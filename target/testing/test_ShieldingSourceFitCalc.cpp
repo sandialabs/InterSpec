@@ -2853,12 +2853,44 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
   const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
   const double distance = 6.0*PhysicalUnits::cm;
 
-  struct TraceCase { TraceActivityType type; double activity; float relax; const char *name; };
+  // The `geom` column exists for ONE row.  An in-situ exponential profile whose depth is not linear
+  //  along the line - the RADIAL ones, a side-on cylinder and a sphere - is carried by sub-piece
+  //  quadrature on the line path (`nsub` in line_source_integration_imp) rather than folded into the
+  //  analytic exponent the way the end-on and rectangular profiles are.  The sphere exercises that
+  //  branch through the rows above; the SIDE-ON CYLINDER, the other radial geometry, had no test on
+  //  any path, so it gets one here rather than a separate scaffold.
+  //
+  // WHAT THOSE THREE ROWS FOUND (2026-09-06), which is why they exist.  `ExponentialDistribution`
+  //  is the one trace type whose activity is per AREA - per m^2 of the EMITTING SURFACE, the table
+  //  at GammaInteractionCalc::TraceActivityType - so its integrand has to supply that area.  The
+  //  two paths disagreed about it, badly:
+  //      sphere    line/element - 1 =  +0.06%
+  //      side-on                     = -97.50%   (element supplied 2*L_o, not an area)
+  //      end-on                      = -99.96%   (element supplied pi*r^2, the right area)
+  //      rect                        = -99.96%   (element supplied (2W)(2H), the right area)
+  //  i.e. the LINE path - what production runs whenever a response is attached - supplied NO area
+  //  in any geometry, so in-situ fits through it were low by the whole emitting surface.  Settled
+  //  by truth rather than by argument: the rectangle and the end-on cylinder by the analyst case
+  //  analysis_tests/option_permutation_fits/misc/AEGIS_Eu152_surface_contamination_exp_surface_with_shielding.n42
+  //  (recorded activity, flat-disk, hence the element path) and the LINE path directly by the
+  //  in-situ Monte-Carlo rows of VolumetricNearFieldTruth.h, which measured it low by exactly the
+  //  area.  Both paths now supply the table's area in every geometry and all seven rows are gated;
+  //  the per-geometry measurement, without the forward model, is
+  //  InSituExponentialAreaConvention (test_VolumetricLinePath.cpp).
+  struct TraceCase { TraceActivityType type; double activity; float relax; const char *name;
+                     GammaInteractionCalc::GeometryType geom; bool gated; };
+  const GammaInteractionCalc::GeometryType sph = GammaInteractionCalc::GeometryType::Spherical;
   const vector<TraceCase> cases = {
-    { TraceActivityType::TotalActivity,           10.0*PhysicalUnits::microCi,                        0.0f, "TotalActivity" },
-    { TraceActivityType::ActivityPerCm3,          0.1*PhysicalUnits::microCi/PhysicalUnits::cm3,      0.0f, "ActivityPerCm3" },
-    { TraceActivityType::ActivityPerGram,         0.1*PhysicalUnits::microCi/PhysicalUnits::gram,     0.0f, "ActivityPerGram" },
-    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution" },
+    { TraceActivityType::TotalActivity,           10.0*PhysicalUnits::microCi,                        0.0f, "TotalActivity", sph, true },
+    { TraceActivityType::ActivityPerCm3,          0.1*PhysicalUnits::microCi/PhysicalUnits::cm3,      0.0f, "ActivityPerCm3", sph, true },
+    { TraceActivityType::ActivityPerGram,         0.1*PhysicalUnits::microCi/PhysicalUnits::gram,     0.0f, "ActivityPerGram", sph, true },
+    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution", sph, true },
+    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution (side-on cyl)",
+      GammaInteractionCalc::GeometryType::CylinderSideOn, true },
+    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution (end-on cyl)",
+      GammaInteractionCalc::GeometryType::CylinderEndOn, true },
+    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution (rect)",
+      GammaInteractionCalc::GeometryType::Rectangular, true },
   };
 
   double worst = 0.0;
@@ -2875,16 +2907,23 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
     trace.m_activity = c.activity;
     trace.m_relaxationDistance = c.relax * static_cast<float>(PhysicalUnits::cm);
 
+    const bool side_on = (c.geom == GammaInteractionCalc::GeometryType::CylinderSideOn);
+    const bool end_on   = (c.geom == GammaInteractionCalc::GeometryType::CylinderEndOn);
+    const bool is_rect  = (c.geom == GammaInteractionCalc::GeometryType::Rectangular);
+
     ShieldingSourceFitCalc::ShieldingInfo shell;
-    shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    shell.m_geometry = c.geom;
     shell.m_isGenericMaterial = false;
     shell.m_forFitting = true;
     shell.m_material = water;
+    // Cylinder dimensions are ['Radius','Length'] with the innermost layer's being half-extents.
     shell.m_dimensions[0] = 3.0*PhysicalUnits::cm;
-    shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+    shell.m_dimensions[1] = (side_on || end_on || is_rect) ? 2.0*PhysicalUnits::cm : 0.0;
+    shell.m_dimensions[2] = is_rect ? 1.5*PhysicalUnits::cm : 0.0;
     shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
     shell.m_traceSources.push_back( trace );
 
+    input.config.geometry = c.geom;
     input.config.shieldings = { shell };
     input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
 
@@ -2916,7 +2955,7 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
                           << input.foreground_peaks[i]->mean() << " keV: element "
                           << std::setprecision(6) << elem[i] << "  line " << line[i] << "  ("
                           << std::showpos << std::setprecision(3) << rel << "%" << std::noshowpos << ")" );
-      if( fabs(rel) > worst )
+      if( c.gated && (fabs(rel) > worst) )
       {
         worst = fabs(rel);
         worst_where = string(c.name) + " @ " + to_string( input.foreground_peaks[i]->mean() );
@@ -2924,11 +2963,125 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
     }
   }//for( trace types )
 
-  BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << std::setprecision(3) << worst << "% (" << worst_where << ")" );
+  BOOST_TEST_MESSAGE( "  worst GATED |line/element - 1|: " << std::setprecision(3) << worst
+                      << "% (" << worst_where << ")" );
   BOOST_CHECK_MESSAGE( worst < 0.75,
                        "line and element disagree by " << worst << "% at " << worst_where
                        << " - a trace-activity type is not integrated the same way on the two paths" );
 }//BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
+
+
+/** A GENERIC (AN/AD) shielding as the INNERMOST layer, with a volumetric source in a layer outside
+ it.  A generic layer at the centre has no volume and attenuates nothing, so the model must equal the
+ same configuration with the generic layer removed - on BOTH quadratures.
+
+ WHY THIS EXISTS.  build_volumetric_calculators used to skip that layer without pushing a shell, so
+ `m_shells` was one shorter than the shielding list while `DistributedSrcCalcT::m_materialIndex`
+ stayed the SHIELDING index: every eval_* and the line integrand then read the wrong shell (an
+ assert in Debug, the outer layer's dims and mu in Release), and the Rayleigh-credit test
+ `subMat > m_materialIndex` was off by one too.  The zero-extent generic shell is now pushed so the
+ two index spaces coincide.  Both a solid and a hollow source are checked, since the hollow branches
+ index `m_shells[m_materialIndex-1]` and must treat a zero-dim generic core as no core at all. */
+BOOST_AUTO_TEST_CASE( GenericInnermostShellIndexing )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  BOOST_REQUIRE( water && steel );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+  const double distance = 8.0*PhysicalUnits::cm;
+
+  ShieldingSourceFitCalc::ShieldingInfo generic;
+  generic.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  generic.m_isGenericMaterial = true;
+  generic.m_forFitting = true;
+  generic.m_material = nullptr;
+  generic.m_dimensions[0] = 26.0;
+  generic.m_dimensions[1] = 1.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  generic.m_dimensions[2] = 0.0;
+  generic.m_fitDimensions[0] = generic.m_fitDimensions[1] = generic.m_fitDimensions[2] = false;
+
+  const auto material_layer = [&]( const shared_ptr<const Material> &mat, const double radius,
+                                   const bool with_trace ){
+    ShieldingSourceFitCalc::ShieldingInfo layer;
+    layer.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    layer.m_isGenericMaterial = false;
+    layer.m_forFitting = true;
+    layer.m_material = mat;
+    layer.m_dimensions[0] = radius;
+    layer.m_dimensions[1] = layer.m_dimensions[2] = 0.0;
+    layer.m_fitDimensions[0] = layer.m_fitDimensions[1] = layer.m_fitDimensions[2] = false;
+    if( with_trace )
+    {
+      ShieldingSourceFitCalc::TraceSourceInfo trace;
+      trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+      trace.m_fitActivity = true;
+      trace.m_nuclide = db->nuclide( "Ba133" );
+      trace.m_activity = 10.0*PhysicalUnits::microCi;
+      trace.m_relaxationDistance = 0.0f;
+      layer.m_traceSources.push_back( trace );
+    }
+    return layer;
+  };
+
+  const auto counts_on = [&]( const vector<ShieldingSourceFitCalc::ShieldingInfo> &layers,
+                              const GammaInteractionCalc::VolumetricIntegrator path ){
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    input.config.shieldings = layers;
+    input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn.first );
+    const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( path );
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    return fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+  };
+
+  // The thickness of the source layer is the same in both stacks (the generic layer takes no room:
+  //  a spherical layer's dimension is its THICKNESS, and a generic one has none).
+  struct Stack { const char *name; vector<ShieldingSourceFitCalc::ShieldingInfo> with, without; };
+  const vector<Stack> stacks = {
+    { "solid water source",
+      { generic, material_layer( water, 2.0*PhysicalUnits::cm, true ), material_layer( steel, 0.3*PhysicalUnits::cm, false ) },
+      {          material_layer( water, 2.0*PhysicalUnits::cm, true ), material_layer( steel, 0.3*PhysicalUnits::cm, false ) } },
+    { "hollow water source on a steel core",
+      { generic, material_layer( steel, 1.0*PhysicalUnits::cm, false ), material_layer( water, 1.5*PhysicalUnits::cm, true ) },
+      {          material_layer( steel, 1.0*PhysicalUnits::cm, false ), material_layer( water, 1.5*PhysicalUnits::cm, true ) } },
+  };
+
+  for( const Stack &s : stacks )
+  {
+    for( const GammaInteractionCalc::VolumetricIntegrator path : { GammaInteractionCalc::VolumetricIntegrator::Element,
+                                                                     GammaInteractionCalc::VolumetricIntegrator::Line } )
+    {
+      const char * const path_name = (path == GammaInteractionCalc::VolumetricIntegrator::Line) ? "line" : "element";
+      vector<double> with, without;
+      BOOST_REQUIRE_NO_THROW( with = counts_on( s.with, path ) );
+      BOOST_REQUIRE_NO_THROW( without = counts_on( s.without, path ) );
+      BOOST_REQUIRE_EQUAL( with.size(), without.size() );
+      // The line path's chords are identical in the two stacks; the element path re-tiles a hollow
+      //  source into sub-domains when it sees an inner shell (even a zero-extent one), so its
+      //  cubature partition differs and only agrees to its own tolerance.
+      const double tol = (path == GammaInteractionCalc::VolumetricIntegrator::Line) ? 1.0e-9 : 2.0e-3;
+      for( size_t i = 0; i < with.size(); ++i )
+      {
+        BOOST_REQUIRE( without[i] > 0.0 );
+        const double rel = with[i]/without[i] - 1.0;
+        BOOST_CHECK_MESSAGE( fabs(rel) < tol, s.name << " (" << path_name << ") peak " << i
+                             << ": with a zero-volume generic innermost layer the model reads "
+                             << with[i] << " vs " << without[i] << " without it (" << 100.0*rel << "%)" );
+      }
+    }//for( paths )
+  }//for( stacks )
+}//BOOST_AUTO_TEST_CASE( GenericInnermostShellIndexing )
 
 
 /** A volumetric effective-shielding pass that cannot run (degenerate geometry) says so in the
@@ -4562,6 +4715,47 @@ BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
     BOOST_CHECK( !why.empty() );
   }
 
+  // An in-situ exponential trace source is representable only where CeeLo's depth axis (the
+  //  source's local z) is the depth InterSpec integrates: end-on cylinder and box.  A side-on
+  //  cylinder's depth is RADIAL, a sphere's too, so both must be refused.
+  {
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.m_type = GammaInteractionCalc::TraceActivityType::ExponentialDistribution;
+    trace.m_fitActivity = true;
+    trace.m_nuclide = nullptr;
+    trace.m_activity = 1.0;
+    trace.m_relaxationDistance = 1.0f*PhysicalUnits::cm;
+
+    const auto with_geom = [&]( const GammaInteractionCalc::GeometryType geom ) {
+      MakeFixedGeomResponse::Setup s;
+      s.geometry = geom;
+      s.distance = 12.5*PhysicalUnits::cm;
+      ShieldingSourceFitCalc::ShieldingInfo src;
+      src.m_geometry = geom;
+      src.m_isGenericMaterial = false;
+      src.m_forFitting = false;
+      src.m_material = fe;
+      src.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+      src.m_dimensions[1] = 1.0*PhysicalUnits::cm;
+      src.m_dimensions[2] = 1.0*PhysicalUnits::cm;
+      src.m_fitDimensions[0] = src.m_fitDimensions[1] = src.m_fitDimensions[2] = false;
+      src.m_traceSources.push_back( trace );
+      s.shieldings.push_back( src );
+      return s;
+    };
+
+    string why;
+    BOOST_CHECK( MakeFixedGeomResponse::sceneRepresentable(
+                    with_geom( GammaInteractionCalc::GeometryType::CylinderEndOn ), &why ) );
+    BOOST_CHECK( MakeFixedGeomResponse::sceneRepresentable(
+                    with_geom( GammaInteractionCalc::GeometryType::Rectangular ), &why ) );
+    BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable(
+                    with_geom( GammaInteractionCalc::GeometryType::Spherical ), &why ) );
+    BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable(
+                    with_geom( GammaInteractionCalc::GeometryType::CylinderSideOn ), &why ) );
+    BOOST_CHECK( !why.empty() );
+  }
+
   // DRF embedding: XML round-trip + hash gating.
   auto drf = make_shared<DetectorPeakResponse>();
   drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm,
@@ -4588,3 +4782,263 @@ BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
   drf->setFixedGeometrySetupXml( "" );
   BOOST_CHECK_EQUAL( drf->hashValue(), hash_before );
 }//BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
+
+
+namespace
+{
+/** A hollow volumetric source for the fit-level cases: a steel core of `core_radius` inside a
+ WATER shell of fixed thickness carrying a Ba-133 trace of fixed activity DENSITY (Bq per cm^3), at
+ `distance`, on the synthetic NaI with its transfer response attached (so the LINE path integrates
+ it).  The density is what makes the inner radius observable: the counts scale with the shell's
+ volume, 4/3 pi ((R_i + t)^3 - R_i^3).  With a fixed TOTAL activity instead - in water or in steel -
+ the per-Bq efficiency barely moves with the core radius (the shrinking emitting skin and the
+ approaching near surface cancel: measured 0.05% per 18% of radius at 0.05% data), so the fit
+ correctly reports an unobservable radius and a far start drifts to the geometric bound; that is
+ the problem, not the quadrature.  Peaks are the forward model's own expectation at the truth,
+ computed on the ELEMENT path so they do not depend on any line set. */
+GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput make_hollow_sphere_fit_input(
+                                              const std::shared_ptr<DetectorPeakResponse> &det,
+                                              const double core_radius, const double shell_thickness,
+                                              const double distance, const double activity )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  BOOST_REQUIRE( water && steel );
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+        = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+  input.config.sources[0].activity = activity;
+  input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+
+  ShieldingSourceFitCalc::ShieldingInfo core;
+  core.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  core.m_isGenericMaterial = false;
+  core.m_forFitting = true;
+  core.m_material = steel;
+  core.m_dimensions[0] = core_radius;
+  core.m_dimensions[1] = core.m_dimensions[2] = 0.0;
+  core.m_fitDimensions[0] = core.m_fitDimensions[1] = core.m_fitDimensions[2] = false;
+
+  ShieldingSourceFitCalc::TraceSourceInfo trace;
+  trace.m_type = GammaInteractionCalc::TraceActivityType::ActivityPerCm3;
+  trace.m_fitActivity = true;
+  trace.m_nuclide = db->nuclide( "Ba133" );
+  trace.m_activity = activity;
+  trace.m_relaxationDistance = 0.0f;
+
+  ShieldingSourceFitCalc::ShieldingInfo shell;
+  shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  shell.m_isGenericMaterial = false;
+  shell.m_forFitting = true;
+  shell.m_material = water;
+  shell.m_dimensions[0] = shell_thickness;
+  shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+  shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+  shell.m_traceSources.push_back( trace );
+
+  input.config.shieldings = { core, shell };
+  return input;
+}//make_hollow_sphere_fit_input(...)
+
+
+struct HollowFitOutcome
+{
+  double core_radius = 0.0, core_uncert = 0.0, activity = 0.0, activity_uncert = 0.0, chi2 = 0.0;
+  int num_fcn_calls = 0;
+  bool final_status = false;
+};
+
+/** Fits the core radius (from `start_radius`) and the activity (from `start_activity`) of the
+ hollow sphere above, on the given line-set replica. */
+HollowFitOutcome fit_hollow_sphere( GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input,
+                                    const deque<shared_ptr<const PeakDef>> &peaks,
+                                    const double start_radius, const double start_activity,
+                                    const bool fit_activity,
+                                    const GammaInteractionCalc::LineSampleParams &sample )
+{
+  input.foreground_peaks = peaks;
+  input.config.shieldings[0].m_dimensions[0] = start_radius;
+  input.config.shieldings[0].m_fitDimensions[0] = true;
+  input.config.sources[0].activity = start_activity;
+  input.config.sources[0].fitActivity = fit_activity;
+  input.config.shieldings[1].m_traceSources[0].m_activity = start_activity;
+  input.config.shieldings[1].m_traceSources[0].m_fitActivity = fit_activity;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+  BOOST_REQUIRE( fcn_pars.first );
+  BOOST_REQUIRE_MESSAGE( fcn_pars.first->resolvedVolumetricEffMethod()
+                            != ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk,
+                         "resolved to flat-disk, so there is no line set" );
+  fcn_pars.first->setVolumetricLineSample( sample );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  auto finished_fcn = [](){};
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, results, finished_fcn );
+
+  HollowFitOutcome out;
+  out.final_status = (results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final);
+  BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(2) );
+  BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
+  out.core_radius = results->final_shieldings[0].m_dimensions[0];
+  out.core_uncert = results->final_shieldings[0].m_dimensionUncerts[0];
+  out.activity = results->fit_src_info[0].activity;
+  out.activity_uncert = results->fit_src_info[0].activityUncertainty.value_or( 0.0 );
+  out.chi2 = results->chi2;
+  out.num_fcn_calls = results->num_fcn_calls;
+  return out;
+}//fit_hollow_sphere(...)
+}//namespace
+
+
+/** A hollow sphere whose INNER radius is the only free parameter, fitted from far away in both
+ directions (0.2x and 5x the truth) on the line path.  The activity is KNOWN here: with it free, a
+ fixed-thickness shell's per-Bq efficiency moves with the core radius almost purely as a scale
+ factor (measured: radius uncertainties of 5-46 cm on a 1.5 cm core, in water and in steel), so the
+ two parameters are degenerate and the fit correctly reports so - a property of the problem, not
+ of the quadrature.  With the activity fixed the radius is determined by the absolute efficiency
+ (~20% per doubling of the core), and the fit must land on it from either side, with a sane
+ uncertainty, in a sane number of evaluations. */
+BOOST_AUTO_TEST_CASE( HollowSphereInnerRadiusFitFarStart )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  // 100 uCi/cm^3 in a ~12 cm^3 shell gives 1e5-1e7-count peaks (0.03-0.3%), precise enough that
+  //  the line set's own ripple, not the statistics, is what limits the fitted radius - the regime
+  //  the replica case is about.
+  const double true_radius = 1.5*PhysicalUnits::cm;
+  const double shell_thickness = 1.0*PhysicalUnits::cm;
+  const double distance = 8.0*PhysicalUnits::cm;
+  const double true_activity = 100.0*PhysicalUnits::microCi;   //activity DENSITY: per cm^3 (ActivityPerCm3 divides by cm^3 itself)
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput truth
+        = make_hollow_sphere_fit_input( det, true_radius, shell_thickness, distance, true_activity );
+  deque<shared_ptr<const PeakDef>> peaks;
+  {
+    const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Element );
+    peaks = peaks_with_model_expected_areas( truth );
+  }
+
+  // 3.5x keeps the start inside the geometric domain (core + shell must stay inside the 8 cm
+  //  distance).  A start OUTSIDE it is clamped to the bound; with an UNOBSERVABLE radius (fixed
+  //  total activity, see make_hollow_sphere_fit_input) Ceres then stopped at the bound after one
+  //  evaluation, reported as a final fit - recorded in scratch/20260908_etendue_validation.
+  for( const shared_ptr<const PeakDef> &p : peaks )
+    BOOST_TEST_MESSAGE( "  truth peak " << p->mean() << " keV: area " << p->peakArea() << " +- " << p->peakAreaUncert() );
+
+  for( const double start_factor : { 0.2, 3.5 } )
+  {
+    const HollowFitOutcome fit = fit_hollow_sphere( truth, peaks, start_factor*true_radius, true_activity, false,
+                                                    GammaInteractionCalc::LineSampleParams() );
+    BOOST_TEST_MESSAGE( "  start " << start_factor << "x: core radius " << std::fixed << std::setprecision(4)
+                        << fit.core_radius/PhysicalUnits::cm << " +- " << fit.core_uncert/PhysicalUnits::cm
+                        << " cm (truth " << true_radius/PhysicalUnits::cm << "), activity "
+                        << fit.activity/PhysicalUnits::microCi << " +- " << fit.activity_uncert/PhysicalUnits::microCi
+                        << " uCi (truth " << true_activity/PhysicalUnits::microCi << "), chi2 " << std::setprecision(3)
+                        << fit.chi2 << ", " << fit.num_fcn_calls << " evaluations" );
+    BOOST_CHECK_MESSAGE( fit.final_status, "fit from " << start_factor << "x did not reach a final status" );
+    BOOST_CHECK_MESSAGE( fabs( fit.core_radius - true_radius ) < 0.03*true_radius,
+                         "fit from " << start_factor << "x landed at " << fit.core_radius/PhysicalUnits::cm
+                         << " cm, truth " << true_radius/PhysicalUnits::cm );
+    BOOST_CHECK_MESSAGE( fit.core_uncert > 0.0, "core radius uncertainty should be positive" );
+    BOOST_CHECK_MESSAGE( fit.num_fcn_calls < 600, "fit from " << start_factor << "x took " << fit.num_fcn_calls
+                         << " evaluations" );
+  }
+}//BOOST_AUTO_TEST_CASE( HollowSphereInnerRadiusFitFarStart )
+
+
+/** The same fit on independent line-set replicas: the fitted VALUES and their UNCERTAINTIES must
+ be stable across replicas.  The uncertainty comes from the curvature of an objective that carries
+ a small deterministic ripple, so it is the more sensitive of the two (what the prompt asked to
+ measure); the spreads are reported, and gated where measured. */
+BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  // 100 uCi/cm^3 in a ~12 cm^3 shell gives 1e5-1e7-count peaks (0.03-0.3%), precise enough that
+  //  the line set's own ripple, not the statistics, is what limits the fitted radius - the regime
+  //  the replica case is about.
+  const double true_radius = 1.5*PhysicalUnits::cm;
+  const double shell_thickness = 1.0*PhysicalUnits::cm;
+  const double distance = 8.0*PhysicalUnits::cm;
+  const double true_activity = 100.0*PhysicalUnits::microCi;   //activity DENSITY: per cm^3 (ActivityPerCm3 divides by cm^3 itself)
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput truth
+        = make_hollow_sphere_fit_input( det, true_radius, shell_thickness, distance, true_activity );
+  deque<shared_ptr<const PeakDef>> peaks;
+  {
+    const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Element );
+    peaks = peaks_with_model_expected_areas( truth );
+  }
+
+  const int num_replicas = 6;
+  const int save_polish = GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_volumetric_polish_line_factor;
+  std::vector<HollowFitOutcome> fits;
+  double unpolished_radius_spread = 0.0, unpolished_uncert_spread = 0.0;
+  for( const int polish : { 1, save_polish } )
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_volumetric_polish_line_factor = polish;
+    fits.clear();
+    for( int k = 0; k < num_replicas; ++k )
+    {
+      GammaInteractionCalc::LineSampleParams sample;
+      sample.kind = GammaInteractionCalc::LineSampleParams::Kind::Sobol;
+      sample.seed = static_cast<uint64_t>( k );
+      fits.push_back( fit_hollow_sphere( truth, peaks, 2.0*true_radius, true_activity, false, sample ) );
+      const HollowFitOutcome &f = fits.back();
+      BOOST_TEST_MESSAGE( "  polish x" << polish << " replica " << k << ": core radius " << std::fixed << std::setprecision(5)
+                          << f.core_radius/PhysicalUnits::cm << " +- " << f.core_uncert/PhysicalUnits::cm
+                          << " cm, chi2 " << std::setprecision(4) << f.chi2 << ", " << f.num_fcn_calls << " evaluations" );
+    }
+    if( polish == 1 )
+    {
+      double lo = 1.0e300, hi = -1.0e300, mean = 0.0, ulo = 1.0e300, uhi = -1.0e300, umean = 0.0;
+      for( const HollowFitOutcome &f : fits )
+      {
+        lo = std::min( lo, f.core_radius ); hi = std::max( hi, f.core_radius ); mean += f.core_radius/fits.size();
+        ulo = std::min( ulo, f.core_uncert ); uhi = std::max( uhi, f.core_uncert ); umean += f.core_uncert/fits.size();
+      }
+      unpolished_radius_spread = (hi - lo)/mean;
+      unpolished_uncert_spread = (uhi - ulo)/umean;
+    }
+  }
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_volumetric_polish_line_factor = save_polish;
+  BOOST_TEST_MESSAGE( "  WITHOUT polish: spread of the radius " << std::fixed << std::setprecision(4)
+                      << 100.0*unpolished_radius_spread << "%, of its uncertainty " << 100.0*unpolished_uncert_spread << "%" );
+  BOOST_TEST_MESSAGE( "  reported uncertainty vs the truth: " << std::fixed << std::setprecision(4)
+                      << 100.0*fits.front().core_uncert/true_radius << "% of the radius; fits sit "
+                      << 100.0*std::fabs( fits.front().core_radius - true_radius )/true_radius << "% from the truth (replica 0)" );
+
+  const auto spread = [&]( const std::function<double(const HollowFitOutcome &)> &get ){
+    double lo = 1.0e300, hi = -1.0e300, mean = 0.0;
+    for( const HollowFitOutcome &f : fits ){ lo = std::min( lo, get(f) ); hi = std::max( hi, get(f) ); mean += get(f)/fits.size(); }
+    return (mean > 0.0) ? (hi - lo)/mean : 0.0;
+  };
+  const double radius_spread = spread( []( const HollowFitOutcome &f ){ return f.core_radius; } );
+  const double radius_uncert_spread = spread( []( const HollowFitOutcome &f ){ return f.core_uncert; } );
+  const double act_spread = spread( []( const HollowFitOutcome &f ){ return f.activity; } );
+  const double act_uncert_spread = spread( []( const HollowFitOutcome &f ){ return f.activity_uncert; } );
+  double mean_uncert = 0.0, mean_radius = 0.0;
+  for( const HollowFitOutcome &f : fits ){ mean_uncert += f.core_uncert/fits.size(); mean_radius += f.core_radius/fits.size(); }
+
+  BOOST_TEST_MESSAGE( "  WITH polish x" << save_polish << ": spread across replicas (max-min)/mean: core radius " << std::fixed << std::setprecision(4)
+                      << 100.0*radius_spread << "%, its uncertainty " << 100.0*radius_uncert_spread
+                      << "%, activity " << 100.0*act_spread << "%, its uncertainty " << 100.0*act_uncert_spread
+                      << "%; mean radius uncertainty " << 100.0*mean_uncert/mean_radius << "% of the radius" );
+  BOOST_CHECK_MESSAGE( radius_spread < 0.01, "the fitted core radius moves by " << 100.0*radius_spread << "% across line sets" );
+  (void)act_spread;
+  // The value spread must be small next to the reported uncertainty, or the uncertainty is meaningless.
+  BOOST_CHECK_MESSAGE( radius_spread*mean_radius < 0.5*mean_uncert,
+                       "the core radius moves across line sets by " << 100.0*radius_spread*mean_radius/mean_uncert
+                       << "% of its own uncertainty" );
+}//BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )

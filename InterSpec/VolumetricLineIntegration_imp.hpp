@@ -49,26 +49,60 @@
  is memoized per energy.  Per evaluation the only new work is intersecting each line with the
  current (fit-parameter, T-valued) shells, and per energy one exponential per source piece: the
  chord integral of exp(-mu s) is analytic, and the smooth remainder (P, an in-situ profile) is a
- 2-4 point Gauss-Legendre average in y = exp(-mu (s1 - s)).
+ 2-4 point Gauss-Legendre average in y = exp(-mu (s - s0)), s0 the near end of the piece.
 
  What this buys over the element path (measured there: 5.8e-4 s per element at 512 rays, boxes
  needing 11k-67k elements PER ENERGY, nothing shared across energies or evaluations): the cost is
- (lines) x (energies) exponentials with the detector work hoisted out of the fit entirely, and
- with the lines fixed the chords are exact in T, so d(integral)/d(dims) no longer carries the
- frozen-aperture staircase error the element path documents at eval_cylinder.
+ (lines) x (energies) exponentials, with the detector-side geometry of a line and its per-energy
+ kernel hoisted out of the per-energy work, and the chords exact in T, so d(integral)/d(dims) does
+ not carry the frozen-aperture staircase error the element path documents at eval_cylinder.  The
+ lines themselves are re-traced through the crystal once per distinct set of scalar source
+ dimensions (#VolumetricLineCache::traced), which is once or twice per optimizer step.
 
- DIRECTION PROPOSAL.  Directions are aimed at points drawn UNIFORMLY IN THE (padded) SOURCE SOLID
- rather than into a cone around its bounding sphere: for a point q uniform in a volume V_p the
- induced direction density is p(w) = (s1^3 - s0^3)/(3 V_p) over the chord [s0,s1] of the line
- through V_p, and the line's weight carries 1/p.  Every line then crosses the padded solid by
- construction, whatever its aspect ratio - where a cone around the bounding SPHERE would waste most
- of its lines on empty space for a needle or an edge-on sheet - and as a fitted dimension shrinks
- the lines follow it.  The proposal is scalar (frozen for autodiff); that is exact, because the true
- integral does not depend on it (importance sampling with a fixed proposal is unbiased for every
- parameter value inside its support, and the padding keeps the support).  The set is rebuilt only
- when the scalar source dimensions leave the window #VolumetricLineCache::matches accepts, never
- per Jet pass - see that function for why holding one proposal across a neighbourhood matters more
- than aiming it perfectly.
+ DIRECTION PROPOSAL.  Directions are aimed at points OF THE SOURCE rather than into a cone around
+ its bounding sphere: every line then crosses the source by construction, whatever its aspect ratio -
+ where a cone around the bounding SPHERE would waste most of its lines on empty space for a needle
+ or an edge-on sheet.  The aim points are frozen in NORMALISED coordinates (the unit solid, or a
+ unit face) and scaled by the CURRENT source dimensions at every evaluation (#line_direction_imp),
+ so the set deforms continuously with the source instead of the source sliding through a fixed set:
+ chord, weight and direction are then smooth functions of the fitted dimensions, and the set never
+ has to be re-drawn.  That is what a FIT needs - see below for why.
+
+ The proposal is a MIXTURE of a volume component (a point uniform in the source padded by `pad`,
+ direction density (s1^3 - s0^3)/(3 V_p) over the line's chord through it) and a surface component
+ (a point uniform on the source's own boundary, sampled per face with fixed probabilities; density
+ sum over the line's crossings P of p_face |P - x|^2 / (A_face |n.w|)).  #line_proposal_density_imp
+ sums them.  A hollow source gets NO component on its inner boundary - see
+ #VolumetricLineCache::frac_outer for the measurement that rules one out.
+
+ WHY THE SURFACE COMPONENT, which is the whole reason the mixture exists.  Differentiating a volume
+ integral whose boundary moves with the parameter gives, by the Reynolds transport theorem,
+ d/dR Int_V f dV = Int_{dV} f (v.n) dA + Int_V d_R f dV.  A line estimator carries the transverse
+ measure dA_perp dOmega and dA_perp = (n.w) dA_S, so a line's share of that BOUNDARY term comes with
+ a 1/(n.w) at its exit point - which is exactly the R/sqrt(R^2 - b^2) that a chord's derivative has
+ at the limb.  Under a volume-only proposal the per-line derivative therefore has DIVERGENT variance
+ (integrable, so unbiased, but heavy-tailed): measured against a converged element-path finite
+ difference the value was right to 0.1% at 65536 lines while the gradient wobbled +-5-14% and
+ flipped sign between adjacent radii - an objective that is smooth in value but rough in slope,
+ which is worse for Levenberg-Marquardt than a constant offset, since the roughness is largest
+ exactly where the true gradient is smallest and it corrupts the curvature the dimension
+ UNCERTAINTY is read from.  The surface component's density diverges at that same limb, so the
+ mixture weight 1/p vanishes there and every line's contribution - value AND derivative - is
+ bounded.  `sm_default_volumetric_line_surface_frac` is the mixture weight.
+
+ A third, HEMISPHERE component (directions uniform above the hull normal, density 1/2pi, no
+ dependence on the dimensions at all) is added for WIDE sources - a 20 m in-situ disk seen from 1 m
+ - where the aim-point components' s^2 direction Jacobian leaves the weights spanning the source's
+ (far/near)^2; it puts a floor under the mixture density and cut the replica scatter 7-16x there
+ (#VolumetricLineCache::frac_hemi, #sm_volumetric_line_hemi_ratio).
+
+ The mixture is unbiased whatever the fractions are (each component covers the source), so they are
+ a variance knob only.  Aiming with the CURRENT dimensions is what makes the estimator's derivative
+ the derivative of what it estimates: the crystal kernel k moves with the line, and its direction
+ gradient is carried by a forward difference of two extra traces (#VolumetricLineCache::TracedLines,
+ only when a dimension is being differentiated).  That term is NOT zero in the continuum limit - it
+ is of order the relative variation of k across the set - which is why it is carried rather than
+ dropped.
 
  LIMIT.  A source extent that is a vanishing fraction of the standoff makes chord/volume a 0/0 here.
  The intervals are computed from each line's closest approach to the assembly origin
@@ -78,21 +112,38 @@
  value and derivative stay finite and continuous all the way to exactly zero and the line path owns
  the whole domain (test_ShieldingDimLimit pins this).
 
- UNITS.  CeeLo works in cm; everything here is in PhysicalUnits.  The etendue weight of a line is
- `omega_w` (cm^2, already divided by 4 pi) times cm^2 in PhysicalUnits; multiplied by an emission
- density (1/volume) and a chord (length) it is dimensionless.
+ SEQUENCE AND ERROR.  The per-line unit coordinates come from a host-side stream
+ (#LineSampleStream; Sobol' with a random digital shift by default, Halton kept for reproducing the
+ original construction), so a REPLICA of the set - an independent randomisation - is one parameter
+ (#LineSampleParams).  Replicas are how the quadrature's precision is measured; within one set the
+ lines are summed in fixed contiguous blocks whose two-scale scatter gives `m_est_rel_error`,
+ calibrated against replicas (LineErrorEstimateCalibration).  Against two independent per-voxel
+ references (VolumetricReferenceIntegrator.h) the line path has no measurable bias
+ (LinePathVsReference); its precision at the shipped line count is what the mixture fractions set.
+
+ UNITS.  CeeLo works in cm; everything here is in PhysicalUnits.  A line's weight is its hull
+ point's area share (cm^2) times the hull cosine, over the proposal density (per steradian) and
+ 4 pi and the line count, converted to PhysicalUnits; multiplied by an emission density (1/volume)
+ and a chord (length) it is dimensionless.
  */
 
 #include <map>
 #include <array>
 #include <cmath>
+#include <deque>
 #include <mutex>
 #include <tuple>
+#include <atomic>
 #include <memory>
+#include <random>
 #include <vector>
 #include <cassert>
 #include <algorithm>
 #include <type_traits>
+
+#include <boost/random/sobol.hpp>
+
+#include <Eigen/Geometry>
 
 #include "io/DetectorEtendue.h"
 #include "io/LowDiscrepancy.h"
@@ -138,8 +189,9 @@ struct ScopedVolumetricIntegratorOverride
   ScopedVolumetricIntegratorOverride &operator=( const ScopedVolumetricIntegratorOverride & ) = delete;
 };//struct ScopedVolumetricIntegratorOverride
 
-/** Gauss-Legendre points on a source chord, in the y = exp(-mu_eff (s1 - s)) substitution
- (2 = exact for a linear remainder; radial in-situ profiles use 4 - see #line_source_integration_imp). */
+/** Gauss-Legendre points on a source chord, in the y = exp(-mu_eff (s - s0)) substitution (s0 the
+ near end of the piece; 2 = exact for a remainder linear in y; radial in-situ profiles use 4 - see
+ #line_source_integration_imp). */
 inline int sm_line_chord_gl_points = 2;
 
 /** Smallest source extent the line path integrates, as a RATIO of the extent to the source-detector
@@ -1014,9 +1066,9 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
                                                                   const double d_lo_cm,
                                                                   const double d_hi_cm,
                                                                   const CollimatorGateGrid *gates = nullptr,
-                                                                  const size_t num_d = 48,
                                                                   const size_t num_cos = 33,
-                                                                  const size_t num_phi_quadrant = 9 )
+                                                                  const size_t num_phi_quadrant = 9,
+                                                                  const int nodes_per_octave = 12 )
 {
   assert( gates || !resp.descriptor.collimator );
 
@@ -1024,9 +1076,16 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
   auto grid = std::make_shared<PrefactorGrid>();
   grid->energy_keV = energy_keV;
 
-  const double lo = std::log( d_lo_cm ), hi = std::log( d_hi_cm );
-  for( size_t i = 0; i < num_d; ++i )
-    grid->ln_d.push_back( lo + (hi - lo)*static_cast<double>(i)/static_cast<double>(num_d - 1) );
+  // Distance nodes on a FIXED logarithmic lattice, ln d = k*delta (12 per octave), covering
+  //  [d_lo, d_hi]: a grid rebuilt over a wider range (VolumetricLineCache::ensure_prefactor_range,
+  //  as the fitted source grows or shrinks) reproduces every node it shares with the old one bit
+  //  for bit, so the integrand is continuous across the extension.
+  assert( (num_cos >= 2) && (num_phi_quadrant >= 2) && (nodes_per_octave >= 1) );
+  const double delta = std::log( 2.0 ) / static_cast<double>( nodes_per_octave );
+  const long k_lo = static_cast<long>( std::floor( std::log( d_lo_cm )/delta ) );
+  const long k_hi = std::max( static_cast<long>( std::ceil( std::log( d_hi_cm )/delta ) ), k_lo + 1 );
+  for( long k = k_lo; k <= k_hi; ++k )
+    grid->ln_d.push_back( static_cast<double>(k) * delta );
   for( size_t i = 0; i < num_cos; ++i )
     grid->cos_t.push_back( static_cast<double>(i)/static_cast<double>(num_cos - 1) );
   if( resp.descriptor.symmetry == ceelo::ResponseSymmetry::Quadrant )
@@ -1072,144 +1131,149 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
 }//build_prefactor_grid(...)
 
 
-/** The detector-side line set for one source shell of one fit, plus the per-energy memos.
- Built by #build_volumetric_line_cache; owned (shared) by #ShieldingSourceChi2Fcn and referenced by
- every #DistributedSrcCalcT of that source.  Immutable after construction except the memos, which
- are mutex-guarded. */
-struct VolumetricLineCache
+/** Fraction of the line set aimed at the source's SURFACES rather than its volume - the defensive
+ component of the mixture proposal (see DIRECTION PROPOSAL in the file comment).  Part of the
+ cache's key. */
+inline double sm_default_volumetric_line_surface_frac = 0.3;
+
+/** TEST HOOK - when set, #VolumetricLineCache::traced returns the most recently traced set whatever
+ dimensions are asked for, and the integration carries the crystal kernel WITHOUT its direction
+ gradient, so a finite difference of the estimator measures the chain rule of everything analytic
+ (the chain-rule lane of LinePathGradientVsFiniteDifference).  Leave false in production. */
+inline bool sm_line_trace_hold = false;
+
+/** TEST HOOKS - resolution of the prefactor grid (#build_prefactor_grid): cos_theta nodes on [0,1],
+ phi nodes over a quadrant, and ln(d) nodes per octave.  These are the production values; the
+ tests sweep them to measure the interpolation error of P on its own. */
+inline size_t sm_prefactor_grid_num_cos = 33;
+inline size_t sm_prefactor_grid_num_phi_quadrant = 9;
+inline int sm_prefactor_grid_nodes_per_octave = 12;
+
+/** TEST HOOK - evaluate the response prefactor DIRECTLY (ceelo::DetectorResponse::fep_prefactor) at
+ every chord node instead of interpolating it from #PrefactorGrid.  T = double only - the direct
+ evaluation carries no derivative lane - so it throws for a Jet.  Isolates the grid's interpolation
+ error from everything else in the line integrand. */
+inline bool sm_prefactor_direct_eval = false;
+
+/** Number of contiguous index blocks the line set is summed in (#line_source_integration_imp):
+ fixes the reduction order independently of the thread count, and the spread of the block estimates
+ is the quadrature's error estimate (`m_est_rel_error`).  Not a tuning knob - changing it changes
+ the rounding of every line-path result. */
+inline size_t sm_line_error_blocks = 32;
+
+/** The HEMISPHERE component of the mixture proposal (see #VolumetricLineCache::frac_hemi): enabled
+ at build for a WIDE source - one whose padded extent, seen from the detector, spans a far/near
+ distance ratio above `sm_volumetric_line_hemi_ratio` (near floored at the crystal's transverse
+ extent) - with `sm_volumetric_line_hemi_frac` of the lines, taken from the volume share.
+ MEASURED (LineProposalMixtureSweep, replica rms of 8 Sobol' replicas at 65536 lines): on the 20 m
+ in-situ disk at 1 m (ratio 16) a share of 0 / 0.15 / 0.3 / 0.5 / 0.65 gives 4.0e-3 / 6.0e-4 /
+ 5.3e-4 / 3.5e-4 / 2.9e-4, on the 100 m disk (ratio 76) 1.5e-2 / 9.4e-4 / 1.2e-3 / 6.9e-4 / 6.7e-4;
+ on compact sources (contact, far field, a 2 m disk at 1 m: ratios 2.3-3.4) the same shares cost
+ 1.0-2.5x, hence the trigger, set above the contact box's 3.4.  An inverse-square area density on
+ the facing face was tried for the same purpose and did less (2.4e-3 / 3.6e-3 on the two disks)
+ while hurting boxes; removed. */
+inline double sm_volumetric_line_hemi_ratio = 4.0;
+inline double sm_volumetric_line_hemi_frac = 0.5;
+
+// The sequence/replica selector of a line set, #LineSampleParams, is declared in
+//  GammaInteractionCalc.h (ShieldingSourceChi2Fcn holds one per fit).
+
+
+/** Right-handed orthonormal tangent basis (e1, e2) perpendicular to the unit vector `a` - a
+ deterministic function of `a` alone, so the pass that traces a perturbed direction and the pass
+ that projects a derivative onto it agree without sharing state. */
+inline void line_tangent_frame( const Eigen::Vector3d &a, Eigen::Vector3d &e1, Eigen::Vector3d &e2 )
 {
-  /** Key: what the set was built for. */
-  std::shared_ptr<const ceelo::DetectorResponse> response;
-  GeometryType geometry = GeometryType::NumGeometryType;
-  size_t material_index = 0;
-  std::array<double,3> source_outer_dims = { 0.0, 0.0, 0.0 };   //scalar, PhysicalUnits
-  std::array<double,3> det_position = { 0.0, 0.0, 0.0 };
-  std::array<double,3> det_axis = { 0.0, 0.0, -1.0 };
-  double det_azimuth = 0.0;
-  int num_lines = 0;
-  double pad = 1.5;   //proposal padding factor the directions were aimed with
+  e1 = (std::fabs(a.z()) < 0.9) ? a.cross( Eigen::Vector3d(0.0, 0.0, 1.0) ).normalized()
+                                : a.cross( Eigen::Vector3d(1.0, 0.0, 0.0) ).normalized();
+  e2 = a.cross( e1 );
+}//line_tangent_frame(...)
 
-  /** Crystal (CeeLo) -> assembly rotation, and the reference point in the crystal frame (cm). */
-  double M[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
-  std::array<double,3> ref_c = { 0.0, 0.0, 0.0 };
 
-  /** The padded proposal solid the directions were aimed at (assembly frame, PhysicalUnits). */
-  std::array<double,3> proposal_dims = { 0.0, 0.0, 0.0 };
+/** Traces one line through the DETECTOR (housing, dead layer, crystal) and fills the CeeLo ray the
+ per-energy kernel is evaluated on: the material segments in traversal order, the active-crystal
+ chord, and the photon direction.  `x` is the hull point and `w_out` the OUTWARD unit direction
+ (toward the source; the photon travels along -w_out).  `scratch` is reused across calls.
 
-  /** The lines, in the crystal frame (cm) - `lines.q` carries the CeeLo kernel segments. */
-  ceelo::EtendueLineSet lines;
+ Returns false - leaving the ray with no segments and a zero chord, which
+ `DetectorResponse::fep_line_probabilities` scores as zero - when the direction points behind the
+ face plane or the line misses the active crystal.  Both are decisions a moving line set has to be
+ able to make per evaluation, so neither is an assert.
 
-  /** Per kept line, assembly frame, PhysicalUnits: origin relative to the detector position,
-   unit photon direction (toward the detector), etendue weight (area), and the distance back
-   along the line from the hull point to the endcap-front plane (the air path ends there). */
-  std::vector<std::array<double,3>> origin_rel;
-  std::vector<std::array<double,3>> dir;
-  std::vector<double> weight;
-  std::vector<double> s_endcap;
+ This is `ceelo::append_etendue_line` without the set: same trace, same conventions, but writing
+ into a caller-owned ray so the lines can be re-traced as the source dimensions move.  Kept here
+ rather than added to CeeLo so the vendored library stays untouched; it uses only its public API
+ (Geometry::trace_ray and the two extent queries).  `Geometry::trace_ray` is const and the geometry
+ has no mutable state, so concurrent calls with distinct `out`/`scratch` are safe. */
+inline bool trace_detector_line( const ceelo::Geometry &geom, const Eigen::Vector3d &x,
+                                 const Eigen::Vector3d &w_out, ceelo::KernelRay &out,
+                                 std::vector<ceelo::PathSegment> &scratch )
+{
+  out.segs.clear();
+  out.active_len = 0.0f;
+  out.omega_w = static_cast<float>( 1.0/(4.0*PhysicalUnits::pi) );
+  out.cos_incidence = static_cast<float>( std::fabs( w_out.z() ) );
+  out.dir = (-w_out).cast<float>();
+  if( !(w_out.z() < 0.0) )
+    return false;   //behind the face plane
 
-  /** Distances (cm, from the crystal-face origin) the prefactor grids cover, and the narrower
-   distance and incidence-cosine ranges the padded source chords actually span (flags are
-   aggregated over the latter - see #PrefactorGrid::worst_flag_between). */
-  double prefactor_d_lo_cm = 0.0, prefactor_d_hi_cm = 0.0;
-  double chord_d_lo_cm = 0.0, chord_d_hi_cm = 0.0;
-  double chord_cos_lo = 0.0, chord_cos_hi = 1.0;
+  // The trace must start outside the outermost shell, on the source side.
+  const std::pair<double,double> zext = geom.outer_z_extent();
+  const double back = 2.0*(geom.outer_bounding_radius()
+                           + std::max( std::fabs(zext.first), std::fabs(zext.second) ))
+                      + x.norm() + 1.0;
+  const Eigen::Vector3d dir_in = -w_out;
+  geom.trace_ray( x + w_out*back, dir_in, scratch );
+  if( scratch.empty() )
+    return false;
+  std::sort( begin(scratch), end(scratch),
+             []( const ceelo::PathSegment &a, const ceelo::PathSegment &b ){
+               return a.t_start < b.t_start;
+             } );
 
-  /** Collimated responses only: the shadow gate's quadratures (see #CollimatorGateGrid). */
-  std::shared_ptr<const CollimatorGateGrid> gate_grid;
-
-  mutable std::mutex memo_mutex;
-  mutable std::map<double,std::shared_ptr<const std::vector<double>>> kernel_by_energy;
-  mutable std::map<double,std::shared_ptr<const PrefactorGrid>> prefactor_by_energy;
-
-  /** Per-line FEP interaction probability at `energy_keV` (memoized). */
-  std::shared_ptr<const std::vector<double>> kernel( const double energy_keV ) const
+  double active = 0.0;
+  for( const ceelo::PathSegment &seg : scratch )
   {
-    {
-      std::lock_guard<std::mutex> lock( memo_mutex );
-      const auto pos = kernel_by_energy.find( energy_keV );
-      if( pos != end(kernel_by_energy) )
-        return pos->second;
-    }
-    auto k = std::make_shared<std::vector<double>>();
-    response->fep_line_probabilities( energy_keV, lines.q, *k );
-    std::lock_guard<std::mutex> lock( memo_mutex );
-    return kernel_by_energy.emplace( energy_keV, k ).first->second;
-  }//kernel(...)
-
-  /** The prefactor grid at `energy_keV` (memoized). */
-  std::shared_ptr<const PrefactorGrid> prefactor( const double energy_keV ) const
-  {
-    {
-      std::lock_guard<std::mutex> lock( memo_mutex );
-      const auto pos = prefactor_by_energy.find( energy_keV );
-      if( pos != end(prefactor_by_energy) )
-        return pos->second;
-    }
-    std::shared_ptr<const PrefactorGrid> g = build_prefactor_grid( *response, energy_keV,
-                                                                   prefactor_d_lo_cm, prefactor_d_hi_cm,
-                                                                   gate_grid.get() );
-    std::lock_guard<std::mutex> lock( memo_mutex );
-    return prefactor_by_energy.emplace( energy_keV, g ).first->second;
-  }//prefactor(...)
-
-  /** The worst response flag the source's chords can meet at `energy_keV` (near-field floor,
-   energy clamping, collimator shadowing) - what the fit's warnings report for a volumetric source,
-   which the point query at the source centre alone would miss (e.g. a collimated detector looking
-   at a source that extends into the shadow). */
-  ceelo::ResponseFlag worst_flag( const double energy_keV ) const
-  {
-    return prefactor( energy_keV )->worst_flag_between( chord_d_lo_cm, chord_d_hi_cm,
-                                                        chord_cos_lo, chord_cos_hi );
+    const double len = seg.length();
+    if( len <= 1.0e-12 )
+      continue;
+    if( seg.is_scoring )
+      active += len;
+    if( seg.material )
+      out.segs.push_back( { seg.material, static_cast<float>(len), seg.is_scoring } );
   }
 
-  /** Whether this cache can still serve the given scalar configuration.
-
-   The detector placement, response and line count must match exactly, but the SOURCE dimensions
-   only have to be close: the line set is an importance-sampling proposal, and a proposal aimed at
-   a slightly different solid is still unbiased as long as it covers the real one (the padding, see
-   #build_volumetric_line_cache).  Reusing it matters for the fit, not for the cost: a rebuilt set
-   is a different quadrature, so the estimate moves by its own discretisation error (~0.2% at 65536
-   lines) whenever the dimensions move at all - and an objective that jumps by 0.2% between
-   optimizer steps is one Levenberg-Marquardt cannot take clean steps on.  Holding one proposal
-   across a whole neighbourhood makes the objective smooth there, which is what the optimizer
-   actually needs; the tolerance is well inside the 1.5x padding, so coverage is never at risk.
-
-   MEASURED, and this is the known weakness of the scheme: the window makes rebuilds RARE, it does
-   not make them free.  `LineCacheRebuildContinuity` sweeps a source radius across a boundary and
-   finds a step of ~1.6e-3 in the integral there - the proposal is re-aimed by the whole width of
-   the window at once, so the sets either side are effectively independent quadratures and the
-   estimate moves by their discretisation.  A fit that walks a source dimension across a boundary
-   therefore meets a ~0.16% discontinuity, which is exactly what this window was meant to avoid and
-   only defers.  The fix is NOT a wider window - a fit crosses it eventually - but to build the
-   proposal ONCE per fit, padded to the dimension parameters' upper BOUNDS instead of their current
-   value, so it spans the whole search domain and never needs rebuilding.  Tracked in TODO.md. */
-  bool matches( const ceelo::DetectorResponse *resp, const GeometryType geom, const size_t mat_index,
-                const std::array<double,3> &outer_dims, const std::array<double,3> &det_pos,
-                const std::array<double,3> &axis, const double azimuth, const int n,
-                const double pad_factor ) const
+  out.active_len = static_cast<float>( active );
+  if( !(active > 0.0) || out.segs.empty() )
   {
-    if( (response.get() != resp) || (geometry != geom) || (material_index != mat_index)
-        || (det_position != det_pos) || (det_axis != axis) || (det_azimuth != azimuth)
-        || (num_lines != n) || (pad != pad_factor) )
-      return false;
-
-    // Dimensions at or below the extent floor all describe the same proposal (the floor is what the
-    //  sampler aimed at), so a shell collapsing to zero does not rebuild on every evaluation.
-    const double ext_floor = sm_line_path_extent_ratio_floor
-                             * std::sqrt( det_pos[0]*det_pos[0] + det_pos[1]*det_pos[1] + det_pos[2]*det_pos[2] );
-    for( size_t i = 0; i < 3; ++i )
-    {
-      const double have = std::max( source_outer_dims[i], ext_floor );
-      const double want = std::max( outer_dims[i], ext_floor );
-      if( have == want )
-        continue;
-      const double ratio = want/have;
-      if( (ratio < 0.8) || (ratio > 1.2) )
-        return false;
-    }
-    return true;
+    out.segs.clear();
+    out.active_len = 0.0f;
+    return false;   //can never contribute
   }
-};//struct VolumetricLineCache
+  return true;
+}//trace_detector_line(...)
+
+
+/** Sets #sm_line_trace_hold for a scope and restores it on exit. */
+struct ScopedLineTraceHold
+{
+  const bool previous;
+  ScopedLineTraceHold() : previous( sm_line_trace_hold ) { sm_line_trace_hold = true; }
+  ~ScopedLineTraceHold() { sm_line_trace_hold = previous; }
+  ScopedLineTraceHold( const ScopedLineTraceHold & ) = delete;
+  ScopedLineTraceHold &operator=( const ScopedLineTraceHold & ) = delete;
+};//struct ScopedLineTraceHold
+
+
+/** Whether a T carries a non-zero derivative lane (false for double). */
+template<typename T>
+inline bool has_derivative_lane( const T &x )
+{
+  if constexpr( std::is_same_v<T,double> )
+    return false;
+  else
+    return (x.v.squaredNorm() > 0.0);
+}
 
 
 /** The crystal -> assembly rotation for a detector whose axis (detector -> assembly) is `axis`,
@@ -1279,19 +1343,20 @@ inline std::array<double,3> uniform_point_in_solid( const GeometryType geometry,
 
 
 /** Volume of the solid (assembly frame dims). */
-inline double solid_volume( const GeometryType geometry, const std::array<double,3> &dims )
+template<typename T>
+inline T solid_volume( const GeometryType geometry, const std::array<T,3> &dims )
 {
-  const double pi = PhysicalUnits::pi;
+  const T pi( PhysicalUnits::pi );
   switch( geometry )
   {
-    case GeometryType::Spherical:      return (4.0/3.0)*pi*dims[0]*dims[0]*dims[0];
+    case GeometryType::Spherical:      return T(4.0/3.0)*pi*dims[0]*dims[0]*dims[0];
     case GeometryType::CylinderEndOn:
-    case GeometryType::CylinderSideOn: return 2.0*pi*dims[0]*dims[0]*dims[1];
-    case GeometryType::Rectangular:    return 8.0*dims[0]*dims[1]*dims[2];
+    case GeometryType::CylinderSideOn: return T(2.0)*pi*dims[0]*dims[0]*dims[1];
+    case GeometryType::Rectangular:    return T(8.0)*dims[0]*dims[1]*dims[2];
     case GeometryType::NumGeometryType: break;
   }
   assert( 0 );
-  return 0.0;
+  return T(0.0);
 }//solid_volume(...)
 
 
@@ -1311,9 +1376,825 @@ inline double solid_bounding_radius( const GeometryType geometry, const std::arr
 }//solid_bounding_radius(...)
 
 
-/** Builds the line set for one source shell.  `source_outer_dims` are the SCALAR cumulative outer
- dims of the source shell (the solid the directions are aimed at, padded by `pad`), `det_*` the
- scalar detector geometry (position = the response's reference point in the assembly frame). */
+/** The component-wise scale that maps the UNIT solid (every dim 1) onto the solid with `dims`:
+ (R,R,R) for a sphere, (R,R,H) for a cylinder, (W,H,D) for a box.  #uniform_point_in_solid and
+ #unit_surface_point both factor this way, so a point frozen in unit coordinates follows the
+ fitted dimensions by one multiplication per axis. */
+template<typename T>
+inline std::array<T,3> solid_scale( const GeometryType geometry, const std::array<T,3> &dims )
+{
+  switch( geometry )
+  {
+    case GeometryType::Spherical:      return { dims[0], dims[0], dims[0] };
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn: return { dims[0], dims[0], dims[1] };
+    case GeometryType::Rectangular:    return dims;
+    case GeometryType::NumGeometryType: break;
+  }
+  assert( 0 );
+  return dims;
+}//solid_scale(...)
+
+
+/** Faces of a solid's surface: sphere 1; cylinders 3 (cap +z, cap -z, side); box 6 (+x, -x, +y, -y,
+ +z, -z).  The surface-aimed lines are sampled per face with FIXED probabilities and their density
+ needs the area of the face a line crosses, so both index faces the same way. */
+inline int surface_face_count( const GeometryType geometry )
+{
+  switch( geometry )
+  {
+    case GeometryType::Spherical:      return 1;
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn: return 3;
+    case GeometryType::Rectangular:    return 6;
+    case GeometryType::NumGeometryType: break;
+  }
+  assert( 0 );
+  return 0;
+}//surface_face_count(...)
+
+
+/** Area of face `f` of the solid with `dims`. */
+template<typename T>
+inline T surface_face_area( const GeometryType geometry, const int f, const std::array<T,3> &dims )
+{
+  const T pi( PhysicalUnits::pi );
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+      return T(4.0)*pi*dims[0]*dims[0];
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+      return (f < 2) ? (pi*dims[0]*dims[0]) : (T(4.0)*pi*dims[0]*dims[1]);
+    case GeometryType::Rectangular:
+    {
+      const int ax = f/2;
+      return T(4.0)*dims[(ax + 1)%3]*dims[(ax + 2)%3];
+    }
+    case GeometryType::NumGeometryType:
+      break;
+  }
+  assert( 0 );
+  return T(0.0);
+}//surface_face_area(...)
+
+
+/** Point on face `f` of the UNIT solid, uniform in the face's area, from two unit-square
+ coordinates; scaled by #solid_scale it lies on the same face of any solid of that geometry. */
+inline std::array<double,3> unit_surface_point( const GeometryType geometry, const int f,
+                                                const double u1, const double u2 )
+{
+  const double two_pi = 2.0*PhysicalUnits::pi;
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+    {
+      const double ct = 1.0 - 2.0*u1;
+      const double st = std::sqrt( std::max( 0.0, 1.0 - ct*ct ) );
+      const double ph = two_pi*u2;
+      return { st*std::cos(ph), st*std::sin(ph), ct };
+    }
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      if( f < 2 )
+      {
+        const double r = std::sqrt( u1 );
+        const double ph = two_pi*u2;
+        return { r*std::cos(ph), r*std::sin(ph), (f == 0) ? 1.0 : -1.0 };
+      }
+      const double ph = two_pi*u1;
+      return { std::cos(ph), std::sin(ph), 2.0*u2 - 1.0 };
+    }
+    case GeometryType::Rectangular:
+    {
+      std::array<double,3> p;
+      const int ax = f/2;
+      p[ax] = (f % 2 == 0) ? 1.0 : -1.0;
+      p[(ax + 1)%3] = 2.0*u1 - 1.0;
+      p[(ax + 2)%3] = 2.0*u2 - 1.0;
+      return p;
+    }
+    case GeometryType::NumGeometryType:
+      break;
+  }
+  assert( 0 );
+  return { 0.0, 0.0, 0.0 };
+}//unit_surface_point(...)
+
+
+/** The face a point `p` ON the surface of the solid with `dims` lies on (scalar decision, by which
+ normalised coordinate is at its limit), and the outward unit normal there (T: a cylinder side's
+ normal turns with the point).  Edges are measure zero and go to whichever face wins the compare. */
+template<typename T>
+inline int surface_face_at( const GeometryType geometry, const std::array<T,3> &dims,
+                            const T p[3], T n[3] )
+{
+  using namespace std;
+  using namespace ceres;
+
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+    {
+      const T r = sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] );
+      for( int i = 0; i < 3; ++i )
+        n[i] = p[i] / r;
+      return 0;
+    }
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      const T rho = sqrt( p[0]*p[0] + p[1]*p[1] );
+      const double cap_ratio = std::fabs( scalar_of(p[2]) ) / scalar_of( dims[1] );
+      const double side_ratio = scalar_of( rho ) / scalar_of( dims[0] );
+      if( cap_ratio >= side_ratio )
+      {
+        const bool top = (scalar_of(p[2]) >= 0.0);
+        n[0] = T(0.0);
+        n[1] = T(0.0);
+        n[2] = T( top ? 1.0 : -1.0 );
+        return top ? 0 : 1;
+      }
+      n[0] = p[0] / rho;
+      n[1] = p[1] / rho;
+      n[2] = T(0.0);
+      return 2;
+    }
+    case GeometryType::Rectangular:
+    {
+      int ax = 0;
+      double best = -1.0;
+      for( int i = 0; i < 3; ++i )
+      {
+        const double ratio = std::fabs( scalar_of(p[i]) ) / scalar_of( dims[i] );
+        if( ratio > best )
+        {
+          best = ratio;
+          ax = i;
+        }
+      }
+      const bool pos = (scalar_of(p[ax]) >= 0.0);
+      for( int i = 0; i < 3; ++i )
+        n[i] = T(0.0);
+      n[ax] = T( pos ? 1.0 : -1.0 );
+      return 2*ax + (pos ? 0 : 1);
+    }
+    case GeometryType::NumGeometryType:
+      break;
+  }
+  assert( 0 );
+  return 0;
+}//surface_face_at(...)
+
+
+/** Interval [a,b] of the line o - s d inside ONE solid, computed from the line's closest approach
+ to the origin (the same re-origining #line_shell_intervals_imp does, for the same precision
+ reason) and NOT clamped at s = 0: `a < 0` says the origin is inside.  False when missed or when
+ the solid lies entirely behind `o`. */
+template<typename T, typename D>
+inline bool line_solid_interval_imp( const GeometryType geometry, const std::array<T,3> &dims,
+                                     const T o[3], const D d[3], T &a, T &b )
+{
+  using AType = std::conditional_t<std::is_same_v<D,double>,double,T>;
+  AType dd( 0.0 );
+  T od( 0.0 );
+  for( int i = 0; i < 3; ++i )
+  {
+    dd += d[i]*d[i];
+    od += o[i]*d[i];
+  }
+  const T s_star = od / dd;
+  const T o_near[3] = { o[0] - s_star*d[0], o[1] - s_star*d[1], o[2] - s_star*d[2] };
+  if( !line_shell_interval_imp( geometry, dims, o_near, d, a, b ) )
+    return false;
+  a += s_star;
+  b += s_star;
+  return (scalar_of(b) > 0.0);
+}//line_solid_interval_imp(...)
+
+
+/** The detector-side line set for one source shell of one fit.
+ Built by #build_volumetric_line_cache; owned (shared) by #ShieldingSourceChi2Fcn and referenced by
+ every #DistributedSrcCalcT of that source.  The candidate lines and the proposal are immutable
+ after construction; the per-dimension traces and the per-energy memos are mutex-guarded.
+
+ A candidate line is a hull point plus an aim point frozen in NORMALISED coordinates (the unit
+ solid, or a unit face); at every evaluation the aim point is scaled by the CURRENT source
+ dimensions (#line_direction_imp), so the line set deforms continuously with the source and the
+ direction, weight and chords are smooth functions of the fitted dimensions.  The crystal kernel
+ of each line depends on its direction and is re-traced per distinct set of scalar dimensions
+ (#traced); see #TracedLines. */
+struct VolumetricLineCache
+{
+  /** Key: what the set was built for. */
+  std::shared_ptr<const ceelo::DetectorResponse> response;
+  GeometryType geometry = GeometryType::NumGeometryType;
+  size_t material_index = 0;
+  std::array<double,3> det_position = { 0.0, 0.0, 0.0 };
+  std::array<double,3> det_axis = { 0.0, 0.0, -1.0 };
+  double det_azimuth = 0.0;
+  int num_lines = 0;
+  double pad = 1.5;            //padding factor of the volume component's proposal solid
+  double surface_frac = 0.3;   //fraction of lines aimed at the surface(s)
+  LineSampleParams sample;     //sequence and replica the lines were drawn from
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** Diagnostics: chord nodes evaluated, and how many of them PrefactorGrid had to clamp (cos_theta
+   below 0, i.e. behind the crystal face plane, or ln(d) outside the grid's range) - both should be
+   zero for every supported source; the tests read them. */
+  mutable std::atomic<uint64_t> diag_num_nodes{ 0 }, diag_nodes_cos_clamped{ 0 }, diag_nodes_d_clamped{ 0 };
+#endif
+
+  /** Crystal (CeeLo) -> assembly rotation, and the reference point in the crystal frame (cm). */
+  double M[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
+  std::array<double,3> ref_c = { 0.0, 0.0, 0.0 };
+
+  /** One candidate line: a hull point and a frozen normalised aim point. */
+  struct Candidate
+  {
+    std::array<double,3> point_c;    //hull point, crystal frame (cm)
+    std::array<double,3> x_rel;      //hull point relative to the detector position, assembly frame (PhysicalUnits)
+    std::array<double,3> n_a;        //outward hull normal, assembly frame
+    double area_weight = 0.0;        //A_face/p_face of the hull face (cm^2)
+    std::array<double,3> q_unit;     //aim point in the unit solid (volume) or on the unit surface
+    int component = 0;               //0: padded outer volume; 1: outer surface
+  };
+  std::vector<Candidate> cand;
+
+  /** Mixture weights (sum to 1) and the fixed per-face sampling probabilities of the surface
+   component (summing to 1 over #surface_face_count faces), chosen at build from the hint
+   dimensions' face areas.  The DENSITY of a line uses the same tables whatever the dimensions, so
+   the estimator stays unbiased; only its variance depends on how well they still match.
+
+   There is deliberately NO component on a hollow source's INNER surface, and this is the one place
+   the symmetry with the outer surface breaks down.  On the outer surface the 1/|n.w| in the density
+   is cancelled by the source chord, which vanishes on the same limb - that cancellation is the
+   whole design.  A line grazing the CORE still crosses plenty of source, so nothing cancels there:
+   the weight collapses across the core's silhouette, and its derivative is enormous.  Measured on a
+   water shell around a steel core, fitting the shell's outer radius (HollowSourceGradientProbe):
+   with an inner component the analytic gradient came out -2.10e-4 against a true +6.5e-5 - the
+   WRONG SIGN - while the value stayed correct to 0.03%.  Without it the gradient is +5.7e-5, i.e.
+   the right sign and 13% low.  Do not add one back. */
+  double frac_volume = 1.0, frac_outer = 0.0;
+  std::array<double,6> face_prob_outer = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
+  /** HEMISPHERE component (`Candidate::component == 2`): the direction uniform over the hemisphere
+   above the hull point's outward normal, density 1/(2 pi) for every kept line.  It depends on
+   nothing the fit moves, so it is trivially smooth in the dimensions, and it puts a FLOOR under the
+   mixture density: every line's weight is bounded by 2 pi / frac_hemi times its hull share.  The
+   aim-point components have no such floor - a line aimed at a point a distance s from the hull
+   point has density ~ s^2, so lines aimed at the near skin of a CONTACT source (the ones that
+   matter most) carry weights ~ 1/s^2 - which is the heavy tail behind an effective sample size of
+   0.1 N there.  Lines it sends past the source cost nothing but their share of N. */
+  double frac_hemi = 0.0;
+  /** The hemisphere share the build was ASKED for (the knob), whether or not the trigger fired -
+   what #matches compares, since the fired value depends on the hint dims. */
+  double hemi_frac_request = 0.0;
+
+  /** The lines traced through the detector at ONE set of scalar source dimensions: the crystal
+   segments (for the FEP kernel per energy), optionally the same at two perturbed directions (for
+   the kernel's direction gradient, see #kernel_set), and the distance/incidence range the padded
+   chords span (for the response flags).  Immutable except the lazily built parts, which are
+   guarded by `mutex`. */
+  struct TracedLines
+  {
+    /** Scalar outer dims the lines were aimed with. */
+    std::array<double,3> key = { 0.0, 0.0, 0.0 };
+
+    /** Per candidate: leaves the hull toward the source side at these dims (else weight zero). */
+    std::vector<char> kept;
+
+    /** One KernelRay per candidate, empty when dropped or when the line misses the active crystal
+     (`fep_line_probabilities` then gives 0, and indices stay aligned with `cand`). */
+    ceelo::ApertureQuadrature q;
+
+    /** The same lines re-traced at directions w_c + delta*e1 and w_c + delta*e2 (crystal frame,
+     e1/e2 from #line_tangent_frame), for a forward difference of the kernel in direction.  Built
+     on the first Jet request that needs it. */
+    mutable ceelo::ApertureQuadrature q_fd[2];
+    mutable bool have_fd = false;
+
+    /** Step of that forward difference (rad).  Not smaller: KernelRay stores segment lengths as
+     float, so the kernel carries ~1e-7 of noise and the gradient ~1e-4 at this step. */
+    static constexpr double fd_delta = 1.0e-3;
+
+    /** Distance (cm, from the crystal-face origin) and incidence-cosine ranges the padded source
+     chords span at these dims (see #PrefactorGrid::worst_flag_between). */
+    double chord_d_lo_cm = 0.0, chord_d_hi_cm = 0.0;
+    double chord_cos_lo = 0.0, chord_cos_hi = 1.0;
+
+    /** Per-line FEP kernel at one energy, and its forward differences (null until built). */
+    struct KernelSet
+    {
+      std::shared_ptr<const std::vector<double>> k, k1, k2;
+    };
+
+    mutable std::mutex mutex;
+    mutable std::map<double,KernelSet> kernels;
+
+    /** The kernel at `energy_keV`, with the direction differences when `with_fd` (which requires
+     `have_fd`).  Memoized. */
+    KernelSet kernel_set( const ceelo::DetectorResponse &resp, const double energy_keV,
+                          const bool with_fd ) const
+    {
+      std::lock_guard<std::mutex> lock( mutex );
+      KernelSet &ks = kernels[energy_keV];
+      if( !ks.k )
+      {
+        auto k = std::make_shared<std::vector<double>>();
+        resp.fep_line_probabilities( energy_keV, q, *k );
+        ks.k = k;
+      }
+      if( with_fd && !ks.k1 )
+      {
+        assert( have_fd );
+        auto k1 = std::make_shared<std::vector<double>>();
+        auto k2 = std::make_shared<std::vector<double>>();
+        resp.fep_line_probabilities( energy_keV, q_fd[0], *k1 );
+        resp.fep_line_probabilities( energy_keV, q_fd[1], *k2 );
+        ks.k1 = k1;
+        ks.k2 = k2;
+      }
+      return ks;
+    }//kernel_set(...)
+  };//struct TracedLines
+
+  /** Traces kept (most recent first): the optimizer evaluates at a point and its trial step and
+   may return to the point, so two entries cover Levenberg-Marquardt's pattern without paying a
+   third set's memory (~10 MB per 65k lines, x3 with the direction differences). */
+  static constexpr size_t sm_max_traces = 2;
+
+  mutable std::mutex memo_mutex;
+  mutable std::deque<std::shared_ptr<const TracedLines>> traces;
+  mutable std::shared_ptr<const TracedLines> latest;
+
+  /** Distance range (cm) the prefactor grids currently cover; widened by #ensure_prefactor_range.
+   Nodes sit on a fixed logarithmic lattice (#build_prefactor_grid), so widening the range leaves
+   every existing node's value unchanged and the integrand continuous across the extension. */
+  mutable double grid_d_lo_cm = 0.0, grid_d_hi_cm = 0.0;
+
+  /** Collimated responses only: the shadow gate's quadratures (see #CollimatorGateGrid). */
+  mutable std::shared_ptr<const CollimatorGateGrid> gate_grid;
+  mutable std::map<double,std::shared_ptr<const PrefactorGrid>> prefactor_by_energy;
+
+  /** The prefactor grid at `energy_keV` (memoized; call #ensure_prefactor_range first). */
+  std::shared_ptr<const PrefactorGrid> prefactor( const double energy_keV ) const
+  {
+    double lo, hi;
+    std::shared_ptr<const CollimatorGateGrid> gates;
+    {
+      std::lock_guard<std::mutex> lock( memo_mutex );
+      const auto pos = prefactor_by_energy.find( energy_keV );
+      if( pos != end(prefactor_by_energy) )
+        return pos->second;
+      lo = grid_d_lo_cm;
+      hi = grid_d_hi_cm;
+      gates = gate_grid;
+    }
+    std::shared_ptr<const PrefactorGrid> g = build_prefactor_grid( *response, energy_keV, lo, hi, gates.get(),
+                                                                   sm_prefactor_grid_num_cos,
+                                                                   sm_prefactor_grid_num_phi_quadrant,
+                                                                   sm_prefactor_grid_nodes_per_octave );
+    std::lock_guard<std::mutex> lock( memo_mutex );
+    // Another thread may have widened (and cleared) the range while this grid was building; a grid
+    //  built for the narrower range must not be memoised under the wider one.
+    if( (lo != grid_d_lo_cm) || (hi != grid_d_hi_cm) )
+      return g;
+    return prefactor_by_energy.emplace( energy_keV, g ).first->second;
+  }//prefactor(...)
+
+  /** Makes the prefactor grids cover [d_lo, d_hi] (cm) with a margin, dropping the memoized grids
+   (and rebuilding the collimator gate) when the range has to grow. */
+  void ensure_prefactor_range( const double d_lo_cm, const double d_hi_cm ) const
+  {
+    std::lock_guard<std::mutex> lock( memo_mutex );
+    if( (grid_d_hi_cm > 0.0) && (d_lo_cm >= grid_d_lo_cm) && (d_hi_cm <= grid_d_hi_cm) )
+      return;
+    const double lo = std::max( 0.5*d_lo_cm, 1.0e-3 );
+    const double hi = std::max( 2.0*d_hi_cm, 2.0*lo );
+    grid_d_lo_cm = (grid_d_hi_cm > 0.0) ? std::min( grid_d_lo_cm, lo ) : lo;
+    grid_d_hi_cm = std::max( grid_d_hi_cm, hi );
+    prefactor_by_energy.clear();
+    if( response->descriptor.collimator )
+      gate_grid = build_collimator_gate_grid( *response, grid_d_lo_cm, grid_d_hi_cm );
+  }//ensure_prefactor_range(...)
+
+  /** The worst response flag the source's chords can meet at `energy_keV` (near-field floor,
+   energy clamping, collimator shadowing), at the most recently evaluated dimensions - what the
+   fit's warnings report for a volumetric source, which the point query at the source centre alone
+   would miss (e.g. a collimated detector looking at a source that extends into the shadow). */
+  ceelo::ResponseFlag worst_flag( const double energy_keV ) const
+  {
+    std::shared_ptr<const TracedLines> t;
+    {
+      std::lock_guard<std::mutex> lock( memo_mutex );
+      t = latest;
+    }
+    if( !t )
+      return ceelo::ResponseFlag::Ok;
+    ensure_prefactor_range( t->chord_d_lo_cm, t->chord_d_hi_cm );
+    return prefactor( energy_keV )->worst_flag_between( t->chord_d_lo_cm, t->chord_d_hi_cm,
+                                                        t->chord_cos_lo, t->chord_cos_hi );
+  }//worst_flag(...)
+
+  /** Whether this cache can serve the given configuration: the detector placement, response, line
+   count and proposal knobs must match exactly.  The source DIMENSIONS are not part of the key -
+   the aim points follow them (see the struct comment), so one set serves a whole fit. */
+  bool matches( const ceelo::DetectorResponse *resp, const GeometryType geom, const size_t mat_index,
+                const std::array<double,3> &det_pos, const std::array<double,3> &axis,
+                const double azimuth, const int n, const double pad_factor,
+                const double surface_fraction, const LineSampleParams &sample_params,
+                const double hemi_fraction ) const
+  {
+    return (response.get() == resp) && (geometry == geom) && (material_index == mat_index)
+           && (det_position == det_pos) && (det_axis == axis) && (det_azimuth == azimuth)
+           && (num_lines == n) && (pad == pad_factor) && (surface_frac == surface_fraction)
+           && (sample == sample_params) && (hemi_frac_request == hemi_fraction);
+  }
+
+  /** The lines traced at the scalar source dims `dims_outer`, with the direction differences when
+   `want_fd`.  Memoized (#sm_max_traces); under #sm_line_trace_hold the most recent trace is
+   returned regardless. */
+  std::shared_ptr<const TracedLines> traced( const std::array<double,3> &dims_outer,
+                                             const bool want_fd, const bool multithread ) const;
+
+  /** Fills `q_fd` of a trace (idempotent). */
+  void trace_direction_differences( const TracedLines &t, const bool multithread ) const;
+};//struct VolumetricLineCache
+
+
+/** Direction of candidate line `j` of `cache` at the given (T-valued, floored) source dims:
+ the OUTWARD unit direction `w` from the hull point toward the scaled aim point, the hull cosine
+ `cos_n`, the crystal-frame direction `w_c`, and the distance `s_endcap` back along the line from
+ the hull point to the endcap-front plane (PhysicalUnits).  False when the line leaves the hull
+ elsewhere or points behind the face plane - weight zero, not renormalised (a scalar decision; the
+ weight goes to zero continuously as cos_n does).  The scalar trace and the T integration both use
+ this, so the traced direction is exactly the scalar part of the integrated one. */
+template<typename T>
+inline bool line_direction_imp( const VolumetricLineCache &cache, const size_t j,
+                                const std::array<T,3> &dims_outer, const T det_pos[3],
+                                T w[3], T &cos_n, T w_c[3], T &s_endcap )
+{
+  using namespace std;
+  using namespace ceres;
+  const double cm = PhysicalUnits::cm;
+  const VolumetricLineCache::Candidate &c = cache.cand[j];
+
+  if( c.component == 2 )
+  {
+    // Hemisphere component: the frozen direction is (cos = u1, phi = 2 pi u2) about the hull
+    //  normal - independent of the dims, hence plain doubles.
+    Eigen::Vector3d e1, e2;
+    line_tangent_frame( Eigen::Vector3d( c.n_a[0], c.n_a[1], c.n_a[2] ), e1, e2 );
+    const double ct = c.q_unit[0];
+    const double st = std::sqrt( std::max( 0.0, 1.0 - ct*ct ) );
+    const double ph = 2.0*PhysicalUnits::pi*c.q_unit[1];
+    for( int i = 0; i < 3; ++i )
+      w[i] = T( ct*c.n_a[i] + st*(std::cos(ph)*e1[i] + std::sin(ph)*e2[i]) );
+  }else
+  {
+    // Aim point: the frozen unit-coordinate point scaled by the current dims.
+    std::array<T,3> scale;
+    switch( c.component )
+    {
+      case 0:
+      {
+        const std::array<T,3> padded = { T(cache.pad)*dims_outer[0], T(cache.pad)*dims_outer[1],
+                                         T(cache.pad)*dims_outer[2] };
+        scale = solid_scale( cache.geometry, padded );
+        break;
+      }
+      default: scale = solid_scale( cache.geometry, dims_outer ); break;
+    }
+
+    T wn( 0.0 );
+    for( int i = 0; i < 3; ++i )
+    {
+      w[i] = T(c.q_unit[i])*scale[i] - (det_pos[i] + T(c.x_rel[i]));
+      wn += w[i]*w[i];
+    }
+    if( !(scalar_of(wn) > 0.0) )
+      return false;
+    wn = sqrt( wn );
+    for( int i = 0; i < 3; ++i )
+      w[i] /= wn;
+  }
+
+  cos_n = w[0]*T(c.n_a[0]) + w[1]*T(c.n_a[1]) + w[2]*T(c.n_a[2]);
+  if( !(scalar_of(cos_n) > 0.0) )
+    return false;
+
+  for( int i = 0; i < 3; ++i )
+    w_c[i] = T(cache.M[0][i])*w[0] + T(cache.M[1][i])*w[1] + T(cache.M[2][i])*w[2];   //M^T w
+  if( !(scalar_of(w_c[2]) < 0.0) )
+    return false;
+
+  // Distance back along the line from the hull point to the endcap-front plane z = ref_c.z.
+  s_endcap = select_max( T( c.point_c[2] - cache.ref_c[2] ) / (-w_c[2]), T(0.0) ) * T(cm);
+  return true;
+}//line_direction_imp(...)
+
+
+/** The mixture proposal's density of a line, per unit direction solid angle at its hull point -
+ what the line's weight is the reciprocal of.  `o` is the hull point and `d` the photon direction.
+
+ The volume component is the direction density of a point uniform in the padded outer solid,
+ (s1^3 - s0^3)/(3 V_p) over the forward chord [s0, s1] through it.  A surface component is the
+ density of a point uniform (per face, with the fixed face probabilities) on that surface, summed
+ over the forward crossings P of the line with it: p_face |P - o|^2 / (A_face |n.w|).  That
+ 1/|n.w| is the point: it is the Jacobian between the transverse line measure and the surface
+ measure, i.e. exactly the factor by which a line grazing the surface has its chord's dimension
+ derivative blow up, so with it in the density the weighted contribution of every line - value and
+ derivative - stays bounded (see DIRECTION PROPOSAL in the file comment).
+
+ Every intersection here is computed from the dims the AIM POINTS were scaled by, never from the
+ calculator's shell intervals: the density has to describe the distribution the lines were actually
+ drawn from, and a shell can be missed (a core collapsed to nothing) while its component is still
+ being sampled.  Getting that wrong biases the estimate by the whole weight of the orphaned
+ component - measured at +12% for a hollow source whose core reached exactly zero. */
+template<typename T>
+inline T line_proposal_density_imp( const VolumetricLineCache &cache,
+                                    const std::array<T,3> &dims_outer,
+                                    const T o[3], const T d[3] )
+{
+  using namespace std;
+  using namespace ceres;
+  const GeometryType geometry = cache.geometry;
+  const T w[3] = { -d[0], -d[1], -d[2] };
+
+  T p( 0.0 );
+
+  // Volume component.
+  if( cache.frac_volume > 0.0 )
+  {
+    const std::array<T,3> padded = { T(cache.pad)*dims_outer[0], T(cache.pad)*dims_outer[1],
+                                     T(cache.pad)*dims_outer[2] };
+    T s0, s1;
+    if( line_solid_interval_imp( geometry, padded, o, d, s0, s1 ) )
+    {
+      s0 = select_max( s0, T(0.0) );
+      const T s3 = s1*s1*s1 - s0*s0*s0;
+      if( scalar_of(s3) > 0.0 )
+        p += T(cache.frac_volume) * s3 / (T(3.0)*solid_volume( geometry, padded ));
+    }
+  }
+
+  // Surface components: every forward crossing of the line with that surface.
+  const auto surface_term = [&]( const std::array<T,3> &dims,
+                                 const std::array<double,6> &face_prob ) -> T {
+    T sum( 0.0 );
+    T s_a, s_b;
+    if( !line_solid_interval_imp( geometry, dims, o, d, s_a, s_b ) )
+      return sum;
+    for( const T *s : { &s_a, &s_b } )
+    {
+      if( !(scalar_of(*s) > 0.0) )
+        continue;   //behind the hull point
+      const T P[3] = { o[0] - (*s)*d[0], o[1] - (*s)*d[1], o[2] - (*s)*d[2] };
+      T n[3];
+      const int f = surface_face_at( geometry, dims, P, n );
+      const T cos_pn = n[0]*w[0] + n[1]*w[1] + n[2]*w[2];
+      const T abs_cos = (scalar_of(cos_pn) < 0.0) ? -cos_pn : cos_pn;
+      if( !(scalar_of(abs_cos) > 0.0) )
+        continue;
+      const T dist2 = (*s)*(*s);   //|P - o| = s: d is a unit vector
+      sum += T(face_prob[f]) * dist2 / (surface_face_area( geometry, f, dims ) * abs_cos);
+    }
+    return sum;
+  };
+
+  if( cache.frac_outer > 0.0 )
+    p += T(cache.frac_outer) * surface_term( dims_outer, cache.face_prob_outer );
+
+  // Hemisphere component: uniform above the hull normal; the caller only asks about kept lines,
+  //  which all lie in that hemisphere.
+  if( cache.frac_hemi > 0.0 )
+    p += T( cache.frac_hemi / (2.0*PhysicalUnits::pi) );
+
+  return p;
+}//line_proposal_density_imp(...)
+
+
+/** The unit coordinates every candidate line is built from - eight per line:
+   [0] hull face, [1],[2] point on the hull face, [3] mixture component, [4] source face,
+   [5],[6],[7] aim point in the unit solid / on the unit face.
+ Generated by the sequence #LineSampleParams names.  Halton reproduces the original construction
+ bit for bit (bases 2,3,5 | 17,19,7,11,13 at index_offset + i); Sobol' assigns its best-behaved
+ low dimensions to the aim point and applies a random digital shift per dimension from `seed`, so
+ each seed is an independent randomisation of the same (t,s)-net. */
+struct LineSampleStream
+{
+  static constexpr int num_dims = 8;
+
+  LineSampleStream( const LineSampleParams &params, const size_t num_lines )
+    : m_params( params )
+  {
+    if( params.kind != LineSampleParams::Kind::Sobol )
+      return;
+    // Sobol' coordinates are precomputed (the engine is sequential); 8 x N doubles, transient.
+    boost::random::sobol engine( num_dims );
+    engine.seed( params.index_offset );   //the point index to start at
+    std::mt19937_64 shift_rng( params.seed * 0x9E3779B97F4A7C15ull + 0x2545F4914F6CDD1Dull );
+    uint64_t shift[num_dims];
+    for( int d = 0; d < num_dims; ++d )
+      shift[d] = shift_rng();
+    // Sobol' dimension d (0 = best) -> coordinate slot: aim point first, then hull point, then the
+    //  three discrete choices.
+    static const int slot_of_dim[num_dims] = { 5, 6, 7, 1, 2, 3, 0, 4 };
+    m_sobol.resize( num_lines * num_dims );
+    const double norm = 1.0 / 18446744073709551616.0;   //2^-64
+    for( size_t i = 0; i < num_lines; ++i )
+      for( int d = 0; d < num_dims; ++d )
+        m_sobol[i*num_dims + slot_of_dim[d]] = static_cast<double>( engine() ^ shift[d] ) * norm;
+  }
+
+  void point( const size_t i, double u[num_dims] ) const
+  {
+    if( m_params.kind == LineSampleParams::Kind::Sobol )
+    {
+      for( int d = 0; d < num_dims; ++d )
+        u[d] = m_sobol[i*num_dims + d];
+      return;
+    }
+    const uint64_t idx = m_params.index_offset + static_cast<uint64_t>(i);
+    u[0] = ceelo::halton( idx, 2 );
+    u[1] = ceelo::halton( idx, 3 );
+    u[2] = ceelo::halton( idx, 5 );
+    u[3] = ceelo::halton( idx, 17 );
+    u[4] = ceelo::halton( idx, 19 );
+    u[5] = ceelo::halton( idx, 7 );
+    u[6] = ceelo::halton( idx, 11 );
+    u[7] = ceelo::halton( idx, 13 );
+  }
+
+private:
+  LineSampleParams m_params;
+  std::vector<double> m_sobol;
+};//struct LineSampleStream
+
+
+/** Hull points from a #LineSampleStream - the host-side twin of `ceelo::sample_hull_points`, so
+ the coordinates can come from any sequence (CeeLo's takes only a Halton index offset).  Same faces
+ (front disc/rect + side wall(s); no back face), same projected-area allocation with a 5% floor,
+ same per-face point construction, written only against the public Geometry accessors;
+ `HullSamplerMatchesCeeLo` pins it bit for bit against CeeLo's for the Halton kind. */
+inline void host_sample_hull_points( const ceelo::Geometry &geom, const int n, const Eigen::Vector3d &toward,
+                                     const bool have_direction, const LineSampleStream &stream,
+                                     std::vector<ceelo::HullPoint> &out )
+{
+  const double pi = PhysicalUnits::pi;
+  struct Face { int kind; double area; Eigen::Vector3d normal; int axis; double sign; double prob; };
+  enum { FrontDisc, FrontRect, CylSide, BoxSide };
+  std::vector<Face> faces;
+  const double L = geom.detector_length();
+  if( geom.shape() == ceelo::DetectorShape::Cylinder )
+  {
+    const double R = geom.detector_radius();
+    faces.push_back( { FrontDisc, pi*R*R, { 0.0, 0.0, -1.0 }, 0, 1.0, 0.0 } );
+    faces.push_back( { CylSide, 2.0*pi*R*L, { 0.0, 0.0, 0.0 }, 0, 1.0, 0.0 } );
+  }else
+  {
+    const double hx = geom.detector_half_x(), hy = geom.detector_half_y();
+    faces.push_back( { FrontRect, 4.0*hx*hy, { 0.0, 0.0, -1.0 }, 0, 1.0, 0.0 } );
+    for( const double sgn : { +1.0, -1.0 } )
+    {
+      faces.push_back( { BoxSide, 2.0*hy*L, { sgn, 0.0, 0.0 }, 0, sgn, 0.0 } );
+      faces.push_back( { BoxSide, 2.0*hx*L, { 0.0, sgn, 0.0 }, 1, sgn, 0.0 } );
+    }
+  }
+  double norm = 0.0;
+  for( Face &f : faces )
+  {
+    double proj = f.area;
+    if( have_direction )
+    {
+      if( f.kind == CylSide )
+      {
+        const double st = std::sqrt( std::max( 0.0, 1.0 - toward.z()*toward.z() ) );
+        proj = 2.0*geom.detector_radius()*L*st;
+      }else
+      {
+        proj = f.area * std::max( 0.0, toward.dot( f.normal ) );
+      }
+    }
+    f.prob = std::max( proj, 0.05*f.area );
+    norm += f.prob;
+  }
+  for( Face &f : faces )
+    f.prob /= norm;
+
+  out.clear();
+  out.reserve( static_cast<size_t>(n) );
+  for( int i = 0; i < n; ++i )
+  {
+    double u[LineSampleStream::num_dims];
+    stream.point( static_cast<size_t>(i), u );
+    const double u_face = u[0], u1 = u[1], u2 = u[2];
+    size_t fi = 0;
+    double acc = 0.0;
+    for( ; fi + 1 < faces.size(); ++fi )
+    {
+      acc += faces[fi].prob;
+      if( u_face < acc )
+        break;
+    }
+    const Face &f = faces[fi];
+    ceelo::HullPoint hp;
+    switch( f.kind )
+    {
+      case FrontDisc:
+      {
+        const double R = geom.detector_radius();
+        const double r = R*std::sqrt( u1 );
+        const double ph = 2.0*pi*u2;
+        hp.point = Eigen::Vector3d( r*std::cos(ph), r*std::sin(ph), 0.0 );
+        hp.normal = Eigen::Vector3d( 0.0, 0.0, -1.0 );
+        break;
+      }
+      case FrontRect:
+        hp.point = Eigen::Vector3d( (2.0*u1 - 1.0)*geom.detector_half_x(), (2.0*u2 - 1.0)*geom.detector_half_y(), 0.0 );
+        hp.normal = Eigen::Vector3d( 0.0, 0.0, -1.0 );
+        break;
+      case CylSide:
+      {
+        const double R = geom.detector_radius();
+        const double ph = 2.0*pi*u1;
+        const double c = std::cos( ph ), s = std::sin( ph );
+        hp.point = Eigen::Vector3d( R*c, R*s, u2*L );
+        hp.normal = Eigen::Vector3d( c, s, 0.0 );
+        break;
+      }
+      case BoxSide:
+      {
+        const double hx = geom.detector_half_x(), hy = geom.detector_half_y();
+        if( f.axis == 0 )
+        {
+          hp.point = Eigen::Vector3d( f.sign*hx, (2.0*u1 - 1.0)*hy, u2*L );
+          hp.normal = Eigen::Vector3d( f.sign, 0.0, 0.0 );
+        }else
+        {
+          hp.point = Eigen::Vector3d( (2.0*u1 - 1.0)*hx, f.sign*hy, u2*L );
+          hp.normal = Eigen::Vector3d( 0.0, f.sign, 0.0 );
+        }
+        break;
+      }
+    }
+    hp.area_weight = f.area / f.prob;
+    out.push_back( hp );
+  }
+}//host_sample_hull_points(...)
+
+
+/** Nearest and farthest distance from the point `c` (assembly frame) to the solid with `dims` -
+ the exact point-to-solid distance for the near side, the bounding-sphere over-estimate for the far
+ side.  Decides whether a source is "wide" for the hemisphere component. */
+inline void padded_solid_distance_range( const GeometryType geometry, const std::array<double,3> &dims,
+                                         const std::array<double,3> &c, double &near_dist, double &far_dist )
+{
+  double cc = 0.0;
+  for( int i = 0; i < 3; ++i )
+    cc += c[i]*c[i];
+  cc = std::sqrt( cc );
+  far_dist = cc + solid_bounding_radius( geometry, dims );
+
+  switch( geometry )
+  {
+    case GeometryType::Spherical:
+      near_dist = std::max( 0.0, cc - dims[0] );
+      break;
+    case GeometryType::CylinderEndOn:
+    case GeometryType::CylinderSideOn:
+    {
+      const double rho = std::hypot( c[0], c[1] );
+      const double dr = std::max( 0.0, rho - dims[0] );
+      const double dz = std::max( 0.0, std::fabs(c[2]) - dims[1] );
+      near_dist = std::hypot( dr, dz );
+      break;
+    }
+    case GeometryType::Rectangular:
+    {
+      double d2 = 0.0;
+      for( int i = 0; i < 3; ++i )
+      {
+        const double d = std::max( 0.0, std::fabs(c[i]) - dims[i] );
+        d2 += d*d;
+      }
+      near_dist = std::sqrt( d2 );
+      break;
+    }
+    case GeometryType::NumGeometryType:
+      near_dist = 0.0;
+      break;
+  }
+}//padded_solid_distance_range(...)
+
+
+/** Builds the line set for one source shell.  `source_outer_dims` are the
+ SCALAR cumulative outer dims of the source shell AT BUILD TIME - a hint only: they set the
+ hull-face allocation, the mixture's face probabilities and the sanity trace, while the lines
+ themselves follow whatever dims each evaluation carries.  `det_*` is the scalar detector geometry
+ (position = the response's reference point in the assembly frame). */
 inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
                                           std::shared_ptr<const ceelo::DetectorResponse> response,
                                           const GeometryType geometry,
@@ -1323,24 +2204,33 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
                                           const std::array<double,3> &det_axis,
                                           const double det_azimuth,
                                           const int num_lines,
-                                          const double pad = 1.5 )
+                                          const double pad = 1.5,
+                                          const double surface_frac = sm_default_volumetric_line_surface_frac,
+                                          const LineSampleParams &sample = LineSampleParams(),
+                                          const double hemi_frac = sm_volumetric_line_hemi_frac )
 {
   using namespace std;
   const double cm = PhysicalUnits::cm;
 
   if( !response || (num_lines <= 0) )
     throw runtime_error( "build_volumetric_line_cache: invalid inputs" );
+  // Every line that crosses the source crosses its surface, and the hemisphere covers everything,
+  //  so the volume share may be zero as long as some component remains.
+  if( !(pad >= 1.0) || !(surface_frac >= 0.0) || !(hemi_frac >= 0.0) || !(surface_frac + hemi_frac <= 1.0)
+      || !(surface_frac + hemi_frac + (1.0 - surface_frac - hemi_frac) > 0.0) )
+    throw runtime_error( "build_volumetric_line_cache: invalid proposal knobs" );
 
   auto cache = make_shared<VolumetricLineCache>();
   cache->response = response;
   cache->geometry = geometry;
   cache->material_index = material_index;
-  cache->source_outer_dims = source_outer_dims;
   cache->det_position = det_position;
   cache->det_axis = det_axis;
   cache->det_azimuth = det_azimuth;
   cache->num_lines = num_lines;
   cache->pad = pad;
+  cache->surface_frac = surface_frac;
+  cache->sample = sample;
 
   detector_frame_rotation( det_axis.data(), det_azimuth, cache->M );
   // The assembly's detector placement is measured to the DETECTOR FACE (InterSpec's one distance
@@ -1349,17 +2239,59 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   const Eigen::Vector3d r0 = CeeLoUtils::detectorFacePosition( response->descriptor );
   cache->ref_c = { r0.x(), r0.y(), r0.z() };
 
-  // Proposal solid: the source padded in every dimension, floored at the same extent ratio the
-  //  dispatcher floors the source itself at, so the proposal always covers the (floored) source.
+  // Hint dims, floored at the same extent ratio the dispatcher floors the source itself at.
   const double det_dist = std::sqrt( det_position[0]*det_position[0] + det_position[1]*det_position[1]
                                      + det_position[2]*det_position[2] );
   const double ext_floor = sm_line_path_extent_ratio_floor * det_dist;
-  std::array<double,3> pdims = source_outer_dims;
   const int ndims = (geometry == GeometryType::Spherical) ? 1 : ((geometry == GeometryType::Rectangular) ? 3 : 2);
+  // All three components are floored, exactly as line_source_integration_imp floors its `dims_o`,
+  //  so the sanity trace below is keyed identically to the first evaluation's and gets reused.
+  std::array<double,3> hint_outer = source_outer_dims;
+  for( int i = 0; i < 3; ++i )
+    hint_outer[i] = std::max( std::fabs(hint_outer[i]), ext_floor );
+  std::array<double,3> pdims = hint_outer;
   for( int i = 0; i < ndims; ++i )
-    pdims[i] = pad * std::max( std::fabs(pdims[i]), ext_floor );
-  cache->proposal_dims = pdims;
-  const double vol_p = solid_volume( geometry, pdims );
+    pdims[i] *= pad;
+
+  // Mixture: the surface share split between the outer and inner surfaces by area, each surface
+  //  sampled per face BY AREA.
+  //
+  //  Not by the area a face presents to the detector, which is what the hull-point allocation uses
+  //  and what an eye on the VALUE would suggest.  MEASURED (LineProposalSurfaceFractionSweep, a
+  //  shielded end-on source at 60 keV): a projected-area allocation with a 5% floor sent the
+  //  2^18-line GRADIENT error to +3.0 / +4.9 / +7.3 / +10.5% at surface fractions of 0.1 / 0.2 /
+  //  0.3 / 0.5, growing with the fraction, while plain area holds it at +0.9 / +1.0 / +0.6 /
+  //  -1.3%.  The VALUE is unbiased either way (0.05-0.15%), so it is a derivative-only trap and a
+  //  value-motivated allocation walks straight into it.
+  //
+  //  The reason to expect that, and the reason plain area is the safe default: a dimension's
+  //  boundary term lives on whichever face MOVES when that dimension changes - a cylinder's side
+  //  wall for its radius, its caps for its half-length - which is unrelated to which face the
+  //  detector sees, and area weighting covers every face in proportion to its size.  (The precise
+  //  mechanism by which the projected allocation biases the derivative was not pinned down; the
+  //  measurement above is the evidence, not the explanation.)
+  const int nfaces = surface_face_count( geometry );
+  double area_outer = 0.0;
+  for( int f = 0; f < nfaces; ++f )
+  {
+    cache->face_prob_outer[f] = surface_face_area( geometry, f, hint_outer );
+    area_outer += cache->face_prob_outer[f];
+  }
+  for( int f = 0; f < nfaces; ++f )
+    cache->face_prob_outer[f] /= area_outer;
+  // The hemisphere share fires only for a WIDE source (see sm_volumetric_line_hemi_ratio): the
+  //  nearest and farthest points of the padded solid from the detector point, the near distance
+  //  floored at the crystal's transverse extent (closer than that the flux no longer falls as
+  //  1/d^2 and "wide" stops meaning anything).
+  double near_dist = 0.0, far_dist = 0.0;
+  padded_solid_distance_range( geometry, pdims, det_position, near_dist, far_dist );
+  const double crystal_half = response->transverse_half_extent()*cm;
+  const bool wide = (far_dist > sm_volumetric_line_hemi_ratio*std::max( near_dist, crystal_half ));
+  const double hemi_used = wide ? hemi_frac : 0.0;
+  cache->frac_volume = 1.0 - surface_frac - hemi_used;
+  cache->frac_outer = surface_frac;
+  cache->frac_hemi = hemi_used;
+  cache->hemi_frac_request = hemi_frac;
 
   const ceelo::Geometry &geom = response->geometry();
 
@@ -1385,112 +2317,241 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   if( toward_norm > 0.0 )
     toward /= toward_norm;
 
+  const LineSampleStream stream( sample, static_cast<size_t>(num_lines) );
   std::vector<ceelo::HullPoint> hull;
-  ceelo::sample_hull_points( geom, num_lines, toward, have_dir, 0, hull );
+  host_sample_hull_points( geom, num_lines, toward, have_dir, stream, hull );
 
-  cache->lines.q.n_rays_total = num_lines;
-  cache->lines.target_centre = centre_c;
-  cache->lines.target_radius = solid_bounding_radius( geometry, pdims )/cm;
-  cache->lines.q.rays.reserve( num_lines );
-  cache->lines.origin.reserve( num_lines );
-  cache->lines.dir.reserve( num_lines );
-  cache->origin_rel.reserve( num_lines );
-  cache->dir.reserve( num_lines );
-  cache->weight.reserve( num_lines );
-  cache->s_endcap.reserve( num_lines );
-
-  double d_min_cm = 1.0e300, d_max_cm = 0.0;   //source-point distance range from the crystal origin
-  double cos_min = 1.0, cos_max = 0.0;         //and their incidence cosines, as common_eval measures them
-  const double inv_n = 1.0/static_cast<double>(num_lines);
-
+  cache->cand.resize( num_lines );
   for( int i = 0; i < num_lines; ++i )
   {
     const ceelo::HullPoint &hp = hull[i];
-    const uint64_t idx = static_cast<uint64_t>(i);
+    double u[LineSampleStream::num_dims];
+    stream.point( static_cast<size_t>(i), u );
+    VolumetricLineCache::Candidate &c = cache->cand[i];
 
-    // Hull point and its normal in the assembly frame (PhysicalUnits).
+    c.point_c = { hp.point.x(), hp.point.y(), hp.point.z() };
     const Eigen::Vector3d xc_rel = (hp.point - r0)*cm;
-    double x_rel[3], n_a[3];
-    to_assembly_dir( xc_rel, x_rel );
-    to_assembly_dir( hp.normal, n_a );
-    const double x_a[3] = { det_position[0] + x_rel[0], det_position[1] + x_rel[1], det_position[2] + x_rel[2] };
+    to_assembly_dir( xc_rel, c.x_rel.data() );
+    to_assembly_dir( hp.normal, c.n_a.data() );
+    c.area_weight = hp.area_weight;
 
-    // Target point uniform in the padded source solid; outward direction toward it.
-    const std::array<double,3> q = uniform_point_in_solid( geometry, pdims,
-                                     ceelo::halton(idx,7), ceelo::halton(idx,11), ceelo::halton(idx,13) );
-    double w[3] = { q[0] - x_a[0], q[1] - x_a[1], q[2] - x_a[2] };
-    const double wn = std::sqrt( w[0]*w[0] + w[1]*w[1] + w[2]*w[2] );
-    if( !(wn > 0.0) )
-      continue;
-    for( int k = 0; k < 3; ++k )
-      w[k] /= wn;
-
-    Eigen::Vector3d w_c;
-    to_crystal_dir( w, w_c );
-    const double cos_n = w[0]*n_a[0] + w[1]*n_a[1] + w[2]*n_a[2];
-    if( !(cos_n > 0.0) || !(w_c.z() < 0.0) )
-      continue;   //leaves the hull elsewhere / behind the face plane: weight zero, not renormalised
-
-    // Chord of this line through the PADDED solid: the direction density p(w) = (s1^3 - s0^3)/(3 V_p).
-    const double o_d[3] = { x_a[0], x_a[1], x_a[2] };
-    const double d_a[3] = { -w[0], -w[1], -w[2] };   //photon direction
-    double s0p, s1p;
-    if( !line_shell_interval_imp<double>( geometry, pdims, o_d, d_a, s0p, s1p ) )
-      continue;   //grazes the proposal boundary at round-off level
-    s0p = std::max( s0p, 0.0 );
-    if( !(s1p > s0p) )
-      continue;
-    const double s3 = s1p*s1p*s1p - s0p*s0p*s0p;
-    if( !(s3 > 0.0) )
-      continue;
-    const double inv_p = 3.0*vol_p/s3;   //sr
-
-    const double etendue_cm2_sr = hp.area_weight * cos_n * inv_p * inv_n;
-    cache->lines.total_etendue += etendue_cm2_sr;
-
-    if( !ceelo::append_etendue_line( cache->lines, geom, hp.point, w_c, etendue_cm2_sr ) )
-      continue;
-
-    cache->origin_rel.push_back( { x_rel[0], x_rel[1], x_rel[2] } );
-    cache->dir.push_back( { d_a[0], d_a[1], d_a[2] } );
-    cache->weight.push_back( cache->lines.q.rays.back().omega_w * cm * cm );
-    // Distance back along the line from the hull point to the endcap-front plane z = r0.z.
-    cache->s_endcap.push_back( std::max( 0.0, (hp.point.z() - r0.z())/(-w_c.z()) ) * cm );
-
-    // Distance range of the padded chord from the crystal origin (for the prefactor grids).
-    for( const double s : { s0p, s1p } )
+    // Component and aim point (see LineSampleStream for which coordinate is which).
+    const double u_comp = u[3];
+    if( u_comp >= 1.0 - cache->frac_hemi )
     {
-      const Eigen::Vector3d p_c = hp.point + (s/cm)*w_c;
-      const double d = p_c.norm();
-      d_min_cm = std::min( d_min_cm, d );
-      d_max_cm = std::max( d_max_cm, d );
-      if( d > 0.0 )
+      c.component = 2;
+      c.q_unit = { u[5], u[6], 0.0 };   //(cos, phi/2pi) about the hull normal
+    }
+    else if( u_comp < cache->frac_outer )
+    {
+      c.component = 1;
+      const std::array<double,6> &fp = cache->face_prob_outer;
+      const double u_face = u[4];
+      int f = 0;
+      double acc = 0.0;
+      for( ; f + 1 < nfaces; ++f )
       {
-        const double ct = std::max( 0.0, std::min( 1.0, -p_c.z()/d ) );
-        cos_min = std::min( cos_min, ct );
-        cos_max = std::max( cos_max, ct );
+        acc += fp[f];
+        if( u_face < acc )
+          break;
       }
+      c.q_unit = unit_surface_point( geometry, f, u[5], u[6] );
+    }else
+    {
+      c.component = 0;
+      c.q_unit = uniform_point_in_solid( geometry, { 1.0, 1.0, 1.0 }, u[5], u[6], u[7] );
     }
   }//for( loop over lines )
 
-  if( cache->lines.q.rays.empty() )
+  // Sanity trace at the hint dims: the set must reach the crystal from where the fit starts.
+  const std::shared_ptr<const VolumetricLineCache::TracedLines> t = cache->traced( hint_outer, false, true );
+  bool any_active = false;
+  for( const ceelo::KernelRay &r : t->q.rays )
+    any_active = any_active || (r.active_len > 0.0f);
+  if( !any_active )
     throw runtime_error( "build_volumetric_line_cache: no line reaches the active crystal" );
-
-  // Prefactor grids span the padded chords with a further margin, and never reach 0 distance.
-  cache->prefactor_d_lo_cm = std::max( 0.5*d_min_cm, 1.0e-3 );
-  cache->prefactor_d_hi_cm = std::max( 2.0*d_max_cm, cache->prefactor_d_lo_cm*2.0 );
-  cache->chord_d_lo_cm = std::max( d_min_cm, cache->prefactor_d_lo_cm );
-  cache->chord_d_hi_cm = std::min( d_max_cm, cache->prefactor_d_hi_cm );
-  cache->chord_cos_lo = cos_min;
-  cache->chord_cos_hi = std::max( cos_max, cos_min );
-
-  // A collimated response needs the shadow gate's quadratures (position-only, cheap at 256 rays).
-  if( response->descriptor.collimator )
-    cache->gate_grid = build_collimator_gate_grid( *response, cache->prefactor_d_lo_cm,
-                                                   cache->prefactor_d_hi_cm );
+  cache->ensure_prefactor_range( t->chord_d_lo_cm, t->chord_d_hi_cm );
 
   return cache;
 }//build_volumetric_line_cache(...)
+
+
+inline std::shared_ptr<const VolumetricLineCache::TracedLines> VolumetricLineCache::traced(
+                                             const std::array<double,3> &dims_outer,
+                                             const bool want_fd, const bool multithread ) const
+{
+  using namespace std;
+  const double cm = PhysicalUnits::cm;
+
+  const std::array<double,3> key = dims_outer;
+  std::shared_ptr<const TracedLines> hit;
+  {
+    std::lock_guard<std::mutex> lock( memo_mutex );
+    if( sm_line_trace_hold && latest )
+      return latest;
+    for( const std::shared_ptr<const TracedLines> &t : traces )
+    {
+      if( t->key == key )
+      {
+        latest = t;
+        hit = t;
+        break;
+      }
+    }
+  }
+  if( hit )
+  {
+    // Outside the lock: tracing the difference pair is ~150 ms and would serialise every other
+    //  caller of this cache behind it.
+    if( want_fd )
+      trace_direction_differences( *hit, multithread );
+    return hit;
+  }
+
+  auto t = std::make_shared<TracedLines>();
+  t->key = key;
+  const size_t n = cand.size();
+  t->kept.assign( n, 0 );
+  t->q.n_rays_total = static_cast<int>( n );
+  t->q.rays.resize( n );
+
+  const ceelo::Geometry &geom = response->geometry();
+  const std::array<double,3> padded = { pad*dims_outer[0], pad*dims_outer[1], pad*dims_outer[2] };
+  const double det_pos[3] = { det_position[0], det_position[1], det_position[2] };
+
+  const size_t num_chunks = (multithread && (n > 4096))
+                              ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
+                              : size_t(1);
+  std::vector<double> d_min( num_chunks, 1.0e300 ), d_max( num_chunks, 0.0 );
+  std::vector<double> c_min( num_chunks, 1.0 ), c_max( num_chunks, 0.0 );
+
+  const auto do_chunk = [&]( const size_t chunk )
+  {
+    const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    std::vector<ceelo::PathSegment> scratch;
+    for( size_t j = lo; j < hi; ++j )
+    {
+      double w[3], cos_n, w_c[3], s_endcap;
+      if( !line_direction_imp<double>( *this, j, dims_outer, det_pos, w, cos_n, w_c, s_endcap ) )
+        continue;
+      t->kept[j] = 1;
+      const Candidate &c = cand[j];
+      const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
+      const Eigen::Vector3d wc( w_c[0], w_c[1], w_c[2] );
+      trace_detector_line( geom, x, wc, t->q.rays[j], scratch );
+
+      // Distance range of the padded chord from the crystal origin (for the prefactor grids).
+      const double x_a[3] = { det_pos[0] + c.x_rel[0], det_pos[1] + c.x_rel[1], det_pos[2] + c.x_rel[2] };
+      const double d[3] = { -w[0], -w[1], -w[2] };
+      double s0, s1;
+      if( !line_solid_interval_imp( geometry, padded, x_a, d, s0, s1 ) )
+        continue;
+      s0 = std::max( s0, 0.0 );
+      for( const double s : { s0, s1 } )
+      {
+        const Eigen::Vector3d p_c = x + (s/cm)*wc;
+        const double dist = p_c.norm();
+        d_min[chunk] = std::min( d_min[chunk], dist );
+        d_max[chunk] = std::max( d_max[chunk], dist );
+        if( dist > 0.0 )
+        {
+          const double ct = std::max( 0.0, std::min( 1.0, -p_c.z()/dist ) );
+          c_min[chunk] = std::min( c_min[chunk], ct );
+          c_max[chunk] = std::max( c_max[chunk], ct );
+        }
+      }
+    }//for( lines in chunk )
+  };//do_chunk
+
+  if( num_chunks > 1 )
+  {
+    SpecUtilsAsync::ThreadPool pool;
+    for( size_t chunk = 0; chunk < num_chunks; ++chunk )
+      pool.post( [&do_chunk,chunk](){ do_chunk( chunk ); } );
+    pool.join();
+  }else
+  {
+    do_chunk( 0 );
+  }
+
+  t->chord_d_lo_cm = *std::min_element( begin(d_min), end(d_min) );
+  t->chord_d_hi_cm = *std::max_element( begin(d_max), end(d_max) );
+  t->chord_cos_lo = *std::min_element( begin(c_min), end(c_min) );
+  t->chord_cos_hi = std::max( *std::max_element( begin(c_max), end(c_max) ), t->chord_cos_lo );
+  if( !(t->chord_d_hi_cm > 0.0) )
+  {
+    t->chord_d_lo_cm = 1.0e-3;
+    t->chord_d_hi_cm = 2.0e-3;
+  }
+
+  if( want_fd )
+    trace_direction_differences( *t, multithread );
+
+  std::lock_guard<std::mutex> lock( memo_mutex );
+  traces.push_front( t );
+  while( traces.size() > sm_max_traces )
+    traces.pop_back();
+  latest = t;
+  return t;
+}//VolumetricLineCache::traced(...)
+
+
+inline void VolumetricLineCache::trace_direction_differences( const TracedLines &t, const bool multithread ) const
+{
+  std::lock_guard<std::mutex> lock( t.mutex );
+  if( t.have_fd )
+    return;
+
+  const ceelo::Geometry &geom = response->geometry();
+  const size_t n = cand.size();
+  for( int s = 0; s < 2; ++s )
+  {
+    t.q_fd[s].n_rays_total = static_cast<int>( n );
+    t.q_fd[s].rays.resize( n );
+  }
+
+  const std::array<double,3> dims_o = t.key;
+  const double det_pos[3] = { det_position[0], det_position[1], det_position[2] };
+
+  const size_t num_chunks = (multithread && (n > 4096))
+                              ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
+                              : size_t(1);
+  const auto do_chunk = [&]( const size_t chunk )
+  {
+    const size_t lo = (n*chunk)/num_chunks, hi = (n*(chunk + 1))/num_chunks;
+    std::vector<ceelo::PathSegment> scratch;
+    for( size_t j = lo; j < hi; ++j )
+    {
+      if( !t.kept[j] )
+        continue;
+      const Candidate &c = cand[j];
+      const Eigen::Vector3d x( c.point_c[0], c.point_c[1], c.point_c[2] );
+      // The direction in double (the ray stores it as float, too coarse against fd_delta).
+      double w[3], cos_n, w_c[3], s_endcap;
+      line_direction_imp<double>( *this, j, dims_o, det_pos, w, cos_n, w_c, s_endcap );
+      const Eigen::Vector3d wc( w_c[0], w_c[1], w_c[2] );
+      Eigen::Vector3d e1, e2;
+      line_tangent_frame( wc, e1, e2 );
+      const Eigen::Vector3d w1 = (wc + TracedLines::fd_delta*e1).normalized();
+      const Eigen::Vector3d w2 = (wc + TracedLines::fd_delta*e2).normalized();
+      trace_detector_line( geom, x, w1, t.q_fd[0].rays[j], scratch );
+      trace_detector_line( geom, x, w2, t.q_fd[1].rays[j], scratch );
+    }
+  };
+
+  if( num_chunks > 1 )
+  {
+    SpecUtilsAsync::ThreadPool pool;
+    for( size_t chunk = 0; chunk < num_chunks; ++chunk )
+      pool.post( [&do_chunk,chunk](){ do_chunk( chunk ); } );
+    pool.join();
+  }else
+  {
+    do_chunk( 0 );
+  }
+
+  t.have_fd = true;
+}//VolumetricLineCache::trace_direction_differences(...)
 
 
 /** Gauss-Legendre nodes/weights on [0,1]. */
@@ -1508,16 +2569,20 @@ inline void unit_gauss_legendre( const int n, const double *&x, const double *&w
   {
     case 2: x = x2; w = w2; return;
     case 3: x = x3; w = w3; return;
-    default: x = x4; w = w4; return;
+    case 4: x = x4; w = w4; return;
   }
+  assert( 0 );   //only 2, 3 and 4 points are tabulated
+  x = x4;
+  w = w4;
 }//unit_gauss_legendre(...)
 
 
 /** Integrates a GROUP of calculators that share geometry (same source shell, dims, detector, line
  cache, normalization and in-situ settings) and differ only in energy-dependent coefficients:
  the per-line chord bookkeeping is done once, the energies innermost.  Fills `integral`,
- `m_num_evals` and `m_est_rel_error` on each.  Chunks of lines run on `pool` when given, and are
- reduced in a fixed order so the result does not depend on the thread count.
+ `m_num_evals` and `m_est_rel_error` on each.  The lines are summed in #sm_line_error_blocks fixed
+ contiguous blocks (run on a pool when `multithread`) and reduced in block order, so the result is
+ bit-identical whatever the thread count; the block spread is the error estimate.
 
  `eff_out` (T = double only): when given, receives one #EffShieldComponents per calculator,
  accumulated in the same pass - every chord node's share of the integral times the areal density,
@@ -1568,7 +2633,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
   }
 
   const size_t num_calc = group.size();
-  const size_t num_lines = cache->dir.size();
+  const size_t num_lines = cache->cand.size();
   const size_t m = lead.m_materialIndex;
   const size_t num_shells = lead.m_shells.size();
   const GeometryType geometry = lead.m_geometry;
@@ -1591,20 +2656,25 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     const T pi( PhysicalUnits::pi );
     if( in_situ )
     {
+      // Per unit EMITTING AREA: the activity is Bq/m^2 of the surface the depth is measured from
+      //  (the contract at GammaInteractionCalc::TraceActivityType), so the weight is
+      //  A_surf / (depth-integral over the volume).  Written as one expression per geometry with
+      //  the area's factors cancelled into the norm, so the vanishing-dimension limits the
+      //  volume-normalised forms have are kept (test_ShieldingDimLimit pins them).
       const T L( relax );
       switch( geometry )
       {
-        case GeometryType::Spherical:
-          rho_scale = T(1.0) / (T(4.0)*pi*Do[0]*Do[0]*Do[0]*sphere_exp_norm_factor( Do[0]/L ));
+        case GeometryType::Spherical:            // 4 pi R^2 / (4 pi R^3 h_sph)
+          rho_scale = T(1.0) / (Do[0]*sphere_exp_norm_factor( Do[0]/L ));
           break;
-        case GeometryType::CylinderEndOn:
-          rho_scale = T(1.0) / (pi*Do[0]*Do[0]*T(2.0)*Do[1]*one_minus_exp_neg_over_x( T(2.0)*Do[1]/L ));
+        case GeometryType::CylinderEndOn:        // pi R^2 / (pi R^2 2 L_o g)
+          rho_scale = T(1.0) / (T(2.0)*Do[1]*one_minus_exp_neg_over_x( T(2.0)*Do[1]/L ));
           break;
-        case GeometryType::CylinderSideOn:
-          rho_scale = T(1.0) / (T(4.0)*pi*Do[1]*Do[0]*Do[0]*cyl_side_exp_norm_factor( Do[0]/L ));
+        case GeometryType::CylinderSideOn:       // 2 pi R (2 L_o) / (4 pi L_o R^2 h_side)
+          rho_scale = T(1.0) / (Do[0]*cyl_side_exp_norm_factor( Do[0]/L ));
           break;
-        case GeometryType::Rectangular:
-          rho_scale = T(1.0) / (T(8.0)*Do[0]*Do[1]*Do[2]*one_minus_exp_neg_over_x( T(2.0)*Do[2]/L ));
+        case GeometryType::Rectangular:          // (2W)(2H) / (8 W H D_o g)
+          rho_scale = T(1.0) / (T(2.0)*Do[2]*one_minus_exp_neg_over_x( T(2.0)*Do[2]/L ));
           break;
         case GeometryType::NumGeometryType:
           assert( 0 );
@@ -1657,12 +2727,41 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     }
   }//if( normalize )
 
+  // Proposal dims (T): the source shell's outer dims, floored as the dispatcher floors them (the
+  //  floor moves the scalar part only, the derivative lane is kept), and the shell inside it for a
+  //  hollow source.  The lines are aimed with these, so they follow the fitted dimensions.
+  const T det_pos[3] = { lead.m_detector.position[0], lead.m_detector.position[1],
+                         lead.m_detector.position[2] };
+  double det_dist2 = 0.0;
+  for( int i = 0; i < 3; ++i )
+    det_dist2 += scalar_of(det_pos[i])*scalar_of(det_pos[i]);
+  const double ext_floor = sm_line_path_extent_ratio_floor * std::sqrt( det_dist2 );
+  std::array<T,3> dims_o;
+  bool dims_have_lane = false;
+  for( int i = 0; i < 3; ++i )
+  {
+    T v = shells[m].dims[i];
+    if( scalar_of(v) < 0.0 )
+      v = -v;
+    if( scalar_of(v) < ext_floor )
+      v += T( ext_floor - scalar_of(v) );
+    dims_o[i] = v;
+    dims_have_lane = dims_have_lane || has_derivative_lane( v );
+  }
+  // The crystal kernel's direction gradient is only needed when a dimension is being differentiated
+  //  (never for T = double, and never under the test hold, which freezes the kernel).
+  const bool want_fd = dims_have_lane && !sm_line_trace_hold;
+  const std::array<double,3> key_o = { scalar_of(dims_o[0]), scalar_of(dims_o[1]), scalar_of(dims_o[2]) };
+  const std::shared_ptr<const VolumetricLineCache::TracedLines> trace
+                                              = cache->traced( key_o, want_fd, multithread );
+  cache->ensure_prefactor_range( trace->chord_d_lo_cm, trace->chord_d_hi_cm );
+
   // Per-calculator energy-dependent inputs.
-  std::vector<std::shared_ptr<const std::vector<double>>> kernels( num_calc );
+  std::vector<VolumetricLineCache::TracedLines::KernelSet> kernels( num_calc );
   std::vector<std::shared_ptr<const PrefactorGrid>> grids( num_calc );
   for( size_t c = 0; c < num_calc; ++c )
   {
-    kernels[c] = cache->kernel( group[c]->m_energy );
+    kernels[c] = trace->kernel_set( *cache->response, group[c]->m_energy, want_fd );
     grids[c] = cache->prefactor( group[c]->m_energy );
   }
 
@@ -1691,24 +2790,28 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     return T(0.0);
   };
 
-  const size_t num_chunks = (multithread && (num_lines > 4096))
-                              ? static_cast<size_t>( std::max( 1, SpecUtilsAsync::num_logical_cpu_cores() ) )
-                              : size_t(1);
-  // Partial sums: [chunk][calc], plus even/odd line halves for the error estimate.
+  // The lines are split into a FIXED number of contiguous index blocks, whatever the thread count:
+  //  each block is summed sequentially in index order and the blocks are reduced in block order,
+  //  so the result is bit-reproducible on any machine.  The blocks double as the error estimate
+  //  (below): a contiguous block of a low-discrepancy sequence is itself a usable quadrature set,
+  //  so the spread of the block estimates measures the quadrature's own scatter.
+  const size_t num_chunks = static_cast<size_t>( std::min<size_t>( sm_line_error_blocks, num_lines ) );
   std::vector<std::vector<T>> partial( num_chunks, std::vector<T>( num_calc, T(0.0) ) );
-  std::vector<std::vector<double>> partial_even( num_chunks, std::vector<double>( num_calc, 0.0 ) );
-  std::vector<std::vector<double>> partial_odd( num_chunks, std::vector<double>( num_calc, 0.0 ) );
   std::vector<std::vector<EffShieldComponents>> partial_eff( accumulate_eff ? num_chunks : 0,
                                                              std::vector<EffShieldComponents>( num_calc ) );
+#if( PERFORM_DEVELOPER_CHECKS )
+  std::vector<std::array<uint64_t,3>> partial_diag( num_chunks, std::array<uint64_t,3>{ 0, 0, 0 } );
+#endif
 
   const auto do_chunk = [&]( const size_t chunk )
   {
     const size_t lo = (num_lines*chunk)/num_chunks;
     const size_t hi = (num_lines*(chunk + 1))/num_chunks;
     std::vector<T> &acc = partial[chunk];
-    std::vector<double> &acc_even = partial_even[chunk];
-    std::vector<double> &acc_odd = partial_odd[chunk];
     std::vector<EffShieldComponents> * const acc_eff = accumulate_eff ? &partial_eff[chunk] : nullptr;
+#if( PERFORM_DEVELOPER_CHECKS )
+    std::array<uint64_t,3> &diag = partial_diag[chunk];
+#endif
 
     std::vector<T> a( num_shells ), b( num_shells );
     std::vector<char> crossed( num_shells );
@@ -1721,15 +2824,45 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
 
     for( size_t j = lo; j < hi; ++j )
     {
-      const std::array<double,3> &orel = cache->origin_rel[j];
-      const std::array<double,3> &d = cache->dir[j];
-      const T o[3] = { lead.m_detector.position[0] + orel[0],
-                       lead.m_detector.position[1] + orel[1],
-                       lead.m_detector.position[2] + orel[2] };
+      if( !trace->kept[j] )
+        continue;
+      const VolumetricLineCache::Candidate &cand = cache->cand[j];
+      T w[3], cos_n, w_c[3], s_endcap;
+      if( !line_direction_imp( *cache, j, dims_o, det_pos, w, cos_n, w_c, s_endcap ) )
+        continue;   //cannot happen: the trace made the same scalar decision
+      const T o[3] = { det_pos[0] + T(cand.x_rel[0]), det_pos[1] + T(cand.x_rel[1]),
+                       det_pos[2] + T(cand.x_rel[2]) };
+      const T d[3] = { -w[0], -w[1], -w[2] };
 
-      line_shell_intervals_imp( geometry, shells, o, d.data(), a, b, crossed );
+      line_shell_intervals_imp( geometry, shells, o, d, a, b, crossed );
       if( !crossed[m] )
         continue;
+
+      // This line's weight (T): hull area share times its cosine over the mixture density, per
+      //  line, over 4 pi (see the file comment's UNITS paragraph).
+      const T p_line = line_proposal_density_imp( *cache, dims_o, o, d );
+      if( !(scalar_of(p_line) > 0.0) )
+        continue;
+      const T w_line = T(cand.area_weight) * cos_n
+                       / (p_line * T(4.0*PhysicalUnits::pi*static_cast<double>(num_lines)))
+                       * T(cm*cm);
+
+      // The direction's derivative lanes projected on the tangent basis the kernel's forward
+      //  differences were traced along (crystal frame; zero scalar part, since the trace was made
+      //  at exactly these scalar dims).
+      T proj_fd[2] = { T(0.0), T(0.0) };
+      if( want_fd )
+      {
+        Eigen::Vector3d e1, e2;
+        line_tangent_frame( Eigen::Vector3d( scalar_of(w_c[0]), scalar_of(w_c[1]), scalar_of(w_c[2]) ),
+                            e1, e2 );
+        for( int i = 0; i < 3; ++i )
+        {
+          const T dw = w_c[i] - T( scalar_of(w_c[i]) );
+          proj_fd[0] += dw * T(e1[i]);
+          proj_fd[1] += dw * T(e2[i]);
+        }
+      }
 
       // Source pieces.
       Piece pieces[2];
@@ -1756,7 +2889,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
         else
           outer_len.emplace_back( l, a[l-1] - a[l] );
       }
-      const T air_len = select_max( a[num_shells-1] - T(cache->s_endcap[j]), T(0.0) );
+      const T air_len = select_max( a[num_shells-1] - s_endcap, T(0.0) );
 
       // Core (only the far piece looks through it): every inner shell's full chord.
       core_len.clear();
@@ -1777,9 +2910,6 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
           core_len.emplace_back( l, len );
         }
       }
-
-      const double w_line = cache->weight[j];
-      const bool even = ((j & 1) == 0);
 
       // Effective-shielding components: the density-weighted path outside the source (and through
       //  the core, for the far piece) is the same for every calculator; the mu-weighted one is per
@@ -1818,8 +2948,20 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
 
       for( size_t c = 0; c < num_calc; ++c )
       {
-        const double k = (*kernels[c])[j];
-        if( !(k > 0.0) )
+        const double k = (*kernels[c].k)[j];
+        T k_T( k );
+        if( want_fd )
+        {
+          // The kernel's direction gradient (forward difference) chained onto the direction's
+          //  lanes: the pathwise derivative of a line that moves with the source.  This term is
+          //  NOT zero in the continuum limit - it is of order the relative variation of k across
+          //  the set times dI/d(dim), i.e. tens of percent of the dimension gradient for a contact
+          //  source at high energy - see the file comment.
+          const double g1 = ((*kernels[c].k1)[j] - k) / VolumetricLineCache::TracedLines::fd_delta;
+          const double g2 = ((*kernels[c].k2)[j] - k) / VolumetricLineCache::TracedLines::fd_delta;
+          k_T += proj_fd[0]*T(g1) + proj_fd[1]*T(g2);
+        }
+        if( !(k > 0.0) && !has_derivative_lane( k_T ) )
           continue;
         const DistributedSrcCalcT<T> &calc = *group[c];
         const std::vector<typename DistributedSrcCalcT<T>::ShellInfo> &cs = calc.m_shells;
@@ -1946,7 +3088,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
             //  turns the analytic factor into exp(+big) - so they keep rate0 = 0 and are carried
             //  by the sub-piece quadrature below instead.
             if( !radial_profile )
-              rate0 = T( d[2]/relax );
+              rate0 = d[2] / T(relax);
           }//if( in_situ )
 
           const T mu_eff = mu_src + rate0;
@@ -1987,6 +3129,28 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
               phi = atan2( ay, ax ) * T(180.0/PhysicalUnits::pi);
             }
             T val = grids[c]->eval( log( dist ), cos_t, phi );
+#if( PERFORM_DEVELOPER_CHECKS )
+            diag[0] += 1;
+            if( scalar_of(cos_t) < 0.0 )
+              diag[1] += 1;
+            if( (scalar_of(dist) < std::exp(grids[c]->ln_d.front())) || (scalar_of(dist) > std::exp(grids[c]->ln_d.back())) )
+              diag[2] += 1;
+#endif
+            if constexpr( std::is_same_v<T,double> )
+            {
+              if( sm_prefactor_direct_eval )
+              {
+                // TEST HOOK: the response's prefactor at the node itself, no grid (see the flag).
+                assert( !cache->response->descriptor.collimator );
+                static const ceelo::ApertureQuadrature no_quadrature;
+                const Eigen::Vector3d pos_c( pc[0], pc[1], pc[2] );
+                val = cache->response->fep_prefactor( calc.m_energy, pos_c, no_quadrature ).value;
+              }
+            }else
+            {
+              if( sm_prefactor_direct_eval )
+                throw logic_error( "sm_prefactor_direct_eval is double-only" );
+            }
             if( radial_profile )
               val *= exp( -(depth_at( p ) - depth0)/T(relax) );
             if( any_cascade && !cascade_fields[c].empty() )
@@ -2034,17 +3198,12 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
           }//for( sub-pieces )
         }//for( pieces )
 
-        const T contrib = T(w_line*k) * line_sum;
-        acc[c] += contrib;
-        if( even )
-          acc_even[c] += scalar_of( contrib );
-        else
-          acc_odd[c] += scalar_of( contrib );
+        acc[c] += w_line * k_T * line_sum;
       }//for( calculators )
     }//for( lines in chunk )
   };//do_chunk
 
-  if( num_chunks > 1 )
+  if( multithread && (num_chunks > 1) && (num_lines > 4096) )
   {
     SpecUtilsAsync::ThreadPool pool;
     for( size_t chunk = 0; chunk < num_chunks; ++chunk )
@@ -2052,24 +3211,69 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     pool.join();
   }else
   {
-    do_chunk( 0 );
+    for( size_t chunk = 0; chunk < num_chunks; ++chunk )
+      do_chunk( chunk );
   }
 
   for( size_t c = 0; c < num_calc; ++c )
   {
     T total( 0.0 );
-    double even = 0.0, odd = 0.0;
     for( size_t chunk = 0; chunk < num_chunks; ++chunk )
-    {
       total += partial[chunk][c];
-      even += partial_even[chunk][c];
-      odd += partial_odd[chunk][c];
-    }
     group[c]->integral = total;
     group[c]->m_num_evals = num_lines;
-    const double tot = std::fabs( scalar_of(total) );
-    group[c]->m_est_rel_error = (tot > 0.0) ? (0.5*std::fabs(even - odd)/tot) : 0.0;
+
+    // Error estimate from the block partial sums at TWO scales.  Each contiguous block of the
+    //  sequence, scaled up by the block count, is an unbiased estimate of the whole, so the scatter
+    //  of the B block estimates measures the error of a set N/B lines long, and the scatter of the
+    //  S super-block estimates (S groups of B/S consecutive blocks) that of a set N/S long.  A
+    //  low-discrepancy set's error falls as n^-alpha with alpha between 1/2 (plain Monte Carlo) and
+    //  ~1, and the two scales measure alpha: s_B/s_S = (B/S)^alpha.  The super-block scatter is then
+    //  extrapolated to the full set, err(N) = s_S * S^-alpha.  With alpha = 1/2 this is exactly the
+    //  plain-MC standard error s_B/sqrt(B); assuming 1/2 outright over-read by 5-10x on a wide disk
+    //  (measured: replica rms 0.1-0.26% against 1.3-1.5% estimated).
+    //  Contiguous blocks, not an even/odd split: the hull face is chosen by the base-2 Halton digit,
+    //  so even and odd indices are (mostly) different hull faces and their difference measured the
+    //  face split rather than the error.  `LineErrorEstimateCalibration` pins this against the
+    //  spread of independent replicas (`LineSampleParams::index_offset`).
+    const double tot = scalar_of( total );
+    const size_t B = num_chunks;
+    const size_t S = std::min<size_t>( 4, B );
+    double ss_b = 0.0, ss_s = 0.0;
+    std::vector<double> sup( S, 0.0 );
+    for( size_t b = 0; b < B; ++b )
+    {
+      const double pb = scalar_of( partial[b][c] );
+      const double block_est = static_cast<double>(B) * pb;
+      ss_b += (block_est - tot)*(block_est - tot);
+      sup[(b*S)/B] += pb;
+    }
+    for( size_t s = 0; s < S; ++s )
+    {
+      const double sup_est = static_cast<double>(S) * sup[s];
+      ss_s += (sup_est - tot)*(sup_est - tot);
+    }
+    double std_err = 0.0;
+    if( (B > 1) && (S > 1) && (std::fabs(tot) > 0.0) )
+    {
+      const double s_b = std::sqrt( ss_b / static_cast<double>(B - 1) );
+      const double s_s = std::sqrt( ss_s / static_cast<double>(S - 1) );
+      double alpha = 0.5;
+      if( (s_b > 0.0) && (s_s > 0.0) && (B > S) )
+        alpha = std::max( 0.5, std::min( 1.0, std::log( s_b/s_s ) / std::log( static_cast<double>(B)/static_cast<double>(S) ) ) );
+      std_err = s_s * std::pow( static_cast<double>(S), -alpha );
+    }
+    group[c]->m_est_rel_error = (std::fabs(tot) > 0.0) ? (std_err / std::fabs(tot)) : 0.0;
   }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t chunk = 0; chunk < num_chunks; ++chunk )
+  {
+    cache->diag_num_nodes += partial_diag[chunk][0];
+    cache->diag_nodes_cos_clamped += partial_diag[chunk][1];
+    cache->diag_nodes_d_clamped += partial_diag[chunk][2];
+  }
+#endif
 
   if( accumulate_eff )
   {

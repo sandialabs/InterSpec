@@ -4517,6 +4517,34 @@ void fit_model_ceres( const std::string wtsession,
                                            variable_indices, observed, observed_uncert, fit_full,
                                            &var_errors, &cov_errmsg, &num_evals, &conv_msg );
       results->chi2 = chi2;
+
+      // POLISH: the search ran on the shipped line count; the answer and its covariance come from
+      //  a finer quadrature, re-solved from the converged point.  Rebuilding the line sets here
+      //  (not inside the solve) is what keeps the objective a single smooth function per solve.
+      //  MEASURED (LineSetReplicaFitStability, test_ShieldingSourceFitCalc.cpp): see the case.
+      const int polish = GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_volumetric_polish_line_factor;
+      if( (polish > 1) && chi2Fcn->hasVolumetricLineSets()
+          && (chi2Fcn->currentCancelStatus() == GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::NotCanceled) )
+      {
+        chi2Fcn->setVolumetricLineCount( polish * chi2Fcn->volumetricLineCount(), &fit_full );
+        vector<double> polished_full, polished_errors;
+        string polished_cov_errmsg, polished_conv_msg;
+        try
+        {
+          const double polished_chi2 = run_ceres_solve( chi2Fcn, par_defs, fit_full, variable_indices,
+                                                        observed, observed_uncert, polished_full,
+                                                        &polished_errors, &polished_cov_errmsg, &num_evals,
+                                                        &polished_conv_msg );
+          fit_full = polished_full;
+          var_errors = polished_errors;
+          cov_errmsg = polished_cov_errmsg;
+          conv_msg = polished_conv_msg;
+          results->chi2 = polished_chi2;
+        }catch( std::exception & )
+        {
+          // The search's answer stands; the polish is a refinement, never a requirement.
+        }
+      }//if( polish )
     }else
     {
       // First a fit with everything (including AN) free, as the starting reference

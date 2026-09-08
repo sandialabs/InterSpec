@@ -254,6 +254,24 @@ DistributedSrcCalcT<Jet1> make_nested_vol_calc( GeometryType g, const std::array
   }
 }
 
+/** Emitting-surface area of an in-situ exponential source - the area its per-m^2 activity refers
+ to, per the table at GammaInteractionCalc::TraceActivityType (dims are the cumulative outer dims,
+ with the cylinder half-length and the box half-extents). */
+double in_situ_emitting_area( GeometryType g, const std::array<double,3> &d )
+{
+  const double pi = PhysicalUnits::pi;
+  switch( g )
+  {
+    case GeometryType::Spherical:      return 4.0*pi*d[0]*d[0];
+    case GeometryType::CylinderEndOn:  return pi*d[0]*d[0];
+    case GeometryType::CylinderSideOn: return 2.0*pi*d[0]*(2.0*d[1]);
+    case GeometryType::Rectangular:    return (2.0*d[0])*(2.0*d[1]);
+    default: break;
+  }
+  return 1.0;
+}//in_situ_emitting_area(...)
+
+
 struct VolCase
 {
   string name;
@@ -335,13 +353,54 @@ void run_vol_case( const VolCase &c )
   // (c) The value and derivative settle to a finite zero-thickness limit: the smallest positive
   //     thicknesses agree - the "derivative at epsilon ~= derivative at 0" property the fit relies
   //     on (here epsilon down to 1e-12 cm stands in for the 0 the ray-trace can't differentiate at).
-  const double vref = vals[last_pos], dref = derivs[last_pos];
+  //
+  //     WHICH quantity settles depends on what the activity is per.  A TotalActivity source keeps
+  //     its activity as it shrinks, so the CONTRIBUTION settles.  An in-situ exponential source's
+  //     activity is per unit EMITTING AREA (the table at GammaInteractionCalc::TraceActivityType),
+  //     so when the swept dimension scales that area - a sphere's radius, a side-on cylinder's
+  //     radius - the total activity, and with it the contribution and its derivative, correctly go
+  //     to ZERO.  What settles there is the contribution PER UNIT EMITTING AREA, which is the
+  //     quantity the physics actually fixes, so that is what is checked.  (The other two in-situ
+  //     cases sweep a DEPTH, which leaves the emitting face unchanged, so their contribution
+  //     settles like a TotalActivity one.)
+  std::vector<double> area( sweep.size(), 1.0 );
+  if( c.exponential )
+  {
+    for( size_t i = 0; i < sweep.size(); ++i )
+    {
+      std::array<double,3> d = c.fixed;
+      d[c.swept] = sweep[i];
+      area[i] = in_situ_emitting_area( c.geom, d );
+    }
+  }
+  const bool area_scales = (fabs(area[last_pos] - area[0]) > 1.0e-12*fabs(area[0]));
+
+  const double vref_raw = vals[last_pos];
+  const double vref = vref_raw / (area_scales ? area[last_pos] : 1.0);
+  const double dref = derivs[last_pos];
   for( size_t i = (last_pos >= 2 ? last_pos - 2 : 0); i <= last_pos; ++i )
   {
-    BOOST_CHECK_MESSAGE( fabs(vals[i]-vref) <= 1.0e-4*fabs(vref) + 1.0e-9,
-      c.name << ": contribution value not settling toward zero thickness: " << vals[i] << " vs " << vref );
-    BOOST_CHECK_MESSAGE( fabs(derivs[i]-dref) <= 1.0e-3*fabs(dref) + 1.0e-3,
-      c.name << ": contribution derivative not settling toward zero thickness: " << derivs[i] << " vs " << dref );
+    const double v = vals[i] / (area_scales ? area[i] : 1.0);
+    BOOST_CHECK_MESSAGE( fabs(v-vref) <= 1.0e-4*fabs(vref) + 1.0e-9,
+      c.name << ": contribution" << (area_scales ? " per unit emitting area" : "")
+      << " not settling toward zero thickness: " << v << " vs " << vref );
+    if( !area_scales )
+      BOOST_CHECK_MESSAGE( fabs(derivs[i]-dref) <= 1.0e-3*fabs(dref) + 1.0e-3,
+        c.name << ": contribution derivative not settling toward zero thickness: " << derivs[i] << " vs " << dref );
+  }
+
+  if( area_scales )
+  {
+    // The raw contribution goes to zero with the emitting area, monotonically - what a fit walking
+    //  such a dimension down to its 0 bound must see.  The DERIVATIVE is not asserted to shrink:
+    //  d(A f)/dt = A' f + A f', so it vanishes only when the area is quadratic in the swept
+    //  dimension (a sphere's radius) and settles to a constant when the area is linear in it (a
+    //  side-on cylinder's radius, measured 1498.93).  Both are finite and continuous, which is
+    //  what (b) and (d) require.
+    for( size_t i = 1; i <= last_pos; ++i )
+      BOOST_CHECK_MESSAGE( fabs(vals[i]) <= fabs(vals[i-1]) + 1.0e-12*fabs(vals[0]),
+        c.name << ": contribution should shrink with the emitting area, but " << vals[i]
+        << " at t=" << sweep[i]/cm << "cm exceeds " << vals[i-1] << " at t=" << sweep[i-1]/cm << "cm" );
   }
 
   // (d) Geometries whose off-center source ray-trace is derivative-continuous through *exactly* zero
@@ -360,8 +419,17 @@ void run_vol_case( const VolCase &c )
     const size_t i0 = sweep.size() - 1;   // exactly 0
     BOOST_CHECK_MESSAGE( std::isfinite(derivs[i0]),
       c.name << ": non-finite contribution derivative at exactly 0: " << derivs[i0] );
-    BOOST_CHECK_MESSAGE( fabs(vals[i0]-vref) <= 1.0e-4*fabs(vref) + 1.0e-9,
-      c.name << ": contribution value discontinuous at exactly 0: " << vals[i0] << " vs " << vref );
+    // A source whose emitting area vanishes with the swept dimension has a zero-thickness LIMIT of
+    //  zero, and the smallest sampled thickness has not reached it (the value falls linearly for a
+    //  side-on radius), so continuity there means "no jump to a finite value at 0" - measured
+    //  against the healthy regime rather than against the last sampled point.
+    if( area_scales )
+      BOOST_CHECK_MESSAGE( fabs(vals[i0]) <= 1.0e-4*fabs(vals[0]),
+        c.name << ": contribution should vanish with the emitting area at exactly 0, but is "
+        << vals[i0] << " against " << vals[0] << " in the healthy regime" );
+    else
+      BOOST_CHECK_MESSAGE( fabs(vals[i0]-vref_raw) <= 1.0e-4*fabs(vref_raw) + 1.0e-9,
+        c.name << ": contribution value discontinuous at exactly 0: " << vals[i0] << " vs " << vref_raw );
     BOOST_CHECK_MESSAGE( fabs(derivs[i0]-dref) <= 1.0e-3*fabs(dref) + 1.0e-3,
       c.name << ": contribution derivative discontinuous at exactly 0: " << derivs[i0] << " vs " << dref );
   }

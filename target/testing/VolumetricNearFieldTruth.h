@@ -280,6 +280,21 @@ static const std::vector<TruthRow> sm_truth = {
   { "offaxis-large-near-dense", 60, 0.001925900494, 4.812e-06 },
   { "sideon-tall-near-dense", 60, 0.005751224784, 1.435e-05 },
   { "sideon-squat-near-dense", 60, 0.003476501305, 8.682e-06 },
+  // In-situ exponential rows (in_situ_scenarios()), generated 2026-09-07 by
+  //  test_VolumetricNearField --run_test=VolumetricNearFieldTruthInSitu at the 0.25% target through
+  //  the cache in scratch/20260907_volumetric_followup/mc; no row stopped on a cap.
+  { "insitu-box-near-light", 60, 0.05520848057, 0.0001358 },
+  { "insitu-box-near-light", 88, 0.1015986755, 0.0002459 },
+  { "insitu-box-near-light", 122, 0.1138932836, 0.0002744 },
+  { "insitu-box-near-light", 344, 0.05923371212, 0.0001453 },
+  { "insitu-box-near-light", 661.7, 0.03376064093, 8.325e-05 },
+  { "insitu-box-near-light", 1332.5, 0.01956582331, 4.85e-05 },
+  { "insitu-cyl-near-light", 60, 0.05547163121, 0.0001363 },
+  { "insitu-cyl-near-light", 88, 0.10208, 0.0002472 },
+  { "insitu-cyl-near-light", 122, 0.1144255639, 0.000276 },
+  { "insitu-cyl-near-light", 344, 0.05928060837, 0.0001456 },
+  { "insitu-cyl-near-light", 661.7, 0.03393884919, 8.378e-05 },
+  { "insitu-cyl-near-light", 1332.5, 0.01961770911, 4.862e-05 },
 };
 
 // Centre-anchored curves, one per distinct source-centre distance in the matrix (regenerated with

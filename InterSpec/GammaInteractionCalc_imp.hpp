@@ -1562,6 +1562,24 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
                            + m_detector.position[1]*m_detector.position[1]
                            + m_detector.position[2]*m_detector.position[2] );
 
+  // ...but the PER-RAY branch below queries an ANGULAR response (build_element_aperture takes an
+  //  incidence cosine, and the CeeLo response is tabulated in it), so for a calculator that carries
+  //  one the shortcut's premise fails: the rotation carries `m_detector.axis` along unchanged, which
+  //  puts the crystal FACE-ON to the source centre whatever the real lateral offset.  Measured
+  //  against the line path, which traces from the real hull at the real position
+  //  (OffAxisSphereResponseRotationProbe, test_VolumetricLinePath.cpp): a 1 cm water sphere at 4 cm
+  //  reads 0.98/1.02 of the truth at a 1.5 cm offset, 0.94/1.05 at 2.5 cm and 0.82/1.11 at 4 cm
+  //  (60 / 661.7 keV) - the sign flips with energy because an oblique path through the crystal is a
+  //  SHORTER full-energy depth at 60 keV and a LONGER one at 662.  On axis the two paths agree to
+  //  0.15% at every offset, so it is purely this.
+  //  NOT a production defect: production runs the line path whenever a response is attached, and
+  //  flat-disk (m_effResponse null) really is isotropic, so the shortcut is exact there.  It matters
+  //  because this function is the VALIDATION REFERENCE: an off-axis sphere with a response attached
+  //  is a configuration this function CANNOT arbitrate, so a line-vs-element comparison there is
+  //  measuring the shortcut, not the line path.  Deliberately not an assert - the two tests that
+  //  reach this configuration exist to MEASURE it, and an assert they had to violate would only
+  //  abort a developer's Debug build.
+
   const T source_inner_rad = (m_materialIndex > 0) ? m_shells[m_materialIndex-1].dims[0] : T(0.0);
   const T source_outer_rad = m_shells[m_materialIndex].dims[0];
 
@@ -1946,8 +1964,12 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     T w;
     if( m_isInSituExponential )
     {
+      // Per unit EMITTING AREA (the contract at GammaInteractionCalc::TraceActivityType): the
+      //  sphere's is its whole surface 4 pi R_o^2, so dV * 4 pi R_o^2 / (4 pi R_o^3 h_sph) - the
+      //  R_o^3 that cancelled the r^2 dr Jacobian leaves one power of R_o here.
       const T u = source_outer_rad / T(m_inSituRelaxationLength);
-      w = T(0.5*pi*x_r*x_r*std::sin(theta)) / sphere_exp_norm_factor( u );
+      w = T(2.0*pi*pi*x_r*x_r*std::sin(theta)) * source_outer_rad * source_outer_rad
+          / sphere_exp_norm_factor( u );
     }else if( m_materialIndex == 0 )
     {
       w = T(1.5*pi*x_r*x_r*std::sin(theta));   // single shell: dV/vol, R_o^3 cancelled
@@ -2309,7 +2331,9 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     {
       const T L = T(m_inSituRelaxationLength);
       if( m_geometry == GeometryType::CylinderSideOn )
-        w = (T(2.0*xx[0]) * Lo) / cyl_side_exp_norm_factor( Ro / L );   // 2*L_o*x_r / h_side(R_o/L)
+        // Per unit EMITTING AREA: the curved side, 2 pi R_o (2 L_o), over the depth integral
+        //  2 pi R_o^2 h_side - so 2*L_o*x_r * (2 pi R_o) / h_side.
+        w = (T(4.0*PhysicalUnits::pi*xx[0]) * Lo * Ro) / cyl_side_exp_norm_factor( Ro / L );
       else
         w = (T(2.0*PhysicalUnits::pi*xx[0]) * (Ro*Ro))
             / one_minus_exp_neg_over_x( total_height / L );             // 2pi*x_r*R_o^2 / g(2L_o/L)
@@ -4481,12 +4505,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             // Reformulation: carry act/m^2 as the numerator and fold 1/norm into the integrand
             //  weight (see eval_*), so do not divide by the depth-integral here.
             //
-            // eval_* uses the single (innermost) source-shell exponential forms - the physical
-            //  in-situ case, where the soil column is the only/innermost layer.  A nested
-            //  exponential source (an inner non-source core inside the soil) would be
-            //  mis-normalized, so assert it away rather than silently apply the wrong weight.
-            //  (calculator->m_inSituRelaxationLength validity is asserted below where it is set.)
-            assert( material_index == 0 );
+            // eval_* and the line path use the single (innermost) source-shell exponential forms -
+            //  the physical in-situ case, where the soil column is the only/innermost layer.  A
+            //  nested exponential source (any layer inside the soil, even a zero-volume generic
+            //  one) would be mis-normalized, so refuse it rather than silently apply the wrong
+            //  weight.  (calculator->m_inSituRelaxationLength validity is asserted below.)
+            if( material_index != 0 )
+              throw std::runtime_error( "An in-situ (exponentially distributed) trace source must be"
+                                        " in the innermost shielding layer." );
             normalizeByVolume = true;
 #elif( VOL_CALC_VARIANT == 0 )
             const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
@@ -4626,10 +4652,12 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
           if( isGenericMaterial( subMat ) )
           {
-            // A generic material at the very center has zero volume, so skip it
-            if( subMat == 0 )
-              continue;
-
+            // A generic material at the very centre has zero volume and attenuates nothing, but it
+            //  is still pushed (with zero dims) so that `m_shells` stays indexed by SHIELDING index:
+            //  m_materialIndex is used both to index m_shells and, elsewhere, m_initial_shieldings
+            //  (inSituEmittingArea, volumeOfMaterial).  Skipping it used to shift every later shell
+            //  down by one against m_materialIndex.  Every interval/walk routine reports a zero-dim
+            //  shell as never crossed, and split_source_subdomains drops the degenerate tiles.
             const T an = atomicNumber_imp( subMat, params );
             const T ad = arealDensity_imp( subMat, params );
 
@@ -4752,8 +4780,10 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           calculator->m_cascade_age = scalar_of( thisage );
         }
 
-        // The line path needs the fit's detector-side line set for this source shell (built once
-        //  per scalar geometry, shared by every energy).
+        // The line path needs the fit's detector-side line set for this source shell: built once
+        //  per fit (buildDetectorSideRays) and shared by every energy and evaluation - its lines
+        //  follow the current dimensions themselves (VolumetricLineIntegration_imp.hpp), so the
+        //  scalar dims passed here only matter if the set has to be built afresh.
         if( calculator->m_effResponse )
         {
           const std::array<T,3> &src_dims = calculator->m_shells[material_index].dims;
@@ -4764,11 +4794,9 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             calculator->m_lineCache = volumetricLineCache( material_index, scalar_dims );
           }catch( std::exception &e )
           {
-            // The set built at creation (buildDetectorSideRays) could not be rebuilt
-            //  at the dimensions the optimizer has moved to: an evaluation failure it reports, never
-            //  a silent change of model.
-            throw std::runtime_error( "The volumetric line set could not be rebuilt at the current"
-                                      " source dimensions: " + std::string(e.what()) );
+            // An evaluation failure it reports, never a silent change of model.
+            throw std::runtime_error( "The volumetric line set could not be built for the current"
+                                      " source: " + std::string(e.what()) );
           }
           assert( calculator->m_lineCache );
         }
