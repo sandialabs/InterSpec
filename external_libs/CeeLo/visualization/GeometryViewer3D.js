@@ -797,9 +797,36 @@ function getAlphaForVolume(volName, matName) {
   if (volName.indexOf("AttLV") === 0) return 0.45;
   if (volName.indexOf("SrcMaterial") === 0) return 0.30;
   if (volName.indexOf("SrcShield") === 0) return 0.40;
+  if (volName.indexOf("SrcCore") === 0) return 0.55;
   // Default for unknown
   if (matName === "Vacuum" || matName === "Air") return 0;
   return 0.50;
+}
+
+/**
+ * What part a volume plays: emission, attenuation, or scoring.
+ *
+ * Worth stating explicitly because a concentric source can now hold three
+ * layers that look alike on screen - a core, the emitting shell, and a shield -
+ * and only the middle one emits.  Nothing about the geometry itself gives that
+ * away, so the tooltip says it.
+ */
+function getRoleForVolume(volName) {
+  if (volName === "active_crystal")
+    return { text: "SCORING - energy deposited here is what is tallied", color: "#7fd18b" };
+  if (volName === "source")
+    return { text: "SOURCE - photons are emitted from this point", color: "#f0c674" };
+  if (volName === "SrcMaterialLV")
+    return { text: "SOURCE - photons are emitted from this volume", color: "#f0c674" };
+  if (volName.indexOf("SrcCore") === 0)
+    return { text: "attenuates only - fills the source cavity, never emits", color: "#9aa0a6" };
+  if (volName.indexOf("SrcVoid") === 0)
+    return { text: "empty cavity - no material, no emission", color: "#9aa0a6" };
+  if (volName.indexOf("SrcShield") === 0)
+    return { text: "attenuates only - wraps the source, never emits", color: "#9aa0a6" };
+  if (volName.indexOf("AttLV") === 0)
+    return { text: "attenuates only - detector-side", color: "#9aa0a6" };
+  return null;
 }
 
 function getLabelForVolume(volName, matName) {
@@ -810,6 +837,13 @@ function getLabelForVolume(volName, matName) {
   if (volName.indexOf("SrcShieldBottom") === 0) return matName + " Bottom Wall";
   if (volName.indexOf("SrcShieldWellWall") === 0) return matName + " Well Wall";
   if (volName.indexOf("SrcShieldWellBottom") === 0) return matName + " Well Bottom";
+  // Concentric stack: SrcShieldLV<i> grows outward from the source, SrcCoreLV<i>
+  //  fills inward from its inner surface (0 = the layer against the shell).
+  if (volName.indexOf("SrcShieldLV") === 0)
+    return matName + " Source Shield " + volName.slice("SrcShieldLV".length);
+  if (volName.indexOf("SrcCoreLV") === 0)
+    return matName + " Source Core " + volName.slice("SrcCoreLV".length);
+  if (volName.indexOf("SrcVoid") === 0) return "Empty cavity";
   return volName + " (" + matName + ")";
 }
 
@@ -1222,6 +1256,48 @@ GeometryViewer3D.prototype._cleanupRenderables = function() {
   this._updateDistanceLine(null);
 };
 
+/**
+ * Walk every placed volume, depth-first from the world, giving the callback the
+ * volume, its position accumulated into the WORLD frame, and its physvol.
+ *
+ * The source region is a NESTED chain: each layer is a full solid carrying the
+ * next one in as a daughter (which displaces its material), and only the
+ * OUTERMOST one is a daughter of the world.  Scanning `worldVol.physvols`
+ * alone therefore sees a single solid blob and misses the source material and
+ * every core.  Detector-side volumes and the Marinelli beaker's wall pieces are
+ * still flat in the world, and come through this walk unchanged.
+ */
+GeometryViewer3D.prototype._eachPlacedVolume = function(cb) {
+  var parsed = this.parsedGDML;
+  if (!parsed) return;
+  var world = parsed.volumes[parsed.worldRef];
+  if (!world) return;
+
+  function walk(vol, ox, oy, oz, depth) {
+    if (!vol || !vol.physvols || depth > 32) return;   // depth caps a cyclic ref
+    for (var i = 0; i < vol.physvols.length; i++) {
+      var pv = vol.physvols[i];
+      var child = parsed.volumes[pv.volumeRef];
+      if (!child) continue;
+      var x = ox + pv.position[0];
+      var y = oy + pv.position[1];
+      var z = oz + pv.position[2];
+      cb(child, [x, y, z], pv);
+      walk(child, x, y, z, depth + 1);
+    }
+  }
+  walk(world, 0, 0, 0, 0);
+};
+
+/** First placed volume whose name matches, with its world-frame position. */
+GeometryViewer3D.prototype._findPlacedVolume = function(name) {
+  var hit = null;
+  this._eachPlacedVolume(function(vol, pos) {
+    if (!hit && vol.name === name) hit = { vol: vol, position: pos };
+  });
+  return hit;
+};
+
 GeometryViewer3D.prototype._buildScene = function() {
   var parsed = this.parsedGDML;
   if (!parsed || !parsed.worldRef) return;
@@ -1237,9 +1313,8 @@ GeometryViewer3D.prototype._buildScene = function() {
   var bbMin = [Infinity, Infinity, Infinity];
   var bbMax = [-Infinity, -Infinity, -Infinity];
 
-  worldVol.physvols.forEach(function(pv) {
-    var vol = parsed.volumes[pv.volumeRef];
-    if (!vol) return;
+  this._eachPlacedVolume(function(vol, pvPos) {
+    var pv = { position: pvPos };
     var matName = vol.material;
     if (matName === "Vacuum" || matName === "Air") return;
 
@@ -1437,25 +1512,26 @@ GeometryViewer3D.prototype._getSourceSurfaceClosestZ = function() {
   var worldVol = parsed.volumes[parsed.worldRef];
   if (!worldVol) return null;
 
-  for (var i = 0; i < worldVol.physvols.length; i++) {
-    var pv = worldVol.physvols[i];
-    var vol = parsed.volumes[pv.volumeRef];
-    if (!vol || vol.name !== "SrcMaterialLV") continue;
+  // SrcMaterialLV is nested inside its shields for a concentric source, so this
+  //  has to walk the tree rather than scan the world's own daughters.
+  var found = this._findPlacedVolume("SrcMaterialLV");
+  if (!found) return null;
+  var solid = parsed.solids[found.vol.solid];
+  if (!solid) return null;
 
-    var solid = parsed.solids[vol.solid];
-    if (!solid) return null;
-
-    if (solid.type === "subtraction") {
-      // Marinelli L-shape: on-axis closest source surface is at the well bottom
-      var second = parsed.solids[solid.second];
-      if (second && second.type === "tube") {
-        return pv.position[2] + solid.offset[2] - second.z / 2;
-      }
-    } else if (solid.type === "tube") {
-      // Simple tube source: top face closest to crystal
-      return pv.position[2] + solid.z / 2;
+  if (solid.type === "subtraction") {
+    // Marinelli L-shape: on-axis closest source surface is at the well bottom
+    var second = parsed.solids[solid.second];
+    if (second && second.type === "tube") {
+      return found.position[2] + solid.offset[2] - second.z / 2;
     }
-    return null;
+  } else if (solid.type === "tube") {
+    // Simple tube source: top face closest to crystal
+    return found.position[2] + solid.z / 2;
+  } else if (solid.type === "sphere") {
+    return found.position[2] + solid.rmax;
+  } else if (solid.type === "box") {
+    return found.position[2] + solid.z / 2;
   }
   return null;
 };
@@ -1466,14 +1542,8 @@ GeometryViewer3D.prototype._getSourceCenter = function() {
   var worldVol = parsed.volumes[parsed.worldRef];
   if (!worldVol) return null;
 
-  for (var i = 0; i < worldVol.physvols.length; i++) {
-    var pv = worldVol.physvols[i];
-    var vol = parsed.volumes[pv.volumeRef];
-    if (vol && vol.name === "SrcMaterialLV") {
-      return pv.position.slice();
-    }
-  }
-  return null;
+  var found = this._findPlacedVolume("SrcMaterialLV");
+  return found ? found.position.slice() : null;
 };
 
 GeometryViewer3D.prototype._isMarinelliSource = function() {
@@ -1482,15 +1552,10 @@ GeometryViewer3D.prototype._isMarinelliSource = function() {
   var parsed = this.parsedGDML;
   var worldVol = parsed.volumes[parsed.worldRef];
   if (!worldVol) return false;
-  for (var i = 0; i < worldVol.physvols.length; i++) {
-    var pv = worldVol.physvols[i];
-    var vol = parsed.volumes[pv.volumeRef];
-    if (vol && vol.name === "SrcMaterialLV") {
-      var solid = parsed.solids[vol.solid];
-      return solid && solid.type === "subtraction";
-    }
-  }
-  return false;
+  var found = this._findPlacedVolume("SrcMaterialLV");
+  if (!found) return false;
+  var solid = parsed.solids[found.vol.solid];
+  return !!(solid && solid.type === "subtraction");
 };
 
 GeometryViewer3D.prototype._computeDistanceInfo = function(hoveredObj) {
@@ -1991,6 +2056,11 @@ GeometryViewer3D.prototype._formatTooltipEntry = function(obj, isMain) {
   var nameStyle = isMain ? 'font-weight:bold;margin-bottom:4px;color:#fff;' : 'font-weight:bold;margin-top:4px;color:#ccc;font-size:12px;';
   html += '<div style="' + nameStyle + '">' + obj.label + '</div>';
   var detailStyle = isMain ? '' : 'font-size:12px;color:#aaa;';
+  var role = getRoleForVolume(obj.volName || "");
+  if (role) {
+    html += '<div style="font-size:' + (isMain ? '12' : '11') + 'px;color:'
+         + role.color + ';margin-bottom:3px;">' + role.text + '</div>';
+  }
   if (obj.materialName) {
     html += '<div style="' + detailStyle + '">Material: ' + obj.materialName + ' (' + obj.density.toFixed(2) + ' g/cm\u00B3)</div>';
   }
