@@ -48,6 +48,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/EnergyCalGainMatch.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -138,6 +139,14 @@ namespace
     auto spec = make_shared<SpecMeas>();
     BOOST_REQUIRE_MESSAGE( spec->load_file( ba133_example_path(), SpecUtils::ParserType::Auto ),
                            "Failed to load ba133 example as SpecMeas" );
+
+    // The Ba-133 portal detectors are NaI.  Attach explicit peak-fit prefs so the gain-match
+    //  peak searches (secondDerivativePeakCanidates / searchForPeakFromUser) run with a known
+    //  coarse resolution type, as they would for a spectrum configured in the app.
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;
+    spec->setPeakFitDetPrefs( prefs );
+
     return spec;
   }//load_ba133_specmeas()
 

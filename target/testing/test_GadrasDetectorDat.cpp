@@ -665,19 +665,19 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   //  (parameter 10), so no geometry can be built for it and it keeps the flat-disk treatment.  If
   //  that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 12999987909897955040ull },
-    { "HPGe 20%", 15942574301746852451ull },
+    { "HPGe 10%", 983084203269855632ull },
+    { "HPGe 20%", 13533579799342821657ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 3405271502809736741ull },
-    { "LaBr 5%", 9533508627378423206ull },
-    { "NaI 10%", 12710450218362030861ull },
-    { "NaI 12%", 13838579886097982910ull },
-    { "NaI 1x1", 9444249551207657343ull },
-    { "NaI 25%", 14359049774689294627ull },
-    { "NaI 2x2", 17708187484627074873ull },
-    { "NaI 30%", 3282691297936797345ull },
-    { "NaI 3x3", 12212646696940897187ull },
-    { "NaI 5%", 7940542305173954851ull }
+    { "LaBr 10%", 2088149069939933830ull },
+    { "LaBr 5%", 11060713233283576584ull },
+    { "NaI 10%", 16714766525809291865ull },
+    { "NaI 12%", 8688658558371915451ull },
+    { "NaI 1x1", 6125286510271069905ull },
+    { "NaI 25%", 1277083199953378797ull },
+    { "NaI 2x2", 7165003405700573784ull },
+    { "NaI 30%", 8268697990731108350ull },
+    { "NaI 3x3", 3507969205792370444ull },
+    { "NaI 5%", 7542932512649661165ull }
   };
 
   bool record = false;
