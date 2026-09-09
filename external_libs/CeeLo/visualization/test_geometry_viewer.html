@@ -60,6 +60,8 @@
   <select id="configSelect"></select>
   <span id="configDesc"></span>
   <button id="resetBtn" onclick="viewer.resetCamera()">Reset View</button>
+  <label for="gdmlFile" style="margin-left:16px">Or load a .gdml:</label>
+  <input type="file" id="gdmlFile" accept=".gdml,.xml">
 </div>
 <div id="viewer"></div>
 
@@ -547,18 +549,74 @@ var CONFIGS = {
     <box name="WorldBox" x="92.000000" y="92.000000" z="262.000000" lunit="cm"/>
     <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
     <box name="SrcMaterialSolid" x="10.000000" y="15.000000" z="20.000000" lunit="cm"/>
-    <box name="SrcShieldOuterSolid0" x="10.400000" y="15.400000" z="20.400000" lunit="cm"/>
-    <box name="SrcShieldInnerSolid0" x="10.000000" y="15.000000" z="20.000000" lunit="cm"/>
-    <subtraction name="SrcShieldSolid0"><first ref="SrcShieldOuterSolid0"/><second ref="SrcShieldInnerSolid0"/></subtraction>
+    <box name="SrcShieldSolid0" x="10.400000" y="15.400000" z="20.400000" lunit="cm"/>
   </solids>
   <structure>
     <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <!-- The source region is a NESTED chain: the shield is a FULL box carrying the
+         cellulose fill as a daughter, which displaces its material.  Only the
+         outermost layer is placed in the world.  This replaced a pair of flat
+         siblings whose shield was an outer-minus-inner subtraction solid, with
+         the subtracted solid inflated 1e-4 cm so the two coincident faces did not
+         confuse GEANT4's navigator; nesting makes that shove unnecessary. -->
     <volume name="SrcMaterialLV"><materialref ref="Cellulose"/><solidref ref="SrcMaterialSolid"/></volume>
-    <volume name="SrcShieldLV0"><materialref ref="SS304"/><solidref ref="SrcShieldSolid0"/></volume>
+    <volume name="SrcShieldLV0"><materialref ref="SS304"/><solidref ref="SrcShieldSolid0"/>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/></physvol>
+    </volume>
     <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
       <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
-      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/><position x="0" y="0" z="-25.000000" unit="cm"/></physvol>
       <physvol name="SrcShieldPV0"><volumeref ref="SrcShieldLV0"/><position x="0" y="0" z="-25.000000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+  "13": {
+    label: 'Source cores: soil shell [2,3]cm, Fe core, Fe shield (G-D)',
+    source: null,
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0067"/></element>
+    <element name="O" formula="O" Z="8"><atom type="A" unit="g/mol" value="15.9994"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9815"/></element>
+    <element name="Si" formula="Si" Z="14"><atom type="A" unit="g/mol" value="28.0855"/></element>
+    <element name="Fe" formula="Fe" Z="26"><atom type="A" unit="g/mol" value="55.8450"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9898"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Soil" state="solid"><D type="density" unit="g/cm3" value="1.60000"/><fraction n="0.500000" ref="O"/><fraction n="0.350000" ref="Si"/><fraction n="0.100000" ref="Al"/><fraction n="0.050000" ref="Fe"/></material>
+    <material name="Fe" state="solid"><D type="density" unit="g/cm3" value="7.87400"/><fraction n="1.000000" ref="Fe"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="60.000000" y="60.000000" z="60.000000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.28318530717958623" aunit="rad" lunit="cm"/>
+    <sphere name="SrcCoreSolid0" rmin="0.000100" rmax="2.000000" startphi="0" deltaphi="6.28318530717958623" starttheta="0" deltatheta="3.14159265358979312" aunit="rad" lunit="cm"/>
+    <sphere name="SrcMaterialSolid" rmin="0.000000" rmax="3.000000" startphi="0" deltaphi="6.28318530717958623" starttheta="0" deltatheta="3.14159265358979312" aunit="rad" lunit="cm"/>
+    <sphere name="SrcShieldSolid0" rmin="0.000000" rmax="3.500000" startphi="0" deltaphi="6.28318530717958623" starttheta="0" deltatheta="3.14159265358979312" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <!-- Innermost first, because GDML needs a volume defined before the mother
+         that references it.  The iron core is a daughter of the emitting soil
+         shell, which is a daughter of the iron shield; each displaces its
+         mother's material, so what you see at a point is the innermost volume
+         containing it. -->
+    <volume name="SrcCoreLV0"><materialref ref="Fe"/><solidref ref="SrcCoreSolid0"/></volume>
+    <volume name="SrcMaterialLV"><materialref ref="Soil"/><solidref ref="SrcMaterialSolid"/>
+      <physvol name="SrcCorePV0"><volumeref ref="SrcCoreLV0"/></physvol>
+    </volume>
+    <volume name="SrcShieldLV0"><materialref ref="Fe"/><solidref ref="SrcShieldSolid0"/>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/></physvol>
+    </volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="SrcShieldPV0"><volumeref ref="SrcShieldLV0"/><position x="0" y="0" z="-5.000000" unit="cm"/></physvol>
     </volume>
   </structure>
   <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
@@ -899,6 +957,24 @@ function loadConfig(key) {
 
 select.addEventListener('change', function() {
   loadConfig(this.value);
+});
+
+// Load any GDML this build exports, e.g.
+//   cd build/examples && ./benchmark_mc_configs --config 12 --events 2000
+//   cd build/examples && ./sphere_g4_validation 1000 0.05 "GD_near"
+document.getElementById('gdmlFile').addEventListener('change', function(ev) {
+  var f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function() {
+    // A GDML carries no source POSITION (GPS puts that in the .mac), so drop any
+    //  marker left over from the previous config rather than showing a stale one.
+    viewer.sourcePosition = null;
+    viewer.loadGDML(reader.result);
+    viewer.setSourcePosition(null);
+    descEl.textContent = f.name;
+  };
+  reader.readAsText(f);
 });
 
 // Load first config

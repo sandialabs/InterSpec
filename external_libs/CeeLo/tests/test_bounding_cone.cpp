@@ -37,7 +37,7 @@ const Material& mat_Al()  { static Material m = make_Aluminum(); return m; }
 /// Bare 3"x3" NaI cylinder.
 Geometry cyl_bare() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     return g;
 }
 
@@ -45,7 +45,7 @@ Geometry cyl_bare() {
 /// hole, dead layer, and an Al can that makes the OUTER shell bigger than the crystal.
 Geometry cyl_full_featured() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_Ge(), {2.915, 6.89});
+    g.set_detector(&mat_Ge(), CylinderDims{2.915, 6.89});
     g.set_bullet_radius(0.8);
     g.set_bore_hole(0.5, 4.0);
     g.set_dead_layer(0.0005, 0.05, 0.05);
@@ -56,14 +56,14 @@ Geometry cyl_full_featured() {
 /// Square box (cubic-ish) detector.
 Geometry box_cubic() {
     Geometry g;
-    g.set_detector(DetectorShape::Box, &mat_NaI(), {2.5, 2.5, 5.0});
+    g.set_detector(&mat_NaI(), BoxDims{2.5, 2.5, 5.0});
     return g;
 }
 
 /// Strongly rectangular box - the case where an axisymmetric assumption would be wrong.
 Geometry box_rect() {
     Geometry g;
-    g.set_detector(DetectorShape::Box, &mat_NaI(), {4.0, 1.0, 3.0});
+    g.set_detector(&mat_NaI(), BoxDims{4.0, 1.0, 3.0});
     g.add_attenuator(&mat_Al(), 0.1, 0.1, -0.3, 3.4);
     return g;
 }
@@ -246,17 +246,17 @@ BOOST_AUTO_TEST_CASE(cone_covers_bulletized_bored_cylinder) {
 /// Extreme aspect ratios and the geometry features the first version of this test never built.
 /// These are where the axis search is hardest, so they are what a future change breaks first.
 BOOST_AUTO_TEST_CASE(cone_covers_extreme_shapes) {
-    Geometry needle;  needle.set_detector(DetectorShape::Cylinder, &mat_NaI(), {0.5, 20.0});
-    Geometry pancake; pancake.set_detector(DetectorShape::Cylinder, &mat_NaI(), {10.0, 0.5});
-    Geometry wafer;   wafer.set_detector(DetectorShape::Cylinder, &mat_NaI(), {8.0, 0.05});
+    Geometry needle;  needle.set_detector(&mat_NaI(), CylinderDims{0.5, 20.0});
+    Geometry pancake; pancake.set_detector(&mat_NaI(), CylinderDims{10.0, 0.5});
+    Geometry wafer;   wafer.set_detector(&mat_NaI(), CylinderDims{8.0, 0.05});
 
     Geometry round_bore;   // rounded bore tip - never exercised anywhere before
-    round_bore.set_detector(DetectorShape::Cylinder, &mat_Ge(), {2.915, 6.89});
+    round_bore.set_detector(&mat_Ge(), CylinderDims{2.915, 6.89});
     round_bore.set_bore_hole(0.6, 5.5, true);
     round_bore.set_bullet_radius(0.8);
 
-    Geometry blade; blade.set_detector(DetectorShape::Box, &mat_NaI(), {6.0, 0.2, 4.0});
-    Geometry bar;   bar.set_detector(DetectorShape::Box, &mat_NaI(), {0.4, 0.4, 12.0});
+    Geometry blade; blade.set_detector(&mat_NaI(), BoxDims{6.0, 0.2, 4.0});
+    Geometry bar;   bar.set_detector(&mat_NaI(), BoxDims{0.4, 0.4, 12.0});
 
     run_suite(needle,     "needle cylinder",   0.5,   20.0);
     run_suite(pancake,    "pancake cylinder",  10.0,   0.5);
@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(negative_dead_layer_stays_inside_the_cone) {
     for (const Cfg& c : {Cfg{"front -0.5", -0.5, 0.0, 0.0}, Cfg{"side -0.3", 0.0, -0.3, 0.0},
                          Cfg{"back -0.4", 0.0, 0.0, -0.4}, Cfg{"all negative", -0.2, -0.2, -0.2}}) {
         Geometry g;
-        g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+        g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
         g.set_dead_layer(c.front, c.side, c.back);
 
         for (const Eigen::Vector3d& src : {Eigen::Vector3d{0.0, 0.0, -60.0},

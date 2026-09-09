@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(max_events_terminates_at_count) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     SimulationConfig config;
@@ -67,7 +67,7 @@ BOOST_AUTO_TEST_CASE(fep_precision_converges) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     SimulationConfig config;
@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(wall_time_terminates) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     SimulationConfig config;
@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(cpu_time_terminates) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     SimulationConfig config;
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(cpu_time_reported_without_cap) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     SimulationConfig config;
@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(progress_callback_invoked) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     std::atomic<int> callback_count{0};
@@ -194,7 +194,7 @@ BOOST_AUTO_TEST_CASE(old_compute_still_works) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     auto result = calc.compute(662.0, 10000, 1);

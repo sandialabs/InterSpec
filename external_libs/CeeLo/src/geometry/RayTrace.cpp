@@ -44,29 +44,42 @@ constexpr double kTwoPi = 2.0 * 3.14159265358979323846;
 
 Geometry::Geometry() = default;
 
-void Geometry::set_detector(DetectorShape shape, const Material* material,
-                            const std::vector<double>& dimensions) {
-    shape_ = shape;
+// Redefining the crystal invalidates everything sized against the old one:
+// a fillet radius, bore or dead layer that no longer fits would otherwise
+// survive silently (a stale fillet leaves rho_c <= 0 with no diagnostic in
+// any build). Clear them all and make the caller re-declare what it wants.
+// The extents are zeroed too, so switching shape cannot leave, say, a radius
+// from a previous cylinder sitting behind a box.
+void Geometry::begin_crystal(const Material* material) {
     detector_material_ = material;
-
-    // Redefining the crystal invalidates everything sized against the old one:
-    // a fillet radius, bore or dead layer that no longer fits would otherwise
-    // survive silently (a stale fillet leaves rho_c <= 0 with no diagnostic in
-    // any build). Clear them all and make the caller re-declare what it wants.
     bullet_radius_ = 0.0;
     bore_hole_.reset();
     dead_layer_.reset();
+    radius_ = half_x_ = half_y_ = length_ = 0.0;
+}
 
-    if (shape == DetectorShape::Cylinder) {
-        assert(dimensions.size() >= 2);
-        radius_ = dimensions[0];
-        length_ = dimensions[1];
-    } else {
-        assert(dimensions.size() >= 3);
-        half_x_ = dimensions[0];
-        half_y_ = dimensions[1];
-        length_ = dimensions[2];
-    }
+void Geometry::set_detector(const Material* material, const CylinderDims& dims) {
+    begin_crystal(material);
+    shape_ = DetectorShape::Cylinder;
+    radius_ = dims.radius_cm;
+    length_ = dims.full_length_cm;
+}
+
+void Geometry::set_detector(const Material* material, const BoxDims& dims) {
+    begin_crystal(material);
+    shape_ = DetectorShape::Box;
+    half_x_ = dims.half_x_cm;
+    half_y_ = dims.half_y_cm;
+    length_ = dims.full_length_cm;
+}
+
+void Geometry::set_detector_from_dimensions_vector(
+        DetectorShape shape, const Material* material,
+        const std::vector<double>& dimensions_cm) {
+    if (shape == DetectorShape::Cylinder)
+        set_detector(material, cylinder_dims_from_vector(dimensions_cm));
+    else
+        set_detector(material, box_dims_from_vector(dimensions_cm));
 }
 
 // bore_fits() now lives in Geometry.h so GeometryDescriptor::problems() can

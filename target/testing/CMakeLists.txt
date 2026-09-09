@@ -400,9 +400,12 @@ add_test( NAME TCeeLoDrfIntegration
 
 # Volumetric (trace / self-attenuating) source efficiency against extended-source Monte-Carlo truth.
 #  The MC itself is a disabled generator that records a goldens bank; the enabled cases only read it,
-#  so this target does NOT run Monte Carlo.  Some rows are KNOWN-FAILING - they mark where the
-#  centre-ray attenuation model stops being adequate (see the file header); they are meant to go
-#  green as the per-ray kernel and survival-removal-mu work lands, not to be tuned away.
+#  so this target does NOT run Monte Carlo.  Two enabled passes over the bank: VolumetricNearFieldVsTruth
+#  on the element (reference) quadrature over all 144 rows, and VolumetricNearFieldVsTruthLinePath on
+#  the PRODUCTION line quadrature over a spanning subset.
+#  (The note that used to stand here about KNOWN-FAILING rows is retired: the per-ray kernel and the
+#  survival-removal-mu work it was waiting on both landed, and there is no expected_failures in this
+#  target any more.)
 add_executable( test_VolumetricNearField test_VolumetricNearField.cpp
                 VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
 target_link_libraries( test_VolumetricNearField PRIVATE InterSpecLib )
@@ -415,7 +418,8 @@ add_test( NAME TVolumetricNearField
 #  no Monte Carlo) plus developer-only rungs that compare against CeeLo MC at 0.25% through an on-disk
 #  cache (`--cachedir=`).  Shares VolumetricNearFieldHarness.h with test_VolumetricNearField.
 add_executable( test_VolumetricLadder test_VolumetricLadder.cpp
-                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h
+                VolumetricReferenceIntegrator.h )
 target_link_libraries( test_VolumetricLadder PRIVATE InterSpecLib )
 add_test( NAME TVolumetricLadder
   COMMAND $<TARGET_FILE:test_VolumetricLadder> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
@@ -427,7 +431,8 @@ add_test( NAME TVolumetricLadder
 #  feeds the cascade correction and the effective-shielding report, and those reports themselves.
 #  No Monte Carlo; seconds.  Shares VolumetricNearFieldHarness.h with the ladder.
 add_executable( test_VolumetricLinePath test_VolumetricLinePath.cpp
-                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h
+                VolumetricReferenceIntegrator.h )
 target_link_libraries( test_VolumetricLinePath PRIVATE InterSpecLib )
 add_test( NAME TVolumetricLinePath
   COMMAND $<TARGET_FILE:test_VolumetricLinePath> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}

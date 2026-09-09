@@ -508,6 +508,57 @@ BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
                           + std::to_string(gd.endcap_front_offset_cm())
                           + " cm != setback " + std::to_string(setback) + " cm" );
 
+    // The crystal-dimension convention itself.  Nothing else here would catch a
+    //  half/full swap: the descriptor would still build, still report no
+    //  problems, and only show up as a systematically wrong efficiency.
+    //
+    //  Both sides are already plain cm - GadrasDetectorDat stores cm and
+    //  buildGadrasGeometry applies no PhysicalUnits factor - so these compare
+    //  directly, with no division by PhysicalUnits::cm.
+    //
+    //  Referenced against the raw Detector.dat values rather than a second
+    //  inferShape() call: buildGadrasGeometry passes a material-name override
+    //  that this test cannot see, and inferShape() branches on it, so re-running
+    //  it here could disagree with the code under test and fail spuriously.
+    //  Every inferShape() branch is axially dat.length(), and every box branch
+    //  is dat.width() transversely, so these hold whichever branch was taken.
+    if( gd.shape == ceelo::DetectorShape::Cylinder )
+    {
+      const ceelo::CylinderDims dims = gd.cylinder_dims();
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.radius_cm,
+                                         dat.equivalentCircularDiameterCm(), 1.0e-3 ),
+                          string(e.dir) + ": crystal diameter "
+                          + std::to_string(2.0*dims.radius_cm) + " cm != equal-area "
+                          + std::to_string(dat.equivalentCircularDiameterCm()) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( dims.full_length_cm, dat.length(), 1.0e-3 ),
+                          string(e.dir) + ": crystal length "
+                          + std::to_string(dims.full_length_cm)
+                          + " cm != Detector.dat length "
+                          + std::to_string(dat.length()) + " cm" );
+    }else
+    {
+      // Rectangular carries a real height; Box is square by construction, so
+      //  its second transverse extent is the width again.
+      const bool rectangular = (std::fabs(dat.heightToWidth() - 1.0f) > 0.01f);
+      const double expect_height = rectangular ? dat.height() : dat.width();
+
+      const ceelo::BoxDims dims = gd.box_dims();
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.half_x_cm, dat.width(), 1.0e-3 ),
+                          string(e.dir) + ": crystal width "
+                          + std::to_string(2.0*dims.half_x_cm)
+                          + " cm != Detector.dat width "
+                          + std::to_string(dat.width()) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.half_y_cm, expect_height, 1.0e-3 ),
+                          string(e.dir) + ": crystal height "
+                          + std::to_string(2.0*dims.half_y_cm)
+                          + " cm != expected " + std::to_string(expect_height) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( dims.full_length_cm, dat.length(), 1.0e-3 ),
+                          string(e.dir) + ": crystal length "
+                          + std::to_string(dims.full_length_cm)
+                          + " cm != Detector.dat length "
+                          + std::to_string(dat.length()) + " cm" );
+    }
+
     // Each synthesized attenuator must carry the file's areal density exactly.
     for( const ceelo::LayerSpec &layer : gd.layers )
     {
@@ -656,28 +707,42 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
 
-  // name -> hash, re-recorded 2026-08-29 (--record-gadras-hashes), when `applyGadrasDat` began
-  //  recording the crystal geometry on the DRF and attaching a measured-curve transfer response to
-  //  it.  Both feed computeHash(), so every shipped detector that HAS an Efficiency.csv and a
-  //  usable geometry changed hash - deliberately: they answer off-axis and near-field now.
+  // name -> hash, re-recorded 2026-09-06 (--record-gadras-hashes), for the FEP-window narrowing in
+  //  "Work bringing CeeLo det response into Act/Shield fit": the MC/kernel full-energy-peak window
+  //  went from a hard-coded 1.5 keV to `kDefaultFepWindowKeV` = 0.75 keV.  A narrower window credits
+  //  less in-window Compton, so the curve-transfer response each of these DRFs carries has slightly
+  //  different LnEta and LnB grids - at most 0.139% (max |d ln| = 1.4e-3), largest at low energy and
+  //  down to ~1e-5 by the top of the range - and its provenance gained fepWindowKeV.  Those are the
+  //  ONLY three things that changed in the serialized response; verified by diffing the response XML
+  //  either side of that commit.  DetectorResponse::content_hash() is a hash of that XML and
+  //  computeHash() folds it in, so the DRF hash moved with it.
   //
-  //  "HPGe 40%" is the one entry that did NOT change: its Detector.dat states a zero crystal length
-  //  (parameter 10), so no geometry can be built for it and it keeps the flat-disk treatment.  If
-  //  that data file is ever corrected, this hash moves too.
+  //  Note what that means: a response-content change moves DRF IDENTITY, which parent-hash lineage
+  //  is matched on.  computeHash() works hard to keep legacy hashes stable (see the "only hash when
+  //  present" guards), but a CeeLo response is hashed in full whenever one is attached, so any
+  //  future change to the response kernel lands here again.
+  //
+  //  Previously re-recorded 2026-08-29, when `applyGadrasDat` began recording the crystal geometry
+  //  on the DRF and attaching a measured-curve transfer response to it - deliberately: they answer
+  //  off-axis and near-field now.
+  //
+  //  "HPGe 40%" is the one entry that never changes: its Detector.dat states a zero crystal length
+  //  (parameter 10), so no geometry can be built for it, it carries no CeeLo response, and it keeps
+  //  the flat-disk treatment.  If that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 12999987909897955040ull },
-    { "HPGe 20%", 15942574301746852451ull },
+    { "HPGe 10%", 7372553335873334779ull },
+    { "HPGe 20%", 16196536323127818931ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 3405271502809736741ull },
-    { "LaBr 5%", 9533508627378423206ull },
-    { "NaI 10%", 12710450218362030861ull },
-    { "NaI 12%", 13838579886097982910ull },
-    { "NaI 1x1", 9444249551207657343ull },
-    { "NaI 25%", 14359049774689294627ull },
-    { "NaI 2x2", 17708187484627074873ull },
-    { "NaI 30%", 3282691297936797345ull },
-    { "NaI 3x3", 12212646696940897187ull },
-    { "NaI 5%", 7940542305173954851ull }
+    { "LaBr 10%", 234978438008986273ull },
+    { "LaBr 5%", 17974260579841392545ull },
+    { "NaI 10%", 10907454414227762381ull },
+    { "NaI 12%", 15349155559717898211ull },
+    { "NaI 1x1", 12632028037909424196ull },
+    { "NaI 25%", 234010201361425340ull },
+    { "NaI 2x2", 6561580901340824291ull },
+    { "NaI 30%", 11940533889697376263ull },
+    { "NaI 3x3", 18345639359501764784ull },
+    { "NaI 5%", 14935417445942686416ull }
   };
 
   bool record = false;

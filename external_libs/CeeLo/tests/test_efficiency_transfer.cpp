@@ -52,7 +52,7 @@ const Material& mat_Al()  { static Material m = make_Aluminum(); return m; }
 // Bare 3"x3" NaI cylinder for the standalone (live-mu) transfer tests.
 Geometry bare_nai_3x3() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     return g;
 }
 
@@ -60,7 +60,7 @@ Geometry bare_nai_3x3() {
 // scatter-in the recapture term credits.
 Geometry hpge_with_passive() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_Ge(), {3.4, 5.5});
+    g.set_detector(&mat_Ge(), CylinderDims{3.4, 5.5});
     g.set_dead_layer(0.07, 0.07, 0.0);
     g.add_attenuator(&mat_Al(), 0.15, 0.10, -0.5, 6.0);
     return g;
@@ -69,8 +69,7 @@ Geometry hpge_with_passive() {
 // A NaI 3"x3" + 0.5 mm Al can descriptor for the DetectorResponse producer.
 GeometryDescriptor nai3x3_descriptor() {
     GeometryDescriptor gd;
-    gd.shape = DetectorShape::Cylinder;
-    gd.dimensions_cm = {3.81, 7.62};
+    gd.set_dimensions(CylinderDims{3.81, 7.62});
     gd.materials = {MaterialSpec::from(make_NaI()),
                     MaterialSpec::from(make_Aluminum())};
     gd.crystal_material_index = 0;

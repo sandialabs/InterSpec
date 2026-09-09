@@ -78,14 +78,14 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_bare_nai) {
 
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_full.enable_fep_only_mode(false);
     auto res_full = calc_full.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_fep.enable_fep_only_mode(true);
     auto res_fep = calc_fep.compute(precision_config(662.0));
@@ -127,7 +127,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_with_attenuator) {
 
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_full.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_full.enable_fep_only_mode(false);
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_with_attenuator) {
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_fep.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_fep.enable_fep_only_mode(true);
@@ -177,7 +177,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_with_source_shield) {
 
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_full.add_source_shield(&pb, 0.05);  // 0.5mm Pb shield
     calc_full.enable_fep_only_mode(false);
@@ -185,7 +185,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_with_source_shield) {
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_fep.add_source_shield(&pb, 0.05);
     calc_fep.enable_fep_only_mode(true);
@@ -225,7 +225,7 @@ BOOST_AUTO_TEST_CASE(fep_only_is_faster) {
 
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_full.enable_fep_only_mode(false);
 
@@ -236,7 +236,7 @@ BOOST_AUTO_TEST_CASE(fep_only_is_faster) {
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_fep.enable_fep_only_mode(true);
 
@@ -253,14 +253,14 @@ BOOST_AUTO_TEST_CASE(fep_only_low_energy) {
 
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_full.enable_fep_only_mode(false);
     auto res_full = calc_full.compute(precision_config(100.0));
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_fep.enable_fep_only_mode(true);
     auto res_fep = calc_fep.compute(precision_config(100.0));
@@ -317,7 +317,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_near_field) {
     for (const NearGeom& g : geoms) {
         EfficiencyCalculator calc_full;
         calc_full.set_fep_window_keV(kTestFepWindowKeV);
-        calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc_full.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
         calc_full.set_point_source(g.src);
         calc_full.enable_fep_only_mode(false);
@@ -325,7 +325,7 @@ BOOST_AUTO_TEST_CASE(fep_matches_full_mode_near_field) {
 
         EfficiencyCalculator calc_fep;
         calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-        calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc_fep.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
         calc_fep.set_point_source(g.src);
         calc_fep.enable_fep_only_mode(true);
@@ -375,14 +375,14 @@ BOOST_AUTO_TEST_CASE(fep_early_kill_matches_full_mode_multi_energy) {
 
         EfficiencyCalculator calc_full;
         calc_full.set_fep_window_keV(kTestFepWindowKeV);
-        calc_full.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc_full.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         calc_full.enable_fep_only_mode(false);
         auto res_full = calc_full.compute(precision_config(E, 0.0025));
 
         EfficiencyCalculator calc_fep;
         calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-        calc_fep.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc_fep.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         calc_fep.enable_fep_only_mode(true);
         auto res_fep = calc_fep.compute(precision_config(E, 0.0025));
@@ -426,14 +426,14 @@ BOOST_AUTO_TEST_CASE(fep_early_kill_czt) {
     // 200 keV: Te/Cd fluorescence cascade escape is significant in thin CZT
     EfficiencyCalculator calc_full;
     calc_full.set_fep_window_keV(kTestFepWindowKeV);
-    calc_full.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.25});
+    calc_full.set_detector(&czt, BoxDims{0.5, 0.5, 0.25});
     calc_full.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
     calc_full.enable_fep_only_mode(false);
     auto res_full = calc_full.compute(precision_config(200.0, 0.0025));
 
     EfficiencyCalculator calc_fep;
     calc_fep.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fep.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.25});
+    calc_fep.set_detector(&czt, BoxDims{0.5, 0.5, 0.25});
     calc_fep.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
     calc_fep.enable_fep_only_mode(true);
     auto res_fep = calc_fep.compute(precision_config(200.0, 0.0025));

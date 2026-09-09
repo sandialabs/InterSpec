@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(csda_reduces_fep_at_high_energy)
     EfficiencyCalculator calc_local, calc_csda;
 
     for (auto* calc : {&calc_local, &calc_csda}) {
-        calc->set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc->set_detector(&nai, CylinderDims{3.81, 7.62});
         calc->set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     }
     calc_local.enable_electron_csda(false);
@@ -289,7 +289,7 @@ BOOST_AUTO_TEST_CASE(csda_small_effect_at_low_energy)
 
     EfficiencyCalculator calc_local, calc_csda;
     for (auto* calc : {&calc_local, &calc_csda}) {
-        calc->set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc->set_detector(&nai, CylinderDims{3.81, 7.62});
         calc->set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     }
     calc_local.enable_electron_csda(false);
@@ -316,7 +316,7 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_invariant_holds_with_csda)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.enable_electron_csda(true);
 
@@ -436,7 +436,7 @@ BOOST_AUTO_TEST_CASE(brems_photons_emitted_at_high_energy)
     Material nai = make_NaI();
 
     Geometry geometry;
-    geometry.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geometry.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     std::mt19937_64 rng(12345);
     // Start inside the crystal (z=0 is front face, crystal extends to z=7.62)
@@ -465,7 +465,7 @@ BOOST_AUTO_TEST_CASE(no_brems_at_low_energy)
     Material nai = make_NaI();
 
     Geometry geometry;
-    geometry.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geometry.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     std::mt19937_64 rng(42);
     Eigen::Vector3d pos(0, 0, 3.81);
@@ -486,7 +486,7 @@ BOOST_AUTO_TEST_CASE(moliere_walk_produces_spread)
     Material nai = make_NaI();
 
     Geometry geometry;
-    geometry.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geometry.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     std::mt19937_64 rng(99);
     Eigen::Vector3d pos(0, 0, 3.81);

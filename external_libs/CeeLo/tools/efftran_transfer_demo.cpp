@@ -66,15 +66,13 @@ GeometryDescriptor preset_descriptor(const std::string& name,
     GeometryDescriptor gd;
     if (name == "czt") {
         // Bare 1x1x0.5 cm CZT box.
-        gd.shape = DetectorShape::Box;
-        gd.dimensions_cm = {0.5, 0.5, 0.5};
+        gd.set_dimensions(BoxDims{0.5, 0.5, 0.5});
         gd.materials = {MaterialSpec::from(make_CZT())};
         gd.crystal_material_index = 0;
         energies_keV = {59.5, 122.0, 356.0, 662.0};
     } else {
         // NaI 3"x3" + 0.5 mm Al can.
-        gd.shape = DetectorShape::Cylinder;
-        gd.dimensions_cm = {3.81, 7.62};
+        gd.set_dimensions(CylinderDims{3.81, 7.62});
         gd.materials = {MaterialSpec::from(make_NaI()),
                         MaterialSpec::from(make_Aluminum())};
         gd.crystal_material_index = 0;

@@ -200,7 +200,7 @@ interpretation and can be corrected.
 
 ### Geometry
 
-- **Detector shapes**: Cylinder and box. Defined by dimensions (radius+length or x/y/z half-widths). Crystal front face at z=0, extends along +z.
+- **Detector shapes**: Cylinder and box. Declared with `set_detector(material, CylinderDims{radius, full_length})` or `set_detector(material, BoxDims{half_x, half_y, full_length})` -- transverse extents are HALVES, the axial extent is the FULL crystal length. That mix is deliberate and is what `GeometryDescriptor::dimensions_cm` serializes; the convention is stated once, in the CRYSTAL DIMENSION CONVENTION block of `src/geometry/Geometry.h`, and nowhere else. (Sources are a separate, uniformly half-extent convention -- `half_length`, `half_dims`.) Crystal front face at z=0, extends along +z.
 
 - **Bulletized (rounded) front edge**: HPGe crystals are usually *bulletized* -- the outer front edge is a quarter-torus fillet rather than a sharp 90° corner (ANGLE `.outx` files call it `bulletizingRadius`). `set_bullet_radius(r_b)` turns it on for cylinders; 0 (the default) is a sharp edge. The fillet's ring circle has radius `rho_c = R - r_b` and lies in the plane `z = r_b`, tangent to the front face and to the side wall. Removed material, by Pappus: `V = 2 pi rho_c r_b^2 (1 - pi/4) + pi r_b^3 / 3` (1.28% of the crystal for the GEM35-70 example: R=2.915, L=6.89, r_b=0.8 cm).
 
@@ -216,7 +216,7 @@ interpretation and can be corrected.
 
 - **Stored geometry (`GeometryDescriptor`)**: the serializable form of all of the above, and the only thing a saved response carries -- `build_geometry()` (and `ResponseGenerator::configure_calculator()`) replay it onto a `Geometry` / `EfficiencyCalculator`. It holds `bullet_radius_cm` alongside `dimensions_cm`, and the rounded-tip flag inside its `BoreHoleConfig`. Both are written to XML only when non-default (`bulletRadius` on `<Detector>`, `roundedTip` on `<Bore>`), so responses for sharp-edged, flat-bored crystals keep their exact bytes and `content_hash`; a reader that predates the attributes, or a file that predates them, defaults to sharp-and-flat, which is what those crystals actually were. `sm_xmlSerializationVersion` is deliberately **not** bumped for such purely additive attributes -- the only version logic is a range check, so a higher version would be rejected outright by existing builds instead of degrading gracefully.
 
-  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
+  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector_from_dimensions_vector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
 
 - **Attenuators** (detector shielding): Cup-shaped shells around the crystal, added via `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`. These are concentric -- each layer wraps around the previous. Attenuators are part of the detector geometry and are always traversed in ray tracing.
 
@@ -292,6 +292,36 @@ to the same value and dropping these pins together.
 - **Full mode** (default): Tracks all photon interactions through attenuators and crystal. Electron CSDA with bremsstrahlung. Gives both FEP and total efficiency, plus pulse-height spectrum.
 
 - **FEP-only mode**: Full MC transport inside the scoring crystal (same Compton/PE/fluorescence physics as full mode), but uses importance-weighted stochastic Rayleigh through non-scoring segments (attenuators, source shielding) -- treating Compton/PE as absorption and only sampling Rayleigh scattering. Photons that exit the crystal boundary are immediately killed (can't contribute to FEP). Faster than full mode but only computes FEP efficiency (no spectrum or total efficiency).
+
+### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
+
+`src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
+crystal, for hosts that integrate an EXTENDED source. The per-element kernel
+(`eps_fep_element`, Eq. 5) integrates over source points and, at each, over a fan
+of rays toward the crystal; reversing the order of integration gives an integral
+over lines parameterised on the DETECTOR side by a hull point `x` and a direction
+`w`, with the etendue measure `dA |w·n| dΩ` — the same number, since
+`dV dΩ = dA |w·n| dΩ ds`.
+
+Why that helps: everything on the detector side of a line (hull point, direction,
+the material segments through endcap / dead layer / crystal) depends on neither
+the source nor the energy, so one line set serves every energy and every
+iteration of a fit, and the source integral along each line is analytic for a
+uniform source. `build_etendue_lines` samples hull point and direction from a
+4-D Halton set (`src/io/LowDiscrepancy.h`) aimed at a target sphere;
+`sample_hull_points` + `append_etendue_line` are the two halves, so a host with a
+better direction proposal (aimed at its own source solid, say) composes them
+itself. `line_interaction_probabilities` (live cross sections) and
+`DetectorResponse::fep_line_probabilities` (stored mu tables) give the per-line
+kernel, parallel to the rays.
+
+Directions that do not leave the hull, and lines with no active-crystal chord,
+are dropped WITHOUT renormalising — they are counted in `n`, which is what keeps
+the estimator unbiased. Validated in `tests/test_detector_etendue.cpp` against
+the per-point aperture kernel (transparent sphere sources, cylinder and box
+crystals, on and off axis: within ~0.4% at 2^16 lines) and against the analytic
+hull measure. InterSpec's volumetric Activity/Shielding fit is the first
+consumer.
 
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 
@@ -470,6 +500,27 @@ The simulation distinguishes two separate geometry systems:
 - **Hollow / annular cylinder** (`set_cylindrical_source(..., inner_radius>0)`): tube/pipe/ring with a non-attenuating central bore. Annular sampler `r = √(r_in²+(r_out²−r_in²)U)`; `source_material_path` charges only the annulus (subtracts the bore). `inner_radius = 0` reduces bit-identically to the solid cylinder.
 - **Hollow rectangular box shell** (`set_rectangular_source(..., inner_half_dims)`): crate/container walls — outer box minus a centered inner void box (same rotation, non-attenuating). Rejection sampler over the outer-box proposal (acceptance `1 − Vi/Vo`); `source_material_path` subtracts the void chord (`box_shell_path`); GDML fill exports as a box subtraction solid. All-zero `inner_half_dims` reduces bit-identically to the solid box. See `tests/test_hollow_box_source.cpp`; pipe-modeling conventions (contents vs wall, side-on shield composition) in `tests/test_pipe_source.cpp`.
 - **CylinderEndOn vs CylinderSideOn** (InterSpec orientations) are set by the `set_cylindrical_source` rotation: **EndOn** = identity (cylinder axis ∥ detector axis, the default); **SideOn** = 90° about y, `R = [[0,0,1],[0,1,0],[-1,0,0]]` (local-z ← detector-x, detector views the curved side).
+- **Source cores** (`add_source_core`, `EfficiencyCalculator::add_source_core`): attenuating
+  layers filling **inward** from a hollow source's inner surface, the mirror of
+  `add_source_shield()`, given **outermost first**. Cores never emit and never change the
+  source volume or the per-emitted-photon normalization; they only attenuate. Whatever is
+  left at the centre stays a genuine non-attenuating void. Without them a source shell
+  around a dense object over-reported: the far half of the shell was not shadowed at all.
+  This is what lets CeeLo express InterSpec's Activity/Shielding model, whose analytic path
+  has always allowed a source shell that is not the innermost layer.
+- **One stored layer stack.** Cores, the emitting shell and shields are the same thing
+  geometrically, and `SourceGeometry` stores them as a single **innermost-first**
+  `std::vector<SourceLayer>` (`layers()`), each entry carrying the outer boundary of the
+  region its material fills; a null material is a void. "Core" and "shield" name only which
+  side of `source_layer_index()` a layer sits on. The ray march walks that vector directly
+  and **the GDML export emits that same vector**, so the traced geometry and the validated
+  geometry cannot describe different scenes. An attenuating interior makes segment ORDER
+  load-bearing (`transport_source_photon_impl` places an interaction by accumulating segment
+  lengths, so a merged near-wall/far-wall segment would place a far-wall interaction short by
+  the whole cavity chord), so those sources take an ordered concentric ray march; with
+  nothing attenuating inside the source, the original closed-form per-shape path runs
+  unchanged, and `has_attenuating_interior()` is a cached bool because it is read once per
+  Molière substep.
 - **Trace vs self-attenuating** are not separate shapes — see `set_source_material` doc: efficiency depends only on the spatial distribution (uniform / exponential-depth) + self-attenuating medium; InterSpec's per-cm³/g/m² concentration and mass-fraction are downstream activity normalization (Bq×volume) that does not affect efficiency.
 
 The photon's journey: source emission point -> source material -> source shields -> air gap -> detector attenuators -> crystal. In full mode, source geometry uses analog MC transport (`transport_source_photon()`); in FEP-only mode, it uses stochastic Rayleigh weighting (`compute_transmission_fep_only()`). The detector geometry always uses full ray tracing and segment-by-segment transport.
@@ -522,6 +573,27 @@ source ~/install/GEANT4-11.4.0/bin/geant4.sh
 #    (written by `benchmark_mc_configs --config N --precision p`).
 python3 ../../profiling/compare_validation.py
 ```
+**The exported source region is NESTED**, GEANT4's native idiom: each source volume is a
+*full* solid (ball / tube / box) at its own outer boundary, carrying the next one in as a
+daughter at its own origin, with only the outermost placed in the world. A daughter displaces
+its mother's material exactly, so there are **no hollow solids, no boolean subtractions and
+no coincident-surface epsilon** anywhere in the source region — a point on a mother/daughter
+face is unambiguous to the navigator, where a point on the shared face of two *siblings* is
+not. It is also what keeps `/gps/pos/confine SrcMaterialPV` sampling the emitting shell
+alone even when the shell is cored: `G4SPSPosDistribution::IsSourceConfined()` locates the
+point with `LocateGlobalPointAndSetup()`, which returns the **deepest** volume containing it,
+so anything inside a core daughter is rejected automatically. Verified against GEANT4 — see
+the source-core rows below. (Marinelli is the exception: an L-shaped fill on absolute
+z-planes is not a concentric stack, so it keeps its four-tubes-per-layer decomposition.)
+
+**Sphere angles are written at full precision on purpose.** `deltatheta` printed as
+`3.1415927` *exceeds* π by 4.6e-8 rad, which makes a `G4Sphere` wrap past the pole and
+self-overlap: GEANT4 then reports "Likely geometry overlap" and pushes the track to get
+unstuck — 33 pushes per 20k events, versus 0 with exact values. Measured at 6M events per
+arm the pushes did not bias the result (FEP −0.42%, z = −0.95; total −0.04%, z = −0.16), so
+references generated before the fix remain valid, but do not generate new ones on a geometry
+that needs rescuing.
+
 Output CSV columns: `energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events`.
 Macros carry a `/run/beamOn <N>` line set by `--macro-events`; `sed` it to change the count without
 re-exporting.
@@ -575,25 +647,45 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 
 | Config | Detector | Attenuator | Source | FEP agreement | Total agreement |
 |--------|----------|------------|--------|---------------|-----------------|
-| 1 | 3"x3" NaI | bare | point, 10cm on-axis | ≤ 0.6% | ≤ 0.6% |
-| 2 | 3"x3" NaI | 1mm Al | point, 10cm on-axis | ≤ 0.8% | ≤ 0.5% |
-| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.9% (<1 MeV); +0.8 to +1.5% ≥1 MeV (LaBr3 residual, TODO.md) | ≤ 0.5% |
-| 5 | 1x1x0.5cm CZT | bare | point, 5cm on-axis | ≤ 1.4% (30-1500 keV; e⁻-escape deficit resolved Aug 2026) | ≤ 0.7% |
-| 6 | 3"x3" NaI | bare | point, 15cm 45deg off-axis | ≤ 1.6% | ≤ 0.5% |
-| 7 | 3"x3" NaI | 1mm Al + 2mm Pb | point, 15cm on-axis | ≤ 0.6% (≥ 200 keV) | ≤ 0.6% (≥ 200 keV)*** |
-| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 0.8% (≥ 100 keV); −2.3% @ 59* | ≤ 0.8%* |
-| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.4% (200-3000)** | ≤ 0.5%** |
-| 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.6% (≥ 200 keV); −2.5% @ 59 |
-| 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.6% |
-| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.0% | ≤ 0.3%† |
-| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | −0.4% @122; −2.1% @88, −8.5% @60‡ | −0.5% @122‡ |
-| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | −0.2% @122; −1.3% @88, −8.6% @60‡ | −0.3% @122‡ |
+| 1 | 3"x3" NaI | bare | point, 10cm on-axis | ≤ 0.6% | ≤ 0.5% |
+| 2 | 3"x3" NaI | 1mm Al | point, 10cm on-axis | ≤ 0.4% | ≤ 0.5% |
+| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.8%; +0.7% @2000, +0.6% @3000 (LaBr3 residual, TODO.md)§ | ≤ 0.4% |
+| 5 | 1x1x0.5cm CZT | bare | point, 5cm on-axis | ≤ 0.8% (≤ 800 keV); −1.5% @1000, −2.5% @1500 (G4-reference-limited, \|z\| ≤ 1.7) | ≤ 0.5% |
+| 6 | 3"x3" NaI | bare | point, 15cm 45deg off-axis | ≤ 0.5% | ≤ 0.8% |
+| 7 | 3"x3" NaI | 1mm Al + 2mm Pb | point, 15cm on-axis | ≤ 0.8% (≥ 200 keV) | ≤ 0.5% (≥ 200 keV)*** |
+| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 0.9% (≥ 100 keV); −1.6% @ 59* | ≤ 0.6%* |
+| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.5% (100-3000)** | ≤ 0.8%** |
+| 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.4% (≥ 200 keV); −3.2% @ 59 |
+| 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 0.5% | ≤ 0.4% |
+| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.4%† |
+| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | +0.9% @122; SKIP @60/88‡ | +0.1% @122‡ |
+| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +1.0% @122; SKIP @60/88‡ | −0.1% @122‡ |
 
-**Measured Aug 2026** against the committed GEANT4 references, from
-`tests/data/ceelo_reference/` regenerated at ~0.3% precision on the EPICS2023
-photon data **after the Aug 2026 crystal-electron-walk fixes** (path-consistent
-Highland + Bohr straggling + step-budget guard; `studies/high_e_fep/FINDINGS.md`).
-A few tenths of a percent of every entry is Monte Carlo statistics.
+**Measured Sep 7 2026** against the committed GEANT4 references, from
+`tests/data/ceelo_reference/` regenerated on the EPICS2023 photon data, after the
+Aug 2026 crystal-electron-walk fixes (path-consistent Highland + Bohr straggling +
+step-budget guard; `studies/high_e_fep/FINDINGS.md`).
+
+**These rows are tighter than the Aug 2026 set because the precision target now
+means what it says.** `TerminationConfig`'s FEP and total targets used to stop the
+run independently, so asking for 0.3% on both stopped at whichever converged first
+— always `total`, the larger efficiency — and left FEP short. Across the previous
+reference set FEP relative precision was a **median 1.44x worse than total**, and
+worse than 2x on 29 of 122 rows. Requiring *all* requested targets took the rows
+above 0.35% FEP from **62/122 to 1** (config 7 @ 100 keV, capped at `max_events`
+and already a SKIP). Most entries in the table therefore *improved* — the old
+numbers carried MC noise on top of the physics.
+
+§ **The LaBr3 residual is narrower than the old table implied.** The previous
+entry read "+0.8 to +1.5% ≥1 MeV"; at 1000 / 1173 / 1332 keV config 3 now runs
++0.27 / +0.03 / −0.10%, so that band was largely statistics. What survives is the
+≥2 MeV structure the TODO item describes: **+0.72% (z 2.3) @2000 and +0.63%
+(z 1.9) @3000**. Those z-scores are *lower* than the +4.0 / +2.6 quoted in
+TODO.md only because that item was measured in a dedicated 0.16%-precision study,
+not at the 0.3% these reference rows carry — the deltas agree, so the item stands.
+
+A per-energy comparison of every configuration, with both sides' 1-sigma
+uncertainties and z-scores, is in `scratch/20260907_CeeLo_G4_comp.md`.
 
 **Configs 25/26 are a matched pair** (added Aug 2026 with bulletization support):
 the same GEM35-70 HPGe coax with a sharp and a bulletized front edge, 4M
@@ -718,8 +810,54 @@ void-center soil shell [2,3] cm + Fe(0.5) — at near (~2 cm gap) and far (~50 c
 Vacuum world. G4 = 4M-event isotropic GPS volume source.
 
 - **FEP agrees across all geometries/energies**: |z| ≤ 1.4 at 238.6/583/911 keV (e.g. G-A FEP z = −0.5/0.4/0.7; G-B/G-C within ±1.5). FEP is the priority metric and validates the geometry, sampling, and self-attenuation path. (G-A FEP at 2614 keV was −4.2%, z≈−3.3 on the pre-Aug-2026 engine — then attributed to the high-energy electron-transport family, amplified by the thick high-Z source, not geometry. The crystal-side share of that family is fixed (see Known Limitations); the sphere anchors have not been re-run since.)
-- **Low-Z trace-source totals agree**: G-B and G-C total efficiency match G4 to ≲1.5% (|z| mostly ≤2) across 238.6–2614 keV — validates the trace + void-center-shell geometry and shielding.
+- **Low-Z trace-source totals agree**: G-B and G-C total efficiency match G4 to ≲1.5% (|z| mostly ≤2) across 238.6–2614 keV — **these June 2026 numbers were taken at a 1.5 keV FEP window and with `enable_source_electron_transport` OFF** (the harness never set it, unlike every config in `bench_configs.h`), which cost several percent of TOTAL above the 1022 keV pair-production threshold. Directly measured on G-C at 2614 keV, enabling the channel moved total from −2.33% (z = −13.4) to −0.63% (z = −3.6), so it is the likely dominant cause of G-A's −4.0% at that energy too — though G-A has not been re-run, and the high-energy electron-transport family noted above may also contribute there. Re-measured Sep 2026 with the channel on and a 0.75 keV window, G-C's total agrees to ≤0.74% (see the source-core section below) — validates the trace + void-center-shell geometry and shielding.
 - **High-Z self-attenuating total is low**: G-A (Thorium) total is **−22% / −4.1% / −2.6%** at 238.6/583/911 keV — the source-material **K-fluorescence** that is not emitted (Th Kα ≈90/93 keV escaping the source), confirmed by the G4 histogram and FEP-clean. See Known Limitations. (G-A 2614 keV total −4.0% was measured pre-Aug-2026-fix; see the FEP note above.)
+
+### Source cores — attenuating layers inside a hollow source (Sep 2026)
+
+`add_source_core()` fills a hollow source's interior with attenuating layers (the mirror of
+`add_source_shield()`), so the emitting shell no longer has to be the innermost layer.
+Validated against GEANT4 with three new geometries at the NEAR distance, all with an **iron**
+core (Z=26: its K X-rays reabsorb within microns, so TOTAL stays judgeable, unlike the
+high-Z missing-K-fluorescence channel below), plus **G-C as the uncored control**:
+
+- **G-D** — G-C's soil shell [2,3] cm with the centre filled by Fe, + Fe(0.5) shield
+- **G-F** — closed-cavity **cylinder** (R=3/hz=3, cavity r=2/hz=2), soil + Fe core
+- **G-G** — **box** shell (half-dims 3 cm, cavity 2 cm), soil + Fe core
+
+16M isotropic G4 events per energy, CeeLo precision-targeted to 0.2% **on FEP**, both sides
+scoring `kDefaultFepWindowKeV`, vacuum world, source-electron transport enabled.
+
+| Config | FEP agreement | Total agreement |
+|--------|---------------|-----------------|
+| G-C (uncored control) | −0.55 to +0.08% (\|z\| ≤ 2.3) | −0.63 to +0.74% (\|z\| ≤ 3.6) |
+| G-D cored sphere | −0.30 to +0.19% (\|z\| ≤ 1.0) | −0.00 to +0.39% (\|z\| ≤ 1.6) |
+| G-F cored cylinder | −0.12 to +0.09% (\|z\| ≤ 0.5) | −0.14 to +0.47% (\|z\| ≤ 2.4) |
+| G-G cored box | −0.74 to +0.03% (\|z\| ≤ 2.7) | −0.36 to +0.26% (\|z\| ≤ 1.8) |
+
+Largest deviation over all 16 (case, energy) rows and both metrics: **0.74%**. The cored
+geometries are as accurate as the uncored control at every energy. The z-scores exceed 2 on a
+few rows only because the precision is now high; every delta is sub-1%.
+
+**The effect being measured is large**, which is what makes a missing or mis-sized core
+obvious rather than subtle: the iron core removes 18.4 / 15.3 / 13.9 / 10.6% of the peak at
+238.6 / 583.2 / 911.2 / 2614.5 keV (G-D vs G-C, CeeLo).
+
+**Two export controls, both passing.** They exist because the GEANT4 geometry is generated by
+CeeLo, so a bad export would look like a transport bug:
+- **G-E, self-core vs solid.** A shell cored with its OWN material is optically identical to a
+  solid ball but emits only from the shell, so ε(G-E)/ε(G-Esolid) is *not* 1 — and both codes
+  must agree on it. FEP ratio CeeLo 1.0330 ± 0.0028 vs G4 1.0354 ± 0.0022 (z = −0.66), with
+  the G4 ratio **16.3σ from 1.0000**, the value GPS confinement leaking into the core would
+  give. (The naive form of this test — expecting the two *geometries* to agree — cannot work,
+  because their emission regions differ.)
+- **G-Eadd, additivity.** One 2 cm core vs four 0.5 cm cores of the same material: the same
+  scene through a different layer stack, so this ratio IS 1, and is, in both codes.
+
+**The nested export is physics-neutral.** Running the pre-nesting and nested GDML for G-C
+through the same macro at 2614.5 keV (16M events each) agrees to FEP z = −1.21, total
+z = −0.30 — so replacing hollow shells and boolean subtractions with nested full solids, and
+dropping the coincident-surface epsilon, changes nothing GEANT4 can measure.
 
 The far (~50 cm) MC efficiencies converge well via the auto two-stream/cone direct stream; a matching G4 cross-check at 50 cm needs much higher isotropic stats (cone bias is invalid with source scatter) and is left for a dedicated high-stats run. The cascade path on a sphere is exercised by `tests/test_spherical_source.cpp` (`co60_summing_out_on_sphere`); `compute_cascade` is geometry-agnostic (routes through `sample_source_position` + `transport_source_photon`).
 

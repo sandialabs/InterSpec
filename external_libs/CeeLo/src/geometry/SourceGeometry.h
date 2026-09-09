@@ -42,21 +42,51 @@
 
 namespace ceelo {
 
-/// A single shielding layer around the source.
+/// One layer of the source's concentric stack - a core, the emitting shell, or
+/// a shield.  They are all the same thing geometrically, and are stored in one
+/// innermost-first list (SourceGeometry::layers()); "core" and "shield" name
+/// only which side of the emitting layer a call to add_core()/add_shield() puts
+/// one on.
+///
 /// Thicknesses (cm) are per local axis of the source shape:
 ///   - Point / Marinelli: uniform — tx == ty == tz; use scalar_thickness().
 ///   - Cylindrical: tx == ty = radial thickness, tz = end-cap thickness
 ///     (same on both end caps).
 ///   - Rectangular: tx, ty, tz = thickness on both +/- faces of each axis.
 /// At least one component is > 0; individual components may be 0.
-struct SourceShieldLayer {
-    const Material* material;
+///
+/// `dims` is the layer's OUTER boundary in the source's local frame, read per
+/// shape exactly as the tracer reads it - Sphere: {radius, -, -}; Cylinder:
+/// {radius, half_length, -}; Box: {hx, hy, hz}.  It is maintained by the
+/// add_*/configure_* mutators so the ray march never has to re-derive it, and
+/// it is what the GDML export emits.  Meaningless for Marinelli (an L-shaped
+/// fill on absolute z-planes, which is not a concentric stack) and zero for a
+/// point source's own layer.
+struct SourceLayer {
+    const Material* material;   ///< nullptr = a genuine non-attenuating void
     double tx;
     double ty;
     double tz;
+    Eigen::Vector3d dims{0.0, 0.0, 0.0};
 
     bool is_uniform() const { return tx == ty && ty == tz; }
     double scalar_thickness() const { return tx; }  ///< Only valid when is_uniform()
+};
+
+/// Non-owning view of a contiguous run of layers, so the sub-ranges of the one
+/// stack (e.g. "the shields") can be handed out without copying.
+class LayerSpan {
+public:
+    LayerSpan() = default;
+    LayerSpan(const SourceLayer* b, const SourceLayer* e) : begin_(b), end_(e) {}
+    const SourceLayer* begin() const { return begin_; }
+    const SourceLayer* end() const { return end_; }
+    std::size_t size() const { return static_cast<std::size_t>(end_ - begin_); }
+    bool empty() const { return begin_ == end_; }
+    const SourceLayer& operator[](std::size_t i) const { return begin_[i]; }
+private:
+    const SourceLayer* begin_ = nullptr;
+    const SourceLayer* end_ = nullptr;
 };
 
 /// Source geometry: source material + concentric shielding shells.
@@ -65,7 +95,10 @@ public:
     SourceGeometry() = default;
 
     /// Set the material filling the source volume (e.g., soil, water).
-    void set_source_material(const Material* mat) { source_material_ = mat; }
+    void set_source_material(const Material* mat) {
+        source_material_ = mat;
+        if (!layers_.empty()) layers_[source_layer_index_].material = mat;
+    }
     const Material* source_material() const { return source_material_; }
 
     /// Add a uniform shielding layer (innermost first). Valid for all shapes.
@@ -82,7 +115,64 @@ public:
     /// may be zero (but not all three). Only valid for rectangular sources.
     void add_shield(const Material* mat, double t_x, double t_y, double t_z);
 
-    const std::vector<SourceShieldLayer>& shields() const { return shields_; }
+    /// The layers OUTSIDE the emitting one, innermost-first - what add_shield()
+    /// appended, in the order it was appended.
+    LayerSpan shields() const {
+        if (layers_.empty()) return {};
+        const SourceLayer* b = layers_.data() + source_layer_index_ + 1;
+        return {b, layers_.data() + layers_.size()};
+    }
+
+    /// Add an attenuating layer INSIDE a hollow extended source - a "core".
+    ///
+    /// The mirror of add_shield(): shields grow outward from the source's outer
+    /// surface, cores fill inward from its inner surface, so the two together
+    /// describe a full concentric stack with the emitting shell somewhere in the
+    /// middle. Cores never emit; they are attenuator only, and they do not
+    /// change the source volume or any emission normalization.
+    ///
+    /// Layers are given OUTERMOST FIRST: the first call is the layer immediately
+    /// inside the source shell. Thickness conventions are exactly add_shield()'s
+    /// (uniform / radial+end / per-axis), but subtracted going inward. Requires
+    /// a hollow extended source (configure_* with a nonzero inner extent); the
+    /// summed core thicknesses may not exceed that inner extent. Any space left
+    /// over at the centre stays a genuine non-attenuating void, which is how an
+    /// air gap or an empty cavity is expressed.
+    ///
+    /// Before this existed the inner region of a hollow source was always a
+    /// non-attenuating void, so a source shell around a dense core over-reported
+    /// its efficiency: the far half of the shell was not shadowed by the core at
+    /// all. Only ray tracing changes - see trace_source_segments().
+    void add_core(const Material* mat, double thickness);
+
+    /// Cylindrical-source core with independent radial and end thicknesses (cm).
+    void add_core(const Material* mat, double t_radial, double t_end);
+
+    /// Rectangular-source core with independent x/y/z thicknesses (cm).
+    void add_core(const Material* mat, double t_x, double t_y, double t_z);
+
+    /// The whole concentric stack, innermost-first: cores, then the emitting
+    /// layer at source_layer_index(), then shields.  This is the geometry the
+    /// ray march walks AND the geometry the GDML export emits, so the two
+    /// cannot describe different scenes.  Meaningless for Marinelli, whose
+    /// layers carry thicknesses only.
+    const std::vector<SourceLayer>& layers() const { return layers_; }
+    std::size_t source_layer_index() const { return source_layer_index_; }
+
+    /// The layers INSIDE the emitting one, innermost-first (the reverse of the
+    /// order add_core() was called in, which is outermost-first).  A leading
+    /// unfilled cavity is NOT included - see has_attenuating_interior().
+    LayerSpan cores() const {
+        if (layers_.empty()) return {};
+        const SourceLayer* b = layers_.data() + (has_center_void_ ? 1 : 0);
+        return {b, layers_.data() + source_layer_index_};
+    }
+
+    /// Whether any attenuating layer sits inside the emitting one.  This is the
+    /// gate that selects the ordered ray march over the legacy per-shape
+    /// closed-form path, and it is read on EVERY trace_source_segments() call -
+    /// including once per Moliere substep - so it is cached, never a scan.
+    bool has_attenuating_interior() const { return has_attenuating_interior_; }
 
     /// Configure for a point source.
     void configure_point(const Eigen::Vector3d& position);
@@ -90,17 +180,23 @@ public:
     /// Configure for a cylindrical extended source.
     /// @param inner_radius  Inner (bore) radius for a hollow/annular cylinder
     ///   (tube, pipe, ring). 0 = solid cylinder. The active material occupies the
-    ///   annulus [inner_radius, radius]; the central bore is an inactive,
-    ///   non-attenuating void.
+    ///   annulus [inner_radius, radius]; the central bore is inactive, and
+    ///   non-attenuating unless filled with add_core().
+    /// @param inner_half_length  Half-length of the hollow region. Negative (the
+    ///   default) means a through-bore, i.e. the same half-length as the source:
+    ///   a pipe. A smaller value gives a closed inner cavity, which is what a
+    ///   stack of nested cylinders needs. Ignored when inner_radius == 0.
     void configure_cylindrical(const Eigen::Vector3d& center, double radius,
                                double half_length, const Eigen::Matrix3d& rotation,
-                               double inner_radius = 0.0);
+                               double inner_radius = 0.0,
+                               double inner_half_length = -1.0);
 
     /// Configure for a rectangular extended source.
     /// @param inner_half_dims  Inner void half-dimensions for a hollow box
     ///   shell (crate, container wall). All-zero = solid box. The active
     ///   material occupies the outer box minus the inner box (both centered,
-    ///   same rotation); the inner box is an inactive, non-attenuating void.
+    ///   same rotation); the inner box is inactive, and non-attenuating unless
+    ///   filled with add_core().
     ///   Must satisfy 0 <= inner < outer componentwise, or be all zero.
     void configure_rectangular(const Eigen::Vector3d& center,
                                const Eigen::Vector3d& half_dims,
@@ -109,13 +205,19 @@ public:
                                    = Eigen::Vector3d::Zero());
 
     /// Configure for a spherical extended source.
+    ///
+    /// Outer radius first, matching configure_cylindrical() and
+    /// EfficiencyCalculator::set_spherical_source(); the two radii used to be
+    /// in opposite orders on either side of that boundary.
+    /// @param outer_radius  Outer radius.
     /// @param inner_radius  Inner (void) radius for a hollow spherical shell.
     ///   0 = solid ball. The active material occupies the shell
-    ///   [inner_radius, outer_radius]; the central void is non-attenuating.
+    ///   [inner_radius, outer_radius]; the centre is inactive, and
+    ///   non-attenuating unless filled with add_core().
     /// @param rotation  Stored for API symmetry; physically irrelevant for a
     ///   sphere (the volume is rotation-invariant).
-    void configure_spherical(const Eigen::Vector3d& center, double inner_radius,
-                             double outer_radius, const Eigen::Matrix3d& rotation);
+    void configure_spherical(const Eigen::Vector3d& center, double outer_radius,
+                             double inner_radius, const Eigen::Matrix3d& rotation);
 
     /// Configure for a Marinelli beaker source.
     /// All z-coordinates are absolute (in detector frame), pre-computed by
@@ -299,9 +401,10 @@ public:
     /// Enable/disable geometric pre-check (electron ray must hit detector bounding cylinder).
     void set_source_electron_geom_check(bool enable) { source_electron_geom_check_ = enable; }
 
-    /// Whether any source material or shields are configured.
+    /// Whether any source material, shields or cores are configured.
     bool has_source_effects() const {
-        return source_material_ != nullptr || !shields_.empty();
+        return source_material_ != nullptr || !shields().empty()
+               || has_attenuating_interior_;
     }
 
     bool is_configured() const { return configured_; }
@@ -315,6 +418,7 @@ public:
     const Eigen::Vector3d& cyl_center() const { return cyl_center_; }
     double cyl_radius() const { return cyl_radius_; }
     double cyl_inner_radius() const { return cyl_inner_r_; }
+    double cyl_inner_half_length() const { return cyl_inner_half_length_; }
     double cyl_half_length() const { return cyl_half_length_; }
     const Eigen::Vector3d& rect_center() const { return rect_center_; }
     const Eigen::Vector3d& rect_half_dims() const { return rect_half_dims_; }
@@ -331,8 +435,33 @@ public:
     double marinelli_z_bot() const { return marinelli_z_bot_; } ///< Beaker bottom z
 
 private:
+    /// The source's whole concentric stack, INNERMOST-FIRST: one ordering, one
+    /// representation.  Layer i fills the region between layer (i-1)'s dims and
+    /// its own.  Entry `source_layer_index_` is the single emitting layer;
+    /// everything below it came from add_core(), everything above from
+    /// add_shield().  A leading entry with a null material is an unfilled
+    /// cavity, kept in the list so the ray march can charge it zero attenuation
+    /// while still counting its along-ray distance.
+    ///
+    /// This replaced three separate descriptions (an outermost-first core list,
+    /// the source material, and an innermost-first shield list) that had to be
+    /// stitched together on every ray.  Storing the stitched form instead is
+    /// what lets the tracer and the GDML export read the SAME geometry.
+    std::vector<SourceLayer> layers_;
+    std::size_t source_layer_index_ = 0;
+
+    /// Cached: is any layer below source_layer_index_ attenuating?  See
+    /// has_attenuating_interior().  Set once by add_core(); never recomputed by
+    /// scanning, because it is read per Moliere substep.
+    bool has_attenuating_interior_ = false;
+
+    /// Whether layers_[0] is an unfilled central cavity.
+    bool has_center_void_ = false;
+
+    /// Authoritative source material.  Mirrored into layers_[source_layer_index_]
+    /// so the stack is self-contained for the tracer and the export, but kept
+    /// here too because set_source_material() may be called before configure_*().
     const Material* source_material_ = nullptr;
-    std::vector<SourceShieldLayer> shields_;
 
     bool configured_ = false;
 
@@ -371,6 +500,12 @@ private:
     Eigen::Vector3d cyl_center_{0, 0, 0};
     double cyl_radius_ = 0.0;
     double cyl_inner_r_ = 0.0;   ///< Inner bore radius (0 = solid); annular when > 0
+    /// Inner half-length of the hollow region.  Equal to cyl_half_length_ for a
+    /// through-bore (a pipe, which is what configure_cylindrical() gives), and
+    /// SHORTER for a closed inner cavity - which is how a stack of nested
+    /// cylinders (InterSpec's shielding model nests in radius AND length) is
+    /// expressed.  Only meaningful when cyl_inner_r_ > 0.
+    double cyl_inner_half_length_ = 0.0;
     double cyl_half_length_ = 0.0;
     Eigen::Matrix3d cyl_rotation_ = Eigen::Matrix3d::Identity();
 
@@ -480,7 +615,45 @@ public:
         std::size_t max_segments = SIZE_MAX) const;
 
 private:
+    /// Ordered ray march through the whole concentric stack (cores, source
+    /// shell, shields).  Used INSTEAD of the per-layer loops whenever an
+    /// attenuating interior is present, because it makes segment ORDER matter -
+    /// see the comment on trace_concentric() in the .cpp.  Appends to `out`
+    /// (which the caller has cleared) and honours `max_segments`.
+    void trace_cored_segments(const Eigen::Vector3d& position,
+                              const Eigen::Vector3d& direction,
+                              std::vector<SourcePathSegment>& out,
+                              std::size_t max_segments) const;
 
+    /// Seed the layer stack the first time a shape is configured, then size it.
+    /// A re-configure keeps any layers already added and just re-sizes them.
+    void init_layer_stack();
+
+    /// The emitting shell's cavity / outer dims for the current shape, in the
+    /// per-shape meaning SourceLayer::dims has.  Zero for Point and Marinelli.
+    Eigen::Vector3d shape_inner_dims() const;
+    Eigen::Vector3d shape_outer_dims() const;
+
+    /// Recompute every layer's `dims` (and the central void) from the shape's
+    /// current dimensions plus the layers' own thicknesses.  THE one place dims
+    /// are derived: every mutator ends by calling it, so re-configuring a shape
+    /// after layers have been added re-sizes them instead of silently keeping
+    /// stale boundaries.
+    void rebuild_layer_dims();
+
+    /// The layer thickness triple, read in the per-shape meaning `dims` has.
+    Eigen::Vector3d layer_delta(const SourceLayer& l) const;
+
+    /// Append `layer` outside the current outermost one (add_shield).
+    void push_shield_layer(SourceLayer layer);
+
+    /// Insert `layer` immediately inside the emitting one (add_core).
+    void push_core_layer(SourceLayer layer);
+
+    /// How many layers below the emitting one came from add_core().  With
+    /// has_center_void_ this fixes the whole stack layout, so rebuild can
+    /// re-derive source_layer_index_ rather than track it through edits.
+    std::size_t n_core_layers_ = 0;
 };
 
 } // namespace ceelo

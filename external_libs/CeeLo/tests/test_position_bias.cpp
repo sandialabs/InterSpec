@@ -64,7 +64,7 @@ EfficiencyCalculator make_large_soil_source() {
     static Material soil = make_Soil();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62}); // 3"x3" NaI
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62}); // 3"x3" NaI
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -100.0), 50.0, 10.0);
     calc.set_source_material(&soil);
     return calc;
@@ -175,7 +175,7 @@ BOOST_AUTO_TEST_CASE(mean_weight_approximately_one) {
     static Material soil = make_Soil();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -100.0), 50.0, 10.0);
     calc.set_source_material(&soil);
 
@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(rectangular_soil_662keV) {
     // Unbiased
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_rectangular_source(
         Eigen::Vector3d(0.0, 0.0, -100.0),
         Eigen::Vector3d(50.0, 50.0, 10.0));
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(rectangular_soil_662keV) {
     // Biased
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_rectangular_source(
         Eigen::Vector3d(0.0, 0.0, -100.0),
         Eigen::Vector3d(50.0, 50.0, 10.0));
@@ -298,7 +298,7 @@ BOOST_AUTO_TEST_CASE(exponential_depth_with_bias_matches) {
     // Unbiased with exponential depth distribution
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -100.0), 50.0, 10.0);
     calc_ub.set_source_material(&soil);
     calc_ub.set_exponential_depth_distribution(3.0); // 3 cm relaxation
@@ -307,7 +307,7 @@ BOOST_AUTO_TEST_CASE(exponential_depth_with_bias_matches) {
     // Biased with same exponential depth distribution
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -100.0), 50.0, 10.0);
     calc_b.set_source_material(&soil);
     calc_b.set_exponential_depth_distribution(3.0);
@@ -350,7 +350,7 @@ BOOST_AUTO_TEST_CASE(dense_lead_source_662keV) {
     // Unbiased
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(center, 5.0, 1.5);
     calc_ub.set_source_material(&lead);
     auto res_ub = calc_ub.compute(config);
@@ -358,7 +358,7 @@ BOOST_AUTO_TEST_CASE(dense_lead_source_662keV) {
     // Biased
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(center, 5.0, 1.5);
     calc_b.set_source_material(&lead);
     calc_b.enable_position_bias();
@@ -401,7 +401,7 @@ BOOST_AUTO_TEST_CASE(large_insitu_1332keV) {
     // Unbiased (FEP-only mode to make convergence feasible)
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -125.0), 7500.0, 25.0);
     calc_ub.set_source_material(&soil);
     calc_ub.enable_fep_only_mode(true);
@@ -410,7 +410,7 @@ BOOST_AUTO_TEST_CASE(large_insitu_1332keV) {
     // Biased (auto params, FEP-only)
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -125.0), 7500.0, 25.0);
     calc_b.set_source_material(&soil);
     calc_b.enable_fep_only_mode(true);
@@ -448,7 +448,7 @@ BOOST_AUTO_TEST_CASE(large_insitu_662keV) {
     // Unbiased (FEP-only mode)
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -125.0), 7500.0, 25.0);
     calc_ub.set_source_material(&soil);
     calc_ub.enable_fep_only_mode(true);
@@ -457,7 +457,7 @@ BOOST_AUTO_TEST_CASE(large_insitu_662keV) {
     // Biased (auto params, FEP-only)
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -125.0), 7500.0, 25.0);
     calc_b.set_source_material(&soil);
     calc_b.enable_fep_only_mode(true);
@@ -513,7 +513,7 @@ BOOST_AUTO_TEST_CASE(rotated_45deg_cylindrical_662keV) {
     // Unbiased
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(center, 15.0, 5.0, rot);
     calc_ub.set_source_material(&soil);
     auto res_ub = calc_ub.compute(config);
@@ -521,7 +521,7 @@ BOOST_AUTO_TEST_CASE(rotated_45deg_cylindrical_662keV) {
     // Biased
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(center, 15.0, 5.0, rot);
     calc_b.set_source_material(&soil);
     calc_b.enable_position_bias();
@@ -566,7 +566,7 @@ BOOST_AUTO_TEST_CASE(rotated_90deg_sideon_662keV) {
     // Unbiased
     EfficiencyCalculator calc_ub;
     calc_ub.set_fep_window_keV(kTestFepWindowKeV);
-    calc_ub.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_ub.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_ub.set_cylindrical_source(center, 10.0, 10.0, rot);
     calc_ub.set_source_material(&soil);
     auto res_ub = calc_ub.compute(config);
@@ -574,7 +574,7 @@ BOOST_AUTO_TEST_CASE(rotated_90deg_sideon_662keV) {
     // Biased
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_cylindrical_source(center, 10.0, 10.0, rot);
     calc_b.set_source_material(&soil);
     calc_b.enable_position_bias();

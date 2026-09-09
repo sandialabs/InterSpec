@@ -113,8 +113,9 @@ int main() {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
-    // 3"x3" NaI(Tl): radius 3.81 cm, length 7.62 cm.
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    // 3"x3" NaI(Tl): a radius (HALF the diameter) and the FULL crystal length.
+    // See CRYSTAL DIMENSION CONVENTION in src/geometry/Geometry.h.
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));  // 10 cm from the face
 
     auto r = calc.compute(661.7 /*keV*/, 100'000 /*events*/, 0 /*auto threads*/);

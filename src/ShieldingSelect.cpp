@@ -3024,6 +3024,8 @@ double ShieldingSelect::inSituSurfaceArea() const
       const double rad = inner_rad + cylindricalRadiusThickness();
       const double half_len = inner_half_length + cylindricalLengthThickness();
       
+      // The end cap facing the detector, or the whole curved side - the area table at
+      //  GammaInteractionCalc::TraceActivityType, which the integrands and totalActivity share.
       if( m_geometry == GeometryType::CylinderEndOn )
         surface_area = PhysicalUnits::pi * rad * rad;
       else

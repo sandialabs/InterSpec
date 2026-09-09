@@ -50,7 +50,7 @@ BOOST_AUTO_TEST_CASE(fep_invariant_with_fluorescence_enabled) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     // Test at several energies spanning K-edge effects
@@ -78,7 +78,7 @@ BOOST_AUTO_TEST_CASE(fluorescence_reduces_fep_above_k_edge) {
     // With fluorescence
     EfficiencyCalculator calc_fl_on;
     calc_fl_on.set_fep_window_keV(kTestFepWindowKeV);
-    calc_fl_on.set_detector(DetectorShape::Cylinder, &nai, {1.0, 2.0});
+    calc_fl_on.set_detector(&nai, CylinderDims{1.0, 2.0});
     calc_fl_on.set_point_source(src);
     auto res_on = calc_fl_on.compute(80.0, 50000, 1);
 
@@ -103,7 +103,7 @@ BOOST_AUTO_TEST_CASE(fluorescence_escape_peak_visible_in_spectrum) {
     // Source directly in front at z = -2 cm
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {2.0, 0.5});
+    calc.set_detector(&nai, CylinderDims{2.0, 0.5});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
     // 10 keV bins from 0 to 90 keV
@@ -139,7 +139,7 @@ BOOST_AUTO_TEST_CASE(invariants_hold_at_high_energy) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
     for (double E : {1100.0, 1500.0, 2000.0, 3000.0}) {
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(escape_peaks_visible_at_2000keV) {
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
     // Moderately-sized NaI: radius=5 cm, length=10 cm
-    calc.set_detector(DetectorShape::Cylinder, &nai, {5.0, 10.0});
+    calc.set_detector(&nai, CylinderDims{5.0, 10.0});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     // Bins: 100 keV wide, 0–3000 keV → 30 bins
@@ -199,7 +199,7 @@ BOOST_AUTO_TEST_CASE(energy_deposited_never_exceeds_incident) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     const double E_inc = 2000.0;
@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(invariants_hold_with_rayleigh) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     // Rayleigh is important below ~100 keV
@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(energy_conservation_in_large_crystal) {
     // Source at z = -2 cm (very close → high geometric efficiency)
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {15.0, 30.0});
+    calc.set_detector(&nai, CylinderDims{15.0, 30.0});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
     // At 662 keV: long enough mean free path that some photons traverse the
@@ -284,7 +284,7 @@ BOOST_AUTO_TEST_CASE(pulse_height_integrates_to_total_eff) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     // Bins from 0 to 2200 keV (200 keV wide) → safely above any deposited energy at 662 keV
@@ -309,7 +309,7 @@ BOOST_AUTO_TEST_CASE(hpge_with_bore_hole_and_fluorescence) {
     Material hpge = make_HPGe();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &hpge, {4.0, 7.0});
+    calc.set_detector(&hpge, CylinderDims{4.0, 7.0});
     calc.set_bore_hole(0.5, 6.0); // 5 mm bore radius, 60 mm bore depth
     calc.set_dead_layer(0.1, 0.1); // 1 mm dead layer (p-type HPGe outer contact)
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));

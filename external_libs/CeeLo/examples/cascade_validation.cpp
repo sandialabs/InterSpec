@@ -63,7 +63,7 @@ const SandiaDecay::SandiaDecayDataBase& db() {
 EfficiencyCalculator nai_3x3(double d_cm) {
     static Material nai = make_NaI();
     EfficiencyCalculator calc;
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -d_cm));
     return calc;
 }
@@ -74,7 +74,7 @@ EfficiencyCalculator bege(double d_cm) {
     static Material ge = make_HPGe();
     static Material al = make_Aluminum();
     EfficiencyCalculator calc;
-    calc.set_detector(DetectorShape::Cylinder, &ge, {2.945, 2.95});
+    calc.set_detector(&ge, CylinderDims{2.945, 2.95});
     calc.set_dead_layer(0.18, 0.05);
     calc.add_attenuator(&al, 0.12, 0.12, 0.0, 2.95);  // endcap
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -(d_cm + 1.45)));
@@ -217,12 +217,12 @@ int main(int argc, char** argv) {
                    (double)u(2505), 100.0*u(2505)/((double)b(2505)>0?(double)b(2505):1.0));
         };
         printf("    A) shielded point (0.2 cm Fe, 2 cm):  G4(24M) 1173=3.7052e-2 1332=3.2977e-2 2505=1.5601e-3 +-0.52%%\n");
-        { EfficiencyCalculator c; c.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        { EfficiencyCalculator c; c.set_detector(&nai, CylinderDims{3.81, 7.62});
           c.set_point_source(Eigen::Vector3d(0,0,-2.0)); c.add_source_shield(&fe, 0.2);
           sum_rate(c); }
         printf("    B) water cyl (r1 hz1, 4 cm):          G4(88M) 1173=2.1273e-2 1332=1.8966e-2 2505=4.7338e-4 +-0.49%%\n");
         { static Material water = make_Water();
-          EfficiencyCalculator c; c.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+          EfficiencyCalculator c; c.set_detector(&nai, CylinderDims{3.81, 7.62});
           c.set_cylindrical_source(Eigen::Vector3d(0,0,-4.0), 1.0, 1.0);
           c.set_source_material(&water); sum_rate(c); }
     }

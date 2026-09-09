@@ -184,7 +184,7 @@ BOOST_AUTO_TEST_CASE(efficiency_calculator_marinelli_api) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
         s.endcap_to_beaker, &s.water, &s.pe, s.beaker_thickness);
@@ -226,7 +226,7 @@ BOOST_AUTO_TEST_CASE(marinelli_mc_run) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
         s.endcap_to_beaker, &s.water, &s.pe, s.beaker_thickness);
@@ -254,7 +254,7 @@ BOOST_AUTO_TEST_CASE(marinelli_no_sample_vs_with_sample) {
     // With water sample
     EfficiencyCalculator calc_water;
     calc_water.set_fep_window_keV(kTestFepWindowKeV);
-    calc_water.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc_water.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc_water.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
         s.endcap_to_beaker, &s.water, &s.pe, s.beaker_thickness);
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(marinelli_no_sample_vs_with_sample) {
     // Without sample material (nullptr)
     EfficiencyCalculator calc_dry;
     calc_dry.set_fep_window_keV(kTestFepWindowKeV);
-    calc_dry.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc_dry.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc_dry.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
         s.endcap_to_beaker, nullptr, &s.pe, s.beaker_thickness);
@@ -283,7 +283,7 @@ BOOST_AUTO_TEST_CASE(marinelli_gdml_export) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
         s.endcap_to_beaker, &s.water, &s.pe, s.beaker_thickness);
@@ -318,7 +318,7 @@ BOOST_AUTO_TEST_CASE(source_electron_transport_increases_total) {
     // Without source electrons
     EfficiencyCalculator calc_no_e;
     calc_no_e.set_fep_window_keV(kTestFepWindowKeV);
-    calc_no_e.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc_no_e.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc_no_e.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc_no_e.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -327,7 +327,7 @@ BOOST_AUTO_TEST_CASE(source_electron_transport_increases_total) {
     // With source electrons
     EfficiencyCalculator calc_with_e;
     calc_with_e.set_fep_window_keV(kTestFepWindowKeV);
-    calc_with_e.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc_with_e.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc_with_e.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc_with_e.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -358,7 +358,7 @@ BOOST_AUTO_TEST_CASE(source_electron_no_effect_low_energy) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
+    calc.set_detector(&s.nai, CylinderDims{3.81, 7.62});
     calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,

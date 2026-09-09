@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     Material nai = make_NaI();
     auto make_calc = [&]() {
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -d_cm));
         return calc;
     };

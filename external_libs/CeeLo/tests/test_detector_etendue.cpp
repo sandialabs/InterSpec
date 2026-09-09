@@ -53,22 +53,21 @@ const Material& mat_Al()  { static Material m = make_Aluminum(); return m; }
 // Bare 3"x3" NaI cylinder: clean analytic hull.
 Geometry bare_nai_3x3() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     return g;
 }
 
 // A box crystal with a thin can, to exercise the five-face hull.
 Geometry boxed_czt() {
     Geometry g;
-    g.set_detector(DetectorShape::Box, &mat_NaI(), {1.0, 0.75, 1.5});
+    g.set_detector(&mat_NaI(), BoxDims{1.0, 0.75, 1.5});
     g.add_attenuator(&mat_Al(), 0.05, 0.05, -0.05, 1.5);
     return g;
 }
 
 GeometryDescriptor nai3x3_descriptor() {
     GeometryDescriptor gd;
-    gd.shape = DetectorShape::Cylinder;
-    gd.dimensions_cm = {3.81, 7.62};
+    gd.set_dimensions(CylinderDims{3.81, 7.62});
     gd.materials = {MaterialSpec::from(make_NaI()), MaterialSpec::from(make_Aluminum())};
     gd.crystal_material_index = 0;
     LayerSpec can;

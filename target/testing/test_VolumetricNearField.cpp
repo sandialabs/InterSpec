@@ -46,6 +46,7 @@
 #include <cmath>
 #include <string>
 #include <map>
+#include <set>
 #include <vector>
 #include <fstream>
 #include <iomanip>
@@ -193,6 +194,39 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldBoxTruth, * boost::unit_test::disabled(
 }//BOOST_AUTO_TEST_CASE( VolumetricNearFieldBoxTruth )
 
 
+/** DEVELOPER-ONLY: prints ONLY the in-situ exponential rows (in_situ_scenarios()), to be APPENDED
+ to sm_truth - additive for the same reason VolumetricNearFieldBoxTruth is.  Unlike the generators
+ above it goes through run_mc and the on-disk cache (`--cachedir=`), at the 0.25% target the bank
+ was last regenerated at, so an interrupted run resumes and a re-run is free. */
+BOOST_AUTO_TEST_CASE( VolumetricNearFieldTruthInSitu, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+
+  cout << "// In-situ rows, from VolumetricNearFieldTruthInSitu.  FEP window: "
+       << ceelo::kDefaultFepWindowKeV << " keV.  APPEND to sm_truth.\n";
+
+  for( const Scenario &s : in_situ_scenarios() )
+  {
+    ScenarioMcMaterials mats;
+    ceelo::EfficiencyCalculator calc;
+    configure_scenario_mc( calc, det, s, mats );
+
+    for( const double energy : scenario_energies() )
+    {
+      const McResult r = run_mc( calc, cache, scenario_mc_key( s ), energy );
+      cout << "  { \"" << s.name << "\", " << setprecision(12) << energy << ", "
+           << setprecision(10) << r.eff << ", " << setprecision(4) << r.eff*r.frac_sigma << " },"
+           << (r.hit_cap() ? "   // HIT CAP (" + r.stop_reason + ")" : "") << "\n";
+      cout.flush();
+    }//for( energies )
+  }//for( in-situ scenarios )
+}//BOOST_AUTO_TEST_CASE( VolumetricNearFieldTruthInSitu )
+
+
 /** Checks InterSpec's volumetric integration against the recorded MC truth.
  
  Two claims, and the second is the point of the whole feature:
@@ -227,7 +261,7 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
   struct GroupStat { vector<pair<double,string>> resid; };   //(|resid| %, row description)
   map<string,GroupStat> groups;
 
-  for( const Scenario &s : scenarios() )
+  for( const Scenario &s : all_scenarios() )
   {
     for( const TruthRow &row : sm_truth )
     {
@@ -398,6 +432,115 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
                        " That is the case the near-field methods exist for - if it now agrees,"
                        " either the truth bank or the model is wrong." );
 }//BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
+
+
+/** The same Monte-Carlo truth bank, on the PRODUCTION quadrature.
+
+ `VolumetricNearFieldVsTruth` above runs the ELEMENT path - `interspec_volumetric_eff` only takes the
+ line path when handed a positive line count or when INTERSPEC_HARNESS_LINE_COUNT is set - so the
+ only MC-arbitrated comparison in the committed suite exercises the VALIDATION REFERENCE and not the
+ thing production actually runs.  Line-versus-element agreement is checked separately and thoroughly
+ (LineVsElementScenarioMatrix), but two quadratures of the same model agreeing says nothing about
+ either being right, which is the whole reason the truth bank exists.
+
+ This closes that with a SPOT CHECK rather than the whole bank: the full 144 rows on the line path
+ cost ~2250 s, almost all of it building a line cache per row, which is not a price worth paying on
+ every run to restate 144 times what a spanning handful states once.  The scenarios below cover each
+ mechanism group the allowance table splits on - unshielded contact, shielded contact, far field, and
+ the wide-angle rim case - at a low, a mid and a high energy.
+
+ Note the transitive argument this backs up rather than replaces: LineVsElementScenarioMatrix gates
+ line-against-element and the pass above gates element-against-MC, which together already imply
+ line-against-MC.  What a direct measurement adds is that it cannot be defeated by a common-mode
+ error in the composition - two quadratures of one model can agree while both drift from the truth.
+
+ The allowance expression is deliberately the SAME one the element pass uses, referenced rather than
+ re-derived; if the two ever need different numbers, that is a finding about the quadratures and
+ belongs in the comment above, not in a second table that can drift.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruthLinePath )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( !sm_truth.empty() && !sm_mc_anchor.empty() );
+
+  const AngleDetector det = load_angle_detector();
+  // COST, since this is a spot check and should stay one.  The harness rebuilds a line set per ROW
+  //  (the set is energy-independent, but interspec_volumetric_eff has no way to be told that), so
+  //  rows x line count is the whole bill: 24 rows at 16384 lines measured 390 s of CPU.  Trimmed to
+  //  three energies per scenario - low, mid and high - which is 12 rows and ~195 s.
+  //  16384 rather than the shipped 65536 for the same reason.  Quadrature noise there is 0.1-0.4%
+  //  (LinePathGradientLineCountSweep, the `value err` column), several times inside the tightest
+  //  allowance below, so it cannot green a row the shipped count would fail.  Going lower is not
+  //  safe: at 4096 the noise is 0.5-1.4%, which would eat most of the 1.5% group.
+  const int num_lines = 1 << 14;
+  const std::set<double> line_energies = { 60.0, 344.0, 1332.5 };
+
+  const std::set<std::string> subset = {
+    "small-near-dense",                           //unshielded contact
+    "shielded-near-dense",                        //contact behind iron
+    "small-far-light",                            //far field
+    "wide-angle-far-dense",                       //wide angle at the rim
+    "insitu-box-near-light",                      //in-situ exponential: the per-AREA contract
+    "insitu-cyl-near-light",                      //  (see in_situ_scenarios)
+  };
+
+  size_t n_checked = 0;
+  double worst = 0.0;
+  string worst_where;
+
+  for( const Scenario &s : all_scenarios() )
+  {
+    if( !subset.count( s.name ) )
+      continue;
+
+    for( const TruthRow &row : sm_truth )
+    {
+      if( (row.scenario != s.name) || !(row.fep_eff > 0.0)
+          || !line_energies.count( row.energy_keV ) )
+        continue;
+
+      const shared_ptr<const ceelo::DetectorResponse> centre_resp = centre_anchored_response( det, s );
+      BOOST_REQUIRE( centre_resp );
+
+      // `num_lines` is the LAST argument; the 5th is the element path's ray count, and passing the
+      //  line count there silently ran this "line path" check on the element quadrature.
+      const double line = interspec_volumetric_eff( det, s, row.energy_keV, centre_resp,
+                                                    -1, ceelo::kDefaultFepWindowKeV, -1.0, false,
+                                                    nullptr, nullptr, num_lines );
+      BOOST_REQUIRE( line > 0.0 );
+
+      const double resid = line/row.fep_eff - 1.0;
+      const double mc_3sigma = 3.0*(row.fep_uncert / (std::max)(row.fep_eff, 1.0E-30));
+      const bool low_energy = (row.energy_keV < 130.0);
+      const bool contact = (s.standoff_cm < 5.0);
+      const double tau_shield = scenario_shield_optical_depth( s, row.energy_keV );
+      const double allowance = !contact ? 0.035
+                             : (!low_energy ? 0.025
+                             : ((tau_shield <= 0.0) ? 0.015 : 0.02));
+      const double tol = allowance + mc_3sigma;
+
+      ++n_checked;
+      if( fabs(resid) > worst )
+      {
+        worst = fabs(resid);
+        worst_where = s.name + " @ " + std::to_string(row.energy_keV);
+      }
+
+      BOOST_CHECK_MESSAGE( fabs(resid) <= tol,
+                           "LINE path vs MC truth, '" << s.name << "' @ " << row.energy_keV
+                           << " keV: model " << line << " vs truth " << row.fep_eff << " ("
+                           << std::showpos << 100.0*resid << std::noshowpos << "%, allowance "
+                           << 100.0*allowance << "% + 3 sigma " << 100.0*mc_3sigma << "%)" );
+    }//for( truth rows )
+  }//for( scenarios )
+
+  BOOST_CHECK_MESSAGE( n_checked >= 10, "Only " << n_checked << " line-path truth rows were"
+                       " checked - the subset names no longer match the scenario table." );
+  BOOST_TEST_MESSAGE( "  line path vs truth: " << n_checked << " rows, worst "
+                      << std::fixed << std::setprecision(2) << 100.0*worst << "% ("
+                      << worst_where << ")" );
+}//BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruthLinePath )
 
 
 /** Separates two things the volumetric comparison above would otherwise conflate.
@@ -1036,12 +1179,22 @@ BOOST_AUTO_TEST_CASE( PerRayGradientVsFiniteDifference )
                          << ") and finite difference (" << fd << ") disagree in SIGN for the source"
                          " radius - a dimension fit would step the wrong way." );
     // PINNED BASELINE, not an aspiration.  Measured against the CONVERGED finite difference above:
-    //  7.3% @ 60 keV, 5.9% @ 122, 2.2% @ 662.  (An earlier reading of 17.5/4.7/0.8% came from a
-    //  single un-swept step and was not a converged derivative - hence the sweep, which now runs
-    //  first and is reported, so this number is never quoted against an arbitrary step again.)
-    //  Budget set just above the worst so the gap cannot silently grow; it should fall to ~1e-6
+    //  2.0% @ 60 keV, 0.9% @ 122, 4.2% @ 662 (re-measured 2026-09-06).  (An earlier reading of
+    //  17.5/4.7/0.8% came from a single un-swept step and was not a converged derivative - hence the
+    //  sweep, which now runs first and is reported, so this number is never quoted against an
+    //  arbitrary step again.)
+    //  THE SHAPE CHANGED, and the old numbers are still quoted in places: this read 7.3/5.9/2.2%,
+    //  monotone in energy, until `m_effNumRays` went 512 -> 128 on 2026-09-03.  It is now
+    //  non-monotone and worst at 662 keV, so "7.3% at 60 keV" is no longer a fact about this code.
+    //  Budget set above the worst so the gap cannot silently grow; it should fall to ~1e-6
     //  once the aperture weights are continuous/T-valued.  Do NOT relax it further without a
     //  matching entry in the eval_cylinder comment.
+    //  FOR CONTEXT: the LINE path - which has no frozen aperture at all - does NOT do better here.
+    //  LinePathGradientVsFiniteDifference (test_VolumetricLinePath.cpp) measures its analytic
+    //  gradient as exact for its own estimator (1.8e-8) but several percent from this finite
+    //  difference at the shipped 65536 lines, converging on it only as lines are added.  So this
+    //  gap is a BIAS and that one is a STANDARD ERROR; they are comparable in size, and neither
+    //  path currently gives a trustworthy dimension uncertainty at contact.
     BOOST_CHECK_MESSAGE( rel < 0.10,
                          "E=" << energy << " keV: source-radius gradient off by " << 100.0*rel
                          << "% (Jet " << jet_val.v[0] << " vs FD " << fd << ") - worse than the"
