@@ -329,6 +329,12 @@
   padding: 6px 9px;
   font-size: 12px;
   line-height: 1.35;
+  /* Allow selecting/copying the message text (InterSpec disables selection by default). */
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgInfo
 {
