@@ -196,9 +196,9 @@ namespace
 }//namespace
 
 
-InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
+InterSpecWebFrame::InterSpecWebFrame(const wxString& input_url, const bool no_restore, const wxString& file_to_open) :
   wxFrame(NULL, wxID_ANY, "InterSpec", wxDefaultPosition, wxDefaultSize, wxRESIZE_BORDER | wxSYSTEM_MENU),
-  m_url( url ),
+  m_url( input_url ),
   m_token( "" ),
   m_dragging_window( false ),
   m_mouse_down_pos( 0, 0 ),
@@ -271,13 +271,15 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //  for documentation on specifying proxies
 
   //m_url will look something like "http://127.0.0.1:55793"
-  std::string bypassurl = m_url;
+  //  wxString has no implicit conversion to std::string on MSVC, so convert explicitly.
+  const std::string url = m_url.ToStdString();
+  std::string bypassurl = url;
   if( SpecUtils::istarts_with( bypassurl, "http://" ) )
     bypassurl = bypassurl.substr( 7 );
 
   bypassurl = " --proxy-bypass-list=\"" + bypassurl 
     // We dont any of the following URLs, but throwing them in for the moment just to be really sure.
-    + ";" + m_url
+    + ";" + url
     + ";127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
     + ";http://127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
     + ";localhost;localhost:*;local;127.0.0.1:*;127.0.0.1;http://127.0.0.1;http://127.0.0.1:*"

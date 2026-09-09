@@ -8901,7 +8901,7 @@ struct LowerExtentFinder
 
     if( !peak_path && (m_persist_q > 0.0) )
     {
-      const size_t near = m_Hb;
+      const size_t near_gap = m_Hb;  // NB: 'near' is a <windows.h> macro on MSVC, so avoid it
       const size_t start_lower = lower;
       bool clamped = false;
       for( int iter = 0; iter < 3; ++iter )
@@ -8928,7 +8928,7 @@ struct LowerExtentFinder
             }
           }
         }
-        if( (nxt >= m_n) || nxt_peak || (nxt <= walked) || ((nxt - walked) > near) || crossed_peak )
+        if( (nxt >= m_n) || nxt_peak || (nxt <= walked) || ((nxt - walked) > near_gap) || crossed_peak )
         {
           lower = walked;
           break;

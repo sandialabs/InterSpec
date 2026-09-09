@@ -44,6 +44,7 @@
 #include <Wt/WAbstractItemModel.h>
 #include <Wt/Core/observing_ptr.hpp>
 
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
@@ -62,7 +63,6 @@ class PopupDivMenu;
 class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
-struct ShieldingSourceModel;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
 #endif
@@ -248,8 +248,6 @@ public:
    fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
    */
   void setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type );
-  
-  void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
   void peakModelRowsInsertedCallback( Wt::WModelIndex index,
                                       int firstRow, int lastRow );

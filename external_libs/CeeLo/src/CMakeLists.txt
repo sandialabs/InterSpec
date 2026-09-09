@@ -64,6 +64,14 @@ target_compile_options(CeeLo PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
 )
 
+# MSVC portability: NOMINMAX stops <windows.h> from defining function-like min/max
+#  macros that turn std::min/std::max/std::clamp into errors (C2589/C2143); and
+#  _USE_MATH_DEFINES makes <cmath> declare M_PI et al. used in EfficiencyCalculator.cpp
+#  and ElectronCsda.cpp.  Inert on non-MSVC compilers.
+target_compile_definitions(CeeLo PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX _USE_MATH_DEFINES>
+)
+
 # Optional SandiaDecay -> DecayCascade adapter (CMake-gated; keeps the core
 # library free of any SandiaDecay dependency). Built as a separate static
 # library that links both CeeLo and SandiaDecay.
@@ -75,5 +83,8 @@ if(CEELO_WITH_SANDIADECAY)
     target_compile_options(CeeLoCascade PRIVATE
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>
         $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    )
+    target_compile_definitions(CeeLoCascade PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX _USE_MATH_DEFINES>
     )
 endif()
