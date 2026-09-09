@@ -2770,17 +2770,13 @@ namespace
                                  50.0f, 3000.0f,
                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
-    // Full-energy efficiency uncertainty: bands + node covariance + coef covariance
+    // Full-energy efficiency uncertainty: node covariance + coef covariance
     const vector<float> uncert_energies = { 59.5f, 122.0f, 661.7f, 1332.5f };
     const vector<float> uncert_vals = { 0.09f, 0.06f, 0.045f, 0.055f };
     shared_ptr<DetectorEfficiencyUncert> tmp
                 = DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, uncert_vals );
     auto uncert = make_shared<DetectorEfficiencyUncert>( *tmp );
 
-    vector<EffUncertBand> bands;
-    bands.push_back( EffUncertBand{ 50.0f, 122.0f, 0.08f } );
-    bands.push_back( EffUncertBand{ 122.0f, 661.0f, 0.05f } );
-    uncert->setBands( bands );
     uncert->setCoefficientCovariance( { 1.0E-4f, -2.0E-5f, 0.0f,
                                         -2.0E-5f, 4.0E-5f, 0.0f,
                                         0.0f, 0.0f, 9.0E-6f } );
@@ -2914,7 +2910,6 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_with_uncert )
 
   // The uncertainty should have made it across (values to URL float precision)
   BOOST_REQUIRE( restored->efficiencyUncert() );
-  BOOST_CHECK( restored->efficiencyUncert()->hasBands() );
   BOOST_CHECK( restored->efficiencyUncert()->hasNodeCovariance() );
 
   // Coefficient covariance is never written to URLs
@@ -2969,9 +2964,6 @@ BOOST_AUTO_TEST_CASE( test_url_drop_order )
   }
   auto big_uncert = make_shared<DetectorEfficiencyUncert>(
             *DetectorEfficiencyUncert::fromPointUncerts( uncert_energies, uncert_vals ) );
-  vector<EffUncertBand> bands;
-  bands.push_back( EffUncertBand{ 50.0f, 661.0f, 0.07f } );
-  big_uncert->setBands( bands );
   drf->setEfficiencyUncert( big_uncert );
 
   string url;

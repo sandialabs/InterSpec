@@ -138,6 +138,7 @@
     honestly inflated uncertainty.</message>
   <message id="mmr-status-stale">Geometry changed - generate again to update the response.</message>
   <message id="mmr-status-existing">Showing the response already attached to this detector.</message>
+  <message id="mmr-status-geom-incomplete">Enter the crystal dimensions and material (the imported length is only a guess) before generating a response.</message>
 
   <message id="mmr-chart-title">Response preview</message>
   <message id="mmr-chart-mode">Show:</message>

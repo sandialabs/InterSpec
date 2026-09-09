@@ -2787,18 +2787,13 @@ std::string DetectorPeakResponse::toAppUrl() const
   // First the total-efficiency uncertainty...
   remove_part("TEFUC");
   remove_part("TEFUE");
-  remove_part("TEFUL");
-  if( remove_part("TEFUB") )
+  if( remove_part("TEFUL") )
     return combine_parts();
 
   // ...then the full-energy node covariance (usually the largest payload)...
   remove_part("EFUC");
   remove_part("EFUE");
   if( remove_part("EFUL") )
-    return combine_parts();
-
-  // ...then the piecewise uncertainty bands (small, user-entered)...
-  if( remove_part("EFUB") )
     return combine_parts();
 
   // ...then the total-efficiency curve itself.
@@ -3194,7 +3189,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_detectorSetback = detectorSetback;
 
   // Assemble the efficiency curve from the parsed representation, plus its
-  //  optional uncertainty ("EFUB"/"EFUE"/"EFUC"/"EFUL" keys).
+  //  optional uncertainty ("EFUE"/"EFUC"/"EFUL" keys).
   {
     std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
     eff->setRawFields( eff_form, efficiencyEnergyUnits, energyEfficiencies, eqn,

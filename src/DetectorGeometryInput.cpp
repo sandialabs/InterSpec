@@ -250,6 +250,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
     m_restoringState( false ),
+    m_seededFromDiameterGuess( false ),
     m_changed()
 {
   assert( m_interspec );
@@ -475,6 +476,10 @@ void DetectorGeometryInput::handleUserInput()
 
   m_collimatorRow->setHidden( !m_hasCollimator->isChecked() );
 
+  // Any user edit means the form is no longer sitting on the fabricated diameter-guess length.
+  //  seedFromDrf() re-sets the flag after the handleShapeChange() it triggers runs through here.
+  m_seededFromDiameterGuess = false;
+
   try
   {
     toDescriptor();
@@ -647,6 +652,12 @@ bool DetectorGeometryInput::isValid() const
     return false;
   }
 }//isValid()
+
+
+bool DetectorGeometryInput::generationReady() const
+{
+  return isValid() && !m_seededFromDiameterGuess;
+}//generationReady()
 
 
 ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
@@ -970,6 +981,10 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
 
 void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf )
 {
+  // Real geometry (descriptor branch) or nothing to seed leaves this false; only the fabricated
+  //  length==diameter guess below sets it.
+  m_seededFromDiameterGuess = false;
+
   if( !drf || !drf->isValid() || (drf->detectorDiameter() <= 0.0f) )
     return;
 
@@ -994,4 +1009,8 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();
+
+  // Set AFTER handleShapeChange(): its handleUserInput() clears the flag, and the fabricated
+  //  length is a guess we must not let be Monte-Carlo characterized until the user fixes it.
+  m_seededFromDiameterGuess = true;
 }//seedFromDrf(...)

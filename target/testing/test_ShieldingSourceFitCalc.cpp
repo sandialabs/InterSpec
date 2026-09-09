@@ -4280,9 +4280,11 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
                                   DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
     if( with_uncert )
     {
-      // One flat band => the efficiency error is fully correlated across peaks.
+      // A fully-correlated 2-node covariance => the efficiency error is fully
+      //  correlated across peaks (equivalent to the old single flat band).
+      const float u2 = static_cast<float>( frac_eff_uncert * frac_eff_uncert );
       auto uncert = make_shared<DetectorEfficiencyUncert>();
-      uncert->setBands( { EffUncertBand{ 0.0f, 3000.0f, static_cast<float>(frac_eff_uncert) } } );
+      uncert->setNodeCovariance( { 1.0f, 3000.0f }, { u2, u2, u2, u2 } );
       drf->setEfficiencyUncert( uncert );
     }
     return drf;
