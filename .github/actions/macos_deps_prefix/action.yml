@@ -1,0 +1,184 @@
+name: macOS dependency prefix
+description: >
+  Builds (or restores from cache) the macOS dependency prefix - boost, Wt 4.13.2, Eigen, Abseil
+  and Ceres, all as universal x86_64+arm64 static libraries - and verifies it is usable.
+
+# ------------------------------------------------------------------------------------------------
+# This exists as a composite action, rather than as steps inlined into a workflow, so that every
+# consumer computes the SAME cache key by construction.  build_wt4_edge.yml builds the prefix and
+# build_macos.yml consumes it; if their keys ever drifted, the first would cost an hour and buy the
+# second nothing.
+#
+# The design follows the `build-linux` job in build_app.yml, whose rules are worth restating:
+#   - Cache the dependency *prefix*, never a build directory.  actions/checkout rewrites every
+#     source file's mtime, so a warm build-directory cache compiles as much as a cold one.
+#   - Key over every input, and assert the hashed files exist - hashFiles() returns "" when it
+#     matches nothing, which would silently turn the key into a constant.
+#   - No `restore-keys`.  An ABI-incompatible near-miss is worse than a rebuild.
+#   - Split restore/save, so the save is gated on both cache-miss and success() and a broken
+#     prefix is never committed to the cache.
+#   - Verify on a cache HIT as well as a miss.  Gating the save cannot catch a bad *restore*;
+#     only verifying on every run can.
+# ------------------------------------------------------------------------------------------------
+
+inputs:
+  build_wxwidgets:
+    description: >
+      Pass '1' to also build wxWidgets into the prefix.  Only the target/wxwidgets desktop-app
+      form needs it; the native macOS app (target/macos) does not.  This is part of the cache key,
+      because it changes the prefix contents without changing the script hash.
+    required: false
+    default: '0'
+
+outputs:
+  prefix-dir:
+    description: Absolute path of the dependency prefix.
+    value: ${{ steps.paths.outputs.prefix-dir }}
+  cache-hit:
+    description: "'true' when the prefix was restored from cache rather than built."
+    value: ${{ steps.cache-macos-deps.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Define dependency paths
+      id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Deliberately outside GITHUB_WORKSPACE: dep_build_macOS.sh refuses to run with a working
+        # directory inside the source tree.
+        BUILD_DIR="${RUNNER_TEMP}/mac_deps_build"
+        PREFIX_DIR="${RUNNER_TEMP}/mac_deps_prefix"
+        mkdir -p "${BUILD_DIR}" "${PREFIX_DIR}"
+        echo "build-dir=${BUILD_DIR}" >> "${GITHUB_OUTPUT}"
+        echo "prefix-dir=${PREFIX_DIR}" >> "${GITHUB_OUTPUT}"
+
+    - name: Compute the dependency cache key
+      id: deps-key
+      shell: bash
+      env:
+        DEPS_HASH: ${{ hashFiles('target/dep_build/dep_build_macOS.sh', 'target/dep_build/patches/**') }}
+        BUILD_WXWIDGETS: ${{ inputs.build_wxwidgets }}
+      run: |
+        set -euo pipefail
+        # hashFiles() silently ignores patterns that match nothing, so check each input exists.
+        # This list must stay in sync with the DEPS_HASH patterns above.
+        for f in target/dep_build/dep_build_macOS.sh \
+                 target/dep_build/patches ; do
+          if [ ! -e "${f}" ]; then
+            echo "::error::${f} does not exist, so the cache key does not cover what it claims to."
+            exit 1
+          fi
+        done
+        if [ -z "${DEPS_HASH}" ]; then
+          echo "::error::hashFiles() matched nothing; the dependency cache key would be constant."
+          exit 1
+        fi
+        # `wt4-v1` is a literal, human-authored discriminator, and it is what actually keeps a
+        # master-branch (Wt 3.7.1) prefix from ever being restored here - a run on a feature branch
+        # can restore caches created on the default branch, so a colliding key would be silently
+        # honoured.  A content hash is not a discriminator: it collides the moment the file
+        # contents do.  Bump v1 whenever the prefix layout changes in a way the hash cannot see.
+        # The runner image is in the key because the prefix is ABI-bound to its toolchain, the same
+        # reason MANYLINUX_IMAGE is in the Linux key.
+        KEY="macos-deps-wt4-v1-${ImageOS:-unknown}-univ-wx${BUILD_WXWIDGETS}-${DEPS_HASH}"
+        echo "key=${KEY}" >> "${GITHUB_OUTPUT}"
+        echo "Dependency cache key: ${KEY}"
+
+    - name: Restore the dependency prefix
+      id: cache-macos-deps
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+        # Deliberately no restore-keys.
+
+    - name: Build the dependency prefix
+      # Never add `continue-on-error` here - it would make a failed build "succeed" and the save
+      # step below would cache a broken prefix.
+      if: steps.cache-macos-deps.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        BUILD_WXWIDGETS: ${{ inputs.build_wxwidgets }}
+      run: |
+        set -euo pipefail
+        df -h /
+        chmod +x target/dep_build/dep_build_macOS.sh
+        time ./target/dep_build/dep_build_macOS.sh \
+          "${GITHUB_WORKSPACE}" \
+          "${{ steps.paths.outputs.build-dir }}" \
+          "${{ steps.paths.outputs.prefix-dir }}"
+
+    # Runs on a cache hit as well as a miss, so a bad *restore* is caught too - the one thing
+    # gating the save cannot do for us.  Also prints the prefix's provenance, so "which prefix am
+    # I linking against?" is answerable from the run log.
+    - name: Verify the dependency prefix
+      shell: bash
+      env:
+        PREFIX_DIR: ${{ steps.paths.outputs.prefix-dir }}
+      run: |
+        set -euo pipefail
+        SENTINEL="${PREFIX_DIR}/.interspec_deps_complete"
+        if [ ! -f "${SENTINEL}" ]; then
+          echo "::error::${PREFIX_DIR} has no completion sentinel - it is not a usable prefix."
+          ls -la "${PREFIX_DIR}" || true
+          exit 1
+        fi
+        echo "### prefix provenance ###"
+        cat "${SENTINEL}"
+
+        # Wt bakes absolute paths into its installed CMake config files and into CONFIGDIR, so a
+        # prefix restored to a different path than it was built at is broken in ways that would
+        # otherwise only surface at link or run time.
+        RECORDED_PREFIX=$(sed -n 's/^prefix_path=//p' "${SENTINEL}")
+        if [ "${RECORDED_PREFIX}" != "${PREFIX_DIR}" ]; then
+          echo "::error::prefix was built at '${RECORDED_PREFIX}' but restored to '${PREFIX_DIR}'."
+          exit 1
+        fi
+
+        for f in lib/libwt.a lib/libwthttp.a lib/libwtdbo.a lib/libwtdbosqlite3.a \
+                 lib/libceres.a lib/libboost_system.a include/Wt/WObject.h ; do
+          if [ ! -e "${PREFIX_DIR}/${f}" ]; then
+            echo "::error::${f} is missing from the dependency prefix."
+            exit 1
+          fi
+        done
+        if [ ! -d "${PREFIX_DIR}/include/eigen3" ]; then
+          echo "::error::include/eigen3 is missing from the dependency prefix."
+          exit 1
+        fi
+
+        # The macOS app is shipped as a universal binary, so every static library it links has to
+        # carry both slices.  A thin library here fails much later, in the app link, with an error
+        # that does not point back at the prefix.
+        for lib in lib/libwt.a lib/libboost_system.a ; do
+          ARCHS=$(lipo -archs "${PREFIX_DIR}/${lib}")
+          echo "${lib}: ${ARCHS}"
+          case " ${ARCHS} " in
+            *" x86_64 "*) ;;
+            *) echo "::error::${lib} is missing the x86_64 slice (has: ${ARCHS})."; exit 1 ;;
+          esac
+          case " ${ARCHS} " in
+            *" arm64 "*) ;;
+            *) echo "::error::${lib} is missing the arm64 slice (has: ${ARCHS})."; exit 1 ;;
+          esac
+        done
+
+        du -sh "${PREFIX_DIR}"
+        df -h /
+
+    - name: Save the dependency prefix
+      # Implicitly `if: success()`, so a failed dependency build or a failed verification never
+      # gets committed to the cache.
+      if: steps.cache-macos-deps.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+
+    # Several GB of boost/Wt/Ceres build trees that nothing downstream reads.
+    - name: Reclaim the dependency build directory
+      if: always() && steps.cache-macos-deps.outputs.cache-hit != 'true'
+      shell: bash
+      run: rm -rf "${{ steps.paths.outputs.build-dir }}"

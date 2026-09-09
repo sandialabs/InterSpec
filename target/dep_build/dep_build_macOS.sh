@@ -88,6 +88,11 @@ export CMAKE_POLICY_VERSION_MINIMUM=3.5
 BUILD_WXWIDGETS=${BUILD_WXWIDGETS:-0}
 echo "BUILD_WXWIDGETS=${BUILD_WXWIDGETS} (set to 1 to also build wxWidgets)"
 
+# Boost's b2 defaults to a single job, and we build boost twice (once per architecture),
+# so without this the boost step dominates the whole script.
+NUM_JOBS=$(sysctl -n hw.ncpu)
+echo "Building with ${NUM_JOBS} jobs"
+
 
 # Define a function to download a file and check its hash
 download_file() {
@@ -184,16 +189,16 @@ else
     fi # if b2 already built / else
 
     # build and stage boost for arm64
-    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
+    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -j ${NUM_JOBS} -a stage
 
     # copy arm libraries to a separate directory
     mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
     # build boost for x86_64 and install it (we'll copy over the libraries later)
-    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
+    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -j ${NUM_JOBS} -a install
 
     # move x86 libraries to a seperate directory
-    mkdir x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
+    mkdir -p x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
 
     # Now lipo libraries together
     mkdir -p universal
@@ -429,4 +434,23 @@ fi #if wxWidgets.installed exists / else
 cd "${working_directory}"
 
 
+# The sentinel is both a "this prefix is complete" flag and a provenance record.  CI prints it on
+#  every run - including cache hits - so "which prefix am I linking against?" is answerable from
+#  the run log rather than by inference.  `prefix_path` is load-bearing, not just informational:
+#  Wt bakes absolute paths into its installed CMake config files and CONFIGDIR, so a prefix
+#  restored to a different path is broken in ways that only show up at link or run time.
+{
+  echo "interspec_git_hash=$(git -C "${interspec_src}" rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "prefix_path=${MY_WT_PREFIX}"
+  echo "arch=$(uname -m)"
+  echo "macosx_deployment_target=${MACOSX_DEPLOYMENT_TARGET}"
+  echo "build_wxwidgets=${BUILD_WXWIDGETS}"
+  echo "cc=$(cc --version | head -n 1)"
+  echo "cmake=$(cmake --version | head -n 1)"
+  echo "dep_script_sha256=$(shasum -a 256 "${interspec_src}/target/dep_build/dep_build_macOS.sh" | awk '{print $1}')"
+  echo "patches_sha256=$(find "${interspec_src}/target/dep_build/patches" -name '*.patch' -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{print $1}')"
+} > "${MY_WT_PREFIX}/.interspec_deps_complete"
+
 echo "Have successfully installed all libraries to ${install_directory}"
+cat "${MY_WT_PREFIX}/.interspec_deps_complete"

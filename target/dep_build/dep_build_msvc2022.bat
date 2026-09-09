@@ -576,8 +576,41 @@ if not exist %WX_BUILT_FILE% (
     echo wxWidgets was already built (%WX_BUILT_FILE% existed)
 )
 
+rem The sentinel is both a "this prefix is complete" flag and a provenance record.  CI prints it
+rem  on every run - including cache hits - so "which prefix am I linking against?" is answerable
+rem  from the run log rather than by inference.  prefix_path is load-bearing, not just
+rem  informational: Wt bakes absolute paths into its installed CMake config files and CONFIGDIR,
+rem  so a prefix restored to a different path is broken in ways that only show up at link or run
+rem  time.  None of these lookups are fatal if they fail - the field is just left empty.
+set "SENTINEL=%MY_PREFIX%\.interspec_deps_complete"
+
+set "DEP_SCRIPT_SHA256="
+for /f %%A in ('certutil -hashfile "%PATCH_DIR%dep_build_msvc2022.bat" SHA256 ^| find /i /v ":" ') do set "DEP_SCRIPT_SHA256=%%A"
+
+set "INTERSPEC_GIT_HASH="
+for /f %%A in ('git -C "%PATCH_DIR%..\.." rev-parse HEAD 2^>nul') do set "INTERSPEC_GIT_HASH=%%A"
+
+set "BUILT_UTC="
+for /f "delims=" %%A in ('powershell -NoProfile -Command "(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')" 2^>nul') do set "BUILT_UTC=%%A"
+
+set "CMAKE_VERSION="
+for /f "delims=" %%A in ('cmake --version 2^>nul ^| findstr /C:"cmake version"') do set "CMAKE_VERSION=%%A"
+
+set "CL_VERSION="
+for /f "delims=" %%A in ('cl 2^>^&1 ^| findstr /C:"Microsoft (R)"') do set "CL_VERSION=%%A"
+
+> "%SENTINEL%" echo interspec_git_hash=%INTERSPEC_GIT_HASH%
+>> "%SENTINEL%" echo built_utc=%BUILT_UTC%
+>> "%SENTINEL%" echo prefix_path=%MY_PREFIX%
+>> "%SENTINEL%" echo arch=x64
+>> "%SENTINEL%" echo builddebug=%builddebug%
+>> "%SENTINEL%" echo cl=%CL_VERSION%
+>> "%SENTINEL%" echo cmake=%CMAKE_VERSION%
+>> "%SENTINEL%" echo dep_script_sha256=%DEP_SCRIPT_SHA256%
+
 popd
 echo "Completed Successfully"
+type "%SENTINEL%"
 exit /b 0
 goto :EOF
 
