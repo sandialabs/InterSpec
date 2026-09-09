@@ -92,6 +92,13 @@ public:
   /** Whether toDescriptor() would currently succeed. */
   bool isValid() const;
 
+  /** Whether there is enough real geometry to generate a Monte-Carlo response:
+   #isValid() and not still sitting on the fabricated length==diameter guess
+   #seedFromDrf makes for a legacy DRF that carries no geometry.  Any user edit
+   to the form clears the guess flag.
+   */
+  bool generationReady() const;
+
   /** Emitted on any user edit (after validity re-evaluation). */
   Wt::Signal<> &changed();
 
@@ -202,6 +209,11 @@ protected:
   /** Set while #setState is rebuilding the form, so the many intermediate edits it makes dont each
    emit #changed at an owner that is in the middle of restoring its own state. */
   bool m_restoringState;
+
+  /** True after #seedFromDrf fabricated the crystal length as a copy of the diameter (a legacy DRF
+   with no stored geometry).  Cleared by the first user edit; gates #generationReady so a pure guess
+   cannot be Monte-Carlo characterized. */
+  bool m_seededFromDiameterGuess;
 
   Wt::Signal<> m_changed;
 };//class DetectorGeometryInput

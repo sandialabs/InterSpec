@@ -151,6 +151,32 @@ public:
   /** The currently selected build method. */
   Method selectedMethod() const;
 
+  /** Replaces the seed DRF a future generation grounds/anchors to, and refreshes the anchor,
+   grounding, chart and estimate rows that read it - WITHOUT re-running the DRF-derived geometry
+   guess, resetting method/precision selections, or auto-generating.
+
+   Used by an owner (e.g. DrfModifyWidget) that edits the DRF's measured points/uncertainty and then
+   wants a regenerated response grounded to the live edits.  The seed must have any existing CeeLo
+   response cleared, since an attached response overrides the manual points/covariance at query time.
+   */
+  void setSeedDrf( std::shared_ptr<const DetectorPeakResponse> seed_drf );
+
+  /** Whether the geometry form currently holds enough real geometry to generate a response
+   (delegates to DetectorGeometryInput::generationReady). */
+  bool generationReady() const;
+
+  /** Kicks off a response generation from the current geometry/method selections; a no-op (with a
+   status message) when the geometry is not #generationReady.  Public so an owner can drive a
+   regenerate-then-use flow. */
+  void startGeneration();
+
+  /** Hides (or shows) the tool's own "Generate Response" button in the Location Support section.
+   An owner that embeds this tool and provides its own generate control (e.g. DrfModifyWidget's
+   footer button, which first collects the owner's edits into the seed) hides the internal one to
+   avoid a redundant control that would generate from the un-updated seed.  The run row's status,
+   progress and cancel controls are unaffected. */
+  void setGenerateButtonHidden( bool hidden );
+
 
   /** A snapshot of this tools GUI state (plus the response it currently holds), for an owner that
    records undo/redo steps for the dialog this tool is a section of. */
@@ -206,7 +232,6 @@ protected:
    the currently generated response, or hides it when there is none. */
   void updateResponseChart();
 
-  void startGeneration();
   void cancelGeneration();
 
   /** Called (on the session thread) with progress from the worker. */
@@ -256,6 +281,9 @@ protected:
   Wt::WTableRow *m_anchorRow;       //the anchor reference-distance input
 
   Wt::WPushButton *m_generate;
+  /** When true, m_generate stays hidden regardless of method/geometry (an embedding owner drives
+      generation with its own control) - see setGenerateButtonHidden(). */
+  bool m_hideGenerateButton;
   Wt::WPushButton *m_cancelBtn;
   Wt::WProgressBar *m_progress;
   Wt::WText *m_status;

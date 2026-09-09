@@ -43,8 +43,7 @@ namespace {
 
 GeometryDescriptor nai_descriptor() {
     GeometryDescriptor gd;
-    gd.shape = DetectorShape::Cylinder;
-    gd.dimensions_cm = {3.81, 7.62};  // NaI 3"x3"
+    gd.set_dimensions(CylinderDims{3.81, 7.62});  // NaI 3"x3"
     gd.materials = {MaterialSpec::from(make_NaI()),
                     MaterialSpec::from(make_Aluminum())};
     gd.crystal_material_index = 0;

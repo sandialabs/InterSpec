@@ -13,29 +13,67 @@
   <message id="dmw-use-btn">Use</message>
   <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>
   <message id="dmw-err-no-backbone">Could not build an efficiency curve from the generated response: {1}</message>
-  <message id="dmw-uncert-help">Optional baseline efficiency uncertainty: a fractional
-    (e.g. 0.05 = 5%) 1-sigma uncertainty that applies, and is fully correlated, within
-    each energy band, and is uncorrelated between bands. The Activity/Shielding fit can
-    fold this into its results. (A Monte-Carlo-characterized response provides its own,
-    finer, energy-correlated uncertainty; these bands add to it.)</message>
-  <message id="dmw-band-lower">Lower energy (keV)</message>
-  <message id="dmw-band-upper">Upper energy (keV)</message>
-  <message id="dmw-band-frac">Frac. uncertainty</message>
-  <message id="dmw-add-band">Add band</message>
-  <message id="dmw-remove-band">Remove band</message>
-  <message id="dmw-anchor-title">Measured reference curve</message>
-  <message id="dmw-anchor-help">The measured efficiency curve this response is anchored to
-    (imported from the detector model). Edit the reference distance, the per-point efficiencies
-    and their uncertainties, or add/remove points. Blank uncertainty cells use the default below.</message>
+
+  <!-- Flat Disk / Geometry Modeled mode toggle (Geom &amp; MC tab). -->
+  <message id="dmw-mode-flat">Flat Disk</message>
+  <message id="dmw-mode-geom">Geometry Modeled</message>
+  <message id="dmw-tt-mode">&lt;p&gt;How this far-field detector answers off-axis, near-field and
+    uncertainty-aware queries.&lt;/p&gt;
+    &lt;ul&gt;
+    &lt;li&gt;&lt;b&gt;Flat Disk&lt;/b&gt; - the classic far-field model: efficiency is the on-axis
+    curve scaled by solid angle, with an abstract energy-correlated uncertainty you edit as a
+    covariance matrix.  No geometry is modeled.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Geometry Modeled&lt;/b&gt; - a Monte-Carlo response, built from the detector
+    geometry below and grounded to the measured efficiency points, supplies the distance/angle
+    dependence and its own finer uncertainty.&lt;/li&gt;
+    &lt;/ul&gt;
+    &lt;p&gt;Switching a geometry-modeled detector back to Flat Disk detaches its response on
+    &quot;Use&quot; (you will be asked to confirm).&lt;/p&gt;</message>
+
+  <!-- Uncertainty tab: help text, then one of two editors (measured points, or a σ/ρ matrix).  The
+       wording tracks whichever editor is currently shown. -->
+  <message id="dmw-uncert-help-points">The detector&apos;s measured efficiency points, which the
+    Activity/Shielding fit can fold into its results.  Edit each point below - its energy, absolute
+    efficiency, and the statistical and certificate uncertainties on that efficiency (points sharing
+    a source are treated as sharing their certificate uncertainty).  (A Monte-Carlo-characterized
+    response supplies its own, finer, uncertainty and overrides these points.)</message>
+  <message id="dmw-uncert-help-cov">The detector&apos;s energy-node covariance matrix, which the
+    Activity/Shielding fit can fold into its results.  The diagonal is the 1-sigma fractional
+    uncertainty (%) at each energy, and the off-diagonal is the correlation between energies.  Add or
+    remove energy nodes below.  (if you change to a geometry-modeled detector efficiency, this matrix
+    will be ignored and not used)</message>
+
+  <!-- Measured-point editor (energy / efficiency / statistical % / certificate % / source). -->
   <message id="dmw-anchor-ref-dist">Reference distance:</message>
   <message id="dmw-anchor-cm">cm</message>
   <message id="dmw-anchor-default-uncert">Default uncertainty:</message>
   <message id="dmw-anchor-percent">%</message>
   <message id="dmw-anchor-energy">Energy (keV)</message>
   <message id="dmw-anchor-eff">Efficiency</message>
-  <message id="dmw-anchor-uncert">Uncert %</message>
+  <message id="dmw-anchor-stat">Stat. %</message>
+  <message id="dmw-anchor-cert">Cert. %</message>
+  <message id="dmw-anchor-source">Source</message>
   <message id="dmw-anchor-add">Add point</message>
   <message id="dmw-anchor-remove">Remove point</message>
+
+  <!-- σ/ρ node-covariance matrix editor. -->
+  <message id="dmw-cov-corner">keV \ keV</message>
+  <message id="dmw-add-energy">Add energy</message>
+  <message id="dmw-remove-energy">Remove energy</message>
+  <message id="dmw-err-cov-energies">The covariance energies must be distinct; two or more were equal, so the uncertainty was not changed.</message>
+  <message id="dmw-err-cov-invalid">The covariance could not be applied, so the uncertainty was not changed: {1}</message>
+
+  <!-- Footer "Generate Response" (Geometry-Modeled only) and the two Use-flow confirmations. -->
+  <message id="dmw-generate-btn">Generate Response</message>
+  <message id="dmw-regen-from-points-note">The regenerated response derives its uncertainty from the measured points, not from a hand-edited covariance matrix.</message>
+  <message id="dmw-detach-title">Remove geometry-modeled response?</message>
+  <message id="dmw-detach-body">Switching to Flat Disk removes the geometry-modeled Monte-Carlo response and reverts this detector to the flat-disk far-field model.  Continue?</message>
+  <message id="dmw-detach-accept">Remove &amp; use</message>
+  <message id="dmw-regen-title">Regenerate response?</message>
+  <message id="dmw-regen-body">You have edits that the currently generated response does not reflect.  Regenerate it from the current geometry and points before using this detector?</message>
+  <message id="dmw-regen-accept">Regenerate &amp; use</message>
+  <message id="dmw-regen-use-anyway">Use without regenerating</message>
+
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
     again later under the &quot;Previous&quot; tab of Detector Select.</message>

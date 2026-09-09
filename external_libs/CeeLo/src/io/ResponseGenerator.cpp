@@ -120,8 +120,8 @@ struct Runner {
         //  the FEP window once here is what makes ResponseProvenance's recorded
         //  value true of every node that went into the response.
         calc.set_fep_window_keV(opts.fep_window_keV);
-        calc.set_detector(gd.shape, mat(gd.crystal_material_index),
-                          gd.dimensions_cm);
+        calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
+                                                 gd.dimensions_cm);
         if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
         if (gd.dead_layer)
             calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
@@ -1930,8 +1930,8 @@ void ResponseGenerator::configure_calculator(
         return owned_materials[base + static_cast<size_t>(idx)].get();
     };
 
-    calc.set_detector(gd.shape, mat(gd.crystal_material_index),
-                      gd.dimensions_cm);
+    calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
+                                             gd.dimensions_cm);
     // set_detector() clears the fillet/bore/dead layer, so declare them after
     // it; fillet first, so bore_fits() sees the final crystal profile.
     if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);

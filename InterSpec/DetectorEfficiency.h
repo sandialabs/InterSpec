@@ -41,38 +41,15 @@ namespace rapidxml
 }//namespace rapidxml
 
 
-/** A single evaluator-specified efficiency uncertainty band.
-
- Semantics: the efficiency uncertainty is 100% correlated for energies within
- [lowerEnergy, upperEnergy), and uncorrelated with energies in other bands.
- Energies are in keV (PhysicalUnits); the uncertainty is fractional
- (i.e., 0.05 == 5%).
-
- This historical, piecewise way of specifying DRF uncertainty comes from
- evaluations/specifications used by activity-fitting applications that did
- not fit shielding.
- */
-struct EffUncertBand
-{
-  float lowerEnergy;
-  float upperEnergy;
-  float fractionalUncert;
-
-  bool operator==( const EffUncertBand &rhs ) const;
-};//struct EffUncertBand
-
-
 /** Optional uncertainty description for a detector efficiency curve.
 
- Holds two independent, optional components:
- - Piecewise bands (see #EffUncertBand): user/evaluator specified.
- - Node covariance: the canonical, rigorous form.  A set of energy nodes
-   {E_j} plus a covariance matrix C of the *fractional* efficiency error at
-   those nodes.  The fractional error at any other energy is *defined* as the
-   linear (in log-energy) interpolation of the node errors, with constant
-   extrapolation beyond the first/last node.  So the covariance among any
-   requested energies is L*C*L^T (L being the interpolation operator), which
-   is positive-semidefinite by construction whenever C is.
+ Holds an optional node covariance: the canonical, rigorous form - a set of
+ energy nodes {E_j} plus a covariance matrix C of the *fractional* efficiency
+ error at those nodes.  The fractional error at any other energy is *defined*
+ as the linear (in log-energy) interpolation of the node errors, with constant
+ extrapolation beyond the first/last node.  So the covariance among any
+ requested energies is L*C*L^T (L being the interpolation operator), which
+ is positive-semidefinite by construction whenever C is.
 
  The node covariance is independent of the functional form of the efficiency
  curve, so it can be populated from a MakeDrf fit (via the fit-coefficient
@@ -90,7 +67,6 @@ class DetectorEfficiencyUncert
 public:
   DetectorEfficiencyUncert();
 
-  bool hasBands() const;
   bool hasNodeCovariance() const;
   bool isEmpty() const;
 
@@ -105,9 +81,8 @@ public:
    */
   std::vector<double> nodeFracCovariance( const std::vector<double> &energies ) const;
 
-  /** Total fractional-efficiency-error covariance among `energies` (keV):
-   nodeFracCovariance(...) plus the piecewise-band contribution (u_b^2 added
-   to element (i,j) when both energies fall within the same band).
+  /** Total fractional-efficiency-error covariance among `energies` (keV);
+   currently identical to nodeFracCovariance(...).
    */
   std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies ) const;
 
@@ -136,12 +111,6 @@ public:
                               const std::vector<float> &fracUncerts,
                               const double corrLength = sm_defaultLogEnergyCorrLength );
 
-  /** Sets the piecewise bands; validates bands are sorted by energy,
-   non-overlapping, with upperEnergy > lowerEnergy and fractionalUncert >= 0.
-   Throws std::runtime_error on invalid input.
-   */
-  void setBands( const std::vector<EffUncertBand> &bands );
-
   /** Sets the node covariance.
 
    @param energies Node energies in keV, strictly increasing, all > 0;
@@ -161,7 +130,6 @@ public:
    */
   void setCoefficientCovariance( const std::vector<float> &covRowMajor );
 
-  const std::vector<EffUncertBand> &bands() const;
   const std::vector<float> &covarianceEnergies() const;
 
   /** Row-major N*N node covariance matrix; empty if not defined. */
@@ -181,9 +149,9 @@ public:
   /** Parses a "EfficiencyUncert" node; throws std::runtime_error on error. */
   void fromXml( const ::rapidxml::xml_node<char> *node );
 
-  /** Appends url query-string entries (keys prefix+"EFUB", prefix+"EFUE",
-   prefix+"EFUC", prefix+"EFUL") to `parts`.  The covariance matrix is encoded
-   as its upper triangle (including diagonal), N*(N+1)/2 values.
+  /** Appends url query-string entries (keys prefix+"EFUE", prefix+"EFUC",
+   prefix+"EFUL") to `parts`.  The covariance matrix is encoded as its upper
+   triangle (including diagonal), N*(N+1)/2 values.
    The coefficient covariance is never written to URLs.
    */
   void toUrlParts( std::map<std::string,std::string> &parts, const std::string &prefix ) const;
@@ -230,9 +198,6 @@ public:
   static const size_t sm_maxCovarianceNodes;
 
 private:
-  /** Piecewise bands; sorted by energy, non-overlapping. */
-  std::vector<EffUncertBand> m_bands;
-
   /** Node energies in keV; sorted ascending. */
   std::vector<float> m_covEnergies;
 
@@ -469,7 +434,7 @@ public:
 
   /** Appends url query-string entries, keys prefixed by `prefix` (e.g.,
    prefix "T" gives "TEFT", "TEFX", "TEFY", "TEFE", "TEFC", "TEUNIT", and
-   "TEFUB"/"TEFUE"/"TEFUC"/"TEFUL" for the uncertainty).
+   "TEFUE"/"TEFUC"/"TEFUL" for the uncertainty).
    */
   void toUrlParts( std::map<std::string,std::string> &parts, const std::string &prefix ) const;
 

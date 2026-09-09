@@ -112,7 +112,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
     switch (cfg) {
         case 1: {
             const Material* nai = add_mat(make_NaI());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
             setup.description = "3\"x3\" NaI bare, point source on-axis 10cm";
             return true;
@@ -120,7 +120,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         case 2: {
             const Material* nai = add_mat(make_NaI());
             const Material* al = add_mat(make_Aluminum());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.add_attenuator(al, 0.1, 0.1, 0.0, 7.62);
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
             setup.description = "3\"x3\" NaI + 1mm Al, point source on-axis 10cm";
@@ -129,7 +129,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         case 3: {
             const Material* labr3 = add_mat(make_LaBr3());
             const Material* al = add_mat(make_Aluminum());
-            calc.set_detector(DetectorShape::Cylinder, labr3, {2.54, 5.08});
+            calc.set_detector(labr3, CylinderDims{2.54, 5.08});
             calc.add_attenuator(al, 0.05, 0.05, 0.0, 5.08);
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
             setup.description = "2\"x2\" LaBr3 + 0.5mm Al, point source on-axis 5cm";
@@ -137,14 +137,14 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         }
         case 5: {
             const Material* czt = add_mat(make_CZT());
-            calc.set_detector(DetectorShape::Box, czt, {0.5, 0.5, 0.5});
+            calc.set_detector(czt, BoxDims{0.5, 0.5, 0.5});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
             setup.description = "1x1x0.5cm CZT bare, point source on-axis 5cm";
             return true;
         }
         case 6: {
             const Material* nai = add_mat(make_NaI());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             const double d = 15.0;
             const double theta = 45.0 * M_PI / 180.0;
             calc.set_point_source(
@@ -156,7 +156,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* al = add_mat(make_Aluminum());
             const Material* pb = add_mat(make_Lead());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.add_attenuator(al, 0.1, 0.1, 0.0, 7.62);
             calc.add_attenuator(pb, 0.2, 0.2, 0.0, 7.62);
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -15.0));
@@ -168,7 +168,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* al = add_mat(make_Aluminum());
             const Material* water = add_mat(make_Water());
             const Material* pe = add_mat(make_Polyethylene());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.add_attenuator(al, 0.05, 0.05, 0.0, 7.62);
             calc.set_marinelli_beaker(
                 /*well_inner_radius=*/4.3,
@@ -184,7 +184,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         case 11: {
             const Material* nai = add_mat(make_NaI());
             const Material* fe = add_mat(make_Iron());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
             calc.add_source_shield(fe, 0.5);
             calc.enable_source_electron_transport(true);
@@ -195,7 +195,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* ss = add_mat(make_StainlessSteel304());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -215,7 +215,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             // should approach the pure direct/cone limit.
             const Material* nai = add_mat(make_NaI());
             const Material* al = add_mat(make_Aluminum());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
             calc.add_source_shield(al, 0.1);
             calc.enable_source_electron_transport(true);
@@ -227,7 +227,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             // shield-scattered photons; weight/variance stress case.
             const Material* nai = add_mat(make_NaI());
             const Material* pb = add_mat(make_Lead());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
             calc.add_source_shield(pb, 2.0);
             calc.enable_source_electron_transport(true);
@@ -239,7 +239,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             // source self-attenuation only.
             const Material* nai = add_mat(make_NaI());
             const Material* water = add_mat(make_Water());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -22.0),
                                         /*radius=*/10.0, /*half_length=*/10.0);
             calc.set_source_material(water);
@@ -253,7 +253,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* water = add_mat(make_Water());
             const Material* pe = add_mat(make_Polyethylene());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -1.6),
                                         /*radius=*/2.5, /*half_length=*/0.5);
             calc.set_source_material(water);
@@ -268,7 +268,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* czt = add_mat(make_CZT());
             const Material* soil = add_mat(make_Soil());
             const Material* ss = add_mat(make_StainlessSteel304());
-            calc.set_detector(DetectorShape::Box, czt, {0.5, 0.5, 0.5});
+            calc.set_detector(czt, BoxDims{0.5, 0.5, 0.5});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -15.0),
                 Eigen::Vector3d(5.0, 5.0, 5.0),
@@ -284,7 +284,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             // (axis = normalize(-src_pos), not -z).
             const Material* nai = add_mat(make_NaI());
             const Material* fe = add_mat(make_Iron());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             const double d = 15.0;
             const double theta = 45.0 * M_PI / 180.0;
             calc.set_point_source(
@@ -301,7 +301,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* pb = add_mat(make_Lead());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -316,7 +316,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* w = add_mat(make_Tungsten());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -333,7 +333,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* sn = add_mat(make_Tin());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -353,7 +353,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* al = add_mat(make_Aluminum());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -372,7 +372,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             const Material* nai = add_mat(make_NaI());
             const Material* pe = add_mat(make_Polyethylene());
             const Material* cellulose = add_mat(make_Cellulose());
-            calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});
+            calc.set_detector(nai, CylinderDims{3.81, 7.62});
             calc.set_rectangular_source(
                 Eigen::Vector3d(0.0, 0.0, -25.0),
                 Eigen::Vector3d(5.0, 7.5, 10.0),
@@ -393,7 +393,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         // one, so including it would make the two codes model different solids.
         case 25: {
             const Material* ge = add_mat(make_HPGe());
-            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_detector(ge, CylinderDims{2.915, 6.89});
             calc.set_bore_hole(0.495, 5.54);
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
             setup.description = "GEM35-70 HPGe coax, SHARP front edge, point source 5cm";
@@ -402,7 +402,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
 
         case 26: {
             const Material* ge = add_mat(make_HPGe());
-            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_detector(ge, CylinderDims{2.915, 6.89});
             calc.set_bullet_radius(0.8);
             calc.set_bore_hole(0.495, 5.54, /*rounded_tip=*/true);
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
@@ -422,7 +422,7 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
         case 28: {
             const Material* ge = add_mat(make_HPGe());
             const Material* fe = add_mat(make_Iron());
-            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_detector(ge, CylinderDims{2.915, 6.89});
             calc.set_bullet_radius(0.8);
             calc.set_bore_hole(0.495, 5.54, /*rounded_tip=*/true);
             const double d_cm = (cfg == 27) ? 2.0 : 10.0;

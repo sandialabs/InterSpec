@@ -52,7 +52,7 @@ const Material& mat_W()   { static Material m = make_Tungsten(); return m; }
 // Bare 3"x3" NaI cylinder, no can, for clean analytic limits.
 Geometry bare_nai_3x3() {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     return g;
 }
 
@@ -125,7 +125,7 @@ BOOST_AUTO_TEST_CASE(tsrc_identity) {
 BOOST_AUTO_TEST_CASE(can_attenuation_monotonic) {
     const Geometry bare = bare_nai_3x3();
     Geometry canned;
-    canned.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    canned.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     canned.add_attenuator(&mat_Al(), 0.05, 0.05, 0.0, 7.62);
 
     const Eigen::Vector3d src(0, 0, -10.0);
@@ -147,7 +147,7 @@ BOOST_AUTO_TEST_CASE(can_attenuation_monotonic) {
 // geometry (3"x3" NaI + 1.5 cm W side collimator extending 5 cm past the face).
 BOOST_AUTO_TEST_CASE(collimator_hole_fraction) {
     Geometry g;
-    g.set_detector(DetectorShape::Cylinder, &mat_NaI(), {3.81, 7.62});
+    g.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     g.add_attenuator(&mat_Al(), 0.05, 0.05, 0.0, 7.62);
     g.add_collimator(&mat_W(), 1.5, -5.0, 7.62);
 

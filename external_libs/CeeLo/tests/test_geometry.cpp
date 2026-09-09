@@ -742,7 +742,7 @@ BOOST_AUTO_TEST_CASE(bulletized_geometry_composes_with_bore_and_dead_layer) {
     // same ring centre with radius r_b - t.
     auto ge = make_HPGe();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &ge, {BR, BL});
+    geom.set_detector(&ge, CylinderDims{BR, BL});
     geom.set_bullet_radius(BRB);
     geom.set_bore_hole(0.495, 5.54, /*rounded_tip=*/true);
     geom.set_dead_layer(0.07, 0.07);
@@ -819,7 +819,7 @@ BOOST_AUTO_TEST_CASE(bulletized_geometry_survives_unequal_dead_layers) {
     for (auto dl : {std::make_pair(0.20, 0.05), std::make_pair(0.05, 0.20),
                     std::make_pair(1.00, 1.00)}) {
         Geometry geom;
-        geom.set_detector(DetectorShape::Cylinder, &ge, {BR, BL});
+        geom.set_detector(&ge, CylinderDims{BR, BL});
         geom.set_bullet_radius(BRB);
         geom.set_dead_layer(dl.first, dl.second);
 
@@ -849,8 +849,8 @@ BOOST_AUTO_TEST_CASE(bulletized_geometry_removes_only_corner_material) {
     // shorten chords, and must shorten them strictly for corner-crossing rays.
     auto ge = make_HPGe();
     Geometry sharp, bullet;
-    sharp.set_detector(DetectorShape::Cylinder, &ge, {BR, BL});
-    bullet.set_detector(DetectorShape::Cylinder, &ge, {BR, BL});
+    sharp.set_detector(&ge, CylinderDims{BR, BL});
+    bullet.set_detector(&ge, CylinderDims{BR, BL});
     bullet.set_bullet_radius(BRB);
 
     std::mt19937_64 rng(24680);
@@ -891,7 +891,7 @@ BOOST_AUTO_TEST_CASE(bare_cylinder_trace) {
     // 2" x 2" NaI: R=2.54 cm, L=5.08 cm
     auto nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {2.54, 5.08});
+    geom.set_detector(&nai, CylinderDims{2.54, 5.08});
 
     Eigen::Vector3d origin(0.0, 0.0, -20.0);
     Eigen::Vector3d dir(0.0, 0.0, 1.0);
@@ -907,7 +907,7 @@ BOOST_AUTO_TEST_CASE(cylinder_with_dead_layer) {
     // HPGe with 0.5 mm front dead layer, 0.5 mm side dead layer
     auto ge = make_HPGe();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &ge, {3.0, 6.0});
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
     geom.set_dead_layer(0.05, 0.05, 0.0); // 0.5 mm = 0.05 cm
 
     Eigen::Vector3d origin(0.0, 0.0, -20.0);
@@ -942,7 +942,7 @@ BOOST_AUTO_TEST_CASE(cylinder_with_attenuator) {
     auto nai = make_NaI();
     auto al = make_Aluminum();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {2.54, 5.08});
+    geom.set_detector(&nai, CylinderDims{2.54, 5.08});
     geom.add_attenuator(&al, 0.1, 0.1, -0.1, 5.18); // 1mm Al all around
 
     Eigen::Vector3d origin(0.0, 0.0, -20.0);
@@ -966,7 +966,7 @@ BOOST_AUTO_TEST_CASE(bare_box_trace) {
     // Simple box detector: 2x3x5 cm
     auto czt = make_CZT();
     Geometry geom;
-    geom.set_detector(DetectorShape::Box, &czt, {1.0, 1.5, 5.0});
+    geom.set_detector(&czt, BoxDims{1.0, 1.5, 5.0});
 
     Eigen::Vector3d origin(0.0, 0.0, -10.0);
     Eigen::Vector3d dir(0.0, 0.0, 1.0);
@@ -980,7 +980,7 @@ BOOST_AUTO_TEST_CASE(bare_box_trace) {
 BOOST_AUTO_TEST_CASE(ray_misses_geometry) {
     auto nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {2.54, 5.08});
+    geom.set_detector(&nai, CylinderDims{2.54, 5.08});
 
     // Ray that completely misses
     Eigen::Vector3d origin(10.0, 10.0, -20.0);
@@ -994,7 +994,7 @@ BOOST_AUTO_TEST_CASE(outer_bounding_radius_grows_with_attenuators) {
     auto nai = make_NaI();
     auto pb = make_Lead();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {2.54, 5.08});
+    geom.set_detector(&nai, CylinderDims{2.54, 5.08});
 
     double r0 = geom.outer_bounding_radius();
     BOOST_CHECK_CLOSE(r0, 2.54, 1e-4);
@@ -1013,7 +1013,7 @@ BOOST_AUTO_TEST_CASE(bore_hole_geometry_trace) {
     // Coaxial HPGe: R=3.0 cm, L=6.0 cm, bore R=0.5 cm, bore depth=4.0 cm
     auto ge = make_HPGe();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &ge, {3.0, 6.0});
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
     geom.set_bore_hole(0.5, 4.0);
 
     // On-axis ray: should only traverse the non-bore part

@@ -107,7 +107,22 @@ struct Scenario
    geometry by mirror symmetry.
    */
   double offset_cm = 0.0;
+
+  /** In-situ exponential depth profile, exp(-depth/relax_cm) from the detector-facing surface;
+   0 = uniform emission.  InterSpec's ExponentialDistribution trace type is per unit EMITTING AREA,
+   so an in-situ row's model integral is reduced by that area rather than by the volume (see
+   scenario_emitting_area_cm2 and interspec_volumetric_eff).  CeeLo's profile runs along the
+   source's LOCAL z, which is the detector axis only for a Box or an end-on Cylinder; a side-on
+   cylinder's InterSpec depth is RADIAL, so it cannot be represented and is refused. */
+  double relax_cm = 0.0;
 };//struct Scenario
+
+
+/** Whether the scenario emits with the in-situ exponential profile. */
+inline bool is_in_situ( const Scenario &s )
+{
+  return s.relax_cm > 0.0;
+}
 
 
 /** Box half-dimensions in CeeLo's (hx, hy, hz) order, hz being along the detector axis. */
@@ -247,6 +262,55 @@ inline std::vector<Scenario> scenarios()
 }//scenarios()
 
 
+/** IN-SITU EXPONENTIAL sources (InterSpec's ExponentialDistribution trace type, activity per m^2
+ of the emitting face) - kept OUT of scenarios() so the uniform-source matrices (line-vs-element
+ A/B, ladder rungs) are unchanged; only the truth-bank passes add these.
+
+ These are the only Monte-Carlo-arbitrated rows for that profile, and the reason they exist is the
+ per-AREA convention: the model's integral must supply the emitting area (see
+ scenario_emitting_area_cm2), and only a truth case that runs the LINE path can show whether it
+ does.  Light matrix and contact only - the profile, not the attenuation, is what is under test; a
+ relaxation length of half the depth keeps both the profile and its truncation at the far face
+ visible.  The centre distance (standoff + half-depth) must be one the centre-anchor table records:
+ 1.5 cm here. */
+inline std::vector<Scenario> in_situ_scenarios()
+{
+  std::vector<Scenario> v;
+
+  Scenario b;
+  b.name = "insitu-box-near-light";
+  b.half_width_cm = 2.0;
+  b.half_height_cm = 1.5;
+  b.half_length_cm = 0.5;
+  b.standoff_cm = 1.0;
+  b.dense = false;
+  b.shape = Shape::Box;
+  b.relax_cm = 0.5;
+  v.push_back( b );
+
+  Scenario c;
+  c.name = "insitu-cyl-near-light";
+  c.radius_cm = 2.0;
+  c.half_length_cm = 0.5;
+  c.standoff_cm = 1.0;
+  c.dense = false;
+  c.relax_cm = 0.5;
+  v.push_back( c );
+
+  return v;
+}//in_situ_scenarios()
+
+
+/** scenarios() followed by in_situ_scenarios(): everything the truth bank records. */
+inline std::vector<Scenario> all_scenarios()
+{
+  std::vector<Scenario> v = scenarios();
+  const std::vector<Scenario> in_situ = in_situ_scenarios();
+  v.insert( v.end(), in_situ.begin(), in_situ.end() );
+  return v;
+}//all_scenarios()
+
+
 /** Source matrix and shield, named as InterSpec materials.
  
  Both sides of the comparison resolve these through InterSpec's MaterialDB and the MC side converts
@@ -274,6 +338,18 @@ inline double scenario_volume_cm3( const Scenario &s )
     return 8.0 * s.half_width_cm * s.half_height_cm * s.half_length_cm;
 
   return 3.14159265358979323846 * s.radius_cm * s.radius_cm * (2.0 * s.half_length_cm);
+}
+
+
+/** Emitting-surface area (cm^2) of an in-situ scenario - the detector-facing face, which is what
+ the per-m^2 activity of InterSpec's ExponentialDistribution refers to (its contract is documented
+ at GammaInteractionCalc::TraceActivityType): the end cap pi*r^2 of an end-on cylinder, or the
+ (2W)(2H) face of a box.  Side-on is refused (see Scenario::relax_cm). */
+inline double scenario_emitting_area_cm2( const Scenario &s )
+{
+  if( s.shape == Shape::Box )
+    return 4.0 * s.half_width_cm * s.half_height_cm;
+  return 3.14159265358979323846 * s.radius_cm * s.radius_cm;
 }
 
 

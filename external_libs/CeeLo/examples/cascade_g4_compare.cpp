@@ -88,7 +88,7 @@ CascadeResult run(const std::vector<DecayCascade>& casc, uint64_t events) {
   Material nai = make_NaI();
   Material fe = make_Iron();
   EfficiencyCalculator calc;
-  calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+  calc.set_detector(&nai, CylinderDims{3.81, 7.62});
   calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
   calc.add_source_shield(&fe, 0.2);
   CascadeConfig cfg;

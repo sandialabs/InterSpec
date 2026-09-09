@@ -67,6 +67,10 @@ build-*
 #  from the cause.  (The existing ones only survive because they were tracked before the rule.)
 !target/**/build_*.sh
 !target/**/build_*.bat
+#  Same trap for the CI workflows: .github/workflows/build_app.yml and friends only survive
+#  because they predate the rule, so a newly added build_*.yml there is silently uncommittable.
+!.github/workflows/build_*.yml
+!.github/workflows/build_*.yaml
 release-builds*
 package-lock.json
 node_modules

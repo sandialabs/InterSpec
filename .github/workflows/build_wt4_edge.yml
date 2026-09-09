@@ -1,0 +1,96 @@
+# ------------------------------------------------------------------------------------------------
+# "Really Bleeding Edge" - automated builds of the `upgrade/Wt4` branch, which will become v1.1.
+#
+# These are deliberately kept separate from the master-branch "Development Build"
+# (tag `bleeding-edge`, produced by build_app.yml): this branch is far less stable and carries
+# many known issues, and the two should never be confused for one another.  Nothing in this file
+# may touch the `bleeding-edge` tag or its release.
+#
+# PHASE 1 (this version): builds and caches the dependency prefixes only - no app build, no
+# release.  The dependency prefix is the slow part by a wide margin, so getting it green and
+# cached first means the follow-up work on the actual app builds iterates in minutes rather than
+# hours.  See the "Phase 2" note at the bottom of this file.
+#
+# NOTE ON WHERE THIS FILE LIVES: it is committed to BOTH `master` and `upgrade/Wt4`, and must be
+#  kept identical on the two.  It never fires on master - the push trigger names only
+#  `upgrade/Wt4`, and a push always runs the copy of the workflow that is on the pushed ref.  The
+#  master copy exists solely because GitHub only registers `workflow_dispatch` for workflow files
+#  that are present on the default branch; without it there is no "Run workflow" button and
+#  `gh workflow run --ref upgrade/Wt4` returns 404.
+#
+# WHEN `upgrade/Wt4` MERGES TO master: delete this file from both branches.  build_app.yml then
+#  resumes sole responsibility for automated builds.
+# ------------------------------------------------------------------------------------------------
+name: Really Bleeding Edge (Wt4)
+
+on:
+  push:
+    branches:
+      - upgrade/Wt4
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Must not collide with the group used by any workflow this one calls (build_macos.yml uses
+  # `ci-macos-<ref>`).  Concurrency groups are repo-global across workflows, so a caller sharing a
+  # group with its callee deadlocks: the caller holds the group while the callee waits for it.
+  group: wt4-edge-${{ github.ref }}
+  # A cancelled job never reaches its `cache/save` step, which would throw away an hours-long
+  # dependency build.  Queue behind the running job instead of pre-empting it.
+  cancel-in-progress: false
+
+jobs:
+  macos-deps:
+    name: macOS dependency prefix
+    runs-on: macos-26
+    # Well under the 6 hour hard ceiling, so a wedged build fails while there is still something
+    # useful in the log rather than being killed anonymously.
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Build or restore the dependency prefix
+        uses: ./.github/actions/macos_deps_prefix
+
+  windows-deps:
+    name: Windows dependency prefix
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # Also sets up MSVC 2022 and CMake.  `install_sccache: 'false'` because this job compiles
+      # none of InterSpec's own code, so an sccache entry would be pure cache-budget burn.
+      - name: Build or restore the dependency prefix
+        uses: ./.github/actions/setup_dev_env
+        with:
+          install_sccache: 'false'
+
+# ------------------------------------------------------------------------------------------------
+# Phase 2, to be added once the two jobs above reliably hit a warm cache:
+#
+#  - `macos-build`: `uses: ./.github/workflows/build_macos.yml` with `secrets: inherit`, which
+#    gives a signed and notarized DMG.  It restores the very prefix macos-deps built above - that
+#    key parity is the whole reason the dependency logic lives in a composite action.
+#  - `windows-build`: mirror build_app.yml's `build-win` job, but WITHOUT its
+#    `EndBug/latest-tag` step - that one moves the `bleeding-edge` tag.
+#  - `release`: `permissions: contents: write` ON THE JOB ONLY (a top-level permissions block
+#    would cap what the called workflow can do), publishing with
+#    `softprops/action-gh-release@v2` to this branch's own tag, `prerelease: true` and
+#    `make_latest: false`, with a body that leads with the extra-unstable warning.
+#    Note that action-gh-release creates a missing tag but never *moves* an existing one, which
+#    is why build_app.yml pairs it with EndBug/latest-tag; do the same here for the new tag,
+#    inside the release job and immediately before the release step.
+#
+# Also still to fix before the Windows app build can work on this branch:
+#  - target/wxWidgets/sbom/make_sbom.py hardcodes the deleted `target/patches/dep_build_msvc2022.bat`
+#  - target/wxwidgets/sbom/components.json still pins Wt 3.7.1 and lists no abseil
+# ------------------------------------------------------------------------------------------------

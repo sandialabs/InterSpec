@@ -162,28 +162,13 @@ namespace
 }//namespace
 
 
-bool EffUncertBand::operator==( const EffUncertBand &rhs ) const
-{
-  return (lowerEnergy == rhs.lowerEnergy)
-         && (upperEnergy == rhs.upperEnergy)
-         && (fractionalUncert == rhs.fractionalUncert);
-}//EffUncertBand::operator==
-
-
 DetectorEfficiencyUncert::DetectorEfficiencyUncert()
-  : m_bands{},
-    m_covEnergies{},
+  : m_covEnergies{},
     m_covMatrix{},
     m_coefCovMatrix{},
     m_corrLength( -1.0 )
 {
 }//DetectorEfficiencyUncert()
-
-
-bool DetectorEfficiencyUncert::hasBands() const
-{
-  return !m_bands.empty();
-}
 
 
 bool DetectorEfficiencyUncert::hasNodeCovariance() const
@@ -194,7 +179,7 @@ bool DetectorEfficiencyUncert::hasNodeCovariance() const
 
 bool DetectorEfficiencyUncert::isEmpty() const
 {
-  return m_bands.empty() && m_covEnergies.empty() && m_coefCovMatrix.empty();
+  return m_covEnergies.empty() && m_coefCovMatrix.empty();
 }
 
 
@@ -243,42 +228,7 @@ vector<double> DetectorEfficiencyUncert::nodeFracCovariance( const vector<double
 
 vector<double> DetectorEfficiencyUncert::efficiencyFracCovariance( const vector<double> &energies ) const
 {
-  vector<double> answer = nodeFracCovariance( energies );
-
-  if( m_bands.empty() )
-    return answer;
-
-  const size_t nreq = energies.size();
-
-  // Index of the band each energy falls in, or -1 if none.
-  vector<int> band_index( nreq, -1 );
-  for( size_t i = 0; i < nreq; ++i )
-  {
-    for( size_t b = 0; b < m_bands.size(); ++b )
-    {
-      if( (energies[i] >= m_bands[b].lowerEnergy) && (energies[i] < m_bands[b].upperEnergy) )
-      {
-        band_index[i] = static_cast<int>( b );
-        break;
-      }
-    }
-  }//for( size_t i = 0; i < nreq; ++i )
-
-  // 100% correlated within a band, uncorrelated between bands.
-  for( size_t i = 0; i < nreq; ++i )
-  {
-    if( band_index[i] < 0 )
-      continue;
-
-    const double u = m_bands[band_index[i]].fractionalUncert;
-    for( size_t j = 0; j < nreq; ++j )
-    {
-      if( band_index[j] == band_index[i] )
-        answer[i*nreq + j] += u * u;
-    }
-  }//for( size_t i = 0; i < nreq; ++i )
-
-  return answer;
+  return nodeFracCovariance( energies );
 }//efficiencyFracCovariance(...)
 
 
@@ -363,32 +313,6 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromPointUncerts(
 }//fromPointUncerts(...)
 
 
-void DetectorEfficiencyUncert::setBands( const vector<EffUncertBand> &bands )
-{
-  for( size_t i = 0; i < bands.size(); ++i )
-  {
-    const EffUncertBand &band = bands[i];
-
-    if( IsNan(band.lowerEnergy) || IsNan(band.upperEnergy) || IsNan(band.fractionalUncert)
-        || IsInf(band.lowerEnergy) || IsInf(band.upperEnergy) || IsInf(band.fractionalUncert) )
-      throw runtime_error( "DetectorEfficiencyUncert::setBands: NaN/Inf band value" );
-
-    if( band.upperEnergy <= band.lowerEnergy )
-      throw runtime_error( "DetectorEfficiencyUncert::setBands: band upper energy must"
-                           " be greater than lower energy" );
-
-    if( band.fractionalUncert < 0.0f )
-      throw runtime_error( "DetectorEfficiencyUncert::setBands: band uncertainty must be >= 0" );
-
-    if( i && (band.lowerEnergy < bands[i-1].upperEnergy) )
-      throw runtime_error( "DetectorEfficiencyUncert::setBands: bands must be sorted"
-                           " and non-overlapping" );
-  }//for( size_t i = 0; i < bands.size(); ++i )
-
-  m_bands = bands;
-}//setBands(...)
-
-
 void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
                                              const vector<float> &covRowMajor )
 {
@@ -471,12 +395,6 @@ void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &co
 }//setCoefficientCovariance(...)
 
 
-const vector<EffUncertBand> &DetectorEfficiencyUncert::bands() const
-{
-  return m_bands;
-}
-
-
 const vector<float> &DetectorEfficiencyUncert::covarianceEnergies() const
 {
   return m_covEnergies;
@@ -509,19 +427,6 @@ void DetectorEfficiencyUncert::toXml( ::rapidxml::xml_node<char> *parent,
   xml_node<char> *base_node = doc->allocate_node( node_element, "EfficiencyUncert" );
   parent->append_node( base_node );
 
-  if( !m_bands.empty() )
-  {
-    vector<float> values;
-    values.reserve( 3 * m_bands.size() );
-    for( const EffUncertBand &band : m_bands )
-    {
-      values.push_back( band.lowerEnergy );
-      values.push_back( band.upperEnergy );
-      values.push_back( band.fractionalUncert );
-    }
-    append_float_list_node( base_node, doc, "Bands", values );
-  }//if( !m_bands.empty() )
-
   if( !m_covEnergies.empty() )
   {
     append_float_list_node( base_node, doc, "CovEnergies", m_covEnergies );
@@ -552,30 +457,10 @@ void DetectorEfficiencyUncert::fromXml( const ::rapidxml::xml_node<char> *node )
   if( !compare( node->name(), node->name_size(), "EfficiencyUncert", 16, false ) )
     throw runtime_error( "DetectorEfficiencyUncert::fromXml: invalid node name" );
 
-  m_bands.clear();
   m_covEnergies.clear();
   m_covMatrix.clear();
   m_coefCovMatrix.clear();
   m_corrLength = -1.0;
-
-  const vector<float> band_vals = parse_float_list_node( node, "Bands" );
-  if( !band_vals.empty() )
-  {
-    if( (band_vals.size() % 3) != 0 )
-      throw runtime_error( "DetectorEfficiencyUncert::fromXml: Bands must hold"
-                           " (lower, upper, uncert) triples" );
-
-    vector<EffUncertBand> bands;
-    for( size_t i = 0; i < band_vals.size(); i += 3 )
-    {
-      EffUncertBand band;
-      band.lowerEnergy = band_vals[i];
-      band.upperEnergy = band_vals[i+1];
-      band.fractionalUncert = band_vals[i+2];
-      bands.push_back( band );
-    }
-    setBands( bands );
-  }//if( !band_vals.empty() )
 
   const vector<float> cov_energies = parse_float_list_node( node, "CovEnergies" );
   if( !cov_energies.empty() )
@@ -601,19 +486,6 @@ void DetectorEfficiencyUncert::fromXml( const ::rapidxml::xml_node<char> *node )
 
 void DetectorEfficiencyUncert::toUrlParts( map<string,string> &parts, const string &prefix ) const
 {
-  if( !m_bands.empty() )
-  {
-    vector<float> values;
-    values.reserve( 3 * m_bands.size() );
-    for( const EffUncertBand &band : m_bands )
-    {
-      values.push_back( band.lowerEnergy );
-      values.push_back( band.upperEnergy );
-      values.push_back( band.fractionalUncert );
-    }
-    parts[prefix + "EFUB"] = to_url_flt_array( values, 5 );
-  }//if( !m_bands.empty() )
-
   if( !m_covEnergies.empty() )
   {
     const size_t nnode = m_covEnergies.size();
@@ -639,35 +511,15 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
                                             const map<string,string> &parts,
                                             const string &prefix )
 {
-  const auto band_pos = parts.find( prefix + "EFUB" );
   const auto energies_pos = parts.find( prefix + "EFUE" );
   const auto cov_pos = parts.find( prefix + "EFUC" );
   const auto corr_pos = parts.find( prefix + "EFUL" );
 
-  if( (band_pos == end(parts)) && (energies_pos == end(parts)) )
+  if( energies_pos == end(parts) )
     return nullptr;
 
   auto answer = make_shared<DetectorEfficiencyUncert>();
 
-  if( band_pos != end(parts) )
-  {
-    const vector<float> band_vals = from_url_flt_array( band_pos->second );
-    if( band_vals.empty() || ((band_vals.size() % 3) != 0) )
-      throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: invalid EFUB" );
-
-    vector<EffUncertBand> bands;
-    for( size_t i = 0; i < band_vals.size(); i += 3 )
-    {
-      EffUncertBand band;
-      band.lowerEnergy = band_vals[i];
-      band.upperEnergy = band_vals[i+1];
-      band.fractionalUncert = band_vals[i+2];
-      bands.push_back( band );
-    }
-    answer->setBands( bands );
-  }//if( band_pos != end(parts) )
-
-  if( energies_pos != end(parts) )
   {
     if( cov_pos == end(parts) )
       throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: EFUE without EFUC" );
@@ -709,13 +561,6 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
 
 void DetectorEfficiencyUncert::appendToHash( std::size_t &seed ) const
 {
-  for( const EffUncertBand &band : m_bands )
-  {
-    boost::hash_combine( seed, band.lowerEnergy );
-    boost::hash_combine( seed, band.upperEnergy );
-    boost::hash_combine( seed, band.fractionalUncert );
-  }
-
   for( const float val : m_covEnergies )
     boost::hash_combine( seed, val );
 
@@ -732,8 +577,7 @@ void DetectorEfficiencyUncert::appendToHash( std::size_t &seed ) const
 
 bool DetectorEfficiencyUncert::operator==( const DetectorEfficiencyUncert &rhs ) const
 {
-  return (m_bands == rhs.m_bands)
-         && (m_covEnergies == rhs.m_covEnergies)
+  return (m_covEnergies == rhs.m_covEnergies)
          && (m_covMatrix == rhs.m_covMatrix)
          && (m_coefCovMatrix == rhs.m_coefCovMatrix)
          && (m_corrLength == rhs.m_corrLength);
@@ -770,18 +614,6 @@ namespace
 void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
                                        const DetectorEfficiencyUncert &rhs )
 {
-  if( lhs.m_bands.size() != rhs.m_bands.size() )
-    throw runtime_error( "DetectorEfficiencyUncert: number of bands doesnt match" );
-
-  for( size_t i = 0; i < lhs.m_bands.size(); ++i )
-  {
-    const EffUncertBand &a = lhs.m_bands[i];
-    const EffUncertBand &b = rhs.m_bands[i];
-    check_float_vectors_close( { a.lowerEnergy, a.upperEnergy, a.fractionalUncert },
-                               { b.lowerEnergy, b.upperEnergy, b.fractionalUncert },
-                               "DetectorEfficiencyUncert band" );
-  }
-
   check_float_vectors_close( lhs.m_covEnergies, rhs.m_covEnergies,
                              "DetectorEfficiencyUncert covariance energies" );
   check_float_vectors_close( lhs.m_covMatrix, rhs.m_covMatrix,

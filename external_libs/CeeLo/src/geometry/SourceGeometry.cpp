@@ -129,53 +129,310 @@ double box_shell_path(const Eigen::Vector3d& local_pos,
     return t1_out - t0_out;
 }
 
+bool inside_surface(SourceGeometry::Shape shape, const SourceLayer& s,
+                    const Eigen::Vector3d& p) {
+    // Points land on a boundary constantly here (every interval endpoint is one),
+    // so the test is deliberately inclusive; midpoints are what it is asked about.
+    constexpr double kEps = 1e-12;
+    switch (shape) {
+    case SourceGeometry::Shape::Sphere:
+        return p.norm() <= s.dims[0] + kEps;
+    case SourceGeometry::Shape::Cylindrical:
+        return std::hypot(p.x(), p.y()) <= s.dims[0] + kEps
+               && std::fabs(p.z()) <= s.dims[1] + kEps;
+    case SourceGeometry::Shape::Rectangular:
+        return std::fabs(p.x()) <= s.dims[0] + kEps
+               && std::fabs(p.y()) <= s.dims[1] + kEps
+               && std::fabs(p.z()) <= s.dims[2] + kEps;
+    default:
+        return false;
+    }
+}
+
+void surface_crossings(SourceGeometry::Shape shape, const SourceLayer& s,
+                       const Eigen::Vector3d& p, const Eigen::Vector3d& d,
+                       std::vector<double>& out) {
+    std::optional<RayHit> hit;
+    switch (shape) {
+    case SourceGeometry::Shape::Sphere:
+        hit = intersect_sphere(p, d, Eigen::Vector3d::Zero(), s.dims[0]);
+        break;
+    case SourceGeometry::Shape::Cylindrical:
+        hit = intersect_cylinder(p, d, s.dims[0], -s.dims[1], s.dims[1]);
+        break;
+    case SourceGeometry::Shape::Rectangular:
+        hit = intersect_box(p, d, s.dims[0], s.dims[1], -s.dims[2], s.dims[2]);
+        break;
+    default:
+        return;
+    }
+    if (!hit || !hit->valid()) return;
+    if (hit->t_enter > 0.0) out.push_back(hit->t_enter);
+    if (hit->t_exit > 0.0) out.push_back(hit->t_exit);
+}
+
+/// Ordered ray march through a concentric stack given innermost-layer-first.
+///
+/// Unlike the per-layer shell-path helpers above - which return one AGGREGATE
+/// length per layer, merging the near-wall and far-wall crossings of a hollow
+/// shell into a single number - this produces segments in true traversal order.
+/// That distinction only matters once the inner region attenuates: a merged
+/// near+far length still gives the right exp(-mu L), but transport_source_photon()
+/// locates interactions by accumulating segment lengths along the ray, so a
+/// merged segment would place a far-wall interaction short by the whole core
+/// chord.  Hence: cores => this walker; no cores => the original loops, untouched.
+///
+/// Method: collect every forward crossing of every surface, sort, and label each
+/// interval by the innermost surface containing its midpoint.  O(n log n) in the
+/// number of surfaces and correct for any nested convex stack, including rays
+/// that miss the inner surfaces entirely.
+void trace_concentric(SourceGeometry::Shape shape,
+                      const std::vector<SourceLayer>& surfs,
+                      const Eigen::Vector3d& local_pos,
+                      const Eigen::Vector3d& local_dir,
+                      std::vector<SourceGeometry::SourcePathSegment>& out,
+                      std::size_t max_segments) {
+    std::vector<double> ts;
+    ts.reserve(2 * surfs.size() + 1);
+    ts.push_back(0.0);
+    for (const SourceLayer& s : surfs)
+        surface_crossings(shape, s, local_pos, local_dir, ts);
+
+    std::sort(ts.begin(), ts.end());
+
+    for (std::size_t i = 0; i + 1 < ts.size(); ++i) {
+        const double t0 = ts[i], t1 = ts[i + 1];
+        const double len = t1 - t0;
+        if (len <= 1e-10) continue;
+
+        const Eigen::Vector3d mid = local_pos + local_dir * (0.5 * (t0 + t1));
+
+        const Material* mat = nullptr;
+        bool in_assembly = false;
+        for (const SourceLayer& s : surfs) {
+            if (inside_surface(shape, s, mid)) {
+                mat = s.material;
+                in_assembly = true;
+                break;  //surfs is innermost-first, so the first hit is the region
+            }
+        }
+        if (!in_assembly) break;  //left the outermost surface; nothing beyond
+
+        // Merge with the previous segment when the material repeats, so a stack
+        // whose neighbours share a material reads the way the layer loops do.
+        // Merging is checked BEFORE the cap: a caller asking for one segment
+        // (the Moliere walk) wants the full run of its current material, not the
+        // first interval of it.
+        if (!out.empty() && out.back().material == mat) {
+            out.back().length += len;
+            continue;
+        }
+        if (out.size() >= max_segments) return;
+        out.push_back({mat, len});
+    }
+}
+
 } // namespace
 
+Eigen::Vector3d SourceGeometry::layer_delta(const SourceLayer& l) const {
+    // The per-shape reading of a thickness triple, in the same meaning `dims`
+    //  has: Sphere {radius}; Cylinder {radial, end}; Box {x, y, z}.
+    switch (shape_) {
+    case Shape::Cylindrical: return Eigen::Vector3d(l.tx, l.tz, 0.0);
+    case Shape::Rectangular: return Eigen::Vector3d(l.tx, l.ty, l.tz);
+    default:                 return Eigen::Vector3d(l.tx, 0.0, 0.0);  //sphere
+    }
+}
+
+Eigen::Vector3d SourceGeometry::shape_inner_dims() const {
+    switch (shape_) {
+    case Shape::Sphere:      return Eigen::Vector3d(sphere_inner_r_, 0.0, 0.0);
+    case Shape::Cylindrical: return Eigen::Vector3d(cyl_inner_r_, cyl_inner_half_length_, 0.0);
+    case Shape::Rectangular: return rect_inner_half_dims_;
+    default:                 return Eigen::Vector3d::Zero();  //Point, Marinelli
+    }
+}
+
+Eigen::Vector3d SourceGeometry::shape_outer_dims() const {
+    switch (shape_) {
+    case Shape::Sphere:      return Eigen::Vector3d(sphere_radius_, 0.0, 0.0);
+    case Shape::Cylindrical: return Eigen::Vector3d(cyl_radius_, cyl_half_length_, 0.0);
+    case Shape::Rectangular: return rect_half_dims_;
+    default:                 return Eigen::Vector3d::Zero();  //Point, Marinelli
+    }
+}
+
+void SourceGeometry::rebuild_layer_dims() {
+    // Split the current stack back into its three runs.  n_core_layers_ plus
+    //  has_center_void_ describe the layout exactly, so this survives any
+    //  ordering of configure_*/set_source_material/add_shield/add_core calls.
+    const std::size_t first_core = has_center_void_ ? 1u : 0u;
+    const std::size_t src_at = first_core + n_core_layers_;
+    assert(src_at < layers_.size());
+
+    std::vector<SourceLayer> cores(layers_.begin() + first_core,
+                                   layers_.begin() + src_at);
+    std::vector<SourceLayer> shields(layers_.begin() + src_at + 1, layers_.end());
+    SourceLayer src = layers_[src_at];
+
+    const Eigen::Vector3d inner = shape_inner_dims();
+    const Eigen::Vector3d outer = shape_outer_dims();
+
+    // Cores are stored innermost-first, but they FILL inward: the last one is
+    //  the layer against the source's inner surface.  Walk them outermost-first
+    //  (i.e. backwards), taking each one's thickness off the cavity as we go.
+    Eigen::Vector3d d = inner;
+    for (std::size_t i = cores.size(); i-- > 0; ) {
+        cores[i].dims = d;
+        d = (d - layer_delta(cores[i])).cwiseMax(0.0);
+    }
+
+    layers_.clear();
+    layers_.reserve(cores.size() + shields.size() + 2);
+
+    // Whatever the cores did not reach stays a genuine void.  Keeping it in the
+    //  list (null material, which every consumer already skips) is what makes
+    //  the along-ray distances right for a partly-filled core.
+    has_center_void_ = (d.maxCoeff() > 1e-10);
+    if (has_center_void_)
+        layers_.push_back({nullptr, 0.0, 0.0, 0.0, d});
+
+    for (const SourceLayer& c : cores) layers_.push_back(c);
+
+    source_layer_index_ = layers_.size();
+    src.material = source_material_;
+    src.dims = outer;
+    layers_.push_back(src);
+
+    Eigen::Vector3d o = outer;
+    for (SourceLayer sh : shields) {
+        o += layer_delta(sh);
+        sh.dims = o;
+        layers_.push_back(sh);
+    }
+}
+
+void SourceGeometry::init_layer_stack() {
+    // Seed the stack the first time a shape is configured; a re-configure keeps
+    //  whatever layers were already added and just re-sizes them.
+    if (layers_.empty()) {
+        n_core_layers_ = 0;
+        has_center_void_ = false;
+        has_attenuating_interior_ = false;
+        source_layer_index_ = 0;
+        layers_.push_back({source_material_, 0.0, 0.0, 0.0,
+                           Eigen::Vector3d::Zero()});
+    }
+    rebuild_layer_dims();
+}
+
+// A shield grows the stack outward; a core fills the cavity inward.  Which side
+//  a layer lands on is the ONLY difference between the two.
 void SourceGeometry::add_shield(const Material* mat, double thickness) {
     assert(mat && thickness > 0.0);
-    shields_.push_back({mat, thickness, thickness, thickness});
+    push_shield_layer({mat, thickness, thickness, thickness, {}});
 }
 
 void SourceGeometry::add_shield(const Material* mat, double t_radial, double t_end) {
     assert(mat && t_radial >= 0.0 && t_end >= 0.0 && (t_radial > 0.0 || t_end > 0.0));
     assert(!configured_ || shape_ == Shape::Cylindrical);
-    shields_.push_back({mat, t_radial, t_radial, t_end});
+    push_shield_layer({mat, t_radial, t_radial, t_end, {}});
 }
 
 void SourceGeometry::add_shield(const Material* mat, double t_x, double t_y, double t_z) {
     assert(mat && t_x >= 0.0 && t_y >= 0.0 && t_z >= 0.0
            && (t_x > 0.0 || t_y > 0.0 || t_z > 0.0));
     assert(!configured_ || shape_ == Shape::Rectangular);
-    shields_.push_back({mat, t_x, t_y, t_z});
+    push_shield_layer({mat, t_x, t_y, t_z, {}});
+}
+
+void SourceGeometry::add_core(const Material* mat, double thickness) {
+    assert(mat && thickness > 0.0);
+    push_core_layer({mat, thickness, thickness, thickness, {}});
+}
+
+void SourceGeometry::add_core(const Material* mat, double t_radial, double t_end) {
+    assert(mat && t_radial >= 0.0 && t_end >= 0.0 && (t_radial > 0.0 || t_end > 0.0));
+    assert(!configured_ || shape_ == Shape::Cylindrical);
+    push_core_layer({mat, t_radial, t_radial, t_end, {}});
+}
+
+void SourceGeometry::add_core(const Material* mat, double t_x, double t_y, double t_z) {
+    assert(mat && t_x >= 0.0 && t_y >= 0.0 && t_z >= 0.0
+           && (t_x > 0.0 || t_y > 0.0 || t_z > 0.0));
+    assert(!configured_ || shape_ == Shape::Rectangular);
+    push_core_layer({mat, t_x, t_y, t_z, {}});
+}
+
+void SourceGeometry::push_shield_layer(SourceLayer layer) {
+    if (layers_.empty()) {
+        // add_shield() before configure_*(): seed the emitting layer so the
+        //  shells have something to accumulate from.  A point source's shells
+        //  legitimately start at r = 0, which is what a zero-dims seed gives.
+        n_core_layers_ = 0;
+        has_center_void_ = false;
+        source_layer_index_ = 0;
+        layers_.push_back({source_material_, 0.0, 0.0, 0.0,
+                           Eigen::Vector3d::Zero()});
+    }
+    layers_.push_back(layer);
+    rebuild_layer_dims();
+}
+
+void SourceGeometry::push_core_layer(SourceLayer layer) {
+    assert(!layers_.empty() && "add_core() requires a configured source");
+    assert(shape_ == Shape::Sphere || shape_ == Shape::Cylindrical
+           || shape_ == Shape::Rectangular);
+    assert(shape_inner_dims().maxCoeff() > 1e-10
+           && "add_core() requires a hollow source");
+
+    // Cores are given OUTERMOST FIRST, so each new one goes immediately inside
+    //  the previous one - i.e. at the innermost end of the core run, which is
+    //  where the stack stores it.  rebuild_layer_dims() then re-derives every
+    //  boundary from the cavity inward.
+    const std::size_t first_core = has_center_void_ ? 1u : 0u;
+    layers_.insert(layers_.begin() + first_core, layer);
+    ++n_core_layers_;
+    has_attenuating_interior_ = true;
+    rebuild_layer_dims();
 }
 
 void SourceGeometry::configure_point(const Eigen::Vector3d& position) {
     shape_ = Shape::Point;
     point_position_ = position;
+    // A point source has no volume: the emitting layer is a zero-dims seed and
+    //  the shells accumulate outward from r = 0, exactly as before.
+    init_layer_stack();
     configured_ = true;
 }
 
 void SourceGeometry::configure_cylindrical(const Eigen::Vector3d& center, double radius,
                                             double half_length, const Eigen::Matrix3d& rotation,
-                                            double inner_radius) {
+                                            double inner_radius,
+                                            double inner_half_length) {
     assert(inner_radius >= 0.0 && inner_radius < radius);
     shape_ = Shape::Cylindrical;
     cyl_center_ = center;
     cyl_radius_ = radius;
     cyl_inner_r_ = inner_radius;
+    // Negative = through-bore (a pipe): the hollow region runs the full length.
+    cyl_inner_half_length_ = (inner_half_length < 0.0) ? half_length : inner_half_length;
+    assert(cyl_inner_half_length_ >= 0.0 && cyl_inner_half_length_ <= half_length);
     cyl_half_length_ = half_length;
     cyl_rotation_ = rotation;
+    init_layer_stack();
     configured_ = true;
 }
 
-void SourceGeometry::configure_spherical(const Eigen::Vector3d& center, double inner_radius,
-                                          double outer_radius, const Eigen::Matrix3d& rotation) {
+void SourceGeometry::configure_spherical(const Eigen::Vector3d& center, double outer_radius,
+                                          double inner_radius, const Eigen::Matrix3d& rotation) {
     assert(inner_radius >= 0.0 && inner_radius < outer_radius);
     shape_ = Shape::Sphere;
     sphere_center_ = center;
     sphere_inner_r_ = inner_radius;
     sphere_radius_ = outer_radius;
     sphere_rotation_ = rotation;
+    init_layer_stack();
     configured_ = true;
 }
 
@@ -192,6 +449,7 @@ void SourceGeometry::configure_rectangular(const Eigen::Vector3d& center,
     rect_half_dims_ = half_dims;
     rect_inner_half_dims_ = inner_half_dims;
     rect_rotation_ = rotation;
+    init_layer_stack();
     configured_ = true;
 }
 
@@ -203,6 +461,10 @@ void SourceGeometry::configure_marinelli(double well_inner_radius, double outer_
     marinelli_z_bk_ = z_bk;
     marinelli_z_we_ = z_we;
     marinelli_z_bot_ = z_bot;
+    // Marinelli is an L-shaped fill on absolute z-planes, not a concentric
+    //  stack, so its layers carry thicknesses only and `dims` stays zero; the
+    //  beaker-wall paths read scalar_thickness() and the absolute z-planes.
+    init_layer_stack();
     configured_ = true;
 }
 
@@ -415,7 +677,7 @@ SourceGeometry::MarinelliReentryInfo SourceGeometry::compute_marinelli_reentry(
 
     // Beaker wall thickness (from shields — first layer)
     double wall_t = 0.0;
-    if (!shields_.empty()) wall_t = shields_[0].scalar_thickness();
+    if (!shields().empty()) wall_t = shields()[0].scalar_thickness();
 
     // --- 1. Ring entry through well wall (r = marinelli_well_r_) ---
     // Photon crosses the well outer surface (= water inner boundary) at r = well_r
@@ -519,10 +781,12 @@ double SourceGeometry::source_material_path(const Eigen::Vector3d& position,
         Eigen::Vector3d local_pos = cyl_rotation_ * (position - cyl_center_);
         Eigen::Vector3d local_dir = cyl_rotation_ * direction;
 
-        // Annulus when a bore is present (subtract the non-attenuating core);
+        // Annulus when a bore is present (subtract the inactive inner region);
         // cyl_inner_r_ == 0 reduces to the solid-cylinder exit path.
+        // cyl_inner_half_length_ == cyl_half_length_ for a through-bore, which
+        // is what configure_cylindrical() gives unless told otherwise.
         return cyl_shell_path(local_pos, local_dir,
-                              cyl_inner_r_, cyl_half_length_,
+                              cyl_inner_r_, cyl_inner_half_length_,
                               cyl_radius_, cyl_half_length_);
     }
 
@@ -573,7 +837,7 @@ double SourceGeometry::min_distance_to_boundary(
         // spherical shield shells, which fill outward from the point.
         if (!include_shields) return 0.0;
         double r_out = 0.0;
-        for (const auto& layer : shields_) r_out += layer.scalar_thickness();
+        for (const auto& layer : shields()) r_out += layer.scalar_thickness();
         double r = (position - point_position_).norm();
         return std::max(r_out - r, 0.0);
     }
@@ -581,20 +845,27 @@ double SourceGeometry::min_distance_to_boundary(
         double r_out = cyl_radius_;
         double l_out = cyl_half_length_;
         if (include_shields)
-            for (const auto& layer : shields_) { r_out += layer.tx; l_out += layer.tz; }
+            for (const auto& layer : shields()) { r_out += layer.tx; l_out += layer.tz; }
         Eigen::Vector3d local = cyl_rotation_ * (position - cyl_center_);
         double rho = std::hypot(local.x(), local.y());
         double d = std::min(r_out - rho, l_out - std::abs(local.z()));
-        // Hollow bore: the inner void wall is also a material boundary when we
-        // measure to the source-material surface (include_shields == false).
-        if (!include_shields && cyl_inner_r_ > 1e-10)
+        // Hollow bore: the inner wall is also a material boundary when we
+        // measure to the source-material surface (include_shields == false) -
+        // whether the inside is a void or a core.  A closed cavity
+        // (cyl_inner_half_length_ < cyl_half_length_) adds its end faces, on the
+        // same conservative footing as the box below.
+        if (!include_shields && cyl_inner_r_ > 1e-10) {
             d = std::min(d, rho - cyl_inner_r_);
+            const double beyond = std::abs(local.z()) - cyl_inner_half_length_;
+            if (beyond > 0.0)
+                d = std::min(d, beyond);
+        }
         return std::max(d, 0.0);
     }
     case Shape::Sphere: {
         double r_out = sphere_radius_;
         if (include_shields)
-            for (const auto& layer : shields_) r_out += layer.scalar_thickness();
+            for (const auto& layer : shields()) r_out += layer.scalar_thickness();
         double r = (position - sphere_center_).norm();
         double d = r_out - r;
         if (!include_shields && sphere_inner_r_ > 1e-10)
@@ -604,7 +875,7 @@ double SourceGeometry::min_distance_to_boundary(
     case Shape::Rectangular: {
         Eigen::Vector3d h = rect_half_dims_;
         if (include_shields)
-            for (const auto& layer : shields_) {
+            for (const auto& layer : shields()) {
                 h.x() += layer.tx; h.y() += layer.ty; h.z() += layer.tz;
             }
         Eigen::Vector3d local = rect_rotation_ * (position - rect_center_);
@@ -656,6 +927,20 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
                                              double energy_MeV) const {
     double total_mu_L = 0.0;
 
+    // With cores the concentric stack is walked once, in order, and this is just
+    //  the sum over the segments it returns; without them, the original per-layer
+    //  loops below run unchanged.  (Attenuation itself does not care about order,
+    //  but having one geometry description rather than two does.)
+    if (has_attenuating_interior_) {
+        std::vector<SourcePathSegment> segments;
+        trace_cored_segments(position, direction, segments, SIZE_MAX);
+        for (const SourcePathSegment& seg : segments) {
+            if (seg.material && seg.length > 0.0)
+                total_mu_L += seg.material->mu_total(energy_MeV) * seg.length;
+        }
+        return std::exp(-total_mu_L);
+    }
+
     // Source material attenuation
     if (source_material_) {
         double path = source_material_path(position, direction);
@@ -667,7 +952,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
     // Shielding layers
     if (shape_ == Shape::Point) {
         // Spherical shells: path = thickness (direction-independent)
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.is_uniform());
             total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness();
         }
@@ -679,7 +964,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         Eigen::Vector3d local_pos = cyl_rotation_ * (position - cyl_center_);
         Eigen::Vector3d local_dir = cyl_rotation_ * direction;
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.tx == layer.ty);
             double outer_r = inner_r + layer.tx;
             double outer_half_z = inner_half_z + layer.tz;
@@ -725,7 +1010,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         Eigen::Vector3d local_pos = rect_rotation_ * (position - rect_center_);
         Eigen::Vector3d local_dir = rect_rotation_ * direction;
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             double outer_hx = inner_hx + layer.tx;
             double outer_hy = inner_hy + layer.ty;
             double outer_hz = inner_hz + layer.tz;
@@ -767,7 +1052,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         // from the center, so the path is direction-dependent — unlike a point
         // source emitting from the exact center).
         double inner_r = sphere_radius_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.is_uniform());
             double outer_r = inner_r + layer.scalar_thickness();
             double path = spherical_shell_path(sphere_center_, position, direction,
@@ -780,7 +1065,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
         // Beaker wall: path depends on exit surface. Well opening has no wall.
         double wall_factor = marinelli_wall_factor(position, direction);
         if (wall_factor > 0.0) {
-            for (const auto& layer : shields_) {
+            for (const auto& layer : shields()) {
                 assert(layer.is_uniform());
                 total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness() * wall_factor;
             }
@@ -792,7 +1077,7 @@ double SourceGeometry::compute_transmission(const Eigen::Vector3d& position,
 
 double SourceGeometry::point_source_transmission(double energy_MeV) const {
     double total_mu_L = 0.0;
-    for (const auto& layer : shields_) {
+    for (const auto& layer : shields()) {
         assert(layer.is_uniform());
         total_mu_L += layer.material->mu_total(energy_MeV) * layer.scalar_thickness();
     }
@@ -843,6 +1128,31 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         }
     };
 
+    // With cores, one ordered walk replaces the per-layer loops (see
+    //  compute_transmission).  process_layer can turn the photon (Rayleigh), and
+    //  every layer past a turn must be traced along the NEW direction - which is
+    //  what the per-shape loops below do by re-deriving the direction each
+    //  iteration.  Here that means re-tracing the rest of the stack from the
+    //  turn point.  Voids advance the position without being processed.
+    if (has_attenuating_interior_) {
+        constexpr int kMaxRetrace = 32;
+        Eigen::Vector3d pos = position;
+        std::vector<SourcePathSegment> segments;
+        for (int retrace = 0; retrace < kMaxRetrace; ++retrace) {
+            const Eigen::Vector3d dir_before = dir;
+            trace_cored_segments(pos, dir_before, segments, SIZE_MAX);
+
+            bool turned = false;
+            for (const SourcePathSegment& seg : segments) {
+                process_layer(seg.material, seg.length);
+                pos += dir_before * seg.length;
+                if (dir != dir_before) { turned = true; break; }
+            }
+            if (!turned) break;
+        }
+        return {weight, dir, pos};
+    }
+
     // Source material attenuation
     if (source_material_) {
         double path = source_material_path(position, direction);
@@ -851,7 +1161,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
 
     // Shielding layers
     if (shape_ == Shape::Point) {
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.is_uniform());
             process_layer(layer.material, layer.scalar_thickness());
         }
@@ -860,7 +1170,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         double inner_half_z = cyl_half_length_;
         Eigen::Vector3d local_pos = cyl_rotation_ * (position - cyl_center_);
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             // Recompute local_dir each iteration: process_layer may change dir
             // via Rayleigh scattering in an earlier layer.
             Eigen::Vector3d local_dir = cyl_rotation_ * dir;
@@ -899,7 +1209,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         double inner_hz = rect_half_dims_.z();
         Eigen::Vector3d local_pos = rect_rotation_ * (position - rect_center_);
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             // Recompute local_dir each iteration: process_layer may change dir
             // via Rayleigh scattering in an earlier layer.
             Eigen::Vector3d local_dir = rect_rotation_ * dir;
@@ -937,7 +1247,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         // Spherical shells: ray-trace each shell with the current direction
         // (Rayleigh in an earlier layer may have changed `dir`).
         double inner_r = sphere_radius_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.is_uniform());
             double outer_r = inner_r + layer.scalar_thickness();
             double path = spherical_shell_path(sphere_center_, position, dir,
@@ -949,7 +1259,7 @@ SourceGeometry::SourceTransmissionResult SourceGeometry::compute_transmission_fe
         // Beaker wall: path depends on exit surface. Well opening has no wall.
         double wall_factor = marinelli_wall_factor(position, direction);
         if (wall_factor > 0.0) {
-            for (const auto& layer : shields_) {
+            for (const auto& layer : shields()) {
                 assert(layer.is_uniform());
                 process_layer(layer.material, layer.scalar_thickness() * wall_factor);
             }
@@ -977,7 +1287,17 @@ void SourceGeometry::trace_source_segments(
     std::size_t max_segments) const
 {
     segments.clear();
-    segments.reserve(1 + shields_.size());
+    segments.reserve(1 + shields().size());
+
+    // An attenuating core makes segment ORDER load-bearing, so the whole stack
+    //  goes through the ordered walker instead of the per-layer loops below.
+    //  There is no attenuating interior for any source that predates
+    //  add_core(), so the loops
+    //  below - and every number they have ever produced - are untouched.
+    if (has_attenuating_interior_) {
+        trace_cored_segments(position, direction, segments, max_segments);
+        return;
+    }
 
     // Source material (extended sources only)
     if (source_material_ && shape_ != Shape::Point) {
@@ -998,7 +1318,7 @@ void SourceGeometry::trace_source_segments(
         const Eigen::Vector3d& center =
             (shape_ == Shape::Point) ? point_position_ : sphere_center_;
         double inner_r = (shape_ == Shape::Point) ? 0.0 : sphere_radius_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.is_uniform());
             double outer_r = inner_r + layer.scalar_thickness();
             double path = spherical_shell_path(center, position, direction,
@@ -1015,7 +1335,7 @@ void SourceGeometry::trace_source_segments(
         Eigen::Vector3d local_pos = cyl_rotation_ * (position - cyl_center_);
         Eigen::Vector3d local_dir = cyl_rotation_ * direction;
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             assert(layer.tx == layer.ty);
             double outer_r = inner_r + layer.tx;
             double outer_half_z = inner_half_z + layer.tz;
@@ -1054,7 +1374,7 @@ void SourceGeometry::trace_source_segments(
         Eigen::Vector3d local_pos = rect_rotation_ * (position - rect_center_);
         Eigen::Vector3d local_dir = rect_rotation_ * direction;
 
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             double outer_hx = inner_hx + layer.tx;
             double outer_hy = inner_hy + layer.ty;
             double outer_hz = inner_hz + layer.tz;
@@ -1092,7 +1412,7 @@ void SourceGeometry::trace_source_segments(
         // Only add wall if photon is inside sample volume.
         double wall_factor = marinelli_wall_factor(position, direction);
         if (wall_factor > 0.0) {
-            for (const auto& layer : shields_) {
+            for (const auto& layer : shields()) {
                 assert(layer.is_uniform());
                 double path = layer.scalar_thickness() * wall_factor;
                 if (path > 1e-10) {
@@ -1102,6 +1422,45 @@ void SourceGeometry::trace_source_segments(
             }
         }
     }
+}
+
+void SourceGeometry::trace_cored_segments(
+    const Eigen::Vector3d& position,
+    const Eigen::Vector3d& direction,
+    std::vector<SourcePathSegment>& segments,
+    std::size_t max_segments) const
+{
+    // Cores only make sense for an extended source with a hollow interior.
+    assert(shape_ == Shape::Sphere || shape_ == Shape::Cylindrical
+           || shape_ == Shape::Rectangular);
+
+    Eigen::Vector3d local_pos, local_dir;
+    switch (shape_) {
+    case Shape::Sphere:
+        // A sphere is rotation invariant, so the local frame is a translation.
+        local_pos = position - sphere_center_;
+        local_dir = direction;
+        break;
+    case Shape::Cylindrical:
+        local_pos = cyl_rotation_ * (position - cyl_center_);
+        local_dir = cyl_rotation_ * direction;
+        break;
+    case Shape::Rectangular:
+        local_pos = rect_rotation_ * (position - rect_center_);
+        local_dir = rect_rotation_ * direction;
+        break;
+    default:
+        return;
+    }
+
+    // layers_ IS the stack the march wants: innermost-first, each entry
+    //  carrying the outer boundary of the region its material fills, with an
+    //  unfilled cavity kept as a null-material entry so the along-ray distances
+    //  stay right.  It used to be stitched together here from an outermost-first
+    //  core list, the source material and an innermost-first shield list, on
+    //  every single ray; maintaining it in the mutators instead is what lets the
+    //  GDML export emit the same geometry this traces.
+    trace_concentric(shape_, layers_, local_pos, local_dir, segments, max_segments);
 }
 
 double SourceGeometry::no_interaction_probability(
@@ -1183,10 +1542,13 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
     };
 
     // Detect whether the source geometry is a single material (no internal
-    // interfaces). Computed once per primary.
+    // interfaces). Computed once per primary.  A cored source always has an
+    // interface at the source/core wall - and possibly a void behind the cores -
+    // so it never takes the single-material electron-containment fast path
+    // below.  Erring toward `false` only costs the slower, exact route.
     const Material* first_mat = source_material_;
-    bool single_material = true;
-    for (const auto& layer : shields_) {
+    bool single_material = !has_attenuating_interior_;
+    for (const auto& layer : shields()) {
         if (!layer.material) continue;
         if (!first_mat) first_mat = layer.material;
         else if (layer.material != first_mat) { single_material = false; break; }
@@ -1290,6 +1652,13 @@ SourceGeometry::SourceFullTransportResult SourceGeometry::transport_source_photo
         double distance_along_ray = 0.0;
 
         for (const auto& seg : segments) {
+            // A null material is a void the trace kept in the list so the
+            //  along-ray distance stays right (a partly-filled core); cross it.
+            if (!seg.material) {
+                distance_along_ray += seg.length;
+                continue;
+            }
+
             double energy_MeV = energy * 1e-3;
             MacroscopicXS xs = seg.material->macroscopic_xs(energy_MeV);
             double mu_total = xs.mu_total();
@@ -1479,14 +1848,14 @@ double SourceGeometry::outermost_extent_radius() const {
 
     if (shape_ == Shape::Point) {
         // Total shield thickness
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             r += layer.scalar_thickness();
         }
     } else if (shape_ == Shape::Cylindrical) {
         // Bounding-sphere radius: shields grow radially by tx and axially by tz.
         double rr = cyl_radius_;
         double hz = cyl_half_length_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             rr += layer.tx;
             hz += layer.tz;
         }
@@ -1494,18 +1863,18 @@ double SourceGeometry::outermost_extent_radius() const {
     } else if (shape_ == Shape::Rectangular) {
         // Bounding-sphere radius: half-diagonal of the outermost box.
         Eigen::Vector3d hd = rect_half_dims_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             hd += Eigen::Vector3d(layer.tx, layer.ty, layer.tz);
         }
         r = hd.norm();
     } else if (shape_ == Shape::Sphere) {
         r = sphere_radius_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             r += layer.scalar_thickness();
         }
     } else if (shape_ == Shape::Marinelli) {
         r = marinelli_outer_r_;
-        for (const auto& layer : shields_) {
+        for (const auto& layer : shields()) {
             r += layer.scalar_thickness();
         }
     }

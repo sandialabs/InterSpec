@@ -287,10 +287,12 @@ build_scenario_calc( const AngleDetector &det,
   calc.m_materialIndex = 0;
   calc.m_attenuateForAir = false;
   calc.m_airTransLenCoef = 0.0;
-  calc.m_isInSituExponential = false;
-  calc.m_inSituRelaxationLength = -1.0;
+  // An in-situ row carries its profile and the fit's normalisation (the in-situ branch of the
+  //  integrands exists only under m_normalizeByVolume, and asserts so).
+  calc.m_isInSituExponential = is_in_situ( s );
+  calc.m_inSituRelaxationLength = is_in_situ( s ) ? (s.relax_cm * cm) : -1.0;
   calc.m_srcVolumetricActivity = 1.0;
-  calc.m_normalizeByVolume = false;
+  calc.m_normalizeByVolume = is_in_situ( s );
   calc.m_energy = energy_keV;
   calc.m_nuclide = nullptr;
   calc.integral = 0.0;
@@ -397,7 +399,8 @@ shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleD
  #build_scenario_calc, from the calculator's own scalar source dims and detector placement - the
  same construction ShieldingSourceChi2Fcn::volumetricLineCache does inside a fit.
  */
-void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc, const int num_lines )
+void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc, const int num_lines,
+                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams() )
 {
   using namespace GammaInteractionCalc;
   BOOST_REQUIRE( calc.m_effResponse );
@@ -408,19 +411,42 @@ void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
                                           calc.m_detector.axis[2] };
   calc.m_lineCache = build_volumetric_line_cache( calc.m_effResponse, calc.m_geometry,
                                                   calc.m_materialIndex, src, det_pos, det_axis, 0.0,
-                                                  num_lines );
+                                                  num_lines, ShieldingSourceChi2Fcn::sm_default_volumetric_line_pad,
+                                                  sm_default_volumetric_line_surface_frac, sample );
 }//attach_line_cache(...)
+
+
+/** A replica of the line set: replica `k` is the contiguous Halton block starting at k*2^24, which is
+ beyond any line count a test uses, so replicas never overlap. */
+GammaInteractionCalc::LineSampleParams line_replica( const int k )
+{
+  GammaInteractionCalc::LineSampleParams sample;
+  sample.kind = GammaInteractionCalc::LineSampleParams::Kind::Halton;
+  sample.index_offset = static_cast<uint64_t>(k) << 24;
+  return sample;
+}//line_replica(...)
+
+
+/** A Sobol' replica: seed `k` (an independent random digital shift of the same net). */
+GammaInteractionCalc::LineSampleParams sobol_replica( const int k )
+{
+  GammaInteractionCalc::LineSampleParams sample;
+  sample.kind = GammaInteractionCalc::LineSampleParams::Kind::Sobol;
+  sample.seed = static_cast<uint64_t>( k );
+  return sample;
+}//sobol_replica(...)
 
 
 /** Integrates a calculator on the requested path (Element = the per-element aperture reference;
  Line = the detector-side line set with `num_lines` lines), through the production dispatcher. */
 void integrate_on_path( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
                         const GammaInteractionCalc::VolumetricIntegrator path,
-                        const int num_lines = -1 )
+                        const int num_lines = -1,
+                        const GammaInteractionCalc::LineSampleParams &sample = GammaInteractionCalc::LineSampleParams() )
 {
   using namespace GammaInteractionCalc;
   if( path == VolumetricIntegrator::Line )
-    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536 );
+    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536, sample );
   std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calcs;
   calcs.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
   {
@@ -490,7 +516,14 @@ double interspec_volumetric_eff( const AngleDetector &det,
   if( est_rel_error_out )
     *est_rel_error_out = calc.m_est_rel_error;
 
-  double eff = calc.integral / (scenario_volume_cm3(s) * cm*cm*cm);
+  // The MC reports an efficiency per emitted photon.  A uniform row's integral is per unit
+  //  volumetric activity, so divide by the volume; an in-situ row's is per unit activity PER
+  //  EMITTING AREA (the integrand supplies the area and the profile normalisation - the contract at
+  //  GammaInteractionCalc::TraceActivityType), so divide by that area instead.
+  const double per_photon_denominator = is_in_situ( s )
+                                          ? (scenario_emitting_area_cm2(s) * cm*cm)
+                                          : (scenario_volume_cm3(s) * cm*cm*cm);
+  double eff = calc.integral / per_photon_denominator;
 
   // FlatDisk carries only the geometric solid angle; the intrinsic efficiency is folded in after
   //  the integration, exactly as expected_peak_counts_imp does.
@@ -526,7 +559,7 @@ double interspec_volumetric_eff( const AngleDetector &det,
  */
 Scenario find_scenario( const string &name )
 {
-  const vector<Scenario> all = scenarios();
+  const vector<Scenario> all = all_scenarios();
   for( const Scenario &s : all )
   {
     if( s.name == name )
@@ -602,6 +635,8 @@ string scenario_description( const Scenario &s )
   o << ", standoff " << s.standoff_cm << " cm";
   if( s.offset_cm != 0.0 )
     o << ", " << s.offset_cm << " cm off axis";
+  if( is_in_situ( s ) )
+    o << ", in-situ exp(-depth/" << s.relax_cm << " cm)";
   o << ", " << scenario_matrix_material( s.dense );
   if( s.shield_cm > 0.0 )
     o << ", " << s.shield_cm << " cm " << scenario_shield_material() << " shield";
@@ -715,6 +750,18 @@ void configure_scenario_mc( ceelo::EfficiencyCalculator &calc, const AngleDetect
                                  s.radius_cm, s.half_length_cm,
                                  scenario_source_rotation( s ) );
 
+  if( is_in_situ( s ) )
+  {
+    // CeeLo's exponential profile runs along the source's LOCAL z from the +z face, which for a
+    //  box or an end-on cylinder is the detector-facing face (scenario_center puts the centre at
+    //  -z), i.e. the same depth InterSpec's eval_rect / eval_cylinder(end-on) use.  For a
+    //  side-on cylinder local z is the cylinder AXIS, across the field of view, while InterSpec's
+    //  depth is radial - not representable, so refuse rather than measure the wrong profile.
+    BOOST_REQUIRE_MESSAGE( s.shape != Shape::CylinderSideOn,
+                           "'" << s.name << "': an in-situ side-on cylinder has no CeeLo scene" );
+    calc.set_exponential_depth_distribution( s.relax_cm );
+  }
+
   if( transparent )
     return;
 
@@ -750,6 +797,8 @@ string scenario_mc_key( const Scenario &s, const bool transparent = false )
   o << ";standoff=" << s.standoff_cm;
   if( s.offset_cm != 0.0 )
     o << ";offset=" << s.offset_cm;
+  if( is_in_situ( s ) )
+    o << ";expL=" << s.relax_cm;
   if( transparent )
     o << ";transparent";
   else

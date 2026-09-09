@@ -49,7 +49,7 @@ int main() {
     // 1. Point source reference at z = -10 cm
     // -----------------------------------------------------------------------
     EfficiencyCalculator calc_pt;
-    calc_pt.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_pt.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_pt.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     auto res_pt = calc_pt.compute(662.0, N, 0);
 
@@ -57,7 +57,7 @@ int main() {
     // 2. Tiny cylindrical source (should converge to point)
     // -----------------------------------------------------------------------
     EfficiencyCalculator calc_tiny;
-    calc_tiny.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_tiny.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_tiny.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 0.001, 0.001);
     auto res_tiny = calc_tiny.compute(662.0, N, 0);
 
@@ -65,7 +65,7 @@ int main() {
     // 3. Larger coaxial cylindrical source (R=2 cm, h=2 cm, centered at -10 cm)
     // -----------------------------------------------------------------------
     EfficiencyCalculator calc_cyl;
-    calc_cyl.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_cyl.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_cyl.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 2.0, 2.0);
     auto res_cyl = calc_cyl.compute(662.0, N, 0);
 
@@ -73,7 +73,7 @@ int main() {
     // 4. Rectangular (box) source (4×4×4 cm, centered at -10 cm)
     // -----------------------------------------------------------------------
     EfficiencyCalculator calc_rect;
-    calc_rect.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_rect.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_rect.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -10.0),
                                      Eigen::Vector3d(2.0, 2.0, 2.0));
     auto res_rect = calc_rect.compute(662.0, N, 0);

@@ -186,10 +186,19 @@ bool MakeFixedGeomResponse::sceneRepresentable( const Setup &setup, std::string 
 
     for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
     {
-      if( (trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution)
-          && (setup.geometry == GammaInteractionCalc::GeometryType::Spherical) )
-        return fail( "Exponentially-distributed trace sources are not supported"
-                     " for spherical geometry." );
+      // CeeLo's exponential depth profile runs along the source's own axis (local z), which is the
+      //  depth InterSpec integrates for an end-on cylinder or a box.  A sphere's and a side-on
+      //  cylinder's in-situ depth is RADIAL (eval_spherical / eval_cylinder), which the scene
+      //  cannot represent.
+      if( trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+      {
+        if( setup.geometry == GammaInteractionCalc::GeometryType::Spherical )
+          return fail( "Exponentially-distributed trace sources are not supported"
+                       " for spherical geometry." );
+        if( setup.geometry == GammaInteractionCalc::GeometryType::CylinderSideOn )
+          return fail( "Exponentially-distributed trace sources are not supported"
+                       " for side-on cylindrical geometry (the depth profile is radial)." );
+      }
     }
   }//for( shieldings )
 

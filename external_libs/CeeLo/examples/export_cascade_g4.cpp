@@ -46,7 +46,7 @@ int main() {
 
     {   // A) shielded point source
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
         calc.add_source_shield(&fe, 0.2);  // 0.2 cm Fe shell (stops betas, ~8% gamma atten)
         calc.export_geant4_gdml("detector_casc_shield.gdml", /*vacuum_world=*/true);
@@ -54,7 +54,7 @@ int main() {
     }
     {   // B) extended water cylinder source
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -4.0), 1.0, 1.0);
         calc.set_source_material(&water);
         calc.export_geant4_gdml("detector_casc_extended.gdml", /*vacuum_world=*/true);

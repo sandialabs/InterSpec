@@ -184,12 +184,36 @@
 .DrfModifyFieldGrid > label { justify-self: end; }
 .DrfModifyFieldGrid > input,
 .DrfModifyFieldGrid > textarea { width: 100%; box-sizing: border-box; }
-.DrfModifyBandTable td { padding: 1px 4px; }
-.DrfModifyUncert .DrfModifyBandTable { margin: 6px 0; }
+/* Geom & MC tab: the panel wrapping the mode toggle + the embedded MC tool. */
+.DrfModifyGeomPanel { padding: 6px 4px; overflow-y: auto; }
+.DrfModifyModeRow { margin-bottom: 6px; }
+
+/* Measured-point editor. */
 .DrfModifyAnchor { margin-top: 8px; }
 .DrfModifyAnchor .DrfModifyRow > label { min-width: 120px; }
 .DrfModifyAnchorTable { display: block; max-height: 220px; overflow-y: auto; margin: 6px 0; }
 .DrfModifyAnchorTable td { padding: 1px 4px; }
+
+/* σ/ρ node-covariance matrix editor: a grid of small inputs, energies down column 0 and echoed
+   across the header, the diagonal carrying σ (%) and the off-diagonal the correlation ρ. */
+.DrfModifyCov { margin-top: 8px; }
+.DrfModifyBandTable td,
+.DrfModifyCovTable td { padding: 1px 4px; }
+.DrfModifyUncert .DrfModifyBandTable,
+.DrfModifyUncert .DrfModifyCovTable { display: block; max-height: 260px; overflow: auto; margin: 6px 0; }
+.DrfModifyCovTable td { text-align: center; white-space: nowrap; }
+.DrfModifyCovTable tr:first-child td,
+.DrfModifyCovTable td:first-child { font-size: smaller; color: var(--interspec-fainter-text-color, #666); }
+.DrfModifyCovTable input { text-align: right; }
+/* The diagonal (σ) stands out; the lower-triangle mirror is muted and non-interactive. */
+.DrfModifyCovTable input.DrfCovDiag { font-weight: bold; }
+.DrfModifyCovTable input.DrfCovMirror
+{
+  color: var(--interspec-fainter-text-color, #999);
+  background: transparent;
+  border-color: transparent;
+}
+
 .DrfModifyNote
 {
   margin-top: 4px;
@@ -198,3 +222,20 @@
   color: var(--interspec-fainter-text-color, #666);
   border-top: 1px solid var(--interspec-outline-color, #ccc);
 }
+
+/* Footer: the export note on the left, the "Generate Response" button (Geometry-Modeled only) on
+   the right. */
+.DrfModifyFooterRow
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.DrfModifyFooterRow .DrfModifyNote
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+  border-top: none;
+}
+.DrfModifyFooterRow .DrfModifyGenerateBtn { flex: 0 0 auto; margin-left: auto; }

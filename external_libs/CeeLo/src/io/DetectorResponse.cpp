@@ -227,6 +227,26 @@ MaterialSpec MaterialSpec::from(const Material& m) {
     return s;
 }
 
+void GeometryDescriptor::set_dimensions(const CylinderDims& dims) {
+    shape = DetectorShape::Cylinder;
+    dimensions_cm = to_dimensions_vector(dims);
+}
+
+void GeometryDescriptor::set_dimensions(const BoxDims& dims) {
+    shape = DetectorShape::Box;
+    dimensions_cm = to_dimensions_vector(dims);
+}
+
+CylinderDims GeometryDescriptor::cylinder_dims() const {
+    assert(shape == DetectorShape::Cylinder);
+    return cylinder_dims_from_vector(dimensions_cm);
+}
+
+BoxDims GeometryDescriptor::box_dims() const {
+    assert(shape == DetectorShape::Box);
+    return box_dims_from_vector(dimensions_cm);
+}
+
 Geometry GeometryDescriptor::build_geometry(
     std::vector<std::unique_ptr<Material>>& owned) const {
     if (crystal_material_index < 0 ||
@@ -255,7 +275,7 @@ Geometry GeometryDescriptor::build_geometry(
     };
 
     Geometry g;
-    g.set_detector(shape, mat_at(crystal_material_index), dimensions_cm);
+    g.set_detector_from_dimensions_vector(shape, mat_at(crystal_material_index), dimensions_cm);
     // set_detector() clears the fillet/bore/dead layer, so declare them after
     // it; fillet first, so bore_fits() sees the final crystal profile.
     if (bullet_radius_cm > 0.0) g.set_bullet_radius(bullet_radius_cm);
@@ -329,7 +349,8 @@ std::vector<GeometryProblem> GeometryDescriptor::problems() const {
     const double db = dead_layer ? dead_layer->back : 0.0;
     const double rb = bullet_radius_cm;
 
-    // --- crystal itself: set_detector() indexes dimensions_cm unchecked ---
+    // --- crystal itself: set_detector_from_dimensions_vector() indexes
+    //     dimensions_cm unchecked ---
     // Its only guard is assert(size() >= 2 / >= 3), so a short vector (a saved
     // response with a missing or truncated <Dimensions>) would read past the
     // end of the vector in a release build.

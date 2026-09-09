@@ -250,6 +250,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
     m_restoringState( false ),
+    m_seededFromDiameterGuess( false ),
     m_changed()
 {
   assert( m_interspec );
@@ -475,6 +476,10 @@ void DetectorGeometryInput::handleUserInput()
 
   m_collimatorRow->setHidden( !m_hasCollimator->isChecked() );
 
+  // Any user edit means the form is no longer sitting on the fabricated diameter-guess length.
+  //  seedFromDrf() re-sets the flag after the handleShapeChange() it triggers runs through here.
+  m_seededFromDiameterGuess = false;
+
   try
   {
     toDescriptor();
@@ -649,6 +654,12 @@ bool DetectorGeometryInput::isValid() const
 }//isValid()
 
 
+bool DetectorGeometryInput::generationReady() const
+{
+  return isValid() && !m_seededFromDiameterGuess;
+}//generationReady()
+
+
 ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 {
   ceelo::GeometryDescriptor gd;
@@ -666,15 +677,15 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     const double width = distance_cm( m_dim1, "width", false );
     const double height = distance_cm( m_dim2, "height", false );
     crystal_len = distance_cm( m_dim3, "length", false );
-    gd.shape = ceelo::DetectorShape::Box;
-    gd.dimensions_cm = { 0.5*width, 0.5*height, crystal_len };
+    //The form takes full width/height/length; CeeLo wants the two transverse
+    //  extents halved and the axial one left full (CRYSTAL DIMENSION CONVENTION).
+    gd.set_dimensions( ceelo::BoxDims{ 0.5*width, 0.5*height, crystal_len } );
     gd.symmetry = ceelo::ResponseSymmetry::Quadrant;
   }else
   {
     const double diam = distance_cm( m_dim1, "diameter", false );
     crystal_len = distance_cm( m_dim2, "length", false );
-    gd.shape = ceelo::DetectorShape::Cylinder;
-    gd.dimensions_cm = { 0.5*diam, crystal_len };
+    gd.set_dimensions( ceelo::CylinderDims{ 0.5*diam, crystal_len } );
     gd.symmetry = ceelo::ResponseSymmetry::Axial;
 
     //Read before the bore, so the bore checks below see the final crystal profile
@@ -850,15 +861,27 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     }
   }//if( the descriptor names a crystal )
 
+  //Inverse of toDescriptor(): the halves come back doubled for display, the
+  //  full length does not.
   if( box && (gd.dimensions_cm.size() >= 3) )
   {
-    m_dim1->setText( cm_to_str( 2.0*gd.dimensions_cm[0] ) );
-    m_dim2->setText( cm_to_str( 2.0*gd.dimensions_cm[1] ) );
-    m_dim3->setText( cm_to_str( gd.dimensions_cm[2] ) );
-  }else if( gd.dimensions_cm.size() >= 2 )
+    const ceelo::BoxDims dims = gd.box_dims();
+    m_dim1->setText( cm_to_str( 2.0*dims.half_x_cm ) );
+    m_dim2->setText( cm_to_str( 2.0*dims.half_y_cm ) );
+    m_dim3->setText( cm_to_str( dims.full_length_cm ) );
+  }else if( !box && (gd.dimensions_cm.size() >= 2) )
   {
-    m_dim1->setText( cm_to_str( 2.0*gd.dimensions_cm[0] ) );
-    m_dim2->setText( cm_to_str( gd.dimensions_cm[1] ) );
+    const ceelo::CylinderDims dims = gd.cylinder_dims();
+    m_dim1->setText( cm_to_str( 2.0*dims.radius_cm ) );
+    m_dim2->setText( cm_to_str( dims.full_length_cm ) );
+    m_dim3->setText( "" );
+  }else
+  {
+    //A descriptor too short for its shape (a hand-edited or truncated file).
+    //  Clear the fields rather than leave the previous detector's numbers
+    //  sitting under the new shape.
+    m_dim1->setText( "" );
+    m_dim2->setText( "" );
     m_dim3->setText( "" );
   }
 
@@ -970,6 +993,10 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
 
 void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf )
 {
+  // Real geometry (descriptor branch) or nothing to seed leaves this false; only the fabricated
+  //  length==diameter guess below sets it.
+  m_seededFromDiameterGuess = false;
+
   if( !drf || !drf->isValid() || (drf->detectorDiameter() <= 0.0f) )
     return;
 
@@ -994,4 +1021,8 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();
+
+  // Set AFTER handleShapeChange(): its handleUserInput() clears the flag, and the fabricated
+  //  length is a guess we must not let be Monte-Carlo characterized until the user fixes it.
+  m_seededFromDiameterGuess = true;
 }//seedFromDrf(...)

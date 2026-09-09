@@ -296,6 +296,12 @@ public:
                                      size_t polyCoefNum,
                                      const bool fitfor );
 
+  //setAllPeaksUseForShieldingSourceFit(...): sets useForShieldingSourceFit on every peak that
+  //  has a parent nuclide, in a single batch, emitting exactly one model refresh.  This avoids
+  //  the per-peak re-sort/dataChanged storm (from calling setData once per peak) that leaves the
+  //  tree view's "use" checkboxes visually stale.  Returns the number of peaks changed.
+  size_t setAllPeaksUseForShieldingSourceFit( const bool use );
+
 
   //Functions for the Wt::WAbstractItemModel interface - from these functions
   //  peaks will be sorted according to m_sortColumn and m_sortOrder

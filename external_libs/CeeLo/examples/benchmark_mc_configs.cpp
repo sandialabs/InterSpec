@@ -60,7 +60,11 @@ constexpr uint64_t kDefaultEvents = 1'000'000;
 constexpr unsigned kDefaultThreads = 0;
 constexpr uint64_t kDefaultMacroEvents = 500'000;
 constexpr uint64_t kPrecisionMaxEvents = 200'000'000;
-constexpr double kPrecisionMaxSeconds = 600.0;
+// Generous on purpose: max_events should be what bounds a precision-targeted
+//  run, not the wall clock.  A reference whose precision depends on how loaded
+//  the machine was is not reproducible, and the stop reason is printed so a run
+//  that does hit a cap says so.
+constexpr double kPrecisionMaxSeconds = 7200.0;
 
 const char* stop_reason_name(StopReason r) {
     switch (r) {

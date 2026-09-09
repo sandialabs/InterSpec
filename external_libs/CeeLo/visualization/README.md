@@ -21,8 +21,14 @@ open ../../visualization/test_geometry_viewer.html
 ```
 
 `test_geometry_viewer.html` is a self-contained harness: it loads
-`GeometryViewer3D.js` from the same directory, has a file picker for a `.gdml`,
-and exposes the camera/slice controls.
+`GeometryViewer3D.js` from the same directory, offers a dropdown of embedded
+sample geometries (the benchmark configurations, plus a cored source), a file
+picker for any `.gdml` this build exports, and the camera/slice controls.
+
+The **"Source cores"** entry in the dropdown is the one to look at for a nested
+source: an iron core inside a soil shell inside an iron shield. Rotate it and
+slice through — you should see three concentric layers, not one solid ball. If
+you only ever see the outermost shield, the tree walk is broken.
 
 ## Embedding
 
@@ -34,6 +40,14 @@ and exposes the camera/slice controls.
   viewer.setSourcePosition(0, 0, -10); // cm, in the GDML frame
 </script>
 ```
+
+**The source region is a NESTED chain.** Each layer of a concentric source — the
+cores, the emitting shell, the shields — is a *full* solid that carries the next
+one in as a daughter, so only the outermost is a daughter of the world and the
+viewer walks the volume tree rather than the world's own placements. A daughter
+displaces its mother's material, which is why the shields are drawn as solids
+rather than as hollow shells: what you see at a point is the innermost volume
+containing it. An unfilled cavity is a `Vacuum` volume and is not drawn.
 
 Pure WebGL and vanilla JavaScript — no three.js, no CDN, no build step. Supported
 GDML solids are the ones CeeLo emits: boxes, tubes (including cup-shaped

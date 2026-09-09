@@ -238,7 +238,7 @@ double conditional_summing_factor(const std::string& nuc, double peak_keV,
     const auto casc = build_cascades(db(), nuc, opt);
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -z_cm));
     CascadeConfig cfg;
     cfg.cascades = casc;
@@ -262,7 +262,7 @@ double fullreal_summing_factor(const std::string& nuc, double peak_keV,
     const auto casc = build_cascades(db(), nuc, opt);
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -z_cm));
     CascadeConfig cfg;
     cfg.cascades = casc;
@@ -422,7 +422,7 @@ double ic_summing_factor(const std::string& nuc, double peak_keV, double dist_cm
     const auto casc = build_cascades(db(), nuc);
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -dist_cm));
     CascadeConfig cfg;
     cfg.cascades = casc;
@@ -497,7 +497,7 @@ std::vector<float> bare_point_spectrum(const std::string& nuc, double z_cm,
     const auto casc = build_cascades(db(), nuc);
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     if (al_r_cm > 0.0) {  // solid Al cylinder source (self-attenuates; routes IC e- through the walk)
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -z_cm), al_r_cm, al_r_cm);
         calc.set_source_material(&al);
@@ -622,7 +622,7 @@ BOOST_AUTO_TEST_CASE(residual_transition_full_conditional_analytic_agree) {
     static Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
     CascadeConfig cfg;
@@ -691,7 +691,7 @@ BOOST_AUTO_TEST_CASE(invalid_branch_completeness_flags_all_estimators) {
     static Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
     CascadeConfig cfg;
     cfg.cascades = cascades;

@@ -109,7 +109,7 @@ int main()
 
         Material nai = make_NaI();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
         // Export GDML (same geometry for all energies in this config).
@@ -147,7 +147,7 @@ int main()
         Material al  = make_Aluminum();
 
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         // 1 mm Al front + side attenuator covering the detector face
         calc.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
@@ -179,7 +179,7 @@ int main()
 
         EfficiencyCalculator calc;
         // 2"×2": R=2.54 cm (1"), L=5.08 cm (2")
-        calc.set_detector(DetectorShape::Cylinder, &labr3, {2.54, 5.08});
+        calc.set_detector(&labr3, CylinderDims{2.54, 5.08});
         calc.add_attenuator(&al, 0.05, 0.05, 0.0, 5.08);
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
@@ -209,7 +209,7 @@ int main()
         Material nai = make_NaI();
 
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
 
         const double d = 15.0;
         const double theta = 45.0 * M_PI / 180.0;
@@ -243,7 +243,7 @@ int main()
         Material pb  = make_Lead();
 
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);   // innermost: 1mm Al
         calc.add_attenuator(&pb, 0.2, 0.2, 0.0, 7.62);   // outer: 2mm Pb
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -15.0));
@@ -275,7 +275,7 @@ int main()
         Material czt = make_CZT();
 
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.5});
+        calc.set_detector(&czt, BoxDims{0.5, 0.5, 0.5});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
         calc.export_geant4_gdml("detector_5.gdml");

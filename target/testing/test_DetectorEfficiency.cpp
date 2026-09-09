@@ -123,7 +123,7 @@ BOOST_AUTO_TEST_CASE( test_point_uncerts_corr_limits )
 BOOST_AUTO_TEST_CASE( test_node_covariance_psd )
 {
   // The covariance among arbitrary requested energies must remain positive
-  //  semi-definite, including off-node energies and band contributions.
+  //  semi-definite, including off-node (interpolated/extrapolated) energies.
   std::mt19937 rng( 987654321u );
   std::uniform_real_distribution<double> energy_dist( 20.0, 3500.0 );
   std::uniform_real_distribution<double> uncert_dist( 0.005, 0.25 );
@@ -142,13 +142,6 @@ BOOST_AUTO_TEST_CASE( test_node_covariance_psd )
 
     shared_ptr<DetectorEfficiencyUncert> uncert
             = DetectorEfficiencyUncert::fromPointUncerts( energies, uncerts, corr_dist(rng) );
-
-    // Add some piecewise bands too
-    vector<EffUncertBand> bands;
-    bands.push_back( EffUncertBand{ 0.0f, 100.0f, 0.05f } );
-    bands.push_back( EffUncertBand{ 100.0f, 700.0f, 0.08f } );
-    bands.push_back( EffUncertBand{ 800.0f, 3000.0f, 0.03f } );
-    uncert->setBands( bands );
 
     // Random request energies, including beyond the node range
     const size_t nreq = 3 + (rng() % 10);
@@ -220,62 +213,6 @@ BOOST_AUTO_TEST_CASE( test_covariance_interpolation )
 }//test_covariance_interpolation
 
 
-BOOST_AUTO_TEST_CASE( test_band_covariance_semantics )
-{
-  auto uncert = make_shared<DetectorEfficiencyUncert>();
-
-  vector<EffUncertBand> bands;
-  bands.push_back( EffUncertBand{ 0.0f, 50.0f, 0.05f } );
-  bands.push_back( EffUncertBand{ 50.0f, 120.0f, 0.07f } );
-  bands.push_back( EffUncertBand{ 120.0f, 3000.0f, 0.03f } );
-  BOOST_REQUIRE_NO_THROW( uncert->setBands( bands ) );
-
-  // Two energies in the same band: covariance u^2 everywhere in the block
-  {
-    const vector<double> req = { 60.0, 100.0 };
-    const vector<double> cov = uncert->efficiencyFracCovariance( req );
-    BOOST_CHECK( close_enough( cov[0], 0.07*0.07 ) );
-    BOOST_CHECK( close_enough( cov[1], 0.07*0.07 ) );  //100% correlated
-    BOOST_CHECK( close_enough( cov[2], 0.07*0.07 ) );
-    BOOST_CHECK( close_enough( cov[3], 0.07*0.07 ) );
-  }
-
-  // Two energies in different bands: zero covariance between them
-  {
-    const vector<double> req = { 60.0, 661.0 };
-    const vector<double> cov = uncert->efficiencyFracCovariance( req );
-    BOOST_CHECK( close_enough( cov[0], 0.07*0.07 ) );
-    BOOST_CHECK_EQUAL( cov[1], 0.0 );
-    BOOST_CHECK_EQUAL( cov[2], 0.0 );
-    BOOST_CHECK( close_enough( cov[3], 0.03*0.03 ) );
-  }
-
-  // An energy outside all bands has zero (band) uncertainty
-  {
-    const vector<double> req = { 5000.0 };
-    const vector<double> cov = uncert->efficiencyFracCovariance( req );
-    BOOST_CHECK_EQUAL( cov[0], 0.0 );
-  }
-
-  // Invalid bands throw
-  {
-    auto bad = make_shared<DetectorEfficiencyUncert>();
-    vector<EffUncertBand> overlapping;
-    overlapping.push_back( EffUncertBand{ 0.0f, 100.0f, 0.05f } );
-    overlapping.push_back( EffUncertBand{ 50.0f, 200.0f, 0.05f } );
-    BOOST_CHECK_THROW( bad->setBands( overlapping ), std::runtime_error );
-
-    vector<EffUncertBand> inverted;
-    inverted.push_back( EffUncertBand{ 100.0f, 50.0f, 0.05f } );
-    BOOST_CHECK_THROW( bad->setBands( inverted ), std::runtime_error );
-
-    vector<EffUncertBand> negative;
-    negative.push_back( EffUncertBand{ 0.0f, 100.0f, -0.05f } );
-    BOOST_CHECK_THROW( bad->setBands( negative ), std::runtime_error );
-  }
-}//test_band_covariance_semantics
-
-
 BOOST_AUTO_TEST_CASE( test_uncert_xml_roundtrip )
 {
   const vector<float> energies = { 59.5f, 122.0f, 661.7f, 1332.5f };
@@ -284,12 +221,7 @@ BOOST_AUTO_TEST_CASE( test_uncert_xml_roundtrip )
   shared_ptr<DetectorEfficiencyUncert> orig
               = DetectorEfficiencyUncert::fromPointUncerts( energies, uncerts, 0.5 );
 
-  vector<EffUncertBand> bands;
-  bands.push_back( EffUncertBand{ 50.0f, 122.0f, 0.08f } );
-  bands.push_back( EffUncertBand{ 122.0f, 661.0f, 0.05f } );
-  // Use a const_cast-free copy with bands set before sharing
   auto orig_mutable = make_shared<DetectorEfficiencyUncert>( *orig );
-  orig_mutable->setBands( bands );
   orig_mutable->setCoefficientCovariance( { 1.0E-4f, -2.0E-5f, -2.0E-5f, 4.0E-5f } );
 
   rapidxml::xml_document<char> doc;
@@ -305,7 +237,6 @@ BOOST_AUTO_TEST_CASE( test_uncert_xml_roundtrip )
 
   // Float parsing may differ in the last ULP, so use the tolerant comparison
   BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( decoded, *orig_mutable ) );
-  BOOST_CHECK( decoded.hasBands() );
   BOOST_CHECK( decoded.hasNodeCovariance() );
   BOOST_CHECK_EQUAL( decoded.coefficientCovariance().size(), 4u );
   BOOST_CHECK( close_enough( decoded.correlationLength(), 0.5 ) );
@@ -321,14 +252,9 @@ BOOST_AUTO_TEST_CASE( test_uncert_url_parts_roundtrip )
               = DetectorEfficiencyUncert::fromPointUncerts( energies, uncerts, 0.5 );
   auto orig = make_shared<DetectorEfficiencyUncert>( *tmp );
 
-  vector<EffUncertBand> bands;
-  bands.push_back( EffUncertBand{ 50.0f, 122.0f, 0.08f } );
-  orig->setBands( bands );
-
   map<string,string> parts;
   orig->toUrlParts( parts, "" );
 
-  BOOST_CHECK( parts.count("EFUB") );
   BOOST_CHECK( parts.count("EFUE") );
   BOOST_CHECK( parts.count("EFUC") );
   BOOST_CHECK( parts.count("EFUL") );
@@ -337,9 +263,6 @@ BOOST_AUTO_TEST_CASE( test_uncert_url_parts_roundtrip )
   BOOST_REQUIRE( decoded );
 
   // URL encoding uses limited significant figures, so compare with tolerance.
-  BOOST_REQUIRE_EQUAL( decoded->bands().size(), orig->bands().size() );
-  BOOST_CHECK( close_enough( decoded->bands()[0].fractionalUncert, 0.08, 1e-4 ) );
-
   const vector<float> &orig_cov = orig->covarianceMatrix();
   const vector<float> &dec_cov = decoded->covarianceMatrix();
   BOOST_REQUIRE_EQUAL( orig_cov.size(), dec_cov.size() );
@@ -364,7 +287,7 @@ BOOST_AUTO_TEST_CASE( test_uncert_url_parts_roundtrip )
   // Prefixed keys should be found with the matching prefix only
   map<string,string> prefixed;
   orig->toUrlParts( prefixed, "T" );
-  BOOST_CHECK( prefixed.count("TEFUB") && prefixed.count("TEFUE") );
+  BOOST_CHECK( prefixed.count("TEFUE") );
   BOOST_CHECK( !DetectorEfficiencyUncert::fromUrlParts( prefixed, "" ) );
   BOOST_CHECK( !!DetectorEfficiencyUncert::fromUrlParts( prefixed, "T" ) );
 }//test_uncert_url_parts_roundtrip
@@ -515,11 +438,9 @@ BOOST_AUTO_TEST_CASE( test_uncert_hash_and_equality )
   b->appendToHash( seed_b );
   BOOST_CHECK_EQUAL( seed_a, seed_b );
 
-  // Different content gives different hash
-  auto c = make_shared<DetectorEfficiencyUncert>( *a );
-  vector<EffUncertBand> bands;
-  bands.push_back( EffUncertBand{ 50.0f, 200.0f, 0.05f } );
-  c->setBands( bands );
+  // Different content (a differing node covariance) gives different hash
+  shared_ptr<DetectorEfficiencyUncert> c
+      = DetectorEfficiencyUncert::fromPointUncerts( energies, { 0.08f, 0.05f, 0.09f } );
   BOOST_CHECK( !(*a == *c) );
 
   size_t seed_c = 0;

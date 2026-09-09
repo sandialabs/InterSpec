@@ -1,6 +1,33 @@
 name: Build InterSpec Dependencies
 description: Sets up build environment, and builds InterSpec dependencies
 
+# ------------------------------------------------------------------------------------------------
+# This is the Windows dependency-prefix action.  It follows the same rules as the `build-linux`
+# job in build_app.yml and .github/actions/macos_deps_prefix:
+#   - Cache the dependency *prefix*, never a build directory.
+#   - Key over every input, and assert the hashed file exists - hashFiles() returns "" when it
+#     matches nothing, which would silently turn the key into a constant.
+#   - No `restore-keys`.  An ABI-incompatible near-miss is worse than a rebuild.
+#   - Split restore/save, so the save is gated on both cache-miss and success().
+#   - Verify on a cache HIT as well as a miss, since gating the save cannot catch a bad *restore*.
+# ------------------------------------------------------------------------------------------------
+
+inputs:
+  install_sccache:
+    description: >
+      Pass 'false' to skip the sccache setup.  A job that only builds the dependency prefix
+      compiles none of InterSpec's own code, so an sccache entry there is pure cache-budget burn.
+    required: false
+    default: 'true'
+
+outputs:
+  prefix-dir:
+    description: Absolute path of the dependency prefix.
+    value: ${{ steps.paths.outputs.prefix-dir }}
+  cache-hit:
+    description: "'true' when the prefix was restored from cache rather than built."
+    value: ${{ steps.cache-deps.outputs.cache-hit }}
+
 runs:
   using: "composite"
   steps:
@@ -12,68 +39,150 @@ runs:
     # Get CMake, see https://github.com/marketplace/actions/get-cmake
     - name: get-cmake
       uses: lukka/get-cmake@v3.24.3
-      
-    #Now go to using: https://github.com/marketplace/actions/run-cmake     
-    - name: Print some info
-      shell: cmd
-      run: | 
-        echo "The job was automatically triggered by a ${{ github.event_name }} event."
-        echo "This job is now running on a ${{ runner.os }} server hosted by GitHub"
-        echo "Building branch ${{ github.ref }} of repository ${{ github.repository }}."
-        echo "The ${{ github.repository }} repository has been cloned to the runner."
-        echo "The files in the repository:
-        ls ${{ github.workspace }}
-  
-  # TODO: the below needs an if to only run on windows
-    - name: Cache Windows Dependencies
-      if: runner.os == 'Windows'
-      id: cache-deps
-      uses: actions/cache@v3
-      with:
-        path: '${{runner.temp}}/install'
-        key: ${{ runner.os }}-dependencies-${{ hashFiles('**/dep_build_msvc2022.bat') }}
-    
-# TODO: dep_build_msvc2022.bat seems to work just fine from PowerShell, so we should really switch to just always using that to be consistent across platforms
-    - name: Build dependencies on windows
-      shell: cmd
-      if: steps.cache-deps.outputs.cache-hit != 'true' && runner.os == 'Windows'
-      working-directory: ${{runner.temp}}
+
+    # pwsh, not bash: RUNNER_TEMP is a native `C:\...` path, and mixing it with `/` separators
+    # inside Git Bash produces paths that mostly work and occasionally do not.
+    - name: Define dependency paths
+      id: paths
+      shell: pwsh
       run: |
-        echo github.event.action: ${{ github.event.action }}
-        echo github.event_name: ${{ github.event_name }}
-        echo github.workflow: ${{ github.workflow }}
-        ${{ github.workspace }}\target\patches\dep_build_msvc2022.bat "${{runner.temp}}\dep_build" "${{runner.temp}}\install"
+        # -Encoding utf8 explicitly: the runner parses GITHUB_OUTPUT as UTF-8, and Out-File's
+        # default encoding differs between Windows PowerShell and pwsh.
+        "build-dir=$env:RUNNER_TEMP\dep_build" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "prefix-dir=$env:RUNNER_TEMP\install"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+    - name: Compute the dependency cache key
+      id: deps-key
+      shell: bash
+      env:
+        # An explicit path, NOT '**/dep_build_msvc2022.bat'.  A `**/` pattern matches on basename
+        # alone, so it is blind to the file moving between directories - which is exactly what
+        # happened when target/patches was renamed to target/dep_build.
+        DEPS_HASH: ${{ hashFiles('target/dep_build/dep_build_msvc2022.bat') }}
+      run: |
+        set -euo pipefail
+        if [ ! -f "target/dep_build/dep_build_msvc2022.bat" ]; then
+          echo "::error::target/dep_build/dep_build_msvc2022.bat does not exist, so the cache key"
+          echo "::error::does not cover what it claims to."
+          exit 1
+        fi
+        if [ -z "${DEPS_HASH}" ]; then
+          echo "::error::hashFiles() matched nothing; the dependency cache key would be constant."
+          exit 1
+        fi
+        # `wt4-v1` is a literal, human-authored discriminator, and it is what actually keeps a
+        # master-branch (Wt 3.7.1) prefix from ever being restored on the Wt4 branch - a run on a
+        # feature branch can restore caches created on the default branch, so a colliding key
+        # would be silently honoured.  A content hash is not a discriminator: it collides the
+        # moment the file contents do.  Bump v1 when the prefix layout changes invisibly to the
+        # hash.
+        KEY="windows-deps-wt4-v1-msvc2022-${ImageOS:-unknown}-${DEPS_HASH}"
+        echo "key=${KEY}" >> "${GITHUB_OUTPUT}"
+        echo "Dependency cache key: ${KEY}"
 
-# Note: each checkout sets each files timestamps to current time, so we will use sccache action
-#       but after building the dependencies
+    - name: Restore the dependency prefix
+      id: cache-deps
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+        # Deliberately no restore-keys.
+
+    - name: Build dependencies on windows
+      # Never add `continue-on-error` here - it would make a failed build "succeed" and the save
+      # step below would cache a broken prefix.
+      shell: cmd
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      env:
+        DEP_BAT: ${{ github.workspace }}\target\dep_build\dep_build_msvc2022.bat
+        DEPS_BUILD_DIR: ${{ steps.paths.outputs.build-dir }}
+        DEPS_PREFIX_DIR: ${{ steps.paths.outputs.prefix-dir }}
+      run: |
+        if not exist "%DEP_BAT%" (
+          echo ::error::%DEP_BAT% does not exist.
+          exit /b 1
+        )
+        rem `shell: cmd` exits with the errorlevel of the LAST program it ran and has no
+        rem  fail-fast, so the failure has to be propagated explicitly.
+        call "%DEP_BAT%" "%DEPS_BUILD_DIR%" "%DEPS_PREFIX_DIR%" || exit /b 1
+
+    # Runs on a cache hit as well as a miss, so a bad *restore* is caught too - the one thing
+    # gating the save cannot do for us.
+    - name: Verify the dependency prefix
+      shell: pwsh
+      env:
+        PREFIX_DIR: ${{ steps.paths.outputs.prefix-dir }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        $prefix = $env:PREFIX_DIR
+        $sentinel = Join-Path $prefix ".interspec_deps_complete"
+        if ( -Not (Test-Path $sentinel) ) {
+          Write-Output "::error::$prefix has no completion sentinel - it is not a usable prefix."
+          if (Test-Path $prefix) { Get-ChildItem $prefix }
+          exit 1
+        }
+        Write-Output "### prefix provenance ###"
+        Get-Content $sentinel
+
+        # Wt bakes absolute paths into its installed CMake config files and into CONFIGDIR, so a
+        # prefix restored to a different path than it was built at is broken in ways that would
+        # otherwise only surface at link or run time.  This is not hypothetical on Windows:
+        # RUNNER_TEMP on windows-2022 moved from D:\ to C:\ in June 2025.
+        $recorded = ((Get-Content $sentinel) -match '^prefix_path=' | Select-Object -First 1) -replace '^prefix_path=', ''
+        if ( $recorded.TrimEnd('\').ToLower() -ne $prefix.TrimEnd('\').ToLower() ) {
+          Write-Output "::error::prefix was built at '$recorded' but restored to '$prefix'."
+          exit 1
+        }
+
+        $required = @(
+          "lib\wt.lib", "lib\wthttp.lib", "lib\wtdbo.lib", "lib\wtdbosqlite3.lib",
+          "lib\WebView2LoaderStatic.lib", "include\Wt\WObject.h",
+          # wxWidgets installs its libraries here; target/wxwidgets is configured with
+          # -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib".
+          "lib\vc_x64_lib"
+        )
+        foreach ($f in $required) {
+          if ( -Not (Test-Path (Join-Path $prefix $f)) ) {
+            Write-Output "::error::$f is missing from the dependency prefix."
+            exit 1
+          }
+        }
+
+        $bytes = (Get-ChildItem $prefix -Recurse -File | Measure-Object -Property Length -Sum).Sum
+        Write-Output ("Prefix size: {0:N1} GB" -f ($bytes / 1GB))
+
+    - name: Save the dependency prefix
+      # Implicitly `if: success()`, so a failed dependency build or a failed verification never
+      # gets committed to the cache.
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.paths.outputs.prefix-dir }}
+        key: ${{ steps.deps-key.outputs.key }}
+
+    # Several GB of boost/Wt/Ceres/wxWidgets build trees that nothing downstream reads.
+    - name: Reclaim the dependency build directory
+      if: always() && steps.cache-deps.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        if (Test-Path "${{ steps.paths.outputs.build-dir }}") {
+          Remove-Item "${{ steps.paths.outputs.build-dir }}" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+    # Note: each checkout sets each files timestamps to current time, so we will use sccache action
+    #       but after building the dependencies
     - name: Ccache for gh actions
+      if: inputs.install_sccache != 'false'
       uses: hendrikmuhs/ccache-action@v1.2.7
-      with: 
+      with:
         # Include git SHA so cache invalidates per-commit; avoids stale object files from
         # previous builds causing linker errors (e.g., unresolved ReferencePhotopeakDisplay symbols)
         key: sccache-${{ github.job }}-${{ runner.os }}-${{ github.sha }}
-        max-size: 10G
+        # Deliberately well under the 10 GB per-repo cache budget.  The key includes github.sha,
+        # so every commit writes a brand-new entry that is never read again; at 10G a couple of
+        # pushes could evict every other cache in the repo, including the dependency prefixes
+        # this action just spent an hour building.
+        max-size: 2G
         variant: sccache
         append-timestamp: false
         verbose: 2
-        
-    - name: List files in prefix
-      shell: pwsh
-      run: |
-        echo "In Install"
-        ls '${{runner.temp}}/install'
-        echo "In Install/lib"
-        ls '${{runner.temp}}/install/lib'
-        echo "In Install/include"
-        ls '${{runner.temp}}/install/include'
-        echo "In Install/bin"
-        ls '${{runner.temp}}/install/bin'
-        echo github.event.action: ${{ github.event.action }}
-        echo github.event_name: ${{ github.event_name }}
-        echo github.workflow: ${{ github.workflow }}
-
-
-
-
-

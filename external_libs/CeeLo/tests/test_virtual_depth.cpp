@@ -39,7 +39,8 @@ using namespace ceelo;
 
 namespace {
 const std::vector<double> kLadder = {1, 2, 3, 5, 8, 12, 20, 30};
-const double kR = 3.81; // NaI 3x3 crystal radius
+const double kR = 3.81;  // NaI 3x3 crystal radius
+const double kL = 7.62;  // ...and its FULL length (see CRYSTAL DIMENSION CONVENTION)
 
 // Synthesize an exact ideal efficiency scan for a known (intrinsic, delta).
 std::vector<double> ideal_scan(double intrinsic, double delta, double R,
@@ -109,8 +110,7 @@ BOOST_AUTO_TEST_CASE(coeffs_roundtrip) {
 BOOST_AUTO_TEST_CASE(file_save_load_roundtrip) {
     // Build a small VpdFit by hand and round-trip it through the text format.
     VpdFit fit;
-    fit.detector = make_descriptor("Test NaI", DetectorShape::Cylinder,
-                                   make_NaI(), {kR, 7.62});
+    fit.detector = make_descriptor("Test NaI", make_NaI(), CylinderDims{kR, kL});
     const std::vector<double> energies = {122, 662, 1332};
     fit.coeffs = {-0.6, 0.5, -0.04};
     for (double E : energies) {
@@ -189,8 +189,10 @@ BOOST_AUTO_TEST_CASE(delta_increases_with_energy) {
     // delta(E) should grow with energy: interactions move deeper into the crystal.
     // Keep events low -- this is the only MC-bearing test.
     Material nai = make_NaI();
-    DetectorDescriptor desc = make_descriptor("NaI 3x3", DetectorShape::Cylinder,
-                                              nai, {kR, 7.62});
+    DetectorDescriptor desc = make_descriptor("NaI 3x3", nai, CylinderDims{kR, kL});
+    // The descriptor must advertise the crystal it will actually simulate; this
+    // pairing once disagreed by a factor of two.
+    BOOST_CHECK_CLOSE(desc.crystal_length_cm, kL, 1e-9);
     VpdFitConfig cfg;
     cfg.energies_keV = {122.0, 1332.0};
     cfg.distance_ladder_cm = {1, 2, 3, 5, 8, 12};
@@ -198,7 +200,7 @@ BOOST_AUTO_TEST_CASE(delta_increases_with_energy) {
     cfg.num_threads = 0;
     cfg.poly_order = 2;
 
-    VpdFit fit = fit_virtual_depth(desc, nai, {kR, 7.62}, cfg);
+    VpdFit fit = fit_virtual_depth(desc, nai, cfg);
     BOOST_REQUIRE_EQUAL(fit.points.size(), 2u);
     const double d122 = fit.points[0].delta_cm;
     const double d1332 = fit.points[1].delta_cm;

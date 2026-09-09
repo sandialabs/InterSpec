@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cassert>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -51,26 +52,40 @@ inline double log_energy_mev(double energy_keV) {
 
 } // namespace
 
-DetectorDescriptor make_descriptor(std::string name, DetectorShape shape,
-                                   const Material& material,
-                                   const std::vector<double>& dimensions) {
+CylinderDims DetectorDescriptor::cylinder_dims() const {
+    assert(shape == DetectorShape::Cylinder);
+    return CylinderDims{crystal_radius_cm, crystal_length_cm};
+}
+
+BoxDims DetectorDescriptor::box_dims() const {
+    assert(shape == DetectorShape::Box);
+    return BoxDims{half_x_cm, half_y_cm, crystal_length_cm};
+}
+
+DetectorDescriptor make_descriptor(std::string name, const Material& material,
+                                   const CylinderDims& dims) {
     DetectorDescriptor d;
     d.name = std::move(name);
     d.material_name = material.name();
-    d.shape = shape;
-    if (shape == DetectorShape::Cylinder) {
-        // dimensions = {radius, half_length}
-        d.crystal_radius_cm = dimensions.at(0);
-        d.crystal_length_cm = 2.0 * dimensions.at(1);
-    } else {
-        // dimensions = {half_x, half_y, length}
-        d.half_x_cm = dimensions.at(0);
-        d.half_y_cm = dimensions.at(1);
-        d.crystal_length_cm = dimensions.at(2);
-        // Area-equivalent disk radius for the rectangular face (area 2hx * 2hy):
-        //   pi R_eff^2 = 4 hx hy  =>  R_eff = 2 sqrt(hx hy / pi)
-        d.crystal_radius_cm = 2.0 * std::sqrt(d.half_x_cm * d.half_y_cm / kPi);
-    }
+    d.shape = DetectorShape::Cylinder;
+    d.crystal_radius_cm = dims.radius_cm;
+    d.crystal_length_cm = dims.full_length_cm;
+    d.crystal_diameter_cm = 2.0 * d.crystal_radius_cm;
+    return d;
+}
+
+DetectorDescriptor make_descriptor(std::string name, const Material& material,
+                                   const BoxDims& dims) {
+    DetectorDescriptor d;
+    d.name = std::move(name);
+    d.material_name = material.name();
+    d.shape = DetectorShape::Box;
+    d.half_x_cm = dims.half_x_cm;
+    d.half_y_cm = dims.half_y_cm;
+    d.crystal_length_cm = dims.full_length_cm;
+    // Area-equivalent disk radius for the rectangular face (area 2hx * 2hy):
+    //   pi R_eff^2 = 4 hx hy  =>  R_eff = 2 sqrt(hx hy / pi)
+    d.crystal_radius_cm = 2.0 * std::sqrt(d.half_x_cm * d.half_y_cm / kPi);
     d.crystal_diameter_cm = 2.0 * d.crystal_radius_cm;
     return d;
 }
@@ -170,13 +185,17 @@ double VpdFit::delta_at(double energy_keV) const {
 
 VpdFit fit_virtual_depth(const DetectorDescriptor& descriptor,
                          const Material& material,
-                         const std::vector<double>& dimensions,
                          const VpdFitConfig& cfg) {
     VpdFit fit;
     fit.detector = descriptor;
 
+    // The crystal comes from the descriptor, so what is simulated is by
+    // construction what the exported file says was simulated.
     EfficiencyCalculator calc;
-    calc.set_detector(descriptor.shape, &material, dimensions);
+    if (descriptor.shape == DetectorShape::Cylinder)
+        calc.set_detector(&material, descriptor.cylinder_dims());
+    else
+        calc.set_detector(&material, descriptor.box_dims());
 
     // Sort energies ascending for a well-conditioned validity range / readout.
     std::vector<double> energies = cfg.energies_keV;

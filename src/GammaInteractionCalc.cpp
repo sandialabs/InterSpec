@@ -3108,42 +3108,7 @@ double ShieldingSourceChi2Fcn::totalActivity( const SandiaDecay::Nuclide *nuclid
         break;
         
       case TraceActivityType::ExponentialDistribution:
-      {
-        switch( m_geometry )
-        {
-          case GeometryType::Spherical:
-          {
-            const double r = sphericalThickness(matn, params);
-            return activity * 4.0 * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
-          }
-            
-          case GeometryType::CylinderEndOn:
-          {
-            const double r = cylindricalRadiusThickness(matn, params);
-            return activity * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
-          }
-            
-          case GeometryType::CylinderSideOn:
-          {
-            const double r = cylindricalRadiusThickness(matn, params);
-            const double z = cylindricalLengthThickness(matn, params);
-            return activity * PhysicalUnits::pi * 2.0 * r * z / PhysicalUnits::m2;
-          }
-            
-          case GeometryType::Rectangular:
-          {
-            const double w = 2.0 * rectangularWidthThickness(matn, params);
-            const double h = 2.0 * rectangularHeightThickness(matn, params);
-            return activity * w * h / PhysicalUnits::m2;
-          }
-            
-          case GeometryType::NumGeometryType:
-            assert( 0 );
-            break;
-        }//switch( m_geometry )
-        
-        break;
-      }//case TraceActivityType::ExponentialDistribution:
+        return activity * inSituEmittingArea( matn, params ) / PhysicalUnits::m2;
         
       case TraceActivityType::NumTraceActivityType:
         assert( 0 );
@@ -3355,46 +3320,9 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
           
           
         case TraceActivityType::ExponentialDistribution:
-        {
-          switch( m_geometry )
-          {
-            case GeometryType::Spherical:
-            {
-              const double r = sphericalThickness(material_index, params);
-              activity += thisActivity * 4.0 * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
-              break;
-            }
-              
-            case GeometryType::CylinderEndOn:
-            {
-              const double r = cylindricalRadiusThickness(material_index, params);
-              activity += thisActivity * PhysicalUnits::pi * r * r / PhysicalUnits::m2;
-              break;
-            }
-              
-            case GeometryType::CylinderSideOn:
-            {
-              const double r = cylindricalRadiusThickness(material_index, params);
-              const double z = cylindricalLengthThickness(material_index, params);
-              activity += thisActivity * PhysicalUnits::pi * 2.0 * r * z / PhysicalUnits::m2;
-              break;
-            }
-              
-            case GeometryType::Rectangular:
-            {
-              const double w = 2.0 * rectangularWidthThickness(material_index, params);
-              const double h = 2.0 * rectangularHeightThickness(material_index, params);
-              activity += thisActivity * w * h / PhysicalUnits::m2;
-              break;
-            }
-              
-            case GeometryType::NumGeometryType:
-              assert( 0 );
-              break;
-          }//switch( m_geometry )
-          
+          // Same emitting area totalActivity uses; the assert below pins the two together.
+          activity += thisActivity * inSituEmittingArea( material_index, params ) / PhysicalUnits::m2;
           break;
-        }//case TraceActivityType::ExponentialDistribution:
           
         case TraceActivityType::NumTraceActivityType:
           assert( 0 );
@@ -3812,6 +3740,49 @@ double ShieldingSourceChi2Fcn::trueSourceToDetectorDistance() const
 }
 
 
+double ShieldingSourceChi2Fcn::inSituEmittingArea( const size_t matn,
+                                                  const std::vector<double> &params ) const
+{
+  // The table at GammaInteractionCalc::TraceActivityType, and the only copy of it: totalActivity,
+  //  activityUncertainty and the per-peak diagnostics all come here, so they cannot drift apart.
+  switch( m_geometry )
+  {
+    case GeometryType::Spherical:
+    {
+      const double r = sphericalThickness( matn, params );
+      return 4.0 * PhysicalUnits::pi * r * r;
+    }
+
+    case GeometryType::CylinderEndOn:
+    {
+      const double r = cylindricalRadiusThickness( matn, params );
+      return PhysicalUnits::pi * r * r;
+    }
+
+    case GeometryType::CylinderSideOn:
+    {
+      // The curved side: 2*pi*r*(2*z), z being the HALF-length.
+      const double r = cylindricalRadiusThickness( matn, params );
+      const double z = cylindricalLengthThickness( matn, params );
+      return PhysicalUnits::pi * 4.0 * r * z;
+    }
+
+    case GeometryType::Rectangular:
+    {
+      const double w = 2.0 * rectangularWidthThickness( matn, params );
+      const double h = 2.0 * rectangularHeightThickness( matn, params );
+      return w * h;
+    }
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( m_geometry )
+
+  assert( 0 );
+  return 0.0;
+}//inSituEmittingArea(...)
+
+
 std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLineCache(
                                             const size_t material_index,
                                             const std::array<double,3> &source_outer_dims ) const
@@ -3834,18 +3805,47 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
   std::lock_guard<std::mutex> lock( m_lineCacheMutex );
   const auto pos = m_lineCaches.find( material_index );
   if( (pos != end(m_lineCaches)) && pos->second
-      && pos->second->matches( m_volEffResponse.get(), m_geometry, material_index, source_outer_dims,
+      && pos->second->matches( m_volEffResponse.get(), m_geometry, material_index,
                                det_pos, det_axis, azimuth, m_volumetricNumLines,
-                               sm_default_volumetric_line_pad ) )
+                               sm_default_volumetric_line_pad,
+                               sm_default_volumetric_line_surface_frac, m_volumetricLineSample,
+                               sm_volumetric_line_hemi_frac ) )
     return pos->second;
 
+  // The dims are a build-time hint only: the set's aim points follow the fitted dimensions at
+  //  every evaluation (VolumetricLineIntegration_imp.hpp), so this is reached once per source
+  //  shell per fit.
   std::shared_ptr<const VolumetricLineCache> cache
         = build_volumetric_line_cache( m_volEffResponse, m_geometry, material_index, source_outer_dims,
                                        det_pos, det_axis, azimuth, m_volumetricNumLines,
-                                       sm_default_volumetric_line_pad );
+                                       sm_default_volumetric_line_pad,
+                                       sm_default_volumetric_line_surface_frac, m_volumetricLineSample,
+                                       sm_volumetric_line_hemi_frac );
   m_lineCaches[material_index] = cache;
   return cache;
 }//volumetricLineCache(...)
+
+
+void ShieldingSourceChi2Fcn::setVolumetricLineCount( const int num_lines, const std::vector<double> *params )
+{
+  if( num_lines <= 0 )
+    throw std::runtime_error( "setVolumetricLineCount: the line count must be positive" );
+  if( (num_lines == m_volumetricNumLines) && !params )
+    return;
+  m_volumetricNumLines = num_lines;
+  clearDetectorSideRays();
+  buildDetectorSideRays( params );
+}//setVolumetricLineCount(...)
+
+
+void ShieldingSourceChi2Fcn::setVolumetricLineSample( const LineSampleParams &sample )
+{
+  if( sample == m_volumetricLineSample )
+    return;
+  m_volumetricLineSample = sample;
+  clearDetectorSideRays();
+  buildDetectorSideRays();
+}//setVolumetricLineSample(...)
 
 
 /** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
@@ -3877,7 +3877,7 @@ void ShieldingSourceChi2Fcn::clearDetectorSideRays()
 }//clearDetectorSideRays()
 
 
-void ShieldingSourceChi2Fcn::buildDetectorSideRays()
+void ShieldingSourceChi2Fcn::buildDetectorSideRays( const std::vector<double> *params )
 {
   clearDetectorSideRays();
 
@@ -3889,17 +3889,41 @@ void ShieldingSourceChi2Fcn::buildDetectorSideRays()
 
   try
   {
-    // One line set per volumetric source shell.  Cumulative outer dims of each shell from the
-    //  initial thicknesses, as build_volumetric_calculators accumulates them from the fit
-    //  parameters; generic shieldings have no extent.
+    // One line set per volumetric source shell.  Cumulative outer dims of each shell - from the
+    //  initial thicknesses, or from `params` (the post-convergence polish rebuilds the sets at the
+    //  CONVERGED dimensions, so the hint the proposal is shaped by is the answer, not the start) -
+    //  as build_volumetric_calculators accumulates them; generic shieldings have no extent.
     std::array<double,3> outer = { 0.0, 0.0, 0.0 };
     for( size_t i = 0; i < m_initial_shieldings.size(); ++i )
     {
       const ShieldingSourceFitCalc::ShieldingInfo &info = m_initial_shieldings[i];
       if( info.m_isGenericMaterial )
         continue;
-      for( int d = 0; d < ndims; ++d )
-        outer[d] += std::max( 0.0, info.m_dimensions[d] );
+      if( params )
+      {
+        switch( m_geometry )
+        {
+          case GeometryType::Spherical:
+            outer[0] += std::max( 0.0, sphericalThickness_imp<double>( i, *params ) );
+            break;
+          case GeometryType::CylinderEndOn:
+          case GeometryType::CylinderSideOn:
+            outer[0] += std::max( 0.0, cylindricalRadiusThickness_imp<double>( i, *params ) );
+            outer[1] += std::max( 0.0, cylindricalLengthThickness_imp<double>( i, *params ) );
+            break;
+          case GeometryType::Rectangular:
+            outer[0] += std::max( 0.0, rectangularWidthThickness_imp<double>( i, *params ) );
+            outer[1] += std::max( 0.0, rectangularHeightThickness_imp<double>( i, *params ) );
+            outer[2] += std::max( 0.0, rectangularDepthThickness_imp<double>( i, *params ) );
+            break;
+          case GeometryType::NumGeometryType:
+            break;
+        }
+      }else
+      {
+        for( int d = 0; d < ndims; ++d )
+          outer[d] += std::max( 0.0, info.m_dimensions[d] );
+      }
 
       const bool is_source = !traceNuclidesForMaterial(i).empty() || !selfAttenuatingNuclides(i).empty();
       if( is_source )
@@ -5169,75 +5193,54 @@ vector<PeakResultPlotInfo>
                 }
               }else
               {
-                // For in-situ exponential, we are tracking per surface area
+                // The activity is per unit EMITTING AREA (the table at TraceActivityType), and
+                //  cpsAtSource carries it un-multiplied, so each geometry supplies its own area to
+                //  make a total emission rate.  Under variant 2 the depth normalisation is already
+                //  in the integrand, so only the area is needed.
                 const size_t mat_index = calculator->m_materialIndex;
                 const double L = relaxationLength(src.nuclide);
-                
-                switch( m_geometry )
+                const double sa = inSituEmittingArea( mat_index, x );
+
+                // Variant 2 folds 1/norm into the integrand, so cpsAtSource is already per-area
+                //  (un-divided by norm); only the emitting area is needed.  Variants 0/1 still
+                //  need the depth integral.
+                double norm = 1.0;
+                if( !calculator->m_normalizeByVolume )
                 {
-                  case GeometryType::Spherical:
+                  switch( m_geometry )
                   {
-                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
-                    //  of time to figure out proper answer, so just setting to zero for the moment
-                    src.cpsAtSource = 0;
-                    src.countsAtSource = 0;
-                    //const double R = sphericalThickness(mat_index, x);
-                    //const double norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
-                    //const double sa = 4.0*PhysicalUnits::pi*R*R;
-                    //src.cpsAtSource *= (sa * norm);
-                    //src.countsAtSource *= (sa * norm);
-                    break;
-                  }//case GeometryType::Spherical:
-                    
-                  case GeometryType::CylinderSideOn:
-                  {
-                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
-                    //  of time to figure out proper answer, so just setting to zero for the moment
-                    src.cpsAtSource = 0;
-                    src.countsAtSource = 0;
-                    //const double R = cylindricalRadiusThickness(mat_index, x);
-                    //const double norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
-                    //const double h = 2.0*cylindricalLengthThickness(mat_index, x);
-                    //const double sa = h * 2.0*R*PhysicalUnits::pi;
-                    //src.cpsAtSource *= (sa * norm);
-                    //src.countsAtSource *= (sa * norm);
-                    break;
-                  }//case GeometryType::CylinderSideOn:
-                  
-                  case GeometryType::CylinderEndOn:
-                  {
-                    const double R = 2.0 * cylindricalLengthThickness(mat_index, x);
-                    const double norm = L * (1.0 - exp(-R / L) );
-                    const double r = cylindricalRadiusThickness(mat_index, x);
-                    const double sa = PhysicalUnits::pi*r*r;
-                    // Variant 2 folds 1/norm into the integrand, so cpsAtSource is already
-                    //  per-area (un-divided by norm); only the cross-section `sa` is needed.
-                    const double norm_factor = calculator->m_normalizeByVolume ? 1.0 : norm;
-                    src.cpsAtSource *= (sa * norm_factor);
-                    src.countsAtSource *= (sa * norm_factor);
-                    break;
-                  }//case GeometryType::CylinderEndOn:
-                  
-                  case GeometryType::Rectangular:
-                  {
-                    // TODO: The same approach as for GeometryType::CylinderEndOn, doesnt seem to work here; ran out
-                    //  of time to figure out proper answer, so just setting to zero for the moment
-                    src.cpsAtSource = 0;
-                    src.countsAtSource = 0;
-                    //const double R = 2.0 * rectangularDepthThickness(mat_index, x);
-                    //const double norm = L * (1.0 - exp(-R / L) );
-                    //const double w = rectangularWidthThickness(mat_index, x);
-                    //const double h = rectangularHeightThickness(mat_index, x);
-                    //const double sa = w*h;
-                    //src.cpsAtSource *= (sa * norm);
-                    //src.countsAtSource *= (sa * norm);
-                    break;
-                  }
-                    
-                  case GeometryType::NumGeometryType:
-                    assert( 0 );
-                    break;
-                }//switch( m_geometry )
+                    case GeometryType::Spherical:
+                    {
+                      const double R = sphericalThickness(mat_index, x);
+                      norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
+                      break;
+                    }
+                    case GeometryType::CylinderSideOn:
+                    {
+                      const double R = cylindricalRadiusThickness(mat_index, x);
+                      norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
+                      break;
+                    }
+                    case GeometryType::CylinderEndOn:
+                    {
+                      const double R = 2.0 * cylindricalLengthThickness(mat_index, x);
+                      norm = L * (1.0 - exp(-R / L) );
+                      break;
+                    }
+                    case GeometryType::Rectangular:
+                    {
+                      const double R = 2.0 * rectangularDepthThickness(mat_index, x);
+                      norm = L * (1.0 - exp(-R / L) );
+                      break;
+                    }
+                    case GeometryType::NumGeometryType:
+                      assert( 0 );
+                      break;
+                  }//switch( m_geometry )
+                }//if( !m_normalizeByVolume )
+
+                src.cpsAtSource *= (sa * norm);
+                src.countsAtSource *= (sa * norm);
               }//if( !calculator->m_isInSituExponential ) / else
             }//if( (src.isTraceSource || src.isSelfAttenSource) && (src.nuclide == calculator->m_nuclide) )
           }//for( PeakDetailSrc &src : peak.m_sources )
@@ -5251,7 +5254,15 @@ vector<PeakResultPlotInfo>
           const bool unnormVol = (calculator->m_normalizeByVolume && !calculator->m_isInSituExponential);
           src.integral = unnormVol ? (calculator->integral * volume) : calculator->integral;
           src.volume = volume;
-          src.averageEfficiencyPerSourceGamma = src.integral / src.volume;
+          // Counts per gamma EMITTED.  A uniform source emits per unit volume, so the integral is
+          //  divided by the volume; an in-situ exponential source emits per unit EMITTING AREA (the
+          //  contract at TraceActivityType) and its integral carries that area, so it is divided by
+          //  the area instead.  Dividing by the volume there under-reports the efficiency by
+          //  area/volume and drives m_totalAttenFactor above 1, which silently disables the
+          //  shielding pull-trend diagnosis downstream.
+          src.averageEfficiencyPerSourceGamma = calculator->m_isInSituExponential
+                          ? (src.integral / inSituEmittingArea( calculator->m_materialIndex, x ))
+                          : (src.integral / src.volume);
           src.srcVolumetricActivity = unnormVol ? (calculator->m_srcVolumetricActivity / volume)
                                                 : calculator->m_srcVolumetricActivity;
           src.inSituExponential = calculator->m_isInSituExponential;

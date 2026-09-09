@@ -197,6 +197,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_anchorInfoRow( nullptr ),
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
+    m_hideGenerateButton( false ),
     m_cancelBtn( nullptr ),
     m_progress( nullptr ),
     m_status( nullptr ),
@@ -432,6 +433,33 @@ void MakeMcResponseForDrf::setGeometryFromDescriptor( const ceelo::GeometryDescr
 }//setGeometryFromDescriptor(...)
 
 
+void MakeMcResponseForDrf::setSeedDrf( std::shared_ptr<const DetectorPeakResponse> seed_drf )
+{
+  m_seedDrf = seed_drf;
+
+  // Only refresh the rows that read the seed; deliberately NOT seedFromDrf()/method resets/
+  //  auto-generate - the owner has already applied its edits and drives generation itself.
+  updateAnchorInfo();
+  updateGroundingInfo();
+  updateResponseChart();
+  updateEstimate();
+}//setSeedDrf(...)
+
+
+void MakeMcResponseForDrf::setGenerateButtonHidden( bool hidden )
+{
+  m_hideGenerateButton = hidden;
+  if( m_generate && hidden )
+    m_generate->hide();
+}//setGenerateButtonHidden(...)
+
+
+bool MakeMcResponseForDrf::generationReady() const
+{
+  return m_geometry->generationReady();
+}//generationReady()
+
+
 Wt::Signal<bool> &MakeMcResponseForDrf::validationChanged()
 {
   return m_validationChanged;
@@ -535,8 +563,8 @@ void MakeMcResponseForDrf::setState( const State &state )
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
   m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
-  m_generate->setHidden( method == Method::CurveTransfer );
-  m_generate->setEnabled( m_geometry->isValid() );
+  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
+  m_generate->setEnabled( m_geometry->generationReady() );
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
 
   m_status->setText( WString::fromUTF8(state.status) );
@@ -583,7 +611,7 @@ void MakeMcResponseForDrf::handleMethodChanged()
   //  explicit "Generate" step (this is what guarantees that entering geometry
   //  and accepting the dialog always yields an attached, distance-aware
   //  response).
-  m_generate->setHidden( method == Method::CurveTransfer );
+  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
 
   // A result from a different method is not what the user is configuring;
   //  abandon any in-flight generation too (its finish handler is stale-guarded
@@ -618,14 +646,14 @@ void MakeMcResponseForDrf::handleGeometryChanged()
     updateResponseChart();
   }
 
-  m_generate->setEnabled( m_geometry->isValid() );
+  m_generate->setEnabled( m_geometry->generationReady() );
   updateAnchorInfo();
   updateGroundingInfo();
   updateEstimate();
 
   // Auto-build the instant transfer whenever the inputs are usable - except while the constructor
   //  is still seeding, where a response the DRF already carries is about to be installed.
-  if( !m_seedingFromDrf && (selectedMethod() == Method::CurveTransfer) && m_geometry->isValid() )
+  if( !m_seedingFromDrf && (selectedMethod() == Method::CurveTransfer) && m_geometry->generationReady() )
     startGeneration();
 
   if( !m_restoringState )
@@ -968,6 +996,14 @@ void MakeMcResponseForDrf::startGeneration()
     return;
   }
 
+  // A valid-but-guessed geometry (length fabricated from the diameter of a legacy DRF) is not
+  //  enough to characterize - require a real, user-confirmed shape.
+  if( !m_geometry->generationReady() )
+  {
+    m_status->setText( WString::tr("mmr-status-geom-incomplete") );
+    return;
+  }
+
   ++m_generationId;
   const int generation_id = m_generationId;
 
@@ -1149,8 +1185,8 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   if( generation_id != m_generationId )
     return;  //stale run - a newer run/state owns the UI
 
-  m_generate->setHidden( selectedMethod() == Method::CurveTransfer );
-  m_generate->setEnabled( m_geometry->isValid() );
+  m_generate->setHidden( m_hideGenerateButton || (selectedMethod() == Method::CurveTransfer) );
+  m_generate->setEnabled( m_geometry->generationReady() );
   m_cancelBtn->hide();
   m_progress->hide();
 

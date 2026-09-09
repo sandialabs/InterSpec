@@ -40,8 +40,7 @@ inline GeometryDescriptor preset_descriptor(const std::string& name) {
     GeometryDescriptor gd;
     if (name == "nai3x3") {
         // Campaign Z2 sentinel: NaI 3"x3" + 0.5 mm Al can.
-        gd.shape = DetectorShape::Cylinder;
-        gd.dimensions_cm = {3.81, 7.62};
+        gd.set_dimensions(CylinderDims{3.81, 7.62});
         gd.materials = {MaterialSpec::from(make_NaI()),
                         MaterialSpec::from(make_Aluminum())};
         gd.crystal_material_index = 0;
@@ -53,8 +52,7 @@ inline GeometryDescriptor preset_descriptor(const std::string& name) {
         gd.layers.push_back(can);
     } else if (name == "hpge_coax") {
         // Campaign Z5 sentinel: large coax HPGe, bore + Li dead layer + Al endcap.
-        gd.shape = DetectorShape::Cylinder;
-        gd.dimensions_cm = {4.0, 8.0};
+        gd.set_dimensions(CylinderDims{4.0, 8.0});
         gd.materials = {MaterialSpec::from(make_HPGe()),
                         MaterialSpec::from(make_Aluminum())};
         gd.crystal_material_index = 0;
@@ -69,16 +67,14 @@ inline GeometryDescriptor preset_descriptor(const std::string& name) {
         gd.reference_point = ReferencePoint::EndcapFront;
     } else if (name == "czt_box") {
         // Campaign Z6: bare CZT 1x1x0.5 cm box (phi axis).
-        gd.shape = DetectorShape::Box;
-        gd.dimensions_cm = {0.5, 0.5, 0.5};
+        gd.set_dimensions(BoxDims{0.5, 0.5, 0.5});
         gd.materials = {MaterialSpec::from(make_CZT())};
         gd.crystal_material_index = 0;
         gd.symmetry = ResponseSymmetry::Quadrant;
     } else if (name == "detective_x") {
         // ORTEC Detective-X-like coax HPGe, from PUBLIC specs (approximate:
         // ~65 mm dia x 50 mm P-type coax, Al endcap, ~0.7 mm Li dead layer).
-        gd.shape = DetectorShape::Cylinder;
-        gd.dimensions_cm = {3.25, 5.0};
+        gd.set_dimensions(CylinderDims{3.25, 5.0});
         gd.materials = {MaterialSpec::from(make_HPGe()),
                         MaterialSpec::from(make_Aluminum())};
         gd.crystal_material_index = 0;

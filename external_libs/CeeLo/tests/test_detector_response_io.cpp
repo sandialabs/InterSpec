@@ -57,8 +57,7 @@ std::shared_ptr<DetectorResponse> make_synthetic_nai(double eta0 = 0.5,
 
     MaterialSpec nai = MaterialSpec::from(make_NaI());
     MaterialSpec al = MaterialSpec::from(make_Aluminum());
-    r->descriptor.shape = DetectorShape::Cylinder;
-    r->descriptor.dimensions_cm = {3.81, 7.62};
+    r->descriptor.set_dimensions(CylinderDims{3.81, 7.62});
     r->descriptor.crystal_material_index = 0;
     r->descriptor.materials = {nai, al};
     LayerSpec can;
@@ -299,8 +298,7 @@ BOOST_AUTO_TEST_CASE(flag_behind_plane_needs_mc) {
 BOOST_AUTO_TEST_CASE(flag_collimator_shadow) {
     // Z8-style W collimator; a steep side view is shadow-dominated.
     auto r = std::make_shared<DetectorResponse>();
-    r->descriptor.shape = DetectorShape::Cylinder;
-    r->descriptor.dimensions_cm = {3.81, 7.62};
+    r->descriptor.set_dimensions(CylinderDims{3.81, 7.62});
     r->descriptor.crystal_material_index = 0;
     r->descriptor.materials = {MaterialSpec::from(make_NaI()),
                                MaterialSpec::from(make_Aluminum()),
@@ -435,8 +433,7 @@ namespace {
 /// 55.4 mm deep, 0.7 mm dead layer.  A real, legal crystal.
 GeometryDescriptor gem35_descriptor() {
     GeometryDescriptor gd;
-    gd.shape = DetectorShape::Cylinder;
-    gd.dimensions_cm = {2.915, 6.89};
+    gd.set_dimensions(CylinderDims{2.915, 6.89});
     gd.bullet_radius_cm = 0.8;
     gd.bore = BoreHoleConfig{0.495, 5.54, /*rounded_tip=*/true};
     gd.dead_layer = DeadLayerConfig{0.07, 0.07003, 0.0};
@@ -463,8 +460,7 @@ BOOST_AUTO_TEST_CASE(problems_accepts_real_gem35) {
 BOOST_AUTO_TEST_CASE(problems_flags_bad_fillet) {
     {   // A fillet is a cylinder feature.
         GeometryDescriptor gd = gem35_descriptor();
-        gd.shape = DetectorShape::Box;
-        gd.dimensions_cm = {2.0, 2.0, 6.89};
+        gd.set_dimensions(BoxDims{2.0, 2.0, 6.89});
         gd.bore.reset();
         BOOST_CHECK(has_problem(gd, GeometryProblem::BulletOnNonCylinder));
     }
@@ -480,7 +476,7 @@ BOOST_AUTO_TEST_CASE(problems_flags_bad_fillet) {
     }
     {   // A squat crystal: the fillet is admissible radially but not axially.
         GeometryDescriptor gd = gem35_descriptor();
-        gd.dimensions_cm = {5.0, 1.0};
+        gd.set_dimensions(CylinderDims{5.0, 1.0});
         gd.bullet_radius_cm = 2.0;
         gd.bore.reset();
         gd.dead_layer.reset();
@@ -488,7 +484,7 @@ BOOST_AUTO_TEST_CASE(problems_flags_bad_fillet) {
     }
     {   // The dead layer offsets the fillet inward until it no longer fits.
         GeometryDescriptor gd = gem35_descriptor();
-        gd.dimensions_cm = {2.915, 0.5};
+        gd.set_dimensions(CylinderDims{2.915, 0.5});
         gd.bullet_radius_cm = 0.4;
         gd.bore.reset();
         gd.dead_layer = DeadLayerConfig{0.2, 0.05, 0.2};
@@ -499,8 +495,7 @@ BOOST_AUTO_TEST_CASE(problems_flags_bad_fillet) {
 BOOST_AUTO_TEST_CASE(problems_flags_bad_bore) {
     {
         GeometryDescriptor gd = gem35_descriptor();
-        gd.shape = DetectorShape::Box;
-        gd.dimensions_cm = {2.0, 2.0, 6.89};
+        gd.set_dimensions(BoxDims{2.0, 2.0, 6.89});
         gd.bullet_radius_cm = 0.0;
         BOOST_CHECK(has_problem(gd, GeometryProblem::BoreOnNonCylinder));
     }
@@ -553,7 +548,31 @@ BOOST_AUTO_TEST_CASE(build_geometry_rejects_illegal_descriptor) {
     BOOST_CHECK_THROW(gd.build_geometry(owned), std::runtime_error);
 }
 
-// set_detector() indexes dimensions_cm behind nothing but an assert, so a
+// The named accessors must produce exactly the `dimensions_cm` layout that is
+// already in every stored response file -- see CRYSTAL DIMENSION CONVENTION in
+// geometry/Geometry.h. Geometry-side coverage is in test_dimension_convention.
+BOOST_AUTO_TEST_CASE(geometry_descriptor_names_match_the_serialized_vector) {
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{3.81, 7.62});
+    BOOST_CHECK(gd.shape == DetectorShape::Cylinder);
+    BOOST_REQUIRE_EQUAL(gd.dimensions_cm.size(), 2u);
+    // Byte-for-byte what every already-written response file holds.
+    BOOST_CHECK_EQUAL(gd.dimensions_cm[0], 3.81);
+    BOOST_CHECK_EQUAL(gd.dimensions_cm[1], 7.62);
+
+    const CylinderDims back = gd.cylinder_dims();
+    BOOST_CHECK_CLOSE(back.radius_cm, 3.81, 1e-12);
+    BOOST_CHECK_CLOSE(back.full_length_cm, 7.62, 1e-12);
+
+    GeometryDescriptor bd;
+    bd.set_dimensions(BoxDims{0.5, 0.5, 0.5});
+    BOOST_CHECK(bd.shape == DetectorShape::Box);
+    BOOST_REQUIRE_EQUAL(bd.dimensions_cm.size(), 3u);
+    BOOST_CHECK_CLOSE(bd.box_dims().full_length_cm, 0.5, 1e-12);
+}
+
+// set_detector_from_dimensions_vector() indexes dimensions_cm behind nothing
+// but an assert, so a
 // truncated <Dimensions> would read past the end of the vector in a release
 // build. Catching it is the whole reason problems() exists.
 BOOST_AUTO_TEST_CASE(problems_flags_short_dimensions) {
@@ -568,7 +587,8 @@ BOOST_AUTO_TEST_CASE(problems_flags_short_dimensions) {
         std::vector<std::unique_ptr<Material>> owned;
         BOOST_CHECK_THROW(gd.build_geometry(owned), std::runtime_error);
     }
-    // A box needs three.
+    // A box needs three.  Assigned raw on purpose: set_dimensions() cannot
+    // express this, which is exactly the point of the check.
     gd.shape = DetectorShape::Box;
     gd.dimensions_cm = {2.0, 2.0};
     BOOST_CHECK(has_problem(gd, GeometryProblem::DimensionsMissing));
@@ -633,8 +653,7 @@ BOOST_AUTO_TEST_CASE(query_position_is_unmoved_by_a_dead_layer) {
 // class of "new check rejects a geometry CeeLo has always accepted".
 BOOST_AUTO_TEST_CASE(problems_accepts_a_plain_box) {
     GeometryDescriptor gd;
-    gd.shape = DetectorShape::Box;
-    gd.dimensions_cm = {0.5, 0.5, 0.5};
+    gd.set_dimensions(BoxDims{0.5, 0.5, 0.5});
     gd.crystal_material_index = 0;
     gd.materials = {MaterialSpec::from(make_CZT())};
     BOOST_CHECK_MESSAGE(gd.problems().empty(),

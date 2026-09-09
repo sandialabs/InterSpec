@@ -34,6 +34,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <cstdint>
 #include <utility>
 
 #include <boost/asio/deadline_timer.hpp>
@@ -68,6 +69,29 @@ class CascadeSummingCalc;
 struct PointSourceRays;
 struct VolumetricLineCache;
 
+/** How a volumetric LINE set's per-line unit coordinates are generated: which low-discrepancy
+ sequence, and which REPLICA of it (a contiguous block starting at `index_offset`).  Part of the
+ line cache's key, so a fit holds one replica for its whole duration and the objective stays
+ deterministic; independent replicas are how the quadrature error is measured offline - their spread
+ is an error bar the sequence itself cannot give.  See VolumetricLineIntegration_imp.hpp. */
+struct LineSampleParams
+{
+  /** Halton: the radical-inverse sequence in bases 2,3,5 (hull) and 17,19,7,11,13 (source), a
+   replica being a contiguous block at `index_offset`.  Sobol: the 8-dimensional Sobol' sequence
+   (Joe-Kuo direction numbers via Boost) with a per-dimension random digital shift drawn from
+   `seed`, a replica being a different seed. */
+  enum class Kind : int { Halton, Sobol };
+  Kind kind = Kind::Sobol;
+  uint64_t index_offset = 0;
+  uint64_t seed = 0;
+
+  bool operator==( const LineSampleParams &rhs ) const
+  {
+    return (kind == rhs.kind) && (index_offset == rhs.index_offset) && (seed == rhs.seed);
+  }
+  bool operator!=( const LineSampleParams &rhs ) const { return !(*this == rhs); }
+};//struct LineSampleParams
+
 /** Maximum areal density allowed for computations, in units of g/cm2 -
  
  Not in units of PhysicalUnits; e.g., you need to multiple by PhysicalUnits::cm2 / PhysicalUnits::g before using for computation..
@@ -84,7 +108,30 @@ enum class TraceActivityType : int
 {
   TotalActivity,
   ActivityPerCm3,
-  ExponentialDistribution,  //Activity of Bq/m2 of the entire column of soil
+  /** Activity per m^2 of the EMITTING SURFACE - the surface the exponential depth profile is
+   measured from, and the one convention every part of the code must share:
+
+       Spherical         4*pi*R^2      (the whole surface; depth is measured inward)
+       CylinderEndOn       pi*R^2      (the end cap facing the detector)
+       CylinderSideOn   2*pi*R*(2*H)   (the curved side; H is the HALF-length)
+       Rectangular      (2*W)*(2*H)    (the face facing the detector)
+
+   The INTEGRAND supplies that area: `integral` times the per-m^2 activity is a count rate, and no
+   caller multiplies by an area (see ShieldingSourceChi2Fcn::expected_peak_counts_imp).
+   #ShieldingSourceChi2Fcn::totalActivity, #ShieldingSourceChi2Fcn::activityUncertainty and
+   ShieldingSelect::inSituSurfaceArea use the SAME table to report a total.
+
+   Why these are the right areas for the two geometries no external truth case reaches: with the
+   depth-integral normalisations the integrands divide by, A_surf/norm reduces to the per-area
+   emission density of a shell at depth d, since
+   Int_0^R exp(-d/L) (R-d)^2/R^2 dd = R*h_sph(R/L) (sphere) and
+   Int_0^R exp(-d/L) (R-d)/R dd = R*h_side(R/L) (side-on) - i.e. the shell Jacobian is already
+   in the normalisation, so multiplying by the full surface area is what makes the activity
+   per unit of THAT area.  The rectangle and the end-on cylinder are corroborated directly by the
+   analyst regression case
+   analysis_tests/option_permutation_fits/misc/AEGIS_Eu152_surface_contamination_exp_surface_with_shielding.n42
+   and (line path) by the in-situ Monte-Carlo truth rows in VolumetricNearFieldTruth.h. */
+  ExponentialDistribution,
   ActivityPerGram, //Needs to come last as wont be available if a "void" material
   //ActivityPPM,
   NumTraceActivityType
@@ -1709,7 +1756,7 @@ protected:
    a #volumetricEffResolveError for a method asked for by name.  (A line-set rebuild during the fit -
    the dimensions left the set's window - that fails is an error the optimizer reports instead; see
    build_volumetric_calculators.) */
-  void buildDetectorSideRays();
+  void buildDetectorSideRays( const std::vector<double> *params = nullptr );
 
   /** Drops every detector-side ray set and the memos built on them (#m_lineCaches, #m_pointRays,
    the #pointSourceFepEff memos) - the single place they are invalidated: whenever the resolved
@@ -1731,9 +1778,33 @@ public:
    line set unbuildable, which the tests use to exercise the fallback. */
   static inline int sm_default_volumetric_num_lines = 65536;
 
+  /** After a fit with volumetric sources on the line path has converged, the line count is raised
+   by this factor (rebuilding the sets from the converged dimensions) and one more solve is run from
+   the converged point - the POLISH - so the reported value and covariance come from a finer
+   quadrature than the search needed.  1 disables it.  The choice is made before that final solve,
+   never inside one (a changing quadrature steps the objective). */
+  static inline int sm_volumetric_polish_line_factor = 4;
+
   /** Padding factor of the line sets' direction proposal around the source (see
    build_volumetric_line_cache); part of #VolumetricLineCache's key. */
   static inline double sm_default_volumetric_line_pad = 1.5;
+
+  /** Change the line count / the line-set replica for this fit: drops every detector-side ray set
+   and memo (#clearDetectorSideRays) and rebuilds them, so the next evaluation integrates on the
+   new set.  Never call while a solve is evaluating (it would step the objective).  Used by the tests
+   to measure fit stability across replicas, and by the post-convergence polish. */
+  void setVolumetricLineCount( const int num_lines, const std::vector<double> *params = nullptr );
+  void setVolumetricLineSample( const LineSampleParams &sample );
+  int volumetricLineCount() const { return m_volumetricNumLines; }
+  const LineSampleParams &volumetricLineSample() const { return m_volumetricLineSample; }
+
+  /** Whether this fit integrates any source on the volumetric LINE path (a response is resolved
+   and at least one line set was built). */
+  bool hasVolumetricLineSets() const
+  {
+    std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+    return !m_lineCaches.empty();
+  }
 
   /** Hard ceiling on the per-energy point-efficiency memos; reaching it clears them (a cache, never
    a correctness dependency).  Far above the few hundred distinct energies a fit ever asks about. */
@@ -1826,19 +1897,30 @@ protected:
   static const size_t sm_maxMixtureCacheSize = 10000;
 
   /** Detector-side line sets for the volumetric LINE integration path, one per source shell,
-   keyed on the source material index and rebuilt whenever the scalar source dimensions (or the
-   detector placement) change - i.e. once per optimizer step for a dimension fit, once per fit
-   otherwise.  See VolumetricLineIntegration_imp.hpp.  Shared (const) with the fit threads. */
+   keyed on the source material index and built once per fit: the set's aim points follow the
+   fitted source dimensions at every evaluation, and the per-dimension crystal traces live inside
+   the cache.  See VolumetricLineIntegration_imp.hpp.  Shared (const) with the fit threads. */
   mutable std::mutex m_lineCacheMutex;
   mutable std::map<size_t,std::shared_ptr<const VolumetricLineCache>> m_lineCaches;
 
   /** Lines per source shell for the line path, from #sm_default_volumetric_num_lines. */
   int m_volumetricNumLines = sm_default_volumetric_num_lines;
 
-  /** The line set for the given source shell at the given SCALAR cumulative outer dims, building
-   or rebuilding it as needed.  Null when there is no resolved volumetric response. */
+  /** Which sequence/replica the line sets are drawn from (see #LineSampleParams); part of the
+   cache key.  Production uses the default; the tests set replicas to measure the quadrature. */
+  LineSampleParams m_volumetricLineSample;
+
+  /** The line set for the given source shell, building it if there is none yet; the SCALAR
+   cumulative outer dims of the shell are the build-time hint.  Null when there is no resolved
+   volumetric response. */
   std::shared_ptr<const VolumetricLineCache> volumetricLineCache( const size_t material_index,
                                                     const std::array<double,3> &source_outer_dims ) const;
+
+  /** Emitting-surface area of shielding `matn` at the given parameters - the area a
+   #TraceActivityType::ExponentialDistribution activity is per unit of, and the ONE place that
+   table lives on this class.  See the contract at #TraceActivityType.  Only meaningful for a
+   geometry; asserts otherwise. */
+  double inSituEmittingArea( const size_t matn, const std::vector<double> &params ) const;
 };//class ShieldingSourceChi2Fcn
 
 }//namespace GammaInteractionCalc

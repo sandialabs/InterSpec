@@ -60,6 +60,7 @@
 #include <vector>
 #include <cmath>
 #include <cstdint>
+#include <cassert>
 #include <optional>
 #include <limits>
 #include <string>
@@ -74,6 +75,67 @@ enum class DetectorShape : uint8_t {
     Cylinder,
     Box
 };
+
+/// ---------------------------------------------------------------------------
+/// CRYSTAL DIMENSION CONVENTION -- stated here, and only here.  Every other
+/// header points at this block rather than restating it; a restatement is how
+/// VirtualDepthFit came to simulate a crystal half the length it advertised.
+///
+///   * TRANSVERSE extents are HALVES: a cylinder's radius, a box's half-width
+///     and half-height.
+///   * The AXIAL extent is the FULL crystal length, face (z = 0) to back
+///     (z = L) -- NOT a half-length.
+///
+/// So a 3"x3" NaI is CylinderDims{ 3.81, 7.62 }, and a 1 x 1 x 0.5 cm CZT slab
+/// is BoxDims{ 0.5, 0.5, 0.5 }.
+///
+/// The mix is deliberate: it is what the ray tracers want (intersect_box takes
+/// transverse half-extents and absolute z bounds), and it is serialized into
+/// GeometryDescriptor::dimensions_cm and thus into every response file ever
+/// written.  Do NOT "unify" it -- that silently invalidates stored responses
+/// for no physics gain.
+///
+/// SOURCES are a separate, self-consistent convention: they are half-extents
+/// throughout (set_cylindrical_source's half_length, set_rectangular_source's
+/// half_dims), and InterSpec's ShieldingInfo::m_dimensions matches them.  A
+/// crystal is measured face to back; a source is centred on a point.  That
+/// asymmetry is intentional too.
+/// ---------------------------------------------------------------------------
+
+/// Cylindrical crystal dimensions.  See CRYSTAL DIMENSION CONVENTION above.
+struct CylinderDims {
+    double radius_cm = 0.0;       ///< HALF the crystal diameter
+    double full_length_cm = 0.0;  ///< FULL length along z, crystal face to back
+};
+
+/// Box crystal dimensions.  See CRYSTAL DIMENSION CONVENTION above.
+struct BoxDims {
+    double half_x_cm = 0.0;       ///< HALF the crystal width
+    double half_y_cm = 0.0;       ///< HALF the crystal height
+    double full_length_cm = 0.0;  ///< FULL length along z, crystal face to back
+};
+
+/// The serialized `dimensions_cm` layout for these dimensions.
+inline std::vector<double> to_dimensions_vector(const CylinderDims& d) {
+    return {d.radius_cm, d.full_length_cm};
+}
+
+inline std::vector<double> to_dimensions_vector(const BoxDims& d) {
+    return {d.half_x_cm, d.half_y_cm, d.full_length_cm};
+}
+
+/// Decode a serialized `dimensions_cm`.  Callers that may hold user or file
+/// input should consult GeometryDescriptor::problems() first -- these only
+/// assert, matching set_detector_from_dimensions_vector().
+inline CylinderDims cylinder_dims_from_vector(const std::vector<double>& v) {
+    assert(v.size() >= 2);
+    return CylinderDims{v[0], v[1]};
+}
+
+inline BoxDims box_dims_from_vector(const std::vector<double>& v) {
+    assert(v.size() >= 3);
+    return BoxDims{v[0], v[1], v[2]};
+}
 
 /// Result of a ray intersection with a single geometric primitive.
 struct RayHit {
@@ -155,15 +217,25 @@ class Geometry {
 public:
     Geometry();
 
-    /// Set the detector crystal shape and dimensions.
-    /// For Cylinder: dimensions = {radius, length}
-    /// For Box: dimensions = {half_width_x, half_width_y, length}
+    /// Set the detector crystal material and dimensions.  The shape follows
+    /// from the dimension type, so a Box cannot be declared with two numbers.
+    /// See CRYSTAL DIMENSION CONVENTION above for what the fields mean.
     ///
     /// Clears any bore hole, dead layer and bulletization radius: those are
     /// sized against the crystal, so redefining it invalidates them. Call this
     /// first, then declare the rest.
-    void set_detector(DetectorShape shape, const Material* material,
-                      const std::vector<double>& dimensions);
+    void set_detector(const Material* material, const CylinderDims& dims);
+    void set_detector(const Material* material, const BoxDims& dims);
+
+    /// Deserialization entry point ONLY -- for replaying a stored
+    /// GeometryDescriptor::dimensions_cm, whose shape and layout are only
+    /// known at run time.  New code uses the typed overloads above.
+    ///
+    /// Only asserts the vector is long enough; GeometryDescriptor::problems()
+    /// is the release-safe guard, and build_geometry() runs it first.
+    void set_detector_from_dimensions_vector(DetectorShape shape,
+                                             const Material* material,
+                                             const std::vector<double>& dimensions_cm);
 
     /// Set bore hole for coaxial HPGe.
     /// Bore extends from the back face inward along the z-axis.
@@ -253,11 +325,11 @@ public:
     const std::optional<DeadLayerConfig>& dead_layer() const { return dead_layer_; }
     const std::vector<AttenuatorConfig>& attenuators() const { return attenuators_; }
 
-    // Detector dimensions
+    // Detector dimensions, as CRYSTAL DIMENSION CONVENTION defines them.
     double detector_radius() const; ///< Only for cylindrical
     double detector_half_x() const; ///< Only for box
     double detector_half_y() const; ///< Only for box
-    double detector_length() const;
+    double detector_length() const; ///< FULL length, both shapes
 
 private:
     DetectorShape shape_ = DetectorShape::Cylinder;
@@ -285,6 +357,10 @@ private:
     void trace_box_geometry(const Eigen::Vector3d& origin,
                             const Eigen::Vector3d& direction,
                             std::vector<PathSegment>& segments) const;
+
+    /// Shared prologue of the set_detector overloads: adopt the material and
+    /// drop everything sized against the previous crystal.
+    void begin_crystal(const Material* material);
 };
 
 } // namespace ceelo

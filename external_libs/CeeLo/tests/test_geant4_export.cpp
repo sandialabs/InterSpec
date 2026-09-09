@@ -44,6 +44,7 @@
 #include "test_fep_window.h"
 #include "export/Geant4Export.h"
 #include "geometry/Geometry.h"
+#include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
 
 #include <Eigen/Core>
@@ -131,6 +132,83 @@ std::string tmp_gdml(const char* tag) {
 // GEM35-70.
 constexpr double R = 2.915, L = 6.89, RB = 0.8, RBORE = 0.495, DEPTH = 5.54;
 
+/// Whole exported file as a string.
+std::string slurp(const std::string& path) {
+    std::ifstream f(path);
+    return std::string((std::istreambuf_iterator<char>(f)),
+                       std::istreambuf_iterator<char>());
+}
+
+double attr_of(const std::string& line, const std::string& key) {
+    const size_t p = line.find(key + "=\"");
+    if (p == std::string::npos) return -1.0;
+    return std::atof(line.c_str() + p + key.size() + 2);
+}
+
+/// One solid of the exported source chain, in file order (innermost first).
+struct SrcSolid {
+    std::string name;
+    std::string kind;   ///< "sphere" | "tube" | "box"
+    double d0 = 0.0;    ///< sphere rmax / tube rmax / box full-x
+    double d1 = 0.0;    ///< sphere rmin / tube full-z  / box full-y
+    double d2 = 0.0;    ///< box full-z
+};
+
+std::vector<SrcSolid> read_src_solids(const std::string& path) {
+    std::ifstream f(path);
+    std::string line;
+    std::vector<SrcSolid> out;
+    while (std::getline(f, line)) {
+        const size_t n = line.find("name=\"Src");
+        if (n == std::string::npos) continue;
+        if (line.find("<sphere") == std::string::npos
+            && line.find("<tube") == std::string::npos
+            && line.find("<box") == std::string::npos) continue;
+        const size_t q0 = line.find('"', n) + 1;
+        const size_t q1 = line.find('"', q0);
+        SrcSolid s;
+        s.name = line.substr(q0, q1 - q0);
+        if (line.find("<sphere") != std::string::npos) {
+            s.kind = "sphere"; s.d0 = attr_of(line, "rmax"); s.d1 = attr_of(line, "rmin");
+        } else if (line.find("<tube") != std::string::npos) {
+            s.kind = "tube";   s.d0 = attr_of(line, "rmax"); s.d1 = attr_of(line, "z");
+        } else {
+            s.kind = "box";    s.d0 = attr_of(line, "x");
+            s.d1 = attr_of(line, "y"); s.d2 = attr_of(line, "z");
+        }
+        out.push_back(s);
+    }
+    return out;
+}
+
+/// Material of each Src* logical volume, and the daughter it carries.
+struct SrcVol { std::string lv, mat, daughter_lv; };
+
+std::vector<SrcVol> read_src_volumes(const std::string& path) {
+    std::ifstream f(path);
+    std::string line;
+    std::vector<SrcVol> out;
+    bool in_src = false;
+    while (std::getline(f, line)) {
+        if (line.find("<volume name=\"Src") != std::string::npos) {
+            const size_t q0 = line.find('"') + 1, q1 = line.find('"', q0);
+            out.push_back({line.substr(q0, q1 - q0), "", ""});
+            in_src = true;
+            continue;
+        }
+        if (!in_src) continue;
+        if (line.find("</volume>") != std::string::npos) { in_src = false; continue; }
+        if (line.find("<materialref") != std::string::npos) {
+            const size_t q0 = line.find("ref=\"") + 5, q1 = line.find('"', q0);
+            out.back().mat = line.substr(q0, q1 - q0);
+        } else if (line.find("<volumeref") != std::string::npos) {
+            const size_t q0 = line.find("ref=\"") + 5, q1 = line.find('"', q0);
+            out.back().daughter_lv = line.substr(q0, q1 - q0);
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 
@@ -156,7 +234,7 @@ BOOST_AUTO_TEST_CASE(exported_polycone_matches_traced_solid) {
     for (const auto& c : cases) {
         EfficiencyCalculator calc;
         calc.set_fep_window_keV(kTestFepWindowKeV);
-        calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+        calc.set_detector(&ge, CylinderDims{R, L});
         if (c.r_b > 0.0) calc.set_bullet_radius(c.r_b);
         if (c.bore_r > 0.0) calc.set_bore_hole(c.bore_r, c.depth, c.tip);
 
@@ -195,7 +273,7 @@ BOOST_AUTO_TEST_CASE(exported_fillet_volume_is_right_not_just_close) {
     auto exported_volume = [&](double r_b) {
         EfficiencyCalculator calc;
         calc.set_fep_window_keV(kTestFepWindowKeV);
-        calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+        calc.set_detector(&ge, CylinderDims{R, L});
         if (r_b > 0.0) calc.set_bullet_radius(r_b);
         // No bore: isolate the fillet.
         const std::string path = tmp_gdml(r_b > 0.0 ? "fv_bullet" : "fv_sharp");
@@ -227,7 +305,7 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
     Material ge = make_HPGe();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+    calc.set_detector(&ge, CylinderDims{R, L});
 
     const std::string path = tmp_gdml("plain");
     calc.export_geant4_gdml(path, /*vacuum_world=*/true);
@@ -237,6 +315,313 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
                           std::istreambuf_iterator<char>());
     BOOST_CHECK(txt.find("<tube name=\"CrystalOuterTube\"") != std::string::npos);
     BOOST_CHECK(txt.find("<polycone") == std::string::npos);
+    std::remove(path.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Source cores.  These close the export<->tracer loop for the concentric source
+// stack the same way the polycone tests do for the crystal: the GDML is parsed
+// back and checked against what the ray tracer actually traverses.  The GEANT4
+// references are generated FROM this export, so a mismatch here would not show
+// up as a test failure -- it would show up as a physics disagreement that looks
+// like a transport bug.
+// ---------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(cored_sphere_export_matches_traced_segments) {
+    // A soil shell [2,3] cm with a 1 cm iron core and a 1 cm lead core inside
+    // it, leaving a 0-1 cm cavity, plus an outer Fe shield.
+    Material nai = make_NaI(), soil = make_Soil();
+    Material fe = make_Iron(), pb = make_Lead();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    calc.set_spherical_source(Eigen::Vector3d(0, 0, -10.0), 3.0,
+                              Eigen::Matrix3d::Identity(), 2.0);
+    calc.set_source_material(&soil);
+    calc.add_source_core(&fe, 1.0);   // fills [1,2]
+    calc.add_source_core(&pb, 1.0);   // fills [0,1]... leaves nothing
+    calc.add_source_shield(&fe, 0.5);
+
+    const std::string path = tmp_gdml("cored_sphere");
+    calc.export_geant4_gdml(path);   // must NOT throw any more
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 4u);   // Pb core, Fe core, soil, Fe shield
+
+    // File order is innermost-first, which is what GDML needs (a volume must be
+    // defined before the mother that references it).
+    BOOST_CHECK_EQUAL(solids[0].name, "SrcCoreSolid1");
+    BOOST_CHECK_EQUAL(solids[1].name, "SrcCoreSolid0");
+    BOOST_CHECK_EQUAL(solids[2].name, "SrcMaterialSolid");
+    BOOST_CHECK_EQUAL(solids[3].name, "SrcShieldSolid0");
+
+    // Every solid is FULL (a daughter displaces its mother), so only the
+    // innermost keeps the 1e-4 cm centre hole G4 navigation wants.
+    BOOST_CHECK_CLOSE(solids[0].d1, 1e-4, 1e-6);
+    for (size_t i = 1; i < solids.size(); ++i)
+        BOOST_CHECK_SMALL(solids[i].d1, 1e-12);
+
+    BOOST_CHECK_CLOSE(solids[0].d0, 1.0, 1e-9);
+    BOOST_CHECK_CLOSE(solids[1].d0, 2.0, 1e-9);
+    BOOST_CHECK_CLOSE(solids[2].d0, 3.0, 1e-9);
+    BOOST_CHECK_CLOSE(solids[3].d0, 3.5, 1e-9);
+
+    // The closure: a ray from the centre outward must cross exactly those
+    // boundaries, in that order, with those lengths.
+    const SourceGeometry& sg = calc.source_geometry();
+    std::vector<SourceGeometry::SourcePathSegment> segs;
+    sg.trace_source_segments(Eigen::Vector3d(0, 0, -10.0), Eigen::Vector3d(0, 0, 1),
+                             662.0, segs);
+    BOOST_REQUIRE_EQUAL(segs.size(), 4u);
+    double prev = 0.0;
+    for (size_t i = 0; i < 4; ++i) {
+        BOOST_CHECK_CLOSE(segs[i].length, solids[i].d0 - prev, 1e-6);
+        prev = solids[i].d0;
+    }
+    BOOST_CHECK_EQUAL(segs[0].material, &pb);
+    BOOST_CHECK_EQUAL(segs[1].material, &fe);
+    BOOST_CHECK_EQUAL(segs[2].material, &soil);
+    BOOST_CHECK_EQUAL(segs[3].material, &fe);
+
+    // Nesting: each volume carries the next one in, and only the outermost is
+    // placed in the world.  This is what makes /gps/pos/confine SrcMaterialPV
+    // sample the shell alone -- IsSourceConfined() locates the DEEPEST volume.
+    const std::vector<SrcVol> vols = read_src_volumes(path);
+    BOOST_REQUIRE_EQUAL(vols.size(), 4u);
+    BOOST_CHECK_EQUAL(vols[0].daughter_lv, "");              // innermost
+    BOOST_CHECK_EQUAL(vols[1].daughter_lv, "SrcCoreLV1");
+    BOOST_CHECK_EQUAL(vols[2].daughter_lv, "SrcCoreLV0");    // cores inside source
+    BOOST_CHECK_EQUAL(vols[3].daughter_lv, "SrcMaterialLV");
+
+    const std::string txt = slurp(path);
+    BOOST_CHECK(txt.find("<subtraction") == std::string::npos);  // no booleans
+    BOOST_CHECK(txt.find("SrcShieldPV0") != std::string::npos);  // world holds outermost
+
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(partly_filled_core_leaves_a_vacuum_cavity) {
+    // Cores that do not reach the centre must leave a real void -- the GDML twin
+    // of partly_filled_core_leaves_a_void_but_keeps_the_distances.
+    Material nai = make_NaI(), soil = make_Soil(), fe = make_Iron();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    calc.set_spherical_source(Eigen::Vector3d(0, 0, -10.0), 3.0,
+                              Eigen::Matrix3d::Identity(), 2.0);
+    calc.set_source_material(&soil);
+    calc.add_source_core(&fe, 0.5);   // fills [1.5, 2]; [0,1.5] stays empty
+
+    const std::string path = tmp_gdml("partial_core");
+    calc.export_geant4_gdml(path);
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 3u);
+    BOOST_CHECK_EQUAL(solids[0].name, "SrcVoidSolid");
+    BOOST_CHECK_CLOSE(solids[0].d0, 1.5, 1e-9);
+    BOOST_CHECK_EQUAL(solids[1].name, "SrcCoreSolid0");
+    BOOST_CHECK_CLOSE(solids[1].d0, 2.0, 1e-9);
+
+    // The cavity must be vacuum, not the world material: the MC charges it no
+    // attenuation whatever the world is made of.
+    const std::vector<SrcVol> vols = read_src_volumes(path);
+    BOOST_REQUIRE(!vols.empty());
+    BOOST_CHECK_EQUAL(vols[0].lv, "SrcVoidLV");
+    BOOST_CHECK_EQUAL(vols[0].mat, "Vacuum");
+
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(hollow_source_without_cores_exports_a_vacuum_cavity) {
+    // No cores at all: the cavity is still a void daughter rather than a
+    // subtraction solid, so the shell is expressed the same way either way.
+    Material nai = make_NaI(), soil = make_Soil();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    calc.set_spherical_source(Eigen::Vector3d(0, 0, -10.0), 3.0,
+                              Eigen::Matrix3d::Identity(), 2.0);
+    calc.set_source_material(&soil);
+
+    const std::string path = tmp_gdml("hollow_nocore");
+    calc.export_geant4_gdml(path);
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 2u);
+    BOOST_CHECK_EQUAL(solids[0].name, "SrcVoidSolid");
+    BOOST_CHECK_CLOSE(solids[0].d0, 2.0, 1e-9);
+    BOOST_CHECK_EQUAL(solids[1].name, "SrcMaterialSolid");
+    BOOST_CHECK_CLOSE(solids[1].d0, 3.0, 1e-9);
+    BOOST_CHECK(slurp(path).find("<subtraction") == std::string::npos);
+
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(cores_are_additive_in_the_export) {
+    // One 2 cm core and four 0.5 cm cores of the same material describe the same
+    // scene; the exported material distribution must agree.  This is the GDML
+    // twin of cores_are_additive, and the G-E additivity control in GEANT4.
+    Material nai = make_NaI(), soil = make_Soil(), fe = make_Iron();
+
+    auto build = [&](EfficiencyCalculator& c, int n_cores) {
+        c.set_fep_window_keV(kTestFepWindowKeV);
+        c.set_detector(&nai, CylinderDims{3.81, 7.62});
+        c.set_spherical_source(Eigen::Vector3d(0, 0, -10.0), 3.0,
+                               Eigen::Matrix3d::Identity(), 2.0);
+        c.set_source_material(&soil);
+        for (int i = 0; i < n_cores; ++i)
+            c.add_source_core(&fe, 2.0 / n_cores);
+    };
+
+    EfficiencyCalculator one, many;
+    build(one, 1);
+    build(many, 4);
+
+    const std::string p1 = tmp_gdml("core_add1"), p4 = tmp_gdml("core_add4");
+    one.export_geant4_gdml(p1);
+    many.export_geant4_gdml(p4);
+
+    const std::vector<SrcSolid> s1 = read_src_solids(p1);
+    const std::vector<SrcSolid> s4 = read_src_solids(p4);
+    BOOST_REQUIRE_EQUAL(s1.size(), 2u);   // one core + source
+    BOOST_REQUIRE_EQUAL(s4.size(), 5u);   // four cores + source
+
+    // Same outer boundary for the iron, same source shell, and every
+    // intermediate boundary is an iron/iron interface that changes nothing.
+    BOOST_CHECK_CLOSE(s1[0].d0, 2.0, 1e-9);
+    BOOST_CHECK_CLOSE(s4[3].d0, 2.0, 1e-9);
+    BOOST_CHECK_CLOSE(s1[1].d0, s4[4].d0, 1e-9);
+
+    // And the tracer agrees: a subdivided core merges back into one run.
+    std::vector<SourceGeometry::SourcePathSegment> g1, g4;
+    one.source_geometry().trace_source_segments(
+        Eigen::Vector3d(0, 0, -10.0), Eigen::Vector3d(0, 0, 1), 662.0, g1);
+    many.source_geometry().trace_source_segments(
+        Eigen::Vector3d(0, 0, -10.0), Eigen::Vector3d(0, 0, 1), 662.0, g4);
+    BOOST_REQUIRE_EQUAL(g1.size(), g4.size());
+    for (size_t i = 0; i < g1.size(); ++i)
+        BOOST_CHECK_CLOSE(g1[i].length, g4[i].length, 1e-9);
+
+    std::remove(p1.c_str());
+    std::remove(p4.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(nested_cylinder_exports_a_closed_cavity_not_a_pipe) {
+    // The export twin of nested_cylinder_is_not_a_pipe.  Before nesting, the
+    // cylinder source solid was written as a plain through-bore <tube> that
+    // ignored cyl_inner_half_length() entirely -- a nested stack came out a pipe.
+    Material nai = make_NaI(), soil = make_Soil(), fe = make_Iron();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    // R=3, half-length 3; cavity r=2, half-length 2 => CLOSED, not a through-bore.
+    calc.set_cylindrical_source(Eigen::Vector3d(0, 0, -10.0), 3.0, 3.0,
+                                Eigen::Matrix3d::Identity(), 2.0, 2.0);
+    calc.set_source_material(&soil);
+    calc.add_source_core(&fe, 2.0, 2.0);
+
+    const std::string path = tmp_gdml("nested_cyl");
+    calc.export_geant4_gdml(path);
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 2u);
+    BOOST_CHECK_EQUAL(solids[0].kind, "tube");
+    BOOST_CHECK_CLOSE(solids[0].d0, 2.0, 1e-9);   // core radius
+    BOOST_CHECK_CLOSE(solids[0].d1, 4.0, 1e-9);   // FULL z = 2*2, NOT 2*3
+    BOOST_CHECK_CLOSE(solids[1].d0, 3.0, 1e-9);
+    BOOST_CHECK_CLOSE(solids[1].d1, 6.0, 1e-9);
+
+    // The tracer sees the same thing, and it is what distinguishes the two: a
+    // ray leaving the axis at |z| = 2.5 (past the cavity end) crosses the full
+    // 3 cm radius of soil.  Modelled as a through-bore it would cross only
+    // 3 - 2 = 1 cm, because the bore would run the whole length.
+    const SourceGeometry& sg = calc.source_geometry();
+    std::vector<SourceGeometry::SourcePathSegment> segs;
+    sg.trace_source_segments(Eigen::Vector3d(0, 0, -10.0 + 2.5),
+                             Eigen::Vector3d(1, 0, 0), 662.0, segs);
+    double soil_len = 0.0;
+    for (const auto& sgm : segs) if (sgm.material == &soil) soil_len += sgm.length;
+    BOOST_CHECK_CLOSE(soil_len, 3.0, 1e-6);
+
+    EfficiencyCalculator pipe;
+    pipe.set_fep_window_keV(kTestFepWindowKeV);
+    pipe.set_detector(&nai, CylinderDims{3.81, 7.62});
+    pipe.set_cylindrical_source(Eigen::Vector3d(0, 0, -10.0), 3.0, 3.0,
+                                Eigen::Matrix3d::Identity(), 2.0);  // through-bore
+    pipe.set_source_material(&soil);
+    std::vector<SourceGeometry::SourcePathSegment> psegs;
+    pipe.source_geometry().trace_source_segments(
+        Eigen::Vector3d(0, 0, -10.0 + 2.5), Eigen::Vector3d(1, 0, 0), 662.0, psegs);
+    double pipe_len = 0.0;
+    for (const auto& sgm : psegs) if (sgm.material == &soil) pipe_len += sgm.length;
+    BOOST_CHECK_CLOSE(pipe_len, 1.0, 1e-6);
+
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(cored_box_exports_nested_boxes) {
+    Material nai = make_NaI(), soil = make_Soil(), fe = make_Iron();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    calc.set_rectangular_source(Eigen::Vector3d(0, 0, -20.0),
+                                Eigen::Vector3d(5.0, 6.0, 7.0),
+                                Eigen::Matrix3d::Identity(),
+                                Eigen::Vector3d(3.0, 4.0, 5.0));
+    calc.set_source_material(&soil);
+    calc.add_source_core(&fe, 3.0, 4.0, 5.0);   // fills the cavity exactly
+
+    const std::string path = tmp_gdml("cored_box");
+    calc.export_geant4_gdml(path);
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 2u);
+    BOOST_CHECK_EQUAL(solids[0].kind, "box");
+    BOOST_CHECK_CLOSE(solids[0].d0, 6.0,  1e-9);   // 2 * 3
+    BOOST_CHECK_CLOSE(solids[0].d1, 8.0,  1e-9);
+    BOOST_CHECK_CLOSE(solids[0].d2, 10.0, 1e-9);
+    BOOST_CHECK_CLOSE(solids[1].d0, 10.0, 1e-9);   // 2 * 5
+    BOOST_CHECK(slurp(path).find("<subtraction") == std::string::npos);
+
+    std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(source_without_material_is_vacuum_not_shield_material) {
+    // An extended source with no set_source_material() is a real volume that the
+    // MC charges NOTHING for.  Under nesting it must still be emitted, as vacuum,
+    // or its shield -- now a full solid rather than a hollow shell -- would
+    // silently fill the source region with shield material.  Regression guard for
+    // exactly that: the bug is invisible in the solid dimensions and shows up only
+    // as a physics disagreement.
+    Material nai = make_NaI(), pb = make_Lead();
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
+    calc.set_cylindrical_source(Eigen::Vector3d(0, 0, -15.0), 3.0, 3.0);
+    calc.add_source_shield(&pb, 0.3, 0.1);   // note: no set_source_material()
+
+    const std::string path = tmp_gdml("nomat");
+    calc.export_geant4_gdml(path);
+
+    const std::vector<SrcSolid> solids = read_src_solids(path);
+    BOOST_REQUIRE_EQUAL(solids.size(), 2u);
+    BOOST_CHECK_EQUAL(solids[0].name, "SrcMaterialSolid");
+    BOOST_CHECK_CLOSE(solids[0].d0, 3.0, 1e-9);   // the source volume is present
+    BOOST_CHECK_CLOSE(solids[1].d0, 3.3, 1e-9);
+
+    const std::vector<SrcVol> vols = read_src_volumes(path);
+    BOOST_REQUIRE_EQUAL(vols.size(), 2u);
+    BOOST_CHECK_EQUAL(vols[0].lv,  "SrcMaterialLV");
+    BOOST_CHECK_EQUAL(vols[0].mat, "Vacuum");     // NOT Pb
+    BOOST_CHECK_EQUAL(vols[1].mat, "Pb");
+    BOOST_CHECK_EQUAL(vols[1].daughter_lv, "SrcMaterialLV");
+
     std::remove(path.c_str());
 }
 
