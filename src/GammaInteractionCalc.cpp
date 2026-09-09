@@ -4773,7 +4773,18 @@ vector<PeakResultPlotInfo>
   
   EnergyCountMap energy_count_map;
   const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
-  
+
+  // Seed a zero-count entry for every fit-peak energy so peak coverage is
+  //  independent of which source types contribute.  The point-source path seeds
+  //  these implicitly (cluster_peak_activities does so while the map is empty),
+  //  but a fit whose only sources are volumetric (trace/self-attenuating) can
+  //  produce no calculators - and hence no keys - when their activity is zero at
+  //  an evaluation point (e.g. a trace source started at zero activity).  Without
+  //  this, energy_count_map would be empty and expected_observed_chis() would
+  //  throw its "place b" logic error, aborting the fit.
+  for( const pair<double,double> &ew : energie_widths )
+    energy_count_map[ew.first] = 0.0;
+
   // Cascade-summing: per-nuclide local cluster maps, corrected then merged
   //  (see the templated path in expected_peak_counts_imp for the details).
   const PointSrcAttenContext<double> cascade_atten_ctx = m_cascadeCalc

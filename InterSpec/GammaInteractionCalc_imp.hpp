@@ -4596,7 +4596,13 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
       for( const typename EnergyCountMapT::value_type &energy_count : local_energy_count_map )
       {
-        if( scalar_of(energy_count.second) == 0.0 )
+        // Skip only a *structurally* empty energy (no emission here).  A count that is zero in
+        //  value but still carries a derivative lane - e.g. a trace/self-attenuating activity (or
+        //  mass fraction) sitting at exactly zero at this evaluation - must NOT be dropped: doing
+        //  so zeroes that parameter's Jacobian column and strands the fit at zero, unable to move
+        //  off it.  For T = double, has_active_lanes() is always false, so this prunes exactly as
+        //  before.
+        if( scalar_of(energy_count.second) == 0.0 && !has_active_lanes(energy_count.second) )
           continue;
 
         auto calculator = std::make_unique<DistributedSrcCalcT<T>>( baseCalculator );
@@ -4798,6 +4804,13 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   EnergyCountMapT energy_count_map;
   const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
+
+  // Seed a zero-count entry for every fit-peak energy so coverage is independent of which source
+  //  types contribute (mirrors energy_chi_contributions).  Without this, a fit whose only sources
+  //  are volumetric would leave the map empty at zero activity and trip the "peak energy not in
+  //  map" check below.
+  for( const std::pair<double,double> &ew : energie_widths )
+    energy_count_map[ew.first] = T(0.0);
 
   // Cascade-summing corrections: each point-source nuclide is clustered into
   //  its own local map, multiplied by its per-peak net summing factor at the
