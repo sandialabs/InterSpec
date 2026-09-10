@@ -119,6 +119,19 @@ inline bool has_active_lanes( const T &val )
 }
 
 
+/** True when `val` is finite in its scalar value AND (for a ceres::Jet) in every derivative lane -
+ a lane that has gone NaN/Inf poisons the whole Jacobian column, so both must be checked. */
+template<typename T>
+inline bool all_finite_lanes( const T &val )
+{
+  if( !std::isfinite( scalar_of(val) ) )
+    return false;
+  if constexpr ( !std::is_same_v<T,double> )
+    return val.v.allFinite();
+  return true;
+}
+
+
 #if( DEBUG_RAYTRACE_CALCS )
 /** Shared lock so concurrently-traced rays dont interleave their stdout.
 
@@ -461,6 +474,23 @@ T sphere_exit_distance_scaled( const T source_over_rad[3], T exit_point[3],
 
   T u[3] = { -px, -py, R - pz };
   const T un = sqrt( u[0]*u[0] + u[1]*u[1] + u[2]*u[2] );
+
+  // un is the source->detector distance; it vanishes only when the source point coincides with the
+  //  detector at (0,0,R).  That is reached when a shell surface passes through the detector - e.g. the
+  //  source-shell radius equals the observation distance, so the source-shell exit lands exactly on
+  //  the detector and the next (outer) shell is handed a source already at the detector.  Then u is the
+  //  zero vector and u[i]/=un is 0/0 = NaN in the value and every ceres::Jet derivative lane (and,
+  //  because the NaN appears before G, the G-guard below cannot catch it: NaN <= 0.0 is false).  The
+  //  emission point is at the integration endpoint, so the remaining chord is zero: return 0 with
+  //  exit = source, finite in value and (zeroed) in every lane.  Mirrors the G-guard just below.
+  if( scalar_of(un) <= 0.0 )
+  {
+    exit_point[0] = px;
+    exit_point[1] = py;
+    exit_point[2] = pz;
+    return T(0.0);
+  }//if( source point coincides with the detector: undefined direction )
+
   u[0] /= un;  u[1] /= un;  u[2] /= un;
 
   const T q_dot_u = source_over_rad[0]*u[0] + source_over_rad[1]*u[1] + source_over_rad[2]*u[2];
@@ -468,6 +498,24 @@ T sphere_exit_distance_scaled( const T source_over_rad[3], T exit_point[3],
              + source_over_rad[1]*source_over_rad[1]
              + source_over_rad[2]*source_over_rad[2];
   const T G = q_dot_u*q_dot_u + T(1.0) - q2;   // >= 1 - |q|^2 >= 0 for an interior source
+
+  // G is >= 0 for a genuinely-interior source (|q| <= 1), but a source landing ON the next shell's
+  //  surface (|q| -> 1) can round to |q| a few ULP > 1, and for a near-tangent ray (q.u ~ 0) that
+  //  drives G slightly negative -> sqrt(G) = NaN in the VALUE and in every ceres::Jet derivative
+  //  lane.  This is the zero-/thin-thickness-shell case: a shell whose outer radius equals the one
+  //  below it, so exit_point_of_sphere_z_imp hands this solver a q on the unit sphere.  The radius
+  //  scaling factors S out of the radical (so the derivative survives S -> 0), but does NOT protect
+  //  against this |q| > 1 rounding.  On/outside the surface the intersection IS the source point:
+  //  distance 0, exit = source - matching the surface rounding tolerance in exit_point_of_sphere_z_imp.
+  //  Take T(0.0) directly; sqrt(T(0.0)) would be finite in value but its Jet lane is 0.5/0 * 0 = NaN.
+  if( scalar_of(G) <= 0.0 )
+  {
+    exit_point[0] = px;
+    exit_point[1] = py;
+    exit_point[2] = pz;
+    return T(0.0);
+  }//if( source is on/outside the shell surface: degenerate zero-length chord )
+
   const T root = sqrt(G);
 
   // Signed ray parameter (source at t=0): forward root toward the detector, else the backward root
@@ -1860,7 +1908,12 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
     const T dy = -source_point[1];
     const T dz = source_point[2] - obs_dist;
 
-    const T air_dist = sqrt( dx*dx + dy*dy + dz*dz );
+    // The last shielding exit can land on the detector (source-shell radius -> observation distance),
+    //  making the air path length exactly zero; sqrt(0) is a finite value but its Jet lane is 0/0.  A
+    //  zero air path is unit transmission, so take it directly with a zeroed lane.  Same class as the
+    //  un-guard in sphere_exit_distance_scaled.
+    const T air_arg = dx*dx + dy*dy + dz*dz;
+    const T air_dist = (scalar_of(air_arg) > 0.0) ? sqrt( air_arg ) : T(0.0);
 
     const T air_atten = exp( -m_airTransLenCoef * air_dist );
     trans *= air_atten;
@@ -1979,10 +2032,17 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
       w = (T(1.5*pi*std::sin(theta)) * (r*r)) / (Ro*Ro + Ro*Ri + Ri*Ri);
     }
 
-    return trans * w;
+    const T result = trans * w;
+    // A single non-finite node (value or any ceres::Jet derivative lane) poisons the whole integral
+    //  and its Jacobian column - the far-start self-atten NaN the un-guard in
+    //  sphere_exit_distance_scaled (and the air-path guard above) address.
+    assert( all_finite_lanes( result ) );
+    return result;
   }//if( m_normalizeByVolume )
 
-  return trans * dV;
+  const T result = trans * dV;
+  assert( all_finite_lanes( result ) );
+  return result;
 }//eval_spherical(...)
 
 
