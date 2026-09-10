@@ -3848,6 +3848,21 @@ void ShieldingSourceChi2Fcn::setVolumetricLineSample( const LineSampleParams &sa
 }//setVolumetricLineSample(...)
 
 
+void ShieldingSourceChi2Fcn::adoptVolumetricLineSets( const ShieldingSourceChi2Fcn &other )
+{
+  if( this == &other )
+    return;
+
+  // Match the line count and replica so the per-evaluation `matches(...)` query lines up with the
+  //  adopted cache entries and nothing rebuilds; then share the immutable line sets themselves.
+  m_volumetricNumLines = other.m_volumetricNumLines;
+  m_volumetricLineSample = other.m_volumetricLineSample;
+
+  std::scoped_lock<std::mutex,std::mutex> lock( m_lineCacheMutex, other.m_lineCacheMutex );
+  m_lineCaches = other.m_lineCaches;   //shared_ptr<const VolumetricLineCache> - safe to share
+}//adoptVolumetricLineSets(...)
+
+
 /** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
 struct PointSourceRays
 {

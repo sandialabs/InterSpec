@@ -2945,6 +2945,14 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
     if( errors.size() != params.size() )
       errors.resize( params.size(), 0.0 );
 
+    // Integrate the volumetric sources on the fit's own line quadrature, not the shipped default:
+    //  the polished line count and any non-default line-sample replica live on the fcn, not in
+    //  ShieldSourceInput, so create() started aug_fcn on the default set.  Reusing the fit's sets
+    //  keeps the used peaks' predictions matching the fit, leaving the check below sensitive only
+    //  to genuine re-clustering.
+    if( chi2Fcn.hasVolumetricLineSets() )
+      aug_fcn->adoptVolumetricLineSets( chi2Fcn );
+
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
     aug_fcn->energy_chi_contributions( params, errors, mixcache, &details );
   }catch( std::exception &e )

@@ -1798,6 +1798,16 @@ public:
   int volumetricLineCount() const { return m_volumetricNumLines; }
   const LineSampleParams &volumetricLineSample() const { return m_volumetricLineSample; }
 
+  /** Adopt another fcn's already-built volumetric line sets - its line count, its line-sample
+   replica, and the exact cached candidate lines it built (from whatever source dimensions, after any
+   post-convergence polish).  The two fcns must share the same detector, geometry and source
+   materials.  Used by ShieldingSourceFitCalc::compute_supplemental_peak_info so the post-fit
+   re-evaluation integrates volumetric sources on the fit's own quadrature: neither the polished line
+   count nor a non-default replica is carried by #ShieldSourceInput, so a freshly create()d fcn would
+   otherwise integrate on the shipped default set and its used-peak predictions would drift from the
+   fit's. */
+  void adoptVolumetricLineSets( const ShieldingSourceChi2Fcn &other );
+
   /** Whether this fit integrates any source on the volumetric LINE path (a response is resolved
    and at least one line set was built). */
   bool hasVolumetricLineSets() const
