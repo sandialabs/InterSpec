@@ -24,7 +24,9 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <cctype>
 #include <string>
+#include <algorithm>
 
 #include <Wt/WAny.h>
 #include <boost/regex.hpp>
@@ -303,7 +305,11 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
   replacerJs( replaceJS );
 
   m_suggestions = addChild( std::make_unique<WSuggestionPopup>( matcherJS, replaceJS ) );
-  m_suggestions->setMaximumSize( WLength::Auto, WLength(15, WLength::Unit::FontEm) );
+  // Keep the popup short enough to fit *below* the edit inside the (often shallow) Peak Manager
+  //  scroll box: Wt reparents the popup into that box and flips it above the edit whenever its max
+  //  height doesn't fit below, which pushes it off-screen for the top rows.  ~9em (~6 rows) usually
+  //  fits below; the list still scrolls for more matches.
+  m_suggestions->setMaximumSize( WLength::Auto, WLength(9, WLength::Unit::FontEm) );
 
   auto editUPtr = std::make_unique<WLineEdit>();
   m_edit = editUPtr.get();
@@ -316,6 +322,16 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
 
   m_edit->setTextSize( 7 );
 
+  // Pre-fill with the cell's current value (as the stock WItemDelegate::createEditor() does).  The
+  //  editor was previously created empty, so an implicit close - blurring, or clicking another row,
+  //  which closes this editor - could commit an empty string and blank the source even though the
+  //  user never typed anything.  Seeding the current value makes such a no-type close round-trip to
+  //  the same source; deliberately clearing the field and pressing Enter still removes the assignment.
+  const Wt::cpp17::any editval = index.data( Wt::ItemDataRole::Edit );
+  const WString curtxt = editval.has_value() ? asString( editval ) : WString();
+  if( !curtxt.empty() )
+    m_edit->setText( curtxt );
+
   m_edit->enterPressed().connect( parent, [parent, this](){ parent->doCloseEditor( this, true, false ); } );
   m_edit->escapePressed().connect( parent, [parent, this](){ parent->doCloseEditor( this, false, false ); } );
   m_edit->escapePressed().preventPropagation();
@@ -324,14 +340,26 @@ PhotopeakDelegate::EditWidget::EditWidget( const Wt::WModelIndex& index,
     m_edit->blurred().connect( this, [this](){ handleBlur(); } );
 
   if( flags.test( ViewItemRenderFlag::Focused ) )
+  {
     m_edit->setFocus();
+    // Select the seeded text so the user can immediately type a replacement.
+    if( !curtxt.empty() )
+      m_edit->setSelection( 0, static_cast<int>( curtxt.toUTF8().size() ) );
+  }
 
   m_suggestions->forEdit( m_edit,
                    PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
+  // WSuggestionPopup swallows the first Enter to commit the highlighted suggestion (this also drives
+  //  the element->isotope drill-down), so without this the user has to press Enter twice to accept.
+  //  Hook activated() to close the editor on a single Enter/click for terminal selections.
+  m_suggestions->activated().connect( this, [this]( int row, WFormWidget * ){ handleSuggestionActivated( row ); } );
+
   {
     WHBoxLayout *hbox = setLayout( std::make_unique<WHBoxLayout>() );
-    hbox->setContentsMargins(1, 1, 1, 1);
+    // No vertical margins: the 1px top+bottom made the editor 2px taller than the row, jittering it
+    //  when editing begins.  Keep 1px left/right so the edit doesn't butt against the cell edges.
+    hbox->setContentsMargins(1, 0, 1, 0);
     hbox->addWidget( std::move(editUPtr) );
   }
 
@@ -478,10 +506,57 @@ void PhotopeakDelegate::EditWidget::handleBlur()
 }//void PhotopeakDelegate::EditWidget::handleBlur()
 
 
+void PhotopeakDelegate::EditWidget::handleSuggestionActivated( const int row )
+{
+  if( !m_edit || !m_parent || !m_suggestions )
+    return;
+
+  // For the nuclide column a bare element symbol (e.g. "Au") is *not* a terminal selection: picking
+  //  it re-filters the suggestions to that element's isotopes so the user can drill down.  The
+  //  element's User-role value is letters only, while a nuclide always carries a mass number (e.g.
+  //  "Au196"), and x-rays / reactions carry a space or parenthesis - so anything that is not
+  //  letters-only is terminal and should commit on a single Enter/click.
+  bool terminal = true;
+  if( m_parent->m_delegateType == NuclideDelegate )
+  {
+    const std::shared_ptr<WAbstractItemModel> model = m_suggestions->model();
+    if( model && (row >= 0) && (row < model->rowCount()) )
+    {
+      string userText = asString( model->index( row, 0 ).data( ItemDataRole::User ) ).toUTF8();
+      SpecUtils::trim( userText );
+      const bool lettersOnly = !userText.empty()
+        && std::all_of( begin(userText), end(userText),
+                        []( char c ){ return std::isalpha( static_cast<unsigned char>(c) ) != 0; } );
+      if( lettersOnly )
+        terminal = false;
+    }//if( valid row )
+  }//if( NuclideDelegate )
+
+  if( !terminal )
+    return;
+
+  // Defer the close: WSuggestionPopup::doActivate dereferences the edit *after* emitting activated(),
+  //  so tearing the editor down synchronously here would be a use-after-free.  Re-resolve `self` on the
+  //  session thread by id (same thread-safe pattern as handleBlur()).
+  const string sessionId = wApp->sessionId();
+  const string selfid = id();
+  std::function<void()> self_closer = [selfid](){
+    EditWidget *self = dynamic_cast<EditWidget *>( wApp->domRoot() ? wApp->domRoot()->findById(selfid) : nullptr );
+    if( self && self->m_parent )
+    {
+      self->m_parent->doCloseEditor( self, true, false );
+      wApp->triggerUpdate();
+    }
+  };
+
+  WServer::instance()->schedule( std::chrono::milliseconds(0), sessionId, self_closer );
+}//void PhotopeakDelegate::EditWidget::handleSuggestionActivated( const int row )
+
+
 
 PhotopeakDelegate::PhotopeakDelegate( PhotopeakDelegate::DelegateType delegateType,
                                       bool closeOnBlur )
-  : WAbstractItemDelegate(),
+  : WItemDelegate(),
     m_closeOnBlur( closeOnBlur ),
     m_delegateType( delegateType ),
     m_suggestionPopup( NULL )
@@ -508,91 +583,26 @@ void PhotopeakDelegate::doCloseEditor( WWidget *editor, bool save, bool isBlurr 
 
 
 
-std::unique_ptr<WWidget> PhotopeakDelegate::update( WWidget *widget,
-                                                    const WModelIndex &index,
-                                                    WFlags< ViewItemRenderFlag > flags )
+std::unique_ptr<WWidget> PhotopeakDelegate::createEditor( const WModelIndex &index,
+                                                          WFlags< ViewItemRenderFlag > flags ) const
 {
-  bool isNew = false;
-  const bool editing = (widget && (widget->find("t") == nullptr));
-
-  // created holds a newly constructed widget; w points to the widget being rendered
-  std::unique_ptr<WWidget> created;
-  WWidget *w = widget;
-
-  if( flags.test( ViewItemRenderFlag::Editing ) )
-  {
-    if( !editing )
-    {
-      created = std::make_unique<EditWidget>( index, flags, m_closeOnBlur, m_delegateType, this );
-      w = created.get();
-      WInteractWidget *iw = dynamic_cast<WInteractWidget *>( w );
-      if( iw ) // Disable drag & drop and selection behaviour
-      {
-        iw->mouseWentDown().preventPropagation();
-        iw->clicked().preventPropagation();
-      }//if( iw )
-    }//if( !editing )
-  }else
-  {
-    if( editing )
-      w = nullptr;
-  }//if( flags.test(Editing) ) / else
-
-  if( !flags.test( ViewItemRenderFlag::Editing ) )
-  {
-    WText *text = dynamic_cast<WText *>( w );
-
-    if( !text )
-    {
-      isNew = true;
-      auto textUPtr = std::make_unique<WText>();
-      text = textUPtr.get();
-      text->setObjectName( "t" );
-      if( !index.isValid() || (index.isValid() && !index.flags().test( ItemFlag::XHTMLText )) )
-        text->setTextFormat( TextFormat::Plain );
-      text->setWordWrap( true );
-      created = std::move( textUPtr );
-      w = text;
-    }else if( !index.isValid() )
-    {
-      text->setText( "" );
-    }
-
-    if( !index.isValid() )
-      return created;
-
-    text->setText( asString( index.data() ) );
-  }//if( !flags.test(Editing) )
-
-  if( w )
-  {
-    WString tooltip = asString( index.data( ItemDataRole::ToolTip ) );
-    if( !tooltip.empty() || !isNew )
-      w->setToolTip( tooltip );
-
-    WT_USTRING sc = asString( index.data( ItemDataRole::StyleClass ) );
-
-    if( flags.test( ViewItemRenderFlag::Selected ) )
-      sc += WT_USTRING::fromUTF8( " Wt-selected" );
-
-    w->setStyleClass( sc );
-  }//if( w )
-
-  return created;
-}//std::unique_ptr<WWidget> update(...)
+  // WItemDelegate::update() calls this when a cell enters editing; it also disables drag & drop /
+  //  selection on the returned widget.  We just supply our suggestion-popup-backed editor.  Display
+  //  (non-editing) rendering is handled by the stock WItemDelegate::update(), which creates the
+  //  IndexText widgets the rest of WItemDelegate relies on.
+  return std::make_unique<EditWidget>( index, flags, m_closeOnBlur, m_delegateType,
+                                       const_cast<PhotopeakDelegate *>( this ) );
+}//std::unique_ptr<WWidget> createEditor(...)
 
 
 Wt::cpp17::any PhotopeakDelegate::editState( WWidget *editor,
                                              const Wt::WModelIndex &/*index*/ ) const
 {
-  WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
-  if( !w )
-  {
-    cerr << "PhotopeakDelegate::editState(...)\n\tLogic error - fix me!" << endl;
-    return Wt::cpp17::any();
-  }//if( !w )
-
-  WLineEdit *lineEdit = dynamic_cast<WLineEdit *>(w->widget(0));
+  // Retrieve the line edit through the editor's own accessor rather than the container's
+  //  positional widget(0): in Wt4 the WLineEdit is layout-managed, so widget(0) no longer
+  //  reliably returns it (and can fault).  Mirrors doCloseEditor().
+  PhotopeakDelegate::EditWidget *edit = dynamic_cast<PhotopeakDelegate::EditWidget *>( editor );
+  WLineEdit *lineEdit = edit ? edit->edit() : nullptr;
 
   if( !lineEdit )
   {
@@ -608,14 +618,9 @@ void PhotopeakDelegate::setEditState( WWidget *editor,
                                       const Wt::WModelIndex &/*index*/,
                                       const Wt::cpp17::any& value ) const
 {
-  WContainerWidget *w = dynamic_cast<WContainerWidget *>(editor);
-  if( !w )
-  {
-    cerr << "PhotopeakDelegate::setEditState(...)\n\tLogic error - fix me!" << endl;
-    return;
-  }
-
-  WLineEdit *lineEdit = dynamic_cast<WLineEdit *>(w->widget(0));
+  // See editState() - get the line edit via the editor's accessor, not widget(0).
+  PhotopeakDelegate::EditWidget *edit = dynamic_cast<PhotopeakDelegate::EditWidget *>( editor );
+  WLineEdit *lineEdit = edit ? edit->edit() : nullptr;
 
   if( !lineEdit )
   {
