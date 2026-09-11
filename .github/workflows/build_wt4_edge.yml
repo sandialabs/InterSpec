@@ -6,10 +6,10 @@
 # many known issues, and the two should never be confused for one another.  Nothing in this file
 # may touch the `bleeding-edge` tag or its release.
 #
-# PHASE 1 (this version): builds and caches the dependency prefixes only - no app build, no
-# release.  The dependency prefix is the slow part by a wide margin, so getting it green and
-# cached first means the follow-up work on the actual app builds iterates in minutes rather than
-# hours.  See the "Phase 2" note at the bottom of this file.
+# It builds the macOS .dmg and the Windows .zip and publishes both to the `wt4-bleeding-edge`
+# release on every push to the branch.  The dependency prefixes are cached (see
+# .github/actions/macos_deps_prefix and .github/actions/setup_dev_env), so a normal run is
+# compile time, not an hour of rebuilding boost and Wt.
 #
 # NOTE ON WHERE THIS FILE LIVES: it is committed to BOTH `master` and `upgrade/Wt4`, and must be
 #  kept identical on the two.  It never fires on master - the push trigger names only
@@ -167,39 +167,112 @@ jobs:
           echo "Exit code of InterSpec test load was $($p.ExitCode)"
           exit $p.ExitCode
 
+  release:
+    name: Publish
+    needs: [macos-build, windows-build]
+    runs-on: ubuntu-latest
+    # `contents: write` ONLY on this job.  The workflow-level default above stays `read`, so the
+    # build jobs - including the reusable build_macos.yml call - never get a writable token.
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: wt4-bleeding-edge
+      # Both platforms' assets carry this, which is the only reason one pattern can match both.
+      # Keep it in step with INSTALL_DIR_NAME above and the .dmg name in build_macos.yml.
+      ASSET_PATTERN: 'InterSpec_*Dangerously_Experimental*'
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-build'
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Show what will be published
+        run: ls -lhR ./artifacts
+
+      # The .dmg and .zip names carry a build date, so every run produces a NEW asset name rather
+      # than overwriting the previous one.  Without this the release would gain a stale asset
+      # every single day.  (build_app.yml's equivalent uses PATTERN="InterSpec_app*", which does
+      # not match these names - do not copy that pattern here.)
+      - name: Delete the previous run's assets
+        run: |
+          set -euo pipefail
+          # Look the release up by tag, not by name: the tag is the stable identifier, and a
+          # release whose name someone edited in the UI would otherwise go unmatched.
+          RELEASE_ID=$(curl -sS -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}" \
+            | jq -r '.id // empty')
+
+          # First run, or the release was deleted: nothing to clean up, and the publish step
+          # below creates it fresh.
+          if [ -z "${RELEASE_ID}" ]; then
+            echo "No existing '${RELEASE_TAG}' release; nothing to prune."
+            exit 0
+          fi
+
+          curl -sS -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets" \
+            | jq -c '.[]?' | while read -r asset; do
+              NAME=$(echo "${asset}" | jq -r '.name')
+              ID=$(echo "${asset}" | jq -r '.id')
+              case "${NAME}" in
+                ${ASSET_PATTERN})
+                  echo "Deleting stale asset: ${NAME}"
+                  curl -sS -X DELETE -H "Authorization: token ${GH_TOKEN}" \
+                    "https://api.github.com/repos/${{ github.repository }}/releases/assets/${ID}"
+                  ;;
+                *) echo "Keeping: ${NAME}" ;;
+              esac
+            done
+
+      # softprops/action-gh-release creates a missing tag, but never MOVES an existing one - so
+      # without this the tag would stay pinned to the first commit ever released.  It has to run
+      # before the publish step, and in this job rather than in a parallel build job (which is
+      # what build_app.yml does, racing the tag move against the release creation).
+      - name: Point the tag at this commit
+        uses: EndBug/latest-tag@v1.6.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          description: Latest automated build of the upgrade/Wt4 branch
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Really Bleeding Edge (v1.1 preview)"
+          draft: false
+          generate_release_notes: false
+          prerelease: true
+          # A prerelease can never be the repo's "Latest release", and asking for it is invalid.
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: "./artifacts/**"
+          body: |
+            ## Expect this to be broken
+
+            These are automated builds of the `upgrade/Wt4` development branch. It is **far less
+            stable than anything else published here** and has many known issues. It is what will
+            eventually become v1.1, but it is not that yet, and no testing whatsoever has been
+            performed on these builds.
+
+            If you want a build that is merely *untested* rather than actively broken, use the
+            [Development Build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge)
+            instead. If you want something dependable, use the latest stable release.
+
+            Please do not use these builds for any analysis you care about.
+
+            | Asset | Notes |
+            | --- | --- |
+            | `InterSpec_macOS_Dangerously_Experimental_<date>.dmg` | Requires macOS 13.3 (Ventura) or later. Universal (Intel + Apple silicon), signed and notarized. |
+            | `InterSpec_Win32_Dangerously_Experimental_<date>.zip` | 64-bit. Requires Windows 10 or 11, and the Edge browser runtime (normally already installed). Unzip and run `InterSpec.exe`. |
+
+            There is no Linux build on this branch yet - see the Development Build for those.
+
+            Each archive contains a `build_info.txt` recording the exact commit it was built from.
+
 # ------------------------------------------------------------------------------------------------
-# STILL TO DO - the release step.
-#
-# Both app builds above currently just upload artifacts (`macos-build` = .dmg, `windows-build` =
-# .zip), downloadable from the run page.  Nothing is published.  To publish, add a `release` job:
-#
-#   needs: [macos-build, windows-build]        # never publish a half-set of assets
-#   permissions: { contents: write }           # ON THE JOB ONLY - a top-level permissions block
-#                                              #  would cap what build_macos.yml is allowed to do
-#   - actions/download-artifact@v4 with pattern: '*-build', merge-multiple: true
-#   - prune the previous run's assets BEFORE uploading.  build_app.yml does this with
-#       PATTERN="InterSpec_app*", which does NOT match this branch's asset names
-#       (InterSpec_Win32_Dangerously_Experimental_*, InterSpec_macOS_Dangerously_Experimental_*).
-#       Copying that pattern across verbatim would silently prune nothing, and since the .dmg
-#       carries a date suffix that means one more stale asset on the release every single day.
-#       Use PATTERN="InterSpec_*Dangerously_Experimental*".
-#   - EndBug/latest-tag@v1.6.1 with ref: wt4-bleeding-edge
-#       softprops/action-gh-release creates a missing tag but never MOVES an existing one, which
-#       is why build_app.yml pairs it with latest-tag.  Put it in the release job immediately
-#       before the release step, not in a parallel build job as build_app.yml does - that races
-#       the tag move against the release creation.
-#       It must be `wt4-bleeding-edge`.  NEVER `bleeding-edge` - that is master's tag.
-#   - softprops/action-gh-release@v2 with:
-#       tag_name: wt4-bleeding-edge
-#       name: "Really Bleeding Edge (v1.1 preview)"
-#       prerelease: true
-#       make_latest: false                     # a prerelease must never become "Latest release"
-#       body: lead with the extra-unstable / many-known-issues warning
-#
-# Check the repo's tag protection rules for `wt4-bleeding-edge` before the first run: if tag
-# creation is blocked, action-gh-release leaves an orphaned DRAFT release that does not show up
-# in the Releases UI at all.
-#
 # Unrelated wart worth fixing sometime, but not here: git contains BOTH `target/wxWidgets/sbom/`
 # and `target/wxwidgets/`.  It only works because Windows and macOS checkouts are case-insensitive
 # and collapse them into one directory; on a case-sensitive Linux checkout they are two.
