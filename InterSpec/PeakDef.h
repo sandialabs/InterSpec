@@ -390,6 +390,18 @@ struct PeakContinuum
                                            const double old_reference_energy );
   bool operator==( const PeakContinuum &rhs ) const;
  
+  /** The serialization version of the peak/continuum format this InterSpec writes.
+
+   Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types.
+   Version 2 adds "FlatStepCDF", "LinearStepCDF", and "BiLinearStepCDF" continuum types.
+   Version 3 changes the "BiLinearStepCDF" definition to a form that covers the same shapes, but is
+   constructed to be better optimized.
+
+   The peak CSV has no version field of its own, so it tags affected `Continuum_Type` cells with
+   this number - see `PeakModel::csv_to_candidate_fit_peaks`.
+   */
+  static constexpr int sm_xmlSerializationVersion = 3;
+
   //toXml: XXX = does not support serializing of m_externalContinuum is pretty 
   //  bad currently!  Currently serializes a new continuum for each peak, even
   //  if they should be shared across peaks
@@ -403,7 +415,32 @@ struct PeakContinuum
    */
   void fromXml( const rapidxml::xml_node<char> *node, int &contId );
 
-  
+  /** Converts pre-version-3 `BiLinearStepCDF` coefficients, in-place, to the current convention.
+
+   Serialization versions 2 and earlier stored `BiLinearStepCDF` as two lines blended by an
+   amplitude-weighted CDF fraction, `(left_const, left_linear, right_const, right_linear)`; version
+   3 stores `(const, linear, step0, step1)` - the same family of shapes, but linear in the peak
+   amplitudes.  Both the XML (`fromXml`) and peak-CSV (`PeakModel::csv_to_candidate_fit_peaks`)
+   readers convert on read, so this is the single statement of that map.
+
+   @param values Four coefficients in the old convention; converted in place.  A no-op if not
+          exactly four.
+   @param uncertainties Zeroed in slots 2 and 3 if of length four - the old uncertainties were on
+          the right-hand line, not on a step, so they do not carry over.
+   @param total_amp `SUM_j( amp_j )` over the ROI's peaks.  A non-positive or non-finite value
+          drops the step (and is logged in developer-check builds), since it cannot be recovered.
+   @param amp_cdf0 `SUM_j( amp_j * CDF_j(roi_lower) )`; the offset the un-anchored version-2 CDF
+          carried at the ROI's lower edge, which the ROI-anchored version-3 model does not.  It is
+          folded into the polynomial terms - skipping it shifts a skewed ROI by several percent.
+   @param context Names this continuum in the developer-check log, should `total_amp` be unusable;
+          e.g. its XML id, or its ROI for a CSV where there is no id.
+   */
+  static void convert_legacy_bilinear_step_cdf( std::vector<double> &values,
+                                                std::vector<double> &uncertainties,
+                                                const double total_amp,
+                                                const double amp_cdf0,
+                                                const std::string &context );
+
 #if( PERFORM_DEVELOPER_CHECKS )
   //equalEnough(...): tests whether the passed in PeakDef objects are
   //  equal, for most intents and purposes.  Allows some small numerical
@@ -475,8 +512,6 @@ protected:
   //  \TODO: use #Measurement::set_energy_calibration when translating a peaks mean for energy
   //         calibrations.
   std::shared_ptr<const SpecUtils::Measurement> m_externalContinuum;
-  
-  static const int sm_xmlSerializationVersion;
   
   friend std::ostream &operator<<( std::ostream &, const PeakContinuum & );
 };//struct PeakContinuum
