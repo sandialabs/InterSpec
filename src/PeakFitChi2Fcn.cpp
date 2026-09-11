@@ -279,21 +279,28 @@ bool PeakFitChi2Fcn::testOffsetConversions()
 void PeakFitChi2Fcn::setOffsetTypeToContinuumInfo( double &info,
                                 const PeakContinuum::OffsetType type )
 {
-  const double lower =  10000.0 * ((info/10000.0) - std::floor((info/10000.0)));
-  const double upper = 100000.0 * floor(info/100000.0);
-  const double digit = type * 10000.0;
-  
-  info = std::floor(lower+0.5) + digit + std::floor(upper+0.5);
+  // `info` packs two fields into one double: decimal digits 0-3 hold the shared-continuum index
+  //  (see setSharedIndexToContinuumInfo), and digits 4-5 hold the OffsetType.
+  //  TWO digits are required - there are more than ten continuum types, and a one-digit field
+  //  silently decoded BiLinearStepCDF (10) and External (11) as NoOffset (0), which then tripped
+  //  the round-trip check in addPeaksToFitter(...).
+  static_assert( static_cast<int>(PeakContinuum::OffsetType::External) < 99,
+                "PeakFitChi2Fcn continuum-info encoding only has two digits for the OffsetType." );
+
+  const double lower =    10000.0 * ((info/10000.0) - std::floor(info/10000.0));
+  const double upper = 1000000.0 * std::floor(info/1000000.0);
+  const double digits = static_cast<double>(type) * 10000.0;
+
+  info = std::floor(lower+0.5) + digits + std::floor(upper+0.5);
 }//setOffsetTypeToContinuumInfo(...)
 
 
 PeakContinuum::OffsetType PeakFitChi2Fcn::continuumInfoToOffsetType( double info )
 {
-  info = std::floor( info / 10000.0 );
-  info /= 10.0;
-  info = 10.0 * (info - std::floor(info));
-  
-  return PeakContinuum::OffsetType( static_cast<int>(info) );
+  const double type_field = std::floor( info / 10000.0 );
+  const double two_digits = type_field - (100.0 * std::floor(type_field/100.0));
+
+  return PeakContinuum::OffsetType( static_cast<int>(two_digits + 0.5) );
 }//continuumInfoToOffsetType(...)
 
 
@@ -1061,7 +1068,9 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
             const size_t upper_ch = data->find_gamma_channel( static_cast<float>(continuum->upperEnergy()) );
             if( upper_ch > lower_ch )
             {
-              const size_t nchannel = upper_ch - lower_ch;
+              // "+ 1": the basis must sit on exactly the channel grid the residual uses, or the
+              //  seed is anchored differently from the fit.
+              const size_t nchannel = 1 + upper_ch - lower_ch;
               const float *energies = &((*channel_energies)[lower_ch]);
               const float *counts = &((*gamma_counts)[lower_ch]);
               // Collect all peaks sharing this continuum
@@ -1093,15 +1102,31 @@ void PeakFitChi2Fcn::addPeaksToFitter( ROOT::Minuit2::MnUserParameters &params,
       for( size_t i = 0; i < polypars.size(); ++i )
       {
         const double startval = polypars[i];
-        double stepsize = 0.1*polypars[i];
+        // The physically expected sign of a step coefficient is negative, and a negative "step
+        //  size" would push execution into the fallback below - which is sized for polynomial
+        //  terms.  Only take the magnitude for the step coefficients; the polynomial terms keep
+        //  their existing behaviour.
+        const bool is_step_par = (is_cdf_step && (i >= cdf_step_coeff_index));
+        double stepsize = is_step_par ? fabs( 0.1*polypars[i] ) : (0.1*polypars[i]);
         if( (method==kFitUserIndicatedPeak) || (stepsize <= 0.0) )
         {
-          if( is_cdf_step && (i == cdf_step_coeff_index) )
+          if( is_cdf_step && (i >= cdf_step_coeff_index) )
           {
-            // Step coefficient: use a step size proportional to the constant polynomial term,
-            //  since they can be on similar scales; the default formula for higher polynomial
-            //  indices gives too small a step for this parameter.
-            stepsize = std::max( 1.0, 0.1 * std::abs(polypars[0]) );
+            // A step coefficient is in keV^-1 (O(1e-3..1e-6)), NOT counts/keV like the polynomial
+            //  terms - its natural scale is the continuum density divided by the ROI peak area.
+            //  Sizing it off the constant term instead lands the first trial step in the regime
+            //  where the amplitude solve collapses the peak to zero.
+            double total_amp = 0.0;
+            for( const PeakDef &p : near_peaks )
+            {
+              if( p.continuum() == continuum )
+                total_amp += std::max( p.amplitude(), 0.0 );
+            }
+
+            if( !std::isfinite(total_amp) || (total_amp < 1.0) )
+              total_amp = 1.0;
+
+            stepsize = 0.05 * std::max( 1.0, std::abs(polypars[0]) ) / total_amp;
           }else
           {
             stepsize = std::max( 0.25*startval, (100.0 / std::pow(10.0, 2.0*i)) );
@@ -1735,8 +1760,7 @@ double LinearProblemSubSolveChi2Fcn::Up() const
 size_t LinearProblemSubSolveChi2Fcn::nfitPars() const
 {
   const size_t nskew = PeakDef::num_skew_parameters(m_skewType);
-  const size_t nstep = (PeakContinuum::is_peak_cdf_step_continuum( m_offsetType )
-                        && (m_offsetType != PeakContinuum::BiLinearStepCDF)) ? 1 : 0;
+  const size_t nstep = PeakContinuum::num_cdf_step_pars( m_offsetType );
   if( m_npeak < 2 )
     return 2 + nskew + nstep;
   return m_npeak + 2 + nskew + nstep;
@@ -1890,18 +1914,17 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
     }//for( size_t i = 0; i < m_npeak; ++i )
   }//if( one peak ) / else
   
-  const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( m_offsetType );
-  // BiLinearStepCDF has no step_coeff; only FlatStepCDF/LinearStepCDF do
-  const bool has_step_coeff = is_cdf_step && (m_offsetType != PeakContinuum::BiLinearStepCDF);
-
-  // For CDF step types (except BiLinearStepCDF), step_coeff is the last Minuit2 parameter
-  const double step_coeff = has_step_coeff ? x[start_skew_index + num_skew_pars] : 0.0;
+  // The peak-CDF step coefficients are the last Minuit2 parameters for this ROI.
+  const size_t num_step_coeffs = PeakContinuum::num_cdf_step_pars( m_offsetType );
+  vector<double> step_coeffs( num_step_coeffs, 0.0 );
+  for( size_t k = 0; k < num_step_coeffs; ++k )
+    step_coeffs[k] = x[start_skew_index + num_skew_pars + k];
 
   vector<double> amps, offsets, amps_uncerts, offsets_uncerts;
 
   const double chi2 = PeakFit::fit_amp_and_offset_imp( &m_x[0], &m_y[0], nullptr, m_nbin,
                                          m_offsetType,
-                                         step_coeff,
+                                         step_coeffs.empty() ? nullptr : step_coeffs.data(),
                                          static_cast<double>( m_lowerROI ),
                                          means, sigmas,
                                          fixedamppeaks,
@@ -1912,14 +1935,12 @@ double LinearProblemSubSolveChi2Fcn::parametersToPeaks( vector<PeakDef> &peaks,
                                          static_cast<double *>( nullptr ) );
   const double chi2Dof = chi2 / dof();
 
-  // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
-  //  setParameters expects poly + step_coeff, so append it.
-  //  BiLinearStepCDF has no step_coeff — its 4 polynomial coefficients are all that's needed.
-  if( has_step_coeff )
+  // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
+  //  step coefficients appended.
+  for( size_t k = 0; k < num_step_coeffs; ++k )
   {
-    offsets.push_back( step_coeff );
-    const double step_coeff_uncert = errors ? errors[start_skew_index + num_skew_pars] : 0.0;
-    offsets_uncerts.push_back( step_coeff_uncert );
+    offsets.push_back( step_coeffs[k] );
+    offsets_uncerts.push_back( errors ? errors[start_skew_index + num_skew_pars + k] : 0.0 );
   }
 
   peaks[0].continuum()->setType( m_offsetType );
@@ -2157,22 +2178,68 @@ void LinearProblemSubSolveChi2Fcn::addStepCoeffParameter(
         const PeakContinuum::OffsetType offsetType,
         const std::vector<std::shared_ptr<const PeakDef>> &inpeaks )
 {
-  // BiLinearStepCDF has no step_coeff; it uses CDF fraction for left/right interpolation
-  if( !PeakContinuum::is_peak_cdf_step_continuum( offsetType )
-     || (offsetType == PeakContinuum::BiLinearStepCDF) )
+  const size_t num_step = PeakContinuum::num_cdf_step_pars( offsetType );
+  if( !num_step )
     return;
 
-  double starting_val = 0.0;
+  // Natural magnitude of a step coefficient: the ROI's continuum density divided by its peak
+  //  area (see RoiInfo::cdf_step_scale in PeakFitLM.cpp).  Deriving the step size and bounds from
+  //  it is what makes this parameter resolvable at all - a fixed step of 0.01 over a range of
+  //  2e4 becomes an internal step of ~1e-6 under Minuit2's arcsin transform for bounded
+  //  parameters, i.e. the parameter never moves.
+  double total_amp = 0.0, cont_density = 0.0;
+  for( const std::shared_ptr<const PeakDef> &p : inpeaks )
+    total_amp += std::max( p->amplitude(), 0.0 );
+
   if( !inpeaks.empty() )
   {
-    const std::vector<double> &cont_pars = inpeaks[0]->continuum()->parameters();
-    const size_t num_poly = PeakContinuum::num_linear_fit_pars( offsetType );
-    if( cont_pars.size() > num_poly )
-      starting_val = cont_pars[num_poly];
+    const std::shared_ptr<const PeakContinuum> cont = inpeaks[0]->continuum();
+    const std::vector<double> &cont_pars = cont->parameters();
+    if( !cont_pars.empty() )
+      cont_density = fabs( cont_pars[0] );
   }
 
-  // Step coefficient can be positive or negative; use wide bounds to match Ceres path
-  pars.Add( "StepCoeff", starting_val, 0.01, -1.0e4, 1.0e4 );
+  if( !std::isfinite(cont_density) || (cont_density <= 0.0) )
+    cont_density = 1.0;
+  if( !std::isfinite(total_amp) || (total_amp < 1.0) )
+    total_amp = 1.0;
+
+  const double base_scale = cont_density / total_amp;
+
+  // Coefficient k multiplies E'^k, so its natural magnitude is smaller by range^k; scaling them all
+  //  alike would bound the keV^-2 slope as though it were keV^-1.
+  double roi_range = 0.0;
+  if( !inpeaks.empty() )
+  {
+    const std::shared_ptr<const PeakContinuum> cont = inpeaks[0]->continuum();
+    roi_range = cont->upperEnergy() - cont->lowerEnergy();
+  }
+  if( !std::isfinite(roi_range) || (roi_range <= 0.0) )
+    roi_range = 1.0;
+
+  for( size_t k = 0; k < num_step; ++k )
+  {
+    double scale = base_scale;
+    for( size_t i = 0; i < k; ++i )
+      scale /= roi_range;
+
+    const double limit = 2.0 * scale;
+
+    double starting_val = 0.0;
+    if( !inpeaks.empty() )
+    {
+      const std::vector<double> &cont_pars = inpeaks[0]->continuum()->parameters();
+      const size_t num_poly = PeakContinuum::num_linear_fit_pars( offsetType );
+      if( cont_pars.size() > (num_poly + k) )
+        starting_val = cont_pars[num_poly + k];
+    }
+
+    // Minuit2 rejects a starting value outside its own bounds.
+    starting_val = std::max( -limit, std::min( limit, starting_val ) );
+
+    const std::string name = "StepCoeff" + std::to_string(k);
+    pars.Add( name, starting_val, 0.05*scale, -limit, limit );
+  }//for( size_t k = 0; k < num_step; ++k )
 }//addStepCoeffParameter(...)
 
 

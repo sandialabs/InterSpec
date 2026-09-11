@@ -1914,6 +1914,31 @@ void photopeak_function_integral( const T mean,
 
 
 
+/** Converts unit-area peak PDF-per-channel integrals to CDF values at channel centers.
+
+ Given the integral of a unit-area peak distribution in each channel (as produced by
+ photopeak_function_integral with amp=1), computes the CDF at each channel center via
+ cumulative summation: CDF(center_i) = sum(pdf[0..i-1]) + 0.5*pdf[i].
+
+ The sum starts at the first channel's lower edge and saturates at the last channel's upper edge,
+ so over a ROI's channels this is exactly the ROI-anchored CDF the peak-CDF step continua are
+ defined in terms of - see `PeakContinuum::cdf_step_anchor_energies(...)`.
+
+ This is analogous to how data-step types compute frac_data using
+ (cumulative_data - 0.5*data[row]) / total.
+ */
+template<typename T>
+inline void unit_pdf_to_cdf( const T *unit_area_pdf_integrals, T *cdf_at_centers, const size_t nchannel )
+{
+  T cumsum = T(0.0);
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    cdf_at_centers[i] = cumsum + T(0.5) * unit_area_pdf_integrals[i];
+    cumsum += unit_area_pdf_integrals[i];
+  }
+}//void unit_pdf_to_cdf(...)
+
+
 #if( __cplusplus >= 202002L )
 template <typename ContType, typename T>
 void offset_integral( const ContType &cont,
@@ -2413,6 +2438,99 @@ void double_bortel_integral( const T peak_mean, const T sigma,
 
   check_jet_array_for_NaN( channels, nchannel );
 }//double_bortel_integral(...)
+
+
+template<typename ContType, typename PeakType, typename T>
+void offset_integral( const ContType &cont,
+                      const float *energies,
+                      T *channels,
+                      const size_t nchannel,
+                      const std::shared_ptr<const SpecUtils::Measurement> &data,
+                      const PeakType * const *roi_peaks,
+                      const size_t num_peaks )
+{
+  const PeakContinuum::OffsetType type = cont.type();
+
+  // Everything that does not need the peaks is already handled, once, by the other overload.
+  if( !PeakContinuum::is_peak_cdf_step_continuum( type ) )
+  {
+    offset_integral( cont, energies, channels, nchannel, data );
+    return;
+  }
+
+  if( !nchannel )
+    return;
+
+  const size_t num_poly = PeakContinuum::num_linear_fit_pars( type );
+  const size_t num_step = PeakContinuum::num_cdf_step_pars( type );
+  const T ref_energy = cont.referenceEnergy();
+
+  // Amplitude-weighted, ROI-anchored peak CDF per channel.  `energies` must be the ROI's own
+  //  channel range, since the cumulative sum below anchors to `energies[0]` - the caller in
+  //  PeakFitLM passes exactly that.
+  std::vector<T> cdf_amp_sum( nchannel, T(0.0) );
+  std::vector<T> pdf_per_channel( nchannel );
+  std::vector<T> cdf_per_channel( nchannel );
+
+  for( size_t j = 0; j < num_peaks; ++j )
+  {
+    const PeakType * const peak = roi_peaks[j];
+    if( !peak )
+      continue;
+
+    const PeakDef::SkewType skew = peak->skewType();
+
+    const T *skew_pars = nullptr;
+    if( skew != PeakDef::SkewType::NoSkew )
+    {
+      if constexpr ( std::is_same_v<PeakType, PeakDef> )
+        skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+      else
+        skew_pars = peak->skew_parameters();
+    }
+
+    std::fill( pdf_per_channel.begin(), pdf_per_channel.end(), T(0.0) );
+    PeakDists::photopeak_function_integral( peak->mean(), peak->sigma(), T(1.0), skew, skew_pars,
+                                            nchannel, energies, pdf_per_channel.data() );
+    unit_pdf_to_cdf( pdf_per_channel.data(), cdf_per_channel.data(), nchannel );
+
+    for( size_t i = 0; i < nchannel; ++i )
+      cdf_amp_sum[i] += peak->amplitude() * cdf_per_channel[i];
+  }//for( size_t j = 0; j < num_peaks; ++j )
+
+  // std::vector<T> for PeakContinuum, std::array<T,N> for the fitters' internal continuum types
+  const auto &pars = cont.parameters();
+
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const T x0_rel = T(energies[i]) - ref_energy;
+    const T x1_rel = T(energies[i+1]) - ref_energy;
+    const T dx = x1_rel - x0_rel;
+    const T center_rel = T(0.5)*(x0_rel + x1_rel);
+
+    T value = pars[0] * dx;
+    if( num_poly > 1 )
+      value += T(0.5) * pars[1] * ((x1_rel*x1_rel) - (x0_rel*x0_rel));
+
+    T step_coeff = pars[num_poly];
+    T energy_pow = center_rel;
+    for( size_t k = 1; k < num_step; ++k )
+    {
+      step_coeff += pars[num_poly + k] * energy_pow;
+      energy_pow *= center_rel;
+    }
+
+    value += step_coeff * cdf_amp_sum[i] * dx;
+
+    // Match `PeakContinuum::offset_integral(...)`, which clamps polynomial plus step together.
+    if( value < T(0.0) )
+      value = T(0.0);
+
+    channels[i] += value;
+  }//for( size_t i = 0; i < nchannel; ++i )
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//offset_integral( cont, energies, channels, nchannel, data, roi_peaks, num_peaks )
 
 
 }//namespace PeakDists

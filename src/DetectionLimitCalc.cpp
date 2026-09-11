@@ -3236,10 +3236,9 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           continuum_coeffs_uncerts[k] = sqrt( fit.covariance[index] );
       }
 
-      // For FlatStepCDF/LinearStepCDF, `num_linear_fit_pars` excludes the step coefficient that
-      //  `setParameters` expects.  BiLinearStepCDF has no step coefficient.
-      if( PeakContinuum::is_peak_cdf_step_continuum( continuum_type )
-         && (continuum_type != PeakContinuum::BiLinearStepCDF) )
+      // `num_linear_fit_pars` excludes the peak-CDF step coefficients that `setParameters` expects
+      //  (one for FlatStepCDF/LinearStepCDF, two for BiLinearStepCDF).
+      for( size_t k = 0; k < PeakContinuum::num_cdf_step_pars( continuum_type ); ++k )
       {
         continuum_coeffs.push_back( 0.0 );
         continuum_coeffs_uncerts.push_back( 0.0 );

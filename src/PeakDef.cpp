@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <regex>
 #include <memory>
 #include <numeric>
@@ -81,8 +82,9 @@ const bool PeakDef::sm_defaultUseForDrfDepthOfInteractionFit = false;
 
 /** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types.
  Version 2 adds "FlatStepCDF", "LinearStepCDF", and "BiLinearStepCDF" continuum types.
+ Version 3 changes the "BiLinearStepCDF" definition to a form that covers the same shapes, but is constructed to be better optimized.
  */
-const int PeakContinuum::sm_xmlSerializationVersion = 2;
+const int PeakContinuum::sm_xmlSerializationVersion = 3;
 
 namespace
 {
@@ -2105,7 +2107,7 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
   xml_node<char> *cont_node = doc->allocate_node( node_element, "PeakContinuum" );
   
   // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
-  static_assert( PeakContinuum::sm_xmlSerializationVersion == 2,
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 3,
                 "PeakContinuum::toXml needs to be updated for new serialization version." );
 
   // For version 1.0.8 and newer InterSpec, we will attempt to let InterSpec v1.0.7 and older be
@@ -2123,9 +2125,16 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
       version = 1;
       break;
 
-    case FlatStepCDF: case LinearStepCDF: case BiLinearStepCDF:
-      // These continuums were added for serialization version 2.
+    case FlatStepCDF: case LinearStepCDF:
+      // These continuums were added for serialization version 2, and their parameters are
+      //  unchanged since.
       version = 2;
+      break;
+
+    case BiLinearStepCDF:
+      // Added for version 2 as (left_const, left_linear, right_const, right_linear); version 3
+      //  reparameterised it to (const, linear, step0, step1); `fromXml` converts on read.
+      version = 3;
       break;
   }//switch( m_type )
   
@@ -2229,6 +2238,109 @@ void PeakContinuum::toXml( rapidxml::xml_node<char> *parent, const int contId ) 
 
 
 
+namespace
+{
+/** Reads a `"<value> <uncertainty>"` element, as written by `PeakDef::toXml`. */
+bool read_peak_value_node( const rapidxml::xml_node<char> * const peak_node,
+                           const char * const name, const size_t name_len, double &value )
+{
+  const rapidxml::xml_node<char> * const node = peak_node->first_node( name, name_len );
+  double uncert = 0.0;
+
+  return (node && node->value() && (sscanf(node->value(), "%lf %lf", &value, &uncert) >= 1));
+}//bool read_peak_value_node(...)
+
+
+/** Sums over the peaks referencing continuum `cont_id`, for converting a pre-version-3
+ BiLinearStepCDF (see `PeakContinuum::fromXml`).
+
+ `<Peak>` nodes are siblings of the `<PeakContinuum>` nodes: directly under `<Peaks>` for
+ peak-serialization version 2 and later, and under `<Peaks><PeakSet>` for version 1 and earlier, so
+ both layouts are walked.  Returns zeros if the node is detached or nothing references the
+ continuum, which leaves the caller with a continuum whose step is zero.
+ */
+struct LegacyRoiPeakSums
+{
+  double total_amp = 0.0;   //!< SUM_j( amp_j )
+  double amp_cdf0 = 0.0;    //!< SUM_j( amp_j * CDF_j(anchor) ), the un-anchored CDF's offset at the ROI edge
+};//struct LegacyRoiPeakSums
+
+
+LegacyRoiPeakSums legacy_roi_peak_sums( const rapidxml::xml_node<char> * const peaks_node,
+                                        const int cont_id, const double anchor_energy )
+{
+  using namespace rapidxml;
+
+  LegacyRoiPeakSums sums;
+  if( !peaks_node )
+    return sums;
+
+  const auto sum_peaks_under = [&sums,cont_id,anchor_energy]( const xml_node<char> * const parent ){
+    for( const xml_node<char> *peak_node = parent->first_node("Peak",4);
+        peak_node; peak_node = peak_node->next_sibling("Peak",4) )
+    {
+      const xml_attribute<char> *att = peak_node->first_attribute( "continuumID", 11 );
+      int this_id = -1;
+      if( !att || !att->value() || (sscanf(att->value(), "%i", &this_id) != 1)
+         || (this_id != cont_id) )
+        continue;
+
+      double amp = 0.0, mean = 0.0, sigma = 0.0;
+      if( !read_peak_value_node( peak_node, "Amplitude", 9, amp ) || !std::isfinite(amp) )
+        continue;
+
+      amp = (std::max)( amp, 0.0 );
+      sums.total_amp += amp;
+
+      if( !read_peak_value_node( peak_node, "Centroid", 8, mean )
+         || !read_peak_value_node( peak_node, "Width", 5, sigma )
+         || !std::isfinite(mean) || !std::isfinite(sigma) || (sigma <= 0.0) )
+        continue;
+
+      // The version-2 model used the CDF measured from -infinity, so it carried a constant offset
+      //  of CDF(ROI lower edge) that the anchored version-3 model does not; we need each peak's
+      //  shape to recover it.
+      PeakDef::SkewType skew = PeakDef::SkewType::NoSkew;
+      const xml_node<char> * const skew_node = peak_node->first_node( "Skew", 4 );
+      if( skew_node && skew_node->value_size() )
+      {
+        try
+        {
+          skew = PeakDef::skew_from_string( std::string(skew_node->value(), skew_node->value_size()) );
+        }catch( std::exception & )
+        {
+          skew = PeakDef::SkewType::NoSkew;   // e.g. the retired "LandauSkew"
+        }
+      }//if( skew_node && skew_node->value_size() )
+
+      double skew_pars[PeakDef::CoefficientType::SkewPar5 - PeakDef::CoefficientType::SkewPar0 + 1] = { 0.0 };
+      const size_t num_skew = PeakDef::num_skew_parameters( skew );
+      bool have_skew_pars = true;
+      for( size_t k = 0; (k < num_skew) && have_skew_pars; ++k )
+      {
+        const std::string name = "Skew" + std::to_string(k);
+        have_skew_pars = read_peak_value_node( peak_node, name.c_str(), name.size(), skew_pars[k] );
+      }
+
+      if( !have_skew_pars )
+        skew = PeakDef::SkewType::NoSkew;
+
+      const double cdf0 = PeakDists::peak_cdf( anchor_energy, mean, sigma, skew, skew_pars );
+      if( std::isfinite(cdf0) )
+        sums.amp_cdf0 += amp * cdf0;
+    }//for( loop over Peak nodes )
+  };//sum_peaks_under
+
+  sum_peaks_under( peaks_node );
+  for( const xml_node<char> *set_node = peaks_node->first_node("PeakSet",7);
+      set_node; set_node = set_node->next_sibling("PeakSet",7) )
+    sum_peaks_under( set_node );
+
+  return sums;
+}//LegacyRoiPeakSums legacy_roi_peak_sums(...)
+}//namespace
+
+
 void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &contId )
 {
   using namespace rapidxml;
@@ -2247,11 +2359,12 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     throw runtime_error( "PeakContinuum invalid version" );
   
   // A reminder double check these logics when changing PeakContinuum::sm_xmlSerializationVersion
-  static_assert( PeakContinuum::sm_xmlSerializationVersion == 2,
+  static_assert( PeakContinuum::sm_xmlSerializationVersion == 3,
                 "PeakContinuum::toXml needs to be updated for new serialization version." );
 
   // Serialization versions 1 and 2 are backwards compatible with version 0 for de-serialization
-  //  (they just add new OffsetType strings), so no changes to this code are needed.
+  //  (they just add new OffsetType strings).  Version 3 only changed what BiLinearStepCDF's four
+  //  parameters mean, which `fromXml` converts on read.
   if( (version < 0) || (version > PeakContinuum::sm_xmlSerializationVersion) )
     throw runtime_error( "Invalid PeakContinuum version: " + std::to_string(version) + ".  "
                     + "Only up to version " + to_string(PeakContinuum::sm_xmlSerializationVersion)
@@ -2267,6 +2380,7 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     throw runtime_error( "PeakContinuum not Type node" );
   
   m_type = str_to_offset_type_str( node->value(), node->value_size() );
+
   
   float dummyval;
   node = cont_node->first_node( "LowerEnergy", 11 );
@@ -2361,6 +2475,53 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
       
     meas->set_info_from_2006_N42_spectrum_node( node );
   }//if( node )
+
+  // Serialization versions 2 and earlier stored BiLinearStepCDF as two lines blended by an
+  //  amplitude-weighted CDF fraction, `(left_const, left_linear, right_const, right_linear)`;
+  //  version 3 stores `(const, linear, step0, step1)` - the same family of shapes, but linear in
+  //  the peak amplitudes.  Converting needs the ROI's total peak area, which lives in the <Peak>
+  //  nodes sitting alongside this one.
+  if( (version < 3) && (m_type == BiLinearStepCDF) && (m_values.size() == 4) )
+  {
+    const LegacyRoiPeakSums sums = legacy_roi_peak_sums( cont_node->parent(), contId, m_lowerEnergy );
+
+    double step0 = 0.0, step1 = 0.0;
+    if( std::isfinite(sums.total_amp) && (sums.total_amp > 0.0) )
+    {
+      step0 = (m_values[2] - m_values[0]) / sums.total_amp;
+      step1 = (m_values[3] - m_values[1]) / sums.total_amp;
+    }else
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Converting a pre-version-3 BiLinearStepCDF continuum, but"
+                          " found no peaks referencing continuum id " + std::to_string(contId)
+                          + " - its step will be dropped.").c_str() );
+#endif
+    }
+
+    if( !std::isfinite(step0) )
+      step0 = 0.0;
+    if( !std::isfinite(step1) )
+      step1 = 0.0;
+
+    // Version 2 blended with the CDF measured from -infinity, so it carried a constant offset of
+    //  `step_k * SUM_j(amp_j*CDF_j(roi_lower))` that the ROI-anchored version-3 model does not.
+    //  Folding it into the polynomial keeps the converted continuum the same shape - without this
+    //  a skewed ROI shifts by several percent on load, since a low-energy tail puts real CDF mass
+    //  below the ROI.
+    if( std::isfinite(sums.amp_cdf0) )
+    {
+      m_values[0] += step0 * sums.amp_cdf0;
+      m_values[1] += step1 * sums.amp_cdf0;
+    }
+
+    m_values[2] = step0;
+    m_values[3] = step1;
+
+    // The old uncertainties were on the right-hand line, not on a step; they do not carry over.
+    if( m_uncertainties.size() == 4 )
+      m_uncertainties[2] = m_uncertainties[3] = 0.0;
+  }//if( a pre-version-3 BiLinearStepCDF )
 }//void PeakContinuum::fromXml(...)
 
 
@@ -3338,8 +3499,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           {
             answer << (i ? "," : "") << continuum_counts[i];
 #if( PERFORM_DEVELOPER_CHECKS )
-            if( !PeakContinuum::is_peak_cdf_step_continuum( continuum->type() ) )
             {
+              // The batch and single-channel implementations must agree for every continuum type,
+              //  including the peak-CDF step ones - they share `cdf_step_anchor_energies(...)`, so
+              //  a divergence here means one of them drifted.
               const size_t channel = i + firstbin;
               const float lower_x = foreground->gamma_channel_lower( channel );
               const float upper_x = foreground->gamma_channel_upper( channel );
@@ -5414,11 +5577,11 @@ size_t PeakContinuum::num_linear_fit_pars( const PeakContinuum::OffsetType type 
       return 2 + (type - FlatStep);
 
     case OffsetType::FlatStepCDF:
-      return 1;  // Constant polynomial only; step_coeff is optimized by non-linear solver
+      return 1;  // Constant polynomial only; step coefficient is optimized by non-linear solver
     case OffsetType::LinearStepCDF:
-      return 2;  // Linear polynomial; step_coeff is optimized by non-linear solver
+      return 2;  // Linear polynomial; step coefficient is optimized by non-linear solver
     case OffsetType::BiLinearStepCDF:
-      return 4;  // All 4 params (left/right polynomials) solved by LLS; no step_coeff
+      return 2;  // Linear polynomial; the two step coefficients are optimized by non-linear solver
   }//switch( type )
 
   assert( 0 );
@@ -5426,6 +5589,32 @@ size_t PeakContinuum::num_linear_fit_pars( const PeakContinuum::OffsetType type 
 
   return 0;
 }//size_t num_linear_fit_pars( const OffsetType type );
+
+
+size_t PeakContinuum::num_cdf_step_pars( const PeakContinuum::OffsetType type )
+{
+  switch( type )
+  {
+    case OffsetType::NoOffset:     case OffsetType::External:
+    case OffsetType::Constant:     case OffsetType::Linear:
+    case OffsetType::Quadratic:    case OffsetType::Cubic:
+    case OffsetType::FlatStep:     case OffsetType::LinearStep:
+    case OffsetType::BiLinearStep:
+      return 0;
+
+    case OffsetType::FlatStepCDF:
+    case OffsetType::LinearStepCDF:
+      return 1;
+
+    case OffsetType::BiLinearStepCDF:
+      return 2;
+  }//switch( type )
+
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum type in num_cdf_step_pars." );
+
+  return 0;
+}//size_t num_cdf_step_pars( const OffsetType type );
 
 
 bool PeakContinuum::is_step_continuum( const OffsetType type )
@@ -5691,177 +5880,153 @@ bool PeakContinuum::isPolynomial() const
 }//bool isPolynomial() const
 
 
+namespace
+{
+/** What a single `PeakContinuum` parameter slot *means*.
+
+ `PeakContinuum::setType(...)` uses this to decide which stored values may be carried across a
+ type change: a value may only be copied into a slot with the identical meaning.  This matters
+ most for the two kinds of "step", which are numerically incompatible:
+   - `DataStep` (FlatStep/LinearStep) multiplies the in-ROI data fraction, so it is a count
+     density in counts/keV - typically O(1) to O(100).
+   - `CdfStep0` (FlatStepCDF/LinearStepCDF) multiplies the ROI peak area, so it is in keV^-1 -
+     typically O(1e-3) to O(1e-6).
+ The two differ by the total ROI peak area, i.e. a factor of 1e3 to 1e6.  Carrying one into the
+ other collapses the fitted peak amplitude to ~0 and inflates the continuum.
+ */
+enum class ContParMeaning
+{
+  Poly0, Poly1, Poly2, Poly3,  //!< Polynomial terms, relative to the reference energy
+  RightPoly0, RightPoly1,      //!< Right-hand line of a bi-linear step
+  DataStep,                    //!< Step magnitude of FlatStep/LinearStep; counts/keV
+  CdfStep0,                    //!< Step coefficient of the CDF step types; keV^-1
+  CdfStep1                     //!< Energy-slope of BiLinearStepCDF's step coefficient; keV^-2
+};//enum class ContParMeaning
+
+
+/** Returns the meaning of each parameter slot of `type`.
+
+ The returned size always equals `PeakContinuum::num_parameters(type)`; this table is the
+ authoritative statement of what every continuum type's parameters are, and hence of which
+ `setType(...)` transitions may preserve which values.
+ */
+const std::vector<ContParMeaning> &continuum_parameter_meanings( const PeakContinuum::OffsetType type )
+{
+  using M = ContParMeaning;
+
+  static const std::vector<M> s_empty{};
+  static const std::vector<M> s_constant{ M::Poly0 };
+  static const std::vector<M> s_linear{ M::Poly0, M::Poly1 };
+  static const std::vector<M> s_quadratic{ M::Poly0, M::Poly1, M::Poly2 };
+  static const std::vector<M> s_cubic{ M::Poly0, M::Poly1, M::Poly2, M::Poly3 };
+  static const std::vector<M> s_flat_step{ M::Poly0, M::DataStep };
+  static const std::vector<M> s_linear_step{ M::Poly0, M::Poly1, M::DataStep };
+  static const std::vector<M> s_bilinear_step{ M::Poly0, M::Poly1, M::RightPoly0, M::RightPoly1 };
+  static const std::vector<M> s_flat_step_cdf{ M::Poly0, M::CdfStep0 };
+  static const std::vector<M> s_linear_step_cdf{ M::Poly0, M::Poly1, M::CdfStep0 };
+  static const std::vector<M> s_bilinear_step_cdf{ M::Poly0, M::Poly1, M::CdfStep0, M::CdfStep1 };
+
+  switch( type )
+  {
+    case PeakContinuum::NoOffset:        return s_empty;
+    case PeakContinuum::Constant:        return s_constant;
+    case PeakContinuum::Linear:          return s_linear;
+    case PeakContinuum::Quadratic:       return s_quadratic;
+    case PeakContinuum::Cubic:           return s_cubic;
+    case PeakContinuum::FlatStep:        return s_flat_step;
+    case PeakContinuum::LinearStep:      return s_linear_step;
+    case PeakContinuum::BiLinearStep:    return s_bilinear_step;
+    case PeakContinuum::FlatStepCDF:     return s_flat_step_cdf;
+    case PeakContinuum::LinearStepCDF:   return s_linear_step_cdf;
+    case PeakContinuum::BiLinearStepCDF: return s_bilinear_step_cdf;
+    case PeakContinuum::External:        return s_empty;
+  }//switch( type )
+
+  assert( 0 );
+  throw std::runtime_error( "Somehow invalid continuum type in continuum_parameter_meanings." );
+}//continuum_parameter_meanings( OffsetType )
+
+
+/** Index of `meaning` within `meanings`, or `meanings.size()` if not present. */
+size_t index_of_meaning( const std::vector<ContParMeaning> &meanings, const ContParMeaning meaning )
+{
+  for( size_t i = 0; i < meanings.size(); ++i )
+  {
+    if( meanings[i] == meaning )
+      return i;
+  }
+
+  return meanings.size();
+}//index_of_meaning(...)
+}//namespace
+
+
 void PeakContinuum::setType( PeakContinuum::OffsetType type )
 {
   const PeakContinuum::OffsetType oldType = m_type;
-  
-  m_type = type;
-  
-  switch( m_type )
+
+  const std::vector<ContParMeaning> &old_meanings = continuum_parameter_meanings( oldType );
+  const std::vector<ContParMeaning> &new_meanings = continuum_parameter_meanings( type );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // The meaning table and num_parameters(...) are independent switches that must stay in step; if
+  //  they drift, every transition through here silently mis-sizes the continuum.
+  assert( old_meanings.size() == num_parameters(oldType) );
+  assert( new_meanings.size() == num_parameters(type) );
+#endif
+
+  // Only trust as many old slots as the old type actually declared *and* we actually hold.
+  const size_t num_old = std::min( old_meanings.size(), m_values.size() );
+
+  std::vector<double> new_values( new_meanings.size(), 0.0 );
+  std::vector<double> new_uncerts( new_meanings.size(), 0.0 );
+  std::vector<bool> new_fit_for( new_meanings.size(), true );
+
+  // Carry over every value whose meaning is unchanged; anything else starts at zero.
+  for( size_t i = 0; i < new_meanings.size(); ++i )
   {
-    case NoOffset:
-      m_values.clear();
-      m_uncertainties.clear();
-      m_fitForValue.clear();
-      m_externalContinuum.reset();
-      //m_lowerEnergy = m_upperEnergy = m_referenceEnergy = 0.0;
-    break;
-      
-    case Constant:
-      m_values.resize( 1, 0.0 );
-      m_uncertainties.resize( 1, 0.0 );
-      m_fitForValue.resize( 1, true );
-      m_externalContinuum.reset();
-    break;
-    
-    case Linear:
-      m_values.resize( 2, 0.0 );
-      m_uncertainties.resize( 2, 0.0 );
-      m_fitForValue.resize( 2, true );
-      m_externalContinuum.reset();
-      
-      if( oldType == FlatStep || oldType == FlatStepCDF )
-        m_values[1] = m_uncertainties[1] = 0.0;
-      break;
+    const size_t j = index_of_meaning( old_meanings, new_meanings[i] );
+    if( j >= num_old )
+      continue;
 
-    case Quadratic:
-      m_values.resize( 3, 0.0 );
-      m_uncertainties.resize( 3, 0.0 );
-      m_fitForValue.resize( 3, true );
-      m_externalContinuum.reset();
-      if( (oldType == BiLinearStep) || (oldType == BiLinearStepCDF)
-        || (oldType == LinearStep) || (oldType == LinearStepCDF) )
-        m_values[2] = m_uncertainties[2] = 0.0;
-      break;
+    new_values[i] = m_values[j];
+    if( j < m_uncertainties.size() )
+      new_uncerts[i] = m_uncertainties[j];
+    if( j < m_fitForValue.size() )
+      new_fit_for[i] = m_fitForValue[j];
+  }//for( size_t i = 0; i < new_meanings.size(); ++i )
 
-    case Cubic:
-      m_values.resize( 4, 0.0 );
-      m_uncertainties.resize( 4, 0.0 );
-      m_fitForValue.resize( 4, true );
-      m_externalContinuum.reset();
-      if( (oldType == BiLinearStep) || (oldType == BiLinearStepCDF) )
-        m_values[2] = m_values[3] = m_uncertainties[2] = m_uncertainties[3] = 0.0;
-      break;
-      
-    case FlatStep:
-      if( (oldType == LinearStep) && (m_values.size() > 2) ) //Preserve the amount of "step"
-      {
-        m_values[1] = m_values[2];
-        m_uncertainties[1] = m_uncertainties[2];
-      }else
-      {
-        if( (m_values.size() > 1) && (m_uncertainties.size() > 1) )
-          m_values[1] = m_uncertainties[1] = 0.0;
-      }
-      
-      m_values.resize( 2, 0.0 );
-      m_uncertainties.resize( 2, 0.0 );
-      m_fitForValue.resize( 2, true );
-      m_externalContinuum.reset();
-    break;
-      
-    case LinearStep:
-      m_values.resize( 3, 0.0 );
-      m_uncertainties.resize( 3, 0.0 );
-      m_fitForValue.resize( 3, true );
-      m_externalContinuum.reset();
-      
-      if( oldType == FlatStep ) //Preserve the amount of "step"
-      {
-        m_values[2] = m_values[1];
-        m_uncertainties[2] = m_uncertainties[1];
-        m_values[1] = m_uncertainties[1] = 0.0;
-      }else
-      {
-        //If going from BiLinear/Quadratic/Cubic to LinearStep the last parameter makes no sense to keep around
-        m_values[2] = m_uncertainties[2] = 0.0;
-      }
-      
-      break;
-      
-    case BiLinearStep:
-      if( (oldType == FlatStep) && (m_values.size() > 1) )
-        m_values[1] = m_uncertainties[1] = 0.0;
-         
-      m_values.resize( 4, 0.0 );
-      m_uncertainties.resize( 4, 0.0 );
-      m_fitForValue.resize( 4, true );
-      m_externalContinuum.reset();
-      //If going from Cubic to BiLinearStep the last two parameters makes no sense to keep around
-      //  so just the right line equal to the left line
-      m_values[2] = m_values[0];
-      m_values[3] = m_values[1];
-      m_uncertainties[2] = m_uncertainties[0];
-      m_uncertainties[3] = m_uncertainties[1];
-      break;
+  // Coming from a type with no right-hand line, seed it from the left one; starting a bi-linear
+  //  step from right==left avoids an artificial discontinuity part way through the ROI.
+  const size_t right0 = index_of_meaning( new_meanings, ContParMeaning::RightPoly0 );
+  if( (right0 < new_meanings.size())
+     && (index_of_meaning( old_meanings, ContParMeaning::RightPoly0 ) >= num_old) )
+  {
+    const size_t right1 = index_of_meaning( new_meanings, ContParMeaning::RightPoly1 );
+    const size_t left0 = index_of_meaning( new_meanings, ContParMeaning::Poly0 );
+    const size_t left1 = index_of_meaning( new_meanings, ContParMeaning::Poly1 );
 
-    case FlatStepCDF:
-    {
-      // FlatStepCDF: 2 parameters (constant poly + step coefficient)
-      if( (oldType == LinearStep || oldType == LinearStepCDF) && (m_values.size() > 2) )
-      {
-        // Preserve step amount
-        m_values[1] = m_values[2];
-        m_uncertainties[1] = m_uncertainties[2];
-      }else if( m_values.size() > 1 )
-      {
-        m_values[1] = m_uncertainties[1] = 0.0;
-      }
+    assert( (right1 < new_meanings.size()) && (left0 < new_meanings.size())
+           && (left1 < new_meanings.size()) );
 
-      m_values.resize( 2, 0.0 );
-      m_uncertainties.resize( 2, 0.0 );
-      m_fitForValue.resize( 2, true );
-      m_externalContinuum.reset();
-      break;
-    }
+    new_values[right0] = new_values[left0];
+    new_values[right1] = new_values[left1];
+    new_uncerts[right0] = new_uncerts[left0];
+    new_uncerts[right1] = new_uncerts[left1];
+    // ...including whether they are being fit; a copy of a pinned line must not be free to move.
+    new_fit_for[right0] = new_fit_for[left0];
+    new_fit_for[right1] = new_fit_for[left1];
+  }//if( the new type has a right-hand line the old type did not )
 
-    case LinearStepCDF:
-    {
-      // LinearStepCDF: 3 parameters (constant + linear poly + step coefficient)
-      m_values.resize( 3, 0.0 );
-      m_uncertainties.resize( 3, 0.0 );
-      m_fitForValue.resize( 3, true );
-      m_externalContinuum.reset();
+  m_type = type;
+  m_values.swap( new_values );
+  m_uncertainties.swap( new_uncerts );
+  m_fitForValue.swap( new_fit_for );
 
-      if( oldType == FlatStep || oldType == FlatStepCDF )
-      {
-        // Preserve the step amount
-        m_values[2] = m_values[1];
-        m_uncertainties[2] = m_uncertainties[1];
-        m_values[1] = m_uncertainties[1] = 0.0;
-      }else
-      {
-        m_values[2] = m_uncertainties[2] = 0.0;
-      }
-      break;
-    }
-
-    case BiLinearStepCDF:
-    {
-      // BiLinearStepCDF: 4 parameters (left_const, left_linear, right_const, right_linear)
-      if( (oldType == FlatStep) && (m_values.size() > 1) )
-        m_values[1] = m_uncertainties[1] = 0.0;
-
-      m_values.resize( 4, 0.0 );
-      m_uncertainties.resize( 4, 0.0 );
-      m_fitForValue.resize( 4, true );
-      m_externalContinuum.reset();
-      // Set the right polynomial equal to the left polynomial as a starting point
-      m_values[2] = m_values[0];
-      m_values[3] = m_values[1];
-      m_uncertainties[2] = m_uncertainties[0];
-      m_uncertainties[3] = m_uncertainties[1];
-      break;
-    }
-
-    case External:
-      m_values.clear();
-      m_uncertainties.clear();
-      m_fitForValue.clear();
-      m_referenceEnergy = 0.0;
-    break;
-  };//switch( m_type )
-  
+  if( type == External )
+    m_referenceEnergy = 0.0;
+  else
+    m_externalContinuum.reset();
 }//void setType( PeakContinuum::OffsetType type )
 
 
@@ -6107,6 +6272,70 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
 }
 
 
+namespace
+{
+/** Peak j's ROI-anchored CDF for the channel spanning [x0,x1].
+
+ The fitters build their step basis by cumulative-summing unit-area channel integrals across the
+ ROI (`PeakDists::unit_pdf_to_cdf`), which for channel i gives
+   sum_{k<i}(pdf_k) + 0.5*pdf_i  ==  0.5*(CDF(x0) + CDF(x1)) - CDF(roi_lower)
+ i.e. the *average of the channel's edge CDFs*, not the CDF at its center.  Evaluating the analytic
+ CDF the same way makes the two agree to floating-point rather than only to O(channel width^2) -
+ using the midpoint instead leaves a trapezoid-vs-midpoint difference of about
+ `(dx^2/8)*pdf'(center)`, which for a 20k-count peak on 0.35 keV channels is a few hundredths of a
+ count per channel.
+
+ Clamping to [f0,f1] anchors the result at the ROI's lower edge and saturates it at the upper edge,
+ matching where the fitters' cumulative sum starts and stops; see
+ `PeakContinuum::cdf_step_anchor_energies(...)`.
+ */
+double anchored_peak_cdf( const double x0, const double x1, const PeakDef &peak,
+                          const double f0, const double f1 )
+{
+  const double * const skew_pars = peak.coefficients() + PeakDef::CoefficientType::SkewPar0;
+  const double cdf0 = PeakDists::peak_cdf( x0, peak.mean(), peak.sigma(), peak.skewType(), skew_pars );
+  const double cdf1 = PeakDists::peak_cdf( x1, peak.mean(), peak.sigma(), peak.skewType(), skew_pars );
+  const double cdf = 0.5*(cdf0 + cdf1);
+
+  return (std::min)( (std::max)( cdf, f0 ), f1 ) - f0;
+}//anchored_peak_cdf(...)
+}//namespace
+
+
+bool PeakContinuum::cdf_step_anchor_energies( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                              double &lower, double &upper ) const
+{
+  lower = 0.0;
+  upper = 0.0;
+
+  // With no ROI defined there is nothing to anchor to; caller then uses the un-anchored CDF.
+  if( !energyRangeDefined() )
+    return false;
+
+  lower = m_lowerEnergy;
+  upper = m_upperEnergy;
+
+  // Prefer the channel edges the fitters actually start/stop their cumulative sums at, so the
+  //  drawn continuum matches the fitted one.  `data` is optional - e.g. LeafletRadMap deliberately
+  //  passes nullptr for multi-Measurement selections - so fall back to the raw ROI bounds, which
+  //  differ by at most a fraction of a channel of CDF mass at the ROI edge.
+  //  This mirrors what `offset_integral_non_cdf(...)` already does for the data-step types.
+  if( data && data->num_gamma_channels() )
+  {
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
+    if( cal && cal->valid() )
+    {
+      const size_t lower_channel = data->find_gamma_channel( static_cast<float>(m_lowerEnergy) );
+      const size_t upper_channel = data->find_gamma_channel( static_cast<float>(m_upperEnergy) );
+      lower = data->gamma_channel_lower( lower_channel );
+      upper = data->gamma_channel_upper( upper_channel );
+    }
+  }//if( data && data->num_gamma_channels() )
+
+  return true;
+}//bool cdf_step_anchor_energies( data, lower, upper ) const
+
+
 double PeakContinuum::offset_integral_cdf_step( const double x0, const double x1,
                                                  const std::shared_ptr<const SpecUtils::Measurement> &data,
                                                  const PeakDef * const *roi_peaks, const size_t num_peaks ) const
@@ -6115,73 +6344,48 @@ double PeakContinuum::offset_integral_cdf_step( const double x0, const double x1
   if( !is_peak_cdf_step_continuum( m_type ) )
     throw runtime_error( "PeakContinuum::offset_integral_cdf_step: only valid for CDF step types" );
 
+  const size_t num_poly = num_linear_fit_pars( m_type );
+  const size_t num_step = num_cdf_step_pars( m_type );
+  assert( m_values.size() == (num_poly + num_step) );
+
   const double x0_rel = x0 - m_referenceEnergy;
   const double x1_rel = x1 - m_referenceEnergy;
   const double dx = x1_rel - x0_rel;
-  const double chan_center = 0.5 * (x0 + x1);
+  // Average the *relative* edges rather than subtracting the reference from the absolute centre:
+  //  the absolute energies are ~1e3 while E' is ~1e0, so the latter throws away several digits.
+  const double center_rel = 0.5 * (x0_rel + x1_rel);
 
-  if( m_type == BiLinearStepCDF )
-  {
-    // BiLinearStepCDF: 4 params (left_const, left_linear, right_const, right_linear)
-    // Interpolation fraction from amplitude-weighted peak CDF
-    assert( m_values.size() == 4 );
-
-    double total_amp = 0.0;
-    double cdf_weighted_sum = 0.0;
-    for( size_t j = 0; j < num_peaks; ++j )
-    {
-      const PeakDef *peak = roi_peaks[j];
-      if( !peak )
-        continue;
-      const double amp = peak->amplitude();
-      const double mean = peak->mean();
-      const double sigma = peak->sigma();
-      const PeakDef::SkewType skew = peak->skewType();
-      const double *skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
-
-      const double cdf_val = PeakDists::peak_cdf( chan_center, mean, sigma, skew, skew_pars );
-      cdf_weighted_sum += amp * cdf_val;
-      total_amp += amp;
-    }
-
-    const double frac_cdf = (total_amp > 0.0) ? (cdf_weighted_sum / total_amp) : 0.5;
-
-    const double left_poly = m_values[0] * dx + 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
-    const double right_poly = m_values[2] * dx + 0.5 * m_values[3] * (x1_rel * x1_rel - x0_rel * x0_rel);
-
-    return std::max( 0.0, ((1.0 - frac_cdf) * left_poly) + (frac_cdf * right_poly) );
-  }//if( m_type == BiLinearStepCDF )
-
-  // FlatStepCDF / LinearStepCDF path
-  const size_t num_poly = (m_type == FlatStepCDF) ? 1 : 2;
-  assert( m_values.size() == (num_poly + 1) );
-
-  // Polynomial part
+  // Polynomial part, integrated exactly across the channel
   double poly = m_values[0] * dx;
-  if( m_type == LinearStepCDF )
+  if( num_poly > 1 )
     poly += 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
 
-  // CDF step part: step_coeff * sum_j(amp_j * CDF_j(chan_center)) * dx
-  const double step_coeff = m_values[num_poly];
+  double anchor_lower = 0.0, anchor_upper = 0.0;
+  const bool anchored = cdf_step_anchor_energies( data, anchor_lower, anchor_upper );
+
+  // Step part: (SUM_k s_k * E'^k) * SUM_j( amp_j * CDFbar_j(center) ) * dx
   double cdf_weighted_sum = 0.0;
   for( size_t j = 0; j < num_peaks; ++j )
   {
     const PeakDef *peak = roi_peaks[j];
     if( !peak )
       continue;
-    const double amp = peak->amplitude();
-    const double mean = peak->mean();
-    const double sigma = peak->sigma();
-    const PeakDef::SkewType skew = peak->skewType();
-    const double *skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
 
-    const double cdf_val = PeakDists::peak_cdf( chan_center, mean, sigma, skew, skew_pars );
-    cdf_weighted_sum += amp * cdf_val;
-  }
+    const double f0 = anchored ? PeakDists::peak_cdf( anchor_lower, peak->mean(), peak->sigma(),
+                                    peak->skewType(),
+                                    peak->coefficients() + PeakDef::CoefficientType::SkewPar0 ) : 0.0;
+    const double f1 = anchored ? PeakDists::peak_cdf( anchor_upper, peak->mean(), peak->sigma(),
+                                    peak->skewType(),
+                                    peak->coefficients() + PeakDef::CoefficientType::SkewPar0 ) : 1.0;
 
-  const double step_contribution = step_coeff * cdf_weighted_sum * dx;
+    cdf_weighted_sum += peak->amplitude() * anchored_peak_cdf( x0, x1, *peak, f0, f1 );
+  }//for( size_t j = 0; j < num_peaks; ++j )
 
-  return std::max( 0.0, poly + step_contribution );
+  double step_coeff = m_values[num_poly];
+  if( num_step > 1 )
+    step_coeff += m_values[num_poly + 1] * center_rel;
+
+  return (std::max)( 0.0, poly + (step_coeff * cdf_weighted_sum * dx) );
 }//double offset_integral_cdf_step( x0, x1, data, roi_peaks, num_peaks )
 
 
@@ -6197,88 +6401,77 @@ void PeakContinuum::offset_integral_cdf_step( const float *energies, double *cha
   if( !nchannel )
     return;
 
-  // Precompute per-peak info for the CDF evaluation
+  const size_t num_poly = num_linear_fit_pars( m_type );
+  const size_t num_step = num_cdf_step_pars( m_type );
+  assert( m_values.size() == (num_poly + num_step) );
+
+  double anchor_lower = 0.0, anchor_upper = 0.0;
+  const bool anchored = cdf_step_anchor_energies( data, anchor_lower, anchor_upper );
+
+  // Precompute per-peak info; the anchors in particular must be hoisted out of the channel loop -
+  //  this batch overload exists because stepped continua are otherwise ~5x slower.
   struct PeakInfo
   {
-    double amp, mean, sigma;
-    PeakDef::SkewType skew;
-    const double *skew_pars;
+    const PeakDef *peak;
+    double amp;
+    double f0, f1;                 //!< CDF at the ROI's lower/upper anchor energy
+    std::vector<double> edge_cdf;  //!< CDF at each channel edge; `nchannel + 1` entries
   };
 
   std::vector<PeakInfo> peak_infos;
-  double total_amp = 0.0;
   peak_infos.reserve( num_peaks );
   for( size_t j = 0; j < num_peaks; ++j )
   {
     const PeakDef *peak = roi_peaks[j];
     if( !peak )
       continue;
+
+    const double * const skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+
     PeakInfo info;
+    info.peak = peak;
     info.amp = peak->amplitude();
-    info.mean = peak->mean();
-    info.sigma = peak->sigma();
-    info.skew = peak->skewType();
-    info.skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
-    peak_infos.push_back( info );
-    total_amp += info.amp;
-  }
+    info.f0 = anchored ? PeakDists::peak_cdf( anchor_lower, peak->mean(), peak->sigma(),
+                                              peak->skewType(), skew_pars ) : 0.0;
+    info.f1 = anchored ? PeakDists::peak_cdf( anchor_upper, peak->mean(), peak->sigma(),
+                                              peak->skewType(), skew_pars ) : 1.0;
 
-  if( m_type == BiLinearStepCDF )
-  {
-    assert( m_values.size() == 4 );
+    // Adjacent channels share an edge, so evaluate the (erf-heavy) CDF once per edge rather than
+    //  twice per channel - this batch overload exists precisely to keep stepped continua fast.
+    info.edge_cdf.resize( nchannel + 1 );
+    for( size_t i = 0; i <= nchannel; ++i )
+      info.edge_cdf[i] = PeakDists::peak_cdf( energies[i], peak->mean(), peak->sigma(),
+                                              peak->skewType(), skew_pars );
 
-    for( size_t i = 0; i < nchannel; ++i )
-    {
-      const double x0_rel = energies[i] - m_referenceEnergy;
-      const double x1_rel = energies[i + 1] - m_referenceEnergy;
-      const double dx = x1_rel - x0_rel;
-      const double chan_center = 0.5 * (energies[i] + energies[i + 1]);
-
-      double cdf_weighted_sum = 0.0;
-      for( const PeakInfo &info : peak_infos )
-      {
-        const double cdf_val = PeakDists::peak_cdf( chan_center, info.mean, info.sigma, info.skew, info.skew_pars );
-        cdf_weighted_sum += info.amp * cdf_val;
-      }
-
-      const double frac_cdf = (total_amp > 0.0) ? (cdf_weighted_sum / total_amp) : 0.5;
-
-      const double left_poly = m_values[0] * dx + 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
-      const double right_poly = m_values[2] * dx + 0.5 * m_values[3] * (x1_rel * x1_rel - x0_rel * x0_rel);
-
-      channels[i] += std::max( 0.0, ((1.0 - frac_cdf) * left_poly) + (frac_cdf * right_poly) );
-    }//for( size_t i = 0; i < nchannel; ++i )
-
-    return;
-  }//if( m_type == BiLinearStepCDF )
-
-  // FlatStepCDF / LinearStepCDF path
-  const size_t num_poly = (m_type == FlatStepCDF) ? 1 : 2;
-  assert( m_values.size() == (num_poly + 1) );
-  const double step_coeff = m_values[num_poly];
+    peak_infos.push_back( std::move(info) );
+  }//for( size_t j = 0; j < num_peaks; ++j )
 
   for( size_t i = 0; i < nchannel; ++i )
   {
     const double x0_rel = energies[i] - m_referenceEnergy;
     const double x1_rel = energies[i + 1] - m_referenceEnergy;
     const double dx = x1_rel - x0_rel;
-    const double chan_center = 0.5 * (energies[i] + energies[i + 1]);
+    // NB: `energies` is float, so `0.5*(energies[i] + energies[i+1])` would sum in float at ~1e3
+    //  and lose ~6e-5 keV of E'; average the relative (double) edges instead.  Only the peak CDF,
+    //  which genuinely needs absolute energies, uses the channel edges directly.
+    const double center_rel = 0.5 * (x0_rel + x1_rel);
 
-    // Polynomial part
     double poly = m_values[0] * dx;
-    if( m_type == LinearStepCDF )
+    if( num_poly > 1 )
       poly += 0.5 * m_values[1] * (x1_rel * x1_rel - x0_rel * x0_rel);
 
-    // CDF step part
     double cdf_weighted_sum = 0.0;
     for( const PeakInfo &info : peak_infos )
     {
-      const double cdf_val = PeakDists::peak_cdf( chan_center, info.mean, info.sigma, info.skew, info.skew_pars );
-      cdf_weighted_sum += info.amp * cdf_val;
+      const double cdf = 0.5*(info.edge_cdf[i] + info.edge_cdf[i+1]);
+      cdf_weighted_sum += info.amp * ((std::min)( (std::max)( cdf, info.f0 ), info.f1 ) - info.f0);
     }
 
-    const double step_contribution = step_coeff * cdf_weighted_sum * dx;
-    channels[i] += std::max( 0.0, poly + step_contribution );
+    double step_coeff = m_values[num_poly];
+    if( num_step > 1 )
+      step_coeff += m_values[num_poly + 1] * center_rel;
+
+    channels[i] += (std::max)( 0.0, poly + (step_coeff * cdf_weighted_sum * dx) );
   }//for( size_t i = 0; i < nchannel; ++i )
 }//void offset_integral_cdf_step( energies, channels, nchannel, data, roi_peaks, num_peaks )
 

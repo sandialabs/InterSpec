@@ -137,10 +137,19 @@ struct PeakContinuum
      */
     LinearStepCDF,
 
-    /** Like BiLinearStep, but uses the CDF of the peaks in the ROI to define the interpolation
-     fraction between left and right polynomials, rather than the cumulative data histogram.
-     This avoids circular dependence on the data being fit.
-     Four parameters: left_const, left_linear, right_const, right_linear — all solved by LLS.
+    /** Like BiLinearStep, but uses the CDF of the peaks in the ROI to blend from a left to a right
+     line, rather than the cumulative data histogram.  This avoids circular dependence on the data
+     being fit.
+
+     Parameterised as a linear continuum plus a *linearly varying* step coefficient:
+       density(E) = p0 + p1*E' + (s0 + s1*E')*SUM_j( amp_j * CDFbar_j(E) )
+     where E' is relative to the reference energy and CDFbar_j is peak j's ROI-anchored CDF.
+     This is algebraically the same family as blending two lines with the amplitude-weighted CDF
+     fraction, but it is *linear* in the peak amplitudes, so the amplitudes stay solvable by LLS
+     and the blend is amplitude-weighted without needing to know the amplitudes up front.
+
+     Four parameters: two polynomial terms solved by LLS, and two step coefficients fit by the
+     non-linear optimizer.
      */
     BiLinearStepCDF,
 
@@ -161,9 +170,9 @@ struct PeakContinuum
   static const char *offset_type_str( const OffsetType type );
   
   /** Returns the total number of parameters for a specified offset type.
-   For FlatStepCDF/LinearStepCDF this includes the step_coeff parameter that is optimized by non-linear solvers.
-   E.g., FlatStepCDF returns 2 (1 polynomial + 1 step_coeff).
-   BiLinearStepCDF returns 4 (all polynomial, no step_coeff).
+   For the CDF step types this includes the step coefficients that are optimized by non-linear
+   solvers: FlatStepCDF returns 2 (1 polynomial + 1 step), LinearStepCDF 3 (2 + 1), and
+   BiLinearStepCDF 4 (2 polynomial + 2 step).
 
    @sa num_linear_fit_pars
    */
@@ -171,15 +180,28 @@ struct PeakContinuum
 
   /** Returns the number of continuum parameters solved by the linear least-squares (LLS) system.
    For non-CDF types, this is the same as num_parameters().
-   For FlatStepCDF/LinearStepCDF, this excludes the step_coeff (e.g., FlatStepCDF returns 1, LinearStepCDF returns 2),
-   since step_coeff is optimized by the non-linear solver (Ceres/L-M), not the LLS.
-   For BiLinearStepCDF, returns 4 (same as num_parameters, since there is no step_coeff).
+   For the CDF step types this excludes the step coefficients, which are optimized by the
+   non-linear solver (Ceres/L-M) rather than the LLS: FlatStepCDF returns 1, LinearStepCDF
+   returns 2, and BiLinearStepCDF returns 2.
 
    This is the value to pass to fit_amp_and_offset_imp() and fit_continuum() as the polynomial term count.
 
    @sa num_parameters
+   @sa num_cdf_step_pars
    */
   static size_t num_linear_fit_pars( const OffsetType type );
+
+  /** Returns the number of peak-CDF step coefficients of the continuum type; i.e., the trailing
+   parameters that are bilinear with the peak amplitudes and so are fit by the non-linear solver
+   rather than the LLS.
+
+   Returns 0 for every non-CDF type, 1 for FlatStepCDF and LinearStepCDF, and 2 for
+   BiLinearStepCDF.  Always equals `num_parameters(type) - num_linear_fit_pars(type)`.
+
+   @sa num_parameters
+   @sa num_linear_fit_pars
+   */
+  static size_t num_cdf_step_pars( const OffsetType type );
 
   /** Returns true if continuum type is FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF, or BiLinearStepCDF. */
   static bool is_step_continuum( const OffsetType type );
@@ -372,6 +394,13 @@ struct PeakContinuum
   //  bad currently!  Currently serializes a new continuum for each peak, even
   //  if they should be shared across peaks
   void toXml( rapidxml::xml_node<char> *parent, const int contId ) const;
+
+  /** Deserializes the continuum.
+
+   Continua written by an older InterSpec are brought up to the current parameter conventions here;
+   `node` must therefore still be attached to the document that holds the `<Peak>` nodes, since
+   converting a pre-version-3 BiLinearStepCDF needs its ROI's total peak area.
+   */
   void fromXml( const rapidxml::xml_node<char> *node, int &contId );
 
   
@@ -392,6 +421,20 @@ private:
   /** Non-CDF multi-channel batch implementation. */
   void offset_integral_non_cdf( const float *energies, double *channels, const size_t nchannel,
                                 const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
+  /** Energies the peak-CDF step continua anchor their CDFs to.
+
+   Returns false when no ROI energy range is set, in which case callers should use the un-anchored
+   CDF (i.e. F0=0, F1=1).  Otherwise sets `lower`/`upper` to the channel edges containing the ROI
+   bounds when `data` is usable, and to the raw ROI bounds when it is not - `data` is optional
+   here, and must remain so.
+
+   The fitters cumulative-sum unit-area channel integrals across the ROI, giving
+   `CDF(center) - CDF(roi_lower)` saturating at the ROI's upper edge.  Anchoring the analytic CDF
+   the same way is what keeps the drawn continuum equal to the fitted one.
+   */
+  bool cdf_step_anchor_energies( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 double &lower, double &upper ) const;
 
   /** CDF step single-channel implementation. */
   double offset_integral_cdf_step( const double x0, const double x1,

@@ -1297,14 +1297,14 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
       roi_peaks.push_back(result_peaks[idx]);
     }
     
-    const bool has_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
-                               && (continuum->type() != PeakContinuum::BiLinearStepCDF);
     const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_linear_fit_pars( continuum->type() ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( continuum->type() );
     const double ref_energy = continuum->referenceEnergy();
 
-    // For FlatStepCDF/LinearStepCDF, fit_continuum returns poly + step_coeff
-    vector<double> continuum_coeffs( num_polynomial_terms + (has_step_coeff ? 1 : 0) );
+    // fit_continuum returns the polynomial terms followed by any peak-CDF step coefficients, which
+    //  together is exactly num_parameters(...) - here every peak has a fixed amplitude, so the step
+    //  coefficients are linear and get solved by the LLS along with the polynomial.
+    vector<double> continuum_coeffs( PeakContinuum::num_parameters( continuum->type() ) );
     vector<double> peak_counts(roi_channels);
     
     try

@@ -6718,12 +6718,11 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
   //  is rare and not distinguishable here, so we always assume the linked convention.
   const int num_sigmas_fit = std::min( nfitsigma, 2 );
 
-  // Continuum parameters consume DOF whether they are fit by the optimizer directly
-  //  or solved analytically via linear least squares.  CDF-step continua (except
-  //  BiLinearStepCDF) carry an additional internal step-coefficient parameter.
-  const bool cdf_step_coeff = PeakContinuum::is_peak_cdf_step_continuum( continuum->type() )
-                              && (continuum->type() != PeakContinuum::BiLinearStepCDF);
-  int num_fit_continuum_pars = cdf_step_coeff ? 1 : 0;
+  // Continuum parameters consume DOF whether they are fit by the optimizer directly or solved
+  //  analytically via linear least squares.  `fitForParameter()` is sized `num_parameters(...)`,
+  //  which already includes any peak-CDF step coefficients, so counting it is the whole story -
+  //  adding the step coefficients again would count them twice.
+  int num_fit_continuum_pars = 0;
   for( const bool fit : continuum->fitForParameter() )
     num_fit_continuum_pars += (fit ? 1 : 0);
 
@@ -7244,7 +7243,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   double * const dummy_channel_counts = nullptr;
 
   return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, cont_type,
-                  0.0, ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
+                  nullptr, ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
@@ -7395,13 +7394,12 @@ bool chi2_significance_test( const PeakDef &peak,
     const double * const skew_pars = peak.coefficients() + static_cast<size_t>(PeakDef::CoefficientType::SkewPar0);
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
     PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
-                                    0.0, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                    nullptr, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                     amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
-    // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
-    //  setParameters expects poly + step_coeff, so append the step_coeff (0.0 here, since
-    //  we're refitting the null hypothesis continuum without optimizing the step).
-    //  BiLinearStepCDF has no step_coeff — its 4 polynomial coefficients are all that's needed.
-    if( is_cdf_step && (cont->type() != PeakContinuum::BiLinearStepCDF) )
+    // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
+    //  step coefficients appended.  They are zero here, since we are refitting the null-hypothesis
+    //  continuum without optimizing the step.
+    for( size_t k = 0; k < PeakContinuum::num_cdf_step_pars( cont->type() ); ++k )
     {
       continuum_coeffs.push_back( 0.0 );
       cont_uncerts.push_back( 0.0 );
@@ -8211,7 +8209,7 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
       double * const dummy_peak_counts = nullptr;
       chi2 = PeakFit::fit_amp_and_offset_imp( x_start, y_start, nullptr, nregionbin,
                                 cont->type(),
-                                0.0, cont->lowerEnergy(),
+                                nullptr, cont->lowerEnergy(),
                                 means, sigmas,
                                 fixedAmpPeaks,
                                 skew_type,
@@ -8235,11 +8233,9 @@ void AutoPeakSearchChi2Fcn::fit_peak_group( const vector<PeakDef> &peaks,
   }//if( means.size() > 1 ) / else
 #endif
   
-  // For FlatStepCDF/LinearStepCDF, fit_amp_and_offset_imp returns only polynomial coefficients;
-  //  setParameters expects poly + step_coeff, so append step_coeff (0.0).
-  // BiLinearStepCDF has no step_coeff, so all 4 params are already returned.
-  if( PeakContinuum::is_peak_cdf_step_continuum( cont->type() )
-     && (cont->type() != PeakContinuum::BiLinearStepCDF) )
+  // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
+  //  step coefficients appended (zero here).
+  for( size_t k = 0; k < PeakContinuum::num_cdf_step_pars( cont->type() ); ++k )
   {
     continuum_coeffs.push_back( 0.0 );
     continuum_coeffs_uncerts.push_back( 0.0 );

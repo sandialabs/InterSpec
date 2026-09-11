@@ -1158,7 +1158,7 @@ RoiBoundaryShadowResult optimize_roi_boundaries_shadow(
       {
         static_cast<void>( PeakFit::fit_amp_and_offset_imp<PeakDef,double>(
             &channel_energies[start_channel], snip_counts.data(), raw_variances.data(), nbin,
-            family, 0.0, midpoint, no_means, no_sigmas, no_fixed_peaks,
+            family, nullptr, midpoint, no_means, no_sigmas, no_fixed_peaks,
             PeakDef::SkewType::NoSkew, nullptr, amplitudes, coefficients,
             amplitude_uncerts, coefficient_uncerts, predictions.data() ) );
       }catch( const std::exception & )
@@ -1888,7 +1888,7 @@ MeasuredRoiModelFit fit_measured_roi_model(
     {
       static_cast<void>( PeakFit::fit_amp_and_offset_imp<PeakDef,double>(
           &channel_energies[first_channel], counts.data(), variances.data(), nbin,
-          family, 0.0, reference_energy, means, sigmas, fixed_peaks,
+          family, nullptr, reference_energy, means, sigmas, fixed_peaks,
           PeakDef::SkewType::NoSkew, nullptr, amplitudes, coefficients,
           amplitude_uncertainties, coefficient_uncertainties, predictions.data() ) );
     }catch( const std::exception & )
@@ -2424,7 +2424,7 @@ AutomaticRoiPolicyResult evaluate_automatic_roi_boundary(
       {
         static_cast<void>( PeakFit::fit_amp_and_offset_imp<PeakDef,double>(
             &channel_energies[first], snip_counts.data(), raw_variances.data(), nbin,
-            family, 0.0, midpoint, no_means, no_sigmas, no_fixed_peaks,
+            family, nullptr, midpoint, no_means, no_sigmas, no_fixed_peaks,
             PeakDef::SkewType::NoSkew, nullptr, amplitudes, coefficients,
             amplitude_uncerts, coefficient_uncerts, predictions.data() ) );
       }catch( const std::exception & )

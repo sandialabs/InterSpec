@@ -261,6 +261,13 @@ add_test( NAME TPeakFitLM_MultiPeak
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_PeakContinuumCdfStep test_PeakContinuumCdfStep.cpp )
+target_link_libraries( test_PeakContinuumCdfStep PRIVATE InterSpecLib )
+add_test( NAME TPeakContinuumCdfStep
+  COMMAND $<TARGET_FILE:test_PeakContinuumCdfStep> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_GadrasPeakDists test_GadrasPeakDists.cpp )
 target_link_libraries( test_GadrasPeakDists PRIVATE InterSpecLib )
 add_test( NAME TGadrasPeakDists

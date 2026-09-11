@@ -1536,15 +1536,14 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
 
         PeakFit::fit_amp_and_offset_imp( energies, data, static_cast<const float *>( nullptr ),
                            nchannel, cont_type,
-                           0.0, ref_energy,
+                           nullptr, ref_energy,
                            means, sigmas, dummy_fixed_amp_peaks, skew_type, skew_pars,
                            amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts,
                            static_cast<double *>( nullptr ) );
 
-        // For FlatStepCDF/LinearStepCDF, append step_coeff (0.0) so setParameters gets the full set.
-        //  BiLinearStepCDF has no step_coeff.
-        if( PeakContinuum::is_peak_cdf_step_continuum( cont_type )
-           && (cont_type != PeakContinuum::BiLinearStepCDF) )
+        // fit_amp_and_offset_imp returns only the polynomial terms; setParameters expects the
+        //  peak-CDF step coefficients appended (zero here, since none were fit).
+        for( size_t k = 0; k < PeakContinuum::num_cdf_step_pars( cont_type ); ++k )
         {
           continuum_coeffs.push_back( 0.0 );
           continuum_coeffs_uncerts.push_back( 0.0 );

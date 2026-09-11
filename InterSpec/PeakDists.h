@@ -1062,6 +1062,31 @@ offset_integral(const ContType& cont,
                 const size_t nchannel,
                 const std::shared_ptr<const SpecUtils::Measurement>& data);
 #endif //__cplusplus >= 202002L
+
+  /** Peak-aware form of `offset_integral(...)`, needed by the peak-CDF step continua.
+
+   The CDF step types define their step in terms of the ROI's peaks, so they cannot be evaluated by
+   the overload above - which throws for them.  This one builds the amplitude-weighted, ROI-anchored
+   peak CDF from `photopeak_function_integral` + `unit_pdf_to_cdf` (both templated, so Ceres Jet
+   derivatives are preserved), and hands every other continuum type straight to that overload.
+
+   `PeakType` is duck-typed the same way `PeakFit::fit_continuum(...)` does it: it must provide
+   `mean()`, `sigma()`, `amplitude()`, `skewType()`, and either `skew_parameters()` or - for
+   `PeakDef` itself - `coefficients()`.
+
+   \param energies Lower channel energies; must be the continuum's *own* ROI channel range, since
+          the CDF is anchored at `energies[0]`.  Must have at least `nchannel + 1` entries.
+   \param channels Channel integrals of the continuum; _added_ to, not zeroed.
+   \param roi_peaks All peaks sharing this ROI's continuum; null entries are skipped.
+   */
+  template<typename ContType, typename PeakType, typename ScalarType>
+  void offset_integral( const ContType &cont,
+                        const float *energies,
+                        ScalarType *channels,
+                        const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const PeakType * const *roi_peaks,
+                        const size_t num_peaks );
 }//namespace PeakDists
 
 #endif  //PeakDists_h

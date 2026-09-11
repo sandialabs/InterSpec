@@ -14512,7 +14512,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
      */
     
     
-    for( int i = 0; i < num_polynomial_terms; ++i )
+    // Every coefficient fit_continuum wrote, i.e. the polynomial terms *and* any peak-CDF step
+    //  coefficients - looping only the polynomial terms would let a NaN step propagate silently.
+    const int num_written_coefs = static_cast<int>( PeakContinuum::num_parameters( range.continuum_type ) );
+    for( int i = 0; i < num_written_coefs; ++i )
     {
       const T &val = continuum_coeffs[i];
       if( isinf(val) || isnan(val) )
@@ -26306,9 +26309,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     if( ref_energy < 0.0 )
       continue;
     
-    // BiLinearStepCDF has no step_coeff, so it can go through the direct LLS path
-    const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( roi.continuum_type )
-                             && (roi.continuum_type != PeakContinuum::BiLinearStepCDF);
+    // The peak-CDF step coefficients are bilinear with the peak amplitudes, so they cannot be
+    //  solved by fit_amp_and_offset_imp (which takes them as known inputs) and need the L-M path.
+    const bool is_cdf_step = (PeakContinuum::num_cdf_step_pars( roi.continuum_type ) > 0);
     const bool is_step_continuum = PeakContinuum::is_step_continuum( roi.continuum_type );
 
     vector<PeakDef> fixed_amp_peaks;
@@ -26433,7 +26436,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     }else
     {
       PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
-                                      roi.continuum_type, 0.0, ref_energy, effective_means,
+                                      roi.continuum_type, nullptr, ref_energy, effective_means,
                                       effective_sigmas, fixed_amp_peaks, options.skew_type, skew_parameters,
                                       fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
     }//if( is_cdf_step ) / else

@@ -173,7 +173,177 @@ struct RoiInfo
   bool use_lls_for_cont;
   double max_initial_sigma;   // max sigma across peaks in this ROI
   size_t num_fit_sigmas;      // number of peaks with fitFor(Sigma)==true
+
+  /** Natural scale of a peak-CDF step coefficient for this ROI, in keV^-1.
+
+   The Ceres variable is the dimensionless `step_coeff / cdf_step_scale`, which is the step's
+   continuum-density change divided by the continuum level itself - O(0.01..1) for every ROI and
+   detector, so a bound of +-2 means "the step may not move the continuum by more than twice its
+   own level".  Without this the raw coefficient is O(1e-3..1e-6) and sits in the same parameter
+   vector as means (~1) and continuum densities (~1e2), which invites premature termination
+   against Ceres' parameter_tolerance.
+
+   Computed once from the input peak amplitudes and the data, never from live fit parameters, so
+   it is a constant and the Jet derivatives stay exact.  Left at 1.0 (a no-op) for every
+   non-CDF-step ROI.
+   */
+  double cdf_step_scale = 1.0;
+
+  /** Total counts in the ROI's channels; used to size a peak-amplitude parameter when the peak's
+   own amplitude has not been fit yet (see `roi_amp_par_scale`).
+   */
+  double data_area = 0.0;
 };//struct RoiInfo
+
+
+/** Natural scale of the k-th peak-CDF step coefficient, in keV^-(1+k).
+
+ `cdf_step_scale` is the scale of the constant term, which is in keV^-1.  Coefficient k multiplies
+ `E'^k`, and `E'` spans the ROI, so its natural magnitude is smaller by `range^k` - without this,
+ BiLinearStepCDF's keV^-2 slope would be scaled and bounded as though it were keV^-1, and the +-2
+ bound would let it swing the step by `2*range` times the continuum level at the ROI's edge.
+ */
+double cdf_step_par_scale( const RoiInfo &roi, const size_t order )
+{
+  const double range = roi.upper_energy - roi.lower_energy;
+
+  double scale = roi.cdf_step_scale;
+  for( size_t i = 0; i < order; ++i )
+    scale /= ((range > 0.0) ? range : 1.0);
+
+  return scale;
+}//double cdf_step_par_scale( const RoiInfo &, const size_t )
+
+
+/** Natural scale of peak `i`'s amplitude parameter, so the Ceres variable is O(1). */
+double roi_amp_par_scale( const RoiInfo &roi, const size_t peak_index )
+{
+  const double amp = roi.peaks[peak_index]->amplitude();
+  if( std::isfinite(amp) && (amp > 1.0) )
+    return amp;
+
+  // A peak that has not been fit yet - or one that came back from the very defect this parameter
+  //  block exists to fix, whose amplitude is exactly 1 - needs a scale from the data instead, or
+  //  the parameter is in raw counts and its ceiling would sit absurdly low.
+  const double sigma = roi.peaks[peak_index]->sigma();
+  const double range = roi.upper_energy - roi.lower_energy;
+  const double roi_counts = roi.data_area;
+  const double frac = ((range > 0.0) && std::isfinite(sigma) && (sigma > 0.0))
+                      ? (std::min)( 1.0, (2.0*sigma)/range ) : 1.0;
+
+  const double est = frac * roi_counts;
+
+  return (std::isfinite(est) && (est > 1.0)) ? est : 1.0;
+}//double roi_amp_par_scale( const RoiInfo &, const size_t )
+
+
+/** Number of peak-amplitude parameters this ROI contributes to the Ceres parameter vector.
+
+ Normally zero: the amplitudes are linear in the model, so the least-squares solve inside
+ `fit_amp_and_offset_imp(...)` recovers them for free and far more robustly than Ceres would.
+ But that solve also solves the continuum polynomial, so it cannot be used when the caller has
+ asked for a continuum coefficient to be held fixed - in that case the amplitudes have to be
+ Ceres parameters like everything else, or they never get solved at all.
+ */
+size_t roi_amp_parameter_count( const RoiInfo &roi )
+{
+  if( roi.use_lls_for_cont )
+    return 0;
+
+  size_t nfit = 0;
+  for( const std::shared_ptr<const PeakDef> &p : roi.peaks )
+    nfit += p->fitFor( PeakDef::GaussAmplitude ) ? 1 : 0;
+
+  return nfit;
+}//size_t roi_amp_parameter_count( const RoiInfo &roi )
+
+
+/** Number of continuum parameters this ROI contributes to the Ceres parameter vector.
+
+ When the LLS solves the continuum, the polynomial terms are not Ceres parameters at all; only the
+ peak-CDF step coefficients remain, because they are bilinear with the peak amplitudes and so
+ cannot be part of the linear solve.  When it does not (any coefficient held fixed), every
+ continuum parameter is a Ceres parameter.
+
+ They occupy the first `roi_cont_parameter_count(roi)` slots of the ROI's parameter block.
+ */
+size_t roi_cont_parameter_count( const RoiInfo &roi )
+{
+  return roi.use_lls_for_cont ? PeakContinuum::num_cdf_step_pars( roi.offset_type )
+                              : PeakContinuum::num_parameters( roi.offset_type );
+}//size_t roi_cont_parameter_count( const RoiInfo &roi )
+
+
+/** Computes `RoiInfo::cdf_step_scale` - the natural keV^-1 scale of a peak-CDF step coefficient.
+
+ The step contributes `step_coeff * SUM_j(amp_j * CDF_j) * dx` counts to a channel, so
+ `step_coeff * SUM(amp)` is a continuum count density.  Dividing the continuum's own density by
+ the ROI peak area therefore gives a scale in the same units as `step_coeff`, and the ratio
+ `step_coeff / scale` is the fractional change the step makes to the continuum.
+
+ Both estimates deliberately fail toward being *too large*: overestimating the scale only loosens
+ the parameter bound, whereas underestimating it would clamp a real step.  The result is always
+ finite and strictly positive.
+ */
+double cdf_step_scale_for_roi( const RoiInfo &roi,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  const double roi_width = roi.upper_energy - roi.lower_energy;
+  if( !data || (roi.upper_channel < roi.lower_channel) || (roi_width <= 0.0) )
+    return 1.0;
+
+  const size_t nchan = 1 + roi.upper_channel - roi.lower_channel;
+
+  // Continuum level from the ROI's edge channels - mostly continuum, little peak.
+  const size_t nedge = std::max( size_t(1), std::min( size_t(4), nchan/4 ) );
+  double low_sum = 0.0, up_sum = 0.0, low_width = 0.0, up_width = 0.0, roi_sum = 0.0;
+  for( size_t i = 0; i < nchan; ++i )
+  {
+    const size_t channel = roi.lower_channel + i;
+    const double counts = data->gamma_channel_content( channel );
+    const double width = data->gamma_channel_width( channel );
+    roi_sum += counts;
+
+    if( i < nedge )
+    {
+      low_sum += counts;
+      low_width += width;
+    }
+
+    if( (i + nedge) >= nchan )
+    {
+      up_sum += counts;
+      up_width += width;
+    }
+  }//for( size_t i = 0; i < nchan; ++i )
+
+  double density = 0.0;
+  if( (low_width > 0.0) && (up_width > 0.0) )
+    density = 0.5*((low_sum/low_width) + (up_sum/up_width));
+
+  if( !std::isfinite(density) || (density <= 0.0) )
+    density = roi_sum / roi_width;               // includes the peaks; an over-estimate
+
+  if( !std::isfinite(density) || (density <= 0.0) )
+    density = 1.0 / roi_width;                   // "one count across the ROI"; never zero
+
+  // Total peak area in the ROI, including peaks whose amplitude is not being fit - the evaluator
+  //  sums over all of them.
+  double total_amp = 0.0;
+  for( const std::shared_ptr<const PeakDef> &p : roi.peaks )
+    total_amp += std::max( p->amplitude(), 0.0 );
+
+  if( !std::isfinite(total_amp) || (total_amp < 1.0) )
+  {
+    // Fresh candidate peaks can still have zero amplitude; estimate it from the data so the
+    //  resulting bound stays meaningful rather than becoming vacuous.
+    total_amp = std::max( 1.0, roi_sum - (density * roi_width) );
+  }
+
+  const double scale = density / total_amp;
+
+  return (!std::isfinite(scale) || (scale <= 0.0)) ? 1.0 : scale;
+}//double cdf_step_scale_for_roi( const RoiInfo &, data )
 
 
 /** PeakFitDiffCostFunction fits peaks from one or more ROIs simultaneously using Ceres.
@@ -185,14 +355,19 @@ struct RoiInfo
 
  Parameter layout (default / shared-skew mode):
    [skew_lower_pars (num_skew values) | skew_upper_pars* (M values, only energy-dep params)]
-   | ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_1_cont | ROI_1_sigma | ROI_1_mean | ...
+   | ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_0_amp** | ROI_1_cont | ... 
    * only present when m_fit_skew_energy_dependence == true
 
  Parameter layout (IndependentSkewValues option):
-   ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_0_skew (num_skew values)
-   | ROI_1_cont | ROI_1_sigma | ROI_1_mean | ROI_1_skew | ...
+   ROI_0_cont | ROI_0_sigma | ROI_0_mean | ROI_0_amp** | ROI_0_skew (num_skew values)
+   | ROI_1_cont | ROI_1_sigma | ROI_1_mean | ROI_1_amp** | ROI_1_skew | ...
    There is no shared skew block; each ROI carries its own num_skew parameters at the end of
    its per-ROI block.
+
+   ** ROI_i_amp is present ONLY when that ROI's continuum is not being solved by the linear
+      least-squares (i.e. a polynomial coefficient is pinned) - normally the amplitudes are
+      recovered by the LLS and cost no Ceres parameters at all.  See roi_amp_parameter_count().
+      Anything that indexes past the mean block must add it; see roi_skew_ptr / skew_base_idx.
 */
 struct PeakFitDiffCostFunction
 {
@@ -252,16 +427,23 @@ struct PeakFitDiffCostFunction
       }
       else
       {
+        // Only a pinned *polynomial* coefficient forces us off the LLS path.  The peak-CDF step
+        //  coefficients are Ceres parameters either way, so pinning one of those is honoured by
+        //  simply marking it constant - see setup_roi_parameters(...).
+        const size_t num_poly = PeakContinuum::num_linear_fit_pars( roi.offset_type );
+        const vector<bool> cont_fit_for = cont->fitForParameter();
+
         roi.use_lls_for_cont = true;
-        for( const bool fit_par : cont->fitForParameter() )
+        for( size_t i = 0; (i < num_poly) && (i < cont_fit_for.size()); ++i )
         {
-          if( !fit_par )
+          if( !cont_fit_for[i] )
           {
             roi.use_lls_for_cont = false;
             break;
           }
         }
       }
+
 
       // Max sigma across all peaks in this ROI
       roi.max_initial_sigma = 1.0;
@@ -276,6 +458,18 @@ struct PeakFitDiffCostFunction
       roi.num_fit_sigmas = 0;
       for( const auto &p : roi.peaks )
         roi.num_fit_sigmas += p->fitFor( PeakDef::Sigma ) ? 1 : 0;
+
+      roi.data_area = 0.0;
+      if( data && (roi.upper_channel >= roi.lower_channel) )
+      {
+        for( size_t ch = roi.lower_channel; ch <= roi.upper_channel; ++ch )
+          roi.data_area += std::max( 0.0, static_cast<double>( data->gamma_channel_content(ch) ) );
+      }
+
+      // Scale that makes the peak-CDF step coefficient a dimensionless O(1) quantity; see the
+      //  `RoiInfo::cdf_step_scale` documentation.
+      if( PeakContinuum::num_cdf_step_pars( roi.offset_type ) )
+        roi.cdf_step_scale = cdf_step_scale_for_roi( roi, data );
 
       rois.push_back( std::move(roi) );
     }//for( auto &kv : cont_to_peaks )
@@ -415,13 +609,9 @@ struct PeakFitDiffCostFunction
   // when IndependentSkewValues is set).
   size_t roi_parameter_count( const RoiInfo &roi ) const
   {
-    const bool cdf_step_lls = roi.use_lls_for_cont
-                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
-                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
-    const size_t cont_pars = roi.use_lls_for_cont
-                             ? (cdf_step_lls ? size_t(1) : size_t(0))
-                             : PeakContinuum::num_parameters( roi.offset_type );
-    size_t n = cont_pars + roi_sigma_parameter_count( roi ) + roi.peaks.size();
+    const size_t cont_pars = roi_cont_parameter_count( roi );
+    size_t n = cont_pars + roi_sigma_parameter_count( roi ) + roi.peaks.size()
+               + roi_amp_parameter_count( roi );
     if( m_options.test( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
       n += PeakDef::num_skew_parameters( m_skew_type );
     return n;
@@ -475,12 +665,7 @@ struct PeakFitDiffCostFunction
     assert( roi_index < m_rois.size() );
     const RoiInfo &roi = m_rois[roi_index];
     const double num_channels = static_cast<double>( 1 + roi.upper_channel - roi.lower_channel );
-    const bool cdf_step_lls = roi.use_lls_for_cont
-                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
-                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
-    const size_t num_fit_cont = roi.use_lls_for_cont
-                                ? (cdf_step_lls ? size_t(1) : size_t(0))
-                                : PeakContinuum::num_parameters( roi.offset_type );
+    const size_t num_fit_cont = roi_cont_parameter_count( roi );
 
     size_t num_fixed = 0;
     for( const auto &p : roi.peaks )
@@ -488,10 +673,15 @@ struct PeakFitDiffCostFunction
       num_fixed += p->fitFor( PeakDef::GaussAmplitude ) ? 0 : 1;
       num_fixed += p->fitFor( PeakDef::Mean ) ? 0 : 1;
     }
-    if( !roi.use_lls_for_cont )
     {
-      for( const bool fit : roi.peaks[0]->continuum()->fitForParameter() )
-        num_fixed += fit ? 0 : 1;
+      // Continuum coefficients the caller pinned do not consume a degree of freedom.  On the LLS
+      //  path only the peak-CDF step coefficients are ours to count (the polynomial terms are not
+      //  in `num_fit_cont` there); off it, every continuum parameter is.
+      const vector<bool> cont_fit_for = roi.peaks[0]->continuum()->fitForParameter();
+      const size_t first = roi.use_lls_for_cont
+                           ? PeakContinuum::num_linear_fit_pars( roi.offset_type ) : size_t(0);
+      for( size_t i = first; i < cont_fit_for.size(); ++i )
+        num_fixed += cont_fit_for[i] ? 0 : 1;
     }
 
     // Count fitted per-ROI skew parameters when IndependentSkewValues is active.
@@ -723,12 +913,8 @@ struct PeakFitDiffCostFunction
       const RoiInfo &roi = m_rois[roi_idx];
       const size_t num_roi_peaks = roi.peaks.size();
       const size_t num_sigmas_fit = roi_sigma_parameter_count( roi );
-      const bool cdf_step_lls = roi.use_lls_for_cont
-                                && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
-                                && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
-      const size_t num_fit_cont = roi.use_lls_for_cont
-                                  ? (cdf_step_lls ? size_t(1) : size_t(0))
-                                  : PeakContinuum::num_parameters( roi.offset_type );
+      const size_t num_fit_cont = roi_cont_parameter_count( roi );
+      const size_t num_amps_fit = roi_amp_parameter_count( roi );
       const size_t nchannel = roi.upper_channel - roi.lower_channel + 1;
       const double range = roi.upper_energy - roi.lower_energy;
 
@@ -749,7 +935,7 @@ struct PeakFitDiffCostFunction
         max_mean = max( max_mean, mean );
       }
 
-      size_t fit_sigma_num = 0;
+      size_t fit_sigma_num = 0, fit_amp_num = 0;
       for( size_t i = 0; i < num_roi_peaks; ++i )
       {
         const std::shared_ptr<const PeakDef> &src_peak = roi.peaks[i];
@@ -760,7 +946,23 @@ struct PeakFitDiffCostFunction
 
         const T frac = roi_params[mean_par_index] - T(0.5);
         const T mean = T(roi.lower_energy) + frac * T(range);
-        const T amp = fit_amp ? T(1.0) : T(src_peak->amplitude());
+
+        // With the LLS in play the amplitude is a placeholder it will solve for; without it, the
+        //  amplitude is a Ceres parameter of its own (scaled so the variable is O(1)).
+        T amp = T(1.0), amp_uncert = T(0.0);
+        if( !fit_amp )
+        {
+          amp = T( src_peak->amplitude() );
+        }else if( num_amps_fit )
+        {
+          const size_t amp_index = num_fit_cont + num_sigmas_fit + num_roi_peaks + fit_amp_num;
+          assert( amp_index < roi_parameter_count( roi ) );
+
+          const double amp_scale = roi_amp_par_scale( roi, i );
+          amp = roi_params[amp_index] * T(amp_scale);
+          if( uncertainties )
+            amp_uncert = uncertainties[param_offset + amp_index] * T(amp_scale);
+        }
 
         T sigma, sigma_uncert;
 
@@ -840,6 +1042,8 @@ struct PeakFitDiffCostFunction
 
         if( src_peak->fitFor( PeakDef::Sigma ) )
           fit_sigma_num += 1;
+        if( fit_amp )
+          fit_amp_num += 1;
 
         PeakType peak;
         peak.setMean( mean );
@@ -860,7 +1064,11 @@ struct PeakFitDiffCostFunction
         }
 
         if( fit_amp )
+        {
+          if( num_amps_fit && (amp_uncert > 0.0) )
+            peak.setAmplitudeUncert( amp_uncert );
           peaks.push_back( peak );
+        }
         else
         {
           peak.setAmplitudeUncert( T( src_peak->amplitudeUncert() ) );
@@ -891,7 +1099,7 @@ struct PeakFitDiffCostFunction
       // otherwise they live at params[0..num_skew-1] (the shared / energy-dependent block).
       const T *roi_skew_ptr;
       if( m_options.test( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
-        roi_skew_ptr = roi_params + num_fit_cont + num_sigmas_fit + num_roi_peaks;
+        roi_skew_ptr = roi_params + num_fit_cont + num_sigmas_fit + num_roi_peaks + num_amps_fit;
       else
         roi_skew_ptr = params;
       const vector<T> skew_pars( roi_skew_ptr, roi_skew_ptr + num_skew );
@@ -923,9 +1131,10 @@ struct PeakFitDiffCostFunction
 
           vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
           {
-            const T sc = cdf_step_lls ? roi_params[0] : T(0.0);
+            // An External continuum has no CDF step coefficients, so there is nothing to pass.
+            assert( !PeakContinuum::num_cdf_step_pars( roi.offset_type ) );
             PeakFit::fit_amp_and_offset_imp( energies, &data_copy[0], &data_variances[0], nchannel,
-                                             roi.offset_type, sc, T(roi.ref_energy),
+                                             roi.offset_type, nullptr, T(roi.ref_energy),
                                              means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
                                              amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
                                              &peak_counts[0] );
@@ -950,9 +1159,6 @@ struct PeakFitDiffCostFunction
       }
       else if( !roi.use_lls_for_cont )
       {
-        // CDF step types should always use the LLS path (roi.use_lls_for_cont should be true)
-        assert( !PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type ) );
-
         // Non-LLS continuum: continuum parameters are in roi_params[0..num_fit_cont-1]
         continuum->setParameters( T(roi.ref_energy), roi_params, nullptr );
 
@@ -961,7 +1167,23 @@ struct PeakFitDiffCostFunction
         for( PeakType &fp : fixed_amp_peaks )
           fp.gauss_integral( energies, &peak_counts[0], nchannel );
 
-        PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, m_data );
+        if( PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type ) )
+        {
+          // A CDF step continuum's step term is defined by the ROI's peaks, so it needs the
+          //  peak-aware integrator; the peaks-less one throws for these types.
+          vector<const PeakType *> all_peaks;
+          all_peaks.reserve( peaks.size() + fixed_amp_peaks.size() );
+          for( const PeakType &p : peaks )
+            all_peaks.push_back( &p );
+          for( const PeakType &fp : fixed_amp_peaks )
+            all_peaks.push_back( &fp );
+
+          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, m_data,
+                                      all_peaks.data(), all_peaks.size() );
+        }else
+        {
+          PeakDists::offset_integral( *continuum, energies, &peak_counts[0], nchannel, m_data );
+        }
       }
       else
       {
@@ -973,11 +1195,18 @@ struct PeakFitDiffCostFunction
           sigmas.push_back( p.sigma() );
         }
 
+        // Ceres holds the step coefficients in dimensionless form; convert each back to its own
+        //  physical units (keV^-1 for the constant term, keV^-2 for the energy slope).
+        vector<T> step_coeffs( num_fit_cont );
+        for( size_t k = 0; k < num_fit_cont; ++k )
+          step_coeffs[k] = roi_params[k] * T(cdf_step_par_scale( roi, k ));
+
         vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
         {
-          const T sc = cdf_step_lls ? roi_params[0] : T(0.0);
           PeakFit::fit_amp_and_offset_imp( energies, channel_counts, nullptr, nchannel,
-                                           roi.offset_type, sc, T(roi.ref_energy),
+                                           roi.offset_type,
+                                           step_coeffs.empty() ? nullptr : step_coeffs.data(),
+                                           T(roi.ref_energy),
                                            means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
                                            amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
                                            &peak_counts[0] );
@@ -993,12 +1222,15 @@ struct PeakFitDiffCostFunction
         if( (roi.offset_type != PeakContinuum::OffsetType::NoOffset)
             && (roi.offset_type != PeakContinuum::OffsetType::External) )
         {
-          if( cdf_step_lls )
+          // fit_amp_and_offset_imp returns only the polynomial coefficients, but the continuum
+          //  expects the step coefficients appended.  The rescale is linear, so the uncertainties
+          //  scale by exactly the same factor.
+          for( size_t k = 0; k < num_fit_cont; ++k )
           {
-            // For CDF step types, fit_amp_and_offset_imp returns only the polynomial coefficients,
-            //  but the continuum expects poly coeffs + step_coeff as the last parameter.
-            cont_coeffs.push_back( roi_params[0] );
-            cont_uncerts.push_back( uncertainties ? T(uncertainties[param_offset]) : T(0.0) );
+            cont_coeffs.push_back( step_coeffs[k] );
+            cont_uncerts.push_back( uncertainties
+                        ? (T(uncertainties[param_offset + k]) * T(cdf_step_par_scale( roi, k )))
+                        : T(0.0) );
           }
 
           continuum->setParameters( T(roi.ref_energy), cont_coeffs.data(), cont_uncerts.data() );
@@ -1582,6 +1814,73 @@ struct PeakFitDiffCostFunction
   }//setup_skew_parameters(...)
 
 
+  /** Bound on the dimensionless peak-CDF step coefficients.
+
+   The Ceres variable is the step's continuum-density change divided by the continuum level, so
+   +-2 says the step may not move the continuum by more than twice its own level.  A fit that
+   wants more than that has gone wrong, not found a steeper step.
+   */
+  static constexpr double sm_cdf_step_bound = 2.0;
+
+
+  /** Pre-solves this ROI's peak-CDF step coefficients by least-squares, and overwrites `seeds`
+   (in dimensionless units) if it succeeds.
+
+   With every peak amplitude held at its input value the step coefficients are linear, so
+   `PeakFit::fit_continuum(...)` can solve them directly.  Failure - a singular design matrix, say
+   - is a legitimate "the data says nothing about the step here" outcome, so we quietly keep the
+   incoming seeds.
+   */
+  void warm_start_cdf_step( const RoiInfo &roi, vector<double> &seeds ) const
+  {
+    if( !m_data || !m_data->num_gamma_channels() || (roi.upper_channel <= roi.lower_channel) )
+      return;
+
+    try
+    {
+      const shared_ptr<const vector<float>> channel_energies = m_data->channel_energies();
+      const shared_ptr<const vector<float>> gamma_counts = m_data->gamma_counts();
+      if( !channel_energies || !gamma_counts
+         || ((roi.upper_channel + 1) >= channel_energies->size())
+         || (roi.upper_channel >= gamma_counts->size()) )
+        return;
+
+      // Note the "+ 1": the basis must sit on exactly the channel grid the residual uses, or the
+      //  seed is anchored differently from the fit.
+      const size_t nchannel = 1 + roi.upper_channel - roi.lower_channel;
+      const float * const energies = &((*channel_energies)[roi.lower_channel]);
+      const float * const counts = &((*gamma_counts)[roi.lower_channel]);
+
+      vector<PeakDef> fixed_amp_peaks;
+      fixed_amp_peaks.reserve( roi.peaks.size() );
+      for( const shared_ptr<const PeakDef> &p : roi.peaks )
+        fixed_amp_peaks.push_back( *p );
+
+      const size_t num_cont_pars = PeakContinuum::num_parameters( roi.offset_type );
+      const size_t num_poly = PeakContinuum::num_linear_fit_pars( roi.offset_type );
+      vector<double> cont_coeffs( num_cont_pars, 0.0 );
+      vector<double> dummy_peak_counts( nchannel, 0.0 );
+
+      // `roi.ref_energy`, not the continuum's own reference energy - make_rois may have moved it,
+      //  and a step paired with a polynomial about a different origin is not the same step.
+      PeakFit::fit_continuum( energies, counts, static_cast<const float *>(nullptr),
+                              nchannel, roi.offset_type, roi.ref_energy,
+                              fixed_amp_peaks, false,
+                              cont_coeffs.data(), dummy_peak_counts.data() );
+
+      for( size_t k = 0; (k < seeds.size()) && ((num_poly + k) < cont_coeffs.size()); ++k )
+      {
+        const double solved = cont_coeffs[num_poly + k] / cdf_step_par_scale( roi, k );
+        if( std::isfinite(solved) )
+          seeds[k] = solved;
+      }
+    }catch( std::exception & )
+    {
+      // Keep the incoming seeds.
+    }
+  }//void warm_start_cdf_step( const RoiInfo &roi, vector<double> &seeds ) const
+
+
   /** Set up parameters for a single ROI at param_offset in the global parameter array. */
   void setup_roi_parameters( const RoiInfo &roi,
                              const size_t param_offset,
@@ -1590,24 +1889,70 @@ struct PeakFitDiffCostFunction
                              vector<std::optional<double>> &lower_bounds,
                              vector<std::optional<double>> &upper_bounds ) const
   {
-    const bool cdf_step_lls = roi.use_lls_for_cont
-                              && PeakContinuum::is_peak_cdf_step_continuum( roi.offset_type )
-                              && (roi.offset_type != PeakContinuum::BiLinearStepCDF);
-    const size_t num_fit_cont = roi.use_lls_for_cont
-                                ? (cdf_step_lls ? size_t(1) : size_t(0))
-                                : PeakContinuum::num_parameters( roi.offset_type );
+    const size_t num_fit_cont = roi_cont_parameter_count( roi );
     const size_t num_sigmas_fit = roi_sigma_parameter_count( roi );
+    const size_t num_amps_fit = roi_amp_parameter_count( roi );
     const double range = roi.upper_energy - roi.lower_energy;
 
-    // CDF step coefficient (step_coeff is the first parameter for this ROI)
-    if( cdf_step_lls )
+    // Peak-CDF step coefficients occupy the first slots of this ROI's parameter block, held in
+    //  dimensionless form (see RoiInfo::cdf_step_scale).
+    if( roi.use_lls_for_cont && num_fit_cont )
     {
       const shared_ptr<const PeakContinuum> initial_continuum = roi.peaks.front()->continuum();
-      const size_t step_par_index = PeakContinuum::num_parameters( roi.offset_type ) - 1;
-      pars[param_offset] = (step_par_index < initial_continuum->parameters().size())
-                           ? initial_continuum->parameters()[step_par_index] : 0.0;
-      lower_bounds[param_offset] = -1.0e4;
-      upper_bounds[param_offset] = 1.0e4;
+      const vector<double> &cont_pars = initial_continuum->parameters();
+      const size_t num_poly = PeakContinuum::num_linear_fit_pars( roi.offset_type );
+
+      // make_rois may have moved the reference energy, and BiLinearStepCDF's step is a function of
+      //  E' - so translate the stored coefficients into the ROI's frame before using them:
+      //    s0 + s1*(E - old_ref) == (s0 + s1*(new_ref - old_ref)) + s1*(E - new_ref)
+      vector<double> stored_pars( num_fit_cont, 0.0 );
+      for( size_t k = 0; k < num_fit_cont; ++k )
+        stored_pars[k] = ((num_poly + k) < cont_pars.size()) ? cont_pars[num_poly + k] : 0.0;
+
+      const double d_ref = roi.ref_energy - initial_continuum->referenceEnergy();
+      if( (num_fit_cont > 1) && std::isfinite(d_ref) && (d_ref != 0.0) )
+        stored_pars[0] += stored_pars[1] * d_ref;
+
+      vector<double> seeds( num_fit_cont, 0.0 ), stored_seeds( num_fit_cont, 0.0 );
+      bool need_warm_start = false;
+      for( size_t k = 0; k < num_fit_cont; ++k )
+      {
+        const double stored = stored_pars[k];
+        seeds[k] = stored / cdf_step_par_scale( roi, k );
+        stored_seeds[k] = seeds[k];
+
+        // A stored value of exactly zero means nobody has fit this step yet - e.g. the user just
+        //  switched continuum type.  chi2 is shallow in this parameter, so starting from zero
+        //  usually *ends* near zero, turning a FlatStepCDF into a plain Constant.
+        need_warm_start |= (!std::isfinite(seeds[k]) || (seeds[k] == 0.0)
+                            || (seeds[k] < -sm_cdf_step_bound) || (seeds[k] > sm_cdf_step_bound));
+      }
+
+      if( need_warm_start )
+        warm_start_cdf_step( roi, seeds );
+
+      const vector<bool> cont_fit_for = initial_continuum->fitForParameter();
+
+      for( size_t k = 0; k < num_fit_cont; ++k )
+      {
+        // Ceres rejects an infeasible starting point outright, so clamp rather than widen - the
+        //  whole value of the bound is that it is physically meaningful.
+        pars[param_offset + k] = std::max( -sm_cdf_step_bound,
+                                           std::min( sm_cdf_step_bound, seeds[k] ) );
+
+        // A step coefficient the caller pinned stays where it started; the polynomial terms are
+        //  still LLS-solved, so a pinned step does not cost us the LLS path.
+        if( ((num_poly + k) < cont_fit_for.size()) && !cont_fit_for[num_poly + k] )
+        {
+          // The caller's value, not whatever the warm start solved for.
+          pars[param_offset + k] = std::isfinite(stored_seeds[k]) ? stored_seeds[k] : 0.0;
+          constant_parameters.push_back( static_cast<int>(param_offset + k) );
+          continue;
+        }
+
+        lower_bounds[param_offset + k] = -sm_cdf_step_bound;
+        upper_bounds[param_offset + k] = sm_cdf_step_bound;
+      }
     }
     // Continuum parameters (if not LLS)
     else if( !roi.use_lls_for_cont )
@@ -1623,6 +1968,22 @@ struct PeakFitDiffCostFunction
         pars[param_offset + i] = cont_pars[i];
         if( !par_fit_for[i] )
           constant_parameters.push_back( static_cast<int>(param_offset + i) );
+      }
+
+      // Bound the step coefficients here too - on this path they are raw Ceres parameters handed
+      //  straight to `setParameters(...)`, so they stay in keV^-1 rather than being rescaled.
+      //  Same +-2 meaning as the LLS path, just expressed in physical units.
+      const size_t num_poly = PeakContinuum::num_linear_fit_pars( roi.offset_type );
+      for( size_t k = 0; (num_poly + k) < num_fit_cont; ++k )
+      {
+        const size_t index = param_offset + num_poly + k;
+        if( !par_fit_for[num_poly + k] )
+          continue;   // a pinned parameter is constant; bounding it would only risk infeasibility
+
+        const double limit = sm_cdf_step_bound * cdf_step_par_scale( roi, k );
+        pars[index] = std::max( -limit, std::min( limit, pars[index] ) );
+        lower_bounds[index] = -limit;
+        upper_bounds[index] = limit;
       }
     }
 
@@ -1701,6 +2062,32 @@ struct PeakFitDiffCostFunction
           maxsigma = uppersigma;
       }
     }//for each peak
+
+    // Peak amplitude parameters; only present when the LLS is not solving them (see
+    //  roi_amp_parameter_count).  Scaled by the input amplitude so the variable starts at 1.
+    if( num_amps_fit )
+    {
+      size_t fit_amp_num = 0;
+      for( size_t i = 0; i < roi.peaks.size(); ++i )
+      {
+        if( !roi.peaks[i]->fitFor( PeakDef::GaussAmplitude ) )
+          continue;
+
+        const size_t amp_index = param_offset + num_fit_cont + num_sigmas_fit
+                                 + roi.peaks.size() + fit_amp_num;
+        const double amp_scale = roi_amp_par_scale( roi, i );
+
+        pars[amp_index] = roi.peaks[i]->amplitude() / amp_scale;
+        if( !std::isfinite(pars[amp_index]) || (pars[amp_index] < 0.0) )
+          pars[amp_index] = 0.0;
+
+        // A peak area cannot be negative; the upper bound just keeps a runaway in check.
+        lower_bounds[amp_index] = 0.0;
+        upper_bounds[amp_index] = std::max( 100.0, 10.0*pars[amp_index] );
+
+        fit_amp_num += 1;
+      }//for( size_t i = 0; i < roi.peaks.size(); ++i )
+    }//if( num_amps_fit )
 
     // Sigma parameters
     if( num_sigmas_fit == 0 )
@@ -1902,7 +2289,10 @@ struct PeakFitDiffCostFunction
         }//for( const auto &p : roi.peaks )
 
         // Write the per-ROI skew params into the global parameter array
-        const size_t skew_base_idx = param_offset + num_fit_cont + num_sigmas_fit + roi.peaks.size();
+        // Must match process_one_roi's `roi_skew_ptr`: the skew block sits after the amplitude
+        //  block, which is only present when the LLS is not solving the amplitudes.
+        const size_t skew_base_idx = param_offset + num_fit_cont + num_sigmas_fit
+                                     + roi.peaks.size() + num_amps_fit;
         const bool restrict_skew_range = m_options.test( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
                                          || m_options.test( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
         for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
