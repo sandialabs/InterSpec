@@ -32,6 +32,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # The name is the warning.  This is what the user sees after unzipping, so it says what the
+  # build is rather than which branch it came from - "Wt4" means nothing to someone downloading
+  # it.  Referenced by every step of the windows-build job.
+  INSTALL_DIR_NAME: InterSpec_Win32_Dangerously_Experimental
+
 concurrency:
   # Must not collide with the group used by any workflow this one calls (build_macos.yml uses
   # `ci-macos-<ref>`).  Concurrency groups are repo-global across workflows, so a caller sharing a
@@ -62,24 +68,20 @@ jobs:
           echo "::error::again and pick upgrade/Wt4 in the branch dropdown."
           exit 1
 
-  macos-deps:
-    name: macOS dependency prefix
+  # Builds the dependency prefix (via .github/actions/macos_deps_prefix, so the cache key matches
+  # what a deps-only run produced) and then the signed, notarized .app and .dmg.  This replaces
+  # the phase-1 `macos-deps` job rather than sitting alongside it: two jobs building the same
+  # prefix would, on any cache-key change, build it from scratch twice in parallel.
+  macos-build:
+    name: macOS app
     needs: guard
-    runs-on: macos-26
-    # Well under the 6 hour hard ceiling, so a wedged build fails while there is still something
-    # useful in the log rather than being killed anonymously.
-    timeout-minutes: 300
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v4
-        with:
-          submodules: true
+    uses: ./.github/workflows/build_macos.yml
+    # The called workflow declares 8 required secrets (signing cert, notary key, Leaflet key).
+    # `inherit` satisfies them for a same-repo call.
+    secrets: inherit
 
-      - name: Build or restore the dependency prefix
-        uses: ./.github/actions/macos_deps_prefix
-
-  windows-deps:
-    name: Windows dependency prefix
+  windows-build:
+    name: Windows app
     needs: guard
     runs-on: windows-2022
     timeout-minutes: 300
@@ -89,30 +91,116 @@ jobs:
         with:
           submodules: true
 
-      # Also sets up MSVC 2022 and CMake.  `install_sccache: 'false'` because this job compiles
-      # none of InterSpec's own code, so an sccache entry would be pure cache-budget burn.
-      - name: Build or restore the dependency prefix
+      # Builds or restores the dependency prefix, and sets up MSVC 2022, CMake and sccache.
+      # Unlike the phase-1 deps-only job, sccache is wanted here - this job compiles InterSpec.
+      - name: Set up dev env and dependency prefix
         uses: ./.github/actions/setup_dev_env
+
+      # Fails fast if the curated SBOM component list has drifted from the pinned dependency
+      # versions in target/dep_build/dep_build_msvc2022.bat, or from a submodule/vendored path.
+      - name: Validate SBOM component list
+        shell: pwsh
+        run: python "${{ github.workspace }}/target/wxwidgets/sbom/make_sbom.py" --check --repo "${{ github.workspace }}"
+
+      # Deliberately NOT cached, unlike build_app.yml's `Cache wxWidgets config/build`.  That is
+      # a build-DIRECTORY cache, and this repo already measured the result: actions/checkout
+      # rewrites every source file's mtime, so a warm build-dir cache compiles exactly as many
+      # objects as a cold one (see the comments on the build-linux job in build_app.yml).  A
+      # from-scratch configure costs a minute or two; sccache is what actually saves compile time.
+      - name: Configure
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
+        run: |
+          $prefix = "${{ runner.temp }}/install"
+          if (-Not (Test-Path 'build_wt4_wx_app')) { mkdir build_wt4_wx_app }
+          cd build_wt4_wx_app
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DUSE_LEAFLET_MAP=ON -DLEAFLET_MAPS_KEY="$env:LEAFLET_KEY" -DUSE_REMOTE_RID=ON -DUSE_REL_ACT_TOOL=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DUSE_LLM_INTERFACE=ON -DCMAKE_INSTALL_PREFIX="$env:INSTALL_DIR_NAME" -DCMAKE_PREFIX_PATH="$prefix" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw" -DCMAKE_BUILD_TYPE="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -G "Ninja" "${{ github.workspace }}/target/wxwidgets"
+
+      - name: Build and package
+        shell: pwsh
+        working-directory: ${{ runner.temp }}/build_wt4_wx_app
+        run: |
+          $install_dir = "$env:INSTALL_DIR_NAME"
+          if (Test-Path $install_dir) { Remove-Item $install_dir -Recurse -Force }
+          cmake --build . --config Release
+          cmake --build . --config Release --target install
+
+          $notes = "$install_dir\build_info.txt"
+          echo "This is an automated build of the InterSpec upgrade/Wt4 branch, built on the GitHub infrastructure at $(Get-Date -AsUTC -Format o)" >> $notes
+          echo "" >> $notes
+          echo "This branch is EXTRA UNSTABLE and has many known issues.  No testing has been performed on this build." >> $notes
+          echo "" >> $notes
+          echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
+          echo "The Edge browser runtime is required to run; this will typically already be installed on Windows 10 and 11." >> $notes
+
+          # CycloneDX SBOM into the install dir, so it ships inside the .zip.
+          python "${{ github.workspace }}/target/wxwidgets/sbom/make_sbom.py" `
+            --repo "${{ github.workspace }}" `
+            --git-sha "${{ github.sha }}" `
+            --timestamp "$(Get-Date -AsUTC -Format o)" `
+            --output "$install_dir/InterSpec_sbom.cdx.json"
+
+          Get-ChildItem "$install_dir*.zip" -ErrorAction SilentlyContinue | ForEach-Object { Remove-Item -Path $_.FullName }
+          Compress-Archive -CompressionLevel Optimal -Path ".\$install_dir" -DestinationPath "$($install_dir)_$(Get-Date -f yyyy-MM-dd).zip"
+          Get-ChildItem
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
-          install_sccache: 'false'
+          name: windows-build
+          overwrite: true
+          if-no-files-found: error
+          path: '${{ runner.temp }}/build_wt4_wx_app/${{ env.INSTALL_DIR_NAME }}_*.zip'
+
+      # Catches the "it linked but cannot start" class of failure - missing resources, a bad
+      # working directory, an unloadable Wt config - which a compile-only check would miss.
+      - name: Test app build worked
+        shell: pwsh
+        working-directory: ${{ runner.temp }}/build_wt4_wx_app/${{ env.INSTALL_DIR_NAME }}
+        run: |
+          $p = Start-Process .\InterSpec.exe -ArgumentList @("--test-load", "--mult-instance", "--no-restore") -PassThru
+          $errTimedOut = $null
+          $p | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue -ErrorVariable errTimedOut
+          if ($errTimedOut) { Stop-Process -InputObject $p -Force }
+          echo "Exit code of InterSpec test load was $($p.ExitCode)"
+          exit $p.ExitCode
 
 # ------------------------------------------------------------------------------------------------
-# Phase 2, to be added once the two jobs above reliably hit a warm cache:
+# STILL TO DO - the release step.
 #
-#  - `macos-build`: `uses: ./.github/workflows/build_macos.yml` with `secrets: inherit`, which
-#    gives a signed and notarized DMG.  It restores the very prefix macos-deps built above - that
-#    key parity is the whole reason the dependency logic lives in a composite action.
-#  - `windows-build`: mirror build_app.yml's `build-win` job, but WITHOUT its
-#    `EndBug/latest-tag` step - that one moves the `bleeding-edge` tag.
-#  - `release`: `permissions: contents: write` ON THE JOB ONLY (a top-level permissions block
-#    would cap what the called workflow can do), publishing with
-#    `softprops/action-gh-release@v2` to this branch's own tag, `prerelease: true` and
-#    `make_latest: false`, with a body that leads with the extra-unstable warning.
-#    Note that action-gh-release creates a missing tag but never *moves* an existing one, which
-#    is why build_app.yml pairs it with EndBug/latest-tag; do the same here for the new tag,
-#    inside the release job and immediately before the release step.
+# Both app builds above currently just upload artifacts (`macos-build` = .dmg, `windows-build` =
+# .zip), downloadable from the run page.  Nothing is published.  To publish, add a `release` job:
 #
-# Also still to fix before the Windows app build can work on this branch:
-#  - target/wxWidgets/sbom/make_sbom.py hardcodes the deleted `target/patches/dep_build_msvc2022.bat`
-#  - target/wxwidgets/sbom/components.json still pins Wt 3.7.1 and lists no abseil
+#   needs: [macos-build, windows-build]        # never publish a half-set of assets
+#   permissions: { contents: write }           # ON THE JOB ONLY - a top-level permissions block
+#                                              #  would cap what build_macos.yml is allowed to do
+#   - actions/download-artifact@v4 with pattern: '*-build', merge-multiple: true
+#   - prune the previous run's assets BEFORE uploading.  build_app.yml does this with
+#       PATTERN="InterSpec_app*", which does NOT match this branch's asset names
+#       (InterSpec_Win32_Dangerously_Experimental_*, InterSpec_macOS_Dangerously_Experimental_*).
+#       Copying that pattern across verbatim would silently prune nothing, and since the .dmg
+#       carries a date suffix that means one more stale asset on the release every single day.
+#       Use PATTERN="InterSpec_*Dangerously_Experimental*".
+#   - EndBug/latest-tag@v1.6.1 with ref: wt4-bleeding-edge
+#       softprops/action-gh-release creates a missing tag but never MOVES an existing one, which
+#       is why build_app.yml pairs it with latest-tag.  Put it in the release job immediately
+#       before the release step, not in a parallel build job as build_app.yml does - that races
+#       the tag move against the release creation.
+#       It must be `wt4-bleeding-edge`.  NEVER `bleeding-edge` - that is master's tag.
+#   - softprops/action-gh-release@v2 with:
+#       tag_name: wt4-bleeding-edge
+#       name: "Really Bleeding Edge (v1.1 preview)"
+#       prerelease: true
+#       make_latest: false                     # a prerelease must never become "Latest release"
+#       body: lead with the extra-unstable / many-known-issues warning
+#
+# Check the repo's tag protection rules for `wt4-bleeding-edge` before the first run: if tag
+# creation is blocked, action-gh-release leaves an orphaned DRAFT release that does not show up
+# in the Releases UI at all.
+#
+# Unrelated wart worth fixing sometime, but not here: git contains BOTH `target/wxWidgets/sbom/`
+# and `target/wxwidgets/`.  It only works because Windows and macOS checkouts are case-insensitive
+# and collapse them into one directory; on a case-sensitive Linux checkout they are two.
 # ------------------------------------------------------------------------------------------------
