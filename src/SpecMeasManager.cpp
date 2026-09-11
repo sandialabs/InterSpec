@@ -143,6 +143,8 @@
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
 #include "InterSpec/GroupBox.h"
+#include "InterSpec/EccUncertOptions.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -3740,15 +3742,22 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   shared_ptr<DetectorPeakResponse> det;
   double source_area = 0.0, source_mass = 0.0;
 
+  // Raw per-energy uncertainty arrays parsed from the .ecc file; used to build
+  //  the EccUncertOptions widget (empty when not an .ecc file).
+  vector<float> ecc_uncert_energies, ecc_baseline_frac, ecc_convergence_frac;
+
   // Try parsing as ECC file first
   try
   {
-    tuple<shared_ptr<DetectorPeakResponse>,double,double> det_area_mass
+    const DetectorPeakResponse::EccParseResult ecc_result
       = DetectorPeakResponse::parseEccFile( input );
 
-    det = get<0>(det_area_mass);
-    source_area = get<1>(det_area_mass);
-    source_mass = get<2>(det_area_mass);
+    det = ecc_result.drf;
+    source_area = ecc_result.sourceArea;
+    source_mass = ecc_result.sourceMass;
+    ecc_uncert_energies = ecc_result.uncertEnergies;
+    ecc_baseline_frac = ecc_result.baselineFrac;
+    ecc_convergence_frac = ecc_result.convergenceFrac;
 
     assert( det && det->isValid() );
     if( !det || !det->isValid() )
@@ -3951,7 +3960,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   // TODO: make option to correct for air-attenuation
   
   far_field_opt->hide();
-  
+
+  // ISOCS .ecc files carry per-energy uncertainties; let the user control how
+  //  they are imported (fully correlated by default).  ANGLE .outx files bring
+  //  their own uncertainty handling, so only offer this for .ecc.
+  EccUncertOptions *ecc_uncert_opts = nullptr;
+  if( !is_outx && (ecc_uncert_energies.size() >= 2) )
+    ecc_uncert_opts = dialog->contents()->addNew<EccUncertOptions>( ecc_uncert_energies,
+                                            ecc_baseline_frac, ecc_convergence_frac );
+
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
   
@@ -4058,7 +4075,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
           new_drf = det->convertFixedGeometryType( source_mass, geom_type );
           break;
       }//switch( geom_type )
-        
+
+      // Reflect the user's uncertainty-import choice in the preview (the chart
+      //  draws the fractional-uncertainty envelope); nullptr clears it.
+      if( new_drf && ecc_uncert_opts )
+      {
+        new_drf = make_shared<DetectorPeakResponse>( *new_drf );
+        new_drf->setEfficiencyUncert( ecc_uncert_opts->buildUncert() );
+      }//if( new_drf && ecc_uncert_opts )
+
       chart->updateChart( new_drf );
 
       if( new_drf && (new_drf->upperEnergy() > 10000.0) )
@@ -4075,6 +4100,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   geom_combo->activated().connect( this, update_state );
   distance_edit->textInput().connect( this, update_state );
   diameter_edit->textInput().connect( this, update_state );
+  if( ecc_uncert_opts )
+    ecc_uncert_opts->changed().connect( this, update_state );
 
 
   accept->clicked().connect( this, [=](){
@@ -4125,6 +4152,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
           new_drf = det->convertFixedGeometryType( source_mass, geom_type );
           break;
       }//switch( geom_type )
+
+      // Apply the user's .ecc uncertainty choice.  A default (fully-correlated)
+      //  uncertainty is already attached at parse time and carried through the
+      //  geometry conversions, so this is an override / clear step.
+      if( new_drf && ecc_uncert_opts )
+      {
+        new_drf = make_shared<DetectorPeakResponse>( *new_drf );
+        new_drf->setEfficiencyUncert( ecc_uncert_opts->buildUncert() );  //nullptr clears it
+      }//if( new_drf && ecc_uncert_opts )
     }catch( std::exception &e )
     {
       passMessage( WString::tr(is_outx ? "smm-outx-error" : "smm-ecc-error").arg(e.what()),

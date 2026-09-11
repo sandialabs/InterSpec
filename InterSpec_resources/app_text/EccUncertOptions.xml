@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- euo- is short for EccUncertOptions -->
+
+  <message id="euo-import-cb">Import ISOCS uncertainties</message>
+  <message id="euo-mode-label">Baseline correlation:</message>
+  <message id="euo-mode-fully-corr">Fully correlated</message>
+  <message id="euo-mode-gaussian">Gaussian (log-energy)</message>
+  <message id="euo-mode-uncorr">Uncorrelated</message>
+  <message id="euo-corrlen-label">Correlation length:</message>
+  <message id="euo-example-title">Example correlations</message>
+  <message id="euo-example-e1">E&#8321; (keV)</message>
+  <message id="euo-example-e2">E&#8322; (keV)</message>
+  <message id="euo-example-rho">Correlation</message>
+  <message id="euo-tt-mode">&lt;p&gt;How the ISOCS baseline (&quot;%err&quot;) uncertainty is correlated between
+    energies.  The baseline uncertainty is a systematic modeling/geometry uncertainty, so an
+    efficiency that is (say) 5% high at one energy tends to be high at nearby energies too.&lt;/p&gt;
+    &lt;ul&gt;
+    &lt;li&gt;&lt;b&gt;Fully correlated&lt;/b&gt; - the baseline uncertainty moves together across all
+    energies (correlation &#961;&#8776;1).  This is how GENIE treats these uncertainties, and is the
+    default.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Gaussian (log-energy)&lt;/b&gt; - correlation falls off smoothly with the
+    separation in ln(energy), controlled by the correlation length below.&lt;/li&gt;
+    &lt;li&gt;&lt;b&gt;Uncorrelated&lt;/b&gt; - each energy&apos;s baseline uncertainty is independent
+    (&#961;=0 between different energies).&lt;/li&gt;
+    &lt;/ul&gt;
+    &lt;p&gt;The Monte-Carlo convergence (&quot;%cnvrg&quot;) uncertainty is always treated as
+    uncorrelated between energies.&lt;/p&gt;</message>
+  <message id="euo-tt-corrlen">&lt;p&gt;The Gaussian correlation length, in natural-log-energy units, used when
+    &quot;Gaussian (log-energy)&quot; correlation is selected.  The correlation between two energies is
+    &#961; = exp(-&#189;&#183;((ln E&#8321; - ln E&#8322;)/L)&#178;).&lt;/p&gt;
+    &lt;p&gt;For example, with L=0.35 two energies a factor of e (&#8776;2.72) apart have
+    correlation exp(-1/(2&#183;0.35&#178;))&#8776;0.02, while energies 10% apart have
+    correlation &#8776;0.96.  Larger values make the uncertainty more correlated across energy.&lt;/p&gt;</message>
+</messages>

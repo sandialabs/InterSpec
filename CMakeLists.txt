@@ -416,6 +416,7 @@ set(sources
     src/MakeFixedGeomResponse.cpp
     src/MakeMcResponseForDrf.cpp
     src/DetectorGeometryInput.cpp
+    src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
@@ -563,6 +564,7 @@ set(headers
     InterSpec/MakeFixedGeomResponse.h
     InterSpec/MakeMcResponseForDrf.h
     InterSpec/DetectorGeometryInput.h
+    InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h

@@ -104,6 +104,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -2200,6 +2201,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_efficiencyType( nullptr ),
     m_detectorDistanceLabel( nullptr ),
     m_detectorDistance( nullptr ),
+    m_eccUncertContainer( nullptr ),
+    m_eccUncertWidget( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -2493,7 +2496,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_uploadedDetName->setTextSize( 30 );
   m_uploadedDetNameDiv->hide();
 
-    
+  // Holds the EccUncertOptions widget, populated only when an ISOCS .ecc file
+  //  is uploaded.
+  m_eccUncertContainer = uploadDetTab->addNew<WContainerWidget>();
+  m_eccUncertContainer->hide();
+
+
   //-------------------------------------
   //--- 4)  Manual
   //-------------------------------------
@@ -4780,8 +4788,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
       ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
 #endif
       
-      auto [trial_det,source_area,source_mass] = DetectorPeakResponse::parseEccFile( csvfile );
-      
+      const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile( csvfile );
+      const std::shared_ptr<DetectorPeakResponse> trial_det = ecc_result.drf;
+      const double source_area = ecc_result.sourceArea;
+
       if( trial_det && trial_det->isValid() )
       {
         det = trial_det;
@@ -4822,6 +4832,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
         {
           assert( 0 );
           return nullptr;
+        }
+
+        // Apply the user's .ecc uncertainty choice (overrides the default
+        //  fully-correlated uncertainty attached at parse time).
+        if( det && m_eccUncertWidget )
+        {
+          det = make_shared<DetectorPeakResponse>( *det );
+          det->setEfficiencyUncert( m_eccUncertWidget->buildUncert() );  //nullptr clears it
         }
       }//if( trial_det && trial_det->isValid() )
     }catch( std::exception & )
@@ -5046,6 +5064,18 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
 
 void DrfSelect::handleEfficiencyCsvUpload()
 {
+  // Reset any prior .ecc uncertainty options; rebuilt below if this upload is
+  //  an .ecc file with usable uncertainties.
+  m_eccUncertWidget = nullptr;
+  m_eccUncertEnergies.clear();
+  m_eccBaselineFrac.clear();
+  m_eccConvergenceFrac.clear();
+  if( m_eccUncertContainer )
+  {
+    m_eccUncertContainer->clear();
+    m_eccUncertContainer->hide();
+  }
+
   m_detectrDiameterDiv->enable();
   if( m_efficiencyCsvUpload->empty() )
   {
@@ -5085,9 +5115,32 @@ void DrfSelect::handleEfficiencyCsvUpload()
     ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
 #endif
     
-    auto [trial_det,surface_area,mass] = DetectorPeakResponse::parseEccFile( csvfile );
+    const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile( csvfile );
+    const std::shared_ptr<DetectorPeakResponse> trial_det = ecc_result.drf;
     if( trial_det && trial_det->isValid() )
+    {
       det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+
+      // Offer the .ecc uncertainty import options for this upload.
+      if( m_eccUncertContainer && (ecc_result.uncertEnergies.size() >= 2) )
+      {
+        m_eccUncertEnergies = ecc_result.uncertEnergies;
+        m_eccBaselineFrac = ecc_result.baselineFrac;
+        m_eccConvergenceFrac = ecc_result.convergenceFrac;
+        m_eccUncertWidget = m_eccUncertContainer->addNew<EccUncertOptions>( m_eccUncertEnergies,
+                                                m_eccBaselineFrac, m_eccConvergenceFrac );
+        m_eccUncertContainer->show();
+
+        // Re-derive the DRF (with the chosen uncertainty) and refresh the
+        //  preview chart when the user changes the import options.
+        m_eccUncertWidget->changed().connect( std::function<void()>( [this](){
+          m_detector = detectorFromEffUpload();
+          setAcceptButtonEnabled( !!m_detector );
+          updateChart();
+          emitChangedSignal();
+        } ) );
+      }//if( have uncertainties )
+    }//if( trial_det && trial_det->isValid() )
   }catch( std::exception & )
   {
   }

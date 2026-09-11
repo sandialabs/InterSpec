@@ -40,6 +40,9 @@ devcontainer_prefix
 .devcontainer 
 det_response_report/
 test_datasets/
+.codex/
+.devcontainer*/
+.opencode*/
 
 IDB*
 

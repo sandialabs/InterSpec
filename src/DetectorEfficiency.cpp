@@ -45,6 +45,8 @@
 using namespace std;
 
 const double DetectorEfficiencyUncert::sm_defaultLogEnergyCorrLength = 0.5;
+const double DetectorEfficiencyUncert::sm_defaultEccCorrLength = 0.35;
+const double DetectorEfficiencyUncert::sm_fullyCorrelatedLength = 1.0e6;
 const size_t DetectorEfficiencyUncert::sm_maxCovarianceNodes = 100;
 
 namespace
@@ -311,6 +313,91 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromPointUncerts(
 
   return answer;
 }//fromPointUncerts(...)
+
+
+shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal(
+                                            const vector<float> &energies,
+                                            const vector<float> &correlatedFrac,
+                                            const vector<float> &uncorrelatedFrac,
+                                            const double corrLength )
+{
+  const bool have_diag = !uncorrelatedFrac.empty();
+
+  if( energies.size() != correlatedFrac.size() )
+    throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: number of"
+                         " energies and correlated uncertainties must match" );
+
+  if( have_diag && (uncorrelatedFrac.size() != energies.size()) )
+    throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: uncorrelated"
+                         " uncertainties must be empty or match the number of energies" );
+
+  if( energies.empty() )
+    throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: no input points" );
+
+  // Sort by energy (carrying both uncertainty components), removing exact-duplicate
+  //  energies (keeping the first).
+  struct Node{ float energy; float corr; float uncorr; };
+  vector<Node> pts;
+  pts.reserve( energies.size() );
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    const float uncorr = have_diag ? uncorrelatedFrac[i] : 0.0f;
+
+    if( (energies[i] <= 0.0f) || IsNan(energies[i]) || IsInf(energies[i]) )
+      throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: energies must be > 0" );
+    if( (correlatedFrac[i] < 0.0f) || IsNan(correlatedFrac[i]) || IsInf(correlatedFrac[i]) )
+      throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: correlated uncertainties must be >= 0" );
+    if( (uncorr < 0.0f) || IsNan(uncorr) || IsInf(uncorr) )
+      throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: uncorrelated uncertainties must be >= 0" );
+
+    pts.push_back( Node{ energies[i], correlatedFrac[i], uncorr } );
+  }//for( size_t i = 0; i < energies.size(); ++i )
+
+  std::stable_sort( begin(pts), end(pts),
+    []( const Node &lhs, const Node &rhs ) -> bool {
+      return lhs.energy < rhs.energy;
+  } );
+
+  pts.erase( std::unique( begin(pts), end(pts),
+    []( const Node &lhs, const Node &rhs ) -> bool {
+      return lhs.energy == rhs.energy;
+  } ), end(pts) );
+
+  if( pts.size() > sm_maxCovarianceNodes )
+    throw runtime_error( "DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal: too many points" );
+
+  const size_t nnode = pts.size();
+  vector<float> node_energies( nnode ), cov( nnode * nnode, 0.0f );
+  for( size_t i = 0; i < nnode; ++i )
+    node_energies[i] = pts[i].energy;
+
+  for( size_t j = 0; j < nnode; ++j )
+  {
+    for( size_t k = j; k < nnode; ++k )
+    {
+      double rho = (j == k) ? 1.0 : 0.0;
+      if( (j != k) && (corrLength > 0.0) )
+      {
+        const double dlne = std::log( static_cast<double>(pts[j].energy) )
+                            - std::log( static_cast<double>(pts[k].energy) );
+        rho = std::exp( -0.5 * std::pow( dlne / corrLength, 2.0 ) );
+      }
+
+      double c_jk = rho * pts[j].corr * pts[k].corr;
+      if( j == k )
+        c_jk += static_cast<double>(pts[j].uncorr) * pts[j].uncorr;  //add the diagonal term
+
+      cov[j*nnode + k] = static_cast<float>( c_jk );
+      cov[k*nnode + j] = static_cast<float>( c_jk );
+    }//for( size_t k = j; k < nnode; ++k )
+  }//for( size_t j = 0; j < nnode; ++j )
+
+  auto answer = make_shared<DetectorEfficiencyUncert>();
+  answer->setNodeCovariance( node_energies, cov );
+  answer->m_corrLength = (corrLength > 0.0) ? corrLength : -1.0;
+
+  return answer;
+}//fromCorrelatedPlusDiagonal(...)
 
 
 void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
