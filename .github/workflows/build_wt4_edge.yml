@@ -42,8 +42,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The "Run workflow" button's branch dropdown defaults to the DEFAULT branch, so the easiest
+  # thing to do by accident is dispatch this against master.  That checks out master, which has
+  # neither .github/actions/macos_deps_prefix nor the updated setup_dev_env, and the run dies
+  # with three unrelated-looking errors that say nothing about the actual mistake.  Fail fast
+  # instead, on a cheap runner, before a scarce macOS runner is even allocated.
+  guard:
+    name: Check branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse to run against anything but upgrade/Wt4
+        if: github.ref != 'refs/heads/upgrade/Wt4'
+        shell: bash
+        run: |
+          echo "::error::This workflow builds the upgrade/Wt4 branch, but was dispatched against"
+          echo "::error::'${{ github.ref }}'.  The copy of this file on master exists only so that"
+          echo "::error::GitHub registers the 'Run workflow' button - workflow_dispatch is only"
+          echo "::error::offered for workflows present on the default branch.  Press 'Run workflow'"
+          echo "::error::again and pick upgrade/Wt4 in the branch dropdown."
+          exit 1
+
   macos-deps:
     name: macOS dependency prefix
+    needs: guard
     runs-on: macos-26
     # Well under the 6 hour hard ceiling, so a wedged build fails while there is still something
     # useful in the log rather than being killed anonymously.
@@ -59,6 +80,7 @@ jobs:
 
   windows-deps:
     name: Windows dependency prefix
+    needs: guard
     runs-on: windows-2022
     timeout-minutes: 300
     steps:
