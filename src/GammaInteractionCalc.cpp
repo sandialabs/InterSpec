@@ -3848,6 +3848,21 @@ void ShieldingSourceChi2Fcn::setVolumetricLineSample( const LineSampleParams &sa
 }//setVolumetricLineSample(...)
 
 
+void ShieldingSourceChi2Fcn::adoptVolumetricLineSets( const ShieldingSourceChi2Fcn &other )
+{
+  if( this == &other )
+    return;
+
+  // Match the line count and replica so the per-evaluation `matches(...)` query lines up with the
+  //  adopted cache entries and nothing rebuilds; then share the immutable line sets themselves.
+  m_volumetricNumLines = other.m_volumetricNumLines;
+  m_volumetricLineSample = other.m_volumetricLineSample;
+
+  std::scoped_lock<std::mutex,std::mutex> lock( m_lineCacheMutex, other.m_lineCacheMutex );
+  m_lineCaches = other.m_lineCaches;   //shared_ptr<const VolumetricLineCache> - safe to share
+}//adoptVolumetricLineSets(...)
+
+
 /** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
 struct PointSourceRays
 {
@@ -4797,7 +4812,18 @@ vector<PeakResultPlotInfo>
   
   EnergyCountMap energy_count_map;
   const vector<pair<double,double> > energie_widths = observedPeakEnergyWidths( m_peaks );
-  
+
+  // Seed a zero-count entry for every fit-peak energy so peak coverage is
+  //  independent of which source types contribute.  The point-source path seeds
+  //  these implicitly (cluster_peak_activities does so while the map is empty),
+  //  but a fit whose only sources are volumetric (trace/self-attenuating) can
+  //  produce no calculators - and hence no keys - when their activity is zero at
+  //  an evaluation point (e.g. a trace source started at zero activity).  Without
+  //  this, energy_count_map would be empty and expected_observed_chis() would
+  //  throw its "place b" logic error, aborting the fit.
+  for( const pair<double,double> &ew : energie_widths )
+    energy_count_map[ew.first] = 0.0;
+
   // Cascade-summing: per-nuclide local cluster maps, corrected then merged
   //  (see the templated path in expected_peak_counts_imp for the details).
   const PointSrcAttenContext<double> cascade_atten_ctx = m_cascadeCalc

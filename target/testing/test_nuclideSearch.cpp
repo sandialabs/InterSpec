@@ -146,8 +146,14 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   //orig_workingspace->undoSentry = std::shared_ptr<void>
   //orig_workingspace->searchdoneCallback = searchdoneCallback
 
-  //The 244 keV of Eu152 has rel. BR of 0.27, so if we set min BR to just below that, we should get one result
-  double min_rel_br = 0.26;
+  // The Nuclide Search "min relative BR" filter normalizes each line to the strongest *gamma*
+  //  (plus annihilation) of the aged nuclide, not the strongest *photon* (see
+  //  relative_br_reference_rate() in IsotopeSearchByEnergyModel.cpp).  This deliberately excludes
+  //  the intense low-energy K/L x-rays that the vacancy/cascade model can make the single most
+  //  intense photon; those would otherwise shrink the relative BR of the gammas users search on.
+  //  For Eu152 the reference is the 121.8 keV gamma (rate 505), so the 244.7 keV gamma (rate 134)
+  //  has a relative BR of ~0.265 (= 134/505).  It is the limiting line of the three energies
+  //  searched here, so setting min-rel-BR just below/above ~0.265 toggles whether Eu152 matches.
   const double minHalfLife = 0.0;
   Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> radiation;
   radiation |= IsotopeSearchByEnergyModel::RadSource::NuclideGammaOrXray;
@@ -161,6 +167,22 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   //  non-empty, which would trigger a post to a non-existent WServer and crash.)
   std::function< void(void) > updatefcn;
 
+  const auto has_nuc = []( const vector<vector<IsotopeSearchByEnergyModel::IsotopeMatch>> &matches, const string &nuc) -> bool {
+    for( const auto &match : matches )
+    {
+      for( const IsotopeSearchByEnergyModel::IsotopeMatch &iso : match )
+      {
+        if( iso.m_nuclide && iso.m_nuclide->symbol == nuc )
+          return true;
+      }
+    }
+    return false;
+  };
+
+  // Set min-rel-BR below the 244 keV Eu152 line (~0.265) but above the ~0.22 needed for the
+  //  handful of nuclides that coincidentally have a photon in all three windows (Ac220, Np228,
+  //  Pa224).  Only Eu152 should match, on all three searched energies.
+  double min_rel_br = 0.24;
   shared_ptr<IsotopeSearchByEnergyModel::SearchWorkingSpace> workingspace
       = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>( *orig_workingspace );
 
@@ -176,7 +198,7 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
     BOOST_CHECK( match[0].m_nuclide->symbol == "Eu152" );
   }
 
-  // Check if we set Rel Br to just above the value for the 244 keV gamma, we shouldnt get any result
+  // Set min-rel-BR just above the 244 keV Eu152 line: we shouldn't get any result.
   min_rel_br = 0.28;
   workingspace = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>( *orig_workingspace );
   IsotopeSearchByEnergyModel::setSearchEnergies( workingspace, min_rel_br, minHalfLife, radiation,
@@ -185,31 +207,20 @@ BOOST_AUTO_TEST_CASE( testNuclideSearch )
   BOOST_CHECK( workingspace->matches.empty() );
 
 
-  // We'll check a little more complicated decay: the 1001 keV line of U238
+  // We'll check a little more complicated decay: the 1001 keV line of U238.  Aged to its default
+  //  decay time (daughters in equilibrium), the 1001 keV line (from Pa234m) is normalized to the
+  //  strongest gamma of the aged mixture (the 63.3 keV line, rate 367), giving a relative
+  //  branching ratio of ~0.228 (= 83.7/367).
   orig_workingspace->energies = { 1000.99 };
   orig_workingspace->windows = { 1.0 };
 
-  min_rel_br = 0.16; //actual value is 0.17
+  min_rel_br = 0.19; //actual value is ~0.228
   workingspace = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>( *orig_workingspace );
-
-  const auto has_nuc = []( const vector<vector<IsotopeSearchByEnergyModel::IsotopeMatch>> &matches, const string &nuc) -> bool {
-    for( const auto &match : matches )
-    {
-      for( const IsotopeSearchByEnergyModel::IsotopeMatch &iso : match )
-      {
-        if( iso.m_nuclide && iso.m_nuclide->symbol == nuc )
-          return true;
-      }
-    }
-    return false;
-  };
-
-
   IsotopeSearchByEnergyModel::setSearchEnergies( workingspace, min_rel_br, minHalfLife, radiation,
                                 elements, nuclides, reactions, "", updatefcn );
   BOOST_CHECK( has_nuc( workingspace->matches, "U238") );
 
-  min_rel_br = 0.18;
+  min_rel_br = 0.25;
   workingspace = make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>( *orig_workingspace );
   IsotopeSearchByEnergyModel::setSearchEnergies( workingspace, min_rel_br, minHalfLife, radiation,
                                 elements, nuclides, reactions, "", updatefcn );

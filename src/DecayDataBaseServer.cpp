@@ -315,19 +315,37 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
     float max_gamma_br = 0.0f;
     if( min_gamma_rel_br > 0.0 )
     {
+      // Normalize the relative branch ratio to the strongest gamma (and annihilation), not the
+      //  strongest photon.  Otherwise the intense low-energy K/L x-rays from the vacancy/cascade
+      //  model become the reference and shrink every gamma's relative BR.  X-ray lines are still
+      //  emitted below; only the normalization reference excludes them.
       for( size_t trans = 0; trans < transitions.size(); ++trans )
       {
         const SandiaDecay::Transition *transition = transitions[trans];
         const vector<SandiaDecay::RadParticle> &products = transition->products;
         for( size_t part = 0; part < products.size(); ++part )
         {
-          if( (products[part].type == SandiaDecay::GammaParticle)
-             || (products[part].type == SandiaDecay::XrayParticle) )
+          if( products[part].type == SandiaDecay::GammaParticle )
             max_gamma_br = std::max( max_gamma_br, products[part].intensity * transition->branchRatio );
           else if( products[part].type == SandiaDecay::PositronParticle )
             max_gamma_br = std::max( max_gamma_br, 2.0f * products[part].intensity * transition->branchRatio );
         }//for( size_t part = 0; part < products.size(); ++part )
       }//for( size_t trans = 0; trans < transitions.size(); ++trans )
+
+      if( max_gamma_br <= 0.0f )
+      {
+        // No gammas (e.g. a pure x-ray emitter): fall back to the strongest x-ray.
+        for( size_t trans = 0; trans < transitions.size(); ++trans )
+        {
+          const SandiaDecay::Transition *transition = transitions[trans];
+          const vector<SandiaDecay::RadParticle> &products = transition->products;
+          for( size_t part = 0; part < products.size(); ++part )
+          {
+            if( products[part].type == SandiaDecay::XrayParticle )
+              max_gamma_br = std::max( max_gamma_br, products[part].intensity * transition->branchRatio );
+          }//for( size_t part = 0; part < products.size(); ++part )
+        }//for( size_t trans = 0; trans < transitions.size(); ++trans )
+      }//if( max_gamma_br <= 0.0f )
 
       max_gamma_br = (max_gamma_br <= 0.0f) ? 1.0f : max_gamma_br;
     }//if( min_gamma_intensity > 0.0 )

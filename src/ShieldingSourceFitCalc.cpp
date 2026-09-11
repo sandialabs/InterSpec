@@ -2181,36 +2181,6 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
     }
   }//for( size_t i = 0; i < nmaterials; ++i )
 
-  // x-ray peaks: the activity/shielding model doesn't account for x-ray production, so a fit that
-  //  relies on x-ray peaks may be unreliable.  (Previously a transient toast at peak-select time.)
-  for( const PeakDef &peak : results.foreground_peaks )
-  {
-    const SandiaDecay::RadParticle * const radpart = peak.decayParticle();
-    if( radpart && (radpart->type == SandiaDecay::XrayParticle) )
-    {
-      results.warnings.push_back( "One or more peaks used in the fit are x-rays. X-ray production is"
-        " not modeled by the activity/shielding fit, so results that rely on these peaks may be"
-        " unreliable." );
-      break;
-    }
-  }//for( const PeakDef &peak : results.foreground_peaks )
-
-  // Questionable fit: the average per-peak deviation shown on the fit chart is
-  //  dev = sqrt(chi2 / N) over the plotted peaks (see `average_peak_deviation` and `dev` in
-  //  ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.  Uses the same
-  //  helper (and hence numerator/denominator) as the chart so the warning's number matches "<dev>".
-  {
-    const double dev = average_peak_deviation( results );
-    if( dev > 3.0 )
-    {
-      char devbuf[32] = { '\0' };
-      snprintf( devbuf, sizeof(devbuf), "%.2f", dev );  // match the chart's dev.toFixed(2)
-      results.warnings.push_back( "The fit is questionable: the average peak deviation (dev) is "
-        + string(devbuf) + " sigma, well above the roughly 1 sigma expected for a good fit - the"
-        " model may not describe the data well." );
-    }
-  }//average peak deviation block
-
   // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
   //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
   //  off-axis, collimator shadowing, energy clamping).  One message per flag kind, listing the
@@ -2280,6 +2250,42 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
         " may be biased.  Consider enabling distance-aware efficiency transfer by entering the"
         " detector dimensions (Detector Response tool, \"Modify...\", Geometry and MC tab,"
         " \"From measured curve\" method)." );
+    }
+  }
+
+  // Questionable fit: the average per-peak deviation shown on the fit chart is
+  //  dev = sqrt(chi2 / N) over the plotted peaks (see `average_peak_deviation` and `dev` in
+  //  ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.  Uses the same
+  //  helper (and hence numerator/denominator) as the chart so the warning's number matches "<dev>".
+  {
+    const double dev = average_peak_deviation( results );
+    if( dev > 3.0 )
+    {
+      char devbuf[32] = { '\0' };
+      snprintf( devbuf, sizeof(devbuf), "%.2f", dev );  // match the chart's dev.toFixed(2)
+      results.warnings.push_back( "The fit is questionable: the average peak deviation (dev) is "
+        + string(devbuf) + " sigma, well above the roughly 1 sigma expected for a good fit - the"
+        " model may not describe the data well." );
+    }
+  }//average peak deviation block
+  
+  // x-ray peaks: their tabulated intensities can be misleading, so caution the user.  Kept last so
+  //  higher-priority warnings above are shown first.
+  {
+    size_t nxray = 0;
+    for( const PeakDef &peak : results.foreground_peaks )
+    {
+      const SandiaDecay::RadParticle * const radpart = peak.decayParticle();
+      if( radpart && (radpart->type == SandiaDecay::XrayParticle) )
+        ++nxray;
+    }//for( const PeakDef &peak : results.foreground_peaks )
+
+    if( nxray > 0 )
+    {
+      const string count = (nxray == 1) ? string("A") : std::to_string( nxray );
+      const string noun = (nxray == 1) ? "X-ray is" : "X-rays are";
+      results.warnings.push_back( count + " " + noun + " being used; their intensities can"
+        " sometimes be misleading, please use caution." );
     }
   }
 }//void check_for_fit_warnings( ModelFitResults & )
@@ -2938,6 +2944,14 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
     vector<double> errors = results.paramErrors;
     if( errors.size() != params.size() )
       errors.resize( params.size(), 0.0 );
+
+    // Integrate the volumetric sources on the fit's own line quadrature, not the shipped default:
+    //  the polished line count and any non-default line-sample replica live on the fcn, not in
+    //  ShieldSourceInput, so create() started aug_fcn on the default set.  Reusing the fit's sets
+    //  keeps the used peaks' predictions matching the fit, leaving the check below sensitive only
+    //  to genuine re-clustering.
+    if( chi2Fcn.hasVolumetricLineSets() )
+      aug_fcn->adoptVolumetricLineSets( chi2Fcn );
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
     aug_fcn->energy_chi_contributions( params, errors, mixcache, &details );

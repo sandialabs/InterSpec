@@ -253,6 +253,33 @@ class DetectorPeakResponseJS {
     return null;
   }
   
+  // Whether a fractional efficiency uncertainty envelope was provided.
+  hasEffUncert() {
+    const u = this.data && this.data.effUncertFrac;
+    return !!(u && u.energies && u.fracUncerts && u.energies.length > 1);
+  }
+
+  // Fractional (1-sigma) efficiency uncertainty at the given energy, linearly
+  // interpolated (constant extrapolation) over the exported sample points, or
+  // null when no envelope is available.
+  fracUncert(energy) {
+    if (!this.hasEffUncert())
+      return null;
+
+    const es = this.data.effUncertFrac.energies;
+    const fs = this.data.effUncertFrac.fracUncerts;
+    if (energy <= es[0]) return fs[0];
+    if (energy >= es[es.length - 1]) return fs[es.length - 1];
+
+    for (let i = 1; i < es.length; ++i) {
+      if (energy <= es[i]) {
+        const t = (energy - es[i-1]) / (es[i] - es[i-1]);
+        return fs[i-1] + t * (fs[i] - fs[i-1]);
+      }
+    }
+    return fs[fs.length - 1];
+  }
+
   // Calculate FWHM at given energy
   fwhm(energy) {
     if (!this.hasFwhm()) {

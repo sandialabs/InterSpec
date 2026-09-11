@@ -32,6 +32,7 @@
 
 #include <Wt/WModelIndex.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemModel.h>
 #include <Wt/WAbstractItemDelegate.h>
 
@@ -97,7 +98,7 @@ std::vector< NearGammaInfo >
 }//namespace IsotopeSelectionAids
 
 
-class PhotopeakDelegate : public Wt::WAbstractItemDelegate
+class PhotopeakDelegate : public Wt::WItemDelegate
 {
 public:
   enum DelegateType
@@ -119,6 +120,12 @@ public:
 
     void handleBlur();
     void handleBlurWorker( std::function<void()> worker );
+
+    //Called when a suggestion is committed (Enter or click).  Closes the editor for terminal
+    //  selections (nuclide/x-ray/reaction/energy) so a single Enter accepts, while leaving it open
+    //  for a bare element symbol so the element->isotope drill-down still works.  'row' is the
+    //  activated suggestion's row in the popup model.
+    void handleSuggestionActivated( const int row );
     
     static void replacerJs( std::string &js );
     static void nuclideNameMatcherJs( std::string &js );
@@ -133,11 +140,15 @@ public:
 public:
   PhotopeakDelegate( DelegateType delegateType, bool closeOnBlur );
   virtual ~PhotopeakDelegate();
-  virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
-                               const Wt::WModelIndex &index,
-                               Wt::WFlags< Wt::ViewItemRenderFlag > flags ) override;
 
 protected:
+
+  // We derive from WItemDelegate (rather than hand-rolling update()) so cells are rendered as the
+  //  IndexText widgets the stock delegate expects; we only supply the custom editor via
+  //  createEditor().  Hand-rolling update() and naming a bare WText "t" broke Wt4's
+  //  WItemDelegate::textWidget() dynamic_cast<IndexText*> contract and could null-deref on re-render.
+  virtual std::unique_ptr<Wt::WWidget> createEditor( const Wt::WModelIndex &index,
+                               Wt::WFlags< Wt::ViewItemRenderFlag > flags ) const override;
 
   //If the editor is closed because of blurring (another field gets selcted or
   //  something), than we dont want to save the edit results if the field is

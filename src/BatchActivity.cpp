@@ -507,9 +507,9 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
       input.seekg( 0, ios::beg );
       input.clear();
 
-      auto answer = DetectorPeakResponse::parseEccFile( input );
-      if( std::get<0>(answer) )
-        return std::get<0>(answer);
+      const DetectorPeakResponse::EccParseResult answer = DetectorPeakResponse::parseEccFile( input );
+      if( answer.drf )
+        return answer.drf;
     }catch( std::exception & )
     {
       // Not a .ECC file

@@ -62,7 +62,15 @@ BOOST_AUTO_TEST_CASE( Erfc )
   {
     const double our_val = PeakDists::boost_erfc_imp(z);
     const double boost_val = boost::math::erfc(z);
-    BOOST_CHECK_CLOSE( our_val, boost_val, 1.0E-10 );
+    // For large z, erfc(z) underflows: boost returns exactly 0 while our impl
+    // may return the smallest (sub)normal.  Both are effectively zero, but a
+    // relative check divides by zero and blows up, so compare against an
+    // absolute floor once the value is below where the relative test is
+    // meaningful.
+    if( std::fabs(boost_val) < 1.0E-290 )
+      BOOST_CHECK_SMALL( our_val, 1.0E-290 );
+    else
+      BOOST_CHECK_CLOSE( our_val, boost_val, 1.0E-10 );
   }
 }//BOOST_AUTO_TEST_CASE( Erfc )
 

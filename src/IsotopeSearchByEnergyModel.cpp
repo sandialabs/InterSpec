@@ -131,7 +131,33 @@ namespace
      that nuclide
    */
   typedef map<const SandiaDecay::Nuclide *, set<double> > NuclideMatches;
-  
+
+  /** The reference emission rate used to turn a line's absolute emission rate into a "relative
+      branch ratio" for the Nuclide Search filter/column.  We normalize to the strongest gamma
+      (including annihilation) of the aged nuclide, rather than the strongest photon, so that the
+      intense low-energy K/L x-rays from the vacancy/cascade model don't shrink the relative BR of
+      the gammas users actually search on.  Falls back to the strongest photon (e.g. an x-ray) for
+      nuclides that emit no gammas.
+   */
+  double relative_br_reference_rate( SandiaDecay::NuclideMixture &mixture, const double age )
+  {
+    double max_rate = 0.0;
+    const vector<SandiaDecay::EnergyRatePair> gammas
+        = mixture.gammas( age, SandiaDecay::NuclideMixture::OrderByEnergy, true );
+    for( const SandiaDecay::EnergyRatePair &g : gammas )
+      max_rate = std::max( max_rate, g.numPerSecond );
+
+    if( max_rate <= 0.0 )   // no gammas: fall back to the strongest photon (e.g. pure x-ray emitter)
+    {
+      const vector<SandiaDecay::EnergyRatePair> photons
+          = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
+      for( const SandiaDecay::EnergyRatePair &p : photons )
+        max_rate = std::max( max_rate, p.numPerSecond );
+    }
+
+    return max_rate;
+  }//relative_br_reference_rate(...)
+
   /** Returns nuclides filtered such that they have gammas/x-rays in the
       specified energy ranges, with at least the minimum branching ratio and
       half-lives specified.
@@ -235,9 +261,9 @@ namespace
           mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc,1.0E4) );
           const vector<SandiaDecay::EnergyRatePair> photons
                                         = mixture.photons(age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy);
-          double max_intensity = 0.0;
-          for( const SandiaDecay::EnergyRatePair &energy_rate : photons )
-            max_intensity = std::max( max_intensity, energy_rate.numPerSecond );
+          // Normalize to the strongest gamma (see relative_br_reference_rate); the per-window
+          //  search below still scans `photons`, so x-ray lines remain matchable.
+          double max_intensity = relative_br_reference_rate( mixture, age );
 
           if( (max_intensity <= 0.0) || IsNan(max_intensity) || IsInf(max_intensity) )
             max_intensity = 1.0; //JIC
@@ -731,25 +757,29 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           const vector<SandiaDecay::EnergyRatePair> photons
                   = mixture.photons( match.m_age, SandiaDecay::NuclideMixture::OrderByAbundance );
           
-          double nearestEnergy = 999999.9, nearestAbun = 0.0, maxAbund = -999.9;
+          double nearestEnergy = 999999.9, nearestAbun = 0.0;
           for( const SandiaDecay::EnergyRatePair &aep : photons )
           {
             double d = 999999.9;
-            
+
             if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
               d = fabs( aep.energy - 510.99891*SandiaDecay::keV );
             else if( match.m_particle )
               d = fabs( aep.energy - match.m_particle->energy );
-            
+
             if( d < nearestEnergy )
             {
               nearestEnergy = d;
               nearestAbun = aep.numPerSecond;
             }//if( d < nearestEnergy )
-            
-            maxAbund = std::max( maxAbund, aep.numPerSecond );
           }//for( const SandiaDecay::AbundanceEnergyPair &aep : photons )
-          
+
+          // Normalize to the strongest gamma (see relative_br_reference_rate), not the strongest
+          //  photon, so intense low-energy x-rays don't shrink the displayed/gated relative BR.
+          double maxAbund = relative_br_reference_rate( mixture, match.m_age );
+          if( maxAbund <= 0.0 )
+            maxAbund = 1.0; //JIC
+
           match.m_branchRatio = nearestAbun / maxAbund;
           
           if( (match.m_branchRatio < min_rel_br) || (match.m_branchRatio <= 0.0) )

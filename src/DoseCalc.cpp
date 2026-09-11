@@ -146,21 +146,17 @@ namespace DoseCalc
                            " density between zero and " + std::to_string(max_ad)
                            + " g/cm2." );
     
-    //Calculate atomic number and areal density, taking into account how the air
-    //  effects the shielding.
-    float an = atomic_number;
-    float ad = areal_density;
-    
-    //TODO: not taking into account
-    // At 3m, 59 keV gammas are attenuated by 6.5%
-    if( distance > 300.0f*PhysicalUnits::cm )
-    {
-      const float air_an = 7.3737f;  //Gadras uses 7.2
-      const float air_density = static_cast<float>( 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3 );
-      const float air_ad = air_density * distance; //0.00129*A(61)*DISTANCE
-      an = (atomic_number*areal_density + air_an*air_ad) / (areal_density + air_ad);
-      ad = areal_density + air_ad;
-    }//if( distance > 300.0f*PhysicalUnits::cm )
+    //Treat the air between source and detector as an additional shield: its
+    //  areal density grows with distance, and its (low) Z is combined with any
+    //  user shield as an areal-density-weighted average.  Applied at all
+    //  distances (GADRAS convention) - e.g. at 3 m, 59 keV gammas are
+    //  attenuated ~6.5%, so ignoring air noticeably overestimates dose.  Since
+    //  distance > 0 (checked above), air_ad > 0 and the denominator is safe.
+    const float air_an = 7.3737f;  //Gadras uses 7.2
+    const float air_density = static_cast<float>( 0.00129 * PhysicalUnits::g / PhysicalUnits::cm3 );
+    const float air_ad = air_density * distance; //0.00129*A(61)*DISTANCE
+    const float an = (atomic_number*areal_density + air_an*air_ad) / (areal_density + air_ad);
+    const float ad = areal_density + air_ad;
     
     const double areal_density_g_cm2 = ad*PhysicalUnits::cm2/PhysicalUnits::g;
     

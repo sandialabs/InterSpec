@@ -152,6 +152,13 @@ static void check_dose( const string &nuclabel,
                         const float atomic_number,
                         const double expected_dose )
 {
+  // get_scatter() sets the decay-XML path and static data dir; it MUST run before
+  // the first DecayDataBaseServer::database() call, otherwise the DB initializes
+  // against the default path and setDecayXmlFile() later throws — which happens
+  // when a single check_dose-based case is run in isolation (--run_test=...).
+  const GadrasShieldScatter * const scatter = get_scatter();
+  BOOST_REQUIRE( scatter );
+
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   BOOST_REQUIRE_MESSAGE( db, "Nuclide database not initiated" );
 
@@ -167,9 +174,6 @@ static void check_dose( const string &nuclabel,
     energies.push_back( p.energy );
     intensities.push_back( p.numPerSecond );
   }
-
-  const GadrasShieldScatter * const scatter = get_scatter();
-  BOOST_REQUIRE( scatter );
 
   const double computed = DoseCalc::gamma_dose_with_shielding(
                               energies, intensities,
@@ -211,9 +215,11 @@ BOOST_AUTO_TEST_CASE( RuntimeSanityChecks )
 
 
 // ------------------------------------------------------------------------
-// Per-scenario dose checks. Reference values are mirrored from
-// DoseCalcWidget::runtime_sanity_checks (commit c3f40d0e). Splitting them
-// out lets boost.test report exactly which scenario regresses.
+// Per-scenario dose checks. Reference values are the InterSpec forward-model
+// output and are kept in sync with DoseCalcWidget::runtime_sanity_checks. They
+// reflect the current SandiaDecay data and the always-on air-attenuation model
+// (air treated as a shield at all distances). Splitting them out lets
+// boost.test report exactly which scenario regresses.
 // ------------------------------------------------------------------------
 
 BOOST_AUTO_TEST_CASE( Co60_NoShield_100cm )
@@ -223,7 +229,7 @@ BOOST_AUTO_TEST_CASE( Co60_NoShield_100cm )
               100.0f * PhysicalUnits::cm,
               0.0f,
               26.0f,
-              115.4210E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              115.0868E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Cs137_NoShield_100cm )
@@ -233,7 +239,7 @@ BOOST_AUTO_TEST_CASE( Cs137_NoShield_100cm )
               100.0f * PhysicalUnits::cm,
               0.0f,
               26.0f,
-              29.6987E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              29.5964E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Cs137_5gcm2_Fe_100cm )
@@ -243,7 +249,7 @@ BOOST_AUTO_TEST_CASE( Cs137_5gcm2_Fe_100cm )
               100.0f * PhysicalUnits::cm,
               5.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 ),
               26.0f,
-              25.4660E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              25.4568E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Cs137_50gcm2_Fe_100cm )
@@ -253,7 +259,7 @@ BOOST_AUTO_TEST_CASE( Cs137_50gcm2_Fe_100cm )
               100.0f * PhysicalUnits::cm,
               50.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 ),
               26.0f,
-              2.9512E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              2.9359E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( U238_NoShield_100cm )
@@ -263,7 +269,7 @@ BOOST_AUTO_TEST_CASE( U238_NoShield_100cm )
               100.0f * PhysicalUnits::cm,
               0.0f,
               60.0f,
-              1.8638E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              1.6836E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( U238_2gcm2_100cm )
@@ -273,7 +279,7 @@ BOOST_AUTO_TEST_CASE( U238_2gcm2_100cm )
               100.0f * PhysicalUnits::cm,
               2.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 ),
               60.0f,
-              0.8020508E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              0.8035726E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Na22_13gcm2_10cm )
@@ -283,7 +289,7 @@ BOOST_AUTO_TEST_CASE( Na22_13gcm2_10cm )
               10.0f * PhysicalUnits::cm,
               13.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 ),
               5.0f,
-              7.5218E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
+              7.5181E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Na22_NoShield_10cm )
@@ -293,7 +299,7 @@ BOOST_AUTO_TEST_CASE( Na22_NoShield_10cm )
               10.0f * PhysicalUnits::cm,
               0.0f,
               5.0f,
-              10.81E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
+              10.8141E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( F18_NoShield_200cm )
@@ -303,7 +309,7 @@ BOOST_AUTO_TEST_CASE( F18_NoShield_200cm )
               200.0f * PhysicalUnits::cm,
               0.0f,
               5.0f,
-              13.2870E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              13.1918E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Ba133_NoShield_10cm )
@@ -313,7 +319,7 @@ BOOST_AUTO_TEST_CASE( Ba133_NoShield_10cm )
               10.0f * PhysicalUnits::cm,
               0.0f,
               82.0f,
-              2.4430E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
+              2.4417E-3 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( Ba133_10gcm2_10cm )
@@ -323,7 +329,7 @@ BOOST_AUTO_TEST_CASE( Ba133_10gcm2_10cm )
               10.0f * PhysicalUnits::cm,
               10.0f * static_cast<float>( PhysicalUnits::gram / PhysicalUnits::cm2 ),
               82.0f,
-              134.0646E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              134.6198E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 
@@ -479,11 +485,26 @@ BOOST_AUTO_TEST_CASE( DoseMonotonicityScan )
       for( size_t i = 1; i < doses.size(); ++i )
         if( doses[i] > doses[i_max] ) i_max = i;
 
+      // Count only *significant* extrema. The always-on air model blends the
+      // effective Z (air Z~7.4 -> shield Z as AD grows); that Z-sweep, folded
+      // through the discrete scatter table, adds sub-percent micro-wiggles near
+      // the low-AD buildup region (observed max ~0.8% for Am241/Pb). They don't
+      // threaten fit_areal_density's bisect-on-the-descending-branch strategy
+      // (the FitAd round-trips bracket ADs well above this region), so ignore
+      // extrema whose local swing is below this relative threshold.
+      const double extrema_rel_thresh = 0.02;
       int n_extrema_after_max = 0;
       for( size_t i = i_max + 1; i + 1 < doses.size(); ++i )
-        if( ( doses[i] > doses[i-1] && doses[i] > doses[i+1] )
-         || ( doses[i] < doses[i-1] && doses[i] < doses[i+1] ) )
+      {
+        const bool is_extremum = ( doses[i] > doses[i-1] && doses[i] > doses[i+1] )
+                              || ( doses[i] < doses[i-1] && doses[i] < doses[i+1] );
+        if( !is_extremum )
+          continue;
+        const double local_rel = std::min( std::abs(doses[i]-doses[i-1]),
+                                            std::abs(doses[i]-doses[i+1]) ) / std::abs(doses[i]);
+        if( local_rel > extrema_rel_thresh )
           ++n_extrema_after_max;
+      }
 
       const double buildup_factor = doses[i_max] / doses[0];
 

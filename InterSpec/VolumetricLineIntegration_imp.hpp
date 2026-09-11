@@ -3118,18 +3118,45 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
               const T rel2 = p[2] - lead.m_detector.position[2];
               pc[i] = (cache->M[0][i]*rel0 + cache->M[1][i]*rel1 + cache->M[2][i]*rel2)/cm + T(cache->ref_c[i]);
             }
-            const T dist = sqrt( pc[0]*pc[0] + pc[1]*pc[1] + pc[2]*pc[2] );
+            // Once the source surface reaches the detector face, line_shell_intervals_imp clamps the
+            //  near chord end to 0 (L401-402) and emission nodes ride onto the crystal, sending
+            //  dist->0.  At the crystal origin the incidence is genuinely undefined: -pc[2]/dist is
+            //  0/0 (a NaN VALUE that poisons every residual) and its lane, log(dist) and atan2's lane
+            //  all diverge.  Pin the distance to the grid's own inner node d_lo ONLY when it falls
+            //  below it (a conditional floor, not an additive term): healthy nodes keep their exact
+            //  distance and full derivative lane, a degenerate node gets the constant d_lo -
+            //  reproducing the grid's flat-region boundary value and zeroing only that node's lane,
+            //  never evaluating sqrt on the degenerate value.  Mirrors the cache-build guard's
+            //  `if(dist>0)` (~L2456) and eff_response_factor (GammaInteractionCalc_imp.hpp:1517-1523).
+            const double d_lo = std::exp( grids[c]->ln_d.front() );  // grid min distance, cm (>0)
+            const T dist2 = pc[0]*pc[0] + pc[1]*pc[1] + pc[2]*pc[2];
+            const T dist = (scalar_of(dist2) > d_lo*d_lo) ? sqrt( dist2 ) : T(d_lo);
+            // dist >= d_lo > 0 and dist >= |pc[2]|, so cos_t is finite and in [-1,1] with its full
+            //  derivative lane; locate clamps any boundary/last-ULP case to the grid's cos axis.
             const T cos_t = -pc[2]/dist;
             T phi( 0.0 );
             if( grids[c]->phi_deg.size() > 1 )
             {
-              // Quadrant symmetry: fold into [0,90] degrees.
+              // Quadrant symmetry: fold into [0,90] degrees.  atan2 is singular (0/0 value AND lane)
+              //  only on the crystal axis where the transverse radius is exactly zero; guard on that
+              //  alone so every off-axis node keeps the base atan2 value and its full lane.  (A node
+              //  with a tiny-but-nonzero transverse radius has a large-but-finite lane, which Ceres
+              //  handles and the base code already produced.)
               const T ax = (scalar_of(pc[0]) < 0.0) ? -pc[0] : pc[0];
               const T ay = (scalar_of(pc[1]) < 0.0) ? -pc[1] : pc[1];
-              phi = atan2( ay, ax ) * T(180.0/PhysicalUnits::pi);
+              if( (scalar_of(ax)*scalar_of(ax) + scalar_of(ay)*scalar_of(ay)) > 0.0 )
+                phi = atan2( ay, ax ) * T(180.0/PhysicalUnits::pi);
             }
-            T val = grids[c]->eval( log( dist ), cos_t, phi );
+            const T ln_dist = log( dist );  // dist >= d_lo > 0 => finite in value and every lane
+            T val = grids[c]->eval( ln_dist, cos_t, phi );
 #if( PERFORM_DEVELOPER_CHECKS )
+            // Every quantity feeding the grid, and its result, must be finite in value AND every lane
+            //  (this is where cos_t = -pc[2]/dist = 0/0 used to poison the residual and Jacobian).
+            assert( all_finite_lanes(dist) && (scalar_of(dist) > 0.0) );
+            assert( all_finite_lanes(cos_t) );
+            assert( all_finite_lanes(ln_dist) );
+            assert( all_finite_lanes(phi) );
+            assert( all_finite_lanes(val) );
             diag[0] += 1;
             if( scalar_of(cos_t) < 0.0 )
               diag[1] += 1;
@@ -3198,6 +3225,9 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
           }//for( sub-pieces )
         }//for( pieces )
 
+#if( PERFORM_DEVELOPER_CHECKS )
+        assert( all_finite_lanes(line_sum) );
+#endif
         acc[c] += w_line * k_T * line_sum;
       }//for( calculators )
     }//for( lines in chunk )
@@ -3220,6 +3250,9 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     T total( 0.0 );
     for( size_t chunk = 0; chunk < num_chunks; ++chunk )
       total += partial[chunk][c];
+#if( PERFORM_DEVELOPER_CHECKS )
+    assert( all_finite_lanes(total) );
+#endif
     group[c]->integral = total;
     group[c]->m_num_evals = num_lines;
 

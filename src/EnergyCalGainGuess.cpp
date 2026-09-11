@@ -669,56 +669,83 @@ double score_hypothesis( const double offset, const double gain,
     }
   }//for( loop over candidate peaks - pass 2 )
 
-  // --- Nuclide self-consistency: matched parents should show their other strong lines -----
+  // --- Self-consistency: a matched source should show its other strong lines too.  Keyed by
+  //     nuclide for gammas, and by element for fluorescence x-rays (whose nuc is null) - so a
+  //     coherently-matched K-series (e.g. a shielding/collimator fingerprint) is rewarded like a
+  //     gamma multiplet, evidence only a correct gain can produce. --------------------------
   map<const SandiaDecay::Nuclide *, vector<size_t>> parent_matches; //-> matched line indices
   map<const SandiaDecay::Nuclide *, double> parent_quality_sum;
+  map<const SandiaDecay::Element *, vector<size_t>> element_matches;
+  map<const SandiaDecay::Element *, double> element_quality_sum;
   for( size_t i = 0; i < peaks.size(); ++i )
   {
-    if( matches[i].matched && lines[matches[i].line_index].nuc )
+    if( !matches[i].matched )
+      continue;
+    const LineSource &line = lines[matches[i].line_index];
+    if( line.nuc )
     {
-      parent_matches[ lines[matches[i].line_index].nuc ].push_back( matches[i].line_index );
-      parent_quality_sum[ lines[matches[i].line_index].nuc ] += matches[i].quality;
+      parent_matches[line.nuc].push_back( matches[i].line_index );
+      parent_quality_sum[line.nuc] += matches[i].quality;
+    }else if( (line.type == LineSource::Type::FluorXray) && line.el )
+    {
+      element_matches[line.el].push_back( matches[i].line_index );
+      element_quality_sum[line.el] += matches[i].quality;
     }
   }
 
-  for( const auto &pm : parent_matches )
+  // Awards the multiplet bonus / missing-line penalty for one source, given its matched line
+  //  indices (with possible repeats when two peaks land on one line), the summed match quality,
+  //  and a predicate selecting the source's library lines.  n_extra counts *distinct* lines, so
+  //  two peaks on one line cannot fake a multiplet.
+  auto score_self_consistency = [&]( const vector<size_t> &matched_line_indices,
+                                     const double quality_sum, auto belongs )
   {
-    const SandiaDecay::Nuclide * const nuc = pm.first;
-    const vector<size_t> &matched_lines = pm.second;
+    vector<size_t> distinct( matched_line_indices );
+    std::sort( begin(distinct), end(distinct) );
+    distinct.erase( std::unique( begin(distinct), end(distinct) ), end(distinct) );
 
     float max_matched_intensity = 0.0f;
-    for( const size_t index : matched_lines )
+    for( const size_t index : distinct )
       max_matched_intensity = std::max( max_matched_intensity, lines[index].rel_intensity );
 
-    // Lines of this parent we should have seen: at least ~25% as strong as its strongest
-    //  matched line, and inside the implied energy range of the spectrum.
+    // Lines we should have seen: at least ~25% as strong as the strongest matched line, and
+    //  inside the implied energy range of the spectrum.
     size_t n_expected = 0, n_matched_expected = 0;
     for( size_t i = 0; i < lines.size(); ++i )
     {
       const LineSource &line = lines[i];
-      if( (line.nuc != nuc) || (line.rel_intensity < 0.25f*max_matched_intensity) )
+      if( !belongs(line) || (line.rel_intensity < 0.25f*max_matched_intensity) )
         continue;
       if( (line.energy < std::max(sm_min_line_energy, offset + 0.01*gain*nchannels))
           || (line.energy > 0.98*e_top) )
         continue;
       ++n_expected;
-      if( std::find( begin(matched_lines), end(matched_lines), i ) != end(matched_lines) )
+      if( std::find( begin(distinct), end(distinct), i ) != end(distinct) )
         ++n_matched_expected;
     }
 
     if( !n_expected )
-      continue;
+      return;
 
     const double fraction = static_cast<double>(n_matched_expected)
                             / static_cast<double>(n_expected);
-    const double n_extra = static_cast<double>( std::min( matched_lines.size(), size_t(5) ) - 1 );
-    // Scaled by the average match quality, so a parent "matched" by several sloppy
+    const double n_extra = static_cast<double>( std::min( distinct.size(), size_t(5) ) - 1 );
+    // Scaled by the average match quality, so a source "matched" by several sloppy
     //  few-keV-off accidentals does not collect the same bonus as clean matches.
-    const double avg_quality = parent_quality_sum[nuc] / static_cast<double>(matched_lines.size());
+    const double avg_quality = quality_sum / static_cast<double>( matched_line_indices.size() );
     score += 0.35 * n_extra * fraction * avg_quality;
     if( (n_expected >= 3) && (fraction < 0.5) )
       score -= 0.4 * (1.0 - fraction);
-  }//for( matched parents )
+  };//score_self_consistency lambda
+
+  for( const auto &pm : parent_matches )
+    score_self_consistency( pm.second, parent_quality_sum[pm.first],
+        [nuc = pm.first]( const LineSource &l ) -> bool { return (l.nuc == nuc); } );
+
+  for( const auto &em : element_matches )
+    score_self_consistency( em.second, element_quality_sum[em.first],
+        [el = em.first]( const LineSource &l ) -> bool {
+          return (l.type == LineSource::Type::FluorXray) && (l.el == el); } );
 
   // --- Amplitude plausibility (weak): within a parent, stronger lines should tend to give
   //     bigger peaks.  Spearman rank correlation between peak area and line intensity.
@@ -954,7 +981,10 @@ guess_energy_cal( const std::shared_ptr<const SpecUtils::Measurement> &meas,
         dup = ( dup || is_duplicate( kept, s ) );
       if( !dup )
         survivors.push_back( std::move(s) );
-      if( survivors.size() >= 20 )
+      // Refine a generous pool: a correct-gain seed can score modestly *un-refined* (its offset
+      //  is not yet applied, and it earns no coherence credit until refinement), so keep enough
+      //  survivors that it is not crowded out by accidental seeds before it can be polished.
+      if( survivors.size() >= 40 )
         break;
     }
 

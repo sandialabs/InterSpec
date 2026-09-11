@@ -3237,7 +3237,7 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
 }//void fromAppUrl( std::string url_query )
 
 
-tuple<shared_ptr<DetectorPeakResponse>,double,double>
+DetectorPeakResponse::EccParseResult
   DetectorPeakResponse::parseEccFile( std::istream &input )
 {
   /*
@@ -3258,11 +3258,12 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
    ...
    */
   
-  // We dont currently handle DRF uncertainties (other than m_expOfLogPowerSeriesUncerts, which
-  //  we dont actually use anywhere anyway...), but in the future we hopefully will, so we'll
-  //  parse them here to.
+  // Per-point uncertainties: the %err column is a correlated baseline
+  //  uncertainty; the %cnvrg(i) column is an (uncorrelated) Monte-Carlo
+  //  convergence uncertainty.  Both are stored as fractional 1-sigma values,
+  //  aligned by index with `energy_efficiencies`.
   string line;
-  vector<pair<float,float>> energy_error;
+  vector<float> uncert_energies, baseline_frac, convergence_frac;
   vector<EnergyEfficiencyPair> energy_efficiencies;
   
   double source_area = 0.0, source_mass = 0.0;
@@ -3332,8 +3333,25 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
           throw runtime_error( "parseEccFile: efficiency <0 ("
                               + to_string(ene_eff.efficiency) + " at " + to_string(ene_eff.energy)
                               + " keV)" );
-        
-        energy_error.emplace_back( values[0], 0.001f * values[2] );
+
+        // %err (values[2]) and %cnvrg(i) (values[4]) are percentages; convert
+        //  to fractional 1-sigma.  (The old code used 0.001f here, which was
+        //  10x too small.)
+        float base_frac = 0.01f * values[2];
+        if( (base_frac < 0.0f) || IsNan(base_frac) || IsInf(base_frac) )
+          base_frac = 0.0f;
+
+        float conv_frac = 0.0f;
+        if( values.size() > 4 )
+        {
+          conv_frac = 0.01f * std::fabs( values[4] );
+          if( IsNan(conv_frac) || IsInf(conv_frac) )
+            conv_frac = 0.0f;
+        }
+
+        uncert_energies.push_back( ene_eff.energy );
+        baseline_frac.push_back( base_frac );
+        convergence_frac.push_back( conv_frac );
       }//if( values.size() > 3 )
     }//if( label is some value ) / else if( ... )
   }//while( SpecUtils::safe_get_line( input, line, 8192 ) )
@@ -3352,7 +3370,7 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   if( !ISOCS_fname.empty() )
     answer->m_name += (answer->m_name.empty() ? "" : " - ") + ISOCS_fname;
   if( !coll_name.empty() )
-    answer->m_name += (answer->m_name.empty() ? "" : " - ") + ISOCS_fname;
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + coll_name;
   
   answer->m_description = comment;
   if( !test_desc.empty() )
@@ -3408,9 +3426,42 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
   answer->m_lastUsedUtc = answer->m_createdUtc;
   answer->m_geomType = EffGeometryType::FixedGeomTotalAct;
   answer->m_parentHash = 0;
+
+  // Attach a default (fully-correlated) efficiency uncertainty so that
+  //  non-interactive callers (batch/LLM/DrfSelect) get uncertainties without
+  //  extra work.  Interactive callers may override this via EccUncertOptions.
+  if( uncert_energies.size() >= 2 )
+  {
+    try
+    {
+      std::shared_ptr<DetectorEfficiencyUncert> uncert
+        = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( uncert_energies,
+                                        baseline_frac, convergence_frac,
+                                        DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+      if( uncert )
+      {
+        std::shared_ptr<DetectorEfficiencyCurve> eff
+          = std::make_shared<DetectorEfficiencyCurve>( *answer->m_efficiency );
+        eff->setUncertainty( uncert );
+        answer->m_efficiency = eff;
+      }//if( uncert )
+    }catch( std::exception &e )
+    {
+      cerr << "parseEccFile: failed to build efficiency uncertainty: " << e.what() << endl;
+    }
+  }//if( uncert_energies.size() >= 2 )
+
   answer->computeHash();
 
-  return {answer, source_area, source_mass};
+  EccParseResult result;
+  result.drf = answer;
+  result.sourceArea = source_area;
+  result.sourceMass = source_mass;
+  result.uncertEnergies = uncert_energies;
+  result.baselineFrac = baseline_frac;
+  result.convergenceFrac = convergence_frac;
+
+  return result;
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
 
