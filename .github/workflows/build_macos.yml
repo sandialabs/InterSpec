@@ -44,27 +44,19 @@ jobs:
       - name: Define build paths
         run: |
           echo "BUILD_DIR=${RUNNER_TEMP}/build_macos" >> "${GITHUB_ENV}"
-          echo "DEPS_BUILD_DIR=${RUNNER_TEMP}/mac_deps_build" >> "${GITHUB_ENV}"
-          echo "DEPS_PREFIX_DIR=${RUNNER_TEMP}/mac_deps_prefix" >> "${GITHUB_ENV}"
           echo "INSTALLER_DIR=${RUNNER_TEMP}/mac_artifacts" >> "${GITHUB_ENV}"
           echo "PAYLOAD_DIR=${RUNNER_TEMP}/mac_artifacts/InterSpec_macOS_latest" >> "${GITHUB_ENV}"
 
       - name: Prepare directories
         run: |
-          mkdir -p "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}" "${BUILD_DIR}" "${INSTALLER_DIR}"
+          mkdir -p "${BUILD_DIR}" "${INSTALLER_DIR}"
 
-      - name: Cache macOS dependencies
-        id: cache-macos-deps
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.DEPS_PREFIX_DIR }}
-          key: macos-deps-${{ hashFiles('target/dep_build/dep_build_macOS.sh') }}
-
-      - name: Build dependency prefix
-        if: steps.cache-macos-deps.outputs.cache-hit != 'true'
-        run: |
-          chmod +x target/dep_build/dep_build_macOS.sh
-          ./target/dep_build/dep_build_macOS.sh "${{ github.workspace }}" "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}"
+      # The dependency prefix lives in a composite action rather than inline here so that this
+      # workflow and build_wt4_edge.yml compute the SAME cache key by construction - the latter
+      # exists to build this prefix ahead of time, which buys nothing if the keys can drift.
+      - name: Build or restore the dependency prefix
+        id: deps
+        uses: ./.github/actions/macos_deps_prefix
 
       - name: Import signing certificate
         env:
@@ -102,7 +94,7 @@ jobs:
           cmake -S "${{ github.workspace }}/target/macos" \
             -B "${BUILD_DIR}" \
             -G Xcode \
-            -DCMAKE_PREFIX_PATH="${DEPS_PREFIX_DIR}" \
+            -DCMAKE_PREFIX_PATH="${{ steps.deps.outputs.prefix-dir }}" \
             -DLEAFLET_MAPS_KEY="${LEAFLET_KEY}" \
             -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 

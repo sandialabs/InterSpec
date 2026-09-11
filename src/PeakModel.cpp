@@ -1847,9 +1847,62 @@ void PeakModel::setContinuumPolynomialFitFor( const Wt::WModelIndex index,
   }//for( const auto &p : m_sortedPeaks )
   
   notifySpecMeasOfPeakChange();
-  
+
   //dataChanged().emit( index, PeakModel::index(...) );
 }//void setContinuumPolynomialFitFor(...)
+
+
+size_t PeakModel::setAllPeaksUseForShieldingSourceFit( const bool use )
+{
+  if( !m_peaks || m_peaks->empty() )
+    return 0;
+
+  // Batch the whole change into a single undo step, and notify the SpecMeas once.
+  UndoRedoManager::PeakModelChange peak_undo_creator;
+  notifySpecMeasOfPeakChange();
+
+  size_t nchanged = 0;
+
+  // Update every peak that has a parent nuclide, replacing the shared_ptr in both m_sortedPeaks
+  //  and (by identity) m_peaks - see the same idiom in setContinuumPolynomialFitFor(...).
+  for( PeakShrdPtr &p : m_sortedPeaks )
+  {
+    if( !p || !p->parentNuclide() || (p->useForShieldingSourceFit() == use) )
+      continue;
+
+    auto new_peak = std::make_shared<PeakDef>( *p );
+    new_peak->useForShieldingSourceFit( use );
+
+    const auto pos = std::find( std::begin(*m_peaks), std::end(*m_peaks), p );
+    assert( pos != std::end(*m_peaks) );
+    if( pos == std::end(*m_peaks) )
+      throw std::runtime_error( "PeakModel::setAllPeaksUseForShieldingSourceFit(...):"
+                                " failed to find peak in m_peaks" );
+
+    *pos = new_peak;
+    p = new_peak;
+    nchanged += 1;
+  }//for( PeakShrdPtr &p : m_sortedPeaks )
+
+  // Emit a single refresh.  Doing this per-peak (via setData) instead triggers a re-sort /
+  //  layoutChanged / dataChanged storm that leaves the tree view's checkboxes visually stale.
+  if( nchanged )
+  {
+    if( m_sortColumn == kUseForShieldingSourceFit )
+    {
+      // sort() re-orders for the new use values and emits one layoutChanged + full dataChanged,
+      //  repainting every row (and driving the dependent callbacks) in a single pass.
+      sort( m_sortColumn, m_sortOrder );
+    }else
+    {
+      const int nrows = static_cast<int>( m_sortedPeaks.size() );
+      dataChanged().emit( PeakModel::index(0, kUseForShieldingSourceFit),
+                          PeakModel::index(nrows - 1, kUseForShieldingSourceFit) );
+    }
+  }//if( nchanged )
+
+  return nchanged;
+}//size_t setAllPeaksUseForShieldingSourceFit( const bool use )
 
 
 //Functions for the Wt::WAbstractItemModel interface

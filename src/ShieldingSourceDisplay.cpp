@@ -3766,28 +3766,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 //When the button is triggered, update model
 void ShieldingSourceDisplay::toggleUseAll( Wt::WCheckBox *button )
 {
-  UndoRedoManager::PeakModelChange peak_undo_creator;
-  
-  const bool useForFit = button->isChecked();
-  const size_t npeaks = m_peakModel->npeaks();
-  
-  for( size_t i = 0; i < npeaks; ++i )
-  {
-    try
-    {
-      const PeakModel::PeakShrdPtr peak = m_peakModel->peakPtr( i );
-      WModelIndex index = m_peakModel->indexOfPeak( peak );
-      
-      if( !!peak && index.isValid() && peak->parentNuclide() )
-      {
-        index = m_peakModel->index( index.row(), PeakModel::kUseForShieldingSourceFit );
-        m_peakModel->setData( index, useForFit );
-      }
-    }catch( std::exception & )
-    {
-      //shouldnt ever happen, wont worry about
-    }
-  }//for( size_t i = 0; i < npeaks; ++i )
+  // Single batch update + one model refresh (see PeakModel::setAllPeaksUseForShieldingSourceFit):
+  //  toggling each peak individually via setData caused a re-sort/dataChanged storm that left some
+  //  of the tree view's "use" checkboxes visually stale.
+  m_peakModel->setAllPeaksUseForShieldingSourceFit( button->isChecked() );
 }//void ShieldingSourceDisplay::toggleUseAll(Wt::WCheckBox* button)
 
 
@@ -7059,6 +7041,33 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
     if( !results || !results->peak_comparisons || !results->peak_calc_details
        || (results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
     {
+      // With no peaks selected for the fit, shieldingFitnessFcn()/ShieldingSourceChi2Fcn::create()
+      //  throws "no peaks selected", which the catch below swallows - leaving the chart showing
+      //  stale chi/pull points.  Detect that here (same test create() applies) and clear the chart
+      //  and interpretive text instead.
+      bool any_peak_selected = false;
+      const std::shared_ptr<const std::deque<PeakModel::PeakShrdPtr>> current_peaks = m_peakModel->peaks();
+      if( current_peaks )
+      {
+        for( const PeakModel::PeakShrdPtr &p : *current_peaks )
+        {
+          if( p && p->useForShieldingSourceFit() )
+          {
+            any_peak_selected = true;
+            break;
+          }
+        }//for( const PeakModel::PeakShrdPtr &p : *current_peaks )
+      }//if( current_peaks )
+
+      if( !any_peak_selected )
+      {
+        ShieldingSourceFitCalc::ModelFitResults empty_results;  // non-const: POD members default-init (see temp_results above)
+        m_chi2Plot->setData( empty_results );
+        updateTrendMessage( nullptr, false );
+        m_showLog->setHidden( !m_lastFitResults );
+        return;
+      }//if( !any_peak_selected )
+
       auto fcnAndPars = shieldingFitnessFcn();
 
       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
@@ -8487,16 +8496,7 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
   }//for( WWebWidget *child : shieldings )
   
   if( set_use_peaks_false )
-  {
-    for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
-    {
-      WModelIndex index = m_peakModel->index( peakn,
-                                             PeakModel::kUseForShieldingSourceFit );
-      const PeakModel::PeakShrdPtr &peak = m_peakModel->peak( index );
-      if( peak->useForShieldingSourceFit() )
-        m_peakModel->setData( index, false );
-    }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
-  }//if( set_use_peaks_false )
+    m_peakModel->setAllPeaksUseForShieldingSourceFit( false );
   
   //We shouldnt actually need the next line
 //  m_sourceModel->repopulateIsotopes();
