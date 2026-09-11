@@ -11,6 +11,13 @@
   fill: none;
 }
 
+/* Fractional efficiency uncertainty envelope (drawn under the efficiency line). */
+.DrfChart .drf-eff-uncert-band {
+  fill: var(--d3spec-fore-line-color, #B02B2C);
+  fill-opacity: 0.18;
+  stroke: none;
+}
+
 /* FWHM line styling */
 .DrfChart .fwhm-line {
   stroke: var(--d3spec-back-line-color, #3F4C6B);

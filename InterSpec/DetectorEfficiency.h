@@ -111,6 +111,34 @@ public:
                               const std::vector<float> &fracUncerts,
                               const double corrLength = sm_defaultLogEnergyCorrLength );
 
+  /** Builds a node covariance from a *correlated* per-point fractional
+   uncertainty plus an optional *uncorrelated* (diagonal) per-point fractional
+   uncertainty:
+     C[j][k] = correlatedFrac_j * correlatedFrac_k * rho(E_j,E_k)
+               + delta_jk * uncorrelatedFrac_j^2
+   with the same Gaussian log-energy kernel as #fromPointUncerts.
+
+   This models ISOCS .ecc uncertainties, whose baseline (%err) component is
+   correlated across energy, while the Monte-Carlo convergence (%cnvrg)
+   component is an independent per-energy estimate.
+
+   @param energies Node energies in keV; sorted (exact duplicates removed).
+   @param correlatedFrac Correlated fractional 1-sigma uncertainties (>= 0),
+          one per energy.
+   @param uncorrelatedFrac Uncorrelated (diagonal) fractional 1-sigma
+          uncertainties (>= 0); either empty or one per energy.
+   @param corrLength Correlation length in natural-log-energy units for the
+          correlated part.  A value <= 0 makes the correlated part diagonal;
+          #sm_fullyCorrelatedLength makes it ~100% correlated.
+
+   Throws std::runtime_error on invalid input.
+   */
+  static std::shared_ptr<DetectorEfficiencyUncert> fromCorrelatedPlusDiagonal(
+                              const std::vector<float> &energies,
+                              const std::vector<float> &correlatedFrac,
+                              const std::vector<float> &uncorrelatedFrac,
+                              const double corrLength );
+
   /** Sets the node covariance.
 
    @param energies Node energies in keV, strictly increasing, all > 0;
@@ -193,6 +221,18 @@ public:
    default will not alter previously stored DRFs.
    */
   static const double sm_defaultLogEnergyCorrLength;
+
+  /** Default log-energy correlation length pre-filled in the ISOCS .ecc import
+   UI (Gaussian mode).  Kept separate from #sm_defaultLogEnergyCorrLength so the
+   .ecc default can differ from the ANGLE/CSV default without changing them.
+   */
+  static const double sm_defaultEccCorrLength;
+
+  /** A log-energy correlation length large enough that all node pairs across a
+   realistic energy span have rho ~ 1, i.e. "fully correlated".  Used instead of
+   an infinite length so it serializes cleanly as a positive double.
+   */
+  static const double sm_fullyCorrelatedLength;
 
   /** Maximum number of covariance node energies accepted. */
   static const size_t sm_maxCovarianceNodes;

@@ -7323,8 +7323,8 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
 
       if( input.is_open() )
       {
-        auto result = DetectorPeakResponse::parseEccFile( input );
-        std::shared_ptr<DetectorPeakResponse> det = std::get<0>( result );
+        const DetectorPeakResponse::EccParseResult result = DetectorPeakResponse::parseEccFile( input );
+        std::shared_ptr<DetectorPeakResponse> det = result.drf;
         if( det && det->isValid() )
         {
           loadedFrom = "FilePath";

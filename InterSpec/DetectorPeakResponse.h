@@ -554,17 +554,47 @@ public:
   std::shared_ptr<const PeakFitDetPrefs> peakFitDetPrefs() const;
   void setPeakFitDetPrefs( std::shared_ptr<const PeakFitDetPrefs> prefs );
 
+  /** The result of parsing an ISOCS .ECC file. */
+  struct EccParseResult
+  {
+    /** A valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs).  A
+     default (fully-correlated) efficiency uncertainty is already attached when
+     the file carried per-point uncertainties.
+     */
+    std::shared_ptr<DetectorPeakResponse> drf;
+
+    /** Source surface area, in units of PhysicalUnits; zero if invalid. */
+    double sourceArea = 0.0;
+
+    /** Source mass, in units of PhysicalUnits; zero if invalid. */
+    double sourceMass = 0.0;
+
+    /** Node energies (keV) for the per-point uncertainties below, in file
+     order (typically already ascending).
+     */
+    std::vector<float> uncertEnergies;
+
+    /** Correlated baseline fractional 1-sigma uncertainties (from the %err
+     column), one per #uncertEnergies entry.
+     */
+    std::vector<float> baselineFrac;
+
+    /** Uncorrelated Monte-Carlo convergence fractional 1-sigma uncertainties
+     (from the %cnvrg(i) column), one per #uncertEnergies entry.
+     */
+    std::vector<float> convergenceFrac;
+  };//struct EccParseResult
+
   /** Parses a .ECC file from ISOCS into a fixed-geometry DRF.
-   
+
    On failure, will throw exception.
-   
-   Returns a tuple containing:
-    - a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
-    - Source surface area, in units of PhysicalUnits; a zero value will be given if invalid
-    - Source mass, in units of PhysicalUnits; a zero value will be given if invalid
+
+   The returned DRF has a default fully-correlated efficiency uncertainty
+   attached (built from the parsed per-point baseline + convergence
+   uncertainties); the raw per-point uncertainties are also returned so callers
+   can rebuild the uncertainty with a different correlation model.
    */
-  static std::tuple<std::shared_ptr<DetectorPeakResponse>,double,double>
-                                              parseEccFile( std::istream &input );
+  static EccParseResult parseEccFile( std::istream &input );
 
   /** Parses an ANGLE .outx XML file into a fixed-geometry DRF.
 

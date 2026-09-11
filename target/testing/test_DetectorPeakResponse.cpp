@@ -411,10 +411,14 @@ BOOST_AUTO_TEST_CASE( test_read_ecc_file )
 
   shared_ptr<DetectorPeakResponse> drf;
   double source_area = 0.0, source_mass = 0.0;
+  DetectorPeakResponse::EccParseResult ecc_result;
 
   BOOST_CHECK_NO_THROW(
-    std::tie(drf, source_area, source_mass) = DetectorPeakResponse::parseEccFile(input)
+    ecc_result = DetectorPeakResponse::parseEccFile(input)
   );
+  drf = ecc_result.drf;
+  source_area = ecc_result.sourceArea;
+  source_mass = ecc_result.sourceMass;
 
   BOOST_REQUIRE_MESSAGE( drf != nullptr, "ECC parsing should return valid DRF" );
 
@@ -459,6 +463,130 @@ BOOST_AUTO_TEST_CASE( test_read_ecc_file )
   }
 
   cout << "Successfully parsed ECC file" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_read_ecc_uncertainties )
+{
+  cout << "\n\nTesting ECC uncertainty import..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string ecc_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Detective-X_in-situ.ecc" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(ecc_file), "ECC file not found: " + ecc_file );
+
+  ifstream input( ecc_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open ECC file" );
+
+  DetectorPeakResponse::EccParseResult ecc;
+  BOOST_CHECK_NO_THROW( ecc = DetectorPeakResponse::parseEccFile(input) );
+  BOOST_REQUIRE( ecc.drf != nullptr );
+
+  // The raw arrays should be index-aligned and non-empty.
+  BOOST_REQUIRE( ecc.uncertEnergies.size() >= 2 );
+  BOOST_REQUIRE_EQUAL( ecc.uncertEnergies.size(), ecc.baselineFrac.size() );
+  BOOST_REQUIRE_EQUAL( ecc.uncertEnergies.size(), ecc.convergenceFrac.size() );
+
+  // The %err column is a percent; a 15% row must become 0.15 (verifies the
+  //  0.01 factor - the old code used 0.001, which was 10x too small).
+  BOOST_CHECK_MESSAGE( close_enough(ecc.uncertEnergies.front(), 45.0f, 1.0e-4),
+                       "First ECC node should be 45 keV" );
+  BOOST_CHECK_MESSAGE( close_enough(ecc.baselineFrac.front(), 0.15f, 1.0e-4),
+                       "45 keV baseline uncertainty should be 0.15, got "
+                       + to_string(ecc.baselineFrac.front()) );
+
+  // The default (parse-time) DRF should carry a (fully-correlated) uncertainty.
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = ecc.drf->efficiencyUncert();
+  BOOST_REQUIRE_MESSAGE( uncert != nullptr, "Parsed ECC DRF should carry an efficiency uncertainty" );
+  BOOST_CHECK( !uncert->isEmpty() );
+
+  // At a node, the 1-sigma fractional uncertainty equals sqrt(base^2 + conv^2).
+  for( size_t i = 0; i < ecc.uncertEnergies.size(); ++i )
+  {
+    const double e = ecc.uncertEnergies[i];
+    const double base = ecc.baselineFrac[i];
+    const double conv = ecc.convergenceFrac[i];
+    const double expected = std::sqrt( base*base + conv*conv );
+
+    const vector<double> sig = uncert->fracUncertainties( { e } );
+    BOOST_REQUIRE_EQUAL( sig.size(), 1u );
+    BOOST_CHECK_MESSAGE( close_enough(static_cast<float>(sig[0]), static_cast<float>(expected), 1.0e-3),
+                         "Node uncertainty at " + to_string(e) + " keV: " + to_string(sig[0])
+                         + " vs expected " + to_string(expected) );
+  }//for( each node )
+
+  cout << "Successfully imported ECC uncertainties" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_from_correlated_plus_diagonal )
+{
+  cout << "\n\nTesting DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal..." << endl;
+
+  const vector<float> energies = { 50.0f, 200.0f, 1000.0f };
+  const vector<float> baseline = { 0.15f, 0.10f, 0.08f };
+  const vector<float> convergence = { 0.02f, 0.03f, 0.01f };
+
+  // --- Gaussian correlation (finite length) ---
+  const double L = 0.35;
+  shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, convergence, L );
+  BOOST_REQUIRE( u != nullptr );
+
+  const vector<float> &cov = u->covarianceMatrix();
+  const vector<float> &cov_e = u->covarianceEnergies();
+  BOOST_REQUIRE_EQUAL( cov_e.size(), 3u );
+  BOOST_REQUIRE_EQUAL( cov.size(), 9u );
+
+  // Diagonal = base^2 + conv^2.
+  for( size_t i = 0; i < 3; ++i )
+  {
+    const double expected = baseline[i]*baseline[i] + convergence[i]*convergence[i];
+    BOOST_CHECK_MESSAGE( close_enough(cov[i*3 + i], static_cast<float>(expected), 1.0e-4),
+                         "Diagonal " + to_string(i) + ": " + to_string(cov[i*3+i])
+                         + " vs " + to_string(expected) );
+  }
+
+  // Off-diagonal = base_j*base_k*rho(E_j,E_k) (no diagonal convergence term).
+  for( size_t j = 0; j < 3; ++j )
+  {
+    for( size_t k = 0; k < 3; ++k )
+    {
+      if( j == k )
+        continue;
+      const double dlne = std::log((double)energies[j]) - std::log((double)energies[k]);
+      const double rho = std::exp( -0.5 * std::pow(dlne/L, 2.0) );
+      const double expected = baseline[j]*baseline[k]*rho;
+      BOOST_CHECK_MESSAGE( close_enough(cov[j*3 + k], static_cast<float>(expected), 1.0e-4),
+                           "Off-diagonal (" + to_string(j) + "," + to_string(k) + "): "
+                           + to_string(cov[j*3+k]) + " vs " + to_string(expected) );
+    }
+  }
+
+  // --- Uncorrelated (L <= 0): off-diagonal must be zero ---
+  shared_ptr<DetectorEfficiencyUncert> u_diag
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, convergence, -1.0 );
+  BOOST_REQUIRE( u_diag != nullptr );
+  const vector<float> &cd = u_diag->covarianceMatrix();
+  for( size_t j = 0; j < 3; ++j )
+    for( size_t k = 0; k < 3; ++k )
+      if( j != k )
+        BOOST_CHECK_MESSAGE( close_enough(cd[j*3+k], 0.0f, 1.0e-6),
+                             "Uncorrelated off-diagonal should be 0" );
+
+  // --- Fully correlated: rho ~ 1 across the span ---
+  shared_ptr<DetectorEfficiencyUncert> u_full
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, convergence,
+                                        DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+  BOOST_REQUIRE( u_full != nullptr );
+  const vector<float> &cf = u_full->covarianceMatrix();
+  // Off-diagonal (0,2) should be ~ base_0*base_2 (rho ~ 1).
+  const double expected_full = baseline[0]*baseline[2];
+  BOOST_CHECK_MESSAGE( close_enough(cf[0*3 + 2], static_cast<float>(expected_full), 1.0e-3),
+                       "Fully-correlated off-diagonal should approach base_j*base_k: "
+                       + to_string(cf[0*3+2]) + " vs " + to_string(expected_full) );
+
+  cout << "Successfully tested fromCorrelatedPlusDiagonal" << endl;
 }
 
 
@@ -1857,7 +1985,12 @@ BOOST_AUTO_TEST_CASE( test_reinterpret_as_far_field )
 
   shared_ptr<DetectorPeakResponse> drf_fixed;
   double source_area = 0.0, source_mass = 0.0;
-  std::tie(drf_fixed, source_area, source_mass) = DetectorPeakResponse::parseEccFile(input);
+  {
+    const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile(input);
+    drf_fixed = ecc_result.drf;
+    source_area = ecc_result.sourceArea;
+    source_mass = ecc_result.sourceMass;
+  }
 
   BOOST_REQUIRE( drf_fixed != nullptr );
   BOOST_REQUIRE( drf_fixed->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
@@ -1914,7 +2047,12 @@ BOOST_AUTO_TEST_CASE( test_convert_fixed_to_far_field )
 
   shared_ptr<DetectorPeakResponse> drf_fixed;
   double source_area = 0.0, source_mass = 0.0;
-  std::tie(drf_fixed, source_area, source_mass) = DetectorPeakResponse::parseEccFile(input);
+  {
+    const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile(input);
+    drf_fixed = ecc_result.drf;
+    source_area = ecc_result.sourceArea;
+    source_mass = ecc_result.sourceMass;
+  }
 
   BOOST_REQUIRE( drf_fixed != nullptr );
   BOOST_REQUIRE( drf_fixed->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );

@@ -159,6 +159,12 @@ DrfChart = function (elem, options) {
     .x(d => this.xScale(d.energy))
     .y(d => this.fwhmScale(d.fwhm));
 
+  // Filled envelope showing +-1 fractional-uncertainty around the efficiency line.
+  this.effUncertArea = d3.svg.area()
+    .x(d => this.xScale(d.energy))
+    .y0(d => this.efficiencyScale(d.lower))
+    .y1(d => this.efficiencyScale(d.upper));
+
   // Create clipping path for chart area
   this.chartArea.append("defs")
     .append("clipPath")
@@ -177,6 +183,11 @@ DrfChart = function (elem, options) {
   // the flat efficiency/FWHM lines).
   this.angleGroup = this.plotGroup.append("g")
     .attr("class", "drf-angle-series");
+
+  // Efficiency uncertainty band, drawn under the efficiency line.
+  this.effUncertBandPath = this.plotGroup.append("path")
+    .attr("class", "drf-eff-uncert-band")
+    .style("display", "none");
 
   // Add paths for lines
   this.efficiencyPath = this.plotGroup.append("path")
@@ -468,11 +479,13 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   const angleMode = !!this.responseSeries;
   if (angleMode && this.effMode === "absolute") {
     this.efficiencyPath.style("display", "none");
+    this.effUncertBandPath.style("display", "none");
     return;
   }
 
   if (!this.detector || !this.detector.hasEfficiency()) {
     this.efficiencyPath.style("display", "none");
+    this.effUncertBandPath.style("display", "none");
     return;
   }
 
@@ -500,18 +513,43 @@ DrfChart.prototype.updateEfficiencyLine = function() {
 
   if (efficiencyPoints.length === 0) {
     this.efficiencyPath.style("display", "none");
+    this.effUncertBandPath.style("display", "none");
     return;
   }
 
+  // Build the +-1 fractional-uncertainty envelope (only in the flat efficiency
+  // view; angle mode's flat line is a far-field reference the band wouldn't fit).
+  let bandPoints = [];
+  if (!angleMode && this.detector.hasEffUncert()) {
+    bandPoints = efficiencyPoints.map(d => {
+      const frac = this.detector.fracUncert(d.energy);
+      const f = (frac !== null && isFinite(frac) && frac > 0) ? frac : 0;
+      return { energy: d.energy, lower: Math.max(d.efficiency * (1 - f), 0), upper: d.efficiency * (1 + f) };
+    });
+  }
+
   // Update efficiency scale based on the generated points (in angle mode
-  // updateAngleSeries owns the efficiency domain).
+  // updateAngleSeries owns the efficiency domain).  Include the upper band so
+  // the envelope is not clipped off the top of the plot.
   if (!angleMode) {
-    const efficiencyExtent = d3.extent(efficiencyPoints, d => d.efficiency);
+    let effValues = efficiencyPoints.map(d => d.efficiency);
+    if (bandPoints.length)
+      effValues = effValues.concat(bandPoints.map(d => d.upper));
+    const efficiencyExtent = d3.extent(effValues);
     if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
       this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
       this.leftYAxisGroup.call(this.leftYAxis);
       this.adjustLeftMargin();
     }
+  }
+
+  // Draw (or hide) the uncertainty envelope under the efficiency line.
+  if (bandPoints.length) {
+    this.effUncertBandPath.datum(bandPoints)
+      .attr("d", this.effUncertArea)
+      .style("display", null);
+  } else {
+    this.effUncertBandPath.style("display", "none");
   }
 
   // Update the efficiency line (in intrinsic angle mode this is the far-field

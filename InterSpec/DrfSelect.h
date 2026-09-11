@@ -64,6 +64,7 @@ namespace ceelo{ struct GeometryDescriptor; }
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
+class EccUncertOptions;
 class NativeFloatSpinBox;
 class DetectorPeakResponse;
 namespace DataBaseUtils
@@ -449,6 +450,14 @@ protected:
   Wt::WComboBox *m_efficiencyType;
   Wt::WLabel *m_detectorDistanceLabel;
   Wt::WLineEdit *m_detectorDistance;
+
+  /** Holds the EccUncertOptions widget for uploaded ISOCS .ecc files; empty
+   (and hidden) for other upload types. */
+  Wt::WContainerWidget *m_eccUncertContainer;
+  EccUncertOptions *m_eccUncertWidget;
+  std::vector<float> m_eccUncertEnergies;
+  std::vector<float> m_eccBaselineFrac;
+  std::vector<float> m_eccConvergenceFrac;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;

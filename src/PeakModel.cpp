@@ -3479,8 +3479,15 @@ bool PeakModel::setData( const WModelIndex &index,
     }else if( (column == kPhotoPeakEnergy) || (column == kAmplitude) )
     {
       if( changedFit )
-        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kNumColumns-1) ); //just update whole row, jic
-      else
+      {
+        // A re-fit can change the identity, fit, and ROI columns.  Emit these as separate narrow
+        //  ranges rather than a single kIsotope..last-column range - a model should only signal the
+        //  cells that actually changed.  See the kIsotope branch below.
+        dataChanged().emit( PeakModel::index(row, kIsotope), PeakModel::index(row, kIsotope) );
+        dataChanged().emit( PeakModel::index(row, kMean), PeakModel::index(row, kCps) );
+        dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kDifference) );
+        dataChanged().emit( PeakModel::index(row, kLowerX), PeakModel::index(row, kContinuumType) );
+      }else
         dataChanged().emit( index, PeakModel::index(row, kDifference) );
     }else if( column == kMean )
     {
@@ -3490,7 +3497,11 @@ bool PeakModel::setData( const WModelIndex &index,
         dataChanged().emit( index, index );
     }else
     {
-      dataChanged().emit( index, PeakModel::index(row, kUserLabel) );
+      // column == kIsotope: a nuclide change updates the isotope name, its assigned gamma energy,
+      //  and the difference columns.  Emit these as narrow, separate ranges rather than one wide
+      //  kIsotope..kUserLabel range - a model should only signal the cells that actually changed.
+      dataChanged().emit( index, index ); // kIsotope
+      dataChanged().emit( PeakModel::index(row, kPhotoPeakEnergy), PeakModel::index(row, kDifference) );
     }
 
 

@@ -1668,6 +1668,14 @@ button.Wt-btn.with-label.LightButton,
   padding-right: 5px;
 }
 
+/* When a suggestion popup is reparented into a tree-view scroll box (e.g. the Peak Manager nuclide
+   column), Wt's `.Wt-treeview ul { padding-left: 20px }` rule out-specifies `.Wt-suggest` and
+   over-indents the items.  Restore the intended small padding for the popup's own list. */
+.Wt-treeview ul.Wt-suggest
+{
+  padding-left: 5px;
+}
+
 /* Style nuclide suggestion popup list items to be wider and full-width for easier clicking */
 .Wt-suggest.nuclide-suggest
 {
