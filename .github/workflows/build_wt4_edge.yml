@@ -182,6 +182,13 @@ jobs:
       # Keep it in step with INSTALL_DIR_NAME above and the .dmg name in build_macos.yml.
       ASSET_PATTERN: 'InterSpec_*Dangerously_Experimental*'
     steps:
+      # EndBug/latest-tag below runs git commands against the workspace, so this job needs a
+      # checkout even though it builds nothing.  (build_app.yml gets away without one in its
+      # release job only because its latest-tag step lives in a build job instead.)
+      # No submodules: tagging does not need them, and they are most of the clone time.
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
