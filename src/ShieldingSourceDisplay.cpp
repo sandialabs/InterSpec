@@ -8433,7 +8433,22 @@ void ShieldingSourceDisplay::deSerializeShieldings( const std::vector<ShieldingS
     if( !select )
       continue;
     
-    select->fromShieldingInfo( info );
+    if( is_fixed_geom )
+    {
+      // A fixed-geometry DRF can't have trace (volumetric) or self-attenuating sources,
+      //  and is always spherical.  Strip them before building widgets so we don't trigger
+      //  the trace-source signal chain (which asserts !m_fixedGeometry).  Mirrors
+      //  ShieldingSelect::deSerialize( node, is_fixed_geom_det ).
+      ShieldingSourceFitCalc::ShieldingInfo fixedInfo = info;
+      fixedInfo.m_nuclideFractions_.clear();
+      fixedInfo.m_traceSources.clear();
+      fixedInfo.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+      select->fromShieldingInfo( fixedInfo );
+    }else
+    {
+      select->fromShieldingInfo( info );
+    }
+
     select->handleUserChangeForUndoRedoWorker( false );
 
 #if( PERFORM_DEVELOPER_CHECKS )
