@@ -1234,6 +1234,42 @@ BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_csv_conversion_includes_cdf_ancho
 }
 
 
+// A legacy `BiLinearStepCDF` row whose coefficients were never read has nothing to convert: the
+// continuum still holds the linear fit `calc_linear_continuum_eqn` derived from the data, with the
+// step slots zeroed by `setType`.  Converting that anyway reads the zeroed step slots as the legacy
+// right-hand line and produces `step_k = -poly_k/A`, i.e. a step that cancels the continuum across
+// the ROI.  A CSV with a `Continuum_Type` column but no `Continuum_Coefficients` column is the
+// plainest way to get there, and neither InterSpec nor another program has to be at fault for it.
+BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_csv_without_coefficients_is_left_alone )
+{
+  const SyntheticRoi roi = make_synthetic_roi();
+
+  stringstream csv;
+  csv.precision( 12 );
+  csv << "Centroid,Net_Area,FWHM,ROI_Lower_Energy,ROI_Upper_Energy,Continuum_Type\r\n"
+      << roi.mean << ',' << roi.amplitude << ',' << (2.35482*roi.sigma) << ','
+      << roi.lower_energy << ',' << roi.upper_energy << ',' << s_legacy_bilinear_cdf_type
+      << "\r\n";
+
+  vector<PeakDef> peaks;
+  const shared_ptr<const PeakContinuum> cont = load_single_roi_csv( roi, csv.str(), peaks );
+
+  BOOST_REQUIRE( cont->type() == PeakContinuum::BiLinearStepCDF );
+  const vector<double> &pars = cont->parameters();
+  BOOST_REQUIRE_EQUAL( pars.size(), size_t(4) );
+
+  BOOST_CHECK_MESSAGE( (pars[2] == 0.0) && (pars[3] == 0.0),
+    "step coefficients became (" << pars[2] << ", " << pars[3] << ") from a row that carried no"
+    " coefficients at all" );
+
+  // The continuum must still roughly track the data it was fit from, rather than being cancelled.
+  const vector<double> counts = evaluate_over_roi( roi, cont, peaks );
+  const double first = counts.front(), last = counts.back();
+  BOOST_CHECK_MESSAGE( (last > 0.5*first) && (last < 2.0*first),
+    "continuum collapsed across the ROI: " << first << " -> " << last << " counts" );
+}
+
+
 // The writer tags the current convention, so a round trip must come back unchanged - in particular
 // not converted a second time, which would divide the step coefficients by the ROI area again.
 BOOST_AUTO_TEST_CASE( bilinear_step_cdf_csv_round_trips )
