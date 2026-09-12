@@ -27,7 +27,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 COMPONENTS_JSON = os.path.join(SCRIPT_DIR, "components.json")
 # Authoritative pinned versions for the prebuilt Windows dependencies.
-DEP_BAT_REL = os.path.join("target", "patches", "dep_build_msvc2022.bat")
+DEP_BAT_REL = os.path.join("target", "dep_build", "dep_build_msvc2022.bat")
 
 INTERSPEC_REPO = "https://github.com/sandialabs/InterSpec"
 

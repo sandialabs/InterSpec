@@ -31,6 +31,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <deque>
 #include <string>
 #include <map>
 #include <vector>
@@ -54,6 +55,8 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakFitLM.h"
+#include "InterSpec/PeakDists.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakFit_imp.hpp"
 
@@ -947,6 +950,350 @@ BOOST_AUTO_TEST_CASE( bilinear_step_cdf_reparameterization_is_exact )
 
   // (The inverse map b_k = p_k + s_k*A is exact by construction of s_k above, so asserting it here
   //  would only be testing the test; what matters is the per-channel agreement checked above.)
+}
+
+
+namespace
+{
+/** The `Continuum_Type` value a pre-version-3 InterSpec would have written - i.e. no "(vN)" tag. */
+const char * const s_legacy_bilinear_cdf_type = "BiLinearStepCDF";
+
+/** Builds a peak CSV of the subset of columns `csv_to_candidate_fit_peaks` actually reads.
+
+ `cont_coefs` is the whole `Continuum_Coefficients` cell: reference energy then the coefficients,
+ space separated, exactly as `write_peak_csv` lays it out.
+ */
+struct CsvPeakRow
+{
+  double mean = 0.0, fwhm = 0.0, area = 0.0;
+  double roi_lower = 0.0, roi_upper = 0.0;
+  string cont_type;
+  string cont_coefs;
+  string skew_type = "None";
+  string skew_coefs;
+};
+
+
+string make_peak_csv( const vector<CsvPeakRow> &rows )
+{
+  stringstream csv;
+  csv << "Centroid,Net_Area,FWHM,ROI_Lower_Energy,ROI_Upper_Energy,Continuum_Type,Skew_Type,"
+         "Continuum_Coefficients,Skew_Coefficients\r\n";
+
+  csv.precision( 12 );
+  for( const CsvPeakRow &r : rows )
+  {
+    csv << r.mean << ',' << r.area << ',' << r.fwhm << ',' << r.roi_lower << ',' << r.roi_upper
+        << ',' << r.cont_type << ',' << r.skew_type << ',' << r.cont_coefs << ',' << r.skew_coefs
+        << "\r\n";
+  }
+
+  return csv.str();
+}
+
+
+/** Formats a `Continuum_Coefficients` cell. */
+string cont_coef_cell( const double ref_energy, const vector<double> &coefs )
+{
+  stringstream ss;
+  ss.precision( 12 );
+  ss << ref_energy;
+  for( const double c : coefs )
+    ss << ' ' << c;
+  return ss.str();
+}
+
+
+/** Loads `csv` against `roi`'s spectrum, and returns the single continuum every peak shares. */
+shared_ptr<const PeakContinuum> load_single_roi_csv( const SyntheticRoi &roi, const string &csv,
+                                                     vector<PeakDef> &peaks )
+{
+  stringstream strm( csv );
+  peaks = PeakModel::csv_to_candidate_fit_peaks( roi.data, strm );
+  BOOST_REQUIRE( !peaks.empty() );
+
+  shared_ptr<const PeakContinuum> cont = peaks.front().continuum();
+  BOOST_REQUIRE( cont );
+  for( const PeakDef &p : peaks )
+    BOOST_REQUIRE_MESSAGE( p.continuum() == cont, "CSV peaks did not end up sharing one ROI" );
+
+  return cont;
+}
+
+
+/** Evaluates `cont` over `roi`'s channels, with `peaks` as the ROI's peaks. */
+vector<double> evaluate_over_roi( const SyntheticRoi &roi,
+                                  const shared_ptr<const PeakContinuum> &cont,
+                                  const vector<PeakDef> &peaks )
+{
+  vector<const PeakDef *> peak_ptrs;
+  for( const PeakDef &p : peaks )
+    peak_ptrs.push_back( &p );
+
+  vector<double> counts( roi.nchannel, 0.0 );
+  cont->offset_integral( roi.energies.data(), counts.data(), roi.nchannel, roi.data,
+                         peak_ptrs.data(), peak_ptrs.size() );
+  return counts;
+}
+
+
+/** The per-channel `SUM_j( amp_j * CDFbar_j ) * dx` the version-3 model multiplies its step by.
+
+ Recovered by probing the evaluator with `(p0,p1,s0,s1) = (0,0,1,0)`, rather than re-implementing
+ the anchored CDF here - the same trick `bilinear_step_cdf_reparameterization_is_exact` uses.
+ */
+vector<double> probe_anchored_cdf_sum( const SyntheticRoi &roi, vector<PeakDef> peaks )
+{
+  shared_ptr<PeakContinuum> probe = make_shared<PeakContinuum>();
+  probe->setType( PeakContinuum::BiLinearStepCDF );
+  probe->setRange( roi.lower_energy, roi.upper_energy );
+  probe->setParameters( roi.ref_energy, { 0.0, 0.0, 1.0, 0.0 }, {} );
+  for( PeakDef &p : peaks )
+    p.setContinuum( probe );
+
+  return evaluate_over_roi( roi, probe, peaks );
+}
+
+
+/** `SUM_j( amp_j * CDF_j(roi_lower) )` - the offset the un-anchored version-2 CDF carried. */
+double roi_amp_cdf0( const SyntheticRoi &roi, const vector<PeakDef> &peaks )
+{
+  double amp_cdf0 = 0.0;
+  for( const PeakDef &p : peaks )
+  {
+    const double *skew_pars = p.coefficients() + PeakDef::CoefficientType::SkewPar0;
+    amp_cdf0 += p.amplitude() * PeakDists::peak_cdf( roi.lower_energy, p.mean(), p.sigma(),
+                                                     p.skewType(), skew_pars );
+  }
+  return amp_cdf0;
+}
+
+
+/** The version-2 model's counts in channel `i`, built from the same CDF samples the version-3
+ evaluator uses so that only the parameter map is under test (see the reparameterisation comment
+ above `bilinear_step_cdf_reparameterization_is_exact`).
+
+ Version 2 was `(1-f)*a(E) + f*b(E)` with `f = g_raw/A`, which rearranges to
+ `a(E) + g_raw(E)*(s0 + s1*E')`; `g_raw = gbar + amp_cdf0` since version 2's CDF ran from -infinity.
+ */
+double legacy_channel_counts( const SyntheticRoi &roi, const size_t i,
+                              const double gbar_dx, const double amp_cdf0, const double total_amp,
+                              const double a0, const double a1, const double b0, const double b1 )
+{
+  const double x0_rel = roi.energies[i] - roi.ref_energy;
+  const double x1_rel = roi.energies[i+1] - roi.ref_energy;
+  const double dx = x1_rel - x0_rel;
+
+  const double s0 = (b0 - a0)/total_amp;
+  const double s1 = (b1 - a1)/total_amp;
+
+  const double left_int = (a0 * dx) + (0.5 * a1 * ((x1_rel*x1_rel) - (x0_rel*x0_rel)));
+  // `s1` multiplies E' at the channel centre; 0.5*(x1^2 - x0^2) == center*dx exactly.
+  const double step_int = (s0 * dx + 0.5 * s1 * ((x1_rel*x1_rel) - (x0_rel*x0_rel)))
+                          * ((gbar_dx/dx) + amp_cdf0);
+
+  return (std::max)( 0.0, left_int + step_int );
+}
+}//namespace
+
+
+// The peak CSV carries no file-level version field, so a `BiLinearStepCDF` cell with no "(vN)" tag
+// is a pre-version-3 one and its four coefficients mean `(left_const, left_linear, right_const,
+// right_linear)`.  Read under the current meaning instead, slot 2 - a count density of O(100) -
+// would become a step coefficient whose natural scale is O(1e-3), i.e. the absurd step that
+// `amplitude_survives_correct_step_and_collapses_on_absurd_one` shows collapsing the peak.
+//
+// Unlike the XML path, there is no continuum id to gather the ROI's peaks by; they are rows of the
+// same file, so the conversion can only run once every row has been read.
+BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_csv_converts_on_read )
+{
+  const SyntheticRoi roi = make_synthetic_roi();
+
+  // Two peaks sharing the ROI, so the conversion's `SUM_j(amp_j)` is genuinely a sum over rows.
+  const double amp0 = roi.amplitude, amp1 = 0.4*roi.amplitude;
+  const double total_amp = amp0 + amp1;
+  const double a0 = 300.0, a1 = -0.8, b0 = 268.0, b1 = 0.35;
+
+  CsvPeakRow row;
+  row.fwhm = 2.35482*roi.sigma;
+  row.roi_lower = roi.lower_energy;
+  row.roi_upper = roi.upper_energy;
+  row.cont_type = s_legacy_bilinear_cdf_type;
+  row.cont_coefs = cont_coef_cell( roi.ref_energy, { a0, a1, b0, b1 } );
+
+  CsvPeakRow row0 = row, row1 = row;
+  row0.mean = roi.mean;             row0.area = amp0;
+  row1.mean = roi.mean + 1.5;       row1.area = amp1;
+
+  vector<PeakDef> peaks;
+  const shared_ptr<const PeakContinuum> cont
+                  = load_single_roi_csv( roi, make_peak_csv( { row0, row1 } ), peaks );
+
+  BOOST_REQUIRE_EQUAL( peaks.size(), size_t(2) );
+  BOOST_REQUIRE( cont->type() == PeakContinuum::BiLinearStepCDF );
+
+  const vector<double> &pars = cont->parameters();
+  BOOST_REQUIRE_EQUAL( pars.size(), size_t(4) );
+
+  // The step coefficients must be the differences over the ROI's total area - not the raw
+  //  right-hand line, which is what an ungated read would have left here.
+  BOOST_CHECK_CLOSE( pars[2], (b0 - a0)/total_amp, 1.0E-3 );
+  BOOST_CHECK_CLOSE( pars[3], (b1 - a1)/total_amp, 1.0E-3 );
+  BOOST_CHECK_MESSAGE( fabs(pars[2]) < 1.0,
+    "step coefficient " << pars[2] << " is a count density, so the legacy coefficients were"
+    " reinterpreted rather than converted" );
+
+  // What actually matters: the continuum draws the same shape it did under version 2.
+  const vector<double> loaded = evaluate_over_roi( roi, cont, peaks );
+  const vector<double> gbar_dx = probe_anchored_cdf_sum( roi, peaks );
+  const double amp_cdf0 = roi_amp_cdf0( roi, peaks );
+
+  for( size_t i = 0; i < roi.nchannel; ++i )
+  {
+    const double expected = legacy_channel_counts( roi, i, gbar_dx[i], amp_cdf0, total_amp,
+                                                   a0, a1, b0, b1 );
+    // Coefficients go through a float in the CSV reader, hence 1e-6 rather than 1e-11.
+    const double tol = (std::max)( 1.0E-6 * fabs(expected), 1.0E-6 );
+    BOOST_CHECK_MESSAGE( fabs(loaded[i] - expected) < tol,
+      "channel " << i << ": loaded " << loaded[i] << " != legacy shape " << expected
+                 << " (diff " << (loaded[i] - expected) << ")" );
+  }
+}
+
+
+// The version-2 CDF ran from -infinity, so it carried a constant `step_k * SUM_j(amp_j*CDF_j(roi
+// lower))` that the ROI-anchored version-3 model does not.  For a bare Gaussian that offset is
+// ~2e-4 and invisible; for a Bortel tail it is several percent, so this is the case that actually
+// exercises the fold-in into the polynomial terms - in either the XML or the CSV path.
+BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_csv_conversion_includes_cdf_anchor )
+{
+  const SyntheticRoi roi = make_synthetic_roi();
+
+  const double total_amp = roi.amplitude;
+  const double a0 = 300.0, a1 = -0.8, b0 = 268.0, b1 = 0.35;
+  const double bortel_tau = 0.35;
+
+  CsvPeakRow row;
+  row.mean = roi.mean;
+  row.area = total_amp;
+  row.fwhm = 2.35482*roi.sigma;
+  row.roi_lower = roi.lower_energy;
+  row.roi_upper = roi.upper_energy;
+  row.cont_type = s_legacy_bilinear_cdf_type;
+  row.cont_coefs = cont_coef_cell( roi.ref_energy, { a0, a1, b0, b1 } );
+  row.skew_type = PeakDef::to_string( PeakDef::SkewType::Bortel );
+  row.skew_coefs = to_string( bortel_tau );
+
+  vector<PeakDef> peaks;
+  const shared_ptr<const PeakContinuum> cont
+                  = load_single_roi_csv( roi, make_peak_csv( { row } ), peaks );
+
+  BOOST_REQUIRE_EQUAL( peaks.size(), size_t(1) );
+  BOOST_REQUIRE( peaks.front().skewType() == PeakDef::SkewType::Bortel );
+
+  const double amp_cdf0 = roi_amp_cdf0( roi, peaks );
+  const double s0 = (b0 - a0)/total_amp;
+
+  // The offset has to be non-negligible, or this test is checking nothing.  Note that
+  //  `PeakDists::peak_cdf` is not normalised the same way for every skew type - Bortel's runs over
+  //  [-0.5,0.5] rather than [0,1] - but that cancels: version 2 blended with this same function, so
+  //  the conversion reproduces whatever offset it carried.
+  BOOST_REQUIRE_MESSAGE( fabs(amp_cdf0/total_amp) > 0.01,
+    "Bortel CDF offset at the ROI edge is only " << (amp_cdf0/total_amp) );
+
+  // The constant term must have absorbed the offset, rather than being carried over as-is.
+  const vector<double> &pars = cont->parameters();
+  BOOST_CHECK_CLOSE( pars[0], a0 + s0*amp_cdf0, 1.0E-3 );
+  BOOST_CHECK_MESSAGE( fabs(pars[0] - a0) > 1.0E-6*fabs(a0),
+    "constant term " << pars[0] << " is unchanged from the legacy left_const " << a0
+                     << ", so the CDF-anchor offset was dropped" );
+
+  const vector<double> loaded = evaluate_over_roi( roi, cont, peaks );
+  const vector<double> gbar_dx = probe_anchored_cdf_sum( roi, peaks );
+
+  double worst_without_foldin = 0.0;
+  for( size_t i = 0; i < roi.nchannel; ++i )
+  {
+    const double expected = legacy_channel_counts( roi, i, gbar_dx[i], amp_cdf0, total_amp,
+                                                   a0, a1, b0, b1 );
+    const double tol = (std::max)( 1.0E-6 * fabs(expected), 1.0E-6 );
+    BOOST_CHECK_MESSAGE( fabs(loaded[i] - expected) < tol,
+      "Bortel: channel " << i << ": loaded " << loaded[i] << " != legacy shape " << expected
+                         << " (diff " << (loaded[i] - expected) << ")" );
+
+    // How wrong the shape would be had the fold-in been skipped.
+    const double no_foldin = legacy_channel_counts( roi, i, gbar_dx[i], 0.0, total_amp,
+                                                    a0, a1, b0, b1 );
+    if( expected > 0.0 )
+      worst_without_foldin = (std::max)( worst_without_foldin, fabs(no_foldin - expected)/expected );
+  }
+
+  BOOST_CHECK_MESSAGE( worst_without_foldin > 0.005,
+    "dropping the CDF-anchor offset would only move the continuum by "
+      << 100.0*worst_without_foldin << "%, so this test does not pin it" );
+}
+
+
+// The writer tags the current convention, so a round trip must come back unchanged - in particular
+// not converted a second time, which would divide the step coefficients by the ROI area again.
+BOOST_AUTO_TEST_CASE( bilinear_step_cdf_csv_round_trips )
+{
+  const SyntheticRoi roi = make_synthetic_roi();
+
+  const double s0 = -30.0/roi.amplitude, s1 = 1.5e-5;
+  const vector<double> coefs{ 300.0, -0.8, s0, s1 };
+
+  shared_ptr<PeakContinuum> cont = make_shared<PeakContinuum>();
+  cont->setType( PeakContinuum::BiLinearStepCDF );
+  cont->setRange( roi.lower_energy, roi.upper_energy );
+  cont->setParameters( roi.ref_energy, coefs, {} );
+
+  shared_ptr<PeakDef> peak = make_shared<PeakDef>( roi.mean, roi.sigma, roi.amplitude );
+  peak->setContinuum( cont );
+
+  deque<shared_ptr<const PeakDef>> peaks{ peak };
+  stringstream csv;
+  PeakModel::write_peak_csv( csv, "synthetic", PeakModel::PeakCsvType::Full, peaks, roi.data );
+
+  BOOST_REQUIRE_MESSAGE( csv.str().find("BiLinearStepCDF(v3)") != string::npos,
+    "write_peak_csv did not tag the continuum convention:\n" << csv.str() );
+
+  stringstream in( csv.str() );
+  const vector<PeakDef> read_peaks = PeakModel::csv_to_candidate_fit_peaks( roi.data, in );
+  BOOST_REQUIRE_EQUAL( read_peaks.size(), size_t(1) );
+
+  const shared_ptr<const PeakContinuum> read_cont = read_peaks.front().continuum();
+  BOOST_REQUIRE( read_cont->type() == PeakContinuum::BiLinearStepCDF );
+
+  const vector<double> &pars = read_cont->parameters();
+  BOOST_REQUIRE_EQUAL( pars.size(), size_t(4) );
+  for( size_t i = 0; i < 4; ++i )
+    BOOST_CHECK_CLOSE( pars[i], coefs[i], 1.0E-3 );
+}
+
+
+// A CSV claiming a convention this InterSpec does not know must not have its coefficients read
+// under todays meaning; the row falls back to the continuum derived from the data.
+BOOST_AUTO_TEST_CASE( future_continuum_convention_is_not_read_as_current )
+{
+  const SyntheticRoi roi = make_synthetic_roi();
+
+  CsvPeakRow row;
+  row.mean = roi.mean;
+  row.area = roi.amplitude;
+  row.fwhm = 2.35482*roi.sigma;
+  row.roi_lower = roi.lower_energy;
+  row.roi_upper = roi.upper_energy;
+  row.cont_type = string(s_legacy_bilinear_cdf_type) + "(v99)";
+  row.cont_coefs = cont_coef_cell( roi.ref_energy, { 300.0, -0.8, 268.0, 0.35 } );
+
+  stringstream strm( make_peak_csv( { row } ) );
+  const vector<PeakDef> peaks = PeakModel::csv_to_candidate_fit_peaks( roi.data, strm );
+  BOOST_REQUIRE_EQUAL( peaks.size(), size_t(1) );
+
+  const shared_ptr<const PeakContinuum> cont = peaks.front().continuum();
+  BOOST_CHECK_MESSAGE( cont->type() != PeakContinuum::BiLinearStepCDF,
+    "a future continuum convention was accepted as the current one" );
 }
 
 
