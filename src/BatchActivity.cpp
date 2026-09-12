@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <memory>
 #include <string>
@@ -40,6 +41,8 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
@@ -642,6 +645,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   //  done a file at a time so that only one input file is held parsed in memory at once.
   size_t num_analyses = 0;
 
+  // The representative gamma line per nuclide, chosen once from the exemplar (its largest-amplitude
+  //  peak used for the activity fit), so per-source detection-limit columns report a consistent
+  //  line across every spectrum.  Built lazily the first time the exemplar is available.
+  bool exemplar_rep_energy_built = false;
+  std::map<std::string,double> exemplar_rep_energy;
+
   for( size_t input_index = 0; input_index < files.size(); ++input_index )
   {
    const shared_ptr<SpecMeas> input_cached_file
@@ -681,7 +690,45 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.m_exemplar_file;
-    
+
+    // Build the exemplar representative-line map once; the exemplar is invariant across input files.
+    if( !exemplar_rep_energy_built && cached_exemplar_n42 )
+    {
+      exemplar_rep_energy_built = true;
+
+      shared_ptr<const SpecUtils::Measurement> ex_spectrum;
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> ex_peaks;
+      set<int> ex_samples = exemplar_sample_nums;
+      try
+      {
+        BatchPeak::get_exemplar_spectrum_and_peaks( ex_spectrum, ex_peaks, ex_samples,
+                                                   cached_exemplar_n42, false );
+      }catch( std::exception & )
+      {
+        ex_peaks.reset();
+      }
+
+      if( ex_peaks )
+      {
+        map<string,double> best_amp;  // nuclide symbol -> largest amplitude seen
+        for( const shared_ptr<const PeakDef> &p : *ex_peaks )
+        {
+          if( !p || !p->useForShieldingSourceFit() )
+            continue;
+          const SandiaDecay::Nuclide * const nuc = p->parentNuclide();
+          if( !nuc )
+            continue;
+
+          const map<string,double>::const_iterator prev = best_amp.find( nuc->symbol );
+          if( (prev == end(best_amp)) || (p->amplitude() > prev->second) )
+          {
+            best_amp[nuc->symbol] = p->amplitude();
+            exemplar_rep_energy[nuc->symbol] = p->mean();
+          }
+        }//for( const shared_ptr<const PeakDef> &p : *ex_peaks )
+      }//if( ex_peaks )
+    }//if( build the exemplar representative-line map )
+
     for( const string &warn : fit_results.m_warnings )
       warnings.push_back( "File '" + item.label + "': " + warn );
 
@@ -800,7 +847,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     //Now add info about the analysis setup
     data["HasFitResults"] = !!fit_results.m_fit_results;
     if( fit_results.m_fit_results )
+    {
       BatchInfoLog::shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
+
+      // Per-source Lc/MDA/status from the exemplars representative line for each nuclide.
+      BatchInfoLog::add_exemplar_detection_limit_rollup_to_sources( data,
+                        fit_results.m_fit_results->supplemental_peak_info, exemplar_rep_energy );
+    }//if( fit_results.m_fit_results )
 
     // Detection limits for the exemplar peaks that couldnt be fit; the peak fit results arent
     //  otherwise included in activity/shielding reports.
@@ -1648,6 +1701,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   
   
   deque<shared_ptr<const PeakDef>> foreground_peaks = foreground_peak_fit_result.fit_peaks;
+
   if( foreground_peaks.empty() )
   {
     result.m_error_msg = "No foreground peaks fit.";
@@ -1766,7 +1820,17 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     result.m_result_code = BatchActivityFitResult::ResultCode::NoSourceNuclides;
     return result;
   }//if( src_definitions.empty() )
-  
+
+  // A foreground peak drives the shielding/source fit for its parent nuclide only when it is
+  //  non-null and flagged use-for-fit.  This MUST match the peak filter in
+  //  ShieldingSourceChi2Fcn::create() (GammaInteractionCalc.cpp ~L1031): create() builds its
+  //  fit-nuclide list from exactly these peaks, and setInitialSourceDefinitions() then requires
+  //  one source definition per such nuclide.  Sharing one predicate keeps the source list and the
+  //  fit-nuclide list from diverging (the cause of the numNuclides()!=sources crash).
+  const auto peak_used_for_src_fit = []( const shared_ptr<const PeakDef> &p ) -> bool {
+    return (p && p->useForShieldingSourceFit());
+  };
+
   // We may not have fit peaks for all `src_definitions`.  Lets remove these sources,
   //  and add warnings about it
   {// Begin remove sources without peaks
@@ -1780,18 +1844,63 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       
       bool have_nuc_in_peak = false;
       for( const auto &p : foreground_peaks )
-        have_nuc_in_peak |= (p->parentNuclide() == nuclide);
-      
+        have_nuc_in_peak |= (peak_used_for_src_fit(p) && (p->parentNuclide() == nuclide));
+
       if( have_nuc_in_peak )
         srcs_with_peaks.push_back( src );
       else
-        result.m_warnings.push_back( "No peak assigned to nuclide " + nuclide->symbol
-                                    + ", not using this nuclide." );
+        result.m_warnings.push_back( "No peak used for the shielding/source fit is assigned to"
+                                    " nuclide " + nuclide->symbol + "; not fitting for this"
+                                    " nuclide." );
     }//for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
     
     srcs_with_peaks.swap( src_definitions );
   }// End remove sources without peaks
-  
+
+  if( src_definitions.empty() )
+  {
+    result.m_error_msg = "None of the exemplar's source nuclides had a peak marked to be used for"
+                         " the shielding/source fit in this spectrum.";
+    result.m_result_code = BatchActivityFitResult::ResultCode::NoSourceNuclides;
+    return result;
+  }//if( src_definitions.empty() ) after pruning
+
+  // The pruned source list is now final.  A foreground peak still flagged use-for-fit but whose
+  //  parent nuclide is not one of these sources would make create() add a fit nuclide with no
+  //  SourceFitDef (numNuclides() > sources), throwing in
+  //  ShieldingSourceChi2Fcn::setInitialSourceDefinitions().  This happens when the exemplar has a
+  //  used peak whose nuclide was never a source (e.g. a duplicate assignment such as Pu241 at the
+  //  Am241 59.54 keV line).  Clear the flag on a copy so the peak still contributes its data, but
+  //  does not introduce an undefined source.
+  {
+    set<const SandiaDecay::Nuclide *> src_nucs;
+    for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
+      src_nucs.insert( src.nuclide );
+
+    set<const SandiaDecay::Nuclide *> warned_nucs;
+    for( shared_ptr<const PeakDef> &p : foreground_peaks )
+    {
+      if( !peak_used_for_src_fit(p) )
+        continue;
+
+      const SandiaDecay::Nuclide * const nuc = p->parentNuclide();
+      if( !nuc || src_nucs.count(nuc) )
+        continue;
+
+      auto neutralized = make_shared<PeakDef>( *p );
+      neutralized->useForShieldingSourceFit( false );
+      p = neutralized;  // deque holds shared_ptr<const PeakDef>; replaces the element in place
+
+      if( !warned_nucs.count(nuc) )
+      {
+        warned_nucs.insert( nuc );
+        result.m_warnings.push_back( "Peak(s) assigned to nuclide " + nuc->symbol + " are marked"
+              " to be used for the shielding/source fit, but this nuclide is not a source in the"
+              " exemplar model; not using these peaks in the fit." );
+      }
+    }//for( shared_ptr<const PeakDef> &p : foreground_peaks )
+  }// End neutralize used peaks with no matching source
+
   try
   {
     // We have all the parts, lets do the computation:
@@ -1870,8 +1979,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       result.m_result_code = BatchActivityFitResult::ResultCode::FitNotSuccessful;
       return result;
     }
-    
-    
+
     for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
     {
       assert( insrc.nuclide );

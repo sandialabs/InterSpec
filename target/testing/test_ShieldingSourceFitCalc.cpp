@@ -4549,6 +4549,195 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
 }//BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
 
 
+/** Guards against Peelle's Pertinent Puzzle: a large, fully-correlated detector-efficiency band must
+ NOT bias the fitted activity.
+
+ DrfUncertaintyInActivityFit forces observed == expected (peaks_with_model_expected_areas), which is
+ the ONE case where PPP has exactly zero bias: for observed parallel to the model prediction,
+ s* = (e^T S^-1 o)/(e^T S^-1 e) = 1 regardless of the covariance S.  Here we deliberately break that
+ parallelism with an asymmetric +10%/-10% perturbation, so a covariance scaled by the OBSERVED counts
+ (the pre-fix bug) pulls the activity systematically low (~30-38% for a 15% band), while scaling by
+ the EXPECTED (model) counts recovers the option-off activity.
+ */
+BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const double distance = 100.0*PhysicalUnits::cm;
+  const double live_time = 1000.0*PhysicalUnits::second;
+  const double true_activity = 1.0*PhysicalUnits::microCi;
+  const double frac_eff_uncert = 0.15;  //large, fully-correlated band - the PPP-prone regime
+
+  const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+  BOOST_REQUIRE( co60 );
+
+  auto make_drf = [distance,frac_eff_uncert]( const bool with_uncert ) -> shared_ptr<DetectorPeakResponse> {
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                  5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  0, 3000*PhysicalUnits::keV,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    if( with_uncert )
+    {
+      const float u2 = static_cast<float>( frac_eff_uncert * frac_eff_uncert );
+      auto uncert = make_shared<DetectorEfficiencyUncert>();
+      uncert->setNodeCovariance( { 1.0f, 3000.0f }, { u2, u2, u2, u2 } );  //fully correlated
+      drf->setEfficiencyUncert( uncert );
+    }
+    return drf;
+  };
+
+  auto make_input = [&]( const shared_ptr<DetectorPeakResponse> &drf, const bool use_uncert )
+                    -> GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput
+  {
+    ShieldingSourceFitCalc::SourceFitDef src;
+    src.nuclide = co60;
+    src.activity = true_activity;
+    src.fitActivity = true;
+    src.age = 1.0*PhysicalUnits::year;
+    src.fitAge = false;
+    src.ageDefiningNuc = nullptr;
+    src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    auto foreground = make_shared<SpecUtils::Measurement>();
+    auto spec = make_shared<vector<float>>( vector<float>{0.0f, 1.0f, 5.0f, 2.0f} );
+    foreground->set_gamma_counts( spec, live_time/PhysicalUnits::second,
+                                  live_time/PhysicalUnits::second );
+
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+    options.multiple_nucs_contribute_to_peaks = false;
+    options.attenuate_for_air = false;
+    options.account_for_decay_during_meas = false;
+    options.multithread_self_atten = true;
+    options.photopeak_cluster_sigma = 1.25;
+    options.background_peak_subtract = false;
+    options.same_age_isotopes = false;
+    options.account_for_drf_uncert = use_uncert;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
+    input.config.distance = distance;
+    input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    input.config.shieldings = {};
+    input.config.sources = { src };
+    input.config.options = options;
+    input.detector = drf;
+    input.foreground = foreground;
+    input.background = nullptr;
+    input.foreground_peaks = {
+      make_test_peak( co60, 1173.228, 1.0, 1.0E5 ),
+      make_test_peak( co60, 1332.492, 1.0, 1.0E5 )
+    };
+    input.background_peaks = nullptr;
+    return input;
+  };
+
+  // Build the "truth" peaks once (model expectation at the true activity), then BREAK observed==
+  //  expected with an asymmetric +10%/-10% perturbation.  The efficiency curve is identical for
+  //  make_drf(true)/make_drf(false), so the model expectation - and thus these perturbed observed
+  //  areas - are the same for every run below; only the DRF-uncert option differs.
+  deque<shared_ptr<const PeakDef>> perturbed_peaks;
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput seed_input
+                                              = make_input( make_drf(false), false );
+    const deque<shared_ptr<const PeakDef>> truth = peaks_with_model_expected_areas( seed_input );
+    BOOST_REQUIRE_EQUAL( truth.size(), 2u );
+
+    const double scales[2] = { 1.10, 0.90 };
+    size_t idx = 0;
+    for( const shared_ptr<const PeakDef> &p : truth )
+    {
+      auto peak = make_shared<PeakDef>( *p );
+      const double area = p->peakArea() * scales[idx % 2];
+      peak->setPeakArea( area );
+      peak->setPeakAreaUncert( sqrt(area) );  //Poisson on the perturbed observed
+      perturbed_peaks.push_back( peak );
+      ++idx;
+    }
+  }
+
+  struct FitOut
+  {
+    double act = 0.0, act_uncert = 0.0, sum_counts = 0.0;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> peaks;
+  };
+
+  auto run_fit = [&]( const shared_ptr<DetectorPeakResponse> &drf, const bool use_uncert ) -> FitOut
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+                                                  = make_input( drf, use_uncert );
+    input.foreground_peaks = perturbed_peaks;  //same observed for every run
+
+    FitOut out;
+    for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
+      out.sum_counts += p->peakArea();
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+          fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    auto progress_fcn = [](){};
+    auto finished_fcn = [](){};
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                       progress_fcn, results, finished_fcn );
+
+    BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), 1 );
+    out.act = results->fit_src_info[0].activity;
+    BOOST_REQUIRE( results->fit_src_info[0].activityUncertainty.has_value() );
+    out.act_uncert = *results->fit_src_info[0].activityUncertainty;
+    if( results->peak_comparisons )
+      out.peaks = *results->peak_comparisons;
+    return out;
+  };
+
+  const FitOut base = run_fit( make_drf(false), false );  //no uncert info at all
+  const FitOut off  = run_fit( make_drf(true),  false );  //band present, option off
+  const FitOut with = run_fit( make_drf(true),  true  );  //band present, option on
+
+  // Option off must be bit-identical to a DRF carrying no uncertainty (the band only enters when on).
+  BOOST_CHECK_EQUAL( off.act, base.act );
+
+  // CORE anti-bias check.  Pre-fix (covariance scaled by OBSERVED counts) this fails by ~30-38%.
+  BOOST_CHECK_MESSAGE( fabs(with.act - off.act) < 0.02*off.act,
+      "DRF-uncert biased the fit: option-on activity " << with.act
+      << " vs option-off " << off.act
+      << " (" << 100.0*(with.act - off.act)/off.act << "% off; a >2% gap is the PPP bug)" );
+
+  // The correlated band is still propagated into the activity uncertainty: it adds ~1:1 (NOT the
+  //  naive s/sqrt(2) diagonal reduction) and strictly inflates the statistics-only uncertainty.
+  const double rel_stat = 1.0 / sqrt( off.sum_counts );
+  const double rel_expected = sqrt( rel_stat*rel_stat + frac_eff_uncert*frac_eff_uncert );
+  BOOST_CHECK_MESSAGE( fabs( (with.act_uncert/with.act) - rel_expected ) < 0.15*rel_expected,
+      "GLS rel uncert " << with.act_uncert/with.act << " vs expected " << rel_expected );
+  BOOST_CHECK_MESSAGE( (with.act_uncert/with.act) > (off.act_uncert/off.act),
+      "option-on uncert " << with.act_uncert/with.act
+      << " should exceed statistics-only " << off.act_uncert/off.act );
+
+  // Display (marginal pull) also uses expected-based sigma: with an asymmetric perturbation the
+  //  per-peak pulls must straddle zero, not sit on a common +Nsigma shelf (the reported symptom).
+  BOOST_REQUIRE_EQUAL( with.peaks.size(), 2u );
+  double min_pull = with.peaks[0].numSigmaOff, max_pull = with.peaks[0].numSigmaOff, sum_pull = 0.0;
+  for( const GammaInteractionCalc::PeakResultPlotInfo &pk : with.peaks )
+  {
+    if( pk.numSigmaOff < min_pull ) min_pull = pk.numSigmaOff;
+    if( pk.numSigmaOff > max_pull ) max_pull = pk.numSigmaOff;
+    sum_pull += pk.numSigmaOff;
+  }
+  const double mean_pull = sum_pull / static_cast<double>( with.peaks.size() );
+  BOOST_CHECK_MESSAGE( (min_pull < 0.0) && (max_pull > 0.0),
+      "marginal pulls should straddle zero, got [" << min_pull << ", " << max_pull << "]" );
+  BOOST_CHECK_MESSAGE( (fabs(min_pull) < 3.0) && (fabs(max_pull) < 3.0),
+      "marginal pulls unexpectedly large: [" << min_pull << ", " << max_pull << "]" );
+  BOOST_CHECK_MESSAGE( fabs(mean_pull) < 0.75,
+      "mean marginal pull " << mean_pull << " should be near zero (a +Nsigma shelf is the bug)" );
+}//BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
+
+
 /** Requesting cascade-summing correction with a DRF lacking total-efficiency
  info must throw at chi2-function creation (the batch/API contract).
  */

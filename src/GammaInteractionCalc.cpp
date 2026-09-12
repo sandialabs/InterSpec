@@ -4590,15 +4590,16 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     ++included_peak_index;
     
     // Marginal pull: the per-peak denominator is sqrt(Sigma_ii) of the SAME covariance the
-    //  (correlated) fit minimizes - Sigma = diag(stat^2) + diag(obs).C_efffrac.diag(obs), see
-    //  `compute_efficiency_whitening`.  So the efficiency term scales with the observed counts, not
-    //  the expected: it is the data point's own uncertainty, and must not move as the model moves.
-    //  This is a genuine per-peak sigma - unlike a GLS whitened residual, which mixes peaks in
-    //  Cholesky order and so cannot be read as "how far off is THIS peak" (nor fed to
-    //  ShieldSourcePullTrend's pull-vs-energy diagnostic).
+    //  (correlated) fit minimizes - Sigma = diag(stat^2) + diag(exp).C_efffrac.diag(exp), see
+    //  `compute_efficiency_whitening`.  The correlated efficiency term is a normalization uncertainty
+    //  on the MODEL prediction, so it scales with the expected counts, not the observed: scaling it
+    //  by the measured data is Peelle's Pertinent Puzzle and biases the pull (and the fit)
+    //  systematically low.  This is still a genuine per-peak (marginal) sigma - unlike a GLS whitened
+    //  residual, which mixes peaks in Cholesky order and so cannot be read as "how far off is THIS
+    //  peak" (nor fed to ShieldSourcePullTrend's pull-vs-energy diagnostic).
     if( eff_frac_uncert > 0.0 )
     {
-      const double eff_uncert = observed_counts * eff_frac_uncert;
+      const double eff_uncert = expected_counts * eff_frac_uncert;
       observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty
                                    + eff_uncert*eff_uncert );
     }

@@ -1593,7 +1593,7 @@ public:
   //  record on the PeakDetail log entries.
   //  `eff_frac_uncerts` governs the displayed observed-uncertainty column, and
   //  hence `numSigmaOff`, which is the MARGINAL pull
-  //  (obs - exp)/sqrt(stat^2 + obs^2*C_ii) - a genuine per-peak sigma taken from
+  //  (obs - exp)/sqrt(stat^2 + exp^2*C_ii) - a genuine per-peak sigma taken from
   //  the diagonal of the same covariance the correlated fit minimizes.  A GLS
   //  whitened residual would NOT be usable here: it mixes peaks in Cholesky
   //  order, so it is not a property of any one peak and cannot be read as a

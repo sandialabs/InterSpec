@@ -25,9 +25,11 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 #include <utility>
 
@@ -127,6 +129,17 @@ namespace BatchInfoLog
     PeakFitIndividual,
     PeakFitSummary
   };//enum class TemplateRenderType
+
+  /** Report template strings may bundle a filesystem path with a display name, delimited by
+   `BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker` (":--DisplayName--:") - this is
+   how templates uploaded via the GUI (and spooled to a temporary path) carry a human-readable name.
+
+   `report_template_disk_path(...)` returns the part before the marker (the path to open), and
+   `report_template_display_name(...)` returns the part after it (used for naming output files).
+   If the marker is not present, the full string is returned unchanged by both.
+   */
+  std::string report_template_disk_path( const std::string &tmplt );
+  std::string report_template_display_name( const std::string &tmplt );
   
   /** Renders data to a template, given the inputs.
    
@@ -163,6 +176,12 @@ namespace BatchInfoLog
   
   /** Callback from inja templating to print a floating point number using `SpecUtils::printCompact(...)`. */
   std::string printCompact( std::vector<const nlohmann::json *> &args );
+
+  /** Callback from inja templating to print a floating point number in scientific notation (e.g. "1.891E+04").
+   Takes two arguments: the first is a `double` value, the second is an int giving the number of decimals.
+   Matches the FRMAC/Genie report format `d.dddE+NN`.
+   */
+  std::string printExp( std::vector<const nlohmann::json *> &args );
   
   void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                             const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -266,6 +285,33 @@ namespace BatchInfoLog
    */
   void add_not_fit_peaks_to_act_shield_json( nlohmann::basic_json<> &data,
                                             const BatchPeak::BatchPeakFitResult &peak_fit_results );
+
+  /** Adds a per-source detection-limit rollup to the "Sources" of an activity/shielding fit result.
+   A batch-only (e.g. FRMAC) convenience, so it is kept out of the GUI-shared
+   `shield_src_fit_results_to_json(...)`.  Fields set on each source:
+     - "HasDetectionLimit": bool; true when an Lc/MDA could be computed (guards the numeric fields).
+     - "Lc_uCi"/"Lc_bq", "Mda_uCi"/"Mda_bq": the Currie decision threshold and detection limit,
+       converted from counts to activity via the reporting line's `counts_per_bq`.
+     - "RepresentativePeakEnergy": energy (keV) of the line the limit was taken from.
+     - "UsedSubstitutePeak": bool; true when the exemplars designated line was not fit in this
+       spectrum and a fallback line was used instead (see below).
+     - "IsDetected": bool (source counts >= Currie decision threshold); report wording for detected
+       vs. not (e.g. FRMAC "Approved" / "Less than Lc") is left to the template.
+     - "DetectionLimitStatus": always-present short human-readable string explaining which line the
+       limit came from, or why none could be computed - so a template can surface the reason rather
+       than leaving a silent blank cell.
+
+   `rep_energy_by_nuclide` maps a nuclide symbol to the energy (keV) of the representative gamma
+   line chosen from the EXEMPLAR (its largest-amplitude peak used for the activity fit).  For each
+   source this prefers that same line in `supp_info` (this spectrums peaks), so the reported Lc/MDA
+   come from a consistent line across files.  When that designated line was not fit in a given
+   spectrum, it falls back to the nuclides most prominent fitted line (flagged via
+   "UsedSubstitutePeak") rather than reporting nothing; only when the nuclide has no usable fitted
+   line at all is the limit omitted (with an explanatory "DetectionLimitStatus").
+   */
+  void add_exemplar_detection_limit_rollup_to_sources( nlohmann::json &data,
+                  const std::vector<ShieldingSourceFitCalc::SupplementalPeakInfo> &supp_info,
+                  const std::map<std::string,double> &rep_energy_by_nuclide );
 
 
 

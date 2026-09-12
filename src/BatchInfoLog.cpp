@@ -22,9 +22,15 @@
  */
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
+#include <cmath>
+#include <ctime>
+#include <chrono>
+#include <limits>
 #include <string>
 #include <vector>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <exception>
@@ -121,7 +127,8 @@ namespace BatchInfoLog
     // Add some callbacks incase people want more control over the precision of their printouts
     env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
     env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
-    
+    env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+
     try
     {
       // If we're using a custom include path, opening templates from the default template location
@@ -130,7 +137,8 @@ namespace BatchInfoLog
       inja::Environment sub_env;
       sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
       sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
-      
+      sub_env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+
       const string default_tmplt_dir = BatchInfoLog::default_template_dir();
       
       {
@@ -280,14 +288,38 @@ namespace BatchInfoLog
     return answer;
   }//load_shielding_fit_plot_js_and_css()
 
-  string render_template( string tmplt, 
+  std::string report_template_disk_path( const std::string &tmplt )
+  {
+    const char * const marker = BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+    const size_t pos = tmplt.find( marker );
+    if( pos == string::npos )
+      return tmplt;
+    return tmplt.substr( 0, pos );
+  }//report_template_disk_path(...)
+
+
+  std::string report_template_display_name( const std::string &tmplt )
+  {
+    const char * const marker = BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+    const size_t pos = tmplt.find( marker );
+    if( pos == string::npos )
+      return tmplt;
+    return tmplt.substr( pos + strlen(marker) );
+  }//report_template_display_name(...)
+
+
+  string render_template( string tmplt,
                          inja::Environment &env,
                          const TemplateRenderType type,
                          const BatchPeak::BatchPeakFitOptions &options,
                          const nlohmann::json &data )
   {
+    // Templates uploaded via the GUI carry a "path:--DisplayName--:name" marker; use just the path
+    //  portion to locate the template file (a no-op for the built-in "txt"/"csv"/"html" names).
+    tmplt = report_template_disk_path( tmplt );
+
     string rpt;
-    
+
     switch( type )
     {
       case TemplateRenderType::ActShieldIndividual:
@@ -362,6 +394,7 @@ namespace BatchInfoLog
         inja::Environment sub_env;
         sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
         sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+        sub_env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
         injatmplt = sub_env.parse_template( tmplt );
       }//
       
@@ -372,16 +405,20 @@ namespace BatchInfoLog
   };//render_template(...)
   
   
-  std::string suggested_output_report_filename( const std::string &filename, 
-                                               const std::string tmplt,
+  std::string suggested_output_report_filename( const std::string &filename,
+                                               std::string tmplt,
                                                const TemplateRenderType type,
                                                const BatchPeak::BatchPeakFitOptions &options )
   {
+    // GUI-uploaded templates carry a "path:--DisplayName--:name" marker; use the display-name
+    //  portion so the output file is named after the template rather than its spooled temp path.
+    tmplt = report_template_display_name( tmplt );
+
     string outname = SpecUtils::filename( filename );
     const string file_ext = SpecUtils::file_extension(outname);
     if( !file_ext.empty() )
       outname = outname.substr(0, outname.size() - file_ext.size());
-    
+
     string tmplt_name = SpecUtils::filename( tmplt );
     string tmplt_ext = SpecUtils::file_extension(tmplt_name);
     
@@ -508,8 +545,57 @@ namespace BatchInfoLog
     }
     return "";
   };
-  
-  
+
+
+  std::string printExp( std::vector<const nlohmann::json *> &args )
+  {
+    try
+    {
+      if( args.empty() )
+        return "";
+      if( args[0]->is_null() )
+        return "--";  //This happens if you try to put a inf or NaN as the value - the JSON will just have a null object, since JSON doesnt support these values
+      if( args[0]->is_string() )
+        return args[0]->get<string>();
+      if( !args[0]->is_number() )
+        throw runtime_error( "not a number, like expected." );
+
+      const double val = args.at(0)->get<double>();
+      const int numDecimal = std::max( 0, args.at(1)->get<int>() );
+
+      char buffer[64] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "%.*E", numDecimal, val );
+
+      // C's `%E` prints a two-digit exponent on POSIX (e.g. "1.891E+04"), but MSVC pads to
+      //  three digits ("1.891E+004"); trim a leading exponent zero so output matches the
+      //  FRMAC/Genie `d.dddE+NN` format on every platform.
+      string result( buffer );
+      const size_t epos = result.find_first_of( "eE" );
+      if( (epos != string::npos) && ((epos + 4) < result.size()) )
+      {
+        const size_t sign_pos = epos + 1;  // '+' or '-'
+        // Remove extra leading zeros in the exponent while keeping at least two digits.
+        while( (result.size() - (sign_pos + 1) > 2) && (result[sign_pos + 1] == '0') )
+          result.erase( sign_pos + 1, 1 );
+      }
+
+      return result;
+    }catch( inja::InjaError &e )
+    {
+      const string msg = "Error converting 'printExp' argument to number.\n"
+      "line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
+      + "): " + e.message + ".";
+
+      cerr << msg << endl;
+      throw;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'printExp': " << e.what() << endl;
+      return "ErrorPrintingValue{" + string(e.what()) + "}";
+    }
+  };
+
+
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
   //  Add which peaks it contributes to, or any information on gammas
 void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
@@ -1477,6 +1563,29 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
     spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );
     spec_obj["StartTimeIsValid"] = !SpecUtils::is_special( spec.start_time() );
+
+    // US-locale form "M/d/yy h:mm:ss tt" (e.g. "5/1/26 11:00:00 AM"), to match convention (sorry to the non-US folks).
+    //  Formatted as recorded wall-clock (no timezone shift).
+    if( !SpecUtils::is_special( spec.start_time() ) )
+    {
+      const std::time_t tt = std::chrono::system_clock::to_time_t(
+              std::chrono::time_point_cast<std::chrono::system_clock::duration>( spec.start_time() ) );
+      std::tm tm_buf{};
+#ifdef _WIN32
+      gmtime_s( &tm_buf, &tt );
+#else
+      gmtime_r( &tt, &tm_buf );
+#endif
+      int hour12 = tm_buf.tm_hour % 12;
+      if( hour12 == 0 )
+        hour12 = 12;
+      const char * const ampm = (tm_buf.tm_hour < 12) ? "AM" : "PM";
+      char datebuf[64] = { '\0' };
+      snprintf( datebuf, sizeof(datebuf), "%d/%d/%02d %d:%02d:%02d %s",
+               tm_buf.tm_mon + 1, tm_buf.tm_mday, (tm_buf.tm_year + 1900) % 100,
+               hour12, tm_buf.tm_min, tm_buf.tm_sec, ampm );
+      spec_obj["StartTimeUsLocale"] = std::string( datebuf );
+    }//if( start time is valid )
     spec_obj["LowerSpectrumEnergy"] = spec.gamma_channel_lower(0);
     spec_obj["UpperSpectrumEnergy"] = spec.gamma_channel_upper(spec.num_gamma_channels() - 1);
     spec_obj["NumberChannels"] = (int)spec.num_gamma_channels();
@@ -1912,6 +2021,137 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     if( !obj.contains("PeaksNotUsedForFit") )
       obj["PeaksNotUsedForFit"]["Peaks"] = nlohmann::json::array();
   }//void add_supplemental_peak_info_to_json(...)
+
+
+  void add_exemplar_detection_limit_rollup_to_sources( nlohmann::json &data,
+                    const std::vector<ShieldingSourceFitCalc::SupplementalPeakInfo> &supp_info,
+                    const std::map<std::string,double> &rep_energy_by_nuclide )
+  {
+    if( !data.contains("Sources") || !data["Sources"].is_array() )
+      return;
+
+    for( nlohmann::basic_json<> &src_json : data["Sources"] )
+    {
+      // Default: no detection-limit rollup for this source (template guards on this).
+      // `IsDetected` is always set (default true, i.e. detected) so templates can decide how to
+      //  label detected vs. not-detected sources - the wording (e.g. FRMAC "Approved" /
+      //  "Less than Lc") is a report concern, kept out of InterSpec here.  `DetectionLimitStatus`
+      //  is always set to a short human-readable explanation, so a template can surface *why* a
+      //  limit is absent rather than leaving a silent blank cell.
+      src_json["HasDetectionLimit"] = false;
+      src_json["IsDetected"] = true;
+      src_json["UsedSubstitutePeak"] = false;
+
+      if( !src_json.contains("Nuclide") || !src_json["Nuclide"].is_string() )
+      {
+        src_json["DetectionLimitStatus"] = "No nuclide associated with this source.";
+        continue;
+      }
+
+      const string nuc = src_json["Nuclide"].get<string>();
+
+      // Gather every peak we could report a limit from for this nuclide: used in the fit, real (not
+      //  a synthetic MDA-only peak), with a computed Currie check and a counts->activity factor.
+      vector<const ShieldingSourceFitCalc::SupplementalPeakInfo *> candidates;
+      for( const ShieldingSourceFitCalc::SupplementalPeakInfo &info : supp_info )
+      {
+        if( !info.peak || !info.used_for_fit || info.synthetic )
+          continue;
+        if( !info.currie.computed || (info.counts_per_bq <= 0.0) )
+          continue;
+
+        const SandiaDecay::Nuclide * const pnuc = info.peak->parentNuclide();
+        if( pnuc && (pnuc->symbol == nuc) )
+          candidates.push_back( &info );
+      }//for( loop over supp_info )
+
+      if( candidates.empty() )
+      {
+        // No fitted line to scale a limit from.  The usual cause is that the nuclides fit line(s)
+        //  were not themselves fit in this spectrum (e.g. they sit in an unresolved multiplet), so
+        //  there is no peak amplitude to convert into an Lc/MDA.  Say so, rather than blanking.
+        src_json["DetectionLimitStatus"] = "No peak used in the fit for " + nuc + " was fit in this"
+                    " spectrum, so no detection limit could be computed for it.";
+        continue;
+      }//if( candidates.empty() )
+
+      // Prefer the exemplars representative line so the reported line is consistent across files; if
+      //  that specific line was not fit here, fall back to this nuclides most prominent fitted line
+      //  rather than reporting nothing.  Record whether the reported line is that substitute.
+      const ShieldingSourceFitCalc::SupplementalPeakInfo *chosen = nullptr;
+
+      const map<string,double>::const_iterator pos = rep_energy_by_nuclide.find( nuc );
+      if( pos != rep_energy_by_nuclide.end() )
+      {
+        const double target_energy = pos->second;
+        const ShieldingSourceFitCalc::SupplementalPeakInfo *rep = nullptr;
+        double best_de = std::numeric_limits<double>::max();
+        for( const ShieldingSourceFitCalc::SupplementalPeakInfo * const info : candidates )
+        {
+          const double de = std::fabs( info->peak->mean() - target_energy );
+          if( de < best_de )
+          {
+            best_de = de;
+            rep = info;
+          }
+        }//for( loop over candidates )
+
+        const double fwhm = (rep && rep->peak->gausPeak()) ? rep->peak->fwhm() : 0.0;
+        const double tol = std::max( 2.0, 0.5*fwhm );
+        if( rep && (best_de <= tol) )
+          chosen = rep;
+      }//if( have a representative energy for this nuclide )
+
+      const bool substituted = !chosen;
+      if( !chosen )
+      {
+        // Representative line was not fit here (or none was designated); use the nuclides most
+        //  prominent fitted line so the nuclide-level MDA is still useful.  `candidates` is
+        //  non-empty here, and seeding with lowest() guarantees the first one is always taken.
+        double best_amp = std::numeric_limits<double>::lowest();
+        for( const ShieldingSourceFitCalc::SupplementalPeakInfo * const info : candidates )
+        {
+          const double amp = info->peak->amplitude();
+          if( amp > best_amp )
+          {
+            best_amp = amp;
+            chosen = info;
+          }
+        }//for( loop over candidates )
+      }//if( !chosen )
+
+      assert( chosen );
+
+      const DetectionLimitCalc::CurrieMdaResult &res = chosen->currie.result;
+
+      // Convert the counts-based limits to activity via `counts_per_bq`, the same conversion
+      //  `add_mda_to_json` uses.  For a per-area (e.g. /m2) fixed-geometry DRF the fitted activity
+      //  is areal, so these come out areal (e.g. uCi/m2) too.
+      const double lc_activity  = res.decision_threshold / chosen->counts_per_bq;
+      const double mda_activity = res.detection_limit / chosen->counts_per_bq;
+
+      src_json["HasDetectionLimit"] = true;
+      src_json["RepresentativePeakEnergy"] = chosen->peak->mean();
+      src_json["UsedSubstitutePeak"] = substituted;
+      src_json["Lc_bq"]  = lc_activity / PhysicalUnits::bq;
+      src_json["Lc_uCi"] = lc_activity / PhysicalUnits::microCi;
+      src_json["Mda_bq"]  = mda_activity / PhysicalUnits::bq;
+      src_json["Mda_uCi"] = mda_activity / PhysicalUnits::microCi;
+
+      // Detected if the observed source counts reach the decision threshold (Currie L_c).
+      src_json["IsDetected"] = (res.source_counts >= res.decision_threshold);
+
+      char statusbuf[192] = { '\0' };
+      if( substituted )
+        snprintf( statusbuf, sizeof(statusbuf), "Detection limit is from the %.2f keV line; the"
+                 " line normally used for %s was not fit in this spectrum.",
+                 chosen->peak->mean(), nuc.c_str() );
+      else
+        snprintf( statusbuf, sizeof(statusbuf), "Detection limit is from the %.2f keV line.",
+                 chosen->peak->mean() );
+      src_json["DetectionLimitStatus"] = statusbuf;
+    }//for( loop over Sources )
+  }//void add_exemplar_detection_limit_rollup_to_sources(...)
 
 
   /** Names the continuum treatment used by a deconvolution limit, for the report.

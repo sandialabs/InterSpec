@@ -687,6 +687,28 @@ structure is built by `BatchInfoLog::add_basic_src_details()` plus a per-source
 | `SelfAttenMassFracUncert`       | number | 0–1 | Mass-fraction uncertainty. Only present if `IsSelfAttenSource` and `SelfAttenIsVariableMassFrac`. |
 | `PeaksThisNucContributesTo`     | array[object] | | See §5.7. May be empty if no peaks were assigned to this nuclide. |
 
+**Batch-only detection-limit rollup.** In a **batch** activity/shielding run, each `Sources[]`
+element additionally carries a per-nuclide Currie detection-limit summary (added by
+`add_exemplar_detection_limit_rollup_to_sources()`; not present in the interactive GUI fit log).
+The limit is taken from a single representative gamma line per nuclide so that the reported Lc/MDA
+are comparable across every spectrum in the batch: the line chosen in the exemplar (its
+largest-amplitude used-for-fit peak) is preferred, and if that line was not fit in a given spectrum
+the nuclide's most prominent fitted line is used as a fallback (flagged by `UsedSubstitutePeak`).
+Limits are converted from counts to activity, so for a per-area fixed-geometry detector they are
+areal too (e.g. µCi/m²), matching `ActivityPostFix`.
+
+| Field | Type | Units | Notes |
+|---|---|---|---|
+| `HasDetectionLimit`         | bool   |     | True if an Lc/MDA could be computed. **Guard the numeric fields below on this.** |
+| `DetectionLimitStatus`      | string |     | Always present. Short human-readable explanation of which line the limit came from, or why none could be computed. Use it to explain an absent limit rather than leaving a blank cell. |
+| `Lc_uCi`                    | number | µCi | Currie decision threshold (Lc), as activity. Only present if `HasDetectionLimit`. |
+| `Lc_bq`                     | number | Bq  | Only present if `HasDetectionLimit`. |
+| `Mda_uCi`                   | number | µCi | Currie detection limit (MDA), as activity. Only present if `HasDetectionLimit`. |
+| `Mda_bq`                    | number | Bq  | Only present if `HasDetectionLimit`. |
+| `RepresentativePeakEnergy`  | number | keV | Energy of the line the limit was taken from. Only present if `HasDetectionLimit`. |
+| `UsedSubstitutePeak`        | bool   |     | True when the exemplar's designated line was not fit in this spectrum and a fallback line was used. Always present. |
+| `IsDetected`                | bool   |     | Always present. True if observed source counts ≥ Lc. Report wording (e.g. FRMAC "Approved" / "Less than Lc") is a template concern. Defaults to `true` when no limit was computed. |
+
 ### 5.7 `Sources[].PeaksThisNucContributesTo[]`
 
 Each element describes one fitted peak that the source contributes gammas to. Built by

@@ -2101,26 +2101,45 @@ static void assemble_included_observed( const GammaInteractionCalc::ShieldingSou
 /** Builds the GLS whitening matrix L^{-1} (row-major, n x n) from the per-peak detector-efficiency
  fractional covariance, so displayed pulls can be whitened identically to the fit objective.
 
- Sigma = diag(stat^2) + diag(observed) . C_eff_frac . diag(observed), Sigma = L L^T; returns L^{-1}
- (lower-triangular).  Returns an empty vector when there is no usable covariance or the Cholesky
- fails, in which case callers keep the plain diagonal (statistics-only) behavior.
+ Sigma = diag(stat^2) + diag(counts_for_cov) . C_eff_frac . diag(counts_for_cov), Sigma = L L^T;
+ returns L^{-1} (lower-triangular).
+
+ `counts_for_cov` scales the (correlated) efficiency term: it must be the EXPECTED (model) counts,
+ NOT the observed counts.  Scaling a correlated normalization-type uncertainty by the measured data
+ is Peelle's Pertinent Puzzle - it biases the GLS fit systematically below the data.  The purely
+ statistical term stays observed-based (`observed_uncert`), since that is the data point's own
+ Poisson uncertainty.
+
+ `ridge_rel`, when > 0, adds a tiny relative jitter to the diagonal on a first Cholesky failure and
+ retries once: the fully-correlated band makes Sigma near rank-1, and silently discarding the whole
+ efficiency term (the empty-vector fallback) would re-introduce the very underestimate we fix here.
+
+ Returns an empty vector when there is no usable covariance or the Cholesky still fails, in which
+ case callers keep the plain diagonal (statistics-only) behavior.
  */
-static std::vector<double> compute_efficiency_whitening( const std::vector<double> &observed,
+static std::vector<double> compute_efficiency_whitening( const std::vector<double> &counts_for_cov,
                                                          const std::vector<double> &observed_uncert,
-                                                         const std::vector<double> &eff_cov )
+                                                         const std::vector<double> &eff_cov,
+                                                         const double ridge_rel = 0.0 )
 {
-  const size_t n = observed.size();
+  const size_t n = counts_for_cov.size();
   if( (n == 0) || (observed_uncert.size() != n) || (eff_cov.size() != (n*n)) )
     return {};
 
   Eigen::MatrixXd Sigma( n, n );
   for( size_t i = 0; i < n; ++i )
     for( size_t j = 0; j < n; ++j )
-      Sigma(i,j) = observed[i] * eff_cov[i*n + j] * observed[j];
+      Sigma(i,j) = counts_for_cov[i] * eff_cov[i*n + j] * counts_for_cov[j];
   for( size_t i = 0; i < n; ++i )
     Sigma(i,i) += observed_uncert[i] * observed_uncert[i];
 
   Eigen::LLT<Eigen::MatrixXd> llt( Sigma );
+  if( (llt.info() != Eigen::Success) && (ridge_rel > 0.0) )
+  {
+    for( size_t i = 0; i < n; ++i )
+      Sigma(i,i) += ridge_rel * Sigma(i,i);
+    llt.compute( Sigma );
+  }
   if( llt.info() != Eigen::Success )
     return {};
 
@@ -2631,7 +2650,22 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       vector<double> obs, obs_uncert;
       assemble_included_observed( *chi2Fcn, obs, obs_uncert );
       const vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
-      results->efficiency_whitening = compute_efficiency_whitening( obs, obs_uncert, eff_cov );
+
+      // Scale the correlated efficiency term by the EXPECTED (model) counts at the fitted solution,
+      //  matching what the converged fit actually used (see #compute_efficiency_whitening / PPP).
+      //  Fall back to the observed counts only if the model cannot be evaluated here.
+      vector<double> cov_counts;
+      try
+      {
+        cov_counts = chi2Fcn->expected_peak_counts_imp<double>( params, mixcache );
+      }catch( std::exception & )
+      {
+        cov_counts.clear();
+      }
+      if( cov_counts.size() != obs.size() )
+        cov_counts = obs;
+
+      results->efficiency_whitening = compute_efficiency_whitening( cov_counts, obs_uncert, eff_cov, 1.0e-10 );
     }//if( account_for_drf_uncert )
 
     auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
@@ -3948,6 +3982,9 @@ namespace
                from the Ceres covariance (zeros if covariance fails).
    @param[out] cov_errmsg If non-null and the covariance fails, a user-displayable note.
    @param[in,out] num_evals If non-null, incremented by the number of residual evaluations.
+   @param cov_counts If non-null and sized to match, the EXPECTED (model) counts used to scale the
+               correlated detector-efficiency covariance (the driver's iterated-GLS loop supplies
+               these from the previous solution); null bootstraps the covariance from `observed`.
    @returns the chi2 (=2*final_cost) at the solution.
    */
   double run_ceres_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
@@ -3960,7 +3997,8 @@ namespace
                           std::vector<double> *var_errors,
                           std::string *cov_errmsg,
                           size_t *num_evals,
-                          std::string *convergence_msg = nullptr )
+                          std::string *convergence_msg = nullptr,
+                          const std::vector<double> *cov_counts = nullptr )
   {
     const size_t num_vars = var_indices.size();
     assert( num_vars > 0 );
@@ -3975,12 +4013,17 @@ namespace
     // Fold detector-efficiency uncertainty into the fit (correlated GLS) when
     //  requested and the DRF supplies it.  Sigma = diag(stat^2)
     //  + diag(counts) . C_eff_frac . diag(counts); the functor whitens its
-    //  residuals by L^{-1} (Sigma = L L^T).  On numerical trouble (or no
-    //  covariance) we silently keep the plain diagonal residual.
+    //  residuals by L^{-1} (Sigma = L L^T).  The counts scaling the correlated
+    //  efficiency term must be the EXPECTED (model) counts (see
+    //  #compute_efficiency_whitening / Peelle's Pertinent Puzzle) - supplied via
+    //  `cov_counts`; absent that we bootstrap from `observed`.  On numerical
+    //  trouble (or no covariance) we silently keep the plain diagonal residual.
     if( chi2Fcn->options().account_for_drf_uncert )
     {
       const std::vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
-      functor->m_whiten = compute_efficiency_whitening( observed, observed_uncert, eff_cov );
+      const std::vector<double> &cnt = (cov_counts && (cov_counts->size() == observed.size()))
+                                       ? *cov_counts : observed;
+      functor->m_whiten = compute_efficiency_whitening( cnt, observed_uncert, eff_cov, 1.0e-10 );
     }//if( account_for_drf_uncert )
 
     // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
@@ -4235,13 +4278,14 @@ namespace
                           std::vector<double> *var_errors,
                           std::string *cov_errmsg,
                           size_t *num_evals,
-                          std::string *convergence_msg = nullptr )
+                          std::string *convergence_msg = nullptr,
+                          const std::vector<double> *cov_counts = nullptr )
   {
     typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
 
     const double primary_chi2 = run_ceres_solve( chi2Fcn, par_defs, start_full, var_indices,
                                                  observed, observed_uncert, final_full, var_errors,
-                                                 cov_errmsg, num_evals, convergence_msg );
+                                                 cov_errmsg, num_evals, convergence_msg, cov_counts );
 
     const size_t npeaks = observed.size();
     if( npeaks == 0 )
@@ -4360,7 +4404,7 @@ namespace
         std::vector<double> trial_full;
         const double c = run_ceres_solve( chi2Fcn, par_defs, s, var_indices, observed,
                                           observed_uncert, trial_full, nullptr, nullptr,
-                                          num_evals, nullptr );
+                                          num_evals, nullptr, cov_counts );
         if( c < best_chi2 )
         {
           best_chi2 = c;
@@ -4386,8 +4430,130 @@ namespace
       convergence_msg->clear();
 
     return run_ceres_solve( chi2Fcn, par_defs, best_start, var_indices, observed, observed_uncert,
-                            final_full, var_errors, cov_errmsg, num_evals, convergence_msg );
+                            final_full, var_errors, cov_errmsg, num_evals, convergence_msg,
+                            cov_counts );
   }//run_ceres_solve_with_recovery(...)
+
+
+  /** Iterated GLS: re-solve while rebuilding the detector-efficiency covariance from the EXPECTED
+   (model) counts at each solution, until the varied parameters stop moving.
+
+   Scaling the correlated efficiency term by expected (not observed) counts is what avoids the
+   Peelle's-Pertinent-Puzzle bias that otherwise pulls every activity systematically low.  Because
+   the expected counts depend on the fit, the self-consistent covariance is reached by fixed-point
+   iteration; each inner solve keeps a fixed matrix of doubles, so the autodiff Jacobian stays
+   correct.  The covariance is seeded from the starting parameters' expected counts, so the biased
+   observed-scaled covariance is never used.
+
+   When the efficiency-uncertainty option is off (or the DRF carries no covariance) this collapses
+   to a single plain solve - bit-identical to calling run_ceres_solve[_with_recovery] directly.
+
+   `use_recovery` selects run_ceres_solve_with_recovery (the main fit) vs. run_ceres_solve (the AN
+   final solve, whose varied set excludes the scanned AN).  Same out-params/return as those.
+   */
+  double run_iterated_gls_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<double> &start_full,
+                          const std::vector<size_t> &var_indices,
+                          const std::vector<double> &observed,
+                          const std::vector<double> &observed_uncert,
+                          std::vector<double> &final_full,
+                          std::vector<double> *var_errors,
+                          std::string *cov_errmsg,
+                          size_t *num_evals,
+                          std::string *convergence_msg,
+                          const bool use_recovery )
+  {
+    typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
+    typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException CancelException;
+    typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache NucMixtureCache;
+
+    auto solve_once = [&]( const std::vector<double> &start,
+                           const std::vector<double> *cov_counts ) -> double {
+      return use_recovery
+        ? run_ceres_solve_with_recovery( chi2Fcn, par_defs, start, var_indices, observed,
+                                         observed_uncert, final_full, var_errors, cov_errmsg,
+                                         num_evals, convergence_msg, cov_counts )
+        : run_ceres_solve( chi2Fcn, par_defs, start, var_indices, observed, observed_uncert,
+                           final_full, var_errors, cov_errmsg, num_evals, convergence_msg,
+                           cov_counts );
+    };
+
+    // Iterate only when the correlated efficiency covariance actually enters the fit; otherwise a
+    //  single solve is bit-identical to the historical path (and avoids needless re-solves).
+    const bool do_iterate = chi2Fcn->options().account_for_drf_uncert
+                            && !chi2Fcn->peakEffFracCovariance().empty();
+    if( !do_iterate )
+      return solve_once( start_full, nullptr );
+
+    // Seed the covariance from the EXPECTED counts at the starting parameters (never the biased
+    //  observed-scaled covariance); fall back to observed only if the model cannot evaluate there.
+    std::vector<double> cov_counts;
+    try
+    {
+      NucMixtureCache cache;
+      cov_counts = chi2Fcn->expected_peak_counts_imp<double>( start_full, cache );
+    }catch( CancelException & )
+    {
+      throw;
+    }catch( std::exception & )
+    {
+      cov_counts = observed;
+    }
+    if( cov_counts.size() != observed.size() )
+      cov_counts = observed;
+
+    const size_t sm_max_gls_iters = chi2Fcn->hasVolumetricLineSets() ? 3 : 5;
+    const double sm_gls_rtol = 1.0e-3;
+
+    std::vector<double> cur_start = start_full;
+    std::vector<double> prev_full;
+    double chi2 = 0.0;
+
+    for( size_t iter = 0; iter < sm_max_gls_iters; ++iter )
+    {
+      chi2 = solve_once( cur_start, &cov_counts );
+
+      if( chi2Fcn->currentCancelStatus() != CalcStatus::NotCanceled )
+        break;
+
+      // Rebuild the covariance from the EXPECTED counts at this solution for the next round.
+      std::vector<double> expected;
+      try
+      {
+        NucMixtureCache cache;
+        expected = chi2Fcn->expected_peak_counts_imp<double>( final_full, cache );
+      }catch( CancelException & )
+      {
+        throw;
+      }catch( std::exception & )
+      {
+        break;  //keep this iteration's result; the covariance cannot be refined further
+      }
+      if( expected.size() != observed.size() )
+        break;
+
+      // Converged once every varied parameter's relative move falls below tolerance.
+      bool converged = !prev_full.empty();
+      for( const size_t k : var_indices )
+      {
+        const double denom = std::max( std::fabs(prev_full.empty() ? 0.0 : prev_full[k]), 1.0e-12 );
+        if( prev_full.empty() || (std::fabs(final_full[k] - prev_full[k]) > sm_gls_rtol*denom) )
+        {
+          converged = false;
+          break;
+        }
+      }
+
+      prev_full = final_full;
+      cur_start = final_full;   //warm-start the next iteration from this solution
+      cov_counts = expected;
+      if( converged )
+        break;
+    }//for( fixed-point iterations )
+
+    return chi2;
+  }//run_iterated_gls_solve(...)
 }//namespace
 
 
@@ -4527,9 +4693,10 @@ void fit_model_ceres( const std::string wtsession,
 
     if( fit_generic_an_indices.empty() )
     {
-      const double chi2 = run_ceres_solve_with_recovery( chi2Fcn, par_defs, initial_full,
+      const double chi2 = run_iterated_gls_solve( chi2Fcn, par_defs, initial_full,
                                            variable_indices, observed, observed_uncert, fit_full,
-                                           &var_errors, &cov_errmsg, &num_evals, &conv_msg );
+                                           &var_errors, &cov_errmsg, &num_evals, &conv_msg,
+                                           /*use_recovery=*/true );
       results->chi2 = chi2;
 
       // POLISH: the search ran on the shipped line count; the answer and its covariance come from
@@ -4543,12 +4710,31 @@ void fit_model_ceres( const std::string wtsession,
         chi2Fcn->setVolumetricLineCount( polish * chi2Fcn->volumetricLineCount(), &fit_full );
         vector<double> polished_full, polished_errors;
         string polished_cov_errmsg, polished_conv_msg;
+
+        // Keep the efficiency term PPP-safe: build its covariance from the EXPECTED counts at the
+        //  converged point (finer quadrature).  A single solve suffices - the polish only refines
+        //  quadrature, so re-iterating the covariance would not move the answer.
+        vector<double> polish_cov_counts;
+        if( chi2Fcn->options().account_for_drf_uncert && !chi2Fcn->peakEffFracCovariance().empty() )
+        {
+          try
+          {
+            GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+            polish_cov_counts = chi2Fcn->expected_peak_counts_imp<double>( fit_full, cache );
+          }catch( std::exception & )
+          {
+            polish_cov_counts.clear();
+          }
+        }//if( efficiency covariance is in play )
+        const vector<double> *polish_cov_ptr = (polish_cov_counts.size() == observed.size())
+                                               ? &polish_cov_counts : nullptr;
+
         try
         {
           const double polished_chi2 = run_ceres_solve( chi2Fcn, par_defs, fit_full, variable_indices,
                                                         observed, observed_uncert, polished_full,
                                                         &polished_errors, &polished_cov_errmsg, &num_evals,
-                                                        &polished_conv_msg );
+                                                        &polished_conv_msg, polish_cov_ptr );
           fit_full = polished_full;
           var_errors = polished_errors;
           cov_errmsg = polished_cov_errmsg;
@@ -4561,12 +4747,33 @@ void fit_model_ceres( const std::string wtsession,
       }//if( polish )
     }else
     {
-      // First a fit with everything (including AN) free, as the starting reference
+      // First a fit with everything (including AN) free, as the starting reference.  Iterated so the
+      //  detector-efficiency covariance is expected-based (PPP-safe); the expected counts frozen
+      //  below - and hence the whole AN scan - then start from an unbiased point.
       vector<double> free_fit_full;
-      double best_chi2 = run_ceres_solve( chi2Fcn, par_defs, initial_full, variable_indices,
+      double best_chi2 = run_iterated_gls_solve( chi2Fcn, par_defs, initial_full, variable_indices,
                                           observed, observed_uncert, free_fit_full, nullptr,
-                                          nullptr, &num_evals );
+                                          nullptr, &num_evals, nullptr, /*use_recovery=*/false );
       vector<double> best_full = free_fit_full;
+
+      // Freeze the efficiency covariance for the AN scan: build it once from the EXPECTED counts at
+      //  the free seed and hold it constant across every scan solve, so their chi2 stay comparable
+      //  (choosing the AN is a chi2 comparison) while the efficiency term stays expected-based.  Off
+      //  (or no DRF covariance) -> empty -> the scan solves fall back to the plain diagonal residual.
+      vector<double> cov_counts_fixed;
+      if( chi2Fcn->options().account_for_drf_uncert && !chi2Fcn->peakEffFracCovariance().empty() )
+      {
+        try
+        {
+          GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+          cov_counts_fixed = chi2Fcn->expected_peak_counts_imp<double>( free_fit_full, cache );
+        }catch( std::exception & )
+        {
+          cov_counts_fixed.clear();
+        }
+      }//if( efficiency covariance is in play )
+      const vector<double> *scan_cov_ptr = (cov_counts_fixed.size() == observed.size())
+                                           ? &cov_counts_fixed : nullptr;
 
       for( const size_t an_index : fit_generic_an_indices )
       {
@@ -4597,7 +4804,8 @@ void fit_model_ceres( const std::string wtsession,
             size_t this_num_evals = 0;
             const double chi2 = run_ceres_solve( chi2Fcn, par_defs, start_full,
                                                  scan_var_indices, observed, observed_uncert,
-                                                 an_fit_full, nullptr, nullptr, &this_num_evals );
+                                                 an_fit_full, nullptr, nullptr, &this_num_evals,
+                                                 nullptr, scan_cov_ptr );
             scan_num_evals += this_num_evals;
 
             std::lock_guard<std::mutex> lock( best_an_mutex );
@@ -4700,9 +4908,10 @@ void fit_model_ceres( const std::string wtsession,
         results->chi2 = best_chi2;
       }else
       {
-        const double chi2 = run_ceres_solve( chi2Fcn, par_defs, best_full, final_var_indices,
+        const double chi2 = run_iterated_gls_solve( chi2Fcn, par_defs, best_full, final_var_indices,
                                              observed, observed_uncert, fit_full, &var_errors,
-                                             &cov_errmsg, &num_evals, &conv_msg );
+                                             &cov_errmsg, &num_evals, &conv_msg,
+                                             /*use_recovery=*/false );
         // Report the cost of the parameters we are actually returning (fit_full); the final
         //  solve restarts from best_full so this is normally == best_chi2, but using it keeps
         //  results->chi2 consistent with the reported parameters and per-peak residuals.

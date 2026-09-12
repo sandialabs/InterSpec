@@ -59,22 +59,6 @@ const char * const BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker
 
 namespace
 {
-  std::string get_report_template_name( const std::string &template_path )
-  {
-    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
-    if( pos == std::string::npos )
-      return template_path;
-    return template_path.substr( pos + strlen( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker ) );
-  }
-
-  std::string get_report_template_path( const std::string &template_path )
-  {
-    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
-    if( pos == std::string::npos )
-      return template_path;
-    return template_path.substr( 0, pos );
-  }
-
   /** Creates a fixed-geometry detector response with unity intrinsic efficiency, so that the
    "activity" limited by `DetectionLimitCalc::get_activity_or_distance_limits` is simply the
    number of peak counts.
@@ -1156,8 +1140,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
 
     for( size_t tmplt_index = 0; tmplt_index < options.report_templates.size(); ++tmplt_index )
     {
-      const std::string tmplt_path = get_report_template_path( options.report_templates[tmplt_index] );
-      const std::string tmplt_name = get_report_template_name( options.report_templates[tmplt_index] );
+      const std::string tmplt_path = BatchInfoLog::report_template_disk_path( options.report_templates[tmplt_index] );
+      const std::string tmplt_name = BatchInfoLog::report_template_display_name( options.report_templates[tmplt_index] );
 
       try
       {
@@ -1331,8 +1315,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   // Now write summary report(s)
   for( const string &summary_tmplt : options.summary_report_templates )
   {
-    const std::string tmplt_path = get_report_template_path( summary_tmplt );
-    const std::string tmplt_name = get_report_template_name( summary_tmplt );
+    const std::string tmplt_path = BatchInfoLog::report_template_disk_path( summary_tmplt );
+    const std::string tmplt_name = BatchInfoLog::report_template_display_name( summary_tmplt );
 
     try
     {
