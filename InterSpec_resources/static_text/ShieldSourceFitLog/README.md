@@ -19,10 +19,10 @@
 >   peaks, continua, optional energy-cal refit, and peak-source assignments.
 >
 > The two families share infrastructure (`foreground` / `background`, `EnergyCal`, chart
-> assets, application metadata, the Inja env, the two custom callbacks `printFixed` /
-> `printCompact`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
+> assets, application metadata, the Inja env, the three custom callbacks `printFixed` /
+> `printCompact` / `printExp`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
 >
-> **Last updated:** 2026-08-29
+> **Last updated:** 2026-09-12
 
 ## 1. What this is
 
@@ -469,6 +469,7 @@ only present if a background spectrum was loaded; `foreground` is always present
   "StartTime":     "2026-05-20T14:30:45.123456",
   "StartTime_iso": "2026-05-20T14:30:45",
   "StartTime_vax": "20-MAY-2026 14:30:45.12",
+  "StartTimeUsLocale": "5/20/26 2:30:45 PM",
   "StartTimeIsValid": true,
   "LowerSpectrumEnergy": 0.0,   "UpperSpectrumEnergy": 3000.0,
   "NumberChannels": 8192,
@@ -521,6 +522,7 @@ only present if a background spectrum was loaded; `foreground` is always present
 | `StartTime`           | string  |     | ISO-8601 extended (with microseconds). |
 | `StartTime_iso`       | string  |     | ISO-8601 basic (seconds resolution). |
 | `StartTime_vax`       | string  |     | VAX-style timestamp. |
+| `StartTimeUsLocale`   | string  |     | US-locale `M/d/yy h:mm:ss tt` (e.g. `5/20/26 2:30:45 PM`), for reports that follow that convention. The recorded wall-clock, with no timezone shift applied. **Only present if `StartTimeIsValid`** — guard on it. |
 | `StartTimeIsValid`    | bool    |     | False if the start-time field was missing from the input file. |
 | `LowerSpectrumEnergy` | number  | keV | Lower edge of the lowest channel. |
 | `UpperSpectrumEnergy` | number  | keV | Upper edge of the highest channel. |
@@ -1776,7 +1778,7 @@ NaN / inf, and operator precedence. Things like `{{ src.Activity_uCi * 1000 }}` 
 when an operand is null or comes from a callback. **Prefer the pre-computed unit
 variants** — e.g. use `src.Activity_pCi` instead of `src.Activity_uCi * 1e6`. When you
 do need a derived value, compute it in C++ and add a field, or use `printFixed` /
-`printCompact` callbacks for formatting.
+`printCompact` / `printExp` callbacks for formatting.
 
 ### 8.3 No HTML auto-escaping
 
@@ -1857,7 +1859,7 @@ into a syntax error by adding text starting with `##`.
 
 ## 9. Custom callbacks
 
-`BatchInfoLog::get_default_inja_env()` registers two callbacks for this tool. (The
+`BatchInfoLog::get_default_inja_env()` registers three callbacks for this tool. (The
 Isotopics-by-Nuclides tool has additional callbacks like `pct`, `safe_html`,
 `scientific`, etc. — those are **not** registered for ShieldSourceFitLog and must not
 be used.)
@@ -1866,6 +1868,7 @@ be used.)
 |---|---|---|---|
 | `printFixed(value, decimals)`     | (number, int) | string | Format `value` with fixed-point notation and exactly `decimals` digits after the decimal point. E.g. `printFixed(3.14159, 2)` → `"3.14"`. |
 | `printCompact(value, sig_figs)`   | (number, int) | string | Format `value` with `sig_figs` significant figures, using whichever of fixed or scientific notation is more compact. Backed by `SpecUtils::printCompact`. E.g. `printCompact(1.23456e5, 4)` → `"1.234E5"`; `printCompact(0.0042, 3)` → `"0.00420"`. |
+| `printExp(value, decimals)`       | (number, int) | string | Format `value` in scientific notation with exactly `decimals` digits after the decimal point, always as `d.dddE±NN` (FRMAC/Genie convention). E.g. `printExp(18910.0, 3)` → `"1.891E+04"`. Unlike `printCompact` this never falls back to fixed-point, so a column stays aligned. The exponent carries at least two digits on every platform — MSVC natively pads to three, and the extra zero is trimmed back (a genuine three-digit exponent such as `1.000E-100` is kept). A `null` value — which is what a NaN or infinity becomes in JSON — prints as `"--"`. |
 
 Prefer these callbacks over Inja expression arithmetic for any formatting that
 involves a decimal point or scientific notation.
@@ -2116,7 +2119,8 @@ along these lines:
 > 2. **Pick the file extension.** `.tmplt.html` for an interactive report (you may
 >    embed the D3 spectrum chart and, for act/shield, the shielding/source-fit plot
 >    using §10.8). `.tmplt.txt` / `.tmplt.csv` / `.tmplt.md` for non-HTML outputs.
-> 3. **Format numerics with `printFixed(value, decimals)` or `printCompact(value, sig_figs)`** —
+> 3. **Format numerics with `printFixed(value, decimals)`, `printCompact(value, sig_figs)`
+>    or `printExp(value, decimals)`** —
 >    do not perform expression-side arithmetic; use the pre-computed unit variants
 >    instead (e.g. `Activity_uCi`, `Distance_m`).
 > 4. **Guard optional fields** with `exists("...")` or `existsIn(obj, "...")` — see
