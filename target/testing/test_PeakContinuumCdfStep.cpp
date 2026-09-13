@@ -1422,3 +1422,229 @@ BOOST_AUTO_TEST_CASE( pinned_coefficient_with_independent_skew_keeps_blocks_alig
           << ", which is what a misaligned skew block reads" );
   }//for( type )
 }
+
+
+namespace
+{
+/** A two-peak ROI whose data is the model itself plus a deterministic perturbation.
+
+ The perturbation keeps both hypotheses at a realistic chi2 (a fixed +-0.8*sqrt(model) zig-zag is
+ ~0.64 per channel) instead of the exact zero a noise-free model would give, so the Delta-chi2 the
+ test turns on is the cost of the model being wrong rather than an artifact of a perfect fit.  It
+ is deterministic so the test cannot flake.
+ */
+struct TwoPeakRoi
+{
+  shared_ptr<SpecUtils::Measurement> data;
+  shared_ptr<PeakContinuum> cont;
+  PeakDef strong{ 598.0, 1.0, 20000.0 };
+  PeakDef weak{ 606.0, 1.0, 0.02 };   //!< an amplitude small enough to be "not there"
+};
+
+
+TwoPeakRoi make_two_peak_roi( const PeakContinuum::OffsetType type, const double step_density )
+{
+  TwoPeakRoi roi;
+
+  const double chan_width = 0.35;
+  const double spec_start = 400.0;
+  const size_t spec_nchannel = 1024;
+
+  vector<float> spec_energies( spec_nchannel + 1 );
+  for( size_t i = 0; i <= spec_nchannel; ++i )
+    spec_energies[i] = static_cast<float>( spec_start + i*chan_width );
+
+  shared_ptr<SpecUtils::EnergyCalibration> cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_lower_channel_energy( spec_nchannel, spec_energies );
+
+  roi.data = make_shared<SpecUtils::Measurement>();
+  roi.data->set_gamma_counts( make_shared<vector<float>>( spec_nchannel, 0.0f ), 1.0f, 1.0f );
+  roi.data->set_energy_calibration( cal );
+
+  // Snap the ROI to channel edges, the way the fitters do.
+  const size_t lower_channel = roi.data->find_gamma_channel( 590.0f );
+  const size_t upper_channel = roi.data->find_gamma_channel( 612.0f );
+
+  roi.cont = make_shared<PeakContinuum>();
+  roi.cont->setType( type );
+  roi.cont->setRange( spec_energies[lower_channel], spec_energies[upper_channel + 1] );
+
+  vector<double> coeffs( PeakContinuum::num_parameters(type), 0.0 );
+  coeffs[0] = 300.0;   //counts/keV
+  if( PeakContinuum::num_cdf_step_pars(type) > 0 )
+    coeffs[PeakContinuum::num_linear_fit_pars(type)] = step_density / roi.strong.amplitude();
+  roi.cont->setParameters( spec_energies[lower_channel], coeffs, {} );
+
+  roi.strong.setContinuum( roi.cont );
+  roi.weak.setContinuum( roi.cont );
+
+  // Generate the data from the model the two peaks and the continuum describe.
+  const PeakDef * const roi_peaks[2] = { &roi.strong, &roi.weak };
+  vector<float> counts( spec_nchannel, 0.0f );
+  for( size_t i = lower_channel; i <= upper_channel; ++i )
+  {
+    const double x0 = spec_energies[i], x1 = spec_energies[i+1];
+    double model = roi.cont->offset_integral( x0, x1, roi.data, roi_peaks, 2 );
+    model += roi.strong.gauss_integral( x0, x1 ) + roi.weak.gauss_integral( x0, x1 );
+
+    const double zig = ((i % 2) ? 0.8 : -0.8) * sqrt( (std::max)(model, 1.0) );
+    counts[i] = static_cast<float>( (std::max)( model + zig, 0.0 ) );
+  }
+
+  roi.data->set_gamma_counts( make_shared<vector<float>>( counts ), 1.0f, 1.0f );
+
+  return roi;
+}
+}//namespace
+
+
+// The null hypothesis `chi2_significance_test(...)` compares against must be the same continuum
+// family with the peak removed - not a different continuum model.  It used to refit the
+// null-hypothesis continuum with `step_coeffs == nullptr` and then force the peak-CDF step
+// coefficients to zero, while the alternative hypothesis kept the fitted step.  For a FlatStepCDF
+// ROI the polynomial is a single constant, so a null with no step cannot represent the data at all,
+// and the chi2 difference measured the change of continuum model rather than the presence of the
+// peak.
+//
+// Two things make this hard to reach, and dictate how the test is written:
+//  - with `other_peaks` empty the step term `SUM_j(amp_j*CDFbar_j)` is zero on the null side
+//    whatever the coefficient is, so the ROI must hold more than one peak;
+//  - the chi2 *ratio* test is waived outright when a ROI peer shares the continuum, which any real
+//    multi-peak ROI does - so only the Delta-chi2 test (`stat_threshold`) can see the difference.
+BOOST_AUTO_TEST_CASE( significance_test_null_keeps_fitted_step )
+{
+  // Half the continuum steps away across the strong peak - far more than a constant can absorb.
+  const TwoPeakRoi roi = make_two_peak_roi( PeakContinuum::FlatStepCDF, -150.0 );
+
+  const double stat_threshold = 5.0;   //required improvement in chi2
+  const double no_ratio_test = 0.0;
+
+  // A peak that is not there must not be called significant just because the null hypothesis threw
+  //  away the step the *other* peak is responsible for.
+  BOOST_CHECK_MESSAGE( !chi2_significance_test( roi.weak, stat_threshold, no_ratio_test,
+                                                { roi.strong }, roi.data ),
+    "A 0.02 count peak was called significant; the null hypothesis is being charged for the step"
+    " belonging to the other peak in the ROI." );
+
+  // ...and the correction must not go so far that a real peak stops being significant.
+  BOOST_CHECK_MESSAGE( chi2_significance_test( roi.strong, stat_threshold, no_ratio_test,
+                                               { roi.weak }, roi.data ),
+    "A 20000 count peak was not called significant." );
+
+  // The non-CDF types have no step coefficient to carry, so both answers must be unchanged.
+  const TwoPeakRoi lin = make_two_peak_roi( PeakContinuum::Linear, 0.0 );
+
+  BOOST_CHECK_MESSAGE( !chi2_significance_test( lin.weak, stat_threshold, no_ratio_test,
+                                                { lin.strong }, lin.data ),
+    "Linear control: a 0.02 count peak was called significant." );
+  BOOST_CHECK_MESSAGE( chi2_significance_test( lin.strong, stat_threshold, no_ratio_test,
+                                               { lin.weak }, lin.data ),
+    "Linear control: a 20000 count peak was not called significant." );
+}
+
+
+namespace
+{
+/** Serializes a valid continuum of `type`, then overwrites the three coefficient lists with
+ `num_coefs` entries each, and reads it back.  Returns the parsed continuum, or throws.
+ */
+shared_ptr<PeakContinuum> parse_continuum_with_coef_count( const PeakContinuum::OffsetType type,
+                                                           const size_t num_coefs,
+                                                           const int version )
+{
+  shared_ptr<PeakContinuum> cont = make_shared<PeakContinuum>();
+  cont->setType( type );
+  cont->setRange( 590.0, 610.0 );
+
+  vector<double> coeffs( PeakContinuum::num_parameters(type), 1.0 );
+  cont->setParameters( 590.0, coeffs, {} );
+
+  PeakDef peak( 600.0, 1.0, 20000.0 );
+  peak.setContinuum( cont );
+
+  // The <Peak> node must be a sibling of <PeakContinuum>, since the legacy conversion reads it.
+  rapidxml::xml_document<char> doc;
+  rapidxml::xml_node<char> *peaks_node = doc.allocate_node( rapidxml::node_element, "Peaks" );
+  doc.append_node( peaks_node );
+
+  map<shared_ptr<PeakContinuum>,int> continuum_ids;
+  peak.toXml( peaks_node, peaks_node, continuum_ids );
+
+  rapidxml::xml_node<char> *cont_node = peaks_node->first_node( "PeakContinuum" );
+  BOOST_REQUIRE( cont_node );
+
+  rapidxml::xml_attribute<char> *ver = cont_node->first_attribute( "version" );
+  BOOST_REQUIRE( ver );
+  ver->value( doc.allocate_string( to_string(version).c_str() ) );
+
+  rapidxml::xml_node<char> *coefs_node = cont_node->first_node( "Coefficients" );
+  BOOST_REQUIRE( coefs_node );
+
+  string vals, fits;
+  for( size_t i = 0; i < num_coefs; ++i )
+  {
+    vals += (i ? " 1.0" : "1.0");
+    fits += (i ? " 1" : "1");
+  }
+
+  for( const char * const name : { "Values", "Uncertainties" } )
+  {
+    rapidxml::xml_node<char> *node = coefs_node->first_node( name );
+    BOOST_REQUIRE( node );
+    node->value( doc.allocate_string( vals.c_str() ) );
+  }
+
+  rapidxml::xml_node<char> *fit_node = coefs_node->first_node( "Fittable" );
+  BOOST_REQUIRE( fit_node );
+  fit_node->value( doc.allocate_string( fits.c_str() ) );
+
+  shared_ptr<PeakContinuum> answer = make_shared<PeakContinuum>();
+  int cont_id = 0;
+  answer->fromXml( cont_node, cont_id );
+
+  return answer;
+}
+}//namespace
+
+
+// `PeakContinuum::fromXml` sized its three coefficient vectors from whatever the XML contained and
+// only checked them against each other, never against the type.  A truncated, hand-edited or
+// third-party file therefore produced a continuum whose parameter vector did not match its type,
+// and `offset_integral_cdf_step(...)` / `offset_eqn_integral(...)` - which index by type alone -
+// then read past the end.  `setType(...)` and both `setParameters(...)` overloads have always
+// enforced the size, so no InterSpec-written file is rejected by this check.
+BOOST_AUTO_TEST_CASE( fromXml_rejects_wrong_coefficient_count )
+{
+  const int cur_ver = PeakContinuum::sm_xmlSerializationVersion;
+
+  // Too few, and too many, for a type expecting four.
+  BOOST_CHECK_THROW( parse_continuum_with_coef_count( PeakContinuum::BiLinearStepCDF, 3, cur_ver ),
+                     std::runtime_error );
+  BOOST_CHECK_THROW( parse_continuum_with_coef_count( PeakContinuum::BiLinearStepCDF, 5, cur_ver ),
+                     std::runtime_error );
+
+  // ...and a plain polynomial type, where a short vector used to leave the slope simply undefined.
+  BOOST_CHECK_THROW( parse_continuum_with_coef_count( PeakContinuum::Linear, 1, cur_ver ),
+                     std::runtime_error );
+  BOOST_CHECK_THROW( parse_continuum_with_coef_count( PeakContinuum::Cubic, 2, cur_ver ),
+                     std::runtime_error );
+
+  // The over-strictness guard: a correctly sized continuum must still read.
+  shared_ptr<PeakContinuum> ok;
+  BOOST_REQUIRE_NO_THROW( ok = parse_continuum_with_coef_count( PeakContinuum::BiLinearStepCDF, 4,
+                                                                cur_ver ) );
+  BOOST_REQUIRE( ok );
+  BOOST_CHECK_EQUAL( ok->parameters().size(), size_t(4) );
+
+  // A legacy BiLinearStepCDF must still convert on read rather than being rejected - the size check
+  //  sits before the conversion, and the conversion now asserts the size instead of skipping.
+  shared_ptr<PeakContinuum> legacy;
+  BOOST_REQUIRE_NO_THROW( legacy = parse_continuum_with_coef_count( PeakContinuum::BiLinearStepCDF,
+                                                                    4, 2 ) );
+  BOOST_REQUIRE( legacy );
+  BOOST_REQUIRE_EQUAL( legacy->parameters().size(), size_t(4) );
+  // Version 2 stored (left_const, left_linear, right_const, right_linear), all 1.0 here, so the
+  //  converted step coefficients (right_k - left_k)/total_amp must be zero.
+  BOOST_CHECK_SMALL( legacy->parameters()[2], 1.0E-12 );
+  BOOST_CHECK_SMALL( legacy->parameters()[3], 1.0E-12 );
+}

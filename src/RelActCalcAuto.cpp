@@ -2113,6 +2113,24 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
    
    @returns The lower and upper channels for the energy range; its guaranteed the \c .first element
             will be less than or equal to the \c .second element.
+
+   KNOWN INCONSISTENCY (pre-existing, deliberately not fixed - 2026-09).  This nearest-channel
+   rounding is unique to RelActCalcAuto; everywhere else in InterSpec a ROI's channels come from
+   `SpecUtils::Measurement::find_gamma_channel()`, which floors (see `PeakFitLM`s RoiInfo builder
+   and `PeakContinuum::cdf_step_anchor_energies()`).  `peaks_for_energy_range_imp(...)` stores the
+   caller's unrounded `RoiRange` energies on the continuum, so when `lower_energy` falls in the
+   upper half of its channel the channels actually integrated and the channels the evaluator later
+   derives from the stored range differ by one.  For the peak-CDF step continua that offsets the
+   drawn/reported continuum from the fitted one by
+   `step_coeff * SUM_j(amp_j*(CDF_j(e_first) - CDF_j(e_floor)))` per channel - of order 0.02 to 0.2
+   counts on a 300 counts/channel continuum, i.e. under 0.1%.  Every other continuum type is
+   unaffected, since only the CDF step types anchor anything to the ROI edge.
+
+   The trap for anyone fixing this: storing `gamma_channel_upper(last_channel)` as the continuum's
+   upper energy does NOT work - `find_gamma_channel` resolves an exact channel edge to the channel
+   *above* it, so the anchor lands one channel too far and a later ordinary refit would fit an extra
+   channel.  A fix has to store an energy strictly inside the last fitted channel, or hand the
+   anchor helper the channel range explicitly.
    */
   static pair<size_t,size_t> channel_range( const double lower_energy, const double upper_energy,
                                           const size_t wanted_nchan,

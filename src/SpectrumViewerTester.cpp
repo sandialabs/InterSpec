@@ -1128,6 +1128,8 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
 
   try
   {
+    // Passes `peak` as the ROI's only peer - this function is only handed one peak, so a
+    //  peak-CDF step continuum shared with others reports a continuum area that is too small.
     const PeakDef *peak_ptr = &peak;
     offset_area = peak.continuum()->offset_integral( peak.lowerX(), peak.upperX(), data, &peak_ptr, 1 );
   }catch(...)

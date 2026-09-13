@@ -3916,16 +3916,21 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       {
         try
         {
-          // In principle we should collect all peaks in the ROI to pass to `offset_integral(...)`,
-          //. but we dont have that information, and I wouldnt exactly matter
+          // Only reached when there is no spectrum.  Passes each peak as its own ROI's only peer,
+          //  which the comparator cannot avoid - it is handed two peaks, not the peak list.  The
+          //  data-based step types throw here (caught below); the peak-CDF step types do NOT -
+          //  they fall back to the raw ROI bounds for their anchor - so for one of those shared by
+          //  several peaks this sort key is computed from a step that is missing the other peaks'
+          //  `amp_j*CDFbar_j` terms.  It only affects row ordering, and only with no spectrum
+          //  loaded.
           const PeakDef *rhs_ptr = rhs.get();
           rhs_area = rhs->continuum()->offset_integral( rhs->lowerX(), rhs->upperX(), data, &rhs_ptr, 1 );
           const PeakDef *lhs_ptr = lhs.get();
           lhs_area = lhs->continuum()->offset_integral( lhs->lowerX(), lhs->upperX(), data, &lhs_ptr, 1 );
         }catch(...)
         {
-          //Will fail for step continua (FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF)
-          //  - which I doubt we will ever get here anyway.
+          //The data-based step continua (FlatStep, LinearStep, BiLinearStep) throw without a
+          //  spectrum; the peak-CDF ones do not - see the note above.
         }
       }
       

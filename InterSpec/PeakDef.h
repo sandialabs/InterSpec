@@ -933,6 +933,16 @@ public:
   
   /** Returns the area between the continuum and data, everywhere data is above
      continuum in the ROI.
+
+   KNOWN LIMITATION: evaluates the continuum with `this` as the ROI's only peak.  The peak-CDF step
+   continua (FlatStepCDF/LinearStepCDF/BiLinearStepCDF) build their step from
+   `SUM_j(amp_j*CDFbar_j)` over every peak sharing the ROI, so for one of those shared by several
+   peaks the continuum comes back too small and the returned area correspondingly too large.
+   `PeakDef` has no back-pointer to its ROI siblings, so fixing this means an overload taking them;
+   until then, prefer computing the area at a call site that has the ROI's peaks in hand.  Most
+   callers only reach this for data-defined (`!gausPeak()`) peaks, which are not given a CDF step
+   continuum in practice - but `BatchInfoLog` calls it for every peak, and writes the result to the
+   batch report's `AreaBetweenContinuumAndData` field.
    */
   double areaFromData( std::shared_ptr<const SpecUtils::Measurement> data ) const;
   

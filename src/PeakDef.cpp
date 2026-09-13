@@ -2447,9 +2447,20 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     for( size_t i = 0; i < contents.size(); ++i )
       m_fitForValue[i] = (contents[i] > 0.5f); 
     
-    if( m_values.size() != m_uncertainties.size() 
+    if( m_values.size() != m_uncertainties.size()
         || m_fitForValue.size() != m_values.size() )
       throw runtime_error( "Continuum coefficients not consistent" );
+
+    // The coefficient vectors must match the type, or every later `m_values[i]` - notably
+    //  `offset_integral_cdf_step(...)` and `offset_eqn_integral(...)`, which index by type alone -
+    //  reads past the end.  `setType(...)` and both `setParameters(...)` overloads have always
+    //  enforced this size, so no InterSpec-written file has a differently sized vector.
+    const size_t num_expected = PeakContinuum::num_parameters( m_type );
+    if( m_values.size() != num_expected )
+      throw runtime_error( "PeakContinuum::fromXml: continuum type '"
+                          + string(offset_type_str(m_type)) + "' expects "
+                          + std::to_string(num_expected) + " coefficients, but XML had "
+                          + std::to_string(m_values.size()) + "." );
   }else
   {
     m_values.clear();
@@ -2472,8 +2483,12 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
 
   // Serialization versions 2 and earlier stored BiLinearStepCDF under a different convention; the
   //  ROI's peak sums needed to convert live in the <Peak> nodes sitting alongside this one.
-  if( (version < 3) && (m_type == BiLinearStepCDF) && (m_values.size() == 4) )
+  if( (version < 3) && (m_type == BiLinearStepCDF) )
   {
+    // Guaranteed by the coefficient-count check above; a wrong size used to silently skip the
+    //  conversion, leaving the continuum in the old parameterization.
+    assert( m_values.size() == 4 );
+
     const LegacyRoiPeakSums sums = legacy_roi_peak_sums( cont_node->parent(), contId, m_lowerEnergy );
     convert_legacy_bilinear_step_cdf( m_values, m_uncertainties, sums.total_amp, sums.amp_cdf0,
                                      "continuum id " + std::to_string(contId) );
@@ -4187,6 +4202,7 @@ double PeakDef::areaFromData( std::shared_ptr<const Measurement> data ) const
       const float e0 = std::max( energyStart, data->gamma_channel_lower(i) );
       const float e1 = std::min( energyEnd, data->gamma_channel_upper(i) );
       const double data_area_i = data->gamma_integral(e0, e1);
+      // `this` is passed as the ROI's only peer - see the limitation noted at the declaration.
       const PeakDef *self = this;
       const double cont_area_1 = m_continuum->offset_integral( e0, e1, data, &self, 1 );
       if( data_area_i > cont_area_1 )
@@ -6323,6 +6339,13 @@ bool PeakContinuum::cdf_step_anchor_energies( const std::shared_ptr<const SpecUt
   //  passes nullptr for multi-Measurement selections - so fall back to the raw ROI bounds, which
   //  differ by at most a fraction of a channel of CDF mass at the ROI edge.
   //  This mirrors what `offset_integral_non_cdf(...)` already does for the data-step types.
+  //
+  // `find_gamma_channel(...)` floors, which matches how every ROI in InterSpec is turned into a
+  //  channel range - except `RelActCalcAuto`s `RoiRangeChannels::channel_range()`, which rounds to
+  //  the nearest channel and then stores the caller's unrounded energies here.  For a RelAct ROI
+  //  the anchors below can therefore be one channel away from the ones the fit used; see the note
+  //  on `channel_range()` for the magnitude (<0.1% of the continuum) and for why the obvious fix
+  //  is wrong.
   if( data && data->num_gamma_channels() )
   {
     const std::shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
