@@ -189,7 +189,7 @@ void EccUncertOptions::handleImportToggled()
 }//handleImportToggled()
 
 
-void EccUncertOptions::handleModeChanged()
+void EccUncertOptions::updateModeWidgets()
 {
   const bool gaussian = (m_mode->currentIndex() == Gaussian);
   m_corrLenLabel->setHidden( !gaussian );
@@ -197,9 +197,58 @@ void EccUncertOptions::handleModeChanged()
   m_corrLen->setEnabled( m_import->isChecked() && gaussian );
 
   rebuildExampleTable();
+}//updateModeWidgets()
+
+
+void EccUncertOptions::handleModeChanged()
+{
+  updateModeWidgets();
 
   m_changed.emit();
 }//handleModeChanged()
+
+
+void EccUncertOptions::setPoints( const vector<float> &energies,
+                                  const vector<float> &correlatedFrac,
+                                  const vector<float> &uncorrelatedFrac )
+{
+  m_energies = energies;
+  m_baselineFrac = correlatedFrac;
+  m_convergenceFrac = uncorrelatedFrac;
+
+  // The node count gates whether the example table is shown at all.
+  rebuildExampleTable();
+}//setPoints(...)
+
+
+void EccUncertOptions::setCorrelationLength( const double corrLength )
+{
+  if( corrLength <= 0.0 )
+  {
+    m_mode->setCurrentIndex( Uncorrelated );
+  }else if( corrLength >= DetectorEfficiencyUncert::sm_fullyCorrelatedLength )
+  {
+    m_mode->setCurrentIndex( FullyCorrelated );
+  }else
+  {
+    m_mode->setCurrentIndex( Gaussian );
+    char buf[32] = { '\0' };
+    snprintf( buf, sizeof(buf), "%.2f", corrLength );
+    m_corrLen->setText( WString::fromUTF8(buf) );
+  }
+
+  updateModeWidgets();
+}//setCorrelationLength(...)
+
+
+void EccUncertOptions::setImportToggleVisible( const bool visible )
+{
+  m_import->setHidden( !visible );
+  if( !visible )
+    m_import->setChecked( true );  //importUncertainties() is then pinned true
+
+  updateModeWidgets();
+}//setImportToggleVisible(...)
 
 
 void EccUncertOptions::rebuildExampleTable()

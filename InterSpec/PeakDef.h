@@ -429,6 +429,10 @@ struct PeakContinuum
           the right-hand line, not on a step, so they do not carry over.
    @param total_amp `SUM_j( amp_j )` over the ROI's peaks.  A non-positive or non-finite value
           drops the step (and is logged in developer-check builds), since it cannot be recovered.
+          Note that the CSV caller can only sum the peaks it retained: a row dropped because its
+          mean falls outside the spectrum being loaded against still contributed area when the file
+          was written, so the recovered step will be too large by that fraction.  The XML caller
+          reads the `<Peak>` nodes directly and does not have this limitation.
    @param amp_cdf0 `SUM_j( amp_j * CDF_j(roi_lower) )`; the offset the un-anchored version-2 CDF
           carried at the ROI's lower edge, which the ROI-anchored version-3 model does not.  It is
           folded into the polynomial terms - skipping it shifts a skewed ROI by several percent.

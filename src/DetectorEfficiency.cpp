@@ -311,6 +311,13 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromPointUncerts(
   answer->setNodeCovariance( node_energies, cov );
   answer->m_corrLength = (corrLength > 0.0) ? corrLength : -1.0;
 
+  // Provenance, taken from the sorted/de-duplicated nodes so it stays index-aligned with them.
+  //  This model is purely correlated, so there is no uncorrelated component.
+  vector<float> corr_frac( nnode );
+  for( size_t i = 0; i < nnode; ++i )
+    corr_frac[i] = pts[i].second;
+  answer->setComponentSplit( corr_frac, {} );
+
   return answer;
 }//fromPointUncerts(...)
 
@@ -396,6 +403,18 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromCorrelatedPlu
   answer->setNodeCovariance( node_energies, cov );
   answer->m_corrLength = (corrLength > 0.0) ? corrLength : -1.0;
 
+  // Provenance, taken from the sorted/de-duplicated nodes so it stays index-aligned with them.
+  vector<float> corr_frac( nnode ), uncorr_frac;
+  for( size_t i = 0; i < nnode; ++i )
+    corr_frac[i] = pts[i].corr;
+  if( have_diag )
+  {
+    uncorr_frac.resize( nnode );
+    for( size_t i = 0; i < nnode; ++i )
+      uncorr_frac[i] = pts[i].uncorr;
+  }
+  answer->setComponentSplit( corr_frac, uncorr_frac );
+
   return answer;
 }//fromCorrelatedPlusDiagonal(...)
 
@@ -410,6 +429,8 @@ void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
     m_covEnergies.clear();
     m_covMatrix.clear();
     m_corrLength = -1.0;
+    m_corrComponent.clear();
+    m_uncorrComponent.clear();
     return;
   }
 
@@ -462,6 +483,11 @@ void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
   m_covEnergies = energies;
   m_covMatrix = cov;
   m_corrLength = -1.0;
+
+  // A directly-set covariance has no correlated/uncorrelated split; the factories that do know the
+  //  split call setComponentSplit(...) after this.
+  m_corrComponent.clear();
+  m_uncorrComponent.clear();
 }//setNodeCovariance(...)
 
 
@@ -482,6 +508,45 @@ void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &co
 }//setCoefficientCovariance(...)
 
 
+void DetectorEfficiencyUncert::setComponentSplit( const vector<float> &correlatedFrac,
+                                                  const vector<float> &uncorrelatedFrac )
+{
+  const size_t nnode = m_covEnergies.size();
+
+  // setNodeCovariance(...) clears the split, so it must be called first; otherwise the provenance
+  //  we are being handed has nothing to be index-aligned with.
+  assert( nnode || (correlatedFrac.empty() && uncorrelatedFrac.empty()) );
+
+  const auto check = []( const vector<float> &vals, const size_t nnode, const char *which ){
+    if( vals.empty() )
+      return;
+
+    if( vals.size() != nnode )
+      throw runtime_error( string("DetectorEfficiencyUncert::setComponentSplit: ") + which
+                           + " component must be empty or match the number of node energies" );
+
+    for( const float val : vals )
+    {
+      if( (val < 0.0f) || IsNan(val) || IsInf(val) )
+        throw runtime_error( string("DetectorEfficiencyUncert::setComponentSplit: ") + which
+                             + " component values must be >= 0" );
+    }
+  };//check lambda
+
+  check( correlatedFrac, nnode, "correlated" );
+  check( uncorrelatedFrac, nnode, "uncorrelated" );
+
+  m_corrComponent = correlatedFrac;
+  m_uncorrComponent = uncorrelatedFrac;
+}//setComponentSplit(...)
+
+
+bool DetectorEfficiencyUncert::hasComponentSplit() const
+{
+  return (!m_corrComponent.empty() || !m_uncorrComponent.empty());
+}
+
+
 const vector<float> &DetectorEfficiencyUncert::covarianceEnergies() const
 {
   return m_covEnergies;
@@ -497,6 +562,18 @@ const vector<float> &DetectorEfficiencyUncert::covarianceMatrix() const
 const vector<float> &DetectorEfficiencyUncert::coefficientCovariance() const
 {
   return m_coefCovMatrix;
+}
+
+
+const vector<float> &DetectorEfficiencyUncert::correlatedComponent() const
+{
+  return m_corrComponent;
+}
+
+
+const vector<float> &DetectorEfficiencyUncert::uncorrelatedComponent() const
+{
+  return m_uncorrComponent;
 }
 
 
@@ -518,6 +595,13 @@ void DetectorEfficiencyUncert::toXml( ::rapidxml::xml_node<char> *parent,
   {
     append_float_list_node( base_node, doc, "CovEnergies", m_covEnergies );
     append_float_list_node( base_node, doc, "CovMatrix", m_covMatrix );
+
+    // Provenance only: the split the covariance above was built from.  Optional, so older readers
+    //  (which look up children by name) simply ignore these and rebuild the identical covariance.
+    if( !m_corrComponent.empty() )
+      append_float_list_node( base_node, doc, "CorrFrac", m_corrComponent );
+    if( !m_uncorrComponent.empty() )
+      append_float_list_node( base_node, doc, "UncorrFrac", m_uncorrComponent );
   }
 
   if( !m_coefCovMatrix.empty() )
@@ -548,12 +632,20 @@ void DetectorEfficiencyUncert::fromXml( const ::rapidxml::xml_node<char> *node )
   m_covMatrix.clear();
   m_coefCovMatrix.clear();
   m_corrLength = -1.0;
+  m_corrComponent.clear();
+  m_uncorrComponent.clear();
 
   const vector<float> cov_energies = parse_float_list_node( node, "CovEnergies" );
   if( !cov_energies.empty() )
   {
     const vector<float> cov_matrix = parse_float_list_node( node, "CovMatrix" );
     setNodeCovariance( cov_energies, cov_matrix );
+
+    // After setNodeCovariance(...), which clears the split.
+    const vector<float> corr_frac = parse_float_list_node( node, "CorrFrac" );
+    const vector<float> uncorr_frac = parse_float_list_node( node, "UncorrFrac" );
+    if( !corr_frac.empty() || !uncorr_frac.empty() )
+      setComponentSplit( corr_frac, uncorr_frac );
   }
 
   const vector<float> coef_cov = parse_float_list_node( node, "CoefCovMatrix" );
@@ -590,6 +682,10 @@ void DetectorEfficiencyUncert::toUrlParts( map<string,string> &parts, const stri
 
     if( m_corrLength > 0.0 )
       parts[prefix + "EFUL"] = SpecUtils::printCompact( m_corrLength, 5 );
+
+    // The coefficient covariance and the correlated/uncorrelated split are deliberately not
+    //  encoded - the QR budget is tight, and the covariance written above already carries the
+    //  physics; only the editing provenance is lost.
   }//if( !m_covEnergies.empty() )
 }//DetectorEfficiencyUncert::toUrlParts(...)
 
@@ -659,6 +755,11 @@ void DetectorEfficiencyUncert::appendToHash( std::size_t &seed ) const
 
   if( m_corrLength > 0.0 )
     boost::hash_combine( seed, m_corrLength );
+
+  // The correlated/uncorrelated split is presentation-only provenance, and is dropped by the
+  //  URL/QR encoding - hashing it would make the same DRF hash differently depending on how it
+  //  reached us, and would change the identity of every .ecc DRF already in a users database.
+  //  The covariance it describes is already hashed above.
 }//DetectorEfficiencyUncert::appendToHash(...)
 
 
@@ -667,6 +768,8 @@ bool DetectorEfficiencyUncert::operator==( const DetectorEfficiencyUncert &rhs )
   return (m_covEnergies == rhs.m_covEnergies)
          && (m_covMatrix == rhs.m_covMatrix)
          && (m_coefCovMatrix == rhs.m_coefCovMatrix)
+         && (m_corrComponent == rhs.m_corrComponent)
+         && (m_uncorrComponent == rhs.m_uncorrComponent)
          && (m_corrLength == rhs.m_corrLength);
 }//DetectorEfficiencyUncert::operator==
 
@@ -707,6 +810,10 @@ void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
                              "DetectorEfficiencyUncert covariance matrix" );
   check_float_vectors_close( lhs.m_coefCovMatrix, rhs.m_coefCovMatrix,
                              "DetectorEfficiencyUncert coefficient covariance" );
+  check_float_vectors_close( lhs.m_corrComponent, rhs.m_corrComponent,
+                             "DetectorEfficiencyUncert correlated component" );
+  check_float_vectors_close( lhs.m_uncorrComponent, rhs.m_uncorrComponent,
+                             "DetectorEfficiencyUncert uncorrelated component" );
 
   const double corr_diff = fabs( lhs.m_corrLength - rhs.m_corrLength );
   const double corr_scale = std::max( fabs(lhs.m_corrLength), fabs(rhs.m_corrLength) );
@@ -813,6 +920,9 @@ std::shared_ptr<DetectorEfficiencyUncert> MeasuredDrfPoints::toEfficiencyUncert(
 
   auto answer = make_shared<DetectorEfficiencyUncert>();
   answer->setNodeCovariance( energies, cov );
+
+  // Deliberately no setComponentSplit(...): the cert part is correlated in blocks per sourceKey,
+  //  not as one common mode across all energies, so a two-vector split cannot represent it.
 
   return answer;
 }//toEfficiencyUncert()
@@ -1185,6 +1295,102 @@ const vector<float> &DetectorEfficiencyCurve::expOfLogPowerSeriesUncerts() const
 {
   return m_expOfLogCoeffUncerts;
 }
+
+
+vector<double> DetectorEfficiencyCurve::fracCovariance( const vector<double> &energies ) const
+{
+  if( energies.empty() || !m_uncert )
+    return {};
+
+  const size_t ne = energies.size();
+  const size_t ncoef = m_expOfLogCoeffs.size();
+  const vector<float> &coef_cov = m_uncert->coefficientCovariance();
+
+  // An equation's uncertainty is the uncertainty of its coefficients.  Only trust the matrix while
+  //  its rank still matches the coefficient count - a term added or removed since it was stored
+  //  makes it meaningless, and falling back beats silently misapplying it.
+  const bool use_coefs = (m_form == DetectorPeakResponse::kExpOfLogPowerSeries)
+                         && ncoef && (coef_cov.size() == (ncoef * ncoef));
+
+  if( use_coefs )
+  {
+    // J[i][k] = L_i^k, L_i = ln(E_i / energyUnits); fractional covariance = J * Sigma * J^T.
+    vector<double> jac( ne * ncoef, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      const double x = energies[i] / static_cast<double>( m_energyUnits );
+      if( x <= 0.0 )
+        continue;  //no information at or below zero energy; leave the row zero
+
+      const double lx = std::log( x );
+      double term = 1.0;
+      for( size_t k = 0; k < ncoef; ++k )
+      {
+        jac[i*ncoef + k] = term;
+        term *= lx;
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    // tmp = J * Sigma, size (ne x ncoef)
+    vector<double> tmp( ne * ncoef, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t k = 0; k < ncoef; ++k )
+      {
+        const double j_ik = jac[i*ncoef + k];
+        if( j_ik == 0.0 )
+          continue;
+        for( size_t l = 0; l < ncoef; ++l )
+          tmp[i*ncoef + l] += j_ik * static_cast<double>( coef_cov[k*ncoef + l] );
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    vector<double> answer( ne * ne, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t j = 0; j < ne; ++j )
+      {
+        double sum = 0.0;
+        for( size_t l = 0; l < ncoef; ++l )
+          sum += tmp[i*ncoef + l] * jac[j*ncoef + l];
+        answer[i*ne + j] = sum;
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    // Symmetrize away the last-bit asymmetry the two passes can leave.
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t j = i + 1; j < ne; ++j )
+      {
+        const double sym = 0.5 * (answer[i*ne + j] + answer[j*ne + i]);
+        answer[i*ne + j] = answer[j*ne + i] = sym;
+      }
+    }
+
+    return answer;
+  }//if( use_coefs )
+
+  if( m_uncert->hasNodeCovariance() )
+    return m_uncert->efficiencyFracCovariance( energies );
+
+  // No node covariance, and any coefficient matrix does not apply to this form.  Nothing usable.
+  return {};
+}//DetectorEfficiencyCurve::fracCovariance(...)
+
+
+vector<double> DetectorEfficiencyCurve::fracUncertainties( const vector<double> &energies ) const
+{
+  const vector<double> cov = fracCovariance( energies );
+  if( cov.size() != (energies.size() * energies.size()) )
+    return {};
+
+  const size_t ne = energies.size();
+  vector<double> answer( ne, 0.0 );
+  for( size_t i = 0; i < ne; ++i )
+    answer[i] = std::sqrt( std::max( 0.0, cov[i*ne + i] ) );
+
+  return answer;
+}//DetectorEfficiencyCurve::fracUncertainties(...)
 
 
 shared_ptr<const DetectorEfficiencyUncert> DetectorEfficiencyCurve::uncertainty() const

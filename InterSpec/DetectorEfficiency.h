@@ -152,11 +152,36 @@ public:
   void setNodeCovariance( const std::vector<float> &energies,
                           const std::vector<float> &covRowMajor );
 
-  /** Sets the (optional) covariance of the efficiency-equation fit
-   coefficients - retained for provenance only; not used in any calculation
-   here.  Must be a square (M*M) row-major matrix, or empty.
+  /** Sets the (optional) M*M row-major covariance of the efficiency-equation fit coefficients, or
+   empty to clear it.
+
+   For a `kExpOfLogPowerSeries` curve this is the authoritative uncertainty: see
+   #DetectorEfficiencyCurve::fracCovariance, which propagates it to a fractional-efficiency
+   covariance.  Nothing in this class uses it - it is the curve that knows the representation, and
+   hence which of the two stores applies.
    */
   void setCoefficientCovariance( const std::vector<float> &covRowMajor );
+
+  /** Sets the (optional) per-node correlated / uncorrelated fractional 1-sigma
+   components the node covariance was built from - retained as provenance so a
+   UI can show and re-edit the split, never used in any calculation here.
+
+   Must be called AFTER #setNodeCovariance, which clears the split (a directly
+   set covariance has none).
+
+   @param correlatedFrac Either empty, or one entry per covariance node energy.
+   @param uncorrelatedFrac Either empty, or one entry per covariance node energy.
+
+   Throws std::runtime_error if a non-empty vector does not match the number of
+   node energies, or holds a negative / non-finite value.
+   */
+  void setComponentSplit( const std::vector<float> &correlatedFrac,
+                          const std::vector<float> &uncorrelatedFrac );
+
+  /** Whether a per-node correlated/uncorrelated split is retained; false for a
+   covariance set directly, or restored from a URL/QR (which does not carry it).
+   */
+  bool hasComponentSplit() const;
 
   const std::vector<float> &covarianceEnergies() const;
 
@@ -165,6 +190,16 @@ public:
 
   /** Row-major M*M fit-coefficient covariance; empty if not defined. */
   const std::vector<float> &coefficientCovariance() const;
+
+  /** Per-node correlated fractional 1-sigma component; empty if not defined.
+   See #setComponentSplit.
+   */
+  const std::vector<float> &correlatedComponent() const;
+
+  /** Per-node uncorrelated (diagonal) fractional 1-sigma component; empty if
+   not defined, or if the covariance was built without one.
+   */
+  const std::vector<float> &uncorrelatedComponent() const;
 
   /** Log-energy correlation length used to construct the node covariance from
    per-point uncertainties; <= 0 if the covariance was not built that way.
@@ -180,7 +215,9 @@ public:
   /** Appends url query-string entries (keys prefix+"EFUE", prefix+"EFUC",
    prefix+"EFUL") to `parts`.  The covariance matrix is encoded as its upper
    triangle (including diagonal), N*(N+1)/2 values.
-   The coefficient covariance is never written to URLs.
+   The coefficient covariance and the correlated/uncorrelated split are never
+   written to URLs (the QR budget); the covariance they describe round-trips, so
+   only the editing provenance is lost.
    */
   void toUrlParts( std::map<std::string,std::string> &parts, const std::string &prefix ) const;
 
@@ -248,6 +285,18 @@ private:
    coefficients.
    */
   std::vector<float> m_coefCovMatrix;
+
+  /** Optional provenance: the per-node correlated (common-mode across energy)
+   fractional 1-sigma component the node covariance was built from; empty when
+   the covariance was set directly.  Same size as #m_covEnergies when set.
+   */
+  std::vector<float> m_corrComponent;
+
+  /** Optional provenance: the per-node uncorrelated (diagonal) fractional
+   1-sigma component; empty when there was none, or when the covariance was set
+   directly.  Same size as #m_covEnergies when set.
+   */
+  std::vector<float> m_uncorrComponent;
 
   /** Log-energy correlation length used by #fromPointUncerts; <= 0 if the
    node covariance was set directly.
@@ -449,6 +498,33 @@ public:
    #DetectorEfficiencyUncert returned by #uncertainty.)
    */
   const std::vector<float> &expOfLogPowerSeriesUncerts() const;
+
+  /** The fractional-efficiency-error covariance among `energies` (keV), row-major N*N; empty when
+   this curve carries no usable uncertainty.
+
+   Which of #DetectorEfficiencyUncert's two stores is authoritative is decided by the
+   representation, so an equation and a set of measured efficiencies each use the description that
+   actually belongs to them:
+     - `kExpOfLogPowerSeries` - the M*M coefficient covariance, propagated analytically.  With
+       `eff(E) = exp( sum_k a_k * L^k )` and `L = ln(E/energyUnits)`, `d ln(eff)/d a_k = L^k`, so the
+       fractional covariance is exactly `J*Sigma*J^T` for `J[i][k] = L_i^k` - no fitting, and it
+       correctly keeps the strong correlation between fitted coefficients.
+     - every other form - the energy-node covariance, which is what points-derived uncertainties
+       (and hand-authored ones) populate.
+   Each falls back to the other store when the authoritative one is absent or does not match the
+   curve (e.g. a coefficient covariance whose rank no longer matches the coefficient count), so a
+   detector made before its fit covariance was retained keeps working.
+
+   Note the two are never combined: for a fitted equation they describe overlapping information (the
+   node covariance being the raw input points, the coefficient covariance the curve fitted through
+   them), so adding them would double count.
+   */
+  std::vector<double> fracCovariance( const std::vector<double> &energies ) const;
+
+  /** Square root of the diagonal of #fracCovariance - the 1-sigma fractional uncertainty at each
+   requested energy (keV).  Empty when there is no usable uncertainty.
+   */
+  std::vector<double> fracUncertainties( const std::vector<double> &energies ) const;
 
   std::shared_ptr<const DetectorEfficiencyUncert> uncertainty() const;
   void setUncertainty( std::shared_ptr<const DetectorEfficiencyUncert> uncert );

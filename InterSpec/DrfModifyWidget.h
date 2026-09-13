@@ -39,6 +39,8 @@
 
 class InterSpec;
 class SwitchCheckbox;
+class EccUncertOptions;
+class NativeFloatSpinBox;
 class DetectorPeakResponse;
 class DetectorEfficiencyUncert;
 
@@ -49,6 +51,7 @@ namespace Wt
   class WMenu;
   class WMenuItem;
   class WCheckBox;
+  class WComboBox;
   class WLineEdit;
   class WTextArea;
   class WPushButton;
@@ -73,9 +76,10 @@ namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
  Monte-Carlo `ceelo::DetectorResponse` is attached and answers off-axis /
  near-field / uncertainty-aware queries).  The Geom & MC tab carries that
  toggle; fixed-geometry DRFs have no geometry to model and show no such tab.
- The Uncertainty tab shows a measured-point editor when the response is
- grounded to measured efficiencies, and a node σ/ρ covariance-matrix editor
- otherwise.
+ The Anchor tab edits the efficiency representation and its uncertainty together, choosing its
+ editor by the curve's `EfficiencyFnctForm` (see #AnchorEditor) rather than by whether measured
+ points happen to be present - so an ISOCS .ecc, a GADRAS Efficiency.csv and an ANGLE .outx all get
+ the same editor, and a fixed-geometry curve is no longer rewritten as far-field on apply.
  */
 class DrfModifyWidget : public Wt::WContainerWidget
 {
@@ -127,16 +131,28 @@ public:
      attached) rather than Flat Disk.  Always false for fixed-geometry DRFs (no Geom & MC tab). */
     bool geometryModeled = false;
 
-    /** The σ/ρ covariance-matrix editor's numeric shadow (display order), used when no measured
-     points ground the response.  #covMatrix is the row-major N·N covariance of fractional
-     efficiency error at #covEnergies (keV). */
-    std::vector<double> covEnergies;
-    std::vector<double> covMatrix;
+    /** The coefficient σ/ρ matrix editor's numeric shadow: the row-major M·M covariance of the
+     exp-of-log-power-series coefficients.  Empty for the other two efficiency forms. */
+    std::vector<double> coefCovMatrix;
 
-    /** Energy / efficiency / stat-% / cert-% / source text, one entry per measured-point row.
-     The last two are empty for an intrinsic (single-uncertainty) curve. */
+    /** The exp-of-log-power-series coefficient text, one entry per term. */
+    std::vector<std::string> coefficients;
+
+    /** The efficiency formula text (`kFunctialEfficienyForm` only). */
+    std::string formula;
+
+    /** Energy / efficiency / stat-% / cert-% / source text, one entry per point row.  Cells for
+     columns this curve does not show are empty. */
     std::vector<std::array<std::string,5>> anchors;
     std::string anchorRefDistance, anchorDefaultUncert;
+
+    /** The energy-correlation length the correlated column is combined with; `EccUncertOptions`
+     `effectiveCorrLength()` semantics, so one field round-trips all three modes.  -1 when the
+     active editor has no correlation control. */
+    double anchorCorrLength = -1.0;
+
+    /** Selected energy units for the coefficient/formula editors (`PhysicalUnits`). */
+    float efficiencyEnergyUnits = 1.0f;
 
     MakeMcResponseForDrf::State mc;
     std::shared_ptr<const MakeFwhmForDrf::ToolState> fwhm;
@@ -164,8 +180,8 @@ protected:
   {
     AddUndoRedoStep = 0x01,
 
-    /** Rebuild the σ/ρ covariance table from the numeric shadow; deferred to #render so a cell
-     edit does not delete the WLineEdit whose `changed()` is being handled. */
+    /** Rebuild the coefficient σ/ρ covariance table from the numeric shadow; deferred to #render
+     so a cell edit does not delete the WLineEdit whose `changed()` is being handled. */
     RebuildCovTable = 0x02
   };//enum RenderActions
 
@@ -180,55 +196,93 @@ protected:
   void doAddUndoRedoStep( const bool add_step );
 
   /** Flat Disk / Geometry Modeled toggled: greys the Geom & MC tool in Flat Disk, swaps the visible
-   Uncertainty editor, and records the edit. */
+   Anchor editor, and records the edit. */
   void handleModeToggle();
 
   /** Whether the far-field response is currently Geometry-Modeled (vs Flat Disk). */
   bool geometryModeled() const;
 
-  /** Whether the Uncertainty tab is showing the measured-points editor (rather than the σ/ρ
-   covariance matrix): true when the DRF carries measured points, or the mode is Geometry Modeled. */
-  bool pointsEditorVisible() const;
+  /** Which of the Anchor tab's three editors is showing.  Chosen by the efficiency curve's
+   `EfficiencyFnctForm`, except that Geometry-Modeled always uses #Points - those rows are the
+   Monte-Carlo grounding anchors. */
+  enum class AnchorEditor
+  {
+    /** `kEnergyEfficiencyPairs`: the energy/efficiency/uncertainty table. */
+    Points,
+    /** `kExpOfLogPowerSeries`: coefficient boxes plus their M·M covariance. */
+    Coefficients,
+    /** `kFunctialEfficienyForm`: the formula text, a flat default uncertainty, and an optional
+     per-energy uncertainty table. */
+    Formula
+  };//enum class AnchorEditor
 
-  /** Shows exactly one of the two Uncertainty-tab editors per #pointsEditorVisible. */
-  void updateUncertEditorVisibility();
+  AnchorEditor activeAnchorEditor() const;
 
-  /** Appends one measured-point row (energy keV / absolute efficiency / statistical-uncert % /
-   certificate-uncert % / source-key); the last two are only built for an absolute reference curve.
+  /** Shows exactly one of the three Anchor-tab editors per #activeAnchorEditor, and words the help
+   text to match the columns actually rendered. */
+  void updateAnchorEditorVisibility();
+
+  /** Appends one point row.  Every column is built; the Efficiency one is hidden by CSS for a
+   formula curve (see #updateAnchorEditorVisibility), whose efficiency comes from the formula, so
+   its rows describe uncertainty only.  The Source column only exists per #m_anchorHasSourceCol.
    Blank stat cells fall back to the default-uncert on apply. */
   void addAnchorRow( const float energy, const float efficiency,
                      const float fracStatUncert, const float fracCertUncert,
                      const std::string &sourceKey );
   void removeAnchorRow();
 
-  /** Rebuilds `working`'s measured points + far-field efficiency + node covariance from the points
-   editor (energy/efficiency/stat/cert/source rows, reference distance, and the default uncert %).
-   No-op when the editor was not built. */
+  /** Whether every Anchor-tab widget still holds the value it was seeded with.  When it does, the
+   apply paths leave the DRF's curve and uncertainty exactly as they were, rather than rebuilding
+   an equivalent-but-not-identical one - which matters for a covariance the correlated+diagonal
+   model cannot reproduce (a source-blocked `MeasuredDrfPoints` matrix, or one restored from a URL
+   with no component split). */
+  bool anchorsMatchSeed() const;
+
+  /** Reads the point rows and the correlation control into the uncertainty the Anchor tab means:
+   `fromCorrelatedPlusDiagonal` over the rows, or - when there are no rows - a single flat node at
+   the default uncert.  Returns nullptr when there is nothing to express. */
+  std::shared_ptr<DetectorEfficiencyUncert> buildUncertFromRows();
+
+  /** Rebuilds `working`'s efficiency curve + uncertainty (and, for an absolute reference curve,
+   its `MeasuredDrfPoints`) from the point editor.  No-op when that editor was not built, or when
+   nothing was edited. */
   void applyAnchorEdits( DetectorPeakResponse &working );
 
-  /** Seeds the σ/ρ covariance shadow (#m_covEnergies / #m_covMatrix) from an existing node
-   covariance, then rebuilds the table. */
-  void seedCovFromUncert( const std::shared_ptr<const DetectorEfficiencyUncert> &uncert );
+  /** Rebuilds `working`'s exp-of-log-power-series curve and coefficient covariance from the
+   coefficient editor. */
+  void applyCoefficientEdits( DetectorPeakResponse &working );
 
-  /** Re-renders the covariance table from the numeric shadow: column 0 editable energies, echoed
-   column headers, diagonal σ (%), editable upper-triangle ρ, disabled lower-triangle mirror. */
+  /** Rebuilds `working`'s formula curve and uncertainty from the formula editor. */
+  void applyFormulaEdits( DetectorPeakResponse &working );
+
+  /** Seeds the coefficient covariance shadow (#m_coefCovMatrix) from an existing uncertainty's
+   `coefficientCovariance()`, then rebuilds the table. */
+  void seedCoefCovFromUncert( const std::shared_ptr<const DetectorEfficiencyUncert> &uncert );
+
+  /** Re-renders the coefficient covariance table from the numeric shadow: column 0 the static
+   `A0..An` labels, diagonal σ (%), editable upper-triangle ρ, disabled lower-triangle mirror. */
   void rebuildCovTable();
 
-  void addEnergyRow();
-  void removeEnergyRow();
+  /** Adds/removes an exp-of-log-power-series term, resizing both the coefficient boxes and the
+   covariance shadow; the surviving block of the covariance stays bit-exact. */
+  void addCoefficient( const float value = 0.0f );
+  void removeCoefficient();
 
-  /** Covariance-shadow edit handlers (index into the current display order).  Each mutates the
-   shadow so untouched entries stay bit-exact (σ scales its row/col to hold ρ fixed; ρ sets one
-   pair), then rebuilds and records the edit. */
+  /** Covariance-shadow edit handlers (coefficient indices).  Each mutates the shadow so untouched
+   entries stay bit-exact (σ scales its row/col to hold ρ fixed; ρ sets one pair), then rebuilds and
+   records the edit. */
   void covSigmaChanged( const std::size_t i, const std::string &text );
   void covRhoChanged( const std::size_t i, const std::size_t j, const std::string &text );
-  void covEnergyChanged( const std::size_t i, const std::string &text );
 
-  /** Writes the covariance shadow onto `working` (sorted ascending); clears the uncert when empty.
-   No-op when the covariance editor is not the visible one. */
-  void applyCovarianceEdits( DetectorPeakResponse &working );
+  /** Validates the formula text with a trial `setIntrinsicEfficiencyFormula`, flagging the field
+   `Wt-invalid` when it will not parse.  Returns whether it is usable. */
+  bool validateFormula();
 
-  /** Builds a working DRF from every tab: name/description, the visible Uncertainty editor, and
+  /** The `PhysicalUnits` energy unit the equation/formula is written in, per #m_effEnergyUnits.
+   Distinct from #m_anchorEnergyUnits - see that member. */
+  float equationEnergyUnits() const;
+
+  /** Builds a working DRF from every tab: name/description, the visible Anchor editor, and
    FWHM.  When `includeMcResponse`, attaches the generated (or existing) Monte-Carlo response in
    Geometry-Modeled mode and detaches it in Flat Disk; otherwise (a regeneration seed) always
    detaches, so the manual points/covariance drive grounding. */
@@ -269,28 +323,52 @@ protected:
    fixed-geometry DRF. */
   bool m_geometryModeled;
 
-  /** Whether the seed DRF arrived with measured efficiency points/pairs, i.e. the points editor is
-   always the right Uncertainty editor for it regardless of mode. */
+  /** Whether the seed DRF arrived with efficiency points/pairs. */
   bool m_origHasPoints;
 
-  // --- Uncertainty tab: the two swappable editors --------------------------
-  /** Help text above the editors; its wording tracks which editor is shown
-      (measured points vs. σ/ρ covariance matrix) - see #updateUncertEditorVisibility. */
-  Wt::WText *m_uncertHelp;
-  /** Holds the measured-points editor; shown when #pointsEditorVisible. */
+  // --- Anchor tab: the three swappable editors -----------------------------
+  /** Help text above the editors; its wording tracks which editor, and which columns, are shown -
+      see #updateAnchorEditorVisibility. */
+  Wt::WText *m_anchorHelp;
+  /** Holds the point-table editor; shown for #AnchorEditor::Points and #AnchorEditor::Formula
+   (where its Efficiency column is hidden, the efficiency coming from the formula). */
   Wt::WContainerWidget *m_pointsEditor;
-  /** Holds the σ/ρ covariance-matrix editor; shown otherwise. */
-  Wt::WContainerWidget *m_covEditor;
+  /** Holds the coefficient boxes and their covariance matrix; shown for
+   #AnchorEditor::Coefficients. */
+  Wt::WContainerWidget *m_coefEditor;
+  /** Holds the efficiency formula text; shown for #AnchorEditor::Formula. */
+  Wt::WContainerWidget *m_formulaEditor;
 
-  /** Measured-point editor: one row per reference point, plus an editable reference distance and a
-   single default statistical-uncert %. */
+  /** Point editor: one row per point, plus an editable reference distance and a single default
+   statistical-uncert %. */
   Wt::WTable *m_anchorTable;
+  /** Wraps #m_anchorTable so it can scroll and centre inside the panel. */
+  Wt::WContainerWidget *m_anchorTableWrap;
   Wt::WPushButton *m_addAnchor, *m_removeAnchor;
   Wt::WLineEdit *m_anchorRefDistance;
   Wt::WLineEdit *m_anchorDefaultUncert;
-  /** `cert` and `source` are null for an intrinsic (single-uncertainty) curve. */
+  /** `source` is null unless #m_anchorHasSourceCol. */
   struct AnchorRow{ Wt::WLineEdit *energy, *eff, *stat, *cert, *source; };
   std::vector<AnchorRow> m_anchors;
+
+  /** How the correlated column is correlated across energy; null when the points carry a source
+   column (see #m_anchorHasSourceCol), whose certificate uncertainty is blocked per source instead. */
+  EccUncertOptions *m_uncertOptions;
+
+  /** Whether the point table has a per-source certificate/Source column, i.e. its correlated
+   uncertainty is blocked by source key rather than governed by #m_uncertOptions.  Only an absolute
+   reference curve has one.  Deliberately distinct from #m_anchorIsAbsolute: conflating the two is
+   what hid the correlated column from every fixed-geometry DRF. */
+  bool m_anchorHasSourceCol;
+
+  /** The `PhysicalUnits` energy unit the point table's Energy column is in.
+
+   For a pairs curve this is the curve's own unit (a GADRAS CSV may use MeV), so the numbers shown
+   are the numbers stored.  For a formula curve the rows are covariance nodes rather than curve
+   points, and `DetectorEfficiencyUncert` documents node energies as keV regardless of the curve -
+   so it is keV there.  Fixed at construction; deliberately NOT tied to #m_effEnergyUnits, which
+   only says what units the equation/formula is written in. */
+  float m_anchorEnergyUnits;
 
   /** Whether the point editor holds ABSOLUTE efficiencies at #m_anchorRefDistance (an ANGLE-style
    reference curve) rather than INTRINSIC ones (a GADRAS Efficiency.csv).  Decides whether the
@@ -300,14 +378,27 @@ protected:
    masquerade as them. */
   bool m_anchorIsAbsolute;
 
-  /** σ/ρ covariance-matrix editor. */
+  /** Coefficient editor (`kExpOfLogPowerSeries`): one spin box per term, their M·M σ/ρ covariance
+   table, and the energy-units selector the equation is written in. */
+  std::vector<NativeFloatSpinBox *> m_coefEdits;
+  Wt::WContainerWidget *m_coefParams;
   Wt::WTable *m_covTable;
-  Wt::WPushButton *m_addEnergy, *m_removeEnergy;
-  /** Authoritative numeric shadow (display order): node energies (keV) and the row-major N·N
-   covariance of fractional efficiency error.  The GUI edits these; untouched entries stay
-   bit-exact across a σ or ρ edit. */
-  std::vector<double> m_covEnergies;
-  std::vector<double> m_covMatrix;
+  Wt::WPushButton *m_addCoef, *m_removeCoef;
+  /** Authoritative numeric shadow: the row-major M·M coefficient covariance.  The GUI edits this;
+   untouched entries stay bit-exact across a σ or ρ edit. */
+  std::vector<double> m_coefCovMatrix;
+
+  /** Formula editor (`kFunctialEfficienyForm`). */
+  Wt::WTextArea *m_formulaText;
+
+  /** keV / MeV for the coefficient and formula editors, and the row holding it (hidden for a
+   points curve, whose energies are in the column itself). */
+  Wt::WComboBox *m_effEnergyUnits;
+  Wt::WContainerWidget *m_effUnitsRow;
+
+  /** The Anchor-tab state this dialog opened with, so #anchorsMatchSeed can tell "the user changed
+   nothing" from "the user re-typed the same numbers". */
+  std::shared_ptr<const ToolState> m_seedState;
 
   /** Footer "Generate Response" button (Geometry-Modeled only); regenerates the MC response from
    the live edits. */

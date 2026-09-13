@@ -3428,3 +3428,673 @@ BOOST_AUTO_TEST_CASE( test_set_efficiency_points_uncerts )
 
   cout << "setEfficiencyPoints per-point uncertainties passed" << endl;
 }//test_set_efficiency_points_uncerts
+
+
+BOOST_AUTO_TEST_CASE( test_uncert_component_split )
+{
+  cout << "\n\nTesting DetectorEfficiencyUncert component-split provenance..." << endl;
+
+  const vector<float> energies = { 50.0f, 200.0f, 1000.0f };
+  const vector<float> baseline = { 0.15f, 0.10f, 0.08f };
+  const vector<float> convergence = { 0.02f, 0.03f, 0.01f };
+
+  // fromCorrelatedPlusDiagonal retains both components.
+  {
+    shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, convergence, 0.35 );
+    BOOST_REQUIRE( u );
+    BOOST_CHECK( u->hasComponentSplit() );
+    BOOST_REQUIRE_EQUAL( u->correlatedComponent().size(), 3u );
+    BOOST_REQUIRE_EQUAL( u->uncorrelatedComponent().size(), 3u );
+    for( size_t i = 0; i < 3; ++i )
+    {
+      BOOST_CHECK( close_enough( u->correlatedComponent()[i], baseline[i], 1.0e-5 ) );
+      BOOST_CHECK( close_enough( u->uncorrelatedComponent()[i], convergence[i], 1.0e-5 ) );
+    }
+  }
+
+  // The split must follow the SORTED nodes, not the argument order.
+  {
+    const vector<float> unsorted_e = { 1000.0f, 50.0f, 200.0f };
+    const vector<float> unsorted_b = { 0.08f, 0.15f, 0.10f };
+    const vector<float> unsorted_c = { 0.01f, 0.02f, 0.03f };
+    shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( unsorted_e, unsorted_b, unsorted_c, 0.35 );
+    BOOST_REQUIRE( u );
+    BOOST_REQUIRE_EQUAL( u->covarianceEnergies().size(), 3u );
+    for( size_t i = 0; i < 3; ++i )
+    {
+      BOOST_CHECK( close_enough( u->covarianceEnergies()[i], energies[i], 1.0e-5 ) );
+      BOOST_CHECK_MESSAGE( close_enough( u->correlatedComponent()[i], baseline[i], 1.0e-5 ),
+        "Split is not index-aligned with the sorted node energies" );
+      BOOST_CHECK( close_enough( u->uncorrelatedComponent()[i], convergence[i], 1.0e-5 ) );
+    }
+  }
+
+  // An empty uncorrelated vector still counts as having a split.
+  {
+    shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, {}, 0.35 );
+    BOOST_REQUIRE( u );
+    BOOST_CHECK( u->hasComponentSplit() );
+    BOOST_CHECK_EQUAL( u->correlatedComponent().size(), 3u );
+    BOOST_CHECK( u->uncorrelatedComponent().empty() );
+  }
+
+  // fromPointUncerts is a purely correlated model, so it has a correlated component and no other.
+  {
+    shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromPointUncerts( energies, baseline, 0.5 );
+    BOOST_REQUIRE( u );
+    BOOST_CHECK( u->hasComponentSplit() );
+    BOOST_CHECK_EQUAL( u->correlatedComponent().size(), 3u );
+    BOOST_CHECK( u->uncorrelatedComponent().empty() );
+  }
+
+  // Setting a covariance directly clears the split - it has no such provenance.
+  {
+    shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, baseline, convergence, 0.35 );
+    BOOST_REQUIRE( u );
+    const vector<float> cov = u->covarianceMatrix();
+    u->setNodeCovariance( u->covarianceEnergies(), cov );
+    BOOST_CHECK( !u->hasComponentSplit() );
+  }
+
+  // Mismatched sizes are rejected.
+  {
+    auto u = make_shared<DetectorEfficiencyUncert>();
+    u->setNodeCovariance( energies, vector<float>( 9, 0.01f ) );
+    BOOST_CHECK_THROW( u->setComponentSplit( { 0.1f, 0.2f }, {} ), std::exception );
+    BOOST_CHECK_THROW( u->setComponentSplit( { 0.1f, 0.2f, -0.3f }, {} ), std::exception );
+  }
+
+  cout << "Component-split provenance passed" << endl;
+}//test_uncert_component_split
+
+
+BOOST_AUTO_TEST_CASE( test_uncert_component_split_roundtrip )
+{
+  cout << "\n\nTesting component-split serialization round-trips..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string ecc_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Detective-X_in-situ.ecc" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(ecc_file), "ECC file not found: " + ecc_file );
+
+  ifstream input( ecc_file.c_str() );
+  DetectorPeakResponse::EccParseResult ecc;
+  BOOST_REQUIRE_NO_THROW( ecc = DetectorPeakResponse::parseEccFile(input) );
+  BOOST_REQUIRE( ecc.drf );
+
+  // The .ecc DRF carries the split the Anchor tab shows: %err correlated, %cnvrg uncorrelated.
+  const shared_ptr<const DetectorEfficiencyUncert> orig = ecc.drf->efficiencyUncert();
+  BOOST_REQUIRE( orig );
+  BOOST_REQUIRE( orig->hasComponentSplit() );
+  BOOST_REQUIRE_EQUAL( orig->correlatedComponent().size(), ecc.baselineFrac.size() );
+  BOOST_CHECK_MESSAGE( close_enough( orig->correlatedComponent().front(), 0.15f, 1.0e-4 ),
+    "45 keV correlated component should be the 15% baseline, got "
+    + to_string(orig->correlatedComponent().front()) );
+  for( size_t i = 0; i < ecc.baselineFrac.size(); ++i )
+  {
+    BOOST_CHECK( close_enough( orig->correlatedComponent()[i], ecc.baselineFrac[i], 1.0e-4 ) );
+    BOOST_CHECK( close_enough( orig->uncorrelatedComponent()[i], ecc.convergenceFrac[i], 1.0e-4 ) );
+  }
+
+  // --- XML: the split survives, and the version is NOT bumped -----------------
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+    doc.append_node( parent );
+    ecc.drf->toXml( parent, &doc );
+
+    const rapidxml::xml_node<char> *drf_node = parent->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+    const rapidxml::xml_attribute<char> *version_attr = drf_node->first_attribute( "version" );
+    BOOST_REQUIRE( version_attr );
+    BOOST_CHECK_MESSAGE( string(version_attr->value()) == "5",
+      "Adding the split must not bump the serialization version; got "
+      + string(version_attr->value()) );
+
+    auto restored = make_shared<DetectorPeakResponse>();
+    BOOST_REQUIRE_NO_THROW( restored->fromXml( drf_node ) );
+    BOOST_REQUIRE( restored->efficiencyUncert() );
+    BOOST_CHECK( restored->efficiencyUncert()->hasComponentSplit() );
+    BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *restored->efficiencyUncert(),
+                                                                 *orig ) );
+  }
+
+  // --- DrfExtra blob (the database path): the split survives ------------------
+  {
+    const string blob = ecc.drf->drfExtraToXmlString();
+    BOOST_REQUIRE( !blob.empty() );
+
+    auto restored = make_shared<DetectorPeakResponse>( *ecc.drf );
+    restored->setEfficiencyUncert( nullptr );
+    BOOST_REQUIRE( !restored->efficiencyUncert() );
+    BOOST_REQUIRE_NO_THROW( restored->setDrfExtraFromXmlString( blob ) );
+    BOOST_REQUIRE( restored->efficiencyUncert() );
+    BOOST_CHECK( restored->efficiencyUncert()->hasComponentSplit() );
+    BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *restored->efficiencyUncert(),
+                                                                 *orig ) );
+  }
+
+  // --- Old XML with no <CorrFrac>: parses fine, simply has no split -----------
+  {
+    const char * const xml =
+      "<EfficiencyUncert>"
+      "<CovEnergies>100 500 1000</CovEnergies>"
+      "<CovMatrix>0.01 0.005 0.002 0.005 0.01 0.004 0.002 0.004 0.01</CovMatrix>"
+      "</EfficiencyUncert>";
+    vector<char> buffer( xml, xml + strlen(xml) + 1 );
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( doc.parse<0>( &buffer[0] ) );
+
+    DetectorEfficiencyUncert u;
+    BOOST_REQUIRE_NO_THROW( u.fromXml( doc.first_node("EfficiencyUncert") ) );
+    BOOST_CHECK( u.hasNodeCovariance() );
+    BOOST_CHECK( !u.hasComponentSplit() );
+  }
+
+  // --- A wrong-length <CorrFrac> is an error, not silently ignored ------------
+  {
+    const char * const xml =
+      "<EfficiencyUncert>"
+      "<CovEnergies>100 500 1000</CovEnergies>"
+      "<CovMatrix>0.01 0.005 0.002 0.005 0.01 0.004 0.002 0.004 0.01</CovMatrix>"
+      "<CorrFrac>0.1 0.1</CorrFrac>"
+      "</EfficiencyUncert>";
+    vector<char> buffer( xml, xml + strlen(xml) + 1 );
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( doc.parse<0>( &buffer[0] ) );
+
+    DetectorEfficiencyUncert u;
+    BOOST_CHECK_THROW( u.fromXml( doc.first_node("EfficiencyUncert") ), std::exception );
+  }
+
+  cout << "Component-split round-trips passed" << endl;
+}//test_uncert_component_split_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_replace_efficiency_curve_preserves_geometry )
+{
+  cout << "\n\nTesting DetectorPeakResponse::replaceEfficiencyCurve..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string ecc_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Detective-X_in-situ.ecc" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(ecc_file), "ECC file not found: " + ecc_file );
+
+  ifstream input( ecc_file.c_str() );
+  DetectorPeakResponse::EccParseResult ecc;
+  BOOST_REQUIRE_NO_THROW( ecc = DetectorPeakResponse::parseEccFile(input) );
+  BOOST_REQUIRE( ecc.drf );
+
+  shared_ptr<DetectorPeakResponse> drf = ecc.drf;
+
+  const DetectorPeakResponse::EffGeometryType orig_geom = drf->geometryType();
+  const float orig_diam = drf->detectorDiameter();
+  const DetectorPeakResponse::DrfSource orig_source = drf->drfSource();
+  const size_t orig_hash = drf->hashValue();
+  const float test_energy = 661.0f;
+  const double orig_eff = drf->intrinsicEfficiency( test_energy );
+
+  BOOST_REQUIRE( drf->isFixedGeometry() );
+  BOOST_REQUIRE_MESSAGE( orig_diam <= 0.0f, "An .ecc DRF is expected to have no diameter" );
+
+  // This is exactly why replaceEfficiencyCurve exists: setEfficiencyPoints cannot be used on an
+  //  .ecc DRF at all - it demands a positive diameter and would force a far-field geometry.
+  {
+    vector<DetectorPeakResponse::EnergyEffPoint> pts;
+    for( const DetectorPeakResponse::EnergyEfficiencyPair &p : drf->efficiencyCurve()->energyEfficiencies() )
+    {
+      DetectorPeakResponse::EnergyEffPoint e;
+      e.energy = p.energy;
+      e.efficiency = p.efficiency;
+      pts.push_back( e );
+    }
+    auto copy = make_shared<DetectorPeakResponse>( *drf );
+    BOOST_CHECK_THROW( copy->setEfficiencyPoints( pts, copy->detectorDiameter(), -1.0,
+                            DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic ),
+                       std::exception );
+  }
+
+  // --- Replace the pairs with the same curve scaled by 2 ----------------------
+  vector<DetectorPeakResponse::EnergyEfficiencyPair> pairs
+                                      = drf->efficiencyCurve()->energyEfficiencies();
+  for( DetectorPeakResponse::EnergyEfficiencyPair &p : pairs )
+    p.efficiency *= 2.0f;
+
+  const vector<float> node_e = { 100.0f, 1000.0f };
+  const vector<float> node_corr = { 0.05f, 0.04f };
+  const vector<float> node_uncorr = { 0.01f, 0.01f };
+  shared_ptr<DetectorEfficiencyUncert> new_uncert
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( node_e, node_corr, node_uncorr,
+                                DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+
+  {
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->setFromPairs( pairs, PhysicalUnits::keV );
+    curve->setUncertainty( new_uncert );
+    BOOST_REQUIRE_NO_THROW( drf->replaceEfficiencyCurve( curve ) );
+  }
+
+  BOOST_CHECK( drf->geometryType() == orig_geom );
+  BOOST_CHECK( drf->isFixedGeometry() );
+  BOOST_CHECK_EQUAL( drf->detectorDiameter(), orig_diam );
+  BOOST_CHECK( drf->drfSource() == orig_source );
+  BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(drf->intrinsicEfficiency(test_energy)),
+                                     static_cast<float>(2.0*orig_eff), 1.0e-4 ),
+                       "Efficiency should have doubled" );
+  BOOST_CHECK( close_enough( drf->lowerEnergy(), pairs.front().energy, 1.0e-4 ) );
+  BOOST_CHECK( close_enough( drf->upperEnergy(), pairs.back().energy, 1.0e-4 ) );
+  BOOST_REQUIRE( drf->efficiencyUncert() );
+  BOOST_CHECK( drf->efficiencyUncert()->hasComponentSplit() );
+  BOOST_CHECK_MESSAGE( drf->hashValue() != orig_hash, "Replacing the curve must change the hash" );
+
+  // --- Invalid input throws, leaving the DRF untouched -----------------------
+  {
+    const size_t before = drf->hashValue();
+
+    BOOST_CHECK_THROW( drf->replaceEfficiencyCurve( nullptr ), std::exception );
+
+    auto empty = make_shared<DetectorEfficiencyCurve>();
+    BOOST_CHECK_THROW( drf->replaceEfficiencyCurve( empty ), std::exception );
+
+    auto one_pt = make_shared<DetectorEfficiencyCurve>();
+    BOOST_CHECK_THROW( one_pt->setFromPairs( { pairs.front() }, PhysicalUnits::keV ), std::exception );
+
+    BOOST_CHECK_EQUAL( drf->hashValue(), before );
+  }
+
+  // --- A formula curve keeps the energy range it cannot define ---------------
+  {
+    auto formula_drf = make_shared<DetectorPeakResponse>( *ecc.drf );
+    const float lower = formula_drf->lowerEnergy(), upper = formula_drf->upperEnergy();
+
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->setFromFormula( "exp(-5.0 - 0.5*log(x))", PhysicalUnits::keV );
+    curve->setUncertainty( new_uncert );
+    BOOST_REQUIRE_NO_THROW( formula_drf->replaceEfficiencyCurve( curve ) );
+
+    BOOST_CHECK( formula_drf->geometryType() == orig_geom );
+    BOOST_CHECK_EQUAL( formula_drf->lowerEnergy(), lower );
+    BOOST_CHECK_EQUAL( formula_drf->upperEnergy(), upper );
+    // Unlike setIntrinsicEfficiencyFormula, the attached uncertainty is not dropped.
+    BOOST_REQUIRE( formula_drf->efficiencyUncert() );
+    BOOST_CHECK( formula_drf->efficiencyUncert()->hasNodeCovariance() );
+  }
+
+  // --- An exp-of-log curve likewise, and it can carry a coefficient covariance
+  {
+    auto eqn_drf = make_shared<DetectorPeakResponse>( *ecc.drf );
+    const float lower = eqn_drf->lowerEnergy(), upper = eqn_drf->upperEnergy();
+
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setCoefficientCovariance( { 0.04f, 0.01f, 0.01f, 0.09f } );
+
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->setFromExpOfLogPowerSeries( { -5.0f, -0.5f }, { 0.2f, 0.3f }, PhysicalUnits::keV );
+    curve->setUncertainty( uncert );
+    BOOST_REQUIRE_NO_THROW( eqn_drf->replaceEfficiencyCurve( curve ) );
+
+    BOOST_CHECK( eqn_drf->geometryType() == orig_geom );
+    BOOST_CHECK_EQUAL( eqn_drf->lowerEnergy(), lower );
+    BOOST_CHECK_EQUAL( eqn_drf->upperEnergy(), upper );
+    BOOST_REQUIRE( eqn_drf->efficiencyUncert() );
+    BOOST_CHECK_EQUAL( eqn_drf->efficiencyUncert()->coefficientCovariance().size(), 4u );
+  }
+
+  cout << "replaceEfficiencyCurve passed" << endl;
+}//test_replace_efficiency_curve_preserves_geometry
+
+
+BOOST_AUTO_TEST_CASE( test_single_node_flat_uncert )
+{
+  cout << "\n\nTesting the single-node (flat) uncertainty the Anchor tab stores..." << endl;
+
+  // A flat "Default uncertainty" is stored as a one-node covariance; nodeFracCovariance
+  //  extrapolates constantly, so it is the same fractional uncertainty at every energy, fully
+  //  correlated between any two.
+  const float flat = 0.07f;
+  shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromPointUncerts( { 661.7f }, { flat },
+                              DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+  BOOST_REQUIRE( u );
+  BOOST_REQUIRE_EQUAL( u->covarianceEnergies().size(), 1u );
+
+  const vector<double> energies = { 45.0, 661.7, 3000.0 };
+  const vector<double> sig = u->fracUncertainties( energies );
+  BOOST_REQUIRE_EQUAL( sig.size(), energies.size() );
+  for( size_t i = 0; i < sig.size(); ++i )
+  {
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(sig[i]), flat, 1.0e-4 ),
+      "Flat uncertainty at " + to_string(energies[i]) + " keV: " + to_string(sig[i]) );
+  }
+
+  // Fully correlated: rho == 1 between any pair.
+  const vector<double> cov = u->efficiencyFracCovariance( energies );
+  BOOST_REQUIRE_EQUAL( cov.size(), energies.size()*energies.size() );
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    for( size_t j = 0; j < energies.size(); ++j )
+    {
+      const double rho = cov[i*energies.size() + j] / (sig[i]*sig[j]);
+      BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(rho), 1.0f, 1.0e-4 ),
+        "Flat uncertainty should be fully correlated; rho(" + to_string(i) + "," + to_string(j)
+        + ") = " + to_string(rho) );
+    }
+  }
+
+  cout << "Single-node flat uncertainty passed" << endl;
+}//test_single_node_flat_uncert
+
+
+BOOST_AUTO_TEST_CASE( test_single_node_corr_plus_diagonal )
+{
+  cout << "\n\nTesting fromCorrelatedPlusDiagonal with a single node..." << endl;
+
+  // The Anchor tab builds its uncertainty from the point rows through this factory.  One row is a
+  //  legitimate (flat, fully-correlated) uncertainty, so it must NOT come back null - returning
+  //  null there would silently clear the DRF's uncertainty.
+  const vector<float> energies = { 661.7f };
+  const vector<float> corr = { 0.07f };
+  const vector<float> uncorr = { 0.02f };
+
+  shared_ptr<DetectorEfficiencyUncert> u
+      = DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, corr, uncorr,
+                                DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+  BOOST_REQUIRE( u != nullptr );
+  BOOST_CHECK( !u->isEmpty() );
+  BOOST_CHECK( u->hasNodeCovariance() );
+  BOOST_REQUIRE_EQUAL( u->covarianceEnergies().size(), 1u );
+  BOOST_CHECK( u->hasComponentSplit() );
+
+  // Flat at every energy, at sqrt(corr^2 + uncorr^2).
+  const double expected = std::sqrt( 0.07*0.07 + 0.02*0.02 );
+  const vector<double> sig = u->fracUncertainties( { 45.0, 661.7, 3000.0 } );
+  BOOST_REQUIRE_EQUAL( sig.size(), 3u );
+  for( size_t i = 0; i < sig.size(); ++i )
+    BOOST_CHECK( close_enough( static_cast<float>(sig[i]), static_cast<float>(expected), 1.0e-4 ) );
+
+  cout << "Single-node correlated+diagonal passed" << endl;
+}//test_single_node_corr_plus_diagonal
+
+
+BOOST_AUTO_TEST_CASE( test_replace_curve_keeps_curve_energy_units )
+{
+  cout << "\n\nTesting replaceEfficiencyCurve with a non-keV curve..." << endl;
+
+  // A GADRAS CSV may be in MeV; the Anchor tab edits those numbers in the curve's own units, so a
+  //  round-trip through replaceEfficiencyCurve must not rescale the efficiency.
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  auto drf = make_shared<DetectorPeakResponse>( "MeV curve", "test" );
+  vector<DetectorPeakResponse::EnergyEffPoint> pts;
+  for( const float mev : { 0.05f, 0.1f, 0.5f, 1.0f, 2.0f } )
+  {
+    DetectorPeakResponse::EnergyEffPoint e;
+    e.energy = mev;
+    e.efficiency = 0.5f / (1.0f + mev);
+    pts.push_back( e );
+  }
+  BOOST_REQUIRE_NO_THROW( drf->setEfficiencyPoints( pts, det_diameter, -1.0,
+                              DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic ) );
+  BOOST_REQUIRE( drf->efficiencyCurve() );
+  // setEfficiencyPoints() writes keV-unit pairs; re-make the curve in MeV to model the CSV case.
+  {
+    vector<DetectorPeakResponse::EnergyEfficiencyPair> pairs;
+    for( const DetectorPeakResponse::EnergyEffPoint &e : pts )
+      pairs.push_back( DetectorPeakResponse::EnergyEfficiencyPair{ e.energy, e.efficiency } );
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->setFromPairs( pairs, static_cast<float>(PhysicalUnits::MeV) );
+    BOOST_REQUIRE_NO_THROW( drf->replaceEfficiencyCurve( curve ) );
+  }
+
+  BOOST_CHECK_EQUAL( drf->efficiencyCurve()->energyUnits(), static_cast<float>(PhysicalUnits::MeV) );
+
+  // 1 MeV == 1000 keV should give the efficiency written for the 1.0 (MeV) pair.
+  const double eff_1mev = drf->intrinsicEfficiency( 1000.0f );
+  BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(eff_1mev), 0.25f, 1.0e-3 ),
+    "Efficiency at 1 MeV should be 0.25, got " + to_string(eff_1mev) );
+
+  cout << "Non-keV curve round-trip passed" << endl;
+}//test_replace_curve_keeps_curve_energy_units
+
+
+BOOST_AUTO_TEST_CASE( test_coef_covariance_propagation )
+{
+  cout << "\n\nTesting coefficient-covariance propagation (J*Sigma*J^T)..." << endl;
+
+  // eff(E) = exp( a0 + a1*ln(x) ),  x = E/energyUnits.  d ln(eff)/d a_k = ln(x)^k, so the
+  //  fractional variance at E is  s00 + 2*L*s01 + L^2*s11  with L = ln(x).
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const float a0 = -5.0f, a1 = -0.5f;
+  const float s00 = 0.04f, s11 = 0.0009f, s01 = -0.002f;
+
+  auto drf = make_shared<DetectorPeakResponse>( "eqn", "test" );
+  drf->fromExpOfLogPowerSeries( { a0, a1 }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  auto uncert = make_shared<DetectorEfficiencyUncert>();
+  uncert->setCoefficientCovariance( { s00, s01, s01, s11 } );
+  drf->setEfficiencyUncert( uncert );
+
+  const vector<double> energies = { 100.0, 661.7, 2000.0 };
+  const vector<double> cov = drf->efficiencyFracCovariance( energies );
+  BOOST_REQUIRE_EQUAL( cov.size(), energies.size()*energies.size() );
+
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    const double L = std::log( energies[i] );   //energyUnits == keV
+    const double expected = s00 + 2.0*L*s01 + L*L*s11;
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(cov[i*3 + i]),
+                                       static_cast<float>(expected), 1.0e-4 ),
+      "Frac variance at " + to_string(energies[i]) + " keV: " + to_string(cov[i*3+i])
+      + " vs expected " + to_string(expected) );
+  }
+
+  // Off-diagonal: s00 + (Li+Lj)*s01 + Li*Lj*s11, and the matrix must be symmetric.
+  {
+    const double Li = std::log(energies[0]), Lj = std::log(energies[2]);
+    const double expected = s00 + (Li+Lj)*s01 + Li*Lj*s11;
+    BOOST_CHECK( close_enough( static_cast<float>(cov[0*3 + 2]),
+                               static_cast<float>(expected), 1.0e-4 ) );
+    BOOST_CHECK_EQUAL( cov[0*3 + 2], cov[2*3 + 0] );
+  }
+
+  // intrinsicEfficiencyEval's sigma comes from the same place.
+  {
+    const DetectorPeakResponse::EffEval ev = drf->intrinsicEfficiencyEval( 661.7f );
+    const double L = std::log( 661.7 );
+    const double frac = std::sqrt( s00 + 2.0*L*s01 + L*L*s11 );
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(ev.sigma),
+                                       static_cast<float>(ev.value * frac), 1.0e-4 ),
+      "EffEval sigma " + to_string(ev.sigma) + " vs expected " + to_string(ev.value*frac) );
+  }
+
+  // MeV units: the Jacobian must use ln(E/units), not ln(E_keV).
+  {
+    auto mev = make_shared<DetectorPeakResponse>( "eqn MeV", "test" );
+    mev->fromExpOfLogPowerSeries( { a0, a1 }, {}, 0.0, det_diameter, PhysicalUnits::MeV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    auto u2 = make_shared<DetectorEfficiencyUncert>();
+    u2->setCoefficientCovariance( { s00, s01, s01, s11 } );
+    mev->setEfficiencyUncert( u2 );
+
+    const vector<double> c = mev->efficiencyFracCovariance( { 661.7 } );
+    BOOST_REQUIRE_EQUAL( c.size(), 1u );
+    const double L = std::log( 661.7 / 1000.0 );
+    const double expected = s00 + 2.0*L*s01 + L*L*s11;
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(c[0]), static_cast<float>(expected), 1.0e-4 ),
+      "MeV-unit curve variance " + to_string(c[0]) + " vs expected " + to_string(expected) );
+  }
+
+  cout << "Coefficient-covariance propagation passed" << endl;
+}//test_coef_covariance_propagation
+
+
+BOOST_AUTO_TEST_CASE( test_uncert_store_precedence )
+{
+  cout << "\n\nTesting which uncertainty store each representation uses..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  const vector<double> energies = { 100.0, 661.7 };
+
+  const vector<float> node_e = { 100.0f, 661.7f };
+  const vector<float> node_u = { 0.30f, 0.30f };   //deliberately large, so it is unmistakable
+
+  // --- An equation with BOTH stores uses the coefficient covariance --------------
+  {
+    auto drf = make_shared<DetectorPeakResponse>( "both", "test" );
+    drf->fromExpOfLogPowerSeries( { -5.0f, -0.5f }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+    shared_ptr<DetectorEfficiencyUncert> u
+        = DetectorEfficiencyUncert::fromPointUncerts( node_e, node_u,
+                          DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+    BOOST_REQUIRE( u );
+    u->setCoefficientCovariance( { 1.0e-4f, 0.0f, 0.0f, 1.0e-8f } );  //tiny, vs the 30% nodes
+    drf->setEfficiencyUncert( u );
+
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    BOOST_REQUIRE_EQUAL( cov.size(), 4u );
+    const double sigma0 = std::sqrt( (std::max)(0.0, cov[0]) );
+    BOOST_CHECK_MESSAGE( sigma0 < 0.10,
+      "An equation carrying both stores must use the coefficient covariance (expected a small"
+      " sigma, got " + to_string(sigma0) + " - the 0.30 node value leaked through)" );
+  }
+
+  // --- A pairs curve with BOTH stores uses the node covariance -------------------
+  {
+    auto drf = make_shared<DetectorPeakResponse>( "pairs", "test" );
+    vector<DetectorPeakResponse::EnergyEffPoint> pts;
+    for( const float e : { 50.0f, 661.7f, 3000.0f } )
+    {
+      DetectorPeakResponse::EnergyEffPoint p;
+      p.energy = e; p.efficiency = 0.1f;
+      pts.push_back( p );
+    }
+    drf->setEfficiencyPoints( pts, det_diameter, -1.0,
+                              DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+    shared_ptr<DetectorEfficiencyUncert> u
+        = DetectorEfficiencyUncert::fromPointUncerts( node_e, node_u,
+                          DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+    BOOST_REQUIRE( u );
+    u->setCoefficientCovariance( { 1.0e-8f } );   //must be ignored for a pairs curve
+    drf->setEfficiencyUncert( u );
+
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    BOOST_REQUIRE_EQUAL( cov.size(), 4u );
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(std::sqrt(cov[0])), 0.30f, 1.0e-3 ),
+      "A pairs curve must use its node covariance; got sigma " + to_string(std::sqrt(cov[0])) );
+  }
+
+  // --- An equation whose matrix no longer matches the coefficient count falls back
+  {
+    auto drf = make_shared<DetectorPeakResponse>( "stale", "test" );
+    drf->fromExpOfLogPowerSeries( { -5.0f, -0.5f, 0.01f }, {}, 0.0, det_diameter,
+                                  PhysicalUnits::keV, 50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    shared_ptr<DetectorEfficiencyUncert> u
+        = DetectorEfficiencyUncert::fromPointUncerts( node_e, node_u,
+                          DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+    BOOST_REQUIRE( u );
+    u->setCoefficientCovariance( { 1.0e-4f, 0.0f, 0.0f, 1.0e-8f } );  //2x2 for a 3-coef equation
+    drf->setEfficiencyUncert( u );
+
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    BOOST_REQUIRE_EQUAL( cov.size(), 4u );
+    BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(std::sqrt(cov[0])), 0.30f, 1.0e-3 ),
+      "A mismatched coefficient covariance must be ignored in favour of the node covariance" );
+  }
+
+  // --- An equation with ONLY a node covariance still works (todays MakeDrf) ------
+  {
+    auto drf = make_shared<DetectorPeakResponse>( "nodes only", "test" );
+    drf->fromExpOfLogPowerSeries( { -5.0f, -0.5f }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    shared_ptr<DetectorEfficiencyUncert> u
+        = DetectorEfficiencyUncert::fromPointUncerts( node_e, node_u,
+                          DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
+    BOOST_REQUIRE( u );
+    drf->setEfficiencyUncert( u );
+
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    BOOST_REQUIRE_EQUAL( cov.size(), 4u );
+    BOOST_CHECK( close_enough( static_cast<float>(std::sqrt(cov[0])), 0.30f, 1.0e-3 ) );
+  }
+
+  cout << "Uncertainty-store precedence passed" << endl;
+}//test_uncert_store_precedence
+
+
+BOOST_AUTO_TEST_CASE( test_measured_points_are_kev )
+{
+  cout << "\n\nTesting that measured points are keV regardless of the equation's units..." << endl;
+
+  // A MakeDrf detector can be an MeV-unit exp-of-log equation fitted to points that are keV by
+  //  contract (MeasuredEffPoint::energy).  The Anchor tab seeds its Energy column from those
+  //  points, so the column - and anything rebuilt from it - must be keV, not the curve's units.
+  //  Getting this wrong reinterprets every energy 1000x and destroys the curve.
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  auto drf = make_shared<DetectorPeakResponse>( "MeV eqn, keV points", "test" );
+  drf->fromExpOfLogPowerSeries( { -5.0f, -0.5f }, {}, 25.0*PhysicalUnits::cm, det_diameter,
+                                PhysicalUnits::MeV, 50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  BOOST_REQUIRE( drf->efficiencyCurve() );
+  BOOST_CHECK_EQUAL( drf->efficiencyCurve()->energyUnits(), static_cast<float>(PhysicalUnits::MeV) );
+
+  vector<MeasuredEffPoint> pts;
+  for( const float kev : { 122.0f, 661.7f, 1332.0f } )
+  {
+    MeasuredEffPoint p;
+    p.energy = kev;                 //keV by contract
+    p.efficiency = 0.01f;
+    p.fracStatUncert = 0.02f;
+    p.fracCertUncert = 0.03f;
+    p.sourceKey = "Eu152/SRS-1";
+    p.distance = static_cast<float>( 25.0 * PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  auto meas = make_shared<MeasuredDrfPoints>();
+  meas->setPoints( pts );
+  drf->setMeasuredPoints( meas );
+
+  // The node covariance those points imply is indexed by the SAME keV energies.
+  const shared_ptr<DetectorEfficiencyUncert> uncert = meas->toEfficiencyUncert();
+  BOOST_REQUIRE( uncert );
+  BOOST_REQUIRE_EQUAL( uncert->covarianceEnergies().size(), 3u );
+  BOOST_CHECK_MESSAGE( close_enough( uncert->covarianceEnergies()[0], 122.0f, 1.0e-3 ),
+    "Node energies from measured points must be keV, got "
+    + to_string(uncert->covarianceEnergies()[0]) );
+
+  // And a curve rebuilt from those rows must be built as keV, so the efficiency lands where the
+  //  points said it does.
+  {
+    vector<DetectorPeakResponse::EnergyEfficiencyPair> pairs;
+    for( const MeasuredEffPoint &p : pts )
+      pairs.push_back( DetectorPeakResponse::EnergyEfficiencyPair{ p.energy, p.efficiency } );
+
+    auto curve = make_shared<DetectorEfficiencyCurve>();
+    curve->setFromPairs( pairs, static_cast<float>(PhysicalUnits::keV) );
+    auto rebuilt = make_shared<DetectorPeakResponse>( *drf );
+    BOOST_REQUIRE_NO_THROW( rebuilt->replaceEfficiencyCurve( curve ) );
+
+    BOOST_CHECK( close_enough( rebuilt->lowerEnergy(), 122.0f, 1.0e-3 ) );
+    BOOST_CHECK( close_enough( rebuilt->upperEnergy(), 1332.0f, 1.0e-3 ) );
+    BOOST_REQUIRE( rebuilt->efficiencyCurve() );
+    BOOST_CHECK_EQUAL( rebuilt->efficiencyCurve()->energyUnits(),
+                       static_cast<float>(PhysicalUnits::keV) );
+    BOOST_CHECK_MESSAGE( close_enough( rebuilt->efficiencyCurve()->efficiency(661.7f), 0.01f, 1.0e-4 ),
+      "Rebuilt curve should give the measured efficiency at 661.7 keV, got "
+      + to_string(rebuilt->efficiencyCurve()->efficiency(661.7f))
+      + " - a 1000x energy reinterpretation looks exactly like this" );
+  }
+
+  cout << "Measured-point energy units passed" << endl;
+}//test_measured_points_are_kev

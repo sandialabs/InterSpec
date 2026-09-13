@@ -9,7 +9,7 @@
   <message id="dmw-err-fwhm-not-applied">The FWHM could not be applied to the detector: {1}</message>
   <message id="dmw-err-no-fwhm-fit">The FWHM equation on the FWHM tab has no coefficients, so the detector kept the FWHM it already had.  Use &quot;Fit FWHM&quot; there, or enter the coefficients by hand.</message>
   <message id="dmw-fwhm-no-foreground">No foreground spectrum is loaded, so there is nothing to fit the FWHM to; you can still edit the equation below by hand.</message>
-  <message id="dmw-tab-uncert">Uncertainty</message>
+  <message id="dmw-tab-anchor">Anchor</message>
   <message id="dmw-use-btn">Use</message>
   <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>
   <message id="dmw-err-no-backbone">Could not build an efficiency curve from the generated response: {1}</message>
@@ -21,29 +21,44 @@
     uncertainty-aware queries.&lt;/p&gt;
     &lt;ul&gt;
     &lt;li&gt;&lt;b&gt;Flat Disk&lt;/b&gt; - the classic far-field model: efficiency is the on-axis
-    curve scaled by solid angle, with an abstract energy-correlated uncertainty you edit as a
-    covariance matrix.  No geometry is modeled.&lt;/li&gt;
+    curve scaled by solid angle, with an energy-correlated uncertainty you edit on the Anchor tab.
+    No geometry is modeled.&lt;/li&gt;
     &lt;li&gt;&lt;b&gt;Geometry Modeled&lt;/b&gt; - a Monte-Carlo response, built from the detector
-    geometry below and grounded to the measured efficiency points, supplies the distance/angle
+    geometry below and grounded to the efficiency points on the Anchor tab, supplies the distance/angle
     dependence and its own finer uncertainty.&lt;/li&gt;
     &lt;/ul&gt;
     &lt;p&gt;Switching a geometry-modeled detector back to Flat Disk detaches its response on
     &quot;Use&quot; (you will be asked to confirm).&lt;/p&gt;</message>
 
-  <!-- Uncertainty tab: help text, then one of two editors (measured points, or a σ/ρ matrix).  The
-       wording tracks whichever editor is currently shown. -->
-  <message id="dmw-uncert-help-points">The detector&apos;s measured efficiency points, which the
+  <!-- Anchor tab: help text, then one of three editors, chosen by how the efficiency is
+       represented (energy/efficiency points, an exp-of-log power series, or a formula).  The
+       wording tracks whichever editor - and which columns - are currently shown. -->
+  <message id="dmw-anchor-help-points">The detector&apos;s measured efficiency points, which the
     Activity/Shielding fit can fold into its results.  Edit each point below - its energy, absolute
-    efficiency, and the statistical and certificate uncertainties on that efficiency (points sharing
-    a source are treated as sharing their certificate uncertainty).  (A Monte-Carlo-characterized
-    response supplies its own, finer, uncertainty and overrides these points.)</message>
-  <message id="dmw-uncert-help-cov">The detector&apos;s energy-node covariance matrix, which the
-    Activity/Shielding fit can fold into its results.  The diagonal is the 1-sigma fractional
-    uncertainty (%) at each energy, and the off-diagonal is the correlation between energies.  Add or
-    remove energy nodes below.  (if you change to a geometry-modeled detector efficiency, this matrix
-    will be ignored and not used)</message>
+    efficiency, and the statistical and certificate uncertainties on that efficiency.  &quot;Stat. %&quot;
+    is independent from one point to the next; &quot;Cert. %&quot; is the source activity uncertainty,
+    and points sharing a source are treated as sharing it.  (A Monte-Carlo-characterized response
+    supplies its own, finer, uncertainty and overrides these points.)</message>
+  <message id="dmw-anchor-help-points-nosrc">The detector&apos;s efficiency points and their
+    uncertainties, which the Activity/Shielding fit can fold into its results.  For each point,
+    &quot;Stat. %&quot; is the part that is independent from one energy to the next (e.g. Monte-Carlo
+    convergence), and &quot;Corr. %&quot; is the part that moves together across energy (e.g. the
+    ISOCS baseline modeling uncertainty) - how strongly it moves together is set below.  Leave
+    &quot;Stat. %&quot; blank to use the default uncertainty.</message>
+  <message id="dmw-anchor-help-coefs">The efficiency equation
+    &lt;code&gt;exp( A0 + A1*log(x) + A2*log(x)&lt;sup&gt;2&lt;/sup&gt; + ... )&lt;/code&gt; and the
+    covariance among its coefficients, which the Activity/Shielding fit can fold into its results.
+    The diagonal is the 1-sigma uncertainty of each coefficient (absolute, not a percent - these are
+    logs), and the off-diagonal is the correlation between them.  Fitted coefficients are strongly
+    correlated, so the off-diagonal matters as much as the diagonal.</message>
+  <message id="dmw-anchor-help-formula">The efficiency formula, with energy as &lt;code&gt;x&lt;/code&gt;,
+    and its uncertainty.  &quot;Default uncertainty&quot; alone gives one flat fractional uncertainty
+    at every energy; add rows below to give per-energy uncertainties instead, splitting each into the
+    part independent from one energy to the next (&quot;Stat. %&quot;) and the part that moves
+    together across energy (&quot;Corr. %&quot;), as an ISOCS .ecc file does.</message>
 
-  <!-- Measured-point editor (energy / efficiency / statistical % / certificate % / source). -->
+  <!-- Point editor (energy / efficiency / statistical % / correlated or certificate % / source).
+       Which columns exist depends on the curve - see DrfModifyWidget::addAnchorRow. -->
   <message id="dmw-anchor-ref-dist">Reference distance:</message>
   <message id="dmw-anchor-cm">cm</message>
   <message id="dmw-anchor-default-uncert">Default uncertainty:</message>
@@ -52,16 +67,31 @@
   <message id="dmw-anchor-eff">Efficiency</message>
   <message id="dmw-anchor-stat">Stat. %</message>
   <message id="dmw-anchor-cert">Cert. %</message>
+  <message id="dmw-anchor-corr">Corr. %</message>
   <message id="dmw-anchor-source">Source</message>
   <message id="dmw-anchor-add">Add point</message>
   <message id="dmw-anchor-remove">Remove point</message>
 
-  <!-- σ/ρ node-covariance matrix editor. -->
-  <message id="dmw-cov-corner">keV \ keV</message>
-  <message id="dmw-add-energy">Add energy</message>
-  <message id="dmw-remove-energy">Remove energy</message>
-  <message id="dmw-err-cov-energies">The covariance energies must be distinct; two or more were equal, so the uncertainty was not changed.</message>
-  <message id="dmw-err-cov-invalid">The covariance could not be applied, so the uncertainty was not changed: {1}</message>
+  <!-- Efficiency-equation coefficients and their σ/ρ covariance. -->
+  <message id="dmw-anchor-coefs">Coefficients</message>
+  <message id="dmw-anchor-add-term">Add term</message>
+  <message id="dmw-anchor-remove-term">Remove term</message>
+  <message id="dmw-cov-corner-coef">Coef \ Coef</message>
+
+  <!-- Efficiency formula. -->
+  <message id="dmw-anchor-formula-label">Efficiency f(x) = </message>
+  <message id="dmw-anchor-formula-empty">Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2)</message>
+  <message id="dmw-tt-anchor-formula">The full-energy intrinsic efficiency as a function of energy,
+    with energy written as &lt;code&gt;x&lt;/code&gt; in the units selected below.</message>
+
+  <!-- Energy units the equation / formula above is written in. -->
+  <message id="dmw-anchor-energy-units">Equation energy units:</message>
+  <message id="dmw-anchor-kev">keV</message>
+  <message id="dmw-anchor-mev">MeV</message>
+
+  <message id="dmw-err-points-invalid">The efficiency points could not be applied, so the efficiency was not changed: {1}</message>
+  <message id="dmw-err-coefs-invalid">The efficiency coefficients could not be applied, so the efficiency was not changed: {1}</message>
+  <message id="dmw-err-formula-invalid">The efficiency formula could not be applied, so the efficiency was not changed: {1}</message>
 
   <!-- Footer "Generate Response" (Geometry-Modeled only) and the two Use-flow confirmations. -->
   <message id="dmw-generate-btn">Generate Response</message>

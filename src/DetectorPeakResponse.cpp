@@ -913,11 +913,12 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
     return m_ceeloResponse->frac_covariance( energies, 0.0, d_cm );
   }
 
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( !uncert )
+  // The curve picks between the coefficient covariance and the node covariance per its
+  //  representation - see DetectorEfficiencyCurve::fracCovariance.
+  if( !m_efficiency )
     return {};
 
-  return uncert->efficiencyFracCovariance( energies );
+  return m_efficiency->fracCovariance( energies );
 }//efficiencyFracCovariance(...)
 
 
@@ -934,11 +935,10 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
     return m_ceeloResponse->frac_covariance( energies, theta, d_cm );
   }
 
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( !uncert )
+  if( !m_efficiency )
     return {};
 
-  return uncert->efficiencyFracCovariance( energies );
+  return m_efficiency->fracCovariance( energies );
 }//efficiencyFracCovariance(...)
 
 
@@ -1158,10 +1158,9 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
 
   answer.value = intrinsicEfficiency( energy );
 
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( uncert && !uncert->isEmpty() )
+  if( m_efficiency )
   {
-    const vector<double> sig = uncert->fracUncertainties( { static_cast<double>(energy) } );
+    const vector<double> sig = m_efficiency->fracUncertainties( { static_cast<double>(energy) } );
     if( sig.size() == 1 )
       answer.sigma = answer.value * sig[0];
   }
@@ -1666,6 +1665,26 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
 
   computeHash();
 }//void setEfficiencyPoints(...)
+
+
+void DetectorPeakResponse::replaceEfficiencyCurve( shared_ptr<const DetectorEfficiencyCurve> curve )
+{
+  if( !curve || !curve->isValid() )
+    throw runtime_error( "DetectorPeakResponse::replaceEfficiencyCurve(): invalid efficiency curve." );
+
+  // Only the pairs form defines its own energy range; a formula or power series says nothing about
+  //  where it is meant to be valid, so the existing range is kept for those.
+  if( curve->form() == kEnergyEfficiencyPairs )
+  {
+    const vector<EnergyEfficiencyPair> &pairs = curve->energyEfficiencies();
+    m_lowerEnergy = pairs.front().energy;
+    m_upperEnergy = pairs.back().energy;
+  }//if( curve->form() == kEnergyEfficiencyPairs )
+
+  m_efficiency = curve;
+
+  computeHash();
+}//void replaceEfficiencyCurve(...)
 
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,

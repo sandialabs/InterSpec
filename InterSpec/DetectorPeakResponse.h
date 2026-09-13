@@ -350,6 +350,29 @@ public:
                            const double absoluteEffDistance,
                            const EffGeometryType geometry_type );
 
+  /** Replaces the efficiency curve (and the uncertainty it carries), leaving *how* the efficiency
+   is interpreted alone.
+
+   Unlike #setEfficiencyPoints, #fromExpOfLogPowerSeries and #setIntrinsicEfficiencyFormula - which
+   (re)characterize a detector, and so rewrite the geometry type, diameter, setback, absolute
+   efficiency distance and flags, and drop any attached uncertainty - this only swaps out the
+   representation.  It is what editing an already-characterized detector needs, in particular a
+   fixed-geometry one (an ISOCS .ecc import, whose diameter is 0 and whose geometry type carries
+   the meaning of the efficiency values).
+
+   Preserved: #geometryType, #detectorDiameter, detector setback, #absoluteEfficiencyDistance and
+   its air-attenuation flag, #drfSource, flags, FWHM, #measuredPoints, #ceeloResponse, the fixed
+   geometry source setup, name/description, and the creation/last-used times.
+   Updated: the efficiency curve, and - for a `kEnergyEfficiencyPairs` curve only - #lowerEnergy /
+   #upperEnergy, which the other two forms do not define.  The hash is recomputed.
+
+   Build `curve` with `DetectorEfficiencyCurve::setFromPairs`, `setFromFormula` or
+   `setFromExpOfLogPowerSeries` (each of which validates its input), plus `setUncertainty`.
+
+   Throws std::runtime_error if `curve` is null or not valid, leaving this object unchanged.
+   */
+  void replaceEfficiencyCurve( std::shared_ptr<const DetectorEfficiencyCurve> curve );
+
   //setIntrinsicEfficiencyFormula(): sets m_efficiencyForm, m_efficiencyFormula,
   //  and m_efficiencyFcn to correspond to the fucntional form passed in.
   //  Formula should be in the a general functional form, where energy is

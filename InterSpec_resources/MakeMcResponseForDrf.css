@@ -188,19 +188,48 @@
 .DrfModifyGeomPanel { padding: 6px 4px; overflow-y: auto; }
 .DrfModifyModeRow { margin-bottom: 6px; }
 
-/* Measured-point editor. */
+/* Anchor tab.  The point table is the only substantial content, so let it take the height the
+   panel has and scroll inside itself, centered horizontally.  `inline-table` inside a
+   `text-align:center` wrapper centers without the flex-centering bug where a too-wide child gets
+   its left edge clipped and unreachable. */
+.DrfModifyStack > .DrfModifyAnchorPanel { height: 100%; box-sizing: border-box; }
+.DrfModifyAnchorPanel { display: flex; flex-direction: column; overflow: hidden; }
+.DrfModifyAnchorPanel > .DrfModifyAnchor { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.DrfModifyAnchorPanel > .DrfModifyAnchor > .EccUncertOptions { flex: 0 0 auto; }
+/* The panel itself does not scroll (the point table's wrapper takes the leftover height), so the
+   coefficient and formula editors have to scroll internally or their lower controls - the keV/MeV
+   selector among them - are clipped at the dialog's minimum height. */
+.DrfModifyAnchorPanel > .DrfModifyCoefs,
+.DrfModifyAnchorPanel > .DrfModifyFormula { min-height: 0; overflow-y: auto; }
+.DrfModifyAnchorPanel > .DrfModifyCoefs { flex: 1 1 auto; }
+.DrfModifyAnchorPanel > .DrfModifyEffUnitsRow { flex: 0 0 auto; }
+
+/* Point editor. */
 .DrfModifyAnchor { margin-top: 8px; }
 .DrfModifyAnchor .DrfModifyRow > label { min-width: 120px; }
-.DrfModifyAnchorTable { display: block; max-height: 220px; overflow-y: auto; margin: 6px 0; }
+.DrfModifyAnchorTableWrap { flex: 1 1 auto; min-height: 0; overflow: auto; text-align: center; margin: 6px 0; }
+.DrfModifyAnchorTable { display: inline-table; text-align: left; }
 .DrfModifyAnchorTable td { padding: 1px 4px; }
+/* A formula curve's rows carry uncertainty only - the formula supplies the efficiency. */
+.DrfModifyAnchorTable.DrfNoEffCol td.DrfEffCol { display: none; }
+
+/* Efficiency-equation coefficients: a row of labelled spin boxes, as the FWHM tool lays them out. */
+.DrfModifyCoefs { margin-top: 8px; }
+.DrfModifyCoefParams { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0; }
+.DrfModifyCoefParams .ParDiv { display: flex; align-items: center; gap: 4px; }
+
+/* Efficiency formula. */
+.DrfModifyFormula { margin-top: 8px; }
+.DrfModifyFormula .DrfModifyRow { align-items: flex-start; }
+.DrfModifyFormula .DrfModifyRow > label { min-width: 120px; }
 
 /* σ/ρ node-covariance matrix editor: a grid of small inputs, energies down column 0 and echoed
    across the header, the diagonal carrying σ (%) and the off-diagonal the correlation ρ. */
-.DrfModifyCov { margin-top: 8px; }
+/* No .DrfModifyCov rule: the covariance table now lives inside .DrfModifyCoefs. */
 .DrfModifyBandTable td,
 .DrfModifyCovTable td { padding: 1px 4px; }
-.DrfModifyUncert .DrfModifyBandTable,
-.DrfModifyUncert .DrfModifyCovTable { display: block; max-height: 260px; overflow: auto; margin: 6px 0; }
+.DrfModifyAnchorPanel .DrfModifyBandTable,
+.DrfModifyAnchorPanel .DrfModifyCovTable { display: block; max-height: 260px; overflow: auto; margin: 6px 0; }
 .DrfModifyCovTable td { text-align: center; white-space: nowrap; }
 .DrfModifyCovTable tr:first-child td,
 .DrfModifyCovTable td:first-child { font-size: smaller; color: var(--interspec-fainter-text-color, #666); }
