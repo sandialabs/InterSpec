@@ -344,8 +344,74 @@ struct MeasuredEffPoint
    */
   float distance = -1.0f;
 
+  // Optional provenance, so the functional fit can be redone from the DRF alone.  All default
+  //  (absent) for points recorded before these existed; serialized and hashed only when set.
+
+  /** Net peak area (counts) the efficiency came from, after any background subtraction, and its
+   1-sigma uncertainty; 0 if unknown. */
+  float peakArea = 0.0f;
+  float peakAreaUncert = 0.0f;
+
+  /** Live time, in seconds, of the spectrum the peak was fit in; 0 if unknown. */
+  float liveTime = 0.0f;
+
+  /** 1-sigma uncertainty of #distance, PhysicalUnits; 0 if none/unknown. */
+  float distanceUncert = 0.0f;
+
+  /** Background peak area that was subtracted (already scaled to this spectrums live time) and
+   its 1-sigma uncertainty; < 0 if no background subtraction was done. */
+  float bkgPeakArea = -1.0f;
+  float bkgPeakAreaUncert = 0.0f;
+
+  /** Spectrum file name and sample numbers (e.g. "1,2,5-9") the peak came from - hints for a
+   human reader only, never dereferenced. */
+  std::string fileName;
+  std::string sampleNumbers;
+
+  /** True if any of the optional provenance fields is set. */
+  bool hasProvenance() const;
+
   bool operator==( const MeasuredEffPoint &rhs ) const;
 };//struct MeasuredEffPoint
+
+
+/** A calibration source the measured points came from, keyed by #MeasuredEffPoint::sourceKey.
+
+ Together with the per-point provenance this is what a later re-fit of the efficiency curve
+ needs; spectra themselves are deliberately not kept in the DRF (the N42 export carries those).
+ */
+struct MeasuredSourceInfo
+{
+  /** Matches #MeasuredEffPoint::sourceKey. */
+  std::string sourceKey;
+
+  /** SandiaDecay nuclide symbol (e.g. "Eu152"); empty for a user-branching-ratio source. */
+  std::string nuclide;
+
+  /** Activity at the time of the characterization spectrum, PhysicalUnits. */
+  double activity = 0.0;
+
+  /** Fractional 1-sigma (certificate) activity uncertainty. */
+  float fracActivityUncert = 0.0f;
+
+  /** Source age at the time of the spectrum, PhysicalUnits; < 0 if not applicable. */
+  double age = -1.0;
+
+  /** Source-to-detector-face distance and its 1-sigma uncertainty, PhysicalUnits;
+   distance < 0 if unknown / fixed geometry. */
+  float distance = -1.0f;
+  float distanceUncert = 0.0f;
+
+  /** Generic shielding around the source (0 if none), or a named material. */
+  float shieldAtomicNumber = 0.0f;
+  float shieldArealDensity = 0.0f;
+  std::string shieldMaterial;
+
+  /** Free text: assay date and activity, certificate/serial number, Source.lib line, ... */
+  std::string assayInfo;
+
+  bool operator==( const MeasuredSourceInfo &rhs ) const;
+};//struct MeasuredSourceInfo
 
 
 /** The raw per-peak efficiency points a DRF was characterized from.
@@ -371,6 +437,18 @@ public:
    point has a non-positive energy or negative uncertainty.
    */
   void setPoints( std::vector<MeasuredEffPoint> points );
+
+  /** The calibration sources the points came from; may be empty for points recorded before
+   source information was kept. */
+  const std::vector<MeasuredSourceInfo> &sources() const;
+  void setSources( std::vector<MeasuredSourceInfo> sources );
+
+  /** The source with the given key, or nullptr. */
+  const MeasuredSourceInfo *sourceForKey( const std::string &key ) const;
+
+  /** True if any point carries provenance beyond the original six fields, or a source table is
+   present - i.e., the XML needs the serialization version that carries them. */
+  bool hasProvenance() const;
 
   /** Builds the rich efficiency uncertainty implied by these points: node
    covariance C[i][j] = delta_ij*stat_i^2 + cert_i*cert_j*[same sourceKey].
@@ -403,6 +481,9 @@ public:
 private:
   /** Sorted by energy. */
   std::vector<MeasuredEffPoint> m_points;
+
+  /** See #sources. */
+  std::vector<MeasuredSourceInfo> m_sources;
 };//class MeasuredDrfPoints
 
 

@@ -41,6 +41,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <functional>
+#include <type_traits>
 
 #include <Wt/Dbo/Dbo.h>
 #include <Wt/WDateTime.h>
@@ -732,6 +733,17 @@ public:
    */
   void setFwhmCoefficients( const std::vector<float> &coefs,
                             const ResolutionFnctForm form );
+
+  /** As above, but also records the 1-sigma uncertainties of the coefficients.
+   `uncerts` must be empty, or the same size as `coefs` (throws otherwise).
+   */
+  void setFwhmCoefficients( const std::vector<float> &coefs,
+                            const ResolutionFnctForm form,
+                            const std::vector<float> &uncerts );
+
+  /** 1-sigma uncertainties of the FWHM coefficients; empty if unknown, otherwise the same size
+   as #resolutionFcnCoefficients(). */
+  const std::vector<float> &resolutionFcnUncertainties() const;
   
   /** Returns efficiency of a full energy detection event, per decay measured at `distance`.
    
@@ -779,23 +791,32 @@ public:
   /** Fractional-efficiency-error covariance among `energies` (keV), row-major
    N*N; empty vector if no uncertainty information is available.
 
-   When a Monte-Carlo-parameterized response is attached (see #ceeloResponse),
-   the covariance comes from it (grounding-fit covariance + per-node MC
-   variance + regime model floors - strongly correlated between nearby
-   energies), evaluated at a far-field on-axis geometry; use the
-   (theta, distance) overload when the actual measurement geometry is known.
-   Otherwise this is `efficiencyUncert()->efficiencyFracCovariance(energies)`.
+   When a CeeLo response is attached (see #ceeloResponse) the covariance is the
+   response's, at the SAME far-field on-axis query #intrinsicEfficiencyEval
+   uses (CeeLoUtils::farFieldSourcePosition), so its diagonal equals that
+   evaluation's (sigma/value)^2.  It carries the anchor/grounding-fit
+   covariance and per-node MC variance (data-derived) plus the response's
+   model envelopes (regime floor, transfer envelope, ...) as fully correlated
+   common modes; `model_part`, when given, receives the envelope-only matrix so
+   the two kinds can be told apart (EffEval::sigmaModel is its per-query
+   counterpart).  Otherwise this is the curve's own
+   `DetectorEfficiencyCurve::fracCovariance` - all data-derived, so
+   `model_part` comes back all zero.
    */
-  std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies ) const;
+  std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies,
+                                                std::vector<double> *model_part = nullptr ) const;
 
-  /** Same as above, but evaluated at the given query geometry (theta in
-   radians from the detector axis; distance in PhysicalUnits) - the
-   Monte-Carlo response's uncertainty grows off-axis and close-in.  The legacy
-   #DetectorEfficiencyUncert path ignores the geometry.
+  /** Same as above, but at the query geometry #fepEfficiencyEval takes (theta
+   and phi in radians, distance from the detector face in PhysicalUnits): the
+   response's uncertainty grows off-axis and close-in, and the diagonal equals
+   that evaluation's (sigma/value)^2.  The legacy curve path ignores the
+   geometry.
    */
   std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies,
                                                 const double theta,
-                                                const double distance ) const;
+                                                const double phi,
+                                                const double distance,
+                                                std::vector<double> *model_part = nullptr ) const;
 
   /** Whether an (optional) total-efficiency curve has been set - i.e., the
    probability an incident gamma deposits *any* energy in the detector, not
@@ -884,12 +905,19 @@ public:
    */
   static const char *effFlagDescription( const EffFlag flag );
 
-  /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}. */
+  /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}.
+
+   `sigma` is the total.  `sigmaModel` is the part of it that comes from a CeeLo response's ad hoc
+   model envelopes alone (ceelo::model_sigma - the regime floor, transfer envelope, near-field
+   penalty, ...), as opposed to what the DRF's own data supports (fit covariance, MC statistics);
+   always <= sigma, and 0 for a legacy curve, whose uncertainty is all data-derived.
+   */
   struct EffEval
   {
     double value = 0.0;
     double sigma = 0.0;
     EffFlag flag = EffFlag::Ok;
+    double sigmaModel = 0.0;
   };//struct EffEval
 
   /** The (optional) Monte-Carlo-parameterized detector response; may be
@@ -1013,6 +1041,30 @@ public:
   static float peakResolutionFWHM( float energy,
                                    ResolutionFnctForm fcnFrm,
                                    const std::vector<float> &pars );
+
+  /** The FWHM functional forms, evaluated for a generic scalar type `T` (double, or a
+   `ceres::Jet<>` for automatic differentiation) with parameters of type `ParT` (float, double,
+   or `T`).  The single implementation behind the float overload above and the fitters.
+
+   Energy is clamped to >= 10 keV.  Where the raw form would take the square root of a negative
+   number (an optimizer trial outside the physical region) a smooth, strictly positive C1
+   continuation is used instead of returning NaN, so a gradient-based fit is never stranded.
+
+   Throws std::runtime_error if `num_pars` doesnt match the form.
+   */
+  template<typename T, typename ParT>
+  static T peakResolutionFWHM( T energy, const ResolutionFnctForm fcnFrm,
+                               const ParT * const pars, const size_t num_pars );
+
+  /** Smooth stand-in for `max(value, floor)`: equals `value` (value and derivative) at and above
+   `floor`, stays strictly positive below it, and tends to zero as `value` -> -infinity. */
+  template<typename T>
+  static T positive_c1_continuation( const T &value, const double floor );
+
+  /** Smooth stand-in for `min(value, upper)`: exact below `upper/2`, C1 at the join, and
+   monotonically approaches (never reaches) `upper` above it. */
+  template<typename T>
+  static T upper_c1_continuation( const T &value, const T &upper );
 
   
   //peakResolutionSigma(...): returns the resolution sigma of the detector,
@@ -1186,6 +1238,14 @@ public:
   //It is expected energy is in the same units (e.g. keV, MeV, etc) as the coefs
   static float expOfLogPowerSeriesEfficiency( const float energy,
                                               const std::vector<float> &coefs );
+
+  /** The exp-of-log-power-series efficiency for a generic scalar type `T` (double, or a
+   `ceres::Jet<>`) with coefficients of type `ParT`; evaluated by Horner's rule in log(energy).
+   The exponent is smoothly capped (see #upper_c1_continuation) so an optimizer trial cannot
+   overflow.  Returns 0 for no coefficients. */
+  template<typename T, typename ParT>
+  static T expOfLogPowerSeriesEfficiency( const T &energy, const ParT * const coefs,
+                                          const size_t num_coefs );
   
   
   void toXml( ::rapidxml::xml_node<char> *parent,
@@ -1438,6 +1498,11 @@ protected:
 
    On 20240410 updated from 1 to 2, to account for `ResolutionFnctForm::kConstantPlusSqrtEnergy` type of FWHM
    being added.  However, will only write 2 if `m_resolutionForm == ResolutionFnctForm::kConstantPlusSqrtEnergy`.
+
+   Later versions (see the history in #toXml) follow the same rule: the lowest version able to
+   express the object is written, so a DRF without the newer fields stays readable by older code.
+   Version 7 (20260912) added FWHM coefficient uncertainties, a stand-alone CeeLo geometry, and
+   measured-point provenance (per-peak details plus a Sources table).
    */
   static const int sm_xmlSerializationVersion;
   
@@ -1737,5 +1802,161 @@ public:
   } //void persist( Action &a )
 };//class DetectorPeakResponse
 
+
+
+// ---- Templated evaluators (shared by the float overloads and the Ceres fitters) ----------------
+namespace DetectorPeakResponseImp
+{
+  /** The value part of a double or a ceres::Jet<>. */
+  template<typename T>
+  inline double scalar_value( const T &v )
+  {
+    if constexpr( std::is_arithmetic_v<T> )
+      return static_cast<double>( v );
+    else
+      return static_cast<double>( v.a );
+  }
+}//namespace DetectorPeakResponseImp
+
+
+template<typename T>
+T DetectorPeakResponse::positive_c1_continuation( const T &value, const double floor )
+{
+  if( DetectorPeakResponseImp::scalar_value(value) >= floor )
+    return value;
+
+  // Equals `value` in both value and derivative at `floor`, stays strictly positive for every
+  //  finite trial, and approaches zero monotonically as the raw argument tends to -infinity.
+  return T(floor*floor) / (T(2.0*floor) - value);
+}//positive_c1_continuation(...)
+
+
+template<typename T>
+T DetectorPeakResponse::upper_c1_continuation( const T &value, const T &upper )
+{
+  const T join = T(0.5) * upper;
+  if( DetectorPeakResponseImp::scalar_value(value) <= 0.5*DetectorPeakResponseImp::scalar_value(upper) )
+    return value;
+
+  // Exact below half of `upper`, C1 at the join, and monotonically approaches (but never
+  //  reaches) `upper`.  Physical values are far below the join; this only regularizes
+  //  otherwise-invalid optimizer trials.
+  const T distance = upper - join;
+  return upper - distance*distance / (value - join + distance);
+}//upper_c1_continuation(...)
+
+
+template<typename T, typename ParT>
+T DetectorPeakResponse::peakResolutionFWHM( T energy, const ResolutionFnctForm fcnFrm,
+                                            const ParT * const pars, const size_t num_pars )
+{
+  using std::log;
+  using std::pow;
+  using std::sqrt;
+
+  // Below ~10 keV the forms are physically ill-defined (e.g. kSqrtEnergyPlusInverse divides by
+  //  energy) and carry no useful information for our use cases; treat as 10 keV.
+  if( DetectorPeakResponseImp::scalar_value(energy) < 10.0*PhysicalUnits::keV )
+    energy = T( 10.0*PhysicalUnits::keV );
+
+  switch( fcnFrm )
+  {
+    case kGadrasResolutionFcn:
+    {
+      if( num_pars != 3 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionFWHM(): pars not defined" );
+
+      // Straight-forward translation of the GADRAS Fortran GetFWHM ("form C", shared with
+      //  PeakDists::gadras_fwhm).  The sign of `a` selects the low-energy branch: a >= 0 adds
+      //  a linear "FWHM at zero energy" offset in quadrature; a < 0 instead bends the power law.
+      const T a = T( pars[0] );   // resolution offset ("FWHM @ 0")
+      const T b = T( pars[1] );   // resolution @ 661 (percent)
+      const T c = T( pars[2] );   // resolution power
+
+      if( DetectorPeakResponseImp::scalar_value(energy) > 661.0 )
+        return 6.61 * b * pow( energy/661.0, c );
+
+      if( DetectorPeakResponseImp::scalar_value(a) >= 0.0 )
+      {
+        // a >= 0 here, so fabs(a) == a; (661 - energy) >= 0 since energy <= 661 in this branch.
+        T zero_limit = a * (661.0 - energy) / 661.0;
+        if( DetectorPeakResponseImp::scalar_value(zero_limit) < 0.0 )
+          zero_limit = T( 0.0 );
+        const T fwhm = 6.61 * b * pow( energy/661.0, c );
+        return sqrt( zero_limit*zero_limit + fwhm*fwhm );
+      }//if( a >= 0.0 )
+
+      T e_clamped = energy;
+      if( DetectorPeakResponseImp::scalar_value(e_clamped) < 30.0 )
+        e_clamped = T( 30.0 );
+      const T p = pow( c, T(1.0)/log(1.0 - a) );
+      return 6.61 * b * pow( e_clamped/661.0, p );
+    }//case kGadrasResolutionFcn:
+
+    case kSqrtEnergyPlusInverse:
+    {
+      if( num_pars != 3 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionFWHM(): pars not defined" );
+      energy /= PhysicalUnits::keV;
+
+      const T width_squared = T(pars[0]) + T(pars[1])*energy + T(pars[2])/energy;
+      return sqrt( positive_c1_continuation(width_squared, 1.0e-12) );
+    }//case kSqrtEnergyPlusInverse:
+
+    case kConstantPlusSqrtEnergy:
+    {
+      if( num_pars != 2 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionFWHM(): pars not defined" );
+      energy /= PhysicalUnits::keV;
+
+      return T(pars[0]) + T(pars[1])*sqrt(energy);
+    }//case kConstantPlusSqrtEnergy:
+
+    case kSqrtPolynomial:
+    {
+      if( num_pars < 1 )
+        throw std::runtime_error( "DetectorPeakResponse::peakResolutionFWHM(): pars not defined" );
+
+      energy /= PhysicalUnits::MeV;
+
+      // Horner's rule - more stable than summing powers
+      T val = T( pars[num_pars - 1] );
+      for( int i = static_cast<int>(num_pars) - 2; i >= 0; i -= 1 )
+        val = val * energy + T( pars[i] );
+
+      return sqrt( positive_c1_continuation(val, 1.0e-12) );
+    }//case kSqrtPolynomial:
+
+    case kNumResolutionFnctForm:
+      throw std::runtime_error( "DetectorPeakResponse::peakResolutionFWHM(): Resolution not defined" );
+      break;
+  }//switch( fcnFrm )
+
+  assert( 0 );
+  return T( 0.0 );
+}//peakResolutionFWHM(...)
+
+
+template<typename T, typename ParT>
+T DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const T &energy, const ParT * const coefs,
+                                                       const size_t num_coefs )
+{
+  using std::exp;
+  using std::log;
+
+  if( !num_coefs )
+    return T( 0.0 );
+
+  const T x = log( energy );
+  T exparg = T( coefs[num_coefs - 1] );
+  for( int i = static_cast<int>(num_coefs) - 2; i >= 0; i -= 1 )
+    exparg = exparg * x + T( coefs[i] );
+
+  // Efficiencies are < 1 (exparg < 0); the cap (exact below 25, i.e. eff < 7e10) only keeps a
+  //  wild optimizer trial from overflowing to infinity.
+  exparg = upper_c1_continuation( exparg, T(50.0) );
+
+  return exp( exparg );
+}//expOfLogPowerSeriesEfficiency(...)
 
 #endif  //DetectorPeakResponse_h

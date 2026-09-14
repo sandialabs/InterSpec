@@ -69,6 +69,7 @@
   <message id="dmw-anchor-cert">Cert. %</message>
   <message id="dmw-anchor-corr">Corr. %</message>
   <message id="dmw-anchor-source">Source</message>
+  <message id="dmw-anchor-dist">Dist. (cm)</message>
   <message id="dmw-anchor-add">Add point</message>
   <message id="dmw-anchor-remove">Remove point</message>
 

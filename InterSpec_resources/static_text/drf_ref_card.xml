@@ -92,6 +92,7 @@
       <div class="title">${drf-name}  <div class="date">${date}</div> </div>
       <div class="desciption">${drf-desc}</div>
       <div><div class="diameter"><label>Detector Diameter</label>:&nbsp;${diameter}</div>  <div class="rel-eff">${rel-eff}</div> </div>
+      <div class="geometry">${geometry}</div>
       
       <div>${eff-table}</div>
       

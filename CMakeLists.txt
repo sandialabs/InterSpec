@@ -410,6 +410,7 @@ set(sources
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
+    src/MakeDrfCalc.cpp
     src/MakeFwhmForDrf.cpp
     src/CeeLoUtils.cpp
     src/CascadeSummingCalc.cpp
@@ -558,6 +559,7 @@ set(headers
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
+    InterSpec/MakeDrfCalc.h
     InterSpec/MakeFwhmForDrf.h
     InterSpec/CeeLoUtils.h
     InterSpec/CascadeSummingCalc.h

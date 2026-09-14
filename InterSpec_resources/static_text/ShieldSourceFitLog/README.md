@@ -747,6 +747,11 @@ Each element describes one fitted peak that the source contributes gammas to. Bu
 | `DetectorSolidAngleFraction` | number | 0–1   | Fraction of 4π subtended by the detector. |
 | `DetectorIntrinsicEff`       | number | 0–1   | Intrinsic photopeak efficiency. |
 | `DetectorEff`                | number | 0–1   | `DetectorSolidAngleFraction × DetectorIntrinsicEff`. |
+| `DrfEffFracUncert`           | number | 0–1   | Fractional 1σ detector-efficiency uncertainty at this energy, at the fit geometry.  Present only when `AccountForDrfUncert` is true and the DRF carries uncertainty information; `SignalCountsUncert` then includes it.  Typically 0.01–0.05 far-field, larger near-field or off-axis. |
+| `DrfEffFracUncertPercentStr` | string | %     | `DrfEffFracUncert` as a percent, for display. |
+| `DrfEffFracUncertModel`      | number | 0–1   | The part of `DrfEffFracUncert` that is the response's ad hoc model envelope (regime floor, geometry-transfer envelope, near-field penalty) rather than uncertainty the DRF's own data supports.  Always ≤ `DrfEffFracUncert`; 0 for a measured-curve DRF used in its measured regime.  A value close to `DrfEffFracUncert` means the uncertainty is a statement about the model, not about the measurement. |
+| `DrfEffFracUncertModelPercentStr` | string | % | `DrfEffFracUncertModel` as a percent, for display. |
+| `DrfEffFlag`                 | string |       | Detector-efficiency validity at this energy and geometry: `ok`, `out-of-range-clamped`, `near-field-unmodeled`, `shadowed`, or `needs-mc`.  Present only when not `ok`; non-`ok` values also appear as fit warnings. |
 | `ShieldAttenuations`         | array[number] | | One factor per shielding layer (`Shieldings.Shields[]` order). |
 | `AttenuationByShieldingFactor` | number |     | Product of `ShieldAttenuations[]`. |
 | `AttenuationByAirFactor`     | number |       | Air attenuation factor between source and detector. |

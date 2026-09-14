@@ -56,6 +56,7 @@
 #include <limits>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <utility>
 #include <iostream>
 #include <algorithm>
@@ -65,6 +66,7 @@
 #include "Minuit2/MnUserParameters.h"
 
 // CeeLo (external_libs/CeeLo/src)
+#include "io/SolidAngle.h"
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
 #include "io/EfficiencyTransfer.h"
@@ -462,7 +464,7 @@ BOOST_AUTO_TEST_CASE( efficiency_covariance_structure )
   shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
 
   const vector<double> energies{ 121.78, 344.28, 661.66, 1173.23, 1408.01 };
-  const vector<double> cov = drf->efficiencyFracCovariance( energies, 0.0,
+  const vector<double> cov = drf->efficiencyFracCovariance( energies, 0.0, 0.0,
                                                             50.0*PhysicalUnits::cm );
   const size_t n = energies.size();
   BOOST_REQUIRE_EQUAL( cov.size(), n*n );
@@ -482,7 +484,7 @@ BOOST_AUTO_TEST_CASE( efficiency_covariance_structure )
 
   //Covariance must grow off-axis / close-in (sigma_transfer) when grounded;
   //  ungrounded fixtures still must not SHRINK off-axis.
-  const vector<double> cov_off = drf->efficiencyFracCovariance( energies, 1.2,
+  const vector<double> cov_off = drf->efficiencyFracCovariance( energies, 1.2, 0.0,
                                                             5.0*PhysicalUnits::cm );
   BOOST_CHECK_GE( cov_off[0] + 1.0E-12, cov[0] );
 }//efficiency_covariance_structure
@@ -764,6 +766,204 @@ BOOST_AUTO_TEST_CASE( transfer_flags_and_sigma )
 }//transfer_flags_and_sigma
 
 
+/** THE invariant on the DRF: the covariance at a query geometry has, on its diagonal, exactly the
+ (sigma/value)^2 the efficiency evaluation at that geometry reports - through a Monte-Carlo
+ response with a near-field model, a far-field-only one (NearFieldUnmodeled inside its floor), and a
+ curve transfer - and the no-geometry covariance is the far-field intrinsic evaluation's.
+ */
+BOOST_AUTO_TEST_CASE( response_covariance_diagonal_matches_eval )
+{
+  struct Geom { double theta, phi, dist_cm; };
+  const vector<Geom> geoms = { {0.0, 0.0, 50.0}, {0.0, 0.0, 3.0}, {M_PI/3.0, 0.7, 20.0} };
+  const vector<double> energies = { 60.0, 121.8, 344.3, 661.7, 1408.0 };
+  const size_t n = energies.size();
+
+  vector<pair<string,shared_ptr<DetectorPeakResponse>>> drfs;
+  drfs.emplace_back( "nai3x3 golden", drf_with_golden( "nai3x3" ) );
+  drfs.emplace_back( "czt_box golden", drf_with_golden( "czt_box" ) );
+  {
+    const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+    shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*geom.transverse_half_extent() );
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+    auto det2 = make_shared<DetectorPeakResponse>( *det );
+    det2->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" ) );
+    drfs.emplace_back( "curve transfer", det2 );
+  }
+
+  for( const auto &named : drfs )
+  {
+    const shared_ptr<DetectorPeakResponse> &drf = named.second;
+    BOOST_REQUIRE( drf && drf->ceeloResponse() );
+
+    for( const Geom &g : geoms )
+    {
+      vector<double> model_part;
+      const vector<double> cov = drf->efficiencyFracCovariance( energies, g.theta, g.phi,
+                                                        g.dist_cm*PhysicalUnits::cm, &model_part );
+      BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+      BOOST_REQUIRE_EQUAL( model_part.size(), n*n );
+      for( size_t i = 0; i < n; ++i )
+      {
+        const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval( static_cast<float>(energies[i]),
+                                                          g.theta, g.phi, g.dist_cm*PhysicalUnits::cm );
+        BOOST_REQUIRE_GT( ev.value, 0.0 );
+        const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
+        const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+        // float energy in the Eval API, double in the covariance: 1e-6 relative
+        BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= 1.0e-6*frac2,
+                             named.first << " at " << g.dist_cm << " cm, theta " << g.theta << ", "
+                             << energies[i] << " keV: C_ii " << cov[i*n+i] << " vs sigma^2 " << frac2 );
+        BOOST_CHECK_MESSAGE( std::fabs(model_part[i*n+i] - frac2_model) <= 1.0e-6*frac2,
+                             named.first << ": model part " << model_part[i*n+i] << " vs " << frac2_model );
+        BOOST_CHECK_LE( ev.sigmaModel, ev.sigma*(1.0 + 1.0e-12) );
+        BOOST_CHECK_GT( ev.sigmaModel, 0.0 );
+      }
+    }//for( each geometry )
+
+    // No-geometry overload: the far-field intrinsic evaluation
+    vector<double> model_part;
+    const vector<double> cov = drf->efficiencyFracCovariance( energies, &model_part );
+    BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+    for( size_t i = 0; i < n; ++i )
+    {
+      const DetectorPeakResponse::EffEval ev = drf->intrinsicEfficiencyEval( static_cast<float>(energies[i]) );
+      BOOST_REQUIRE_GT( ev.value, 0.0 );
+      const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
+      BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= 1.0e-6*frac2,
+                           named.first << " far field, " << energies[i] << " keV: C_ii " << cov[i*n+i]
+                           << " vs sigma^2 " << frac2 );
+      const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+      BOOST_CHECK_MESSAGE( std::fabs(model_part[i*n+i] - frac2_model) <= 1.0e-6*frac2,
+                           named.first << ": far-field model part" );
+    }
+  }//for( each DRF )
+}//response_covariance_diagonal_matches_eval
+
+
+/** Corpus evidence for the curve-transfer model envelope (ceelo::model_sigma transfer_* constants).
+
+ A measured-curve transfer knows the detector's far-field on-axis efficiency and its geometry, and
+ nothing else: its eta is angle-flat and it has no near-field model, so off axis and close in it is
+ wrong by an amount the SigmaTransferModel envelope is supposed to cover.  Every golden Monte-Carlo
+ response is such a detector fully characterized, so building a curve transfer from the golden's
+ OWN far-field curve and comparing it to the golden off axis and near field measures that error per
+ detector type, angle, distance and energy, with no new Monte Carlo.  This prints, per detector and
+ (theta, d/a) cell: the mean signed error, the worst |error|, the worst |error|/sigma of the transfer,
+ and how one-signed the error is across energies (a common mode, as the covariance treats it).
+
+ Evidence, not a gate: the numbers are for the user's recalibration decision (see the header of
+ model_sigma).  Only the far-field on-axis sanity is asserted.  Near-field cells are taken only
+ where the golden itself has a near-field model and is inside its validated range.
+
+ Measured 2026-09-13 (full table in the test output; the 3"x3" NaI MakeDrfEndToEnd MC truth agrees):
+   - Off axis, d/a >= 5 (the far-field envelope alone): mean error 30 deg / 45 deg / 60 deg is
+     NaI 3.0/3.7/3.7%, HPGe coax 2.5/2.9/3.0%, Detective-X 1.8/2.7/2.9%, CZT box 0.3/0.1/0.5%, and
+     it saturates with angle rather than growing as sin^2(theta).  Worst |error|/sigma is 2.1-2.9
+     at 30-60 deg for the three cylinders (the 3% x sin^2 mid/high-E term gives 0.75% at 30 deg;
+     the low-E ramp term already covers the lowest energies).  One-signed across energies: NaI in
+     every cell, HPGe 80%, Detective-X 91% - a common mode, as the covariance treats it.
+   - Near field on axis, d/a = 1 / 2 / 3: mean error NaI 2.9/1.7/1.0%, HPGe 4.0/2.6/1.6%,
+     Detective-X 3.0/2.0/1.3% (worst 5-7% at contact), against a 10/7.5/5% envelope: covered
+     about 2x over, and always over-predicting.
+   - The far-field on-axis transfer reproduces the golden to < 0.01% (sanity).
+ */
+BOOST_AUTO_TEST_CASE( curve_transfer_envelope_corpus )
+{
+  const vector<double> thetas_deg = { 0.0, 15.0, 30.0, 45.0, 60.0 };
+  // Distance from the detector FACE in units of the transverse half-extent (InterSpec's
+  //  convention).  CeeLo's own near gates count from the crystal-face origin, one endcap offset
+  //  further back, so the "envelope" column belongs to a slightly larger d/a than the row label.
+  const vector<double> d_over_as = { 1.0, 2.0, 3.0, 5.0, 10.0, 30.0 };
+
+  for( const char * const preset : { "nai3x3", "hpge_coax", "detective_x", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+    const shared_ptr<const ceelo::DetectorResponse> golden = drf->ceeloResponse();
+    BOOST_REQUIRE( golden );
+    const ceelo::GeometryDescriptor &gd = golden->descriptor;
+    const double a_cm = gd.transverse_half_extent();
+
+    // The golden's own far-field on-axis curve, sampled on its energy grid, is the anchor; no
+    //  anchor sigma, so the transfer's sigma is purely its model envelope (floor + transfer terms).
+    const Eigen::Vector3d far_pos = CeeLoUtils::farFieldSourcePosition( gd );
+    ceelo::AnchorCurve anchor;
+    for( const double e : golden->eta_fep.energies_keV )
+    {
+      if( (e < 40.0) || (e > 3000.0) )
+        continue;
+      const ceelo::EffResult r = golden->eps_fep_at( e, far_pos );
+      if( r.value <= 0.0 )
+        continue;
+      anchor.energies_keV.push_back( e );
+      anchor.eff.push_back( r.value );
+      anchor.frac_sigma.push_back( 0.0 );
+    }
+    BOOST_REQUIRE_GE( anchor.energies_keV.size(), 4u );
+    const shared_ptr<ceelo::DetectorResponse> transfer
+                  = ceelo::make_transfer_response( gd, anchor, far_pos, nullptr, ceelo::TransferResponseOptions{} );
+    BOOST_REQUIRE( transfer && transfer->model_transfer.has_value() );
+
+    BOOST_TEST_MESSAGE( "=== " << preset << " (a = " << a_cm << " cm, "
+                        << (golden->near_field.empty() ? "no near-field model" : "near-field model")
+                        << ", " << anchor.energies_keV.size() << " anchor energies) ===" );
+    BOOST_TEST_MESSAGE( "  theta   d/a    n   mean err   worst |err|  worst |err|/sig   envelope   same-sign" );
+
+    double far_onaxis_worst = 0.0;
+    for( const double theta_deg : thetas_deg )
+    {
+      for( const double d_over_a : d_over_as )
+      {
+        const double theta = theta_deg * M_PI / 180.0;
+        const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, 0.0, d_over_a*a_cm );
+        const ceelo::ApertureQuadrature q_golden = golden->make_quadrature( pos );
+        const ceelo::ApertureQuadrature q_transfer = transfer->make_quadrature( pos );
+
+        int n = 0, n_pos = 0;
+        double sum_err = 0.0, worst_err = 0.0, worst_pull = 0.0, envelope = 0.0;
+        for( const double e : anchor.energies_keV )
+        {
+          const ceelo::EffResult g = golden->eps_fep_at( e, pos, q_golden );
+          const ceelo::EffResult t = transfer->eps_fep_at( e, pos, q_transfer );
+          // Only where the golden is itself trustworthy: inside its validated regime
+          if( (g.flag != ceelo::ResponseFlag::Ok) || (g.value <= 0.0) || (t.value <= 0.0) )
+            continue;
+          const double err = t.value / g.value - 1.0;
+          const double sig = t.sigma / t.value;
+          ++n;
+          n_pos += (err > 0.0);
+          sum_err += err;
+          worst_err = std::max( worst_err, fabs(err) );
+          worst_pull = std::max( worst_pull, fabs(err) / sig );
+          envelope = std::max( envelope, transfer->model_transfer->eval( pos.norm()/a_cm, -pos.z()/pos.norm(), e ) );
+        }
+        if( n == 0 )
+          continue;
+
+        const double same_sign = std::max( n_pos, n - n_pos ) / double(n);
+        std::ostringstream row;
+        row << "  " << std::setw(5) << std::fixed << std::setprecision(0) << theta_deg
+            << std::setw(6) << std::setprecision(0) << d_over_a
+            << std::setw(5) << n
+            << std::setw(9) << std::setprecision(2) << 100.0*sum_err/n << "%"
+            << std::setw(11) << 100.0*worst_err << "%"
+            << std::setw(14) << worst_pull
+            << std::setw(12) << 100.0*envelope << "%"
+            << std::setw(9) << std::setprecision(2) << same_sign;
+        BOOST_TEST_MESSAGE( row.str() );
+
+        if( (theta_deg == 0.0) && (d_over_a >= 10.0) )
+          far_onaxis_worst = std::max( far_onaxis_worst, worst_err );
+      }//for( d_over_a )
+    }//for( theta )
+
+    // Sanity: far field on axis the transfer reproduces its own anchor, to well under 0.1%
+    //  (measured 2026-09-13: under 0.01% for all four).  This is the gate; the table above is
+    //  evidence for a human, not a pass/fail.
+    BOOST_CHECK_MESSAGE( far_onaxis_worst < 0.001, preset << ": far-field on-axis transfer error " << 100.0*far_onaxis_worst << "%" );
+  }//for( each golden )
+}//curve_transfer_envelope_corpus
+
+
 /** Anchor-source selection: raw single-distance measured points beat the
  curve; mixed distances fall back to the curve; fixed geometry throws.
  */
@@ -806,14 +1006,24 @@ BOOST_AUTO_TEST_CASE( transfer_anchor_source_selection )
   BOOST_CHECK_CLOSE( raw_anchor.curve.frac_sigma[0],
                      std::sqrt(0.01*0.01 + 0.03*0.03), 1.0 );
 
-  //Mixed-distance points: falls back to sampling the fitted curve.
+  //Mixed-distance points: still the raw branch - the points at the minority distance are
+  //  transferred to the most common distance (25 cm: energies 0,2,4) through the kernel ratio.
   shared_ptr<DetectorPeakResponse> det_mixed = synthetic_curve_drf( diam_cm );
   det_mixed->setMeasuredPoints( make_points(true) );
 
-  const CeeLoUtils::TransferAnchor curve_anchor
+  const CeeLoUtils::TransferAnchor mixed_anchor
                        = CeeLoUtils::transferAnchorForDrf( det_mixed, geom, -1.0 );
-  BOOST_CHECK( curve_anchor.curve_derived );
-  BOOST_CHECK_GE( curve_anchor.curve.energies_keV.size(), 16u );
+  BOOST_CHECK( !mixed_anchor.curve_derived );
+  BOOST_CHECK_EQUAL( mixed_anchor.curve.energies_keV.size(), 5u );
+  BOOST_CHECK_CLOSE( mixed_anchor.ref_distance_cm, 25.0, 0.1 );
+  {
+    //Points already at 25 cm are untouched; the 50 cm ones grow by ~K(25)/K(50) (~ 4x far-field)
+    const vector<MeasuredEffPoint> &raw_pts = det_mixed->measuredPoints()->points();
+    BOOST_CHECK_CLOSE( mixed_anchor.curve.eff[0], raw_pts[0].efficiency, 1.0e-3 );
+    const double ratio = mixed_anchor.curve.eff[1] / raw_pts[1].efficiency;
+    BOOST_CHECK_GT( ratio, 3.0 );
+    BOOST_CHECK_LT( ratio, 4.5 );
+  }
 
   //A user-specified reference distance overrides the automatic one.
   const CeeLoUtils::TransferAnchor override_anchor
@@ -2619,3 +2829,201 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
   //  that geometry is the max-error gate in angle_efficiency_cross_validation.
   BOOST_CHECK_LT( median, 0.02 );
 }//angle_cascade_summing_unit_test
+
+
+/** Points taken at different distances, all generated from ONE transfer response, must transfer
+ to the same anchor (within the kernel's own tolerance) whichever distance they were taken at.
+ */
+BOOST_AUTO_TEST_CASE( transfer_anchor_mixed_distance_consistency )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+
+  // A reference response to generate "measurements" from
+  shared_ptr<DetectorPeakResponse> truth = synthetic_curve_drf( diam_cm );
+  const CeeLoUtils::TransferAnchor truth_anchor = CeeLoUtils::transferAnchorForDrf( truth, geom, 50.0 );
+  const shared_ptr<ceelo::DetectorResponse> truth_resp
+        = CeeLoUtils::makeTransferResponse( geom, truth_anchor, ceelo::AnchorCurve{}, "truth" );
+  BOOST_REQUIRE( truth_resp );
+
+  vector<MeasuredEffPoint> pts;
+  size_t idx = 0;
+  for( const double E : {121.78, 244.7, 344.28, 661.66, 778.9, 1112.1, 1408.01} )
+  {
+    const double d_cm = ( (idx % 3) == 0 ) ? 25.0 : ( ((idx % 3) == 1) ? 50.0 : 100.0 );
+    idx += 1;
+    const ceelo::EffResult r = truth_resp->eps_fep_at( E,
+                                    CeeLoUtils::sourcePositionFromFace( geom, 0.0, 0.0, d_cm ) );
+    MeasuredEffPoint p;
+    p.energy = static_cast<float>( E );
+    p.efficiency = static_cast<float>( r.value );
+    p.fracStatUncert = 0.01f;
+    p.sourceKey = "src#" + std::to_string( idx % 3 );
+    p.distance = static_cast<float>( d_cm * PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  auto points = make_shared<MeasuredDrfPoints>();
+  points->setPoints( pts );
+
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( diam_cm );
+  det->setMeasuredPoints( points );
+
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, 50.0 );
+  BOOST_CHECK( !anchor.curve_derived );
+  BOOST_REQUIRE_EQUAL( anchor.curve.energies_keV.size(), pts.size() );
+
+  // Every transferred point equals the truth response evaluated at the reference distance
+  for( size_t i = 0; i < anchor.curve.energies_keV.size(); ++i )
+  {
+    const ceelo::EffResult r = truth_resp->eps_fep_at( anchor.curve.energies_keV[i],
+                                    CeeLoUtils::sourcePositionFromFace( geom, 0.0, 0.0, 50.0 ) );
+    BOOST_CHECK_CLOSE( anchor.curve.eff[i], r.value, 0.5 );
+  }
+}//transfer_anchor_mixed_distance_consistency
+
+
+/** Far from the detector the kernel-based intrinsic factor is the flat-disk solid angle; close in
+ it is not, and it always falls with distance at about the inverse-square rate.
+ */
+BOOST_AUTO_TEST_CASE( far_field_factor_matches_flat_disk_far_away )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  const double diam = 2.0 * a_cm * PhysicalUnits::cm;
+
+  CeeLoUtils::GeometryKernel kernel( geom );
+  BOOST_CHECK_CLOSE( kernel.farFieldDistanceCm(), std::max( 1000.0*a_cm, 100.0 ), 1.0e-9 );
+
+  const vector<double> energies = { 60.0, 122.0, 662.0, 1332.0 };
+  for( const double d_cm : { 100.0*a_cm, 400.0 } )
+  {
+    const vector<double> g = CeeLoUtils::farFieldIntrinsicFactors( geom, energies,
+                                                        vector<double>( energies.size(), d_cm ) );
+    BOOST_REQUIRE_EQUAL( g.size(), energies.size() );
+    const double flat = DetectorPeakResponse::fractionalSolidAngle( diam, d_cm*PhysicalUnits::cm );
+    for( size_t i = 0; i < g.size(); ++i )
+      BOOST_CHECK_CLOSE( g[i], flat, 1.5 );  //percent
+  }
+
+  // At the far-field definition distance the factor IS the disk solid angle
+  const double d_far = kernel.farFieldDistanceCm();
+  BOOST_CHECK_CLOSE( kernel.intrinsicFactor( 662.0, d_far ),
+                     ceelo::disk_solid_angle_fraction( d_far, a_cm ), 1.0e-6 );
+
+  // Close in, the chord/attenuation physics departs from the flat disk (a few percent at 5 cm)
+  const double g_near = kernel.intrinsicFactor( 122.0, 5.0 );
+  const double flat_near = DetectorPeakResponse::fractionalSolidAngle( diam, 5.0*PhysicalUnits::cm );
+  BOOST_CHECK_GT( std::fabs( g_near/flat_near - 1.0 ), 0.005 );
+  BOOST_CHECK_LT( std::fabs( g_near/flat_near - 1.0 ), 0.5 );
+}//far_field_factor_matches_flat_disk_far_away
+
+
+BOOST_AUTO_TEST_CASE( far_field_factor_distance_slope_sign )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const vector<double> energies = { 122.0, 662.0, 1332.0 };
+  const vector<double> dists = { 25.0, 50.0, 100.0 };
+  const vector<double> slopes = CeeLoUtils::farFieldIntrinsicFactorDistanceSlopes( geom, energies, dists );
+  BOOST_REQUIRE_EQUAL( slopes.size(), 3u );
+  for( size_t i = 0; i < 3; ++i )
+  {
+    // d ln g / d d ~ -2/d in the far field (inverse square)
+    BOOST_CHECK_LT( slopes[i], 0.0 );
+    BOOST_CHECK_CLOSE( slopes[i], -2.0/dists[i], 15.0 );
+  }
+}//far_field_factor_distance_slope_sign
+
+
+/** A DRF carrying a coefficient covariance, anchored on its curve: the response's covariance at
+ the anchor energies is the curve's J*Sigma*J^T plus the model floor, the curve is reproduced at
+ the reference distance, and the raw points ride along as provenance.
+ */
+BOOST_AUTO_TEST_CASE( curve_anchor_covariance_flows_to_drf )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+
+  auto det = make_shared<DetectorPeakResponse>( "cov", "test" );
+  const vector<float> coefs = { -4.5f, 1.9f, -0.22f };
+  det->fromExpOfLogPowerSeries( coefs, {}, 0.0, diam_cm*PhysicalUnits::cm, PhysicalUnits::keV,
+                                59.0f, 1500.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  auto uncert = make_shared<DetectorEfficiencyUncert>();
+  uncert->setCoefficientCovariance( { 4.0E-3f, -1.0E-3f, 1.0E-4f,
+                                     -1.0E-3f,  3.0E-4f, -3.0E-5f,
+                                      1.0E-4f, -3.0E-5f, 4.0E-6f } );
+  det->setEfficiencyUncert( uncert );
+
+  vector<MeasuredEffPoint> pts;
+  for( const float E : { 122.0f, 662.0f, 1332.0f } )
+  {
+    MeasuredEffPoint p;
+    p.energy = E;
+    p.efficiency = 1.0e-3f;
+    p.fracStatUncert = 0.02f;
+    p.sourceKey = "src#0";
+    p.distance = static_cast<float>( 25.0*PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  auto points = make_shared<MeasuredDrfPoints>();
+  points->setPoints( pts );
+  det->setMeasuredPoints( points );
+
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::curveAnchorWithCovarianceForDrf( det, geom, -1.0 );
+  const size_t ne = anchor.curve.energies_keV.size();
+  BOOST_REQUIRE_GE( ne, 24u );
+  BOOST_REQUIRE_EQUAL( anchor.curve.frac_cov.size(), ne*ne );
+  BOOST_CHECK_EQUAL( anchor.curve.points.size(), 3u );
+  BOOST_CHECK( anchor.curve_derived );
+
+  const vector<double> legacy_cov = det->efficiencyFracCovariance( anchor.curve.energies_keV );
+  BOOST_REQUIRE_EQUAL( legacy_cov.size(), ne*ne );
+  for( size_t i = 0; i < ne*ne; ++i )
+    BOOST_CHECK_CLOSE( anchor.curve.frac_cov[i], legacy_cov[i], 1.0e-6 );
+
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "cov" );
+  BOOST_REQUIRE( resp );
+  BOOST_CHECK( !resp->grounding.empty() );
+  BOOST_CHECK_EQUAL( resp->grounding.points.size(), 3u );
+
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  // The far-field intrinsic efficiency of the response is the legacy curve
+  for( const float E : { 80.0f, 200.0f, 662.0f, 1200.0f } )
+  {
+    const DetectorPeakResponse::EffEval ev = det2->intrinsicEfficiencyEval( E );
+    BOOST_CHECK_CLOSE( ev.value, det->intrinsicEfficiency( E ), 0.3 );
+  }
+
+  // ...and its covariance at the anchor energies is the curve covariance (data) plus the two model
+  //  envelopes active far field on axis - the regime floor and the transfer's on-axis floor - each
+  //  a common mode, and reported separately as the model part
+  BOOST_REQUIRE( resp->model_transfer.has_value() );
+  const double floor = resp->floors.fep_far;
+  const double st = resp->model_transfer->far_onaxis;
+  vector<double> model_part;
+  const vector<double> resp_cov = det2->efficiencyFracCovariance( anchor.curve.energies_keV, &model_part );
+  BOOST_REQUIRE_EQUAL( resp_cov.size(), ne*ne );
+  BOOST_REQUIRE_EQUAL( model_part.size(), ne*ne );
+  for( size_t i = 0; i < ne; ++i )
+  {
+    for( size_t j = 0; j < ne; ++j )
+    {
+      BOOST_CHECK_CLOSE( resp_cov[i*ne + j], legacy_cov[i*ne + j] + floor*floor + st*st, 1.0e-3 );
+      BOOST_CHECK_CLOSE( model_part[i*ne + j], floor*floor + st*st, 1.0e-6 );
+    }
+  }
+
+  // The correlations are real: a distant off-diagonal is non-zero and matches
+  BOOST_CHECK_GT( std::fabs( resp_cov[0*ne + (ne-1)] - floor*floor - st*st ), 1.0e-6 );
+
+  // Round trip through the DRF blob keeps it
+  auto det3 = make_shared<DetectorPeakResponse>( *det2 );
+  det3->setDrfExtraFromXmlString( det2->drfExtraToXmlString() );
+  BOOST_REQUIRE( det3->ceeloResponse() );
+  const vector<double> cov3 = det3->efficiencyFracCovariance( anchor.curve.energies_keV );
+  BOOST_REQUIRE_EQUAL( cov3.size(), ne*ne );
+  for( size_t i = 0; i < ne*ne; ++i )
+    BOOST_CHECK_CLOSE( cov3[i], resp_cov[i], 1.0e-6 );
+}//curve_anchor_covariance_flows_to_drf

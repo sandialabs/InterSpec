@@ -2229,13 +2229,13 @@ BOOST_AUTO_TEST_CASE( ApertureChordDistribution, * boost::unit_test::disabled() 
 }
 
 
-/** What is the covariance path's sigma ACTUALLY, versus the per-query sigma?
+/** The covariance path's sigma versus the per-query sigma, on a real (ANGLE) transfer.
  *
- * frac_covariance() is not just the floor: it is
- *     floor^2 + transfer_i*transfer_j + cov_ln_k + node_i^2
- * so it already carries the grounding TRANSFER term, which grows as the query geometry departs
- * from the anchor.  Only the NearFieldUnmodeled penalty (a hard-coded 0.05 in quadrature) is
- * missing from it.  Measure both so the size of the inflation is a number, not an inference.
+ * frac_covariance() is built from the same per-query budget eps_fep reports (floors, the transfer
+ * envelopes, the NearFieldUnmodeled penalty, node sigma, grounding covariance), so its diagonal
+ * must equal the per-query sigma at every distance - the "inflation" column is 1.00x by
+ * construction.  Before 2026-09 the NearFieldUnmodeled and model_transfer terms were missing from
+ * it (up to 5x at contact); this prints both so a regression is a number, not an inference.
  */
 BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma, * boost::unit_test::disabled() )
 {
@@ -2247,7 +2247,7 @@ BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma, * boost::unit_test::disabled() 
   BOOST_TEST_MESSAGE( "    d(cm)     E(keV)   frac_cov sigma   eps_fep sigma   inflation   flag" );
   for( const double d : { 0.0, 1.0, 5.0, 10.0, 25.0, 50.0 } )
   {
-    const std::vector<double> cov = det.mc_transfer->frac_covariance( es, 0.0, d );
+    const std::vector<double> cov = det.mc_transfer->frac_covariance( es, 0.0, 0.0, d );
     for( size_t i = 0; i < es.size(); ++i )
     {
       const double cov_sig = std::sqrt( std::max(0.0, cov[i*es.size()+i]) );
@@ -2259,6 +2259,7 @@ BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma, * boost::unit_test::disabled() 
           << std::setw(15) << 100.0*q_sig << "%"
           << std::setw(11) << std::setprecision(2) << (cov_sig>0 ? q_sig/cov_sig : 0.0) << "x   "
           << ceelo::to_string(r.flag) );
+      BOOST_CHECK_CLOSE( cov_sig, q_sig, 1.0e-6 );
     }
   }
 }

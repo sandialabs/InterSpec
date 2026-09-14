@@ -142,15 +142,14 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
     for( int i = 0; i < n_samples; ++i )
       energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_samples-1) ) );
 
-    const vector<double> sigmas = drf->efficiencyFracCovariance( energies ).empty()
-                          ? vector<double>()
-                          : [&](){
-                              vector<double> s;
-                              const vector<double> cov = drf->efficiencyFracCovariance( energies );
-                              for( size_t i = 0; i < energies.size(); ++i )
-                                s.push_back( std::sqrt( std::max(0.0, cov[i*energies.size()+i]) ) );
-                              return s;
-                            }();
+    // One covariance query: for a DRF carrying a response this traces a full aperture fan.
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    vector<double> sigmas;
+    if( cov.size() == (energies.size()*energies.size()) )
+    {
+      for( size_t i = 0; i < energies.size(); ++i )
+        sigmas.push_back( std::sqrt( std::max(0.0, cov[i*energies.size()+i]) ) );
+    }
 
     for( size_t i = 0; i < energies.size(); ++i )
     {
@@ -161,7 +160,8 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
       ceelo::GroundingPoint gp;
       gp.energy_keV = energies[i];
       gp.measured_eff = intrinsic * frac_solid_angle;
-      gp.frac_stat_sigma = sigmas.empty() ? 0.05 : std::max( 0.01, sigmas[i] );
+      gp.frac_stat_sigma = sigmas.empty() ? CeeLoUtils::sm_default_anchor_frac_sigma
+                                          : std::max( CeeLoUtils::sm_min_anchor_frac_sigma, sigmas[i] );
       gp.frac_cert_sigma = 0.0;
       gp.source_key = "legacy-curve";
       gp.distance_cm = d_ref_cm;
@@ -212,6 +212,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_cancelFlag( nullptr ),
     m_result( nullptr ),
     m_validationChanged(),
+    m_geometryChanged(),
+    m_hideChart( false ),
     m_responseGenerated(),
     m_updatedDrf()
 {
@@ -658,7 +660,63 @@ void MakeMcResponseForDrf::handleGeometryChanged()
 
   if( !m_restoringState )
     m_userChanged.emit();
+
+  m_geometryChanged.emit();
 }//handleGeometryChanged()
+
+
+CeeLoUtils::TransferAnchor MakeMcResponseForDrf::transferAnchor( const ceelo::GeometryDescriptor &gd ) const
+{
+  // A DRF whose curve carries a covariance (a fitted equation's coefficient covariance, or per-point
+  //  node covariance) is anchored on that curve with the covariance, so correlations between
+  //  energies survive into the response; otherwise the raw-point / sampled-curve anchor.
+  const shared_ptr<const DetectorEfficiencyCurve> curve = m_seedDrf ? m_seedDrf->efficiencyCurve() : nullptr;
+  const bool have_curve_cov = (curve && curve->uncertainty() && !curve->uncertainty()->isEmpty());
+  if( have_curve_cov )
+    return CeeLoUtils::curveAnchorWithCovarianceForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+  return CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+}//transferAnchor(...)
+
+
+void MakeMcResponseForDrf::setMethod( const Method method )
+{
+  m_method->setCurrentIndex( static_cast<int>(method) );
+  handleMethodChanged();
+}//setMethod(...)
+
+
+void MakeMcResponseForDrf::setChartHidden( const bool hidden )
+{
+  m_hideChart = hidden;
+  if( m_chartBox && hidden )
+    m_chartBox->hide();
+  else if( m_chartBox && m_result )
+    updateResponseChart();
+}//setChartHidden(...)
+
+
+Wt::Signal<> &MakeMcResponseForDrf::geometryChanged()
+{
+  return m_geometryChanged;
+}
+
+
+bool MakeMcResponseForDrf::geometryValid() const
+{
+  return m_geometry->isValid();
+}
+
+
+ceelo::GeometryDescriptor MakeMcResponseForDrf::geometryDescriptor() const
+{
+  return m_geometry->toDescriptor();
+}
+
+
+DetectorGeometryInput *MakeMcResponseForDrf::geometryInput()
+{
+  return m_geometry;
+}
 
 
 void MakeMcResponseForDrf::updateAnchorInfo()
@@ -675,8 +733,7 @@ void MakeMcResponseForDrf::updateAnchorInfo()
   try
   {
     const ceelo::GeometryDescriptor gd = m_geometry->toDescriptor();
-    const CeeLoUtils::TransferAnchor anchor
-          = CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+    const CeeLoUtils::TransferAnchor anchor = transferAnchor( gd );
 
     const string dist_str = PhysicalUnits::printToBestLengthUnits(
                                     anchor.ref_distance_cm * PhysicalUnits::cm );
@@ -778,7 +835,7 @@ void MakeMcResponseForDrf::updateResponseChart()
   if( !m_chart || !m_chartBox )
     return;
 
-  if( !m_result )
+  if( !m_result || m_hideChart )
   {
     m_chartBox->hide();
     m_chart->updateChart( nullptr );
@@ -1020,7 +1077,7 @@ void MakeMcResponseForDrf::startGeneration()
     CeeLoUtils::TransferAnchor anchor;
     try
     {
-      anchor = CeeLoUtils::transferAnchorForDrf( m_seedDrf, gd, refDistanceOverrideCm() );
+      anchor = transferAnchor( gd );
     }catch( std::exception &e )
     {
       m_status->setText( WString::tr("mmr-anchor-unusable")
@@ -1121,7 +1178,21 @@ void MakeMcResponseForDrf::startGeneration()
     {
       response = ceelo::ResponseGenerator::generate( gd, opts );
       if( response && !ground_pts.empty() )
-        ceelo::ResponseGenerator::ground_to_points( *response, ground_pts, curve_derived );
+      {
+        // Model efficiencies at each point's own geometry, with the point distances in InterSpec's
+        //  face-referenced convention (rather than leaving ground_to_points to interpret them).
+        vector<ceelo::GroundingPoint> pts = ground_pts;
+        for( ceelo::GroundingPoint &p : pts )
+        {
+          if( p.model_eff > 0.0 )
+            continue;
+          const double theta = std::acos( std::min( std::max( p.cos_theta, -1.0 ), 1.0 ) );
+          const double phi = p.phi_deg * 3.14159265358979323846 / 180.0;
+          const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, phi, p.distance_cm );
+          p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
+        }
+        ceelo::ResponseGenerator::ground_to_points( *response, pts, curve_derived );
+      }
     }catch( ceelo::GenerationCancelled & )
     {
       errmsg = "cancelled";

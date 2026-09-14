@@ -3530,8 +3530,21 @@ std::vector<double> ShieldingSourceChi2Fcn::includedPeakEnergies() const
 }//includedPeakEnergies()
 
 
-std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
+/** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
+struct PointSourceRays
 {
+  std::shared_ptr<const ceelo::DetectorResponse> response;   //the resolved response the fan was traced for
+  double theta = 0.0, phi = 0.0, dist_from_face_cm = 0.0;    //query geometry, fixed for the life of the fit
+  Eigen::Vector3d position_cm = Eigen::Vector3d::Zero();     //crystal-face frame (CeeLoUtils::sourcePositionFromFace)
+  ceelo::ApertureQuadrature quadrature;                      //response->make_quadrature( position_cm ), traced once
+};//struct PointSourceRays
+
+
+std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance( std::vector<double> *model_part ) const
+{
+  if( model_part )
+    model_part->clear();
+
   if( !m_detector || !m_detector->isValid() )
     return {};
 
@@ -3539,70 +3552,94 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
   if( energies.empty() )
     return {};
 
-  // At the fit geometry (the point sources' polar angle and true distance, as the forward model
-  //  evaluates them); the covariance of a Monte-Carlo-parameterized response depends (mildly) on
-  //  geometry, while the legacy DetectorEfficiencyUncert path ignores it.
-  double theta = 0.0, phi = 0.0, true_dist = m_distance;
-  pointSourceEvalGeometry( theta, phi, true_dist );
-  const std::vector<double> cov = m_detector->isFixedGeometry()
-                    ? m_detector->efficiencyFracCovariance( energies )
-                    : m_detector->efficiencyFracCovariance( energies, theta, true_dist );
+  // Through the SAME model and geometry pointSourceFepEff evaluates the point sources with, so
+  //  the covariance diagonal is that evaluation's (sigma/value)^2 - one budget, not two.  The
+  //  response's model envelopes (regime floor, transfer envelope, near-field penalty - see
+  //  ceelo::model_sigma) enter as fully correlated common modes: a bias shared by every peak at
+  //  this geometry must not average down as 1/sqrt(N) over the fit's peaks.  (Before 2026-09
+  //  `frac_covariance` lacked those terms and this function patched them onto the DIAGONAL only;
+  //  measured on the ANGLE GEM35-70 the per-query sigma at contact was 11.4% against a 2.3%
+  //  covariance floor.)  The WARNING half lives in `peakDrfEffFlags()` and ShieldingSourceFitCalc's
+  //  per-flag messages - do not add a second warning path here.
+  using ShieldingSourceFitCalc::PointEffModel;
+
+  std::vector<double> cov;
+  switch( pointSourceEffModel() )
+  {
+    case PointEffModel::NoDetector:
+      return {};
+
+    case PointEffModel::FixedGeomIntrinsic:
+    case PointEffModel::FlatDisk:
+    {
+      // Both take their sigma from intrinsicEfficiencyEval - the far-field on-axis view of
+      //  whatever the DRF carries - so the covariance is that same far-field query.  Asked at the
+      //  energies rounded through `float` exactly as that evaluation rounds them, so the diagonal
+      //  matches it exactly rather than to within a tolerance (an equation DRF's covariance is a
+      //  cancelling quadratic form in ln(E), which can amplify a float rounding well past 1e-6).
+      std::vector<double> float_energies( energies.size() );
+      for( size_t i = 0; i < energies.size(); ++i )
+        float_energies[i] = static_cast<double>( static_cast<float>( energies[i] ) );
+      cov = m_detector->efficiencyFracCovariance( float_energies, model_part );
+      break;
+    }
+
+    case PointEffModel::Response:
+      assert( m_pointRays && (m_pointRays->response == m_volEffResponse) );
+      cov = m_volEffResponse->frac_covariance( energies, m_pointRays->position_cm,
+                                               m_pointRays->quadrature, model_part );
+      break;
+  }//switch( pointSourceEffModel() )
 
   assert( cov.empty() || (cov.size() == (energies.size() * energies.size())) );
+  assert( !model_part || (model_part->size() == cov.size()) );
 
-  if( cov.empty() )
-    return cov;
-
-  // Inflate the diagonal to at least the response's OWN per-query fractional sigma at this
-  //  geometry (plan 3.5).
-  //
-  //  `frac_covariance` applies only the near/far sigma FLOORS - 2.3% inside d < 4a for the FEP -
-  //  whereas a per-query `eps_fep` additionally carries the terms that say the query is outside
-  //  what the response actually models: a curve-anchored transfer has no NearFieldModel at all
-  //  (nothing in CeeLoUtils or EfficiencyTransfer ever builds one), so every query inside the
-  //  near-field gate is flagged NearFieldUnmodeled and given 5% in quadrature.
-  //
-  //  Measured on the ANGLE GEM35-70: 11.4% per-query sigma at contact against the 2.3% covariance
-  //  floor - a 5x under-statement, in exactly the regime where the transfer is independently
-  //  measured to be 5-8% biased.  Reporting a flagged, admittedly-unmodelled query as if it were
-  //  better known than the response claims is how an optimistic uncertainty reaches a user.
-  //
-  //  The WARNING half of this already exists: `peakDrfEffFlags()` feeds the per-flag messages in
-  //  ShieldingSourceFitCalc.  Only the sigma was missing, so this is deliberately just the
-  //  diagonal inflation - do not add a second warning path.
-  const size_t n = energies.size();
-  std::vector<double> inflated = cov;
-  for( size_t i = 0; i < n; ++i )
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+  // The invariant this function rests on: diagonal == per-query sigma.  The non-Response models
+  //  evaluate at float energy, hence the looser tolerance there.
   {
-    // Through the same model and geometry the forward model uses for the point sources.
-    const DetectorPeakResponse::EffEval ev = pointSourceFepEff( energies[i] );
-    if( ev.value <= 0.0 )
-      continue;
+    const size_t n = energies.size();
+    const double tol = 1.0e-9;
+    for( size_t i = 0; (i < n) && (cov.size() == n*n); ++i )
+    {
+      const DetectorPeakResponse::EffEval ev = pointSourceFepEff( energies[i] );
+      if( ev.value <= 0.0 )
+        continue;
+      const double frac2 = (ev.sigma / ev.value) * (ev.sigma / ev.value);
+      assert( std::fabs( cov[i*n + i] - frac2 ) <= tol * std::max( frac2, 1.0e-12 ) );
+    }
+  }
+#endif
 
-    const double frac = ev.sigma / ev.value;
-    const double diag = inflated[i*n + i];
-    if( (frac*frac) > diag )
-      inflated[i*n + i] = frac*frac;
-  }//for( each included peak )
-
-  return inflated;
+  return cov;
 }//peakEffFracCovariance()
 
 
-
-std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts() const
+std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts( std::vector<double> *model_uncerts ) const
 {
-  const std::vector<double> cov = peakEffFracCovariance();
+  std::vector<double> model_cov;
+  const std::vector<double> cov = peakEffFracCovariance( model_uncerts ? &model_cov : nullptr );
   if( cov.empty() )
+  {
+    if( model_uncerts )
+      model_uncerts->clear();
     return {};
+  }
 
   const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(cov.size()) ) ) );
   std::vector<double> uncerts( n, 0.0 );
   for( size_t i = 0; i < n; ++i )
     uncerts[i] = std::sqrt( std::max( 0.0, cov[i*n + i] ) );
 
+  if( model_uncerts )
+  {
+    model_uncerts->assign( n, 0.0 );
+    for( size_t i = 0; (i < n) && (model_cov.size() == n*n); ++i )
+      (*model_uncerts)[i] = std::sqrt( std::max( 0.0, model_cov[i*n + i] ) );
+  }
+
   return uncerts;
-}//peakEffFracUncerts()
+}
 
 
 std::vector<std::pair<double,DetectorPeakResponse::EffFlag>>
@@ -3863,16 +3900,6 @@ void ShieldingSourceChi2Fcn::adoptVolumetricLineSets( const ShieldingSourceChi2F
 }//adoptVolumetricLineSets(...)
 
 
-/** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
-struct PointSourceRays
-{
-  std::shared_ptr<const ceelo::DetectorResponse> response;   //the resolved response the fan was traced for
-  double theta = 0.0, phi = 0.0, dist_from_face_cm = 0.0;    //query geometry, fixed for the life of the fit
-  Eigen::Vector3d position_cm = Eigen::Vector3d::Zero();     //crystal-face frame (CeeLoUtils::sourcePositionFromFace)
-  ceelo::ApertureQuadrature quadrature;                      //response->make_quadrature( position_cm ), traced once
-};//struct PointSourceRays
-
-
 void ShieldingSourceChi2Fcn::clearDetectorSideRays()
 {
   {
@@ -4063,7 +4090,10 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
       answer.value = m_detector->intrinsicEfficiency( energy_f );
       const EffEval ev = m_detector->intrinsicEfficiencyEval( energy_f );
       if( ev.value > 0.0 )
+      {
         answer.sigma = answer.value * (ev.sigma / ev.value);
+        answer.sigmaModel = answer.value * (ev.sigmaModel / ev.value);
+      }
       answer.flag = ev.flag;
       break;
     }
@@ -4077,6 +4107,7 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
                                                                  m_pointRays->quadrature );
       answer.value = res.value;
       answer.sigma = res.sigma;
+      answer.sigmaModel = res.sigma_model;
       answer.flag = DetectorPeakResponse::effFlagFromCeelo( res.flag );
 
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
@@ -4097,10 +4128,24 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
       // Intrinsic curve x flat-disk solid angle - the legacy, theta-blind model.  A response the
       //  DRF may carry is deliberately NOT consulted: the model was chosen by name, or nothing
       //  better could be built, and the volumetric sources are on flat-disk for the same reason.
+      //
+      // TODO: the flat-disk model has NO uncertainty of its own for being used outside the regime
+      //  it can represent, though it is measured badly wrong there: against CeeLo MC truth for a
+      //  3"x3" NaI it is 11.5% off on average (19.5% worst) at 15 cm, and 5.8%/14.1% at 30 degrees
+      //  off axis (numbers pinned in target/testing/test_MakeDrfEndToEnd.cpp's header).  The sigma
+      //  below is only the intrinsic CURVE's own uncertainty; there is a near-field fit warning
+      //  (ShieldingSourceFitCalc::check_for_fit_warnings) and a >5-degree NeedsMc flag, but no
+      //  uncertainty behind either.  The response path was given exactly this treatment - a
+      //  near-field penalty plus a flag, ceelo::model_sigma::near_unmodeled - and the flat-disk
+      //  path needs the same before its uncertainties can be called honest.  Deferred 2026-09-13;
+      //  it needs an envelope calibrated on a corpus, not a guessed constant.
       answer.value = m_detector->efficiency( energy_f, true_dist );
       const EffEval intr = m_detector->intrinsicEfficiencyEval( energy_f );
       if( intr.value > 0.0 )
+      {
         answer.sigma = answer.value * (intr.sigma / intr.value);
+        answer.sigmaModel = answer.value * (intr.sigmaModel / intr.value);
+      }
       answer.flag = intr.flag;
       if( std::fabs(theta) > 0.087 )   //~5 degrees: the model cannot represent an off-axis source
         answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
@@ -4510,7 +4555,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::map<double,double> &energy_count_map,
                                            vector<GammaInteractionCalc::PeakDetail> *log_info,
                                            const std::vector<double> *eff_frac_uncerts,
-                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags )
+                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags,
+                                           const std::vector<double> *eff_frac_uncerts_model )
 {
   size_t included_peak_index = 0;  //parallels #includedPeakEnergies ordering
 
@@ -4579,9 +4625,11 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     
     // Detector-efficiency uncertainty (see the header comment): inflate the
     //  denominator so the displayed chi matches the GLS-whitened fit.
-    double eff_frac_uncert = 0.0;
+    double eff_frac_uncert = 0.0, eff_frac_uncert_model = 0.0;
     if( eff_frac_uncerts && (included_peak_index < eff_frac_uncerts->size()) )
       eff_frac_uncert = (*eff_frac_uncerts)[included_peak_index];
+    if( eff_frac_uncerts_model && (included_peak_index < eff_frac_uncerts_model->size()) )
+      eff_frac_uncert_model = (*eff_frac_uncerts_model)[included_peak_index];
 
     DetectorPeakResponse::EffFlag eff_flag = DetectorPeakResponse::EffFlag::Ok;
     if( eff_flags && (included_peak_index < eff_flags->size()) )
@@ -4652,6 +4700,7 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
           log_peak.observedCounts = observed_counts;
           log_peak.observedUncert = observed_uncertainty;
           log_peak.drfEffFracUncert = eff_frac_uncert;
+          log_peak.drfEffFracUncertModel = eff_frac_uncert_model;
           log_peak.drfEffFlag = eff_flag;
           
           log_peak.numSigmaOff = chi;
@@ -5409,9 +5458,9 @@ vector<PeakResultPlotInfo>
   }//if( log_info )
   
   
-  vector<double> eff_frac_uncerts;
+  vector<double> eff_frac_uncerts, eff_frac_uncerts_model;
   if( m_options.account_for_drf_uncert )
-    eff_frac_uncerts = peakEffFracUncerts();
+    eff_frac_uncerts = peakEffFracUncerts( log_info ? &eff_frac_uncerts_model : nullptr );
 
   vector<pair<double,DetectorPeakResponse::EffFlag>> eff_flags;
   if( log_info )
@@ -5421,7 +5470,8 @@ vector<PeakResultPlotInfo>
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
                           log_info,
                           eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts,
-                          eff_flags.empty() ? nullptr : &eff_flags );
+                          eff_flags.empty() ? nullptr : &eff_flags,
+                          eff_frac_uncerts_model.empty() ? nullptr : &eff_frac_uncerts_model );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
   

@@ -41,6 +41,18 @@ namespace Wt
   class WCssTextRule;
 }
 
+/** A measured data point drawn on a DrfChart: an efficiency marker with error bar on the left
+ axis, and/or a FWHM marker on the right axis (a value <= 0 draws nothing on that axis). */
+struct DrfChartPoint
+{
+  double energy = 0.0;               //keV
+  double efficiency = 0.0, efficiencyUncert = 0.0;
+  double fwhm = 0.0, fwhmUncert = 0.0;
+  std::string label;                 //tooltip text, e.g. "Cs137 661.7 keV: 12345 counts"
+  std::string color;                 //CSS color, or empty for the default
+};//struct DrfChartPoint
+
+
 class DrfChart : public Wt::WContainerWidget
 {
 protected:
@@ -104,6 +116,22 @@ public:
    defaults to enabled.  Turned off where the chart is previewing a geometry /
    efficiency response, which the FWHM has nothing to say about. */
   void setShowFwhm( const bool show );
+
+  /** Sets (or, with an empty vector, clears) measured data points to draw over the curves - the
+   efficiency points the Create DRF tool fits, with error bars, and their FWHM markers. */
+  void setDataPoints( const std::vector<DrfChartPoint> &points );
+
+  /** Show/hide the efficiency markers, and the FWHM markers, of #setDataPoints. */
+  void setShowEfficiencyPoints( const bool show );
+  void setShowFwhmPoints( const bool show );
+
+  /** Shades the energy regions outside [lowKeV, highKeV] - where the curve is extrapolated beyond
+   the data.  A range with high <= low clears the shading. */
+  void setDataRange( const double lowKeV, const double highKeV );
+
+  /** When true, #updateChart keeps the current x-axis zoom rather than resetting it to the new
+   detectors energy range - for a chart whose detector is re-pushed after every re-fit. */
+  void setKeepZoomOnUpdate( const bool keep );
 
 protected:
   /** Re-samples the per-angle series (at #m_sourceDistance) and pushes it to

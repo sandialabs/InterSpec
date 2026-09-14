@@ -38,6 +38,7 @@
 class DrfChart;
 class InterSpec;
 class DetectorPeakResponse;
+namespace CeeLoUtils{ struct TransferAnchor; }
 
 namespace Wt
 {
@@ -151,6 +152,24 @@ public:
   /** The currently selected build method. */
   Method selectedMethod() const;
 
+  /** Selects the build method (as if the user picked it in the combo). */
+  void setMethod( const Method method );
+
+  /** Hides (or shows) the response-preview chart section - for an owner that has its own chart. */
+  void setChartHidden( const bool hidden );
+
+  /** Emitted after any user edit of the geometry form (after this tool has reacted to it). */
+  Wt::Signal<> &geometryChanged();
+
+  /** Whether the geometry form currently describes a complete geometry (DetectorGeometryInput::isValid). */
+  bool geometryValid() const;
+
+  /** The geometry form's descriptor; throws std::runtime_error (with a user message) when invalid. */
+  ceelo::GeometryDescriptor geometryDescriptor() const;
+
+  /** The embedded geometry form. */
+  DetectorGeometryInput *geometryInput();
+
   /** Replaces the seed DRF a future generation grounds/anchors to, and refreshes the anchor,
    grounding, chart and estimate rows that read it - WITHOUT re-running the DRF-derived geometry
    guess, resetting method/precision selections, or auto-generating.
@@ -220,6 +239,11 @@ protected:
   /** Refreshes the measured-curve anchor description row (source label +
    reference-distance edit) from the seed DRF and current geometry. */
   void updateAnchorInfo();
+
+  /** The measured-curve transfer anchor for the seed DRF and `gd`: the DRF's fitted curve with
+   its covariance when the curve carries one (CeeLoUtils::curveAnchorWithCovarianceForDrf), else
+   its raw points / sampled curve (CeeLoUtils::transferAnchorForDrf).  Throws like those do. */
+  CeeLoUtils::TransferAnchor transferAnchor( const ceelo::GeometryDescriptor &gd ) const;
 
   /** Refreshes the "ground to measured efficiency" row: what the DRF offers as an anchor (raw
    measured points, a sampled efficiency curve, or nothing), and whether the checkbox can be used. */
@@ -320,6 +344,8 @@ protected:
 
   Wt::Signal<bool> m_validationChanged;
   Wt::Signal<> m_userChanged;
+  Wt::Signal<> m_geometryChanged;
+  bool m_hideChart;
   Wt::Signal<std::shared_ptr<ceelo::DetectorResponse>> m_responseGenerated;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 };//class MakeMcResponseForDrf

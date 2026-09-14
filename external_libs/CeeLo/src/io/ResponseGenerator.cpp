@@ -813,8 +813,8 @@ std::shared_ptr<DetectorResponse> generate_closed_loop(
             // A few random fails but structured clean => minor model-form:
             // inflate the fep floors, record, and treat the grid as converged.
             if (n_random_fail > 0) {
-                resp->floors.fep_far *= 1.25;
-                resp->floors.fep_near *= 1.25;
+                resp->floors.fep_far *= model_sigma::generator_floor_inflation;
+                resp->floors.fep_near *= model_sigma::generator_floor_inflation;
             }
             converged = true;
             break;
@@ -1522,6 +1522,17 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
     g.points = std::move(points);
     g.knot_ln_energies = knots;
     g.ln_k.assign(c.data(), c.data() + n_knots);
+    // A response that carries `model_transfer` already applies the off-axis/near envelope on every
+    // query, unconditionally.  The grounding block's own transfer would be a SECOND copy of the
+    // same envelope -- and since frac_covariance carries both as correlated common modes, a doubled
+    // one.  Same rule as set_anchor_covariance (io/EfficiencyTransfer.cpp); reachable whenever a
+    // quick-MC or EFFTRAN response is grounded to measured points.
+    if (resp.model_transfer) {
+        g.transfer.far_onaxis = 0.0;
+        g.transfer.offaxis_mid = 0.0;
+        g.transfer.offaxis_low_e = 0.0;
+        g.transfer.near_contact = 0.0;
+    }
     g.cov.resize(static_cast<size_t>(n_knots) * n_knots);
     for (int i = 0; i < n_knots; ++i)
         for (int j = 0; j < n_knots; ++j)

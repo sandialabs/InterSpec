@@ -179,6 +179,10 @@ DrfChart = function (elem, options) {
   this.plotGroup = this.chartArea.append("g")
     .attr("clip-path", "url(#drfchart-clip-" + this.chart.id + ")");
 
+  // Shading of the energy regions outside the measured data (drawn under everything).
+  this.dataRangeGroup = this.plotGroup.append("g")
+    .attr("class", "drf-data-range");
+
   // Group for the per-angle response curves + uncertainty bands (drawn under
   // the flat efficiency/FWHM lines).
   this.angleGroup = this.plotGroup.append("g")
@@ -199,6 +203,17 @@ DrfChart = function (elem, options) {
     .attr("class", "fwhm-line")
     .style("fill", "none")
     .style("stroke-width", "2px");
+
+  // Measured data points (efficiency markers + error bars, FWHM markers), drawn over the lines.
+  this.effPointsGroup = this.plotGroup.append("g")
+    .attr("class", "drf-eff-points");
+  this.fwhmPointsGroup = this.plotGroup.append("g")
+    .attr("class", "drf-fwhm-points");
+  this.dataPoints = null;       // [{e,eff,effSig,fwhm,fwhmSig,label,color}] or null
+  this.showEffPoints = true;
+  this.showFwhmPts = true;
+  this.dataRange = null;        // [low,high] keV or null
+  this.keepZoom = false;        // keep the x-range across setDetectorData calls
 
   // Legend for the per-angle curves (only shown when response angles are set).
   this.angleLegend = this.chartArea.append("g")
@@ -386,8 +401,8 @@ DrfChart.prototype.setXAxisRange = function(minEnergy, maxEnergy) {
   // Update the per-angle response curves
   this.updateAngleSeries();
 
-  // Notify C++ of range change if needed
-  // this.WtEmit(this.chart.id, {name: 'xRangeChanged'}, minEnergy, maxEnergy);
+  this.updateDataPoints();
+  this.updateDataRangeShading();
 };
 
 DrfChart.prototype.zoomOut = function() {
@@ -400,6 +415,15 @@ DrfChart.prototype.zoomOut = function() {
     const extent = this.detector.getEnergyExtent();
     minEnergy = extent[0];
     maxEnergy = extent[1];
+  }
+
+  // ...widened to include the measured points (with a little margin)
+  const pe = this.pointEnergyExtent();
+  if (pe) {
+    const pad = 0.03 * (pe[1] - pe[0]);
+    if (!this.detector) { minEnergy = pe[0] - pad; maxEnergy = pe[1] + pad; }
+    else { minEnergy = Math.min(minEnergy, pe[0] - pad); maxEnergy = Math.max(maxEnergy, pe[1] + pad); }
+    minEnergy = Math.max(0, minEnergy);
   }
   
   this.setXAxisRange(minEnergy, maxEnergy);
@@ -461,14 +485,16 @@ DrfChart.prototype.setDetectorData = function(detectorData) {
     this.detector = null;
   }
   
-  // Set x range if energy extent is provided
-  if (this.detector) {
+  // Set x range if energy extent is provided (unless the owner asked to keep the zoom)
+  if (this.detector && !this.keepZoom) {
     const energyExtent = this.detector.getEnergyExtent();
     this.setXAxisRange(energyExtent[0], energyExtent[1]);
   }
   
   this.updateEfficiencyLine();
   this.updateFwhmLine();
+  this.updateDataPoints();
+  this.updateDataRangeShading();
 };
 
 
@@ -486,6 +512,13 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   if (!this.detector || !this.detector.hasEfficiency()) {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
+    // No curve: the measured points alone set the efficiency axis
+    const ptExt = this.pointValueExtent("eff");
+    if (ptExt) {
+      this.efficiencyScale.domain( drfChartEfficiencyDomain(ptExt) );
+      this.leftYAxisGroup.call(this.leftYAxis);
+      this.adjustLeftMargin();
+    }
     return;
   }
 
@@ -535,6 +568,9 @@ DrfChart.prototype.updateEfficiencyLine = function() {
     let effValues = efficiencyPoints.map(d => d.efficiency);
     if (bandPoints.length)
       effValues = effValues.concat(bandPoints.map(d => d.upper));
+    const ptExt = this.pointValueExtent("eff");
+    if (ptExt)
+      effValues = effValues.concat(ptExt);
     const efficiencyExtent = d3.extent(effValues);
     if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
       this.efficiencyScale.domain( drfChartEfficiencyDomain(efficiencyExtent) );
@@ -720,8 +756,17 @@ DrfChart.prototype.drawAngleLegend = function(series) {
 DrfChart.prototype.updateFwhmLine = function() {
   if (this.showFwhm === false || !this.detector || !this.detector.hasFwhm()) {
     this.fwhmPath.style("display", "none");
-    this.rightYAxisGroup.style("display", "none");
-    this.rightYAxisLabel.style("display", "none");
+    // FWHM markers alone can still carry the right axis
+    const ptExt = (this.showFwhm !== false) ? this.pointValueExtent("fwhm") : null;
+    if (ptExt) {
+      const pad = 0.1 * Math.max(ptExt[1] - ptExt[0], 0.1 * ptExt[1]);
+      this.fwhmScale.domain([Math.max(0, ptExt[0] - pad), ptExt[1] + pad]);
+      this.rightYAxisGroup.call(this.rightYAxis).style("display", null);
+      this.rightYAxisLabel.style("display", null);
+    } else {
+      this.rightYAxisGroup.style("display", "none");
+      this.rightYAxisLabel.style("display", "none");
+    }
     return;
   }
   
@@ -759,8 +804,12 @@ DrfChart.prototype.updateFwhmLine = function() {
     .attr("d", this.fwhmLine)
     .style("display", null);
   
-  // Update FWHM scale
-  const fwhmExtent = d3.extent(fwhmPoints, d => d.fwhm);
+  // Update FWHM scale (including any measured FWHM markers)
+  let fwhmValues = fwhmPoints.map(d => d.fwhm);
+  const ptExt = this.pointValueExtent("fwhm");
+  if (ptExt)
+    fwhmValues = fwhmValues.concat(ptExt);
+  const fwhmExtent = d3.extent(fwhmValues);
   if (fwhmExtent[0] !== undefined && fwhmExtent[1] !== undefined) {
     const fwhmRange = fwhmExtent[1] - fwhmExtent[0];
     const fwhmPadding = fwhmRange * 0.1;
@@ -774,6 +823,27 @@ DrfChart.prototype.updateFwhmLine = function() {
 };
 
 DrfChart.prototype.updateTooltip = function(mouse) {
+  // A measured point under the cursor wins over the curve
+  const near = this.nearestDataPoint(mouse, 8);
+  if (near) {
+    let html = near.label ? `<div>${near.label}</div>` : "";
+    html += `<div>Energy: ${near.e.toFixed(1)} keV</div>`;
+    if (near.eff > 0) {
+      const effStr = near.eff < 0.01 ? near.eff.toExponential(3) : near.eff.toFixed(4);
+      const sigStr = (near.effSig > 0) ? ` &plusmn; ${(100*near.effSig/near.eff).toFixed(1)}%` : "";
+      html += `<div>Efficiency: ${effStr}${sigStr}</div>`;
+    }
+    if (near.fwhm > 0) {
+      const sigStr = (near.fwhmSig > 0) ? ` &plusmn; ${near.fwhmSig.toFixed(2)}` : "";
+      html += `<div>FWHM: ${near.fwhm.toFixed(2)}${sigStr} keV</div>`;
+    }
+    this.tooltip.html(html)
+      .style("left", (d3.event.pageX + 10) + "px")
+      .style("top", (d3.event.pageY - 10) + "px")
+      .transition().duration(200).style("opacity", 0.9);
+    return;
+  }
+
   // Check if we have any data to show (efficiency or FWHM)
   if (!this.detector) return;
   
@@ -891,6 +961,9 @@ DrfChart.prototype.handleResize = function() {
 
   // Reflow the per-angle response curves onto the resized scales
   this.updateAngleSeries();
+
+  this.updateDataPoints();
+  this.updateDataRangeShading();
 };
 
 // Examine all rendered left Y-axis tick labels, find the minimum number of
@@ -995,6 +1068,9 @@ DrfChart.prototype.adjustLeftMargin = function() {
   this.rightYAxisLabel
     .attr("x", this.options.margins.top + this.chartAreaHeight / 2)
     .attr("y", -(svgRect.width - 15));
+
+  this.updateDataPoints();
+  this.updateDataRangeShading();
 };
 
 // Method to set x-axis range from C++
@@ -1012,4 +1088,138 @@ DrfChart.prototype.setShowFwhm = function(show) {
 // Method to get current x-axis range
 DrfChart.prototype.getXRange = function() {
   return this.xScale.domain();
+};
+
+
+// --- measured data points ----------------------------------------------------
+
+// Points: [{e, eff, effSig, fwhm, fwhmSig, label, color}], or null/[] to clear.
+DrfChart.prototype.setDataPoints = function(points) {
+  this.dataPoints = (points && points.length) ? points : null;
+  this.updateYAxisRanges();
+  this.updateEfficiencyLine();
+  this.updateFwhmLine();
+  this.updateDataPoints();
+};
+
+DrfChart.prototype.setShowEffPoints = function(show) {
+  this.showEffPoints = !!show;
+  this.updateEfficiencyLine();
+  this.updateDataPoints();
+};
+
+DrfChart.prototype.setShowFwhmPoints = function(show) {
+  this.showFwhmPts = !!show;
+  this.updateFwhmLine();
+  this.updateDataPoints();
+};
+
+DrfChart.prototype.setKeepZoom = function(keep) {
+  this.keepZoom = !!keep;
+};
+
+// [min,max] energy of the points, or null.
+DrfChart.prototype.pointEnergyExtent = function() {
+  if (!this.dataPoints) return null;
+  return d3.extent(this.dataPoints, d => d.e);
+};
+
+// [min,max] of the visible points' "eff" or "fwhm" values (error bars included), or null.
+DrfChart.prototype.pointValueExtent = function(which) {
+  if (!this.dataPoints) return null;
+  const show = (which === "eff") ? this.showEffPoints : this.showFwhmPts;
+  if (!show) return null;
+  const xDomain = this.xScale.domain();
+  const sigKey = (which === "eff") ? "effSig" : "fwhmSig";
+  let lo = Infinity, hi = -Infinity;
+  for (const p of this.dataPoints) {
+    if (p.e < xDomain[0] || p.e > xDomain[1]) continue;
+    const v = p[which], s = p[sigKey] > 0 ? p[sigKey] : 0;
+    if (!(v > 0)) continue;
+    lo = Math.min(lo, v - s);
+    hi = Math.max(hi, v + s);
+  }
+  return (lo <= hi) ? [Math.max(0, lo), hi] : null;
+};
+
+// The point within `maxPx` of the mouse (efficiency or FWHM marker), or null.
+DrfChart.prototype.nearestDataPoint = function(mouse, maxPx) {
+  if (!this.dataPoints) return null;
+  let best = null, bestD2 = maxPx * maxPx;
+  const fwhmVisible = (this.showFwhm !== false) && this.showFwhmPts;
+  for (const p of this.dataPoints) {
+    const x = this.xScale(p.e);
+    const cands = [];
+    if (this.showEffPoints && p.eff > 0) cands.push(this.efficiencyScale(p.eff));
+    if (fwhmVisible && p.fwhm > 0) cands.push(this.fwhmScale(p.fwhm));
+    for (const y of cands) {
+      const d2 = (x - mouse[0]) * (x - mouse[0]) + (y - mouse[1]) * (y - mouse[1]);
+      if (d2 < bestD2) { bestD2 = d2; best = p; }
+    }
+  }
+  return best;
+};
+
+// (Re)draws the efficiency markers with error bars and the FWHM markers.
+DrfChart.prototype.updateDataPoints = function() {
+  const pts = this.dataPoints || [];
+  const xDomain = this.xScale.domain();
+  const inRange = p => (p.e >= xDomain[0] && p.e <= xDomain[1]);
+
+  // Efficiency markers + error bars
+  const effPts = this.showEffPoints ? pts.filter(p => inRange(p) && p.eff > 0) : [];
+  const effSel = this.effPointsGroup.selectAll("g.drf-eff-point").data(effPts, (p, i) => i);
+  const effEnter = effSel.enter().append("g").attr("class", "drf-eff-point");
+  effEnter.append("line").attr("class", "drf-eff-errbar");
+  effEnter.append("circle").attr("class", "drf-eff-marker").attr("r", 4);
+  effSel.exit().remove();
+  const self = this;
+  effSel.each(function(p) {
+    const g = d3.select(this);
+    const x = self.xScale(p.e);
+    const y = self.efficiencyScale(p.eff);
+    const sig = p.effSig > 0 ? p.effSig : 0;
+    g.select("line.drf-eff-errbar")
+      .attr("x1", x).attr("x2", x)
+      .attr("y1", self.efficiencyScale(p.eff + sig))
+      .attr("y2", self.efficiencyScale(Math.max(0, p.eff - sig)))
+      .style("display", sig > 0 ? null : "none");
+    g.select("circle.drf-eff-marker")
+      .attr("cx", x).attr("cy", y)
+      .style("fill", p.color ? p.color : null);
+  });
+
+  // FWHM markers: an "x" on the right axis scale
+  const fwhmVisible = (this.showFwhm !== false) && this.showFwhmPts;
+  const fwhmPts = fwhmVisible ? pts.filter(p => inRange(p) && p.fwhm > 0) : [];
+  const fwhmSel = this.fwhmPointsGroup.selectAll("path.drf-fwhm-point").data(fwhmPts, (p, i) => i);
+  fwhmSel.enter().append("path").attr("class", "drf-fwhm-point");
+  fwhmSel.exit().remove();
+  fwhmSel.attr("d", p => {
+    const x = self.xScale(p.e), y = self.fwhmScale(p.fwhm), r = 3.5;
+    return `M${x - r},${y - r}L${x + r},${y + r}M${x - r},${y + r}L${x + r},${y - r}`;
+  }).style("stroke", p => p.color ? p.color : null);
+};
+
+// Shades the energy regions outside [low, high]; high <= low clears it.
+DrfChart.prototype.setDataRange = function(low, high) {
+  this.dataRange = (high > low) ? [low, high] : null;
+  this.updateDataRangeShading();
+};
+
+DrfChart.prototype.updateDataRangeShading = function() {
+  const g = this.dataRangeGroup;
+  g.selectAll("rect").remove();
+  if (!this.dataRange) return;
+  const xDomain = this.xScale.domain();
+  const h = this.chartAreaHeight;
+  const addRect = (a, b) => {
+    const x0 = this.xScale(Math.max(a, xDomain[0]));
+    const x1 = this.xScale(Math.min(b, xDomain[1]));
+    if (x1 > x0)
+      g.append("rect").attr("class", "drf-data-range-shade")
+        .attr("x", x0).attr("y", 0).attr("width", x1 - x0).attr("height", h);
+  };
+  if (this.dataRange[0] > xDomain[0]) addRect(xDomain[0], this.dataRange[0]);
+  if (this.dataRange[1] < xDomain[1]) addRect(this.dataRange[1], xDomain[1]);
 };

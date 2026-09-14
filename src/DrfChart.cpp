@@ -33,6 +33,7 @@
 #include <Wt/WLength.h>
 #include <Wt/WJavaScript.h>
 #include <Wt/WApplication.h>
+#include <Wt/WWebWidget.h>
 #include <Wt/WStringStream.h>
 #include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
@@ -121,6 +122,69 @@ void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
   else
     m_pendingJs.push_back( js );
 }//DrfChart::setIntrinsicEfficiency(...)
+
+
+void DrfChart::setDataPoints( const std::vector<DrfChartPoint> &points )
+{
+  WStringStream js;
+  js << m_jsgraph << ".setDataPoints([";
+  for( size_t i = 0; i < points.size(); ++i )
+  {
+    const DrfChartPoint &p = points[i];
+    js << (i ? "," : "") << "{e:" << p.energy
+       << ",eff:" << p.efficiency << ",effSig:" << p.efficiencyUncert
+       << ",fwhm:" << p.fwhm << ",fwhmSig:" << p.fwhmUncert
+       << ",label:" << WWebWidget::jsStringLiteral(p.label)
+       << ",color:" << WWebWidget::jsStringLiteral(p.color) << "}";
+  }
+  js << "]);";
+
+  if( isRendered() )
+    doJavaScript( js.str() );
+  else
+    m_pendingJs.push_back( js.str() );
+}//setDataPoints(...)
+
+
+void DrfChart::setShowEfficiencyPoints( const bool show )
+{
+  const string js = m_jsgraph + ".setShowEffPoints(" + string(show ? "true" : "false") + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//setShowEfficiencyPoints(...)
+
+
+void DrfChart::setShowFwhmPoints( const bool show )
+{
+  const string js = m_jsgraph + ".setShowFwhmPoints(" + string(show ? "true" : "false") + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//setShowFwhmPoints(...)
+
+
+void DrfChart::setDataRange( const double lowKeV, const double highKeV )
+{
+  const string js = m_jsgraph + ".setDataRange(" + std::to_string(lowKeV) + ","
+                    + std::to_string(highKeV) + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//setDataRange(...)
+
+
+void DrfChart::setKeepZoomOnUpdate( const bool keep )
+{
+  const string js = m_jsgraph + ".setKeepZoom(" + string(keep ? "true" : "false") + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//setKeepZoomOnUpdate(...)
 
 
 void DrfChart::setShowFwhm( const bool show )

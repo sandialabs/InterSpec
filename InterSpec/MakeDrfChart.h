@@ -32,6 +32,8 @@
 #include <Wt/Chart/WCartesianChart.h>
 
 
+struct ColorTheme;
+
 class MakeDrfChart : public Wt::Chart::WCartesianChart
 {
 public:

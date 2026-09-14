@@ -52,12 +52,9 @@
   </message>
   <message id="md-peak-fit-prefs-title">Peak Fit Prefs</message>
   <message id="md-show-fwhm-markers">Show FWHM points</message>
-  <message id="md-display-energy-lower-label">Display Energy, Lower:</message>
-  <message id="md-display-energy-upper-label">Upper:</message>
   <message id="md-mi-chart-phone">Chart/Options</message>
   <message id="md-mi-peaks-phone">Peaks To Use</message>
   <message id="md-export-btn">Store/Export...</message>
-  <message id="md-mc-response-btn">Characterize by MC...</message>
   <message id="md-export-window-title">Store/Export DRF</message>
   <message id="md-tt-name">
     Name of the detector response function to save to <em>InterSpecs</em>
@@ -97,7 +94,7 @@
   <message id="md-saved-to-db">Saved '{1}' to the internal database.</message>
   <message id="md-peak-counts">{1} {2} keV, Peak {3} counts</message>
   <message id="md-peak-no-nuc">No assoc. nuclide, {1} keV, Peak {2} counts</message>
-  <message id="md-err-det-diam-invalid">Detector diameter is invalid - assuming 2.54 cm.</message>
+  <message id="md-err-det-diam-invalid">Detector diameter is not a valid distance; no efficiency was fit.</message>
   <message id="md-err-some-src">Some sources had errors.</message>
   <message id="md-n-fit-pars">{1} Fit Params</message>
   <message id="md-html-eff-table-caption">Full-Energy Detection Efficiency (% total gammas)</message>
@@ -108,4 +105,32 @@
   <message id="md-chart-intrinsic-eff-plus-label">Intrinsic Eff. +2σ</message>
   <message id="md-chart-intrinsic-eff-minus-label">Fit Intrinsic Eff. -2σ</message>
   <message id="md-chart-fit-fwhm-label">Fit FWHM</message>
+
+  <!-- msd- is short for MakeDrfSrcDef -->
+  <message id="msd-distance">Distance</message>
+  <message id="msd-distance-uncert">Dist. Uncert.</message>
+  <message id="msd-distance-uncert-ph">optional, e.g. 0.5 cm</message>
+  <message id="msd-activity">Activity</message>
+  <message id="msd-total-act">Total Act.</message>
+  <message id="msd-act-per-cm2">Act./cm2</message>
+  <message id="msd-act-per-m2">Act./m2</message>
+  <message id="msd-act-per-gram">Act./gram</message>
+  <message id="msd-act-uncert">Act. Uncert.&amp;nbsp;</message>
+  <message id="msd-assay-date">Assay Date</message>
+  <message id="msd-spec-date">Spec. Date</message>
+  <message id="msd-age-at-assay">Age@Assay</message>
+
+  <message id="md-geom-mode-diameter">Diameter only</message>
+  <message id="md-geom-mode-geometry">Detector geometry</message>
+  <message id="md-tt-geom-mode">How much you know about the detector. The crystal diameter is all that is required; describing the crystal material and dimensions (and endcap) lets the response be evaluated correctly close to the detector and off-axis, and lets you optionally characterize it by Monte Carlo.</message>
+  <message id="md-geom-guidance">Usually the crystal diameter is all you need. If you also know the crystal material, length and endcap, switch to &quot;Detector geometry&quot; for better near-field and off-axis answers.</message>
+  <message id="md-det-setback-ph">optional, e.g. 0.5 cm</message>
+  <message id="md-tt-det-diam">Diameter of the active detector crystal (not the housing). The setback is the distance from the outside face of the detector to the crystal; leave it blank if unknown.</message>
+  <message id="md-options-title">Options</message>
+  <message id="md-fit-warning-birge">The efficiency points scatter more than their stated uncertainties allow, so the coefficient uncertainties have been inflated by {1}x to match.</message>
+  <message id="md-err-geometry-invalid">The detector geometry is incomplete or invalid; please correct it, or switch to &quot;Diameter only&quot;.</message>
+  <message id="md-make-without-data-btn">Make without data...</message>
+  <message id="md-export-n42-anchor">Export data as N42-2012 file.</message>
+  <message id="md-err-window-title">Error</message>
+  <message id="md-drf-not-valid">Sorry, DRF not valid.</message>
 </messages>

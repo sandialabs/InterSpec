@@ -247,6 +247,9 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorMaterial( nullptr ), m_collimatorThickness( nullptr ),
     m_collimatorExtension( nullptr ),
     m_note( nullptr ),
+    m_compact( false ),
+    m_showDetails( true ),
+    m_detailsLink( nullptr ),
     m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
     m_restoringState( false ),
@@ -424,6 +427,16 @@ void DetectorGeometryInput::init()
     m_collimatorRow->hide();
   }
 
+  // Compact mode: the advanced crystal rows hide behind this link (see setCompact)
+  m_detailsLink = addNew<WPushButton>( WString::tr("dgi-more-geometry") );
+  m_detailsLink->addStyleClass( "LinkBtn DgiDetailsLink" );
+  m_detailsLink->clicked().connect( this, [this](){
+    m_showDetails = !m_showDetails;
+    m_detailsLink->setText( WString::tr( m_showDetails ? "dgi-fewer-geometry" : "dgi-more-geometry" ) );
+    handleShapeChange();
+  } );
+  m_detailsLink->hide();
+
   m_note = addNew<WText>( "" );
   m_note->addStyleClass( "DgiNote" );
   m_note->setInline( false );
@@ -458,10 +471,11 @@ void DetectorGeometryInput::handleShapeChange()
 
   //Show/hide whole table rows (WTableRow::setHidden) - NOT by walking widget
   //  parents, which for a table cell is not a reliable row handle.
-  m_dim3Row->setHidden( !box );          //third dimension only for boxes
-  m_bulletRow->setHidden( box );         //a fillet is a cylinder-crystal feature
-  m_boreRow->setHidden( !coax );         //bore (and its rounded tip) only for coaxial HPGe
-  m_deadRow->setHidden( box );           //dead layer for cylinders/HPGe, not boxes
+  const bool hide_details = (m_compact && !m_showDetails);
+  m_dim3Row->setHidden( !box );                          //third dimension only for boxes
+  m_bulletRow->setHidden( box || hide_details );         //a fillet is a cylinder-crystal feature
+  m_boreRow->setHidden( !coax || hide_details );         //bore (and its rounded tip) only for coaxial HPGe
+  m_deadRow->setHidden( box || hide_details );           //dead layer for cylinders/HPGe, not boxes
 
   handleUserInput();
 }//handleShapeChange()
@@ -1026,3 +1040,68 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   //  length is a guess we must not let be Monte-Carlo characterized until the user fixes it.
   m_seededFromDiameterGuess = true;
 }//seedFromDrf(...)
+
+
+void DetectorGeometryInput::seedFromDiameter( const double diameter, const double setback,
+                                              const std::string &crystal_hint )
+{
+  m_seededFromDiameterGuess = false;
+  if( (diameter <= 0.0) || std::isnan(diameter) || std::isinf(diameter) )
+    return;
+
+  // Seed silently: the intermediate edits must not look like user input to the owner (which
+  //  would auto-build a transfer on a geometry that is still only a guess); the caller re-fits.
+  const bool was_restoring = m_restoringState;
+  m_restoringState = true;
+
+  const double diam_cm = diameter / PhysicalUnits::cm;
+  m_shape->setCurrentIndex( 0 );
+  m_dim1->setText( cm_to_str( diam_cm ) );
+  m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+
+  const int crystal = crystal_index_from_text( crystal_hint );
+  if( crystal >= 0 )
+    m_crystalMaterial->setCurrentIndex( crystal );
+
+  // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
+  //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
+  while( m_layersTable->rowCount() > 1 )
+    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
+  m_layers.clear();
+  if( setback > 0.0 )
+    addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
+
+  m_note->setText( WString::tr("dgi-seeded-note") );
+  handleShapeChange();
+
+  m_seededFromDiameterGuess = true;
+  m_restoringState = was_restoring;
+}//seedFromDiameter(...)
+
+
+double DetectorGeometryInput::enteredDiameter() const
+{
+  if( m_shape->currentIndex() == 2 )  //box
+    return 0.0;
+  try
+  {
+    const double d = PhysicalUnits::stringToDistance( m_dim1->text().toUTF8() );
+    return (d > 0.0) ? d : 0.0;
+  }catch( std::exception & )
+  {
+    return 0.0;
+  }
+}//enteredDiameter()
+
+
+void DetectorGeometryInput::setCompact( const bool compact )
+{
+  m_compact = compact;
+  m_showDetails = !compact;
+  if( m_detailsLink )
+  {
+    m_detailsLink->setHidden( !compact );
+    m_detailsLink->setText( WString::tr( m_showDetails ? "dgi-fewer-geometry" : "dgi-more-geometry" ) );
+  }
+  handleShapeChange();
+}//setCompact(...)

@@ -83,7 +83,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 6;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 7;
 
 namespace
 {
@@ -704,6 +704,10 @@ void DetectorPeakResponse::computeHash()
   boost::hash_combine( seed, m_resolutionForm );
   for( const float val : m_resolutionCoeffs )
     boost::hash_combine( seed, val );
+  // Only when present, so DRFs stored before FWHM uncertainties were kept retain their hash
+  if( m_resolutionUncerts.size() == m_resolutionCoeffs.size() )
+    for( const float val : m_resolutionUncerts )
+      boost::hash_combine( seed, val );
 
   boost::hash_combine( seed, m_efficiencySource );
   boost::hash_combine( seed, eff.form() );
@@ -903,42 +907,47 @@ void DetectorPeakResponse::setEfficiencyUncert( shared_ptr<const DetectorEfficie
 }//setEfficiencyUncert(...)
 
 
-vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies ) const
+vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies,
+                                                               vector<double> *model_part ) const
 {
   if( m_ceeloResponse )
   {
-    // Far-field on-axis default geometry; use the (theta, distance) overload
-    //  when the measurement geometry is known.
-    const double d_cm = std::max( 100.0, 20.0 * m_ceeloResponse->transverse_half_extent() );
-    return m_ceeloResponse->frac_covariance( energies, 0.0, d_cm );
+    // The far-field on-axis query intrinsicEfficiencyEval takes its sigma from.
+    return m_ceeloResponse->frac_covariance( energies,
+                    CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor ), model_part );
   }
 
   // The curve picks between the coefficient covariance and the node covariance per its
-  //  representation - see DetectorEfficiencyCurve::fracCovariance.
-  if( !m_efficiency )
-    return {};
-
-  return m_efficiency->fracCovariance( energies );
+  //  representation - see DetectorEfficiencyCurve::fracCovariance.  All of it is data-derived, so
+  //  the model part is all zeros - but it must still be SIZED, or a caller reusing a vector across
+  //  calls is left holding the previous answer.
+  const vector<double> cov = m_efficiency ? m_efficiency->fracCovariance( energies )
+                                          : vector<double>{};
+  if( model_part )
+    model_part->assign( cov.size(), 0.0 );
+  return cov;
 }//efficiencyFracCovariance(...)
 
 
 vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies,
                                                                const double theta,
-                                                               const double distance ) const
+                                                               const double phi,
+                                                               const double distance,
+                                                               vector<double> *model_part ) const
 {
-  if( m_ceeloResponse )
+  // A fixed-geometry DRF has no query geometry to speak of, and #fepEfficiencyEval short-circuits
+  //  to the intrinsic (far-field) evaluation for one; the covariance must follow it there, or the
+  //  two would disagree for a fixed-geometry DRF that also carries a response.
+  if( m_ceeloResponse && !isFixedGeometry() )
   {
-    // `distance` is from the detector face (InterSpec's one convention); CeeLo's covariance wants
-    //  the source's distance from the crystal-face origin, which only gates its near/far regime.
-    const double d_cm = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, theta, 0.0,
-                                                            distance / PhysicalUnits::cm ).norm();
-    return m_ceeloResponse->frac_covariance( energies, theta, d_cm );
+    // `distance` is from the detector face - InterSpec's one convention - so the query position is
+    //  formed exactly as fepEfficiencyEval forms it.
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                                    theta, phi, distance / PhysicalUnits::cm );
+    return m_ceeloResponse->frac_covariance( energies, pos, model_part );
   }
 
-  if( !m_efficiency )
-    return {};
-
-  return m_efficiency->fracCovariance( energies );
+  return efficiencyFracCovariance( energies, model_part );
 }//efficiencyFracCovariance(...)
 
 
@@ -1145,13 +1154,14 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     //  the parameterized response (its transverse half-extent `a` is the
     //  face radius the solid angle is defined against).
     const double a_cm = m_ceeloResponse->transverse_half_extent();
-    const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy,
-              CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
+    const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
+    const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
     const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
     answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
+    answer.sigmaModel = (omega > 0.0) ? (res.sigma_model / omega) : 0.0;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
@@ -1200,6 +1210,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
     const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
+    answer.sigmaModel = res.sigma_model;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
@@ -1210,6 +1221,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
                                                       distance + m_detectorSetback );
   answer.value = fracSolidAngle * intrinsic.value;
   answer.sigma = fracSolidAngle * intrinsic.sigma;
+  answer.sigmaModel = fracSolidAngle * intrinsic.sigmaModel;
   answer.flag = intrinsic.flag;
 
   // The legacy curve cannot model an off-axis response; flag meaningful
@@ -1235,6 +1247,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
     const ceelo::EffResult res = m_ceeloResponse->eps_total_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
+    answer.sigmaModel = res.sigma_model;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
@@ -4335,6 +4348,23 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
                          const ResolutionFnctForm form )
 {
+  setFwhmCoefficients( coefs, form, {} );
+}
+
+
+const std::vector<float> &DetectorPeakResponse::resolutionFcnUncertainties() const
+{
+  return m_resolutionUncerts;
+}
+
+
+void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
+                         const ResolutionFnctForm form,
+                         const std::vector<float> &uncerts )
+{
+  if( !uncerts.empty() && (uncerts.size() != coefs.size()) )
+    throw runtime_error( "setFwhmCoefficients: number of uncertainties must match coefficients." );
+
   switch( form )
   {
     case ResolutionFnctForm::kSqrtPolynomial:
@@ -4365,6 +4395,7 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
   
   m_resolutionForm = form;
   m_resolutionCoeffs = coefs;
+  m_resolutionUncerts = uncerts;
   
   computeHash();
 }//void setFwhmCoefficients(...)
@@ -4388,14 +4419,24 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 4: Added PeakFitDetPrefs (20260221)
   // - Version 5: Added EfficiencyUncert and TotalEfficiency (20260610)
   // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707)
-  static_assert( sm_xmlSerializationVersion == 6, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 7: Added ResolutionCoefficientUncerts, CeeLoGeometry (geometry without a response),
+  //              and MeasuredEffPoints provenance (per-point peak/background/distance-uncert
+  //              details plus a Sources table) (20260912)
+  static_assert( sm_xmlSerializationVersion == 7, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_eff_uncert = (eff_uncert && !eff_uncert->isEmpty());
+  const bool have_res_uncerts = (!m_resolutionUncerts.empty()
+                                 && (m_resolutionUncerts.size() == m_resolutionCoeffs.size()));
+  const bool have_bare_geometry = (m_geometry && !m_ceeloResponse);
+  const bool have_provenance = (m_measuredPoints && m_measuredPoints->hasProvenance());
 
   int version_to_write = 0;
 
-  if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
+  if( have_res_uncerts || have_bare_geometry || have_provenance )
+  {
+    version_to_write = 7;
+  }else if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
   {
     // MC-parameterized response / raw measured points require version 6
     version_to_write = 6;
@@ -4513,6 +4554,16 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     val = doc->allocate_string( valstrm.str().c_str() );
     node = doc->allocate_node( node_element, "ResolutionCoefficients", val );
     base_node->append_node( node );
+
+    if( have_res_uncerts )
+    {
+      stringstream uncertstrm;
+      for( size_t i = 0; i < m_resolutionUncerts.size(); ++i )
+        uncertstrm << (i?" ":"") << m_resolutionUncerts[i];
+      val = doc->allocate_string( uncertstrm.str().c_str() );
+      node = doc->allocate_node( node_element, "ResolutionCoefficientUncerts", val );
+      base_node->append_node( node );
+    }//if( have_res_uncerts )
   }//if( m_resolutionCoeffs.size() )
 
   if( eff.energyEfficiencies().size() )
@@ -4660,6 +4711,8 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
+  else if( m_geometry )
+    append_ceelo_geometry_node( base_node, doc, *m_geometry );  //a response carries its own
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -4902,6 +4955,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencyForm value" );
 
   m_resolutionCoeffs.clear();
+  m_resolutionUncerts.clear();
   if( m_resolutionForm != kNumResolutionFnctForm )
   {
     node = parent->first_node( "ResolutionCoefficients", 22 );
@@ -4910,6 +4964,15 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
       if( m_resolutionCoeffs.size() > 20 )
         throw runtime_error( "DetectorPeakResponse: too many resolution coefficients" );
+    }
+
+    // Optional (version 7); discarded if it doesnt match the coefficients
+    node = XML_FIRST_NODE(parent, "ResolutionCoefficientUncerts");
+    if( node && node->value() )
+    {
+      SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionUncerts );
+      if( m_resolutionUncerts.size() != m_resolutionCoeffs.size() )
+        m_resolutionUncerts.clear();
     }
   }//if( m_resolutionForm != kNumResolutionFnctForm )
 
@@ -5100,6 +5163,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
     m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
 
+  // A geometry without a response (version 7); a response carries its own descriptor.
+  m_geometry.reset();
+  node = parent->first_node( "CeeLoGeometry", 13 );
+  if( node && !m_ceeloResponse )
+    m_geometry = parse_ceelo_geometry_node( node );  //throws on invalid content
+
   m_fixedGeomSetupXml.clear();
   node = parent->first_node( "FixedGeomSourceSetup", 20 );
   if( node )
@@ -5173,6 +5242,27 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     {
       snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: resolution"
       " coefficient %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
+      throw runtime_error( buffer );
+    }
+  }
+
+  if( lhs.m_resolutionUncerts.size() != rhs.m_resolutionUncerts.size() )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
+             " resolution coefficient uncertainties of LHS (%i) doesnt match RHS (%i)",
+             int(lhs.m_resolutionUncerts.size()),
+             int(rhs.m_resolutionUncerts.size()) );
+    throw runtime_error(buffer);
+  }
+
+  for( size_t i = 0; i < lhs.m_resolutionUncerts.size(); ++i )
+  {
+    const float a = lhs.m_resolutionUncerts[i];
+    const float b = rhs.m_resolutionUncerts[i];
+    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) )
+    {
+      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: resolution"
+      " coefficient uncertainty %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
       throw runtime_error( buffer );
     }
   }
@@ -5421,11 +5511,8 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
 float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                            const std::vector<float> &coefs )
 {
-  double exparg = 0.0;
-  const double x = log( static_cast<double>(energy) );
-  for( size_t i = 0; i < coefs.size(); ++i )
-    exparg += coefs[i] * pow(x,static_cast<double>(i));
-  const double answer = exp( exparg );
+  const double answer = expOfLogPowerSeriesEfficiency( static_cast<double>(energy),
+                                                       coefs.data(), coefs.size() );
   return (answer >= 0.0) ? static_cast<float>(answer) : 0.0f;
 }//float expOfLogPowerSeriesEfficiency(...)
 
@@ -5479,102 +5566,11 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 ResolutionFnctForm fcnFrm,
                                                 const std::vector<float> &pars )
 {
-  // Clamp energy to >= 10 keV.  Below that the resolution forms are physically
-  //  ill-defined (e.g. kSqrtEnergyPlusInverse divides by energy) and the FWHM
-  //  at a few keV doesn't carry useful information for our use cases.  Treat
-  //  any sub-10-keV input as if it were 10 keV.
-  const float min_energy = 10.0f * static_cast<float>( PhysicalUnits::keV );
-  if( energy < min_energy )
-    energy = min_energy;
-
-  switch( fcnFrm )
-  {
-    case kGadrasResolutionFcn:
-    {
-      if( pars.size() != 3 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      assert( PhysicalUnits::keV == 1.0 );
-
-      // Straight-forward translation of the GADRAS Fortran GetFWHM (the "form C" shared with
-      //  PeakDists::gadras_fwhm).  This replaces an earlier variant that used a different
-      //  low-energy positive-offset branch (A7 = sqrt((6.61b)^2 - a^2)/6.61); the two agree for
-      //  E > 661 and for negative offset (aside from the max(30,E) floor below), but differ for
-      //  positive resolution-offset detectors (e.g. HPGe, LaBr3) below 661 keV.  Form C is the
-      //  Fortran-faithful form and is now used everywhere GADRAS FWHM is computed.
-      const double a = pars[0];   // resolution offset ("FWHM @ 0")
-      const double b = pars[1];   // resolution @ 661 (percent)
-      const double c = pars[2];   // resolution power
-
-      if( energy > 661.0f )
-        return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
-
-      if( a >= 0.0 )
-      {
-        const double zero_limit = std::max( 0.0, fabs(a) * (661.0 - energy) / 661.0 );
-        const double fwhm = 6.61 * b * pow( energy/661.0, c );
-        return static_cast<float>( sqrt( zero_limit*zero_limit + fwhm*fwhm ) );
-      }//if( a >= 0.0 )
-
-      const double p = pow( c, 1.0/log(1.0-a) );
-      return static_cast<float>( 6.61 * b * pow( std::max(30.0,static_cast<double>(energy))/661.0, p ) );
-    }//case kGadrasResolutionFcn:
-    
-    case kSqrtEnergyPlusInverse:
-    {
-      if( pars.size() != 3 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      return sqrt(pars[0] + pars[1]*energy + pars[2]/energy);
-    }//case kSqrtEnergyPlusInverse:
-      
-    case kConstantPlusSqrtEnergy:
-    {
-      if( pars.size() != 2 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      return pars[0] + pars[1]*sqrt(energy);
-    }//case kConstantPlusSqrtEnergy:
-      
-    case kSqrtPolynomial:
-    {
-      if( pars.size() < 1 )
-        throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                             " pars not defined" );
-
-      energy /= PhysicalUnits::MeV;
-      //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-
-      // Use Horner's method to evaluate the polynomial - more stable.
-      double val = pars.back();
-      for( int i = static_cast<int>(pars.size()) - 2; i >= 0; i -= 1 )
-        val = val * energy + pars[i]; // Multiply by x and add the next coefficient
-
-#ifndef NDEBUG
-      double nonstable_val = pars[0];
-      for( size_t i = 1; i < pars.size(); ++i )
-        nonstable_val += pars[i] * pow(static_cast<double>(energy), static_cast<double>(i) );
-      const double diff = fabs(nonstable_val - val);
-      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(fabs(nonstable_val), fabs(val))) );
-#endif
-
-      return sqrt( val );
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                " Resolution not defined" );
-    break;
-  }//switch( m_resolutionForm )
-  
-  //Lets keep MSVS happy
-  assert(0);
-  return 0.0f;
-}//static float peakResolutionFwhmGadras(...)
+  // The templated implementation clamps energy to >= 10 keV, and uses a smooth positive
+  //  continuation (rather than NaN) where a form would take the square root of a negative.
+  return static_cast<float>( peakResolutionFWHM( static_cast<double>(energy), fcnFrm,
+                                                 pars.data(), pars.size() ) );
+}//float peakResolutionFWHM(...)
 
 
 float DetectorPeakResponse::peakResolutionSigma( const float energy,
@@ -6167,6 +6163,7 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   MakeDrfFit::performResolutionFit( peaks, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
+  m_resolutionUncerts = (uncerts.size() == coefficients.size()) ? uncerts : vector<float>{};
   m_resolutionForm = fnctnlForm;
   
   computeHash();

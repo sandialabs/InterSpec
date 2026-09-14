@@ -1,0 +1,39 @@
+<div align="center">
+  <h1 id="make-mc-response"><b>Characterize Detector by Monte Carlo</b></h1>
+  <hr />
+</div>
+
+<div style="display:table-row">
+<h4>Overview</h4>
+<p>
+Describes the physical geometry of a detector - crystal shape, material and dimensions, dead layer,
+endcap/housing layers, an optional collimator - and produces a response that can be evaluated for a
+source at any distance and angle, not only on the detector axis in the far field as the flat-disk
+model assumes.
+</p>
+<p>
+Three methods are offered under <em>Location Support</em>:
+</p>
+<ul>
+  <li><b>No MC support (instant, from measured curve)</b>: no Monte Carlo is run.  The detector's
+      measured efficiency curve is held fixed at its measurement distance and transferred to other
+      positions by the ratio of ray-traced, attenuation-weighted solid angles (the EFFTRAN idea).
+      This is the default, and is what a DRF made with a geometry in the &quot;Create Detector
+      Response Function&quot; tool carries.</li>
+  <li><b>Quick MC</b>: Monte Carlo along the detector axis only (plus a few angles), transferred
+      elsewhere as above.  A fraction of the cost of a full characterization.</li>
+  <li><b>Full MC</b>: Monte Carlo over energy, angle and distance.  Takes minutes, and is the choice
+      when sources will be measured well off-axis or in contact with the detector.</li>
+</ul>
+<p>
+When the detector has measured efficiency points, a generated response is corrected to them
+(&quot;grounded&quot;), so it reproduces your calibration while adding the geometry physics between
+and beyond it.  The <em>Response preview</em> shows the efficiency for several source angles at a
+distance you choose.
+</p>
+<p>
+Monte-Carlo characterization is worth it when measurements are made closer than a few detector
+diameters, or noticeably off the detector axis; for far-field, on-axis work the instant
+measured-curve transfer already gives the same answer.
+</p>
+</div>

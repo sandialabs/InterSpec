@@ -404,6 +404,8 @@ add_test( NAME TCeeLoDrfIntegration
   COMMAND $<TARGET_FILE:test_CeeLoDrfIntegration> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+# Several cases run real MC cross-validation; minutes in Release, far longer in a Debug build.
+set_tests_properties( TCeeLoDrfIntegration PROPERTIES TIMEOUT 5400 )
 
 # Volumetric (trace / self-attenuating) source efficiency against extended-source Monte-Carlo truth.
 #  The MC itself is a disabled generator that records a goldens bank; the enabled cases only read it,
@@ -636,6 +638,17 @@ add_test( NAME TMakeDrfFit
   COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+# Create-DRF path validated end-to-end against a stored CeeLo Monte-Carlo truth table (fit,
+#  covariance calibration, mixed distances, and an activity fit through the made DRF).  The
+#  table regenerates with INTERSPEC_REGEN_MAKEDRF_MC_TRUTH=1 (minutes of MC).
+add_executable( test_MakeDrfEndToEnd test_MakeDrfEndToEnd.cpp )
+target_link_libraries( test_MakeDrfEndToEnd PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfEndToEnd
+  COMMAND $<TARGET_FILE:test_MakeDrfEndToEnd> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+set_tests_properties( TMakeDrfEndToEnd PROPERTIES TIMEOUT 1800 )
 
 add_executable( test_EnergyCal test_EnergyCal.cpp )
 target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )

@@ -95,11 +95,15 @@ enum class ResponseFlag : uint8_t {
 
 const char* to_string(ResponseFlag f);
 
-/// {value, 1-sigma absolute uncertainty, provenance flag}.
+/// {value, 1-sigma absolute uncertainty, provenance flag}.  `sigma` is the total; `sigma_model`
+/// is the part of it that comes from the ad hoc model envelopes alone (see model_sigma and
+/// frac_covariance) - the remainder is data-derived (MC node statistics, anchor/grounding fit
+/// covariance).  sigma_model <= sigma always.
 struct EffResult {
     double value = 0.0;
     double sigma = 0.0;
     ResponseFlag flag = ResponseFlag::Ok;
+    double sigma_model = 0.0;
 };
 
 // ---------------------------------------------------------------------------
@@ -128,10 +132,58 @@ struct ShieldContext {
 /// existing caller).  CeeLo ships the seam empty; InterSpec installs the model.
 using BuildupModel = std::function<double(double E_keV, const ShieldContext&)>;
 
-/// Fractional eps_total sigma added per build-up application, as a floor on the
-/// model-form uncertainty of the (ratio-only) build-up correction.  Combined in
-/// quadrature with the existing sigma when a ShieldContext is supplied.
-constexpr double kBuildupSigmaFloor = 0.10;
+// ---------------------------------------------------------------------------
+// Model-envelope uncertainty constants
+// ---------------------------------------------------------------------------
+
+/// EVERY ad hoc model-uncertainty constant CeeLo applies at query time lives here, and nowhere
+/// else.  They are ENVELOPES - "where the model is not measured it may be wrong by about this
+/// much" - not measurements, and DetectorResponse::SigmaBudget keeps them apart from the
+/// data-derived terms (MC node sigma, anchor/grounding fit covariance) so a host can tell the two
+/// kinds apart (EffResult::sigma_model, frac_covariance's `model_part`).  Each enters a query as a
+/// fully-correlated common mode across energies at the query geometry.
+///
+/// Provenance: every value dates from the original CeeLo import (InterSpec commit b26e5a67); the
+/// S1/S7 campaign notes and the "spec sec 4" grounding table they were taken from are not in this
+/// repository, and none has been validated on an arbitrary user detector.  Treat them as
+/// placeholders awaiting recalibration on a corpus - InterSpec's test_CeeLoDrfIntegration
+/// (curve_transfer_envelope_corpus) measures the curve-transfer terms against MC responses.
+namespace model_sigma {
+    /// theta > 90 degrees: no nodes behind the face plane; the value is a clamped guess.
+    constexpr double behind_plane = 0.30;
+    /// A far-field profile (no NearFieldModel) queried inside the near-field gate: the
+    /// kernel-only near-field error (S1).
+    constexpr double near_unmodeled = 0.05;
+    /// Collimator shadow, by transmitted hole fraction s: below `shadow_refuse_s` the query is
+    /// refuse-grade (sigma ~100%); up to `shadow_ramp_s` the sigma ramps linearly from
+    /// `shadow_ramp_max` down to 0.
+    constexpr double shadow_refuse = 1.0;
+    constexpr double shadow_refuse_s = 0.05;
+    constexpr double shadow_ramp_s = 0.30;
+    constexpr double shadow_ramp_max = 0.5;
+    /// Model-form floor on the (ratio-only) build-up correction of a shielded eps_total, added
+    /// in quadrature when a ShieldContext is supplied.
+    constexpr double buildup_floor = 0.10;
+    /// SigmaFloors defaults: the campaign's conservative per-{quantity x regime} envelope.  The
+    /// generator multiplies the FEP floors by `generator_floor_inflation` when its closed loop
+    /// sees a minor model-form failure.
+    constexpr double fep_far_floor = 0.014;
+    constexpr double fep_near_floor = 0.023;
+    constexpr double tot_far_floor = 0.016;
+    constexpr double tot_near_floor = 0.029;
+    constexpr double near_regime_a = 4.0;
+    constexpr double generator_floor_inflation = 1.25;
+    /// SigmaTransferModel defaults (S7-measured Level-1 values; a Level-2 nuisance fit would
+    /// shrink the near term to ~1%).  Known shortfall: an angle-flat curve transfer of a 3"x3"
+    /// NaI is measured 3-7% off at 30 degrees, where `transfer_offaxis_mid` gives 0.75%.
+    constexpr double transfer_far_onaxis = 0.005;
+    constexpr double transfer_offaxis_mid = 0.03;
+    constexpr double transfer_offaxis_low_e = 0.25;
+    constexpr double transfer_low_e_ref_keV = 45.0;
+    constexpr double transfer_mid_e_ref_keV = 150.0;
+    constexpr double transfer_near_contact = 0.10;
+    constexpr double transfer_near_gate_a = 5.0;
+}  // namespace model_sigma
 
 // ---------------------------------------------------------------------------
 // Geometry descriptor (storable; rebuilds the ray-trace Geometry)
@@ -470,13 +522,21 @@ struct GroundingPoint {
 /// (S7-measured; constants from the spec sec 4 grounding table -- Level-1
 /// values; a Level-2 nuisance fit would shrink the near term to ~1%).
 struct SigmaTransferModel {
-    double far_onaxis = 0.005;      ///< far-field on-axis floor
-    double offaxis_mid = 0.03;      ///< x sin^2(theta), mid/high E
-    double offaxis_low_e = 0.25;    ///< extra x sin^2(theta) at low E
-    double low_e_ref_keV = 45.0;    ///< where the low-E term is fully on
-    double mid_e_ref_keV = 150.0;   ///< where the low-E term is off
-    double near_contact = 0.10;     ///< at contact (d ~ a), no Level-2
-    double near_gate_a = 5.0;       ///< near term active below this many a
+    double far_onaxis = model_sigma::transfer_far_onaxis;        ///< far-field on-axis floor
+    double offaxis_mid = model_sigma::transfer_offaxis_mid;      ///< x sin^2(theta), mid/high E
+    double offaxis_low_e = model_sigma::transfer_offaxis_low_e;  ///< extra x sin^2(theta) at low E
+    double low_e_ref_keV = model_sigma::transfer_low_e_ref_keV;  ///< where the low-E term is fully on
+    double mid_e_ref_keV = model_sigma::transfer_mid_e_ref_keV;  ///< where the low-E term is off
+    double near_contact = model_sigma::transfer_near_contact;    ///< at contact (d ~ a), no Level-2
+    double near_gate_a = model_sigma::transfer_near_gate_a;      ///< near term active below this many a
+
+    /// The three mechanisms separately - the on-axis floor, the off-axis (angle-flat eta)
+    /// residual and the near-field residual; eval() is their quadrature sum.  A covariance treats
+    /// each as its own fully-correlated common mode (rank-one block): their per-energy magnitudes
+    /// differ (the off-axis term ramps up below mid_e_ref_keV), and one combined block would
+    /// over-correlate energies whose magnitudes differ.
+    struct Components { double far_onaxis = 0.0, offaxis = 0.0, near = 0.0; };
+    Components components(double d_over_a, double cos_theta, double energy_keV) const;
 
     /// d in units of the transverse half-extent a.
     double eval(double d_over_a, double cos_theta, double energy_keV) const;
@@ -508,14 +568,15 @@ struct GroundingBlock {
 // ---------------------------------------------------------------------------
 
 /// Coverage-tuned per-{quantity x regime} model floors (fractional 1-sigma;
-/// spec sec 4/5). Defaults are the campaign's conservative envelope; the
-/// generator tunes them per detector on a held-out probe bank.
+/// spec sec 4/5). Defaults are the campaign's conservative envelope
+/// (model_sigma); the generator inflates the FEP pair on a minor model-form
+/// failure of its closed loop.
 struct SigmaFloors {
-    double fep_far = 0.014;
-    double fep_near = 0.023;
-    double tot_far = 0.016;
-    double tot_near = 0.029;
-    double near_regime_a = 4.0;   ///< near regime: d < this many a
+    double fep_far = model_sigma::fep_far_floor;
+    double fep_near = model_sigma::fep_near_floor;
+    double tot_far = model_sigma::tot_far_floor;
+    double tot_near = model_sigma::tot_near_floor;
+    double near_regime_a = model_sigma::near_regime_a;   ///< near regime: d < this many a
 };
 
 enum class ResponseProfile : uint8_t {
@@ -774,14 +835,38 @@ public:
     double kernel_transmitted(double energy_keV, const ApertureQuadrature& q) const;
 
     // --- multi-energy covariance for fits (spec Eq. 8b) ---
-    /// Row-major NxN fractional covariance of eps_fep between the given
-    /// energies at a common query geometry: grounding basis covariance
-    /// (correlated) + node MC variance (diagonal) + model floor and
-    /// sigma_transfer (treated as fully correlated common modes -- a floor
-    /// that "the whole response may be off by x%" must not average down
-    /// across peaks).
+    /// Row-major NxN fractional covariance of eps_fep between `energies_keV` at ONE query
+    /// geometry (a crystal-face-frame position, as eps_fep_at takes):
+    ///
+    ///     C_ij = sum_t m_t[i] * m_t[j] + Cov[ln k](E_i, E_j) + delta_ij * node2_i
+    ///
+    /// m_t are the model-envelope terms of the per-query sigma budget (regime floor,
+    /// behind-plane, collimator shadow, near-field-unmodeled, and the far / off-axis / near
+    /// components of model_transfer and grounding.transfer): each says "the model may be off by
+    /// x% here" for a reason shared by every energy, so each is a fully-correlated common mode
+    /// that must NOT average down over a fit's peaks.  node2 is the MC node variance (independent
+    /// per energy) and Cov[ln k] the anchor / grounding fit covariance - the data-derived part.
+    ///
+    /// INVARIANT (pinned by tests): C_ii == (eps_fep_at(E_i, src_cm, q).sigma / value)^2 - the
+    /// same budget through the same code (fep_budget), so the two cannot drift.  PSD by
+    /// construction.  When `model_part` is given it receives the envelope-only matrix
+    /// sum_t m_t[i] m_t[j] (same layout), so a host can separate the ad hoc envelopes from the
+    /// uncertainty its own data supports.
+    ///
+    /// The quadrature only feeds the collimator shadow gate; the overload without one builds it
+    /// (as eps_fep_at does).  The distance form mirrors eps_fep(E, theta, phi, dist) and goes
+    /// through query_position().  eps_total has no covariance API: hosts consume its value only;
+    /// its budget is the same struct, so one could be added the same way.
     std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
-                                        double theta_rad, double dist_cm) const;
+                                        const Eigen::Vector3d& src_cm,
+                                        const ApertureQuadrature& q,
+                                        std::vector<double>* model_part = nullptr) const;
+    std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
+                                        const Eigen::Vector3d& src_cm,
+                                        std::vector<double>* model_part = nullptr) const;
+    std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
+                                        double theta_rad, double phi_rad, double dist_cm,
+                                        std::vector<double>* model_part = nullptr) const;
 
     // --- XML (one codec for generator + InterSpec) ---
     /// Root element <CeeLoResponse version="1">; InterSpec convention
@@ -802,9 +887,18 @@ private:
     /// so content_hash() can hash the certificate-free payload (invariance).
     std::string serialize_xml(bool include_certificate) const;
 
-    struct EvalCommon;  // internal per-query bundle
+    struct SigmaBudget;  // one query's fractional sigma budget: data-derived vs model envelopes
+    struct EvalCommon;   // internal per-query bundle
+    /// Geometry, flags and the geometry-only envelope terms (behind-plane, model_transfer,
+    /// collimator shadow) shared by the FEP and total paths.
     EvalCommon common_eval(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q) const;
+    /// THE one FEP sigma budget: the near-field gate, grounding (k and its transfer envelope),
+    /// the eta node sigma and the regime floor, on top of what common_eval filled in.  Raises
+    /// flags on `ec`; returns the near-field boost and grounding ln k for the value.
+    /// fep_prefactor (hence eps_fep) and frac_covariance are its only callers - which is what
+    /// makes the covariance diagonal equal the per-query sigma by construction.
+    void fep_budget(double energy_keV, EvalCommon& ec, double& ln_N, double& ln_k) const;
     /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
     /// the thing it decomposes cannot drift apart.
     void kernel_ray_weights_impl(double energy_keV, const ApertureQuadrature& q, MuChoice mu,

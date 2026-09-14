@@ -23,160 +23,362 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
+#include <deque>
+#include <limits>
+#include <memory>
+#include <string>
 #include <vector>
+#include <sstream>
+#include <iostream>
+#include <stdexcept>
+#include <algorithm>
 
 #include "Eigen/Dense"
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MinosError.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
+#include "ceres/ceres.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 
 using namespace std;
 
 
-
 namespace
 {
-  class DetectorResolutionFitness
-  : public ROOT::Minuit2::FCNBase
+  /** The value part of a double or a ceres::Jet<>. */
+  template<typename T>
+  double scalar_of( const T &v )
   {
-  protected:
-    std::deque<std::shared_ptr<const PeakDef>> m_peaks;
+    if constexpr( std::is_arithmetic_v<T> )
+      return static_cast<double>( v );
+    else
+      return static_cast<double>( v.a );
+  }
+
+
+  /** Solver options shared by the FWHM and efficiency fits. */
+  ceres::Solver::Options make_solver_options()
+  {
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.minimizer_type = ceres::TRUST_REGION;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    options.use_nonmonotonic_steps = true;
+    options.max_num_iterations = 500;
+    options.function_tolerance = 1.0e-10;
+    options.gradient_tolerance = 1.0e-12;
+    options.parameter_tolerance = 1.0e-12;
+    options.num_threads = 1;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
+    return options;
+  }//make_solver_options()
+
+
+  /** Computes the (ambient-space) covariance of the single parameter block of `problem`, using
+   the SVD based estimator.  Returns an empty vector if it cannot be computed.
+
+   `ceres::Covariance` evaluates the Jacobian and runs Eigen's SVD on it, which is not safe on
+   a non-finite Jacobian, so the residuals and Jacobian are checked first.
+   */
+  vector<double> problem_covariance( ceres::Problem &problem, double *pars, const size_t num_pars )
+  {
+    vector<double> residuals;
+    ceres::CRSMatrix jacobian;
+    double cost = 0.0;
+    if( !problem.Evaluate( ceres::Problem::EvaluateOptions(), &cost, &residuals, nullptr, &jacobian ) )
+      return {};
+
+    for( const double r : residuals )
+      if( std::isnan(r) || std::isinf(r) )
+        return {};
+    for( const double j : jacobian.values )
+      if( std::isnan(j) || std::isinf(j) )
+        return {};
+
+    ceres::Covariance::Options cov_options;
+    cov_options.algorithm_type = ceres::DENSE_SVD;
+    cov_options.null_space_rank = -1;
+    cov_options.min_reciprocal_condition_number = 1.0e-14;
+
+    ceres::Covariance covariance( cov_options );
+    vector<pair<const double *, const double *>> cov_blocks;
+    cov_blocks.emplace_back( pars, pars );
+
+    vector<double> cov( num_pars * num_pars, 0.0 );
+    if( !covariance.Compute( cov_blocks, &problem )
+        || !covariance.GetCovarianceBlock( pars, pars, cov.data() ) )
+      return {};
+
+    for( const double c : cov )
+      if( std::isnan(c) || std::isinf(c) )
+        return {};
+
+    return cov;
+  }//problem_covariance(...)
+
+
+  /** The 1-sigma width uncertainty every FWHM fit uses - see MakeDrfFit::peak_width_chi2. */
+  double sigma_uncert_for_fit( const PeakDef &peak )
+  {
+    const double sigma = peak.sigma();
+    return (peak.sigmaUncert() > 0.0) ? std::max( peak.sigmaUncert(), 0.01*sigma ) : 0.05*sigma;
+  }
+
+
+  /** Residuals (sigma_pred - sigma_meas)/sigma_uncert for each Gaussian peak. */
+  struct FwhmCostFunctor
+  {
+    vector<double> m_energies, m_sigmas, m_sigma_uncerts;
     DetectorPeakResponse::ResolutionFnctForm m_form;
-    
-  public:
-    DetectorResolutionFitness( const std::deque<std::shared_ptr<const PeakDef>> &peaks,
-                              DetectorPeakResponse::ResolutionFnctForm form )
-    : m_peaks( peaks ),
-    m_form( form )
+    size_t m_num_pars;
+
+    FwhmCostFunctor( const deque<shared_ptr<const PeakDef>> &peaks,
+                     const DetectorPeakResponse::ResolutionFnctForm form,
+                     const size_t num_pars )
+      : m_form( form ), m_num_pars( num_pars )
     {
-    }
-    
-    virtual ~DetectorResolutionFitness(){}
-    
-    
-    virtual double DoEval( const std::vector<double> &x ) const
-    {
-      for( size_t i = 0; i < x.size(); ++i )
-        if( IsInf(x[i]) || IsNan(x[i]) )
-          return 999999.9;
-      
-      vector<float> fx( x.size() );
-      for( size_t i = 0; i < x.size(); ++i )
-        fx[i] = static_cast<float>( x[i] );
-      
-      double chi2 = 0.0;
-      for( const PeakModel::PeakShrdPtr &peak : m_peaks )
+      for( const shared_ptr<const PeakDef> &peak : peaks )
       {
-        if( !peak )  //probably isnt needed
+        if( !peak || !peak->gausPeak() )
           continue;
-        const float predicted = DetectorPeakResponse::peakResolutionSigma( peak->mean(), m_form, fx );
-        if( predicted <= 0.0 || IsNan(predicted) || IsInf(predicted) )
-          return 999999.9;
-        
-        chi2 += MakeDrfFit::peak_width_chi2( predicted, *peak );
-      }//for( const EnergySigma &es : m_energies_and_sigmas )
-      
-      return chi2;
-    }//DoEval();
-    
-    virtual double operator()( const std::vector<double> &x ) const
-    {
-      return DoEval( x );
-    }
-    
-    DetectorResolutionFitness &operator=( const DetectorResolutionFitness &rhs )
-    {
-      if( &rhs != this )
-      {
-        m_peaks = rhs.m_peaks;
-        m_form = rhs.m_form;
+        m_energies.push_back( peak->mean() );
+        m_sigmas.push_back( peak->sigma() );
+        m_sigma_uncerts.push_back( sigma_uncert_for_fit(*peak) );
       }
-      return *this;
-    }
-    
-    virtual double Up() const{ return 1.0; }
-  };//class DetectorResolutionFitness
-  
-  
-  class DetectorEffFitness
-  : public ROOT::Minuit2::FCNBase
-  {
-  protected:
-    std::vector<MakeDrfFit::DetEffDataPoint> m_data;
-    int m_order;
-    
-  public:
-    DetectorEffFitness( const std::vector<MakeDrfFit::DetEffDataPoint> &data, const int order )
-    : m_data( data ),
-      m_order( order )
+    }//FwhmCostFunctor(...)
+
+    size_t num_residuals() const { return m_energies.size(); }
+
+    template<typename T>
+    bool operator()( T const *const *parameters, T *residuals ) const
     {
-    }
-    
-    virtual ~DetectorEffFitness(){}
-    
-    virtual double DoEval( const std::vector<double> &x ) const
+      const T * const pars = parameters[0];
+      try
+      {
+        for( size_t i = 0; i < m_energies.size(); ++i )
+        {
+          const T fwhm = DetectorPeakResponse::peakResolutionFWHM( T(m_energies[i]), m_form,
+                                                                   pars, m_num_pars );
+          const double val = scalar_of( fwhm );
+          if( std::isnan(val) || std::isinf(val) )
+            return false;  //Ceres treats this as an invalid trial and shrinks the step
+          residuals[i] = (fwhm / 2.35482 - m_sigmas[i]) / m_sigma_uncerts[i];
+        }
+      }catch( std::exception & )
+      {
+        return false;
+      }
+      return true;
+    }//operator()
+
+    /** chi2 at `pars`; +infinity if the form cant be evaluated there. */
+    double chi2( const vector<double> &pars ) const
     {
-      for( const double val : x )
-        if( IsInf(val) || IsNan(val) )
-          return 999999.9;
-      
-      vector<float> fx( x.size() );
-      for( size_t i = 0; i < x.size(); ++i )
-        fx[i] = static_cast<float>( x[i] );
-      
+      vector<double> residuals( num_residuals(), 0.0 );
+      const double * const blocks[1] = { pars.data() };
+      if( !(*this)( blocks, residuals.data() ) )
+        return std::numeric_limits<double>::infinity();
       double chi2 = 0.0;
-      for( const MakeDrfFit::DetEffDataPoint &data : m_data )
-      {
-        const float eqneff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( data.energy, fx );
-        if( eqneff <= 0.0 || IsNan(eqneff) || IsInf(eqneff) )
-          return 999999.9;
-        
-        const double uncert = data.efficiency_uncert <= 0.0 ? 0.05*data.efficiency : data.efficiency_uncert;
-        //cout << "data.energy=" << data.energy << ", eqneff=" << eqneff
-        //     << ", data.efficiency=" << data.efficiency << ", uncert=" << uncert
-        //     << ", data.efficiency_uncert=" << data.efficiency_uncert << endl;
-        chi2 += std::pow( (eqneff - data.efficiency)/uncert, 2 );
-      }
-      
+      for( const double r : residuals )
+        chi2 += r*r;
       return chi2;
-    }//DoEval();
-    
-    virtual double operator()( const std::vector<double> &x ) const
+    }//chi2(...)
+  };//struct FwhmCostFunctor
+
+
+  /** Parameter bounds, NaN meaning unbounded. */
+  struct ParBounds
+  {
+    double lower = std::numeric_limits<double>::quiet_NaN();
+    double upper = std::numeric_limits<double>::quiet_NaN();
+  };
+
+
+  /** Builds the Ceres problem for the FWHM fit around `pars` (which must outlive the problem). */
+  void setup_fwhm_problem( ceres::Problem &problem, const FwhmCostFunctor &functor,
+                           vector<double> &pars, const vector<int> &constant_pars,
+                           const vector<ParBounds> &bounds )
+  {
+    const size_t num_pars = pars.size();
+    // Ceres wants a non-const functor pointer, though it only ever calls the const operator()
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<FwhmCostFunctor,4>(
+                              const_cast<FwhmCostFunctor *>(&functor),
+                              ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+    cost_function->AddParameterBlock( static_cast<int>(num_pars) );
+    cost_function->SetNumResiduals( static_cast<int>(functor.num_residuals()) );
+    problem.AddResidualBlock( cost_function, nullptr, pars.data() );  //problem owns cost_function
+
+    if( !constant_pars.empty() )
     {
-      return DoEval( x );
-    }
-    
-    DetectorEffFitness &operator=( const DetectorEffFitness &rhs )
-    {
-      if( &rhs != this )
+      if( constant_pars.size() == num_pars )
       {
-        m_data = rhs.m_data;
-        m_order = rhs.m_order;
+        problem.SetParameterBlockConstant( pars.data() );
+      }else
+      {
+        ceres::SubsetManifold * const manifold
+                        = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_pars );
+        problem.SetManifold( pars.data(), manifold );  //problem owns manifold
       }
-      return *this;
+    }//if( !constant_pars.empty() )
+
+    for( size_t i = 0; i < num_pars; ++i )
+    {
+      const bool is_const = (std::find( begin(constant_pars), end(constant_pars),
+                                        static_cast<int>(i) ) != end(constant_pars));
+      if( is_const || (i >= bounds.size()) )
+        continue;
+      if( !std::isnan(bounds[i].lower) )
+      {
+        pars[i] = std::max( pars[i], bounds[i].lower );
+        problem.SetParameterLowerBound( pars.data(), static_cast<int>(i), bounds[i].lower );
+      }
+      if( !std::isnan(bounds[i].upper) )
+      {
+        pars[i] = std::min( pars[i], bounds[i].upper );
+        problem.SetParameterUpperBound( pars.data(), static_cast<int>(i), bounds[i].upper );
+      }
+    }//for( size_t i = 0; i < num_pars; ++i )
+  }//setup_fwhm_problem(...)
+
+
+  struct FwhmSolution
+  {
+    vector<double> pars;
+    double chi2 = std::numeric_limits<double>::infinity();
+    bool converged = false;
+  };
+
+  /** One LM solve from `start`; never throws (a failed solve keeps chi2 = infinity). */
+  FwhmSolution solve_fwhm( const FwhmCostFunctor &functor, vector<double> start,
+                           const vector<int> &constant_pars, const vector<ParBounds> &bounds )
+  {
+    FwhmSolution answer;
+    ceres::Problem problem;
+    setup_fwhm_problem( problem, functor, start, constant_pars, bounds );
+
+    ceres::Solver::Summary summary;
+    ceres::Solve( make_solver_options(), &problem, &summary );
+
+    switch( summary.termination_type )
+    {
+      case ceres::CONVERGENCE:
+      case ceres::USER_SUCCESS:
+        answer.converged = true;
+        break;
+      case ceres::NO_CONVERGENCE:
+        break;
+      case ceres::FAILURE:
+      case ceres::USER_FAILURE:
+        return answer;
+    }//switch( summary.termination_type )
+
+    answer.pars = start;
+    answer.chi2 = functor.chi2( start );
+    return answer;
+  }//solve_fwhm(...)
+
+
+  /** Residuals L^{-1}*(model/measured - 1), with L the Cholesky factor of the fractional data
+   covariance, so correlated (per-source) errors are weighted correctly. */
+  struct EffCostFunctor
+  {
+    vector<double> m_energies, m_meas;
+    Eigen::MatrixXd m_whiten;   //L^{-1}; lower triangular
+    vector<double> m_par_scales;
+
+    size_t num_residuals() const { return m_meas.size(); }
+    size_t num_parameters() const { return m_par_scales.size(); }
+
+    template<typename T>
+    bool operator()( T const *const *parameters, T *residuals ) const
+    {
+      const size_t n = m_meas.size(), ncoef = m_par_scales.size();
+      const T * const pars = parameters[0];
+
+      vector<T> coefs( ncoef );
+      for( size_t k = 0; k < ncoef; ++k )
+        coefs[k] = pars[k] * m_par_scales[k];
+
+      vector<T> raw( n );
+      for( size_t i = 0; i < n; ++i )
+      {
+        const T model = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( T(m_energies[i]),
+                                                                            coefs.data(), ncoef );
+        const double val = scalar_of( model );
+        if( std::isnan(val) || std::isinf(val) )
+          return false;
+        raw[i] = model / m_meas[i] - 1.0;
+      }
+
+      for( size_t i = 0; i < n; ++i )
+      {
+        T sum( 0.0 );
+        for( size_t j = 0; j <= i; ++j )
+          sum += m_whiten(i,j) * raw[j];
+        residuals[i] = sum;
+      }
+
+      return true;
+    }//operator()
+
+    /** chi2 at coefficient values `coefs` (un-scaled); +infinity if not evaluable. */
+    double chi2_of_coefs( const vector<double> &coefs ) const
+    {
+      vector<double> pars( coefs.size() );
+      for( size_t k = 0; k < coefs.size(); ++k )
+        pars[k] = coefs[k] / m_par_scales[k];
+      vector<double> residuals( num_residuals(), 0.0 );
+      const double * const blocks[1] = { pars.data() };
+      if( !(*this)( blocks, residuals.data() ) )
+        return std::numeric_limits<double>::infinity();
+      double chi2 = 0.0;
+      for( const double r : residuals )
+        chi2 += r*r;
+      return chi2;
+    }//chi2_of_coefs(...)
+  };//struct EffCostFunctor
+
+
+  /** L^{-1} for C = L*L^T.  If C is not numerically positive definite a small diagonal jitter is
+   added (up to a few times); as a last resort the correlations are dropped. */
+  Eigen::MatrixXd whitening_matrix( const vector<double> &cov_row_major, const size_t n,
+                                    std::string &warnings )
+  {
+    Eigen::MatrixXd C( n, n );
+    double trace = 0.0;
+    for( size_t i = 0; i < n; ++i )
+    {
+      for( size_t j = 0; j < n; ++j )
+        C(i,j) = cov_row_major[i*n + j];
+      trace += C(i,i);
     }
-    
-    virtual double Up() const{ return 1.0; }
-  };//class DetectorResolutionFitness
+
+    const Eigen::MatrixXd identity = Eigen::MatrixXd::Identity( n, n );
+    double jitter = 1.0E-12 * trace / static_cast<double>( n );
+    for( int attempt = 0; attempt < 4; ++attempt )
+    {
+      Eigen::LLT<Eigen::MatrixXd> llt( C );
+      if( llt.info() == Eigen::Success )
+      {
+        const Eigen::MatrixXd L = llt.matrixL();
+        return L.triangularView<Eigen::Lower>().solve( identity );
+      }
+      C += jitter * identity;
+      jitter *= 100.0;
+    }//for( int attempt = 0; attempt < 4; ++attempt )
+
+    warnings += "Data covariance was not positive definite; correlations between points ignored. ";
+    Eigen::MatrixXd answer = Eigen::MatrixXd::Zero( n, n );
+    for( size_t i = 0; i < n; ++i )
+      answer(i,i) = 1.0 / std::sqrt( std::max( cov_row_major[i*n + i], 1.0E-12 ) );
+    return answer;
+  }//whitening_matrix(...)
 }//namespace
-
-
 
 
 namespace MakeDrfFit
@@ -199,11 +401,10 @@ double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 
 
 
-double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
-                           const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                           const int sqrtEqnOrder,
-                           std::vector<float> &answer,
-                           std::vector<float> &uncerts )
+FwhmFitResult performResolutionFitEx( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
+                                      const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                                      const int sqrtEqnOrder,
+                                      const std::vector<float> &starting_coefs )
 {
   if( !peaks || peaks->empty() )
     throw runtime_error( "MakeDrfFit::performResolutionFit(...): no input peaks" );
@@ -212,18 +413,21 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   const PeakFitUtils::CoarseResolutionType coarse_type
                             = PeakFitUtils::coarse_resolution_from_peaks( peakv );
   const bool highres = (coarse_type == PeakFitUtils::CoarseResolutionType::High);
+  const size_t npeaks = peaks->size();
+
+  // Default starting values and bounds; the bounds span both the high- and low-resolution
+  //  detector ranges, because we could be wrong about the detector being high-resolution.
+  double a_initial = 0.0, b_initial = 0.0, c_initial = 0.0;
+  double lowerA = 0.0, upperA = 0.0, lowerB = 0.0, upperB = 0.0, lowerC = 0.0, upperC = 0.0;
   
+  // Closed-form linear least squares seed, where the form allows it
   bool fit_using_lls = false;
-  double a_initial, b_initial, c_initial;
-  double lowerA, upperA, lowerB, upperB, lowerC, upperC;
+  vector<float> lls_coefs, lls_uncerts;
   
   switch( fnctnlForm )
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
     {
-      // The following min/max arguments are (high-res, low-res) - we will allow the fits
-      //  to go anywhere in the range, because we could be wrong about the detector being
-      //  high-resolution
       lowerA = std::min( 0.75*1.0, 1.5*-7.0);
       upperA = std::max( 2.0*1.77, 1.5*7.44000);
       lowerB = std::min( 0.75*0.20028, 0.75*2.13000 );
@@ -231,25 +435,22 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       lowerC = std::min( 0.75*0.31, 0.75*0.20000 );
       upperC = std::max( 1.5*0.57223, 1.25*0.70000 );
       
-      if( answer.size() == 3 )
+      if( starting_coefs.size() == 3 )
       { //caller has provided some default values, lets use them
-        a_initial = static_cast<double>( answer[0] );
-        b_initial = static_cast<double>( answer[1] );
-        c_initial = static_cast<double>( answer[2] );
+        a_initial = static_cast<double>( starting_coefs[0] );
+        b_initial = static_cast<double>( starting_coefs[1] );
+        c_initial = static_cast<double>( starting_coefs[2] );
+      }else if( highres )
+      {
+        a_initial = 0.5*(1.0 + 1.77);
+        b_initial = 0.5*(0.20028 + 0.27759);
+        c_initial = 0.5*(0.31 + 0.57223);
       }else
       {
-        if( highres )
-        {
-          a_initial = 0.5*(1.0 + 1.77);
-          b_initial = 0.5*(0.20028 + 0.27759);
-          c_initial = 0.5*(0.31 + 0.57223);
-        }else
-        {
-          a_initial = 0.0;//0.5*(-7.0 + 7.44000);
-          b_initial = 0.5*(2.13000 + 8.50000);
-          c_initial = 0.5*(0.20000 + 0.70000);
-        }
-      }//if( answer.size() == 3 ) / else
+        a_initial = 0.0;
+        b_initial = 0.5*(2.13000 + 8.50000);
+        c_initial = 0.5*(0.20000 + 0.70000);
+      }
       
       break;
     }//case kGadrasResolutionFcn:
@@ -270,29 +471,14 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       try
       {
-        int num_fit_coefficients = 3;
-        //if( sqrtEqnOrder > 3 )
-        //  num_fit_coefficients = sqrtEqnOrder;  // Right now, just assuming 3 fit parameters always, but thing would work out if we wanted to do different
-        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, num_fit_coefficients, true, answer, uncerts );
-        
-        assert( answer.size() == static_cast<size_t>(num_fit_coefficients) );
-        
-        //cout << "MakeDrfFit::fit_sqrt_poly_fwhm_lls got {";
-        //for( size_t i = 0; i < answer.size(); ++i )
-        //  cout << answer[i] << "+-" << uncerts[i] << ", ";
-        //cout << "}.  Chi2=" << chi2 << endl;
-        
-        fit_using_lls = true;
-      }catch( std::exception &e )
+        fit_sqrt_poly_fwhm_lls( *peaks, 3, true, lls_coefs, lls_uncerts );
+        fit_using_lls = (lls_coefs.size() == 3);
+      }catch( std::exception & )
       {
-#ifndef NDEBUG
-        cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-#endif
-      }//try / catch
+      }
       
       break;
     }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
-      
       
     case DetectorPeakResponse::kConstantPlusSqrtEnergy:
     {
@@ -307,20 +493,14 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       try
       {
-        double chi2 = MakeDrfFit::fit_constant_plus_sqrt_fwhm_lls( *peaks, answer, uncerts );
-        
-        assert( answer.size() == 2 );
-        
-        fit_using_lls = true;
-      }catch( std::exception &e )
+        fit_constant_plus_sqrt_fwhm_lls( *peaks, lls_coefs, lls_uncerts );
+        fit_using_lls = (lls_coefs.size() == 2);
+      }catch( std::exception & )
       {
-        cerr << "MakeDrfFit::fit_constant_plus_sqrt_fwhm_lls threw exception: " << e.what() << endl;
-        
-      }//try / catch
+      }
       
       break;
     }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
-      
       
     case DetectorPeakResponse::kSqrtPolynomial:
     {
@@ -342,275 +522,216 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
       try
       {
-        double chi2 = MakeDrfFit::fit_sqrt_poly_fwhm_lls( *peaks, sqrtEqnOrder, false, answer, uncerts );
-        
-        assert( answer.size() == static_cast<int>(sqrtEqnOrder) );
-        
-        //cout << "MakeDrfFit::fit_sqrt_poly_fwhm_lls got {";
-        //for( size_t i = 0; i < answer.size(); ++i )
-        //  cout << answer[i] << "+-" << uncerts[i] << ", ";
-        //cout << "}.  Chi2=" << chi2 << endl;
-        
-        fit_using_lls = true;
-      }catch( std::exception &e )
+        fit_sqrt_poly_fwhm_lls( *peaks, sqrtEqnOrder, false, lls_coefs, lls_uncerts );
+        fit_using_lls = (static_cast<int>(lls_coefs.size()) == sqrtEqnOrder);
+      }catch( std::exception & )
       {
-#ifndef NDEBUG
-        cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-#endif
-      }//try / catch
+      }
       
       break;
     }//case kSqrtPolynomial:
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
-      //We should never make it here if the detector FWHM functional form has
-      //  not been explicitly set, so throw and error if we got here
       throw runtime_error( "MakeDrfFit::performResolutionFit(...):"
                           " invalid ResolutionFnctForm" );
-      break;
   }//switch( fnctnlForm )
   
+  // Starting parameters, which are held fixed, and bounds - depending on how many peaks we have
+  vector<double> start;
+  vector<int> constant_pars;
+  vector<ParBounds> bounds;
+  auto bounded = []( const double lower, const double upper ){
+    ParBounds b;
+    b.lower = lower;
+    b.upper = upper;
+    return b;
+  };
   
-  //For high res we should only have to to this one fit
-  //But for lowres detectors we should consider the cases of
-  //  A==0, A<0, and A>0 when fitting for kGadrasResolutionFcn
+  bool search_gadras_a = false;
   
-  bool fitting_gad_a = false;
-  DetectorResolutionFitness fitness( *peaks, fnctnlForm );
-  
-  ROOT::Minuit2::MnUserParameters inputPrams;
   switch( fnctnlForm )
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
     {
-      if( peaks->size() == 1 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial );
-      }else if( peaks->size() == 2 )
-      {
-        inputPrams.Add( "A", a_initial );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }else
-      {
-        fitting_gad_a = true;
-        inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-        inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-      }//if( all_peaks.size() == 1 )
+      start = { a_initial, b_initial, c_initial };
+      bounds = { bounded(lowerA,upperA), bounded(lowerB,upperB), bounded(lowerC,upperC) };
+      if( npeaks == 1 )
+        constant_pars = { 0, 2 };
+      else if( npeaks == 2 )
+        constant_pars = { 0 };
+      else
+        search_gadras_a = true;
       break;
-    }//case DetectorPeakResponse::kGadrasResolutionFcn:
-      
+    }//case kGadrasResolutionFcn:
       
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
     {
       if( fit_using_lls )
       {
-        for( int order = 0; order < 3; ++order )
-        {
-          const string name = string("") + char('A' + order);
-          inputPrams.Add( name, answer[order], uncerts[order] );
-        }//for( int order = 0; order < sqrtEqnOrder; ++order )
+        start.assign( begin(lls_coefs), end(lls_coefs) );
       }else
       {
-        if( peaks->size() == 1 )
+        bounds = { bounded(lowerA,upperA), bounded(lowerB,upperB), bounded(lowerC,upperC) };
+        if( npeaks == 1 )
         {
-          inputPrams.Add( "A", 0.0 );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-          inputPrams.Add( "C", 0.0 );
-        }if( peaks->size() == 2 )
+          start = { 0.0, b_initial, 0.0 };
+          constant_pars = { 0, 2 };
+        }else if( npeaks == 2 )
         {
-          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-          inputPrams.Add( "C", 0.0 );
-        }else if( peaks->size() >= 3 )
+          start = { a_initial, b_initial, 0.0 };
+          constant_pars = { 2 };
+        }else
         {
-          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-          inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
+          start = { a_initial, b_initial, c_initial };
         }
-      }//if( fit_using_lls )
-      
+      }//if( fit_using_lls ) / else
       break;
-    }//case DetectorPeakResponse::kSqrtEnergyPlusInverse:
-      
+    }//case kSqrtEnergyPlusInverse:
       
     case DetectorPeakResponse::kConstantPlusSqrtEnergy:
     {
       if( fit_using_lls )
       {
-        for( int order = 0; order < 2; ++order )
-        {
-          const string name = string("") + char('A' + order);
-          inputPrams.Add( name, answer[order], uncerts[order] );
-        }//for( int order = 0; order < sqrtEqnOrder; ++order )
+        start.assign( begin(lls_coefs), end(lls_coefs) );
       }else
       {
-        if( peaks->size() == 1 )
+        bounds = { bounded(lowerA,upperA), bounded(lowerB,upperB) };
+        if( npeaks == 1 )
         {
-          inputPrams.Add( "A", 0.0 );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-        }else if( peaks->size() >= 2 )
+          start = { 0.0, b_initial };
+          constant_pars = { 0 };
+        }else
         {
-          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
+          start = { a_initial, b_initial };
         }
-      }//if( fit_using_lls )
-      
+      }//if( fit_using_lls ) / else
       break;
-    }//case DetectorPeakResponse::kConstantPlusSqrtEnergy:
-      
+    }//case kConstantPlusSqrtEnergy:
       
     case DetectorPeakResponse::kSqrtPolynomial:
     {
       if( fit_using_lls )
       {
-        for( int order = 0; order < sqrtEqnOrder; ++order )
-        {
-          const string name = string("") + char('A' + order);
-          inputPrams.Add( name, answer[order], uncerts[order] );
-        }//for( int order = 0; order < sqrtEqnOrder; ++order )
+        start.assign( begin(lls_coefs), end(lls_coefs) );
       }else
       {
-        if( peaks->size() < 3 )
+        // Note: may be fewer coefficients than `sqrtEqnOrder` (callers rely on this)
+        if( npeaks <= 3 )
         {
-          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-          inputPrams.Add( "B", b_initial );
+          start = { a_initial, b_initial };
+          bounds = { bounded(lowerA,upperA), bounded(lowerB,upperB) };
+          if( npeaks < 3 )
+            constant_pars = { 1 };
         }else
         {
-          inputPrams.Add( "A", a_initial, 0.1*(upperA-lowerA), lowerA, upperA );
-          inputPrams.Add( "B", b_initial, 0.1*(upperB-lowerB), lowerB, upperB );
-          if( peaks->size() > 3 )
-            inputPrams.Add( "C", c_initial, 0.1*(upperC-lowerC), lowerC, upperC );
-          //inputPrams.Add( "D", 0.5, 0.05, 0.25, 0.75 );
+          start = { a_initial, b_initial, c_initial };
+          bounds = { bounded(lowerA,upperA), bounded(lowerB,upperB), bounded(lowerC,upperC) };
         }
-      }//if( fit_using_lls )
+      }//if( fit_using_lls ) / else
       break;
     }//case kSqrtPolynomial:
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
       assert( 0 );
       break;
-  }//switch
+  }//switch( fnctnlForm )
   
+  const size_t num_pars = start.size();
+  const FwhmCostFunctor functor( *peaks, fnctnlForm, num_pars );
+  if( !functor.num_residuals() )
+    throw runtime_error( "MakeDrfFit::performResolutionFit(...): no Gaussian peaks" );
   
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( fitness, inputParamState, strategy );
+  FwhmSolution best;
   
-  double tolerance = 0.5;
-  unsigned int maxFcnCall = 50000;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-  
-  ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
-  
-  auto scanpar = [&fitParams,&minimum,&fitness,&fitter,maxFcnCall,tolerance,strategy]( const string par ){
-    std::vector<double> best_pars = fitter.Params();
-    
-    const auto index = fitter.Parameters().Index(par);
-    auto &mnpar = fitter.Parameter( index );
-    
-    assert( mnpar.HasLowerLimit() && mnpar.HasUpperLimit() );
-    
-    double best_a = mnpar.Value();
-    const double lower_a = mnpar.LowerLimit();
-    const double upper_a = mnpar.UpperLimit();
-    
-    double best_chi2 = fitness.DoEval( fitParams.Params() );
-    
-    for( double an = lower_a; an < upper_a; an += 0.1*(upper_a-lower_a) )
-    {
-      auto testpar = fitParams;
-      testpar.SetValue(par, an);
-      testpar.Fix(par);
-      
-      ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
-      ROOT::Minuit2::MnMinimize anfitter( fitness, anInputParam, strategy );
-      
-      ROOT::Minuit2::FunctionMinimum anminimum = anfitter( maxFcnCall, tolerance );
-      if( !anminimum.IsValid() )
-        anminimum = anfitter( maxFcnCall, tolerance );
-      
-      const double this_chi2 = fitness.DoEval( anfitter.Params() );
-      if( this_chi2 < best_chi2 )
-      {
-        best_pars = anfitter.Params();
-        best_chi2 = this_chi2;
-        best_a = an;
-      }
-    }//for( double an = 1.0; an < 101.0; an += 2.5 )
-    
-    if( best_chi2 < fitness.DoEval(fitParams.Params()) )
-    {
-      auto testpar = fitParams;
-      testpar.SetValue( par, best_pars[index] );
-      ROOT::Minuit2::MnUserParameterState anInputParam( testpar );
-      ROOT::Minuit2::MnMinimize anfitter( fitness, anInputParam, strategy );
-      
-      minimum = anfitter( maxFcnCall, tolerance );
-      if( !minimum.IsValid() )
-        minimum = anfitter( maxFcnCall, tolerance );
-      
-      fitParams = anfitter.Parameters();
-    }//if( best_chi2 < fitness.DoEval(fitParams.Params()) )
-  };//scanpar lambda
-  
-  if( fitting_gad_a )
+  if( search_gadras_a )
   {
-    scanpar( "A" );
-  }//if( fitting_gad_a )
+    // The sign of A selects a different functional form below 661 keV, so a gradient method
+    //  cant cross zero on its own: solve each branch from several starts and keep the best.
+    const double a_neg_max = -1.0E-6;
+    for( const bool negative : { true, false } )
+    {
+      vector<ParBounds> region_bounds = bounds;
+      region_bounds[0] = negative ? bounded(lowerA, a_neg_max) : bounded(0.0, upperA);
+      
+      vector<double> a_starts = negative ? vector<double>{ -8.0, -4.0, -1.5, -0.3 }
+                                         : vector<double>{ 0.0, 0.5, 1.4, 4.0 };
+      if( (negative && (a_initial < 0.0)) || (!negative && (a_initial >= 0.0)) )
+        a_starts.push_back( a_initial );
+      
+      for( const double a0 : a_starts )
+      {
+        const FwhmSolution trial = solve_fwhm( functor, { a0, b_initial, c_initial },
+                                               constant_pars, region_bounds );
+        if( trial.chi2 < best.chi2 )
+          best = trial;
+      }
+    }//for( const bool negative : { true, false } )
+  }else
+  {
+    best = solve_fwhm( functor, start, constant_pars, bounds );
+  }//if( search_gadras_a ) / else
   
-  const double final_chi2 = fitness.DoEval( fitParams.Params() );
-  
-  //cout << "FWHM final chi2=" << final_chi2 << endl;
   if( fit_using_lls )
   {
-    const double pre_chi2 = fitness.DoEval( vector<double>( begin(answer), end(answer) ) );
-    //cout << "FWHM LLS chi2=" << pre_chi2 << endl;
-    if( pre_chi2 < final_chi2 )
+    // Keep the closed-form answer if the nonlinear refinement didnt improve on it
+    const vector<double> lls_pars( begin(lls_coefs), end(lls_coefs) );
+    const double lls_chi2 = functor.chi2( lls_pars );
+    if( lls_chi2 <= best.chi2 )
     {
-      //cout << "Least Linear chi2 better than from Minuit, using that" << endl;
-      return pre_chi2;
+      best.pars = lls_pars;
+      best.chi2 = lls_chi2;
+      best.converged = true;
+    }
+  }//if( fit_using_lls )
+  
+  if( best.pars.empty() || std::isinf(best.chi2) || std::isnan(best.chi2) )
+    throw runtime_error( "FWHM response function fit failed to find a valid solution" );
+  
+  FwhmFitResult result;
+  result.chi2 = best.chi2;
+  result.dof = static_cast<int>( functor.num_residuals() ) - static_cast<int>( num_pars - constant_pars.size() );
+  if( !best.converged )
+    result.warnings += "The FWHM fit did not fully converge. ";
+  
+  result.coefs.resize( num_pars );
+  for( size_t i = 0; i < num_pars; ++i )
+    result.coefs[i] = static_cast<float>( best.pars[i] );
+  
+  // Covariance at the solution (no further minimization; the problem is only built to evaluate it)
+  {
+    vector<double> pars = best.pars;
+    ceres::Problem problem;
+    // Bounds only matter for a solve; leave them out so a solution sitting on a bound isnt moved.
+    setup_fwhm_problem( problem, functor, pars, constant_pars, {} );
+    const vector<double> cov = problem_covariance( problem, pars.data(), num_pars );
+    
+    result.uncerts.assign( num_pars, 0.0f );
+    if( cov.size() == num_pars*num_pars )
+    {
+      result.covRowMajor.assign( begin(cov), end(cov) );
+      for( size_t i = 0; i < num_pars; ++i )
+        result.uncerts[i] = static_cast<float>( std::sqrt( std::max( 0.0, cov[i*num_pars + i] ) ) );
+    }else
+    {
+      result.warnings += "FWHM coefficient uncertainties could not be computed. ";
     }
   }
   
-  if( !minimum.IsValid() )
-  {
-    stringstream msg;
-    msg  << "FWHM response function fit status is not valid"
-    << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-    << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-    << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-    << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-    << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-    << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-    << endl;
-    if( minimum.IsAboveMaxEdm() )
-      msg << "\t\tEDM=" << minimum.Edm() << endl;
-#ifndef NDEBUG
-    cerr << endl << msg.str() << endl;
-#endif
-    throw std::runtime_error( msg.str() );
-  }//if( !minimum.IsValid() )
-  
-  answer.clear();
-  uncerts.clear();
-  
-  //for( size_t i = 0; i < fitParams.Params().size(); ++i )
-  //  cout << "\tMinuit fit FWHM Par_" << i << "=" << fitParams.Params()[i] << endl;
-  
-  for( const double p : fitParams.Params() )
-    answer.push_back( static_cast<float>(p) );
-  
-  for( const double p : fitParams.Errors() )
-    uncerts.push_back( p );
-  
-  return final_chi2;
-}//std::vector<float> performResolutionFit(...)
+  return result;
+}//performResolutionFitEx(...)
+
+
+double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
+                           const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
+                           const int sqrtEqnOrder,
+                           std::vector<float> &answer,
+                           std::vector<float> &uncerts )
+{
+  const FwhmFitResult result = performResolutionFitEx( peaks, fnctnlForm, sqrtEqnOrder, answer );
+  answer = result.coefs;
+  uncerts = result.uncerts;
+  return result.chi2;
+}//performResolutionFit(...)
 
   
   //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
@@ -659,7 +780,7 @@ removeOutlyingWidthPeaks( const std::shared_ptr<const std::deque<std::shared_ptr
     
     return reduced_peaks;
 }//removeOutlyingWidthPeaks(...)
-
+  
   
   
 double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
@@ -875,42 +996,66 @@ double fit_constant_plus_sqrt_fwhm_lls( const std::deque< std::shared_ptr<const 
 }//double fit_constant_plus_sqrt_fwhm_lls(...)
   
   
-double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint> data,
-                            const int order,
-                           std::vector<float> &coeffs,
-                           std::vector<float> &coeff_uncerts )
+std::vector<double> effDataCovariance( const std::vector<EffFitPoint> &data )
+{
+  const size_t n = data.size();
+  vector<double> cov( n*n, 0.0 );
+  for( size_t i = 0; i < n; ++i )
+  {
+    const EffFitPoint &a = data[i];
+    cov[i*n + i] += static_cast<double>(a.fracStatUncert) * a.fracStatUncert;
+    if( a.sourceKey.empty() )
+    {
+      cov[i*n + i] += static_cast<double>(a.fracCertUncert) * a.fracCertUncert
+                      + static_cast<double>(a.fracDistUncert) * a.fracDistUncert;
+      continue;
+    }
+    
+    for( size_t j = 0; j < n; ++j )
+    {
+      const EffFitPoint &b = data[j];
+      if( a.sourceKey == b.sourceKey )
+        cov[i*n + j] += static_cast<double>(a.fracCertUncert) * b.fracCertUncert
+                        + static_cast<double>(a.fracDistUncert) * b.fracDistUncert;
+    }
+  }//for( size_t i = 0; i < n; ++i )
+  
+  return cov;
+}//effDataCovariance(...)
+
+
+double fit_intrinsic_eff_least_linear_squares( const std::vector<EffFitPoint> &data,
+                                               const int order,
+                                               std::vector<float> &coeffs,
+                                               std::vector<float> &coeff_uncerts,
+                                               std::vector<double> *cov_row_major )
 {
   const size_t nbin = data.size();
-  
-  //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3
-  vector<float> x, effs, effs_uncert;
-  x.resize( data.size() );
-  effs.resize( data.size() );
-  effs_uncert.resize( data.size() );
-  for( size_t i = 0; i < data.size(); ++i )
-  {
-    x[i] = data[i].energy;
-    effs[i] = data[i].efficiency;
-    effs_uncert[i] = data[i].efficiency_uncert;
-  }
-  
+  if( (order < 1) || (nbin < static_cast<size_t>(order)) )
+    throw runtime_error( "fit_intrinsic_eff_least_linear_squares: invalid order" );
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
   //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3 + ...
+  //  The weight of each point is its total fractional uncertainty (= sigma of log(eff)).
   Eigen::MatrixX<double> A( nbin, order );
   Eigen::VectorX<double> b( nbin );
   
   for( size_t row = 0; row < nbin; ++row )
   {
-    const double data_y = log(effs[row]);
-    const double data_y_uncert = fabs( log(effs_uncert[row]) );
+    const EffFitPoint &p = data[row];
+    if( (p.energy <= 0.0f) || (p.efficiency <= 0.0f) )
+      throw runtime_error( "fit_intrinsic_eff_least_linear_squares: non-positive energy or efficiency" );
     
-    b(row) = data_y / data_y_uncert;
+    const double frac_uncert = std::max( 1.0E-6, std::sqrt( static_cast<double>(p.fracStatUncert)*p.fracStatUncert
+                                                          + static_cast<double>(p.fracCertUncert)*p.fracCertUncert
+                                                          + static_cast<double>(p.fracDistUncert)*p.fracDistUncert ) );
+    const double logx = log( static_cast<double>(p.energy) );
+    
+    b(row) = log( static_cast<double>(p.efficiency) ) / frac_uncert;
     for( int col = 0; col < order; ++col )
-      A(row,col) = std::pow( log(x[row]), double(col)) / data_y_uncert;
-  }//for( int col = 0; col < order; ++col )
+      A(row,col) = std::pow( logx, double(col) ) / frac_uncert;
+  }//for( size_t row = 0; row < nbin; ++row )
   
 #if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
   const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
@@ -919,37 +1064,41 @@ double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint
 #endif
   
   const Eigen::VectorXd a = svd.solve(b);
-  
-  const Eigen::MatrixX<double> A_transpose = A.transpose();
-  const Eigen::MatrixX<double> alpha = A_transpose * A;
-  const Eigen::MatrixX<double> C = alpha.inverse();
+  const Eigen::MatrixX<double> C = (A.transpose() * A).inverse();
   
   coeffs.resize( order );
   coeff_uncerts.resize( order );
   for( int coef = 0; coef < order; ++coef )
   {
     coeffs[coef] = static_cast<float>( a(coef) );
-    coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
-  }//for( int coef = 0; coef < order; ++coef )
+    coeff_uncerts[coef] = static_cast<float>( std::sqrt( std::max( 0.0, C(coef,coef) ) ) );
+  }
+  
+  if( cov_row_major )
+  {
+    cov_row_major->assign( order*order, 0.0 );
+    for( int i = 0; i < order; ++i )
+      for( int j = 0; j < order; ++j )
+        (*cov_row_major)[i*order + j] = C(i,j);
+  }//if( cov_row_major )
   
   double chi2 = 0;
   for( size_t bin = 0; bin < nbin; ++bin )
   {
-    double y_pred = 0.0;
-    for( int i = 0; i < order; ++i )
-      y_pred += a(i) * std::pow( log(x[bin]), double(i) );
-    y_pred = exp( y_pred );
-    chi2 += std::pow( (y_pred - effs[bin]) / effs_uncert[bin], 2.0 );
-  }//for( int bin = 0; bin < nbin; ++bin )
+    const EffFitPoint &p = data[bin];
+    const double frac_uncert = std::max( 1.0E-6, std::sqrt( static_cast<double>(p.fracStatUncert)*p.fracStatUncert
+                                                          + static_cast<double>(p.fracCertUncert)*p.fracCertUncert
+                                                          + static_cast<double>(p.fracDistUncert)*p.fracDistUncert ) );
+    const double y_pred = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<double>(p.energy),
+                                                                              a.data(), a.size() );
+    chi2 += std::pow( (y_pred - p.efficiency) / (frac_uncert * p.efficiency), 2.0 );
+  }//for( size_t bin = 0; bin < nbin; ++bin )
   
   return chi2;
 }//double fit_intrinsic_eff_least_linear_squares(...)
   
   
-double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
-                            const int fcnOrder,
-                            std::vector<float> &result,
-                            std::vector<float> &uncerts )
+EffFitResult performEfficiencyFit( const std::vector<EffFitPoint> &data, const int fcnOrder )
 {
   if( data.empty() )
     throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): no input peaks" );
@@ -961,147 +1110,178 @@ double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
     throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): requested fit order " + std::to_string(fcnOrder)
                          + ", with only " + std::to_string(data.size()) + " data points." );
   
-  result.clear();
-  uncerts.clear();
+  for( const EffFitPoint &p : data )
+  {
+    if( (p.energy <= 0.0f) || (p.efficiency <= 0.0f) || std::isnan(p.efficiency) || std::isinf(p.efficiency)
+        || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f) || (p.fracDistUncert < 0.0f) )
+      throw runtime_error( "MakeDrfFit::performEfficiencyFit(...): invalid data point" );
+  }
   
-  auto maxel = std::max_element( begin(data), end(data), [](const DetEffDataPoint &lhs,const DetEffDataPoint &rhs) -> bool {
-    return lhs.energy > rhs.energy;
-  } );
+  const size_t n = data.size(), ncoef = static_cast<size_t>( fcnOrder );
+  EffFitResult result;
+  result.dof = static_cast<int>( n ) - fcnOrder;
   
-  DetectorEffFitness fitness( data, fcnOrder );
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  
-  
-  const bool inMeV = (maxel->energy < 30);
-  
-  //Value limits taken from a wide variety of detectors, and then exaggerated
-  //  to hopefully cover all reasonable ranges.
-  const double mev_lower_bounds[8]    = {-4.75, -2.5,  -1.5,  -1.0,  -1.5,  -1.25, -0.75, -0.1 };
-  const double mev_upper_bounds[8]    = {-0.75, -0.25,  1.25,  0.9,   0.25,  0.25,  0.05,  0.05 };
-  const double mev_starting_values[8] = {-2.7,  -1.2,  -0.18, -0.14, -0.40, -0.15, -0.03, -0.002 };
-  
-  bool lls_worked = false;
+  // Seed from the closed-form log-space fit (falls back to a flat curve if that fails)
+  vector<float> seed_coefs, seed_uncerts;
+  vector<double> seed_cov;
+  bool have_seed = false;
   try
   {
-    const double chi2 = fit_intrinsic_eff_least_linear_squares( data, fcnOrder, result, uncerts );
-    
-    cout << "GLLS Fit chi2=" << chi2 << ", coefs={";
-    for( size_t i = 0; i < result.size(); ++i )
-      cout << result[i] << "+-" << uncerts[i] << ", ";
-    cout << "}" << endl;
-    lls_worked = true;
-    //return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
-  
-    //Least Linear Squares
-    for( size_t i = 0; i < result.size(); ++i )
-    {
-      if( inMeV )
-      {
-        if( result[i] > mev_lower_bounds[i] && result[i] < mev_upper_bounds[i] )
-          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/100.0, mev_lower_bounds[i], mev_upper_bounds[i] );
-        else
-          inputPrams.Add( std::to_string(i), result[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0 );
-      }else
-      {
-        inputPrams.Add( std::to_string(i), result[i], 1.0 );
-      }
-    }
-    
-  }catch(std::exception &e)
+    fit_intrinsic_eff_least_linear_squares( data, fcnOrder, seed_coefs, seed_uncerts, &seed_cov );
+    have_seed = true;
+    for( const float c : seed_coefs )
+      have_seed = (have_seed && !std::isnan(c) && !std::isinf(c));
+  }catch( std::exception & )
   {
-    cout << "GLLS Fit failed: " << e.what() << endl;
-    
-    if( inMeV )
-    {
-      for( int i = 0; i < 8 && i < fcnOrder; ++i )
-      {
-        assert( mev_upper_bounds[i] > mev_lower_bounds[i] );
-        inputPrams.Add( std::to_string(i), mev_starting_values[i], (mev_upper_bounds[i] - mev_lower_bounds[i])/10.0, mev_lower_bounds[i], mev_upper_bounds[i] );
-      }
+  }
+  
+  if( !have_seed )
+  {
+    double mean_log_eff = 0.0;
+    for( const EffFitPoint &p : data )
+      mean_log_eff += log( static_cast<double>(p.efficiency) ) / static_cast<double>( n );
+    seed_coefs.assign( ncoef, 0.0f );
+    seed_coefs[0] = static_cast<float>( mean_log_eff );
+    seed_cov.clear();
+  }//if( !have_seed )
+  
+  // Problem setup
+  EffCostFunctor functor;
+  for( const EffFitPoint &p : data )
+  {
+    functor.m_energies.push_back( p.energy );
+    functor.m_meas.push_back( p.efficiency );
+  }
+  functor.m_whiten = whitening_matrix( effDataCovariance(data), n, result.warnings );
+  functor.m_par_scales.resize( ncoef );
+  for( size_t k = 0; k < ncoef; ++k )
+    functor.m_par_scales[k] = (fabs(seed_coefs[k]) > 1.0E-6) ? fabs(static_cast<double>(seed_coefs[k])) : 1.0;
+  
+  vector<double> pars( ncoef );
+  for( size_t k = 0; k < ncoef; ++k )
+    pars[k] = seed_coefs[k] / functor.m_par_scales[k];
+  
+  auto cost_function = new ceres::DynamicAutoDiffCostFunction<EffCostFunctor,4>(
+                              &functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+  cost_function->AddParameterBlock( static_cast<int>(ncoef) );
+  cost_function->SetNumResiduals( static_cast<int>(n) );
+  
+  ceres::Problem problem;
+  problem.AddResidualBlock( cost_function, nullptr, pars.data() );  //problem owns cost_function
+  
+  ceres::Solver::Summary summary;
+  ceres::Solve( make_solver_options(), &problem, &summary );
+  
+  switch( summary.termination_type )
+  {
+    case ceres::CONVERGENCE:
+    case ceres::USER_SUCCESS:
+      break;
       
-      for( int order = 8; order <= fcnOrder; ++order )
-        inputPrams.Add( std::to_string(order), 0, 0.001, -0.1, 0.1 );
+    case ceres::NO_CONVERGENCE:
+      result.warnings += "The efficiency fit did not fully converge. ";
+      break;
+      
+    case ceres::FAILURE:
+    case ceres::USER_FAILURE:
+      if( !have_seed )
+        throw runtime_error( "Efficiency function fit failed: " + summary.message );
+      result.warnings += "The efficiency fit failed (" + summary.message + "); using the linear seed. ";
+      for( size_t k = 0; k < ncoef; ++k )
+        pars[k] = seed_coefs[k] / functor.m_par_scales[k];
+      break;
+  }//switch( summary.termination_type )
+  
+  vector<double> coefs( ncoef );
+  for( size_t k = 0; k < ncoef; ++k )
+    coefs[k] = pars[k] * functor.m_par_scales[k];
+  
+  double chi2 = functor.chi2_of_coefs( coefs );
+  
+  // Keep the closed-form answer if the nonlinear refinement didnt improve on it
+  vector<double> cov;
+  if( have_seed )
+  {
+    const vector<double> seed_dbl( begin(seed_coefs), end(seed_coefs) );
+    const double seed_chi2 = functor.chi2_of_coefs( seed_dbl );
+    if( seed_chi2 < chi2 )
+    {
+      coefs = seed_dbl;
+      chi2 = seed_chi2;
+      for( size_t k = 0; k < ncoef; ++k )
+        pars[k] = coefs[k] / functor.m_par_scales[k];
+    }
+  }//if( have_seed )
+  
+  if( std::isnan(chi2) || std::isinf(chi2) )
+    throw runtime_error( "Efficiency function fit did not find a valid solution" );
+  
+  // Coefficient covariance at the solution.  The residuals are whitened, so the SVD based
+  //  estimate is the covariance of the (scaled) parameters directly.
+  {
+    const vector<double> scaled_cov = problem_covariance( problem, pars.data(), ncoef );
+    if( scaled_cov.size() == ncoef*ncoef )
+    {
+      cov.resize( ncoef*ncoef );
+      for( size_t i = 0; i < ncoef; ++i )
+        for( size_t j = 0; j < ncoef; ++j )
+          cov[i*ncoef + j] = functor.m_par_scales[i] * functor.m_par_scales[j] * scaled_cov[i*ncoef + j];
+    }else if( seed_cov.size() == ncoef*ncoef )
+    {
+      cov = seed_cov;
+      result.warnings += "Coefficient covariance taken from the linear seed. ";
     }else
     {
-      inputPrams.Add( "A", -344, 100, -1000, 1000 );
-      inputPrams.Add( "B", 270, 50 );
-      inputPrams.Add( "C", -84, 50 );
-      if( fcnOrder > 3 )
-        inputPrams.Add( "D", 13.00, 10 );
-      if( fcnOrder > 4 )
-        inputPrams.Add( "E", -1.0, 0.1 );
-      if( fcnOrder > 5 )
-        inputPrams.Add( "F", 0.03, 0.01 );
-      for( int order = 7; order <= fcnOrder; ++order )
-        inputPrams.Add( std::string("")+char('A'+order-1), 0, 1.0 );
-    }//if( inMeV ) / else
-  }
-
-  
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( fitness, inputParamState, strategy );
-  
-  double tolerance = 0.5;
-  unsigned int maxFcnCall = 50000;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, 2*tolerance );
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, static_cast<double>( data.size() ) );
-  
-  ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
-
-  //Minos seems to give the same error we already have.
-  //ROOT::Minuit2::MnMinos minos( fitness, minimum, 1 );
-  //vector<pair<double,double>> assymerrors;
-  //for( int i = 0; i < fcnOrder; ++i )
-  //{
-  //  ROOT::Minuit2::MinosError error = minos.Minos(i);
-  //  assymerrors.push_back( make_pair(error.Lower(), error.Upper()) );
-  //  cout << "Par " << i << " error: " << fitParams.Errors()[i] << ", Lower=" <<error.Lower() << ", Upper=" << error.Upper() << endl;
-  //}
-  
-  
-  double chi2 = fitness.DoEval( fitParams.Params() );
-  const double lls_chi2 = lls_worked ? fitness.DoEval( vector<double>(begin(result),end(result)) ) : std::numeric_limits<double>::infinity();
-  cerr << "Eff final chi2=" << chi2 << " vs " << lls_chi2 << " from LLS" << endl;
-  
-  if( !minimum.IsValid() )
-  {
-    stringstream msg;
-    msg  << "Eff response function fit status is not valid"
-    << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-    << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-    << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-    << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-    << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-    << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-    << endl;
-    if( minimum.IsAboveMaxEdm() )
-      msg << "\t\tEDM=" << minimum.Edm() << endl;
-    cerr << endl << msg.str() << endl;
-    
-    if( !lls_worked )
-      throw std::runtime_error( msg.str() );
-  }//if( !minimum.IsValid() )
-  
-  if( lls_worked && (lls_chi2 < chi2) )
-  {
-    cerr << "Returning least linear squares answer for Intrinsic Eff equation" << endl;
-    chi2 = lls_chi2;
-  }else
-  {
-    result.clear();
-    for( const double p : fitParams.Params() )
-      result.push_back( static_cast<float>(p) );
-  
-    uncerts.clear();
-    for( const double p : fitParams.Errors() )
-      uncerts.push_back( p );
+      result.warnings += "Coefficient uncertainties could not be computed. ";
+    }
   }
   
-  return (fcnOrder == data.size()) ? chi2 : (chi2 / (data.size() - fcnOrder));
+  // Birge (variance of unit weight) inflation: when the points scatter more than their stated
+  //  uncertainties allow, the reported curve uncertainty is scaled up to match the scatter.
+  //  chi2/dof rather than a robust estimator, since there are only ever a handful of points; see
+  //  the "variance of unit weight" discussion in RelActCalcManual.cpp for the trade-offs.
+  result.chi2 = chi2;
+  result.birgeScale = (result.dof > 0) ? std::max( 1.0, chi2 / result.dof ) : 1.0;
+  
+  result.coefs.resize( ncoef );
+  for( size_t k = 0; k < ncoef; ++k )
+    result.coefs[k] = static_cast<float>( coefs[k] );
+  
+  result.uncerts.assign( ncoef, 0.0f );
+  if( cov.size() == ncoef*ncoef )
+  {
+    result.covRowMajor.resize( ncoef*ncoef );
+    for( size_t i = 0; i < ncoef*ncoef; ++i )
+      result.covRowMajor[i] = static_cast<float>( result.birgeScale * cov[i] );
+    for( size_t k = 0; k < ncoef; ++k )
+      result.uncerts[k] = static_cast<float>( std::sqrt( std::max( 0.0, result.birgeScale * cov[k*ncoef + k] ) ) );
+  }//if( cov.size() == ncoef*ncoef )
+  
+  return result;
+}//performEfficiencyFit(...)
+
+
+double performEfficiencyFit( const std::vector<DetEffDataPoint> data,
+                            const int fcnOrder,
+                            std::vector<float> &result,
+                            std::vector<float> &uncerts )
+{
+  vector<EffFitPoint> points;
+  for( const DetEffDataPoint &d : data )
+  {
+    EffFitPoint p;
+    p.energy = d.energy;
+    p.efficiency = d.efficiency;
+    p.fracStatUncert = ((d.efficiency_uncert > 0.0f) && (d.efficiency > 0.0f))
+                        ? (d.efficiency_uncert / d.efficiency) : 0.05f;
+    points.push_back( std::move(p) );
+  }
+  
+  const EffFitResult fit = performEfficiencyFit( points, fcnOrder );
+  result = fit.coefs;
+  uncerts = fit.uncerts;
+  
+  return (fit.dof > 0) ? (fit.chi2 / fit.dof) : fit.chi2;
 }//performEfficiencyFit(...)
   
 }//namespace MakeDrfFit

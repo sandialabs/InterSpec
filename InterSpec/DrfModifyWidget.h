@@ -141,9 +141,9 @@ public:
     /** The efficiency formula text (`kFunctialEfficienyForm` only). */
     std::string formula;
 
-    /** Energy / efficiency / stat-% / cert-% / source text, one entry per point row.  Cells for
-     columns this curve does not show are empty. */
-    std::vector<std::array<std::string,5>> anchors;
+    /** Energy / efficiency / stat-% / cert-% / source / distance-cm text, one entry per point row.
+     Cells for columns this curve does not show are empty. */
+    std::vector<std::array<std::string,6>> anchors;
     std::string anchorRefDistance, anchorDefaultUncert;
 
     /** The energy-correlation length the correlated column is combined with; `EccUncertOptions`
@@ -228,7 +228,7 @@ protected:
    Blank stat cells fall back to the default-uncert on apply. */
   void addAnchorRow( const float energy, const float efficiency,
                      const float fracStatUncert, const float fracCertUncert,
-                     const std::string &sourceKey );
+                     const std::string &sourceKey, const float distance = -1.0f );
   void removeAnchorRow();
 
   /** Whether every Anchor-tab widget still holds the value it was seeded with.  When it does, the
@@ -348,7 +348,8 @@ protected:
   Wt::WLineEdit *m_anchorRefDistance;
   Wt::WLineEdit *m_anchorDefaultUncert;
   /** `source` is null unless #m_anchorHasSourceCol. */
-  struct AnchorRow{ Wt::WLineEdit *energy, *eff, *stat, *cert, *source; };
+  /** `dist` (cm, blank = the reference distance) exists only with the source column. */
+  struct AnchorRow{ Wt::WLineEdit *energy, *eff, *stat, *cert, *source, *dist; };
   std::vector<AnchorRow> m_anchors;
 
   /** How the correlated column is correlated across energy; null when the points carry a source

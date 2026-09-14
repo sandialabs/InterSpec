@@ -825,6 +825,14 @@ void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
 #endif //PERFORM_DEVELOPER_CHECKS
 
 
+bool MeasuredEffPoint::hasProvenance() const
+{
+  return (peakArea != 0.0f) || (peakAreaUncert != 0.0f) || (liveTime != 0.0f)
+         || (distanceUncert != 0.0f) || (bkgPeakArea >= 0.0f) || (bkgPeakAreaUncert != 0.0f)
+         || !fileName.empty() || !sampleNumbers.empty();
+}//MeasuredEffPoint::hasProvenance()
+
+
 bool MeasuredEffPoint::operator==( const MeasuredEffPoint &rhs ) const
 {
   return (energy == rhs.energy)
@@ -832,8 +840,32 @@ bool MeasuredEffPoint::operator==( const MeasuredEffPoint &rhs ) const
          && (fracStatUncert == rhs.fracStatUncert)
          && (fracCertUncert == rhs.fracCertUncert)
          && (sourceKey == rhs.sourceKey)
-         && (distance == rhs.distance);
+         && (distance == rhs.distance)
+         && (peakArea == rhs.peakArea)
+         && (peakAreaUncert == rhs.peakAreaUncert)
+         && (liveTime == rhs.liveTime)
+         && (distanceUncert == rhs.distanceUncert)
+         && (bkgPeakArea == rhs.bkgPeakArea)
+         && (bkgPeakAreaUncert == rhs.bkgPeakAreaUncert)
+         && (fileName == rhs.fileName)
+         && (sampleNumbers == rhs.sampleNumbers);
 }//MeasuredEffPoint::operator==
+
+
+bool MeasuredSourceInfo::operator==( const MeasuredSourceInfo &rhs ) const
+{
+  return (sourceKey == rhs.sourceKey)
+         && (nuclide == rhs.nuclide)
+         && (activity == rhs.activity)
+         && (fracActivityUncert == rhs.fracActivityUncert)
+         && (age == rhs.age)
+         && (distance == rhs.distance)
+         && (distanceUncert == rhs.distanceUncert)
+         && (shieldAtomicNumber == rhs.shieldAtomicNumber)
+         && (shieldArealDensity == rhs.shieldArealDensity)
+         && (shieldMaterial == rhs.shieldMaterial)
+         && (assayInfo == rhs.assayInfo);
+}//MeasuredSourceInfo::operator==
 
 
 MeasuredDrfPoints::MeasuredDrfPoints()
@@ -857,7 +889,8 @@ void MeasuredDrfPoints::setPoints( vector<MeasuredEffPoint> points )
 {
   for( const MeasuredEffPoint &p : points )
   {
-    if( (p.energy <= 0.0f) || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f) )
+    if( (p.energy <= 0.0f) || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f)
+        || (p.peakAreaUncert < 0.0f) || (p.distanceUncert < 0.0f) || (p.bkgPeakAreaUncert < 0.0f) )
       throw runtime_error( "MeasuredDrfPoints::setPoints: invalid point" );
   }
 
@@ -868,6 +901,50 @@ void MeasuredDrfPoints::setPoints( vector<MeasuredEffPoint> points )
 
   m_points = std::move( points );
 }//setPoints(...)
+
+
+const vector<MeasuredSourceInfo> &MeasuredDrfPoints::sources() const
+{
+  return m_sources;
+}
+
+
+void MeasuredDrfPoints::setSources( vector<MeasuredSourceInfo> sources )
+{
+  for( const MeasuredSourceInfo &s : sources )
+  {
+    if( s.sourceKey.empty() || (s.fracActivityUncert < 0.0f) || (s.distanceUncert < 0.0f) )
+      throw runtime_error( "MeasuredDrfPoints::setSources: invalid source" );
+  }
+
+  m_sources = std::move( sources );
+}//setSources(...)
+
+
+const MeasuredSourceInfo *MeasuredDrfPoints::sourceForKey( const std::string &key ) const
+{
+  for( const MeasuredSourceInfo &s : m_sources )
+  {
+    if( s.sourceKey == key )
+      return &s;
+  }
+  return nullptr;
+}//sourceForKey(...)
+
+
+bool MeasuredDrfPoints::hasProvenance() const
+{
+  if( !m_sources.empty() )
+    return true;
+
+  for( const MeasuredEffPoint &p : m_points )
+  {
+    if( p.hasProvenance() )
+      return true;
+  }
+
+  return false;
+}//hasProvenance()
 
 
 std::shared_ptr<DetectorEfficiencyUncert> MeasuredDrfPoints::toEfficiencyUncert() const
@@ -948,18 +1025,81 @@ void MeasuredDrfPoints::toXml( ::rapidxml::xml_node<char> *parent,
       pt->append_attribute( doc->allocate_attribute( name, val ) );
     };
 
+    auto add_str_attrib = [&]( const char *name, const std::string &value ){
+      if( value.empty() )
+        return;
+      const char *val = doc->allocate_string( value.c_str() );
+      pt->append_attribute( doc->allocate_attribute( name, val ) );
+    };
+
     add_attrib( "E", p.energy );
     add_attrib( "eff", p.efficiency );
     add_attrib( "statSig", p.fracStatUncert );
     add_attrib( "certSig", p.fracCertUncert );
-    if( !p.sourceKey.empty() )
-    {
-      const char *val = doc->allocate_string( p.sourceKey.c_str() );
-      pt->append_attribute( doc->allocate_attribute( "src", val ) );
-    }
+    add_str_attrib( "src", p.sourceKey );
     if( p.distance >= 0.0f )
       add_attrib( "d", p.distance );
+
+    // Provenance (all optional; omitted when at their defaults so pre-existing files are unchanged)
+    if( p.distanceUncert > 0.0f )
+      add_attrib( "dSig", p.distanceUncert );
+    if( (p.peakArea != 0.0f) || (p.peakAreaUncert != 0.0f) )
+    {
+      add_attrib( "area", p.peakArea );
+      add_attrib( "areaSig", p.peakAreaUncert );
+    }
+    if( p.liveTime > 0.0f )
+      add_attrib( "lt", p.liveTime );
+    if( p.bkgPeakArea >= 0.0f )
+    {
+      add_attrib( "bkgArea", p.bkgPeakArea );
+      add_attrib( "bkgAreaSig", p.bkgPeakAreaUncert );
+    }
+    add_str_attrib( "file", p.fileName );
+    add_str_attrib( "samples", p.sampleNumbers );
   }//for( const MeasuredEffPoint &p : m_points )
+
+  if( !m_sources.empty() )
+  {
+    xml_node<char> *srcs_node = doc->allocate_node( node_element, "Sources" );
+    base_node->append_node( srcs_node );
+
+    for( const MeasuredSourceInfo &s : m_sources )
+    {
+      xml_node<char> *src = doc->allocate_node( node_element, "Src" );
+      srcs_node->append_node( src );
+
+      auto add_dbl = [&]( const char *name, const double value ){
+        snprintf( buffer, sizeof(buffer), "%1.16E", value );  //17 significant digits: exact for a double
+        const char *val = doc->allocate_string( buffer );
+        src->append_attribute( doc->allocate_attribute( name, val ) );
+      };
+      auto add_str = [&]( const char *name, const std::string &value ){
+        if( value.empty() )
+          return;
+        const char *val = doc->allocate_string( value.c_str() );
+        src->append_attribute( doc->allocate_attribute( name, val ) );
+      };
+
+      add_str( "key", s.sourceKey );
+      add_str( "nuc", s.nuclide );
+      add_dbl( "act", s.activity );
+      add_dbl( "actSig", s.fracActivityUncert );
+      if( s.age >= 0.0 )
+        add_dbl( "age", s.age );
+      if( s.distance >= 0.0f )
+        add_dbl( "d", s.distance );
+      if( s.distanceUncert > 0.0f )
+        add_dbl( "dSig", s.distanceUncert );
+      if( (s.shieldAtomicNumber > 0.0f) || (s.shieldArealDensity > 0.0f) )
+      {
+        add_dbl( "shieldAN", s.shieldAtomicNumber );
+        add_dbl( "shieldAD", s.shieldArealDensity );
+      }
+      add_str( "shieldMat", s.shieldMaterial );
+      add_str( "info", s.assayInfo );
+    }//for( const MeasuredSourceInfo &s : m_sources )
+  }//if( !m_sources.empty() )
 }//MeasuredDrfPoints::toXml(...)
 
 
@@ -990,20 +1130,78 @@ void MeasuredDrfPoints::fromXml( const ::rapidxml::xml_node<char> *node )
                              + name + "' attribute" );
     };
 
+    auto attrib_str = [&]( const char *name, std::string &value ){
+      const auto att = pt->first_attribute( name );
+      if( att && att->value_size() )
+        value = string( att->value(), att->value() + att->value_size() );
+    };
+
     MeasuredEffPoint p;
     attrib_float( "E", p.energy, true );
     attrib_float( "eff", p.efficiency, true );
     attrib_float( "statSig", p.fracStatUncert, true );
     attrib_float( "certSig", p.fracCertUncert, false );
     attrib_float( "d", p.distance, false );
-    const auto src = pt->first_attribute( "src" );
-    if( src && src->value_size() )
-      p.sourceKey = string( src->value(), src->value() + src->value_size() );
+    attrib_str( "src", p.sourceKey );
+
+    // Optional provenance - absent in files written before it was recorded
+    attrib_float( "dSig", p.distanceUncert, false );
+    attrib_float( "area", p.peakArea, false );
+    attrib_float( "areaSig", p.peakAreaUncert, false );
+    attrib_float( "lt", p.liveTime, false );
+    attrib_float( "bkgArea", p.bkgPeakArea, false );
+    attrib_float( "bkgAreaSig", p.bkgPeakAreaUncert, false );
+    attrib_str( "file", p.fileName );
+    attrib_str( "samples", p.sampleNumbers );
 
     points.push_back( std::move(p) );
   }//for( loop over Pt nodes )
 
+  vector<MeasuredSourceInfo> sources;
+  const auto srcs_node = node->first_node( "Sources", 7 );
+  for( auto src = (srcs_node ? srcs_node->first_node("Src",3) : nullptr);
+       src; src = src->next_sibling("Src",3) )
+  {
+    auto attrib_dbl = [&]( const char *name, double &value ){
+      const auto att = src->first_attribute( name );
+      if( !att || !att->value_size() )
+        return;
+      if( !SpecUtils::parse_double( att->value(), att->value_size(), value ) )
+        throw runtime_error( string("MeasuredDrfPoints::fromXml: invalid source '")
+                             + name + "' attribute" );
+    };
+    auto attrib_flt = [&]( const char *name, float &value ){
+      double dval = value;
+      attrib_dbl( name, dval );
+      value = static_cast<float>( dval );
+    };
+    auto attrib_str = [&]( const char *name, std::string &value ){
+      const auto att = src->first_attribute( name );
+      if( att && att->value_size() )
+        value = string( att->value(), att->value() + att->value_size() );
+    };
+
+    MeasuredSourceInfo info;
+    attrib_str( "key", info.sourceKey );
+    attrib_str( "nuc", info.nuclide );
+    attrib_dbl( "act", info.activity );
+    attrib_flt( "actSig", info.fracActivityUncert );
+    attrib_dbl( "age", info.age );
+    attrib_flt( "d", info.distance );
+    attrib_flt( "dSig", info.distanceUncert );
+    attrib_flt( "shieldAN", info.shieldAtomicNumber );
+    attrib_flt( "shieldAD", info.shieldArealDensity );
+    attrib_str( "shieldMat", info.shieldMaterial );
+    attrib_str( "info", info.assayInfo );
+
+    if( info.sourceKey.empty() )
+      throw runtime_error( "MeasuredDrfPoints::fromXml: source without a key" );
+
+    sources.push_back( std::move(info) );
+  }//for( loop over Src nodes )
+
   setPoints( std::move(points) );
+  setSources( std::move(sources) );
 }//MeasuredDrfPoints::fromXml(...)
 
 
@@ -1017,13 +1215,41 @@ void MeasuredDrfPoints::appendToHash( std::size_t &seed ) const
     boost::hash_combine( seed, p.fracCertUncert );
     boost::hash_combine( seed, p.sourceKey );
     boost::hash_combine( seed, p.distance );
-  }
+
+    // Provenance is hashed only when present, so DRFs stored before it existed keep their hash.
+    if( p.hasProvenance() )
+    {
+      boost::hash_combine( seed, p.peakArea );
+      boost::hash_combine( seed, p.peakAreaUncert );
+      boost::hash_combine( seed, p.liveTime );
+      boost::hash_combine( seed, p.distanceUncert );
+      boost::hash_combine( seed, p.bkgPeakArea );
+      boost::hash_combine( seed, p.bkgPeakAreaUncert );
+      boost::hash_combine( seed, p.fileName );
+      boost::hash_combine( seed, p.sampleNumbers );
+    }
+  }//for( const MeasuredEffPoint &p : m_points )
+
+  for( const MeasuredSourceInfo &s : m_sources )
+  {
+    boost::hash_combine( seed, s.sourceKey );
+    boost::hash_combine( seed, s.nuclide );
+    boost::hash_combine( seed, s.activity );
+    boost::hash_combine( seed, s.fracActivityUncert );
+    boost::hash_combine( seed, s.age );
+    boost::hash_combine( seed, s.distance );
+    boost::hash_combine( seed, s.distanceUncert );
+    boost::hash_combine( seed, s.shieldAtomicNumber );
+    boost::hash_combine( seed, s.shieldArealDensity );
+    boost::hash_combine( seed, s.shieldMaterial );
+    boost::hash_combine( seed, s.assayInfo );
+  }//for( const MeasuredSourceInfo &s : m_sources )
 }//MeasuredDrfPoints::appendToHash(...)
 
 
 bool MeasuredDrfPoints::operator==( const MeasuredDrfPoints &rhs ) const
 {
-  return m_points == rhs.m_points;
+  return (m_points == rhs.m_points) && (m_sources == rhs.m_sources);
 }
 
 
@@ -1038,15 +1264,38 @@ void MeasuredDrfPoints::equalEnough( const MeasuredDrfPoints &lhs,
   {
     const MeasuredEffPoint &a = lhs.m_points[i];
     const MeasuredEffPoint &b = rhs.m_points[i];
-    if( a.sourceKey != b.sourceKey )
-      throw runtime_error( "MeasuredDrfPoints: source key of point "
+    if( (a.sourceKey != b.sourceKey) || (a.fileName != b.fileName)
+        || (a.sampleNumbers != b.sampleNumbers) )
+      throw runtime_error( "MeasuredDrfPoints: source key/file/samples of point "
                            + std::to_string(i) + " doesnt match" );
     check_float_vectors_close( { a.energy, a.efficiency, a.fracStatUncert,
-                                 a.fracCertUncert, a.distance },
+                                 a.fracCertUncert, a.distance, a.peakArea, a.peakAreaUncert,
+                                 a.liveTime, a.distanceUncert, a.bkgPeakArea, a.bkgPeakAreaUncert },
                                { b.energy, b.efficiency, b.fracStatUncert,
-                                 b.fracCertUncert, b.distance },
+                                 b.fracCertUncert, b.distance, b.peakArea, b.peakAreaUncert,
+                                 b.liveTime, b.distanceUncert, b.bkgPeakArea, b.bkgPeakAreaUncert },
                                "MeasuredDrfPoints point" );
   }//for( size_t i = 0; i < lhs.m_points.size(); ++i )
+
+  if( lhs.m_sources.size() != rhs.m_sources.size() )
+    throw runtime_error( "MeasuredDrfPoints: number of sources doesnt match" );
+
+  for( size_t i = 0; i < lhs.m_sources.size(); ++i )
+  {
+    const MeasuredSourceInfo &a = lhs.m_sources[i];
+    const MeasuredSourceInfo &b = rhs.m_sources[i];
+    if( (a.sourceKey != b.sourceKey) || (a.nuclide != b.nuclide)
+        || (a.shieldMaterial != b.shieldMaterial) || (a.assayInfo != b.assayInfo) )
+      throw runtime_error( "MeasuredDrfPoints: strings of source "
+                           + std::to_string(i) + " dont match" );
+    check_float_vectors_close( { static_cast<float>(a.activity), a.fracActivityUncert,
+                                 static_cast<float>(a.age), a.distance, a.distanceUncert,
+                                 a.shieldAtomicNumber, a.shieldArealDensity },
+                               { static_cast<float>(b.activity), b.fracActivityUncert,
+                                 static_cast<float>(b.age), b.distance, b.distanceUncert,
+                                 b.shieldAtomicNumber, b.shieldArealDensity },
+                               "MeasuredDrfPoints source" );
+  }//for( size_t i = 0; i < lhs.m_sources.size(); ++i )
 }//MeasuredDrfPoints::equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

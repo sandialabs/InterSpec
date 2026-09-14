@@ -1,0 +1,60 @@
+<div align="center">
+  <h1 id="modify-drf"><b>Modify Detector Response</b></h1>
+  <hr />
+</div>
+
+<div style="display:table-row">
+<h4>Overview</h4>
+<p>
+This tool edits the detector response function (DRF) currently in use, or builds one from scratch
+when opened with a blank detector (the &quot;Make without data...&quot; button of the
+&quot;Create Detector Response Function&quot; tool, or when no detector is loaded).  Nothing is
+changed until you press <b>Use</b>; <b>Cancel</b> discards the edits.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>General</h4>
+<p>The DRF's name and description.</p>
+</div>
+
+<div style="display:table-row">
+<h4>Geom &amp; MC</h4>
+<p>
+How the detector is modeled for sources close to the detector or off its axis.  &quot;Flat Disk&quot;
+is the traditional model: the crystal is a disk of the stated diameter, and only the source
+distance matters.  &quot;Geometry Modeled&quot; describes the crystal (shape, material, dimensions,
+dead layer, endcap layers) and uses that description to evaluate the response for any source
+position:
+</p>
+<ul>
+  <li><em>No MC support (from measured curve)</em>: instant.  The DRF's own measured efficiency
+      (or its curve) is transferred to other positions through the ray-traced geometry.  Accurate on
+      axis and mildly off-axis; the reported uncertainty grows off-axis and very close in.</li>
+  <li><em>Quick MC</em> and <em>Full MC</em>: run a Monte-Carlo characterization of the geometry
+      (minutes), which is then corrected (&quot;grounded&quot;) to the DRF's measured efficiency
+      points when it has them.  Full MC also models the response well off-axis and at contact.</li>
+</ul>
+<p>
+Press <b>Generate Response</b> after editing the geometry or the anchor points; the response is
+marked stale until you do.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>FWHM</h4>
+<p>Fits, or lets you enter, the peak-width (FWHM) equation of the detector from the peaks in the
+current spectrum.</p>
+</div>
+
+<div style="display:table-row">
+<h4>Anchor</h4>
+<p>
+The efficiency data the DRF is pinned to.  Depending on the DRF this is a table of measured
+points (energy, efficiency, statistical and certificate uncertainties, source and distance), the
+coefficients of the efficiency equation with their covariance, or a formula.  Edit a value to
+change the response; the uncertainties you enter here are what the analysis tools propagate into
+their activity uncertainties.  For a DRF made by the &quot;Create Detector Response Function&quot;
+tool the points are the measured peaks, and each keeps its own source distance.
+</p>
+</div>

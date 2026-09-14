@@ -39,6 +39,8 @@
 #include <memory>
 #include <iostream>
 
+#include <boost/functional/hash.hpp>
+
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
 
@@ -447,3 +449,223 @@ BOOST_AUTO_TEST_CASE( test_uncert_hash_and_equality )
   c->appendToHash( seed_c );
   BOOST_CHECK_NE( seed_a, seed_c );
 }//test_uncert_hash_and_equality
+
+
+namespace
+{
+  /** Round-trips a MeasuredDrfPoints through its XML codec. */
+  MeasuredDrfPoints xml_roundtrip( const MeasuredDrfPoints &orig )
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+    doc.append_node( parent );
+    orig.toXml( parent, &doc );
+
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, rapidxml::print_no_indenting );
+
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<rapidxml::parse_trim_whitespace>( buf.data() );
+    const rapidxml::xml_node<char> *node = doc2.first_node( "Parent" )->first_node( "MeasuredEffPoints" );
+    BOOST_REQUIRE( node );
+
+    MeasuredDrfPoints restored;
+    restored.fromXml( node );
+    return restored;
+  }//xml_roundtrip(...)
+
+
+  MeasuredEffPoint legacy_point( const float energy, const std::string &key )
+  {
+    MeasuredEffPoint p;
+    p.energy = energy;
+    p.efficiency = 0.01f;
+    p.fracStatUncert = 0.02f;
+    p.fracCertUncert = 0.03f;
+    p.sourceKey = key;
+    p.distance = 25.0f * static_cast<float>( PhysicalUnits::cm );
+    return p;
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_measured_points_provenance_xml_roundtrip )
+{
+  MeasuredEffPoint a = legacy_point( 122.0f, "Eu152#0" );
+  a.peakArea = 12345.0f;
+  a.peakAreaUncert = 130.5f;
+  a.liveTime = 600.0f;
+  a.distanceUncert = 0.5f * static_cast<float>( PhysicalUnits::cm );
+  a.bkgPeakArea = 20.0f;
+  a.bkgPeakAreaUncert = 5.0f;
+  a.fileName = "eu152_25cm.n42";
+  a.sampleNumbers = "1,2,5-9";
+
+  MeasuredEffPoint b = legacy_point( 661.7f, "Cs137#1" );  //no provenance at all
+  MeasuredEffPoint c = legacy_point( 1332.5f, "Co60#2" );
+  c.bkgPeakArea = 0.0f;  //a zero background subtraction is still "subtracted", so must survive
+
+  MeasuredDrfPoints orig;
+  orig.setPoints( { a, b, c } );
+  BOOST_CHECK( orig.hasProvenance() );
+  BOOST_CHECK( a.hasProvenance() );
+  BOOST_CHECK( !b.hasProvenance() );
+  BOOST_CHECK( c.hasProvenance() );
+
+  const MeasuredDrfPoints restored = xml_roundtrip( orig );
+  BOOST_REQUIRE_EQUAL( restored.points().size(), 3u );
+  BOOST_CHECK( restored == orig );
+  BOOST_CHECK_EQUAL( restored.points()[0].fileName, "eu152_25cm.n42" );
+  BOOST_CHECK_EQUAL( restored.points()[0].sampleNumbers, "1,2,5-9" );
+  BOOST_CHECK( close_enough( restored.points()[0].distanceUncert, a.distanceUncert ) );
+  BOOST_CHECK( !restored.points()[1].hasProvenance() );
+  BOOST_CHECK_EQUAL( restored.points()[2].bkgPeakArea, 0.0f );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( MeasuredDrfPoints::equalEnough( orig, restored ) );
+#endif
+
+  // Negative uncertainties are rejected
+  MeasuredEffPoint bad = legacy_point( 300.0f, "x" );
+  bad.distanceUncert = -1.0f;
+  MeasuredDrfPoints reject;
+  BOOST_CHECK_THROW( reject.setPoints( { bad } ), std::runtime_error );
+}//test_measured_points_provenance_xml_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_measured_points_sources_table_roundtrip )
+{
+  MeasuredDrfPoints orig;
+  orig.setPoints( { legacy_point( 122.0f, "Eu152#0" ), legacy_point( 661.7f, "Cs137#1" ) } );
+  BOOST_CHECK( !orig.hasProvenance() );
+
+  MeasuredSourceInfo eu;
+  eu.sourceKey = "Eu152#0";
+  eu.nuclide = "Eu152";
+  eu.activity = 10.0 * PhysicalUnits::microCi;
+  eu.fracActivityUncert = 0.03f;
+  eu.age = 5.0 * PhysicalUnits::year;
+  eu.distance = 25.0f * static_cast<float>( PhysicalUnits::cm );
+  eu.distanceUncert = 0.2f * static_cast<float>( PhysicalUnits::cm );
+  eu.shieldAtomicNumber = 26.0f;
+  eu.shieldArealDensity = 1.5f * static_cast<float>( PhysicalUnits::g / PhysicalUnits::cm2 );
+  eu.assayInfo = "Assay 2020-01-01: 12.3 uCi; cert SRS-1234";
+
+  MeasuredSourceInfo cs;
+  cs.sourceKey = "Cs137#1";
+  cs.nuclide = "Cs137";
+  cs.activity = 1.0 * PhysicalUnits::microCi;
+  cs.shieldMaterial = "Aluminum";
+
+  orig.setSources( { eu, cs } );
+  BOOST_CHECK( orig.hasProvenance() );
+  BOOST_REQUIRE( orig.sourceForKey( "Cs137#1" ) );
+  BOOST_CHECK_EQUAL( orig.sourceForKey( "Cs137#1" )->nuclide, "Cs137" );
+  BOOST_CHECK( !orig.sourceForKey( "nope" ) );
+
+  const MeasuredDrfPoints restored = xml_roundtrip( orig );
+  BOOST_REQUIRE_EQUAL( restored.sources().size(), 2u );
+  const MeasuredSourceInfo &r_eu = restored.sources()[0];
+  BOOST_CHECK_EQUAL( r_eu.sourceKey, eu.sourceKey );
+  BOOST_CHECK_EQUAL( r_eu.nuclide, eu.nuclide );
+  BOOST_CHECK( close_enough( r_eu.activity, eu.activity, 1.0e-9 ) );
+  BOOST_CHECK( close_enough( r_eu.fracActivityUncert, eu.fracActivityUncert ) );
+  BOOST_CHECK( close_enough( r_eu.age, eu.age, 1.0e-9 ) );
+  BOOST_CHECK( close_enough( r_eu.distance, eu.distance ) );
+  BOOST_CHECK( close_enough( r_eu.distanceUncert, eu.distanceUncert ) );
+  BOOST_CHECK( close_enough( r_eu.shieldAtomicNumber, eu.shieldAtomicNumber ) );
+  BOOST_CHECK( close_enough( r_eu.shieldArealDensity, eu.shieldArealDensity ) );
+  BOOST_CHECK_EQUAL( r_eu.assayInfo, eu.assayInfo );
+  BOOST_CHECK_EQUAL( restored.sources()[1].shieldMaterial, "Aluminum" );
+  BOOST_CHECK_LT( restored.sources()[1].age, 0.0 );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( MeasuredDrfPoints::equalEnough( orig, restored ) );
+#endif
+
+  // The hash sees the source table
+  size_t seed_with = 0, seed_without = 0;
+  orig.appendToHash( seed_with );
+  MeasuredDrfPoints no_srcs;
+  no_srcs.setPoints( orig.points() );
+  no_srcs.appendToHash( seed_without );
+  BOOST_CHECK_NE( seed_with, seed_without );
+
+  // A source needs a key
+  MeasuredSourceInfo keyless;
+  BOOST_CHECK_THROW( no_srcs.setSources( { keyless } ), std::runtime_error );
+}//test_measured_points_sources_table_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_measured_points_legacy_hash_unchanged )
+{
+  // Points without provenance must hash exactly as before the provenance fields existed - i.e.,
+  //  the six original fields, in this order - so every stored DRF keeps its identity.
+  const vector<MeasuredEffPoint> pts = { legacy_point( 122.0f, "Eu152#0" ),
+                                         legacy_point( 661.7f, "Cs137#1" ) };
+  MeasuredDrfPoints points;
+  points.setPoints( pts );
+
+  size_t expected = 0;
+  for( const MeasuredEffPoint &p : points.points() )
+  {
+    boost::hash_combine( expected, p.energy );
+    boost::hash_combine( expected, p.efficiency );
+    boost::hash_combine( expected, p.fracStatUncert );
+    boost::hash_combine( expected, p.fracCertUncert );
+    boost::hash_combine( expected, p.sourceKey );
+    boost::hash_combine( expected, p.distance );
+  }
+
+  size_t actual = 0;
+  points.appendToHash( actual );
+  BOOST_CHECK_EQUAL( actual, expected );
+
+  // ...and adding provenance to a point does change it
+  vector<MeasuredEffPoint> with_prov = pts;
+  with_prov[0].liveTime = 600.0f;
+  MeasuredDrfPoints points2;
+  points2.setPoints( with_prov );
+  size_t changed = 0;
+  points2.appendToHash( changed );
+  BOOST_CHECK_NE( changed, expected );
+}//test_measured_points_legacy_hash_unchanged
+
+
+BOOST_AUTO_TEST_CASE( test_measured_points_legacy_xml_reads )
+{
+  // Exactly what pre-provenance code wrote
+  const char *old_xml =
+    "<MeasuredEffPoints>"
+      "<Pt E=\"1.22000000E+02\" eff=\"1.00000000E-02\" statSig=\"2.00000000E-02\""
+          " certSig=\"3.00000000E-02\" src=\"Eu152#0\" d=\"2.50000000E+01\"/>"
+      "<Pt E=\"6.61700000E+02\" eff=\"5.00000000E-03\" statSig=\"1.00000000E-02\"/>"
+    "</MeasuredEffPoints>";
+
+  vector<char> buf( old_xml, old_xml + strlen(old_xml) );
+  buf.push_back( '\0' );
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( doc.parse<rapidxml::parse_trim_whitespace>( buf.data() ) );
+
+  MeasuredDrfPoints points;
+  BOOST_REQUIRE_NO_THROW( points.fromXml( doc.first_node( "MeasuredEffPoints" ) ) );
+  BOOST_REQUIRE_EQUAL( points.points().size(), 2u );
+  BOOST_CHECK( !points.hasProvenance() );
+  BOOST_CHECK( points.sources().empty() );
+  BOOST_CHECK_EQUAL( points.points()[0].sourceKey, "Eu152#0" );
+  BOOST_CHECK( close_enough( points.points()[0].distance, 25.0 ) );
+  BOOST_CHECK_LT( points.points()[1].distance, 0.0f );
+  BOOST_CHECK_EQUAL( points.points()[1].bkgPeakArea, -1.0f );
+  BOOST_CHECK_EQUAL( points.points()[1].liveTime, 0.0f );
+
+  // And writing it back out adds nothing new
+  rapidxml::xml_document<char> out;
+  rapidxml::xml_node<char> *parent = out.allocate_node( rapidxml::node_element, "Parent" );
+  out.append_node( parent );
+  points.toXml( parent, &out );
+  string xml;
+  rapidxml::print( std::back_inserter(xml), out, rapidxml::print_no_indenting );
+  BOOST_CHECK( xml.find( "Sources" ) == string::npos );
+  BOOST_CHECK( xml.find( "lt=" ) == string::npos );
+  BOOST_CHECK( xml.find( "area=" ) == string::npos );
+}//test_measured_points_legacy_xml_reads

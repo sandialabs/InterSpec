@@ -51,8 +51,6 @@
     Este es un efecto mayor a energías menores, o distancias de calibración mayores.
   </message>
   <message id="md-show-fwhm-markers">Mostrar puntos FWHM</message>
-  <message id="md-display-energy-lower-label">Energía visualización, inferior:</message>
-  <message id="md-display-energy-upper-label">Superior:</message>
   <message id="md-mi-chart-phone">Gráfico/opciones</message>
   <message id="md-mi-peaks-phone">Picos a usar</message>
   <message id="md-export-btn">Almacenar/exportar...</message>
@@ -95,7 +93,7 @@
   <message id="md-saved-to-db">Se guardó '{1}' en la base de datos interna.</message>
   <message id="md-peak-counts">{1} {2} keV, pico {3} cuentas</message>
   <message id="md-peak-no-nuc">Sin nucleído asoc., {1} keV, pico {2} cuentas</message>
-  <message id="md-err-det-diam-invalid">Diámetro del detector es inválido - asumiendo 2.54 cm.</message>
+  
   <message id="md-err-some-src">Algunas fuentes tuvieron errores.</message>
   <message id="md-n-fit-pars">{1} parámetros ajuste</message>
   <message id="md-html-eff-table-caption">Eficiencia de detección de energía completa (% gammas totales)</message>
@@ -107,5 +105,4 @@
   <message id="md-chart-intrinsic-eff-minus-label">Ef. intríns. ajuste -2σ</message>
   <message id="md-chart-fit-fwhm-label">FWHM ajuste</message>
 </messages>
-
 

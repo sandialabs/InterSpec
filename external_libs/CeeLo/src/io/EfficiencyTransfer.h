@@ -74,7 +74,28 @@ struct AnchorCurve {
     std::vector<double> energies_keV;   ///< strictly ascending
     std::vector<double> eff;            ///< absolute efficiency at the ref pos
     std::vector<double> frac_sigma;     ///< optional per-point (empty => 0)
+
+    /// Optional row-major NxN covariance of the anchor's fractional (ln eff)
+    /// error - e.g. the coefficient covariance of a fitted curve propagated to
+    /// the anchor energies.  When sized N*N, make_transfer_response stores it
+    /// as the response's grounding covariance (hat-basis knots at the anchor
+    /// energies, ln k = 0) so correlations between energies survive into
+    /// frac_covariance(), and frac_sigma is ignored.
+    std::vector<double> frac_cov;
+
+    /// Optional raw measured points the anchor curve was fitted to, kept in
+    /// the grounding block for provenance / later re-grounding only.
+    std::vector<GroundingPoint> points;
 };
+
+/// Writes `anchor.frac_cov` (which must be N*N for the anchor's N energies)
+/// into `response.grounding`: knots = ln(anchor energies), ln_k = 0,
+/// cov = frac_cov, curve_derived = true, points = anchor.points, and a ZERO
+/// transfer sigma (the off-axis / near-field envelope is carried by the
+/// response's `model_transfer`, which is applied unconditionally - keeping it
+/// out of the grounding block avoids counting it twice).  Throws on a size
+/// mismatch.  Called by make_transfer_response when frac_cov is present.
+void set_anchor_covariance(DetectorResponse& response, const AnchorCurve& anchor);
 
 /// Standalone EFFTRAN transfer primitive over a live detector `Geometry`.
 /// Cheap: one aperture quadrature is built at construction; each transfer is a

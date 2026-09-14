@@ -33,6 +33,7 @@
 
 #include <tuple>
 #include <cmath>
+#include <iomanip>
 #include <string>
 #include <vector>
 #include <memory>
@@ -48,6 +49,13 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 
+#include "io/DetectorResponse.h"
+#include "io/EfficiencyTransfer.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -3075,6 +3083,89 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_with_uncert )
 }//test_url_roundtrip_with_uncert
 
 
+/** How big is a DRF app URL, and is there room for the fitted equation's coefficient covariance?
+
+ QR codes hold 2953 bytes in binary mode; `toAppUrl` budgets 2923 for the query string and drops
+ payload in a fixed order when it does not fit (node covariance goes second, before even the
+ total-efficiency curve).  Today the coefficient covariance is never encoded at all, so a DRF
+ shared by URL/QR comes back with no equation uncertainty - `EFFU` carries per-coefficient sigmas
+ that no query path reads.
+
+ This measures the real sizes so the trade is a number rather than a guess.
+ */
+BOOST_AUTO_TEST_CASE( test_url_size_budget )
+{
+  cout << "\n\nMeasuring DRF app-URL sizes..." << endl;
+
+  // A detector the size the Create DRF tool actually produces: a 6-term equation fitted to 11
+  //  calibration energies, with the fit covariance and the measured-point node covariance.
+  const size_t ncoef = 6;
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f, -0.0042f, 0.00019f };
+  const vector<float> cal_energies = { 59.5f, 81.0f, 121.8f, 276.4f, 302.9f, 356.0f,
+                                       383.8f, 661.7f, 1173.2f, 1332.5f, 1408.0f };
+  vector<float> node_sigmas;
+  for( size_t i = 0; i < cal_energies.size(); ++i )
+    node_sigmas.push_back( 0.03f + 0.01f*float(i % 3) );
+
+  auto drf = make_shared<DetectorPeakResponse>( "SizeTest", "url size measurement" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  shared_ptr<DetectorEfficiencyUncert> tmp
+              = DetectorEfficiencyUncert::fromPointUncerts( cal_energies, node_sigmas );
+  BOOST_REQUIRE( tmp );
+  auto uncert = make_shared<DetectorEfficiencyUncert>( *tmp );
+
+  // A plausible fit covariance: strongly anti-correlated neighbours, as a log-power-series fit gives
+  vector<float> coefcov( ncoef*ncoef, 0.0f );
+  for( size_t i = 0; i < ncoef; ++i )
+    for( size_t j = 0; j < ncoef; ++j )
+      coefcov[i*ncoef + j] = static_cast<float>( 1.0e-3*std::pow(0.35,double(i+j))
+                                                 * ((i==j) ? 1.0 : -0.82) );
+  uncert->setCoefficientCovariance( coefcov );
+  drf->setEfficiencyUncert( uncert );
+  drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+
+  const string url = drf->toAppUrl();
+  cout << "  full DRF app URL: " << url.size() << " chars (QR binary budget 2923)" << endl;
+
+  // Break it down by part
+  size_t node_cov_chars = 0, coef_chars = 0;
+  {
+    vector<string> fields;
+    SpecUtils::split( fields, url, "&" );
+    for( const string &f : fields )
+    {
+      cout << "    " << std::setw(8) << f.substr( 0, f.find('=') ) << " : "
+           << f.size() << " chars" << endl;
+      if( SpecUtils::istarts_with( f, "EFUC=" ) || SpecUtils::istarts_with( f, "EFUE=" ) )
+        node_cov_chars += f.size();
+      if( SpecUtils::istarts_with( f, "EFFC=" ) )
+        coef_chars = f.size();
+    }
+  }
+  cout << "  node covariance (EFUE+EFUC) costs " << node_cov_chars << " chars" << endl;
+  cout << "  the " << ncoef << " coefficients themselves cost " << coef_chars << " chars" << endl;
+
+  // What would the coefficient covariance cost?  Upper triangle, N*(N+1)/2 values.
+  const size_t ntri = (ncoef*(ncoef+1))/2;
+  for( const size_t sig : { 5u, 4u, 3u } )
+  {
+    string s;
+    size_t idx = 0;
+    for( size_t i = 0; i < ncoef; ++i )
+      for( size_t j = i; j < ncoef; ++j, ++idx )
+        s += (idx ? "*" : "") + SpecUtils::printCompact( coefcov[i*ncoef + j], sig );
+    cout << "  coefficient covariance upper triangle (" << ntri << " values, " << sig
+         << " sig figs): " << (s.size() + 6) << " chars" << endl;
+  }
+
+  // Headroom
+  BOOST_CHECK_MESSAGE( url.size() < 2923, "DRF URL already at the QR limit: " << url.size() );
+  cout << "  headroom after the current URL: " << (2923 - url.size()) << " chars" << endl;
+}//test_url_size_budget
+
+
 BOOST_AUTO_TEST_CASE( test_url_drop_order )
 {
   cout << "\n\nTesting URL drop order when over the QR budget..." << endl;
@@ -4098,3 +4189,309 @@ BOOST_AUTO_TEST_CASE( test_measured_points_are_kev )
 
   cout << "Measured-point energy units passed" << endl;
 }//test_measured_points_are_kev
+
+
+namespace
+{
+  /** A 3"x3" NaI in a thin Al can, as a stand-alone geometry descriptor. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> make_test_geometry()
+  {
+    ceelo::GeometryDescriptor gd;
+    gd.shape = ceelo::DetectorShape::Cylinder;
+    gd.dimensions_cm = { 3.81, 7.62 };
+    gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                     ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+    gd.crystal_material_index = 0;
+    ceelo::LayerSpec can;
+    can.material_index = 1;
+    can.front_thickness_cm = 0.05;
+    can.side_thickness_cm = 0.05;
+    can.z_end_cm = 7.62;
+    gd.layers.push_back( can );
+    gd.reference_point = ceelo::ReferencePoint::EndcapFront;
+    return make_shared<const ceelo::GeometryDescriptor>( gd );
+  }//make_test_geometry()
+
+
+  /** toXml -> fromXml, returning the restored DRF and the version attribute written. */
+  shared_ptr<DetectorPeakResponse> drf_xml_roundtrip( const DetectorPeakResponse &orig, int &version )
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *parent = doc.allocate_node( rapidxml::node_element, "Parent" );
+    doc.append_node( parent );
+    orig.toXml( parent, &doc );
+
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, rapidxml::print_no_indenting );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<rapidxml::parse_trim_whitespace>( buf.data() );
+    const rapidxml::xml_node<char> *drf_node = doc2.first_node( "Parent" )->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+    const rapidxml::xml_attribute<char> *version_attr = drf_node->first_attribute( "version" );
+    BOOST_REQUIRE( version_attr );
+    version = atoi( version_attr->value() );
+
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( drf_node );
+    return restored;
+  }//drf_xml_roundtrip(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_fwhm_uncerts_xml_roundtrip )
+{
+  cout << "\n\nTesting FWHM coefficient uncertainties round-trip..." << endl;
+
+  const double det_diameter = 5.0 * PhysicalUnits::cm;
+  auto drf = make_shared<DetectorPeakResponse>( "FwhmUncerts", "test" );
+  drf->fromExpOfLogPowerSeries( { -5.0f, 0.5f }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // Without uncertainties the DRF stays at the old version, and the hash is what it always was
+  drf->setFwhmCoefficients( { 1.2f, 7.5f, 0.45f }, DetectorPeakResponse::kGadrasResolutionFcn );
+  BOOST_CHECK( drf->resolutionFcnUncertainties().empty() );
+  const uint64_t hash_without = drf->hashValue();
+  int version = -1;
+  shared_ptr<DetectorPeakResponse> restored = drf_xml_roundtrip( *drf, version );
+  BOOST_CHECK_LE( version, 6 );
+  BOOST_CHECK( restored->resolutionFcnUncertainties().empty() );
+
+  // Size mismatch is rejected
+  BOOST_CHECK_THROW( drf->setFwhmCoefficients( { 1.2f, 7.5f, 0.45f },
+                                               DetectorPeakResponse::kGadrasResolutionFcn,
+                                               { 0.1f } ), std::runtime_error );
+
+  drf->setFwhmCoefficients( { 1.2f, 7.5f, 0.45f }, DetectorPeakResponse::kGadrasResolutionFcn,
+                            { 0.1f, 0.2f, 0.03f } );
+  BOOST_REQUIRE_EQUAL( drf->resolutionFcnUncertainties().size(), 3u );
+  BOOST_CHECK_NE( drf->hashValue(), hash_without );
+
+  restored = drf_xml_roundtrip( *drf, version );
+  BOOST_CHECK_EQUAL( version, 7 );
+  BOOST_REQUIRE_EQUAL( restored->resolutionFcnUncertainties().size(), 3u );
+  BOOST_CHECK( close_enough( restored->resolutionFcnUncertainties()[1], 0.2f, 1.0e-5 ) );
+  BOOST_CHECK_EQUAL( restored->hashValue(), drf->hashValue() );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *drf, *restored ) );
+#endif
+
+  cout << "FWHM coefficient uncertainties round-trip passed" << endl;
+}//test_fwhm_uncerts_xml_roundtrip
+
+
+BOOST_AUTO_TEST_CASE( test_geometry_xml_symmetry )
+{
+  cout << "\n\nTesting stand-alone geometry survives toXml/fromXml..." << endl;
+
+  const double det_diameter = 2.0 * 3.81 * PhysicalUnits::cm;
+  auto drf = make_shared<DetectorPeakResponse>( "GeomOnly", "test" );
+  drf->fromExpOfLogPowerSeries( { -5.0f, 0.5f }, {}, 0.0, det_diameter, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  const std::shared_ptr<const ceelo::GeometryDescriptor> gd = make_test_geometry();
+  drf->setGeometry( gd );
+  BOOST_REQUIRE( drf->geometry() );
+  BOOST_CHECK( !drf->ceeloResponse() );
+
+  int version = -1;
+  shared_ptr<DetectorPeakResponse> restored = drf_xml_roundtrip( *drf, version );
+  BOOST_CHECK_EQUAL( version, 7 );
+  BOOST_REQUIRE_MESSAGE( restored->geometry(), "Geometry without a response was lost in XML" );
+  BOOST_CHECK( !restored->ceeloResponse() );
+  BOOST_CHECK_EQUAL( restored->geometry()->to_xml_string(), gd->to_xml_string() );
+  BOOST_CHECK_EQUAL( restored->hashValue(), drf->hashValue() );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *drf, *restored ) );
+#endif
+
+  cout << "Stand-alone geometry XML symmetry passed" << endl;
+}//test_geometry_xml_symmetry
+
+
+BOOST_AUTO_TEST_CASE( test_xml_v7_roundtrip )
+{
+  cout << "\n\nTesting XML v7 round-trip (measured-point provenance)..." << endl;
+
+  shared_ptr<DetectorPeakResponse> orig = make_drf_with_new_fields();
+
+  // Plain measured points (no provenance) keep version 6
+  vector<MeasuredEffPoint> pts;
+  for( const float kev : { 122.0f, 661.7f, 1332.0f } )
+  {
+    MeasuredEffPoint p;
+    p.energy = kev;
+    p.efficiency = 0.01f;
+    p.fracStatUncert = 0.02f;
+    p.fracCertUncert = 0.03f;
+    p.sourceKey = "Eu152#0";
+    p.distance = static_cast<float>( 25.0 * PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  {
+    auto meas = make_shared<MeasuredDrfPoints>();
+    meas->setPoints( pts );
+    orig->setMeasuredPoints( meas );
+    int version = -1;
+    shared_ptr<DetectorPeakResponse> restored = drf_xml_roundtrip( *orig, version );
+    BOOST_CHECK_EQUAL( version, 6 );
+    BOOST_REQUIRE( restored->measuredPoints() );
+    BOOST_CHECK( !restored->measuredPoints()->hasProvenance() );
+  }
+
+  // Provenance and a source table need version 7, and come back intact
+  pts[0].peakArea = 5000.0f;
+  pts[0].peakAreaUncert = 75.0f;
+  pts[0].liveTime = 300.0f;
+  pts[0].distanceUncert = static_cast<float>( 0.5 * PhysicalUnits::cm );
+  pts[0].fileName = "cal.n42";
+  pts[0].sampleNumbers = "1";
+  MeasuredSourceInfo src;
+  src.sourceKey = "Eu152#0";
+  src.nuclide = "Eu152";
+  src.activity = 10.0 * PhysicalUnits::microCi;
+  src.fracActivityUncert = 0.03f;
+  src.distance = static_cast<float>( 25.0 * PhysicalUnits::cm );
+  src.distanceUncert = static_cast<float>( 0.5 * PhysicalUnits::cm );
+
+  auto meas = make_shared<MeasuredDrfPoints>();
+  meas->setPoints( pts );
+  meas->setSources( { src } );
+  orig->setMeasuredPoints( meas );
+  BOOST_CHECK( orig->measuredPoints()->hasProvenance() );
+
+  int version = -1;
+  shared_ptr<DetectorPeakResponse> restored = drf_xml_roundtrip( *orig, version );
+  BOOST_CHECK_EQUAL( version, 7 );
+  BOOST_REQUIRE( restored->measuredPoints() );
+  BOOST_CHECK( restored->measuredPoints()->hasProvenance() );
+  BOOST_REQUIRE_EQUAL( restored->measuredPoints()->sources().size(), 1u );
+  BOOST_CHECK_EQUAL( restored->measuredPoints()->sources()[0].nuclide, "Eu152" );
+  BOOST_CHECK_EQUAL( restored->measuredPoints()->points()[0].fileName, "cal.n42" );
+  BOOST_CHECK( close_enough( restored->measuredPoints()->points()[0].peakArea, 5000.0f, 1.0e-5 ) );
+  BOOST_CHECK_EQUAL( restored->hashValue(), orig->hashValue() );
+  BOOST_REQUIRE( restored->efficiencyUncert() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *restored->efficiencyUncert(),
+                                                          *orig->efficiencyUncert() ) );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *orig, *restored ) );
+#endif
+
+  // The DB blob path carries the same content
+  {
+    auto via_blob = make_shared<DetectorPeakResponse>( *orig );
+    via_blob->setMeasuredPoints( nullptr );
+    via_blob->setDrfExtraFromXmlString( orig->drfExtraToXmlString() );
+    BOOST_REQUIRE( via_blob->measuredPoints() );
+    BOOST_CHECK( *via_blob->measuredPoints() == *orig->measuredPoints() );
+  }
+
+  cout << "XML v7 round-trip passed" << endl;
+}//test_xml_v7_roundtrip
+
+
+
+/** Field-by-field comparison of two point sets, tolerant of float printing (relative 1e-6), that
+ names the first difference. */
+std::string points_difference( const MeasuredDrfPoints &a, const MeasuredDrfPoints &b )
+{
+  if( a.points().size() != b.points().size() )
+    return "point count " + std::to_string(a.points().size()) + " vs " + std::to_string(b.points().size());
+  auto close = []( const double x, const double y ){ return fabs(x - y) <= 1.0e-6*std::max(fabs(x),fabs(y)) + 1.0e-12; };
+  for( size_t i = 0; i < a.points().size(); ++i )
+  {
+    const MeasuredEffPoint &p = a.points()[i], &q = b.points()[i];
+    const std::pair<const char *,std::pair<double,double>> fields[] = {
+      {"energy",{p.energy,q.energy}}, {"efficiency",{p.efficiency,q.efficiency}},
+      {"fracStatUncert",{p.fracStatUncert,q.fracStatUncert}}, {"fracCertUncert",{p.fracCertUncert,q.fracCertUncert}},
+      {"distance",{p.distance,q.distance}}, {"distanceUncert",{p.distanceUncert,q.distanceUncert}},
+      {"peakArea",{p.peakArea,q.peakArea}}, {"peakAreaUncert",{p.peakAreaUncert,q.peakAreaUncert}},
+      {"liveTime",{p.liveTime,q.liveTime}}, {"bkgPeakArea",{p.bkgPeakArea,q.bkgPeakArea}},
+      {"bkgPeakAreaUncert",{p.bkgPeakAreaUncert,q.bkgPeakAreaUncert}} };
+    for( const auto &f : fields )
+      if( !close( f.second.first, f.second.second ) )
+        return std::string("point ") + std::to_string(i) + " " + f.first + ": " + std::to_string(f.second.first) + " vs " + std::to_string(f.second.second);
+    if( (p.sourceKey != q.sourceKey) || (p.fileName != q.fileName) || (p.sampleNumbers != q.sampleNumbers) )
+      return "point " + std::to_string(i) + " strings differ";
+  }
+  if( a.sources().size() != b.sources().size() )
+    return "source count differs";
+  for( size_t i = 0; i < a.sources().size(); ++i )
+  {
+    const MeasuredSourceInfo &p = a.sources()[i], &q = b.sources()[i];
+    if( (p.sourceKey != q.sourceKey) || (p.nuclide != q.nuclide) || !close(p.activity,q.activity)
+        || !close(p.fracActivityUncert,q.fracActivityUncert) || !close(p.age,q.age)
+        || !close(p.distance,q.distance) || !close(p.distanceUncert,q.distanceUncert) )
+      return "source " + std::to_string(i) + " differs";
+  }
+  return "";
+}//points_difference(...)
+
+
+BOOST_AUTO_TEST_CASE( test_n42_embeds_drf_with_measured_points )
+{
+  cout << "\n\nTesting that an N42 file carries a provenance-rich DRF..." << endl;
+
+  shared_ptr<DetectorPeakResponse> drf = make_drf_with_new_fields();
+  drf->setFwhmCoefficients( { 1.2f, 7.5f, 0.45f }, DetectorPeakResponse::kGadrasResolutionFcn,
+                            { 0.1f, 0.2f, 0.03f } );
+  vector<MeasuredEffPoint> pts;
+  for( const float kev : { 122.0f, 661.7f, 1332.0f } )
+  {
+    MeasuredEffPoint p;
+    p.energy = kev;
+    p.efficiency = 0.01f;
+    p.fracStatUncert = 0.02f;
+    p.fracCertUncert = 0.03f;
+    p.sourceKey = "Eu152#0";
+    p.distance = static_cast<float>( (kev < 500.0f ? 25.0 : 50.0) * PhysicalUnits::cm );
+    p.peakArea = 1000.0f * kev;
+    p.peakAreaUncert = 30.0f;
+    p.liveTime = 300.0f;
+    p.fileName = "cal.n42";
+    pts.push_back( p );
+  }
+  MeasuredSourceInfo src;
+  src.sourceKey = "Eu152#0";
+  src.nuclide = "Eu152";
+  src.activity = 10.0 * PhysicalUnits::microCi;
+  src.fracActivityUncert = 0.03f;
+  auto meas_pts = make_shared<MeasuredDrfPoints>();
+  meas_pts->setPoints( pts );
+  meas_pts->setSources( { src } );
+  drf->setMeasuredPoints( meas_pts );
+
+  auto meas = make_shared<SpecMeas>();
+  auto m = make_shared<SpecUtils::Measurement>();
+  auto counts = make_shared<vector<float>>( 128, 1.0f );
+  m->set_gamma_counts( counts, 100.0f, 100.0f );
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( 128, { 0.0f, 10.0f }, {} );
+  m->set_energy_calibration( cal );
+  meas->add_measurement( m, true );
+  meas->setDetector( drf );
+
+  stringstream out;
+  BOOST_REQUIRE( meas->write_2012_N42( out ) );
+
+  SpecMeas loaded;
+  stringstream in( out.str() );
+  BOOST_REQUIRE( loaded.load_from_N42( in ) );
+  BOOST_REQUIRE( loaded.detector() );
+  BOOST_REQUIRE( loaded.detector()->measuredPoints() );
+  BOOST_CHECK_MESSAGE( points_difference( *loaded.detector()->measuredPoints(), *drf->measuredPoints() ).empty(),
+                       points_difference( *loaded.detector()->measuredPoints(), *drf->measuredPoints() ) );
+  BOOST_REQUIRE_EQUAL( loaded.detector()->measuredPoints()->sources().size(), 1u );
+  BOOST_CHECK_EQUAL( loaded.detector()->measuredPoints()->sources()[0].nuclide, "Eu152" );
+  BOOST_CHECK( close_enough( loaded.detector()->measuredPoints()->points()[2].distance, 50.0*PhysicalUnits::cm, 1.0e-5 ) );
+  BOOST_REQUIRE_EQUAL( loaded.detector()->resolutionFcnUncertainties().size(), 3u );
+  BOOST_CHECK_EQUAL( loaded.detector()->hashValue(), drf->hashValue() );
+  BOOST_REQUIRE( loaded.detector()->efficiencyUncert() );
+  BOOST_CHECK_NO_THROW( DetectorEfficiencyUncert::equalEnough( *loaded.detector()->efficiencyUncert(),
+                                                          *drf->efficiencyUncert() ) );
+
+  cout << "N42 DRF embedding passed" << endl;
+}//test_n42_embeds_drf_with_measured_points

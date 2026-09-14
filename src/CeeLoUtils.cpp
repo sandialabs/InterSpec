@@ -41,6 +41,7 @@
 
 #include "io/SolidAngle.h"
 #include "io/ResponseKernel.h"
+#include "geometry/Geometry.h"
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -195,16 +196,45 @@ TransferAnchor transferAnchorForDrf(
         pts.push_back( p );
     }
 
-    double min_d = std::numeric_limits<double>::max(), max_d = 0.0, sum_d = 0.0;
-    for( const MeasuredEffPoint &p : pts )
+    if( pts.size() >= 2 )
     {
-      min_d = std::min( min_d, double(p.distance) );
-      max_d = std::max( max_d, double(p.distance) );
-      sum_d += p.distance;
-    }
+      // Reference distance: the user's override, else the distance most points were taken at
+      //  (so most of them transfer with a ratio of exactly one).
+      double d_ref_cm = override_ref_distance_cm;
+      if( d_ref_cm <= 0.0 )
+      {
+        map<long,size_t> counts;  //keyed on 0.1 mm to merge float noise
+        for( const MeasuredEffPoint &p : pts )
+          counts[ std::lround( 100.0 * p.distance / PhysicalUnits::cm ) ] += 1;
+        size_t best = 0;
+        for( const auto &c : counts )
+        {
+          if( c.second > best )
+          {
+            best = c.second;
+            d_ref_cm = 0.01 * c.first;
+          }
+        }
+      }//if( d_ref_cm <= 0.0 )
 
-    if( (pts.size() >= 2) && (max_d < 1.01*min_d) )
-    {
+      // Points at other distances are transferred to the reference distance through the geometry
+      //  kernel ratio - the same physics the response applies at query time.
+      {
+        std::unique_ptr<GeometryKernel> kernel;
+        for( MeasuredEffPoint &p : pts )
+        {
+          const double d_cm = p.distance / PhysicalUnits::cm;
+          if( fabs(d_cm - d_ref_cm) <= 0.01*d_ref_cm )
+            continue;
+          if( !kernel )
+            kernel.reset( new GeometryKernel( geom ) );
+          const double k_i = kernel->kernel( p.energy, d_cm );
+          const double k_ref = kernel->kernel( p.energy, d_ref_cm );
+          if( (k_i > 0.0) && (k_ref > 0.0) )
+            p.efficiency = static_cast<float>( p.efficiency * k_ref / k_i );
+        }//for( MeasuredEffPoint &p : pts )
+      }
+
       sort( begin(pts), end(pts),
             []( const MeasuredEffPoint &a, const MeasuredEffPoint &b ){
               return a.energy < b.energy;
@@ -257,13 +287,13 @@ TransferAnchor transferAnchorForDrf(
 
       if( answer.curve.energies_keV.size() >= 2 )
       {
-        answer.ref_distance_cm = (sum_d / pts.size()) / PhysicalUnits::cm;
+        answer.ref_distance_cm = d_ref_cm;
         answer.curve_derived = false;
         return answer;
       }
 
       answer.curve = ceelo::AnchorCurve{};
-    }//if( >= 2 points, all at one distance )
+    }//if( >= 2 points )
   }//if( raw && !raw->empty() )
 
   // Fallback: sample the fitted intrinsic curve and convert it to absolute
@@ -326,9 +356,9 @@ TransferAnchor transferAnchorForDrf(
     if( intrinsic <= 0.0 )
       continue;
 
-    double frac_sigma = 0.05;
+    double frac_sigma = sm_default_anchor_frac_sigma;
     if( cov.size() == ne*ne )
-      frac_sigma = std::max( 0.01, std::sqrt( std::max( 0.0, cov[i*ne + i] ) ) );
+      frac_sigma = std::max( sm_min_anchor_frac_sigma, std::sqrt( std::max( 0.0, cov[i*ne + i] ) ) );
 
     answer.curve.energies_keV.push_back( energies[i] );
     answer.curve.eff.push_back( intrinsic * frac_solid_angle );
@@ -427,6 +457,243 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 
   return ceelo::make_transfer_response( geom, anchor.curve, ref_pos, tot_anchor, opts );
 }//makeTransferResponse(...)
+
+
+struct GeometryKernel::Impl
+{
+  ceelo::GeometryDescriptor geom;
+  std::vector<std::unique_ptr<ceelo::Material>> owned;  //must outlive `geometry`
+  std::unique_ptr<ceelo::Geometry> geometry;
+  int n_rays;
+  double a_cm;
+  std::map<long,ceelo::ApertureQuadrature> quads;  //keyed on micrometres of face distance
+
+  const ceelo::ApertureQuadrature &quadrature( const double face_dist_cm )
+  {
+    const long key = std::lround( 1.0E4 * face_dist_cm );
+    auto pos = quads.find( key );
+    if( pos == end(quads) )
+    {
+      const Eigen::Vector3d src = sourcePositionFromFace( geom, 0.0, 0.0, face_dist_cm );
+      pos = quads.emplace( key, ceelo::make_aperture_quadrature( *geometry, src, n_rays ) ).first;
+    }
+    return pos->second;
+  }
+};//struct GeometryKernel::Impl
+
+
+GeometryKernel::GeometryKernel( const ceelo::GeometryDescriptor &geom, const int n_rays )
+  : m_impl( new Impl() )
+{
+  if( !geom.problems().empty() )
+    throw runtime_error( "GeometryKernel: geometry has problems: "
+                         + string(ceelo::to_string(geom.problems().front())) );
+  m_impl->geom = geom;
+  m_impl->geometry.reset( new ceelo::Geometry( geom.build_geometry( m_impl->owned ) ) );
+  m_impl->n_rays = std::max( 64, n_rays );
+  m_impl->a_cm = geom.transverse_half_extent();
+}//GeometryKernel(...)
+
+
+GeometryKernel::~GeometryKernel()
+{
+}
+
+
+double GeometryKernel::kernel( const double energy_keV, const double face_dist_cm )
+{
+  if( (energy_keV <= 0.0) || (face_dist_cm < 0.0) )
+    throw runtime_error( "GeometryKernel::kernel: invalid energy or distance" );
+  return m_impl->quadrature( face_dist_cm ).interaction_omega( energy_keV, ceelo::MuChoice::Total );
+}//kernel(...)
+
+
+double GeometryKernel::farFieldDistanceCm() const
+{
+  return std::max( 1000.0 * m_impl->a_cm, 100.0 );
+}
+
+
+double GeometryKernel::intrinsicFactor( const double energy_keV, const double face_dist_cm )
+{
+  const double d_far = farFieldDistanceCm();
+  const double k_far = kernel( energy_keV, d_far );
+  if( k_far <= 0.0 )
+    throw runtime_error( "GeometryKernel::intrinsicFactor: zero far-field kernel" );
+  const double omega_far = ceelo::disk_solid_angle_fraction( d_far, m_impl->a_cm );
+  return kernel( energy_keV, face_dist_cm ) * omega_far / k_far;
+}//intrinsicFactor(...)
+
+
+double GeometryKernel::intrinsicFactorDistanceSlope( const double energy_keV, const double face_dist_cm )
+{
+  const double delta = std::max( 0.05, 1.0E-3 * face_dist_cm );  //cm
+  const double lo = std::max( 0.0, face_dist_cm - delta );
+  const double hi = face_dist_cm + delta;
+  const double g_lo = intrinsicFactor( energy_keV, lo );
+  const double g_hi = intrinsicFactor( energy_keV, hi );
+  if( (g_lo <= 0.0) || (g_hi <= 0.0) )
+    return 0.0;
+  return log( g_hi / g_lo ) / (hi - lo);
+}//intrinsicFactorDistanceSlope(...)
+
+
+std::vector<double> farFieldIntrinsicFactors( const ceelo::GeometryDescriptor &geom,
+                                              const std::vector<double> &energies_keV,
+                                              const std::vector<double> &face_dist_cm,
+                                              const int n_rays )
+{
+  if( energies_keV.size() != face_dist_cm.size() )
+    throw runtime_error( "farFieldIntrinsicFactors: energies and distances must be parallel" );
+  GeometryKernel kernel( geom, n_rays );
+  vector<double> answer( energies_keV.size() );
+  for( size_t i = 0; i < energies_keV.size(); ++i )
+    answer[i] = kernel.intrinsicFactor( energies_keV[i], face_dist_cm[i] );
+  return answer;
+}//farFieldIntrinsicFactors(...)
+
+
+std::vector<double> farFieldIntrinsicFactorDistanceSlopes( const ceelo::GeometryDescriptor &geom,
+                                              const std::vector<double> &energies_keV,
+                                              const std::vector<double> &face_dist_cm,
+                                              const int n_rays )
+{
+  if( energies_keV.size() != face_dist_cm.size() )
+    throw runtime_error( "farFieldIntrinsicFactorDistanceSlopes: energies and distances must be parallel" );
+  GeometryKernel kernel( geom, n_rays );
+  vector<double> answer( energies_keV.size() );
+  for( size_t i = 0; i < energies_keV.size(); ++i )
+    answer[i] = kernel.intrinsicFactorDistanceSlope( energies_keV[i], face_dist_cm[i] );
+  return answer;
+}//farFieldIntrinsicFactorDistanceSlopes(...)
+
+
+TransferAnchor curveAnchorWithCovarianceForDrf(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const ceelo::GeometryDescriptor &geom,
+                      const double ref_distance_cm )
+{
+  if( !drf || !drf->isValid() )
+    throw runtime_error( "curveAnchorWithCovarianceForDrf: invalid detector response." );
+
+  if( drf->isFixedGeometry() )
+    throw runtime_error( "curveAnchorWithCovarianceForDrf: a fixed-geometry efficiency"
+                         " has no source-detector geometry to transfer." );
+
+  double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
+  if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+  {
+    e_lo = 59.0;
+    e_hi = 2614.0;
+  }
+  e_lo = std::max( e_lo, 20.0 );
+
+  // Dense log-spaced samples plus flanks either side of each crystal K-edge (the transfer's eta
+  //  interpolant is segmented at the edges but gets nodes only at anchor energies).
+  const int n_samples = 24;
+  vector<double> energies;
+  for( int i = 0; i < n_samples; ++i )
+    energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_samples-1) ) );
+
+  for( const double edge : geom.crystal_k_edges( e_lo, e_hi ) )
+  {
+    const double below = edge * (1.0 - 1.0e-3), above = edge * (1.0 + 1.0e-3);
+    if( (below > e_lo) && (above < e_hi) )
+    {
+      energies.push_back( below );
+      energies.push_back( above );
+    }
+  }
+
+  sort( begin(energies), end(energies) );
+  energies.erase( unique( begin(energies), end(energies) ), end(energies) );
+
+  // Absolute efficiency at the reference distance, through the kernel: eta(E)*K(E,d_ref) with
+  //  eta pinned so the far-field intrinsic efficiency is the DRF's curve (see GeometryKernel).
+  GeometryKernel kernel( geom );
+  const double d_far = kernel.farFieldDistanceCm();
+  const double d_ref = (ref_distance_cm > 0.0) ? ref_distance_cm : d_far;
+
+  TransferAnchor answer;
+  answer.curve_derived = true;
+  answer.ref_distance_cm = d_ref;
+
+  vector<size_t> kept;  //indices into `energies` that made it into the anchor
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    const double intrinsic = drf->intrinsicEfficiency( static_cast<float>(energies[i]) );
+    if( (intrinsic <= 0.0) || std::isnan(intrinsic) || std::isinf(intrinsic) )
+      continue;
+    const double g = kernel.intrinsicFactor( energies[i], d_ref );
+    if( g <= 0.0 )
+      continue;
+    answer.curve.energies_keV.push_back( energies[i] );
+    answer.curve.eff.push_back( intrinsic * g );
+    kept.push_back( i );
+  }//for( size_t i = 0; i < energies.size(); ++i )
+
+  const size_t ne = kept.size();
+  if( ne < 2 )
+    throw runtime_error( "curveAnchorWithCovarianceForDrf: fewer than two usable"
+                         " efficiency points could be constructed." );
+
+  // The curve's own covariance (coefficient covariance propagated, or node covariance) - read
+  //  from the curve, not the DRF, so an already attached response cannot intercept it.
+  vector<double> cov;
+  const shared_ptr<const DetectorEfficiencyCurve> curve = drf->efficiencyCurve();
+  if( curve )
+    cov = curve->fracCovariance( answer.curve.energies_keV );
+
+  bool cov_usable = (cov.size() == ne*ne);
+  for( size_t i = 0; cov_usable && (i < ne); ++i )
+    cov_usable = (cov[i*ne + i] > 0.0) && !std::isnan(cov[i*ne + i]) && !std::isinf(cov[i*ne + i]);
+
+  if( cov_usable )
+  {
+    answer.curve.frac_cov = cov;
+  }else
+  {
+    // No usable covariance: fall back to per-point sigmas, as transferAnchorForDrf
+    answer.curve.frac_sigma.assign( ne, sm_default_anchor_frac_sigma );
+    if( cov.size() == ne*ne )
+      for( size_t i = 0; i < ne; ++i )
+        answer.curve.frac_sigma[i] = std::max( sm_min_anchor_frac_sigma, std::sqrt( std::max( 0.0, cov[i*ne + i] ) ) );
+  }
+
+  // Raw points, for provenance / re-grounding
+  const shared_ptr<const MeasuredDrfPoints> raw = drf->measuredPoints();
+  if( raw )
+  {
+    for( const MeasuredEffPoint &p : raw->points() )
+    {
+      if( (p.distance < 0.0f) || (p.efficiency <= 0.0f) )
+        continue;
+      ceelo::GroundingPoint gp;
+      gp.energy_keV = p.energy;
+      gp.measured_eff = p.efficiency;
+      gp.frac_stat_sigma = p.fracStatUncert;
+      gp.frac_cert_sigma = p.fracCertUncert;
+      gp.source_key = p.sourceKey;
+      gp.distance_cm = p.distance / PhysicalUnits::cm;
+      gp.cos_theta = 1.0;
+      answer.curve.points.push_back( std::move(gp) );
+    }
+  }//if( raw )
+
+  return answer;
+}//curveAnchorWithCovarianceForDrf(...)
+
+
+double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd )
+{
+  return std::max( 1000.0 * gd.transverse_half_extent(), 100.0 );
+}//farFieldDistanceCm(...)
+
+
+Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd )
+{
+  return sourcePositionFromFace( gd, 0.0, 0.0, farFieldDistanceCm( gd ) );
+}//farFieldSourcePosition(...)
 
 
 Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
@@ -1504,7 +1771,8 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   //  CeeLo-backed DRF: on axis, in the response's own far field, over the same
   //  disk solid angle.  Any divergence here would put the stored curve and the
   //  live query at odds.
-  const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
+  const double d_cm = farFieldDistanceCm( response->descriptor );
+  const Eigen::Vector3d far_pos = farFieldSourcePosition( response->descriptor );
   const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
   if( omega <= 0.0 )
     throw runtime_error( "setLegacyEfficiencyFromResponse: degenerate solid angle." );
@@ -1513,8 +1781,7 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   points.reserve( energies.size() );
   for( const double energy : energies )
   {
-    const ceelo::EffResult res = response->eps_fep_at( energy,
-                                    sourcePositionFromFace( response->descriptor, 0.0, 0.0, d_cm ) );
+    const ceelo::EffResult res = response->eps_fep_at( energy, far_pos );
     const double eff = res.value / omega;
     if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
       continue;

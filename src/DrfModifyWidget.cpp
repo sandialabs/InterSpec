@@ -542,7 +542,11 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
         m_anchorTable->elementAt(0,col++)->addNew<WText>(
                     WString::tr( m_anchorHasSourceCol ? "dmw-anchor-cert" : "dmw-anchor-corr" ) );
         if( m_anchorHasSourceCol )
+        {
           m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-source") );
+          // Per-point distance: characterization sources need not all sit at the reference distance
+          m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-dist") );
+        }
       }
 
       WContainerWidget *btns = m_pointsEditor->addNew<WContainerWidget>();
@@ -556,7 +560,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       if( have_measured )
       {
         for( const MeasuredEffPoint &p : measured->points() )
-          addAnchorRow( p.energy, p.efficiency, p.fracStatUncert, p.fracCertUncert, p.sourceKey );
+          addAnchorRow( p.energy, p.efficiency, p.fracStatUncert, p.fracCertUncert, p.sourceKey,
+                        p.distance );
       }else if( have_pairs )
       {
         // Seed the uncertainty columns from whatever the DRF actually carries: the split the
@@ -729,7 +734,7 @@ std::shared_ptr<const DetectorPeakResponse> DrfModifyWidget::originalDrf() const
 
 void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
                                     const float fracStatUncert, const float fracCertUncert,
-                                    const std::string &sourceKey )
+                                    const std::string &sourceKey, const float distance )
 {
   const int row = m_anchorTable->rowCount();  //row 0 is the header
 
@@ -762,12 +767,23 @@ void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
   r.stat   = make_edit( col++, fracStatUncert, true );
   r.cert   = make_edit( col++, fracCertUncert, true );
   r.source = nullptr;
+  r.dist = nullptr;
   if( m_anchorHasSourceCol )
   {
     r.source = m_anchorTable->elementAt(row,col++)->addNew<WLineEdit>();
     r.source->setTextSize( 10 );
     r.source->setText( WString::fromUTF8(sourceKey) );
     r.source->changed().connect( this, &DrfModifyWidget::markEdited );
+
+    r.dist = m_anchorTable->elementAt(row,col++)->addNew<WLineEdit>();
+    r.dist->setTextSize( 6 );
+    if( distance > 0.0f )
+    {
+      char buf[32];
+      snprintf( buf, sizeof(buf), "%.4g", distance / PhysicalUnits::cm );
+      r.dist->setText( buf );
+    }
+    r.dist->changed().connect( this, &DrfModifyWidget::markEdited );
   }//if( m_anchorHasSourceCol )
   m_anchors.push_back( r );
   if( m_removeAnchor )
@@ -899,6 +915,32 @@ void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
 
   const double refDist = refDistCm * PhysicalUnits::cm;
 
+  // Points may have been measured at distances other than the reference distance the curve is
+  //  anchored at, so each is scaled by the ratio of geometric factors before it joins the curve.
+  //  Uses the ray-traced kernel when the detector states a geometry (correct in the near field),
+  //  else the flat-disk solid angle.
+  const double working_diam = working.detectorDiameter();
+  const double working_setback = working.detectorSetback();
+  std::unique_ptr<CeeLoUtils::GeometryKernel> dist_kernel;
+  if( m_anchorIsAbsolute && working.geometry() )
+  {
+    try
+    {
+      dist_kernel.reset( new CeeLoUtils::GeometryKernel( *working.geometry() ) );
+    }catch( std::exception & )
+    {
+    }
+  }//if( a geometry is available )
+
+  auto geom_factor = [&]( const double energy, const double dist ) -> double {
+    if( dist_kernel )
+    {
+      try{ return dist_kernel->intrinsicFactor( energy, dist / PhysicalUnits::cm ); }
+      catch( std::exception & ){}
+    }
+    return DetectorPeakResponse::fractionalSolidAngle( working_diam, dist + working_setback );
+  };//geom_factor lambda
+
   vector<DetectorPeakResponse::EnergyEffPoint> effpts;
   vector<MeasuredEffPoint> measpts;
   for( const AnchorRow &r : m_anchors )
@@ -943,23 +985,59 @@ void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
     if( r.source )
       srcKey = r.source->text().toUTF8();
 
+    // Per-point distance (cm); blank means the reference distance
+    double pointDist = refDist;
+    if( r.dist )
+    {
+      const string ds = r.dist->text().toUTF8();
+      if( !ds.empty() )
+      {
+        try{ pointDist = std::stod( ds ) * PhysicalUnits::cm; }catch( std::exception & ){ pointDist = refDist; }
+        if( pointDist <= 0.0 )
+          pointDist = refDist;
+      }
+    }//if( r.dist )
+
+    // The curve is absolute efficiency AT `refDist`; a point taken elsewhere is transferred there.
+    double eff_at_ref = eff;
+    if( m_anchorIsAbsolute && (fabs(pointDist - refDist) > 1.0E-6*refDist) )
+    {
+      const double g_point = geom_factor( energy * m_anchorEnergyUnits, pointDist );
+      const double g_ref = geom_factor( energy * m_anchorEnergyUnits, refDist );
+      if( (g_point > 0.0) && (g_ref > 0.0) )
+        eff_at_ref = eff * g_ref / g_point;
+    }//if( this point was measured somewhere other than the reference distance )
+
     DetectorPeakResponse::EnergyEffPoint e;
     e.energy = energy;
-    e.efficiency = eff;
+    e.efficiency = eff_at_ref;
     // The far-field curve carries the combined 1-sigma as a fallback per-point uncert; the richer
     //  per-source covariance is set from the measured points below (and overwrites it).
     const float combo = std::sqrt( statFrac*statFrac + certFrac*certFrac );
     if( combo > 0.0f )
-      e.efficiencyUncert = eff * combo;
+      e.efficiencyUncert = eff_at_ref * combo;
     effpts.push_back( e );
 
     MeasuredEffPoint m;
+    // Start from the original point when this row still describes it, so the provenance
+    //  (peak area, live time, file, ...) an edit of one number should not erase is kept.
+    if( m_orig && m_orig->measuredPoints() )
+    {
+      for( const MeasuredEffPoint &orig : m_orig->measuredPoints()->points() )
+      {
+        if( (fabs(orig.energy - energy) < 1.0E-3f*energy) && (orig.sourceKey == srcKey) )
+        {
+          m = orig;
+          break;
+        }
+      }
+    }//if( m_orig && m_orig->measuredPoints() )
     m.energy = energy;
     m.efficiency = eff;
     m.fracStatUncert = statFrac;
     m.fracCertUncert = certFrac;
     m.sourceKey = srcKey;
-    m.distance = m_anchorIsAbsolute ? static_cast<float>( refDist ) : -1.0f;
+    m.distance = m_anchorIsAbsolute ? static_cast<float>( pointDist ) : -1.0f;
     measpts.push_back( m );
   }//for( const AnchorRow &r : m_anchors )
 
@@ -981,6 +1059,8 @@ void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
 
       auto meas = make_shared<MeasuredDrfPoints>();
       meas->setPoints( measpts );
+      if( m_orig && m_orig->measuredPoints() )
+        meas->setSources( m_orig->measuredPoints()->sources() );  //the source table survives edits
       working.setMeasuredPoints( meas );
 
       // Drive the efficiency uncertainty from the edited stat/cert/source structure (C[i][j] =
@@ -1064,7 +1144,8 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
     state->anchors.push_back( { r.energy->text().toUTF8(), r.eff->text().toUTF8(),
                                 r.stat->text().toUTF8(),
                                 r.cert ? r.cert->text().toUTF8() : string(),
-                                r.source ? r.source->text().toUTF8() : string() } );
+                                r.source ? r.source->text().toUTF8() : string(),
+                                r.dist ? r.dist->text().toUTF8() : string() } );
   }//for( const AnchorRow &r : m_anchors )
 
   if( m_anchorRefDistance )
@@ -1127,7 +1208,7 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   {
     while( !m_anchors.empty() )
       removeAnchorRow();
-    for( const std::array<string,5> &a : state->anchors )
+    for( const std::array<string,6> &a : state->anchors )
     {
       addAnchorRow( 0.0f, 0.0f, 0.0f, 0.0f, string() );
       m_anchors.back().energy->setText( WString::fromUTF8(a[0]) );
@@ -1137,7 +1218,9 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
         m_anchors.back().cert->setText( WString::fromUTF8(a[3]) );
       if( m_anchors.back().source )
         m_anchors.back().source->setText( WString::fromUTF8(a[4]) );
-    }//for( const std::array<string,5> &a : state->anchors )
+      if( m_anchors.back().dist )
+        m_anchors.back().dist->setText( WString::fromUTF8(a[5]) );
+    }//for( const std::array<string,6> &a : state->anchors )
 
     m_anchorRefDistance->setText( WString::fromUTF8(state->anchorRefDistance) );
     m_anchorDefaultUncert->setText( WString::fromUTF8(state->anchorDefaultUncert) );

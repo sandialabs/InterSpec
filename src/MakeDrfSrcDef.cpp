@@ -75,14 +75,15 @@ using namespace Wt;
 namespace
 {
   const int sm_distance_row        = 1;
-  const int sm_activity_row        = 2;
-  const int sm_activity_uncert_row = 3;
-  const int sm_assay_date_row      = 4;
-  const int sm_spec_date_row       = 5;
-  const int sm_age_at_assay_row    = 6;
-  const int sm_decayed_info_row    = 7;
-  const int sm_shield_material_row = 8;
-  const int sm_options_row         = 9;
+  const int sm_distance_uncert_row = 2;
+  const int sm_activity_row        = 3;
+  const int sm_activity_uncert_row = 4;
+  const int sm_assay_date_row      = 5;
+  const int sm_spec_date_row       = 6;
+  const int sm_age_at_assay_row    = 7;
+  const int sm_decayed_info_row    = 8;
+  const int sm_shield_material_row = 9;
+  const int sm_options_row         = 10;
   
   
   // Returns if the candidate source is already in the vector of sources
@@ -335,6 +336,8 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_nuclideLabel( nullptr ),
   m_distanceLabel( nullptr ),
   m_distanceEdit( nullptr ),
+  m_distanceUncertLabel( nullptr ),
+  m_distanceUncertEdit( nullptr ),
   m_activityLabel( nullptr ),
   m_activityEdit( nullptr ),
   m_activityUncertainty( nullptr ),
@@ -520,7 +523,7 @@ void MakeDrfSrcDef::create()
 */
   
   cell = m_table->elementAt(sm_distance_row,0);
-  m_distanceLabel = cell->addNew<WLabel>( WString::fromUTF8("Distance") );
+  m_distanceLabel = cell->addNew<WLabel>( WString::tr("msd-distance") );
   cell = m_table->elementAt(sm_distance_row,1);
   m_distanceEdit = cell->addNew<WLineEdit>();
   m_distanceEdit->setTextSize( 16 );
@@ -538,10 +541,29 @@ void MakeDrfSrcDef::create()
   m_distanceEdit->setText( "50 cm" );
   m_distanceEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
   m_distanceEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedDistance );
+
+  // Optional distance uncertainty: fully correlated for all this source's peaks, it propagates
+  //  into the efficiency uncertainty through the geometric factor's distance slope.
+  cell = m_table->elementAt(sm_distance_uncert_row,0);
+  m_distanceUncertLabel = cell->addNew<WLabel>( WString::tr("msd-distance-uncert") );
+  cell = m_table->elementAt(sm_distance_uncert_row,1);
+  m_distanceUncertEdit = cell->addNew<WLineEdit>();
+  m_distanceUncertEdit->setTextSize( 16 );
+  m_distanceUncertEdit->setAutoComplete( false );
+  m_distanceUncertEdit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceUncertEdit->setAttributeValue( "autocorrect", "off" );
+  m_distanceUncertEdit->setAttributeValue( "spellcheck", "off" );
+#endif
+  m_distanceUncertLabel->setBuddy( m_distanceUncertEdit );
+  m_distanceUncertEdit->setValidator( distValidator );
+  m_distanceUncertEdit->setPlaceholderText( WString::tr("msd-distance-uncert-ph") );
+  m_distanceUncertEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedDistanceUncert );
+  m_distanceUncertEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedDistanceUncert );
   
   
   cell = m_table->elementAt(sm_activity_row,0);
-  m_activityLabel = cell->addNew<WLabel>( WString::fromUTF8("Activity") );
+  m_activityLabel = cell->addNew<WLabel>( WString::tr("msd-activity") );
 
   cell = m_table->elementAt(sm_activity_row,1);
   m_activityEdit = cell->addNew<WLineEdit>();
@@ -564,7 +586,7 @@ void MakeDrfSrcDef::create()
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
   cell = m_table->elementAt(sm_activity_uncert_row,0);
-  WLabel *label = cell->addNew<WLabel>( WString::fromUTF8("Act. Uncert.&nbsp;") );  //The nbsp is to make this the longest label so when acti ity or shielding is shown, the width doesnt get changed
+  WLabel *label = cell->addNew<WLabel>( WString::tr("msd-act-uncert") );  //The nbsp in the text is to make this the longest label so when activity or shielding is shown, the width doesnt get changed
   cell = m_table->elementAt(sm_activity_uncert_row,1);
   m_activityUncertainty = cell->addNew<WDoubleSpinBox>();
   m_activityUncertainty->setValue( 0.0 );
@@ -589,7 +611,7 @@ void MakeDrfSrcDef::create()
   //m_activityUncertainty->setValidator( percentVal );
   
   cell = m_table->elementAt(sm_assay_date_row,0);
-  label = cell->addNew<WLabel>( WString::fromUTF8("Assay Date") );
+  label = cell->addNew<WLabel>( WString::tr("msd-assay-date") );
   cell = m_table->elementAt(sm_assay_date_row,1);
   m_assayDate = cell->addNew<WDateEdit>();
   //m_assayDate->setTextSize( 9 );
@@ -597,7 +619,7 @@ void MakeDrfSrcDef::create()
   m_assayDate->changed().connect( this, &MakeDrfSrcDef::handleEnteredDatesUpdated );
   
   cell = m_table->elementAt(sm_spec_date_row,0);
-  label = cell->addNew<WLabel>( WString::fromUTF8("Spec. Date") );
+  label = cell->addNew<WLabel>( WString::tr("msd-spec-date") );
   cell = m_table->elementAt(sm_spec_date_row,1);
   m_drfMeasurementDate = cell->addNew<WDateEdit>();
   //m_drfMeasurementDate->setTextSize( 10 );
@@ -607,7 +629,7 @@ void MakeDrfSrcDef::create()
   
   
   cell = m_table->elementAt(sm_age_at_assay_row,0);
-  label = cell->addNew<WLabel>( WString::fromUTF8("Age@Assay") );
+  label = cell->addNew<WLabel>( WString::tr("msd-age-at-assay") );
   cell = m_table->elementAt(sm_age_at_assay_row,1);
   m_sourceAgeAtAssay = cell->addNew<WLineEdit>();
   
@@ -1015,6 +1037,71 @@ void MakeDrfSrcDef::setDistance( const double dist )
 }//void setDistance( const double dist );
 
 
+double MakeDrfSrcDef::distanceUncertainty() const
+{
+  string txt = m_distanceUncertEdit->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( txt.empty() )
+    return 0.0;
+  try
+  {
+    const double val = PhysicalUnits::stringToDistance( txt );
+    return (val > 0.0) ? val : 0.0;
+  }catch( std::exception & )
+  {
+    return 0.0;
+  }
+}//distanceUncertainty()
+
+
+void MakeDrfSrcDef::setDistanceUncertainty( const double uncert )
+{
+  if( uncert > 0.0 )
+    m_distanceUncertEdit->setText( PhysicalUnits::printToBestLengthUnits(uncert) );
+  else
+    m_distanceUncertEdit->setText( "" );
+}//setDistanceUncertainty(...)
+
+
+void MakeDrfSrcDef::handleUserChangedDistanceUncert()
+{
+  string txt = m_distanceUncertEdit->text().toUTF8();
+  SpecUtils::trim( txt );
+  bool valid = txt.empty();
+  if( !valid )
+  {
+    try{ PhysicalUnits::stringToDistance( txt ); valid = true; }catch( std::exception & ){ valid = false; }
+  }
+  if( valid && m_distanceUncertEdit->hasStyleClass( "SrcInputError" ) )
+    m_distanceUncertEdit->removeStyleClass( "SrcInputError" );
+  else if( !valid && !m_distanceUncertEdit->hasStyleClass( "SrcInputError" ) )
+    m_distanceUncertEdit->addStyleClass( "SrcInputError" );
+  m_updated.emit();
+}//handleUserChangedDistanceUncert()
+
+
+std::string MakeDrfSrcDef::assayInfoString() const
+{
+  string answer;
+  try
+  {
+    if( m_useAgeInfo->isChecked() )
+    {
+      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      answer += "Assay " + m_assayDate->date().toString("yyyy-MM-dd").toUTF8()
+                + ": " + PhysicalUnits::printToBestActivityUnits( enteredActivity(), 5, useCi );
+      const string age = m_sourceAgeAtAssay->text().toUTF8();
+      if( !age.empty() )
+        answer += "; age at assay " + age;
+      answer += "; spectrum " + m_drfMeasurementDate->date().toString("yyyy-MM-dd").toUTF8();
+    }
+  }catch( std::exception & )
+  {
+  }
+  return answer;
+}//assayInfoString()
+
+
 void MakeDrfSrcDef::setActivity( const double act )
 {
   const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
@@ -1134,35 +1221,37 @@ void MakeDrfSrcDef::setIsEffGeometryType( const int drf_eff_geom_type )
          || (type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram) );
   
   bool hide_distance = false;
-  const char *text = "Activity";
+  const char *text = "msd-activity";
   switch( type )
   {
     case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
     case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
       hide_distance = false;
-      text = "Activity";
+      text = "msd-activity";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
       hide_distance = true;
-      text = "Total Act.";
+      text = "msd-total-act";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
       hide_distance = true;
-      text = "Act./cm2";
+      text = "msd-act-per-cm2";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
       hide_distance = true;
-      text = "Act./m2";
+      text = "msd-act-per-m2";
       break;
     case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
       hide_distance = true;
-      text = "Act./gram";
+      text = "msd-act-per-gram";
       break;
   }//switch( type )
   
-  m_activityLabel->setText( text );
+  m_activityLabel->setText( WString::tr(text) );
   m_distanceEdit->setHidden( hide_distance );
   m_distanceLabel->setHidden( hide_distance );
+  m_distanceUncertEdit->setHidden( hide_distance );
+  m_distanceUncertLabel->setHidden( hide_distance );
 }//void setIsEffGeometryType( const bool is_fixed )
 
 
@@ -1227,6 +1316,9 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
     const double dist = distance();
     if( dist > 0.0 )
       answer += " Distance=" + PhysicalUnits::printToBestLengthUnits( dist, 6 );
+    const double dist_uncert = distanceUncertainty();
+    if( (dist > 0.0) && (dist_uncert > 0.0) )
+      answer += " DistanceUncert=" + PhysicalUnits::printToBestLengthUnits( dist_uncert, 6 );
   }catch( std::exception &e )
   {
     // Fixed geometry or something

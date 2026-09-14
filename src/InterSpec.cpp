@@ -9358,7 +9358,8 @@ void InterSpec::deleteMcResponseWindow()
 }//void deleteMcResponseWindow()
 
 
-DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf )
+DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf,
+                                                 const bool blank_if_null )
 {
   if( m_drfModifyWindow )
   {
@@ -9367,7 +9368,7 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
     return m_drfModifyWindow.get();
   }//if( m_drfModifyWindow )
 
-  if( !drf )
+  if( !drf && !blank_if_null )
   {
     const shared_ptr<SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
     drf = foreground ? foreground->detector() : nullptr;

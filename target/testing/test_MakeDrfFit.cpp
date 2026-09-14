@@ -773,3 +773,454 @@ BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_consistency )
   BOOST_CHECK_GE( chi2, 0.0 );
   BOOST_CHECK( std::isfinite( chi2 ) );
 }
+
+
+// ---- Templated evaluators ---------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE( test_expOfLogPowerSeries_template_matches_float )
+{
+  const std::vector<float> coefs = { -2.7f, -1.2f, -0.18f, -0.14f };
+  for( const double energy : { 0.03, 0.06, 0.122, 0.3, 0.661, 1.332, 2.6 } )  //MeV
+  {
+    double expected = 0.0;
+    for( size_t i = 0; i < coefs.size(); ++i )
+      expected += coefs[i] * std::pow( std::log(energy), static_cast<double>(i) );
+    expected = std::exp( expected );
+
+    const float legacy = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<float>(energy), coefs );
+    const double templ = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, coefs.data(), coefs.size() );
+    BOOST_CHECK_CLOSE( legacy, expected, 1.0e-3 );
+    BOOST_CHECK_CLOSE( templ, expected, 1.0e-8 );
+  }
+
+  // No coefficients -> 0; a huge exponent is capped rather than overflowing
+  BOOST_CHECK_EQUAL( DetectorPeakResponse::expOfLogPowerSeriesEfficiency( 100.0, coefs.data(), 0 ), 0.0 );
+  const double big[2] = { 500.0, 0.0 };
+  const double capped = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( 100.0, big, 2 );
+  BOOST_CHECK( !std::isinf(capped) && !std::isnan(capped) );
+  BOOST_CHECK_LT( capped, std::exp(50.0) );
+}//test_expOfLogPowerSeries_template_matches_float
+
+
+BOOST_AUTO_TEST_CASE( test_templated_fwhm_matches_float )
+{
+  using Form = DetectorPeakResponse::ResolutionFnctForm;
+
+  // Hand-computed reference values for each form, including the 10 keV clamp
+  const std::vector<float> gad_pos = { 1.4f, 0.25f, 0.45f }, gad_neg = { -3.0f, 6.0f, 0.5f };
+  const std::vector<float> sqrt_inv = { 2.6f, 0.0015f, 30.0f };
+  const std::vector<float> const_sqrt = { 1.0f, 0.035f };
+  const std::vector<float> sqrt_poly = { 2.6f, 1.0f, 0.5f };
+
+  auto gadras_ref = []( const std::vector<float> &p, double e ){
+    e = std::max( e, 10.0 );
+    const double a = p[0], b = p[1], c = p[2];
+    if( e > 661.0 )
+      return 6.61 * b * std::pow( e/661.0, c );
+    if( a >= 0.0 )
+    {
+      const double zl = a * (661.0 - e) / 661.0;
+      const double f = 6.61 * b * std::pow( e/661.0, c );
+      return std::sqrt( zl*zl + f*f );
+    }
+    const double pw = std::pow( c, 1.0/std::log(1.0 - a) );
+    return 6.61 * b * std::pow( std::max(30.0,e)/661.0, pw );
+  };
+
+  for( const double energy : { 5.0, 10.0, 30.0, 59.5, 122.0, 356.0, 661.0, 1332.0, 2614.0 } )
+  {
+    const float ef = static_cast<float>( energy );
+    const double ec = std::max( energy, 10.0 );
+
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( ef, Form::kGadrasResolutionFcn, gad_pos ),
+                       gadras_ref( gad_pos, energy ), 1.0e-3 );
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( ef, Form::kGadrasResolutionFcn, gad_neg ),
+                       gadras_ref( gad_neg, energy ), 1.0e-3 );
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( ef, Form::kSqrtEnergyPlusInverse, sqrt_inv ),
+                       std::sqrt( sqrt_inv[0] + sqrt_inv[1]*ec + sqrt_inv[2]/ec ), 1.0e-3 );
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( ef, Form::kConstantPlusSqrtEnergy, const_sqrt ),
+                       const_sqrt[0] + const_sqrt[1]*std::sqrt(ec), 1.0e-3 );
+    const double x = ec / 1000.0;
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( ef, Form::kSqrtPolynomial, sqrt_poly ),
+                       std::sqrt( sqrt_poly[0] + sqrt_poly[1]*x + sqrt_poly[2]*x*x ), 1.0e-3 );
+
+    // The double template is the same function
+    BOOST_CHECK_CLOSE( DetectorPeakResponse::peakResolutionFWHM( energy, Form::kGadrasResolutionFcn,
+                                                                 gad_neg.data(), 3 ),
+                       gadras_ref( gad_neg, energy ), 1.0e-8 );
+  }//for( energies )
+
+  // A negative square-root argument gives a small positive continuation, not NaN
+  const std::vector<float> bad_poly = { -5.0f, 0.0f };
+  const float cont = DetectorPeakResponse::peakResolutionFWHM( 100.0f, Form::kSqrtPolynomial, bad_poly );
+  BOOST_CHECK( !std::isnan(cont) );
+  BOOST_CHECK_GT( cont, 0.0f );
+  BOOST_CHECK_LT( cont, 1.0e-3f );
+
+  BOOST_CHECK_THROW( DetectorPeakResponse::peakResolutionFWHM( 100.0f, Form::kGadrasResolutionFcn, const_sqrt ),
+                     std::runtime_error );
+}//test_templated_fwhm_matches_float
+
+
+// ---- Efficiency fit -----------------------------------------------------------------------------
+
+namespace
+{
+  /** Synthetic points on exp(c0 + c1*lnE + ...) (energies in keV) with Gaussian scatter of
+   `noise_frac`, stated statistical uncertainty `stat_frac`. */
+  std::vector<MakeDrfFit::EffFitPoint> make_eff_points( const std::vector<float> &truth,
+                                                        const double stat_frac,
+                                                        const double noise_frac,
+                                                        const unsigned seed = 4242 )
+  {
+    const std::vector<double> energies = { 59.5, 81.0, 122.1, 244.7, 344.3, 356.0, 511.0,
+                                           661.7, 778.9, 964.1, 1173.2, 1332.5, 1408.0 };
+    std::mt19937 gen( seed );
+    std::normal_distribution<double> noise( 0.0, 1.0 );
+
+    std::vector<MakeDrfFit::EffFitPoint> pts;
+    for( const double energy : energies )
+    {
+      const double eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( energy, truth.data(), truth.size() );
+      MakeDrfFit::EffFitPoint p;
+      p.energy = static_cast<float>( energy );
+      p.efficiency = static_cast<float>( eff * (1.0 + noise_frac*noise(gen)) );
+      p.fracStatUncert = static_cast<float>( stat_frac );
+      p.sourceKey = (energy < 300.0) ? "Eu152#0" : "Co60#1";
+      pts.push_back( p );
+    }
+    return pts;
+  }//make_eff_points(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_recovers_truth )
+{
+  // A 3-term keV curve (intrinsic ~ 0.5 at 60 keV falling to ~0.05 at 1.3 MeV)
+  const std::vector<float> truth = { -4.5f, 1.9f, -0.22f };
+  const std::vector<MakeDrfFit::EffFitPoint> pts = make_eff_points( truth, 0.02, 0.02 );
+
+  const MakeDrfFit::EffFitResult fit = MakeDrfFit::performEfficiencyFit( pts, 3 );
+  BOOST_REQUIRE_EQUAL( fit.coefs.size(), 3u );
+  BOOST_REQUIRE_EQUAL( fit.uncerts.size(), 3u );
+  BOOST_REQUIRE_EQUAL( fit.covRowMajor.size(), 9u );
+  BOOST_CHECK_EQUAL( fit.dof, 10 );
+  BOOST_CHECK_MESSAGE( fit.warnings.empty(), "Warnings: " + fit.warnings );
+
+  // Coefficients within 3 sigma, curve within ~2% everywhere
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK_GT( fit.uncerts[i], 0.0f );
+    BOOST_CHECK_MESSAGE( std::fabs(fit.coefs[i] - truth[i]) < 3.0*fit.uncerts[i],
+                         "coef " << i << ": " << fit.coefs[i] << " +- " << fit.uncerts[i]
+                         << " vs truth " << truth[i] );
+  }
+  for( const MakeDrfFit::EffFitPoint &p : pts )
+  {
+    const double truth_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<double>(p.energy), truth.data(), 3 );
+    const double fit_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<double>(p.energy), fit.coefs.data(), 3 );
+    BOOST_CHECK_CLOSE( fit_eff, truth_eff, 2.5 );
+  }
+
+  // Scatter matches stated uncertainty: chi2/dof of order 1, no Birge inflation to speak of
+  BOOST_CHECK_GT( fit.chi2 / fit.dof, 0.2 );
+  BOOST_CHECK_LT( fit.chi2 / fit.dof, 3.0 );
+  BOOST_CHECK_LT( fit.birgeScale, 3.0 );
+
+  // Covariance is symmetric and consistent with the uncertainties
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK_CLOSE( std::sqrt(fit.covRowMajor[i*3 + i]), fit.uncerts[i], 1.0e-3 );
+    for( size_t j = 0; j < 3; ++j )
+      BOOST_CHECK_CLOSE( fit.covRowMajor[i*3 + j], fit.covRowMajor[j*3 + i], 1.0e-4 );
+  }
+
+  // Exactly determined and over-specified orders are rejected sensibly
+  BOOST_CHECK_THROW( MakeDrfFit::performEfficiencyFit( pts, 0 ), std::runtime_error );
+  BOOST_CHECK_THROW( MakeDrfFit::performEfficiencyFit( pts, static_cast<int>(pts.size()) + 1 ), std::runtime_error );
+  BOOST_CHECK_NO_THROW( MakeDrfFit::performEfficiencyFit( pts, static_cast<int>(pts.size()) ) );
+}//test_performEfficiencyFit_recovers_truth
+
+
+BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_block_covariance_shifts_common_mode )
+{
+  const std::vector<float> truth = { -4.5f, 1.9f, -0.22f };
+  const std::vector<MakeDrfFit::EffFitPoint> stat_only = make_eff_points( truth, 0.02, 0.0 );
+
+  // Data covariance structure: diagonal stat, plus cert/dist blocks per source
+  std::vector<MakeDrfFit::EffFitPoint> with_cert = stat_only;
+  for( MakeDrfFit::EffFitPoint &p : with_cert )
+  {
+    if( p.sourceKey == "Eu152#0" )
+      p.fracCertUncert = 0.05f;
+    else
+      p.fracDistUncert = 0.03f;
+  }
+
+  const size_t n = with_cert.size();
+  const std::vector<double> cov = MakeDrfFit::effDataCovariance( with_cert );
+  BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+  for( size_t i = 0; i < n; ++i )
+  {
+    for( size_t j = 0; j < n; ++j )
+    {
+      double expected = (i == j) ? 0.02*0.02 : 0.0;
+      if( with_cert[i].sourceKey == with_cert[j].sourceKey )
+        expected += (with_cert[i].sourceKey == "Eu152#0") ? 0.05*0.05 : 0.03*0.03;
+      BOOST_CHECK_CLOSE( cov[i*n + j], expected, 1.0e-3 );  //inputs are floats
+    }
+  }
+
+  // The correlated source errors leave the best-fit curve essentially unchanged (noise-free data)
+  //  but must widen the reported curve uncertainty.
+  const MakeDrfFit::EffFitResult fit_stat = MakeDrfFit::performEfficiencyFit( stat_only, 3 );
+  const MakeDrfFit::EffFitResult fit_cert = MakeDrfFit::performEfficiencyFit( with_cert, 3 );
+  BOOST_REQUIRE_EQUAL( fit_cert.covRowMajor.size(), 9u );
+  BOOST_CHECK_LT( fit_stat.chi2, 1.0e-4 );
+  BOOST_CHECK_LT( fit_cert.chi2, 1.0e-4 );
+
+  const double e_test = 200.0;  //a Eu152 energy
+  const std::vector<double> j = { 1.0, std::log(e_test), std::pow(std::log(e_test), 2) };
+  auto curve_var = [&j]( const std::vector<float> &c ){
+    double v = 0.0;
+    for( size_t a = 0; a < 3; ++a )
+      for( size_t b = 0; b < 3; ++b )
+        v += j[a] * c[a*3 + b] * j[b];
+    return v;
+  };
+  const double var_stat = curve_var( fit_stat.covRowMajor );
+  const double var_cert = curve_var( fit_cert.covRowMajor );
+  BOOST_CHECK_GT( var_cert, 1.5*var_stat );
+  // ...and by no more than the 5% common mode itself (the cert cannot add more than 5% to a curve
+  //  that is pinned by an independent second source)
+  BOOST_CHECK_LT( std::sqrt(var_cert), 0.06 );
+
+  // Off-diagonals are populated
+  bool any_offdiag = false;
+  for( size_t a = 0; a < 3; ++a )
+    for( size_t b = 0; b < 3; ++b )
+      any_offdiag = (any_offdiag || ((a != b) && (std::fabs(fit_cert.covRowMajor[a*3 + b]) > 0.0f)));
+  BOOST_CHECK( any_offdiag );
+}//test_performEfficiencyFit_block_covariance_shifts_common_mode
+
+
+BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_birge_inflation )
+{
+  const std::vector<float> truth = { -4.5f, 1.9f, -0.22f };
+  // 10% scatter but only 2% claimed
+  const std::vector<MakeDrfFit::EffFitPoint> pts = make_eff_points( truth, 0.02, 0.10, 777 );
+
+  const MakeDrfFit::EffFitResult fit = MakeDrfFit::performEfficiencyFit( pts, 3 );
+  BOOST_REQUIRE_EQUAL( fit.covRowMajor.size(), 9u );
+  BOOST_CHECK_GT( fit.birgeScale, 4.0 );
+  BOOST_CHECK_CLOSE( fit.birgeScale, fit.chi2 / fit.dof, 1.0e-6 );
+  for( size_t i = 0; i < 3; ++i )
+    BOOST_CHECK_CLOSE( fit.uncerts[i]*fit.uncerts[i], fit.covRowMajor[i*3 + i], 1.0e-3 );
+
+  // The inflated uncertainty band now covers the truth
+  int covered = 0;
+  for( const MakeDrfFit::EffFitPoint &p : pts )
+  {
+    const double lnE = std::log( static_cast<double>(p.energy) );
+    const std::vector<double> j = { 1.0, lnE, lnE*lnE };
+    double var = 0.0;
+    for( size_t a = 0; a < 3; ++a )
+      for( size_t b = 0; b < 3; ++b )
+        var += j[a] * fit.covRowMajor[a*3 + b] * j[b];
+    const double fit_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<double>(p.energy), fit.coefs.data(), 3 );
+    const double truth_eff = DetectorPeakResponse::expOfLogPowerSeriesEfficiency( static_cast<double>(p.energy), truth.data(), 3 );
+    if( std::fabs(std::log(fit_eff/truth_eff)) < 2.0*std::sqrt(var) )
+      covered += 1;
+  }
+  BOOST_CHECK_GE( covered, static_cast<int>(pts.size()) - 2 );
+}//test_performEfficiencyFit_birge_inflation
+
+
+BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_legacy_wrapper_matches_new )
+{
+  const std::vector<float> truth = { -4.5f, 1.9f, -0.22f };
+  const std::vector<MakeDrfFit::EffFitPoint> pts = make_eff_points( truth, 0.02, 0.02 );
+
+  std::vector<MakeDrfFit::DetEffDataPoint> legacy_pts;
+  for( const MakeDrfFit::EffFitPoint &p : pts )
+  {
+    MakeDrfFit::DetEffDataPoint d;
+    d.energy = p.energy;
+    d.efficiency = p.efficiency;
+    d.efficiency_uncert = p.fracStatUncert * p.efficiency;
+    legacy_pts.push_back( d );
+  }
+
+  std::vector<float> coefs, uncerts;
+  const double chi2_per_dof = MakeDrfFit::performEfficiencyFit( legacy_pts, 3, coefs, uncerts );
+
+  std::vector<MakeDrfFit::EffFitPoint> uncorrelated = pts;
+  for( MakeDrfFit::EffFitPoint &p : uncorrelated )
+    p.sourceKey.clear();
+  const MakeDrfFit::EffFitResult fit = MakeDrfFit::performEfficiencyFit( uncorrelated, 3 );
+
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK_CLOSE( coefs[i], fit.coefs[i], 1.0e-3 );
+    BOOST_CHECK_CLOSE( uncerts[i], fit.uncerts[i], 1.0e-2 );
+  }
+  BOOST_CHECK_CLOSE( chi2_per_dof, fit.chi2 / fit.dof, 1.0e-3 );
+}//test_performEfficiencyFit_legacy_wrapper_matches_new
+
+
+// ---- FWHM fit -----------------------------------------------------------------------------------
+
+namespace
+{
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> make_gadras_peaks(
+                                                    const std::vector<float> &coefs,
+                                                    const std::vector<double> &energies )
+  {
+    auto peaks = std::make_shared<std::deque<std::shared_ptr<const PeakDef>>>();
+    for( const double energy : energies )
+    {
+      const float fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                  DetectorPeakResponse::kGadrasResolutionFcn, coefs );
+      peaks->push_back( create_test_peak( energy, fwhm ) );
+    }
+    return peaks;
+  }
+
+  void check_gadras_curve_recovered( const std::vector<float> &truth, const std::vector<float> &fit,
+                                     const std::vector<double> &energies )
+  {
+    for( const double energy : energies )
+    {
+      const float t = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                  DetectorPeakResponse::kGadrasResolutionFcn, truth );
+      const float f = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                  DetectorPeakResponse::kGadrasResolutionFcn, fit );
+      BOOST_CHECK_CLOSE( f, t, 0.5 );
+    }
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_performResolutionFit_gadras_negative_a )
+{
+  // A NaI-like detector with the negative-offset (bent power law) branch
+  const std::vector<float> truth = { -3.0f, 6.0f, 0.5f };
+  const std::vector<double> energies = { 59.5, 122.1, 200.0, 356.0, 511.0, 661.7, 1173.2, 1332.5, 2614.5 };
+  const auto peaks = make_gadras_peaks( truth, energies );
+
+  std::vector<float> coefs, uncerts;
+  const double chi2 = MakeDrfFit::performResolutionFit( peaks, DetectorPeakResponse::kGadrasResolutionFcn,
+                                                        0, coefs, uncerts );
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  BOOST_REQUIRE_EQUAL( uncerts.size(), 3u );
+  BOOST_CHECK_LT( chi2, 1.0e-2 );
+  BOOST_CHECK_LT( coefs[0], 0.0f );
+  check_gadras_curve_recovered( truth, coefs, energies );
+  for( const float u : uncerts )
+    BOOST_CHECK_GT( u, 0.0f );
+}//test_performResolutionFit_gadras_negative_a
+
+
+BOOST_AUTO_TEST_CASE( test_performResolutionFit_gadras_positive_a )
+{
+  // A HPGe-like detector with the positive-offset (quadrature) branch
+  const std::vector<float> truth = { 1.4f, 0.25f, 0.45f };
+  const std::vector<double> energies = { 59.5, 122.1, 200.0, 356.0, 511.0, 661.7, 1173.2, 1332.5, 2614.5 };
+  const auto peaks = make_gadras_peaks( truth, energies );
+
+  // Start from the wrong branch on purpose
+  std::vector<float> coefs = { -2.0f, 0.3f, 0.5f }, uncerts;
+  const double chi2 = MakeDrfFit::performResolutionFit( peaks, DetectorPeakResponse::kGadrasResolutionFcn,
+                                                        0, coefs, uncerts );
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  BOOST_CHECK_LT( chi2, 1.0e-2 );
+  BOOST_CHECK_GT( coefs[0], 0.0f );
+  check_gadras_curve_recovered( truth, coefs, energies );
+}//test_performResolutionFit_gadras_positive_a
+
+
+BOOST_AUTO_TEST_CASE( test_performResolutionFit_peak_count_freezing )
+{
+  const std::vector<float> truth = { 1.4f, 0.25f, 0.45f };
+
+  // One peak: only B floats
+  {
+    const auto peaks = make_gadras_peaks( truth, { 661.7 } );
+    const MakeDrfFit::FwhmFitResult r = MakeDrfFit::performResolutionFitEx( peaks,
+                                   DetectorPeakResponse::kGadrasResolutionFcn, 0, {} );
+    BOOST_REQUIRE_EQUAL( r.coefs.size(), 3u );
+    BOOST_CHECK_EQUAL( r.uncerts[0], 0.0f );
+    BOOST_CHECK_GT( r.uncerts[1], 0.0f );
+    BOOST_CHECK_EQUAL( r.uncerts[2], 0.0f );
+    BOOST_CHECK_EQUAL( r.dof, 0 );
+    BOOST_CHECK_CLOSE( r.coefs[1], truth[1], 1.0 );  //661.7 keV pins B directly (above 661 keV)
+  }
+
+  // Two peaks: B and C float
+  {
+    const auto peaks = make_gadras_peaks( truth, { 661.7, 1332.5 } );
+    const MakeDrfFit::FwhmFitResult r = MakeDrfFit::performResolutionFitEx( peaks,
+                                   DetectorPeakResponse::kGadrasResolutionFcn, 0, {} );
+    BOOST_REQUIRE_EQUAL( r.coefs.size(), 3u );
+    BOOST_CHECK_EQUAL( r.uncerts[0], 0.0f );
+    BOOST_CHECK_GT( r.uncerts[1], 0.0f );
+    BOOST_CHECK_GT( r.uncerts[2], 0.0f );
+    BOOST_CHECK_CLOSE( r.coefs[1], truth[1], 1.0 );
+    BOOST_CHECK_CLOSE( r.coefs[2], truth[2], 2.0 );
+  }
+
+  // kSqrtPolynomial without a linear seed (2 peaks, 3 requested) returns 2 coefficients, B fixed
+  {
+    const std::vector<float> poly = { 2.6f, 1.0f, 0.5f };
+    const auto peaks = std::make_shared<std::deque<std::shared_ptr<const PeakDef>>>(
+                          create_peaks_with_known_fwhm( poly, { 200.0, 1000.0 } ) );
+    const MakeDrfFit::FwhmFitResult r = MakeDrfFit::performResolutionFitEx( peaks,
+                                   DetectorPeakResponse::kSqrtPolynomial, 3, {} );
+    BOOST_CHECK_EQUAL( r.coefs.size(), 2u );
+    BOOST_CHECK_GT( r.uncerts[0], 0.0f );
+    BOOST_CHECK_EQUAL( r.uncerts[1], 0.0f );
+  }
+}//test_performResolutionFit_peak_count_freezing
+
+
+BOOST_AUTO_TEST_CASE( test_performResolutionFit_uncerts_populated )
+{
+  const std::vector<float> truth = { 2.6f, 1.0f, 0.5f };
+  const std::vector<double> energies = { 59.5, 122.1, 356.0, 661.7, 1173.2, 1332.5, 2614.5 };
+  const auto peaks = std::make_shared<std::deque<std::shared_ptr<const PeakDef>>>(
+                        create_peaks_with_known_fwhm( truth, energies, false, 0.02 ) );
+
+  const MakeDrfFit::FwhmFitResult r = MakeDrfFit::performResolutionFitEx( peaks,
+                                 DetectorPeakResponse::kSqrtPolynomial, 3, {} );
+  BOOST_REQUIRE_EQUAL( r.coefs.size(), 3u );
+  BOOST_REQUIRE_EQUAL( r.covRowMajor.size(), 9u );
+  BOOST_CHECK_EQUAL( r.dof, 4 );
+  BOOST_CHECK_MESSAGE( r.warnings.empty(), "Warnings: " + r.warnings );
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK_GT( r.uncerts[i], 0.0f );
+    BOOST_CHECK_CLOSE( r.uncerts[i]*r.uncerts[i], r.covRowMajor[i*3 + i], 1.0e-3 );
+    BOOST_CHECK_MESSAGE( std::fabs(r.coefs[i] - truth[i]) < 4.0*r.uncerts[i] + 1.0e-3,
+                         "coef " << i << ": " << r.coefs[i] << " +- " << r.uncerts[i] << " vs " << truth[i] );
+  }
+
+  // The legacy wrapper returns the same thing
+  std::vector<float> coefs, uncerts;
+  const double chi2 = MakeDrfFit::performResolutionFit( peaks, DetectorPeakResponse::kSqrtPolynomial, 3, coefs, uncerts );
+  BOOST_CHECK_CLOSE( chi2, r.chi2, 1.0e-6 );
+  BOOST_REQUIRE_EQUAL( coefs.size(), 3u );
+  for( size_t i = 0; i < 3; ++i )
+    BOOST_CHECK_CLOSE( coefs[i], r.coefs[i], 1.0e-6 );
+
+  // Every form yields uncertainties
+  for( const auto form : { DetectorPeakResponse::kSqrtEnergyPlusInverse,
+                           DetectorPeakResponse::kConstantPlusSqrtEnergy } )
+  {
+    std::vector<float> c, u;
+    BOOST_REQUIRE_NO_THROW( MakeDrfFit::performResolutionFit( peaks, form, 3, c, u ) );
+    BOOST_REQUIRE_EQUAL( c.size(), u.size() );
+    for( const float val : u )
+      BOOST_CHECK_GT( val, 0.0f );
+  }
+}//test_performResolutionFit_uncerts_populated

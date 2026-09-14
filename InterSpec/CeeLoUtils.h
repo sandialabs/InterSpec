@@ -47,6 +47,14 @@ namespace SandiaDecay{ class SandiaDecayDataBase; }
  */
 namespace CeeLoUtils
 {
+  /** The fractional 1-sigma assumed for an efficiency anchor point when the DRF carries no
+   uncertainty information at all, and the floor applied when it does: a fitted curve's tiny
+   statistical sigma must not claim the anchor is exact.  Ad hoc, like ceelo::model_sigma - the
+   only such defaults on the InterSpec side, kept here so they cannot multiply.
+   */
+  constexpr double sm_default_anchor_frac_sigma = 0.05;
+  constexpr double sm_min_anchor_frac_sigma = 0.01;
+
   /** Converts an InterSpec MaterialDB material to a self-contained CeeLo
    material spec (per-element mass fractions; nuclide fractions folded into
    their element).  Throws for elements CeeLo has no data for (Z > 92).
@@ -89,10 +97,12 @@ namespace CeeLoUtils
 
   /** Builds the efficiency-transfer anchor for a DRF.
 
-   Prefers the DRF's raw measured points when they exist and were all taken at
-   a single distance (within 1%); the per-point uncertainty is then
-   sqrt(stat^2 + cert^2) (the source-certificate correlation is conservatively
-   flattened onto the diagonal).  Otherwise the fitted intrinsic curve is
+   Prefers the DRF's raw measured points when they exist: points taken at
+   different distances are transferred to one reference distance (the most
+   common measurement distance, or `override_ref_distance_cm` when > 0) with
+   the geometry kernel ratio K(E,d_ref)/K(E,d_i) - see #GeometryKernel; the
+   per-point uncertainty is sqrt(stat^2 + cert^2) (the source-certificate
+   correlation is conservatively flattened onto the diagonal).  Otherwise the fitted intrinsic curve is
    sampled at 16 log-spaced energies - plus flanking samples just either side
    of each crystal K-edge, since the transfer's eta interpolant is segmented at
    the edges but gets nodes only at anchor energies - and converted to absolute
@@ -151,13 +161,85 @@ namespace CeeLoUtils
                       const ceelo::AnchorCurve &tot_curve,
                       const std::string &detector_name );
 
+  /** MC-free full-energy-peak kernel K(E, position) of a detector geometry - the attenuation-weighted
+   effective solid angle the EFFTRAN transfer is built on (see external_libs/CeeLo/src/io/EfficiencyTransfer.h).
+
+   Used to put measurements taken at different source distances onto one footing: the absolute
+   efficiency at distance d is eta(E)*K(E,d), so dividing a measured point by
+   #intrinsicFactor(E, d) gives the same far-field intrinsic efficiency that
+   DetectorPeakResponse::intrinsicEfficiencyEval reports for a geometry-modeled DRF, whatever
+   distance the point was taken at.  Sub-millisecond per evaluation; the ray quadrature is built once
+   per distinct distance.  Not thread-safe (build one per thread); the geometry is copied in.
+   */
+  class GeometryKernel
+  {
+  public:
+    explicit GeometryKernel( const ceelo::GeometryDescriptor &geom, int n_rays = 2048 );
+    ~GeometryKernel();
+
+    /** K(E) for an on-axis point source `face_dist_cm` from the detector face. */
+    double kernel( double energy_keV, double face_dist_cm );
+
+    /** The on-axis distance (cm, from the face) the far-field intrinsic efficiency is defined at:
+     max(1000*a, 100 cm), with `a` the transverse half-extent - as intrinsicEfficiencyEval uses. */
+    double farFieldDistanceCm() const;
+
+    /** g(E,d) = K(E,d) * Omega_disk(d_far,a) / K(E,d_far): absolute efficiency at `face_dist_cm`
+     divided by this is the far-field intrinsic efficiency.  Reduces to the flat-disk solid angle
+     fraction far from the detector. */
+    double intrinsicFactor( double energy_keV, double face_dist_cm );
+
+    /** d ln(g)/d(d) at `face_dist_cm`, per cm (central difference) - about -2/d far from the
+     detector; multiply by a distance uncertainty (cm) for the fractional efficiency uncertainty
+     it induces. */
+    double intrinsicFactorDistanceSlope( double energy_keV, double face_dist_cm );
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+  };//class GeometryKernel
+
+  /** Convenience over #GeometryKernel::intrinsicFactor for parallel vectors of energies (keV) and
+   face distances (cm). */
+  std::vector<double> farFieldIntrinsicFactors( const ceelo::GeometryDescriptor &geom,
+                                                const std::vector<double> &energies_keV,
+                                                const std::vector<double> &face_dist_cm,
+                                                int n_rays = 2048 );
+
+  /** Convenience over #GeometryKernel::intrinsicFactorDistanceSlope (per cm). */
+  std::vector<double> farFieldIntrinsicFactorDistanceSlopes( const ceelo::GeometryDescriptor &geom,
+                                                const std::vector<double> &energies_keV,
+                                                const std::vector<double> &face_dist_cm,
+                                                int n_rays = 2048 );
+
+  /** The transfer anchor a fitted DRF should carry: the DRF's efficiency CURVE, densely sampled
+   (24 log-spaced energies plus flanks either side of each crystal K-edge), converted to absolute
+   efficiency at `ref_distance_cm` (or, when <= 0, at #GeometryKernel::farFieldDistanceCm) with the
+   geometry kernel, together with the curve's full fractional covariance (a fitted equation's
+   coefficient covariance propagated to the sample energies, or its node covariance) as
+   `AnchorCurve::frac_cov` - so correlations between energies survive into the response - and the
+   raw measured points, when the DRF has them, as provenance.
+
+   Unlike #transferAnchorForDrf this never anchors on the raw points themselves: a smooth fitted
+   curve is the better estimate of the efficiency between measured energies, and its covariance
+   is the right uncertainty for it.  Reads the DRF's curve directly, so it is unaffected by any
+   response the DRF may already carry.  `curve_derived` is true in the returned anchor.
+
+   Throws std::runtime_error for an invalid or fixed-geometry DRF.
+   */
+  TransferAnchor curveAnchorWithCovarianceForDrf(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const ceelo::GeometryDescriptor &geom,
+                      const double ref_distance_cm );
+
   /** InterSpec measures every source-to-detector distance from the DETECTOR FACE - the endcap
    front, the surface a user can put a ruler against.  That is the only convention the user ever
    sees.  CeeLo's `GeometryDescriptor::reference_point` is a convention internal to the library that
    InterSpec never consults: every query position is formed HERE, face-referenced, and handed to the
-   position-taking CeeLo API (`eps_fep_at`, `eps_total_at`, `make_quadrature`).  Nothing in InterSpec
-   may call the distance-taking `eps_fep` / `eps_total` / `query_position` /
-   `reference_point_position`, which would silently re-interpret the distance in whatever convention
+   position-taking CeeLo API (`eps_fep_at`, `eps_total_at`, `make_quadrature`, the position forms of
+   `frac_covariance`).  Nothing in InterSpec may call the distance-taking `eps_fep` / `eps_total` /
+   `frac_covariance(energies, theta, phi, dist)` / `query_position` / `reference_point_position`,
+   which would silently re-interpret the distance in whatever convention
    the descriptor happens to carry (a CrystalFace descriptor would put the source one endcap offset
    too close).  The flat-disk model lives in the same convention: `DetectorPeakResponse::efficiency`
    adds the detector setback to the face distance to reach the crystal.
@@ -169,6 +251,15 @@ namespace CeeLoUtils
   Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
                                           double theta_rad, double phi_rad,
                                           double dist_from_face_cm );
+
+  /** THE far-field on-axis query InterSpec's intrinsic (solid-angle-free) views of a response use:
+   DetectorPeakResponse::intrinsicEfficiencyEval, its no-geometry efficiencyFracCovariance, and
+   setLegacyEfficiencyFromResponse all evaluate at this one position, so the stored curve, the
+   live query and its covariance cannot come from different places.  The distance from the face is
+   max(1000*a, 100 cm), `a` the transverse half-extent - well beyond every near-field term.
+   */
+  double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd );
+  Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd );
 
   /** The detector face (endcap front) in the crystal-face frame, (0, 0, -endcap_front_offset_cm):
    the point InterSpec's distances are measured to, and the point a source-side ray aims at.
