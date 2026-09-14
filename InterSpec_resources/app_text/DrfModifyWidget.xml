@@ -33,18 +33,26 @@
   <!-- Anchor tab: help text, then one of three editors, chosen by how the efficiency is
        represented (energy/efficiency points, an exp-of-log power series, or a formula).  The
        wording tracks whichever editor - and which columns - are currently shown. -->
-  <message id="dmw-anchor-help-points">The detector&apos;s measured efficiency points, which the
-    Activity/Shielding fit can fold into its results.  Edit each point below - its energy, absolute
-    efficiency, and the statistical and certificate uncertainties on that efficiency.  &quot;Stat. %&quot;
-    is independent from one point to the next; &quot;Cert. %&quot; is the source activity uncertainty,
-    and points sharing a source are treated as sharing it.  (A Monte-Carlo-characterized response
-    supplies its own, finer, uncertainty and overrides these points.)</message>
+  <message id="dmw-anchor-help-points">The detector&apos;s measured efficiency points, which are also
+    what its efficiency curve is: the &lt;em&gt;absolute&lt;/em&gt; efficiency at the reference
+    distance below.  Edit each point - its energy, efficiency, and the statistical and certificate
+    uncertainties on that efficiency.  &quot;Stat. %&quot; is independent from one point to the next;
+    &quot;Cert. %&quot; is the source activity uncertainty, and points sharing a source are treated as
+    sharing it.</message>
+  <message id="dmw-anchor-help-refit">The peaks this detector was characterized from: the
+    &lt;em&gt;absolute&lt;/em&gt; efficiency measured at each source&apos;s own distance.  The
+    efficiency &lt;b&gt;equation is re-fit from these points when you press &quot;Use&quot;&lt;/b&gt;,
+    so the curve, its covariance and these points always describe the same detector - editing a point
+    therefore moves the curve, and editing only an uncertainty changes how strongly that point pulls
+    on the fit.  &quot;Stat. %&quot; is independent from one point to the next; &quot;Cert. %&quot; is
+    the source activity uncertainty, shared by every point of the same source.</message>
   <message id="dmw-anchor-help-points-nosrc">The detector&apos;s efficiency points and their
-    uncertainties, which the Activity/Shielding fit can fold into its results.  For each point,
-    &quot;Stat. %&quot; is the part that is independent from one energy to the next (e.g. Monte-Carlo
-    convergence), and &quot;Corr. %&quot; is the part that moves together across energy (e.g. the
-    ISOCS baseline modeling uncertainty) - how strongly it moves together is set below.  Leave
-    &quot;Stat. %&quot; blank to use the default uncertainty.</message>
+    uncertainties, which the Activity/Shielding fit can fold into its results.  Each point&apos;s
+    uncertainty is split in two: &quot;Uncorr. %&quot; is the part that is independent from one energy
+    to the next (Monte-Carlo convergence, counting statistics), and &quot;Corr. %&quot; is the part
+    that moves together across energy (a baseline modeling uncertainty, for instance).  How far that
+    &quot;together&quot; reaches is set by &quot;Correlated part, across energy&quot; below.  A blank
+    cell means none.</message>
   <message id="dmw-anchor-help-coefs">The efficiency equation
     &lt;code&gt;exp( A0 + A1*log(x) + A2*log(x)&lt;sup&gt;2&lt;/sup&gt; + ... )&lt;/code&gt; and the
     covariance among its coefficients, which the Activity/Shielding fit can fold into its results.
@@ -52,20 +60,58 @@
     logs), and the off-diagonal is the correlation between them.  Fitted coefficients are strongly
     correlated, so the off-diagonal matters as much as the diagonal.</message>
   <message id="dmw-anchor-help-formula">The efficiency formula, with energy as &lt;code&gt;x&lt;/code&gt;,
-    and its uncertainty.  &quot;Default uncertainty&quot; alone gives one flat fractional uncertainty
-    at every energy; add rows below to give per-energy uncertainties instead, splitting each into the
-    part independent from one energy to the next (&quot;Stat. %&quot;) and the part that moves
-    together across energy (&quot;Corr. %&quot;), as an ISOCS .ecc file does.</message>
+    and its uncertainty.  The formula gives the efficiency, so the rows below are uncertainty only:
+    one row per energy you want to state one at, split into the part that is independent from one
+    energy to the next (&quot;Uncorr. %&quot;) and the part that moves together across energy
+    (&quot;Corr. %&quot;), as an ISOCS .ecc file does.  For one flat uncertainty at every energy, give
+    a single row.  These rows ARE the uncertainty: clearing their percentage columns says the
+    detector states none.</message>
+
+  <!-- Shown whenever a geometry-modeled response is (or will be) attached: it, not the numbers on
+       this tab, is what answers every query. -->
+  <message id="dmw-anchor-note-response">This detector answers every efficiency and uncertainty
+    question through its geometry-modeled response.  The numbers below are what that response is built
+    from; it is rebuilt from them when you press &quot;Use&quot;.</message>
+
+  <!-- The read-only "what this detector reports" line, and its tooltip. -->
+  <message id="dmw-uncert-summary">At {1} keV this detector reports an efficiency uncertainty of
+    {2}%, all of it from its own data.</message>
+  <message id="dmw-uncert-summary-split">At {1} keV this detector reports an efficiency uncertainty of
+    {2}%: {3}% from its own data, {4}% model envelope.</message>
+  <message id="dmw-uncert-summary-assumed">At {1} keV this detector reports an efficiency uncertainty
+    of {2}%, none of which is a measurement of this detector: {3}% is a default for a detector that
+    never stated one, and {4}% is the model envelope.  Enter what you know about it above.</message>
+  <message id="dmw-uncert-summary-none">This detector reports no efficiency uncertainty, so analyses
+    using it will report only counting statistics.</message>
+  <message id="dmw-tt-uncert-summary">&lt;p&gt;The fractional efficiency uncertainty the
+    Activity/Shielding fit would propagate, at one representative energy - the same number the band on
+    the efficiency chart is drawn from.&lt;/p&gt;
+    &lt;p&gt;It can read lower than any single number in the table above, and that is not a mistake:
+    between two stated energies the uncertainty is interpolated, so a part that is independent from
+    one energy to the next partly averages out in between (by up to a factor of √2 exactly
+    half way).  A part that moves together across energy does not.&lt;/p&gt;
+    &lt;p&gt;&lt;b&gt;From its own data&lt;/b&gt; is measurement: counting statistics, source
+    certificates, and the fit or Monte-Carlo statistics behind the curve.  More or better data shrinks
+    it.  Typically 0.3 - 5%.&lt;/p&gt;
+    &lt;p&gt;&lt;b&gt;Model envelope&lt;/b&gt; is an allowance for the model being asked about a
+    position nobody measured - a few tenths of a percent on axis and far away, 1.5 - 2.5% for a
+    Monte-Carlo response&apos;s regime floor, and up to 10 - 25% very close in or well off axis at low
+    energy.  It does not shrink with more counting, and it is the same error for every peak at once.
+    A detector with no measured uncertainty at all (a GADRAS Detector.dat) reports about 5% here that
+    is purely this kind of allowance.&lt;/p&gt;</message>
 
   <!-- Point editor (energy / efficiency / statistical % / correlated or certificate % / source).
        Which columns exist depends on the curve - see DrfModifyWidget::addAnchorRow. -->
   <message id="dmw-anchor-ref-dist">Reference distance:</message>
   <message id="dmw-anchor-cm">cm</message>
-  <message id="dmw-anchor-default-uncert">Default uncertainty:</message>
-  <message id="dmw-anchor-percent">%</message>
-  <message id="dmw-anchor-energy">Energy (keV)</message>
+  <message id="dmw-corr-inert-note">No point states a correlated part, so this setting is not
+    affecting anything yet - it scales the &quot;Corr. %&quot; column, which is empty.</message>
+  <message id="dmw-anchor-energy">Energy ({1})</message>
   <message id="dmw-anchor-eff">Efficiency</message>
+  <message id="dmw-anchor-eff-abs">Abs. Eff.</message>
+  <message id="dmw-anchor-eff-intrinsic">Intrinsic Eff.</message>
   <message id="dmw-anchor-stat">Stat. %</message>
+  <message id="dmw-anchor-uncorr">Uncorr. %</message>
   <message id="dmw-anchor-cert">Cert. %</message>
   <message id="dmw-anchor-corr">Corr. %</message>
   <message id="dmw-anchor-source">Source</message>
@@ -78,6 +124,11 @@
   <message id="dmw-anchor-add-term">Add term</message>
   <message id="dmw-anchor-remove-term">Remove term</message>
   <message id="dmw-cov-corner-coef">Coef \ Coef</message>
+  <message id="dmw-coef-cov-assumed-note">This detector never stored a covariance for its
+    coefficients, so the table starts from the per-coefficient uncertainties it does have, with every
+    correlation assumed to be zero.  Fitted coefficients are strongly correlated, so that assumption
+    overstates the efficiency band - it is a starting point to edit, and it is only written back to
+    the detector if you change it.</message>
 
   <!-- Efficiency formula. -->
   <message id="dmw-anchor-formula-label">Efficiency f(x) = </message>
@@ -91,6 +142,52 @@
   <message id="dmw-anchor-mev">MeV</message>
 
   <message id="dmw-err-points-invalid">The efficiency points could not be applied, so the efficiency was not changed: {1}</message>
+  <message id="dmw-err-bad-row">Row {1} of the point table is not a number, so nothing was changed.
+    Correct it (or clear the row) and press &quot;Use&quot; again.</message>
+  <message id="dmw-err-need-two-points">At least two usable points are needed, so nothing was changed.
+    Each point needs a positive energy and efficiency.</message>
+  <message id="dmw-err-need-distance">Every point of a far-field detector needs a source distance -
+    an absolute efficiency means nothing without one - so nothing was changed.</message>
+  <message id="dmw-err-need-ref-distance">A reference distance is needed to interpret these absolute
+    efficiencies, so nothing was changed.</message>
+  <message id="dmw-err-no-diameter">This detector has no crystal diameter, which a far-field absolute
+    efficiency curve needs, so nothing was changed.</message>
+  <message id="dmw-err-nonpositive-row">Row {1} of the point table has an energy or an efficiency
+    that is zero or negative, so nothing was changed.  Correct it, or clear the row.</message>
+  <message id="dmw-err-negative-uncert">Row {1} of the point table has a negative uncertainty, so
+    nothing was changed.</message>
+  <message id="dmw-err-row-needs-distance">Row {1} of the point table has no distance.  Each point is
+    the absolute efficiency measured at its own source distance, so without it the point cannot be
+    used - nothing was changed.</message>
+  <message id="dmw-err-incomplete-row">Row {1} of the point table has an energy or an efficiency but
+    not both, so nothing was changed.  Fill both in, or clear the row.</message>
+  <message id="dmw-err-no-distance-transfer">The point at {1} keV was measured at a different
+    distance than the reference distance, and this detector does not describe enough geometry to move
+    it there, so nothing was changed.</message>
+  <message id="dmw-err-regen-failed">The response could not be regenerated, so this detector was not
+    changed.  Check the geometry on the &quot;Geom &amp; MC&quot; tab.</message>
+  <message id="dmw-err-refit-failed">The efficiency equation could not be re-fit to these points, so
+    nothing was changed: {1}</message>
+  <message id="dmw-err-uncert-not-built">The uncertainty could not be built from these rows, so
+    nothing was changed: {1}</message>
+  <message id="dmw-err-no-coefs">The efficiency equation has no coefficients, so nothing was changed.</message>
+  <message id="dmw-err-no-formula">The efficiency formula is empty, so nothing was changed.</message>
+  <message id="dmw-err-cov-size">The coefficient uncertainties do not match the number of equation
+    terms, so nothing was changed.</message>
+  <message id="dmw-err-cov-not-psd">These uncertainties and correlations cannot describe any real set
+    of errors (the matrix is not positive semi-definite).  Left as they are, the analysis would
+    quietly fall back to counting statistics alone - so they have to be corrected before this
+    detector can be used.  Usually one correlation is too strong given the others.</message>
+  <message id="dmw-err-wrong-editor">Internal error: the wrong efficiency editor was applied, so
+    nothing was changed.</message>
+  <message id="dmw-warn-unknown-source">These source names are not in this detector&apos;s source
+    table, so only the certificate uncertainty you typed is known for them: {1}</message>
+  <message id="dmw-note-points-stale">The efficiency curve was edited by hand, so the measured points
+    this detector carries are no longer a fit of it; they are kept as a record of the measurement.</message>
+  <message id="dmw-note-cov-dropped">The number of equation terms changed, so the covariance this
+    detector carried no longer describes it and was removed - nothing would have used it.  Enter the
+    coefficient uncertainties again if you have them.</message>
+  <message id="dmw-note-refit-warning">The efficiency equation was re-fit to the points: {1}</message>
   <message id="dmw-err-coefs-invalid">The efficiency coefficients could not be applied, so the efficiency was not changed: {1}</message>
   <message id="dmw-err-formula-invalid">The efficiency formula could not be applied, so the efficiency was not changed: {1}</message>
 
@@ -100,10 +197,18 @@
   <message id="dmw-detach-title">Remove geometry-modeled response?</message>
   <message id="dmw-detach-body">Switching to Flat Disk removes the geometry-modeled Monte-Carlo response and reverts this detector to the flat-disk far-field model.  Continue?</message>
   <message id="dmw-detach-accept">Remove &amp; use</message>
-  <message id="dmw-regen-title">Regenerate response?</message>
-  <message id="dmw-regen-body">You have edits that the currently generated response does not reflect.  Regenerate it from the current geometry and points before using this detector?</message>
+  <message id="dmw-regen-title">Response does not reflect your edits</message>
+  <message id="dmw-regen-required-body">While a geometry-modeled response is attached, it - not the
+    curve or points you edited - answers every efficiency and uncertainty question about this detector,
+    so using it as it stands would simply ignore your edit.  Either rebuild the response from the
+    current geometry and points, or remove it and go back to the flat-disk far-field model.</message>
+  <message id="dmw-regen-impossible-body">While a geometry-modeled response is attached, it - not the
+    curve or points you edited - answers every efficiency and uncertainty question about this detector,
+    so using it as it stands would simply ignore your edit.  The geometry on the &quot;Geom &amp;
+    MC&quot; tab is not complete enough to rebuild it, so the choice is to remove the response and go
+    back to the flat-disk far-field model, or to cancel and finish the geometry.</message>
   <message id="dmw-regen-accept">Regenerate &amp; use</message>
-  <message id="dmw-regen-use-anyway">Use without regenerating</message>
+  <message id="dmw-regen-detach">Remove response, use flat disk</message>
 
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it

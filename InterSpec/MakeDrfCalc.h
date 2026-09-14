@@ -113,6 +113,37 @@ namespace MakeDrfCalc
                                                      const GeometryChoice &geom,
                                                      const FitResults &fit,
                                                      std::shared_ptr<ceelo::DetectorResponse> mcResponse );
+
+
+  /** The geometry `drf` describes itself with, ready to hand to #intrinsicFitPoints or
+   #refitEfficiencyFromPoints: its geometry descriptor (when it has one and is far-field), diameter,
+   setback, and whether it is a fixed-geometry type.
+   */
+  GeometryChoice geometryChoiceForDrf( const DetectorPeakResponse &drf );
+
+
+  /** Re-fits `drf`'s efficiency equation to `points` and installs the result: the equation, its
+   coefficient covariance (the authoritative uncertainty of an equation curve), the block covariance
+   the points imply (kept as the fallback for other representations), the points themselves, and the
+   energy range they span.
+
+   This is the ONLY way the measured points and the curve are allowed to change together outside the
+   Create-DRF tool - editing the points and re-interpolating them as the curve would silently swap an
+   intrinsic curve for absolute measurements, and editing them without re-fitting would leave the
+   refit source describing a curve nobody would get back.
+
+   Everything else about the DRF is left exactly as it was: geometry, diameter, setback, geometry
+   type, flags, FWHM, DRF source, timestamps, and any attached CeeLo response (which the caller is
+   responsible for regenerating or detaching - it answers every query while attached).
+
+   @param nterms Number of equation terms; <= 0 keeps however many the current curve has.
+   @param warnings Receives the fit's non-fatal warnings, if any.
+   Throws std::runtime_error (leaving `drf` untouched) when the points cannot be fit.
+   */
+  void refitEfficiencyFromPoints( DetectorPeakResponse &drf,
+                                  const MeasuredDrfPoints &points,
+                                  const int nterms,
+                                  std::string &warnings );
 }//namespace MakeDrfCalc
 
 #endif //MakeDrfCalc_h

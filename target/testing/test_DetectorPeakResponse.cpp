@@ -3063,8 +3063,29 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_with_uncert )
   BOOST_REQUIRE( restored->efficiencyUncert() );
   BOOST_CHECK( restored->efficiencyUncert()->hasNodeCovariance() );
 
-  // Coefficient covariance is never written to URLs
-  BOOST_CHECK( restored->efficiencyUncert()->coefficientCovariance().empty() );
+  const vector<double> test_energies_for_coef = { 80.0, 661.0, 1332.0 };
+
+  // The coefficient covariance survives too (as its Cholesky factor - see
+  //  DetectorEfficiencyUncert::toUrlParts), which for an equation curve is the uncertainty every
+  //  query actually uses; a shared DRF used to come back with effectively none.
+  const vector<float> &orig_coef_cov = orig->efficiencyUncert()->coefficientCovariance();
+  const vector<float> &rest_coef_cov = restored->efficiencyUncert()->coefficientCovariance();
+  BOOST_REQUIRE_EQUAL( rest_coef_cov.size(), orig_coef_cov.size() );
+  for( size_t i = 0; i < orig_coef_cov.size(); ++i )
+    BOOST_CHECK( close_enough( rest_coef_cov[i], orig_coef_cov[i], 1e-3 ) );
+
+  // And what it is there for: the fractional efficiency uncertainty the curve propagates from it.
+  {
+    const vector<double> orig_curve = orig->efficiencyCurve()->fracUncertainties( test_energies_for_coef );
+    const vector<double> rest_curve = restored->efficiencyCurve()->fracUncertainties( test_energies_for_coef );
+    BOOST_REQUIRE_EQUAL( rest_curve.size(), orig_curve.size() );
+    for( size_t i = 0; i < orig_curve.size(); ++i )
+      BOOST_CHECK( close_enough( rest_curve[i], orig_curve[i], 1e-3 ) );
+  }
+
+  // Rebuilding from a Cholesky factor cannot produce an impossible matrix, whatever the rounding did.
+  BOOST_CHECK( DetectorEfficiencyUncert::covarianceIsUsable(
+                          vector<double>( begin(rest_coef_cov), end(rest_coef_cov) ) ) );
 
   const vector<double> test_energies = { 80.0, 661.0, 1332.0 };
   const vector<double> orig_uncerts = orig->efficiencyUncert()->fracUncertainties( test_energies );
@@ -3083,15 +3104,18 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_with_uncert )
 }//test_url_roundtrip_with_uncert
 
 
-/** How big is a DRF app URL, and is there room for the fitted equation's coefficient covariance?
+/** How big is a DRF app URL, and what does the fitted equation's coefficient covariance cost in it?
 
  QR codes hold 2953 bytes in binary mode; `toAppUrl` budgets 2923 for the query string and drops
- payload in a fixed order when it does not fit (node covariance goes second, before even the
- total-efficiency curve).  Today the coefficient covariance is never encoded at all, so a DRF
- shared by URL/QR comes back with no equation uncertainty - `EFFU` carries per-coefficient sigmas
- that no query path reads.
+ payload in a fixed order when it does not fit.  Measured 2026-09-13 for the realistic detector below
+ (6-term equation, 11 calibration energies, FWHM, name, description): the whole URL 921 chars, the
+ node covariance `EFUE`+`EFUC` 683 of them, the six coefficients `EFFC` 41 - so about 2000 chars of
+ headroom.
 
- This measures the real sizes so the trade is a number rather than a guess.
+ The coefficient covariance (`EFCC`, the Cholesky factor at 4 significant figures) costs about 200 of
+ that, i.e. roughly a third of what the node covariance already shipped, which is why it is now
+ written and is the LAST uncertainty the ladder gives up: for an equation curve it is the
+ authoritative one, while the node covariance is the fallback for the other representations.
  */
 BOOST_AUTO_TEST_CASE( test_url_size_budget )
 {
@@ -3116,12 +3140,22 @@ BOOST_AUTO_TEST_CASE( test_url_size_budget )
   BOOST_REQUIRE( tmp );
   auto uncert = make_shared<DetectorEfficiencyUncert>( *tmp );
 
-  // A plausible fit covariance: strongly anti-correlated neighbours, as a log-power-series fit gives
+  // A plausible fit covariance: sigmas falling with the term order, and neighbouring coefficients
+  //  strongly anti-correlated with the correlation decaying with separation - rho(i,j) =
+  //  (-0.82)^|i-j|, which is what a log-power-series fit actually looks like, and (unlike an
+  //  outer-product-with-a-sign-flip) is a matrix that can describe real errors.  It has to be: the
+  //  setter refuses one that cannot (DetectorEfficiencyUncert::covarianceIsUsable).
   vector<float> coefcov( ncoef*ncoef, 0.0f );
   for( size_t i = 0; i < ncoef; ++i )
+  {
     for( size_t j = 0; j < ncoef; ++j )
-      coefcov[i*ncoef + j] = static_cast<float>( 1.0e-3*std::pow(0.35,double(i+j))
-                                                 * ((i==j) ? 1.0 : -0.82) );
+    {
+      const double sigma_i = sqrt(1.0e-3) * std::pow( 0.35, double(i) );
+      const double sigma_j = sqrt(1.0e-3) * std::pow( 0.35, double(j) );
+      const double rho = std::pow( -0.82, fabs( double(i) - double(j) ) );
+      coefcov[i*ncoef + j] = static_cast<float>( sigma_i * sigma_j * rho );
+    }
+  }
   uncert->setCoefficientCovariance( coefcov );
   drf->setEfficiencyUncert( uncert );
   drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
@@ -3130,7 +3164,7 @@ BOOST_AUTO_TEST_CASE( test_url_size_budget )
   cout << "  full DRF app URL: " << url.size() << " chars (QR binary budget 2923)" << endl;
 
   // Break it down by part
-  size_t node_cov_chars = 0, coef_chars = 0;
+  size_t node_cov_chars = 0, coef_chars = 0, coef_cov_chars = 0;
   {
     vector<string> fields;
     SpecUtils::split( fields, url, "&" );
@@ -3142,23 +3176,32 @@ BOOST_AUTO_TEST_CASE( test_url_size_budget )
         node_cov_chars += f.size();
       if( SpecUtils::istarts_with( f, "EFFC=" ) )
         coef_chars = f.size();
+      if( SpecUtils::istarts_with( f, "EFCC=" ) )
+        coef_cov_chars = f.size();
     }
   }
   cout << "  node covariance (EFUE+EFUC) costs " << node_cov_chars << " chars" << endl;
   cout << "  the " << ncoef << " coefficients themselves cost " << coef_chars << " chars" << endl;
+  cout << "  the coefficient covariance (EFCC) costs " << coef_cov_chars << " chars" << endl;
 
-  // What would the coefficient covariance cost?  Upper triangle, N*(N+1)/2 values.
-  const size_t ntri = (ncoef*(ncoef+1))/2;
-  for( const size_t sig : { 5u, 4u, 3u } )
-  {
-    string s;
-    size_t idx = 0;
-    for( size_t i = 0; i < ncoef; ++i )
-      for( size_t j = i; j < ncoef; ++j, ++idx )
-        s += (idx ? "*" : "") + SpecUtils::printCompact( coefcov[i*ncoef + j], sig );
-    cout << "  coefficient covariance upper triangle (" << ntri << " values, " << sig
-         << " sig figs): " << (s.size() + 6) << " chars" << endl;
-  }
+  // The coefficient covariance is encoded, and is the cheaper of the two covariances.
+  BOOST_CHECK_MESSAGE( coef_cov_chars > 0, "the coefficient covariance is not in the URL" );
+  BOOST_CHECK_MESSAGE( coef_cov_chars < node_cov_chars,
+                       "the coefficient covariance (" << coef_cov_chars << " chars) is expected to be"
+                       " cheaper than the node covariance (" << node_cov_chars << ")" );
+
+  // "EFFU" (the legacy per-coefficient sigmas) is the covariance's diagonal, so dropping it alongside
+  //  EFCC looks like free space.  It is not: `computeHash` folds that field in, and a decode could not
+  //  tell "dropped because EFCC carries it" from "this DRF never stated one", so it would have to
+  //  fabricate the field and the DRF would come back with a different identity than it was sent with.
+  //  The rule is therefore simply that the URL says what the DRF says - which for this fixture (a
+  //  covariance set directly, no legacy sigmas) means no EFFU at all.
+  //  `test_url_roundtrip_preserves_identity` is what pins the identity itself.
+  BOOST_REQUIRE( drf->efficiencyCurve() );
+  const bool has_legacy_sigmas = !drf->efficiencyCurve()->expOfLogPowerSeriesUncerts().empty();
+  BOOST_CHECK_MESSAGE( (url.find("EFFU=") != string::npos) == has_legacy_sigmas,
+                       "the URL " << (has_legacy_sigmas ? "dropped" : "invented")
+                       << " the legacy per-coefficient sigmas, which computeHash folds in" );
 
   // Headroom
   BOOST_CHECK_MESSAGE( url.size() < 2923, "DRF URL already at the QR limit: " << url.size() );
@@ -3217,6 +3260,283 @@ BOOST_AUTO_TEST_CASE( test_url_drop_order )
   cout << "  URL length after drops: " << url.size() << " chars" << endl;
   cout << "URL drop order passed" << endl;
 }//test_url_drop_order
+
+
+/** When an equation DRF's URL is over budget, the node covariance goes and the coefficient covariance
+ stays: for an equation curve the coefficient matrix is the uncertainty every query uses (see
+ DetectorEfficiencyCurve::fracCovariance), while the node covariance is the fallback for the other
+ representations - and it is three times the size.
+ */
+/** A DRF shared by URL or QR has to come back as the SAME detector - same content, same
+ `hashValue()`.  `computeHash` folds in the legacy per-coefficient uncertainties, so anything the
+ decode infers rather than reads (e.g. filling that field in from the coefficient covariance's
+ diagonal because the encode dropped it as redundant) silently gives the recipient a different
+ identity: a new row in their database, and a broken `parentHashValue` lineage.
+ */
+/** `fromEnergyEfficiencyCsv`'s `energyUnits` argument says what units to STORE the curve in.  A pair's
+ energy field is the physical energy divided by those units (DetectorEfficiencyCurve::efficiency
+ evaluates at energy/m_energyUnits), and `m_lowerEnergy`/`m_upperEnergy` are keV regardless - so the
+ same CSV asked for in keV and in MeV has to describe the same detector.
+
+ Every caller passes keV, which made both halves of this a no-op and hid an inverted conversion (a
+ 59 keV point stored as 59000 MeV) and a range taken from the unit-dependent numbers.
+ */
+BOOST_AUTO_TEST_CASE( test_efficiency_csv_energy_units )
+{
+  cout << "\n\nTesting efficiency-CSV energy units..." << endl;
+
+  const vector<pair<float,float>> points = {
+    { 59.5f, 0.31f }, { 122.0f, 0.24f }, { 356.0f, 0.13f },
+    { 661.7f, 0.082f }, { 1332.5f, 0.045f }
+  };
+
+  auto make_csv = []( const vector<pair<float,float>> &pts ) -> string {
+    stringstream csv;
+    csv << "energy,efficiency\n";
+    for( const pair<float,float> &p : pts )
+      csv << p.first << "," << p.second << "\n";
+    return csv.str();
+  };//make_csv lambda
+
+  const float diam = static_cast<float>( 7.62*PhysicalUnits::cm );
+
+  auto in_kev = make_shared<DetectorPeakResponse>( "csv keV", "units test" );
+  {
+    stringstream csv( make_csv(points) );
+    BOOST_REQUIRE_NO_THROW( in_kev->fromEnergyEfficiencyCsv( csv, diam, -1.0,
+                                static_cast<float>(PhysicalUnits::keV),
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic ) );
+  }
+
+  auto in_mev = make_shared<DetectorPeakResponse>( "csv MeV", "units test" );
+  {
+    stringstream csv( make_csv(points) );
+    BOOST_REQUIRE_NO_THROW( in_mev->fromEnergyEfficiencyCsv( csv, diam, -1.0,
+                                static_cast<float>(PhysicalUnits::MeV),
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic ) );
+  }
+
+  BOOST_REQUIRE( in_kev->isValid() && in_mev->isValid() );
+  BOOST_CHECK_EQUAL( in_kev->efficiencyEnergyUnits(), static_cast<float>(PhysicalUnits::keV) );
+  BOOST_CHECK_EQUAL( in_mev->efficiencyEnergyUnits(), static_cast<float>(PhysicalUnits::MeV) );
+
+  // The stored numbers differ by the units; the detector does not.
+  const vector<DetectorPeakResponse::EnergyEfficiencyPair> &kev_pairs
+      = in_kev->efficiencyCurve()->energyEfficiencies();
+  const vector<DetectorPeakResponse::EnergyEfficiencyPair> &mev_pairs
+      = in_mev->efficiencyCurve()->energyEfficiencies();
+  BOOST_REQUIRE_EQUAL( kev_pairs.size(), points.size() );
+  BOOST_REQUIRE_EQUAL( mev_pairs.size(), points.size() );
+
+  for( size_t i = 0; i < points.size(); ++i )
+  {
+    BOOST_CHECK_CLOSE( kev_pairs[i].energy, points[i].first, 1.0E-3 );
+    BOOST_CHECK_MESSAGE( fabs( mev_pairs[i].energy - 0.001*points[i].first ) < 1.0E-6,
+                         "a " << points[i].first << " keV point stored in an MeV curve came out as "
+                         << mev_pairs[i].energy << ", expected " << 0.001*points[i].first );
+  }
+
+  // Asked at the same PHYSICAL energy, both give the same efficiency.
+  for( const pair<float,float> &p : points )
+  {
+    BOOST_CHECK_MESSAGE( close_enough( in_mev->intrinsicEfficiency(p.first),
+                                       in_kev->intrinsicEfficiency(p.first), 1.0E-4 ),
+                         "at " << p.first << " keV the MeV-stored curve gives "
+                         << in_mev->intrinsicEfficiency(p.first) << " and the keV-stored one "
+                         << in_kev->intrinsicEfficiency(p.first) );
+  }
+
+  // And the stated validity range is keV in both.
+  BOOST_CHECK_CLOSE( in_kev->lowerEnergy(), points.front().first, 1.0E-3 );
+  BOOST_CHECK_CLOSE( in_kev->upperEnergy(), points.back().first, 1.0E-3 );
+  BOOST_CHECK_MESSAGE( fabs( in_mev->lowerEnergy() - points.front().first ) < 1.0E-3,
+                       "an MeV-stored curve reported a lower energy of " << in_mev->lowerEnergy()
+                       << " keV, expected " << points.front().first );
+  BOOST_CHECK_MESSAGE( fabs( in_mev->upperEnergy() - points.back().first ) < 1.0E-3,
+                       "an MeV-stored curve reported an upper energy of " << in_mev->upperEnergy()
+                       << " keV, expected " << points.back().first );
+
+  cout << "Efficiency-CSV energy units passed" << endl;
+}//test_efficiency_csv_energy_units
+
+
+BOOST_AUTO_TEST_CASE( test_url_roundtrip_preserves_identity )
+{
+  cout << "\n\nTesting URL round-trip preserves DRF identity..." << endl;
+
+  // The interesting case is a fitted equation with a covariance but NO legacy per-coefficient
+  //  uncertainties - exactly what MakeDrfCalc::assembleDrf produces when the fit reports none.
+  const size_t ncoef = 4;
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+
+  auto drf = make_shared<DetectorPeakResponse>( "IdentityTest", "url identity" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  vector<float> coefcov( ncoef*ncoef, 0.0f );
+  for( size_t i = 0; i < ncoef; ++i )
+  {
+    for( size_t j = 0; j < ncoef; ++j )
+    {
+      const double sigma_i = sqrt(1.0e-3) * std::pow( 0.35, double(i) );
+      const double sigma_j = sqrt(1.0e-3) * std::pow( 0.35, double(j) );
+      coefcov[i*ncoef + j] = static_cast<float>( sigma_i * sigma_j
+                                                 * std::pow( -0.82, fabs(double(i) - double(j)) ) );
+    }
+  }
+  auto uncert = make_shared<DetectorEfficiencyUncert>();
+  uncert->setCoefficientCovariance( coefcov );
+  drf->setEfficiencyUncert( uncert );
+
+  BOOST_REQUIRE( drf->efficiencyCurve()->expOfLogPowerSeriesUncerts().empty() );
+
+  string url;
+  BOOST_REQUIRE_NO_THROW( url = drf->toAppUrl() );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+
+  BOOST_CHECK_MESSAGE( restored->efficiencyCurve()->expOfLogPowerSeriesUncerts().empty(),
+                       "the decode invented per-coefficient uncertainties this DRF never had" );
+  BOOST_CHECK_MESSAGE( restored->hashValue() == drf->hashValue(),
+                       "a URL round trip changed the DRF's identity: " << drf->hashValue()
+                       << " -> " << restored->hashValue() );
+  BOOST_CHECK_EQUAL( restored->efficiencyUncert()->coefficientCovariance().size(), ncoef*ncoef );
+
+  // And a DRF that DOES carry legacy sigmas keeps them, rather than having them dropped as
+  //  "redundant" with the covariance.
+  {
+    vector<float> legacy( ncoef, 0.0f );
+    for( size_t i = 0; i < ncoef; ++i )
+      legacy[i] = std::sqrt( coefcov[i*ncoef + i] );
+
+    auto with_legacy = make_shared<DetectorPeakResponse>( "IdentityTest2", "url identity" );
+    with_legacy->fromExpOfLogPowerSeries( coeffs, legacy, 0.0, 7.62*PhysicalUnits::cm,
+                                PhysicalUnits::keV, 50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    with_legacy->setEfficiencyUncert( uncert );
+
+    string url2;
+    BOOST_REQUIRE_NO_THROW( url2 = with_legacy->toAppUrl() );
+    auto restored2 = make_shared<DetectorPeakResponse>();
+    BOOST_REQUIRE_NO_THROW( restored2->fromAppUrl( url2 ) );
+
+    BOOST_CHECK_EQUAL( restored2->efficiencyCurve()->expOfLogPowerSeriesUncerts().size(), ncoef );
+    BOOST_CHECK_MESSAGE( restored2->hashValue() == with_legacy->hashValue(),
+                         "a URL round trip changed the identity of a DRF with legacy uncertainties" );
+  }
+
+  cout << "URL round-trip identity passed" << endl;
+}//test_url_roundtrip_preserves_identity
+
+
+/** A `<CeeLoGeometry>` element is version-7 content, so a DRF that carries one must not declare an
+ older format version - a reader that gates v7 features on the declared version would drop exactly
+ the geometry this serialization exists to preserve.
+ */
+BOOST_AUTO_TEST_CASE( test_xml_version_covers_geometry_beside_response )
+{
+  cout << "\n\nTesting XML version when a geometry sits beside a response..." << endl;
+
+  auto drf = make_shared<DetectorPeakResponse>( "VersionTest", "version test" );
+  drf->fromExpOfLogPowerSeries( { -5.0f, 0.5f, -0.01f }, {}, 0.0, 7.62*PhysicalUnits::cm,
+                                PhysicalUnits::keV, 50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { 3.81, 7.62 };
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ) };
+  gd.crystal_material_index = 0;
+  gd.reference_point = ceelo::ReferencePoint::EndcapFront;
+  drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( gd ) );
+
+  BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( *drf ) );
+  BOOST_REQUIRE( drf->ceeloResponse() );
+
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( drf->toXml( &doc, &doc ) );
+
+  const rapidxml::xml_node<char> *node = doc.first_node( "DetectorPeakResponse" );
+  BOOST_REQUIRE( node );
+  const rapidxml::xml_attribute<char> *ver = node->first_attribute( "version" );
+  BOOST_REQUIRE( ver );
+  const int version = atoi( ver->value() );
+
+  const bool has_geom_node = !!node->first_node( "CeeLoGeometry" );
+  BOOST_CHECK_MESSAGE( has_geom_node, "the geometry was not written beside the response" );
+  BOOST_CHECK_MESSAGE( version >= 7, "a document containing <CeeLoGeometry> declared version "
+                       << version );
+
+  // And it reads back, with the geometry surviving a detach.
+  DetectorPeakResponse restored;
+  BOOST_REQUIRE_NO_THROW( restored.fromXml( node ) );
+  restored.setCeeloResponse( nullptr );
+  BOOST_CHECK_MESSAGE( restored.geometry(), "the geometry did not survive the round trip + detach" );
+
+  cout << "XML version/geometry check passed" << endl;
+}//test_xml_version_covers_geometry_beside_response
+
+
+BOOST_AUTO_TEST_CASE( test_url_keeps_coef_covariance_over_node )
+{
+  cout << "\n\nTesting that an oversized URL keeps the coefficient covariance..." << endl;
+
+  const size_t ncoef = 5;
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f, -0.0042f };
+
+  auto drf = make_shared<DetectorPeakResponse>( "CoefCovKept",
+                        string(1500,'d') );  //a long description, so the URL starts out oversized
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // 40 nodes -> 820 upper-triangle entries, which alone is most of the QR budget.
+  vector<float> node_energies, node_sigmas;
+  for( size_t i = 0; i < 40; ++i )
+  {
+    node_energies.push_back( 30.0f + 70.0f*i );
+    node_sigmas.push_back( 0.05f + 0.001f*i );
+  }
+  auto uncert = make_shared<DetectorEfficiencyUncert>(
+            *DetectorEfficiencyUncert::fromPointUncerts( node_energies, node_sigmas ) );
+
+  vector<float> coefcov( ncoef*ncoef, 0.0f );
+  for( size_t i = 0; i < ncoef; ++i )
+  {
+    for( size_t j = 0; j < ncoef; ++j )
+    {
+      const double sigma_i = sqrt(1.0e-3) * std::pow( 0.35, double(i) );
+      const double sigma_j = sqrt(1.0e-3) * std::pow( 0.35, double(j) );
+      const double rho = std::pow( -0.82, fabs( double(i) - double(j) ) );
+      coefcov[i*ncoef + j] = static_cast<float>( sigma_i * sigma_j * rho );
+    }
+  }
+  uncert->setCoefficientCovariance( coefcov );
+  drf->setEfficiencyUncert( uncert );
+
+  string url;
+  BOOST_REQUIRE_NO_THROW( url = drf->toAppUrl() );
+  BOOST_CHECK( url.size() < 2923 );
+
+  BOOST_CHECK_MESSAGE( url.find("EFUC=") == string::npos,
+                       "the node covariance should have been dropped first" );
+  BOOST_CHECK_MESSAGE( url.find("EFCC=") != string::npos,
+                       "the coefficient covariance should outlive the node covariance" );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_REQUIRE( restored->efficiencyUncert() );
+  BOOST_CHECK_EQUAL( restored->efficiencyUncert()->coefficientCovariance().size(), ncoef*ncoef );
+
+  // The DRF still reports an efficiency uncertainty - which is the whole point.
+  const vector<double> uncerts = restored->efficiencyCurve()->fracUncertainties( { 661.7 } );
+  BOOST_REQUIRE_EQUAL( uncerts.size(), 1 );
+  BOOST_CHECK( uncerts[0] > 0.0 );
+
+  cout << "  URL " << url.size() << " chars, coefficient covariance kept" << endl;
+}//test_url_keeps_coef_covariance_over_node
 
 
 BOOST_AUTO_TEST_CASE( test_hash_stability_with_uncert )

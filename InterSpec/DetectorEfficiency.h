@@ -159,8 +159,30 @@ public:
    #DetectorEfficiencyCurve::fracCovariance, which propagates it to a fractional-efficiency
    covariance.  Nothing in this class uses it - it is the curve that knows the representation, and
    hence which of the two stores applies.
+
+   A matrix that is not a possible set of errors (asymmetric, or not positive semi-definite - see
+   #covarianceIsUsable) is REFUSED rather than stored: for an equation curve it would silently win
+   over a usable node covariance, and an impossible covariance propagates to *less* apparent
+   uncertainty (the fit's Cholesky whitening fails and falls back to counting statistics alone).
+   Throws std::runtime_error, naming the problem.
    */
   void setCoefficientCovariance( const std::vector<float> &covRowMajor );
+
+  /** Whether `covRowMajor` (row-major, size N*N) describes a possible set of errors: square,
+   symmetric to within rounding, and positive semi-definite to within `1.0E-6 * max(diagonal)`.
+
+   That tolerance is not arbitrary, and it must not be tightened without measuring first.  A real
+   `MakeDrfFit::performEfficiencyFit` covariance is badly conditioned and stored as float: measured
+   over an 11-energy calibration set, its smallest eigenvalue relative to the matrix scale is
+   -2.2E-10 at 6 terms but -1.45E-8 at 7, so a 1.0E-8 tolerance would start silently dropping the
+   coefficient covariance of every 7-term DRF.  A hand-entered impossible correlation set is negative
+   by of order 0.1 to 1 of the scale, which is four orders away from either.
+
+   `why`, when given, receives a short explanation when the answer is false.  An empty matrix is
+   usable (it just says "no covariance").
+   */
+  static bool covarianceIsUsable( const std::vector<double> &covRowMajor,
+                                  std::string *why = nullptr );
 
   /** Sets the (optional) per-node correlated / uncorrelated fractional 1-sigma
    components the node covariance was built from - retained as provenance so a
@@ -212,12 +234,19 @@ public:
   /** Parses a "EfficiencyUncert" node; throws std::runtime_error on error. */
   void fromXml( const ::rapidxml::xml_node<char> *node );
 
-  /** Appends url query-string entries (keys prefix+"EFUE", prefix+"EFUC",
-   prefix+"EFUL") to `parts`.  The covariance matrix is encoded as its upper
-   triangle (including diagonal), N*(N+1)/2 values.
-   The coefficient covariance and the correlated/uncorrelated split are never
-   written to URLs (the QR budget); the covariance they describe round-trips, so
-   only the editing provenance is lost.
+  /** Appends url query-string entries to `parts`:
+   - prefix+"EFUE" / prefix+"EFUC" / prefix+"EFUL": the node covariance - node energies, the upper
+     triangle (including diagonal, N*(N+1)/2 values) of the matrix, and the correlation length.
+   - prefix+"EFCC": the coefficient covariance, as the LOWER-TRIANGULAR CHOLESKY FACTOR L (column
+     by column, M*(M+1)/2 values), so what is read back is `L*L^T` - positive semi-definite by
+     construction, and perturbed smoothly by the rounding, where rounding the raw entries of a
+     strongly anti-correlated fit matrix can blow up the propagated variance through cancellation.
+     For an equation curve this is the authoritative uncertainty (see
+     #DetectorEfficiencyCurve::fracCovariance), and at 4 significant figures it costs about a third
+     of what the node covariance does.
+
+   The correlated/uncorrelated split is still not written (it is editing provenance only, and the
+   covariance it describes round-trips without it).
    */
   void toUrlParts( std::map<std::string,std::string> &parts, const std::string &prefix ) const;
 

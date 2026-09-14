@@ -419,6 +419,7 @@ set(sources
     src/DetectorGeometryInput.cpp
     src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
+    src/DrfModifyCalc.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
@@ -568,6 +569,7 @@ set(headers
     InterSpec/DetectorGeometryInput.h
     InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
+    InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h

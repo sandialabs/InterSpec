@@ -34,6 +34,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -940,6 +941,45 @@ BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_recovers_truth )
   BOOST_CHECK_THROW( MakeDrfFit::performEfficiencyFit( pts, static_cast<int>(pts.size()) + 1 ), std::runtime_error );
   BOOST_CHECK_NO_THROW( MakeDrfFit::performEfficiencyFit( pts, static_cast<int>(pts.size()) ) );
 }//test_performEfficiencyFit_recovers_truth
+
+
+/** The efficiency fit's own covariance has to be storable, and the tolerance that decides that has
+ to stay loose enough for a real one.
+
+ `DetectorEfficiencyUncert::covarianceIsUsable` calls a matrix positive semi-definite to within
+ 1.0E-6 of its scale.  That looks generous, and the temptation is to tighten it.  This pins why not:
+ the fit is badly conditioned (the design matrix is powers of ln(E) over barely one decade) and the
+ result is stored as float, so the smallest eigenvalue of a genuine high-order fit is slightly
+ negative - measurably more so as terms are added.  A tolerance near 1.0E-8 would start dropping the
+ coefficient covariance of every 7-term DRF, which is the most uncertainty-bearing thing they carry.
+
+ The other half of the contract: when the covariance IS unusable the fit says so in `warnings` and
+ clears it, rather than leaving it for `MakeDrfCalc::assembleDrf` to drop without telling anyone.
+ */
+BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_covariance_is_storable )
+{
+  const std::vector<float> truth = { -4.5f, 1.9f, -0.22f };
+  const std::vector<MakeDrfFit::EffFitPoint> pts = make_eff_points( truth, 0.02, 0.02 );
+
+  for( int order = 3; order <= 7; ++order )
+  {
+    const MakeDrfFit::EffFitResult fit = MakeDrfFit::performEfficiencyFit( pts, order );
+    BOOST_REQUIRE_EQUAL( fit.coefs.size(), static_cast<size_t>(order) );
+
+    BOOST_REQUIRE_MESSAGE( fit.covRowMajor.size() == static_cast<size_t>(order*order),
+                           "order " << order << " fit produced no coefficient covariance"
+                           " (warnings: " << fit.warnings << ")" );
+
+    const std::vector<double> cov( begin(fit.covRowMajor), end(fit.covRowMajor) );
+    std::string why;
+    BOOST_CHECK_MESSAGE( DetectorEfficiencyUncert::covarianceIsUsable( cov, &why ),
+                         "order " << order << " fit covariance is not storable: " << why );
+
+    // And it actually goes in, which is what the DRF needs.
+    DetectorEfficiencyUncert uncert;
+    BOOST_CHECK_NO_THROW( uncert.setCoefficientCovariance( fit.covRowMajor ) );
+  }//for( int order = 3; order <= 7; ++order )
+}//test_performEfficiencyFit_covariance_is_storable
 
 
 BOOST_AUTO_TEST_CASE( test_performEfficiencyFit_block_covariance_shifts_common_mode )

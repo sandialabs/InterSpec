@@ -35,11 +35,13 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 
 class InterSpec;
 class SwitchCheckbox;
 class EccUncertOptions;
+class MeasuredDrfPoints;
 class NativeFloatSpinBox;
 class DetectorPeakResponse;
 class DetectorEfficiencyUncert;
@@ -76,26 +78,40 @@ namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
  Monte-Carlo `ceelo::DetectorResponse` is attached and answers off-axis /
  near-field / uncertainty-aware queries).  The Geom & MC tab carries that
  toggle; fixed-geometry DRFs have no geometry to model and show no such tab.
+
  The Anchor tab edits the efficiency representation and its uncertainty together, choosing its
- editor by the curve's `EfficiencyFnctForm` (see #AnchorEditor) rather than by whether measured
- points happen to be present - so an ISOCS .ecc, a GADRAS Efficiency.csv and an ANGLE .outx all get
- the same editor, and a fixed-geometry curve is no longer rewritten as far-field on apply.
+ editor with `DrfModifyCalc::editorForDrf` - purely from what the DRF carries, never from the
+ Flat-Disk / Geometry-Modeled toggle, so flipping that toggle cannot send an apply down a different
+ editor than the one the user typed into.
+
+ Two rules keep the emitted DRF self-consistent, and both were learned the hard way:
+
+  - **The rows are seeded from whatever the apply writes back.**  A Create-DRF detector's measured
+    points are ABSOLUTE efficiencies at their own source distances while its curve is intrinsic, so
+    an apply that took those rows as the curve made the detector ~200x too insensitive.  Now the
+    measured-point editors write the points and RE-FIT the equation from them
+    (`MakeDrfCalc::refitEfficiencyFromPoints`), which is the only operation that keeps the curve, its
+    coefficient covariance, the node covariance and the points all describing one detector.
+  - **A response's staleness is derived from content, not tracked with a flag** - see
+    #responseStale.  While attached, a `ceelo::DetectorResponse` answers every efficiency and
+    covariance query, so an edit it does not reflect is an edit the program ignores.
+
+ `DrfModifyCalc` holds the apply logic itself (it is unit tested; this class is the Wt plumbing).
  */
 class DrfModifyWidget : public Wt::WContainerWidget
 {
 public:
-  /** The geometry (for the geometry form and the measured-anchor editor) comes from
-   `drf->geometry()`. */
   DrfModifyWidget( InterSpec *viewer,
                    std::shared_ptr<const DetectorPeakResponse> drf );
   virtual ~DrfModifyWidget() override;
 
-  /** Builds the modified DRF from all tabs and emits #updatedDrf. */
+  /** Builds the modified DRF from all tabs and emits #updatedDrf.  Assumes #requestApply has already
+   validated the edits. */
   void apply();
 
-  /** The "Use" entry point: applies immediately, unless a confirmation is warranted first -
-   detaching a geometry-modeled response when the mode was switched to Flat Disk, or regenerating a
-   stale response before use.  See #apply. */
+  /** The "Use" entry point: validates the edits, and applies unless something must be settled first -
+   an edit that could not be applied (reported, and nothing is emitted), a geometry-modeled response
+   being detached, or a response that no longer reflects the edits.  See #apply.  */
   void requestApply();
 
   /** Emitted (by #apply) with the modified DRF. */
@@ -124,6 +140,30 @@ public:
    */
   struct ToolState
   {
+    /** One point row: its cells as typed, plus which of the DRF's measured points it describes.
+
+     The seed index has to travel with the state: it is how an edited row keeps its point's
+     provenance (peak area, live time, file name, distance uncertainty), and an undo that dropped it
+     would silently discard that provenance on the next apply.
+     */
+    struct RowState
+    {
+      std::array<std::string,6> cells;
+      int seedIndex = -1;
+
+      bool operator==( const RowState &rhs ) const
+      {
+        return (cells == rhs.cells) && (seedIndex == rhs.seedIndex);
+      }
+    };//struct RowState
+
+    /** `hashValue()` of the DRF the dialog was opened on.  An undo step outlives the dialog (it is
+     re-resolved against whatever tool exists when it runs), so without this a step recorded for one
+     detector would be replayed onto a different one - transplanting its cell text and, worse, its
+     `RowState::seedIndex` provenance.  #setState ignores a state whose detector is not the one on
+     screen. */
+    uint64_t drfHash = 0;
+
     std::string name, description;
     int tabIndex = 0;
 
@@ -131,9 +171,11 @@ public:
      attached) rather than Flat Disk.  Always false for fixed-geometry DRFs (no Geom & MC tab). */
     bool geometryModeled = false;
 
-    /** The coefficient σ/ρ matrix editor's numeric shadow: the row-major M·M covariance of the
-     exp-of-log-power-series coefficients.  Empty for the other two efficiency forms. */
-    std::vector<double> coefCovMatrix;
+    /** The coefficient editor's numeric shadow, kept as 1-sigma per coefficient plus a correlation
+     matrix rather than a covariance: typing a 0 sigma then typing it back must not destroy that
+     coefficient's correlations, and you cannot recover them from a zeroed row of a covariance. */
+    std::vector<double> coefSigmas;
+    std::vector<double> coefRho;     //row-major N*N, unit diagonal
 
     /** The exp-of-log-power-series coefficient text, one entry per term. */
     std::vector<std::string> coefficients;
@@ -143,8 +185,8 @@ public:
 
     /** Energy / efficiency / stat-% / cert-% / source / distance-cm text, one entry per point row.
      Cells for columns this curve does not show are empty. */
-    std::vector<std::array<std::string,6>> anchors;
-    std::string anchorRefDistance, anchorDefaultUncert;
+    std::vector<RowState> anchors;
+    std::string anchorRefDistance;
 
     /** The energy-correlation length the correlated column is combined with; `EccUncertOptions`
      `effectiveCorrLength()` semantics, so one field round-trips all three modes.  -1 when the
@@ -180,97 +222,94 @@ protected:
   {
     AddUndoRedoStep = 0x01,
 
-    /** Rebuild the coefficient σ/ρ covariance table from the numeric shadow; deferred to #render
-     so a cell edit does not delete the WLineEdit whose `changed()` is being handled. */
-    RebuildCovTable = 0x02
+    /** Rebuild the coefficient σ/ρ table from the numeric shadow; deferred to #render so a cell edit
+     does not delete the WLineEdit whose `changed()` is being handled. */
+    RebuildCovTable = 0x02,
+
+    /** Re-read the uncertainty this DRF would report, and the response-staleness wording. */
+    RefreshSummary = 0x04
   };//enum RenderActions
 
   /** Flags this dialogs state as user-edited, so the next render records an undo/redo step. */
   void scheduleUndoRedoStep();
 
-  /** A user edit: records an undo/redo step, marks any generated response stale, and refreshes the
+  /** A user edit: records an undo/redo step, refreshes the "what this detector reports" line and the
    footer "Generate Response" button.  Every edit handler routes through here. */
   void markEdited();
 
   /** Re-baselines #m_currentState, and (when flagged) records the step from the old baseline. */
   void doAddUndoRedoStep( const bool add_step );
 
-  /** Flat Disk / Geometry Modeled toggled: greys the Geom & MC tool in Flat Disk, swaps the visible
-   Anchor editor, and records the edit. */
+  /** Flat Disk / Geometry Modeled toggled: greys the Geom & MC tool in Flat Disk and records the
+   edit.  Deliberately does NOT change which Anchor editor is showing - that follows the efficiency
+   representation, not how the detector answers off-axis questions. */
   void handleModeToggle();
 
   /** Whether the far-field response is currently Geometry-Modeled (vs Flat Disk). */
   bool geometryModeled() const;
 
-  /** Which of the Anchor tab's three editors is showing.  Chosen by the efficiency curve's
-   `EfficiencyFnctForm`, except that Geometry-Modeled always uses #Points - those rows are the
-   Monte-Carlo grounding anchors. */
-  enum class AnchorEditor
-  {
-    /** `kEnergyEfficiencyPairs`: the energy/efficiency/uncertainty table. */
-    Points,
-    /** `kExpOfLogPowerSeries`: coefficient boxes plus their M·M covariance. */
-    Coefficients,
-    /** `kFunctialEfficienyForm`: the formula text, a flat default uncertainty, and an optional
-     per-energy uncertainty table. */
-    Formula
-  };//enum class AnchorEditor
+  /** Whether the point table carries the Source / Distance columns, i.e. its rows are the raw
+   measured points rather than the curve's own numbers. */
+  bool anchorHasSourceCols() const;
 
-  AnchorEditor activeAnchorEditor() const;
-
-  /** Shows exactly one of the three Anchor-tab editors per #activeAnchorEditor, and words the help
-   text to match the columns actually rendered. */
+  /** Shows exactly one of the three Anchor-tab editors for #m_editor, and words the help text to
+   match. */
   void updateAnchorEditorVisibility();
 
   /** Appends one point row.  Every column is built; the Efficiency one is hidden by CSS for a
    formula curve (see #updateAnchorEditorVisibility), whose efficiency comes from the formula, so
-   its rows describe uncertainty only.  The Source column only exists per #m_anchorHasSourceCol.
-   Blank stat cells fall back to the default-uncert on apply. */
+   its rows describe uncertainty only.  The Source/Distance columns only exist per
+   #anchorHasSourceCols.  `seedIndex` is the measured point this row describes, or -1.
+   A blank uncertainty cell means zero - there is no default standing in for one. */
   void addAnchorRow( const float energy, const float efficiency,
                      const float fracStatUncert, const float fracCertUncert,
-                     const std::string &sourceKey, const float distance = -1.0f );
+                     const std::string &sourceKey, const float distance = -1.0f,
+                     const int seedIndex = -1 );
   void removeAnchorRow();
 
-  /** Whether every Anchor-tab widget still holds the value it was seeded with.  When it does, the
-   apply paths leave the DRF's curve and uncertainty exactly as they were, rather than rebuilding
-   an equivalent-but-not-identical one - which matters for a covariance the correlated+diagonal
-   model cannot reproduce (a source-blocked `MeasuredDrfPoints` matrix, or one restored from a URL
-   with no component split). */
-  bool anchorsMatchSeed() const;
+  /** Per-editor "did the user change anything here" checks, against the state the dialog opened
+   with.  One flag for all three editors is what let a mode flip discard the edits of whichever
+   editor was not applied; and an untouched editor must leave the DRF bit-identical, which matters
+   for a covariance the correlated+diagonal model cannot reproduce (a source-blocked
+   `MeasuredDrfPoints` matrix, or one restored from a URL with no component split).  */
+  bool pointsEdited() const;
+  bool coefficientsEdited() const;
+  bool coefCovarianceEdited() const;
+  bool formulaEdited() const;
 
-  /** Reads the point rows and the correlation control into the uncertainty the Anchor tab means:
-   `fromCorrelatedPlusDiagonal` over the rows, or - when there are no rows - a single flat node at
-   the default uncert.  Returns nullptr when there is nothing to express. */
-  std::shared_ptr<DetectorEfficiencyUncert> buildUncertFromRows();
+  /** Reads the point table into `DrfModifyCalc::PointRow`s, reporting a malformed cell rather than
+   skipping it.  Returns whether every row parsed. */
+  bool collectPointRows( std::vector<DrfModifyCalc::PointRow> &rows,
+                         std::vector<DrfModifyCalc::Problem> &problems ) const;
 
-  /** Rebuilds `working`'s efficiency curve + uncertainty (and, for an absolute reference curve,
-   its `MeasuredDrfPoints`) from the point editor.  No-op when that editor was not built, or when
-   nothing was edited. */
-  void applyAnchorEdits( DetectorPeakResponse &working );
+  /** The Anchor-tab settings that are not per-row. */
+  DrfModifyCalc::AnchorOptions anchorOptions() const;
 
-  /** Rebuilds `working`'s exp-of-log-power-series curve and coefficient covariance from the
-   coefficient editor. */
-  void applyCoefficientEdits( DetectorPeakResponse &working );
+  /** Applies whichever Anchor editor is showing, when it was edited.  Returns false only when
+   something the user typed could not be applied; `problems` always says what. */
+  bool applyAnchorTab( DetectorPeakResponse &working,
+                       std::vector<DrfModifyCalc::Problem> &problems );
 
-  /** Rebuilds `working`'s formula curve and uncertainty from the formula editor. */
-  void applyFormulaEdits( DetectorPeakResponse &working );
+  /** Shows `problems` to the user; blocking ones as errors, the rest as information. */
+  void showProblems( const std::vector<DrfModifyCalc::Problem> &problems );
 
-  /** Seeds the coefficient covariance shadow (#m_coefCovMatrix) from an existing uncertainty's
-   `coefficientCovariance()`, then rebuilds the table. */
+  /** Seeds the coefficient σ/ρ shadow from an existing uncertainty's `coefficientCovariance()`,
+   falling back to the legacy per-coefficient uncertainties (flagged as a placeholder - see
+   #m_coefCovIsPlaceholder), then rebuilds the table. */
   void seedCoefCovFromUncert( const std::shared_ptr<const DetectorEfficiencyUncert> &uncert );
 
-  /** Re-renders the coefficient covariance table from the numeric shadow: column 0 the static
-   `A0..An` labels, diagonal σ (%), editable upper-triangle ρ, disabled lower-triangle mirror. */
+  /** Re-renders the coefficient σ/ρ table from the numeric shadow: column 0 the static
+   `A0..An` labels, diagonal σ, editable upper-triangle ρ, disabled lower-triangle mirror.  Also
+   updates the "these correlations are impossible" warning. */
   void rebuildCovTable();
 
-  /** Adds/removes an exp-of-log-power-series term, resizing both the coefficient boxes and the
-   covariance shadow; the surviving block of the covariance stays bit-exact. */
+  /** Adds/removes an exp-of-log-power-series term, resizing both the coefficient boxes and the σ/ρ
+   shadow; the surviving block stays bit-exact. */
   void addCoefficient( const float value = 0.0f );
   void removeCoefficient();
 
-  /** Covariance-shadow edit handlers (coefficient indices).  Each mutates the shadow so untouched
-   entries stay bit-exact (σ scales its row/col to hold ρ fixed; ρ sets one pair), then rebuilds and
-   records the edit. */
+  /** Covariance-shadow edit handlers (coefficient indices).  Each writes one entry of the σ/ρ
+   shadow, so every other entry stays bit-exact, then rebuilds and records the edit. */
   void covSigmaChanged( const std::size_t i, const std::string &text );
   void covRhoChanged( const std::size_t i, const std::size_t j, const std::string &text );
 
@@ -282,26 +321,57 @@ protected:
    Distinct from #m_anchorEnergyUnits - see that member. */
   float equationEnergyUnits() const;
 
-  /** Builds a working DRF from every tab: name/description, the visible Anchor editor, and
-   FWHM.  When `includeMcResponse`, attaches the generated (or existing) Monte-Carlo response in
+  /** Builds a working DRF from every tab: name/description, the visible Anchor editor, the geometry,
+   and FWHM.  When `includeMcResponse`, attaches the generated (or existing) Monte-Carlo response in
    Geometry-Modeled mode and detaches it in Flat Disk; otherwise (a regeneration seed) always
-   detaches, so the manual points/covariance drive grounding. */
-  std::shared_ptr<DetectorPeakResponse> buildWorkingDrf( const bool includeMcResponse );
+   detaches, so the manual points/covariance drive grounding.
 
-  /** Footer "Generate Response": re-seeds the MC tool with the live edits (detached) and starts a
-   generation.  Geometry-Modeled only. */
+   `problems` collects everything that could not be applied; nothing is shown to the user from here
+   (#requestApply decides that), so this is safe to call for a seed or a summary. */
+  std::shared_ptr<DetectorPeakResponse> buildWorkingDrf( const bool includeMcResponse,
+                                      std::vector<DrfModifyCalc::Problem> &problems );
+
+  /** Whether the response that would be attached no longer describes the current edits, derived by
+   comparing `DrfModifyCalc::seedFingerprint` against the fingerprint of the seed the attached
+   response was built from.
+
+   Content, not a flag: a flag has to be cleared by whoever regenerates, and the paths that forgot to
+   (an automatic rebuild from a pre-edit seed; a redo that restored the edits but not the flag) left
+   an edited curve behind a response that still answered every query.  */
+  bool responseStale();
+
+  /** Footer "Generate Response": starts a generation, which pulls the live edits through the seed
+   provider installed on the MC tool.  Geometry-Modeled only. */
   void handleGenerateResponse();
 
-  /** Shows/enables the footer generate button per mode, geometry readiness, and pending edits. */
+  /** Shows/enables the footer generate button per mode, geometry readiness, and staleness. */
   void updateGenerateButton();
 
-  /** MC tool finished a generation: clears the stale flag (the following #userChanged is not a user
-   edit), and, when a regenerate-then-use is pending, applies. */
+  /** MC tool finished a generation: records what it was generated from, and, when a
+   regenerate-then-use is pending, applies. */
   void handleResponseGenerated( std::shared_ptr<ceelo::DetectorResponse> response );
+
+  /** Switches to Flat Disk (detaching the response) and applies - the honest alternative to using a
+   response that ignores the edits. */
+  void detachResponseAndApply();
+
+  /** Shows or hides the note saying the correlation control currently has nothing to act on. */
+  void updateCorrelationNote();
+
+  /** Updates the read-only "what this detector reports" line: the efficiency uncertainty the
+   analysis would propagate, split into the part this detector's data supports and the part that is
+   an ad hoc model envelope.  Also refreshes the response-staleness note. */
+  void refreshUncertSummary();
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_orig;
-  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
+
+  /** The DRF's raw measured points as the dialog opened, which rows carry provenance from. */
+  std::shared_ptr<const MeasuredDrfPoints> m_seedPoints;
+
+  /** Which Anchor editor this DRF gets, from `DrfModifyCalc::editorForDrf`.  Fixed at construction:
+   it describes how the DRF represents its efficiency, which this dialog does not change. */
+  DrfModifyCalc::AnchorEditor m_editor;
 
   Wt::WMenu *m_tabMenu;
   Wt::WStackedWidget *m_tabStack;
@@ -323,71 +393,87 @@ protected:
    fixed-geometry DRF. */
   bool m_geometryModeled;
 
-  /** Whether the seed DRF arrived with efficiency points/pairs. */
-  bool m_origHasPoints;
-
   // --- Anchor tab: the three swappable editors -----------------------------
-  /** Help text above the editors; its wording tracks which editor, and which columns, are shown -
+  /** Help text above the editors; its wording tracks which editor is shown -
       see #updateAnchorEditorVisibility. */
   Wt::WText *m_anchorHelp;
-  /** Holds the point-table editor; shown for #AnchorEditor::Points and #AnchorEditor::Formula
-   (where its Efficiency column is hidden, the efficiency coming from the formula). */
+
+  /** Shown when a geometry-modeled response is attached: that response, not the numbers below,
+   answers every efficiency and uncertainty query, and is rebuilt from them on "Use". */
+  Wt::WText *m_responseNote;
+
+  /** The uncertainty this detector reports, and how much of it is model envelope - see
+   #refreshUncertSummary. */
+  Wt::WText *m_uncertSummary;
+
+  /** Holds the point-table editor; shown for every editor except
+   #DrfModifyCalc::AnchorEditor::Coefficients (for a formula curve its Efficiency column is hidden,
+   the efficiency coming from the formula). */
   Wt::WContainerWidget *m_pointsEditor;
-  /** Holds the coefficient boxes and their covariance matrix; shown for
-   #AnchorEditor::Coefficients. */
+  /** Holds the coefficient boxes and their σ/ρ matrix. */
   Wt::WContainerWidget *m_coefEditor;
-  /** Holds the efficiency formula text; shown for #AnchorEditor::Formula. */
+  /** Holds the efficiency formula text. */
   Wt::WContainerWidget *m_formulaEditor;
 
-  /** Point editor: one row per point, plus an editable reference distance and a single default
-   statistical-uncert %. */
+  /** Point editor: one row per point, plus an editable reference distance. */
   Wt::WTable *m_anchorTable;
   /** Wraps #m_anchorTable so it can scroll and centre inside the panel. */
   Wt::WContainerWidget *m_anchorTableWrap;
   Wt::WPushButton *m_addAnchor, *m_removeAnchor;
   Wt::WLineEdit *m_anchorRefDistance;
-  Wt::WLineEdit *m_anchorDefaultUncert;
-  /** `source` is null unless #m_anchorHasSourceCol. */
-  /** `dist` (cm, blank = the reference distance) exists only with the source column. */
-  struct AnchorRow{ Wt::WLineEdit *energy, *eff, *stat, *cert, *source, *dist; };
+  /** `source` and `dist` are null unless #anchorHasSourceCols; `seedIndex` is the measured point
+   this row describes (-1 for a row the user added). */
+  struct AnchorRow
+  {
+    Wt::WLineEdit *energy, *eff, *stat, *cert, *source, *dist;
+    int seedIndex = -1;
+  };//struct AnchorRow
   std::vector<AnchorRow> m_anchors;
 
-  /** How the correlated column is correlated across energy; null when the points carry a source
-   column (see #m_anchorHasSourceCol), whose certificate uncertainty is blocked per source instead. */
+  /** How the correlated column is correlated across energy; null when the rows are measured points,
+   whose certificate uncertainty is blocked per source instead. */
   EccUncertOptions *m_uncertOptions;
 
-  /** Whether the point table has a per-source certificate/Source column, i.e. its correlated
-   uncertainty is blocked by source key rather than governed by #m_uncertOptions.  Only an absolute
-   reference curve has one.  Deliberately distinct from #m_anchorIsAbsolute: conflating the two is
-   what hid the correlated column from every fixed-geometry DRF. */
-  bool m_anchorHasSourceCol;
+  /** Shown while every "Corr. %" cell is blank, i.e. while #m_uncertOptions governs nothing. */
+  Wt::WText *m_corrInertNote;
 
   /** The `PhysicalUnits` energy unit the point table's Energy column is in.
 
-   For a pairs curve this is the curve's own unit (a GADRAS CSV may use MeV), so the numbers shown
-   are the numbers stored.  For a formula curve the rows are covariance nodes rather than curve
-   points, and `DetectorEfficiencyUncert` documents node energies as keV regardless of the curve -
-   so it is keV there.  Fixed at construction; deliberately NOT tied to #m_effEnergyUnits, which
-   only says what units the equation/formula is written in. */
+   keV except for a pairs curve, where it is the curve's own unit (a GADRAS CSV may use MeV) so the
+   numbers shown are the numbers stored.  Measured points and covariance nodes are keV by contract
+   (`MeasuredEffPoint::energy`, `DetectorEfficiencyUncert`) whatever units the curve's equation uses.
+   Fixed at construction; deliberately NOT tied to #m_effEnergyUnits, which only says what units the
+   equation/formula is written in. */
   float m_anchorEnergyUnits;
 
-  /** Whether the point editor holds ABSOLUTE efficiencies at #m_anchorRefDistance (an ANGLE-style
-   reference curve) rather than INTRINSIC ones (a GADRAS Efficiency.csv).  Decides whether the
-   reference-distance row and the certificate/source columns are shown, which geometry type
-   #applyAnchorEdits writes back, and whether the rows are also recorded as `MeasuredDrfPoints` -
-   which are read elsewhere as absolute efficiencies at a distance, so intrinsic points must not
-   masquerade as them. */
-  bool m_anchorIsAbsolute;
-
-  /** Coefficient editor (`kExpOfLogPowerSeries`): one spin box per term, their M·M σ/ρ covariance
-   table, and the energy-units selector the equation is written in. */
+  /** Coefficient editor (`kExpOfLogPowerSeries`): one spin box per term, their σ/ρ table, and the
+   energy-units selector the equation is written in. */
   std::vector<NativeFloatSpinBox *> m_coefEdits;
   Wt::WContainerWidget *m_coefParams;
   Wt::WTable *m_covTable;
   Wt::WPushButton *m_addCoef, *m_removeCoef;
-  /** Authoritative numeric shadow: the row-major M·M coefficient covariance.  The GUI edits this;
-   untouched entries stay bit-exact across a σ or ρ edit. */
-  std::vector<double> m_coefCovMatrix;
+
+  /** Authoritative numeric shadow of the coefficient covariance, as 1-sigma per coefficient and a
+   row-major N*N correlation matrix (unit diagonal).  The GUI edits these; untouched entries stay
+   bit-exact, and a 0 sigma does not erase correlations. */
+  std::vector<double> m_coefSigmas;
+  std::vector<double> m_coefRho;
+
+  /** Shown when the σ/ρ the user entered cannot describe any real set of errors. */
+  Wt::WText *m_covWarning;
+
+  /** Shown while #m_coefCovIsPlaceholder: the matrix on screen is not one this DRF carries. */
+  Wt::WText *m_covPlaceholderNote;
+
+  /** Whether the user has edited the σ/ρ table in this session.  Tracked rather than inferred from a
+   value diff, because adding or removing a term resizes the shadow and would look like an edit. */
+  bool m_coefCovTouched;
+
+  /** True when the σ/ρ shown was manufactured from the legacy per-coefficient uncertainties rather
+   than read from a stored covariance.  Such a matrix assumes the coefficients are independent, which
+   for a log-power-series fit they emphatically are not, so it is offered as a starting point and
+   only written to the DRF if the user actually edits it. */
+  bool m_coefCovIsPlaceholder;
 
   /** Formula editor (`kFunctialEfficienyForm`). */
   Wt::WTextArea *m_formulaText;
@@ -397,24 +483,25 @@ protected:
   Wt::WComboBox *m_effEnergyUnits;
   Wt::WContainerWidget *m_effUnitsRow;
 
-  /** The Anchor-tab state this dialog opened with, so #anchorsMatchSeed can tell "the user changed
-   nothing" from "the user re-typed the same numbers". */
+  /** The Anchor-tab state this dialog opened with, so the per-editor edited-checks can tell "the
+   user changed nothing" from "the user re-typed the same numbers". */
   std::shared_ptr<const ToolState> m_seedState;
 
   /** Footer "Generate Response" button (Geometry-Modeled only); regenerates the MC response from
    the live edits. */
   Wt::WPushButton *m_generateBtn;
 
-  /** Whether an edit has landed since the last generated response, i.e. the response is stale. */
-  bool m_changedSinceGenerate;
+  /** `DrfModifyCalc::seedFingerprint` of the seed the currently held response was built from - the
+   DRF as it arrived, or the seed of the last generation.  See #responseStale. */
+  std::size_t m_generatedFromFingerprint;
+
+  /** The fingerprint of the seed handed to the generation now running, promoted to
+   #m_generatedFromFingerprint when it lands. */
+  std::size_t m_pendingSeedFingerprint;
 
   /** Set true just before a regenerate-then-use starts, so #handleResponseGenerated applies once the
    response lands. */
   bool m_applyAfterGenerate;
-
-  /** One-shot: the #userChanged that a generation emits right after #responseGenerated is not a user
-   edit, so it must not re-mark the fresh response stale. */
-  bool m_suppressNextEditMark;
 
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 

@@ -261,13 +261,46 @@ class DetectorPeakResponseJS {
 
   // Fractional (1-sigma) efficiency uncertainty at the given energy, linearly
   // interpolated (constant extrapolation) over the exported sample points, or
-  // null when no envelope is available.
+  // null when no envelope is available.  This is the TOTAL - what the activity
+  // fit propagates.
   fracUncert(energy) {
+    return this.interpUncert(energy, 'fracUncerts');
+  }
+
+  // The part of fracUncert(energy) that is an ad hoc model envelope (a transfer
+  // model's off-axis allowance, a regime floor - things no measurement of this
+  // detector constrains) rather than something its own data supports.  0 for a
+  // plain curve DRF, whose uncertainty is all data-derived.
+  modelFracUncert(energy) {
+    const val = this.interpUncert(energy, 'modelFracUncerts');
+    return (val === null) ? 0 : val;
+  }
+
+  // The data-derived part: what is left of the total once the model envelope is
+  // taken out (they add in quadrature).
+  dataFracUncert(energy) {
+    const total = this.fracUncert(energy);
+    if (total === null)
+      return null;
+    const model = Math.min(this.modelFracUncert(energy), total);
+    return Math.sqrt(Math.max(0, total*total - model*model));
+  }
+
+  // Whether the data-derived part above is a measurement of this detector at all, or a default
+  // standing in for one (see DetectorPeakResponse::toJSON).
+  uncertDataIsAssumed() {
+    const u = this.data && this.data.effUncertFrac;
+    return !!(u && u.dataIsAssumed);
+  }
+
+  interpUncert(energy, field) {
     if (!this.hasEffUncert())
       return null;
 
     const es = this.data.effUncertFrac.energies;
-    const fs = this.data.effUncertFrac.fracUncerts;
+    const fs = this.data.effUncertFrac[field];
+    if (!fs || fs.length !== es.length)
+      return null;
     if (energy <= es[0]) return fs[0];
     if (energy >= es[es.length - 1]) return fs[es.length - 1];
 

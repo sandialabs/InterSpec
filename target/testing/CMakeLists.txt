@@ -764,6 +764,15 @@ add_test( NAME TDetectorPeakResponse
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# The apply paths of the "Modify Detector Response" tool (DrfModifyCalc): that an edit writes what the
+#  user was shown, and that the DRF that comes out is one self-consistent description of a detector.
+add_executable( test_DrfModify test_DrfModify.cpp )
+target_link_libraries( test_DrfModify PRIVATE InterSpecLib )
+add_test( NAME TDrfModify
+  COMMAND $<TARGET_FILE:test_DrfModify> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
 target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
 add_test( NAME TDetectorEfficiency

@@ -780,6 +780,22 @@ public:
    under the energy-independent rescalings done by #convertFixedGeometryType
    and #reinterpretAsFarFieldIntrinsicEfficiency etc., and so are carried
    across those conversions unchanged.
+
+   CAUTION - this is a STORE, not the answer.  A DRF can describe its efficiency in three places and
+   its uncertainty in three, and which one is authoritative is decided per representation, once,
+   here:
+
+   | Quantity | Authoritative | The others are |
+   |---|---|---|
+   | efficiency value | an attached #ceeloResponse, else #efficiencyCurve | #measuredPoints are re-fit input and provenance, never a value source |
+   | efficiency uncertainty | an attached #ceeloResponse, else - for a `kExpOfLogPowerSeries` curve - the coefficient covariance, else the node covariance (`DetectorEfficiencyCurve::fracCovariance` applies exactly this order) | the node covariance kept beside an equation is provenance / the fallback for the other representations |
+   | geometry | an attached #ceeloResponse's descriptor, else #setGeometry's | - |
+
+   So **ask #efficiencyFracCovariance or the #EffEval queries for an uncertainty**; they honor the
+   order above.  Reading this object directly gives you the node covariance only, which for an
+   equation DRF is not what any fit uses, and for a response-bearing DRF is not what any query uses.
+   (That mistake is what left the efficiency chart drawing a zero-width band while the activity fit
+   was propagating several percent.)
    */
   std::shared_ptr<const DetectorEfficiencyUncert> efficiencyUncert() const;
 
@@ -931,6 +947,9 @@ public:
 
   /** Sets (or clears, with nullptr) the Monte-Carlo-parameterized response.
    Recomputes hash value.
+
+   Clearing one adopts its descriptor as #geometry when no geometry was stated separately, so
+   putting a detector back on the flat-disk model does not make it forget what it physically is.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
 
@@ -950,12 +969,12 @@ public:
    */
   std::shared_ptr<const ceelo::GeometryDescriptor> geometry() const;
 
-  /** Sets (or clears, with nullptr) the physical geometry.  Ignored while a
-   #ceeloResponse is attached, since that carries its own.
+  /** Sets (or clears, with nullptr) the physical geometry.  Always stored (and serialized), but
+   shadowed by an attached #ceeloResponse's own descriptor for as long as one is attached - so this
+   is what the detector falls back to when the response is detached.
 
-   NOT part of the hash: the geometry says what the detector *is*, not what it
-   answers, so recording it must not change the identity of an already-stored
-   DRF (see #hashValue).
+   Folded into the hash only when no response is attached (the response's content hash covers its
+   descriptor), so attaching a response does not change the identity a stored DRF already has.
    */
   void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
@@ -1091,6 +1110,28 @@ public:
   //Simple accessors
   float detectorDiameter() const;
   double absoluteEfficiencyDistance() const;
+
+  /** Whether this DRF states any efficiency uncertainty of its own - a non-zero entry in any of the
+   three stores (the coefficient covariance, the node covariance, or the measured points' sigmas).
+
+   The distinction that needs it: a DRF can REPORT an uncertainty while stating none, because
+   `CeeLoUtils::sm_default_anchor_frac_sigma` supplies a flat 5% to the curve-transfer response
+   attached to any geometry-bearing DRF at load.  That number arrives in the data-derived slot of the
+   response's budget, so it is indistinguishable there from a measurement - and every surface that
+   splits "from its own data" from "model envelope" has to say which it is looking at.  An all-zero
+   covariance counts as stating nothing: it is a claim of perfect knowledge that nothing propagates.
+   */
+  bool statesOwnEfficiencyUncert() const;
+
+  /** Whether the air attenuation between the source and the detector is divided back out when a
+   `FarFieldAbsolute` efficiency is used at a distance other than the one it was measured at; only
+   meaningful for that geometry type.  See #efficiency.
+   */
+  bool absEffCorrectForAirAtten() const;
+
+  /** Sets #absEffCorrectForAirAtten; recomputes the hash. */
+  void setAbsEffCorrectForAirAtten( const bool correct );
+
   const std::string &efficiencyFormula() const;
   const std::string &name() const;
   const std::string &description() const;

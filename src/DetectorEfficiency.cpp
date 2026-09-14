@@ -28,10 +28,13 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <iostream>
 #include <algorithm>
 #include <stdexcept>
 
 #include <boost/functional/hash.hpp>
+
+#include <Eigen/Dense>  // eigenvalues for the positive-semi-definite check, Cholesky for the URL form
 
 #include "rapidxml/rapidxml.hpp"
 
@@ -491,6 +494,75 @@ void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
 }//setNodeCovariance(...)
 
 
+bool DetectorEfficiencyUncert::covarianceIsUsable( const vector<double> &covRowMajor,
+                                                   std::string *why )
+{
+  auto fail = [why]( const char *msg ) -> bool {
+    if( why )
+      *why = msg;
+    return false;
+  };//fail lambda
+
+  if( covRowMajor.empty() )
+    return true;  //"no covariance" is a usable statement
+
+  const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(covRowMajor.size()) ) ) );
+  if( (n * n) != covRowMajor.size() )
+    return fail( "matrix is not square" );
+
+  double max_diag = 0.0;
+  for( size_t i = 0; i < n; ++i )
+  {
+    const double val = covRowMajor[i*n + i];
+    if( IsNan(val) || IsInf(val) )
+      return fail( "matrix holds a non-finite value" );
+    if( val < 0.0 )
+      return fail( "matrix has a negative variance on its diagonal" );
+    max_diag = std::max( max_diag, val );
+  }//for( size_t i = 0; i < n; ++i )
+
+  if( max_diag <= 0.0 )
+    return true;  //all-zero: no information, but not impossible
+
+  // Symmetry, scaled by the matrix's own magnitude so the test means the same for a covariance of
+  //  1e-3-sized entries and one of 1e3-sized ones.
+  for( size_t i = 0; i < n; ++i )
+  {
+    for( size_t j = i + 1; j < n; ++j )
+    {
+      const double a = covRowMajor[i*n + j], b = covRowMajor[j*n + i];
+      if( IsNan(a) || IsInf(a) || IsNan(b) || IsInf(b) )
+        return fail( "matrix holds a non-finite value" );
+      if( fabs(a - b) > (1.0E-5 * max_diag) )
+        return fail( "matrix is not symmetric" );
+    }
+  }//for( size_t i = 0; i < n; ++i )
+
+  // Positive semi-definite: no direction may imply a negative variance.  The tolerance is relative
+  //  to the matrix scale, so a fit covariance whose smallest eigenvalue is a rounding artifact is
+  //  accepted, while a hand-entered impossible correlation set (e.g. rho01 = rho02 = 0.99 with
+  //  rho12 = -0.99) is not.
+  Eigen::MatrixXd m( n, n );
+  for( size_t i = 0; i < n; ++i )
+    for( size_t j = 0; j < n; ++j )
+      m(i,j) = 0.5*(covRowMajor[i*n + j] + covRowMajor[j*n + i]);
+
+  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver( m, Eigen::EigenvaluesOnly );
+  if( solver.info() != Eigen::Success )
+    return fail( "matrix eigenvalues could not be computed" );
+
+  // The tolerance is what separates float rounding from an impossible entry.  A fitted covariance can
+  //  be badly conditioned (a log-power-series fit routinely is), and storing it as float perturbs its
+  //  smallest eigenvalue by of order 1e-7 of the matrix scale; a hand-entered impossible set of
+  //  correlations is negative by of order 0.1 to 1 of it.
+  if( solver.eigenvalues().minCoeff() < (-1.0E-6 * max_diag) )
+    return fail( "matrix is not positive semi-definite - these uncertainties and correlations"
+                 " cannot describe any real set of errors" );
+
+  return true;
+}//covarianceIsUsable(...)
+
+
 void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &covRowMajor )
 {
   if( covRowMajor.empty() )
@@ -503,6 +575,14 @@ void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &co
   if( (n * n) != covRowMajor.size() )
     throw runtime_error( "DetectorEfficiencyUncert::setCoefficientCovariance:"
                          " matrix must be square" );
+
+  // Refused rather than stored: for an equation curve this matrix takes precedence over the node
+  //  covariance, so an impossible one would both hide a usable covariance and (through a failed
+  //  Cholesky in the fit) reduce the apparent uncertainty.
+  const vector<double> as_dbl( begin(covRowMajor), end(covRowMajor) );
+  std::string why;
+  if( !covarianceIsUsable( as_dbl, &why ) )
+    throw runtime_error( "DetectorEfficiencyUncert::setCoefficientCovariance: " + why );
 
   m_coefCovMatrix = covRowMajor;
 }//setCoefficientCovariance(...)
@@ -648,9 +728,28 @@ void DetectorEfficiencyUncert::fromXml( const ::rapidxml::xml_node<char> *node )
       setComponentSplit( corr_frac, uncorr_frac );
   }
 
+  // A stored covariance that is not a possible set of errors is dropped, not thrown on: these files
+  //  predate the check, and losing the whole DRF (or, through the DB blob's catch, all of its extras)
+  //  over one unusable matrix would be a worse answer than losing the matrix.  It is dropped rather
+  //  than kept because for an equation curve it would take precedence over the node covariance while
+  //  contributing nothing but a failed Cholesky downstream.
   const vector<float> coef_cov = parse_float_list_node( node, "CoefCovMatrix" );
   if( !coef_cov.empty() )
-    setCoefficientCovariance( coef_cov );
+  {
+    try
+    {
+      setCoefficientCovariance( coef_cov );
+    }catch( std::exception &e )
+    {
+      m_coefCovMatrix.clear();
+      cerr << "DetectorEfficiencyUncert::fromXml: dropping the stored coefficient covariance: "
+           << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Stored coefficient covariance was unusable: "
+                                      + string(e.what())).c_str() );
+#endif
+    }
+  }//if( !coef_cov.empty() )
 
   const ::rapidxml::xml_node<char> *corr_node = node->first_node( "CorrelationLength" );
   if( corr_node && corr_node->value_size() )
@@ -683,10 +782,65 @@ void DetectorEfficiencyUncert::toUrlParts( map<string,string> &parts, const stri
     if( m_corrLength > 0.0 )
       parts[prefix + "EFUL"] = SpecUtils::printCompact( m_corrLength, 5 );
 
-    // The coefficient covariance and the correlated/uncorrelated split are deliberately not
-    //  encoded - the QR budget is tight, and the covariance written above already carries the
-    //  physics; only the editing provenance is lost.
+    // The correlated/uncorrelated split is deliberately not encoded - it is editing provenance, and
+    //  the covariance written above round-trips without it.
   }//if( !m_covEnergies.empty() )
+
+  // The coefficient covariance, as the lower-triangular Cholesky factor - see the header.  For an
+  //  equation curve this is the authoritative uncertainty, so it is written whether or not there is
+  //  a node covariance (and is the last uncertainty the size-reduction ladder gives up).
+  if( !m_coefCovMatrix.empty() )
+  {
+    const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(m_coefCovMatrix.size()) ) ) );
+    if( (n*n) == m_coefCovMatrix.size() )
+    {
+      Eigen::MatrixXd m( n, n );
+      double max_diag = 0.0;
+      for( size_t i = 0; i < n; ++i )
+      {
+        max_diag = std::max( max_diag, static_cast<double>(m_coefCovMatrix[i*n + i]) );
+        for( size_t j = 0; j < n; ++j )
+          m(i,j) = 0.5*(m_coefCovMatrix[i*n + j] + m_coefCovMatrix[j*n + i]);
+      }
+
+      // A fit covariance is positive definite, but a rank-deficient one (a coefficient the data did
+      //  not constrain) needs a nudge before it will factor; the nudge is far below the 4
+      //  significant figures written out.
+      //  The last rung is above `covarianceIsUsable`'s tolerance, so a matrix that only just passed
+      //  that check still factors rather than being dropped from the URL without a word.
+      Eigen::MatrixXd factor;
+      bool have_factor = false;
+      for( const double rel_jitter : { 0.0, 1.0E-12, 1.0E-9, 1.0E-6, 1.0E-4 } )
+      {
+        Eigen::MatrixXd trial = m;
+        if( rel_jitter > 0.0 )
+          trial += (rel_jitter * std::max(max_diag, 1.0E-300)) * Eigen::MatrixXd::Identity( n, n );
+
+        const Eigen::LLT<Eigen::MatrixXd> llt( trial );
+        if( llt.info() == Eigen::Success )
+        {
+          factor = llt.matrixL();
+          have_factor = true;
+          break;
+        }
+      }//for( const double rel_jitter : ... )
+
+      if( have_factor )
+      {
+        vector<float> lower;
+        lower.reserve( (n * (n + 1)) / 2 );
+        for( size_t j = 0; j < n; ++j )        //column by column, so a row of L is contiguous on read
+          for( size_t i = j; i < n; ++i )
+            lower.push_back( static_cast<float>( factor(i,j) ) );
+
+        parts[prefix + "EFCC"] = to_url_flt_array( lower, 4 );
+      }else
+      {
+        cerr << "DetectorEfficiencyUncert::toUrlParts: the coefficient covariance would not factor,"
+                " so it is not in this URL." << endl;
+      }//if( have_factor ) / else
+    }//if( the matrix is square )
+  }//if( !m_coefCovMatrix.empty() )
 }//DetectorEfficiencyUncert::toUrlParts(...)
 
 
@@ -697,12 +851,14 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
   const auto energies_pos = parts.find( prefix + "EFUE" );
   const auto cov_pos = parts.find( prefix + "EFUC" );
   const auto corr_pos = parts.find( prefix + "EFUL" );
+  const auto coef_pos = parts.find( prefix + "EFCC" );
 
-  if( energies_pos == end(parts) )
+  if( (energies_pos == end(parts)) && (coef_pos == end(parts)) )
     return nullptr;
 
   auto answer = make_shared<DetectorEfficiencyUncert>();
 
+  if( energies_pos != end(parts) )
   {
     if( cov_pos == end(parts) )
       throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: EFUE without EFUC" );
@@ -737,6 +893,49 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
       answer->m_corrLength = val;
     }
   }//if( energies_pos != end(parts) )
+
+  // The coefficient covariance arrives as the lower triangle of its Cholesky factor (column by
+  //  column), so rebuilding it as L*L^T is positive semi-definite however the values were rounded.
+  if( coef_pos != end(parts) )
+  {
+    const vector<float> lower = from_url_flt_array( coef_pos->second );
+
+    // n from n*(n+1)/2 entries
+    size_t n = 0;
+    while( ((n * (n + 1)) / 2) < lower.size() )
+      ++n;
+    if( ((n * (n + 1)) / 2) != lower.size() )
+      throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: EFCC has wrong number of entries" );
+
+    vector<double> L( n * n, 0.0 );
+    size_t pos = 0;
+    for( size_t j = 0; j < n; ++j )
+      for( size_t i = j; i < n; ++i )
+        L[i*n + j] = lower[pos++];
+
+    vector<float> cov( n * n, 0.0f );
+    for( size_t i = 0; i < n; ++i )
+    {
+      for( size_t j = 0; j <= i; ++j )
+      {
+        double sum = 0.0;
+        for( size_t k = 0; k <= j; ++k )   //L is lower triangular
+          sum += L[i*n + k] * L[j*n + k];
+        cov[i*n + j] = cov[j*n + i] = static_cast<float>( sum );
+      }
+    }//for( size_t i = 0; i < n; ++i )
+
+    // A malformed factor must not abandon the whole DRF the URL carries - that is a deep-link or QR
+    //  load, where the rest of the detector is still perfectly good.  Dropped, like on the XML path.
+    try
+    {
+      answer->setCoefficientCovariance( cov );
+    }catch( std::exception &e )
+    {
+      cerr << "DetectorEfficiencyUncert::fromUrlParts: dropping the coefficient covariance: "
+           << e.what() << endl;
+    }
+  }//if( coef_pos != end(parts) )
 
   return answer;
 }//DetectorEfficiencyUncert::fromUrlParts(...)

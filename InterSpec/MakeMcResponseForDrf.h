@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -180,14 +181,35 @@ public:
    */
   void setSeedDrf( std::shared_ptr<const DetectorPeakResponse> seed_drf );
 
+  /** Installs a callback that supplies the seed DRF, consulted at the start of EVERY generation -
+   the owner's "Generate Response" button, and the automatic regeneration a geometry change triggers
+   for #Method::CurveTransfer.
+
+   An owner whose edits belong in the seed (DrfModifyWidget) must use this rather than #setSeedDrf:
+   a seed pushed in once goes stale the moment the user edits anything, and the automatic
+   regeneration would then rebuild the response from the pre-edit curve while looking current.  The
+   callback must return a DRF with any CeeLo response detached, for the reason given on #setSeedDrf.
+   Pass an empty function to go back to whatever #setSeedDrf last provided.
+   */
+  void setSeedProvider( std::function<std::shared_ptr<const DetectorPeakResponse>()> provider );
+
   /** Whether the geometry form currently holds enough real geometry to generate a response
    (delegates to DetectorGeometryInput::generationReady). */
   bool generationReady() const;
 
   /** Kicks off a response generation from the current geometry/method selections; a no-op (with a
    status message) when the geometry is not #generationReady.  Public so an owner can drive a
-   regenerate-then-use flow. */
+   regenerate-then-use flow - see #generationRunning for how to tell that it declined. */
   void startGeneration();
+
+  /** Whether a generation posted by #startGeneration is still in flight.
+
+   An owner that queues something to happen when the response lands (DrfModifyWidget's
+   regenerate-then-use) needs this: #startGeneration can decline - an incomplete geometry, an anchor
+   it cannot build - and a queued action left armed would then fire on some later, unrelated
+   generation.
+   */
+  bool generationRunning() const;
 
   /** Hides (or shows) the tool's own "Generate Response" button in the Location Support section.
    An owner that embeds this tool and provides its own generate control (e.g. DrfModifyWidget's
@@ -279,6 +301,17 @@ protected:
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_seedDrf;
+
+  /** See #setSeedProvider; when set, #refreshSeedFromProvider replaces #m_seedDrf from it before
+   every generation. */
+  std::function<std::shared_ptr<const DetectorPeakResponse>()> m_seedProvider;
+
+  /** Pulls a fresh seed from #m_seedProvider, if one is installed. */
+  void refreshSeedFromProvider();
+
+  /** See #generationRunning: true from the moment a worker is posted until that run finishes, is
+   cancelled, or is abandoned by a change that invalidates it. */
+  bool m_generationRunning = false;
 
   DetectorGeometryInput *m_geometry;
 

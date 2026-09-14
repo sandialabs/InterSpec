@@ -169,7 +169,17 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
 
   const size_t ncoef = fit.eff.coefs.size();
   if( fit.eff.covRowMajor.size() == ncoef*ncoef )
-    uncert->setCoefficientCovariance( fit.eff.covRowMajor );
+  {
+    // A covariance the setter refuses (not a possible set of errors) must not take the whole DRF
+    //  down with it - the points' own block covariance is still a usable statement.
+    try
+    {
+      uncert->setCoefficientCovariance( fit.eff.covRowMajor );
+    }catch( std::exception &e )
+    {
+      cerr << "MakeDrfCalc::assembleDrf: not storing the fit covariance: " << e.what() << endl;
+    }
+  }//if( the fit produced a coefficient covariance )
 
   if( !uncert->isEmpty() )
     drf->setEfficiencyUncert( uncert );
@@ -246,5 +256,157 @@ std::shared_ptr<DetectorPeakResponse> assembleDrf( const std::string &name,
 
   return drf;
 }//assembleDrf(...)
+
+
+GeometryChoice geometryChoiceForDrf( const DetectorPeakResponse &drf )
+{
+  GeometryChoice answer;
+  answer.fixedGeometry = drf.isFixedGeometry();
+  if( answer.fixedGeometry )
+    return answer;
+
+  answer.geometry = drf.geometry();
+  answer.diameter = drf.detectorDiameter();
+  answer.setback = drf.detectorSetback();
+
+  return answer;
+}//geometryChoiceForDrf(...)
+
+
+void refitEfficiencyFromPoints( DetectorPeakResponse &drf,
+                                const MeasuredDrfPoints &points,
+                                const int nterms,
+                                std::string &warnings )
+{
+  warnings.clear();
+
+  if( points.empty() )
+    throw runtime_error( "There are no measured points to fit." );
+
+  // The fit is of the INTRINSIC efficiency (intrinsicFitPoints divides each point's source geometry
+  //  out), so installing it on a DRF whose curve is read as absolute efficiency would be wrong by a
+  //  solid angle.  Such a detector has to be re-characterized, not re-fit in place.
+  if( drf.geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute )
+    throw runtime_error( "This detector states ABSOLUTE efficiency at a fixed distance, which a"
+                         " re-fit of intrinsic efficiency cannot express." );
+
+  const shared_ptr<const DetectorEfficiencyCurve> curve = drf.efficiencyCurve();
+
+  // The equation keeps the units it was written in, so its coefficients stay comparable with the
+  //  ones the user (or a previous fit) can see.
+  const float units = (curve && curve->isValid() && (curve->energyUnits() > 0.0f))
+                      ? curve->energyUnits() : static_cast<float>(PhysicalUnits::keV);
+  const bool inMeV = (units > 10.0f);
+
+  int order = nterms;
+  if( order <= 0 )
+    order = curve ? static_cast<int>( curve->expOfLogPowerSeriesCoeffs().size() ) : 0;
+  if( order <= 0 )
+    order = 4;  //a DRF that was not an equation before (a pairs curve being re-fit) gets the default
+
+  const GeometryChoice geom = geometryChoiceForDrf( drf );
+  const vector<MakeDrfFit::EffFitPoint> effpts = intrinsicFitPoints( points, geom, inMeV );
+
+  if( static_cast<int>(effpts.size()) < 2 )
+    throw runtime_error( "At least two usable measured points are needed to fit an efficiency"
+                         " equation (points need a positive energy, efficiency, and - for a"
+                         " far-field detector - a source distance)." );
+
+  // More terms than points would be an under-determined fit; fall back rather than refuse, since the
+  //  term count is not something the user chose here.
+  if( static_cast<int>(effpts.size()) < order )
+    order = static_cast<int>( effpts.size() );
+
+  const MakeDrfFit::EffFitResult fit = MakeDrfFit::performEfficiencyFit( effpts, order );
+  warnings = fit.warnings;
+
+  if( fit.coefs.empty() )
+    throw runtime_error( "The efficiency fit returned no coefficients." );
+
+  for( const float val : fit.coefs )
+  {
+    if( std::isnan(val) || std::isinf(val) )
+      throw runtime_error( "The efficiency fit returned an invalid coefficient." );
+  }
+
+  // The energy range the points actually cover (they are sorted by energy).
+  const float lower = points.points().front().energy;
+  const float upper = points.points().back().energy;
+
+  // Build the whole new state before touching `drf`, so a throw leaves it as it was.
+  auto new_curve = make_shared<DetectorEfficiencyCurve>();
+  new_curve->setFromExpOfLogPowerSeries( fit.coefs, fit.uncerts, units );
+
+  auto pts = make_shared<MeasuredDrfPoints>( points );
+
+  // The two uncertainty stores this DRF ends up with, from this one fit: the coefficient covariance
+  //  (what an equation curve's uncertainty IS - see DetectorEfficiencyCurve::fracCovariance), and
+  //  the points' own block covariance beside it as the fallback for other representations.
+  shared_ptr<DetectorEfficiencyUncert> uncert = pts->toEfficiencyUncert();
+  if( !uncert )
+    uncert = make_shared<DetectorEfficiencyUncert>();
+
+  const size_t ncoef = fit.coefs.size();
+  bool have_coef_cov = (fit.covRowMajor.size() == (ncoef*ncoef));
+  if( have_coef_cov )
+  {
+    try
+    {
+      uncert->setCoefficientCovariance( fit.covRowMajor );
+    }catch( std::exception & )
+    {
+      have_coef_cov = false;  //not a possible set of errors; the points' covariance still stands
+    }
+  }//if( the fit produced a coefficient covariance )
+
+  if( !have_coef_cov )
+  {
+    warnings += (warnings.empty() ? "" : "  ");
+    warnings += "The fit did not produce a usable coefficient covariance, so the equation carries"
+                " only the uncertainty the measured points imply.";
+  }
+
+  new_curve->setUncertainty( uncert->isEmpty() ? nullptr : uncert );
+
+  drf.replaceEfficiencyCurve( new_curve );
+  drf.setMeasuredPoints( pts );
+  if( upper > lower )
+    drf.setEnergyRange( lower, upper );
+
+  // A point the fitted curve cannot get near is almost always a mis-typed cell rather than a bad
+  //  fit, and it drags the whole curve with it - so name it.  A fit does not pass through its
+  //  points, hence the generous factor before anything is said.
+  {
+    double worst_ratio = 1.0;
+    float worst_energy = 0.0f;
+    for( const MakeDrfFit::EffFitPoint &fitpt : effpts )
+    {
+      if( (fitpt.efficiency <= 0.0f) || (fitpt.energy <= 0.0f) )
+        continue;
+
+      const float energy_kev = inMeV ? (1000.0f*fitpt.energy) : fitpt.energy;
+      const double curve_eff = new_curve->efficiency( energy_kev );
+      if( curve_eff <= 0.0 )
+        continue;
+
+      const double ratio = curve_eff / static_cast<double>( fitpt.efficiency );
+      const double off_by = (ratio > 1.0) ? ratio : (1.0/ratio);
+      if( off_by > worst_ratio )
+      {
+        worst_ratio = off_by;
+        worst_energy = energy_kev;
+      }
+    }//for( const MakeDrfFit::EffFitPoint &fitpt : effpts )
+
+    if( worst_ratio > 2.0 )
+    {
+      char buffer[256];
+      snprintf( buffer, sizeof(buffer), "the fitted curve is a factor of %.3g from the point at"
+                " %.1f keV - check that value", worst_ratio, worst_energy );
+      warnings += (warnings.empty() ? "" : "  ");
+      warnings += buffer;
+    }
+  }
+}//refitEfficiencyFromPoints(...)
 
 }//namespace MakeDrfCalc

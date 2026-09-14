@@ -188,7 +188,12 @@ DrfChart = function (elem, options) {
   this.angleGroup = this.plotGroup.append("g")
     .attr("class", "drf-angle-series");
 
-  // Efficiency uncertainty band, drawn under the efficiency line.
+  // Efficiency uncertainty bands, drawn under the efficiency line.  Two of them: the wider one is
+  // the total the analysis propagates, the inner one only the part this detector's own data
+  // supports - the difference is the ad hoc model envelope of whatever model answers the query.
+  this.effUncertModelBandPath = this.plotGroup.append("path")
+    .attr("class", "drf-eff-uncert-band drf-eff-uncert-band-model")
+    .style("display", "none");
   this.effUncertBandPath = this.plotGroup.append("path")
     .attr("class", "drf-eff-uncert-band")
     .style("display", "none");
@@ -506,12 +511,14 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   if (angleMode && this.effMode === "absolute") {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
+    this.effUncertModelBandPath.style("display", "none");
     return;
   }
 
   if (!this.detector || !this.detector.hasEfficiency()) {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
+    this.effUncertModelBandPath.style("display", "none");
     // No curve: the measured points alone set the efficiency axis
     const ptExt = this.pointValueExtent("eff");
     if (ptExt) {
@@ -547,18 +554,27 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   if (efficiencyPoints.length === 0) {
     this.efficiencyPath.style("display", "none");
     this.effUncertBandPath.style("display", "none");
+    this.effUncertModelBandPath.style("display", "none");
     return;
   }
 
-  // Build the +-1 fractional-uncertainty envelope (only in the flat efficiency
+  // Build the +-1 fractional-uncertainty envelopes (only in the flat efficiency
   // view; angle mode's flat line is a far-field reference the band wouldn't fit).
-  let bandPoints = [];
+  // `bandPoints` is the data-derived part, `modelBandPoints` the total including
+  // the model envelope; drawing both says which part of the uncertainty is a
+  // measurement of this detector and which is an allowance for the model.
+  let bandPoints = [], modelBandPoints = [];
   if (!angleMode && this.detector.hasEffUncert()) {
-    bandPoints = efficiencyPoints.map(d => {
-      const frac = this.detector.fracUncert(d.energy);
+    const envelope = (d, frac) => {
       const f = (frac !== null && isFinite(frac) && frac > 0) ? frac : 0;
       return { energy: d.energy, lower: Math.max(d.efficiency * (1 - f), 0), upper: d.efficiency * (1 + f) };
-    });
+    };
+    bandPoints = efficiencyPoints.map(d => envelope(d, this.detector.dataFracUncert(d.energy)));
+    // Only when there IS a model envelope: for a plain curve DRF the two are the same envelope, and
+    // drawing both composites their fill opacities into a darker band than either specifies.
+    const anyModel = efficiencyPoints.some(d => this.detector.modelFracUncert(d.energy) > 0);
+    if (anyModel)
+      modelBandPoints = efficiencyPoints.map(d => envelope(d, this.detector.fracUncert(d.energy)));
   }
 
   // Update efficiency scale based on the generated points (in angle mode
@@ -566,7 +582,9 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   // the envelope is not clipped off the top of the plot.
   if (!angleMode) {
     let effValues = efficiencyPoints.map(d => d.efficiency);
-    if (bandPoints.length)
+    if (modelBandPoints.length)
+      effValues = effValues.concat(modelBandPoints.map(d => d.upper));
+    else if (bandPoints.length)
       effValues = effValues.concat(bandPoints.map(d => d.upper));
     const ptExt = this.pointValueExtent("eff");
     if (ptExt)
@@ -579,7 +597,16 @@ DrfChart.prototype.updateEfficiencyLine = function() {
     }
   }
 
-  // Draw (or hide) the uncertainty envelope under the efficiency line.
+  // Draw (or hide) the uncertainty envelopes under the efficiency line; the total goes down first,
+  // so the data-derived part sits on top of it.
+  if (modelBandPoints.length) {
+    this.effUncertModelBandPath.datum(modelBandPoints)
+      .attr("d", this.effUncertArea)
+      .style("display", null);
+  } else {
+    this.effUncertModelBandPath.style("display", "none");
+  }
+
   if (bandPoints.length) {
     this.effUncertBandPath.datum(bandPoints)
       .attr("d", this.effUncertArea)
@@ -879,6 +906,22 @@ DrfChart.prototype.updateTooltip = function(mouse) {
   if (efficiency !== null) {
     const efficiencyStr = efficiency < 0.01 ? efficiency.toExponential(3) : efficiency.toFixed(4);
     tooltipContent += `<div>Efficiency: ${efficiencyStr}</div>`;
+
+    // The two bands, in words: the total the analysis propagates, and how much of it is a model
+    // allowance rather than a measurement of this detector.
+    const total = this.detector.hasEffUncert() ? this.detector.fracUncert(energy) : null;
+    if (total !== null && isFinite(total) && total > 0) {
+      const model = this.detector.modelFracUncert(energy);
+      const data = this.detector.dataFracUncert(energy);
+      const assumed = this.detector.uncertDataIsAssumed();
+      tooltipContent += `<div>Uncertainty: &plusmn;${(100*total).toFixed(1)}%</div>`;
+      if (model > 0)
+        tooltipContent += `<div>&nbsp;&nbsp;${(100*data).toFixed(1)}% `
+                          + (assumed ? "assumed (this detector states none)" : "from data")
+                          + `, ${(100*model).toFixed(1)}% model envelope</div>`;
+      else if (assumed)
+        tooltipContent += `<div>&nbsp;&nbsp;assumed - this detector states no uncertainty</div>`;
+    }
   }
   if (fwhm !== null) {
     tooltipContent += `<div>FWHM: ${fwhm.toFixed(2)} keV</div>`;

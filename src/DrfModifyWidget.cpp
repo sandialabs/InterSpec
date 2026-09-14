@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <cctype>
 #include <memory>
 #include <string>
 #include <numeric>
@@ -51,6 +52,8 @@
 
 #include "SpecUtils/SpecFile.h"
 
+#include "io/DetectorResponse.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/HelpSystem.h"
@@ -61,6 +64,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/DetectorEfficiency.h"
@@ -130,6 +134,42 @@ void uncert_for_energy( const shared_ptr<const DetectorEfficiencyUncert> &uncert
   if( sig.size() == 1 )
     corrFrac = static_cast<float>( sig[0] );
 }//uncert_for_energy(...)
+
+
+/** Parses a line edit as a number; `ok` is set false (and the value left alone) on a non-empty cell
+ that is not a number, so a typo is reported rather than silently skipping the row.
+ */
+bool read_double( const WLineEdit * const edit, double &value, bool &was_blank )
+{
+  was_blank = true;
+  if( !edit )
+    return true;
+
+  const string text = edit->text().toUTF8();
+  if( text.empty() )
+    return true;
+
+  was_blank = false;
+
+  // Whole-cell parse: `std::stod` alone would take "0.4x" as 0.4, which is a silent
+  //  reinterpretation of something the user can see is wrong.
+  size_t used = 0;
+  try
+  {
+    value = std::stod( text, &used );
+  }catch( std::exception & )
+  {
+    return false;
+  }
+
+  while( (used < text.size()) && std::isspace( static_cast<unsigned char>(text[used]) ) )
+    ++used;
+
+  if( used != text.size() )
+    return false;
+
+  return !(std::isnan(value) || std::isinf(value));
+}//read_double(...)
 }//namespace
 
 
@@ -138,7 +178,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   : WContainerWidget(),
     m_interspec( viewer ),
     m_orig( drf ),
-    m_geometry( drf ? drf->geometry() : nullptr ),
+    m_seedPoints( drf ? drf->measuredPoints() : nullptr ),
+    m_editor( DrfModifyCalc::AnchorEditor::CurvePairs ),
     m_tabMenu( nullptr ),
     m_tabStack( nullptr ),
     m_name( nullptr ),
@@ -148,8 +189,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_fwhmTabItem( nullptr ),
     m_modeToggle( nullptr ),
     m_geometryModeled( false ),
-    m_origHasPoints( false ),
     m_anchorHelp( nullptr ),
+    m_responseNote( nullptr ),
+    m_uncertSummary( nullptr ),
     m_pointsEditor( nullptr ),
     m_coefEditor( nullptr ),
     m_formulaEditor( nullptr ),
@@ -158,26 +200,29 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_addAnchor( nullptr ),
     m_removeAnchor( nullptr ),
     m_anchorRefDistance( nullptr ),
-    m_anchorDefaultUncert( nullptr ),
     m_anchors(),
     m_uncertOptions( nullptr ),
-    m_anchorHasSourceCol( false ),
+    m_corrInertNote( nullptr ),
     m_anchorEnergyUnits( static_cast<float>(PhysicalUnits::keV) ),
-    m_anchorIsAbsolute( false ),
     m_coefEdits(),
     m_coefParams( nullptr ),
     m_covTable( nullptr ),
     m_addCoef( nullptr ),
     m_removeCoef( nullptr ),
-    m_coefCovMatrix(),
+    m_coefSigmas(),
+    m_coefRho(),
+    m_covWarning( nullptr ),
+    m_covPlaceholderNote( nullptr ),
+    m_coefCovIsPlaceholder( false ),
+    m_coefCovTouched( false ),
     m_formulaText( nullptr ),
     m_effEnergyUnits( nullptr ),
     m_effUnitsRow( nullptr ),
     m_seedState( nullptr ),
     m_generateBtn( nullptr ),
-    m_changedSinceGenerate( false ),
+    m_generatedFromFingerprint( 0 ),
+    m_pendingSeedFingerprint( 0 ),
     m_applyAfterGenerate( false ),
-    m_suppressNextEditMark( false ),
     m_updatedDrf(),
     m_renderFlags(),
     m_currentState( nullptr ),
@@ -242,42 +287,24 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     layout->setRowStretch( 0, 1 );
   }//if( narrow_layout ) / else
 
-  // What kind of efficiency the DRF carries decides which Anchor editor is the right one, and
-  //  (for far-field) whether it starts Flat Disk or Geometry Modeled:
-  //
-  //   - raw `measuredPoints` (an ANGLE / Make-Detector-Response import): absolute efficiencies at a
-  //     reference distance, with per-point statistical + certificate uncertainties;
-  //   - failing that, an energy/efficiency-pair efficiency curve (a GADRAS Efficiency.csv): the same
-  //     measured table, just without any uncertainties, and intrinsic rather than absolute - so no
-  //     reference distance applies.
-  const shared_ptr<const MeasuredDrfPoints> measured
-      = m_orig ? m_orig->measuredPoints() : nullptr;
-  const bool have_measured = (measured && !measured->empty());
-
   const shared_ptr<const DetectorEfficiencyCurve> eff_curve
       = m_orig ? m_orig->efficiencyCurve() : nullptr;
-  const bool have_pairs = (!have_measured && eff_curve
-                  && (eff_curve->form() == DetectorPeakResponse::kEnergyEfficiencyPairs)
-                  && (eff_curve->energyEfficiencies().size() >= 2));
 
-  m_origHasPoints = (have_measured || have_pairs);
-  m_anchorIsAbsolute = (m_orig && (m_orig->geometryType()
-                                   == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute));
+  // Which editor this DRF gets, and hence what its rows mean, comes from what the DRF carries - see
+  //  DrfModifyCalc::editorForDrf.  The rows are then seeded from whatever that editor's apply writes
+  //  back, which is the whole point: seeding a Create-DRF detector's rows from its ABSOLUTE measured
+  //  points while the apply treated them as the INTRINSIC curve is what made a detector come out
+  //  ~200x too insensitive.
+  if( m_orig )
+    m_editor = DrfModifyCalc::editorForDrf( *m_orig );
 
-  // Two things that used to share m_anchorIsAbsolute.  A source column only makes sense for an
-  //  absolute reference curve (its certificate uncertainty is blocked per source); the correlated
-  //  column itself is shown for every curve, governed instead by m_uncertOptions.
-  m_anchorHasSourceCol = m_anchorIsAbsolute;
+  const bool measured_rows = DrfModifyCalc::editorUsesMeasuredPoints( m_editor );
 
   // The Energy column of a pairs curve is in the curve's own units - which a GADRAS CSV may set to
-  //  MeV.  A formula curve's rows are covariance nodes instead, and those are keV by contract, so
-  //  the column stays keV there no matter what units the formula itself is written in.
-  //  Measured points are keV by contract (MeasuredEffPoint::energy) no matter what units the
-  //  curve's equation uses - a MakeDrf detector can be an MeV equation fitted to keV points - so
-  //  only a pairs curve, whose own numbers fill the column, sets this from the curve.
-  const bool formula_form = (eff_curve && eff_curve->isValid()
-                     && (eff_curve->form() == DetectorPeakResponse::kFunctialEfficienyForm));
-  if( !formula_form && !have_measured && eff_curve && eff_curve->isValid()
+  //  MeV.  Measured points and covariance nodes are keV by contract whatever units the curve's
+  //  equation uses (a MakeDrf detector can be an MeV equation fitted to keV points), so only the
+  //  pairs editor, whose own numbers fill the column, takes its units from the curve.
+  if( (m_editor == DrfModifyCalc::AnchorEditor::CurvePairs) && eff_curve && eff_curve->isValid()
       && (eff_curve->energyUnits() > 0.0f) )
     m_anchorEnergyUnits = eff_curve->energyUnits();
 
@@ -341,8 +368,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_mcTool = toolOwned.get();
     panel->addWidget( std::move(toolOwned) );
 
-    // We drive generation from the footer "Generate Response" button (which first folds our edits
-    //  into the seed), so hide the tool's own redundant generate button in Location Support.
+    // We drive generation from the footer "Generate Response" button, so hide the tool's own
+    //  redundant generate button in Location Support.
     m_mcTool->setGenerateButtonHidden( true );
 
     // ContentLoading::Eager: this tool posts work to a worker thread and gets back to itself with
@@ -401,13 +428,6 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   }
 
   // --- Tab: Anchor (efficiency representation + its uncertainty) ------------
-  //  One of three editors, chosen by the efficiency form (see activeAnchorEditor):
-  //   - the point table (energy / efficiency / stat % / corr % [/ cert % / source]) for a
-  //     kEnergyEfficiencyPairs curve, and for Geometry Modeled, where the rows are the MC
-  //     grounding anchors;
-  //   - coefficient boxes plus their M*M covariance for a kExpOfLogPowerSeries curve;
-  //   - the formula text for a kFunctialEfficienyForm curve, which also shows the point table with
-  //     its Efficiency column hidden, so per-energy uncertainties can be given the same way.
   {
     auto panelOwned = make_unique<WContainerWidget>();
     WContainerWidget *panel = panelOwned.get();
@@ -416,6 +436,13 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     // Wording is set to match the visible editor in updateAnchorEditorVisibility().
     m_anchorHelp = panel->addNew<WText>();
     m_anchorHelp->setInline( false );
+
+    // While a geometry-modeled response is attached it - not the numbers below - answers every
+    //  efficiency and uncertainty query.  Saying so is the difference between editing a curve and
+    //  editing the detector.
+    m_responseNote = panel->addNew<WText>( WString::tr("dmw-anchor-note-response") );
+    m_responseNote->setInline( false );
+    m_responseNote->addStyleClass( "DrfModifyNote" );
 
     const shared_ptr<const DetectorEfficiencyUncert> orig_uncert
         = m_orig ? m_orig->efficiencyUncert() : nullptr;
@@ -467,6 +494,19 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       m_covTable = m_coefEditor->addNew<WTable>();
       m_covTable->addStyleClass( "DrfModifyBandTable DrfModifyCovTable" );
 
+      m_covWarning = m_coefEditor->addNew<WText>();
+      m_covWarning->setInline( false );
+      m_covWarning->addStyleClass( "DrfModifyWarning" );
+      m_covWarning->hide();
+
+      // Says when the matrix on screen was manufactured from the stored per-coefficient sigmas
+      //  rather than read from a covariance this DRF carries - the two look identical otherwise, and
+      //  the manufactured one assumes an independence that a log-power-series fit never has.
+      m_covPlaceholderNote = m_coefEditor->addNew<WText>( WString::tr("dmw-coef-cov-assumed-note") );
+      m_covPlaceholderNote->setInline( false );
+      m_covPlaceholderNote->addStyleClass( "DrfModifyNote" );
+      m_covPlaceholderNote->hide();
+
       if( eff_curve && eff_curve->isValid()
           && (eff_curve->form() == DetectorPeakResponse::kExpOfLogPowerSeries) )
       {
@@ -487,13 +527,13 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       // Reference distance the absolute curve is anchored at (cm); an intrinsic curve is
       //  per-gamma-striking-the-face, at no distance, so the row is hidden for it.
       double refDistCm = 0.0;
-      if( have_measured )
+      if( m_seedPoints )
       {
-        for( const MeasuredEffPoint &p : measured->points() )
+        for( const MeasuredEffPoint &p : m_seedPoints->points() )
         {
           if( p.distance > 0.0f ){ refDistCm = p.distance / PhysicalUnits::cm; break; }
         }
-      }//if( have_measured )
+      }//if( m_seedPoints )
       if( (refDistCm <= 0.0) && m_orig )
         refDistCm = m_orig->absoluteEfficiencyDistance() / PhysicalUnits::cm;
 
@@ -510,41 +550,47 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
         m_anchorRefDistance->setText( buf );
       }
       distRow->addNew<WLabel>( WString::tr("dmw-anchor-cm") );
-      distRow->setHidden( !m_anchorIsAbsolute );
-
-      WContainerWidget *defRow = m_pointsEditor->addNew<WContainerWidget>();
-      defRow->addStyleClass( "DrfModifyRow" );
-      defRow->addNew<WLabel>( WString::tr("dmw-anchor-default-uncert") );
-      m_anchorDefaultUncert = defRow->addNew<WLineEdit>();
-      m_anchorDefaultUncert->setTextSize( 6 );
-      m_anchorDefaultUncert->changed().connect( this, &DrfModifyWidget::markEdited );
-      // Only a fallback for blank per-point stat cells - except for a formula curve with no rows at
-      //  all, where it is the whole (flat) uncertainty.  Left blank when the source stated no
-      //  uncertainties at all (a GADRAS Efficiency.csv), rather than inventing one.
-      if( have_measured )
-        m_anchorDefaultUncert->setText( "5" );
-      defRow->addNew<WLabel>( WString::tr("dmw-anchor-percent") );
+      // Only the absolute reference curve is anchored at one distance; a re-fit takes each point's
+      //  own distance, and an intrinsic curve has none.
+      distRow->setHidden( m_editor != DrfModifyCalc::AnchorEditor::AbsolutePoints );
 
       m_anchorTableWrap = m_pointsEditor->addNew<WContainerWidget>();
       m_anchorTableWrap->addStyleClass( "DrfModifyAnchorTableWrap" );
       m_anchorTable = m_anchorTableWrap->addNew<WTable>();
       m_anchorTable->addStyleClass( "DrfModifyAnchorTable" );
       {
+        // Units in the header, because the column is not always keV (a GADRAS CSV curve may be MeV).
+        const bool in_mev = (m_anchorEnergyUnits > 10.0f);
+        const WString energy_units = WString::tr( in_mev ? "dmw-anchor-mev" : "dmw-anchor-kev" );
+
+        // What the efficiency column means, which is what the apply must agree with: absolute at a
+        //  distance for the measured-point editors and an absolute reference curve, intrinsic for a
+        //  far-field curve of its own, and just "efficiency" for a fixed-geometry DRF.
+        const char *eff_id = "dmw-anchor-eff";
+        if( measured_rows
+            || (m_orig && (m_orig->geometryType()
+                           == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)) )
+          eff_id = "dmw-anchor-eff-abs";
+        else if( m_orig && !m_orig->isFixedGeometry() )
+          eff_id = "dmw-anchor-eff-intrinsic";
+
         int col = 0;
-        m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-energy") );
-        WTableCell * const effHeader = m_anchorTable->elementAt(0,col++);
-        effHeader->addNew<WText>( WString::tr("dmw-anchor-eff") );
-        effHeader->addStyleClass( "DrfEffCol" );
-        m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-stat") );
-        // The correlated component, shown for every curve.  With a source column it is the
-        //  certificate uncertainty (100% correlated within a source); without one it is correlated
-        //  across energy by the model below.
         m_anchorTable->elementAt(0,col++)->addNew<WText>(
-                    WString::tr( m_anchorHasSourceCol ? "dmw-anchor-cert" : "dmw-anchor-corr" ) );
-        if( m_anchorHasSourceCol )
+                                        WString::tr("dmw-anchor-energy").arg(energy_units) );
+        WTableCell * const effHeader = m_anchorTable->elementAt(0,col++);
+        effHeader->addNew<WText>( WString::tr(eff_id) );
+        effHeader->addStyleClass( "DrfEffCol" );
+        // The two components, named the same way the control below them and the help text are:
+        //  measured points split into statistical and per-source certificate, everything else into
+        //  the part that is independent between energies and the part that is not.
+        m_anchorTable->elementAt(0,col++)->addNew<WText>(
+                    WString::tr( measured_rows ? "dmw-anchor-stat" : "dmw-anchor-uncorr" ) );
+        m_anchorTable->elementAt(0,col++)->addNew<WText>(
+                    WString::tr( measured_rows ? "dmw-anchor-cert" : "dmw-anchor-corr" ) );
+        if( measured_rows )
         {
           m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-source") );
-          // Per-point distance: characterization sources need not all sit at the reference distance
+          // Per-point distance: characterization sources need not all sit at one distance
           m_anchorTable->elementAt(0,col++)->addNew<WText>( WString::tr("dmw-anchor-dist") );
         }
       }
@@ -557,12 +603,21 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       m_removeAnchor->addStyleClass( "LinkBtn" );
       m_removeAnchor->clicked().connect( this, [this](){ removeAnchorRow(); markEdited(); } );
 
-      if( have_measured )
+      if( measured_rows && m_seedPoints )
       {
-        for( const MeasuredEffPoint &p : measured->points() )
+        // The raw points, as they are: absolute efficiency at each point's own source distance.  The
+        //  row remembers which point it came from, so editing its energy does not lose the point's
+        //  peak area, live time, file name or distance uncertainty.
+        const vector<MeasuredEffPoint> &points = m_seedPoints->points();
+        for( size_t i = 0; i < points.size(); ++i )
+        {
+          const MeasuredEffPoint &p = points[i];
           addAnchorRow( p.energy, p.efficiency, p.fracStatUncert, p.fracCertUncert, p.sourceKey,
-                        p.distance );
-      }else if( have_pairs )
+                        p.distance, static_cast<int>(i) );
+        }
+      }else if( (m_editor == DrfModifyCalc::AnchorEditor::CurvePairs) && eff_curve
+                && eff_curve->isValid()
+                && (eff_curve->form() == DetectorPeakResponse::kEnergyEfficiencyPairs) )
       {
         // Seed the uncertainty columns from whatever the DRF actually carries: the split the
         //  covariance was built from when it has one, else the 1-sigma envelope as a purely
@@ -582,13 +637,14 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
           uncert_for_energy( orig_uncert, energy_kev, stat, corr );
           addAnchorRow( energy_kev / m_anchorEnergyUnits, 0.0f, stat, corr, string() );
         }
-      }//if( have_measured ) / else if( have_pairs ) / else if( have a covariance )
+      }//if( measured rows ) / else if( pairs ) / else if( have a covariance )
       m_removeAnchor->setEnabled( !m_anchors.empty() );
 
       // How the correlated column is correlated across energy.  Shared with the .ecc import
       //  dialogs, so the mode -> correlation-length mapping and the example table live in one
-      //  place, and the Modify dialog speaks the same language the import did.
-      if( !m_anchorHasSourceCol )
+      //  place, and the Modify dialog speaks the same language the import did.  Measured points do
+      //  not get one: their correlated part is blocked per source, which a single length cannot say.
+      if( !measured_rows )
       {
         vector<float> node_energies, corr_frac, uncorr_frac;
         for( const AnchorRow &r : m_anchors )
@@ -608,14 +664,19 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
                                                                     uncorr_frac );
         m_uncertOptions->setImportToggleVisible( false );
         // correlationLength() <= 0 is ambiguous between "uncorrelated was chosen" and "the matrix
-        //  was set directly", so fall back to fully correlated - the anchorsMatchSeed() guard is
-        //  what keeps that guess from rewriting a covariance the user never touched.
+        //  was set directly", so fall back to fully correlated - the "was this editor edited" guard
+        //  is what keeps that guess from rewriting a covariance the user never touched.
         const double seed_len = (orig_uncert && (orig_uncert->correlationLength() > 0.0))
                        ? orig_uncert->correlationLength()
                        : DetectorEfficiencyUncert::sm_fullyCorrelatedLength;
         m_uncertOptions->setCorrelationLength( seed_len );
         m_uncertOptions->changed().connect( this, &DrfModifyWidget::markEdited );
-      }//if( !m_anchorHasSourceCol )
+
+        m_corrInertNote = m_pointsEditor->addNew<WText>( WString::tr("dmw-corr-inert-note") );
+        m_corrInertNote->setInline( false );
+        m_corrInertNote->addStyleClass( "DrfModifyNote" );
+        m_corrInertNote->hide();
+      }//if( !measured_rows )
 
       panel->addWidget( std::move(ptsOwned) );
     }//point-table editor
@@ -635,6 +696,13 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       unitsLabel->setBuddy( m_effEnergyUnits );
     }
 
+    // What this detector reports, from the same call the activity fit uses - including how much of
+    //  it is an envelope nobody measured.  See refreshUncertSummary().
+    m_uncertSummary = panel->addNew<WText>();
+    m_uncertSummary->setInline( false );
+    m_uncertSummary->addStyleClass( "DrfModifyNote DrfModifyUncertSummary" );
+    HelpSystem::attachToolTipOn( m_uncertSummary, WString::tr("dmw-tt-uncert-summary"), true );
+
     updateAnchorEditorVisibility();
 
     WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-anchor"), std::move(panelOwned) );
@@ -643,13 +711,27 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 
   m_tabMenu->itemSelected().connect( this, &DrfModifyWidget::handleTabSelected );
 
-  // Both child tools hand their state changes here, so one undo step covers the whole dialog; an
-  //  edit also marks any generated response stale (see markEdited).  m_mcTool is null for a
-  //  fixed-geometry DRF (no Geom & MC tab).
+  // Both child tools hand their state changes here, so one undo step covers the whole dialog.
+  //  m_mcTool is null for a fixed-geometry DRF (no Geom & MC tab).
   if( m_mcTool )
   {
     m_mcTool->userChanged().connect( this, &DrfModifyWidget::markEdited );
     m_mcTool->responseGenerated().connect( this, &DrfModifyWidget::handleResponseGenerated );
+
+    // EVERY generation - the footer button, and the automatic one a geometry change triggers for the
+    //  instant curve-transfer method - anchors on the live edits, with the response detached so the
+    //  manual points/covariance drive the grounding rather than being overridden by it.
+    m_mcTool->setSeedProvider( [this]() -> shared_ptr<const DetectorPeakResponse> {
+      vector<DrfModifyCalc::Problem> problems;
+      const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false, problems );
+
+      // An edit that could not be applied means this seed is NOT what the user is looking at, so
+      //  whatever is generated from it must not come back looking current: a fingerprint of 0 never
+      //  matches, so the response stays stale until the edit is fixed and it is rebuilt.
+      m_pendingSeedFingerprint = (seed && !DrfModifyCalc::anyBlocking(problems))
+                                 ? DrfModifyCalc::seedFingerprint( *seed ) : 0;
+      return seed;
+    } );
   }//if( m_mcTool )
   if( m_fwhmTool )
   {
@@ -681,11 +763,21 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   else
     layout->addWidget( std::move(footerOwned), 1, 0, 1, 2 );  //below, spanning menu and stack columns
 
-  updateGenerateButton();
-  // What the Anchor tab opened with, so anchorsMatchSeed() can tell "the user changed nothing" from
-  //  "the user re-typed the same numbers" - the apply paths leave the DRF alone in the first case.
+  // What the Anchor tab opened with, so the per-editor edited-checks can tell "the user changed
+  //  nothing" from "the user re-typed the same numbers" - an untouched editor leaves the DRF alone.
   m_seedState = currentState();
 
+  // The response the DRF arrived with was built from the DRF as it arrived.  Taking the fingerprint
+  //  of a freshly built (un-edited) working copy, rather than of m_orig, means any difference from
+  //  here on is a real edit and not a round-trip of the geometry form through the same code path.
+  {
+    vector<DrfModifyCalc::Problem> problems;
+    const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false, problems );
+    m_generatedFromFingerprint = seed ? DrfModifyCalc::seedFingerprint( *seed ) : 0;
+  }
+
+  updateGenerateButton();
+  refreshUncertSummary();
 }//DrfModifyWidget constructor
 
 
@@ -732,9 +824,16 @@ std::shared_ptr<const DetectorPeakResponse> DrfModifyWidget::originalDrf() const
 }
 
 
+bool DrfModifyWidget::anchorHasSourceCols() const
+{
+  return DrfModifyCalc::editorUsesMeasuredPoints( m_editor );
+}
+
+
 void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
                                     const float fracStatUncert, const float fracCertUncert,
-                                    const std::string &sourceKey, const float distance )
+                                    const std::string &sourceKey, const float distance,
+                                    const int seedIndex )
 {
   const int row = m_anchorTable->rowCount();  //row 0 is the header
 
@@ -758,8 +857,8 @@ void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
   };
 
   // Uncertainties are shown/edited as percentages; a blank stat cell inherits the default % on
-  //  apply.  Only the source column is conditional (see m_anchorHasSourceCol); the efficiency one
-  //  is built always and hidden by CSS for a formula curve.
+  //  apply.  Only the source/distance columns are conditional (see anchorHasSourceCols); the
+  //  efficiency one is built always and hidden by CSS for a formula curve.
   int col = 0;
   AnchorRow r;
   r.energy = make_edit( col++, energy, false );
@@ -768,7 +867,8 @@ void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
   r.cert   = make_edit( col++, fracCertUncert, true );
   r.source = nullptr;
   r.dist = nullptr;
-  if( m_anchorHasSourceCol )
+  r.seedIndex = seedIndex;
+  if( anchorHasSourceCols() )
   {
     r.source = m_anchorTable->elementAt(row,col++)->addNew<WLineEdit>();
     r.source->setTextSize( 10 );
@@ -784,7 +884,7 @@ void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
       r.dist->setText( buf );
     }
     r.dist->changed().connect( this, &DrfModifyWidget::markEdited );
-  }//if( m_anchorHasSourceCol )
+  }//if( anchorHasSourceCols() )
   m_anchors.push_back( r );
   if( m_removeAnchor )
     m_removeAnchor->setEnabled( !m_anchors.empty() );
@@ -801,312 +901,262 @@ void DrfModifyWidget::removeAnchorRow()
 }//removeAnchorRow()
 
 
-shared_ptr<DetectorEfficiencyUncert> DrfModifyWidget::buildUncertFromRows()
+bool DrfModifyWidget::collectPointRows( std::vector<DrfModifyCalc::PointRow> &rows,
+                                        std::vector<DrfModifyCalc::Problem> &problems ) const
 {
-  if( !m_uncertOptions )
-    return nullptr;
+  rows.clear();
 
-  // Default for blank per-point stat cells, and - with no rows at all - the whole uncertainty.
-  float defaultFrac = 0.0f;
-  {
-    const string ds = m_anchorDefaultUncert->text().toUTF8();
-    try{ defaultFrac = 0.01f * std::stof( ds ); }catch( std::exception & ){ defaultFrac = 0.0f; }
-    if( defaultFrac < 0.0f )
-      defaultFrac = 0.0f;
-  }
-
-  vector<float> energies, corr_fracs, stat_fracs;
-  for( const AnchorRow &r : m_anchors )
-  {
-    const string es = r.energy->text().toUTF8();
-    if( es.empty() )
-      continue;
-
-    float energy = 0.0f;
-    try{ energy = std::stof( es ); }catch( std::exception & ){ continue; }
-    if( energy <= 0.0f )
-      continue;
-
-    const string ss = r.stat->text().toUTF8();
-    float statFrac = defaultFrac;
-    if( !ss.empty() )
-    {
-      try{ statFrac = 0.01f * std::stof( ss ); }catch( std::exception & ){ statFrac = defaultFrac; }
-    }
-
-    float corrFrac = 0.0f;
-    const string cs = r.cert->text().toUTF8();
-    if( !cs.empty() )
-    {
-      try{ corrFrac = 0.01f * std::stof( cs ); }catch( std::exception & ){ corrFrac = 0.0f; }
-    }
-
-    // Covariance node energies are keV regardless of the units the curve (and hence the column)
-    //  uses - see DetectorEfficiencyUncert.
-    energies.push_back( energy * m_anchorEnergyUnits );
-    corr_fracs.push_back( std::max( 0.0f, corrFrac ) );
-    stat_fracs.push_back( std::max( 0.0f, statFrac ) );
-  }//for( const AnchorRow &r : m_anchors )
-
-  // No rows, but a default: one flat, fully-correlated node.  A single-node covariance extrapolates
-  //  constantly, so this is the same fractional uncertainty at every energy - which is exactly what
-  //  a flat "Default uncertainty" means.
-  if( energies.empty() )
-  {
-    if( defaultFrac <= 0.0f )
-      return nullptr;
-
-    const float ref_energy = ((m_orig && (m_orig->lowerEnergy() > 0.0f)) ? m_orig->lowerEnergy()
-                                                                         : 661.7f);
-    try
-    {
-      return DetectorEfficiencyUncert::fromPointUncerts( { ref_energy }, { defaultFrac },
-                             DetectorEfficiencyUncert::sm_fullyCorrelatedLength );
-    }catch( std::exception & )
-    {
-      return nullptr;
-    }
-  }//if( energies.empty() )
-
-  // Keep the widget's example table in step with the rows, then build directly: buildUncert()
-  //  declines below two nodes, and one node is a legitimate (flat, fully-correlated) uncertainty.
-  //  effectiveCorrLength() is still the single source of the mode -> length mapping.
-  m_uncertOptions->setPoints( energies, corr_fracs, stat_fracs );
-
-  try
-  {
-    return DetectorEfficiencyUncert::fromCorrelatedPlusDiagonal( energies, corr_fracs, stat_fracs,
-                                              m_uncertOptions->effectiveCorrLength() );
-  }catch( std::exception & )
-  {
-    return nullptr;
-  }
-}//buildUncertFromRows()
-
-
-void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
-{
   if( !m_anchorTable )
-    return;  //the point editor was not built
+    return true;
 
-  // Nothing was touched: leave the curve and uncertainty bit-identical.  Matters for a covariance
-  //  the correlated+diagonal model cannot reproduce (a source-blocked MeasuredDrfPoints matrix, or
-  //  a hand-authored one restored from a URL with no component split).
-  if( anchorsMatchSeed() )
-    return;
-
-  // Default fractional statistical uncertainty for blank per-point stat cells.
-  float defaultFrac = 0.0f;
+  bool all_ok = true;
+  for( size_t i = 0; i < m_anchors.size(); ++i )
   {
-    const string ds = m_anchorDefaultUncert->text().toUTF8();
-    try{ defaultFrac = 0.01f * std::stof( ds ); }catch( std::exception & ){ defaultFrac = 0.0f; }
-    if( defaultFrac < 0.0f )
-      defaultFrac = 0.0f;
-  }
+    const AnchorRow &r = m_anchors[i];
+    const int row_number = static_cast<int>(i) + 1;
 
-  // Reference distance (cm) the curve is anchored at.
-  double refDistCm = 0.0;
-  {
-    const string rs = m_anchorRefDistance->text().toUTF8();
-    try{ refDistCm = std::stod( rs ); }catch( std::exception & ){ refDistCm = 0.0; }
-  }
-  if( m_anchorIsAbsolute && (refDistCm <= 0.0) )
-    return;  //can't build absolute efficiency without a valid distance
+    DrfModifyCalc::PointRow row;
+    row.rowNumber = row_number;
+    row.seedIndex = r.seedIndex;
 
-  const double refDist = refDistCm * PhysicalUnits::cm;
+    bool blank = true;
+    bool ok = true;
 
-  // Points may have been measured at distances other than the reference distance the curve is
-  //  anchored at, so each is scaled by the ratio of geometric factors before it joins the curve.
-  //  Uses the ray-traced kernel when the detector states a geometry (correct in the near field),
-  //  else the flat-disk solid angle.
-  const double working_diam = working.detectorDiameter();
-  const double working_setback = working.detectorSetback();
-  std::unique_ptr<CeeLoUtils::GeometryKernel> dist_kernel;
-  if( m_anchorIsAbsolute && working.geometry() )
-  {
-    try
+    ok = read_double( r.energy, row.energy, blank ) && ok;
+    const bool energy_blank = blank;
+
+    double efficiency = 0.0;
+    ok = read_double( r.eff, efficiency, blank ) && ok;
+    const bool eff_blank = blank;
+    row.efficiency = efficiency;
+
+    // A wholly blank row is the empty row an "Add point" left behind, not an error.
+    if( energy_blank && eff_blank )
     {
-      dist_kernel.reset( new CeeLoUtils::GeometryKernel( *working.geometry() ) );
-    }catch( std::exception & )
-    {
-    }
-  }//if( a geometry is available )
+      bool any_other = false;
+      double scratch = 0.0;
+      read_double( r.stat, scratch, blank );  any_other = any_other || !blank;
+      read_double( r.cert, scratch, blank );  any_other = any_other || !blank;
+      read_double( r.dist, scratch, blank );  any_other = any_other || !blank;
+      if( !any_other && (!r.source || r.source->text().empty()) )
+        continue;
+    }//if( energy and efficiency are both blank )
 
-  auto geom_factor = [&]( const double energy, const double dist ) -> double {
-    if( dist_kernel )
+    // A row that is blank in ONLY one of the two columns that make a point is not a point, and the
+    //  calc layer would quietly drop it - which is the silent loss this function exists to prevent.
+    //  (A formula curve's rows carry no efficiency, so only the energy is required there.)
+    const bool need_efficiency = (m_editor != DrfModifyCalc::AnchorEditor::Formula);
+    if( energy_blank || (need_efficiency && eff_blank) )
     {
-      try{ return dist_kernel->intrinsicFactor( energy, dist / PhysicalUnits::cm ); }
-      catch( std::exception & ){}
-    }
-    return DetectorPeakResponse::fractionalSolidAngle( working_diam, dist + working_setback );
-  };//geom_factor lambda
-
-  vector<DetectorPeakResponse::EnergyEffPoint> effpts;
-  vector<MeasuredEffPoint> measpts;
-  for( const AnchorRow &r : m_anchors )
-  {
-    const string es = r.energy->text().toUTF8();
-    const string fs = r.eff->text().toUTF8();
-    if( es.empty() && fs.empty() )
-      continue;  //blank row
-
-    float energy = 0.0f, eff = 0.0f;
-    try
-    {
-      energy = std::stof( es );
-      eff = std::stof( fs );
-    }catch( std::exception & )
-    {
-      continue;  //skip malformed rows
-    }
-    if( (energy <= 0.0f) || (eff <= 0.0f) )
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-incomplete-row",
+                                                  std::to_string(row_number) ) );
+      all_ok = false;
       continue;
+    }//if( only one of energy/efficiency was given )
 
-    const string ss = r.stat->text().toUTF8();
-    float statFrac = defaultFrac;
-    if( !ss.empty() )
+    double stat_percent = 0.0;
+    if( read_double( r.stat, stat_percent, blank ) )
     {
-      try{ statFrac = 0.01f * std::stof( ss ); }catch( std::exception & ){ statFrac = defaultFrac; }
+      if( !blank )
+        row.fracStat = 0.01 * stat_percent;
+    }else
+    {
+      ok = false;
     }
-    if( statFrac < 0.0f )
-      statFrac = 0.0f;
 
-    // The correlated component is parsed for every curve; only its meaning differs (see
-    //  m_anchorHasSourceCol).
-    float certFrac = 0.0f;
-    string srcKey;
-    const string cs = r.cert->text().toUTF8();
-    if( !cs.empty() )
+    double cert_percent = 0.0;
+    if( read_double( r.cert, cert_percent, blank ) )
     {
-      try{ certFrac = 0.01f * std::stof( cs ); }catch( std::exception & ){ certFrac = 0.0f; }
+      if( !blank )
+        row.fracCert = 0.01 * cert_percent;
+    }else
+    {
+      ok = false;
     }
-    if( certFrac < 0.0f )
-      certFrac = 0.0f;
+
     if( r.source )
-      srcKey = r.source->text().toUTF8();
+      row.sourceKey = r.source->text().toUTF8();
 
-    // Per-point distance (cm); blank means the reference distance
-    double pointDist = refDist;
     if( r.dist )
     {
-      const string ds = r.dist->text().toUTF8();
-      if( !ds.empty() )
+      double dist_cm = 0.0;
+      if( read_double( r.dist, dist_cm, blank ) )
       {
-        try{ pointDist = std::stod( ds ) * PhysicalUnits::cm; }catch( std::exception & ){ pointDist = refDist; }
-        if( pointDist <= 0.0 )
-          pointDist = refDist;
+        if( !blank && (dist_cm > 0.0) )
+          row.distance = dist_cm * PhysicalUnits::cm;
+      }else
+      {
+        ok = false;
       }
     }//if( r.dist )
 
-    // The curve is absolute efficiency AT `refDist`; a point taken elsewhere is transferred there.
-    double eff_at_ref = eff;
-    if( m_anchorIsAbsolute && (fabs(pointDist - refDist) > 1.0E-6*refDist) )
+    if( !ok )
     {
-      const double g_point = geom_factor( energy * m_anchorEnergyUnits, pointDist );
-      const double g_ref = geom_factor( energy * m_anchorEnergyUnits, refDist );
-      if( (g_point > 0.0) && (g_ref > 0.0) )
-        eff_at_ref = eff * g_ref / g_point;
-    }//if( this point was measured somewhere other than the reference distance )
-
-    DetectorPeakResponse::EnergyEffPoint e;
-    e.energy = energy;
-    e.efficiency = eff_at_ref;
-    // The far-field curve carries the combined 1-sigma as a fallback per-point uncert; the richer
-    //  per-source covariance is set from the measured points below (and overwrites it).
-    const float combo = std::sqrt( statFrac*statFrac + certFrac*certFrac );
-    if( combo > 0.0f )
-      e.efficiencyUncert = eff_at_ref * combo;
-    effpts.push_back( e );
-
-    MeasuredEffPoint m;
-    // Start from the original point when this row still describes it, so the provenance
-    //  (peak area, live time, file, ...) an edit of one number should not erase is kept.
-    if( m_orig && m_orig->measuredPoints() )
-    {
-      for( const MeasuredEffPoint &orig : m_orig->measuredPoints()->points() )
-      {
-        if( (fabs(orig.energy - energy) < 1.0E-3f*energy) && (orig.sourceKey == srcKey) )
-        {
-          m = orig;
-          break;
-        }
-      }
-    }//if( m_orig && m_orig->measuredPoints() )
-    m.energy = energy;
-    m.efficiency = eff;
-    m.fracStatUncert = statFrac;
-    m.fracCertUncert = certFrac;
-    m.sourceKey = srcKey;
-    m.distance = m_anchorIsAbsolute ? static_cast<float>( pointDist ) : -1.0f;
-    measpts.push_back( m );
-  }//for( const AnchorRow &r : m_anchors )
-
-  if( effpts.size() < 2 )
-    return;  //need at least two points for a curve; leave the DRF untouched
-
-  try
-  {
-    // Points whose correlated column is blocked per source keep the far-field characterization
-    //  path, which is what records `MeasuredDrfPoints` and needs the reference distance.
-    if( m_anchorHasSourceCol )
-    {
-      const float diameter = working.detectorDiameter();
-      if( diameter <= 0.0f )
-        return;  //a far-field curve needs a positive diameter; leave the DRF as-is
-
-      working.setEfficiencyPoints( effpts, diameter, refDist,
-                                   DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
-
-      auto meas = make_shared<MeasuredDrfPoints>();
-      meas->setPoints( measpts );
-      if( m_orig && m_orig->measuredPoints() )
-        meas->setSources( m_orig->measuredPoints()->sources() );  //the source table survives edits
-      working.setMeasuredPoints( meas );
-
-      // Drive the efficiency uncertainty from the edited stat/cert/source structure (C[i][j] =
-      //  delta_ij*stat_i^2 + cert_i*cert_j*[same source]); a CeeLo response, when attached,
-      //  overrides this at query time.
-      const shared_ptr<DetectorEfficiencyUncert> uncert = meas->toEfficiencyUncert();
-      if( uncert && !uncert->isEmpty() )
-        working.setEfficiencyUncert( uncert );
-
-      return;
-    }//if( m_anchorHasSourceCol )
-
-    // Everything else - an .ecc, a GADRAS Efficiency.csv, an ANGLE .outx - only changes its
-    //  numbers.  setEfficiencyPoints would rewrite the geometry type, diameter and flags, which is
-    //  what a fixed-geometry DRF has no spare copy of, and it rejects the zero diameter an .ecc has.
-    vector<DetectorPeakResponse::EnergyEfficiencyPair> pairs;
-    pairs.reserve( effpts.size() );
-    for( const DetectorPeakResponse::EnergyEffPoint &e : effpts )
-    {
-      DetectorPeakResponse::EnergyEfficiencyPair p;
-      p.energy = e.energy;
-      p.efficiency = e.efficiency;
-      pairs.push_back( p );
+      // Named, not skipped: silently dropping a malformed row is how an apply ends up writing fewer
+      //  points than the user can see.
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-bad-row",
+                                                  std::to_string(row_number) ) );
+      all_ok = false;
+      continue;
     }
 
-    auto curve = make_shared<DetectorEfficiencyCurve>();
-    curve->setFromPairs( pairs, m_anchorEnergyUnits );
-    curve->setUncertainty( buildUncertFromRows() );
-    working.replaceEfficiencyCurve( curve );
-  }catch( std::exception &e )
+    // Values that parse but cannot describe a point.  The calc layer drops these, so if they are not
+    //  caught here the apply quietly writes fewer points than are on screen.
+    if( (row.energy <= 0.0) || (need_efficiency && (row.efficiency <= 0.0)) )
+    {
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-nonpositive-row",
+                                                  std::to_string(row_number) ) );
+      all_ok = false;
+      continue;
+    }
+
+    if( (row.fracStat < 0.0) || (row.fracCert < 0.0) )
+    {
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-negative-uncert",
+                                                  std::to_string(row_number) ) );
+      all_ok = false;
+      continue;
+    }
+
+    // A far-field point's absolute efficiency means nothing without the distance it was taken at,
+    //  and for the re-fit editor there is no reference distance to fall back on.
+    if( r.dist && (m_editor == DrfModifyCalc::AnchorEditor::RefitPoints)
+        && (row.distance <= 0.0) && m_orig && !m_orig->isFixedGeometry() )
+    {
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-row-needs-distance",
+                                                  std::to_string(row_number) ) );
+      all_ok = false;
+      continue;
+    }
+
+    rows.push_back( row );
+  }//for( size_t i = 0; i < m_anchors.size(); ++i )
+
+  return all_ok;
+}//collectPointRows(...)
+
+
+DrfModifyCalc::AnchorOptions DrfModifyWidget::anchorOptions() const
+{
+  DrfModifyCalc::AnchorOptions options;
+  options.energyUnits = m_anchorEnergyUnits;
+
+  // Only the absolute-reference editor shows (or means) a reference distance.  Handing one to the
+  //  re-fit editor, whose distance column is per point, would let a blank cell silently take another
+  //  point's distance - and would stop a distance-less row ever being refused.
+  options.hasRowTable = (m_anchorTable != nullptr);
+
+  if( m_anchorRefDistance && (m_editor == DrfModifyCalc::AnchorEditor::AbsolutePoints) )
   {
-    passMessage( WString::tr("dmw-err-points-invalid").arg(e.what()), WarningWidget::WarningMsgHigh );
+    bool blank = true;
+    double dist_cm = 0.0;
+    if( read_double( m_anchorRefDistance, dist_cm, blank ) && !blank && (dist_cm > 0.0) )
+      options.refDistance = dist_cm * PhysicalUnits::cm;
   }
-}//applyAnchorEdits(...)
+
+  if( m_uncertOptions )
+    options.corrLength = m_uncertOptions->effectiveCorrLength();
+
+  options.equationTerms = static_cast<int>( m_coefEdits.size() );
+
+  return options;
+}//anchorOptions()
+
+
+bool DrfModifyWidget::applyAnchorTab( DetectorPeakResponse &working,
+                                      std::vector<DrfModifyCalc::Problem> &problems )
+{
+  // Only the editor that is showing can apply, and only when it was actually edited.  Both matter:
+  //  dispatching on anything that the Flat-Disk / Geometry-Modeled toggle can change would let a
+  //  toggle send the apply down an editor the user never typed into, and rebuilding an untouched
+  //  editor's numbers would replace a covariance the correlated+diagonal model cannot reproduce.
+  switch( m_editor )
+  {
+    case DrfModifyCalc::AnchorEditor::Coefficients:
+    {
+      if( !coefficientsEdited() )
+        return true;
+
+      vector<float> coefs;
+      coefs.reserve( m_coefEdits.size() );
+      for( NativeFloatSpinBox * const edit : m_coefEdits )
+        coefs.push_back( edit->value() );
+
+      // What may be written back:
+      //   - the user edited the table: their numbers, whatever they started from;
+      //   - otherwise a real stored covariance is kept as-is, but ONLY while it still describes the
+      //     equation.  Adding or removing a term resizes the shadow (which is why a value diff
+      //     cannot tell "touched" from "resized"), and writing the resized matrix would claim the
+      //     new coefficient is known exactly; leaving it to be dropped, with a note, is honest.
+      //   - a manufactured assume-independent matrix the user never touched is not this DRF's
+      //     covariance at all, so it is never written.
+      const bool terms_changed = (m_seedState
+                                  && (m_coefEdits.size() != m_seedState->coefficients.size()));
+      const bool write_cov = m_coefCovTouched
+                             || (!m_coefCovIsPlaceholder && !terms_changed);
+
+      return DrfModifyCalc::applyCoefficients( working, coefs, m_coefSigmas, m_coefRho,
+                                               equationEnergyUnits(), write_cov, problems );
+    }//case Coefficients
+
+    case DrfModifyCalc::AnchorEditor::Formula:
+    {
+      if( !formulaEdited() && !pointsEdited() )
+        return true;
+
+      vector<DrfModifyCalc::PointRow> rows;
+      if( !collectPointRows( rows, problems ) )
+        return false;
+
+      return DrfModifyCalc::applyFormula( working, m_formulaText->text().toUTF8(),
+                                          equationEnergyUnits(), rows, anchorOptions(), problems );
+    }//case Formula
+
+    case DrfModifyCalc::AnchorEditor::RefitPoints:
+    case DrfModifyCalc::AnchorEditor::AbsolutePoints:
+    case DrfModifyCalc::AnchorEditor::CurvePairs:
+    {
+      if( !pointsEdited() )
+        return true;
+
+      vector<DrfModifyCalc::PointRow> rows;
+      if( !collectPointRows( rows, problems ) )
+        return false;
+
+      return DrfModifyCalc::applyPointRows( working, m_editor, rows, anchorOptions(),
+                                            m_seedPoints, problems );
+    }//case the three point editors
+  }//switch( m_editor )
+
+  return true;
+}//applyAnchorTab(...)
+
+
+void DrfModifyWidget::showProblems( const std::vector<DrfModifyCalc::Problem> &problems )
+{
+  for( const DrfModifyCalc::Problem &problem : problems )
+  {
+    WString message = WString::tr( problem.messageId );
+    if( !problem.arg.empty() )
+      message = message.arg( WString::fromUTF8(problem.arg) );
+
+    passMessage( message, problem.blocking ? WarningWidget::WarningMsgHigh
+                                           : WarningWidget::WarningMsgInfo );
+  }//for( const Problem &problem : problems )
+}//showProblems(...)
 
 
 bool DrfModifyWidget::ToolState::operator==( const ToolState &rhs ) const
 {
-  if( (name != rhs.name) || (description != rhs.description) || (tabIndex != rhs.tabIndex)
+  if( (drfHash != rhs.drfHash)
+     || (name != rhs.name) || (description != rhs.description) || (tabIndex != rhs.tabIndex)
      || (geometryModeled != rhs.geometryModeled)
-     || (coefCovMatrix != rhs.coefCovMatrix)
+     || (coefSigmas != rhs.coefSigmas)
+     || (coefRho != rhs.coefRho)
      || (coefficients != rhs.coefficients)
      || (formula != rhs.formula)
      || (anchors != rhs.anchors)
      || (anchorRefDistance != rhs.anchorRefDistance)
-     || (anchorDefaultUncert != rhs.anchorDefaultUncert)
      || (anchorCorrLength != rhs.anchorCorrLength)
      || (efficiencyEnergyUnits != rhs.efficiencyEnergyUnits)
      || (mc != rhs.mc) )
@@ -1125,13 +1175,15 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
 {
   auto state = make_shared<ToolState>();
 
+  state->drfHash = m_orig ? m_orig->hashValue() : uint64_t(0);
   state->name = m_name->text().toUTF8();
   state->description = m_description->text().toUTF8();
   state->tabIndex = m_tabMenu->currentIndex();
   state->geometryModeled = m_geometryModeled;
 
-  // The covariance shadow is the authoritative numeric state (not the widgets).
-  state->coefCovMatrix = m_coefCovMatrix;
+  // The sigma/rho shadow is the authoritative numeric state (not the widgets).
+  state->coefSigmas = m_coefSigmas;
+  state->coefRho = m_coefRho;
 
   for( const NativeFloatSpinBox * const edit : m_coefEdits )
     state->coefficients.push_back( edit->text().toUTF8() );
@@ -1141,17 +1193,18 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
 
   for( const AnchorRow &r : m_anchors )
   {
-    state->anchors.push_back( { r.energy->text().toUTF8(), r.eff->text().toUTF8(),
-                                r.stat->text().toUTF8(),
-                                r.cert ? r.cert->text().toUTF8() : string(),
-                                r.source ? r.source->text().toUTF8() : string(),
-                                r.dist ? r.dist->text().toUTF8() : string() } );
+    ToolState::RowState row;
+    row.cells = { r.energy->text().toUTF8(), r.eff->text().toUTF8(),
+                  r.stat->text().toUTF8(),
+                  r.cert ? r.cert->text().toUTF8() : string(),
+                  r.source ? r.source->text().toUTF8() : string(),
+                  r.dist ? r.dist->text().toUTF8() : string() };
+    row.seedIndex = r.seedIndex;
+    state->anchors.push_back( row );
   }//for( const AnchorRow &r : m_anchors )
 
   if( m_anchorRefDistance )
     state->anchorRefDistance = m_anchorRefDistance->text().toUTF8();
-  if( m_anchorDefaultUncert )
-    state->anchorDefaultUncert = m_anchorDefaultUncert->text().toUTF8();
   if( m_uncertOptions )
     state->anchorCorrLength = m_uncertOptions->effectiveCorrLength();
   if( m_effEnergyUnits )
@@ -1171,6 +1224,12 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   if( !state )
     return;
 
+  // An undo step is resolved against whatever Modify dialog is open when it runs, which may be a
+  //  different detector than the one the step was recorded on (see ToolState::drfHash).
+  const uint64_t this_drf = m_orig ? m_orig->hashValue() : uint64_t(0);
+  if( state->drfHash != this_drf )
+    return;
+
   m_restoringState = true;
   m_currentState = state;
 
@@ -1185,7 +1244,7 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
       m_mcTool->setDisabled( !m_geometryModeled );
   }//if( m_modeToggle )
 
-  // Coefficient boxes, then the covariance shadow and the table it drives.  Bound both loops by the
+  // Coefficient boxes, then the sigma/rho shadow and the table it drives.  Bound both loops by the
   //  widget count: removeCoefficient() keeps at least one term, so a target of zero would otherwise
   //  never be reached.
   while( (m_coefEdits.size() > state->coefficients.size()) && (m_coefEdits.size() > 1) )
@@ -1196,7 +1255,8 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   for( size_t i = 0; i < ncoef_set; ++i )
     m_coefEdits[i]->setText( WString::fromUTF8(state->coefficients[i]) );
 
-  m_coefCovMatrix = state->coefCovMatrix;
+  m_coefSigmas = state->coefSigmas;
+  m_coefRho = state->coefRho;
   rebuildCovTable();
 
   if( m_formulaText )
@@ -1208,22 +1268,21 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   {
     while( !m_anchors.empty() )
       removeAnchorRow();
-    for( const std::array<string,6> &a : state->anchors )
+    for( const ToolState::RowState &a : state->anchors )
     {
-      addAnchorRow( 0.0f, 0.0f, 0.0f, 0.0f, string() );
-      m_anchors.back().energy->setText( WString::fromUTF8(a[0]) );
-      m_anchors.back().eff->setText( WString::fromUTF8(a[1]) );
-      m_anchors.back().stat->setText( WString::fromUTF8(a[2]) );
+      addAnchorRow( 0.0f, 0.0f, 0.0f, 0.0f, string(), -1.0f, a.seedIndex );
+      m_anchors.back().energy->setText( WString::fromUTF8(a.cells[0]) );
+      m_anchors.back().eff->setText( WString::fromUTF8(a.cells[1]) );
+      m_anchors.back().stat->setText( WString::fromUTF8(a.cells[2]) );
       if( m_anchors.back().cert )
-        m_anchors.back().cert->setText( WString::fromUTF8(a[3]) );
+        m_anchors.back().cert->setText( WString::fromUTF8(a.cells[3]) );
       if( m_anchors.back().source )
-        m_anchors.back().source->setText( WString::fromUTF8(a[4]) );
+        m_anchors.back().source->setText( WString::fromUTF8(a.cells[4]) );
       if( m_anchors.back().dist )
-        m_anchors.back().dist->setText( WString::fromUTF8(a[5]) );
-    }//for( const std::array<string,6> &a : state->anchors )
+        m_anchors.back().dist->setText( WString::fromUTF8(a.cells[5]) );
+    }//for( const ToolState::RowState &a : state->anchors )
 
     m_anchorRefDistance->setText( WString::fromUTF8(state->anchorRefDistance) );
-    m_anchorDefaultUncert->setText( WString::fromUTF8(state->anchorDefaultUncert) );
   }//if( m_anchorTable )
 
   // setCorrelationLength does not emit changed(), so this stays out of the edit path.
@@ -1240,11 +1299,13 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   if( (state->tabIndex >= 0) && (state->tabIndex < m_tabMenu->count()) )
     m_tabMenu->select( state->tabIndex );
 
-  // Restoring is not a user edit, so nothing here should become the next undo step; a restored
-  //  snapshot is not treated as newly edited (staleness is re-derived by the next real edit).
+  // Restoring is not a user edit, so nothing here should become the next undo step.  Nothing is done
+  //  about response staleness either - it is re-derived from the restored content, so an undo/redo
+  //  cannot strand it in the "fresh" state the way clearing a flag here used to.
   m_renderFlags.clear( RenderActions::AddUndoRedoStep );
-  m_changedSinceGenerate = false;
+  m_applyAfterGenerate = false;   //whatever was pending belonged to the state being replaced
   updateGenerateButton();
+  refreshUncertSummary();
   m_restoringState = false;
 }//DrfModifyWidget::setState(...)
 
@@ -1264,14 +1325,16 @@ void DrfModifyWidget::markEdited()
   if( m_restoringState )
     return;
 
-  // The userChanged the MC tool emits right after a successful generation is not a user edit, so it
-  //  must not re-flag the fresh response stale - consume the one-shot suppression instead.
-  if( m_suppressNextEditMark )
-    m_suppressNextEditMark = false;
-  else
-    m_changedSinceGenerate = true;
+  // A regenerate-then-use is only pending while the generation it is waiting on is actually running.
+  //  A run that fails, is cancelled, or is abandoned by a method/geometry change never emits
+  //  `responseGenerated`, and a flag left armed would make some later, unrelated generation apply and
+  //  close this dialog without the user asking.  (Every one of those paths emits `userChanged`,
+  //  which is what brings us here.)
+  if( m_applyAfterGenerate && m_mcTool && !m_mcTool->generationRunning() )
+    m_applyAfterGenerate = false;
 
   updateGenerateButton();
+  m_renderFlags |= RenderActions::RefreshSummary;
   scheduleUndoRedoStep();
 }//void markEdited()
 
@@ -1280,12 +1343,16 @@ void DrfModifyWidget::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool add_step = m_renderFlags.test( RenderActions::AddUndoRedoStep );
   const bool rebuild_cov = m_renderFlags.test( RenderActions::RebuildCovTable );
+  const bool refresh_summary = m_renderFlags.test( RenderActions::RefreshSummary );
   m_renderFlags = Wt::WFlags<RenderActions>();
 
   // The covariance cell edits defer their table rebuild here, so the WLineEdit whose `changed()`
   //  fired is not deleted from inside its own event handler.
   if( rebuild_cov )
     rebuildCovTable();
+
+  if( refresh_summary )
+    refreshUncertSummary();
 
   // Re-baseline on every render, not just flagged ones, so a change made without recording a step
   //  (a restore, a generation landing) doesnt leave a stale baseline for the next edit to diff.
@@ -1324,7 +1391,8 @@ void DrfModifyWidget::doAddUndoRedoStep( const bool add_step )
 }//void doAddUndoRedoStep( const bool add_step )
 
 
-std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bool includeMcResponse )
+std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bool includeMcResponse,
+                                            std::vector<DrfModifyCalc::Problem> &problems )
 {
   // One working copy that every tab writes onto.
   shared_ptr<DetectorPeakResponse> working = m_orig
@@ -1341,12 +1409,7 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
 
   // Anchor tab: apply whichever editor is showing.  Done before the MC step so a grounding sees
   //  the edited points.
-  switch( activeAnchorEditor() )
-  {
-    case AnchorEditor::Points:       applyAnchorEdits( *working );      break;
-    case AnchorEditor::Coefficients: applyCoefficientEdits( *working ); break;
-    case AnchorEditor::Formula:      applyFormulaEdits( *working );     break;
-  }//switch( activeAnchorEditor() )
+  applyAnchorTab( *working, problems );
 
   // FWHM: take whatever the FWHM tab is showing, without triggering the tool's own
   //  detector-changed emit.  The tab opens seeded from this DRF, so this is a no-op unless the user
@@ -1372,14 +1435,28 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
         // An equation form is selected, but it has no coefficients - the user changed the form and
         //  has not fit (or filled in) one yet.  Say so, rather than closing as if the equation
         //  showing had been applied; the DRF keeps whatever FWHM it came in with.
-        passMessage( WString::tr("dmw-err-no-fwhm-fit"), WarningWidget::WarningMsgHigh );
+        problems.push_back( DrfModifyCalc::Problem( "dmw-err-no-fwhm-fit", string(), false ) );
       }
     }catch( std::exception &e )
     {
-      passMessage( WString::tr("dmw-err-fwhm-not-applied").arg(e.what()),
-                   WarningWidget::WarningMsgHigh );
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-fwhm-not-applied", e.what(), false ) );
     }
   }//if( m_fwhmTool )
+
+  // The geometry the user described.  Recorded whether or not a response is attached: the response
+  //  carries its own descriptor, but a later switch to Flat Disk must not leave the detector with no
+  //  statement of what it physically is (and hence unable to ever have a response again).
+  if( m_mcTool && m_mcTool->geometryInput() && m_mcTool->generationReady() )
+  {
+    try
+    {
+      working->setGeometry( make_shared<const ceelo::GeometryDescriptor>(
+                                                  m_mcTool->geometryInput()->toDescriptor() ) );
+    }catch( std::exception & )
+    {
+      //an incomplete form; whatever the DRF already stated stands
+    }
+  }//if( the geometry form holds a real geometry )
 
   // Monte-Carlo response.  In Geometry-Modeled mode, attach the generated response (keeping any the
   //  DRF already carried when nothing new was generated); in Flat Disk, or as a regeneration seed,
@@ -1402,8 +1479,7 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
         CeeLoUtils::setLegacyEfficiencyFromResponse( *working, resp );
       }catch( std::exception &e )
       {
-        passMessage( WString::tr("dmw-err-no-backbone").arg(e.what()),
-                     WarningWidget::WarningMsgHigh );
+        problems.push_back( DrfModifyCalc::Problem( "dmw-err-no-backbone", e.what() ) );
       }
     }//if( !working->isValid() )
 
@@ -1416,6 +1492,7 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
     working->setCeeloResponse( nullptr );  //regeneration seed: manual points/covariance must drive
   }
   //else: Geometry Modeled with nothing newly generated - keep whatever response the DRF came with.
+  //  Whether that response still describes these edits is #responseStale's job, not this one's.
 
   return working;
 }//buildWorkingDrf(...)
@@ -1423,13 +1500,59 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
 
 void DrfModifyWidget::apply()
 {
-  shared_ptr<DetectorPeakResponse> working = buildWorkingDrf( true );
+  vector<DrfModifyCalc::Problem> problems;
+  shared_ptr<DetectorPeakResponse> working = buildWorkingDrf( true, problems );
+
+  // requestApply() has already validated, so a blocking problem here would be a logic error - but
+  // refuse rather than emit a DRF that does not hold what the user typed.
+  if( DrfModifyCalc::anyBlocking( problems ) )
+  {
+    showProblems( problems );
+    return;
+  }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // The editing invariants (see DrfModifyCalc), on the DRF actually being handed over - and only
+  //  when this dialog is what made it inconsistent.  A DRF that arrived that way (a legacy stored
+  //  one), or one whose equation the user deliberately hand-edited away from its points (which is a
+  //  supported edit, reported as `dmw-note-points-stale`), is not a programming error.
+  {
+    bool points_now_stale = false;
+    for( const DrfModifyCalc::Problem &problem : problems )
+      points_now_stale = (points_now_stale || (problem.messageId == "dmw-note-points-stale"));
+
+    std::string orig_why, why;
+    const bool orig_ok = m_orig ? DrfModifyCalc::checkDrfSelfConsistent( *m_orig, orig_why ) : true;
+
+    if( orig_ok && !points_now_stale && working->isValid()
+        && !DrfModifyCalc::checkDrfSelfConsistent( *working, why ) )
+    {
+      log_developer_error( __func__,
+        ("Modify-DRF produced an inconsistent DRF: " + why).c_str() );
+      assert( 0 );
+    }
+  }
+#endif
+
+  showProblems( problems );   //the non-blocking notes: what else the apply did
   m_updatedDrf.emit( working );
 }//apply()
 
 
 void DrfModifyWidget::requestApply()
 {
+  // Nothing the user typed may be silently dropped: build once, up front, and refuse with the reason
+  //  rather than closing the dialog looking successful.
+  {
+    vector<DrfModifyCalc::Problem> problems;
+    buildWorkingDrf( true, problems );
+    if( DrfModifyCalc::anyBlocking( problems ) )
+    {
+      showProblems( problems );
+      return;
+    }
+  }
+
   // Flat Disk, but the original carried a geometry-modeled response: confirm the detach first.
   if( !m_geometryModeled && m_orig && m_orig->ceeloResponse() )
   {
@@ -1441,26 +1564,68 @@ void DrfModifyWidget::requestApply()
     return;
   }//if( detaching a geometry-modeled response )
 
-  // Geometry Modeled with pending edits and a possible generation: offer to regenerate first, so the
-  //  attached response reflects the edits rather than the state it was generated from.
-  const bool canGen = (m_mcTool && m_mcTool->generationReady());
-  if( m_geometryModeled && m_changedSinceGenerate && canGen )
+  // A response that does not reflect the edits is not a cosmetic mismatch: while it is attached it
+  //  answers every efficiency and uncertainty query, so the edit would simply be ignored.  There is
+  //  therefore no "use anyway" - either the response is rebuilt, or it goes.
+  if( m_geometryModeled && responseStale() )
   {
-    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-regen-title"),
-                                                             WString::tr("dmw-regen-body") );
-    WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept") );
-    WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-regen-use-anyway") );
-    dialog->addButton( WString::tr("Cancel") );
-    regen->clicked().connect( this, [this](){
-      m_applyAfterGenerate = true;   //handleResponseGenerated applies once the response lands
+    const bool canGen = (m_mcTool && m_mcTool->generationReady());
+    const bool instant = (m_mcTool
+             && (m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::CurveTransfer));
+
+    // The curve-transfer method is deterministic and instant, so there is nothing to ask about.
+    if( canGen && instant )
+    {
+      m_applyAfterGenerate = true;
       handleGenerateResponse();
-    } );
-    useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
+
+      // `startGeneration` can decline (an anchor it cannot build, a geometry that turned out not to
+      //  be ready).  Leaving the flag set would make some later, unrelated regeneration apply and
+      //  close this dialog without the user asking; so it only stays set while a run is in flight.
+      if( !m_mcTool->generationRunning() )
+      {
+        m_applyAfterGenerate = false;
+        passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
+      }
+      return;
+    }
+
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-regen-title"),
+                   WString::tr( canGen ? "dmw-regen-required-body" : "dmw-regen-impossible-body" ) );
+    if( canGen )
+    {
+      WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept") );
+      regen->clicked().connect( this, [this](){
+        m_applyAfterGenerate = true;   //handleResponseGenerated applies once the response lands
+        handleGenerateResponse();
+        if( !m_mcTool->generationRunning() )   //declined; see the note in the instant path above
+        {
+          m_applyAfterGenerate = false;
+          passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
+        }
+      } );
+    }
+    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach") );
+    detach->clicked().connect( this, &DrfModifyWidget::detachResponseAndApply );
+    dialog->addButton( WString::tr("Cancel") );
     return;
-  }//if( pending edits in Geometry-Modeled mode )
+  }//if( the attached response no longer describes the edits )
 
   apply();
 }//requestApply()
+
+
+void DrfModifyWidget::detachResponseAndApply()
+{
+  m_geometryModeled = false;
+  if( m_modeToggle )
+    m_modeToggle->setChecked( false );
+  if( m_mcTool )
+    m_mcTool->setDisabled( true );
+
+  updateGenerateButton();
+  apply();
+}//detachResponseAndApply()
 
 
 void DrfModifyWidget::handleModeToggle()
@@ -1468,6 +1633,10 @@ void DrfModifyWidget::handleModeToggle()
   m_geometryModeled = (m_modeToggle && m_modeToggle->isChecked());
   if( m_mcTool )
     m_mcTool->setDisabled( !m_geometryModeled );  //Flat Disk greys the whole tool
+
+  // Deliberately does not touch which Anchor editor is showing: that follows how the efficiency is
+  //  represented, and sending the apply down a different editor because of this toggle is what used
+  //  to discard whichever editor's edits were not applied.
   updateAnchorEditorVisibility();
   markEdited();
 }//handleModeToggle()
@@ -1479,45 +1648,11 @@ bool DrfModifyWidget::geometryModeled() const
 }
 
 
-DrfModifyWidget::AnchorEditor DrfModifyWidget::activeAnchorEditor() const
-{
-  // Points win over the curve's representation whenever the DRF has any.
-  //  - Geometry Modeled: the rows are what the Monte-Carlo response is grounded to, whatever
-  //    representation the seed curve happened to use.
-  //  - m_origHasPoints: a MakeDrf detector is an exp-of-log CURVE that also carries the measured
-  //    points it was fitted from, and it is those points - not the coefficients - that produce its
-  //    (consumed) node covariance via MeasuredDrfPoints::toEfficiencyUncert.  Dispatching on the
-  //    curve form alone would hide them behind the coefficient editor.
-  if( m_geometryModeled || m_origHasPoints )
-    return AnchorEditor::Points;
-
-  const shared_ptr<const DetectorEfficiencyCurve> curve = m_orig ? m_orig->efficiencyCurve()
-                                                                 : nullptr;
-  if( curve && curve->isValid() )
-  {
-    switch( curve->form() )
-    {
-      case DetectorPeakResponse::kExpOfLogPowerSeries:  return AnchorEditor::Coefficients;
-      case DetectorPeakResponse::kFunctialEfficienyForm: return AnchorEditor::Formula;
-      case DetectorPeakResponse::kEnergyEfficiencyPairs:
-      case DetectorPeakResponse::kNumEfficiencyFnctForms:
-        break;
-    }//switch( curve->form() )
-  }//if( curve && curve->isValid() )
-
-  return AnchorEditor::Points;
-}//activeAnchorEditor()
-
-
 void DrfModifyWidget::updateAnchorEditorVisibility()
 {
-  const AnchorEditor editor = activeAnchorEditor();
-
-  // The formula editor also shows the point table, for per-energy uncertainties; its Efficiency
-  //  column is hidden there, the efficiency coming from the formula.
-  const bool show_points = (editor != AnchorEditor::Coefficients);
-  const bool show_coefs = (editor == AnchorEditor::Coefficients);
-  const bool show_formula = (editor == AnchorEditor::Formula);
+  const bool show_points = DrfModifyCalc::editorUsesPointTable( m_editor );
+  const bool show_coefs = (m_editor == DrfModifyCalc::AnchorEditor::Coefficients);
+  const bool show_formula = (m_editor == DrfModifyCalc::AnchorEditor::Formula);
 
   if( m_pointsEditor )
     m_pointsEditor->setHidden( !show_points );
@@ -1538,44 +1673,63 @@ void DrfModifyWidget::updateAnchorEditorVisibility()
   if( m_anchorHelp )
   {
     const char *help_id = "dmw-anchor-help-points-nosrc";
-    if( show_coefs )
-      help_id = "dmw-anchor-help-coefs";
-    else if( show_formula )
-      help_id = "dmw-anchor-help-formula";
-    else if( m_anchorHasSourceCol )
-      help_id = "dmw-anchor-help-points";  //wording follows the columns actually rendered
+    switch( m_editor )
+    {
+      case DrfModifyCalc::AnchorEditor::RefitPoints:    help_id = "dmw-anchor-help-refit";    break;
+      case DrfModifyCalc::AnchorEditor::AbsolutePoints: help_id = "dmw-anchor-help-points";   break;
+      case DrfModifyCalc::AnchorEditor::CurvePairs:     help_id = "dmw-anchor-help-points-nosrc"; break;
+      case DrfModifyCalc::AnchorEditor::Coefficients:   help_id = "dmw-anchor-help-coefs";    break;
+      case DrfModifyCalc::AnchorEditor::Formula:        help_id = "dmw-anchor-help-formula";  break;
+    }//switch( m_editor )
 
     m_anchorHelp->setText( WString::tr( help_id ) );
   }//if( m_anchorHelp )
+
+  // Whether a response is (going to be) in charge of every query.
+  if( m_responseNote )
+  {
+    const bool have_resp = (m_geometryModeled
+                            && ((m_mcTool && m_mcTool->generatedResponse())
+                                || (m_orig && m_orig->ceeloResponse())));
+    m_responseNote->setHidden( !have_resp );
+  }
 }//updateAnchorEditorVisibility()
 
 
 void DrfModifyWidget::seedCoefCovFromUncert( const std::shared_ptr<const DetectorEfficiencyUncert> &uncert )
 {
-  m_coefCovMatrix.clear();
+  m_coefSigmas.clear();
+  m_coefRho.clear();
+  m_coefCovIsPlaceholder = false;
 
   const size_t n = m_coefEdits.size();
   if( uncert && n )
   {
     const vector<float> &cov = uncert->coefficientCovariance();
     if( cov.size() == (n*n) )
-      m_coefCovMatrix.assign( begin(cov), end(cov) );
+      DrfModifyCalc::sigmaRhoFromCovariance( cov, m_coefSigmas, m_coefRho );
   }//if( uncert && n )
 
-  // No stored covariance: start from the legacy per-coefficient uncertainties when there are any,
-  //  so the user has something to edit rather than a grid of zeros.  This is only a starting point -
-  //  it assumes the coefficients are independent, which for a log-power-series fit they emphatically
-  //  are not, so it over-estimates the band until a real fit covariance is stored.
-  if( m_coefCovMatrix.empty() && n )
+  // No stored covariance: start from the legacy per-coefficient uncertainties when there are any, so
+  //  the user has something to edit rather than a grid of zeros.  It is only a starting point - it
+  //  assumes the coefficients are independent, which for a log-power-series fit they emphatically are
+  //  not - so it is labelled as such, and applyAnchorTab only writes it if the user edits it.
+  if( m_coefSigmas.empty() && n && m_orig )
   {
-    m_coefCovMatrix.assign( n*n, 0.0 );
+    if( DrfModifyCalc::sigmaRhoFromLegacyUncerts( *m_orig, m_coefSigmas, m_coefRho ) )
+      m_coefCovIsPlaceholder = true;
+  }
 
-    const shared_ptr<const DetectorEfficiencyCurve> curve = m_orig ? m_orig->efficiencyCurve()
-                                                                   : nullptr;
-    const vector<float> legacy = curve ? curve->expOfLogPowerSeriesUncerts() : vector<float>{};
-    for( size_t i = 0; (i < n) && (legacy.size() == n); ++i )
-      m_coefCovMatrix[i*n + i] = static_cast<double>(legacy[i]) * legacy[i];
-  }//if( m_coefCovMatrix.empty() && n )
+  if( m_coefSigmas.size() != n )
+  {
+    m_coefSigmas.assign( n, 0.0 );
+    m_coefRho.assign( n*n, 0.0 );
+    for( size_t i = 0; i < n; ++i )
+      m_coefRho[i*n + i] = 1.0;
+  }
+
+  if( m_covPlaceholderNote )
+    m_covPlaceholderNote->setHidden( !m_coefCovIsPlaceholder );
 
   rebuildCovTable();
 }//seedCoefCovFromUncert(...)
@@ -1589,8 +1743,13 @@ void DrfModifyWidget::rebuildCovTable()
   m_covTable->clear();  //wipes all cells and the WLineEdits/WTexts they hold
 
   const size_t n = m_coefEdits.size();
-  if( m_coefCovMatrix.size() != (n*n) )
-    m_coefCovMatrix.assign( n*n, 0.0 );
+  if( (m_coefSigmas.size() != n) || (m_coefRho.size() != (n*n)) )
+  {
+    m_coefSigmas.assign( n, 0.0 );
+    m_coefRho.assign( n*n, 0.0 );
+    for( size_t i = 0; i < n; ++i )
+      m_coefRho[i*n + i] = 1.0;
+  }
 
   if( !n )
     return;
@@ -1612,21 +1771,16 @@ void DrfModifyWidget::rebuildCovTable()
     //  coefficient boxes above.
     m_covTable->elementAt(trow,0)->addNew<WText>( coef_name(i) );
 
-    const double Cii = m_coefCovMatrix[i*n + i];
-    const double sigma_i = (Cii > 0.0) ? std::sqrt(Cii) : 0.0;
-
     for( size_t j = 0; j < n; ++j )
     {
       const int tcol = static_cast<int>(j) + 1;
-      const double Cjj = m_coefCovMatrix[j*n + j];
-      const double sigma_j = (Cjj > 0.0) ? std::sqrt(Cjj) : 0.0;
 
       if( j == i )
       {
         // Diagonal: the 1-sigma uncertainty of the coefficient itself (absolute, not a percent -
         //  these coefficients are logs, so a percentage of one means nothing).
         char buf[32];
-        snprintf( buf, sizeof(buf), "%.4g", sigma_i );
+        snprintf( buf, sizeof(buf), "%.4g", m_coefSigmas[i] );
         WLineEdit *e = m_covTable->elementAt(trow,tcol)->addNew<WLineEdit>();
         e->setTextSize( 8 );
         e->addStyleClass( "DrfCovDiag" );
@@ -1634,18 +1788,17 @@ void DrfModifyWidget::rebuildCovTable()
         e->changed().connect( this, [this,i,e](){ covSigmaChanged( i, e->text().toUTF8() ); } );
       }else
       {
-        const double Cij = m_coefCovMatrix[i*n + j];
-        const double rho = ((sigma_i > 0.0) && (sigma_j > 0.0)) ? (Cij/(sigma_i*sigma_j)) : 0.0;
         char buf[32];
-        snprintf( buf, sizeof(buf), "%.3g", rho );
+        snprintf( buf, sizeof(buf), "%.3g", m_coefRho[i*n + j] );
         WLineEdit *e = m_covTable->elementAt(trow,tcol)->addNew<WLineEdit>();
         e->setTextSize( 6 );
         e->setText( WString::fromUTF8(buf) );
 
         if( j > i )
         {
-          // Upper triangle: correlation (editable), only meaningful when both sigmas are non-zero.
-          e->setEnabled( (sigma_i > 0.0) && (sigma_j > 0.0) );
+          // Upper triangle: correlation (editable).  Editable even when a sigma is zero - the
+          //  correlation is kept in its own matrix, so it survives a sigma being zeroed and typed
+          //  back, which a covariance-only shadow could not.
           e->changed().connect( this, [this,i,j,e](){ covRhoChanged( i, j, e->text().toUTF8() ); } );
         }else
         {
@@ -1656,6 +1809,20 @@ void DrfModifyWidget::rebuildCovTable()
       }//if( diagonal ) / else
     }//for( size_t j = 0; j < n; ++j )
   }//for( size_t i = 0; i < n; ++i )
+
+  // An impossible set of sigmas and correlations does not fail loudly downstream: the fit's Cholesky
+  //  whitening quietly gives up and falls back to counting statistics only, so the user would get
+  //  LESS uncertainty for entering something that cannot happen.  Say so here, and refuse on apply.
+  if( m_covWarning )
+  {
+    const vector<double> cov = DrfModifyCalc::covarianceFromSigmaRho( m_coefSigmas, m_coefRho );
+    std::string why;
+    const bool usable = DetectorEfficiencyUncert::covarianceIsUsable( cov, &why );
+    m_covWarning->setText( WString::tr("dmw-err-cov-not-psd") );
+    m_covWarning->setHidden( usable );
+    if( m_covTable )
+      m_covTable->toggleStyleClass( "Wt-invalid", !usable );
+  }//if( m_covWarning )
 }//rebuildCovTable()
 
 
@@ -1673,13 +1840,24 @@ void DrfModifyWidget::addCoefficient( const float value )
   edit->valueChanged().connect( this, &DrfModifyWidget::markEdited );
   m_coefEdits.push_back( edit );
 
-  // Grow the covariance to match, leaving the existing block bit-exact.
+  // Grow the shadow to match, leaving the existing block bit-exact.
   const size_t nn = m_coefEdits.size();
+  if( (m_coefSigmas.size() != n) || (m_coefRho.size() != (n*n)) )
+  {
+    m_coefSigmas.assign( n, 0.0 );
+    m_coefRho.assign( n*n, 0.0 );
+    for( size_t i = 0; i < n; ++i )
+      m_coefRho[i*n + i] = 1.0;
+  }
+
+  m_coefSigmas.push_back( 0.0 );
   vector<double> grown( nn*nn, 0.0 );
+  for( size_t i = 0; i < nn; ++i )
+    grown[i*nn + i] = 1.0;
   for( size_t i = 0; i < n; ++i )
     for( size_t j = 0; j < n; ++j )
-      grown[i*nn + j] = m_coefCovMatrix[i*n + j];
-  m_coefCovMatrix = grown;
+      grown[i*nn + j] = m_coefRho[i*n + j];
+  m_coefRho = grown;
 
   if( m_removeCoef )
     m_removeCoef->setEnabled( nn > 1 );
@@ -1699,11 +1877,16 @@ void DrfModifyWidget::removeCoefficient()
   m_coefEdits.pop_back();
 
   const size_t nn = m_coefEdits.size();
-  vector<double> shrunk( nn*nn, 0.0 );
-  for( size_t i = 0; i < nn; ++i )
-    for( size_t j = 0; j < nn; ++j )
-      shrunk[i*nn + j] = m_coefCovMatrix[i*n + j];
-  m_coefCovMatrix = shrunk;
+  if( m_coefSigmas.size() == n )
+    m_coefSigmas.pop_back();
+  if( m_coefRho.size() == (n*n) )
+  {
+    vector<double> shrunk( nn*nn, 0.0 );
+    for( size_t i = 0; i < nn; ++i )
+      for( size_t j = 0; j < nn; ++j )
+        shrunk[i*nn + j] = m_coefRho[i*n + j];
+    m_coefRho = shrunk;
+  }
 
   if( m_removeCoef )
     m_removeCoef->setEnabled( nn > 1 );
@@ -1716,34 +1899,18 @@ void DrfModifyWidget::removeCoefficient()
 void DrfModifyWidget::covSigmaChanged( const std::size_t i, const std::string &text )
 {
   const size_t n = m_coefEdits.size();
-  if( (i >= n) || (m_coefCovMatrix.size() != (n*n)) )
+  if( (i >= n) || (m_coefSigmas.size() != n) )
     return;
+
+  m_coefCovTouched = true;
 
   double s_new = 0.0;
   try{ s_new = std::stod( text ); }
   catch( std::exception & ){ m_renderFlags |= RenderActions::RebuildCovTable; scheduleRender(); return; }
 
-  if( s_new < 0.0 )
-    s_new = 0.0;
-
-  const double Cii = m_coefCovMatrix[i*n + i];
-  const double s_old = (Cii > 0.0) ? std::sqrt(Cii) : 0.0;
-
-  // Scale row/col i so every correlation ρ_ik is held fixed, then set the variance exactly - this
-  //  leaves C_jk (j,k != i) bit-identical.  When s_old == 0 the correlations were undefined, so the
-  //  off-diagonals stay zero and only the variance is set.
-  if( s_old > 0.0 )
-  {
-    const double f = s_new / s_old;
-    for( size_t k = 0; k < n; ++k )
-    {
-      if( k == i )
-        continue;
-      m_coefCovMatrix[i*n + k] *= f;
-      m_coefCovMatrix[k*n + i] *= f;
-    }
-  }//if( s_old > 0.0 )
-  m_coefCovMatrix[i*n + i] = s_new * s_new;
+  // Only this sigma changes; the correlations live in their own matrix, so typing 0 here (and then
+  //  typing the value back) cannot destroy them - which it did when the shadow was a covariance.
+  m_coefSigmas[i] = std::max( 0.0, s_new );
 
   m_renderFlags |= RenderActions::RebuildCovTable;
   markEdited();
@@ -1753,8 +1920,10 @@ void DrfModifyWidget::covSigmaChanged( const std::size_t i, const std::string &t
 void DrfModifyWidget::covRhoChanged( const std::size_t i, const std::size_t j, const std::string &text )
 {
   const size_t n = m_coefEdits.size();
-  if( (i >= n) || (j >= n) || (i == j) || (m_coefCovMatrix.size() != (n*n)) )
+  if( (i >= n) || (j >= n) || (i == j) || (m_coefRho.size() != (n*n)) )
     return;
+
+  m_coefCovTouched = true;
 
   double rho = 0.0;
   try{ rho = std::stod( text ); }
@@ -1762,15 +1931,62 @@ void DrfModifyWidget::covRhoChanged( const std::size_t i, const std::size_t j, c
   if( rho < -1.0 ) rho = -1.0;
   if( rho >  1.0 ) rho =  1.0;
 
-  const double sigma_i = std::sqrt( std::max(0.0, m_coefCovMatrix[i*n + i]) );
-  const double sigma_j = std::sqrt( std::max(0.0, m_coefCovMatrix[j*n + j]) );
-  const double Cij = rho * sigma_i * sigma_j;
-  m_coefCovMatrix[i*n + j] = Cij;
-  m_coefCovMatrix[j*n + i] = Cij;
+  m_coefRho[i*n + j] = rho;
+  m_coefRho[j*n + i] = rho;
 
   m_renderFlags |= RenderActions::RebuildCovTable;
   markEdited();
 }//covRhoChanged(...)
+
+
+bool DrfModifyWidget::pointsEdited() const
+{
+  if( !m_seedState )
+    return false;
+
+  const shared_ptr<ToolState> now = currentState();
+
+  return (now->anchors != m_seedState->anchors)
+         || (now->anchorRefDistance != m_seedState->anchorRefDistance)
+         || (now->anchorCorrLength != m_seedState->anchorCorrLength);
+}//pointsEdited()
+
+
+bool DrfModifyWidget::coefficientsEdited() const
+{
+  if( !m_seedState )
+    return false;
+
+  const shared_ptr<ToolState> now = currentState();
+
+  return (now->coefficients != m_seedState->coefficients)
+         || (now->coefSigmas != m_seedState->coefSigmas)
+         || (now->coefRho != m_seedState->coefRho)
+         || (now->efficiencyEnergyUnits != m_seedState->efficiencyEnergyUnits);
+}//coefficientsEdited()
+
+
+bool DrfModifyWidget::coefCovarianceEdited() const
+{
+  if( !m_seedState )
+    return false;
+
+  const shared_ptr<ToolState> now = currentState();
+
+  return (now->coefSigmas != m_seedState->coefSigmas) || (now->coefRho != m_seedState->coefRho);
+}//coefCovarianceEdited()
+
+
+bool DrfModifyWidget::formulaEdited() const
+{
+  if( !m_seedState )
+    return false;
+
+  const shared_ptr<ToolState> now = currentState();
+
+  return (now->formula != m_seedState->formula)
+         || (now->efficiencyEnergyUnits != m_seedState->efficiencyEnergyUnits);
+}//formulaEdited()
 
 
 bool DrfModifyWidget::validateFormula()
@@ -1815,117 +2031,31 @@ float DrfModifyWidget::equationEnergyUnits() const
 }//equationEnergyUnits()
 
 
-void DrfModifyWidget::applyCoefficientEdits( DetectorPeakResponse &working )
+bool DrfModifyWidget::responseStale()
 {
-  if( m_coefEdits.empty() )
-    return;
-
-  if( anchorsMatchSeed() )
-    return;  //nothing touched; leave the curve and its uncertainty bit-identical
-
-  vector<float> coefs;
-  coefs.reserve( m_coefEdits.size() );
-  for( NativeFloatSpinBox * const edit : m_coefEdits )
-    coefs.push_back( edit->value() );
-
-  const size_t n = coefs.size();
-  vector<float> coefCov;
-  if( m_coefCovMatrix.size() == (n*n) )
-  {
-    coefCov.reserve( n*n );
-    for( const double val : m_coefCovMatrix )
-      coefCov.push_back( static_cast<float>(val) );
-
-    // All-zero is "no covariance given", not a covariance of zero.
-    bool any = false;
-    for( const float val : coefCov )
-      any = (any || (val != 0.0f));
-    if( !any )
-      coefCov.clear();
-  }//if( m_coefCovMatrix.size() == (n*n) )
-
-  // The equation's diagonal doubles as the legacy per-coefficient uncertainty, which is what gets
-  //  written to the app-URL and the older DB fields.
-  vector<float> uncerts;
-  if( !coefCov.empty() )
-  {
-    uncerts.resize( n );
-    for( size_t i = 0; i < n; ++i )
-      uncerts[i] = std::sqrt( std::max( 0.0f, coefCov[i*n + i] ) );
-  }
-
-  try
-  {
-    auto curve = make_shared<DetectorEfficiencyCurve>();
-    curve->setFromExpOfLogPowerSeries( coefs, uncerts, equationEnergyUnits() );
-
-    if( !coefCov.empty() )
-    {
-      const shared_ptr<const DetectorEfficiencyUncert> existing = working.efficiencyUncert();
-      auto uncert = existing ? make_shared<DetectorEfficiencyUncert>( *existing )
-                             : make_shared<DetectorEfficiencyUncert>();
-      // For an exp-of-log curve this IS the uncertainty the fits see: DetectorEfficiencyCurve::
-      //  fracCovariance propagates it as J*Sigma*J^T.  The node covariance is left untouched, so a
-      //  detector that also carries one (a MakeDrf response, from its measured points) keeps it as
-      //  provenance without the two being combined.
-      uncert->setCoefficientCovariance( coefCov );
-      curve->setUncertainty( uncert->isEmpty() ? nullptr : uncert );
-    }else if( m_orig )
-    {
-      curve->setUncertainty( m_orig->efficiencyUncert() );
-    }
-
-    working.replaceEfficiencyCurve( curve );
-  }catch( std::exception &e )
-  {
-    passMessage( WString::tr("dmw-err-coefs-invalid").arg(e.what()), WarningWidget::WarningMsgHigh );
-  }
-}//applyCoefficientEdits(...)
-
-
-void DrfModifyWidget::applyFormulaEdits( DetectorPeakResponse &working )
-{
-  if( !m_formulaText )
-    return;
-
-  if( anchorsMatchSeed() )
-    return;  //nothing touched; leave the curve and its uncertainty bit-identical
-
-  const string fcn = m_formulaText->text().toUTF8();
-  if( fcn.empty() )
-    return;
-
-  try
-  {
-    auto curve = make_shared<DetectorEfficiencyCurve>();
-    curve->setFromFormula( fcn, equationEnergyUnits() );
-    // Without the correlation control there are no rows to rebuild from, so carry the existing
-    //  uncertainty across rather than dropping it on a formula-only edit.
-    curve->setUncertainty( m_uncertOptions ? buildUncertFromRows() : working.efficiencyUncert() );
-    working.replaceEfficiencyCurve( curve );
-  }catch( std::exception &e )
-  {
-    passMessage( WString::tr("dmw-err-formula-invalid").arg(e.what()), WarningWidget::WarningMsgHigh );
-  }
-}//applyFormulaEdits(...)
-
-
-bool DrfModifyWidget::anchorsMatchSeed() const
-{
-  if( !m_seedState )
+  if( !m_geometryModeled || !m_mcTool )
     return false;
 
-  const shared_ptr<ToolState> now = currentState();
+  // Nothing to be stale unless a response would actually be attached and answer the queries.
+  const shared_ptr<const ceelo::DetectorResponse> resp = m_mcTool->generatedResponse()
+                          ? m_mcTool->generatedResponse()
+                          : (m_orig ? m_orig->ceeloResponse() : nullptr);
+  if( !resp )
+    return false;
 
-  return (now->anchors == m_seedState->anchors)
-         && (now->anchorRefDistance == m_seedState->anchorRefDistance)
-         && (now->anchorDefaultUncert == m_seedState->anchorDefaultUncert)
-         && (now->anchorCorrLength == m_seedState->anchorCorrLength)
-         && (now->coefficients == m_seedState->coefficients)
-         && (now->coefCovMatrix == m_seedState->coefCovMatrix)
-         && (now->formula == m_seedState->formula)
-         && (now->efficiencyEnergyUnits == m_seedState->efficiencyEnergyUnits);
-}//anchorsMatchSeed()
+  // A method change makes the attached response the wrong KIND of response, whatever it was built
+  //  from.  (The two enumerations mirror each other; see MakeMcResponseForDrf's use of the same
+  //  mapping when it opens on an existing response.)
+  if( static_cast<int>(m_mcTool->selectedMethod()) != static_cast<int>(resp->provenance.method) )
+    return true;
+
+  vector<DrfModifyCalc::Problem> problems;
+  const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false, problems );
+  if( !seed )
+    return false;
+
+  return (DrfModifyCalc::seedFingerprint( *seed ) != m_generatedFromFingerprint);
+}//responseStale()
 
 
 void DrfModifyWidget::handleGenerateResponse()
@@ -1933,14 +2063,13 @@ void DrfModifyWidget::handleGenerateResponse()
   if( !m_mcTool || !m_geometryModeled )
     return;
 
-  // Seed the MC tool with the live edits, CeeLo detached (buildWorkingDrf(false)), so the manual
-  //  points/covariance ground the regeneration rather than being overridden by an attached response.
-  const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false );
-  m_mcTool->setSeedDrf( seed );
-
+  // The seed comes from the provider installed in the constructor (the live edits, with any response
+  //  detached), so the manual points/covariance ground the regeneration rather than being overridden
+  //  by the response we are replacing.
+  //
   // For a raw-measured-points DRF, the regeneration derives its uncertainty from those points, not
   //  from a hand-edited matrix - say so once, so an edited covariance is not silently discarded.
-  if( m_origHasPoints && m_anchorIsAbsolute )
+  if( m_editor == DrfModifyCalc::AnchorEditor::RefitPoints )
     passMessage( WString::tr("dmw-regen-from-points-note"), WarningWidget::WarningMsgInfo );
 
   m_mcTool->startGeneration();
@@ -1958,21 +2087,24 @@ void DrfModifyWidget::updateGenerateButton()
 
   // Shown only in Geometry-Modeled mode, once there is something to (re)generate from or a response
   //  to refresh.  Enabled whenever the geometry is complete enough to run and there is work to do:
-  //  the first generation (no response yet - e.g. right after switching to Geometry Modeled with
-  //  valid geometry) or a regeneration when an edit is pending.
+  //  the first generation, or a regeneration when the response no longer reflects the edits.  It is
+  //  never disabled while stale - the user has to be able to fix it.
   const bool show = m_geometryModeled && (canGen || haveResp);
   m_generateBtn->setHidden( !show );
-  m_generateBtn->setEnabled( show && canGen && (!haveResp || m_changedSinceGenerate) );
+  m_generateBtn->setEnabled( show && canGen && (!haveResp || responseStale()) );
 }//updateGenerateButton()
 
 
 void DrfModifyWidget::handleResponseGenerated( std::shared_ptr<ceelo::DetectorResponse> response )
 {
-  // A fresh response clears staleness.  The MC tool emits userChanged right after this, which routes
-  //  to markEdited - suppress that one so it does not immediately re-flag the response stale.
-  m_changedSinceGenerate = false;
-  m_suppressNextEditMark = true;
+  // What the response that just landed was built from - the seed the provider handed the generation.
+  //  Staleness is this comparison, rather than a flag some path could forget to clear.
+  if( response )
+    m_generatedFromFingerprint = m_pendingSeedFingerprint;
+
   updateGenerateButton();
+  updateAnchorEditorVisibility();  //a response is now in charge of the queries
+  refreshUncertSummary();
 
   if( m_applyAfterGenerate )
   {
@@ -1981,6 +2113,86 @@ void DrfModifyWidget::handleResponseGenerated( std::shared_ptr<ceelo::DetectorRe
       apply();   //the regenerate-then-use flow: the response now reflects the edits
   }
 }//handleResponseGenerated(...)
+
+
+void DrfModifyWidget::refreshUncertSummary()
+{
+  if( !m_uncertSummary )
+    return;
+
+  // Ask the DRF the apply would produce, through the same call the activity/shielding fit uses, so
+  //  this line cannot drift from what the analysis propagates (and from the chart band).
+  vector<DrfModifyCalc::Problem> problems;
+  shared_ptr<DetectorPeakResponse> working;
+  try
+  {
+    working = buildWorkingDrf( true, problems );
+  }catch( std::exception & )
+  {
+    working = nullptr;
+  }
+
+  const DrfModifyCalc::UncertSummary summary = working
+                      ? DrfModifyCalc::uncertSummary( *working )
+                      : DrfModifyCalc::UncertSummary{};
+
+  if( !summary.valid || (summary.total <= 0.0) )
+  {
+    m_uncertSummary->setText( WString::tr("dmw-uncert-summary-none") );
+    m_uncertSummary->show();
+    updateCorrelationNote();
+    return;
+  }
+
+  char energy[32], total[32], data[32], model[32];
+  snprintf( energy, sizeof(energy), "%.1f", summary.energy );
+  snprintf( total, sizeof(total), "%.2g", 100.0*summary.total );
+  snprintf( data, sizeof(data), "%.2g", 100.0*summary.data );
+  snprintf( model, sizeof(model), "%.2g", 100.0*summary.model );
+
+  // Three wordings, because "2.1% from this detector's data" is a lie for a detector that never
+  //  stated an uncertainty - it is a default standing in for one (see UncertSummary::dataIsAssumed).
+  const char *id = "dmw-uncert-summary";
+  if( summary.dataIsAssumed )
+    id = "dmw-uncert-summary-assumed";
+  else if( summary.model > 0.0 )
+    id = "dmw-uncert-summary-split";
+
+  WString text = WString::tr( id ).arg( energy ).arg( total );
+  if( summary.model > 0.0 || summary.dataIsAssumed )
+    text = text.arg( data ).arg( model );
+
+  m_uncertSummary->setText( text );
+  m_uncertSummary->show();
+
+  updateCorrelationNote();
+}//refreshUncertSummary()
+
+
+void DrfModifyWidget::updateCorrelationNote()
+{
+  if( !m_corrInertNote )
+    return;
+
+  // The correlation control scales the "Corr. %" column and nothing else, so with that column empty
+  //  it has no effect on any number this detector reports - including the one on the line above,
+  //  which a user who has just set "Fully correlated" will otherwise read as disagreeing with it.
+  bool any_correlated = false;
+  for( const AnchorRow &r : m_anchors )
+  {
+    if( !r.cert )
+      continue;
+
+    bool blank = true;
+    double percent = 0.0;
+    if( read_double( r.cert, percent, blank ) && !blank && (percent != 0.0) )
+      any_correlated = true;
+  }//for( const AnchorRow &r : m_anchors )
+
+  const bool show = (m_uncertOptions && !m_uncertOptions->isHidden() && !m_anchors.empty()
+                     && !any_correlated);
+  m_corrInertNote->setHidden( !show );
+}//updateCorrelationNote()
 
 
 // ---------------------------------------------------------------------------

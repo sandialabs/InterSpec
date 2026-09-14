@@ -178,6 +178,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   : WContainerWidget(),
     m_interspec( viewer ),
     m_seedDrf( seed_drf ),
+    m_seedProvider(),
     m_geometry( nullptr ),
     m_method( nullptr ),
     m_profile( nullptr ),
@@ -448,6 +449,26 @@ void MakeMcResponseForDrf::setSeedDrf( std::shared_ptr<const DetectorPeakRespons
 }//setSeedDrf(...)
 
 
+void MakeMcResponseForDrf::setSeedProvider( std::function<std::shared_ptr<const DetectorPeakResponse>()> provider )
+{
+  m_seedProvider = std::move( provider );
+  refreshSeedFromProvider();
+}//setSeedProvider(...)
+
+
+void MakeMcResponseForDrf::refreshSeedFromProvider()
+{
+  if( !m_seedProvider )
+    return;
+
+  // Pulled before every generation, so an automatic rebuild cannot anchor on a seed that predates
+  //  the owner's edits (which would produce a response that ignores them while looking current).
+  const std::shared_ptr<const DetectorPeakResponse> seed = m_seedProvider();
+  if( seed )
+    setSeedDrf( seed );
+}//refreshSeedFromProvider()
+
+
 void MakeMcResponseForDrf::setGenerateButtonHidden( bool hidden )
 {
   m_hideGenerateButton = hidden;
@@ -537,6 +558,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   // A generation that is still running would land on top of the state being restored; its finish
   //  handler is stale-guarded by the generation id.
   ++m_generationId;
+  m_generationRunning = false;
   if( m_cancelFlag )
     m_cancelFlag->store( true );
   m_progress->hide();
@@ -619,6 +641,7 @@ void MakeMcResponseForDrf::handleMethodChanged()
   //  abandon any in-flight generation too (its finish handler is stale-guarded
   //  and balances the update lock itself), and take back the run-row UI.
   ++m_generationId;
+  m_generationRunning = false;
   if( m_cancelFlag )
     m_cancelFlag->store( true );
   m_progress->hide();
@@ -1041,8 +1064,21 @@ void MakeMcResponseForDrf::updateEstimate()
 }//updateEstimate()
 
 
+bool MakeMcResponseForDrf::generationRunning() const
+{
+  return m_generationRunning;
+}//generationRunning()
+
+
 void MakeMcResponseForDrf::startGeneration()
 {
+  // Nothing is in flight until a worker is actually posted below; every early return here is a
+  //  declined generation, which an owner needs to be able to tell from a started one.
+  m_generationRunning = false;
+
+  // Whatever the owner's edits currently say - see #setSeedProvider.
+  refreshSeedFromProvider();
+
   ceelo::GeometryDescriptor gd;
   try
   {
@@ -1113,6 +1149,7 @@ void MakeMcResponseForDrf::startGeneration()
 
     m_status->setText( WString::tr("mmr-status-transfer-building") );
 
+    m_generationRunning = true;
     wApp->enableUpdates( true );
     WServer::instance()->ioService().boost::asio::io_service::post( worker );
     return;
@@ -1217,6 +1254,7 @@ void MakeMcResponseForDrf::startGeneration()
   m_progress->show();
   m_status->setText( WString::tr("mmr-status-running") );
 
+  m_generationRunning = true;
   wApp->enableUpdates( true );
 
   WServer::instance()->ioService().boost::asio::io_service::post( worker );
@@ -1255,6 +1293,8 @@ void MakeMcResponseForDrf::handleGenerationFinished(
 
   if( generation_id != m_generationId )
     return;  //stale run - a newer run/state owns the UI
+
+  m_generationRunning = false;
 
   m_generate->setHidden( m_hideGenerateButton || (selectedMethod() == Method::CurveTransfer) );
   m_generate->setEnabled( m_geometry->generationReady() );
@@ -1340,6 +1380,18 @@ void MakeMcResponseForDrf::acceptResponse()
       return;
     }
   }//if( !new_det->isValid() )
+
+  // Record the geometry the user described, as well as the response built from it.  The response
+  //  carries its own descriptor, but detaching it later (Modify Detector Response -> Flat Disk) must
+  //  not leave the detector with no statement of what it physically is.
+  try
+  {
+    if( m_geometry && m_geometry->generationReady() )
+      new_det->setGeometry( make_shared<const ceelo::GeometryDescriptor>( m_geometry->toDescriptor() ) );
+  }catch( std::exception & )
+  {
+    //an incomplete form; the response's own descriptor is still there
+  }
 
   new_det->setCeeloResponse( m_result );
 

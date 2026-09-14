@@ -41,6 +41,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -1255,6 +1256,19 @@ EffFitResult performEfficiencyFit( const std::vector<EffFitPoint> &data, const i
       result.covRowMajor[i] = static_cast<float>( result.birgeScale * cov[i] );
     for( size_t k = 0; k < ncoef; ++k )
       result.uncerts[k] = static_cast<float>( std::sqrt( std::max( 0.0, result.birgeScale * cov[k*ncoef + k] ) ) );
+
+    // Decide here, where the one warning channel is, whether the covariance can actually be stored -
+    //  DetectorEfficiencyUncert refuses one that describes no possible set of errors, and downstream
+    //  (MakeDrfCalc::assembleDrf) that refusal would drop it with nothing said to the user.
+    const vector<double> cov_dbl( begin(result.covRowMajor), end(result.covRowMajor) );
+    string why;
+    if( !DetectorEfficiencyUncert::covarianceIsUsable( cov_dbl, &why ) )
+    {
+      result.covRowMajor.clear();
+      result.warnings += "The efficiency fit's coefficient covariance could not be used (" + why
+                         + "), so the equation will carry only the uncertainty the measured points"
+                           " imply. ";
+    }
   }//if( cov.size() == ncoef*ncoef )
   
   return result;
