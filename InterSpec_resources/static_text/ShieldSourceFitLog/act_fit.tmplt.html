@@ -405,7 +405,7 @@ Sources:
         <th>Det. Eff</th>
         <th>Pred.</th>
         <th>&sigma; off</th>
-{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.DrfUncertaintyMethodName == "Likelihood" %}
         <th>DRF eff. uncert.</th>
 {% endif %}
 {% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
@@ -433,7 +433,7 @@ Sources:
         <td>{{ printCompact(peak.DetectorEff,5) }}</td>
         <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
         <td>{{ printFixed(peak.PredictedNumSigmaOff,3) }}</td>
-{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.DrfUncertaintyMethodName == "Likelihood" %}
         <td>{% if existsIn(peak,"DrfEffFracUncert") %}{{ peak.DrfEffFracUncertPercentStr }}%{% endif %}</td>
 {% endif %}
 {% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}

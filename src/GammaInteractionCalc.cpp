@@ -5409,8 +5409,12 @@ vector<PeakResultPlotInfo>
   }//if( log_info )
   
   
+  // Only state 3 (Likelihood) feeds the efficiency uncertainty into the residuals, so the per-peak
+  //  pulls (numSigmaOff) reflect the correlated band and sit coherently off-zero.  States None and
+  //  ErrorPropagation leave the pulls statistics-only (straddling zero) - ErrorPropagation widens
+  //  only the reported parameter uncertainties, post-fit.
   vector<double> eff_frac_uncerts;
-  if( m_options.account_for_drf_uncert )
+  if( m_options.drf_uncert_method == ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood )
     eff_frac_uncerts = peakEffFracUncerts();
 
   vector<pair<double,DetectorPeakResponse::EffFlag>> eff_flags;

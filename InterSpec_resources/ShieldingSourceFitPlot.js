@@ -35,7 +35,8 @@ ShieldingSourceFitPlot = function (elem, options) {
     ttSourcesContributing: (typeof o.ttSourcesContributing === "string") ? o.ttSourcesContributing : "Sources contributing:",
     ttCountsAbbrev:        (typeof o.ttCountsAbbrev === "string") ? o.ttCountsAbbrev : "cnts",
     ttBrAbbrev:            (typeof o.ttBrAbbrev === "string") ? o.ttBrAbbrev : "br",
-    devLabel:              (typeof o.devLabel === "string") ? o.devLabel : "<dev>"
+    devLabel:              (typeof o.devLabel === "string") ? o.devLabel : "<dev>",
+    effCorrNote:           (typeof o.effCorrNote === "string") ? o.effCorrNote : "Det. eff. correlations bias residuals ~{1}σ from zero — see Help for why."
   };
 
   // Set the dimensions of the canvas / graph
@@ -177,7 +178,7 @@ ShieldingSourceFitPlot.prototype.setLocalizations = function( locStrings ) {
     "ttNumObserved", "ttNumExpected", "ttNumSigmaOff", "ttObsOverExp",
     "ttNumForeground", "ttNumBackground",
     "ttSourcesContributing", "ttCountsAbbrev", "ttBrAbbrev",
-    "devLabel"
+    "devLabel", "effCorrNote"
   ];
 
   for( const key of keys ) {
@@ -588,6 +589,27 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
     .style("text-anchor", "end")
     .style("font-size", "12px")
     .text(this.displayStrings.devLabel + "=" + dev.toFixed(2) + " σ");
+
+  // In Chi mode, when the correlated detector-efficiency band entered the fit (state 3), the server
+  //  sends eff_corr_bias_sigma: the signed mean of the pulls, which for a correlated band is the one
+  //  common efficiency-driven offset shared by every peak.  Annotate it (below the <dev> label) so a
+  //  user seeing pulls that sit coherently off-zero understands it is that shared shift, not a misfit.
+  //  Absent (states None/ErrorPropagation, or the live-edit chart) => no note.
+  this.svg.selectAll(".effcorrtext").remove();
+  if( this.showChi
+      && (typeof data.eff_corr_bias_sigma === 'number')
+      && isFinite(data.eff_corr_bias_sigma)
+      && (Math.abs(data.eff_corr_bias_sigma) > 0.1) ) {
+    const note = this.displayStrings.effCorrNote.replace( "{1}", Math.abs(data.eff_corr_bias_sigma).toFixed(1) );
+    this.svg.append("text")
+      .attr("class", "effcorrtext")
+      .attr("x", parentWidth - 10)
+      .attr("y", 31)
+      .style("text-anchor", "end")
+      .style("font-size", "11px")
+      .style("fill", "#a0a0a0")
+      .text( note );
+  }
 };//ShieldingSourceFitPlot.prototype.setData
 
 

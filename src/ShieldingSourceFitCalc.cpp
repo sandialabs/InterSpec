@@ -1874,8 +1874,17 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  // The efficiency-uncertainty handling used to be a single bool `account_for_drf_uncert`
+  //  serialized as "AccountForDrfUncert".  It is now the 3-state `drf_uncert_method`, written as
+  //  the enum int under "DrfUncertaintyMethod".  We ALSO keep writing the legacy bool node
+  //  (on == not-None) so an older build reading a newer file still gets a sensible on/off.
+  name = "DrfUncertaintyMethod";
+  value = doc->allocate_string( std::to_string( static_cast<int>(drf_uncert_method) ).c_str() );
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "AccountForDrfUncert";
-  value = account_for_drf_uncert ? "1" : "0";
+  value = (drf_uncert_method != DrfUncertaintyMethod::None) ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
@@ -1949,9 +1958,27 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   if( node )
     compute_effective_shielding = boolval( node );
 
-  node = XML_FIRST_NODE( parent_node, "AccountForDrfUncert" );
+  // Efficiency-uncertainty handling: prefer the new 3-state "DrfUncertaintyMethod" enum node;
+  //  fall back to the legacy bool "AccountForDrfUncert" (1 -> ErrorPropagation, 0 -> None) for
+  //  files written before this became an enum.  Absent both keeps the struct default
+  //  (ErrorPropagation - `deSerialize` reset the struct to defaults above).
+  node = XML_FIRST_NODE( parent_node, "DrfUncertaintyMethod" );
   if( node )
-    account_for_drf_uncert = boolval( node );  //absent in older XML -> keeps the default (true)
+  {
+    const string val = SpecUtils::xml_value_str( node );
+    int method = 0;
+    if( !(stringstream(val) >> method)
+        || (method < static_cast<int>(DrfUncertaintyMethod::None))
+        || (method > static_cast<int>(DrfUncertaintyMethod::Likelihood)) )
+      throw runtime_error( "ShieldingSourceFitOptions invalid DrfUncertaintyMethod: '" + val + "'" );
+    drf_uncert_method = static_cast<DrfUncertaintyMethod>( method );
+  }else
+  {
+    node = XML_FIRST_NODE( parent_node, "AccountForDrfUncert" );
+    if( node )
+      drf_uncert_method = boolval( node ) ? DrfUncertaintyMethod::ErrorPropagation
+                                          : DrfUncertaintyMethod::None;
+  }//if( new enum node ) / else ( legacy bool node )
 
   node = XML_FIRST_NODE( parent_node, "CorrectForCascadeSumming" );
   if( node )
@@ -2011,8 +2038,8 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
   if( lhs.compute_effective_shielding != rhs.compute_effective_shielding )
     throw runtime_error( "ShieldingSourceFitOptions LHS compute_effective_shielding != RHS compute_effective_shielding" );
 
-  if( lhs.account_for_drf_uncert != rhs.account_for_drf_uncert )
-    throw runtime_error( "ShieldingSourceFitOptions LHS account_for_drf_uncert != RHS account_for_drf_uncert" );
+  if( lhs.drf_uncert_method != rhs.drf_uncert_method )
+    throw runtime_error( "ShieldingSourceFitOptions LHS drf_uncert_method != RHS drf_uncert_method" );
 
   if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
     throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
@@ -2199,6 +2226,19 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
       break;
     }
   }//for( size_t i = 0; i < nmaterials; ++i )
+
+  // Stale detector-efficiency-uncertainty selection: the user asked to propagate or fit with the
+  //  efficiency uncertainty, but the DRF/peaks provided no efficiency covariance, so the fit ran
+  //  statistics-only.  The GUI hides the control when the current DRF has no uncertainty, but a
+  //  restored session, a batch exemplar, or a DRF swapped after the choice was made can all reach
+  //  here with a non-None method and an empty band - surface it rather than silently ignoring it.
+  if( (chi2Fcn.options().drf_uncert_method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None)
+      && chi2Fcn.peakEffFracCovariance().empty() )
+  {
+    results.warnings.push_back( "Detector-efficiency uncertainty was requested, but the detector"
+      " response carries no efficiency-uncertainty information for these peaks; the fit used the"
+      " counting (statistical) uncertainty only." );
+  }
 
   // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
   //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
@@ -2645,7 +2685,7 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     //  per-peak pulls: a whitened residual mixes peaks in Cholesky order, so it is not a property of
     //  any one peak - the chart and ShieldSourcePullTrend show the marginal pull instead
     //  (see `expected_observed_chis`).
-    if( chi2Fcn->options().account_for_drf_uncert )
+    if( chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood )
     {
       vector<double> obs, obs_uncert;
       assemble_included_observed( *chi2Fcn, obs, obs_uncert );
@@ -2666,7 +2706,7 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
         cov_counts = obs;
 
       results->efficiency_whitening = compute_efficiency_whitening( cov_counts, obs_uncert, eff_cov, 1.0e-10 );
-    }//if( account_for_drf_uncert )
+    }//if( drf_uncert_method == Likelihood )
 
     auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
     const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
@@ -4018,13 +4058,16 @@ namespace
     //  #compute_efficiency_whitening / Peelle's Pertinent Puzzle) - supplied via
     //  `cov_counts`; absent that we bootstrap from `observed`.  On numerical
     //  trouble (or no covariance) we silently keep the plain diagonal residual.
-    if( chi2Fcn->options().account_for_drf_uncert )
+    //  Only state 3 (Likelihood) folds the correlated band into the fit; states None and
+    //  ErrorPropagation solve stat-only here (ErrorPropagation's uncertainty inflation is a
+    //  post-fit delta method that re-invokes this solver, relying on it being stat-only).
+    if( chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood )
     {
       const std::vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
       const std::vector<double> &cnt = (cov_counts && (cov_counts->size() == observed.size()))
                                        ? *cov_counts : observed;
       functor->m_whiten = compute_efficiency_whitening( cnt, observed_uncert, eff_cov, 1.0e-10 );
-    }//if( account_for_drf_uncert )
+    }//if( drf_uncert_method == Likelihood )
 
     // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
     //  the functor maps them to the bounded physical values - see #BoundTransform.
@@ -4479,9 +4522,10 @@ namespace
                            cov_counts );
     };
 
-    // Iterate only when the correlated efficiency covariance actually enters the fit; otherwise a
-    //  single solve is bit-identical to the historical path (and avoids needless re-solves).
-    const bool do_iterate = chi2Fcn->options().account_for_drf_uncert
+    // Iterate only when the correlated efficiency covariance actually enters the fit (state 3);
+    //  otherwise a single solve is bit-identical to the historical path (and avoids needless
+    //  re-solves).  States None/ErrorPropagation never iterate.
+    const bool do_iterate = (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood)
                             && !chi2Fcn->peakEffFracCovariance().empty();
     if( !do_iterate )
       return solve_once( start_full, nullptr );
@@ -4715,7 +4759,8 @@ void fit_model_ceres( const std::string wtsession,
         //  converged point (finer quadrature).  A single solve suffices - the polish only refines
         //  quadrature, so re-iterating the covariance would not move the answer.
         vector<double> polish_cov_counts;
-        if( chi2Fcn->options().account_for_drf_uncert && !chi2Fcn->peakEffFracCovariance().empty() )
+        if( (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood)
+            && !chi2Fcn->peakEffFracCovariance().empty() )
         {
           try
           {
@@ -4761,7 +4806,8 @@ void fit_model_ceres( const std::string wtsession,
       //  (choosing the AN is a chi2 comparison) while the efficiency term stays expected-based.  Off
       //  (or no DRF covariance) -> empty -> the scan solves fall back to the plain diagonal residual.
       vector<double> cov_counts_fixed;
-      if( chi2Fcn->options().account_for_drf_uncert && !chi2Fcn->peakEffFracCovariance().empty() )
+      if( (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::Likelihood)
+          && !chi2Fcn->peakEffFracCovariance().empty() )
       {
         try
         {
@@ -4935,6 +4981,139 @@ void fit_model_ceres( const std::string wtsession,
     }
     for( const auto &index_error : an_scan_errors )
       errors[index_error.first] = index_error.second;
+
+    // WI-4 (state 2, ErrorPropagation): inflate the reported parameter uncertainties by the
+    //  detector-efficiency band WITHOUT moving the central values - results->paramValues stays
+    //  fit_full, so the answer is bit-identical to the None/statistics-only fit.  Numeric eigen-mode
+    //  delta (sandwich) method: decompose the peak-space fractional efficiency covariance C into its
+    //  orthonormal modes, take a symmetric central difference of the parameters along each mode
+    //  (+/- sqrt(lambda_m)*v_m applied to the observed counts) via the SAME statistics-only WLS
+    //  (run_ceres_solve whitens only in Likelihood, so these re-solves carry no efficiency term), and
+    //  accumulate the parameter scatter
+    //    V_extra = sum_m (dtheta_m)(dtheta_m)^T ~= J C J^T,  dtheta_m = 0.5*(theta_+m - theta_-m)
+    //  to first order.  A rank-1 fully-correlated band sigma_f therefore maps ~1:1 onto activity
+    //  (extra_sigma ~ sigma_f*theta), not sigma_f/sqrt(Npeaks).  Only the diagonal (paramErrors) is
+    //  touched; scanned-AN and constant entries are left as-is.
+    if( (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::ErrorPropagation)
+        && !final_var_indices.empty() )
+    {
+      const vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
+      const size_t n = observed.size();
+      if( (n > 0) && (eff_cov.size() == n*n) )
+      {
+        try
+        {
+          Eigen::MatrixXd C( n, n );
+          for( size_t r = 0; r < n; ++r )
+            for( size_t c = 0; c < n; ++c )
+              C(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)) = eff_cov[r*n + c];
+
+          Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig( C );
+          if( eig.info() == Eigen::Success )
+          {
+            const Eigen::VectorXd &evals = eig.eigenvalues();     //ascending
+            const Eigen::MatrixXd &evecs = eig.eigenvectors();    //column m <-> evals[m]
+
+            double total_var = 0.0;
+            for( Eigen::Index m = 0; m < evals.size(); ++m )
+              total_var += std::max( 0.0, evals[m] );
+
+            vector<double> extra_var( final_var_indices.size(), 0.0 );
+            const size_t sm_max_delta_modes = 8;   //cost cap; a correlated band is ~rank 1
+            size_t used_modes = 0;
+            double captured = 0.0;
+
+            //Largest eigenvalue first; take the top modes covering >=99% of the trace variance.
+            for( Eigen::Index m = evals.size() - 1;
+                 (m >= 0) && (used_modes < sm_max_delta_modes); --m )
+            {
+              const double lambda = evals[m];
+              if( lambda <= 1.0e-12*std::max(1.0,total_var) )
+                break;   //remaining (smaller) modes are negligible / non-positive
+              if( (total_var > 0.0) && (captured >= 0.99*total_var) )
+                break;   //already covered enough of the variance
+
+              // Perturb observed counts along this mode and re-solve the stat-only WLS.  A (1+delta_i)
+              //  efficiency scaling at peak i maps exactly onto observed_i -> observed_i/(1+delta_i)
+              //  (uncertainty scaled the same way, so both sides of the residual divide by 1+delta_i).
+              //  We take a SYMMETRIC central difference (+delta and -delta): the response A(delta) is
+              //  convex, so a one-sided step o/(1+delta) samples the secant and under-reports the slope
+              //  by ~1/(1+sigma_f) (e.g. a 10% band would give 9.1%, anti-conservatively), whereas the
+              //  centered estimate cancels that leading curvature and recovers the delta-method target
+              //  extra_sigma ~ sigma_f*theta.  Each side is usable only where its per-peak scale factor
+              //  stays safely positive; if one side is unusable we fall back to a one-sided difference.
+              const double sqrt_lambda = std::sqrt( lambda );
+              vector<double> obs_plus = observed, unc_plus = observed_uncert;
+              vector<double> obs_minus = observed, unc_minus = observed_uncert;
+              bool plus_ok = true, minus_ok = true;
+              for( size_t i = 0; i < n; ++i )
+              {
+                const double di = sqrt_lambda*evecs(static_cast<Eigen::Index>(i),m);
+                const double denom_plus = 1.0 + di, denom_minus = 1.0 - di;
+                if( denom_plus <= 1.0e-3 )    //band wider than ~100% at this peak
+                  plus_ok = false;
+                else { obs_plus[i]  = observed[i]/denom_plus;   unc_plus[i]  = observed_uncert[i]/denom_plus; }
+                if( denom_minus <= 1.0e-3 )
+                  minus_ok = false;
+                else { obs_minus[i] = observed[i]/denom_minus;  unc_minus[i] = observed_uncert[i]/denom_minus; }
+              }//for( each peak )
+
+              if( !plus_ok && !minus_ok )
+                continue;
+
+              try
+              {
+                vector<double> plus_full, minus_full;
+                if( plus_ok )
+                  run_ceres_solve( chi2Fcn, par_defs, fit_full, final_var_indices,
+                                   obs_plus, unc_plus, plus_full,
+                                   nullptr, nullptr, &num_evals, nullptr, nullptr );
+                if( minus_ok )
+                  run_ceres_solve( chi2Fcn, par_defs, fit_full, final_var_indices,
+                                   obs_minus, unc_minus, minus_full,
+                                   nullptr, nullptr, &num_evals, nullptr, nullptr );
+
+                const bool have_plus = (plus_full.size() == fit_full.size());
+                const bool have_minus = (minus_full.size() == fit_full.size());
+                if( have_plus || have_minus )
+                {
+                  for( size_t i = 0; i < final_var_indices.size(); ++i )
+                  {
+                    const size_t idx = final_var_indices[i];
+                    double d;
+                    if( have_plus && have_minus )
+                      d = 0.5*(plus_full[idx] - minus_full[idx]);   //centered: cancels leading curvature
+                    else if( have_plus )
+                      d = plus_full[idx] - fit_full[idx];           //fallback: one-sided (+)
+                    else
+                      d = fit_full[idx] - minus_full[idx];          //fallback: one-sided (-)
+                    extra_var[i] += d*d;
+                  }
+                  captured += lambda;
+                  ++used_modes;
+                }
+              }catch( std::exception & )
+              {
+                //A failed mode is simply skipped - it just omits that (small) contribution.
+              }
+
+              if( chi2Fcn->currentCancelStatus()
+                  != GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::NotCanceled )
+                break;
+            }//for( each eigenmode, largest first )
+
+            for( size_t i = 0; i < final_var_indices.size(); ++i )
+            {
+              const size_t idx = final_var_indices[i];
+              errors[idx] = std::sqrt( errors[idx]*errors[idx] + extra_var[i] );
+            }
+          }//if( eigensolver succeeded )
+        }catch( std::exception & )
+        {
+          //Any failure leaves the statistics-only errors untouched (conservative).
+        }
+      }//if( covariance is square and non-empty )
+    }//if( ErrorPropagation && have varied params )
 
     std::lock_guard<std::mutex> lock( results->m_mutex );
 

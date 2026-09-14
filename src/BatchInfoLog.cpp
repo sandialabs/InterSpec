@@ -826,7 +826,23 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     fit_options["PhotopeakClusterSigma"]    = options.photopeak_cluster_sigma;
     fit_options["BackgroundPeakSubtract"]   = options.background_peak_subtract;
     fit_options["ElementNuclidesSameAge"]   = options.same_age_isotopes;
-    fit_options["AccountForDrfUncert"]      = options.account_for_drf_uncert;
+    // Detector-efficiency-uncertainty handling is now a 3-state enum (`drf_uncert_method`).  Emit
+    //  the enum int and a human-readable name for reports that distinguish the states, and KEEP the
+    //  legacy boolean `AccountForDrfUncert` ( = not-None ) so existing report templates that gate a
+    //  "DRF eff. uncert." column on it keep working unchanged (states 2 and 3 both show it).
+    {
+      const ShieldingSourceFitCalc::DrfUncertaintyMethod method = options.drf_uncert_method;
+      const char *method_name = "None";
+      switch( method )
+      {
+        case ShieldingSourceFitCalc::DrfUncertaintyMethod::None:             method_name = "None";             break;
+        case ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation: method_name = "ErrorPropagation"; break;
+        case ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood:       method_name = "Likelihood";       break;
+      }//switch( method )
+      fit_options["DrfUncertaintyMethod"]     = static_cast<int>( method );
+      fit_options["DrfUncertaintyMethodName"] = method_name;
+      fit_options["AccountForDrfUncert"]      = (method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None);
+    }
     fit_options["CorrectForCascadeSumming"] = options.correct_for_cascade_summing;
   }//void add_act_shield_fit_options_to_json(...)
   
@@ -889,8 +905,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     peak_json["DetectorEff"] = peak.detEff;
 
     // Fractional 1-sigma DRF efficiency uncertainty at this energy; present
-    //  only when the `account_for_drf_uncert` option was on and the DRF has
-    //  uncertainty info (SignalCountsUncert then includes this component).
+    //  only when `drf_uncert_method` was `Likelihood` (the only state that folds
+    //  the band into the per-peak residual) and the DRF has uncertainty info
+    //  (SignalCountsUncert then includes this component).
     if( peak.drfEffFracUncert > 0.0 )
     {
       peak_json["DrfEffFracUncert"] = peak.drfEffFracUncert;

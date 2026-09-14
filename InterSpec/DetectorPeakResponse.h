@@ -761,7 +761,9 @@ public:
    variance + regime model floors - strongly correlated between nearby
    energies), evaluated at a far-field on-axis geometry; use the
    (theta, distance) overload when the actual measurement geometry is known.
-   Otherwise this is `efficiencyUncert()->efficiencyFracCovariance(energies)`.
+   Precedence (mutually exclusive; not summed): CeeLo -> fit-coefficient
+   covariance (see #coefCovFracCovariance) -> node-covariance path
+   (`efficiencyUncert()->efficiencyFracCovariance(energies)`).
    */
   std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies ) const;
 
@@ -1237,7 +1239,18 @@ public:
 
   static float akimaInterpolate( const float energy,
                                 const std::vector<EnergyEfficiencyPair> &xy );
-  
+
+  /** Shared by both #efficiencyFracCovariance overloads: if the attached
+   efficiency uncertainty carries a fit-coefficient covariance (M*M, row-major)
+   and the curve is a kExpOfLogPowerSeries with a matching coefficient count,
+   propagate it to the requested energies via the log-power design matrix:
+     B[i][k] = pow( log( energies[i] / efficiencyEnergyUnits() ), k ),  k=0..M-1
+   and return B*C_coef*B^T (row-major N*N).  Returns an empty vector when there
+   is no usable coefficient covariance, so callers can fall back to the node
+   path.  Energies are in keV.
+   */
+  std::vector<double> coefCovFracCovariance( const std::vector<double> &energies ) const;
+
   //20190525: Why is m_user a raw index, and not a Wt::Dbo::ptr<InterSpecUser>?
   //          Maybe for database upgrade so Wt::Dbo doesnt need a reference to
   //          InterSpecUser?

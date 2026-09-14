@@ -188,7 +188,8 @@ std::string ShieldingSourceFitPlot::localizedStringsJson()
        << "\"ttSourcesContributing\": " << WString::tr("x2g-tt-sources-contributing").jsStringLiteral() << ","
        << "\"ttCountsAbbrev\": " << WString::tr("x2g-tt-counts-abbrev").jsStringLiteral() << ","
        << "\"ttBrAbbrev\": " << WString::tr("x2g-tt-br-abbrev").jsStringLiteral() << ","
-       << "\"devLabel\": " << WString::tr("x2g-dev-label").jsStringLiteral()
+       << "\"devLabel\": " << WString::tr("x2g-dev-label").jsStringLiteral() << ","
+       << "\"effCorrNote\": " << WString::tr("x2g-eff-corr-note").jsStringLiteral()
        << "}";
   return json.str();
 }
@@ -319,6 +320,21 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
   if( (results.successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final)
       && (peak_comparisons->size() > 0) && std::isfinite(results.chi2) && (results.chi2 > 0.0) )
     json_obj["dev"] = std::sqrt( results.chi2 / static_cast<double>(peak_comparisons->size()) );
+
+  // WI-5: In state 3 (Likelihood) the fit shares one small common efficiency adjustment across every
+  //  peak, so a nonzero adjustment shifts every residual the same way - the pulls sit coherently
+  //  off-zero even when the model fits well.  `efficiency_whitening` is non-empty ONLY when the
+  //  correlated band actually entered the fit (Likelihood + a real covariance); it is empty in states
+  //  None/ErrorPropagation and on the live-edit stack `ModelFitResults`, which then produces no note.
+  //  Report the signed mean of the plotted (marginal) pulls so the chart can annotate that coherent
+  //  shift; for a fully-correlated band this mean is the common offset.
+  if( !results.efficiency_whitening.empty() && (npoints > 0) )
+  {
+    double sum_chi = 0.0;
+    for( size_t i = 0; i < npoints; ++i )
+      sum_chi += fin( (*peak_comparisons)[i].numSigmaOff );
+    json_obj["eff_corr_bias_sigma"] = sum_chi / static_cast<double>( npoints );
+  }//if( the correlated efficiency band entered the fit )
 
   return json_obj.dump();
 }

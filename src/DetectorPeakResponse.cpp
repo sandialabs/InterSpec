@@ -903,6 +903,71 @@ void DetectorPeakResponse::setEfficiencyUncert( shared_ptr<const DetectorEfficie
 }//setEfficiencyUncert(...)
 
 
+vector<double> DetectorPeakResponse::coefCovFracCovariance( const vector<double> &energies ) const
+{
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
+  if( !uncert || !m_efficiency )
+    return {};
+
+  const vector<float> &coefCov = uncert->coefficientCovariance();
+  if( coefCov.empty() )
+    return {};
+
+  // Only exp-of-log-power-series curves have coefficients that this design matrix matches.
+  if( efficiencyFcnType() != kExpOfLogPowerSeries )
+    return {};
+
+  const vector<float> &coefs = efficiencyExpOfLogsCoeffs();
+  const size_t M = coefs.size();
+  if( (M == 0) || (coefCov.size() != M*M) )
+    return {};   //covariance does not correspond to this curve's coefficients
+
+  const double energyUnits = static_cast<double>( efficiencyEnergyUnits() );
+  if( (energyUnits <= 0.0) || IsNan(energyUnits) || IsInf(energyUnits) )
+    return {};
+
+  const size_t n = energies.size();
+
+  // B[i][k] = pow( log( energies[i]/energyUnits ), k ), matching how the curve evaluates
+  //  (see #expOfLogPowerSeriesEfficiency: x = energy/energyUnits, then log(x)).  Energies are in keV.
+  vector<vector<double>> B( n, vector<double>( M, 0.0 ) );
+  for( size_t i = 0; i < n; ++i )
+  {
+    const double x = energies[i] / energyUnits;
+    if( x <= 0.0 )
+      return {};   //cannot take the log; fall back to the node path
+    const double lnx = std::log( x );
+    double xpow = 1.0;
+    for( size_t k = 0; k < M; ++k )
+    {
+      B[i][k] = xpow;
+      xpow *= lnx;
+    }
+  }//for( each energy )
+
+  // Return B * C_coef * B^T (row-major n*n).  This is the fractional-efficiency covariance to first
+  //  order: d(ln eff)/d(coef_k) = B[i][k], and the fractional efficiency error is ~ d(ln eff).
+  vector<double> result( n*n, 0.0 );
+  for( size_t i = 0; i < n; ++i )
+  {
+    for( size_t j = 0; j < n; ++j )
+    {
+      double sum = 0.0;
+      for( size_t a = 0; a < M; ++a )
+      {
+        double bc = 0.0;   //(C_coef * B[j]^T)[a] = sum_b C[a][b]*B[j][b]
+        for( size_t b = 0; b < M; ++b )
+          bc += static_cast<double>( coefCov[a*M + b] ) * B[j][b];
+        sum += B[i][a] * bc;
+      }
+      result[i*n + j] = sum;
+    }//for( j )
+  }//for( i )
+
+  return result;
+}//coefCovFracCovariance(...)
+
+
 vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies ) const
 {
   if( m_ceeloResponse )
@@ -912,6 +977,12 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
     const double d_cm = std::max( 100.0, 20.0 * m_ceeloResponse->transverse_half_extent() );
     return m_ceeloResponse->frac_covariance( energies, 0.0, d_cm );
   }
+
+  // A stored fit-coefficient covariance (e.g. from XML deserialization) takes precedence over the
+  //  node-covariance path; the two describe the same thing, so we never sum them.
+  const vector<double> coefCov = coefCovFracCovariance( energies );
+  if( !coefCov.empty() )
+    return coefCov;
 
   const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
   if( !uncert )
@@ -933,6 +1004,11 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
                                                             distance / PhysicalUnits::cm ).norm();
     return m_ceeloResponse->frac_covariance( energies, theta, d_cm );
   }
+
+  // The legacy DetectorEfficiencyUncert path ignores the geometry; coefficient covariance likewise.
+  const vector<double> coefCov = coefCovFracCovariance( energies );
+  if( !coefCov.empty() )
+    return coefCov;
 
   const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
   if( !uncert )
