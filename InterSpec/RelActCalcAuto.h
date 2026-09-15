@@ -2383,10 +2383,61 @@ struct RelActAutoSolution
      slab is EXACTLY equivalent - homogeneous slab attenuation composes - so this being true there
      means "consistent with a single homogeneous object/enrichment".) */
     bool single_curve_adequate = false;
+
+    /** The merged fit's own relative activities, i.e. the composition of the single material that
+     best describes the whole spectrum.  Kept because `TiedEnrichmentComparison` needs a candidate
+     COMMON composition to tie the curves at, and this is the only estimate of one that does not
+     come from the multi-curve fit's own (possibly degenerate) split - which is exactly the case
+     where the tied test matters.  Empty when the merged fit did not succeed. */
+    std::vector<NuclideRelAct> merged_activities;
   };//struct MergedCurveComparison
 
   /** Only attempted for multi-curve fits that reach Status::Success; unset otherwise. */
   std::optional<MergedCurveComparison> m_merged_single_curve_comparison;
+
+  /** Result of re-fitting the SAME multi-curve model with the curves' enrichments tied to one
+   common value - the direct likelihood-ratio test of "do these objects have different
+   compositions?", and the primary detection statistic when the curves share an element.
+
+   Why this exists alongside `MergedCurveComparison`.  The merged null collapses the curves to a
+   single rel-eff curve, so it forces one curve SHAPE and one COMPOSITION at the same time.  The
+   two-curve alternative then wins partly just by having a second efficiency shape available to
+   absorb peak-shape / continuum / efficiency model error, and at high statistics that absorption
+   dominates: on the 2026-09 240-min stacked grid the merged Δχ² of physically IDENTICAL disks ran
+   7, 144, 230, 377 as the count rate rose, against a 3-sigma bar of ~15.  The tied null keeps every
+   curve, every shielding and every shape parameter the alternative has and constrains only the
+   enrichment, so both models absorb the same model error and what is left is the composition
+   difference.  Measured on the same four identical-disk cases, the tied Δχ² was 2.9, −1.5, 95, 125,
+   while a genuinely heterogeneous 3.3/90 pair stayed at 9687.
+
+   Which isotopes are tied: exactly those whose per-curve mass fraction the data actually
+   determines on EVERY curve (`MassFractionCovarianceQuality::Usable`).  Tying the rest is actively
+   harmful - U234's fitted per-curve values differ by eight orders of magnitude because nothing
+   constrains them, so pinning it punishes the null for a parameter the data never measured (tying
+   all isotopics gave 123.5 where tying only U235/U238 gave −1.5 on the same spectrum). */
+  struct TiedEnrichmentComparison
+  {
+    bool valid = false;      ///< tied model built, solved to Success, and chi2/DOF comparable
+    std::string message;     ///< why not valid, and/or notes (which isotopes were tied, and at what)
+    double free_chi2_data = 0.0, tied_chi2_data = 0.0;
+    size_t free_dof_data = 0, tied_dof_data = 0;
+    double delta_chi2 = 0.0;
+    int extra_dof_of_free = 0;
+
+    /** The sources whose cross-curve ratio was tied, and the controlling source they were tied to. */
+    std::vector<SrcVariant> tied_sources;
+    SrcVariant controlling_source;
+
+    /** True when `delta_chi2` is within statistical expectation of the free model's extra effective
+     parameters, i.e. one common enrichment describes the data about as well.  Same
+     `max(1, chi2/dof)` model-error scaling as `MergedCurveComparison::single_curve_adequate`; set by
+     `finalize_curve_separation_status()` and only meaningful when `valid`. */
+    bool common_enrichment_adequate = false;
+  };//struct TiedEnrichmentComparison
+
+  /** Only attempted for multi-curve fits that reach Status::Success and share a determined element
+   across curves; unset otherwise. */
+  std::optional<TiedEnrichmentComparison> m_tied_enrichment_comparison;
 
   /** Computes `m_cross_curve_correlations`/`m_cross_curve_max_corr`, `m_evidence_purity`, and
    `m_enrichment_diff_z` from the already-filled `m_covariance`, `m_obs_eff_for_each_curve`, and
@@ -2406,6 +2457,11 @@ struct RelActAutoSolution
   enum class CurveDistinctBasis : int
   {
     None,                   ///< distinctness not established by the data
+    /** The tied-enrichment likelihood ratio rejected one common composition (3-sigma-scaled bar).
+     Preferred over every tier below whenever `m_tied_enrichment_comparison` is valid: it is the
+     only one of them that isolates the composition difference from model error - see
+     `TiedEnrichmentComparison`. */
+    TiedEnrichment,
     ZScore,                 ///< a reliable enrichment-difference z >= 3 (not overruled by the merged fit)
     ZCorroboratedByMerged,  ///< marginal z (>= 1.5) + single-curve fit rejected at the 3-sigma-scaled bar
     MergedOnly,             ///< single-curve fit decisively worse (5-sigma-scaled bar); z table silent or absent
@@ -2430,9 +2486,14 @@ struct RelActAutoSolution
   bool curves_detected_distinct() const;
 
   /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
-   single-material outcome does not read as an error: "Separated", "Distinct curves - see
-   per-nuclide notes", "Poorly separated", "Not distinguished (consistent with a single curve)", or
-   "NotApplicable". */
+   single-material outcome does not read as an error, and so that the label always states what was
+   CONCLUDED rather than only how well-determined the split is: "Distinct curves - per-curve values
+   usable", "Distinct curves - see per-nuclide notes", "Not distinguished (per-curve values still
+   individually anchored)", "Poorly separated", "Not distinguished (consistent with a single
+   curve)", or "NotApplicable".
+
+   Both `WellSeparated` labels describe the same status - the per-curve values are individually
+   anchored either way - and differ only in whether `curves_detected_distinct()` fired. */
   const char *curve_separation_display() const;
 
   /** Display name for a rel-eff curve: the user-assigned quoted name (e.g. "'Inner'") when one is

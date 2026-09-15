@@ -434,9 +434,33 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
         // Was not a URI
       }
     }//if( was a small file ) / else
-    
-    
-    
+
+
+    // Try a stand-alone `<DetectorPeakResponse>` XML file (e.g. exported from InterSpec, or a
+    //  MakeDrf result).  Not size-gated, unlike the URI path above, so large XML DRFs load here.
+    //  The `first_node` check rules out non-DRF files, so this wont mis-claim a CSV/ECC/etc.
+    try
+    {
+      vector<char> data;
+      SpecUtils::load_file_data( drf_file.c_str(), data );
+      if( !data.empty() )
+      {
+        rapidxml::xml_document<char> doc;
+        doc.parse<rapidxml::parse_trim_whitespace>( &data[0] );
+        const rapidxml::xml_node<char> *root = doc.first_node( "DetectorPeakResponse" );
+        if( root )
+        {
+          auto drf = make_shared<DetectorPeakResponse>();
+          drf->fromXml( root );
+          return drf;
+        }
+      }//if( !data.empty() )
+    }catch( std::exception & )
+    {
+      // Was not a stand-alone `<DetectorPeakResponse>` XML file
+    }
+
+
     // Try a CSV/TSV file that may have multiple DRF in it
     fstream input( drf_file.c_str(), ios::binary | ios::in );
     if( !input )

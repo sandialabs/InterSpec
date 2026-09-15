@@ -779,7 +779,10 @@ BOOST_AUTO_TEST_CASE( marginal_z_corroborated_by_merged_rejection_is_detected )
   BOOST_CHECK( sol.curves_detected_distinct() );
   BOOST_CHECK( sol.m_curve_separation_status
                == RelActAutoSolution::CurveSeparationStatus::WellSeparated );
-  BOOST_CHECK_EQUAL( string(sol.curve_separation_display()), string("Separated") );
+  // The headline has to say a detection WAS made.  It used to be a bare "Separated", which the
+  //  no-detection branch of this same status also produced - see D6 in the 2026-09 review.
+  BOOST_CHECK_EQUAL( string(sol.curve_separation_display()),
+                     string("Distinct curves - per-curve values usable") );
 
   BOOST_REQUIRE( sol.m_merged_single_curve_comparison.has_value() );
   BOOST_CHECK( !sol.m_merged_single_curve_comparison->single_curve_adequate );

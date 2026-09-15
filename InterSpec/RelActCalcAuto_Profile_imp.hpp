@@ -1790,6 +1790,9 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     add_merged_single_curve_comparison( solution,restart_options,foreground,background,
                                         solution.m_drf,solution.m_spectrum_peaks,
                                         det_type,cancel_calc );
+    add_tied_enrichment_comparison( solution,restart_options,foreground,background,
+                                    solution.m_drf,solution.m_spectrum_peaks,
+                                    det_type,cancel_calc );
     add_mass_fraction_profiles( solution,foreground,background,solution.m_drf,
                                 solution.m_spectrum_peaks,
                                 det_type,cancel_calc,baseline_restart_count+1,
@@ -1888,6 +1891,9 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
       add_merged_single_curve_comparison( solution,polish_options,foreground,background,
                                           solution.m_drf,solution.m_spectrum_peaks,
                                           det_type,cancel_calc );
+      add_tied_enrichment_comparison( solution,polish_options,foreground,background,
+                                      solution.m_drf,solution.m_spectrum_peaks,
+                                      det_type,cancel_calc );
       add_mass_fraction_profiles( solution,foreground,background,solution.m_drf,
                                   solution.m_spectrum_peaks,
                                   det_type,cancel_calc,baseline_restart_count+1,
