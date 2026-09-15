@@ -4970,11 +4970,17 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyErrorPropagationOnly )
 
 /** State 3 (Likelihood): the correlated band enters the fit, so the WI-5 annotation trigger
  (results.efficiency_whitening) becomes non-empty (n*n) - and ONLY then.  This is the exact signal
- `ShieldingSourceFitPlot::jsonForData` keys the coherent-offset note on.  The note's value is the
- signed mean of the plotted marginal pulls, which we reproduce here from the returned peak infos.
- (The magnitude of that offset is model-dependent - for two peaks with a single free activity the
- activity absorbs the common efficiency mode, so it is small; this test documents the plumbing and
- the metric, not a fixed offset size.)
+ `ShieldingSourceFitPlot::jsonForData` keys the coherent-offset note on.
+
+ The band's presence in the likelihood is what makes the marginal pulls DIFFER from statistics-only:
+ each per-peak denominator gains the efficiency term (sqrt(stat^2 + (expected*frac_eff)^2), see
+ `expected_observed_chis`), so every Likelihood pull is strictly SMALLER in magnitude than the
+ corresponding None pull.  This is the exact mirror of DrfUncertaintyErrorPropagationOnly, which
+ asserts the state-2 pulls EQUAL the None pulls - so together the two tests pin WI-3's gate from both
+ sides: the efficiency term is in the pull denominator in Likelihood and absent in None/ErrorPropagation.
+ (We deliberately do NOT assert a shared-sign coherent offset here: with two peaks and a single free
+ activity the activity absorbs the common efficiency mode, so the signed mean is near zero - the
+ offset magnitude is model-dependent and is documented, not asserted.)
  */
 BOOST_AUTO_TEST_CASE( DrfUncertaintyInLikelihoodCoherentOffset )
 {
@@ -4982,26 +4988,35 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInLikelihoodCoherentOffset )
 
   const double frac_eff_uncert = 0.15;
 
+  const DrfUncertFitOut none = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::None, true, frac_eff_uncert );
   const DrfUncertFitOut like = run_drf_uncert_fit(
               ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood, true, frac_eff_uncert );
 
-  // The band is in the likelihood => the whitening matrix is computed and is n*n.
+  // The band is in the likelihood => the whitening matrix is computed and is n*n; in None it is empty.
   BOOST_REQUIRE_EQUAL( like.peaks.size(), 2u );
+  BOOST_REQUIRE_EQUAL( none.peaks.size(), like.peaks.size() );
   BOOST_CHECK_EQUAL( like.whitening_size, like.peaks.size()*like.peaks.size() );
+  BOOST_CHECK_EQUAL( none.whitening_size, 0u );
 
-  // The annotation metric jsonForData emits is the signed mean of the plotted pulls; recompute it and
-  //  confirm it is finite and within the individual pull range (a basic consistency guard).
-  double sum_pull = 0.0, min_pull = like.peaks[0].numSigmaOff, max_pull = like.peaks[0].numSigmaOff;
-  for( const GammaInteractionCalc::PeakResultPlotInfo &pk : like.peaks )
+  // The band entered the pull denominator: every Likelihood marginal pull must be strictly smaller in
+  //  magnitude than the corresponding statistics-only pull, and genuinely different from it (NOT the
+  //  bit-identical equality the ErrorPropagation test requires).  A large, fully-correlated 15% band
+  //  on high-stat peaks inflates the denominator far beyond the counting term, so the shrink is large.
+  bool any_differs = false;
+  for( size_t i = 0; i < like.peaks.size(); ++i )
   {
-    sum_pull += pk.numSigmaOff;
-    min_pull = std::min( min_pull, pk.numSigmaOff );
-    max_pull = std::max( max_pull, pk.numSigmaOff );
+    const double like_pull = like.peaks[i].numSigmaOff;
+    const double none_pull = none.peaks[i].numSigmaOff;
+    BOOST_CHECK( std::isfinite(like_pull) );
+    BOOST_CHECK_MESSAGE( fabs(like_pull) < fabs(none_pull),
+        "Likelihood pull " << like_pull << " should be smaller in magnitude than stat-only "
+        << none_pull << " (efficiency term inflates the per-peak denominator)" );
+    if( fabs(like_pull - none_pull) > 1.0e-6 )
+      any_differs = true;
   }
-  const double mean_pull = sum_pull / static_cast<double>( like.peaks.size() );
-  BOOST_CHECK( std::isfinite(mean_pull) );
-  BOOST_CHECK_MESSAGE( (mean_pull >= min_pull - 1.0e-9) && (mean_pull <= max_pull + 1.0e-9),
-      "signed-mean pull " << mean_pull << " outside [" << min_pull << ", " << max_pull << "]" );
+  BOOST_CHECK_MESSAGE( any_differs,
+      "Likelihood marginal pulls must differ from statistics-only pulls (band is in the likelihood)" );
 }//BOOST_AUTO_TEST_CASE( DrfUncertaintyInLikelihoodCoherentOffset )
 
 
@@ -5050,6 +5065,11 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyMethodNoUncertWarns )
  fractional-efficiency covariance via the log-power design matrix B, i.e.
    efficiencyFracCovariance(energies) ~= B * C_coef * B^T,   B[i][k] = pow(log(E_i/units), k).
  The result must be symmetric and positive-semidefinite.
+
+ Run with BOTH keV and MeV curve energy units.  keV makes E/units a no-op (units==1), so it alone
+ could not catch a regression that dropped the `/units` division; the MeV case (units==1000) exercises
+ that division with a non-trivial divisor - the reference log(E/units) then diverges from a bare log(E),
+ so a missing division fails the check.
  */
 BOOST_AUTO_TEST_CASE( CoefCovariancePropagates )
 {
@@ -5057,78 +5077,89 @@ BOOST_AUTO_TEST_CASE( CoefCovariancePropagates )
 
   const double distance = 100.0*PhysicalUnits::cm;
 
-  // A 3-coefficient exp-of-log-power-series curve (units = keV, so E/units = E in keV).
-  const vector<float> coefs = { -5.0f, 0.5f, -0.1f };
-  auto drf = make_shared<DetectorPeakResponse>();
-  drf->fromExpOfLogPowerSeries( coefs, {}, distance, 5*PhysicalUnits::cm, PhysicalUnits::keV,
-                                0, 3000*PhysicalUnits::keV,
-                                DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
-  BOOST_REQUIRE_EQUAL( drf->efficiencyFcnType(), DetectorPeakResponse::kExpOfLogPowerSeries );
-
-  const size_t M = coefs.size();
-
-  // A hand-built, symmetric PSD coefficient covariance (diagonal-dominant), row-major M*M.
-  vector<float> coefCov( M*M, 0.0f );
-  coefCov[0*M + 0] = 4.0e-2f;
-  coefCov[1*M + 1] = 1.0e-2f;
-  coefCov[2*M + 2] = 2.5e-3f;
-  coefCov[0*M + 1] = coefCov[1*M + 0] = 5.0e-3f;
-  coefCov[1*M + 2] = coefCov[2*M + 1] = 1.0e-3f;
-
-  auto uncert = make_shared<DetectorEfficiencyUncert>();
-  uncert->setCoefficientCovariance( coefCov );
-  drf->setEfficiencyUncert( uncert );
-
-  const vector<double> energies = { 100.0, 500.0, 1173.228, 1332.492, 2000.0 };
-  const vector<double> cov = drf->efficiencyFracCovariance( energies );
-  const size_t n = energies.size();
-  BOOST_REQUIRE_EQUAL( cov.size(), n*n );
-
-  // Reference: B * C * B^T computed independently here.
-  const double units = static_cast<double>( drf->efficiencyEnergyUnits() );
-  vector<vector<double>> B( n, vector<double>( M, 0.0 ) );
-  for( size_t i = 0; i < n; ++i )
+  // The same propagation math, checked for a given curve energy-unit convention.
+  auto check_units = [distance]( const float equationEnergyUnits, const char * const units_label )
   {
-    const double lnx = std::log( energies[i] / units );
-    double xp = 1.0;
-    for( size_t k = 0; k < M; ++k ){ B[i][k] = xp; xp *= lnx; }
-  }
+    BOOST_TEST_MESSAGE( "CoefCovariancePropagates: units = " << units_label );
 
-  double max_abs = 0.0;
-  for( size_t i = 0; i < n; ++i )
-    for( size_t j = 0; j < n; ++j )
-      max_abs = std::max( max_abs, fabs(cov[i*n + j]) );
+    // A 3-coefficient exp-of-log-power-series curve.
+    const vector<float> coefs = { -5.0f, 0.5f, -0.1f };
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromExpOfLogPowerSeries( coefs, {}, distance, 5*PhysicalUnits::cm, equationEnergyUnits,
+                                  0, 3000*PhysicalUnits::keV,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    BOOST_REQUIRE_EQUAL( drf->efficiencyFcnType(), DetectorPeakResponse::kExpOfLogPowerSeries );
 
-  for( size_t i = 0; i < n; ++i )
-  {
-    for( size_t j = 0; j < n; ++j )
-    {
-      double ref = 0.0;
-      for( size_t a = 0; a < M; ++a )
-        for( size_t b = 0; b < M; ++b )
-          ref += B[i][a] * static_cast<double>(coefCov[a*M + b]) * B[j][b];
-      BOOST_CHECK_MESSAGE( fabs(cov[i*n + j] - ref) < 1.0e-6*(1.0 + max_abs),
-          "coef-cov propagation mismatch at (" << i << "," << j << "): got " << cov[i*n + j]
-          << " vs ref " << ref );
-      // Symmetry.
-      BOOST_CHECK_SMALL( cov[i*n + j] - cov[j*n + i], 1.0e-9*(1.0 + max_abs) );
-    }
-  }
+    const size_t M = coefs.size();
 
-  // Positive-semidefinite: every diagonal >= 0, and a few random quadratic forms x^T cov x >= 0.
-  for( size_t i = 0; i < n; ++i )
-    BOOST_CHECK_GE( cov[i*n + i], -1.0e-9*(1.0 + max_abs) );
-  for( int trial = 0; trial < 8; ++trial )
-  {
-    vector<double> x( n );
+    // A hand-built, symmetric PSD coefficient covariance (diagonal-dominant), row-major M*M.
+    vector<float> coefCov( M*M, 0.0f );
+    coefCov[0*M + 0] = 4.0e-2f;
+    coefCov[1*M + 1] = 1.0e-2f;
+    coefCov[2*M + 2] = 2.5e-3f;
+    coefCov[0*M + 1] = coefCov[1*M + 0] = 5.0e-3f;
+    coefCov[1*M + 2] = coefCov[2*M + 1] = 1.0e-3f;
+
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setCoefficientCovariance( coefCov );
+    drf->setEfficiencyUncert( uncert );
+
+    const vector<double> energies = { 100.0, 500.0, 1173.228, 1332.492, 2000.0 };
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    const size_t n = energies.size();
+    BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+
+    // Reference: B * C * B^T computed independently here.  units matches the curve convention, so this
+    //  diverges from a bare log(E) whenever units != 1 - i.e. the MeV case guards the `/units` divide.
+    const double units = static_cast<double>( drf->efficiencyEnergyUnits() );
+    BOOST_CHECK_CLOSE( units, static_cast<double>(equationEnergyUnits), 1.0e-4 );
+    vector<vector<double>> B( n, vector<double>( M, 0.0 ) );
     for( size_t i = 0; i < n; ++i )
-      x[i] = 2.0*((double)rand()/RAND_MAX) - 1.0;
-    double q = 0.0;
+    {
+      const double lnx = std::log( energies[i] / units );
+      double xp = 1.0;
+      for( size_t k = 0; k < M; ++k ){ B[i][k] = xp; xp *= lnx; }
+    }
+
+    double max_abs = 0.0;
     for( size_t i = 0; i < n; ++i )
       for( size_t j = 0; j < n; ++j )
-        q += x[i]*cov[i*n + j]*x[j];
-    BOOST_CHECK_MESSAGE( q >= -1.0e-6*(1.0 + max_abs), "quadratic form negative: " << q );
-  }
+        max_abs = std::max( max_abs, fabs(cov[i*n + j]) );
+
+    for( size_t i = 0; i < n; ++i )
+    {
+      for( size_t j = 0; j < n; ++j )
+      {
+        double ref = 0.0;
+        for( size_t a = 0; a < M; ++a )
+          for( size_t b = 0; b < M; ++b )
+            ref += B[i][a] * static_cast<double>(coefCov[a*M + b]) * B[j][b];
+        BOOST_CHECK_MESSAGE( fabs(cov[i*n + j] - ref) < 1.0e-6*(1.0 + max_abs),
+            units_label << " coef-cov propagation mismatch at (" << i << "," << j << "): got "
+            << cov[i*n + j] << " vs ref " << ref );
+        // Symmetry.
+        BOOST_CHECK_SMALL( cov[i*n + j] - cov[j*n + i], 1.0e-9*(1.0 + max_abs) );
+      }
+    }
+
+    // Positive-semidefinite: every diagonal >= 0, and a few random quadratic forms x^T cov x >= 0.
+    for( size_t i = 0; i < n; ++i )
+      BOOST_CHECK_GE( cov[i*n + i], -1.0e-9*(1.0 + max_abs) );
+    for( int trial = 0; trial < 8; ++trial )
+    {
+      vector<double> x( n );
+      for( size_t i = 0; i < n; ++i )
+        x[i] = 2.0*((double)rand()/RAND_MAX) - 1.0;
+      double q = 0.0;
+      for( size_t i = 0; i < n; ++i )
+        for( size_t j = 0; j < n; ++j )
+          q += x[i]*cov[i*n + j]*x[j];
+      BOOST_CHECK_MESSAGE( q >= -1.0e-6*(1.0 + max_abs), units_label << " quadratic form negative: " << q );
+    }
+  };//check_units lambda
+
+  check_units( PhysicalUnits::keV, "keV" );   // units == 1: E/units is a no-op
+  check_units( PhysicalUnits::MeV, "MeV" );   // units == 1000: exercises the /units division
 }//BOOST_AUTO_TEST_CASE( CoefCovariancePropagates )
 
 

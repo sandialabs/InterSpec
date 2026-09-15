@@ -5115,6 +5115,14 @@ void fit_model_ceres( const std::string wtsession,
       }//if( covariance is square and non-empty )
     }//if( ErrorPropagation && have varied params )
 
+    // The WI-4 re-solves above break out of their mode loop on cancel/timeout rather than throwing
+    //  (a throw there would be swallowed by the loop's own catch(std::exception&), since
+    //  CancelException derives from std::exception).  Re-check here, outside that block, so a cancel
+    //  surfaces as the proper FitStatus instead of a Final result carrying half-applied widening.
+    const CalcStatus post_widen_cancel = chi2Fcn->currentCancelStatus();
+    if( post_widen_cancel != CalcStatus::NotCanceled )
+      throw ShieldingSourceChi2Fcn::CancelException( post_widen_cancel );
+
     std::lock_guard<std::mutex> lock( results->m_mutex );
 
     if( !cov_errmsg.empty() )
