@@ -90,6 +90,44 @@ double resolve_node_precision(const GenerationOptions& opts, uint32_t stage,
                                : opts.node_fep_precision;
 }
 
+/// The detector-side geometry mapping: crystal, fillet, bore, dead layer,
+/// attenuator layers, collimator.
+///
+/// ONE copy on purpose. This used to be written out twice -- once in
+/// Runner::configure for the generator's own MC nodes and once in the public
+/// configure_calculator -- and the two drifted: the generator's copy never
+/// called set_bullet_radius and dropped set_bore_hole's rounded_tip argument.
+/// Every response generated from a bulletized descriptor therefore had its eta
+/// table measured on a SHARP crystal, while the query-time kernel K ray-traced
+/// the filleted solid from the same descriptor. Measured on the ANGLE GEM35-70
+/// corpus (0.8 cm fillet), that put eps_fep 29% high on axis and 21% low at
+/// 51 degrees at 35 keV, decaying to ~1% above 300 keV -- and the generator's
+/// own probe banks could not see it, because they route through here too.
+///
+/// `mat` maps a descriptor material index to an instantiated Material the
+/// caller owns and keeps alive for the lifetime of `calc`.
+template <class MatFn>
+void apply_detector_side(EfficiencyCalculator& calc, const GeometryDescriptor& gd,
+                         MatFn mat) {
+    calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
+                                             gd.dimensions_cm);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after
+    // it; fillet first, so bore_fits() sees the final crystal profile.
+    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
+    if (gd.bore)
+        calc.set_bore_hole(gd.bore->radius, gd.bore->depth, gd.bore->rounded_tip);
+    if (gd.dead_layer)
+        calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
+                            gd.dead_layer->back);
+    for (const LayerSpec& l : gd.layers)
+        calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
+                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
+    if (gd.collimator)
+        calc.add_collimator(mat(gd.collimator->material_index),
+                            gd.collimator->side_thickness_cm,
+                            gd.collimator->z_start_cm, gd.collimator->z_end_cm);
+}
+
 // Shared per-run state: configured calculator + progress/cancel bookkeeping.
 struct Runner {
     const GeometryDescriptor& gd;
@@ -112,28 +150,14 @@ struct Runner {
     }
 
     void configure(EfficiencyCalculator& calc) const {
-        // Same mapping as the public helper, but reusing this Runner's
-        // already-instantiated materials (one instantiation per run, not per
-        // node).
-        //
         // Every calculator the generator builds routes through here, so setting
         //  the FEP window once here is what makes ResponseProvenance's recorded
         //  value true of every node that went into the response.
         calc.set_fep_window_keV(opts.fep_window_keV);
-        calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                                 gd.dimensions_cm);
-        if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
-        if (gd.dead_layer)
-            calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
-                                gd.dead_layer->back);
-        for (const LayerSpec& l : gd.layers)
-            calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                                l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-        if (gd.collimator)
-            calc.add_collimator(mat(gd.collimator->material_index),
-                                gd.collimator->side_thickness_cm,
-                                gd.collimator->z_start_cm,
-                                gd.collimator->z_end_cm);
+        // The detector-side mapping itself is shared with the public
+        //  configure_calculator() -- see apply_detector_side().
+        apply_detector_side(calc, gd,
+                            [this](int i) { return this->mat(i); });
     }
 
     void tick(const std::string& stage) {
@@ -1821,15 +1845,21 @@ std::vector<ProbePoint> ResponseGenerator::adversarial_probe_bank(
 void ResponseGenerator::certify(DetectorResponse& resp,
                                 const GeometryDescriptor& gd,
                                 const GenerationOptions& opts, int n_probes,
-                                int seed_offset, ProbeFamilyMask cert_families) {
-    // Fresh quasi-random probe bank at a fixed UNIFORM precision (0.005),
-    // Halton offset seed_offset (7000 -- disjoint from generation's 5000 and
-    // never parity-split). Uniform so the certificate MC never inherits the
-    // graded generation map.
+                                int seed_offset, ProbeFamilyMask cert_families,
+                                double probe_precision) {
+    // Fresh quasi-random probe bank at a fixed UNIFORM precision, Halton offset
+    // seed_offset (7000 -- disjoint from generation's 5000 and never
+    // parity-split). Uniform so the certificate MC never inherits the graded
+    // generation map.
+    //
+    // The default stays 0.005 so every historical caller is bit-identical, but
+    // it is a floor on what a certificate can resolve: scored against a model
+    // whose error is 0.2%, a 0.5%-precision bank reports its own noise. Pass
+    // `probe_precision` when certifying something finer than about 0.5%.
     GenerationOptions probe_opts = opts;
     probe_opts.node_precision = nullptr;
     probe_opts.precision_profile = PrecisionProfile::Uniform;
-    probe_opts.node_fep_precision = 0.005;
+    probe_opts.node_fep_precision = (probe_precision > 0.0) ? probe_precision : 0.005;
     probe_opts.progress = nullptr;
     probe_opts.cancel = nullptr;
     GenerationStats stats;
@@ -1892,10 +1922,17 @@ void ResponseGenerator::certify(DetectorResponse& resp,
                               std::max(0.01 * pp.eps_fep, noise));
         cert.rows.push_back(row);
 
-        if (pp.eps_tot > 0.0 && pp.tot_unc / pp.eps_tot <= 0.05) {
-            const EffResult mt = resp.eps_total_at(pp.energy_keV, src);
+        // Total efficiency: recorded per row, not just percentiled away. The
+        // tot_* regime floors have to be derived from this distribution, and a
+        // pair of percentiles cannot be deconvolved against the MC noise that
+        // produced them.
+        const EffResult mt = resp.eps_total_at(pp.energy_keV, src);
+        cert.rows.back().mc_tot = pp.eps_tot;
+        cert.rows.back().mc_tot_sig = pp.tot_unc;
+        cert.rows.back().model_tot = mt.value;
+        cert.rows.back().model_tot_sig = mt.sigma;
+        if (pp.eps_tot > 0.0 && pp.tot_unc / pp.eps_tot <= 0.05)
             tot_errs.push_back(std::fabs(mt.value / pp.eps_tot - 1.0));
-        }
     }
 
     auto percentile = [](std::vector<double> v, double q) -> double {
@@ -1941,24 +1978,8 @@ void ResponseGenerator::configure_calculator(
         return owned_materials[base + static_cast<size_t>(idx)].get();
     };
 
-    calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                             gd.dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after
-    // it; fillet first, so bore_fits() sees the final crystal profile.
-    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
-    if (gd.bore)
-        calc.set_bore_hole(gd.bore->radius, gd.bore->depth,
-                           gd.bore->rounded_tip);
-    if (gd.dead_layer)
-        calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
-                            gd.dead_layer->back);
-    for (const LayerSpec& l : gd.layers)
-        calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (gd.collimator)
-        calc.add_collimator(mat(gd.collimator->material_index),
-                            gd.collimator->side_thickness_cm,
-                            gd.collimator->z_start_cm, gd.collimator->z_end_cm);
+    // Shared with the generator's own per-node setup; see apply_detector_side.
+    apply_detector_side(calc, gd, mat);
 }
 
 } // namespace ceelo

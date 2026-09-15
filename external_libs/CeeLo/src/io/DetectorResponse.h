@@ -643,7 +643,13 @@ struct AccuracyCertificate {
     /// adds structured tags). `pass` is the noise-aware tolerance verdict.
     struct Row {
         double E_keV = 0.0, d_cm = 0.0, cos_theta = 1.0, phi_deg = 0.0;
+        /// Full-energy peak: the MC truth and the model, each with its sigma.
         double mc = 0.0, mc_sig = 0.0, model = 0.0, model_sig = 0.0;
+        /// Total efficiency, the same four.  Kept per row rather than summarized
+        /// away because the tot_* regime floors have to be DERIVED from this
+        /// distribution, and two percentiles cannot be deconvolved against the
+        /// MC noise that produced them.
+        double mc_tot = 0.0, mc_tot_sig = 0.0, model_tot = 0.0, model_tot_sig = 0.0;
         uint8_t tag = 0;
         bool pass = false;
     };

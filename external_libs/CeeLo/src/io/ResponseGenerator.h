@@ -353,11 +353,17 @@ public:
     /// bank so the certificate's p95/max reflect the worst-case interpolation
     /// gaps, not just random coverage. 0 (default) = random-only (the D-a
     /// behaviour, unchanged).
+    /// `probe_precision` overrides the certificate bank's fixed uniform MC
+    /// target; 0 (the default) keeps the historical 0.005, so every existing
+    /// caller is bit-identical. Raise it when the quantity being certified is
+    /// smaller than 0.5% - a certificate run at 0.005 against a 0.2% model error
+    /// measures its own Monte-Carlo noise.
     static void certify(DetectorResponse& response,
                         const GeometryDescriptor& descriptor,
                         const GenerationOptions& options,
                         int n_probes = 48, int seed_offset = 7000,
-                        ProbeFamilyMask cert_families = 0);
+                        ProbeFamilyMask cert_families = 0,
+                        double probe_precision = 0.0);
 
     /// Configure `calc`'s DETECTOR side (crystal, bore, dead layer, attenuator
     /// layers, collimator) from a stored descriptor — the same mapping the

@@ -31,6 +31,7 @@
 #include "geometry/Geometry.h"
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
+#include "efficiency/EfficiencyCalculator.h"
 #include "io/Pchip.h"
 #include "io/ResponseKernel.h"
 #include "materials/Material.h"
@@ -1363,4 +1364,72 @@ BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
         DetectorResponse::from_xml_string(xml);
     BOOST_CHECK_CLOSE(back2->provenance.fep_window_keV,
                       kDefaultFepWindowKeV, 1e-9);
+}
+
+// The detector-side geometry mapping used to exist TWICE -- once in
+// ResponseGenerator's file-local Runner::configure, for the MC nodes the
+// generator runs, and once in the public configure_calculator.  They drifted:
+// the generator's copy never called set_bullet_radius and dropped
+// set_bore_hole's rounded_tip argument, so every response generated from a
+// bulletized descriptor had its eta table measured on a SHARP crystal while the
+// query-time kernel K ray-traced the filleted solid from the same descriptor.
+// Measured on the ANGLE GEM35-70 corpus (0.8 cm fillet) that put eps_fep 29%
+// high on axis and 21% low at 51 degrees at 35 keV.
+//
+// The generator's own probe banks could not catch it: they route through the
+// same Runner::configure, so they simulated the same wrong crystal.
+//
+// The two copies are now ONE function (apply_detector_side), which is what
+// makes this test meaningful: exercising configure_calculator now exercises
+// the mapping the generator uses for every MC node.  Keep it that way -- if the
+// mapping is ever duplicated again, this test goes back to proving nothing.
+BOOST_AUTO_TEST_CASE(configure_calculator_carries_fillet_and_rounded_tip) {
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{3.0, 6.0});
+    gd.crystal_material_index = 0;
+    gd.materials = {MaterialSpec::from(make_NaI())};
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = BoreHoleConfig{0.5, 4.0, /*rounded_tip=*/true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.07, 0.0};
+    BOOST_REQUIRE(gd.problems().empty());
+
+    std::vector<std::unique_ptr<Material>> owned;
+    EfficiencyCalculator calc;
+    ResponseGenerator::configure_calculator(calc, gd, owned);
+
+    const Geometry& g = calc.geometry();
+    BOOST_CHECK_CLOSE(g.bullet_radius(), 0.8, 1e-9);
+    BOOST_REQUIRE(g.has_bore_hole());
+    BOOST_CHECK(g.bore_hole()->rounded_tip);
+    BOOST_REQUIRE(g.has_dead_layer());
+    BOOST_CHECK_CLOSE(g.dead_layer()->front, 0.07, 1e-9);
+
+    // And the fillet is not merely recorded, it is traced: a ray clipping the
+    // front CORNER must see less active crystal than the same ray would on a
+    // sharp cylinder, while a ray down the axis is untouched by the fillet.
+    GeometryDescriptor sharp = gd;
+    sharp.bullet_radius_cm = 0.0;
+    sharp.bore->rounded_tip = false;
+    std::vector<std::unique_ptr<Material>> owned_sharp;
+    EfficiencyCalculator calc_sharp;
+    ResponseGenerator::configure_calculator(calc_sharp, sharp, owned_sharp);
+
+    auto active_len = [](const Geometry& geom, const Eigen::Vector3d& from,
+                         const Eigen::Vector3d& dir) {
+        double len = 0.0;
+        for (const PathSegment& s : geom.trace_ray(from, dir.normalized()))
+            if (s.is_scoring) len += s.length();
+        return len;
+    };
+
+    // Corner-clipping ray: aimed just inside the outer radius at the front face.
+    const Eigen::Vector3d src(0.0, 0.0, -20.0);
+    const Eigen::Vector3d corner(2.9, 0.0, 0.0);
+    BOOST_CHECK_LT(active_len(g, src, corner - src),
+                   active_len(calc_sharp.geometry(), src, corner - src));
+
+    // On-axis ray: the fillet is a front-EDGE feature, so it must not change it.
+    const Eigen::Vector3d axis(0.0, 0.0, 1.0);
+    BOOST_CHECK_CLOSE(active_len(g, src, axis),
+                      active_len(calc_sharp.geometry(), src, axis), 1e-6);
 }

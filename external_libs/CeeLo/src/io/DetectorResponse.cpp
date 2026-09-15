@@ -1911,6 +1911,17 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
             flat.push_back(r.pass ? 1.0 : 0.0);
         }
         append_value_node(doc, cn, "Rows", join_doubles(flat));
+        // Total efficiency rides in its OWN 4-column stream rather than
+        // widening "Rows": a reader of an older file parses Rows at its
+        // historical stride of 10 and simply finds no RowsTot, instead of
+        // silently mis-striding every row.
+        std::vector<double> flat_tot;
+        flat_tot.reserve(c.rows.size() * 4);
+        for (const AccuracyCertificate::Row& r : c.rows) {
+            flat_tot.push_back(r.mc_tot);    flat_tot.push_back(r.mc_tot_sig);
+            flat_tot.push_back(r.model_tot); flat_tot.push_back(r.model_tot_sig);
+        }
+        append_value_node(doc, cn, "RowsTot", join_doubles(flat_tot));
     }
 
     std::string out;
@@ -2098,6 +2109,17 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             r.tag = static_cast<uint8_t>(flat[i + 8]);
             r.pass = flat[i + 9] != 0.0;
             c.rows.push_back(r);
+        }
+        // Optional; absent in certificates written before the total-efficiency
+        // columns existed, which then keep their zeros.
+        const std::vector<double> flat_tot = parse_doubles(child_value(cn, "RowsTot"));
+        if (flat_tot.size() >= 4 * c.rows.size()) {
+            for (size_t k = 0; k < c.rows.size(); ++k) {
+                c.rows[k].mc_tot = flat_tot[4 * k];
+                c.rows[k].mc_tot_sig = flat_tot[4 * k + 1];
+                c.rows[k].model_tot = flat_tot[4 * k + 2];
+                c.rows[k].model_tot_sig = flat_tot[4 * k + 3];
+            }
         }
     }
 
