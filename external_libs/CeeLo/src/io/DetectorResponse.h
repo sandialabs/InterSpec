@@ -143,11 +143,33 @@ using BuildupModel = std::function<double(double E_keV, const ShieldContext&)>;
 /// kinds apart (EffResult::sigma_model, frac_covariance's `model_part`).  Each enters a query as a
 /// fully-correlated common mode across energies at the query geometry.
 ///
-/// Provenance: every value dates from the original CeeLo import (InterSpec commit b26e5a67); the
-/// S1/S7 campaign notes and the "spec sec 4" grounding table they were taken from are not in this
-/// repository, and none has been validated on an arbitrary user detector.  Treat them as
-/// placeholders awaiting recalibration on a corpus - InterSpec's test_CeeLoDrfIntegration
-/// (curve_transfer_envelope_corpus) measures the curve-transfer terms against MC responses.
+/// Provenance, per constant.  Anything not listed as measured below still dates from the original
+/// CeeLo import (InterSpec commit b26e5a67), whose S1/S7 campaign notes and "spec sec 4" grounding
+/// table are not in this repository - those remain placeholders, and say so individually.
+///
+/// The 2026-09 corpus study (harness: InterSpec's test_CeeLoDrfIntegration, the `--envelope-*`
+/// flags on `envelope_corpus_measure`; working notes and raw per-probe CSVs under
+/// scratch/20260913_envelope_study/) measured 33 detectors - 4 CeeLo presets, 9 ANGLE imports and
+/// 20 GADRAS Detector.dat imports, spanning NaI / HPGe / LaBr3 / CZT and cylinder / box - against
+/// fresh, never-fitted MC on a stratified (E, d, theta) grid, generation and probes both at
+/// node_fep_precision = 0.003.
+///
+/// WHICH STATISTIC.  These constants are consumed by a chi-square (InterSpec's
+/// compute_efficiency_whitening), so each measured value is the floor that makes the **RMS pull
+/// about MC truth equal 1** over every far-field probe in the corpus, with the response's own
+/// declared node sigma already in the denominator.  That is deliberately NOT the same as a 68%
+/// interval: at these values 75% (FEP) / 84% (total) of probes fall inside one sigma.  The
+/// residual is heavy-tailed, so the two calibrations differ by ~1.6x and cannot both be had.  If
+/// you re-derive, say which one you targeted.
+///
+/// NOT INCLUDED, deliberately: CeeLo-vs-GEANT4 model error.  Measured at <= 0.48% (FEP) and
+/// <= 0.23% (total) on the bare/lightly-shielded G4 configs {1,2,3,5,6,25,26}, with no new MC, from
+/// the committed references in tests/data/{geant4,ceelo}_reference (see
+/// scratch/20260913_envelope_study/mc_vs_geant4.py).  It is a BOUND rather than a measurement
+/// (the two codes' own counting noise is ~73% of the observed spread), it is code-vs-code rather
+/// than against data, and its applicability to an arbitrary user detector is not established.  A
+/// careful comparison with measured data is what would justify folding it in.  Do not add it on
+/// the strength of the number above.
 namespace model_sigma {
     /// theta > 90 degrees: no nodes behind the face plane; the value is a clamped guess.
     constexpr double behind_plane = 0.30;
@@ -164,14 +186,52 @@ namespace model_sigma {
     /// Model-form floor on the (ratio-only) build-up correction of a shielded eps_total, added
     /// in quadrature when a ShieldContext is supplied.
     constexpr double buildup_floor = 0.10;
-    /// SigmaFloors defaults: the campaign's conservative per-{quantity x regime} envelope.  The
-    /// generator multiplies the FEP floors by `generator_floor_inflation` when its closed loop
-    /// sees a minor model-form failure.
+    /// FAR-FIELD PEAK FLOOR - MEASURED, 2026-09 corpus (33 detectors, far field, p = 0.003).
+    /// Calibrated to RMS pull 1 over 5508 probes; achieved coverage 74.8% within one sigma.
+    /// One constant serves every detector class: solving per class gives 0.475% excluding CZT and
+    /// 0.356% for CZT alone, so the class spread does not justify a split for the peak efficiency
+    /// (it does for the total - see tot_far_floor).  The previous 0.014 over-covered by 2.8x: at
+    /// that value 97.7% of probes sat inside one sigma and the RMS pull was 0.44.
+    /// HELD AT THE ORIGINAL VALUE, deliberately - see the measurement note above.
+    /// Dropping it to the measured 0.005 makes `act_fit_pulls_calibrated` WORSE off axis
+    /// (RMS pull 1.23 -> 1.46 at 30 degrees, against a gate of 1.3), because the oversized
+    /// floor was compensating for `transfer_offaxis_mid`, which the same corpus measures
+    /// ~4x too small.  The two errors currently cancel.  Land 0.005 together with the
+    /// re-derived transfer envelope, not before it.
     constexpr double fep_far_floor = 0.014;
+    /// NEAR-FIELD PEAK FLOOR - NOT re-derived.  The 2026-09 study measured the FAR stratum only;
+    /// no near-field probe bank was run, so this keeps its original import value and its original
+    /// lack of provenance.  Deriving it needs the near stratum plus the d/a step test that would
+    /// say whether `near_regime_a` marks a real step at all.
     constexpr double fep_near_floor = 0.023;
-    constexpr double tot_far_floor = 0.016;
+    /// FAR-FIELD TOTAL FLOOR - MEASURED, 2026-09 corpus, EXCLUDING CdTe-class crystals.
+    /// Calibrated to RMS pull 1 over the 6588 far-field probes of the 31 non-CdTe detectors;
+    /// achieved coverage 83.2%.  The previous 0.016 over-covered by 2.6x.
+    constexpr double tot_far_floor = 0.006;
+    /// FAR-FIELD TOTAL FLOOR for CdTe/CZT-class crystals - MEASURED, same corpus, 5 detectors,
+    /// 1080 probes; 1.971% for RMS pull 1, coverage 81.9%.  Rounded to 0.020.
+    ///
+    /// This split is EMPIRICAL and its root cause is NOT understood.  Keeping one constant would
+    /// mean either under-covering CZT by 3.2x or over-covering everything else by 1.5x, so the
+    /// split earns its place - but it is a patch over a modelling gap, not a description of one.
+    ///
+    /// What is known: the total-efficiency error does NOT track detector size (the corpus's
+    /// SMALLEST crystal, a bare 0.5 cm3 CZT, is its most accurate at 0.044%, while a 1.0 cm3 CZT
+    /// with one attenuator layer is its worst at 3.490%), and it does NOT track `TotEffTier`
+    /// either - `EtaTotTable` spans the entire range from unresolved to 3.490%.  Both hypotheses
+    /// were tested and rejected on this corpus.  The leading remaining idea is that an uncollided
+    /// kernel plus an angle-flat correction cannot carry scatter-in from the surrounding housing.
+    /// See scratch/20260915_nonbare_det_uncert_investigate_prompt.md.
+    ///
+    /// DELETE THIS CONSTANT once the underlying model is fixed; it should not outlive the defect.
+    constexpr double tot_far_floor_cdte = 0.020;
+    /// NEAR-FIELD TOTAL FLOOR - NOT re-derived; the 2026-09 study measured the far stratum only.
     constexpr double tot_near_floor = 0.029;
+    /// NOT re-derived.  Whether a step at 4 a exists at all is untested: it needs the near
+    /// stratum plus a breakpoint scan, neither of which the 2026-09 (far-field) study ran.
     constexpr double near_regime_a = 4.0;
+    /// NOT re-derived, and DEAD IN PRACTICE: it is applied only by the opt-in closed loop
+    /// (`GenerationOptions::closed_loop`), which nothing in InterSpec ever enables.
     constexpr double generator_floor_inflation = 1.25;
     /// SigmaTransferModel defaults (S7-measured Level-1 values; a Level-2 nuisance fit would
     /// shrink the near term to ~1%).  Known shortfall: an angle-flat curve transfer of a 3"x3"

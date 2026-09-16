@@ -128,6 +128,37 @@ void apply_detector_side(EfficiencyCalculator& calc, const GeometryDescriptor& g
                             gd.collimator->z_start_cm, gd.collimator->z_end_cm);
 }
 
+/// True when the crystal is CdTe-class (CdTe, CZT): Cd + Te carry more than half the
+/// crystal's mass.  Keyed on COMPOSITION rather than on the material's name, because
+/// names are free-form user text ("CZT", "CdZnTe", "Cd0.9Zn0.1Te", ...) and a name
+/// test would quietly stop matching.
+///
+/// Used only to select `model_sigma::tot_far_floor_cdte`. That floor is an empirical
+/// patch over a modelling gap that is not yet understood (see the constant's comment),
+/// so this predicate is expected to be DELETED along with it, not extended.
+bool crystal_is_cdte_class(const GeometryDescriptor& gd) {
+    if (gd.crystal_material_index < 0 ||
+        static_cast<size_t>(gd.crystal_material_index) >= gd.materials.size())
+        return false;
+    double cd_te = 0.0;
+    for (const MaterialComponent& c : gd.materials[static_cast<size_t>(
+             gd.crystal_material_index)].composition) {
+        if (c.Z == 48 || c.Z == 52) cd_te += c.mass_fraction;
+    }
+    return cd_te > 0.5;
+}
+
+/// Stamp the measured per-quantity floors onto a freshly generated response.
+///
+/// Called from every generate() return path. The defaults in SigmaFloors already carry
+/// the corpus-measured values; the only thing that varies with the detector is the
+/// total-efficiency floor for CdTe-class crystals, which the 2026-09 corpus measured
+/// 3.2x higher than everything else.
+void apply_measured_floors(DetectorResponse& resp, const GeometryDescriptor& gd) {
+    if (crystal_is_cdte_class(gd))
+        resp.floors.tot_far = model_sigma::tot_far_floor_cdte;
+}
+
 // Shared per-run state: configured calculator + progress/cancel bookkeeping.
 struct Runner {
     const GeometryDescriptor& gd;
@@ -1177,6 +1208,7 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         resp->provenance.min_distance_cm = 2.0 * a;  // far-field validity floor
         resp->model_transfer = SigmaTransferModel{};  // honest off-axis/near sigma
         resp->scatter_in_recapture = kTotalScatterInRecapture;  // total near-field
+        apply_measured_floors(*resp, gd);
         resp->finalize();
         if (opts.progress) opts.progress(1.0, "Done");
         return resp;
@@ -1470,6 +1502,7 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         resp->scatter_in_recapture = kTotalScatterInRecapture;
     }
 
+    apply_measured_floors(*resp, gd);
     resp->finalize();
     if (opts.progress) opts.progress(1.0, "Done");
     return resp;
