@@ -145,6 +145,9 @@ namespace
 
   /** --envelope-transfer: the curve-transfer envelope measurement.  No MC. */
   bool g_envelope_transfer = false;
+
+  /** --envelope-chord: the chord-length predictor experiment.  No MC. */
+  bool g_envelope_chord = false;
   int g_envelope_energies = 10;
 
   struct ProbeRow
@@ -367,6 +370,8 @@ struct TestFixture
         g_envelope_diag = true;
       else if( arg == "--envelope-transfer" )
         g_envelope_transfer = true;
+      else if( arg == "--envelope-chord" )
+        g_envelope_chord = true;
       else if( arg.find("--envelope-threads=") == 0 )
         g_envelope_threads = static_cast<unsigned>( std::stoul( arg.substr( 19 ) ) );
       else if( arg.find("--envelope-energies=") == 0 )
@@ -4154,3 +4159,174 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
                       << n_rows << " rows -> " << out_path );
   BOOST_CHECK_GT( n_det, 20u );
 }//envelope_transfer_from_mc
+
+
+/** Tests whether the off-axis curve-transfer residual can be PREDICTED (and so
+ corrected) from the chord-length distribution the kernel already computes.
+
+ The idea.  A transfer's only approximation is that eta - roughly "P(full-energy
+ deposit | the photon interacted in the crystal)" - is taken to be independent of
+ angle.  It is not, because at an angle a photon traverses a different distribution
+ of path lengths through the crystal, and the chance of containing the full cascade
+ depends on how much material is left around the interaction point.
+
+ The kernel ALREADY has that distribution: every KernelRay carries `active_len` and
+ a solid-angle weight, at query time, for free.  So the question is whether some
+ statistic of it predicts the residual.
+
+ The candidate that seemed to matter was NOT the plain mean chord - that is a pure
+ geometry number - but the chord weighted by INTERACTION probability,
+ 1 - exp(-mu(E) L), which is energy dependent through mu and so looked like the only
+ one of these able to reach the 55% of the variance that moves with energy.
+
+ RESULT (2026-09, 4245 joined points): IT DOES NOT WORK, and the code is kept because
+ a well-diagnosed negative result is worth more than an untested idea.
+
+     correlation with the residual   ratio_mean (geometry)          r = -0.378
+                                     ratio_iw   (interaction-wtd)   r = -0.355
+     RMS residual after correction   shape + aspect ratio           1.905%
+                                     shape + ratio_mean             1.894%
+                                     shape + ratio_iw               1.901%
+
+ The interaction weighting is implemented correctly and does carry real energy
+ information - for nai3x3 at 45 degrees ratio_iw runs 0.755 -> 0.871 across 40 keV to
+ 2.5 MeV while ratio_mean is flat by construction.  It is simply the WRONG energy
+ dependence: smooth and monotonic in mu, where the residual's is not.
+
+ Why, physically: the entry chord says where the first interaction is likely to
+ happen.  Whether the FULL energy is then contained depends on escape of scattered
+ photons and secondaries FROM that point, which is governed by the distance to the
+ crystal boundary in every direction around it - not by the incoming ray's path
+ length.  They are different geometric quantities, and only the second one is eta.
+ A predictor with a chance would have to be an escape-geometry statistic (something
+ like the mean distance-to-boundary averaged over the interaction-depth
+ distribution), which the kernel does not currently carry.
+
+ Emits per (detector, theta, E) so the regression can be done in Python against the
+ measured residual in transfer_vs_mc.csv.  No Monte Carlo.
+
+ Run with --envelope-out=<dir> --envelope-chord.
+ */
+BOOST_AUTO_TEST_CASE( envelope_chord_predictor )
+{
+  if( g_envelope_out.empty() || !g_envelope_chord )
+  {
+    BOOST_TEST_MESSAGE( "envelope_chord_predictor: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-chord)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "chord_predictor.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "# Chord-length statistics from the kernel quadrature, per (detector, theta, E).\n"
+         "# mean_chord      : solid-angle weighted mean active chord (pure geometry)\n"
+         "# iw_chord        : chord weighted by solid angle AND interaction probability\n"
+         "#                   1 - exp(-mu(E)*L); energy dependent through mu\n"
+         "# ratio_*         : the same statistic divided by its on-axis value at that energy,\n"
+         "#                   which is the form a correction to an angle-flat eta would take\n"
+         "# mu_cm           : crystal mu_total at E (1/cm)\n"
+         "detector,family,E_keV,theta_deg,mean_chord,iw_chord,ratio_mean,ratio_iw,mu_cm\n";
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  const vector<double> thetas = { 0.0, 15.0, 30.0, 45.0, 60.0, 75.0 };
+  size_t n_det = 0;
+
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+
+    // A bare transfer response is enough: we only want its geometry kernel and its
+    //  crystal mu table, not its eta.
+    ceelo::AnchorCurve anchor;
+    for( const double e : { 40.0, 100.0, 300.0, 1000.0, 2500.0 } )
+    {
+      anchor.energies_keV.push_back( e );
+      anchor.eff.push_back( 1.0e-3 );
+    }
+    const double a_cm = det.gd.transverse_half_extent();
+    const Eigen::Vector3d ref = CeeLoUtils::sourcePositionFromFace( det.gd, 0.0, 0.0, 10.0*a_cm );
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try
+    {
+      resp = ceelo::make_transfer_response( det.gd, anchor, ref, nullptr,
+                                            ceelo::TransferResponseOptions{} );
+    }catch( std::exception & )
+    {
+      continue;
+    }
+    if( !resp || resp->mu_tables.empty() )
+      continue;
+
+    // Crystal mu: the first mu table is the crystal's (materials are emitted in
+    //  descriptor order and the crystal is referenced by crystal_material_index).
+    const size_t mu_idx = (det.gd.crystal_material_index >= 0
+                           && size_t(det.gd.crystal_material_index) < resp->mu_tables.size())
+                          ? size_t(det.gd.crystal_material_index) : 0;
+
+    // Same energies the corpus measured at, so the two files join.
+    vector<double> energies;
+    {
+      double e_lo = resp->provenance.valid_e_min_keV, e_hi = resp->provenance.valid_e_max_keV;
+      if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+      { e_lo = 35.0; e_hi = 3000.0; }
+      e_lo *= 1.01; e_hi *= 0.99;
+      for( int i = 0; i < 12; ++i )
+        energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/11.0 ) );
+    }
+
+    for( const double E : energies )
+    {
+      const double mu = resp->mu_tables[mu_idx].eval( E ).mu_total();
+
+      double base_mean = 0.0, base_iw = 0.0;
+      for( size_t it = 0; it < thetas.size(); ++it )
+      {
+        const double theta = thetas[it] * M_PI / 180.0;
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, 10.0*a_cm );
+        const ceelo::ApertureQuadrature q = resp->make_quadrature( src );
+
+        double w_sum = 0.0, wl_sum = 0.0, iw_sum = 0.0, iwl_sum = 0.0;
+        for( const ceelo::KernelRay &r : q.rays )
+        {
+          const double L = r.active_len;
+          if( L <= 0.0 )
+            continue;
+          const double w = r.omega_w;
+          // Only photons that INTERACT can contribute to eta, so weight by the
+          //  interaction probability - this is what makes the statistic depend on E.
+          const double p = 1.0 - std::exp( -mu * L );
+          w_sum += w;       wl_sum += w * L;
+          iw_sum += w * p;  iwl_sum += w * p * L;
+        }
+        if( (w_sum <= 0.0) || (iw_sum <= 0.0) )
+          continue;
+
+        const double mean_chord = wl_sum / w_sum;
+        const double iw_chord = iwl_sum / iw_sum;
+        if( it == 0 )
+        { base_mean = mean_chord; base_iw = iw_chord; }
+        if( (base_mean <= 0.0) || (base_iw <= 0.0) )
+          continue;
+
+        char line[384];
+        std::snprintf( line, sizeof(line),
+          "\"%s\",%s,%.4f,%.2f,%.6f,%.6f,%.6f,%.6f,%.6f",
+          det.name.c_str(), det.family.c_str(), E, thetas[it],
+          mean_chord, iw_chord, mean_chord/base_mean, iw_chord/base_iw, mu );
+        out << line << "\n";
+      }
+    }
+    ++n_det;
+    out.flush();
+  }
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_chord_predictor: " << n_det << " detectors -> " << out_path );
+  BOOST_CHECK_GT( n_det, 20u );
+}//envelope_chord_predictor

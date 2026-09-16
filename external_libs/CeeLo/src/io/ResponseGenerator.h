@@ -203,6 +203,14 @@ struct GenerationOptions {
     /// skipped (far-field product) and a SigmaTransferModel is attached so
     /// off-axis/near queries report honest, inflated sigma.
     bool transfer_mode = false;
+    /// > 1 spends a few forced cos-theta MC anchors to build a coarse eta(E, theta).
+    ///
+    /// Measured ceiling (2026-09 corpus, 36 detectors): angular anchors alone take the
+    /// far-field off-axis error from 3.08% to at best 2.28% RMS, because only 45% of that
+    /// error is a fixed bias per (detector, angle) - the other 55% varies with ENERGY at
+    /// fixed angle. Resolving energy off axis is what collapses it to ~0.38%, and that is
+    /// a full characterization (transfer_mode = false), not more anchors.
+    /// Spend anchors to cut the bias; do not expect them to cut the envelope.
     int  n_anchor_angles = 1;
 
     uint64_t base_seed = 1;         ///< deterministic node-seed base (never 0)

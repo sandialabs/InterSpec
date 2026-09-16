@@ -265,6 +265,32 @@ namespace model_sigma {
     ///
     /// <= 0 selects the LEGACY sin^2(theta) form, which is what a stored response written
     /// before this field existed gets on read - old files keep old behaviour exactly.
+    ///
+    /// HOW MUCH OF THIS IS REDUCIBLE, measured on the same corpus - because the obvious
+    /// idea (add angular resolution) buys much less than it looks like it should:
+    ///
+    ///   off-axis RMS error, no correction                      3.08%
+    ///   + a shared saturating shape f(theta)                   2.65%   (free)
+    ///   + amplitude linear in crystal aspect ratio L/2R        2.50%   (free)
+    ///   + a PERFECT per-(detector, angle) correction           2.28%   <- MC anchor angles
+    ///   + a PERFECT per-(detector, angle, ENERGY) correction   0.38%   <- full eta(E,theta)
+    ///
+    /// Only 45% of the variance is a fixed bias per (detector, angle); the other **55% varies
+    /// with ENERGY at fixed detector and angle**.  So angular refinement alone cannot remove
+    /// most of it, and a geometry-only correction removes just 19% in RMS - the per-detector
+    /// means correlate nicely with aspect ratio (flat crystals near zero, L/2R ~ 1 running
+    /// +2 to +4%), but those means are only part of the variance.  What collapses the error is
+    /// resolving ENERGY off axis, which is what a full characterization does.
+    ///
+    /// Predictors TRIED AND REJECTED on this corpus, so they are not retried: crystal
+    /// aspect ratio, the kernel's solid-angle-weighted mean chord, and that chord weighted
+    /// by interaction probability 1 - exp(-mu(E)L).  All three correlate with the residual
+    /// at |r| ~ 0.35-0.38 and all three leave ~1.9% - the interaction weighting buys nothing
+    /// over plain geometry even though it does carry real energy dependence (for a 3"x3" NaI
+    /// at 45 degrees its ratio runs 0.755 -> 0.871 over 40 keV to 2.5 MeV).  It is the wrong
+    /// energy dependence: the entry chord says where a photon first interacts, while
+    /// full-energy containment depends on escape FROM that point, which is a different
+    /// geometric quantity.  See envelope_chord_predictor in test_CeeLoDrfIntegration.
     constexpr double transfer_offaxis_s2_half = 0.153;
     constexpr double transfer_near_contact = 0.10;
     constexpr double transfer_near_gate_a = 5.0;
