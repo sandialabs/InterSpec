@@ -2433,6 +2433,19 @@ struct RelActAutoSolution
      `max(1, chi2/dof)` model-error scaling as `MergedCurveComparison::single_curve_adequate`; set by
      `finalize_curve_separation_status()` and only meaningful when `valid`. */
     bool common_enrichment_adequate = false;
+
+    /** Set when the tied fit could not even reach the chi2 the MERGED single-curve fit achieved.
+     The merged model is essentially a point of the tied model (merged composition on both curves,
+     the base curve carrying the activity), so this cannot happen at a proper solution: it means the
+     tied fit is not at its own optimum, and since `delta_chi2` is measured from the free fit, the
+     shortfall is indistinguishable from - and gets reported as - a composition difference.
+
+     When set, `valid` is false AND no detection is claimed on any other evidence either: the same
+     failure to optimize undermines the free fit's per-curve compositions, which is what the
+     enrichment-difference z is computed from.  Measured on the 2026-09 corpus: 48 of 154 files
+     violated the inequality, 24 of them while reporting a detection - including a single 93 % disk
+     whose tied chi2 sat 110 above the merged fit. */
+    bool inconsistent_with_merged = false;
   };//struct TiedEnrichmentComparison
 
   /** Only attempted for multi-curve fits that reach Status::Success and share a determined element

@@ -637,6 +637,7 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       entry["delta_chi2"] = tied.delta_chi2;
       entry["extra_dof_of_free"] = static_cast<int64_t>(tied.extra_dof_of_free);
       entry["common_enrichment_adequate"] = tied.common_enrichment_adequate;
+      entry["inconsistent_with_merged"] = tied.inconsistent_with_merged;
       // Negative: the restricted model beat the model containing it, i.e. the free fit is not at
       //  its own optimum - a defect report, not a statistic.
       entry["tied_fits_better"] = (tied.delta_chi2 < 0.0);

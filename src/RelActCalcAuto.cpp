@@ -24265,6 +24265,17 @@ std::string RelActAutoSolution::z_row_annotation( const EnrichmentDiffZ &diff ) 
 
 std::string RelActAutoSolution::curve_separation_trigger_text() const
 {
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged )
+    return "the fits are not mutually consistent - constraining the curves to a common enrichment"
+           " gave a HIGHER chi2 ("
+           + SpecUtils::printCompact(m_tied_enrichment_comparison->tied_chi2_data, 6)
+           + ") than merging them into a single curve ("
+           + SpecUtils::printCompact(m_merged_single_curve_comparison.has_value()
+                        ? m_merged_single_curve_comparison->merged_chi2_data : 0.0, 6)
+           + "), which cannot happen at a proper solution, so at least one of these fits did not"
+             " reach its optimum and no separation statistic from them is usable";
+
   if( poor_fit_quality() )
     return "the fit does not describe the data (weighted R" + string("\xc2\xb2") + " = "
            + SpecUtils::printCompact(m_r2, 3) + "), so no per-curve result from it is meaningful -"
@@ -24530,6 +24541,14 @@ void RelActAutoSolution::finalize_curve_separation_status()
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
   }
 
+  // Same idea as the poor-fit floor below, but for a different failure: the tied fit could not even
+  //  reach the merged fit's chi2, so the three nested models disagree about their own ordering.  No
+  //  per-curve statement from that set is supportable.
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged
+      && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
+    m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
+
   // A fit that does not describe the data cannot support ANY confident statement about the curves -
   //  neither "per-curve results can be used with their reported uncertainties" nor "consistent with a
   //  single material of one enrichment".  Without this, a pair with no nuclide in common has neither
@@ -24702,6 +24721,13 @@ RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis
   //  Δχ2 that only reflects the second curve soaking up model error.
   const double model_error_scale = (m_dof_data > 0)
             ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+  // A tied fit that could not even match the merged fit is proof the fits are not mutually
+  //  consistent, and that undermines the per-curve compositions the z tiers below rest on just as
+  //  much as it undermines the tied delta-chi2.  Claim nothing.
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged )
+    return CurveDistinctBasis::None;
+
   const bool tied_valid = (m_tied_enrichment_comparison.has_value()
                            && m_tied_enrichment_comparison->valid);
   if( tied_valid )
@@ -26759,7 +26785,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
-                         const unsigned rescue_depth = 0 );
+                         const unsigned rescue_depth = 0,
+                         std::shared_ptr<const RelActAutoSolution> *merged_out = nullptr );
 
 static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const Options &orig_options,
@@ -26769,7 +26796,8 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
-                         const unsigned rescue_depth = 0 );
+                         const unsigned rescue_depth = 0,
+                         std::shared_ptr<const RelActAutoSolution> merged_sol = nullptr );
 
 
 /** The nuisance-parameter seed handed to the merged null: the multi-curve solution, with its
@@ -26796,6 +26824,39 @@ static RelActAutoSolution merged_null_nuisance_seed( const RelActAutoSolution &s
   seed.m_rel_activities.clear();
   return seed;
 }//merged_null_nuisance_seed(...)
+
+
+/** Which curve the merged single-curve model is built from: an UNSHIELDED (outermost)
+ physical-model curve when one exists, else the first physical one.
+
+ Basing the merge on a shielded (inner) curve loses that curve's external shielding entirely - the
+ "HPGe U inside U" preset's inner curve carries no Fe-case external of its own, it inherits it
+ through ShieldedByCurves, which the merge clears - which produced a merged model with no Fe case
+ and a spuriously huge delta-chi2 even where a single curve is exactly equivalent (stacked
+ EQUAL-enrichment objects: homogeneous slab attenuation composes, so one summed-AD slab reproduces
+ the stack identically).  Shared so the tied comparison's retry seeds the same curve. */
+static size_t merged_base_curve_index( const Options &options )
+{
+  size_t base_index = 0;
+  bool have_phys_base = false;
+  for( size_t i = 0; i < options.rel_eff_curves.size(); ++i )
+  {
+    const RelEffCurveInput &curve = options.rel_eff_curves[i];
+    if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      continue;
+    if( !have_phys_base )
+    {
+      base_index = i;
+      have_phys_base = true;
+    }
+    if( curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      base_index = i;
+      break;
+    }
+  }
+  return base_index;
+}//merged_base_curve_index(...)
 
 
 /** Re-express a converged MERGED single-curve solution as a starting point for the multi-curve
@@ -26974,7 +27035,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
-                         const unsigned rescue_depth )
+                         const unsigned rescue_depth,
+                         std::shared_ptr<const RelActAutoSolution> *merged_out )
 {
   // Every solve() return path calls this exactly once, so the separation status (which folds in the
   //  comparison computed below) is finalized here whether or not the comparison itself applies.
@@ -27017,32 +27079,7 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     for( RoiRange &roi : merged.rois )
       roi.range_limits_type = RoiRange::RangeLimitsType::Fixed;
 
-    // Base the merged curve on an UNSHIELDED (outermost) physical-model curve when one exists: its
-    //  external attenuators are the true external shielding of the whole stack.  Basing on a shielded
-    //  (inner) curve loses that shielding entirely - e.g. the "HPGe U inside U" preset's inner curve
-    //  carries no Fe-case external of its own (it inherits it through ShieldedByCurves, which the
-    //  merge clears), so a first-physical-curve choice produced a merged model with no Fe case and a
-    //  spuriously huge delta-chi2 even where a single curve is exactly equivalent (stacked
-    //  EQUAL-enrichment objects: homogeneous slab attenuation composes, so one summed-AD slab
-    //  reproduces the stack identically).
-    size_t base_index = 0;
-    bool have_phys_base = false;
-    for( size_t i = 0; i < orig_options.rel_eff_curves.size(); ++i )
-    {
-      const RelEffCurveInput &curve = orig_options.rel_eff_curves[i];
-      if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        continue;
-      if( !have_phys_base )
-      {
-        base_index = i;
-        have_phys_base = true;
-      }
-      if( curve.shielded_by_other_phys_model_curve_shieldings.empty() )
-      {
-        base_index = i;
-        break;
-      }
-    }//for( each curve )
+    const size_t base_index = merged_base_curve_index( orig_options );
 
     string notes;
     const auto add_note = [&notes]( const string &note ){
@@ -27333,6 +27370,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
       comparison.merged_dof_data = merged_sol.m_dof_data;
       if( !merged_sol.m_rel_activities.empty() )
         comparison.merged_activities = merged_sol.m_rel_activities.front();
+      if( merged_out )
+        *merged_out = std::make_shared<const RelActAutoSolution>( merged_sol );
       comparison.delta_chi2 = merged_sol.m_chi2_data - sol.m_chi2_data;
       comparison.extra_dof_of_multi = static_cast<int>(merged_sol.m_dof_data)
                                       - static_cast<int>(sol.m_dof_data);
@@ -27413,7 +27452,8 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
                          const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
                          std::shared_ptr<std::atomic_bool> cancel_calc,
-                         const unsigned rescue_depth )
+                         const unsigned rescue_depth,
+                         std::shared_ptr<const RelActAutoSolution> merged_sol )
 {
   const DoWorkOnDestruct finalize_status( [&sol](){ sol.finalize_curve_separation_status(); } );
 
@@ -27615,6 +27655,7 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
     const RelActAutoSolution *best_tied = nullptr;
     std::optional<RelActAutoSolution> best_tied_storage;
     string best_label;
+    Options best_options;   //the winning candidate's model, so the retry below re-solves the same one
 
     for( const pair<string,map<const SandiaDecay::Nuclide *,double>> &candidate : candidates )
     {
@@ -27682,6 +27723,7 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
         best_tied_storage = std::move( tied_sol );
         best_tied = &best_tied_storage.value();
         best_label = candidate.first;
+        best_options = tied;
       }
 
       // The remaining candidates exist only to find a LOWER tied chi2.  Once one common composition
@@ -27696,6 +27738,74 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
       if( (best_tied->m_chi2_data - sol.m_chi2_data) <= bar )
         break;
     }//for( each candidate common composition )
+
+    // --- Sanity floor: the tied fit must not be worse than the MERGED single-curve fit -----------
+    //
+    // The merged model is, to a very good approximation, a point of the tied model: put the merged
+    // composition on both curves, let the base curve carry the activity and leave the other one
+    // negligible (it can still host a source the base curve lacks, e.g. U232, with its own free
+    // ratio).  So chi2_tied should come out at or below chi2_merged, and when it does not, the tied
+    // fit missed - which INVENTS a detection, because delta_chi2 is measured from the free fit.
+    //
+    // This is not hypothetical: 48 of 154 corpus files violated it, 24 of them while reporting a
+    // detection, and for several the excess was as large as the delta-chi2 itself (a single 93 %
+    // disk - one object - reported "distinct" on a tied chi2 that sat 110 above the merged fit).
+    // So: retry from the merged solution re-expressed in the two-curve space, and if that still
+    // cannot match the merged fit, refuse to report the comparison at all rather than let a
+    // convergence failure masquerade as evidence.
+    const bool merged_usable = (merged_sol
+                                && RelActAutoSolution::is_usable_status(merged_sol->m_status)
+                                && std::isfinite(merged_sol->m_chi2_data));
+    static constexpr double sm_tied_vs_merged_tolerance = 1.0;  //chi2 units, above solver noise
+    if( best_tied && merged_usable
+        && (best_tied->m_chi2_data > (merged_sol->m_chi2_data + sm_tied_vs_merged_tolerance))
+        && (!cancel_calc || !cancel_calc->load()) )
+    {
+      const std::optional<RelActAutoSolution> merged_seed
+          = multi_curve_seed_from_merged( *merged_sol, orig_options,
+                                          merged_base_curve_index(orig_options) );
+      if( merged_seed.has_value() && !best_options.rel_eff_curves.empty() )
+      {
+        try
+        {
+          const RelActAutoSolution retried = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                          best_options, foreground, background, retained_drf, retained_peaks,
+                          det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                          false, &merged_seed.value(), true, nullptr, nullptr, true,
+                          /*may_host_profile=*/false );
+          if( RelActAutoSolution::is_usable_status(retried.m_status)
+              && std::isfinite(retried.m_chi2_data)
+              && (retried.m_chi2_data < best_tied->m_chi2_data) )
+          {
+            add_note( "the first tied fits landed above the merged single-curve fit, so the tie was"
+                      " re-solved from the merged solution (chi2 "
+                      + SpecUtils::printCompact(best_tied->m_chi2_data, 6) + " -> "
+                      + SpecUtils::printCompact(retried.m_chi2_data, 6) + ")" );
+            best_tied_storage = std::move( retried );
+            best_tied = &best_tied_storage.value();
+          }
+        }catch( const std::exception &e )
+        {
+          add_note( string("merged-seeded tied retry failed (") + e.what() + ")" );
+        }
+      }//if( a merged-derived seed could be built )
+
+      if( best_tied->m_chi2_data > (merged_sol->m_chi2_data + sm_tied_vs_merged_tolerance) )
+      {
+        comparison.tied_chi2_data = best_tied->m_chi2_data;
+        comparison.tied_dof_data = best_tied->m_dof_data;
+        comparison.delta_chi2 = best_tied->m_chi2_data - sol.m_chi2_data;
+        comparison.valid = false;
+        comparison.inconsistent_with_merged = true;
+        add_note( "the common-enrichment fit could not reach the merged single-curve fit's chi2 ("
+                  + SpecUtils::printCompact(best_tied->m_chi2_data, 6) + " vs "
+                  + SpecUtils::printCompact(merged_sol->m_chi2_data, 6) + "), so it is not at its"
+                  " own optimum and this comparison would overstate the composition difference" );
+        comparison.message = notes;
+        sol.m_tied_enrichment_comparison = std::move( comparison );
+        return;
+      }
+    }//if( the tied fit came out above the merged fit )
 
     if( !best_tied )
     {
@@ -27770,10 +27880,12 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
         // Both comparisons were measured against the solution just replaced.
         sol.m_merged_single_curve_comparison.reset();
         sol.m_tied_enrichment_comparison.reset();
+        std::shared_ptr<const RelActAutoSolution> new_merged;
         add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
-                                            all_peaks, det_type, cancel_calc );
+                                            all_peaks, det_type, cancel_calc, 0, &new_merged );
         add_tied_enrichment_comparison( sol, orig_options, foreground, background, input_drf,
-                                        all_peaks, det_type, cancel_calc, rescue_depth + 1 );
+                                        all_peaks, det_type, cancel_calc, rescue_depth + 1,
+                                        new_merged );
         return;
       }
     }//if( the restricted model beat the model containing it )
@@ -27833,10 +27945,11 @@ RelActAutoSolution solve( const Options options,
      || !orig_sol.m_spectrum )
   {
     RelActAutoSolution result = orig_sol;
+    std::shared_ptr<const RelActAutoSolution> merged_sol;
     add_merged_single_curve_comparison( result, options, foreground, background,
-                                        input_drf, all_peaks, det_type, cancel_calc );
+                                        input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
     add_tied_enrichment_comparison( result, options, foreground, background,
-                                    input_drf, all_peaks, det_type, cancel_calc );
+                                    input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
     add_mass_fraction_profiles( result, foreground, background, input_drf,
                                 all_peaks, det_type, cancel_calc );
     return result;
@@ -27868,10 +27981,11 @@ RelActAutoSolution solve( const Options options,
        || !current_sol.m_spectrum->energy_calibration()->valid() )
     {
       RelActAutoSolution result = orig_sol;
+      std::shared_ptr<const RelActAutoSolution> merged_sol;
       add_merged_single_curve_comparison( result, options, foreground, background,
-                                          input_drf, all_peaks, det_type, cancel_calc );
+                                          input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
       add_tied_enrichment_comparison( result, options, foreground, background,
-                                      input_drf, all_peaks, det_type, cancel_calc );
+                                      input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
       add_mass_fraction_profiles( result, foreground, background, input_drf,
                                   all_peaks, det_type, cancel_calc );
       return result;
@@ -28226,10 +28340,11 @@ RelActAutoSolution solve( const Options options,
           // The helper's guards skip the merged solve for a canceled fit, but its finalize keeps
           //  the metrics/status contract intact on this return path too.
           RelActAutoSolution canceled_sol = updated_sol;
+          std::shared_ptr<const RelActAutoSolution> merged_sol;
           add_merged_single_curve_comparison( canceled_sol, options, foreground, background,
-                                              input_drf, all_peaks, det_type, cancel_calc );
+                                              input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
           add_tied_enrichment_comparison( canceled_sol, options, foreground, background,
-                                          input_drf, all_peaks, det_type, cancel_calc );
+                                          input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
           return canceled_sol;
         }
       }//switch( updated_sol.m_status )
@@ -28279,10 +28394,11 @@ RelActAutoSolution solve( const Options options,
   else
     cout << " final ROIs were NOT found." << endl;
 
+  std::shared_ptr<const RelActAutoSolution> merged_sol;
   add_merged_single_curve_comparison( current_sol, options, foreground, background,
-                                      input_drf, all_peaks, det_type, cancel_calc );
+                                      input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
   add_tied_enrichment_comparison( current_sol, options, foreground, background,
-                                  input_drf, all_peaks, det_type, cancel_calc );
+                                  input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
   add_mass_fraction_profiles( current_sol, foreground, background, input_drf,
                               all_peaks, det_type, cancel_calc );
 
