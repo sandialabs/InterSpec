@@ -192,13 +192,12 @@ namespace model_sigma {
     /// 0.356% for CZT alone, so the class spread does not justify a split for the peak efficiency
     /// (it does for the total - see tot_far_floor).  The previous 0.014 over-covered by 2.8x: at
     /// that value 97.7% of probes sat inside one sigma and the RMS pull was 0.44.
-    /// HELD AT THE ORIGINAL VALUE, deliberately - see the measurement note above.
-    /// Dropping it to the measured 0.005 makes `act_fit_pulls_calibrated` WORSE off axis
-    /// (RMS pull 1.23 -> 1.46 at 30 degrees, against a gate of 1.3), because the oversized
-    /// floor was compensating for `transfer_offaxis_mid`, which the same corpus measures
-    /// ~4x too small.  The two errors currently cancel.  Land 0.005 together with the
-    /// re-derived transfer envelope, not before it.
-    constexpr double fep_far_floor = 0.014;
+    /// Landed together with the re-derived transfer envelope, which is the only way it
+    /// works: on its own this change made `act_fit_pulls_calibrated` WORSE off axis
+    /// (RMS pull 1.23 -> 1.46 at 30 degrees against a gate of 1.3), because the oversized
+    /// floor had been compensating for an off-axis term ~4x too small.  Two errors were
+    /// cancelling; fixing either alone exposes the other.
+    constexpr double fep_far_floor = 0.005;
     /// NEAR-FIELD PEAK FLOOR - NOT re-derived.  The 2026-09 study measured the FAR stratum only;
     /// no near-field probe bank was run, so this keeps its original import value and its original
     /// lack of provenance.  Deriving it needs the near stratum plus the d/a step test that would
@@ -233,14 +232,40 @@ namespace model_sigma {
     /// NOT re-derived, and DEAD IN PRACTICE: it is applied only by the opt-in closed loop
     /// (`GenerationOptions::closed_loop`), which nothing in InterSpec ever enables.
     constexpr double generator_floor_inflation = 1.25;
-    /// SigmaTransferModel defaults (S7-measured Level-1 values; a Level-2 nuisance fit would
-    /// shrink the near term to ~1%).  Known shortfall: an angle-flat curve transfer of a 3"x3"
-    /// NaI is measured 3-7% off at 30 degrees, where `transfer_offaxis_mid` gives 0.75%.
+    /// TRANSFER FAR-FIELD ON-AXIS FLOOR - MEASURED, 2026-09 corpus, and it survives.
+    /// A transfer anchored on a MEASURED MC curve at one distance and queried on axis at
+    /// another runs 0.55% RMS, against this 0.5%.  (The older
+    /// curve_transfer_envelope_corpus reported 0.00% here, but it anchored on a golden and
+    /// re-queried the same point - that is a tautology, not an accuracy, as its own gate
+    /// comment says.  Anchor at one distance and predict at another, or measure nothing.)
     constexpr double transfer_far_onaxis = 0.005;
-    constexpr double transfer_offaxis_mid = 0.03;
-    constexpr double transfer_offaxis_low_e = 0.25;
+    /// OFF-AXIS AMPLITUDE - MEASURED, 2026-09 corpus (36 detectors, 7668 held-out points).
+    /// The residual SATURATES with angle; see transfer_offaxis_s2_half.  This is the
+    /// amplitude the saturating form approaches, not a per-sin^2 slope, so it is not
+    /// comparable to the 0.03 it replaces.
+    constexpr double transfer_offaxis_mid = 0.037;
+    /// EXTRA AMPLITUDE at low energy - MEASURED, same corpus, and far smaller than the
+    /// 0.25 it replaces.  Splitting the corpus at mid_e_ref_keV gives A = 3.68% above and
+    /// 5.23% below, i.e. the amplitude rises by a factor 1.42, not the factor ~9 the old
+    /// value implied.  Enters as (mid + low_e * w^2) with w the ln ramp below.
+    constexpr double transfer_offaxis_low_e = 0.016;
     constexpr double transfer_low_e_ref_keV = 45.0;
     constexpr double transfer_mid_e_ref_keV = 150.0;
+    /// Half-saturation in sin^2(theta) for the off-axis term - MEASURED, 2026-09 corpus.
+    /// 0.153 = sin^2(23 degrees); fitted 0.116 (= sin^2 20 deg) above mid_e_ref_keV and
+    /// 0.203 (= sin^2 27 deg) below, so one value serves.
+    ///
+    /// WHY THE FORM CHANGED.  The error climbs to ~2.4% by 30 degrees and then flattens
+    /// (measured 2.43 / 3.64 / 4.01 / 3.04% at 30/45/60/75), while sin^2(theta) grows
+    /// without bound - so the old form was ~4x short at 15-30 degrees, where ordinary
+    /// measurements are made, and over-covered by ~2x past 60 degrees, where they are not.
+    /// The saturating form beat it on HELD-OUT angles in every split tried (fit {15,45,75}
+    /// predict {30,60}: RMS 0.49% vs 1.15%; and the reverse: 0.75% vs 1.53%), which is the
+    /// bar a change of functional form has to clear.
+    ///
+    /// <= 0 selects the LEGACY sin^2(theta) form, which is what a stored response written
+    /// before this field existed gets on read - old files keep old behaviour exactly.
+    constexpr double transfer_offaxis_s2_half = 0.153;
     constexpr double transfer_near_contact = 0.10;
     constexpr double transfer_near_gate_a = 5.0;
 }  // namespace model_sigma
@@ -589,6 +614,10 @@ struct SigmaTransferModel {
     double mid_e_ref_keV = model_sigma::transfer_mid_e_ref_keV;  ///< where the low-E term is off
     double near_contact = model_sigma::transfer_near_contact;    ///< at contact (d ~ a), no Level-2
     double near_gate_a = model_sigma::transfer_near_gate_a;      ///< near term active below this many a
+    /// Half-saturation in sin^2(theta) of the off-axis term.  <= 0 selects the legacy
+    /// unbounded sin^2(theta) form, so a response deserialized from a file written before
+    /// this field existed behaves exactly as it did.
+    double offaxis_s2_half = model_sigma::transfer_offaxis_s2_half;
 
     /// The three mechanisms separately - the on-axis floor, the off-axis (angle-flat eta)
     /// residual and the near-field residual; eval() is their quadrature sum.  A covariance treats

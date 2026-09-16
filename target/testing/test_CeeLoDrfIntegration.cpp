@@ -142,6 +142,9 @@ namespace
    study is a background job, so it should leave the box usable.
    */
   unsigned g_envelope_threads = 0;
+
+  /** --envelope-transfer: the curve-transfer envelope measurement.  No MC. */
+  bool g_envelope_transfer = false;
   int g_envelope_energies = 10;
 
   struct ProbeRow
@@ -362,6 +365,8 @@ struct TestFixture
         g_envelope_near = true;
       else if( arg == "--envelope-diag" )
         g_envelope_diag = true;
+      else if( arg == "--envelope-transfer" )
+        g_envelope_transfer = true;
       else if( arg.find("--envelope-threads=") == 0 )
         g_envelope_threads = static_cast<unsigned>( std::stoul( arg.substr( 19 ) ) );
       else if( arg.find("--envelope-energies=") == 0 )
@@ -3949,3 +3954,203 @@ BOOST_AUTO_TEST_CASE( envelope_bullet_diagnostic )
 
   BOOST_TEST_MESSAGE( "envelope_bullet_diagnostic: wrote " << out_path );
 }//envelope_bullet_diagnostic
+
+
+/** Measures the curve-transfer envelope (`ceelo::model_sigma::transfer_*`) against
+ direct Monte Carlo, reusing the corpus MC this study already collected.
+
+ WHY NOT curve_transfer_envelope_corpus.  That case anchors a transfer on a golden
+ response's own far-field on-axis curve and then compares the transfer to the same
+ golden - model against model, inheriting the golden's own interpolation error, and
+ circular on axis by construction (its gate comment says so: the far-field on-axis
+ agreement it checks is a tautology, not an accuracy).
+
+ What this does instead: the anchor is the MEASURED MC on-axis far-field curve from
+ `envelope_corpus_measure`'s raw rows, and the transfer is scored against the MC at
+ every OTHER (theta, d/a, E) point in the same file.  Both sides are then real
+ numbers, the on-axis far-field point is a genuine held-out prediction rather than
+ the anchor itself, and it runs on all 35 corpus detectors that carry an anchor
+ rather than on the 4 goldens.
+
+ Costs NO Monte Carlo: `make_transfer_response` is deterministic and sub-second, and
+ the MC truth is already on disk.
+
+ Emits one raw row per (detector, theta, d/a, E) - as everywhere in this study, no
+ statistic is computed here.  The saturating-form fit, the per-energy split that
+ judges `transfer_offaxis_low_e`, and the aspect-ratio regression live in the Python
+ under scratch/20260913_envelope_study/.
+
+ Run with --envelope-out=<dir> --envelope-transfer (no --envelope-corpus needed).
+ */
+BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
+{
+  if( g_envelope_out.empty() || !g_envelope_transfer )
+  {
+    BOOST_TEST_MESSAGE( "envelope_transfer_from_mc: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-transfer)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string raw_dir = SpecUtils::append_path( g_envelope_out, "raw" );
+  BOOST_REQUIRE( SpecUtils::is_directory(raw_dir) );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "transfer_vs_mc.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "# Curve-transfer envelope vs direct MC.  Anchor = MEASURED MC on axis at the\n"
+         "#   largest far-field distance in the corpus grid; every other point is a\n"
+         "#   held-out prediction.  No Monte Carlo is run here.\n"
+         "# envelope_* are the SigmaTransferModel components the response reports at the\n"
+         "#   query point: far_onaxis, offaxis and near, evaluated at the CRYSTAL-ORIGIN\n"
+         "#   d/a and cos_theta (which is what SigmaTransferModel::components consumes).\n"
+         "detector,family,fidelity,a_cm,aspect_L_over_2R,E_keV,is_k_edge,theta_deg,cos_theta,"
+         "d_face_cm,d_over_a_face,d_over_a_origin,mc,mc_sig,transfer,rel_err,"
+         "envelope_far,envelope_off,envelope_near,envelope_total\n";
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  size_t n_det = 0, n_rows = 0;
+
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+
+    string safe = det.name;
+    for( char &c : safe )
+    {
+      if( (c == ' ') || (c == '/') || (c == '\\') )
+        c = '_';
+    }
+    const string csv = SpecUtils::append_path( raw_dir, safe + "__far__p0.003__q0.003.csv" );
+    if( !SpecUtils::is_file(csv) )
+      continue;
+
+    // ---- read this detector's measured MC rows -----------------------------
+    struct McRow { double E, theta, d_face, mc, mc_sig; int is_edge; };
+    vector<McRow> rows;
+    {
+      ifstream in( csv.c_str() );
+      string line;
+      vector<string> hdr;
+      while( std::getline( in, line ) )
+      {
+        if( line.empty() || (line[0] == '#') )
+          continue;
+        vector<string> f;
+        SpecUtils::split( f, line, "," );
+        if( hdr.empty() )
+        { hdr = f; continue; }
+        if( f.size() != hdr.size() )
+          continue;
+        map<string,string> m;
+        for( size_t i = 0; i < f.size(); ++i )
+          m[hdr[i]] = f[i];
+        if( m["quantity"] != "fep" )
+          continue;
+        McRow r;
+        r.E = std::stod( m["E_keV"] );
+        r.theta = std::stod( m["theta_deg"] );
+        r.d_face = std::stod( m["d_face_cm"] );
+        r.mc = std::stod( m["mc"] );
+        r.mc_sig = std::stod( m["mc_sig"] );
+        r.is_edge = (m["is_k_edge"] == "1") ? 1 : 0;
+        if( r.mc > 0.0 )
+          rows.push_back( r );
+      }
+    }
+    if( rows.size() < 20 )
+      continue;
+
+    // ---- anchor: measured MC, on axis, at the largest distance -------------
+    double d_anchor = 0.0;
+    for( const McRow &r : rows )
+      if( std::fabs(r.theta) < 0.01 )
+        d_anchor = std::max( d_anchor, r.d_face );
+    if( d_anchor <= 0.0 )
+      continue;
+
+    ceelo::AnchorCurve anchor;
+    {
+      map<double,pair<double,double>> by_e;   //E -> (eff, frac_sigma)
+      for( const McRow &r : rows )
+      {
+        if( (std::fabs(r.theta) < 0.01) && (std::fabs(r.d_face - d_anchor) < 1e-6) && !r.is_edge )
+          by_e[r.E] = make_pair( r.mc, r.mc_sig / r.mc );
+      }
+      for( const pair<const double,pair<double,double>> &e : by_e )
+      {
+        anchor.energies_keV.push_back( e.first );
+        anchor.eff.push_back( e.second.first );
+        // The anchor is MC, so it carries real counting noise; declaring it keeps
+        //  the transfer's reported sigma honest rather than pretending the curve
+        //  is exact (which is what makes the golden-anchored version circular).
+        anchor.frac_sigma.push_back( e.second.second );
+      }
+    }
+    if( anchor.energies_keV.size() < 6 )
+      continue;
+
+    const Eigen::Vector3d ref_pos =
+          CeeLoUtils::sourcePositionFromFace( det.gd, 0.0, 0.0, d_anchor );
+    shared_ptr<ceelo::DetectorResponse> xfer;
+    try
+    {
+      xfer = ceelo::make_transfer_response( det.gd, anchor, ref_pos, nullptr,
+                                            ceelo::TransferResponseOptions{} );
+    }catch( std::exception &e )
+    {
+      BOOST_TEST_MESSAGE( "  " << det.name << ": transfer build failed: " << e.what() );
+      continue;
+    }
+    if( !xfer || !xfer->model_transfer.has_value() )
+      continue;
+
+    const double a_cm = det.gd.transverse_half_extent();
+    // Aspect ratio L/2R: the candidate geometric predictor of the off-axis
+    //  amplitude (how much the chord-length distribution changes with angle).
+    double aspect = 0.0;
+    if( det.gd.shape == ceelo::DetectorShape::Cylinder && det.gd.dimensions_cm.size() > 1 )
+      aspect = det.gd.dimensions_cm[1] / (2.0 * det.gd.dimensions_cm[0]);
+    else if( det.gd.dimensions_cm.size() > 2 )
+      aspect = det.gd.dimensions_cm[2] / (2.0 * std::min(det.gd.dimensions_cm[0],
+                                                         det.gd.dimensions_cm[1]));
+
+    for( const McRow &r : rows )
+    {
+      const double theta = r.theta * M_PI / 180.0;
+      const Eigen::Vector3d src =
+            CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, r.d_face );
+      const double d_origin = src.norm();
+      const double ct = (d_origin > 0.0) ? (-src.z() / d_origin) : 1.0;
+
+      const ceelo::EffResult t = xfer->eps_fep_at( r.E, src );
+      if( (t.value <= 0.0) || (t.flag != ceelo::ResponseFlag::Ok) )
+        continue;
+
+      const ceelo::SigmaTransferModel::Components c =
+            xfer->model_transfer->components( d_origin / a_cm, ct, r.E );
+
+      char line[512];
+      std::snprintf( line, sizeof(line),
+        "\"%s\",%s,%s,%.4f,%.4f,%.4f,%d,%.2f,%.6f,%.5f,%.4f,%.4f,%.6e,%.4e,%.6e,%.6f,"
+        "%.6f,%.6f,%.6f,%.6f",
+        det.name.c_str(), det.family.c_str(), det.fidelity.c_str(), a_cm, aspect,
+        r.E, r.is_edge, r.theta, ct, r.d_face, r.d_face/a_cm, d_origin/a_cm,
+        r.mc, r.mc_sig, t.value, t.value/r.mc - 1.0,
+        c.far_onaxis, c.offaxis, c.near,
+        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near) );
+      out << line << "\n";
+      ++n_rows;
+    }
+    ++n_det;
+    out.flush();
+  }//for( corpus )
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_transfer_from_mc: " << n_det << " detectors, "
+                      << n_rows << " rows -> " << out_path );
+  BOOST_CHECK_GT( n_det, 20u );
+}//envelope_transfer_from_mc

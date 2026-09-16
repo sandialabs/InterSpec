@@ -410,7 +410,12 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_shape) {
     const double contact = m.eval(1.0, 1.0, 662.0);
     BOOST_CHECK_LT(far_on, 0.01);
     BOOST_CHECK_GT(far_off, far_on);
-    BOOST_CHECK_GT(low_graze, 0.15);
+    // Low-energy grazing is still the largest far-field case, but it is no longer
+    // enormous: the 2026-09 corpus measured the off-axis amplitude rising by a
+    // factor 1.42 below mid_e_ref_keV, where transfer_offaxis_low_e = 0.25 had
+    // implied a factor ~9 and put this value above 0.15.  It is now ~0.046.
+    BOOST_CHECK_GT(low_graze, 0.03);
+    BOOST_CHECK_GT(low_graze, far_off);
     BOOST_CHECK_GT(contact, 0.05);
 }
 
@@ -440,7 +445,7 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_components_sum_to_eval) {
 BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
     // MEASURED on the 2026-09 corpus (33 detectors, far field, p=0.003), calibrated
     // to RMS pull 1.  Was 0.014, an un-derived import value that over-covered 2.8x.
-    BOOST_CHECK_EQUAL(model_sigma::fep_far_floor, 0.014);
+    BOOST_CHECK_EQUAL(model_sigma::fep_far_floor, 0.005);
     BOOST_CHECK_EQUAL(model_sigma::fep_near_floor, 0.023);
     // MEASURED on the 2026-09 corpus EXCLUDING CdTe-class crystals; was 0.016.
     BOOST_CHECK_EQUAL(model_sigma::tot_far_floor, 0.006);
@@ -450,8 +455,12 @@ BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
     BOOST_CHECK_EQUAL(model_sigma::tot_near_floor, 0.029);
     BOOST_CHECK_EQUAL(model_sigma::near_regime_a, 4.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_far_onaxis, 0.005);
-    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_mid, 0.03);
-    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_low_e, 0.25);
+    // MEASURED 2026-09: the saturating form's amplitude, not a per-sin^2 slope.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_mid, 0.037);
+    // MEASURED: amplitude rises x1.42 below mid_e_ref, not the x9 the old 0.25 implied.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_low_e, 0.016);
+    // MEASURED: sin^2(23 deg).  <= 0 would select the legacy unbounded sin^2 form.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_s2_half, 0.153);
     BOOST_CHECK_EQUAL(model_sigma::transfer_low_e_ref_keV, 45.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_mid_e_ref_keV, 150.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.10);
@@ -488,12 +497,26 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_absolute_values) {
     BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.100124922, 1e-6);
     // halfway through the near ramp (d = 3a): near term 0.05
     BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.050249378, 1e-6);
-    // far field, 60 degrees, above the low-E ramp: off = 0.75 * 0.03
-    BOOST_CHECK_CLOSE(m.eval(20.0, ct60, 662.0), 0.023048861, 1e-6);
-    // far field, grazing, at/below the low-E reference: off = 1.0 * (0.03 + 0.25)
-    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 45.0), 0.280044639, 1e-6);
+    // far field, 60 deg, above the low-E ramp: off = 0.037 * 0.75/(0.75 + 0.153)
+    BOOST_CHECK_CLOSE(m.eval(20.0, ct60, 662.0), 0.0311349968, 1e-5);
+    // far field, grazing, at/below the low-E reference:
+    //   off = (0.037 + 0.016) * 1.0/(1.0 + 0.153)
+    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 45.0), 0.0462381767, 1e-5);
     // the low-E boost is fully off at/above the mid reference
-    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 150.0), std::sqrt(0.005 * 0.005 + 0.03 * 0.03), 1e-9);
+    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 150.0), 0.0324773906, 1e-5);
+
+    // The off-axis term SATURATES: doubling sin^2 past the half-saturation point
+    // must gain much less than a factor two, which is the whole reason the form
+    // changed.  (Under the old sin^2 law these would differ by exactly 2x.)
+    const SigmaTransferModel::Components c45 = m.components(20.0, std::sqrt(0.5), 662.0);
+    const SigmaTransferModel::Components c90 = m.components(20.0, 0.0, 662.0);
+    BOOST_CHECK_LT(c90.offaxis / c45.offaxis, 1.35);
+
+    // A stored response written before offaxis_s2_half existed must keep the legacy
+    // unbounded form, which <= 0 selects.
+    SigmaTransferModel legacy = m;
+    legacy.offaxis_s2_half = 0.0;
+    BOOST_CHECK_CLOSE(legacy.components(20.0, ct60, 662.0).offaxis, 0.75 * 0.037, 1e-9);
 }
 
 // --- multi-energy covariance ------------------------------------------------

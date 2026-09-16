@@ -859,7 +859,13 @@ SigmaTransferModel::Components SigmaTransferModel::components(
             (std::log(mid_e_ref_keV) - std::log(low_e_ref_keV));
         w = clamp(w, 0.0, 1.0);
     }
-    c.offaxis = s2 * (offaxis_mid + offaxis_low_e * w * w);
+    // Saturating in sin^2(theta): the measured residual flattens past ~30 degrees
+    // because beyond there you are looking at the crystal from the side and the
+    // distribution of path lengths stops changing much with further angle.
+    // offaxis_s2_half <= 0 selects the legacy unbounded form (old stored files).
+    const double amp = offaxis_mid + offaxis_low_e * w * w;
+    c.offaxis = (offaxis_s2_half > 0.0) ? (amp * s2 / (s2 + offaxis_s2_half))
+                                        : (amp * s2);
     if (d_over_a < near_gate_a) {
         const double t = clamp((near_gate_a - d_over_a) / (near_gate_a - 1.0),
                                0.0, 1.0);
@@ -1841,6 +1847,7 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
             append_attrib(doc, tn, "midERefKeV", fmt_double(t.mid_e_ref_keV));
             append_attrib(doc, tn, "nearContact", fmt_double(t.near_contact));
             append_attrib(doc, tn, "nearGateA", fmt_double(t.near_gate_a));
+            append_attrib(doc, tn, "offAxisS2Half", fmt_double(t.offaxis_s2_half));
         }
         if (!grounding.points.empty()) {
             XmlNode* pts = append_node(doc, g, "Points");
@@ -1879,6 +1886,7 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, tn, "midERefKeV", fmt_double(t.mid_e_ref_keV));
         append_attrib(doc, tn, "nearContact", fmt_double(t.near_contact));
         append_attrib(doc, tn, "nearGateA", fmt_double(t.near_gate_a));
+            append_attrib(doc, tn, "offAxisS2Half", fmt_double(t.offaxis_s2_half));
     }
 
     // Accuracy certificate -- additive METADATA, excluded from content_hash
@@ -2043,6 +2051,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             t.mid_e_ref_keV = attrib_double(tn, "midERefKeV", t.mid_e_ref_keV);
             t.near_contact = attrib_double(tn, "nearContact", t.near_contact);
             t.near_gate_a = attrib_double(tn, "nearGateA", t.near_gate_a);
+            // Absent => 0 => the legacy sin^2 form, so old files are unchanged.
+            t.offaxis_s2_half = attrib_double(tn, "offAxisS2Half", 0.0);
         }
         if (const XmlNode* pts = g->first_node("Points")) {
             for (const XmlNode* pn = pts->first_node("Pt"); pn;
@@ -2080,6 +2090,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         t.mid_e_ref_keV = attrib_double(tn, "midERefKeV", t.mid_e_ref_keV);
         t.near_contact = attrib_double(tn, "nearContact", t.near_contact);
         t.near_gate_a = attrib_double(tn, "nearGateA", t.near_gate_a);
+            // Absent => 0 => the legacy sin^2 form, so old files are unchanged.
+            t.offaxis_s2_half = attrib_double(tn, "offAxisS2Half", 0.0);
         resp->model_transfer = t;
     }
 

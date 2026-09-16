@@ -924,8 +924,14 @@ BOOST_AUTO_TEST_CASE( act_fit_uncertainty_includes_drf )
       far_drf_part = drf_part;
   }//for( each regime )
 
-  // Far field on axis: the 3% certificate common modes (through the curve covariance) dominate
-  BOOST_CHECK_GT( far_drf_part, 0.02 );
+  // Far field on axis: the 3% certificate common modes (through the curve covariance)
+  //  dominate.  The lower bound moved 0.02 -> 0.015 when fep_far_floor was re-derived
+  //  from 0.014 to the measured 0.005 (2026-09 corpus): the floor is a fully-correlated
+  //  common mode, so shrinking it shrinks this contribution directly, and far_drf_part
+  //  measures 0.0179.  What the bound guards is that the DRF term stays non-trivial -
+  //  it is not a calibration, and the calibration that matters (act_fit_pulls_calibrated)
+  //  is checked separately and independently.
+  BOOST_CHECK_GT( far_drf_part, 0.015 );
   BOOST_CHECK_LT( far_drf_part, 0.06 );
   // Near field and off axis add the transfer's model envelope on top
   BOOST_CHECK_GT( near_drf_part, far_drf_part );
