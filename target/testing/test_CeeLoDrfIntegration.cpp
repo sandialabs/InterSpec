@@ -4013,7 +4013,7 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
          "#   d/a and cos_theta (which is what SigmaTransferModel::components consumes).\n"
          "detector,family,fidelity,a_cm,aspect_L_over_2R,E_keV,is_k_edge,theta_deg,cos_theta,"
          "d_face_cm,d_over_a_face,d_over_a_origin,mc,mc_sig,transfer,rel_err,"
-         "envelope_far,envelope_off,envelope_near,envelope_total\n";
+         "envelope_far,envelope_off,envelope_near,envelope_total,flag\n";
 
   const vector<CorpusDet> corpus = build_corpus_descriptors();
   size_t n_det = 0, n_rows = 0;
@@ -4029,13 +4029,25 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
       if( (c == ' ') || (c == '/') || (c == '\\') )
         c = '_';
     }
-    const string csv = SpecUtils::append_path( raw_dir, safe + "__far__p0.003__q0.003.csv" );
-    if( !SpecUtils::is_file(csv) )
+    // Both strata: the far rows measure the off-axis term, the near rows measure
+    //  transfer_near_contact / near_gate_a and near_unmodeled - which are the SAME
+    //  physics charged twice today (a curve transfer has no near-field table AND a
+    //  model_transfer, so it pays both).  Measuring them from one file settles
+    //  whether they can be merged.
+    vector<string> csvs;
+    for( const char * const stratum : { "__far__p0.003__q0.003.csv", "__near__p0.003__q0.003.csv" } )
+    {
+      const string c = SpecUtils::append_path( raw_dir, safe + stratum );
+      if( SpecUtils::is_file(c) )
+        csvs.push_back( c );
+    }
+    if( csvs.empty() )
       continue;
 
     // ---- read this detector's measured MC rows -----------------------------
     struct McRow { double E, theta, d_face, mc, mc_sig; int is_edge; };
     vector<McRow> rows;
+    for( const string &csv : csvs )
     {
       ifstream in( csv.c_str() );
       string line;
@@ -4070,6 +4082,8 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
       continue;
 
     // ---- anchor: measured MC, on axis, at the largest distance -------------
+    // Anchor on the FARTHEST on-axis point: that is the curve a real user would
+    //  have measured, and it keeps every near row a held-out prediction.
     double d_anchor = 0.0;
     for( const McRow &r : rows )
       if( std::fabs(r.theta) < 0.01 )
@@ -4132,7 +4146,14 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
       const double ct = (d_origin > 0.0) ? (-src.z() / d_origin) : 1.0;
 
       const ceelo::EffResult t = xfer->eps_fep_at( r.E, src );
-      if( (t.value <= 0.0) || (t.flag != ceelo::ResponseFlag::Ok) )
+      // NearFieldUnmodeled is kept on purpose: it means "no near-field table, sigma
+      //  inflated", not "refused", and that flagged region is exactly where
+      //  near_unmodeled and transfer_near_contact apply - i.e. the thing being
+      //  measured.  NeedsMc and OutOfRangeClamped are still dropped: those are the
+      //  response declining to promise anything.
+      if( (t.value <= 0.0)
+          || ((t.flag != ceelo::ResponseFlag::Ok)
+              && (t.flag != ceelo::ResponseFlag::NearFieldUnmodeled)) )
         continue;
 
       const ceelo::SigmaTransferModel::Components c =
@@ -4141,12 +4162,13 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
       char line[512];
       std::snprintf( line, sizeof(line),
         "\"%s\",%s,%s,%.4f,%.4f,%.4f,%d,%.2f,%.6f,%.5f,%.4f,%.4f,%.6e,%.4e,%.6e,%.6f,"
-        "%.6f,%.6f,%.6f,%.6f",
+        "%.6f,%.6f,%.6f,%.6f,%s",
         det.name.c_str(), det.family.c_str(), det.fidelity.c_str(), a_cm, aspect,
         r.E, r.is_edge, r.theta, ct, r.d_face, r.d_face/a_cm, d_origin/a_cm,
         r.mc, r.mc_sig, t.value, t.value/r.mc - 1.0,
         c.far_onaxis, c.offaxis, c.near,
-        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near) );
+        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near),
+        ceelo::to_string(t.flag) );
       out << line << "\n";
       ++n_rows;
     }

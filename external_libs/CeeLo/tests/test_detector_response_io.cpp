@@ -416,7 +416,7 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_shape) {
     // implied a factor ~9 and put this value above 0.15.  It is now ~0.046.
     BOOST_CHECK_GT(low_graze, 0.03);
     BOOST_CHECK_GT(low_graze, far_off);
-    BOOST_CHECK_GT(contact, 0.05);
+    BOOST_CHECK_GT(contact, 0.02);
 }
 
 // eval() is the quadrature sum of the three mechanisms components() reports.
@@ -446,13 +446,15 @@ BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
     // MEASURED on the 2026-09 corpus (33 detectors, far field, p=0.003), calibrated
     // to RMS pull 1.  Was 0.014, an un-derived import value that over-covered 2.8x.
     BOOST_CHECK_EQUAL(model_sigma::fep_far_floor, 0.005);
-    BOOST_CHECK_EQUAL(model_sigma::fep_near_floor, 0.023);
+    // MEASURED: no near excess for FEP (ratio 0.38x), so set equal to fep_far_floor.
+    BOOST_CHECK_EQUAL(model_sigma::fep_near_floor, 0.005);
     // MEASURED on the 2026-09 corpus EXCLUDING CdTe-class crystals; was 0.016.
     BOOST_CHECK_EQUAL(model_sigma::tot_far_floor, 0.006);
     // CdTe/CZT measured 3.2x higher.  Empirical split over a modelling gap that is
     // not understood - delete it once the underlying model is fixed, do not extend it.
     BOOST_CHECK_EQUAL(model_sigma::tot_far_floor_cdte, 0.020);
-    BOOST_CHECK_EQUAL(model_sigma::tot_near_floor, 0.029);
+    // MEASURED: the total DOES degrade close in (2.01x), unlike the peak.
+    BOOST_CHECK_EQUAL(model_sigma::tot_near_floor, 0.020);
     BOOST_CHECK_EQUAL(model_sigma::near_regime_a, 4.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_far_onaxis, 0.005);
     // MEASURED 2026-09: the saturating form's amplitude, not a per-sin^2 slope.
@@ -463,10 +465,12 @@ BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
     BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_s2_half, 0.153);
     BOOST_CHECK_EQUAL(model_sigma::transfer_low_e_ref_keV, 45.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_mid_e_ref_keV, 150.0);
-    BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.10);
+    // MEASURED against near-field MC; 0.10 over-covered by 2.5-5x inside 3.5a.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.04);
     BOOST_CHECK_EQUAL(model_sigma::transfer_near_gate_a, 5.0);
     BOOST_CHECK_EQUAL(model_sigma::behind_plane, 0.30);
-    BOOST_CHECK_EQUAL(model_sigma::near_unmodeled, 0.05);
+    // MEASURED, and no longer double-counted against the transfer's near ramp.
+    BOOST_CHECK_EQUAL(model_sigma::near_unmodeled, 0.04);
     BOOST_CHECK_EQUAL(model_sigma::buildup_floor, 0.10);
 
     const SigmaFloors f;
@@ -494,9 +498,11 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_absolute_values) {
     // far field, on axis, mid energy: the on-axis floor alone
     BOOST_CHECK_CLOSE(m.eval(20.0, 1.0, 662.0), 0.005, 1e-9);
     // at contact (d = a), on axis: sqrt(0.005^2 + 0.10^2)
-    BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.100124922, 1e-6);
+    // at contact (d = a), on axis: sqrt(0.005^2 + 0.04^2)
+    BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.0403112887, 1e-5);
     // halfway through the near ramp (d = 3a): near term 0.05
-    BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.050249378, 1e-6);
+    // halfway through the near ramp (d = 3a): near term 0.02
+    BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.0206155281, 1e-5);
     // far field, 60 deg, above the low-E ramp: off = 0.037 * 0.75/(0.75 + 0.153)
     BOOST_CHECK_CLOSE(m.eval(20.0, ct60, 662.0), 0.0311349968, 1e-5);
     // far field, grazing, at/below the low-E reference:

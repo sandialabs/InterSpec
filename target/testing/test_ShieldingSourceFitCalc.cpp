@@ -2619,11 +2619,23 @@ BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )
           BOOST_CHECK_EQUAL( model_cov[i], 0.0 );
       }else if( c.expect == PointEffModel::Response )
       {
-        // 5 cm is inside the transfer's near gate: the model envelopes dominate, and they are
-        //  common modes, so every pair of peaks is strongly correlated
+        // 5 cm is inside the transfer's near gate, so the model envelopes are present and
+        //  they are common modes: every pair of peaks stays positively, substantially
+        //  correlated.  What this guards is that the common mode is THERE - a fit that
+        //  treated a shared efficiency error as independent per peak would report an
+        //  activity several times more certain than it is (uncert overview sec 4).
+        //
+        // The threshold moved 0.5 -> 0.3 when the near-field envelope was re-derived on
+        //  the 2026-09 near-stratum corpus: transfer_near_contact 0.10 -> 0.04 (measured
+        //  2.5-5x over-covering inside 3.5a) and near_unmodeled no longer double-charged
+        //  against it.  A smaller shared envelope necessarily means a smaller shared
+        //  FRACTION of the variance, so rho fell to 0.361 - the data covariance now
+        //  competes rather than being swamped.  That is the intended consequence of a
+        //  measurement, and the system-level check agrees: act_fit_pulls_calibrated at
+        //  15 cm improved from 0.44 (2.3x over-covered) to 0.79.
         for( size_t i = 0; i < n; ++i )
           for( size_t j = 0; j < n; ++j )
-            BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.5,
+            BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.3,
                                  where << ": rho(" << energies[i] << "," << energies[j] << ") = "
                                  << cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) );
       }

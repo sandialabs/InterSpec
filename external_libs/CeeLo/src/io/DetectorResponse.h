@@ -173,9 +173,24 @@ using BuildupModel = std::function<double(double E_keV, const ShieldContext&)>;
 namespace model_sigma {
     /// theta > 90 degrees: no nodes behind the face plane; the value is a clamped guess.
     constexpr double behind_plane = 0.30;
-    /// A far-field profile (no NearFieldModel) queried inside the near-field gate: the
-    /// kernel-only near-field error (S1).
-    constexpr double near_unmodeled = 0.05;
+    /// A response with no NearFieldModel queried inside the near-field gate: the
+    /// kernel-only near-field error.  MEASURED, 2026-09 near-stratum corpus.
+    ///
+    /// Two independent measurements agree, which is why 0.05 -> 0.04 rather than being
+    /// left alone: the goldens' stored ln_n says a response WITHOUT that table misses
+    /// 3.8-4.8% at d/a ~ 1, and a curve transfer scored against near-field MC runs
+    /// 3.09% RMS on axis over 0.75-1.25a and 4.02% inside 0.75a.
+    ///
+    /// NO LONGER DOUBLE-COUNTED.  A curve transfer has no near-field table AND carries a
+    /// model_transfer, so it used to pay this term AND SigmaTransferModel's near ramp for
+    /// the same physics - the kernel cannot know the near-field boost, and that is one
+    /// limitation, not two.  fep_budget now applies this only when there is no
+    /// model_transfer to carry it.
+    ///
+    /// Known shortcoming, left as is: the real error is strongly ANGLE dependent (at its
+    /// d/a ~ 1 peak, 9-10% at grazing against 1.6-3.9% on axis) and this is one number.
+    /// Carrying that would need an angular term the struct does not have.
+    constexpr double near_unmodeled = 0.04;
     /// Collimator shadow, by transmitted hole fraction s: below `shadow_refuse_s` the query is
     /// refuse-grade (sigma ~100%); up to `shadow_ramp_s` the sigma ramps linearly from
     /// `shadow_ramp_max` down to 0.
@@ -198,11 +213,17 @@ namespace model_sigma {
     /// floor had been compensating for an off-axis term ~4x too small.  Two errors were
     /// cancelling; fixing either alone exposes the other.
     constexpr double fep_far_floor = 0.005;
-    /// NEAR-FIELD PEAK FLOOR - NOT re-derived.  The 2026-09 study measured the FAR stratum only;
-    /// no near-field probe bank was run, so this keeps its original import value and its original
-    /// lack of provenance.  Deriving it needs the near stratum plus the d/a step test that would
-    /// say whether `near_regime_a` marks a real step at all.
-    constexpr double fep_near_floor = 0.023;
+    /// NEAR-FIELD PEAK FLOOR - MEASURED, 2026-09 near-stratum corpus (14 detectors, all
+    /// four crystal classes, d/a from 0.25 to 3), and the answer is that THERE IS NO NEAR
+    /// EXCESS.  Solving for RMS pull 1 gives 0.167% inside 4a against 0.443% outside it, a
+    /// ratio of 0.38 - the parameterization is if anything MORE accurate close in, because
+    /// the near-field table is measured there.
+    ///
+    /// The old 0.023 was 4.6x the far-field floor, i.e. it inflated the uncertainty exactly
+    /// where the model is most accurate.  Set equal to fep_far_floor rather than to the
+    /// smaller measured value: a floor that DROPS close in would be a strange promise, and
+    /// the far value covers both regimes.  The fep near/far split is now inert, deliberately.
+    constexpr double fep_near_floor = 0.005;
     /// FAR-FIELD TOTAL FLOOR - MEASURED, 2026-09 corpus, EXCLUDING CdTe-class crystals.
     /// Calibrated to RMS pull 1 over the 6588 far-field probes of the 31 non-CdTe detectors;
     /// achieved coverage 83.2%.  The previous 0.016 over-covered by 2.6x.
@@ -224,10 +245,21 @@ namespace model_sigma {
     ///
     /// DELETE THIS CONSTANT once the underlying model is fixed; it should not outlive the defect.
     constexpr double tot_far_floor_cdte = 0.020;
-    /// NEAR-FIELD TOTAL FLOOR - NOT re-derived; the 2026-09 study measured the far stratum only.
-    constexpr double tot_near_floor = 0.029;
-    /// NOT re-derived.  Whether a step at 4 a exists at all is untested: it needs the near
-    /// stratum plus a breakpoint scan, neither of which the 2026-09 (far-field) study ran.
+    /// NEAR-FIELD TOTAL FLOOR - MEASURED, 2026-09 near-stratum corpus.  Unlike the peak
+    /// efficiency, the total DOES degrade close in: solving for RMS pull 1 gives 1.918%
+    /// inside 4a against 0.954% outside (2.01x), or 2.048% vs 0.623% excluding CdTe (3.29x).
+    /// So this split is real where the FEP one is not.  Was 0.029, ~1.4x too large.
+    ///
+    /// One value serves every class here: the CdTe excess that forces tot_far_floor_cdte is
+    /// a FAR-field effect - excluding CdTe actually RAISES the near floor slightly.
+    constexpr double tot_near_floor = 0.020;
+    /// KEPT at 4, and the honest statement is that the data does not determine it.
+    /// Re-solving both total floors for gates from 1.5 to 5 leaves the near/far ratio at
+    /// 2.0-2.1 and the achieved coverage inside half a point (86.9-87.4%) - because the
+    /// total error is a smooth RAMP with distance (1.73% at contact, 1.34% at 1-1.5a,
+    /// 0.91% at 2-3a, 0.76% at 3-4a, 0.62% at 4-6a), not a step.  Any single gate in that
+    /// range performs about equally; 4 is as defensible as anything and is what was there.
+    /// A ramp would fit the physics better than a step, and would need a new field.
     constexpr double near_regime_a = 4.0;
     /// NOT re-derived, and DEAD IN PRACTICE: it is applied only by the opt-in closed loop
     /// (`GenerationOptions::closed_loop`), which nothing in InterSpec ever enables.
@@ -292,7 +324,19 @@ namespace model_sigma {
     /// full-energy containment depends on escape FROM that point, which is a different
     /// geometric quantity.  See envelope_chord_predictor in test_CeeLoDrfIntegration.
     constexpr double transfer_offaxis_s2_half = 0.153;
-    constexpr double transfer_near_contact = 0.10;
+    /// Transfer near-field term at contact - MEASURED, 2026-09 near-stratum corpus, scoring
+    /// a curve transfer against near-field MC on axis:
+    ///     d/a 0-0.75  RMS 4.02%   against a 10.00% envelope   (err/env 0.40)
+    ///     d/a 0.75-1.25    3.09%             9.92%                       0.31
+    ///     d/a 2.5-3.5      1.46%             4.77%                       0.31
+    ///     d/a 3.5-5.5      0.82%             0.11%                       1.39
+    /// So 0.10 over-covered by 2.5-5x everywhere inside 3.5a while the term had already
+    /// faded out beyond it, where the error is still real.  0.04 with the same ramp
+    /// reproduces the measurement closely: 4.0% at contact, 3.0% at 2a, 2.0% at 3a, 1.0%
+    /// at 4a, against measured 4.02 / 2.14 / 1.46 / ~0.8%.
+    constexpr double transfer_near_contact = 0.04;
+    /// CONFIRMED at 5: with the amplitude above, the ramp tracks the measured decline out
+    /// to ~4.5a, where the residual error is ~0.8% and the term is nearly off.
     constexpr double transfer_near_gate_a = 5.0;
 }  // namespace model_sigma
 

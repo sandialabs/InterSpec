@@ -1262,7 +1262,14 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
             b.node2 += nf_sig * nf_sig;
         } else {
             raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
-            b.model[SigmaBudget::NearUnmodeled] = model_sigma::near_unmodeled;
+            // Charge this ONCE.  A curve transfer has no near-field table AND carries a
+            // model_transfer, so it used to pay near_unmodeled here and the transfer's
+            // near ramp in common_eval for the same physics - the ray-traced kernel
+            // cannot know the near-field boost, which is one limitation, not two.  The
+            // 2026-09 corpus measured both at ~4% and they are the same measurement.
+            // Where there is no model_transfer to carry it, this term still applies.
+            if (!model_transfer)
+                b.model[SigmaBudget::NearUnmodeled] = model_sigma::near_unmodeled;
         }
     }
 
