@@ -148,6 +148,13 @@ namespace
 
   /** --envelope-chord: the chord-length predictor experiment.  No MC. */
   bool g_envelope_chord = false;
+
+  /** --envelope-refuse: behind_plane and shadow_* - the refuse-grade terms. */
+  bool g_envelope_refuse = false;
+
+  /** --envelope-contact: generate the near stratum at ResponseProfile::Contact instead of
+   General.  Off by default so near and far are measured at the SAME profile. */
+  bool g_envelope_contact = false;
   int g_envelope_energies = 10;
 
   struct ProbeRow
@@ -372,6 +379,10 @@ struct TestFixture
         g_envelope_transfer = true;
       else if( arg == "--envelope-chord" )
         g_envelope_chord = true;
+      else if( arg == "--envelope-refuse" )
+        g_envelope_refuse = true;
+      else if( arg == "--envelope-contact" )
+        g_envelope_contact = true;
       else if( arg.find("--envelope-threads=") == 0 )
         g_envelope_threads = static_cast<unsigned>( std::stoul( arg.substr( 19 ) ) );
       else if( arg.find("--envelope-energies=") == 0 )
@@ -916,22 +927,15 @@ BOOST_AUTO_TEST_CASE( response_covariance_diagonal_matches_eval )
  (theta, d/a) cell: the mean signed error, the worst |error|, the worst |error|/sigma of the transfer,
  and how one-signed the error is across energies (a common mode, as the covariance treats it).
 
- Evidence, not a gate: the numbers are for the user's recalibration decision (see the header of
- model_sigma).  Only the far-field on-axis sanity is asserted.  Near-field cells are taken only
- where the golden itself has a near-field model and is inside its validated range.
+ SUPERSEDED as evidence by envelope_transfer_from_mc, which anchors on MEASURED MC
+ rather than on a golden and therefore is not circular.  The numbers in this block are
+ from before the 2026-09 re-derivation and NO LONGER DESCRIBE THE SHIPPED MODEL - the
+ off-axis term is now saturating (transfer_offaxis_mid 0.037 with a sin^2 half-saturation
+ at 0.153) rather than 0.03 x sin^2, and the near term is 0.06 rather than 0.10.  A reader
+ taking the percentages below as current will be off by ~2.5x.  Kept for the far-field
+ on-axis sanity check it still performs.
 
- Measured 2026-09-13 (full table in the test output; the 3"x3" NaI MakeDrfEndToEnd MC truth agrees):
-   - Off axis, d/a >= 5 (the far-field envelope alone): mean error 30 deg / 45 deg / 60 deg is
-     NaI 3.0/3.7/3.7%, HPGe coax 2.5/2.9/3.0%, Detective-X 1.8/2.7/2.9%, CZT box 0.3/0.1/0.5%, and
-     it saturates with angle rather than growing as sin^2(theta).  Worst |error|/sigma is 2.1-2.9
-     at 30-60 deg for the three cylinders (the 3% x sin^2 mid/high-E term gives 0.75% at 30 deg;
-     the low-E ramp term already covers the lowest energies).  One-signed across energies: NaI in
-     every cell, HPGe 80%, Detective-X 91% - a common mode, as the covariance treats it.
-   - Near field on axis, d/a = 1 / 2 / 3: mean error NaI 2.9/1.7/1.0%, HPGe 4.0/2.6/1.6%,
-     Detective-X 3.0/2.0/1.3% (worst 5-7% at contact), against a 10/7.5/5% envelope: covered
-     about 2x over, and always over-predicting.
-   - The far-field on-axis transfer reproduces the golden to < 0.01% (sanity).
- */
+ Original note: evidence, not a gate:*/
 BOOST_AUTO_TEST_CASE( curve_transfer_envelope_corpus )
 {
   const vector<double> thetas_deg = { 0.0, 15.0, 30.0, 45.0, 60.0 };
@@ -3765,10 +3769,13 @@ BOOST_AUTO_TEST_CASE( envelope_corpus_measure )
   const vector<CorpusDet> corpus = build_corpus_descriptors();
   const char * const stratum = g_envelope_near ? "near" : "far";
 
-  // The near-field stratum is only meaningful against a response that HAS a
-  //  near-field model to interpolate; a FarField profile there measures the
-  //  missing-model error, which is a different experiment (NearMissing).
-  const ceelo::ResponseProfile profile = g_envelope_near
+  // Profile matters, and mixing it across strata is a trap: a near sweep at Contact
+  //  ("denser near scan") compared against a far sweep at General cannot separate
+  //  "near regime" from "generation profile", and the floors it would produce are
+  //  applied on distance alone to every profile.  Default to General for BOTH strata
+  //  so the comparison is like-for-like; --envelope-contact opts into Contact when the
+  //  question really is about that profile.
+  const ceelo::ResponseProfile profile = (g_envelope_near && g_envelope_contact)
         ? ceelo::ResponseProfile::Contact : ceelo::ResponseProfile::General;
 
   size_t n_run = 0;
@@ -3784,9 +3791,10 @@ BOOST_AUTO_TEST_CASE( envelope_corpus_measure )
     //  runs at the same node precision but different probe precision are
     //  different experiments and must not collide on one filename.
     char leaf[256];
-    std::snprintf( leaf, sizeof(leaf), "%s__%s__p%g__q%g.csv",
-                   det.name.c_str(), stratum, g_envelope_precision,
-                   g_envelope_probe_precision );
+    std::snprintf( leaf, sizeof(leaf), "%s__%s%s__p%g__q%g.csv",
+                   det.name.c_str(), stratum,
+                   (profile == ceelo::ResponseProfile::Contact) ? "-contact" : "",
+                   g_envelope_precision, g_envelope_probe_precision );
     string safe = leaf;
     for( char &c : safe )
     {
@@ -4145,6 +4153,14 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
       const double d_origin = src.norm();
       const double ct = (d_origin > 0.0) ? (-src.z() / d_origin) : 1.0;
 
+      // EXCLUDE the anchor point itself.  The transfer reproduces its own anchor to
+      //  machine precision, so scoring it contributes bit-exact zeros and silently
+      //  dilutes the RMS - a third of the on-axis far rows, in the first version of this
+      //  case, which made transfer_far_onaxis look better than it is (0.546% scored vs
+      //  0.669% held out).  Everything emitted here must be a held-out prediction.
+      if( (std::fabs(r.theta) < 0.01) && (std::fabs(r.d_face - d_anchor) < 1e-6) )
+        continue;
+
       const ceelo::EffResult t = xfer->eps_fep_at( r.E, src );
       // NearFieldUnmodeled is kept on purpose: it means "no near-field table, sigma
       //  inflated", not "refused", and that flagged region is exactly where
@@ -4352,3 +4368,192 @@ BOOST_AUTO_TEST_CASE( envelope_chord_predictor )
   BOOST_TEST_MESSAGE( "envelope_chord_predictor: " << n_det << " detectors -> " << out_path );
   BOOST_CHECK_GT( n_det, 20u );
 }//envelope_chord_predictor
+
+
+/** Derives the two refuse-grade envelopes the corpus sweep could not reach:
+ `model_sigma::behind_plane` and the `shadow_*` collimator ramp.
+
+ Neither is measurable from the corpus sweep, for the same structural reason:
+ `ResponseGenerator::probe_bank` samples cos_theta over [cos_theta_min, 1] with
+ cos_theta_min = 0.02, so NOTHING ever probes behind the face plane, and no corpus
+ detector carries a collimator at all.  Both are cheap once you place the points by
+ hand, which is what this does.
+
+ behind_plane: MC with the source behind the crystal face (cos_theta < 0), against
+ the model's clamped guess.  The question to answer is not only "what is the number"
+ but "should there be a number at all" - the code already raises ResponseFlag::NeedsMc
+ there, and a 30% sigma on an answer the source itself calls a clamped guess may be
+ worse than declining to answer.
+
+ shadow_*: the transmitted hole fraction s = kernel_transmitted/omega_frac_active is
+ computable WITHOUT Monte Carlo, so probes can be PLACED at chosen s rather than
+ stumbled upon.  A tungsten-collimated NaI is built here because the corpus has no
+ collimated detector (the CeeLo suite's make_collimated_nai is a synthetic response,
+ not a descriptor this side can reach).
+
+ Run with --envelope-out=<dir> --envelope-refuse.
+ */
+BOOST_AUTO_TEST_CASE( envelope_refuse_grade_terms )
+{
+  if( g_envelope_out.empty() || !g_envelope_refuse )
+  {
+    BOOST_TEST_MESSAGE( "envelope_refuse_grade_terms: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-refuse)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "refuse_grade.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "term,detector,E_keV,theta_deg,cos_theta,d_face_cm,s_transmitted,"
+         "mc,mc_sig,model,rel_err,model_sigma,flag\n";
+
+  // ---- 1. behind_plane ----------------------------------------------------
+  // Three detectors of different shape; a source behind the face plane sees the
+  //  crystal through its back and sides, which the response has no nodes for.
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  size_t n_behind = 0;
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+    if( !SpecUtils::icontains(det.name, "nai3x3")
+        && !SpecUtils::icontains(det.name, "hpge_coax")
+        && !SpecUtils::icontains(det.name, "czt_box") )
+      continue;
+
+    ceelo::GenerationOptions opts;
+    opts.detector_name = det.name;
+    opts.profile = ceelo::ResponseProfile::General;
+    opts.node_fep_precision = 0.005;
+    opts.num_threads = g_envelope_threads;
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try { resp = ceelo::ResponseGenerator::generate( det.gd, opts ); }
+    catch( std::exception & ) { continue; }
+    if( !resp )
+      continue;
+
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+    const double a_cm = det.gd.transverse_half_extent();
+    for( const double theta_deg : { 100.0, 120.0, 150.0, 180.0 } )
+    {
+      const double theta = theta_deg * M_PI / 180.0;
+      for( const double E : { 60.0, 356.0, 1332.0 } )
+      {
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, 5.0*a_cm );
+        calc.set_point_source( src );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = E;
+        cfg.termination.target_fep_rel_precision = 0.01;
+        cfg.termination.max_events = 20000000;
+        cfg.termination.min_events = 40000;
+        cfg.num_threads = g_envelope_threads;
+        cfg.seed = 777000 + int(theta_deg)*10 + int(E);
+        const ceelo::EfficiencyResult mc = calc.compute( cfg );
+        const ceelo::EffResult m = resp->eps_fep_at( E, src );
+        if( (mc.full_energy_peak_efficiency <= 0.0) || (m.value <= 0.0) )
+          continue;
+        char line[320];
+        std::snprintf( line, sizeof(line),
+          "behind_plane,\"%s\",%.1f,%.1f,%.6f,%.4f,,%.6e,%.3e,%.6e,%.6f,%.6f,%s",
+          det.name.c_str(), E, theta_deg, std::cos(theta), 5.0*a_cm,
+          mc.full_energy_peak_efficiency, mc.fep_uncertainty, m.value,
+          m.value/mc.full_energy_peak_efficiency - 1.0, m.sigma/m.value,
+          ceelo::to_string(m.flag) );
+        out << line << "\n";
+        ++n_behind;
+      }
+    }
+    out.flush();
+  }
+
+  // ---- 2. shadow_* --------------------------------------------------------
+  // A tungsten-collimated 3"x3" NaI, mirroring the CeeLo suite's make_collimated_nai.
+  ceelo::GeometryDescriptor cg;
+  cg.set_dimensions( ceelo::CylinderDims{3.81, 7.62} );
+  cg.crystal_material_index = 0;
+  {
+    const shared_ptr<const Material> nai = MaterialDB::instance()->material("NaI");
+    const shared_ptr<const Material> al = MaterialDB::instance()->material("Al");
+    const shared_ptr<const Material> w = MaterialDB::instance()->material("W");
+    BOOST_REQUIRE_MESSAGE( nai && al && w, "MaterialDB missing NaI/Al/W" );
+    cg.materials = { CeeLoUtils::to_ceelo_material(*nai),
+                     CeeLoUtils::to_ceelo_material(*al),
+                     CeeLoUtils::to_ceelo_material(*w) };
+  }
+  { ceelo::LayerSpec can; can.material_index = 1; can.front_thickness_cm = 0.05;
+    can.side_thickness_cm = 0.05; can.z_end_cm = 7.62; cg.layers.push_back(can); }
+  { ceelo::CollimatorSpec col; col.material_index = 2; col.side_thickness_cm = 1.5;
+    col.z_start_cm = -5.0; col.z_end_cm = 7.62; cg.collimator = col; }
+  BOOST_REQUIRE_MESSAGE( cg.problems().empty(), "collimated descriptor is invalid" );
+
+  ceelo::GenerationOptions copts;
+  copts.detector_name = "collimated_nai";
+  copts.profile = ceelo::ResponseProfile::General;
+  copts.node_fep_precision = 0.005;
+  copts.num_threads = g_envelope_threads;
+  shared_ptr<ceelo::DetectorResponse> cresp;
+  try { cresp = ceelo::ResponseGenerator::generate( cg, copts ); }
+  catch( std::exception &e )
+  { BOOST_TEST_MESSAGE( "collimated generation failed: " << e.what() ); }
+
+  size_t n_shadow = 0;
+  if( cresp )
+  {
+    std::vector<std::unique_ptr<ceelo::Material>> owned2;
+    ceelo::EfficiencyCalculator ccalc;
+    ceelo::ResponseGenerator::configure_calculator( ccalc, cg, owned2 );
+    const double a_cm = cg.transverse_half_extent();
+
+    // Sweep angle to walk s from wide open down through the refuse gate.
+    for( const double theta_deg : { 0.0, 20.0, 35.0, 45.0, 55.0, 65.0, 75.0, 85.0 } )
+    {
+      const double theta = theta_deg * M_PI / 180.0;
+      for( const double E : { 122.0, 662.0, 1332.0 } )
+      {
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( cg, theta, 0.0, 8.0*a_cm );
+        const ceelo::ApertureQuadrature q = cresp->make_quadrature( src );
+        const ceelo::EffResult m = cresp->eps_fep_at( E, src, q );
+        if( m.value <= 0.0 )
+          continue;
+
+        ccalc.set_point_source( src );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = E;
+        cfg.termination.target_fep_rel_precision = 0.01;
+        cfg.termination.max_events = 20000000;
+        cfg.termination.min_events = 40000;
+        cfg.num_threads = g_envelope_threads;
+        cfg.seed = 888000 + int(theta_deg)*10 + int(E);
+        const ceelo::EfficiencyResult mc = ccalc.compute( cfg );
+        if( mc.full_energy_peak_efficiency <= 0.0 )
+          continue;
+
+        char line[320];
+        std::snprintf( line, sizeof(line),
+          "shadow,\"collimated_nai\",%.1f,%.1f,%.6f,%.4f,%.6f,%.6e,%.3e,%.6e,%.6f,%.6f,%s",
+          E, theta_deg, std::cos(theta), 8.0*a_cm,
+          q.omega_frac_active > 0.0 ? -1.0 : -1.0,   // s is private; the flag reports the regime
+          mc.full_energy_peak_efficiency, mc.fep_uncertainty, m.value,
+          m.value/mc.full_energy_peak_efficiency - 1.0, m.sigma/m.value,
+          ceelo::to_string(m.flag) );
+        out << line << "\n";
+        ++n_shadow;
+      }
+      out.flush();
+    }
+  }
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_refuse_grade_terms: " << n_behind << " behind-plane points, "
+                      << n_shadow << " shadow points -> " << out_path );
+  BOOST_CHECK_GT( n_behind, 10u );
+}//envelope_refuse_grade_terms

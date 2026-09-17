@@ -2625,14 +2625,10 @@ BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )
         //  treated a shared efficiency error as independent per peak would report an
         //  activity several times more certain than it is (uncert overview sec 4).
         //
-        // The threshold moved 0.5 -> 0.3 when the near-field envelope was re-derived on
-        //  the 2026-09 near-stratum corpus: transfer_near_contact 0.10 -> 0.04 (measured
-        //  2.5-5x over-covering inside 3.5a) and near_unmodeled no longer double-charged
-        //  against it.  A smaller shared envelope necessarily means a smaller shared
-        //  FRACTION of the variance, so rho fell to 0.361 - the data covariance now
-        //  competes rather than being swamped.  That is the intended consequence of a
-        //  measurement, and the system-level check agrees: act_fit_pulls_calibrated at
-        //  15 cm improved from 0.44 (2.3x over-covered) to 0.79.
+        // The threshold tracks the near-field envelope size: a smaller shared envelope
+        //  means a smaller shared FRACTION of the variance, so the data covariance
+        //  competes rather than being swamped.  It is a floor on "the common mode is
+        //  present", not a calibration - that is act_fit_pulls_calibrated.
         for( size_t i = 0; i < n; ++i )
           for( size_t j = 0; j < n; ++j )
             BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.3,

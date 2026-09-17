@@ -389,13 +389,10 @@ BOOST_AUTO_TEST_CASE(grounding_k_and_covariance) {
             const double rho = C[i * n + j] /
                 std::sqrt(C[i * n + i] * C[j * n + j]);
             BOOST_CHECK_LE(std::fabs(rho), 1.0 + 1e-9);
-            // Correlated, because the model envelopes are common modes across
-            // energy while the node statistics are independent.  The threshold
-            // dropped from 0.3 when fep_far_floor was re-derived from 0.014 to
-            // 0.005 (2026-09 corpus): a smaller shared envelope necessarily
-            // means a smaller shared FRACTION of the variance, so rho fell to
-            // 0.226 here.  That is the intended consequence, not a regression -
-            // what the test guards is that the common mode is still THERE.
+            // Correlated, because the model envelopes are common modes across energy
+            // while the node statistics are independent.  The threshold tracks the
+            // envelope size: a smaller shared envelope means a smaller shared FRACTION
+            // of the variance.  What this guards is that the common mode is still there.
             if (i != j) BOOST_CHECK_GT(rho, 0.15);
         }
     }
@@ -410,12 +407,13 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_shape) {
     const double contact = m.eval(1.0, 1.0, 662.0);
     BOOST_CHECK_LT(far_on, 0.01);
     BOOST_CHECK_GT(far_off, far_on);
-    // Low-energy grazing is still the largest far-field case, but it is no longer
-    // enormous: the 2026-09 corpus measured the off-axis amplitude rising by a
-    // factor 1.42 below mid_e_ref_keV, where transfer_offaxis_low_e = 0.25 had
-    // implied a factor ~9 and put this value above 0.15.  It is now ~0.046.
+    // Low-energy grazing is the largest far-field case, but only moderately so: the
+    // measured off-axis amplitude rises by a factor ~1.4 below mid_e_ref_keV.
     BOOST_CHECK_GT(low_graze, 0.03);
     BOOST_CHECK_GT(low_graze, far_off);
+    // At contact the envelope is sqrt(far_onaxis^2 + near^2), so this bound tracks
+    // transfer_near_contact directly.  What it guards is that the near term is still
+    // materially present at contact, not its exact size.
     BOOST_CHECK_GT(contact, 0.02);
 }
 
@@ -443,15 +441,15 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_components_sum_to_eval) {
 // values the response campaign set.  Changing a number here is a deliberate act with a test to
 // update, not a tidy-up.
 BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
-    // MEASURED on the 2026-09 corpus (33 detectors, far field, p=0.003), calibrated
-    // to RMS pull 1.  Was 0.014, an un-derived import value that over-covered 2.8x.
+    // Measured over the detector corpus, far field, calibrated to RMS pull 1.
     BOOST_CHECK_EQUAL(model_sigma::fep_far_floor, 0.005);
     // MEASURED: no near excess for FEP (ratio 0.38x), so set equal to fep_far_floor.
+    // Measured: no near excess for the peak efficiency (0.48x), so equal to fep_far_floor.
     BOOST_CHECK_EQUAL(model_sigma::fep_near_floor, 0.005);
-    // MEASURED on the 2026-09 corpus EXCLUDING CdTe-class crystals; was 0.016.
+    // Measured over the corpus EXCLUDING CdTe-class crystals, which need their own value.
     BOOST_CHECK_EQUAL(model_sigma::tot_far_floor, 0.006);
-    // CdTe/CZT measured 3.2x higher.  Empirical split over a modelling gap that is
-    // not understood - delete it once the underlying model is fixed, do not extend it.
+    // CdTe/CZT solves 3.2x higher.  Empirical split over a modelling gap that is not
+    // understood - delete it once the model is fixed, do not extend it.
     BOOST_CHECK_EQUAL(model_sigma::tot_far_floor_cdte, 0.020);
     // MEASURED: the total DOES degrade close in (2.01x), unlike the peak.
     BOOST_CHECK_EQUAL(model_sigma::tot_near_floor, 0.020);
@@ -466,11 +464,14 @@ BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
     BOOST_CHECK_EQUAL(model_sigma::transfer_low_e_ref_keV, 45.0);
     BOOST_CHECK_EQUAL(model_sigma::transfer_mid_e_ref_keV, 150.0);
     // MEASURED against near-field MC; 0.10 over-covered by 2.5-5x inside 3.5a.
-    BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.04);
+    // Measured as the RMS over the full angular range at the worst distance; an
+    // on-axis-only statistic under-covers grazing by about two.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.06);
     BOOST_CHECK_EQUAL(model_sigma::transfer_near_gate_a, 5.0);
     BOOST_CHECK_EQUAL(model_sigma::behind_plane, 0.30);
     // MEASURED, and no longer double-counted against the transfer's near ramp.
-    BOOST_CHECK_EQUAL(model_sigma::near_unmodeled, 0.04);
+    // The same quantity as transfer_near_contact, kept equal to it on purpose.
+    BOOST_CHECK_EQUAL(model_sigma::near_unmodeled, 0.06);
     BOOST_CHECK_EQUAL(model_sigma::buildup_floor, 0.10);
 
     const SigmaFloors f;
@@ -499,10 +500,12 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_absolute_values) {
     BOOST_CHECK_CLOSE(m.eval(20.0, 1.0, 662.0), 0.005, 1e-9);
     // at contact (d = a), on axis: sqrt(0.005^2 + 0.10^2)
     // at contact (d = a), on axis: sqrt(0.005^2 + 0.04^2)
-    BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.0403112887, 1e-5);
+    // at contact (d = a), on axis: sqrt(0.005^2 + 0.06^2)
+    BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.0602079729, 1e-5);
     // halfway through the near ramp (d = 3a): near term 0.05
     // halfway through the near ramp (d = 3a): near term 0.02
-    BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.0206155281, 1e-5);
+    // halfway through the near ramp (d = 3a): near term 0.03
+    BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.0304138127, 1e-5);
     // far field, 60 deg, above the low-E ramp: off = 0.037 * 0.75/(0.75 + 0.153)
     BOOST_CHECK_CLOSE(m.eval(20.0, ct60, 662.0), 0.0311349968, 1e-5);
     // far field, grazing, at/below the low-E reference:
@@ -744,7 +747,14 @@ BOOST_AUTO_TEST_CASE(frac_covariance_distance_form_applies_reference_point) {
     const double offset = r->descriptor.endcap_front_offset_cm();
     BOOST_REQUIRE_GT(offset, 0.0);
     // Just inside the gate from the crystal face, just outside it from the endcap front.
-    const double d = 2.0 * a - 0.5 * offset;
+    // Derive the distance FROM the gate rather than hard-coding 2a: with no near-field
+    // table the gate is max(provenance.min_distance_cm, near_regime_a * a), and it moved
+    // to 4a in 2026-09 when near_unmodeled was widened to cover 2a-4a (the boost is still
+    // 1.75-2.07% out there).  What this case tests is the REFERENCE-POINT conversion, so
+    // it must straddle whatever the gate currently is.
+    const double gate = std::max(r->provenance.min_distance_cm,
+                                 model_sigma::near_regime_a * a);
+    const double d = gate - 0.5 * offset;
     const std::vector<double> Es{661.7};
 
     const std::vector<double> C = r->frac_covariance(Es, 0.0, 0.0, d);
@@ -1408,24 +1418,18 @@ BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
                       kDefaultFepWindowKeV, 1e-9);
 }
 
-// The detector-side geometry mapping used to exist TWICE -- once in
-// ResponseGenerator's file-local Runner::configure, for the MC nodes the
-// generator runs, and once in the public configure_calculator.  They drifted:
-// the generator's copy never called set_bullet_radius and dropped
-// set_bore_hole's rounded_tip argument, so every response generated from a
-// bulletized descriptor had its eta table measured on a SHARP crystal while the
-// query-time kernel K ray-traced the filleted solid from the same descriptor.
-// Measured on the ANGLE GEM35-70 corpus (0.8 cm fillet) that put eps_fep 29%
-// high on axis and 21% low at 51 degrees at 35 keV.
+// The detector side of a descriptor is declared onto three different sinks - the query-time
+// kernel's Geometry (via GeometryDescriptor::build_geometry), the generator's per-node
+// EfficiencyCalculator, and the public configure_calculator.  They must agree: eta is
+// measured through a calculator while K traces a Geometry, so a feature one honours and
+// another drops makes the response internally inconsistent, and the generator's own probe
+// banks cannot see it because they route through the same path it does.
 //
-// The generator's own probe banks could not catch it: they route through the
-// same Runner::configure, so they simulated the same wrong crystal.
-//
-// The two copies are now ONE function (apply_detector_side), which is what
-// makes this test meaningful: exercising configure_calculator now exercises
-// the mapping the generator uses for every MC node.  Keep it that way -- if the
-// mapping is ever duplicated again, this test goes back to proving nothing.
-BOOST_AUTO_TEST_CASE(configure_calculator_carries_fillet_and_rounded_tip) {
+// This pins that agreement DIRECTLY - by tracing both sinks and comparing chords - rather
+// than by trusting that both happen to call apply_detector_side.  That matters: a test that
+// only exercises configure_calculator would still pass if someone re-inlined the mapping
+// into the generator and dropped a feature from the copy.
+BOOST_AUTO_TEST_CASE(descriptor_declares_the_same_solid_to_every_sink) {
     GeometryDescriptor gd;
     gd.set_dimensions(CylinderDims{3.0, 6.0});
     gd.crystal_material_index = 0;
@@ -1474,4 +1478,19 @@ BOOST_AUTO_TEST_CASE(configure_calculator_carries_fillet_and_rounded_tip) {
     const Eigen::Vector3d axis(0.0, 0.0, 1.0);
     BOOST_CHECK_CLOSE(active_len(g, src, axis),
                       active_len(calc_sharp.geometry(), src, axis), 1e-6);
+
+    // THE INVARIANT.  Build the same descriptor through the OTHER sink - the query-time
+    // kernel's Geometry - and require both to trace identical chords.  This is the pair
+    // that actually disagreed: eta was measured on a sharp crystal while K traced the
+    // filleted one.  Rays chosen to touch every feature: the corner (fillet), the axis
+    // (bore and front dead layer) and a steep side entry (side dead layer, can).
+    std::vector<std::unique_ptr<Material>> owned_geom;
+    const Geometry kernel_solid = gd.build_geometry(owned_geom);
+    const Eigen::Vector3d side(4.5, 0.0, 3.0);
+    for (const Eigen::Vector3d& target : {corner, Eigen::Vector3d(0.0, 0.0, 1.0), side}) {
+        const Eigen::Vector3d dir =
+            (target - src).norm() > 0.0 ? (target - src) : Eigen::Vector3d(0.0, 0.0, 1.0);
+        BOOST_CHECK_CLOSE(active_len(kernel_solid, src, dir),
+                          active_len(g, src, dir), 1e-9);
+    }
 }

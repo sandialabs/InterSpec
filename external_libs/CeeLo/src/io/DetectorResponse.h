@@ -143,200 +143,212 @@ using BuildupModel = std::function<double(double E_keV, const ShieldContext&)>;
 /// kinds apart (EffResult::sigma_model, frac_covariance's `model_part`).  Each enters a query as a
 /// fully-correlated common mode across energies at the query geometry.
 ///
-/// Provenance, per constant.  Anything not listed as measured below still dates from the original
-/// CeeLo import (InterSpec commit b26e5a67), whose S1/S7 campaign notes and "spec sec 4" grounding
-/// table are not in this repository - those remain placeholders, and say so individually.
+/// THE CORPUS.  Values marked MEASURED come from scoring generated responses against fresh,
+/// never-fitted MC on a stratified (E, d, theta) grid: 36 detectors - 4 CeeLo presets, 10 ANGLE
+/// imports, 22 GADRAS Detector.dat imports - spanning NaI / HPGe / LaBr3 / CZT and cylinder / box,
+/// generation and probes both at node_fep_precision = 0.003.  Harness: the `--envelope-*` flags on
+/// InterSpec's test_CeeLoDrfIntegration (`envelope_corpus_measure`, `envelope_transfer_from_mc`);
+/// raw per-probe CSVs and analysis under scratch/20260913_envelope_study/.  Re-run it when the
+/// engine changes.
 ///
-/// The 2026-09 corpus study (harness: InterSpec's test_CeeLoDrfIntegration, the `--envelope-*`
-/// flags on `envelope_corpus_measure`; working notes and raw per-probe CSVs under
-/// scratch/20260913_envelope_study/) measured 33 detectors - 4 CeeLo presets, 9 ANGLE imports and
-/// 20 GADRAS Detector.dat imports, spanning NaI / HPGe / LaBr3 / CZT and cylinder / box - against
-/// fresh, never-fitted MC on a stratified (E, d, theta) grid, generation and probes both at
-/// node_fep_precision = 0.003.
+/// THE STATISTIC.  These are consumed by a chi-square (InterSpec's
+/// compute_efficiency_whitening), so each measured value is the floor that makes the RMS pull
+/// about MC truth equal 1 over the relevant probes, with the response's own declared node sigma in
+/// the denominator.  That is NOT a 68% interval - the residual is heavy-tailed, so at these values
+/// about 75% (FEP) and 84% (total) of probes fall inside one sigma, and the two calibrations
+/// differ by ~1.6x.  State which one you targeted if you re-derive.
 ///
-/// WHICH STATISTIC.  These constants are consumed by a chi-square (InterSpec's
-/// compute_efficiency_whitening), so each measured value is the floor that makes the **RMS pull
-/// about MC truth equal 1** over every far-field probe in the corpus, with the response's own
-/// declared node sigma already in the denominator.  That is deliberately NOT the same as a 68%
-/// interval: at these values 75% (FEP) / 84% (total) of probes fall inside one sigma.  The
-/// residual is heavy-tailed, so the two calibrations differ by ~1.6x and cannot both be had.  If
-/// you re-derive, say which one you targeted.
-///
-/// NOT INCLUDED, deliberately: CeeLo-vs-GEANT4 model error.  Measured at <= 0.48% (FEP) and
-/// <= 0.23% (total) on the bare/lightly-shielded G4 configs {1,2,3,5,6,25,26}, with no new MC, from
-/// the committed references in tests/data/{geant4,ceelo}_reference (see
-/// scratch/20260913_envelope_study/mc_vs_geant4.py).  It is a BOUND rather than a measurement
-/// (the two codes' own counting noise is ~73% of the observed spread), it is code-vs-code rather
-/// than against data, and its applicability to an arbitrary user detector is not established.  A
-/// careful comparison with measured data is what would justify folding it in.  Do not add it on
-/// the strength of the number above.
+/// NOT INCLUDED, deliberately: CeeLo-vs-GEANT4 model error, bounded at <= 0.48% (FEP) and
+/// <= 0.23% (total) on the bare/lightly-shielded G4 configs {1,2,3,5,6,25,26} from the committed
+/// references in tests/data/{geant4,ceelo}_reference (scratch/20260913_envelope_study/
+/// mc_vs_geant4.py).  It is a bound rather than a measurement - the two codes' own counting noise
+/// is ~73% of the observed spread - it is code-vs-code rather than against data, and its
+/// applicability to an arbitrary user detector is not established.  A careful comparison against
+/// measured data is what would justify folding it in.
 namespace model_sigma {
     /// theta > 90 degrees: no nodes behind the face plane; the value is a clamped guess.
+    ///
+    /// MEASURED, and deliberately NOT reduced.  Direct MC behind the face plane (three
+    /// detectors, 100-180 degrees, 60 keV to 1.3 MeV - `envelope_refuse_grade_terms`, since
+    /// `probe_bank` samples cos_theta over [cos_theta_min, 1] and never goes there) puts the
+    /// clamped guess within 1-4% of truth, against this 30%.
+    ///
+    /// That measures the model against the solid as DESCRIBED, and the descriptor is knowingly
+    /// incomplete exactly there: CeeLo models no attenuator behind the crystal (see LayerSpec),
+    /// which is where a real detector keeps its PMT, cryostat or electronics.  So the 1-4%
+    /// says the extrapolation is sound for a bare back, not that a query behind a real
+    /// detector is good to 4%.  The envelope stays wide because what it is covering is the
+    /// missing back structure, which this measurement cannot see.
+    ///
+    /// The query also raises ResponseFlag::NeedsMc, so a host can decline rather than use it.
     constexpr double behind_plane = 0.30;
-    /// A response with no NearFieldModel queried inside the near-field gate: the
-    /// kernel-only near-field error.  MEASURED, 2026-09 near-stratum corpus.
+
+    /// A response with no NearFieldModel queried inside the near-field gate: the kernel-only
+    /// near-field error, i.e. the near-field boost a ray-traced kernel cannot know.
     ///
-    /// Two independent measurements agree, which is why 0.05 -> 0.04 rather than being
-    /// left alone: the goldens' stored ln_n says a response WITHOUT that table misses
-    /// 3.8-4.8% at d/a ~ 1, and a curve transfer scored against near-field MC runs
-    /// 3.09% RMS on axis over 0.75-1.25a and 4.02% inside 0.75a.
+    /// MEASURED as the RMS of |exp(lnN) - 1| over the stored NearFieldModel grid at its worst
+    /// distance (d/a ~ 1), pooled over three fully-characterized detectors.  Equal to
+    /// `transfer_near_contact` on purpose: it is the same limitation, and fep_budget applies
+    /// whichever one carries it, never both (see there for the angular structure).
     ///
-    /// NO LONGER DOUBLE-COUNTED.  A curve transfer has no near-field table AND carries a
-    /// model_transfer, so it used to pay this term AND SigmaTransferModel's near ramp for
-    /// the same physics - the kernel cannot know the near-field boost, and that is one
-    /// limitation, not two.  fep_budget now applies this only when there is no
-    /// model_transfer to carry it.
-    ///
-    /// Known shortcoming, left as is: the real error is strongly ANGLE dependent (at its
-    /// d/a ~ 1 peak, 9-10% at grazing against 1.6-3.9% on axis) and this is one number.
-    /// Carrying that would need an angular term the struct does not have.
-    constexpr double near_unmodeled = 0.04;
+    /// Gated at `near_regime_a`, not at provenance.min_distance_cm: the boost is still ~1.8-2.1%
+    /// out at 2.4-3a, which a 2a gate left uncovered.
+    constexpr double near_unmodeled = 0.06;
+
     /// Collimator shadow, by transmitted hole fraction s: below `shadow_refuse_s` the query is
     /// refuse-grade (sigma ~100%); up to `shadow_ramp_s` the sigma ramps linearly from
     /// `shadow_ramp_max` down to 0.
+    ///
+    /// NOT DERIVED - none of the four.  No corpus detector carries a collimator.  They are cheap
+    /// to measure once points are placed by hand: s = kernel_transmitted/omega_frac_active is
+    /// computable without any MC, so probes can be placed at chosen s.
+    ///
+    /// Known defect independent of the values: the ramp is DISCONTINUOUS at the refuse boundary,
+    /// giving 0.417 just above shadow_refuse_s and 1.0 just below it.
     constexpr double shadow_refuse = 1.0;
     constexpr double shadow_refuse_s = 0.05;
     constexpr double shadow_ramp_s = 0.30;
     constexpr double shadow_ramp_max = 0.5;
-    /// Model-form floor on the (ratio-only) build-up correction of a shielded eps_total, added
-    /// in quadrature when a ShieldContext is supplied.
+
+    /// Model-form floor on the (ratio-only) build-up correction of a shielded eps_total, added in
+    /// quadrature when a ShieldContext is supplied.
+    ///
+    /// NOT DERIVED.  CeeLo ships the build-up seam empty and the host installs the model, so
+    /// deriving this means comparing a corrected shielded eps_total against MC through real
+    /// shields with source geometry - a different experiment, and its own piece of work.
     constexpr double buildup_floor = 0.10;
-    /// FAR-FIELD PEAK FLOOR - MEASURED, 2026-09 corpus (33 detectors, far field, p = 0.003).
-    /// Calibrated to RMS pull 1 over 5508 probes; achieved coverage 74.8% within one sigma.
-    /// One constant serves every detector class: solving per class gives 0.475% excluding CZT and
-    /// 0.356% for CZT alone, so the class spread does not justify a split for the peak efficiency
-    /// (it does for the total - see tot_far_floor).  The previous 0.014 over-covered by 2.8x: at
-    /// that value 97.7% of probes sat inside one sigma and the RMS pull was 0.44.
-    /// Landed together with the re-derived transfer envelope, which is the only way it
-    /// works: on its own this change made `act_fit_pulls_calibrated` WORSE off axis
-    /// (RMS pull 1.23 -> 1.46 at 30 degrees against a gate of 1.3), because the oversized
-    /// floor had been compensating for an off-axis term ~4x too small.  Two errors were
-    /// cancelling; fixing either alone exposes the other.
+
+    /// Far-field peak-efficiency floor - MEASURED over 36 detectors.  One constant serves every
+    /// crystal class: solving per class gives 0.475% excluding CdTe and 0.356% for CdTe alone, so
+    /// the class spread does not justify a split here (it does for the total).
     constexpr double fep_far_floor = 0.005;
-    /// NEAR-FIELD PEAK FLOOR - MEASURED, 2026-09 near-stratum corpus (14 detectors, all
-    /// four crystal classes, d/a from 0.25 to 3), and the answer is that THERE IS NO NEAR
-    /// EXCESS.  Solving for RMS pull 1 gives 0.167% inside 4a against 0.443% outside it, a
-    /// ratio of 0.38 - the parameterization is if anything MORE accurate close in, because
-    /// the near-field table is measured there.
+
+    /// Near-field peak-efficiency floor - MEASURED, and the answer is that there is no near
+    /// excess: solving inside `near_regime_a` gives 0.21% against 0.43% outside it, over the
+    /// same detectors at the same generation profile.  The parameterization is if anything
+    /// MORE accurate close in, because the near-field table is measured there.
     ///
-    /// The old 0.023 was 4.6x the far-field floor, i.e. it inflated the uncertainty exactly
-    /// where the model is most accurate.  Set equal to fep_far_floor rather than to the
-    /// smaller measured value: a floor that DROPS close in would be a strange promise, and
-    /// the far value covers both regimes.  The fep near/far split is now inert, deliberately.
+    /// Set equal to `fep_far_floor` rather than to the smaller measured value - a floor that
+    /// DROPS close in would be a strange promise, and the far value covers both regimes.  The
+    /// peak near/far split is therefore inert by construction; the TOTAL one is not (3.0x).
     constexpr double fep_near_floor = 0.005;
-    /// FAR-FIELD TOTAL FLOOR - MEASURED, 2026-09 corpus, EXCLUDING CdTe-class crystals.
-    /// Calibrated to RMS pull 1 over the 6588 far-field probes of the 31 non-CdTe detectors;
-    /// achieved coverage 83.2%.  The previous 0.016 over-covered by 2.6x.
+
+    /// Far-field total-efficiency floor - MEASURED, EXCLUDING CdTe-class crystals.
     constexpr double tot_far_floor = 0.006;
-    /// FAR-FIELD TOTAL FLOOR for CdTe/CZT-class crystals - MEASURED, same corpus, 5 detectors,
-    /// 1080 probes; 1.971% for RMS pull 1, coverage 81.9%.  Rounded to 0.020.
+
+    /// Far-field total-efficiency floor for CdTe/CZT-class crystals - MEASURED separately because
+    /// one constant cannot serve: CdTe solves 3.2x higher than everything else.  Selected on
+    /// crystal COMPOSITION (`crystal_is_cdte_class`), not on the material's name, since names are
+    /// free-form user text.
     ///
-    /// This split is EMPIRICAL and its root cause is NOT understood.  Keeping one constant would
-    /// mean either under-covering CZT by 3.2x or over-covering everything else by 1.5x, so the
-    /// split earns its place - but it is a patch over a modelling gap, not a description of one.
-    ///
-    /// What is known: the total-efficiency error does NOT track detector size (the corpus's
-    /// SMALLEST crystal, a bare 0.5 cm3 CZT, is its most accurate at 0.044%, while a 1.0 cm3 CZT
-    /// with one attenuator layer is its worst at 3.490%), and it does NOT track `TotEffTier`
-    /// either - `EtaTotTable` spans the entire range from unresolved to 3.490%.  Both hypotheses
-    /// were tested and rejected on this corpus.  The leading remaining idea is that an uncollided
-    /// kernel plus an angle-flat correction cannot carry scatter-in from the surrounding housing.
-    /// See scratch/20260915_nonbare_det_uncert_investigate_prompt.md.
-    ///
-    /// DELETE THIS CONSTANT once the underlying model is fixed; it should not outlive the defect.
+    /// EMPIRICAL, and the root cause is not understood.  The excess tracks neither detector size
+    /// (the corpus's smallest crystal, a bare 0.5 cm3 CZT, is its most accurate) nor `TotEffTier`
+    /// (EtaTotTable spans the whole range); both were tested and rejected.  The leading remaining
+    /// idea is that an uncollided kernel plus an angle-flat b(E) cannot carry scatter-in from the
+    /// housing - see scratch/20260915_nonbare_det_uncert_investigate_prompt.md.  DELETE this
+    /// constant once the model is fixed; it should not outlive the defect.
     constexpr double tot_far_floor_cdte = 0.020;
-    /// NEAR-FIELD TOTAL FLOOR - MEASURED, 2026-09 near-stratum corpus.  Unlike the peak
-    /// efficiency, the total DOES degrade close in: solving for RMS pull 1 gives 1.918%
-    /// inside 4a against 0.954% outside (2.01x), or 2.048% vs 0.623% excluding CdTe (3.29x).
-    /// So this split is real where the FEP one is not.  Was 0.029, ~1.4x too large.
+
+    /// Near-field total-efficiency floor - MEASURED.  Unlike the peak efficiency, the total does
+    /// degrade close in: 1.92% inside `near_regime_a` against 0.64% outside, a factor 3.0.
     ///
-    /// One value serves every class here: the CdTe excess that forces tot_far_floor_cdte is
-    /// a FAR-field effect - excluding CdTe actually RAISES the near floor slightly.
+    /// One value serves every class measured near-field, but that is weak evidence about CdTe: the
+    /// near subset's only two CdTe detectors are the two showing no far-field excess either, and
+    /// the three that motivate `tot_far_floor_cdte` were never measured near-field.
     constexpr double tot_near_floor = 0.020;
-    /// KEPT at 4, and the honest statement is that the data does not determine it.
-    /// Re-solving both total floors for gates from 1.5 to 5 leaves the near/far ratio at
-    /// 2.0-2.1 and the achieved coverage inside half a point (86.9-87.4%) - because the
-    /// total error is a smooth RAMP with distance (1.73% at contact, 1.34% at 1-1.5a,
-    /// 0.91% at 2-3a, 0.76% at 3-4a, 0.62% at 4-6a), not a step.  Any single gate in that
-    /// range performs about equally; 4 is as defensible as anything and is what was there.
-    /// A ramp would fit the physics better than a step, and would need a new field.
+
+    /// Where the near regime begins, in transverse half-extents.
+    ///
+    /// NOT DETERMINED by the data.  Re-solving the total floors for gates from 1.5 to 5 leaves the
+    /// near/far ratio at 2.0-2.1 and the achieved coverage within half a point, because the total
+    /// error is a smooth ramp with distance (~1.7% at contact to ~0.6% at 4-6a), not a step.  Any
+    /// gate in that range performs about equally.  A ramp would fit the physics better than a step
+    /// and would need a new field.
     constexpr double near_regime_a = 4.0;
-    /// NOT re-derived, and DEAD IN PRACTICE: it is applied only by the opt-in closed loop
-    /// (`GenerationOptions::closed_loop`), which nothing in InterSpec ever enables.
+
+    /// Multiplier the closed loop applies to the FEP floors on a minor model-form failure.
+    ///
+    /// NOT DERIVED, and dead in practice: only `GenerationOptions::closed_loop` applies it, and
+    /// nothing in InterSpec enables that.
     constexpr double generator_floor_inflation = 1.25;
-    /// TRANSFER FAR-FIELD ON-AXIS FLOOR - MEASURED, 2026-09 corpus, and it survives.
-    /// A transfer anchored on a MEASURED MC curve at one distance and queried on axis at
-    /// another runs 0.55% RMS, against this 0.5%.  (The older
-    /// curve_transfer_envelope_corpus reported 0.00% here, but it anchored on a golden and
-    /// re-queried the same point - that is a tautology, not an accuracy, as its own gate
-    /// comment says.  Anchor at one distance and predict at another, or measure nothing.)
+
+    // --- SigmaTransferModel defaults ---------------------------------------------------------
+    //
+    // All four were measured on eps_FEP only (`envelope_transfer_from_mc` scores the FEP rows),
+    // but common_eval applies them to eps_total as well.  There is no total-efficiency measurement
+    // behind any of them.
+    //
+    // The measurement anchors a transfer on a MEASURED MC curve at one distance and scores it
+    // against MC at every OTHER distance, angle and energy, so every scored point is held out.
+    // (Anchoring on a model and re-querying the anchor measures nothing - it is a tautology.)
+
+    /// Transfer floor on axis in the far field.  MEASURED at 0.669% RMS held out, and 0.815% at
+    /// the shortest far distance probed (d/a = 5), i.e. above this value by 1.3-1.6x.  Left at
+    /// 0.005 rather than raised: it is a floor under a term the anchor covariance also carries,
+    /// and raising it would double-count a measured curve's own uncertainty.
     constexpr double transfer_far_onaxis = 0.005;
-    /// OFF-AXIS AMPLITUDE - MEASURED, 2026-09 corpus (36 detectors, 7668 held-out points).
-    /// The residual SATURATES with angle; see transfer_offaxis_s2_half.  This is the
-    /// amplitude the saturating form approaches, not a per-sin^2 slope, so it is not
-    /// comparable to the 0.03 it replaces.
+
+    /// Off-axis amplitude, mid and high energy - MEASURED.  This is the amplitude the saturating
+    /// form approaches (see `transfer_offaxis_s2_half`), not a per-sin^2 slope.
     constexpr double transfer_offaxis_mid = 0.037;
-    /// EXTRA AMPLITUDE at low energy - MEASURED, same corpus, and far smaller than the
-    /// 0.25 it replaces.  Splitting the corpus at mid_e_ref_keV gives A = 3.68% above and
-    /// 5.23% below, i.e. the amplitude rises by a factor 1.42, not the factor ~9 the old
-    /// value implied.  Enters as (mid + low_e * w^2) with w the ln ramp below.
+
+    /// Extra off-axis amplitude at low energy, entering as (mid + low_e * w^2) with w the ln ramp
+    /// between the two reference energies below.  MEASURED: splitting the corpus at
+    /// `transfer_mid_e_ref_keV` gives amplitudes of 3.68% above and 5.23% below, a factor 1.42.
     constexpr double transfer_offaxis_low_e = 0.016;
+
+    /// The low-energy ramp's endpoints.  NOT DERIVED - `transfer_mid_e_ref_keV` was used as the
+    /// SPLIT POINT when the amplitude either side of it was measured, which says nothing about
+    /// whether 45 and 150 are the right endpoints.  Testing that needs the amplitude resolved
+    /// across energy rather than pooled into two bins.
     constexpr double transfer_low_e_ref_keV = 45.0;
     constexpr double transfer_mid_e_ref_keV = 150.0;
-    /// Half-saturation in sin^2(theta) for the off-axis term - MEASURED, 2026-09 corpus.
-    /// 0.153 = sin^2(23 degrees); fitted 0.116 (= sin^2 20 deg) above mid_e_ref_keV and
-    /// 0.203 (= sin^2 27 deg) below, so one value serves.
+
+    /// Half-saturation of the off-axis term in sin^2(theta) - MEASURED at sin^2(23 deg); fitting
+    /// above and below `transfer_mid_e_ref_keV` separately gives sin^2(20 deg) and sin^2(27 deg),
+    /// so one value serves.
     ///
-    /// WHY THE FORM CHANGED.  The error climbs to ~2.4% by 30 degrees and then flattens
-    /// (measured 2.43 / 3.64 / 4.01 / 3.04% at 30/45/60/75), while sin^2(theta) grows
-    /// without bound - so the old form was ~4x short at 15-30 degrees, where ordinary
-    /// measurements are made, and over-covered by ~2x past 60 degrees, where they are not.
-    /// The saturating form beat it on HELD-OUT angles in every split tried (fit {15,45,75}
-    /// predict {30,60}: RMS 0.49% vs 1.15%; and the reverse: 0.75% vs 1.53%), which is the
-    /// bar a change of functional form has to clear.
+    /// The residual SATURATES with angle - past ~30 degrees you view the crystal from the side and
+    /// the distribution of path lengths through it stops changing much - where sin^2(theta) grows
+    /// without bound.  `A * s2/(s2 + s2_half)` beat sin^2 on HELD-OUT angles in every split tried
+    /// (fit {15,45,75} predict {30,60}: RMS 0.49% vs 1.15%, and the reverse 0.75% vs 1.53%), which
+    /// is the bar a change of functional form has to clear.
     ///
-    /// <= 0 selects the LEGACY sin^2(theta) form, which is what a stored response written
-    /// before this field existed gets on read - old files keep old behaviour exactly.
+    /// <= 0 selects the legacy unbounded sin^2 form, which is what a stored response written
+    /// before this field existed gets on read.
     ///
-    /// HOW MUCH OF THIS IS REDUCIBLE, measured on the same corpus - because the obvious
-    /// idea (add angular resolution) buys much less than it looks like it should:
+    /// HOW MUCH OF THE OFF-AXIS ERROR IS REDUCIBLE, since adding angular resolution is the obvious
+    /// idea and buys less than it looks like: a shared shape takes the 3.08% RMS residual to
+    /// 2.65%, adding an aspect-ratio amplitude to 2.50%, and a PERFECT per-(detector, angle)
+    /// correction only to 2.28% - because just 45% of the variance is a fixed bias per (detector,
+    /// angle) and 55% varies with ENERGY at fixed angle.  Resolving energy off axis is what
+    /// collapses it, and that is a full characterization, not more anchor angles.
     ///
-    ///   off-axis RMS error, no correction                      3.08%
-    ///   + a shared saturating shape f(theta)                   2.65%   (free)
-    ///   + amplitude linear in crystal aspect ratio L/2R        2.50%   (free)
-    ///   + a PERFECT per-(detector, angle) correction           2.28%   <- MC anchor angles
-    ///   + a PERFECT per-(detector, angle, ENERGY) correction   0.38%   <- full eta(E,theta)
-    ///
-    /// Only 45% of the variance is a fixed bias per (detector, angle); the other **55% varies
-    /// with ENERGY at fixed detector and angle**.  So angular refinement alone cannot remove
-    /// most of it, and a geometry-only correction removes just 19% in RMS - the per-detector
-    /// means correlate nicely with aspect ratio (flat crystals near zero, L/2R ~ 1 running
-    /// +2 to +4%), but those means are only part of the variance.  What collapses the error is
-    /// resolving ENERGY off axis, which is what a full characterization does.
-    ///
-    /// Predictors TRIED AND REJECTED on this corpus, so they are not retried: crystal
-    /// aspect ratio, the kernel's solid-angle-weighted mean chord, and that chord weighted
-    /// by interaction probability 1 - exp(-mu(E)L).  All three correlate with the residual
-    /// at |r| ~ 0.35-0.38 and all three leave ~1.9% - the interaction weighting buys nothing
-    /// over plain geometry even though it does carry real energy dependence (for a 3"x3" NaI
-    /// at 45 degrees its ratio runs 0.755 -> 0.871 over 40 keV to 2.5 MeV).  It is the wrong
-    /// energy dependence: the entry chord says where a photon first interacts, while
-    /// full-energy containment depends on escape FROM that point, which is a different
-    /// geometric quantity.  See envelope_chord_predictor in test_CeeLoDrfIntegration.
+    /// Predictors tried and rejected, so they are not retried: crystal aspect ratio, the kernel's
+    /// solid-angle-weighted mean chord, and that chord weighted by interaction probability
+    /// 1 - exp(-mu(E)L).  On a common subset all three correlate at |r| ~ 0.35-0.38 and leave
+    /// ~1.9%; the interaction weighting buys nothing over plain geometry despite carrying real
+    /// energy dependence.  The entry chord says where a photon first interacts, while full-energy
+    /// containment depends on escape FROM that point - a different geometric quantity.  See
+    /// `envelope_chord_predictor`.
     constexpr double transfer_offaxis_s2_half = 0.153;
-    /// Transfer near-field term at contact - MEASURED, 2026-09 near-stratum corpus, scoring
-    /// a curve transfer against near-field MC on axis:
-    ///     d/a 0-0.75  RMS 4.02%   against a 10.00% envelope   (err/env 0.40)
-    ///     d/a 0.75-1.25    3.09%             9.92%                       0.31
-    ///     d/a 2.5-3.5      1.46%             4.77%                       0.31
-    ///     d/a 3.5-5.5      0.82%             0.11%                       1.39
-    /// So 0.10 over-covered by 2.5-5x everywhere inside 3.5a while the term had already
-    /// faded out beyond it, where the error is still real.  0.04 with the same ramp
-    /// reproduces the measurement closely: 4.0% at contact, 3.0% at 2a, 2.0% at 3a, 1.0%
-    /// at 4a, against measured 4.02 / 2.14 / 1.46 / ~0.8%.
-    constexpr double transfer_near_contact = 0.04;
-    /// CONFIRMED at 5: with the amplitude above, the ramp tracks the measured decline out
-    /// to ~4.5a, where the residual error is ~0.8% and the term is nearly off.
+
+    /// Transfer near-field term at contact, ramping to zero at `transfer_near_gate_a`.
+    ///
+    /// MEASURED as the RMS over the full (E, cos theta) grid at the worst distance (d/a ~ 1).  The
+    /// angular range matters: the error is U-shaped in cos theta - for one HPGe at d/a = 1 it runs
+    /// 9.9% at grazing, a minimum of 1.6% near cos theta ~ 0.77, and 3.9% on axis - so an
+    /// on-axis-only measurement gives 4.0% and under-covers grazing queries by about two.  A single
+    /// number cannot carry that shape, and this is the honest one for a query of unknown angle.
+    ///
+    /// KNOWN SHORTCOMING: a query that is both near-grazing and close-in is still under-covered
+    /// (~10% real against ~6% declared).  Carrying it needs an angular term this struct does not
+    /// have, and the shape is not sin^2.
+    constexpr double transfer_near_contact = 0.06;
+
+    /// Where the transfer's near term switches off, in transverse half-extents.  With the
+    /// amplitude above the ramp tracks the measured decline out to ~4.5a, where the residual is
+    /// ~0.8% and the term is nearly off.
     constexpr double transfer_near_gate_a = 5.0;
 }  // namespace model_sigma
 
@@ -513,6 +525,53 @@ struct GeometryDescriptor {
     std::string to_xml_string() const;
     static GeometryDescriptor from_xml_string(const std::string& xml);
 };
+
+/// True when the crystal is CdTe-class (CdTe, CZT): Cd + Te carry more than half the
+/// crystal's mass.  Keyed on COMPOSITION rather than on the material's name, because names
+/// are free-form user text ("CZT", "CdZnTe", "Cd0.9Zn0.1Te", ...) and a name test would
+/// quietly stop matching.
+///
+/// ONE definition, used by both response-building paths (ResponseGenerator::generate and
+/// make_transfer_response).  It selects model_sigma::tot_far_floor_cdte, which is an
+/// empirical patch over a modelling gap that is not understood, so this is expected to be
+/// DELETED along with that constant rather than extended.
+/// Declare a descriptor's detector side - crystal, fillet, bore, dead layer, attenuator
+/// layers, collimator - onto `sink`.
+///
+/// ONE definition, used by all three paths that build a detector from a descriptor:
+/// GeometryDescriptor::build_geometry (the query-time kernel), ResponseGenerator's per-node
+/// setup, and ResponseGenerator::configure_calculator.  `Geometry` and `EfficiencyCalculator`
+/// expose the same setter signatures, so both are valid sinks.
+///
+/// Keep it that way.  The eta table is measured through a calculator configured here while
+/// the query-time kernel K traces a Geometry configured here; if the two ever declare
+/// different solids the response is internally inconsistent, and the generator's own probe
+/// banks cannot detect it because they route through the same path.
+///
+/// `mat` maps a descriptor material index to an instantiated Material the caller owns and
+/// keeps alive for as long as the sink is used.
+template <class Sink, class MatFn>
+void apply_detector_side(Sink& sink, const GeometryDescriptor& gd, MatFn mat) {
+    sink.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
+                                             gd.dimensions_cm);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after it; fillet
+    // first, so bore_fits() sees the final crystal profile.
+    if (gd.bullet_radius_cm > 0.0) sink.set_bullet_radius(gd.bullet_radius_cm);
+    if (gd.bore)
+        sink.set_bore_hole(gd.bore->radius, gd.bore->depth, gd.bore->rounded_tip);
+    if (gd.dead_layer)
+        sink.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side, gd.dead_layer->back);
+    for (const LayerSpec& l : gd.layers)
+        sink.add_attenuator(mat(l.material_index), l.front_thickness_cm,
+                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
+    if (gd.collimator)
+        sink.add_collimator(mat(gd.collimator->material_index),
+                            gd.collimator->side_thickness_cm, gd.collimator->z_start_cm,
+                            gd.collimator->z_end_cm);
+}
+
+bool crystal_is_cdte_class(const GeometryDescriptor& gd);
+
 
 // ---------------------------------------------------------------------------
 // Stored mu tables (generation-time attenuation snapshot)

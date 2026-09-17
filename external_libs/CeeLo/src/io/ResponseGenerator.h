@@ -205,12 +205,11 @@ struct GenerationOptions {
     bool transfer_mode = false;
     /// > 1 spends a few forced cos-theta MC anchors to build a coarse eta(E, theta).
     ///
-    /// Measured ceiling (2026-09 corpus, 36 detectors): angular anchors alone take the
-    /// far-field off-axis error from 3.08% to at best 2.28% RMS, because only 45% of that
-    /// error is a fixed bias per (detector, angle) - the other 55% varies with ENERGY at
-    /// fixed angle. Resolving energy off axis is what collapses it to ~0.38%, and that is
-    /// a full characterization (transfer_mode = false), not more anchors.
-    /// Spend anchors to cut the bias; do not expect them to cut the envelope.
+    /// Angular anchors cut the off-axis BIAS, not the envelope: measured over the detector
+    /// corpus, only 45% of the far-field off-axis error is a fixed bias per (detector,
+    /// angle), and a perfect angle correction takes the 3.08% RMS residual only to 2.28%.
+    /// The other 55% varies with ENERGY at fixed angle, which collapses it to ~0.4% but
+    /// needs a full characterization (transfer_mode = false), not more anchors.
     int  n_anchor_angles = 1;
 
     uint64_t base_seed = 1;         ///< deterministic node-seed base (never 0)

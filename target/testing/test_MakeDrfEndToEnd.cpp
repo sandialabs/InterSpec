@@ -925,14 +925,13 @@ BOOST_AUTO_TEST_CASE( act_fit_uncertainty_includes_drf )
   }//for( each regime )
 
   // Far field on axis: the 3% certificate common modes (through the curve covariance)
-  //  dominate.  The lower bound moved 0.02 -> 0.015 when fep_far_floor was re-derived
-  //  from 0.014 to the measured 0.005 (2026-09 corpus): the floor is a fully-correlated
-  //  common mode, so shrinking it shrinks this contribution directly, and far_drf_part
-  //  measures 0.0179.  What the bound guards is that the DRF term stays non-trivial -
-  //  it is not a calibration, and the calibration that matters (act_fit_pulls_calibrated)
-  //  is checked separately and independently.
+  //  dominate, and far_drf_part measures ~1.8%.  These bounds guard that the DRF term
+  //  stays non-trivial and does not run away; they are not a calibration - that is
+  //  act_fit_pulls_calibrated, checked separately.  fep_far_floor is a fully-correlated
+  //  common mode, so it feeds this quantity directly.
   BOOST_CHECK_GT( far_drf_part, 0.015 );
-  BOOST_CHECK_LT( far_drf_part, 0.06 );
+  // Keep the upper bound close to the measurement: a bound that cannot fail is not a test.
+  BOOST_CHECK_LT( far_drf_part, 0.03 );
   // Near field and off axis add the transfer's model envelope on top
   BOOST_CHECK_GT( near_drf_part, far_drf_part );
   BOOST_CHECK_GT( off_drf_part, far_drf_part );
@@ -1032,6 +1031,13 @@ BOOST_AUTO_TEST_CASE( act_fit_pulls_calibrated )
           BOOST_CHECK_MESSAGE( (sd > 0.5) && (sd < 1.3), "far field pull SD " << sd );
         }
         BOOST_CHECK_MESSAGE( rms < 1.3, g.d_cm << " cm, " << g.theta_deg << " deg: RMS pull " << rms );
+      // AND a lower bound.  An over-covering envelope is a real defect, not a safe
+      //  default - it hides disagreement and makes every activity look consistent - and
+      //  without this bound it is invisible here, since an envelope ten times too large
+      //  passes `rms < 1.3` trivially.  The three regimes read ~0.8 / 1.0 / 1.2, so 0.6
+      //  leaves room for honest variation without admitting a 2x-over-covered envelope.
+      BOOST_CHECK_MESSAGE( rms > 0.6, g.d_cm << " cm, " << g.theta_deg
+                           << " deg: RMS pull " << rms << " - envelope is OVER-covering" );
       }else
       {
         // Counting statistics alone cover neither the calibration nor the transfer's model error

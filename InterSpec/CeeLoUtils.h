@@ -49,8 +49,25 @@ namespace CeeLoUtils
 {
   /** The fractional 1-sigma assumed for an efficiency anchor point when the DRF carries no
    uncertainty information at all, and the floor applied when it does: a fitted curve's tiny
-   statistical sigma must not claim the anchor is exact.  Ad hoc, like ceelo::model_sigma - the
-   only such defaults on the InterSpec side, kept here so they cannot multiply.
+   statistical sigma must not claim the anchor is exact.  The only such defaults on the
+   InterSpec side, kept here so they cannot multiply.
+
+   sm_default_anchor_frac_sigma - MEASURED.  The canonical "states no uncertainty" case is a
+   GADRAS Detector.dat + Efficiency.csv, and `gadras_efficiency_cross_validation` measures how
+   far that stated curve sits from Monte-Carlo truth for the geometry the file describes - 160
+   points over 20 detectors, 60 keV to 2 MeV, giving median |MC/stated - 1| of 2.3% (LaBr3),
+   2.6% (NaI), 3.0% (CZT) and 5.8% (HPGe).  Converting those medians to an equivalent one-sigma
+   (x1.48 for a half-normal) spans about 3.4% to 8.6%, and 0.05 sits inside that - generous for
+   LaBr3 and NaI, about 1.7x thin for HPGe.  Note this deliberately includes GEOMETRY-description
+   error, because that is part of how wrong such a DRF is, which is what an anchor sigma covers.
+   Note also it is a median-to-sigma conversion, a different statistic from the RMS-pull
+   calibration behind `ceelo::model_sigma`.
+
+   sm_min_anchor_frac_sigma - NOT DERIVED, and the question is not its size.  It exists to stop a
+   fitted curve's tiny statistical sigma claiming an anchor is exact; since
+   `curveAnchorWithCovarianceForDrf` carries the curve's full covariance rather than a per-point
+   sigma, the guard may have less to do.  Deciding that needs a look at what covariances
+   MakeDrfFit actually produces, not a corpus measurement.
    */
   constexpr double sm_default_anchor_frac_sigma = 0.05;
   constexpr double sm_min_anchor_frac_sigma = 0.01;

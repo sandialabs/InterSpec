@@ -244,6 +244,12 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
 
     // Honest off-axis/near sigma (the angle-flat eta has no theta residual).
     resp->model_transfer = opts.model_transfer;
+    // The measured floors are per-response and were only ever stamped by
+    // ResponseGenerator::generate(), so a curve transfer - which runs no MC and never
+    // goes through it - shipped the CdTe-class total floor at its non-CdTe value,
+    // under-covering by 3.3x on exactly the detectors that motivated the split.
+    if (crystal_is_cdte_class(descriptor))
+        resp->floors.tot_far = model_sigma::tot_far_floor_cdte;
 
     if (have_cov)
         set_anchor_covariance(*resp, fep_anchor);

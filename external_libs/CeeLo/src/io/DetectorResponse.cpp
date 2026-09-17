@@ -276,20 +276,7 @@ Geometry GeometryDescriptor::build_geometry(
     };
 
     Geometry g;
-    g.set_detector_from_dimensions_vector(shape, mat_at(crystal_material_index), dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after
-    // it; fillet first, so bore_fits() sees the final crystal profile.
-    if (bullet_radius_cm > 0.0) g.set_bullet_radius(bullet_radius_cm);
-    if (bore) g.set_bore_hole(bore->radius, bore->depth, bore->rounded_tip);
-    if (dead_layer)
-        g.set_dead_layer(dead_layer->front, dead_layer->side, dead_layer->back);
-    for (const LayerSpec& l : layers)
-        g.add_attenuator(mat_at(l.material_index), l.front_thickness_cm,
-                         l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (collimator)
-        g.add_collimator(mat_at(collimator->material_index),
-                         collimator->side_thickness_cm, collimator->z_start_cm,
-                         collimator->z_end_cm);
+    apply_detector_side(g, *this, mat_at);
     return g;
 }
 
@@ -847,6 +834,18 @@ double TotEffPayload::ln_b_at(double energy_keV) const {
 // Grounding
 // ---------------------------------------------------------------------------
 
+bool crystal_is_cdte_class(const GeometryDescriptor& gd) {
+    if (gd.crystal_material_index < 0 ||
+        static_cast<size_t>(gd.crystal_material_index) >= gd.materials.size())
+        return false;
+    double cd_te = 0.0;
+    for (const MaterialComponent& c : gd.materials[static_cast<size_t>(
+             gd.crystal_material_index)].composition) {
+        if (c.Z == 48 || c.Z == 52) cd_te += c.mass_fraction;
+    }
+    return cd_te > 0.5;
+}
+
 SigmaTransferModel::Components SigmaTransferModel::components(
     double d_over_a, double cos_theta, double energy_keV) const {
     Components c;
@@ -1253,7 +1252,13 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
     // and angle dependent) or the provenance floor - NOT the floor regime `near_regime`.
     ln_N = 0.0;
     const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
-    const double d_gate = std::max(d_break, provenance.min_distance_cm);
+    double d_gate = std::max(d_break, provenance.min_distance_cm);
+    // With no near-field table the gate would be provenance.min_distance_cm, which the
+    // generator sets to 2a - but the boost the response cannot represent is still
+    // 1.75-2.07% out at 2.4-3a (measured on the goldens' ln_n), a regime where this term
+    // switched off and nothing else covered it.  Widen it to the floor's own near regime.
+    if (near_field.empty())
+        d_gate = std::max(d_gate, floors.near_regime_a * ec.a_cm);
     if (ec.d_cm < d_gate) {
         if (!near_field.empty()) {
             ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);

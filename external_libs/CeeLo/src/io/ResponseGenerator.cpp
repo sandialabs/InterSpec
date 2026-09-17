@@ -90,64 +90,6 @@ double resolve_node_precision(const GenerationOptions& opts, uint32_t stage,
                                : opts.node_fep_precision;
 }
 
-/// The detector-side geometry mapping: crystal, fillet, bore, dead layer,
-/// attenuator layers, collimator.
-///
-/// ONE copy on purpose. This used to be written out twice -- once in
-/// Runner::configure for the generator's own MC nodes and once in the public
-/// configure_calculator -- and the two drifted: the generator's copy never
-/// called set_bullet_radius and dropped set_bore_hole's rounded_tip argument.
-/// Every response generated from a bulletized descriptor therefore had its eta
-/// table measured on a SHARP crystal, while the query-time kernel K ray-traced
-/// the filleted solid from the same descriptor. Measured on the ANGLE GEM35-70
-/// corpus (0.8 cm fillet), that put eps_fep 29% high on axis and 21% low at
-/// 51 degrees at 35 keV, decaying to ~1% above 300 keV -- and the generator's
-/// own probe banks could not see it, because they route through here too.
-///
-/// `mat` maps a descriptor material index to an instantiated Material the
-/// caller owns and keeps alive for the lifetime of `calc`.
-template <class MatFn>
-void apply_detector_side(EfficiencyCalculator& calc, const GeometryDescriptor& gd,
-                         MatFn mat) {
-    calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                             gd.dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after
-    // it; fillet first, so bore_fits() sees the final crystal profile.
-    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
-    if (gd.bore)
-        calc.set_bore_hole(gd.bore->radius, gd.bore->depth, gd.bore->rounded_tip);
-    if (gd.dead_layer)
-        calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
-                            gd.dead_layer->back);
-    for (const LayerSpec& l : gd.layers)
-        calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (gd.collimator)
-        calc.add_collimator(mat(gd.collimator->material_index),
-                            gd.collimator->side_thickness_cm,
-                            gd.collimator->z_start_cm, gd.collimator->z_end_cm);
-}
-
-/// True when the crystal is CdTe-class (CdTe, CZT): Cd + Te carry more than half the
-/// crystal's mass.  Keyed on COMPOSITION rather than on the material's name, because
-/// names are free-form user text ("CZT", "CdZnTe", "Cd0.9Zn0.1Te", ...) and a name
-/// test would quietly stop matching.
-///
-/// Used only to select `model_sigma::tot_far_floor_cdte`. That floor is an empirical
-/// patch over a modelling gap that is not yet understood (see the constant's comment),
-/// so this predicate is expected to be DELETED along with it, not extended.
-bool crystal_is_cdte_class(const GeometryDescriptor& gd) {
-    if (gd.crystal_material_index < 0 ||
-        static_cast<size_t>(gd.crystal_material_index) >= gd.materials.size())
-        return false;
-    double cd_te = 0.0;
-    for (const MaterialComponent& c : gd.materials[static_cast<size_t>(
-             gd.crystal_material_index)].composition) {
-        if (c.Z == 48 || c.Z == 52) cd_te += c.mass_fraction;
-    }
-    return cd_te > 0.5;
-}
-
 /// Stamp the measured per-quantity floors onto a freshly generated response.
 ///
 /// Called from every generate() return path. The defaults in SigmaFloors already carry
