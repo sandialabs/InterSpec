@@ -98,7 +98,6 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   : WContainerWidget(),
     m_interspec( viewer ),
     m_orig( drf ),
-    m_geometry( drf ? drf->geometry() : nullptr ),
     m_tabMenu( nullptr ),
     m_tabStack( nullptr ),
     m_name( nullptr ),
@@ -1025,7 +1024,9 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
     WString txt;
     if( !valid )
     {
-      txt = WString::tr("dmw-info-eff-none");
+      // The "generate one on the Geom & MC tab" wording only makes sense when that tab exists; a
+      //  fixed-geometry DRF has no geometry to model and so no such tab.
+      txt = WString::tr( m_geomTabItem ? "dmw-info-eff-none" : "dmw-info-eff-none-nogeom" );
     }else
     {
       switch( drf->efficiencyFcnType() )
@@ -1045,7 +1046,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
           break;
 
         case DetectorPeakResponse::kNumEfficiencyFnctForms:
-          txt = WString::tr("dmw-info-eff-none");
+          txt = WString::tr( m_geomTabItem ? "dmw-info-eff-none" : "dmw-info-eff-none-nogeom" );
           break;
       }//switch( efficiency form )
 
@@ -1065,6 +1066,8 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
     if( drf && drf->isFixedGeometry() )
     {
       const string &postfix = DetectorPeakResponse::det_eff_geom_type_postfix( drf->geometryType() );
+      // `postfix` is an activity-UNIT suffix ("/cm2", "/m2", "/g"), so it has to be attached to a
+      //  unit, not to the words "Fixed source geometry" - which read as "Fixed source geometry/cm2".
       txt = WString::tr("dmw-info-geom-fixed").arg( WString::fromUTF8(postfix) );
     }else if( gd )
     {
@@ -1492,7 +1495,15 @@ void DrfModifyWidget::requestApply()
       gen->clicked().connect( this, [this](){
         //handleResponseGenerated applies once THIS run lands; a run that never starts, or that
         //  fails part way, must not leave a later unrelated generation armed.
-        m_applyAfterGenerationId = handleGenerateResponse() ? m_mcTool->generationId() : -1;
+        const bool started = handleGenerateResponse();
+        m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
+
+        // Otherwise this dialog just closes and nothing happens: the reason lands on the Geom & MC
+        //  tab's status line, which is not where the user is looking after pressing a footer button.
+        if( !started )
+          passMessage( WString::tr("dmw-nogen-not-started")
+                         .arg( WString::fromUTF8( m_mcTool->geometryProblem() ) ),
+                       WarningWidget::WarningMsgHigh );
       } );
       useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
     }else
@@ -1536,7 +1547,12 @@ void DrfModifyWidget::handleModeToggle()
   if( m_mcTool )
     m_mcTool->setDisabled( !m_geometryModeled );  //Flat Disk greys the whole tool
   updateUncertEditorVisibility();
-  markEdited();
+
+  // `markEditedNoRegen`: the toggle decides WHETHER a response is attached, not what one built from
+  //  these inputs would contain.  Marking it stale meant toggling to Flat Disk and back made "Use"
+  //  offer to regenerate a response that is still perfectly current.
+  markEditedNoRegen();
+  updateGenerateButton();   //the button's visibility follows the mode
 }//handleModeToggle()
 
 

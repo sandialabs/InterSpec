@@ -298,7 +298,6 @@ protected:
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_orig;
-  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
 
   Wt::WMenu *m_tabMenu;
   Wt::WStackedWidget *m_tabStack;

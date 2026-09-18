@@ -463,6 +463,113 @@ BOOST_AUTO_TEST_CASE( aperture_quadrature_reuse_is_equivalent )
  Detector.dat import), the physical geometry - and give back the same hash, since the "Previous"
  detectors in the user database are keyed on it.
  */
+/** The gaps the round-trip test above leaves, each of which a real defect walked through:
+
+    - A DRF can carry a geometry AND a response at once (every GADRAS detector with an
+      Efficiency.csv does: applyGadrasDat sets the geometry, then attaches a curve-transfer
+      response).  Only one of the two is ever serialized, so identity has to ask `geometry()`
+      rather than the raw member - comparing the member reported every round-tripped MC-backed
+      detector as changed, and threw a developer-check error on every spectrum save.
+    - `hashValue()` equality after `fromXml` is vacuous: the hash is read verbatim out of the file.
+      What decides DB dedupe is the RECOMPUTED hash, which is what DrfSelect::detectorFromEffUpload
+      triggers via setName().
+    - Nothing pinned the emitted `version`, so a change that bumped every DRF would go unnoticed.
+    - Nothing covered the database extras codec for the geometry, in particular that an EMPTY
+      extras column must clear a geometry the object already had (a Dbo re-read of a reused object).
+ */
+BOOST_AUTO_TEST_CASE( round_trip_identity_and_extras_codec )
+{
+  auto to_text_and_back = []( const shared_ptr<const DetectorPeakResponse> &drf )
+                                                          -> shared_ptr<DetectorPeakResponse> {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    drf->toXml( root, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( doc2.first_node("root")->first_node("DetectorPeakResponse") );
+    return restored;
+  };
+
+  // --- a DRF carrying BOTH a geometry and a response ------------------------------------------
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+    BOOST_REQUIRE( drf->ceeloResponse() );
+    // Put a geometry in the member as well, the way the GADRAS and .detx importers do.
+    drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( drf->ceeloResponse()->descriptor ) );
+
+    const shared_ptr<DetectorPeakResponse> restored = to_text_and_back( drf );
+
+    // This is the assertion that fires on every save when identity asks the wrong question.
+    BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *drf, *restored ) );
+    BOOST_CHECK( (*drf) == (*restored) );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+
+    // The hash that DB dedupe actually uses is the recomputed one, not the one read from the file.
+    const uint64_t stored = restored->hashValue();
+    restored->setName( restored->name() );   //what detectorFromEffUpload does; recomputes the hash
+    BOOST_CHECK_EQUAL( stored, restored->hashValue() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+  }
+
+  // --- the version attribute is part of the file's contract with older readers ------------------
+  {
+    auto version_of = []( const shared_ptr<const DetectorPeakResponse> &drf ) -> int {
+      rapidxml::xml_document<char> doc;
+      rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+      doc.append_node( root );
+      drf->toXml( root, &doc );
+      const rapidxml::xml_node<char> *n = doc.first_node("root")->first_node("DetectorPeakResponse");
+      BOOST_REQUIRE( n );
+      const rapidxml::xml_attribute<char> *a = n->first_attribute("version");
+      return a ? std::stoi( string(a->value(), a->value_size()) ) : -1;
+    };
+
+    // A geometry (with or without a response) needs the version that can express it...
+    const shared_ptr<DetectorPeakResponse> geo = drf_with_golden( "nai3x3" );
+    BOOST_CHECK_GE( version_of( geo ), 6 );
+
+    // ...and a plain legacy DRF must NOT be dragged up to it.
+    auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no ceelo at all" );
+    legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    BOOST_CHECK_LT( version_of( legacy ), 6 );
+  }
+
+  // --- the database extras column: a geometry must survive it, and an empty one must CLEAR ------
+  {
+    const shared_ptr<DetectorPeakResponse> src = drf_with_golden( "hpge_coax" );
+
+    auto geom_only = make_shared<DetectorPeakResponse>( "geometry only", "extras codec" );
+    geom_only->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    geom_only->setGeometry( make_shared<const ceelo::GeometryDescriptor>( src->ceeloResponse()->descriptor ) );
+
+    const string extras = geom_only->drfExtraToXmlString();
+    BOOST_CHECK( !extras.empty() );
+
+    auto round = make_shared<DetectorPeakResponse>( *geom_only );
+    round->setDrfExtraFromXmlString( extras );
+    BOOST_REQUIRE( round->geometry() );
+    BOOST_CHECK_EQUAL( geom_only->geometry()->to_xml_string(), round->geometry()->to_xml_string() );
+
+    // Now the case a future refactor is most likely to lose: the SAME object, re-read from a row
+    //  whose extras column is empty, must not keep the geometry it already had.
+    round->setDrfExtraFromXmlString( string() );
+    BOOST_CHECK( !round->geometry() );
+    BOOST_CHECK( !round->ceeloResponse() );
+  }
+}//round_trip_identity_and_extras_codec
+
+
 BOOST_AUTO_TEST_CASE( file_xml_round_trip_keeps_ceelo )
 {
   auto round_trip = []( const shared_ptr<const DetectorPeakResponse> &drf )

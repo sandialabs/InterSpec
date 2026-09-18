@@ -79,6 +79,7 @@
   <message id="dmw-nogen-body">This detector is set to Geometry Modeled, but no Monte-Carlo response has been generated for it - without one it behaves as a flat disk (the geometry entered is kept).  Generate the response now?</message>
   <message id="dmw-nogen-generate">Generate &amp; use</message>
   <message id="dmw-nogen-use-anyway">Use without a response</message>
+  <message id="dmw-nogen-not-started">The Monte-Carlo run could not be started, so the detector was not applied: {1}</message>
   <message id="dmw-geom-incomplete-title">Detector geometry incomplete</message>
   <message id="dmw-geom-incomplete-body">A Monte-Carlo response cannot be generated yet: {1}&lt;br /&gt;&lt;br /&gt;Use the detector anyway?  It will behave as a flat disk, and the incomplete geometry is not kept.</message>
   <message id="dmw-geom-incomplete-use-anyway">Use anyway</message>
@@ -86,12 +87,14 @@
   <!-- General tab: the summary table of what the detector carries. -->
   <message id="dmw-info-eff">Efficiency</message>
   <message id="dmw-info-eff-none">None yet - generate a Monte-Carlo response on the Geom &amp; MC tab</message>
+  <!-- Same, for a detector with no Geom &amp; MC tab to send them to (fixed geometry). -->
+  <message id="dmw-info-eff-none-nogeom">None - this detector has no efficiency curve</message>
   <message id="dmw-info-eff-formula">Formula (function of energy)</message>
   <message id="dmw-info-eff-exp-log">Fitted curve ({1} exp-of-log coefficients)</message>
   <message id="dmw-info-eff-pairs">Interpolated table of {1} energy/efficiency points</message>
   <message id="dmw-info-eff-measured">{1}; {2} measured points kept</message>
   <message id="dmw-info-geom">Geometry</message>
-  <message id="dmw-info-geom-fixed">Fixed source geometry{1} - the efficiency is for one specific source arrangement</message>
+  <message id="dmw-info-geom-fixed">Fixed source geometry (source strength in Bq{1}) - the efficiency is for one specific source arrangement</message>
   <message id="dmw-info-geom-flat">Flat disk, {1} diameter (no physical geometry recorded)</message>
   <message id="dmw-info-geom-cyl">{1} cylinder, {2} diameter × {3} long</message>
   <message id="dmw-info-geom-box">{1} box, {2} × {3} × {4} (width × height × length)</message>
