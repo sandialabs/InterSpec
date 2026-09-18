@@ -121,6 +121,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ZipArchive.h"
@@ -4126,7 +4127,28 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       {
         //The DRF carries its own shape from here on - see DetectorPeakResponse::geometry().
         angle_seed_drf->setGeometry( angle_geometry );
-        viewer->showDrfModifyWindow( angle_seed_drf );
+        DrfModifyWindow *modify_win = viewer->showDrfModifyWindow( angle_seed_drf );
+
+        // Unlike the fixed-geometry entries, this branch does not import anything by itself: the
+        //  detector only becomes real when the user presses "Use" in the Modify dialog.  Closing
+        //  that dialog therefore throws the whole import away, which is worth saying out loud -
+        //  silently ending up with no detector after pressing Accept reads as a lost file.
+        if( modify_win )
+        {
+          auto applied = make_shared<bool>( false );
+
+          // Tracked to `this` (which outlives the dialog), NOT to the window: InterSpec connects
+          //  deleteDrfModifyWindow to finished() first, so a connection tracked to the window is
+          //  already severed by the time our handler's turn comes and never runs.  The lambdas
+          //  capture only the flag - no widget pointer - so outliving the window is harmless.
+          modify_win->tool()->updatedDrf().connect( this,
+                  [applied]( shared_ptr<DetectorPeakResponse> ){ *applied = true; } );
+
+          modify_win->finished().connect( this, [applied](){
+            if( !*applied )
+              passMessage( WString::tr("smm-outx-generic-discarded"), WarningWidget::WarningMsgHigh );
+          } );
+        }//if( modify_win )
       }
       return;
     }//if( generic detector option selected )
