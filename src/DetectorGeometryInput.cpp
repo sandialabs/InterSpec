@@ -368,8 +368,10 @@ void DetectorGeometryInput::init()
 
     for( WLineEdit *edit : { m_dim1, m_dim2, m_dim3 } )
     {
-      edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
-      edit->enterPressed().connect( this, &DetectorGeometryInput::handleUserInput );
+      // handleCrystalDimensionInput, not handleUserInput: these are the only fields that can retire
+      //  the fabricated length seedFromDrf() guesses (see m_seededFromDiameterGuess).
+      edit->changed().connect( this, &DetectorGeometryInput::handleCrystalDimensionInput );
+      edit->enterPressed().connect( this, &DetectorGeometryInput::handleCrystalDimensionInput );
     }
   }
 
@@ -506,6 +508,19 @@ void DetectorGeometryInput::handleShapeChange()
 }//handleShapeChange()
 
 
+void DetectorGeometryInput::handleCrystalDimensionInput()
+{
+  // A crystal dimension was typed, so the form is no longer sitting on the length seedFromDrf()
+  //  fabricated from the diameter.  Only these fields clear the flag: it used to be cleared by ANY
+  //  edit, so typing an endcap thickness silently promoted "length = diameter" to a fact - and
+  //  since setGeometry() is part of hashValue(), that guess was then recorded as this detector's
+  //  geometry and saved as its own "Previous" entry.
+  m_seededFromDiameterGuess = false;
+
+  handleUserInput();
+}//handleCrystalDimensionInput()
+
+
 void DetectorGeometryInput::handleUserInput()
 {
   //init() wires this handler into widgets it creates along the way (e.g. the initial
@@ -514,10 +529,6 @@ void DetectorGeometryInput::handleUserInput()
     return;
 
   m_collimatorRow->setHidden( !m_hasCollimator->isChecked() );
-
-  // Any user edit means the form is no longer sitting on the fabricated diameter-guess length.
-  //  seedFromDrf() re-sets the flag after the handleShapeChange() it triggers runs through here.
-  m_seededFromDiameterGuess = false;
 
   updateFromForm();
 
@@ -1111,9 +1122,9 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
 
   handleShapeChange();
 
-  // Set AFTER handleShapeChange(): its handleUserInput() clears the flag, and the fabricated
-  //  length is a guess we must not let be Monte-Carlo characterized until the user fixes it.  The
-  //  note saying so stays up until the first real edit clears the flag.
+  // The fabricated length is a guess we must not let be Monte-Carlo characterized until the user
+  //  fixes it.  The note saying so stays up until one of the crystal dimension fields is edited
+  //  (handleCrystalDimensionInput); set after handleShapeChange() so the note it draws sees it.
   m_seededFromDiameterGuess = true;
   updateFromForm();
 }//seedFromDrf(...)

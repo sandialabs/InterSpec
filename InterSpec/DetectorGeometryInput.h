@@ -147,6 +147,11 @@ public:
 protected:
   void init();
   void handleShapeChange();
+  /** A crystal dimension edit: retires #m_seededFromDiameterGuess, then #handleUserInput.
+      Only these fields clear that flag - a layer thickness or a material choice says nothing
+      about how long the crystal is. */
+  void handleCrystalDimensionInput();
+
   void handleUserInput();
 
   /** Re-reads the form once and refreshes everything that depends on it: the note beneath it and
