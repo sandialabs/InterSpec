@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dgd- is short for DetectorGeometryDiagram: the tooltip text of the geometry
+       drawing beside the detector geometry form.  Keep the English in sync with the fallback
+       table in DetectorGeometryDiagram.cpp (used when there is no session). -->
+  <message id="dgd-front">front (source side)</message>
+  <message id="dgd-crystal">Active crystal volume</message>
+  <message id="dgd-dead">Dead layer (inactive crystal)</message>
+  <message id="dgd-bore">Bore hole (void)</message>
+  <message id="dgd-layer">Layer {1}: {2}</message>
+  <message id="dgd-collimator">Collimator: {1}</message>
+  <message id="dgd-material">{1} ({2} g/cm³)</message>
+  <message id="dgd-dims-cyl">Diameter {1}, length {2}</message>
+  <message id="dgd-dims-box">{1} × {2} × {3} (width × height × length)</message>
+  <message id="dgd-fillet">Front edge fillet radius {1}</message>
+  <message id="dgd-bore-dims">Diameter {1}, depth {2} from the back{3}</message>
+  <message id="dgd-bore-rounded"> (rounded tip)</message>
+  <message id="dgd-dead-dims">Front {1}, side {2}</message>
+  <message id="dgd-dead-dims-back">Front {1}, side {2}, back {3}</message>
+  <message id="dgd-layer-dims">Front {1}, side {2}; outer diameter {3}</message>
+  <message id="dgd-coll-dims">Thickness {1}, extends {2} past the face; inner diameter {3}</message>
+  <message id="dgd-volume">Volume: {1} cm³</message>
+  <message id="dgd-mass">Mass: {1}</message>
+  <message id="dgd-void">(empty)</message>
+  <!-- A layer left blank on the geometry form: it is a real gap, named for the tooltip. -->
+  <message id="dgd-vacuum">vacuum</message>
+</messages>

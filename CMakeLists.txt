@@ -416,7 +416,7 @@ set(sources
     src/MakeFixedGeomResponse.cpp
     src/MakeMcResponseForDrf.cpp
     src/DetectorGeometryInput.cpp
-    src/DetectorGeometryCrossSection.cpp
+    src/DetectorGeometryDiagram.cpp
     src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
     src/FluxTool.cpp
@@ -565,7 +565,7 @@ set(headers
     InterSpec/MakeFixedGeomResponse.h
     InterSpec/MakeMcResponseForDrf.h
     InterSpec/DetectorGeometryInput.h
-    InterSpec/DetectorGeometryCrossSection.h
+    InterSpec/DetectorGeometryDiagram.h
     InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
     InterSpec/FluxTool.h

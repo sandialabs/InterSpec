@@ -21,7 +21,7 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#define BOOST_TEST_MODULE test_DetectorGeometryCrossSection_suite
+#define BOOST_TEST_MODULE test_DetectorGeometryDiagram_suite
 #include <boost/test/included/unit_test.hpp>
 
 #include <cmath>
@@ -34,13 +34,13 @@
 #include "materials/Material.h"
 
 #include "InterSpec/CeeLoUtils.h"
-#include "InterSpec/DetectorGeometryCrossSection.h"
+#include "InterSpec/DetectorGeometryDiagram.h"
 
 using namespace std;
 
-using Model = DetectorGeometryCrossSection::Model;
-using Plane = DetectorGeometryCrossSection::Plane;
-using Region = DetectorGeometryCrossSection::Region;
+using Model = DetectorGeometryDiagram::Model;
+using Plane = DetectorGeometryDiagram::Plane;
+using Region = DetectorGeometryDiagram::Region;
 
 namespace
 {
@@ -209,7 +209,7 @@ namespace
 BOOST_AUTO_TEST_CASE( plain_cylinder_regions_and_volumes )
 {
   const ceelo::GeometryDescriptor gd = nai_cylinder();
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
 
   BOOST_CHECK( !model.box );
   BOOST_CHECK( !find_region( model, "dead" ) );
@@ -260,7 +260,7 @@ BOOST_AUTO_TEST_CASE( plain_cylinder_regions_and_volumes )
 BOOST_AUTO_TEST_CASE( coax_volumes_add_up )
 {
   const ceelo::GeometryDescriptor gd = hpge_coax();
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
 
   const Region *crystal = find_region( model, "crystal" );
   const Region *dead = find_region( model, "dead" );
@@ -330,7 +330,7 @@ BOOST_AUTO_TEST_CASE( coax_volumes_add_up )
 BOOST_AUTO_TEST_CASE( box_crystal )
 {
   const ceelo::GeometryDescriptor gd = czt_box();
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
 
   BOOST_CHECK( model.box );
   const Region *crystal = find_region( model, "crystal" );
@@ -364,7 +364,7 @@ BOOST_AUTO_TEST_CASE( flat_bore_and_back_dead_layer )
   gd.bore = ceelo::BoreHoleConfig{ 0.5, 5.0, false };          //flat bottom
   gd.dead_layer = ceelo::DeadLayerConfig{ 0.07, 0.07, 0.3 };   //and a back dead layer
 
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
 
   const Region *crystal = find_region( model, "crystal" );
   const Region *dead = find_region( model, "dead" );
@@ -433,7 +433,7 @@ BOOST_AUTO_TEST_CASE( vacuum_layers_are_voids )
   gd.layers.push_back( layer( 3, 0.2, 0.2, 6.0 ) );    //blank -> vacuum
   gd.layers.push_back( layer( 1, 0.1, 0.1, 6.0 ) );    //Al
 
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
   check_volume_matches_profile( model, 0.5 );   //a coax: the fillet and bore tip are arcs
   for( const Region &r : model.regions )
     check_profile( r );
@@ -480,7 +480,7 @@ BOOST_AUTO_TEST_CASE( vacuum_layers_are_voids )
   BOOST_REQUIRE( bore );
   BOOST_CHECK_EQUAL( bore->kind, "void" );
 
-  const nlohmann::json j = nlohmann::json::parse( DetectorGeometryCrossSection::toJson( model ) );
+  const nlohmann::json j = nlohmann::json::parse( DetectorGeometryDiagram::toJson( model ) );
   int n_void = 0;
   for( const nlohmann::json &r : j["regions"] )
     n_void += (r["kind"].get<string>() == "void");
@@ -494,8 +494,8 @@ BOOST_AUTO_TEST_CASE( json_escapes_material_names )
   const string nasty = "Al\"; alert(1); //\n</script>\\";
   gd.materials[1].name = nasty;
 
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
-  const string json_txt = DetectorGeometryCrossSection::toJson( model );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
+  const string json_txt = DetectorGeometryDiagram::toJson( model );
 
   // It parses back (an unescaped quote or newline would have ended the string early), and the name
   //  comes through as data rather than as syntax.
@@ -515,7 +515,7 @@ BOOST_AUTO_TEST_CASE( json_escapes_material_names )
 BOOST_AUTO_TEST_CASE( collimator_and_json )
 {
   const ceelo::GeometryDescriptor gd = collimated_nai();
-  const Model model = DetectorGeometryCrossSection::buildModel( gd );
+  const Model model = DetectorGeometryDiagram::buildModel( gd );
 
   const Region *coll = find_region( model, "collimator" );
   BOOST_REQUIRE( coll );
@@ -533,7 +533,7 @@ BOOST_AUTO_TEST_CASE( collimator_and_json )
   BOOST_CHECK_CLOSE( model.z_min, z_cs, 1e-9 );
   BOOST_CHECK_CLOSE( model.r_max, r_out, 1e-9 );
 
-  const string json_txt = DetectorGeometryCrossSection::toJson( model );
+  const string json_txt = DetectorGeometryDiagram::toJson( model );
   const nlohmann::json j = nlohmann::json::parse( json_txt );
   BOOST_CHECK( j.contains("box") && j.contains("zMin") && j.contains("zMax") && j.contains("rMax") );
   BOOST_REQUIRE( j.contains("knots") && j["knots"].contains("z") && j["knots"].contains("r") );

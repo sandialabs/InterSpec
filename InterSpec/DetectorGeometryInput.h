@@ -34,7 +34,7 @@
 class InterSpec;
 class DetectorPeakResponse;
 class ShieldMaterialSuggestion;
-class DetectorGeometryCrossSection;
+class DetectorGeometryDiagram;
 
 namespace Wt
 {
@@ -150,7 +150,7 @@ protected:
   void handleUserInput();
 
   /** Re-reads the form once and refreshes everything that depends on it: the note beneath it and
-   the cross-section drawing.  One pass, because building the descriptor resolves every layer
+   the geometry diagram.  One pass, because building the descriptor resolves every layer
    material through `MaterialDB`. */
   void updateFromForm();
   void addLayerRow( const Wt::WString &material, const Wt::WString &frontThick,
@@ -210,8 +210,8 @@ protected:
   Wt::WText *m_importNotes;
 
   /** The live side-elevation drawing of the geometry, beside the controls (below them when the
-   form is narrow; hidden on phones).  Follows every edit - see #updateCrossSection. */
-  DetectorGeometryCrossSection *m_crossSection;
+   form is narrow; hidden on phones).  Follows every edit - see #updateFromForm. */
+  DetectorGeometryDiagram *m_diagram;
 
   /** The crystal a #setFromDescriptor named that this form has no entry for, and
    therefore substituted NaI for; empty when nothing was substituted.  Rendered

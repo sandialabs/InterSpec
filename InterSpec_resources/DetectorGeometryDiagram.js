@@ -21,7 +21,7 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-/* A side-elevation cross-section of a detector geometry (see DetectorGeometryCrossSection.cpp,
+/* A side-elevation cross-section of a detector geometry (see DetectorGeometryDiagram.cpp,
    which does the geometry and hands over a list of r-z polycone regions).  d3 v3; ES2019-safe.
 
    Data: { box, zMin, zMax, rMax, knots: { z: [...], r: [...] }, labels: { front: "..." },
@@ -34,7 +34,7 @@
    still a visible line.  Orientation follows the container: front at the top when it is taller
    than wide, front at the left otherwise.
  */
-DetectorGeometryCrossSection = function( elem, options )
+DetectorGeometryDiagram = function( elem, options )
 {
   this.container = (typeof elem === 'string') ? document.getElementById(elem) : elem;
 
@@ -50,7 +50,7 @@ DetectorGeometryCrossSection = function( elem, options )
   //  drop any previous observer) rather than stacking a second copy on top.
   if( this.roomObserver )
     this.roomObserver.disconnect();
-  d3.select(this.container).selectAll('svg,div.DgxsTooltip').remove();
+  d3.select(this.container).selectAll('svg,div.DgdTooltip').remove();
   this.options = options || {};
   this.minPx = this.options.minPx || 2;
   // Below this much room beside the form, the drawing hides itself rather than being squeezed.
@@ -59,9 +59,9 @@ DetectorGeometryCrossSection = function( elem, options )
   this.minRoomHeightPx = this.options.minRoomHeightPx || 120;
   this.data = null;
 
-  this.svg = d3.select(this.container).append('svg').attr('class', 'DgxsSvg');
+  this.svg = d3.select(this.container).append('svg').attr('class', 'DgdSvg');
   this.g = this.svg.append('g');
-  this.tooltip = d3.select(this.container).append('div').attr('class', 'DgxsTooltip');
+  this.tooltip = d3.select(this.container).append('div').attr('class', 'DgdTooltip');
 
   // The room available is a property of the PARENT, not of this element: once hidden, this element
   // has no width of its own to measure and its own ResizeObserver stops firing.  So watch the row
@@ -79,7 +79,7 @@ DetectorGeometryCrossSection = function( elem, options )
 
 /* Width left for the drawing in the row it shares with the form: the row's width, less every other
    item in it and the gaps between them.  Valid whether or not the drawing is currently showing. */
-DetectorGeometryCrossSection.prototype.availableWidth = function()
+DetectorGeometryDiagram.prototype.availableWidth = function()
 {
   const parent = this.container.parentElement;
   if( !parent )
@@ -104,59 +104,59 @@ DetectorGeometryCrossSection.prototype.availableWidth = function()
 };
 
 /* Height available to the drawing: the row's, since this element stretches to it. */
-DetectorGeometryCrossSection.prototype.availableHeight = function()
+DetectorGeometryDiagram.prototype.availableHeight = function()
 {
   const parent = this.container.parentElement;
   return parent ? parent.clientHeight : this.container.clientHeight;
 };
 
 /* Shows or hides the drawing per #availableWidth / #availableHeight; returns whether it is showing. */
-DetectorGeometryCrossSection.prototype.updateRoom = function()
+DetectorGeometryDiagram.prototype.updateRoom = function()
 {
   const hide = ( this.availableWidth() < this.minRoomPx )
                || ( this.availableHeight() < this.minRoomHeightPx );
-  const wasHidden = this.container.classList.contains( 'DgxsNoRoom' );
+  const wasHidden = this.container.classList.contains( 'DgdNoRoom' );
   if( hide !== wasHidden )
   {
     if( hide )
-      this.container.classList.add( 'DgxsNoRoom' );
+      this.container.classList.add( 'DgdNoRoom' );
     else
-      this.container.classList.remove( 'DgxsNoRoom' );
+      this.container.classList.remove( 'DgdNoRoom' );
     this.hideTooltip();
   }
 
   return !hide;
 };
 
-DetectorGeometryCrossSection.prototype.setData = function( data )
+DetectorGeometryDiagram.prototype.setData = function( data )
 {
   this.data = data;
   this.updateRoom();
   this.render();
 };
 
-DetectorGeometryCrossSection.prototype.clear = function()
+DetectorGeometryDiagram.prototype.clear = function()
 {
   this.data = null;
   this.g.selectAll('*').remove();
   this.hideTooltip();
 };
 
-DetectorGeometryCrossSection.prototype.handleResize = function()
+DetectorGeometryDiagram.prototype.handleResize = function()
 {
   // Re-decide whether there is room before drawing; `render()` no-ops while hidden (zero width).
   this.updateRoom();
   this.render();
 };
 
-DetectorGeometryCrossSection.prototype.hideTooltip = function()
+DetectorGeometryDiagram.prototype.hideTooltip = function()
 {
   this.tooltip.style('opacity', 0);
 };
 
 /* Sum of the on-screen lengths of the gaps between consecutive knots at scale s (px/cm), each gap
    at least minPx wide. */
-function dgxsInflatedExtent( knots, s, minPx )
+function dgdInflatedExtent( knots, s, minPx )
 {
   let e = 0;
   for( let i = 0; i + 1 < knots.length; ++i )
@@ -166,7 +166,7 @@ function dgxsInflatedExtent( knots, s, minPx )
 
 /* A monotone piecewise-linear map cm -> px through the knots at scale s, thin gaps widened to
    minPx; values between knots interpolate within their gap, values outside continue at scale s. */
-function dgxsBuildMap( knots, s, minPx )
+function dgdBuildMap( knots, s, minPx )
 {
   const n = knots.length;
   const pos = [0];
@@ -195,7 +195,7 @@ function dgxsBuildMap( knots, s, minPx )
   };
 }
 
-DetectorGeometryCrossSection.prototype.render = function()
+DetectorGeometryDiagram.prototype.render = function()
 {
   const self = this;
   const w = this.container.clientWidth;
@@ -229,16 +229,16 @@ DetectorGeometryCrossSection.prototype.render = function()
   for( let it = 0; it < 40; ++it )
   {
     const mid = 0.5*(lo + hi);
-    if( (dgxsInflatedExtent(zK, mid, minPx) <= availZ) && (2*dgxsInflatedExtent(rK, mid, minPx) <= availR) )
+    if( (dgdInflatedExtent(zK, mid, minPx) <= availZ) && (2*dgdInflatedExtent(rK, mid, minPx) <= availR) )
       lo = mid;
     else
       hi = mid;
   }
   const s = Math.max( lo, 1e-6 );
-  const mapZ = dgxsBuildMap( zK, s, minPx );
-  const mapR = dgxsBuildMap( rK, s, minPx );
-  const zExt = dgxsInflatedExtent( zK, s, minPx );
-  const rExt = dgxsInflatedExtent( rK, s, minPx );
+  const mapZ = dgdBuildMap( zK, s, minPx );
+  const mapR = dgdBuildMap( rK, s, minPx );
+  const zExt = dgdInflatedExtent( zK, s, minPx );
+  const rExt = dgdInflatedExtent( rK, s, minPx );
 
   // Screen placement: the drawing centred, the label band on the source side.
   let toXY, axisFrom, axisTo, labelPos, labelRotate;
@@ -272,12 +272,12 @@ DetectorGeometryCrossSection.prototype.render = function()
 
   // Fills: one closed path per region, the full mirrored section (right outer, right inner, left
   //  inner, left outer).  A zero-width pinch along the axis cancels under nonzero fill.
-  const regions = this.g.selectAll('g.DgxsRegion').data( d.regions ).enter()
+  const regions = this.g.selectAll('g.DgdRegion').data( d.regions ).enter()
                     .append('g')
-                    .attr('class', function(r){ return 'DgxsRegion Dgxs-' + r.kind; })
+                    .attr('class', function(r){ return 'DgdRegion Dgd-' + r.kind; })
                     .attr('data-id', function(r){ return r.id; });
 
-  regions.append('path').attr('class', 'DgxsFill').attr('d', function( r ){
+  regions.append('path').attr('class', 'DgdFill').attr('d', function( r ){
     const prof = r.profile;
     if( !prof || prof.length < 2 )
       return '';
@@ -296,7 +296,7 @@ DetectorGeometryCrossSection.prototype.render = function()
   // Outlines, drawn after every fill so no region paints over a neighbour's edge: the outer edge
   //  on both sides, the front and back caps, and the inner (bore-side) edge only where it is off
   //  the axis.
-  const outlines = this.g.append('g').attr('class', 'DgxsOutline');
+  const outlines = this.g.append('g').attr('class', 'DgdOutline');
   const addLine = function( pts ){
     if( pts.length >= 2 )
       outlines.append('path').attr('d', 'M' + pts.map(fmt).join('L'));
@@ -338,9 +338,9 @@ DetectorGeometryCrossSection.prototype.render = function()
   });
 
   // Axis and the "front" label.
-  this.g.append('path').attr('class', 'DgxsAxis')
+  this.g.append('path').attr('class', 'DgdAxis')
         .attr('d', 'M' + fmt(axisFrom) + 'L' + fmt(axisTo));
-  const label = this.g.append('text').attr('class', 'DgxsLabel')
+  const label = this.g.append('text').attr('class', 'DgdLabel')
         .attr('text-anchor', 'middle')
         .text( (d.labels && d.labels.front) ? d.labels.front : '' );
   if( labelRotate )
@@ -376,13 +376,13 @@ DetectorGeometryCrossSection.prototype.render = function()
     self.tooltip.style('left', left + 'px').style('top', top + 'px');
   };
   regions.on('mouseover', function( r ){
-      d3.select(this).classed('DgxsHover', true);
+      d3.select(this).classed('DgdHover', true);
       showTip( r );
       moveTip();
     })
     .on('mousemove', moveTip)
     .on('mouseout', function(){
-      d3.select(this).classed('DgxsHover', false);
+      d3.select(this).classed('DgdHover', false);
       self.hideTooltip();
     })
     .on('touchstart', function( r ){

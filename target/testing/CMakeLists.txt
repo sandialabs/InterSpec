@@ -407,10 +407,10 @@ add_test( NAME TCeeLoDrfIntegration
 
 # The detector-geometry cross-section drawing's model (regions, volumes, masses, JSON): pure C++,
 # no Wt session needed.
-add_executable( test_DetectorGeometryCrossSection test_DetectorGeometryCrossSection.cpp )
-target_link_libraries( test_DetectorGeometryCrossSection PRIVATE InterSpecLib )
-add_test( NAME TDetectorGeometryCrossSection
-  COMMAND $<TARGET_FILE:test_DetectorGeometryCrossSection> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+add_executable( test_DetectorGeometryDiagram test_DetectorGeometryDiagram.cpp )
+target_link_libraries( test_DetectorGeometryDiagram PRIVATE InterSpecLib )
+add_test( NAME TDetectorGeometryDiagram
+  COMMAND $<TARGET_FILE:test_DetectorGeometryDiagram> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

@@ -63,7 +63,7 @@
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/ShieldMaterialSuggestion.h"
-#include "InterSpec/DetectorGeometryCrossSection.h"
+#include "InterSpec/DetectorGeometryDiagram.h"
 
 using namespace Wt;
 using namespace std;
@@ -275,7 +275,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorExtension( nullptr ),
     m_note( nullptr ),
     m_importNotes( nullptr ),
-    m_crossSection( nullptr ),
+    m_diagram( nullptr ),
     m_materialSuggestion( nullptr ),
     m_restoringState( false ),
     m_seededFromDiameterGuess( false ),
@@ -459,9 +459,9 @@ void DetectorGeometryInput::init()
     m_collimatorRow->hide();
   }
 
-  m_crossSection = body->addNew<DetectorGeometryCrossSection>();
+  m_diagram = body->addNew<DetectorGeometryDiagram>();
   if( m_interspec && m_interspec->isPhone() )
-    m_crossSection->hide();   //no room; the CSS hides it on narrow screens too
+    m_diagram->hide();   //no room; the CSS hides it on narrow screens too
 
   m_note = addNew<WText>( "" );
   m_note->addStyleClass( "DgiNote" );
@@ -528,7 +528,7 @@ void DetectorGeometryInput::handleUserInput()
 
 void DetectorGeometryInput::updateFromForm()
 {
-  const bool want_drawing = (m_crossSection && !m_crossSection->isHidden());
+  const bool want_drawing = (m_diagram && !m_diagram->isHidden());
 
   string problem;
   try
@@ -541,12 +541,12 @@ void DetectorGeometryInput::updateFromForm()
       problem = WString::tr("dgi-seeded-note").toUTF8();
 
     if( want_drawing )
-      m_crossSection->setGeometry( gd );
+      m_diagram->setGeometry( gd );
   }catch( std::exception &e )
   {
     problem = e.what();
     if( want_drawing )
-      m_crossSection->setStale( true );   //keep the last valid drawing, dimmed
+      m_diagram->setStale( true );   //keep the last valid drawing, dimmed
   }
 
   if( m_note )

@@ -1,9 +1,9 @@
-/* The live cross-section beside the detector geometry form (DetectorGeometryCrossSection). */
+/* The live geometry diagram beside the detector geometry form (DetectorGeometryDiagram). */
 
 /* The form's controls and the drawing sit side by side when there is room beside the form, and the
    drawing is hidden outright when there is not - it never wraps underneath, which read as a stray
    panel with odd spacing.  `nowrap` is what stops the wrap; the JS measures the room left over and
-   applies `DgxsNoRoom` (see minRoomPx).  The WGroupBox fieldset itself is deliberately not the flex
+   applies `DgdNoRoom` (see minRoomPx).  The WGroupBox fieldset itself is deliberately not the flex
    container - fieldset flex is quirky. */
 .DetectorGeometryInput .DgiBody
 {
@@ -18,14 +18,14 @@
    form's top to the form's bottom, and the SVG inside is absolutely positioned so it contributes no
    height of its own.  Anything that gives this element an intrinsic height (a min-height, or an
    in-flow SVG) makes the group box taller than the form needs and leaves dead space below. */
-.DetectorGeometryCrossSection
+.DetectorGeometryDiagram
 {
   flex: 1 1 0;
   min-width: 0;
   position: relative;
   overflow: hidden;
 }
-.DetectorGeometryCrossSection svg
+.DetectorGeometryDiagram svg
 {
   position: absolute;
   top: 0;
@@ -37,38 +37,38 @@
 
 /* Not enough room beside the form to draw anything worth looking at.  `display:none` also takes the
    flex gap with it, so the form is left exactly as it would be with no drawing at all. */
-.DetectorGeometryCrossSection.DgxsNoRoom { display: none; }
+.DetectorGeometryDiagram.DgdNoRoom { display: none; }
 
 /* One colour, from the chart theme; regions differ only in fill opacity.  The --d3spec-* variables
    are only defined where a spectrum chart has set them, hence the fallback chain. */
-.DetectorGeometryCrossSection .DgxsFill
+.DetectorGeometryDiagram .DgdFill
 {
   fill: var(--d3spec-axis-color, var(--interspec-text-color, #333));
   stroke: none;
   pointer-events: all;
 }
-.DetectorGeometryCrossSection .Dgxs-crystal .DgxsFill { fill-opacity: 0.28; }
-.DetectorGeometryCrossSection .Dgxs-dead .DgxsFill { fill-opacity: 0.55; }
-.DetectorGeometryCrossSection .Dgxs-layer .DgxsFill { fill-opacity: 0.15; }
-.DetectorGeometryCrossSection .Dgxs-collimator .DgxsFill { fill-opacity: 0.40; }
-.DetectorGeometryCrossSection .DgxsHover .DgxsFill { fill-opacity: 0.75; }
+.DetectorGeometryDiagram .Dgd-crystal .DgdFill { fill-opacity: 0.28; }
+.DetectorGeometryDiagram .Dgd-dead .DgdFill { fill-opacity: 0.55; }
+.DetectorGeometryDiagram .Dgd-layer .DgdFill { fill-opacity: 0.15; }
+.DetectorGeometryDiagram .Dgd-collimator .DgdFill { fill-opacity: 0.40; }
+.DetectorGeometryDiagram .DgdHover .DgdFill { fill-opacity: 0.75; }
 
 /* A void (the bore, or a layer whose material is blank/vacuum) is drawn by its outline alone - it is
    empty space, so a fill of any opacity would read as a material.  `fill: none` rather than
    `fill-opacity: 0` so the hover rule above cannot bring it back; `pointer-events: all` (set on
-   .DgxsFill) still makes the area hoverable for its tooltip. */
-.DetectorGeometryCrossSection .Dgxs-void .DgxsFill { fill: none; }
+   .DgdFill) still makes the area hoverable for its tooltip. */
+.DetectorGeometryDiagram .Dgd-void .DgdFill { fill: none; }
 
 /* No `shape-rendering: crispEdges` here: it would sharpen the straight edges but stair-step the
    fillet and the rounded bore tip, which are the shapes worth seeing. */
-.DetectorGeometryCrossSection .DgxsOutline path
+.DetectorGeometryDiagram .DgdOutline path
 {
   fill: none;
   stroke: var(--d3spec-axis-color, var(--interspec-text-color, #333));
   stroke-width: 1px;
   pointer-events: none;
 }
-.DetectorGeometryCrossSection .DgxsAxis
+.DetectorGeometryDiagram .DgdAxis
 {
   fill: none;
   stroke: var(--d3spec-axis-color, var(--interspec-text-color, #333));
@@ -76,18 +76,18 @@
   stroke-dasharray: 3 3;
   stroke-opacity: 0.5;
 }
-.DetectorGeometryCrossSection .DgxsLabel
+.DetectorGeometryDiagram .DgdLabel
 {
   fill: var(--d3spec-text-color, var(--interspec-text-color, #333));
   font: 11px sans-serif;
 }
 
 /* The form is invalid: the last valid drawing stays up, dimmed. */
-.DetectorGeometryCrossSection.DgxsStale svg { opacity: 0.4; }
+.DetectorGeometryDiagram.DgdStale svg { opacity: 0.4; }
 
 /* The drawing clips to its box (overflow:hidden above), so the tooltip has to fit inside it:
    it wraps rather than running off, and never claims more than the box it lives in. */
-div.DgxsTooltip
+div.DgdTooltip
 {
   position: absolute;
   padding: 6px 8px;
@@ -109,5 +109,5 @@ div.DgxsTooltip
 
 @media (max-width: 480px)
 {
-  .DetectorGeometryCrossSection { display: none; }
+  .DetectorGeometryDiagram { display: none; }
 }

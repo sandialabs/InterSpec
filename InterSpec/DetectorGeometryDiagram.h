@@ -1,5 +1,5 @@
-#ifndef DetectorGeometryCrossSection_h
-#define DetectorGeometryCrossSection_h
+#ifndef DetectorGeometryDiagram_h
+#define DetectorGeometryDiagram_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
 
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -42,16 +42,16 @@ namespace ceelo{ struct GeometryDescriptor; }
  colour (the chart theme variables), every layer at least a couple of pixels wide and everything
  else to scale, orientation picked from the space it is given.
  */
-class DetectorGeometryCrossSection : public Wt::WContainerWidget
+class DetectorGeometryDiagram : public Wt::WContainerWidget
 {
 public:
-  DetectorGeometryCrossSection();
-  virtual ~DetectorGeometryCrossSection() override;
+  DetectorGeometryDiagram();
+  virtual ~DetectorGeometryDiagram() override;
 
   /** Redraws from a valid descriptor (one that passed `GeometryDescriptor::problems()`). */
   void setGeometry( const ceelo::GeometryDescriptor &gd );
 
-  /** The form is currently invalid: keep the last drawing but dim it (class `DgxsStale`). */
+  /** The form is currently invalid: keep the last drawing but dim it (class `DgdStale`). */
   void setStale( const bool stale );
 
   /** One plane of a polycone profile: at `z`, the region spans `rmin <= r <= rmax`.  Planes are
@@ -114,6 +114,6 @@ protected:
   /** Whether the client-side object has been built.  A first render does not always carry the Full
    flag, and without this the object would never be created. */
   bool m_jsDefined;
-};//class DetectorGeometryCrossSection
+};//class DetectorGeometryDiagram
 
-#endif //DetectorGeometryCrossSection_h
+#endif //DetectorGeometryDiagram_h

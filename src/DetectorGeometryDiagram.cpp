@@ -42,7 +42,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "InterSpec/DetectorGeometryCrossSection.h"
+#include "InterSpec/DetectorGeometryDiagram.h"
 
 using namespace Wt;
 using namespace std;
@@ -51,31 +51,31 @@ namespace
 {
   const double kPi = 3.14159265358979323846;
 
-  /** The English text of every `dgxs-*` key, so #buildModel can be exercised (unit tests) with no
+  /** The English text of every `dgd-*` key, so #buildModel can be exercised (unit tests) with no
    Wt session; with a session the message bundle wins. */
   const char *english_text( const char *key )
   {
     static const std::pair<const char *,const char *> table[] = {
-      { "dgxs-front",        "front (source side)" },
-      { "dgxs-crystal",      "Active crystal volume" },
-      { "dgxs-dead",         "Dead layer (inactive crystal)" },
-      { "dgxs-bore",         "Bore hole (void)" },
-      { "dgxs-layer",        "Layer {1}: {2}" },
-      { "dgxs-collimator",   "Collimator: {1}" },
-      { "dgxs-material",     "{1} ({2} g/cm\xc2\xb3)" },
-      { "dgxs-dims-cyl",     "Diameter {1}, length {2}" },
-      { "dgxs-dims-box",     "{1} \xc3\x97 {2} \xc3\x97 {3} (width \xc3\x97 height \xc3\x97 length)" },
-      { "dgxs-fillet",       "Front edge fillet radius {1}" },
-      { "dgxs-bore-dims",    "Diameter {1}, depth {2} from the back{3}" },
-      { "dgxs-bore-rounded", " (rounded tip)" },
-      { "dgxs-dead-dims",    "Front {1}, side {2}" },
-      { "dgxs-dead-dims-back", "Front {1}, side {2}, back {3}" },
-      { "dgxs-layer-dims",   "Front {1}, side {2}; outer diameter {3}" },
-      { "dgxs-coll-dims",    "Thickness {1}, extends {2} past the face; inner diameter {3}" },
-      { "dgxs-volume",       "Volume: {1} cm\xc2\xb3" },
-      { "dgxs-mass",         "Mass: {1}" },
-      { "dgxs-void",         "(empty)" },
-      { "dgxs-vacuum",       "vacuum" }
+      { "dgd-front",        "front (source side)" },
+      { "dgd-crystal",      "Active crystal volume" },
+      { "dgd-dead",         "Dead layer (inactive crystal)" },
+      { "dgd-bore",         "Bore hole (void)" },
+      { "dgd-layer",        "Layer {1}: {2}" },
+      { "dgd-collimator",   "Collimator: {1}" },
+      { "dgd-material",     "{1} ({2} g/cm\xc2\xb3)" },
+      { "dgd-dims-cyl",     "Diameter {1}, length {2}" },
+      { "dgd-dims-box",     "{1} \xc3\x97 {2} \xc3\x97 {3} (width \xc3\x97 height \xc3\x97 length)" },
+      { "dgd-fillet",       "Front edge fillet radius {1}" },
+      { "dgd-bore-dims",    "Diameter {1}, depth {2} from the back{3}" },
+      { "dgd-bore-rounded", " (rounded tip)" },
+      { "dgd-dead-dims",    "Front {1}, side {2}" },
+      { "dgd-dead-dims-back", "Front {1}, side {2}, back {3}" },
+      { "dgd-layer-dims",   "Front {1}, side {2}; outer diameter {3}" },
+      { "dgd-coll-dims",    "Thickness {1}, extends {2} past the face; inner diameter {3}" },
+      { "dgd-volume",       "Volume: {1} cm\xc2\xb3" },
+      { "dgd-mass",         "Mass: {1}" },
+      { "dgd-void",         "(empty)" },
+      { "dgd-vacuum",       "vacuum" }
     };
 
     for( const auto &entry : table )
@@ -184,37 +184,37 @@ namespace
 }//namespace
 
 
-DetectorGeometryCrossSection::DetectorGeometryCrossSection()
+DetectorGeometryDiagram::DetectorGeometryDiagram()
   : WContainerWidget(),
     m_geometryJson(),
     m_stale( false ),
     m_jsDefined( false )
 {
-  addStyleClass( "DetectorGeometryCrossSection" );
+  addStyleClass( "DetectorGeometryDiagram" );
 
   InterSpec *viewer = InterSpec::instance();
   if( viewer )
-    viewer->useMessageResourceBundle( "DetectorGeometryCrossSection" );
+    viewer->useMessageResourceBundle( "DetectorGeometryDiagram" );
 
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
-  wApp->require( "InterSpec_resources/DetectorGeometryCrossSection.js" );
-  wApp->useStyleSheet( "InterSpec_resources/DetectorGeometryCrossSection.css" );
-}//DetectorGeometryCrossSection constructor
+  wApp->require( "InterSpec_resources/DetectorGeometryDiagram.js" );
+  wApp->useStyleSheet( "InterSpec_resources/DetectorGeometryDiagram.css" );
+}//DetectorGeometryDiagram constructor
 
 
-DetectorGeometryCrossSection::~DetectorGeometryCrossSection()
+DetectorGeometryDiagram::~DetectorGeometryDiagram()
 {
 }
 
 
-void DetectorGeometryCrossSection::doXsJs( const std::string &method_call )
+void DetectorGeometryDiagram::doXsJs( const std::string &method_call )
 {
   // See the note on this function in the header: the element and the object may both be absent.
   doJavaScript( "{const c=" + jsRef() + ";if(c&&c.xs){c.xs." + method_call + ";}}" );
 }//doXsJs(...)
 
 
-void DetectorGeometryCrossSection::defineJavaScript()
+void DetectorGeometryDiagram::defineJavaScript()
 {
   m_jsDefined = true;
 
@@ -226,7 +226,7 @@ void DetectorGeometryCrossSection::defineJavaScript()
   //  that has not been shown.  Wt re-applies JavaScript members when the real element replaces the
   //  stub, so the object gets built then instead.
   setJavaScriptMember( "xs", "(function(){const e=" + jsRef()
-                             + ";return e ? new DetectorGeometryCrossSection(e,"
+                             + ";return e ? new DetectorGeometryDiagram(e,"
                                " {minPx: 2, minRoomPx: 200, minRoomHeightPx: 120}) : null;})()" );
 
   setJavaScriptMember( "resizeObserver",
@@ -250,7 +250,7 @@ void DetectorGeometryCrossSection::defineJavaScript()
 }//defineJavaScript()
 
 
-void DetectorGeometryCrossSection::render( Wt::WFlags<Wt::RenderFlag> flags )
+void DetectorGeometryDiagram::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   const bool renderFull = flags.test( Wt::RenderFlag::Full );
 
@@ -263,7 +263,7 @@ void DetectorGeometryCrossSection::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render(...)
 
 
-void DetectorGeometryCrossSection::setGeometry( const ceelo::GeometryDescriptor &gd )
+void DetectorGeometryDiagram::setGeometry( const ceelo::GeometryDescriptor &gd )
 {
   m_geometryJson = toJson( buildModel(gd) );   //kept so defineJavaScript can re-send it
   doXsJs( "setData(" + m_geometryJson + ")" );
@@ -271,16 +271,16 @@ void DetectorGeometryCrossSection::setGeometry( const ceelo::GeometryDescriptor 
 }//setGeometry(...)
 
 
-void DetectorGeometryCrossSection::setStale( const bool stale )
+void DetectorGeometryDiagram::setStale( const bool stale )
 {
   if( stale == m_stale )
     return;
   m_stale = stale;
-  toggleStyleClass( "DgxsStale", stale );
+  toggleStyleClass( "DgdStale", stale );
 }//setStale(...)
 
 
-DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( const ceelo::GeometryDescriptor &gd )
+DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo::GeometryDescriptor &gd )
 {
   Model model;
 
@@ -495,18 +495,18 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
 
     const bool is_void = (region.kind == "void");
     const string mat = material_name( spec.material_index );
-    const WString mat_txt = (is_void && mat.empty()) ? text("dgxs-vacuum") : WString::fromUTF8(mat);
-    region.tip_title = text("dgxs-layer").arg( ++drawn_layers ).arg( mat_txt ).toUTF8();
+    const WString mat_txt = (is_void && mat.empty()) ? text("dgd-vacuum") : WString::fromUTF8(mat);
+    region.tip_title = text("dgd-layer").arg( ++drawn_layers ).arg( mat_txt ).toUTF8();
     if( !is_void )
-      region.tip_lines.push_back( text("dgxs-material").arg( mat_txt )
+      region.tip_lines.push_back( text("dgd-material").arg( mat_txt )
                                     .arg( compact_str( material_density(spec.material_index) ) ).toUTF8() );
-    region.tip_lines.push_back( text("dgxs-layer-dims").arg( length_str(f) ).arg( length_str(s) )
+    region.tip_lines.push_back( text("dgd-layer-dims").arg( length_str(f) ).arg( length_str(s) )
                                   .arg( length_str(2.0*r_out) ).toUTF8() );
-    region.tip_lines.push_back( text("dgxs-volume").arg( compact_str(region.volume_cm3) ).toUTF8() );
+    region.tip_lines.push_back( text("dgd-volume").arg( compact_str(region.volume_cm3) ).toUTF8() );
     // A void has no mass worth quoting (`vacuumMaterialSpec` gives it 1e-25 g/cm3 so the transport
     //  code has something to work with), so say it is empty instead - as the bore does.
-    region.tip_lines.push_back( is_void ? text("dgxs-void").toUTF8()
-                                        : text("dgxs-mass").arg( mass_str(region.mass_g) ).toUTF8() );
+    region.tip_lines.push_back( is_void ? text("dgd-void").toUTF8()
+                                        : text("dgd-mass").arg( mass_str(region.mass_g) ).toUTF8() );
     layer_regions.push_back( region );
 
     r_in = r_out;
@@ -535,19 +535,19 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
 
     const bool coll_void = (collimator_region.kind == "void");
     const string mat = material_name( spec.material_index );
-    const WString mat_txt = (coll_void && mat.empty()) ? text("dgxs-vacuum") : WString::fromUTF8(mat);
-    collimator_region.tip_title = text("dgxs-collimator").arg( mat_txt ).toUTF8();
+    const WString mat_txt = (coll_void && mat.empty()) ? text("dgd-vacuum") : WString::fromUTF8(mat);
+    collimator_region.tip_title = text("dgd-collimator").arg( mat_txt ).toUTF8();
     if( !coll_void )
-      collimator_region.tip_lines.push_back( text("dgxs-material").arg( mat_txt )
+      collimator_region.tip_lines.push_back( text("dgd-material").arg( mat_txt )
                                                .arg( compact_str( material_density(spec.material_index) ) ).toUTF8() );
     // The extension the user entered, measured from the detector face - not from z_cs, which is
     //  pulled forward to the endcap front when the endcap reaches further than the collimator.
-    collimator_region.tip_lines.push_back( text("dgxs-coll-dims").arg( length_str(t_c) )
+    collimator_region.tip_lines.push_back( text("dgd-coll-dims").arg( length_str(t_c) )
                                              .arg( length_str( std::max(0.0, -spec.z_start_cm) ) )
                                              .arg( length_str(2.0*r_in) ).toUTF8() );
-    collimator_region.tip_lines.push_back( text("dgxs-volume").arg( compact_str(collimator_region.volume_cm3) ).toUTF8() );
-    collimator_region.tip_lines.push_back( coll_void ? text("dgxs-void").toUTF8()
-                            : text("dgxs-mass").arg( mass_str(collimator_region.mass_g) ).toUTF8() );
+    collimator_region.tip_lines.push_back( text("dgd-volume").arg( compact_str(collimator_region.volume_cm3) ).toUTF8() );
+    collimator_region.tip_lines.push_back( coll_void ? text("dgd-void").toUTF8()
+                            : text("dgd-mass").arg( mass_str(collimator_region.mass_g) ).toUTF8() );
     have_collimator = true;
 
     r_in = r_out;
@@ -575,16 +575,16 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
     dead.profile = make_profile( zs, dead_rmin, rmax_at );
     dead.volume_cm3 = v_dead;
     dead.mass_g = v_dead * crystal_density;
-    dead.tip_title = text("dgxs-dead").toUTF8();
-    dead.tip_lines.push_back( text("dgxs-material").arg( WString::fromUTF8(crystal_name) )
+    dead.tip_title = text("dgd-dead").toUTF8();
+    dead.tip_lines.push_back( text("dgd-material").arg( WString::fromUTF8(crystal_name) )
                                 .arg( compact_str(crystal_density) ).toUTF8() );
     if( t_b > 0.0 )
-      dead.tip_lines.push_back( text("dgxs-dead-dims-back").arg( length_str(t_f) ).arg( length_str(t_s) )
+      dead.tip_lines.push_back( text("dgd-dead-dims-back").arg( length_str(t_f) ).arg( length_str(t_s) )
                                   .arg( length_str(t_b) ).toUTF8() );
     else
-      dead.tip_lines.push_back( text("dgxs-dead-dims").arg( length_str(t_f) ).arg( length_str(t_s) ).toUTF8() );
-    dead.tip_lines.push_back( text("dgxs-volume").arg( compact_str(v_dead) ).toUTF8() );
-    dead.tip_lines.push_back( text("dgxs-mass").arg( mass_str(dead.mass_g) ).toUTF8() );
+      dead.tip_lines.push_back( text("dgd-dead-dims").arg( length_str(t_f) ).arg( length_str(t_s) ).toUTF8() );
+    dead.tip_lines.push_back( text("dgd-volume").arg( compact_str(v_dead) ).toUTF8() );
+    dead.tip_lines.push_back( text("dgd-mass").arg( mass_str(dead.mass_g) ).toUTF8() );
     model.regions.push_back( dead );
   }//if( dead layer )
 
@@ -603,18 +603,18 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
     }
     crystal.volume_cm3 = v_active;
     crystal.mass_g = v_active * crystal_density;
-    crystal.tip_title = text("dgxs-crystal").toUTF8();
-    crystal.tip_lines.push_back( text("dgxs-material").arg( WString::fromUTF8(crystal_name) )
+    crystal.tip_title = text("dgd-crystal").toUTF8();
+    crystal.tip_lines.push_back( text("dgd-material").arg( WString::fromUTF8(crystal_name) )
                                    .arg( compact_str(crystal_density) ).toUTF8() );
     if( box )
-      crystal.tip_lines.push_back( text("dgxs-dims-box").arg( length_str(2.0*R) ).arg( length_str(2.0*hy) )
+      crystal.tip_lines.push_back( text("dgd-dims-box").arg( length_str(2.0*R) ).arg( length_str(2.0*hy) )
                                      .arg( length_str(L) ).toUTF8() );
     else
-      crystal.tip_lines.push_back( text("dgxs-dims-cyl").arg( length_str(2.0*R) ).arg( length_str(L) ).toUTF8() );
+      crystal.tip_lines.push_back( text("dgd-dims-cyl").arg( length_str(2.0*R) ).arg( length_str(L) ).toUTF8() );
     if( r_b > 0.0 )
-      crystal.tip_lines.push_back( text("dgxs-fillet").arg( length_str(r_b) ).toUTF8() );
-    crystal.tip_lines.push_back( text("dgxs-volume").arg( compact_str(v_active) ).toUTF8() );
-    crystal.tip_lines.push_back( text("dgxs-mass").arg( mass_str(crystal.mass_g) ).toUTF8() );
+      crystal.tip_lines.push_back( text("dgd-fillet").arg( length_str(r_b) ).toUTF8() );
+    crystal.tip_lines.push_back( text("dgd-volume").arg( compact_str(v_active) ).toUTF8() );
+    crystal.tip_lines.push_back( text("dgd-mass").arg( mass_str(crystal.mass_g) ).toUTF8() );
     model.regions.push_back( crystal );
   }
 
@@ -628,11 +628,11 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
     bore.profile = make_profile( zs, []( double ){ return 0.0; }, rmin_bore_at );
     bore.volume_cm3 = v_bore;
     bore.mass_g = 0.0;
-    bore.tip_title = text("dgxs-bore").toUTF8();
-    bore.tip_lines.push_back( text("dgxs-bore-dims").arg( length_str(2.0*R_bore) ).arg( length_str(D_bore) )
-                                .arg( rounded ? text("dgxs-bore-rounded") : WString() ).toUTF8() );
-    bore.tip_lines.push_back( text("dgxs-volume").arg( compact_str(v_bore) ).toUTF8() );
-    bore.tip_lines.push_back( text("dgxs-void").toUTF8() );
+    bore.tip_title = text("dgd-bore").toUTF8();
+    bore.tip_lines.push_back( text("dgd-bore-dims").arg( length_str(2.0*R_bore) ).arg( length_str(D_bore) )
+                                .arg( rounded ? text("dgd-bore-rounded") : WString() ).toUTF8() );
+    bore.tip_lines.push_back( text("dgd-volume").arg( compact_str(v_bore) ).toUTF8() );
+    bore.tip_lines.push_back( text("dgd-void").toUTF8() );
     model.regions.push_back( bore );
   }//if( bore )
 
@@ -703,7 +703,7 @@ DetectorGeometryCrossSection::Model DetectorGeometryCrossSection::buildModel( co
 }//buildModel(...)
 
 
-std::string DetectorGeometryCrossSection::toJson( const Model &model )
+std::string DetectorGeometryDiagram::toJson( const Model &model )
 {
   nlohmann::json j;
   j["box"] = model.box;
@@ -712,7 +712,7 @@ std::string DetectorGeometryCrossSection::toJson( const Model &model )
   j["rMax"] = model.r_max;
   j["knots"]["z"] = model.z_knots;
   j["knots"]["r"] = model.r_knots;
-  j["labels"]["front"] = text("dgxs-front").toUTF8();
+  j["labels"]["front"] = text("dgd-front").toUTF8();
 
   nlohmann::json regions = nlohmann::json::array();
   for( const Region &region : model.regions )
