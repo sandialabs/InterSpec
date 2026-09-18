@@ -863,9 +863,13 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
-          && ((!m_geometry && !rhs.m_geometry)
-              || (m_geometry && rhs.m_geometry
-                  && (m_geometry->to_xml_string() == rhs.m_geometry->to_xml_string())))
+          // `geometry()`, not `m_geometry`: a response carries its own descriptor and the
+          //  serializers write only one of the two, so a DRF that has been through a file or the
+          //  database has the same shape in the other member.  Comparing the raw member reports
+          //  every round-tripped MC-backed detector as changed.
+          && ((!geometry() && !rhs.geometry())
+              || (geometry() && rhs.geometry()
+                  && (geometry()->to_xml_string() == rhs.geometry()->to_xml_string())))
           );
 }//operator==
 
@@ -1088,7 +1092,11 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
     // Back the intrinsic total out of a far-field absolute evaluation, where
     //  eps_total ~= (solid angle) x (intrinsic total).
     const double a_cm = m_ceeloResponse->transverse_half_extent();
-    const double d_cm = std::max( 100.0, 20.0*a_cm );
+    // The SAME far-field distance #intrinsicEfficiencyEval uses for the FEP.  20a is not converged
+    //  for the total, whose effective interaction depth is the whole crystal rather than the first
+    //  attenuation length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would
+    //  ride into both the peak-to-total the General tab prints and the cascade-summing correction.
+    const double d_cm = std::max( 1000.0*a_cm, 100.0 );
     const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy,
               CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
     const double omega = fractionalSolidAngle( m_detectorDiameter,
@@ -1257,10 +1265,44 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::efficiencyEval( const float 
 }//efficiencyEval(...)
 
 
+/** The ray set plus the position it was traced at, so a mismatched reuse can be caught. */
+struct DetectorPeakResponse::PositionedQuadrature
+{
+  Eigen::Vector3d position;
+  ceelo::ApertureQuadrature quadrature;
+};//struct DetectorPeakResponse::PositionedQuadrature
+
+
+std::shared_ptr<const DetectorPeakResponse::PositionedQuadrature>
+   DetectorPeakResponse::apertureQuadrature( const double theta, const double phi,
+                                             const double distance ) const
+{
+  if( !m_ceeloResponse || isFixedGeometry() )
+    return nullptr;
+
+  auto answer = std::make_shared<PositionedQuadrature>();
+  answer->position = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                              theta, phi, distance / PhysicalUnits::cm );
+  answer->quadrature = m_ceeloResponse->make_quadrature( answer->position );
+
+  return answer;
+}//DetectorPeakResponse::apertureQuadrature(...)
+
+
 DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const float energy,
                                                         const double theta,
                                                         const double phi,
                                                         const double distance ) const
+{
+  return fepEfficiencyEval( energy, theta, phi, distance, nullptr );
+}//fepEfficiencyEval(...)
+
+
+DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const float energy,
+                              const double theta,
+                              const double phi,
+                              const double distance,
+                              const std::shared_ptr<const PositionedQuadrature> &quadrature ) const
 {
   EffEval answer;
 
@@ -1274,7 +1316,21 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
     //  reference point.
     const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
                                                     theta, phi, distance / PhysicalUnits::cm );
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( quadrature && ((quadrature->position - pos).norm() > 1.0E-6) )
+    {
+      log_developer_error( __func__, "A reused aperture quadrature was traced at a different"
+                                     " source position than the one being queried." );
+      assert( 0 );
+    }
+#endif
+
+    // The quadrature is the whole cost of the query and depends only on the position, so a caller
+    //  sweeping energies at one position passes the one it built (see #apertureQuadrature).
+    const ceelo::EffResult res = quadrature
+                                   ? m_ceeloResponse->eps_fep_at( energy, pos, quadrature->quadrature )
+                                   : m_ceeloResponse->eps_fep_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
     answer.flag = to_eff_flag( res.flag );
@@ -1388,8 +1444,12 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_totalEfficiency.reset();
   m_measuredPoints.reset();
   m_ceeloResponse.reset();
+  m_geometry.reset();
   m_fixedGeomSetupXml.clear();
 
+  // Cleared above, before this early-out: an extras column that no longer carries a geometry (or
+  //  a response) must not leave the previous one in place - `persist()` calls this on every read
+  //  of an object that may already hold one.
   if( xml.empty() )
     return;
 
@@ -1444,8 +1504,11 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( ceelo_node )
       m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
 
+    // A response carries its own geometry, and `geometry()` answers with that one - so a standalone
+    //  geometry is only read when there is no response (the same rule both writers use, and the
+    //  same guard `fromXml` applies).
     const rapidxml::xml_node<char> *geom_node = base_node->first_node( "CeeLoGeometry" );
-    if( geom_node )
+    if( geom_node && !m_ceeloResponse )
       m_geometry = parse_ceelo_geometry_node( geom_node );
 
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
@@ -4444,7 +4507,8 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
   // - Version 4: Added PeakFitDetPrefs (20260221)
   // - Version 5: Added EfficiencyUncert and TotalEfficiency (20260610)
-  // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707)
+  // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707);
+  //              CeeLoGeometry (a physical geometry carried without a response) (20260916)
   static_assert( sm_xmlSerializationVersion == 6, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
@@ -4452,9 +4516,9 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
 
   int version_to_write = 0;
 
-  if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
+  if( m_ceeloResponse || m_geometry || (m_measuredPoints && !m_measuredPoints->empty()) )
   {
-    // MC-parameterized response / raw measured points require version 6
+    // MC-parameterized response / physical geometry / raw measured points require version 6
     version_to_write = 6;
   }else if( have_eff_uncert || m_totalEfficiency )
   {
@@ -4715,8 +4779,12 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   if( m_measuredPoints && !m_measuredPoints->empty() )
     m_measuredPoints->toXml( base_node, doc );
 
+  // A response carries its own geometry; a DRF that knows its shape but has no response writes
+  //  the geometry on its own (the same rule drfExtraToXmlString uses for the database column).
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
+  else if( m_geometry )
+    append_ceelo_geometry_node( base_node, doc, *m_geometry );
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -5157,6 +5225,13 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
     m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
 
+  // The physical geometry of a DRF that has no response (see toXml); a response's own descriptor
+  //  is what geometry() answers with, so this is only read when there is no response.
+  m_geometry.reset();
+  node = parent->first_node( "CeeLoGeometry", 13 );
+  if( node && !m_ceeloResponse )
+    m_geometry = parse_ceelo_geometry_node( node );  //throws on invalid content
+
   m_fixedGeomSetupXml.clear();
   node = parent->first_node( "FixedGeomSourceSetup", 20 );
   if( node )
@@ -5333,6 +5408,19 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
       && (lhs.m_ceeloResponse->content_hash() != rhs.m_ceeloResponse->content_hash()) )
     throw runtime_error( "DetectorPeakResponse: CeeLo response content"
                          " doesnt match" );
+
+  // The physical geometry a DRF carries without a response (an ANGLE / Detector.dat import) is
+  //  serialized too, so a round trip that drops or corrupts it must be caught here - `m_hash` can
+  //  not catch it, since fromXml restores the hash the file declared rather than recomputing it.
+  const shared_ptr<const ceelo::GeometryDescriptor> lhs_geom = lhs.geometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> rhs_geom = rhs.geometry();
+  if( (!lhs_geom) != (!rhs_geom) )
+    throw runtime_error( "DetectorPeakResponse: availability of detector"
+                         " geometry doesnt match" );
+
+  if( lhs_geom && rhs_geom
+      && (lhs_geom->to_xml_string() != rhs_geom->to_xml_string()) )
+    throw runtime_error( "DetectorPeakResponse: detector geometry doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 
@@ -6269,16 +6357,34 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   // Add common energy extent
   json << "\"extent\":[" << minEnergy << "," << maxEnergy << "]";
   
-  // Add efficiency data
+  // Add efficiency data.
+  //
+  // What the client is to end up with is the INTRINSIC efficiency (per gamma striking the face):
+  //  that is what the chart plots, and what the `validation` block below asserts.  The stored curve
+  //  of a `FarFieldAbsolute` DRF is instead ABSOLUTE efficiency at its reference distance, so it is
+  //  sent verbatim together with the `absToIntrinsic` factor below, and the client applies the very
+  //  same product `intrinsicEfficiency()` does.  (Sending a curve the client would have to
+  //  re-interpolate is what made this wrong before: first the factor was left off entirely, which
+  //  drew the curve low by the solid angle - a factor of hundreds - and then resampling it could
+  //  not reproduce the stored curve's own interpolation to better than a percent.)
+  const bool sample_intrinsic = (m_efficiency->form() == kFunctialEfficienyForm);
+
   json << ",\"efficiency\":";
-  if( m_efficiency->form() == kFunctialEfficienyForm )
+  if( sample_intrinsic )
   {
-    // For functional form, generate 100 points and send as kEnergyEfficiencyPairs with energyUnits=1
+    // A formula has no client-side equivalent, so it is sampled - already intrinsic, and log-spaced
+    //  because a detector efficiency bends hardest at the low-energy end.
+    const int n_sample = 200;
+    const bool log_space = (minEnergy > 1.0f) && (maxEnergy > minEnergy);
+
     json << "{\"form\":\"kEnergyEfficiencyPairs\",\"energyUnits\":1,\"pairs\":[";
     bool first = true;
-    for( int i = 0; i < 100; ++i )
+    for( int i = 0; i < n_sample; ++i )
     {
-      const float energy = minEnergy + (float(i)/99.0f) * (maxEnergy-minEnergy);
+      const double frac = double(i) / (n_sample - 1);
+      const float energy = log_space
+              ? static_cast<float>( minEnergy * std::pow( double(maxEnergy)/minEnergy, frac ) )
+              : static_cast<float>( minEnergy + frac*(maxEnergy - minEnergy) );
       const float efficiency = static_cast<float>( intrinsicEfficiency( energy ) );
       
       // Skip invalid efficiency values
@@ -6404,7 +6510,43 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     json << "]}";
   }//if( m_totalEfficiency )
 
+  // NOTE: this block must stay OUTSIDE the PERFORM_DEVELOPER_CHECKS guard below - the chart needs
+  //  it in every build.  (It survived being on the wrong side of that guard only because
+  //  InterSpec_config.h.in uses `#cmakedefine01`, so the macro is always *defined*, as 0 or 1, and
+  //  `#ifdef` is always true.  Normalizing that one `#ifdef` to this file's usual
+  //  `#if( PERFORM_DEVELOPER_CHECKS )` would have silently dropped the factors and drawn every
+  //  absolute-geometry curve low by the solid angle - 175x at a 25 cm characterization distance.)
+  //
+  // The absolute-to-intrinsic conversion for a verbatim `FarFieldAbsolute` curve: `1/solid-angle
+  //  fraction`, times the air-attenuation correction when that is enabled (which is what makes it
+  //  energy dependent).  Sampled log-spaced and interpolated on the client, which is accurate
+  //  because the factor itself is smooth and slowly varying - unlike the efficiency curve.
+  if( !sample_intrinsic && (m_geomType == EffGeometryType::FarFieldAbsolute) )
+  {
+    const int n_factor = 200;
+    const bool log_space = (minEnergy > 1.0f) && (maxEnergy > minEnergy);
+
+    json << ",\"absToIntrinsic\":{\"energies\":[";
+    std::stringstream factors;
+    for( int i = 0; i < n_factor; ++i )
+    {
+      const double frac = double(i) / (n_factor - 1);
+      const float energy = log_space
+              ? static_cast<float>( minEnergy * std::pow( double(maxEnergy)/minEnergy, frac ) )
+              : static_cast<float>( minEnergy + frac*(maxEnergy - minEnergy) );
+      if( i )
+      {
+        json << ",";
+        factors << ",";
+      }
+      json << energy;
+      factors << absoluteToIntrinsicMultiple( energy );
+    }
+    json << "],\"factors\":[" << factors.str() << "]}";
+  }//if( a verbatim absolute curve )
+
 #ifdef PERFORM_DEVELOPER_CHECKS
+
   // Add validation data for JavaScript testing
   json << ",\"validation\":{";
   json << "\"energies\":[";
@@ -6480,8 +6622,11 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
 std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance ) const
 {
   // Only a Monte-Carlo / transfer parameterized response carries angular
-  //  information; a legacy curve is angle-blind (nothing to draw).
-  if( !isValid() || !m_ceeloResponse )
+  //  information; a legacy curve is angle-blind (nothing to draw).  The
+  //  response answers on its own, so a DRF that has not had a legacy curve
+  //  sampled from it yet (a geometry-only import mid-characterization) still
+  //  gets its per-angle curves.
+  if( !m_ceeloResponse )
     return "null";
 
   // Energy grid: log-spaced over the DRFs validated range (sensible default
@@ -6529,6 +6674,11 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
 
     const double theta = angles_deg[a] * (M_PI / 180.0);
 
+    // One traced ray set for this angle, reused by all `n_energy` queries below: tracing is ~98% of
+    //  a Monte-Carlo-backed query and depends only on the position, so this is the difference
+    //  between ~540 ms and ~18 ms for the whole chart.
+    const std::shared_ptr<const PositionedQuadrature> quad = apertureQuadrature( theta, 0.0, dist );
+
     // Track the most severe non-Ok flag over the curve, for a per-series cue.
     EffFlag worst = EffFlag::Ok;
 
@@ -6537,7 +6687,7 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
     for( int i = 0; i < n_energy; ++i )
     {
       const double energy = e_lo * std::pow( e_hi/e_lo, double(i)/(n_energy-1) );
-      const EffEval eval = fepEfficiencyEval( static_cast<float>(energy), theta, 0.0, dist );
+      const EffEval eval = fepEfficiencyEval( static_cast<float>(energy), theta, 0.0, dist, quad );
       if( IsNan(eval.value) || IsInf(eval.value) || (eval.value < 0.0) )
         continue;
 

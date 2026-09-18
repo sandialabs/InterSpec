@@ -3110,8 +3110,11 @@ bool SpecMeasManager::tryLoadSingleDrf( const NonSpecFileKind kind,
 
     try
     {
-      if( filesize > 100*1024 )  // if larger than 100 KB, probably not a DRF
-        throw runtime_error( "To large to be XML file" );
+      // The classifier already saw "<DetectorPeakResponse" at the very start of the file, so the
+      //  only question is whether it is sane to read whole: a Monte-Carlo characterized detector
+      //  carries ~100 KB of response tables, so the cap has to be well above that.
+      if( filesize > 16*1024*1024 )
+        throw runtime_error( "To large to be a DRF XML file" );
 
       rapidxml::file<char> input_file( infile );
 
@@ -3916,7 +3919,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     generic_geom_index = geom_combo->count() - 1;
   }//if( angle_geometry && angle_seed_drf )
 
-  geom_combo->setCurrentIndex( 1 );
+  // A file that describes the whole detector is best used as one (geometry-modeled, answering any
+  //  source position), so that is the default; a curve-only file defaults to its fixed geometry.
+  geom_combo->setCurrentIndex( (generic_geom_index >= 0) ? generic_geom_index : 1 );
     
   WTable *far_field_opt = dialog->contents()->addNew<WTable>();
   //far_field_opt->setHiddenKeepsGeometry( true );
@@ -4102,6 +4107,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   diameter_edit->textInput().connect( this, update_state );
   if( ecc_uncert_opts )
     ecc_uncert_opts->changed().connect( this, update_state );
+
+  // Show the preview / options for the default selection (the generic detector, when offered).
+  update_state();
 
 
   accept->clicked().connect( this, [=](){

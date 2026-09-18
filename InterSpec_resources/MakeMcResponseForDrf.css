@@ -58,6 +58,7 @@
 {
   padding: 1px 4px;
   font-size: smaller;
+  white-space: nowrap;  /* the "Front thickness" / "Side thickness" headers stay on one line */
 }
 
 .DetectorGeometryInput .DgiCollimator > label
@@ -74,9 +75,16 @@
   vertical-align: middle;
 }
 
+/* The three "pay attention to this" notes below.  `--interspec-warning-color` is not one of the
+   variables ColorTheme defines (it sets nine, none of them a warning colour), so the fallback is
+   what actually applies - and #a35d00 against the dark theme's rgb(44,45,48) is ~2.7:1, under the
+   legibility minimum.  Fall back to the theme's own text colour, which is readable in every theme
+   by construction, and carry "this is a note" with italics rather than with hue.  If a warning
+   colour is ever added to ColorTheme, these pick it up with no further change. */
 .DetectorGeometryInput .DgiNote
 {
-  color: var(--interspec-warning-color, #a35d00);
+  color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+  font-style: italic;
   font-size: smaller;
 }
 
@@ -89,7 +97,8 @@
 .MakeMcResponseForDrf .McUpgradeNote
 {
   font-size: smaller;
-  color: var(--interspec-warning-color, #a35d00);
+  color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+  font-style: italic;
   margin: 2px 0 4px 0;
 }
 
@@ -131,6 +140,7 @@
 {
   flex: 1 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;  /* the progress line is long; wrap beside the Cancel button */
 }
 
 .MakeMcResponseForDrf .McRunRow > button
@@ -184,6 +194,12 @@
 .DrfModifyFieldGrid > label { justify-self: end; }
 .DrfModifyFieldGrid > input,
 .DrfModifyFieldGrid > textarea { width: 100%; box-sizing: border-box; }
+/* General tab: the live efficiency/FWHM chart and the summary of what the detector carries. */
+.DrfModifyWidget .DrfModifyGeneralChart { width: 100%; height: 220px; margin-top: 4px; }
+.DrfModifyInfoTable { margin-top: 8px; font-size: smaller; }
+.DrfModifyInfoTable td { padding: 2px 6px; vertical-align: top; }
+.DrfModifyInfoTable .DrfModifyInfoLabel { font-weight: bold; white-space: nowrap; }
+
 /* Geom & MC tab: the panel wrapping the mode toggle + the embedded MC tool. */
 .DrfModifyGeomPanel { padding: 6px 4px; overflow-y: auto; }
 .DrfModifyModeRow { margin-bottom: 6px; }
@@ -239,3 +255,6 @@
   border-top: none;
 }
 .DrfModifyFooterRow .DrfModifyGenerateBtn { flex: 0 0 auto; margin-left: auto; }
+/* Why the generate button is disabled; stands in for the export tip while it applies. */
+.DrfModifyFooterRow .DrfModifyGenerateHint { color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+  font-style: italic; }

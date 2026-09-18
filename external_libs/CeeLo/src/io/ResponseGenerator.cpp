@@ -97,6 +97,7 @@ struct Runner {
     std::vector<std::unique_ptr<Material>> owned;
     int nodes_done = 0;
     int nodes_total = 1;
+    NodeStat last;  ///< the most recent run_node, for the per-node progress callback
 
     Runner(const GeometryDescriptor& g, const GenerationOptions& o)
         : gd(g), opts(o) {
@@ -142,6 +143,17 @@ struct Runner {
             throw GenerationCancelled();
         if (opts.progress)
             opts.progress(std::min(1.0, double(nodes_done) / nodes_total), stage);
+        if (opts.node_progress) {
+            NodeProgress p;
+            p.nodes_done = nodes_done;
+            p.nodes_total = nodes_total;
+            p.stage = last.stage;
+            p.energy_keV = last.energy_keV;
+            p.events = last.events;
+            p.cpu_s = last.cpu_s;
+            p.wall_s = last.wall_s;
+            opts.node_progress(p);
+        }
     }
 
     // fep_only: FEP-only transport (skips the eps_tot tally) for nodes whose
@@ -160,22 +172,22 @@ struct Runner {
                           resolve_node_precision(opts, stage, energy_keV));
         cfg.seed = node_seed(opts.base_seed, stage, node);
         EfficiencyResult r = calc.compute(cfg);
-        if (opts.stats_out) {
-            NodeStat ns;
-            ns.stage = stage;
-            ns.energy_keV = energy_keV;
-            const double d = src.norm();
-            ns.d_cm = d;
-            ns.cos_theta = (d > 0.0) ? (-src.z() / d) : 1.0;
-            ns.events = r.num_events_simulated;
-            ns.cpu_s = r.cpu_time_seconds;
-            ns.wall_s = r.wall_time_seconds;
-            ns.stop = static_cast<uint8_t>(r.stop_reason);
-            ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
-                ? r.fep_uncertainty / r.full_energy_peak_efficiency
-                : 0.0;
+        NodeStat ns;
+        ns.stage = stage;
+        ns.energy_keV = energy_keV;
+        const double d = src.norm();
+        ns.d_cm = d;
+        ns.cos_theta = (d > 0.0) ? (-src.z() / d) : 1.0;
+        ns.events = r.num_events_simulated;
+        ns.cpu_s = r.cpu_time_seconds;
+        ns.wall_s = r.wall_time_seconds;
+        ns.stop = static_cast<uint8_t>(r.stop_reason);
+        ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
+            ? r.fep_uncertainty / r.full_energy_peak_efficiency
+            : 0.0;
+        last = ns;  // what tick() reports
+        if (opts.stats_out)
             opts.stats_out->add(ns);
-        }
         return r;
     }
 };
@@ -995,27 +1007,63 @@ int ResponseGenerator::estimated_node_count(const GeometryDescriptor& gd,
         const int cert = o.n_cert_probes + 4 * 8;
         return initial + std::max(0, o.max_refine_iters) * per_iter + cert;
     }
-    const bool box = gd.shape == DetectorShape::Box;
-    const int n_phi = box ? o.n_phi_nodes : 1;
-    const int backbone =
-        o.n_energy_scan + 2 * static_cast<int>(
-            crystal_edges(gd, o.e_min_keV, o.e_max_keV).size());
-    // EFFTRAN transfer mode: only the on-axis backbone (+ a few forced angle
-    // anchors when n_anchor_angles > 1); no near-field tensor.
-    if (o.transfer_mode) {
-        const int anchors = (o.n_anchor_angles > 1)
-            ? o.n_shape_energies * std::max(3, o.n_anchor_angles) : 0;
-        return backbone + anchors;
+    return plan_nodes(gd, o).total();
+}
+
+std::vector<double> ResponseGenerator::backbone_scan_energies(
+    const GeometryDescriptor& gd, const GenerationOptions& opts) {
+    // The max(1, ...) matters: n_energy_scan == 1 would divide by zero and put a NaN in the grid
+    // (and hence into std::sort). A single scan point is just the low end of the range.
+    std::vector<double> scan_E;
+    for (int i = 0; i < opts.n_energy_scan; ++i)
+        scan_E.push_back(opts.e_min_keV *
+                         std::pow(opts.e_max_keV / opts.e_min_keV,
+                                  double(i) / std::max(1, opts.n_energy_scan - 1)));
+    for (const double e : crystal_edges(gd, opts.e_min_keV, opts.e_max_keV)) {
+        scan_E.push_back(e * (1.0 - 1e-3));
+        scan_E.push_back(e * (1.0 + 1e-3));
     }
-    const int angular = o.n_shape_energies * o.n_cos_theta_scan * n_phi;
-    int near = 0;
+    std::sort(scan_E.begin(), scan_E.end());
+    scan_E.erase(std::unique(scan_E.begin(), scan_E.end(),
+                             [](double x, double y) { return y - x < x * 1e-6; }),
+                 scan_E.end());
+    return scan_E;
+}
+
+ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
+    const GeometryDescriptor& gd, const GenerationOptions& o) {
+    NodePlan plan;
+    plan.backbone_energies_keV = backbone_scan_energies(gd, o);
+
+    const bool box = gd.shape == DetectorShape::Box;
+    plan.n_phi = box ? std::max(1, o.n_phi_nodes) : 1;
+
+    // The stage-2/3 target energies; generate() snaps each to the nearest
+    // greedy backbone node (in log energy) and merges duplicates.
+    const int n_shape = std::max(0, o.n_shape_energies);
+    for (int i = 0; i < n_shape; ++i)
+        plan.shape_energies_keV.push_back(
+            o.e_min_keV * std::pow(o.e_max_keV / o.e_min_keV,
+                                   double(i) / std::max(1, n_shape - 1)));
+
+    // EFFTRAN transfer mode: only the on-axis backbone (+ a few forced angle
+    // anchors when n_anchor_angles > 1); never a near-field tensor.
+    if (o.transfer_mode) {
+        plan.transfer_anchors = true;
+        plan.n_cos_theta =
+            (o.n_anchor_angles > 1) ? std::max(3, o.n_anchor_angles) : 0;
+        plan.n_near_positions = 0;
+        return plan;
+    }
+
+    plan.n_cos_theta = o.n_cos_theta_scan;
     if (o.profile != ResponseProfile::FarField) {
         // 9 cos_theta nodes x (8 or 9) MC distance nodes per shape energy
         // (the outermost distance node is a no-MC ln N = 0 anchor).
         const int nd = (o.profile == ResponseProfile::Contact) ? 9 : 8;
-        near = o.n_shape_energies * nd * 9;
+        plan.n_near_positions = 9 * nd;
     }
-    return backbone + angular + near;
+    return plan;
 }
 
 std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
@@ -1082,19 +1130,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     resp->eta_fep.edges_keV = edges;
 
     // ---- 1. energy backbone (on-axis, far field) ---------------------------
-    std::vector<double> scan_E;
-    for (int i = 0; i < opts.n_energy_scan; ++i)
-        scan_E.push_back(opts.e_min_keV *
-                         std::pow(opts.e_max_keV / opts.e_min_keV,
-                                  double(i) / (opts.n_energy_scan - 1)));
-    for (const double e : edges) {
-        scan_E.push_back(e * (1.0 - 1e-3));
-        scan_E.push_back(e * (1.0 + 1e-3));
-    }
-    std::sort(scan_E.begin(), scan_E.end());
-    scan_E.erase(std::unique(scan_E.begin(), scan_E.end(),
-                             [](double x, double y) { return y - x < x * 1e-6; }),
-                 scan_E.end());
+    // The grid is shared with plan_nodes(), so a host's per-stage plan is what runs.
+    const std::vector<double> scan_E = backbone_scan_energies(gd, opts);
 
     const Eigen::Vector3d far_pos(0.0, 0.0, -d_far);
     const ApertureQuadrature q_far = resp->make_quadrature(far_pos);

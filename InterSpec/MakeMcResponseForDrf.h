@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -39,9 +40,16 @@ class DrfChart;
 class InterSpec;
 class DetectorPeakResponse;
 
+/** Measured Monte-Carlo throughput of a geometry (defined in the .cpp). */
+struct McTimeCalibration;
+
+/** What a running generation's worker reports after each node (defined in the .cpp). */
+struct McProgressSnapshot;
+
 namespace Wt
 {
   class WText;
+  class WTimer;
   class WCheckBox;
   class WTableRow;
   class WGroupBox;
@@ -55,6 +63,8 @@ namespace ceelo
 {
   class DetectorResponse;
   struct GroundingPoint;
+  struct GenerationStats;
+  struct GenerationOptions;
   struct GeometryDescriptor;
 }//namespace ceelo
 
@@ -121,6 +131,14 @@ public:
   /** The most recently generated (and grounded) response; may be nullptr. */
   std::shared_ptr<const ceelo::DetectorResponse> generatedResponse() const;
 
+  /** Identifies the generation currently in flight (or the last one started); bumped by every new
+   run, by #setState and by a method change.  An owner that wants to act when a *particular* run
+   lands records this when it starts the run and compares on arrival - a run that fails, is
+   cancelled, or is superseded never reports, so a bare "act on the next response" flag would stay
+   armed and fire on an unrelated generation later.
+   */
+  int generationId() const;
+
   /** Emitted after every successful generation (before the user accepts) -
    e.g. so the Make Detector Response tool can attach the response to the
    DRF it assembles.  Deliberately non-const: the receiver may still need to
@@ -165,10 +183,26 @@ public:
    (delegates to DetectorGeometryInput::generationReady). */
   bool generationReady() const;
 
+  /** Times a short, low-statistics Monte Carlo of the current geometry (a second or so, off the
+   session thread) so the run-time estimate is measured rather than guessed.  Debounced, and
+   skipped for the no-MC method, an invalid or already-measured geometry, a disabled or hidden
+   tool, or while a generation runs.  Call when the tool comes into view (its tab is selected). */
+  void scheduleTimeCalibration();
+
+  /** Why the geometry form cannot generate right now - its validation error, or the note that the
+   crystal length is still the diameter guess - or empty when #generationReady.  For an owner that
+   shows the reason beside its own generate control (see DetectorGeometryInput::problemDescription). */
+  std::string geometryProblem() const;
+
+  /** The geometry currently in the form.  Throws std::runtime_error, with a user-displayable
+   message, when the form is not valid. */
+  ceelo::GeometryDescriptor geometryDescriptor() const;
+
   /** Kicks off a response generation from the current geometry/method selections; a no-op (with a
    status message) when the geometry is not #generationReady.  Public so an owner can drive a
-   regenerate-then-use flow. */
-  void startGeneration();
+   regenerate-then-use flow.  Returns whether a generation was actually started, so an owner that
+   means to act on the result does not arm itself for a run that never happens. */
+  bool startGeneration();
 
   /** Hides (or shows) the tool's own "Generate Response" button in the Location Support section.
    An owner that embeds this tool and provides its own generate control (e.g. DrfModifyWidget's
@@ -203,7 +237,33 @@ public:
    records undo/redo for this tool should take a new snapshot. */
   Wt::Signal<> &userChanged();
 
+  /** Like #userChanged, but for edits a generated response does NOT depend on - currently the
+   Response-preview chart controls.  An owner should record its undo step for these but must not
+   treat the response as out of date. */
+  Wt::Signal<> &userChangedNoRegen();
+
+  /** Whether a generation is in flight right now.  An owner with its own "Generate" button needs
+   this: #generatedResponse is null for the whole duration of a run, so a button keyed on that
+   alone re-enables itself mid-run. */
+  bool isGenerating() const;
+
+  /** Re-enabling (Flat Disk -> Geometry Modeled) is when the estimate starts to matter. */
+  virtual void setDisabled( bool disabled ) override;
+
 protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
+
+  /** The options a generation would run with right now (method, profile, precision) - shared by
+   the estimate, the node plan and the run itself, so they cannot disagree. */
+  ceelo::GenerationOptions generationOptions() const;
+
+  void startTimeCalibration();
+  void handleTimeCalibrationFinished( const McTimeCalibration &calib, const int calibration_id );
+
+  /** Paints "n/N nodes - working on ... - x of ~y min" from #m_progressSnapshot; the 2 s
+   #m_progressTimer and the worker's stage-change posts both land here. */
+  void refreshProgressText();
+
   void handleGeometryChanged();
   void handleMethodChanged();
   void handlePrecisionChanged();
@@ -234,12 +294,15 @@ protected:
 
   void cancelGeneration();
 
-  /** Called (on the session thread) with progress from the worker. */
-  void updateProgress( const double frac, const std::string &stage,
-                       const int generation_id );
+  /** Called (on the session thread) when the worker reports a stage change or the last node. */
+  void updateProgress( const int generation_id );
+
+  /** `stats` is the per-node cost record of the run (null for the no-MC transfer); it feeds the
+   next estimate for this geometry. */
   void handleGenerationFinished( std::shared_ptr<ceelo::DetectorResponse> result,
                                  const std::string &errmsg,
-                                 const int generation_id );
+                                 const int generation_id,
+                                 std::shared_ptr<const ceelo::GenerationStats> stats );
 
   /** Per-node MC FEP precision (base target) from the GUI selection. */
   double selectedPrecision() const;
@@ -320,8 +383,49 @@ protected:
 
   Wt::Signal<bool> m_validationChanged;
   Wt::Signal<> m_userChanged;
+  Wt::Signal<> m_userChangedNoRegen;
   Wt::Signal<std::shared_ptr<ceelo::DetectorResponse>> m_responseGenerated;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
+
+  // --- Time estimate: a short calibration Monte Carlo of the current geometry -------------------
+  /** Measured throughput for the geometry it names; null until a probe (or a real run) measured
+   one.  See McTimeCalibration in the .cpp. */
+  std::shared_ptr<const McTimeCalibration> m_calibration;
+
+  /** Identifies the current probe; a result from a stale one is dropped.  Session thread only. */
+  int m_calibrationId;
+  bool m_calibrating;
+
+  /** Set by the first full render - i.e. once the tool has actually been looked at (a hidden tab
+   is not rendered until shown); until then no probe runs, so a tab never opened costs nothing. */
+  bool m_shown;
+
+  /** Debounces #scheduleTimeCalibration (1.5 s single-shot). */
+  std::unique_ptr<Wt::WTimer> m_calibTimer;
+
+  // --- Progress of a running generation ----------------------------------------------------------
+  /** Whether a Monte-Carlo generation is in flight (the run row shows its progress). */
+  bool m_generating;
+
+  /** What the worker fills in after every node; read by #refreshProgressText. */
+  std::shared_ptr<McProgressSnapshot> m_progressSnapshot;
+
+  /** Repaints the progress text every 2 s while generating, so the elapsed time and the ETA keep
+   moving through a long node. */
+  std::unique_ptr<Wt::WTimer> m_progressTimer;
+  std::chrono::steady_clock::time_point m_generationStart;
+
+  /** The geometry (as XML) the current run is characterizing, keying the calibration derived
+   from its per-node costs. */
+  std::string m_runGeometryKey;
+
+  /** The planned node count, and the predicted cumulative wall-seconds after each node (size
+   count + 1, [0] = 0): the prior the ETA blends the measured rate into. */
+  int m_nodesTotal;
+  std::vector<double> m_priorCumulative;
+
+  /** Whether the current run's stage-2 nodes are transfer-mode angle anchors (for the phrase). */
+  bool m_transferAnchors;
 };//class MakeMcResponseForDrf
 
 
