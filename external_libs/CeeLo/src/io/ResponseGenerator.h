@@ -279,7 +279,12 @@ public:
     /// copy of the points). `points[i].model_eff` may be 0, in which case it
     /// is computed here from the (ungrounded) response at the point's own
     /// geometry. `curve_derived` marks points sampled from a fitted legacy
-    /// curve rather than raw peak fits (lower quality; flagged in the block).
+    /// curve rather than raw peak fits (lower quality; flagged in the block);
+    /// it also selects the knot scheme, since such points carry no statistical
+    /// scatter to smooth: one knot per distinct energy (exact interpolation)
+    /// for curve-derived points, versus <=6 quantile-placed knots for raw
+    /// measured points, where over-fitting scatter would cost more than the
+    /// extra flexibility gains.
     static void ground_to_points(DetectorResponse& response,
                                  std::vector<GroundingPoint> points,
                                  bool curve_derived);

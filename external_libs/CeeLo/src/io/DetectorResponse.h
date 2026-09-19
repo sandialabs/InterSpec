@@ -430,7 +430,23 @@ private:
 enum class TotEffTier : uint8_t {
     KernelExact,   ///< bare crystal: eps_tot = K_{mu - mu_RS}
     BCurve,        ///< canned scintillator: eps_tot = b(E) * K_{mu - mu_RS}
-    EtaTotTable    ///< HPGe-class: eps_tot = k(E) * eta_tot(E,theta) * K
+    EtaTotTable,   ///< HPGe-class: eps_tot = k(E) * eta_tot(E,theta) * K
+    /// eps_tot is NOT CHARACTERIZED: the response carries FEP only, and the
+    /// eps_total_* queries return 0 flagged NeedsMc rather than a number.
+    ///
+    /// This exists because KernelExact is a POSITIVE claim, not a default:
+    /// ResponseGenerator only selects it after checking the bare kernel against
+    /// MC to 1% (see pick_tot_tier). A producer with no total-efficiency data at
+    /// all -- an FEP-only import, or a curve transfer whose source DRF had no
+    /// total curve -- was previously left at the KernelExact default, so it
+    /// silently served a bare-crystal kernel as if it were a verified total.
+    /// For a real HPGe that is not a small error: the kernel omits the passive
+    /// housing and every peak-to-total effect, and at low energy it falls BELOW
+    /// the response's own eps_fep, which is physically impossible. A host gating
+    /// cascade-summing on "does this response have a total?" got a confident yes
+    /// and a wrong correction. Being un-representable is the honest answer, so
+    /// it is a tier rather than a flag no caller has to read.
+    NotCharacterized
 };
 
 struct TotEffPayload {
@@ -441,6 +457,10 @@ struct TotEffPayload {
 
     void finalize();
     double ln_b_at(double energy_keV) const;   ///< clamped PCHIP over (lnE, ln b)
+
+    /// False only for #TotEffTier::NotCharacterized - i.e. whether an
+    /// eps_total query returns a modeled value at all.
+    bool characterized() const { return tier != TotEffTier::NotCharacterized; }
 
 private:
     Pchip b_curve_;

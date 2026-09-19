@@ -1470,26 +1470,68 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
         p.model_eff = r.value;
     }
 
-    // Knots: 2-4 hats across the measured ln-E span (n scales with the
-    // number of distinct energies; a near-flat ratio needs few parameters).
+    // Knot selection.  The right number of hats depends on whether the points
+    // carry statistical scatter, so the two regimes are handled separately:
+    //
+    //  - `curve_derived` points are deterministic samples of an already-fitted
+    //    curve (e.g. a vendor characterization) with no scatter to smooth, so
+    //    one knot per distinct energy interpolates them exactly.  Anything
+    //    coarser discards real curve structure: measured on two HPGe vendor
+    //    characterizations, a 4-hat fit left 2.0-2.2% residual where exact
+    //    interpolation leaves none, and leave-one-out (which sees only genuine
+    //    between-node predictive error) improved from 1.3-1.4% to 0.5-0.7% --
+    //    i.e. the coarse fit was discarding signal, not suppressing noise.
+    //
+    //  - raw measured points DO carry scatter, and there more hats hurt: with
+    //    5% scatter, leave-one-out against the noiseless truth favours ~6 hats
+    //    over a saturated fit (2.7% vs 3.2% rms).  So cap at 6, and place the
+    //    knots at data quantiles rather than uniformly in ln-E, which keeps
+    //    ~2 points per interval and avoids the unsupported-knot degeneracy
+    //    that uniform placement produces on clustered energies.
+    //
+    // Sorted point ln-energies; knots are chosen from these, so every knot is
+    // supported by data by construction.
     std::vector<double> ln_es;
     for (const GroundingPoint& p : points) ln_es.push_back(std::log(p.energy_keV));
     std::sort(ln_es.begin(), ln_es.end());
-    ln_es.erase(std::unique(ln_es.begin(), ln_es.end(),
-                            [](double x, double y) { return y - x < 0.01; }),
-                ln_es.end());
-    const int n_knots =
-        std::max(1, std::min({4, static_cast<int>(ln_es.size()),
-                              static_cast<int>(points.size())}));
+
+    // Distinct energies, merging any within ~1% of each other (a hat pair that
+    // close is not separately determined).
+    std::vector<double> ln_distinct = ln_es;
+    ln_distinct.erase(std::unique(ln_distinct.begin(), ln_distinct.end(),
+                                  [](double x, double y) { return y - x < 0.01; }),
+                      ln_distinct.end());
+
     std::vector<double> knots;
-    if (n_knots == 1) {
-        knots.push_back(ln_es.front());
+    if (curve_derived) {
+        knots = ln_distinct;
     } else {
-        for (int i = 0; i < n_knots; ++i)
-            knots.push_back(ln_es.front() +
-                            (ln_es.back() - ln_es.front()) * double(i) /
-                                (n_knots - 1));
+        // <=6 hats, and enough points to keep ~2 per interval: n_knots-1
+        // intervals need 2*(n_knots-1) points, i.e. n_knots <= N/2 + 1.  Always
+        // allow the 2 needed to express a slope, since a linear ln-k trend is
+        // the dominant real structure and a constant would miss it entirely.
+        const int n_support = std::max(2, static_cast<int>(points.size()) / 2 + 1);
+        const int n_knots = std::max(1, std::min({6, static_cast<int>(ln_distinct.size()),
+                                                  n_support}));
+        if (n_knots == 1) {
+            knots.push_back(ln_es.front());
+        } else {
+            // Quantiles of the point energies, so intervals hold roughly equal
+            // numbers of points.
+            const size_t last = ln_es.size() - 1;
+            for (int i = 0; i < n_knots; ++i) {
+                const size_t idx = static_cast<size_t>(
+                    std::llround(double(i) * double(last) / double(n_knots - 1)));
+                knots.push_back(ln_es[idx]);
+            }
+            // Quantiles can coincide when energies are clustered; a repeated
+            // knot would make the basis singular.
+            knots.erase(std::unique(knots.begin(), knots.end(),
+                                    [](double x, double y) { return y - x < 0.01; }),
+                        knots.end());
+        }
     }
+    const int n_knots = static_cast<int>(knots.size());
 
     const size_t n = points.size();
     Eigen::MatrixXd X(n, n_knots);

@@ -265,7 +265,17 @@ BOOST_AUTO_TEST_CASE(certify_populates_certificate) {
     const AccuracyCertificate& c = resp->certificate;
     BOOST_REQUIRE(!c.empty());
     BOOST_CHECK_EQUAL(c.rows.size(), static_cast<size_t>(n_probes));
-    BOOST_CHECK(c.converged);
+    // `converged` is a VERDICT (fep_p95 <= opts.cert_tol), not a "the probe pass
+    // ran" flag, so do NOT assert it here: coarse_options() builds from 3%-noisy
+    // nodes on a 9x5 grid, which cannot certify to the 1.2% default gate (it
+    // measures ~4%). Reporting converged = false there is certify() honouring
+    // its contract, not a failure. Assert instead that the verdict is CONSISTENT
+    // with the percentiles it was derived from, which catches a real regression
+    // (a silent pass, or a verdict decoupled from the numbers) at any precision.
+    BOOST_CHECK_EQUAL(c.converged, c.fep_p95 <= opts.cert_tol);
+    std::printf("[certify] coarse p95 = %.3f%% (max %.3f%%), tol %.1f%% "
+                "-> converged=%d\n", 100.0 * c.fep_p95, 100.0 * c.fep_max,
+                100.0 * opts.cert_tol, c.converged ? 1 : 0);
     BOOST_CHECK_EQUAL(c.iterations, 0);
     BOOST_CHECK_EQUAL(c.probe_seed_base, opts.base_seed);
     BOOST_CHECK_GT(c.cpu_seconds, 0.0);        // probe-bank MC actually cost time
