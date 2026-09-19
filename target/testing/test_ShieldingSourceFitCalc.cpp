@@ -2693,20 +2693,32 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
  the ratio is therefore (d/(d+z))^2 * ((d_anchor+z)/d_anchor)^2 - unity at the anchor, below it
  closer in, above it farther out, saturating with distance and growing with energy as z does.
 
- Measured here (3"x3" NaI, anchor 50 cm = max(50 cm, 10a); worst peak of the five, 383.8 keV):
+ An INTRINSIC curve is authoritative in the far field - that is what "per photon crossing the
+ face" means - so CeeLoUtils::transferAnchorForDrf anchors a curve-derived transfer there.  The
+ drift is therefore one-sided: flat-disk puts the whole crystal at its endcap face, which is always
+ too close, so the transfer reads LOW everywhere and converges up to the curve as the source
+ recedes.  The ratio is (d/(d+z))^2 - unity only in the limit.
+
+ (This used to anchor at max(50 cm, 10a).  10a is the standard far-field criterion for SOLID ANGLE,
+ but the scale that matters here is the interaction depth z, and 50 cm does not clear it: anchoring
+ there forced agreement at 50 cm and left every shipped GADRAS detector reading ~11% HIGH at any
+ large distance, where the flat-disk curve is at its most trustworthy.)
+
+ Measured here (3"x3" NaI; worst peak of the five, 383.8 keV):
 
      distance     point source     3 cm Water trace sphere
-      25 cm         -6.13 %              -6.30 %
-      50 cm         +0.02 %              -0.05 %      <- anchor: the models agree
-     200 cm         +5.60 %              +5.60 %
+      25 cm        -12.70 %             -12.93 %
+      50 cm         -6.98 %              -7.07 %
+     200 cm         -1.79 %              -1.81 %
+    2000 cm         -0.07 %              -0.08 %      <- the far field: the curve is authoritative
 
- (at 81 keV the same columns are -0.38 / -0.02 / +0.27 %, i.e. the drift follows the interaction
- depth, which is ~0.1 cm at 81 keV and ~1.6 cm at 384 keV in NaI.)
+ (at 81 keV the drifts are ~20x smaller, following the interaction depth, which is ~0.1 cm at
+ 81 keV and ~1.6 cm at 384 keV in NaI.)
 
- So the gates below are: the transfer reproduces the measured curve where the curve is authoritative
- (its anchor), the drift away from the anchor has the sign the depth term demands and stays bounded,
- and both source kinds and both DRF flavours see the SAME drift - one efficiency model per fit.
- A change in any of those is a real change in what the fit reports, not test noise.
+ So the gates below are: the drift is never meaningfully positive, it shrinks monotonically with
+ distance, it vanishes in the far field, and both source kinds and both DRF flavours see the SAME
+ drift - one efficiency model per fit.  A change in any of those is a real change in what the fit
+ reports, not test noise.
  */
 BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
 {
@@ -2721,8 +2733,9 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
   const shared_ptr<const Material> water = matdb->material( "Water" );
   BOOST_REQUIRE( water );
 
-  // CeeLoUtils::transferAnchorForDrf's curve-derived anchor for this DRF: max( 50 cm, 10a ).
-  const double anchor_distance = 50.0*PhysicalUnits::cm;
+  // Far enough that the interaction-depth term has died away; this is where the curve-derived
+  //  transfer is anchored, and so where it must reproduce the measured curve.
+  const double far_field_distance = 2000.0*PhysicalUnits::cm;
 
   /** One (distance, DRF flavour, source kind) combination's per-peak (Auto/flat-disk - 1), in %. */
   struct Row
@@ -2734,7 +2747,8 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
   };
   vector<Row> rows;
 
-  for( const double distance : { 25.0*PhysicalUnits::cm, anchor_distance, 200.0*PhysicalUnits::cm } )
+  for( const double distance : { 25.0*PhysicalUnits::cm, 50.0*PhysicalUnits::cm,
+                                200.0*PhysicalUnits::cm, far_field_distance } )
   {
     for( const bool attach : { false, true } )
     {
@@ -2797,11 +2811,11 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
     }//for( geometry-only, attached )
   }//for( distance )
 
-  // Measured max |drift|: 0.12% at the anchor, 6.30% at 25 cm, 5.60% at 200 cm.  The gates leave
-  //  ~2x margin at the anchor and a flat 8% bound away from it - tight enough that a changed depth
-  //  term or a changed anchor shows up, loose enough not to chase quadrature noise.
-  const double anchor_tolerance_percent = 0.25;
-  const double drift_bound_percent = 8.0;
+  // Measured max |drift|: 12.85% at 25 cm, 7.07% at 50 cm, 1.81% at 200 cm, 0.19% in the far
+  //  field.  The gates leave ~2x margin - tight enough that a changed depth term or a changed
+  //  anchor shows up, loose enough not to chase quadrature noise.
+  const double far_field_tolerance_percent = 0.5;
+  const double drift_bound_percent = 20.0;
 
   for( const Row &row : rows )
   {
@@ -2813,24 +2827,41 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
                            << "%, beyond the " << drift_bound_percent << "% the interaction-depth"
                            " term can account for" );
 
-      if( row.distance == anchor_distance )
+      // One-sided: the flat disk puts the interaction at the endcap face, which is always closer
+      //  than where it happens, so it always over-predicts.  (The tiny positive allowance is for
+      //  the far-field rows, where the drift is a rounding error rather than a sign.)
+      BOOST_CHECK_MESSAGE( rel < 0.05,
+                           row.label << ", peak " << i << ": drift of " << rel << "% is positive -"
+                           " the transfer cannot read HIGHER than flat-disk, whose interaction"
+                           " plane is at the crystal face" );
+
+      if( row.distance == far_field_distance )
       {
-        BOOST_CHECK_MESSAGE( fabs(rel) < anchor_tolerance_percent,
-                             row.label << ", peak " << i << ": the transfer misses the measured curve"
-                             " by " << rel << "% AT ITS OWN ANCHOR DISTANCE, where the curve is"
-                             " authoritative" );
-      }else
-      {
-        // Closer than the anchor the transfer must read LOW, farther it must read HIGH; the 81 keV
-        //  peak's drift is small but its sign is just as determined.
-        const bool farther = (row.distance > anchor_distance);
-        BOOST_CHECK_MESSAGE( farther ? (rel > 0.0) : (rel < 0.0),
-                             row.label << ", peak " << i << ": drift of " << rel << "% has the wrong"
-                             " sign for a source " << (farther ? "farther from" : "closer than")
-                             << " the anchor distance" );
+        BOOST_CHECK_MESSAGE( fabs(rel) < far_field_tolerance_percent,
+                             row.label << ", peak " << i << ": the transfer misses the measured"
+                             " curve by " << rel << "% IN THE FAR FIELD, where an intrinsic curve"
+                             " is authoritative and the transfer is anchored" );
       }
     }//for( peaks )
   }//for( rows )
+
+  // The depth term dies away with distance, so each peak's |drift| must shrink monotonically.
+  //  This is what pins the SHAPE of the correction rather than just its size at one distance.
+  for( const Row &a : rows )
+  {
+    for( const Row &b : rows )
+    {
+      if( (a.attach != b.attach) || (a.volumetric != b.volumetric) || !(a.distance < b.distance) )
+        continue;
+      BOOST_REQUIRE_EQUAL( a.rel_percent.size(), b.rel_percent.size() );
+      for( size_t i = 0; i < a.rel_percent.size(); ++i )
+        BOOST_CHECK_MESSAGE( fabs(a.rel_percent[i]) >= fabs(b.rel_percent[i]) - 1.0E-6,
+                             "peak " << i << ": drift is " << a.rel_percent[i] << "% at "
+                             << int(a.distance/PhysicalUnits::cm) << " cm but " << b.rel_percent[i]
+                             << "% at " << int(b.distance/PhysicalUnits::cm) << " cm - the"
+                             " interaction-depth correction must shrink with distance" );
+    }
+  }
 
   // One model per fit: the drift cannot depend on whether the transfer was attached at load or built
   //  by the fit, nor (beyond the shell's own extent) on the source being a point or a volume.

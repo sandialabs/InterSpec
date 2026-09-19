@@ -275,12 +275,33 @@ TransferAnchor transferAnchorForDrf(
   answer.curve_derived = true;
 
   const double a_cm = geom.transverse_half_extent();
-  double d_ref_cm = std::max( 50.0, 10.0 * a_cm );
+
+  // The anchor handed to the transfer must be a TRUE absolute efficiency at `d_ref_cm`:
+  //  make_transfer_response forms eta(E) = anchor_eff(E) / K(E, q_ref) from the ray-traced
+  //  kernel at that position, and every later query is eta(E) * K(E, q_target).  Any error in
+  //  the anchor is therefore carried to every distance.
+  //
+  //  Below we reconstruct the anchor as (intrinsic curve) x (flat-disk solid angle at d_ref).
+  //  That product is the absolute efficiency only in the FAR FIELD - "intrinsic" means per
+  //  photon crossing the face, and close in the detection probability per crossing photon
+  //  changes with the incidence-angle distribution, which is exactly what K models.  So the
+  //  reference distance has to be a far field one; anchoring nearer bakes the near-field
+  //  correction in backwards and leaves a constant offset everywhere else.  Anchoring a 3x3
+  //  NaI at 50 cm made its absolute efficiency read ~11% high at any large distance, and the
+  //  flat-disk model it came from is at its most trustworthy there.
+  //
+  //  The same far field DetectorPeakResponse::intrinsicEfficiencyEval and
+  //  setLegacyEfficiencyFromResponse use, so all three agree about what "intrinsic" means.
+  double d_ref_cm = std::max( 1000.0 * a_cm, 100.0 );
   if( override_ref_distance_cm > 0.0 )
     d_ref_cm = override_ref_distance_cm;
   else if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
            && (drf->absoluteEfficiencyDistance() > 0.0) )
+  {
+    // An absolute curve is a real measurement at a real distance - anchor there, not at
+    //  infinity, since that value already includes whatever near-field behaviour it had.
     d_ref_cm = drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
+  }
 
   double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
   if( (e_lo <= 0.0) || (e_hi <= e_lo) )

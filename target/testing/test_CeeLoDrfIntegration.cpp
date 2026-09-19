@@ -1968,6 +1968,73 @@ BOOST_AUTO_TEST_CASE( flat_disk_snapshot_matches_response )
 }//flat_disk_snapshot_matches_response
 
 
+/** The shipped GADRAS detectors are the population this change actually moves.
+
+ Each data/GenericGadrasDetectors/<name>/ ships a Detector.dat AND an Efficiency.csv - both
+ halves of an efficiency transfer - so DetectorPeakResponse::applyGadrasDat attaches a
+ curve-transfer response as the DRF list is built, and efficiency() answers through it.  A
+ diameter-only DRF (common_drfs.tsv, a CSV import, a formula) has no geometry to transfer
+ through and is untouched; this case pins which of those two a shipped detector is, and that
+ the near-field departure from the flat disk is real but bounded.
+ */
+BOOST_AUTO_TEST_CASE( shipped_gadras_detectors_use_their_response )
+{
+  const string gadras_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(gadras_dir),
+                         "no GenericGadrasDetectors in " + g_data_dir );
+
+  const vector<string> subdirs = SpecUtils::recursive_ls( gadras_dir, "Detector.dat" );
+  BOOST_REQUIRE_MESSAGE( !subdirs.empty(), "no shipped GADRAS detectors found" );
+
+  size_t num_with_response = 0, num_total = 0;
+  for( const string &dat : subdirs )
+  {
+    const string dir = SpecUtils::parent_path( dat );
+    auto drf = make_shared<DetectorPeakResponse>();
+    try
+    {
+      drf->fromGadrasDirectory( dir );
+    }catch( std::exception & )
+    {
+      continue;   //a .dat this build cannot parse is not what this case is about
+    }
+
+    ++num_total;
+    if( !drf->ceeloResponse() )
+      continue;   //e.g. a crystal dimension of zero, which buildGadrasGeometry rejects
+    ++num_with_response;
+
+    // efficiency() is the response's answer; flatDiskEfficiency() is what it used to be.  They
+    //  must differ near the detector and converge far from it - the interaction-depth term the
+    //  flat disk cannot carry falls off as ~2*z_eff/d.
+    const double near_ratio = drf->efficiency( 661.7f, 25.0*PhysicalUnits::cm )
+                              / drf->flatDiskEfficiency( 661.7f, 25.0*PhysicalUnits::cm );
+    const double far_ratio = drf->efficiency( 661.7f, 400.0*PhysicalUnits::cm )
+                             / drf->flatDiskEfficiency( 661.7f, 400.0*PhysicalUnits::cm );
+
+    BOOST_TEST_MESSAGE( SpecUtils::filename(dir) + ": efficiency/flatDisk = "
+                        + std::to_string(near_ratio) + " at 25 cm, "
+                        + std::to_string(far_ratio) + " at 400 cm" );
+
+    // Sane bounds rather than golden values: this is a physics correction, not a new detector.
+    BOOST_CHECK_GT( near_ratio, 0.5 );
+    BOOST_CHECK_LT( near_ratio, 1.5 );
+    BOOST_CHECK_GT( far_ratio, 0.8 );
+    BOOST_CHECK_LT( far_ratio, 1.25 );
+
+    // Whatever efficiency() answers, every spelling of the absolute query must agree.
+    BOOST_CHECK_EQUAL( drf->efficiency( 661.7f, 25.0*PhysicalUnits::cm ),
+                       drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm ).value );
+  }//for( const string &dat : subdirs )
+
+  BOOST_TEST_MESSAGE( "shipped GADRAS detectors: " + std::to_string(num_with_response)
+                      + " of " + std::to_string(num_total) + " carry a transfer response" );
+  BOOST_CHECK_MESSAGE( num_with_response > 0,
+              "no shipped GADRAS detector got a transfer response - either the Efficiency.csv"
+              " files stopped being shipped, or attachCurveTransferResponse stopped running" );
+}//shipped_gadras_detectors_use_their_response
+
+
 //========================= GADRAS Efficiency.csv cross-validation ============
 // Does our Monte Carlo reproduce the intrinsic efficiency GADRAS reports for
 //  the same detector?  Everything downstream - importing a Detector.dat with no
