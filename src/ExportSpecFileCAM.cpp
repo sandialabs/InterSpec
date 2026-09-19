@@ -57,6 +57,7 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/ExportSpecFileCAM.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -1223,9 +1224,17 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
     throw runtime_error( "convert_efficiency_to_genie: a positive source distance is required for"
                          " a non-fixed-geometry detector response function." );
 
-  const auto absolute_eff = [&drf,fixed_geom,distance]( const double energy ) -> double {
-    return fixed_geom ? drf.farFieldIntrinsicEfficiency( static_cast<float>(energy) )
-                      : drf.efficiency( static_cast<float>(energy), distance );
+  // Every tabulated point (or log-spaced sample) is evaluated at this one distance, so sample a
+  //  Monte-Carlo response once rather than tracing an aperture quadrature per energy.  An alias
+  //  shared_ptr that does not own `drf`: the snapshot only reads it, and does not outlive this
+  //  call.  Returns `drf` itself when there is nothing to snapshot.
+  const shared_ptr<const DetectorPeakResponse> drf_ptr( shared_ptr<const void>(), &drf );
+  const shared_ptr<const DetectorPeakResponse> eff_drf
+                                = CeeLoUtils::flatDiskSnapshotAt( drf_ptr, distance );
+
+  const auto absolute_eff = [eff_drf,fixed_geom,distance]( const double energy ) -> double {
+    return fixed_geom ? eff_drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) )
+                      : eff_drf->efficiency( static_cast<float>(energy), distance );
   };//absolute_eff lambda
 
   const DetectorPeakResponse::EfficiencyFnctForm form = drf.efficiencyFcnType();

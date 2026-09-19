@@ -99,9 +99,26 @@ double minDetectableCounts( double energy, double det_sigma, std::shared_ptr<con
 double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr<const SpecUtils::Measurement> data );
   
 
+/** The standoff IsotopeId assumes when it needs a detector efficiency.
+
+ Nuclide identification never knows the real source distance, and does not need it: the
+ weights it computes depend only on the RATIO of efficiencies between gamma lines, which a
+ far-field-ish standoff fixes.  Naming it here lets suggestNuclides() take a
+ CeeLoUtils::flatDiskSnapshotAt snapshot at exactly the distance fractionDetectedWeight
+ will ask for - a snapshot queried at any other distance is wrong.
+ */
+extern const double sm_assumed_distance;
+
+
 //fractionDetectedWeight(...): used by suggestNuclides() to determine the
 //  fraction of peaks detected, that would be expected for a given nuclide,
 //  detector, observed data, and shielding configuration.
+//
+//  Efficiency is evaluated at sm_assumed_distance (1 m) - only the ratio between gamma
+//  lines matters to the weight, so the absolute standoff does not.  suggestNuclides()
+//  hands in a CeeLoUtils::flatDiskSnapshotAt snapshot taken at that distance, so the
+//  per-line lookups are curve interpolations rather than Monte-Carlo queries; passing the
+//  raw DRF still gives the same numbers, just slower.
 double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &source_gammas,  //normalization doesnt matter
                            std::shared_ptr<const DetectorPeakResponse> response,
                            double shielding_an,

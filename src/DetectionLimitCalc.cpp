@@ -57,6 +57,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -3651,7 +3652,9 @@ decon_characteristic_limits( const DeconCharacteristicLimitInput &input )
   DeconCharacteristicLimitResult answer;
   answer.input = input;
 
-  const DeconComputeInput &base = input.decon_input;
+  // A value, not a reference: the detector response is swapped for a flat-disk snapshot
+  //  once the input has been validated (below), and every trial copies `base`.
+  DeconComputeInput base = input.decon_input;
   if( !std::isfinite(input.alpha) || !std::isfinite(input.beta)
      || !(input.alpha > 0.0) || !(input.alpha < 0.5)
      || !(input.beta > 0.0) || !(input.beta < 0.5) )
@@ -3689,6 +3692,13 @@ decon_characteristic_limits( const DeconCharacteristicLimitInput &input )
     answer.error_message = "invalid distance, shielding, detector response, or spectrum input";
     return answer;
   }
+
+  // The profile scan re-enters decon_compute_peaks for every trial activity, and each of those
+  //  evaluates the efficiency once per ROI peak - hundreds of lookups, all at this one distance.
+  //  Sample the response once here instead; `answer.input` above already holds the caller's
+  //  original input, so the snapshot cannot escape in the results.  A DRF with no Monte-Carlo
+  //  response (or a fixed-geometry one) comes back unchanged.
+  base.drf = CeeLoUtils::flatDiskSnapshotAt( base.drf, base.distance );
 
   for( const DeconRoiInfo &roi : base.roi_info )
   {
