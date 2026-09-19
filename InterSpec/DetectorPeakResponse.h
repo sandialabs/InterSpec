@@ -260,6 +260,14 @@ public:
      Monte-Carlo characterization of that geometry.
      */
     GadrasDetectorDatOnly = 13,
+
+    /** From a binary detector-characterization parameter file (a spatial
+     full-energy-peak efficiency grid) plus its ASCII geometry record.  The
+     grid's angular + radial efficiency is reparameterized into a CeeLo
+     response; only full-energy-peak (not total) efficiency is available.
+     See DetectorEffG2kPar.h.
+     */
+    CharacterizationParFile = 14,
   };//enum DrfSource
   
 public:
@@ -783,18 +791,25 @@ public:
   bool hasTotalEfficiency() const;
 
   /** Whether cascade-summing corrections can be computed with this DRF: an
-   explicit total-efficiency curve, OR an attached CeeLo MC response (whose
-   total-efficiency payload #totalEfficiencyEval dispatches to).
+   explicit total-efficiency curve, OR an attached CeeLo response whose
+   total-efficiency payload is actually characterized (#totalEfficiencyEval
+   dispatches to it).
+
+   A response is NOT enough on its own - an FEP-only characterization, or a
+   curve transfer from a DRF that had no total curve, carries
+   `ceelo::TotEffTier::NotCharacterized`, where eps_total refuses instead of
+   returning a number.  Those DRFs answer false here.
    */
   bool hasAnyTotalEfficiencyInfo() const;
 
   /** Intrinsic total efficiency at `energy` (keV), dispatching to whichever
    total-efficiency source the DRF has: an explicit total-efficiency curve, or
    (backed out of) an attached CeeLo MC response evaluated far-field.  Returns
-   0 when the DRF has no total-efficiency info (unlike #totalIntrinsicEfficiency,
-   which throws).  Used by the per-element cascade-summing correction, which
-   needs an intrinsic (solid-angle-free) total efficiency for arbitrary source
-   geometries.
+   0 when the DRF has no total-efficiency info - i.e. exactly when
+   #hasAnyTotalEfficiencyInfo is false, which includes an FEP-only CeeLo
+   response - rather than throwing like #totalIntrinsicEfficiency.  Used by the
+   per-element cascade-summing correction, which needs an intrinsic
+   (solid-angle-free) total efficiency for arbitrary source geometries.
    */
   float totalIntrinsicEfficiencyAny( const float energy ) const;
 

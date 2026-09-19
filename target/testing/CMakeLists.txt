@@ -219,6 +219,29 @@ if( INTERSPEC_ENABLE_JRC_PU_GRID_TEST )
     LABELS "long" )
 endif()
 
+# The detector-characterization .PAR + DETECTOR.txt reader validation test always
+# builds (so the reader stays compile-checked with every build), but is not a
+# ctest by default: it validates against a corpus of .PAR/DETECTOR.txt/.ecc/.gis
+# files that cannot live in the repository (vendor IP).  Enable the option and set
+# INTERSPEC_G2K_PAR_DIR to the corpus root to register + run it; the test itself
+# graceful-skips when --pardir is empty.  Mirrors INTERSPEC_ENABLE_JRC_PU_GRID_TEST.
+add_executable( test_DetectorEffG2kPar test_DetectorEffG2kPar.cpp )
+target_link_libraries( test_DetectorEffG2kPar PRIVATE InterSpecLib )
+option( INTERSPEC_ENABLE_G2K_PAR_TEST
+        "Register the uncommitted detector-characterization .PAR corpus validation as a ctest" OFF )
+set( INTERSPEC_G2K_PAR_DIR "" CACHE STRING
+     "Root directory of the (uncommitted) .PAR/DETECTOR.txt/.ecc corpus, one subdir per detector" )
+if( INTERSPEC_ENABLE_G2K_PAR_TEST )
+  add_test( NAME TDetectorEffG2kPar
+    COMMAND $<TARGET_FILE:test_DetectorEffG2kPar> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS} --pardir=${INTERSPEC_G2K_PAR_DIR}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  # Measured ~1600s for 64 detectors with the .ecc/.gis cases, and the optional
+  #  python grid-parity case shells out per query, so allow the long budget the
+  #  other corpus-sweeping tests use.
+  set_tests_properties( TDetectorEffG2kPar PROPERTIES TIMEOUT 7200 )
+endif()
+
 add_executable( test_BatchSampleSelect test_BatchSampleSelect.cpp )
 target_link_libraries( test_BatchSampleSelect PRIVATE InterSpecLib )
 add_test( NAME TBatchSampleSelect

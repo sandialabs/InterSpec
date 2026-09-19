@@ -1026,9 +1026,15 @@ bool DetectorPeakResponse::hasTotalEfficiency() const
 
 bool DetectorPeakResponse::hasAnyTotalEfficiencyInfo() const
 {
-  // A CeeLo MC response always carries a total-efficiency payload (see
-  //  #totalEfficiencyEval, which dispatches to it unconditionally).
-  return ( !!m_totalEfficiency || !!m_ceeloResponse );
+  if( m_totalEfficiency )
+    return true;
+
+  // Most CeeLo responses carry a total-efficiency payload, but not all do: an
+  //  FEP-only characterization, or a curve transfer whose source DRF had no
+  //  total curve, leaves the tier at `NotCharacterized`, where eps_total
+  //  refuses (0, flagged NeedsMc) rather than returning a number.  Answering
+  //  "yes" for those let cascade summing run off an uncharacterized total.
+  return ( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() );
 }//hasAnyTotalEfficiencyInfo()
 
 
@@ -1083,7 +1089,7 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
   if( m_totalEfficiency )
     return m_totalEfficiency->efficiency( energy );
 
-  if( m_ceeloResponse )
+  if( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() )
   {
     // Back the intrinsic total out of a far-field absolute evaluation, where
     //  eps_total ~= (solid angle) x (intrinsic total).
@@ -1305,7 +1311,10 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
 {
   EffEval answer;
 
-  if( m_ceeloResponse )
+  // An FEP-only response has no total to give; fall through to the legacy curve
+  //  if one is attached, so a DRF that carries both is not made worse by the
+  //  response (`eps_total` would refuse with 0/NeedsMc).
+  if( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() )
   {
     const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
                                                     theta, phi, distance / PhysicalUnits::cm );
@@ -3209,6 +3218,8 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case static_cast<int>(DrfSource::IsocsEcc):
       case static_cast<int>(DrfSource::AngleOutx):
       case static_cast<int>(DrfSource::UserImportedEfficiencyCsvDrf):
+      case static_cast<int>(DrfSource::GadrasDetectorDatOnly):
+      case static_cast<int>(DrfSource::CharacterizationParFile):
         drf_source = static_cast<DrfSource>( val );
         break;
 
@@ -4525,6 +4536,8 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
     case DrfSource::IsocsEcc:               val = "ISOCS";                             break;
     case DrfSource::AngleOutx:              val = "AngleOutx";                         break;
+    case DrfSource::GadrasDetectorDatOnly:  val = "GadrasDetectorDatOnly";             break;
+    case DrfSource::CharacterizationParFile: val = "CharacterizationParFile";          break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -4901,6 +4914,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
   {
     m_efficiencySource = AngleOutx;
+  }else if( compare(node->value(),node->value_size(),"GadrasDetectorDatOnly",21,false) )
+  {
+    m_efficiencySource = GadrasDetectorDatOnly;
+  }else if( compare(node->value(),node->value_size(),"CharacterizationParFile",23,false) )
+  {
+    m_efficiencySource = CharacterizationParFile;
   }else
   {
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
