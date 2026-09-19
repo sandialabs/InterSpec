@@ -50,6 +50,7 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <memory>
@@ -1754,6 +1755,121 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_CHECK_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, nullptr ),
                      std::exception );
 }//backbone_efficiency_from_response
+
+/** A flat-disk snapshot must reproduce the response it was sampled from, at the distance it
+ was built for, to within interpolation error - and must degrade to a no-op (the same pointer
+ back) for every DRF that has nothing to snapshot, so call sites need no special case.
+
+ The whole point of the snapshot is that a caller sweeping energies at one position can keep
+ using the cheap `efficiency()` call and still get the Monte-Carlo answer; if it drifted from
+ the response, that caller would be quietly back on the flat-disk approximation.
+ */
+BOOST_AUTO_TEST_CASE( flat_disk_snapshot_matches_response )
+{
+  const vector<double> distances{ 25.0, 100.0, 400.0 };
+  const vector<float> energies{ 60.0f, 122.0f, 356.0f, 661.7f, 1332.0f, 2614.0f };
+
+  double worst_overall = 0.0;
+  for( const char *preset : { "nai3x3", "hpge_coax", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+
+    for( const double dist_cm : distances )
+    {
+      const double dist = dist_cm * PhysicalUnits::cm;
+      const shared_ptr<const DetectorPeakResponse> snap
+                                  = CeeLoUtils::flatDiskSnapshotAt( drf, dist );
+
+      BOOST_REQUIRE_MESSAGE( snap && (snap != drf),
+                  string("no snapshot built for ") + preset + " at "
+                  + std::to_string(dist_cm) + " cm" );
+      BOOST_CHECK( !snap->ceeloResponse() );   //else efficiency() would dispatch, not interpolate
+      BOOST_CHECK_CLOSE( snap->flatDiskSnapshotDistance(), dist, 1.0E-9 );
+
+      double worst = 0.0, worst_energy = 0.0;
+      for( const float energy : energies )
+      {
+        const double exact = drf->fepEfficiencyEval( energy, 0.0, 0.0, dist ).value;
+        const double approx = snap->efficiency( energy, dist );
+        BOOST_REQUIRE( exact > 0.0 );
+
+        const double rel = fabs( approx - exact ) / exact;
+        if( rel > worst ){ worst = rel; worst_energy = energy; }
+      }//for( const float energy : energies )
+
+      BOOST_TEST_MESSAGE( string(preset) + " @ " + std::to_string((int)dist_cm)
+                          + " cm: worst " + std::to_string(100.0*worst) + "% at "
+                          + std::to_string((int)worst_energy) + " keV" );
+      worst_overall = std::max( worst_overall, worst );
+
+      // Interpolation between backbone points, nothing else - measured 0.12% (hpge_coax) to
+      //  0.69% (czt_box) on 2026-09-18, always worst at the top of the energy grid.  The gate
+      //  is ~3x that: a solid-angle or frame error would be tens of percent, not a few.
+      BOOST_CHECK_MESSAGE( worst < 0.02, string("snapshot for ") + preset + " at "
+                  + std::to_string((int)dist_cm) + " cm departs from the response by "
+                  + std::to_string(100.0*worst) + "%" );
+    }//for( const double dist_cm : distances )
+  }//for( preset )
+
+  BOOST_TEST_MESSAGE( "flat-disk snapshot: worst over all presets/distances "
+                      + std::to_string(100.0*worst_overall) + "%" );
+
+  // Why the snapshot exists, reported rather than gated (timings are machine-dependent):
+  //  a Monte-Carlo query traces an aperture quadrature, the snapshot interpolates a curve.
+  {
+    const shared_ptr<DetectorPeakResponse> timed = drf_with_golden( "nai3x3" );
+    const double dist = 25.0*PhysicalUnits::cm;
+    const size_t n_eval = 200;
+
+    const auto t0 = std::chrono::steady_clock::now();
+    for( size_t i = 0; i < n_eval; ++i )
+      timed->fepEfficiencyEval( 100.0f + (i % 50)*40.0f, 0.0, 0.0, dist );
+    const auto t1 = std::chrono::steady_clock::now();
+
+    const shared_ptr<const DetectorPeakResponse> snap = CeeLoUtils::flatDiskSnapshotAt( timed, dist );
+    const auto t2 = std::chrono::steady_clock::now();
+    for( size_t i = 0; i < n_eval; ++i )
+      snap->efficiency( 100.0f + (i % 50)*40.0f, dist );
+    const auto t3 = std::chrono::steady_clock::now();
+
+    const double us_raw = std::chrono::duration<double,std::micro>(t1-t0).count() / n_eval;
+    const double us_build = std::chrono::duration<double,std::micro>(t2-t1).count();
+    const double us_snap = std::chrono::duration<double,std::micro>(t3-t2).count() / n_eval;
+    BOOST_TEST_MESSAGE( "snapshot cost: raw " + std::to_string(us_raw) + " us/eval, build "
+                        + std::to_string(us_build) + " us, snapshot "
+                        + std::to_string(us_snap) + " us/eval (break-even near "
+                        + std::to_string( (int)(us_build/std::max(1.0,us_raw-us_snap)) )
+                        + " evaluations)" );
+  }
+
+  // A DRF with no response is already its own flat-disk model: same pointer, no copy.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( legacy, 25.0*PhysicalUnits::cm ) == legacy );
+  BOOST_CHECK( legacy->flatDiskSnapshotDistance() < 0.0 );
+
+  // Nor is there anything to snapshot for a non-positive distance, a null DRF, or an
+  //  uninitialized one.
+  const shared_ptr<DetectorPeakResponse> golden = drf_with_golden( "nai3x3" );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( golden, -1.0 ) == golden );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( golden, 0.0 ) == golden );
+  BOOST_CHECK( !CeeLoUtils::flatDiskSnapshotAt( nullptr, 25.0*PhysicalUnits::cm ) );
+
+  // The snapshot carries the source's setback into its own solid angle, so a DRF with one
+  //  still reproduces its response.
+  auto with_setback = make_shared<DetectorPeakResponse>( *golden );
+  with_setback->setDetectorSetback( 2.0*PhysicalUnits::cm );
+  const double dist = 30.0*PhysicalUnits::cm;
+  const shared_ptr<const DetectorPeakResponse> sb_snap
+                              = CeeLoUtils::flatDiskSnapshotAt( with_setback, dist );
+  BOOST_REQUIRE( sb_snap && (sb_snap != with_setback) );
+  BOOST_CHECK_CLOSE( sb_snap->detectorSetback(), 2.0*PhysicalUnits::cm, 1.0E-6 );
+  BOOST_CHECK_CLOSE( sb_snap->efficiency( 661.7f, dist ),
+                     with_setback->fepEfficiencyEval( 661.7f, 0.0, 0.0, dist ).value, 5.0 );
+}//flat_disk_snapshot_matches_response
+
 
 //========================= GADRAS Efficiency.csv cross-validation ============
 // Does our Monte Carlo reproduce the intrinsic efficiency GADRAS reports for

@@ -365,6 +365,50 @@ namespace CeeLoUtils
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
                       const size_t num_points = 48 );
 
+
+  /** A copy of @p drf whose ordinary efficiency curve reproduces the attached Monte-Carlo
+   response's ABSOLUTE full-energy efficiency for an on-axis point source at @p distance -
+   a "flat-disk equivalent" of the detector, valid at that one position.
+
+   Why: `DetectorPeakResponse::efficiency` dispatches to the response, and a Monte-Carlo
+   query traces an aperture quadrature - ~1.7 ms, versus ~1 us for a curve interpolation.
+   A caller sweeping many energies at one fixed source position (an MDA profile scan, a
+   nuclide-ID candidate sweep, a CAM efficiency export) pays that per call.  This samples
+   the response ONCE - a single traced quadrature shared across the whole energy grid - and
+   quotes the result against the flat-disk solid angle at @p distance, so that afterwards
+   `snapshot->efficiency( energy, distance )` gives the Monte-Carlo answer through plain
+   Akima interpolation.  Worth it above roughly 80 evaluations at one position.
+
+   Returns @p drf ITSELF - not a copy - when there is nothing to snapshot: no attached
+   response, a fixed-geometry DRF (distance is meaningless), an invalid DRF, or a
+   non-positive @p distance.  So a call site needs no branch and no special case.
+
+   Three things to know before using one:
+
+    - It is valid at @p distance only.  Evaluating it at another distance silently
+      re-extrapolates by the flat-disk solid-angle ratio, i.e. reintroduces exactly the
+      approximation this exists to avoid.  The distance is recorded on the returned object
+      (`DetectorPeakResponse::flatDiskSnapshotDistance`) and `efficiency` asserts on the
+      mismatch under PERFORM_DEVELOPER_CHECKS.
+    - It launders the response's provenance flag.  A snapshot reports EffFlag::Ok where the
+      response would have said NearFieldUnmodeled or OutOfRangeClamped, because a curve has
+      nowhere to carry a flag.  A snapshot is a substitute for `efficiency()`, which returns
+      a bare double and drops flags anyway - never use one where an `EffEval`'s flag is
+      consumed (the Act/Shield fit, `peakDrfEffFlags`, `responseAngleSeriesJSON`).
+    - It is a transient.  It has its own hash and is NOT the user's detector: never store
+      one in a SpecMeas, hand it to a setter, or let it reach the "Previous" DRF database.
+      Its name is suffixed so one that escapes is recognizable.
+
+   Interpolation between the sampled points makes it an approximation to the response of
+   order a percent - the same grid, K-edge flanking and per-point Monte-Carlo sigma that
+   #setLegacyEfficiencyFromResponse uses.  Throws nothing: any failure to sample returns
+   @p drf unchanged, since every caller's fallback is simply the slower exact path.
+   */
+  std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const double distance,
+                      const size_t num_points = 48 );
+
   /** The canonical text for a generic attenuator - one specified only by an
    effective atomic number and an areal density, as GADRAS does.  Used as the
    material name in a #genericAttenuatorMaterial and shown in the geometry

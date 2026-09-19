@@ -5472,8 +5472,33 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
+#if( PERFORM_DEVELOPER_CHECKS )
+  // A flat-disk snapshot's curve reproduces its response at ONE distance; at any other it
+  //  silently re-extrapolates by the solid-angle ratio - the approximation the snapshot was
+  //  built to avoid.  See CeeLoUtils::flatDiskSnapshotAt.
+  if( (m_flatDiskSnapshotDistance > 0.0)
+      && (fabs(dist - m_flatDiskSnapshotDistance) > 1.0E-6*m_flatDiskSnapshotDistance) )
+  {
+    log_developer_error( __func__, "A flat-disk snapshot was queried at a different distance"
+                                   " than the one it was built for." );
+    assert( 0 );
+  }
+#endif
+
   return flatDiskEfficiency( energy, dist );
 }//float efficiency( const float energy ) const
+
+
+double DetectorPeakResponse::flatDiskSnapshotDistance() const
+{
+  return m_flatDiskSnapshotDistance;
+}//flatDiskSnapshotDistance()
+
+
+void DetectorPeakResponse::setFlatDiskSnapshotDistance( const double distance )
+{
+  m_flatDiskSnapshotDistance = distance;
+}//setFlatDiskSnapshotDistance(...)
 
 
 double DetectorPeakResponse::flatDiskEfficiency( const float energy, const double dist ) const

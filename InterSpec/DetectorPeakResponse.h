@@ -738,6 +738,23 @@ public:
   double flatDiskEfficiency( const float energy, const double distance ) const;
 
 
+  /** The source distance a #CeeLoUtils::flatDiskSnapshotAt snapshot was built for, or a
+   negative value for an ordinary DRF.
+
+   A snapshot's curve reproduces its response's absolute efficiency at ONE distance; asking
+   it for another silently re-extrapolates by the flat-disk solid-angle ratio, which is the
+   approximation the snapshot exists to avoid.  #efficiency asserts on that misuse under
+   PERFORM_DEVELOPER_CHECKS.  Not part of the DRF's value: not hashed and not serialized,
+   since a snapshot is a transient that must never be stored.
+   */
+  double flatDiskSnapshotDistance() const;
+
+  /** Sets (or clears, with a negative value) the snapshot distance above.  Intended for
+   #CeeLoUtils::flatDiskSnapshotAt; nothing else should mark a DRF as a snapshot.
+   */
+  void setFlatDiskSnapshotDistance( const double distance );
+
+
   /** Returns the fraction of gamma rays, at the specified energy, striking the face of the detector,
    will result in a full-energy detection event.  Or for fixed-geometry efficiencies, returns the efficiency
    of a gamma to be detected, per bq of the source (or similar per unit area, if for a surface distribution).
@@ -1462,6 +1479,12 @@ protected:
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** See #flatDiskSnapshotDistance - negative for every DRF that is not a snapshot.
+   Deliberately absent from #computeHash, #operator== and #equalEnough: it says how this
+   object was made, not what it answers.
+   */
+  double m_flatDiskSnapshotDistance = -1.0;
 
   /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
   std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;

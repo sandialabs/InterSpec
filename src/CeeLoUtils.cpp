@@ -1461,6 +1461,135 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
 }//buildGadrasGeometry(...)
 
 
+namespace
+{
+/** The energy grid both #setLegacyEfficiencyFromResponse and #flatDiskSnapshotAt sample on:
+ log-spaced over the response's validated range, plus a pair either side of each crystal
+ K-edge.  The stored response is segmented at the edges, and a curve interpolated through
+ points that straddle one would smooth away a real discontinuity.
+ */
+vector<double> responseSampleEnergies( const ceelo::DetectorResponse &response,
+                                       const size_t num_points )
+{
+  double e_lo = response.provenance.valid_e_min_keV;
+  double e_hi = response.provenance.valid_e_max_keV;
+  if( !(e_hi > e_lo) || (e_lo <= 0.0) )
+  {
+    e_lo = 35.0;      //the generator's own defaults, when provenance is unset
+    e_hi = 3000.0;
+  }
+
+  vector<double> energies;
+  energies.reserve( num_points + 8 );
+  const size_t n = std::max<size_t>( 8, num_points );
+  for( size_t i = 0; i < n; ++i )
+  {
+    const double f = static_cast<double>(i) / (n - 1);
+    energies.push_back( std::exp( std::log(e_lo) + f*(std::log(e_hi) - std::log(e_lo)) ) );
+  }
+
+  for( const double edge : response.descriptor.crystal_k_edges( e_lo, e_hi ) )
+  {
+    energies.push_back( 0.995*edge );
+    energies.push_back( 1.005*edge );
+  }
+  std::sort( begin(energies), end(energies) );
+
+  return energies;
+}//responseSampleEnergies(...)
+}//namespace
+
+
+std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
+                    const std::shared_ptr<const DetectorPeakResponse> &drf,
+                    const double distance,
+                    const size_t num_points )
+{
+  // Nothing to snapshot -> hand back the input, so callers need no branch.  A DRF already on
+  //  the flat-disk model is its own snapshot, and a fixed-geometry one ignores distance.
+  if( !drf || !drf->isValid() || !drf->ceeloResponse() || drf->isFixedGeometry()
+      || !(distance > 0.0) )
+    return drf;
+
+  const shared_ptr<const ceelo::DetectorResponse> response = drf->ceeloResponse();
+
+  try
+  {
+    // The crystal radius, not `transverse_half_extent()` - same reasoning as
+    //  setLegacyEfficiencyFromResponse below: the stored curve is quoted per photon crossing
+    //  the CRYSTAL face, and `efficiency()` multiplies it back by the solid angle of the
+    //  diameter we record here, so the two have to be the same disk.
+    const double a_cm = response->transverse_half_extent();
+    const double crystal_a_cm = (response->descriptor.dimensions_cm.empty()
+                                 || !(response->descriptor.dimensions_cm[0] > 0.0))
+                                  ? a_cm : response->descriptor.dimensions_cm[0];
+    if( !(crystal_a_cm > 0.0) )
+      return drf;
+
+    // The setback is preserved on the snapshot, so it has to be in the divisor too: what must
+    //  hold afterwards is  fracSolidAngle(diam, distance + setback) * curve == abs_eff.
+    const double setback = drf->detectorSetback();
+    const double diameter = 2.0 * crystal_a_cm * PhysicalUnits::cm;
+    const double omega = DetectorPeakResponse::fractionalSolidAngle( diameter, distance + setback );
+    if( !(omega > 0.0) )
+      return drf;
+
+    // One traced quadrature for the whole sweep - it depends only on the source position, and
+    //  tracing it is ~98% of the cost of a query.
+    const Eigen::Vector3d src_pos = sourcePositionFromFace( response->descriptor, 0.0, 0.0,
+                                                    distance / PhysicalUnits::cm );
+    const ceelo::ApertureQuadrature quad = response->make_quadrature( src_pos );
+
+    const vector<double> energies = responseSampleEnergies( *response, num_points );
+
+    vector<DetectorPeakResponse::EnergyEffPoint> points;
+    points.reserve( energies.size() );
+    for( const double energy : energies )
+    {
+      const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
+      const double eff = res.value / omega;
+      if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
+        continue;
+
+      DetectorPeakResponse::EnergyEffPoint p;
+      p.energy = static_cast<float>( energy );
+      p.efficiency = static_cast<float>( eff );
+      if( res.sigma > 0.0 )
+        p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+      points.push_back( p );
+    }//for( const double energy : energies )
+
+    if( points.size() < 2 )
+      return drf;
+
+    auto snapshot = make_shared<DetectorPeakResponse>( *drf );
+
+    // The response must NOT come along: it is what `efficiency()` would dispatch to, and the
+    //  whole point is that the curve now answers instead.
+    snapshot->setCeeloResponse( nullptr );
+
+    // setEfficiencyPoints resets the setback and the DRF source along with the curve.
+    const DetectorPeakResponse::DrfSource source = drf->drfSource();
+    snapshot->setEfficiencyPoints( points, static_cast<float>( diameter ), -1.0,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    if( setback > 0.0 )
+      snapshot->setDetectorSetback( setback );
+    snapshot->setDrfSource( source );
+
+    // Mark it, so a snapshot that escapes into the UI or the database is recognizable, and so
+    //  `efficiency()` can assert on a query at the wrong distance.
+    snapshot->setName( drf->name() + " (flat-disk snapshot)" );
+    snapshot->setFlatDiskSnapshotDistance( distance );
+
+    return snapshot;
+  }catch( std::exception & )
+  {
+    // Every caller's fallback is the slower exact path, so a failure to sample is not an error.
+    return drf;
+  }//try / catch
+}//flatDiskSnapshotAt(...)
+
+
 void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                     const std::shared_ptr<const ceelo::DetectorResponse> &response,
                     const size_t num_points )
@@ -1472,32 +1601,7 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   if( a_cm <= 0.0 )
     throw runtime_error( "setLegacyEfficiencyFromResponse: response has no extent." );
 
-  double e_lo = response->provenance.valid_e_min_keV;
-  double e_hi = response->provenance.valid_e_max_keV;
-  if( !(e_hi > e_lo) || (e_lo <= 0.0) )
-  {
-    e_lo = 35.0;      //the generator's own defaults, when provenance is unset
-    e_hi = 3000.0;
-  }
-
-  // Log-spaced, plus a pair either side of each crystal K-edge: the stored
-  //  response is segmented at the edges, and a curve fit through points that
-  //  straddle one would smooth away a real discontinuity.
-  vector<double> energies;
-  energies.reserve( num_points + 8 );
-  const size_t n = std::max<size_t>( 8, num_points );
-  for( size_t i = 0; i < n; ++i )
-  {
-    const double f = static_cast<double>(i) / (n - 1);
-    energies.push_back( std::exp( std::log(e_lo) + f*(std::log(e_hi) - std::log(e_lo)) ) );
-  }
-
-  for( const double edge : response->descriptor.crystal_k_edges( e_lo, e_hi ) )
-  {
-    energies.push_back( 0.995*edge );
-    energies.push_back( 1.005*edge );
-  }
-  std::sort( begin(energies), end(energies) );
+  const vector<double> energies = responseSampleEnergies( *response, num_points );
 
   // Exactly what DetectorPeakResponse::intrinsicEfficiencyEval does for a
   //  CeeLo-backed DRF: on axis, in the response's own far field, over the same
