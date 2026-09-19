@@ -6,6 +6,14 @@
   <message id="ftw-qr-tool-state-text">Current state of flux tool.</message>
   <message id="ftw-hdr-intrinsic-eff">Intr. Eff.</message>
   <message id="ftw-hdr-geom-eff">Geom. Eff.</message>
+  <message id="ftw-tt-hdr-intrinsic-eff">The detector&apos;s far-field intrinsic efficiency: the chance a gamma
+    striking the detector face is recorded in the full-energy peak.  When the detector has a
+    characterized response, the efficiency used to compute the flux comes from that response, so
+    it is not exactly this column times the geometric efficiency - near the detector the flat-disk
+    product is an approximation.</message>
+  <message id="ftw-tt-hdr-geom-eff">The nominal flat-disk solid-angle fraction the detector face takes up at
+    the given distance.  See the note on the intrinsic efficiency column for why the two do not
+    necessarily multiply to the efficiency used.</message>
   <message id="ftw-hdr-flux-on-det">Flux on Det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Flux (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>

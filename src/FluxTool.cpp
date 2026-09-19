@@ -549,8 +549,25 @@ namespace FluxToolImp
     {
       if( section < 0 || section > FluxToolWidget::sm_selectColumn
          || orientation != Wt::Orientation::Horizontal
-         || role != Wt::ItemDataRole::Display )
+         || ((role != Wt::ItemDataRole::Display) && (role != Wt::ItemDataRole::ToolTip)) )
         return Wt::cpp17::any();
+
+      if( role == Wt::ItemDataRole::ToolTip )
+      {
+        // The intrinsic and geometric columns are the far-field decomposition; the efficiency the
+        //  flux is computed from comes from the detector's response when it has one, so the two
+        //  columns do not necessarily multiply to it.  Say so rather than leave the arithmetic
+        //  looking broken.
+        switch( section )
+        {
+          case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
+            return Wt::cpp17::any( WString::tr("ftw-tt-hdr-intrinsic-eff") );
+          case FluxToolWidget::FluxColumns::FluxGeometricEffCol:
+            return Wt::cpp17::any( WString::tr("ftw-tt-hdr-geom-eff") );
+          default:
+            return Wt::cpp17::any();
+        }//switch( section )
+      }//if( role == ToolTip )
 
       if( section == FluxToolWidget::sm_selectColumn )
         return Wt::cpp17::any( m_fluxtool->m_selectColName );
