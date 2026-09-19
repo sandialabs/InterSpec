@@ -5472,9 +5472,15 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
+  return flatDiskEfficiency( energy, dist );
+}//float efficiency( const float energy ) const
+
+
+double DetectorPeakResponse::flatDiskEfficiency( const float energy, const double dist ) const
+{
   const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
   return fracSolidAngle * farFieldIntrinsicEfficiency( energy );
-}//float efficiency( const float energy ) const
+}//double flatDiskEfficiency( const float energy, const double dist ) const
 
 
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const

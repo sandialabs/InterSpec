@@ -4097,7 +4097,8 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
       // Intrinsic curve x flat-disk solid angle - the legacy, theta-blind model.  A response the
       //  DRF may carry is deliberately NOT consulted: the model was chosen by name, or nothing
       //  better could be built, and the volumetric sources are on flat-disk for the same reason.
-      answer.value = m_detector->efficiency( energy_f, true_dist );
+      //  Hence `flatDiskEfficiency` and not `efficiency`, which dispatches to the response.
+      answer.value = m_detector->flatDiskEfficiency( energy_f, true_dist );
       const EffEval intr = m_detector->intrinsicEfficiencyEval( energy_f );
       if( intr.value > 0.0 )
         answer.sigma = answer.value * (intr.sigma / intr.value);
@@ -5309,8 +5310,11 @@ vector<PeakResultPlotInfo>
             if( calculator->m_effResponse )
               det_total_eff = pointSourceFepEff( peak.energy ).value;
             else
+              // `flatDiskEfficiency`, not `efficiency`: `detSolidAngle` below is this divided by
+              //  the intrinsic efficiency, so it is only a solid angle while both come from the
+              //  flat-disk model - which is the model this branch's integrand used.
               det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic
-                                                            : m_detector->efficiency( peak.energy, m_distance );
+                                                            : m_detector->flatDiskEfficiency( peak.energy, m_distance );
           }
           const double model_eff = calculator->m_effResponse ? det_total_eff : (det_total_eff / det_intrinsic);
           peak.detIntrinsicEff = det_intrinsic;

@@ -723,6 +723,21 @@ public:
   double efficiency( const float energy, const double distance ) const;
 
 
+  /** The flat-disk absolute efficiency: the geometric solid-angle fraction of a disk of
+   #detectorDiameter at `distance` + #detectorSetback, times #farFieldIntrinsicEfficiency.
+
+   This is what #efficiency computes, and it is deliberately blind to any attached
+   #ceeloResponse.  Use it only where the flat-disk MODEL is what is wanted - not merely
+   where a number is wanted: the Act/Shield fit's `PointEffModel::FlatDisk` branch, whose
+   volumetric integrand is on the same model, and the results assembly that recovers a solid
+   angle by dividing this by the intrinsic efficiency.  Everything else should call
+   #efficiency.
+
+   Will throw `std::runtime_exception` if this object has not been initialized.
+   */
+  double flatDiskEfficiency( const float energy, const double distance ) const;
+
+
   /** Returns the fraction of gamma rays, at the specified energy, striking the face of the detector,
    will result in a full-energy detection event.  Or for fixed-geometry efficiencies, returns the efficiency
    of a gamma to be detected, per bq of the source (or similar per unit area, if for a surface distribution).
