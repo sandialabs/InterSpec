@@ -1121,14 +1121,17 @@ BOOST_AUTO_TEST_CASE( transfer_drf_round_trip )
 }//transfer_drf_round_trip
 
 
-/** Attaching a transfer response must leave the legacy efficiency entry
- points bit-identical.
+/** Attaching a transfer response freezes the legacy INTRINSIC curve and moves #efficiency.
+
+ This is the contract flip: before, both accessor families were frozen, which meant a
+ response-backed DRF answered one way through #efficiency and another through
+ #fepEfficiencyEval - and the Act/Shield fit had already moved to the latter.  Now
+ #farFieldIntrinsicEfficiency is the frozen one and #efficiency follows the response.
  */
-BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
+BOOST_AUTO_TEST_CASE( transfer_changes_absolute_not_intrinsic )
 {
   const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
-  const double a_cm = geom.transverse_half_extent();
-  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*geom.dimensions_cm[0] );
 
   const vector<float> energies{ 59.5f, 121.78f, 661.7f, 1332.5f, 2614.0f };
   const double dist = 30.0 * PhysicalUnits::cm;
@@ -1147,11 +1150,98 @@ BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
 
   for( size_t i = 0; i < energies.size(); ++i )
   {
-    BOOST_CHECK_EQUAL( static_cast<double>(det->farFieldIntrinsicEfficiency(energies[i])),
+    const float energy = energies[i];
+
+    // Frozen: the stored curve, bit for bit.
+    BOOST_CHECK_EQUAL( static_cast<double>(det->farFieldIntrinsicEfficiency(energy)),
                        intrinsic_before[i] );
-    BOOST_CHECK_EQUAL( det->efficiency( energies[i], dist ), eff_before[i] );
+
+    // Moved: #efficiency is the response's answer now, and all three spellings of the
+    //  absolute query must agree exactly - the whole point of the change.
+    const double after = det->efficiency( energy, dist );
+    BOOST_CHECK_EQUAL( after, det->efficiencyEval( energy, dist ).value );
+    BOOST_CHECK_EQUAL( after, det->fepEfficiencyEval( energy, 0.0, 0.0, dist ).value );
+
+    // A curve transfer at 30 cm is a correction to the flat disk, not a different detector:
+    //  exact equality would mean the transfer never engaged, and a factor outside this
+    //  bracket would mean it is broken.  Measured span on 2026-09-18 was 1.00-1.10.
+    BOOST_CHECK_NE( after, eff_before[i] );
+    BOOST_CHECK_GT( after/eff_before[i], 0.7 );
+    BOOST_CHECK_LT( after/eff_before[i], 1.4 );
+
+    // And the flat-disk model is still reachable, unchanged, under its own name.
+    BOOST_CHECK_EQUAL( det->flatDiskEfficiency( energy, dist ), eff_before[i] );
   }
-}//transfer_legacy_invariance
+}//transfer_changes_absolute_not_intrinsic
+
+
+/** The two efficiency accessor families must not answer differently for the same query.
+
+ Each check below is a divergence that used to be possible: `efficiency()` evaluated the
+ stored curve times a flat-disk solid angle while `fepEfficiencyEval()` dispatched to the
+ Monte-Carlo response, so the same object gave two answers depending on which accessor a
+ caller happened to reach for - ~19% apart at 25 cm for a 3x3 NaI.
+ */
+BOOST_AUTO_TEST_CASE( accessor_families_agree )
+{
+  for( const char *preset : { "nai3x3", "hpge_coax", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+
+    for( const double dist_cm : { 25.0, 100.0, 400.0 } )
+    {
+      const double d = dist_cm * PhysicalUnits::cm;
+      for( const float E : { 60.0f, 122.0f, 661.7f, 1332.0f, 2614.0f } )
+      {
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ), drf->efficiencyEval( E, d ).value );
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ),
+                           drf->fepEfficiencyEval( E, 0.0, 0.0, d ).value );
+
+        // A caller-traced quadrature is an optimization only, never a different answer.
+        const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> q
+                                        = drf->apertureQuadrature( 0.0, 0.0, d );
+        BOOST_REQUIRE( q );
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ),
+                           drf->fepEfficiencyEval( E, 0.0, 0.0, d, q ).value );
+      }//for( E )
+
+      if( drf->hasAnyTotalEfficiencyInfo() )
+        BOOST_CHECK_EQUAL( drf->totalEfficiency( 661.7f, d ),
+                           drf->totalEfficiencyEval( 661.7f, 0.0, 0.0, d ).value );
+    }//for( dist_cm )
+
+    // The flat-disk model stays exactly what it always was, and - for a response-backed DRF -
+    //  is no longer what #efficiency answers.
+    const double d = 100.0*PhysicalUnits::cm;
+    BOOST_CHECK_CLOSE( drf->flatDiskEfficiency( 661.7f, d ),
+                       DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
+                                                       d + drf->detectorSetback() )
+                         * drf->farFieldIntrinsicEfficiency( 661.7f ), 1.0E-9 );
+  }//for( preset )
+
+  // A curve-only DRF: every accessor agrees AND equals the flat-disk value, i.e. the legacy
+  //  path really is untouched by the change.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  const double d = 25.0*PhysicalUnits::cm;
+  BOOST_CHECK_EQUAL( legacy->efficiency( 661.7f, d ), legacy->flatDiskEfficiency( 661.7f, d ) );
+  BOOST_CHECK_EQUAL( legacy->efficiency( 661.7f, d ), legacy->efficiencyEval( 661.7f, d ).value );
+  BOOST_CHECK( !legacy->apertureQuadrature( 0.0, 0.0, d ) );
+
+  // totalEfficiency must not recurse through totalEfficiencyEval's legacy branch - if it did
+  //  this call would blow the stack rather than fail an assertion.
+  BOOST_CHECK_THROW( legacy->totalEfficiency( 661.7f, d ), std::runtime_error );
+
+  // An uninitialized DRF throws, and keeps throwing once a response is attached: the contract
+  //  used to come from the curve, which the response branch never touches.
+  auto bare = make_shared<DetectorPeakResponse>( "bare", "" );
+  BOOST_CHECK_THROW( bare->efficiency( 661.7f, d ), std::runtime_error );
+  bare->setCeeloResponse( drf_with_golden("nai3x3")->ceeloResponse() );
+  BOOST_CHECK( !bare->isValid() );
+  BOOST_CHECK_THROW( bare->efficiency( 661.7f, d ), std::runtime_error );
+}//accessor_families_agree
 
 
 /** Crystal K-edges: the sampled anchor must flank each edge (eta = eff/K

@@ -1077,8 +1077,16 @@ float DetectorPeakResponse::totalIntrinsicEfficiency( const float energy ) const
 
 double DetectorPeakResponse::totalEfficiency( const float energy, const double dist ) const
 {
-  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
-  return fracSolidAngle * totalIntrinsicEfficiency( energy );
+  // Mirrors #efficiency: dispatches to an attached response.  The predicate is widened from
+  //  `m_totalEfficiency` to #hasAnyTotalEfficiencyInfo so a response-backed DRF stops throwing,
+  //  but a DRF with NO total-efficiency information still does - #totalEfficiencyEval's
+  //  {0,0,NeedsMc} would turn a cascade-summing correction the caller asked for into a silent
+  //  no-op, which is the failure this throw was protecting against.
+  if( !hasAnyTotalEfficiencyInfo() )
+    throw runtime_error( "DetectorPeakResponse::totalEfficiency:"
+                         " no total efficiency defined" );
+
+  return totalEfficiencyEval( energy, 0.0, 0.0, dist ).value;
 }//totalEfficiency(...)
 
 
@@ -1378,8 +1386,11 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
     return answer;
   }
 
-  answer.value = isFixedGeometry() ? totalIntrinsicEfficiency( energy )
-                                   : totalEfficiency( energy, distance );
+  // Inlined rather than calling #totalEfficiency, which now delegates back here.
+  answer.value = isFixedGeometry()
+                   ? totalIntrinsicEfficiency( energy )
+                   : fractionalSolidAngle( m_detectorDiameter, distance + m_detectorSetback )
+                       * totalIntrinsicEfficiency( energy );
   if( fabs(theta) > 0.087 )
     answer.flag = EffFlag::NeedsMc;
 
@@ -5485,7 +5496,14 @@ double DetectorPeakResponse::efficiency( const float energy, const double dist )
   }
 #endif
 
-  return flatDiskEfficiency( energy, dist );
+  // The throw-on-uninitialized contract used to come for free from the efficiency curve; the
+  //  response branch below never touches the curve, so a response-only DRF would otherwise
+  //  answer with a number where it used to throw.
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::efficiency: detector response has not"
+                         " been initialized" );
+
+  return efficiencyEval( energy, dist ).value;
 }//float efficiency( const float energy ) const
 
 

@@ -2013,14 +2013,21 @@ BOOST_AUTO_TEST_CASE( test_reinterpret_as_far_field )
   const vector<float> test_energies = { 100.0f, 500.0f, 1000.0f };
   for( const float E : test_energies )
   {
-    // Use efficiency() for fixed geometry (needs distance parameter)
-    const float eff_fixed = drf_fixed->efficiency( E * PhysicalUnits::keV, 1.0 );
+    // For a fixed-geometry DRF, efficiency() ignores the distance and gives the intrinsic
+    //  value - it dispatches through efficiencyEval, whose fixed-geometry short circuit says
+    //  distance and angles are meaningless.  It used to reach the flat-disk product instead,
+    //  which for a DRF whose diameter is -1 depended on the caller passing a NEGATIVE
+    //  distance; passing 1.0, as here, silently gave a solid-angle-scaled number.
+    const double eff_fixed = drf_fixed->efficiency( E * PhysicalUnits::keV, 1.0 );
+    BOOST_CHECK_EQUAL( eff_fixed,
+                       static_cast<double>(drf_fixed->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV )) );
+    BOOST_CHECK_EQUAL( eff_fixed, drf_fixed->efficiency( E * PhysicalUnits::keV, -1.0 ) );
 
     // Use farFieldIntrinsicEfficiency() for far-field
     const float eff_farfield = drf_farfield->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
     // These won't be exactly equal due to different geometry assumptions, but both should be valid
-    BOOST_CHECK_MESSAGE( eff_fixed >= 0.0f && eff_farfield >= 0.0f,
+    BOOST_CHECK_MESSAGE( eff_fixed >= 0.0 && eff_farfield >= 0.0f,
                         "Both efficiencies should be non-negative at " + to_string(E) + " keV" );
   }
 

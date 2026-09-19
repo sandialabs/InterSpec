@@ -710,13 +710,26 @@ public:
   void setFwhmCoefficients( const std::vector<float> &coefs,
                             const ResolutionFnctForm form );
   
-  /** Returns efficiency of a full energy detection event, per decay measured at `distance`.
-   
+  /** Efficiency of a full energy detection event, per decay, for an on-axis point source at
+   `distance` - the DRF's best answer.
+
+   Identical to `efficiencyEval( energy, distance ).value`, so it honours any response
+   attached to this DRF: a Monte-Carlo characterization (#ceeloResponse), or the EFFTRAN
+   curve-transfer response CeeLoUtils::attachCurveTransferResponse gives every
+   geometry-bearing DRF at load.  With no response attached this is the legacy flat-disk
+   value - #flatDiskEfficiency - bit for bit.
+
+   Note this is therefore NOT in general
+   `fractionalSolidAngle(...) * farFieldIntrinsicEfficiency(energy)`: the intrinsic accessor
+   stays on the frozen curve, so the two only coincide when no response is attached.  A
+   caller that wants the flat-disk MODEL, rather than this DRF's best answer, must say so -
+   see #flatDiskEfficiency.
+
+   For a fixed-geometry DRF, `distance` is ignored and this returns
+   #farFieldIntrinsicEfficiency.
+
    Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
-   
-   If a fixed-geometry DRF, then distance must either be zero or negative, in which case will
-   just return the same thing as #farFieldIntrinsicEfficiency
-   
+
    Will throw `std::runtime_exception` if this object has not been initialized.
    Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
    */
@@ -871,10 +884,14 @@ public:
    */
   float totalIntrinsicEfficiency( const float energy ) const;
 
-  /** Returns probability of an emitted gamma, from a point source at
-   `distance`, depositing any energy in the detector - mirrors #efficiency.
+  /** Probability of an emitted gamma, from a point source at `distance`, depositing any
+   energy in the detector - the total-efficiency mirror of #efficiency, and like it equal to
+   `totalEfficiencyEval( energy, 0, 0, distance ).value`, so it honours an attached
+   #ceeloResponse's total-efficiency payload.
 
-   Throws std::runtime_error if !hasTotalEfficiency().
+   Throws std::runtime_error when the DRF has neither a total-efficiency curve nor a CeeLo
+   response (i.e. !#hasAnyTotalEfficiencyInfo).  Prefer #totalEfficiencyEval, which returns
+   {0, 0, NeedsMc} instead of throwing, or #totalIntrinsicEfficiencyAny.
    */
   double totalEfficiency( const float energy, const double distance ) const;
 
@@ -916,10 +933,13 @@ public:
 
   /** The (optional) Monte-Carlo-parameterized detector response; may be
    nullptr.  When set, the #EffEval query functions and
-   #efficiencyFracCovariance dispatch to it; the legacy efficiency curve is
-   kept as the back-compat fallback/export, and #farFieldIntrinsicEfficiency /
-   #efficiency are NOT affected (they keep evaluating the legacy curve
-   bit-identically).
+   #efficiencyFracCovariance dispatch to it, and so do #efficiency and
+   #totalEfficiency (through #efficiencyEval / #totalEfficiencyEval).
+
+   The legacy efficiency curve is kept as the back-compat fallback/export, and
+   #farFieldIntrinsicEfficiency / #totalIntrinsicEfficiency keep evaluating it
+   bit-identically - they are the frozen half of the pair.  #flatDiskEfficiency
+   is the explicit opt-out for a caller that needs the flat-disk model itself.
    */
   std::shared_ptr<const ceelo::DetectorResponse> ceeloResponse() const;
 
