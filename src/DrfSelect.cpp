@@ -3532,9 +3532,17 @@ void DrfSelect::updateDrfContentSummary()
   add_chip( WString::tr("ds-chip-uncert"), WString::tr("ds-chip-tt-uncert"),
             (uncert && !uncert->isEmpty()) );
 
-  //Total efficiency (cascade summing input)
-  add_chip( WString::tr("ds-chip-total-eff"), WString::tr("ds-chip-tt-total-eff"),
-            det->hasTotalEfficiency() );
+  //Total efficiency (cascade summing input).  Must use the same predicate the
+  //  cascade-summing code gates on (CascadeSummingCalc::drfHasNeededInfo), not
+  //  hasTotalEfficiency() - that one is true only for the LEGACY total-efficiency
+  //  curve, so a DRF whose total comes from an attached MC response would be shown
+  //  as lacking one while cascade summing was in fact available.
+  const bool has_tot_eff = det->hasAnyTotalEfficiencyInfo();
+  add_chip( WString::tr("ds-chip-total-eff"),
+            WString::tr( !has_tot_eff        ? "ds-chip-tt-total-eff"
+                         : det->hasTotalEfficiency() ? "ds-chip-tt-total-eff-curve"
+                                                     : "ds-chip-tt-total-eff-mc" ),
+            has_tot_eff );
 
   //Raw measured points (provenance / grounding input)
   const shared_ptr<const MeasuredDrfPoints> points = det->measuredPoints();
