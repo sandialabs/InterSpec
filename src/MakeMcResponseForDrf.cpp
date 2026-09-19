@@ -1189,7 +1189,7 @@ void MakeMcResponseForDrf::updateEstimate()
     if( (plan.n_near_positions > 0) && (nE > 0) )
     {
       const WString near_part = WString::tr("mmr-est-part-near").arg( plan.n_near_positions ).arg( nE );
-      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( near_part );
+      parts = WString::tr("mmr-est-part-join").arg( parts ).arg( near_part  );
     }//if( near-field nodes )
 
     const char *durKey = "mmr-est-dur-model";
