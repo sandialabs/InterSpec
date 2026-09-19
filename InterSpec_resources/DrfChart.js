@@ -56,6 +56,11 @@ DrfChart = function (elem, options) {
   // Initialize chart dimensions
   this.updateDimensions();
 
+  // Wt re-emits every JavaScript member when it recreates a widget's DOM, so this constructor can
+  //  run again on an element that already holds our SVG and tooltip.  Clear them rather than
+  //  stacking a second set on top of the first.
+  d3.select(this.chart).selectAll("svg,div.DrfChartTooltip").remove();
+
   // Setup the tooltip
   this.tooltip = d3.select(this.chart).append("div")
     .attr("class", "DrfChartTooltip")

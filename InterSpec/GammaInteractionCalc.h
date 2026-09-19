@@ -517,7 +517,8 @@ struct PeakDetail
 
   /** Fractional (1-sigma) detector-efficiency uncertainty at this peaks energy,
    from the DRFs uncertainty info; 0 when the DRF has none or the
-   `account_for_drf_uncert` option is off.  When non-zero, #observedUncert and
+   `drf_uncert_method` option is not `Likelihood` (states None/ErrorPropagation
+   leave the pulls statistics-only).  When non-zero, #observedUncert and
    #numSigmaOff include this component (added in quadrature as
    expectedCounts*drfEffFracUncert), matching the GLS-whitened fit.
    */

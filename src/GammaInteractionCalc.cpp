@@ -4201,7 +4201,11 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceTotEff( const d
     case PointEffModel::Response:
     {
       // The resolved response's own total efficiency - anchored on the DRF's total curve when one
-      //  was available to the transfer (CeeLoUtils::totalTransferAnchorForDrf), else its kernel tier.
+      //  was available to the transfer (CeeLoUtils::totalTransferAnchorForDrf).  With no such curve
+      //  a curve-transfer response is `TotEffTier::NotCharacterized` and refuses here (0, NeedsMc):
+      //  a measured FEP curve says nothing about peak-to-total, so there is no total to report.
+      //  Cascade summing is gated upstream on DetectorPeakResponse::hasAnyTotalEfficiencyInfo(),
+      //  which is false for exactly those responses, so a fit does not reach this refusal.
       assert( m_pointRays && (m_pointRays->response == m_volEffResponse) );
       const ceelo::EffResult res = m_volEffResponse->eps_total_at( energy, m_pointRays->position_cm,
                                                                    m_pointRays->quadrature );
@@ -5458,8 +5462,15 @@ vector<PeakResultPlotInfo>
   }//if( log_info )
   
   
+  // Only state 3 (Likelihood) feeds the efficiency uncertainty into the residuals, so the per-peak
+  //  pulls (numSigmaOff) reflect the correlated band and sit coherently off-zero.  States None and
+  //  ErrorPropagation leave the pulls statistics-only (straddling zero) - ErrorPropagation widens
+  //  only the reported parameter uncertainties, post-fit.
+  //  `eff_frac_uncerts_model` is the ad hoc model-envelope part of that same band, so it is
+  //  filled on the same terms - reporting a model part of a band the peaks are not carrying
+  //  would not be readable (and BatchInfoLog only emits it when the total is non-zero).
   vector<double> eff_frac_uncerts, eff_frac_uncerts_model;
-  if( m_options.account_for_drf_uncert )
+  if( m_options.drf_uncert_method == ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood )
     eff_frac_uncerts = peakEffFracUncerts( log_info ? &eff_frac_uncerts_model : nullptr );
 
   vector<pair<double,DetectorPeakResponse::EffFlag>> eff_flags;

@@ -580,7 +580,11 @@ ActFit fit_ba133_activity( const shared_ptr<DetectorPeakResponse> &drf, const do
 
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
-  options.account_for_drf_uncert = account_for_drf_uncert;
+  // `Likelihood` is what the former `account_for_drf_uncert = true` did: the efficiency covariance
+  //  is folded into the fit's whitening.  The numbers this test pins were measured against that.
+  options.drf_uncert_method = account_for_drf_uncert
+                              ? ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood
+                              : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
   const double theta = theta_deg * M_PI / 180.0;

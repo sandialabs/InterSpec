@@ -222,8 +222,12 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
     }
     t.finalize();
 
-    // Total-efficiency tier: b(E) from the total anchor (angle-flat), else the
-    // bare-crystal kernel-exact tier.
+    // Total-efficiency tier: b(E) from the total anchor (angle-flat).  With no
+    // usable total anchor there is NO total-efficiency information to transfer,
+    // so the tier is NotCharacterized: this producer is fed a measured FEP curve
+    // and knows nothing about the detector's peak-to-total, and the previous
+    // KernelExact fallback quietly turned that absence into a bare-crystal
+    // number a host could not tell from a verified one.
     if (tot_anchor && tot_anchor->energies_keV.size() >= 2 &&
         tot_anchor->eff.size() == tot_anchor->energies_keV.size()) {
         resp->tot_eff.tier = TotEffTier::BCurve;
@@ -236,9 +240,9 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
             resp->tot_eff.ln_b.push_back(std::log(tot_anchor->eff[i] / K_nors));
         }
         if (resp->tot_eff.b_energies_keV.size() < 2)
-            resp->tot_eff.tier = TotEffTier::KernelExact;  // fall back
+            resp->tot_eff.tier = TotEffTier::NotCharacterized;   // nothing usable
     } else {
-        resp->tot_eff.tier = TotEffTier::KernelExact;
+        resp->tot_eff.tier = TotEffTier::NotCharacterized;
     }
     resp->tot_eff.finalize();
 

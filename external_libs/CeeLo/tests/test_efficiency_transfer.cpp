@@ -339,11 +339,12 @@ BOOST_AUTO_TEST_CASE(mc_consistency) {
      eps_total == total_prefactor * sum(total_ray_weights)
  If those ever drift apart, every such host is silently wrong with no symptom at the seam.
 
- Covers ALL THREE total tiers.  That is the point of the test as much as the identity is: the tiers
- disagree about which MuChoice the total kernel uses (EtaTotTable takes Total, the others
- NoRayleigh) and about the scatter-in recapture, and a caller that assembled the wrong pair would
- get a plausible number with no error.  Production MC-parameterized responses are EtaTotTable, which
- make_transfer_response never produces - hence the synthesized case.
+ Covers ALL THREE CHARACTERIZED total tiers.  That is the point of the test as much as the identity
+ is: the tiers disagree about which MuChoice the total kernel uses (EtaTotTable takes Total, the
+ others NoRayleigh) and about the scatter-in recapture, and a caller that assembled the wrong pair
+ would get a plausible number with no error.  Neither KernelExact nor EtaTotTable is what
+ make_transfer_response produces (it emits BCurve with a total anchor, NotCharacterized without),
+ hence the two synthesized cases.
  */
 BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
     const GeometryDescriptor gd = nai3x3_descriptor();
@@ -353,11 +354,15 @@ BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
     TransferResponseOptions opts;
     opts.detector_name = "nai3x3-decomposition";
 
-    // KernelExact: no total anchor.
+    // KernelExact: this producer never claims it (a measured FEP curve says nothing about
+    //  peak-to-total, so no total anchor -> NotCharacterized), so synthesize the tier to exercise
+    //  its NoRayleigh kernel branch.
     const std::shared_ptr<DetectorResponse> kernel_exact =
         make_transfer_response(gd, make_anchor(), ref, nullptr, opts);
     BOOST_REQUIRE(kernel_exact);
-    BOOST_REQUIRE(kernel_exact->tot_eff.tier == TotEffTier::KernelExact);
+    BOOST_REQUIRE(kernel_exact->tot_eff.tier == TotEffTier::NotCharacterized);
+    kernel_exact->tot_eff.tier = TotEffTier::KernelExact;
+    kernel_exact->tot_eff.finalize();
 
     // BCurve: a total anchor scaled off the FEP one (values are irrelevant to the identity).
     const AnchorCurve tot_anchor = make_anchor(4.0);

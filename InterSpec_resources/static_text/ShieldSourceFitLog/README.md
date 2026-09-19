@@ -431,7 +431,11 @@ it does not exist in the payload.
     "MultithreadSelfAttenCalc": true,
     "PhotopeakClusterSigma":  1.5,
     "BackgroundPeakSubtract": false,
-    "ElementNuclidesSameAge": true
+    "ElementNuclidesSameAge": true,
+    "DrfUncertaintyMethod":     1,
+    "DrfUncertaintyMethodName": "ErrorPropagation",
+    "AccountForDrfUncert":      true,
+    "CorrectForCascadeSumming": false
   }
 }
 ```
@@ -454,6 +458,10 @@ it does not exist in the payload.
 | `FitOptions.PhotopeakClusterSigma`    | number |  | Energies within this many σ are clustered into a single photopeak. |
 | `FitOptions.BackgroundPeakSubtract`   | bool   |  | Background peaks are subtracted from foreground peaks before fitting. |
 | `FitOptions.ElementNuclidesSameAge`   | bool   |  | Different isotopes of the same element share one age parameter. |
+| `FitOptions.DrfUncertaintyMethod`     | number |  | How the detector-efficiency uncertainty band is used: `0` none (statistics-only), `1` `ErrorPropagation` (default — central values identical to `0`, reported parameter uncertainties widened by the band post-fit), `2` `Likelihood` (band folded into the fit itself, so the central value may move and the per-peak pulls sit coherently off zero). |
+| `FitOptions.DrfUncertaintyMethodName` | string |  | The same value as a name: `"None"`, `"ErrorPropagation"` or `"Likelihood"`.  `act_fit.tmplt.html` keys its "DRF eff. uncert." column off this. |
+| `FitOptions.AccountForDrfUncert`      | bool   |  | Legacy field, kept so older report templates keep working: true whenever `DrfUncertaintyMethod` is not `0`.  It does **not** distinguish the two non-zero states — prefer `DrfUncertaintyMethod`. |
+| `FitOptions.CorrectForCascadeSumming` | bool   |  | Cascade (true-coincidence) summing corrections applied to predicted counts. |
 
 ### 5.4 `foreground` and `background`
 
@@ -747,7 +755,7 @@ Each element describes one fitted peak that the source contributes gammas to. Bu
 | `DetectorSolidAngleFraction` | number | 0–1   | Fraction of 4π subtended by the detector. |
 | `DetectorIntrinsicEff`       | number | 0–1   | Intrinsic photopeak efficiency. |
 | `DetectorEff`                | number | 0–1   | `DetectorSolidAngleFraction × DetectorIntrinsicEff`. |
-| `DrfEffFracUncert`           | number | 0–1   | Fractional 1σ detector-efficiency uncertainty at this energy, at the fit geometry.  Present only when `AccountForDrfUncert` is true and the DRF carries uncertainty information; `SignalCountsUncert` then includes it.  Typically 0.01–0.05 far-field, larger near-field or off-axis. |
+| `DrfEffFracUncert`           | number | 0–1   | Fractional 1σ detector-efficiency uncertainty at this energy, at the fit geometry.  Present only when `FitOptions.DrfUncertaintyMethod` is `2` (`Likelihood`) and the DRF carries uncertainty information; `SignalCountsUncert` then includes it, and it is therefore in the denominator of `PredictedNumSigmaOff` (which moves that pull toward zero).  NOT present under `ErrorPropagation`, which uses the same band but only post-fit, leaving the per-peak residuals statistics-only — so `AccountForDrfUncert` being true does not imply this field.  Typically 0.01–0.05 far-field, larger near-field or off-axis. |
 | `DrfEffFracUncertPercentStr` | string | %     | `DrfEffFracUncert` as a percent, for display. |
 | `DrfEffFracUncertModel`      | number | 0–1   | The part of `DrfEffFracUncert` that is the response's ad hoc model envelope (regime floor, geometry-transfer envelope, near-field penalty) rather than uncertainty the DRF's own data supports.  Always ≤ `DrfEffFracUncert`; 0 for a measured-curve DRF used in its measured regime.  A value close to `DrfEffFracUncert` means the uncertainty is a statement about the model, not about the measurement. |
 | `DrfEffFracUncertModelPercentStr` | string | % | `DrfEffFracUncertModel` as a percent, for display. |

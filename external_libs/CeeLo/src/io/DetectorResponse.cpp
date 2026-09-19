@@ -64,7 +64,12 @@ namespace ceelo {
 // they can read correctly, and hard-fail (via the range test in from_xml)
 // on exactly the ones they would get wrong. Existing responses keep their bytes
 // and their hash. Follow this pattern for the next additive field.
-const int DetectorResponse::sm_xmlSerializationVersion = 2;
+//
+// v3 followed the pattern for TotEffTier::NotCharacterized: a pre-v3 reader maps
+// the unknown tier string onto KernelExact and would serve a bare kernel as a
+// verified total efficiency, so only responses that use that tier are stamped
+// v3.
+const int DetectorResponse::sm_xmlSerializationVersion = 3;
 
 namespace {
 
@@ -1105,6 +1110,13 @@ void DetectorResponse::total_ray_weights(
     std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
     // Mirrors eps_total_impl's tier dispatch - the EtaTotTable tier folds a measured eta_tot over
     // the FULL-mu kernel, the other tiers use the Rayleigh-free one.
+    if (!tot_eff.characterized()) {
+        // No total to differentiate through; empty weights make K == 0, matching
+        // eps_total_impl's refusal instead of implying a bare-kernel total.
+        w_out.clear();
+        dirs_out.clear();
+        return;
+    }
     const MuChoice mu = (tot_eff.tier == TotEffTier::EtaTotTable) ? MuChoice::Total
                                                                   : MuChoice::NoRayleigh;
     const double recap = (mu == MuChoice::NoRayleigh)
@@ -1328,8 +1340,19 @@ EffResult DetectorResponse::total_prefactor(
     // would double-count against a host that applies its own scatter augment.
     EvalCommon ec = common_eval(energy_keV, src_cm, q);
 
+    // Mirrors eps_total_impl's refusal: no total data, no prefactor.
+    if (!tot_eff.characterized()) {
+        EffResult res;
+        res.value = 0.0;
+        res.sigma = 0.0;
+        res.flag = ResponseFlag::NeedsMc;
+        return res;
+    }
+
     double value = 1.0, node_sig = 0.0;
     switch (tot_eff.tier) {
+        case TotEffTier::NotCharacterized:
+            break;                                   //handled above
         case TotEffTier::KernelExact:
             break;                                   //bare kernel; multiplier is 1
         case TotEffTier::BCurve:
@@ -1385,9 +1408,21 @@ EffResult DetectorResponse::eps_total_impl(
     const ShieldContext* sc) const {
     EvalCommon ec = common_eval(energy_keV, src_cm, q);
 
+    // No total-efficiency data: refuse rather than serve the bare kernel as if
+    // it were a verified total (see TotEffTier::NotCharacterized).
+    if (!tot_eff.characterized()) {
+        EffResult res;
+        res.value = 0.0;
+        res.sigma = 0.0;
+        res.flag = ResponseFlag::NeedsMc;
+        return res;
+    }
+
     double value = 0.0;
     double node_sig = 0.0;
     switch (tot_eff.tier) {
+        case TotEffTier::NotCharacterized:
+            break;                                   //handled above
         case TotEffTier::KernelExact:
             value = kernel_K(energy_keV, q, MuChoice::NoRayleigh, t_src);
             break;
@@ -1758,8 +1793,15 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         // exact bytes (and content_hash) and stay loadable by older builds.
         const bool needs_v2 = (descriptor.bullet_radius_cm > 0.0)
                               || (descriptor.bore && descriptor.bore->rounded_tip);
+        // v3 = the eps_tot "not characterized" tier. A v2 reader maps an unknown
+        // tier string onto KernelExact, which is precisely the silent misread
+        // this tier exists to prevent (it would serve a bare kernel as a
+        // verified total), so such a file must hard-fail on older builds rather
+        // than load wrongly. Only responses that actually use the tier are
+        // stamped v3, so every existing file keeps its bytes and content_hash.
+        const bool needs_v3 = !tot_eff.characterized();
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", needs_v2 ? 2 : 1);
+        std::snprintf(buf, sizeof(buf), "%i", needs_v3 ? 3 : (needs_v2 ? 2 : 1));
         append_attrib(doc, root, "version", buf);
     }
 
@@ -1828,7 +1870,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         XmlNode* te = append_node(doc, root, "TotalEfficiency");
         const char* tier = tot_eff.tier == TotEffTier::KernelExact ? "kernel"
                            : tot_eff.tier == TotEffTier::BCurve    ? "bcurve"
-                                                                   : "etatable";
+                           : tot_eff.tier == TotEffTier::EtaTotTable ? "etatable"
+                                                                   : "none";
         append_attrib(doc, te, "tier", tier);
         if (scatter_in_recapture != 0.0)
             append_attrib(doc, te, "scatterInRecapture",
@@ -2038,6 +2081,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             resp->tot_eff.tier = TotEffTier::BCurve;
         else if (tier && std::strcmp(tier, "etatable") == 0)
             resp->tot_eff.tier = TotEffTier::EtaTotTable;
+        else if (tier && std::strcmp(tier, "none") == 0)
+            resp->tot_eff.tier = TotEffTier::NotCharacterized;
         else
             resp->tot_eff.tier = TotEffTier::KernelExact;
         resp->scatter_in_recapture = attrib_double(te, "scatterInRecapture", 0.0);

@@ -1398,6 +1398,76 @@ BOOST_AUTO_TEST_CASE(production_method_absent_reads_as_full_mc) {
     BOOST_CHECK(back->provenance.method == ProductionMethod::FullMc);
 }
 
+// --- TotEffTier::NotCharacterized -------------------------------------------
+
+// An FEP-only response must REFUSE every eps_total query rather than fall back
+// on the bare-crystal kernel: KernelExact is a claim the generator only makes
+// after checking that kernel against MC, and a producer with no total data at
+// all (an imported FEP characterization, a curve transfer with no total anchor)
+// has not earned it.  For a real HPGe the bare kernel omits the housing and all
+// peak-to-total structure, and at low energy it lands BELOW the response's own
+// eps_fep - impossible - so a host gating cascade summing on "is there a total?"
+// would get a confident yes and a wrong correction.
+BOOST_AUTO_TEST_CASE(uncharacterized_total_refuses_instead_of_guessing) {
+    auto r = make_synthetic_nai();
+    r->tot_eff = TotEffPayload();
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->tot_eff.finalize();
+    BOOST_CHECK(!r->tot_eff.characterized());
+
+    const Eigen::Vector3d pos = r->query_position(0.0, 0.0, 25.0);
+    const ApertureQuadrature q = r->make_quadrature(pos);
+
+    // FEP is unaffected - the response still carries a real eta_fep table.
+    const EffResult fep = r->eps_fep_at(662.0, pos, q);
+    BOOST_CHECK_GT(fep.value, 0.0);
+    BOOST_CHECK(fep.flag == ResponseFlag::Ok);
+
+    // Every total path refuses, and says so with NeedsMc rather than a zero a
+    // caller could mistake for "the detector cannot see this".
+    for (const double E : {60.0, 662.0, 1500.0}) {
+        const EffResult tot = r->eps_total_at(E, pos, q);
+        BOOST_CHECK_EQUAL(tot.value, 0.0);
+        BOOST_CHECK(tot.flag == ResponseFlag::NeedsMc);
+
+        const EffResult pre = r->total_prefactor(E, pos, q);
+        BOOST_CHECK_EQUAL(pre.value, 0.0);
+        BOOST_CHECK(pre.flag == ResponseFlag::NeedsMc);
+
+        // Empty weights, so a host assembling the kernel itself gets K == 0
+        // instead of a bare-crystal kernel it would scale and trust.
+        std::vector<double> w{1.0, 2.0};
+        std::vector<Eigen::Vector3d> dirs{Eigen::Vector3d::UnitZ()};
+        r->total_ray_weights(E, q, w, dirs);
+        BOOST_CHECK(w.empty());
+        BOOST_CHECK(dirs.empty());
+    }
+}
+
+// The tier must survive the file, and a file that uses it must be unreadable by
+// a build that predates it: a pre-v3 reader maps an unknown tier string onto
+// KernelExact, which is exactly the misread the tier exists to prevent.
+BOOST_AUTO_TEST_CASE(uncharacterized_total_round_trips_and_stamps_v3) {
+    auto r = make_synthetic_nai();
+    r->tot_eff = TotEffPayload();
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->tot_eff.finalize();
+
+    const std::string xml = r->to_xml_string();
+    BOOST_CHECK(xml.find("version=\"3\"") != std::string::npos);
+    BOOST_CHECK(xml.find("tier=\"none\"") != std::string::npos);
+
+    std::shared_ptr<DetectorResponse> back =
+        DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK(back->tot_eff.tier == TotEffTier::NotCharacterized);
+    BOOST_CHECK(!back->tot_eff.characterized());
+
+    // A characterized response keeps its old stamp, so no existing file's bytes
+    // (or content_hash) move for a feature it does not use.
+    BOOST_CHECK(make_synthetic_nai()->to_xml_string().find("version=\"1\"")
+                != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
     auto r = make_synthetic_nai();
     r->provenance.fep_window_keV = 1.5;

@@ -235,7 +235,31 @@ class DetectorPeakResponseJS {
     return [50, 3000]; // Default fallback
   }
   
-  // Calculate efficiency at given energy
+  // The absolute-to-intrinsic conversion factor at an energy, or 1 when the curve is already
+  // intrinsic.  A FarFieldAbsolute curve stores absolute efficiency at its reference distance; the
+  // factor is 1/(solid-angle fraction), times an air-attenuation correction when the detector asks
+  // for one (which is what makes it energy dependent).  Sampled by C++ and interpolated here, which
+  // mirrors DetectorPeakResponse::intrinsicEfficiency()'s own product.
+  absToIntrinsic(energy) {
+    const f = this.data && this.data.absToIntrinsic;
+    if (!f || !f.energies || !f.factors || f.energies.length < 1)
+      return 1.0;
+
+    const es = f.energies, fs = f.factors;
+    if (energy <= es[0]) return fs[0];
+    if (energy >= es[es.length - 1]) return fs[es.length - 1];
+
+    for (let i = 1; i < es.length; ++i) {
+      if (energy <= es[i]) {
+        const t = (energy - es[i-1]) / (es[i] - es[i-1]);
+        return fs[i-1] + t * (fs[i] - fs[i-1]);
+      }
+    }
+    return fs[fs.length - 1];
+  }
+
+  // Calculate efficiency at given energy.  Always the INTRINSIC efficiency (per gamma striking the
+  // detector face), whatever the stored curve happens to hold - see absToIntrinsic().
   efficiency(energy) {
     if (!this.hasEfficiency()) {
       return null;
@@ -244,13 +268,17 @@ class DetectorPeakResponseJS {
     const effData = this.data.efficiency;
     
     const energyInUnits = energy / effData.energyUnits;
+    let eff = null;
     if (effData.form === 'kEnergyEfficiencyPairs') {
-      return akimaInterpolate(energyInUnits, effData.pairs);
+      eff = akimaInterpolate(energyInUnits, effData.pairs);
     } else if (effData.form === 'kExpOfLogPowerSeries') {
-      return expOfLogPowerSeriesEfficiency(energyInUnits, effData.coefficients);
+      eff = expOfLogPowerSeriesEfficiency(energyInUnits, effData.coefficients);
     }
-    
-    return null;
+
+    if (eff === null)
+      return null;
+
+    return eff * this.absToIntrinsic(energy);
   }
   
   // Whether a fractional efficiency uncertainty envelope was provided.

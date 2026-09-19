@@ -130,7 +130,9 @@
   <message id="ds-chip-tt-uncert-assumed">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV - but none of it is a measurement of this detector.  {3}% is the default assumed for a detector that states no uncertainty of its own (a GADRAS Detector.dat, for example), and {4}% is the model envelope.  &quot;Modify...&quot; lets you enter what you actually know.</message>
   <message id="ds-chip-tt-uncert-split">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV - {3}% from this detector&apos;s own data, and {4}% model envelope: an allowance for asking the model about a position nobody measured.  The envelope does not shrink with more counting, and it moves every peak together.</message>
   <message id="ds-chip-total-eff">Total eff.</message>
-  <message id="ds-chip-tt-total-eff">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
+  <message id="ds-chip-tt-total-eff">Total efficiency (probability of depositing any energy) - the input needed for cascade-summing corrections. This detector has none, so cascade-summing corrections are unavailable.</message>
+  <message id="ds-chip-tt-total-eff-curve">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
+  <message id="ds-chip-tt-total-eff-mc">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), supplied by this detector's Monte-Carlo response rather than by a separate curve.</message>
   <message id="ds-chip-points">Measured points</message>
   <message id="ds-chip-tt-points">The raw per-peak efficiency measurements this DRF was made from (kept for provenance, and to anchor a Monte-Carlo characterization).</message>
   <message id="ds-chip-mc">MC response</message>

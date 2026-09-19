@@ -343,6 +343,41 @@ namespace ShieldingSourceFitCalc
     FlatDisk
   };//enum class PointEffModel
 
+  /** How the detector-efficiency uncertainty is used by the Activity/Shielding fit.
+
+   The DRF may carry efficiency-uncertainty information (a Monte-Carlo-parameterized
+   response's covariance, or a #DetectorEfficiencyUncert), giving a fractional efficiency
+   covariance among the fit peaks that is typically strongly correlated between nearby
+   energies.  This enum selects whether, and how, that band is used.  See
+   #ShieldingSourceFitOptions::drf_uncert_method.
+   */
+  enum class DrfUncertaintyMethod : int
+  {
+    /** State 1: statistics-only fit.  Only per-peak counting uncertainty is used; the
+     efficiency band is ignored entirely.  Reported covariance and chart pulls are
+     stat-only.  Bit-identical to before any efficiency-uncertainty option existed. */
+    None = 0,
+
+    /** State 2 (default): the central (best-fit) values are bit-identical to #None, but the
+     reported parameter uncertainties are inflated by the efficiency band via a numeric
+     eigen-mode delta/sandwich method (re-solving the stat-only fit under per-mode efficiency
+     perturbations and accumulating the parameter scatter).  Chart pulls stay stat-only, so
+     the residual chart still straddles zero.  This is what most users want: the efficiency
+     uncertainty widens the answer's error bar without moving the answer. */
+    ErrorPropagation = 1,
+
+    /** State 3: fold the correlated efficiency covariance into the fit likelihood (GLS),
+     whitening the residuals by the Cholesky factor of the TOTAL per-peak covariance
+        Sigma = diag(peak-stat^2) + diag(counts) . C_eff . diag(counts),
+     rebuilt from EXPECTED (model) counts via an iterated-GLS fixed point to avoid Peelle's
+     Pertinent Puzzle.  A common-mode efficiency error then maps ~1:1 onto activity (it is
+     NOT averaged down by sqrt(Npeaks)).  The central value MAY legitimately move when peaks
+     are mutually inconsistent under the band, and the marginal chart pulls sit coherently
+     off-zero; the chart annotates the coherent shift.  (The legacy Minuit2 path uses a
+     diagonal, uncorrelated inflation only.) */
+    Likelihood = 2
+  };//enum class DrfUncertaintyMethod
+
   struct ShieldingSourceFitOptions
   {
     bool multiple_nucs_contribute_to_peaks = true;
@@ -378,28 +413,20 @@ namespace ShieldingSourceFitCalc
      */
     bool compute_effective_shielding = false;
 
-    /** Whether to fold the detector-efficiency uncertainty into the fit.
+    /** How the detector-efficiency uncertainty is used by the fit - see #DrfUncertaintyMethod
+     for the full description of each of the three states.
 
-     When true and the DRF carries efficiency uncertainty information (a
-     Monte-Carlo-parameterized response's covariance, or a
-     #DetectorEfficiencyUncert), the fit residuals are whitened by the
-     Cholesky factor of the TOTAL per-peak covariance
-        Sigma = diag(peak-stat^2) + diag(counts) . C_eff . diag(counts),
-     where C_eff is the fractional efficiency covariance among the fit peaks.
-     This propagates the efficiency uncertainty - INCLUDING its strong
-     correlation between nearby energies - into both the best-fit values and
-     the reported parameter uncertainties.  A common-mode efficiency error
-     then maps ~1:1 onto activity (it is NOT averaged down by sqrt(Npeaks)),
-     which is the physically correct behavior.
+     Default #DrfUncertaintyMethod::ErrorPropagation: when the DRF carries efficiency-uncertainty
+     information the reported activity/shielding uncertainties are inflated by the efficiency band
+     while the central (best-fit) values are left bit-identical to a statistics-only fit.  #None
+     ignores the band entirely (the historical statistics-only behavior); #Likelihood folds the
+     correlated band into the (iterated-GLS) fit so it can also move the central value.
 
-     When false, only the per-peak statistical (counting) uncertainty is used
-     - the historical behavior; results are bit-identical to before this
-     option existed.
-
-     Applies to the Ceres fit path (the default); the legacy Minuit2 path
-     uses a diagonal (uncorrelated) inflation only.
+     Back-compat: this replaces the former `bool account_for_drf_uncert`.  A serialized
+     `AccountForDrfUncert` = 1 deserializes to #ErrorPropagation (the new safe default) and 0 to
+     #None; see `deSerialize`.
      */
-    bool account_for_drf_uncert = true;
+    DrfUncertaintyMethod drf_uncert_method = DrfUncertaintyMethod::ErrorPropagation;
 
     /** Correct expected peak counts for true-coincidence (cascade) summing.
 

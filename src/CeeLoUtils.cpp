@@ -1066,8 +1066,7 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     ceelo::MaterialSpec mspec;
     if( is_vacuum )
     {
-      if( !resolve_named( "galactic vacuum", mspec ) )
-        mspec = make_transparent();
+      mspec = vacuumMaterialSpec();  //the same gap the geometry form makes for a blank material
     }else if( !resolve( layer.material, mspec ) )
     {
       // For an unresolvable material still insert a layer so the physical extent
@@ -1772,16 +1771,35 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   //  disk solid angle.  Any divergence here would put the stored curve and the
   //  live query at odds.
   const double d_cm = farFieldDistanceCm( response->descriptor );
-  const Eigen::Vector3d far_pos = farFieldSourcePosition( response->descriptor );
-  const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
+
+  // The solid angle - and the diameter recorded on the DRF below - must be the CRYSTAL's, not
+  //  `transverse_half_extent()`.  That function sums the side dead layer, every endcap layer AND
+  //  the collimator onto the crystal radius (its own header says "do not use this" for a physical
+  //  radius): +4% for a canned 3x3 NaI, +12% for a typical p-type HPGe, +56% with a 2 cm
+  //  collimator.  Absolute efficiency comes out the same either way (the curve and the solid angle
+  //  compensate), but every INTRINSIC efficiency the DRF reports is per photon crossing that disk,
+  //  so an oversized one made the detector look (2a/d_crystal)^2 less efficient than it is - 2.45x
+  //  with that collimator - and the diameter shown to the user was simply wrong.
+  //  `transverse_half_extent()` is still the right scale for the far-field DISTANCE above, which is
+  //  about the whole object.
+  const double crystal_a_cm = (response->descriptor.dimensions_cm.empty()
+                               || !(response->descriptor.dimensions_cm[0] > 0.0))
+                                ? a_cm : response->descriptor.dimensions_cm[0];
+  const double omega = ceelo::disk_solid_angle_fraction( d_cm, crystal_a_cm );
   if( omega <= 0.0 )
     throw runtime_error( "setLegacyEfficiencyFromResponse: degenerate solid angle." );
+
+  // Every point is sampled at this one position, and tracing the aperture quadrature is essentially
+  //  the whole cost of a query (it depends only on the position, not the energy), so trace it once
+  //  rather than once per energy - ~30x less work for the same numbers.
+  const Eigen::Vector3d src_pos = farFieldSourcePosition( response->descriptor );
+  const ceelo::ApertureQuadrature quad = response->make_quadrature( src_pos );
 
   vector<DetectorPeakResponse::EnergyEffPoint> points;
   points.reserve( energies.size() );
   for( const double energy : energies )
   {
-    const ceelo::EffResult res = response->eps_fep_at( energy, far_pos );
+    const ceelo::EffResult res = response->eps_fep_at( energy, src_pos, quad );
     const double eff = res.value / omega;
     if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
       continue;
@@ -1803,7 +1821,7 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   const double setback = drf.detectorSetback();
   const DetectorPeakResponse::DrfSource source = drf.drfSource();
 
-  drf.setEfficiencyPoints( points, static_cast<float>( 2.0 * a_cm * PhysicalUnits::cm ),
+  drf.setEfficiencyPoints( points, static_cast<float>( 2.0 * crystal_a_cm * PhysicalUnits::cm ),
                           -1.0, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
   if( setback > 0.0 )
@@ -1863,5 +1881,25 @@ bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
   areal_density_g_cm2 = ad;
   return true;
 }//parseGenericAttenuatorName(...)
+
+
+bool isVacuumMaterialName( const std::string &name )
+{
+  std::string s = name;
+  SpecUtils::trim( s );
+  SpecUtils::to_lower_ascii( s );
+  return s.empty() || (s == "void") || (s == "vacuum") || (s == "galactic")
+         || (s == "galactic vacuum") || (s == "none");
+}//isVacuumMaterialName(...)
+
+
+ceelo::MaterialSpec vacuumMaterialSpec()
+{
+  ceelo::MaterialSpec spec;
+  spec.name = "vacuum";
+  spec.density_g_per_cm3 = 1.0e-25;
+  spec.composition = { ceelo::MaterialComponent{ 1, 1.0 } };
+  return spec;
+}//vacuumMaterialSpec()
 
 }//namespace CeeLoUtils

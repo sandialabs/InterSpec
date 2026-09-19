@@ -121,6 +121,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ZipArchive.h"
@@ -3110,8 +3111,11 @@ bool SpecMeasManager::tryLoadSingleDrf( const NonSpecFileKind kind,
 
     try
     {
-      if( filesize > 100*1024 )  // if larger than 100 KB, probably not a DRF
-        throw runtime_error( "To large to be XML file" );
+      // The classifier already saw "<DetectorPeakResponse" at the very start of the file, so the
+      //  only question is whether it is sane to read whole: a Monte-Carlo characterized detector
+      //  carries ~100 KB of response tables, so the cap has to be well above that.
+      if( filesize > 16*1024*1024 )
+        throw runtime_error( "To large to be a DRF XML file" );
 
       rapidxml::file<char> input_file( infile );
 
@@ -3916,7 +3920,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     generic_geom_index = geom_combo->count() - 1;
   }//if( angle_geometry && angle_seed_drf )
 
-  geom_combo->setCurrentIndex( 1 );
+  // A file that describes the whole detector is best used as one (geometry-modeled, answering any
+  //  source position), so that is the default; a curve-only file defaults to its fixed geometry.
+  geom_combo->setCurrentIndex( (generic_geom_index >= 0) ? generic_geom_index : 1 );
     
   WTable *far_field_opt = dialog->contents()->addNew<WTable>();
   //far_field_opt->setHiddenKeepsGeometry( true );
@@ -4103,6 +4109,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   if( ecc_uncert_opts )
     ecc_uncert_opts->changed().connect( this, update_state );
 
+  // Show the preview / options for the default selection (the generic detector, when offered).
+  update_state();
+
 
   accept->clicked().connect( this, [=](){
     const int index = geom_combo->currentIndex();
@@ -4118,7 +4127,28 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       {
         //The DRF carries its own shape from here on - see DetectorPeakResponse::geometry().
         angle_seed_drf->setGeometry( angle_geometry );
-        viewer->showDrfModifyWindow( angle_seed_drf );
+        DrfModifyWindow *modify_win = viewer->showDrfModifyWindow( angle_seed_drf );
+
+        // Unlike the fixed-geometry entries, this branch does not import anything by itself: the
+        //  detector only becomes real when the user presses "Use" in the Modify dialog.  Closing
+        //  that dialog therefore throws the whole import away, which is worth saying out loud -
+        //  silently ending up with no detector after pressing Accept reads as a lost file.
+        if( modify_win )
+        {
+          auto applied = make_shared<bool>( false );
+
+          // Tracked to `this` (which outlives the dialog), NOT to the window: InterSpec connects
+          //  deleteDrfModifyWindow to finished() first, so a connection tracked to the window is
+          //  already severed by the time our handler's turn comes and never runs.  The lambdas
+          //  capture only the flag - no widget pointer - so outliving the window is harmless.
+          modify_win->tool()->updatedDrf().connect( this,
+                  [applied]( shared_ptr<DetectorPeakResponse> ){ *applied = true; } );
+
+          modify_win->finished().connect( this, [applied](){
+            if( !*applied )
+              passMessage( WString::tr("smm-outx-generic-discarded"), WarningWidget::WarningMsgHigh );
+          } );
+        }//if( modify_win )
       }
       return;
     }//if( generic detector option selected )

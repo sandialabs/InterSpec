@@ -210,6 +210,67 @@
   <message id="dmw-regen-accept">Regenerate &amp; use</message>
   <message id="dmw-regen-detach">Remove response, use flat disk</message>
 
+  <!-- A Geometry-Modeled detector that has no Monte-Carlo response at all when "Use" is pressed. -->
+  <message id="dmw-nogen-title">No Monte-Carlo response yet</message>
+  <message id="dmw-nogen-body">This detector is set to Geometry Modeled, but no Monte-Carlo response has been generated for it - without one it behaves as a flat disk (the geometry entered is kept).  Generate the response now?</message>
+  <message id="dmw-nogen-generate">Generate &amp; use</message>
+  <message id="dmw-nogen-use-anyway">Use without a response</message>
+  <message id="dmw-nogen-not-started">The Monte-Carlo run could not be started, so the detector was not applied: {1}</message>
+  <message id="dmw-geom-incomplete-title">Detector geometry incomplete</message>
+  <message id="dmw-geom-incomplete-body">A Monte-Carlo response cannot be generated yet: {1}&lt;br /&gt;&lt;br /&gt;Use the detector anyway?  It will behave as a flat disk, and the incomplete geometry is not kept.</message>
+  <message id="dmw-geom-incomplete-use-anyway">Use anyway</message>
+
+  <!-- General tab: the summary table of what the detector carries. -->
+  <message id="dmw-info-eff">Efficiency</message>
+  <message id="dmw-info-eff-none">None yet - generate a Monte-Carlo response on the Geom &amp; MC tab</message>
+  <!-- Same, for a detector with no Geom &amp; MC tab to send them to (fixed geometry). -->
+  <message id="dmw-info-eff-none-nogeom">None - this detector has no efficiency curve</message>
+  <message id="dmw-info-eff-formula">Formula (function of energy)</message>
+  <message id="dmw-info-eff-exp-log">Fitted curve ({1} exp-of-log coefficients)</message>
+  <message id="dmw-info-eff-pairs">Interpolated table of {1} energy/efficiency points</message>
+  <message id="dmw-info-eff-measured">{1}; {2} measured points kept</message>
+  <message id="dmw-info-geom">Geometry</message>
+  <message id="dmw-info-geom-fixed">Fixed source geometry (source strength in Bq{1}) - the efficiency is for one specific source arrangement</message>
+  <message id="dmw-info-geom-flat">Flat disk, {1} diameter (no physical geometry recorded)</message>
+  <message id="dmw-info-geom-cyl">{1} cylinder, {2} diameter × {3} long</message>
+  <message id="dmw-info-geom-box">{1} box, {2} × {3} × {4} (width × height × length)</message>
+  <message id="dmw-info-geom-known">Physical geometry recorded</message>
+  <message id="dmw-info-geom-layers">{1}; {2} endcap/housing layer(s)</message>
+  <message id="dmw-info-support">Location support</message>
+  <message id="dmw-info-support-none">None - flat-disk model (on-axis efficiency scaled by solid angle; off-axis queries are flagged)</message>
+  <message id="dmw-info-support-full">Full Monte-Carlo characterization ({1} profile; valid {2})</message>
+  <message id="dmw-info-support-quick">Quick Monte-Carlo transfer, EFFTRAN-style (valid {1})</message>
+  <message id="dmw-info-support-curve">Measured-curve transfer, no Monte Carlo (valid {1})</message>
+  <message id="dmw-info-support-min-dist">{1}; best beyond {2} from the face</message>
+  <message id="dmw-info-grounded-points">{1}; grounded to the measured points</message>
+  <message id="dmw-info-grounded-curve">{1}; grounded to the efficiency curve</message>
+  <message id="dmw-info-uncert">Uncertainty</message>
+  <message id="dmw-info-uncert-mc">From the Monte-Carlo response (node statistics + model floors)</message>
+  <message id="dmw-info-uncert-mc-grounded">From the Monte-Carlo response and its grounding</message>
+  <message id="dmw-info-uncert-points">Per-point statistical + certificate ({1} points, {2} source(s))</message>
+  <message id="dmw-info-uncert-nodes">Energy-node covariance matrix ({1} energies)</message>
+  <message id="dmw-info-uncert-coef">Fit-coefficient covariance</message>
+  <message id="dmw-info-uncert-none">None</message>
+  <message id="dmw-info-fwhm">FWHM</message>
+  <message id="dmw-info-fwhm-none">None</message>
+  <message id="dmw-info-fwhm-form">{1} ({2} coefficients)</message>
+  <message id="dmw-info-fwhm-at-662">{1}; {2} keV at 662 keV</message>
+  <message id="dmw-info-fwhm-gadras">GADRAS equation</message>
+  <message id="dmw-info-fwhm-sqrt-poly">sqrt(polynomial in energy)</message>
+  <message id="dmw-info-fwhm-sqrt-inv">sqrt(A + B·E + C/E)</message>
+  <message id="dmw-info-fwhm-const-sqrt">A + B·sqrt(E)</message>
+  <message id="dmw-info-total">Total efficiency</message>
+  <!-- Every Monte-Carlo response carries a total-efficiency model; only a legacy DRF needs a
+       curve set by hand.  Either one makes cascade-summing corrections possible. -->
+  <message id="dmw-info-toteff-mc">Yes, from the Monte-Carlo response (cascade-summing corrections possible)</message>
+  <message id="dmw-info-toteff-curve">Yes, from its own total-efficiency curve (cascade-summing corrections possible)</message>
+  <message id="dmw-info-toteff-ratio">{1}; total is {2}× the peak efficiency at 662 keV</message>
+  <message id="dmw-info-no">No</message>
+  <message id="dmw-info-range">Energy range</message>
+  <message id="dmw-info-kev-range">{1}-{2} keV</message>
+  <message id="dmw-info-diam">Diameter</message>
+  <message id="dmw-info-diam-setback">{1} (setback {2})</message>
+
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
     again later under the &quot;Previous&quot; tab of Detector Select.</message>

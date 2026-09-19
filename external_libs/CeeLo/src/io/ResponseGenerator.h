@@ -97,6 +97,27 @@ struct GenerationStats {
     }
 };
 
+/// Per-node progress, for a host that wants an exact node count and the node's
+/// cost rather than the fraction + stage string `GenerationOptions::progress`
+/// gives. Called from the generation thread right after each MC node, on the
+/// fixed-grid path (the closed-loop generator's phases each run it as their own
+/// fixed-grid generation, so their counts restart per phase).
+struct NodeProgress {
+    int nodes_done = 0;        ///< nodes finished so far, this one included
+    int nodes_total = 0;       ///< estimated_node_count() for the run: an upper bound,
+                               ///< since shape energies that snap to the same backbone
+                               ///< node merge and the run then finishes a few short
+    uint32_t stage = 0;        ///< NodeStat::stage: 1 backbone, 2 angular / transfer
+                               ///< anchors, 3 near field. The closed-loop generator's probe
+                               ///< banks tick without a grid node, and then carry the previous
+                               ///< node's values (0 before the first) - treat anything outside
+                               ///< 1-3 as "no stage".
+    double energy_keV = 0.0;
+    uint64_t events = 0;
+    double cpu_s = 0.0;        ///< summed worker-thread CPU seconds of this node
+    double wall_s = 0.0;
+};
+
 /// Per-node MC precision policy (the D0 speedup dial). Uniform reproduces the
 /// historical single-target behaviour bit-for-bit; RelaxMild installs the
 /// energy-graded map measured in the D0 policy memo (~2-2.5x cheaper high-E
@@ -245,6 +266,10 @@ struct GenerationOptions {
     /// Progress: fraction complete [0,1] + human-readable stage. Called from
     /// the generation thread between MC nodes (lightweight; no UI work).
     std::function<void(double, const std::string&)> progress;
+    /// Per-node progress with an exact node count and the node's cost (see
+    /// NodeProgress). Optional and independent of `progress`; same thread and
+    /// timing.
+    std::function<void(const NodeProgress&)> node_progress;
     /// Cooperative cancellation, polled between MC nodes. A cancelled run
     /// throws GenerationCancelled.
     std::shared_ptr<std::atomic<bool>> cancel;
@@ -280,13 +305,55 @@ public:
     static int estimated_node_count(const GeometryDescriptor& descriptor,
                                     const GenerationOptions& options);
 
+    /// The stage-by-stage node plan behind estimated_node_count() (fixed-grid
+    /// path), in generation order. Stage 1 is exactly the backbone grid
+    /// generate() runs. Stages 2/3 are per *shape energy*: the
+    /// `n_shape_energies` log-spaced targets, which generate() snaps to the
+    /// greedy-selected backbone nodes and merges when two land on the same
+    /// one - so total() is an upper bound (== estimated_node_count()).
+    struct NodePlan {
+        std::vector<double> backbone_energies_keV;  ///< stage 1, sorted, de-duplicated
+        std::vector<double> shape_energies_keV;     ///< stage 2/3 target energies
+        int n_cos_theta = 0;           ///< stage 2 angles per shape energy (0: flat transfer)
+        int n_phi = 1;                 ///< boxes: azimuths per angle
+        int n_near_positions = 0;      ///< stage 3 (cos_theta x distance) MC positions per
+                                       ///< shape energy (0 for FarField / transfer)
+        bool transfer_anchors = false; ///< stage 2 nodes are transfer-mode angle anchors
+        int n_backbone() const { return static_cast<int>(backbone_energies_keV.size()); }
+        int n_angular() const {
+            return static_cast<int>(shape_energies_keV.size()) * n_cos_theta * n_phi;
+        }
+        int n_near() const {
+            return static_cast<int>(shape_energies_keV.size()) * n_near_positions;
+        }
+        int total() const { return n_backbone() + n_angular() + n_near(); }
+    };
+    /// NOTE: the fixed-grid path only. `closed_loop` generation refines data-driven, so its node
+    /// count is not known upfront and its per-phase NodeProgress counts restart; plan_nodes()
+    /// describes the grid as if closed_loop were off, and only then does total() ==
+    /// estimated_node_count(). A host driving a progress bar for a closed-loop run must use
+    /// NodeProgress::nodes_total rather than this.
+    static NodePlan plan_nodes(const GeometryDescriptor& descriptor,
+                               const GenerationOptions& options);
+
+    /// The stage-1 energy grid generate() runs: `n_energy_scan` log-spaced
+    /// energies over [e_min_keV, e_max_keV] plus a pair of flanks around each
+    /// crystal K-edge, sorted and de-duplicated.
+    static std::vector<double> backbone_scan_energies(
+        const GeometryDescriptor& descriptor, const GenerationOptions& options);
+
     /// Level-1 grounding (spec Eqs. 7a-7d): fit ln k(E) on a hat basis to
     /// raw measured points via GLS with V = diag(stat^2) + per-source
     /// certificate blocks; fills response.grounding (incl. covariance and a
     /// copy of the points). `points[i].model_eff` may be 0, in which case it
     /// is computed here from the (ungrounded) response at the point's own
     /// geometry. `curve_derived` marks points sampled from a fitted legacy
-    /// curve rather than raw peak fits (lower quality; flagged in the block).
+    /// curve rather than raw peak fits (lower quality; flagged in the block);
+    /// it also selects the knot scheme, since such points carry no statistical
+    /// scatter to smooth: one knot per distinct energy (exact interpolation)
+    /// for curve-derived points, versus <=6 quantile-placed knots for raw
+    /// measured points, where over-fitting scatter would cost more than the
+    /// extra flexibility gains.
     static void ground_to_points(DetectorResponse& response,
                                  std::vector<GroundingPoint> points,
                                  bool curve_derived);

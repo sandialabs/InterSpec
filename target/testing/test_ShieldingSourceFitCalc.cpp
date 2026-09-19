@@ -436,7 +436,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.photopeak_cluster_sigma = ((10.0*rand()) / RAND_MAX);
     test.background_peak_subtract = (rand() % 2);
     test.same_age_isotopes = (rand() % 2);
-    test.account_for_drf_uncert = (rand() % 2);
+    test.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>( rand() % 3 );
     test.correct_for_cascade_summing = (rand() % 2);
     // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
     //  rather than silently reverting a user's choice on reload.
@@ -444,11 +444,46 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
 
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
-    
+
     ShieldingSourceFitCalc::ShieldingSourceFitOptions from_xml;
     BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( &doc ) );
     BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( test, from_xml ) );
   }//for( size_t i = 0; i < 20; ++i )
+
+  // Back-compat: a file written before drf_uncert_method became an enum carries only the legacy
+  //  "AccountForDrfUncert" bool.  Removing the new "DrfUncertaintyMethod" node must fall back to it,
+  //  mapping 1 -> ErrorPropagation (the new safe default) and 0 -> None.
+  for( int legacy_on = 0; legacy_on <= 1; ++legacy_on )
+  {
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions seed;
+    seed.drf_uncert_method = legacy_on ? ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood
+                                       : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
+
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( seed.serialize( &doc ) );
+
+    // serialize(...) appends the option nodes DIRECTLY under the passed node (here the document), with
+    //  no wrapper element - deSerialize(...) reads them the same way.  So operate on the document.
+
+    // Drop the new enum node so only the legacy bool remains; force the legacy bool to legacy_on.
+    rapidxml::xml_node<char> * const enum_node = doc.first_node( "DrfUncertaintyMethod" );
+    BOOST_REQUIRE( enum_node );
+    doc.remove_node( enum_node );
+
+    rapidxml::xml_node<char> * const bool_node = doc.first_node( "AccountForDrfUncert" );
+    BOOST_REQUIRE( bool_node );
+    bool_node->value( legacy_on ? "1" : "0" );
+
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions from_legacy;
+    BOOST_REQUIRE_NO_THROW( from_legacy.deSerialize( &doc ) );
+
+    const ShieldingSourceFitCalc::DrfUncertaintyMethod expected = legacy_on
+              ? ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation
+              : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
+    BOOST_CHECK_MESSAGE( from_legacy.drf_uncert_method == expected,
+        "legacy AccountForDrfUncert=" << legacy_on << " should map to "
+        << static_cast<int>(expected) << ", got " << static_cast<int>(from_legacy.drf_uncert_method) );
+  }//for( legacy_on )
 }//BOOST_AUTO_TEST_CASE( SourceFitDefSerialization )
 
 
@@ -4522,9 +4557,10 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
 /** GLS treatment of DRF efficiency uncertainty in the (Ceres) activity fit:
  - a fully-correlated 5% efficiency band maps ~1:1 onto the activity
    uncertainty (NOT 5%/sqrt(N_peaks)),
- - attaching uncertainty info with `account_for_drf_uncert = false` leaves the
+ - attaching uncertainty info with `drf_uncert_method = None` leaves the
    fit bit-identical to a DRF with no uncertainty info at all, and
- - the option does not move the best-fit activity (only its uncertainty).
+ - the `Likelihood` option does not move the best-fit activity here (only its
+   uncertainty) - the peaks are mutually consistent under the band.
  */
 BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
 {
@@ -4559,7 +4595,7 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
     return drf;
   };
 
-  // Common input, except detector + the account_for_drf_uncert flag.
+  // Common input, except detector + the drf_uncert_method (None vs Likelihood via use_uncert).
   auto make_input = [&]( const shared_ptr<DetectorPeakResponse> &drf, const bool use_uncert )
                     -> GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput
   {
@@ -4585,7 +4621,8 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
     options.photopeak_cluster_sigma = 1.25;
     options.background_peak_subtract = false;
     options.same_age_isotopes = false;
-    options.account_for_drf_uncert = use_uncert;
+    options.drf_uncert_method = use_uncert ? ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood
+                                            : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
     input.config.distance = distance;
@@ -4731,7 +4768,8 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
     options.photopeak_cluster_sigma = 1.25;
     options.background_peak_subtract = false;
     options.same_age_isotopes = false;
-    options.account_for_drf_uncert = use_uncert;
+    options.drf_uncert_method = use_uncert ? ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood
+                                            : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
     input.config.distance = distance;
@@ -4854,6 +4892,393 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
 }//BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
 
 
+namespace
+{
+  /** Shared scaffold for the state-2 / stale-selection tests: a Co60 point source at 100 cm with two
+   peaks whose observed areas are asymmetrically perturbed off the model expectation, so the fit has a
+   non-trivial residual structure.  `method` selects the DRF-uncert handling; `with_band` attaches a
+   fully-correlated `frac_eff_uncert` efficiency band to the DRF.  Returns the fitted activity, its
+   uncertainty, the per-peak marginal pulls, and any warnings.
+   */
+  struct DrfUncertFitOut
+  {
+    double act = 0.0, act_uncert = 0.0, sum_counts = 0.0;
+    vector<GammaInteractionCalc::PeakResultPlotInfo> peaks;
+    vector<string> warnings;
+    size_t whitening_size = 0;  //results.efficiency_whitening.size(): the WI-5 annotation trigger
+  };
+
+  DrfUncertFitOut run_drf_uncert_fit( const ShieldingSourceFitCalc::DrfUncertaintyMethod method,
+                                      const bool with_band,
+                                      const double frac_eff_uncert )
+  {
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    BOOST_REQUIRE( db );
+    const SandiaDecay::Nuclide * const co60 = db->nuclide( "Co60" );
+    BOOST_REQUIRE( co60 );
+
+    const double distance = 100.0*PhysicalUnits::cm;
+    const double live_time = 1000.0*PhysicalUnits::second;
+    const double true_activity = 1.0*PhysicalUnits::microCi;
+
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                  5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  0, 3000*PhysicalUnits::keV,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    if( with_band )
+    {
+      const float u2 = static_cast<float>( frac_eff_uncert * frac_eff_uncert );
+      auto uncert = make_shared<DetectorEfficiencyUncert>();
+      uncert->setNodeCovariance( { 1.0f, 3000.0f }, { u2, u2, u2, u2 } );  //fully correlated
+      drf->setEfficiencyUncert( uncert );
+    }
+
+    auto make_input = [&]() -> GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput
+    {
+      ShieldingSourceFitCalc::SourceFitDef src;
+      src.nuclide = co60;
+      src.activity = true_activity;
+      src.fitActivity = true;
+      src.age = 1.0*PhysicalUnits::year;
+      src.fitAge = false;
+      src.ageDefiningNuc = nullptr;
+      src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+      auto foreground = make_shared<SpecUtils::Measurement>();
+      auto spec = make_shared<vector<float>>( vector<float>{0.0f, 1.0f, 5.0f, 2.0f} );
+      foreground->set_gamma_counts( spec, live_time/PhysicalUnits::second,
+                                    live_time/PhysicalUnits::second );
+
+      ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+      options.multiple_nucs_contribute_to_peaks = false;
+      options.attenuate_for_air = false;
+      options.account_for_decay_during_meas = false;
+      options.multithread_self_atten = true;
+      options.photopeak_cluster_sigma = 1.25;
+      options.background_peak_subtract = false;
+      options.same_age_isotopes = false;
+      options.drf_uncert_method = method;
+
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;
+      input.config.distance = distance;
+      input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+      input.config.shieldings = {};
+      input.config.sources = { src };
+      input.config.options = options;
+      input.detector = drf;
+      input.foreground = foreground;
+      input.background = nullptr;
+      input.foreground_peaks = {
+        make_test_peak( co60, 1173.228, 1.0, 1.0E5 ),
+        make_test_peak( co60, 1332.492, 1.0, 1.0E5 )
+      };
+      input.background_peaks = nullptr;
+      return input;
+    };
+
+    // Break observed==expected with an asymmetric +10%/-10% perturbation (same for every method,
+    //  since the efficiency curve is identical; only the uncertainty option differs).
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input = make_input();
+    const deque<shared_ptr<const PeakDef>> truth = peaks_with_model_expected_areas( input );
+    BOOST_REQUIRE_EQUAL( truth.size(), 2u );
+    const double scales[2] = { 1.10, 0.90 };
+    deque<shared_ptr<const PeakDef>> perturbed;
+    size_t idx = 0;
+    for( const shared_ptr<const PeakDef> &p : truth )
+    {
+      auto peak = make_shared<PeakDef>( *p );
+      const double area = p->peakArea() * scales[idx % 2];
+      peak->setPeakArea( area );
+      peak->setPeakAreaUncert( sqrt(area) );
+      perturbed.push_back( peak );
+      ++idx;
+    }
+    input.foreground_peaks = perturbed;
+
+    DrfUncertFitOut out;
+    for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
+      out.sum_counts += p->peakArea();
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+          fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    auto progress_fcn = [](){};
+    auto finished_fcn = [](){};
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                       progress_fcn, results, finished_fcn );
+
+    BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), 1 );
+    out.act = results->fit_src_info[0].activity;
+    BOOST_REQUIRE( results->fit_src_info[0].activityUncertainty.has_value() );
+    out.act_uncert = *results->fit_src_info[0].activityUncertainty;
+    if( results->peak_comparisons )
+      out.peaks = *results->peak_comparisons;
+    out.warnings = results->warnings;
+    out.whitening_size = results->efficiency_whitening.size();
+    return out;
+  }//run_drf_uncert_fit(...)
+}//namespace
+
+
+/** State 2 (ErrorPropagation, the new default): the central best-fit activity must be BIT-IDENTICAL
+ to the statistics-only (None) fit - only the reported uncertainty grows, folding in the correlated
+ efficiency band via the delta method - and the per-peak (marginal) pulls stay statistics-only (they
+ straddle zero, exactly as in None; the band is NOT in the likelihood).
+ */
+BOOST_AUTO_TEST_CASE( DrfUncertaintyErrorPropagationOnly )
+{
+  set_data_dir();
+
+  const double frac_eff_uncert = 0.15;  //large, fully-correlated band
+
+  const DrfUncertFitOut none = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::None, true, frac_eff_uncert );
+  const DrfUncertFitOut prop = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation, true, frac_eff_uncert );
+
+  // Central value bit-identical: ErrorPropagation must not move the answer at all.
+  BOOST_CHECK_EQUAL( prop.act, none.act );
+
+  // Reported uncertainty strictly larger, and ~ sqrt(rel_stat^2 + frac_eff_uncert^2) * act (the band
+  //  adds ~1:1 for a fully-correlated efficiency error, not band/sqrt(N_peaks)).
+  BOOST_CHECK_MESSAGE( prop.act_uncert > none.act_uncert,
+      "ErrorPropagation uncert " << prop.act_uncert << " should exceed stat-only " << none.act_uncert );
+
+  // For a fully-correlated (rank-1) band, the common efficiency mode maps ~1:1 onto the single free
+  //  activity, so the delta method must recover extra_sigma ~ frac_eff_uncert*act (NOT band/sqrt(N)).
+  //  The symmetric central difference recovers this to O(frac_eff^2): the multiplicative response
+  //  A(d)=A0/(1+d) makes the centered estimate frac_eff/(1-frac_eff^2) (+2.3% at 0.15 - slightly
+  //  conservative), versus the one-sided frac_eff/(1+frac_eff) (-13% at 0.15 - anti-conservative).
+  //  A 5% tolerance therefore accepts the centered estimate but would reject a one-sided regression.
+  const double rel_stat = none.act_uncert / none.act;
+  const double rel_expected = sqrt( rel_stat*rel_stat + frac_eff_uncert*frac_eff_uncert );
+  BOOST_CHECK_MESSAGE( fabs( (prop.act_uncert/prop.act) - rel_expected ) < 0.05*rel_expected,
+      "ErrorPropagation rel uncert " << prop.act_uncert/prop.act << " vs expected " << rel_expected
+      << " (stat-only " << rel_stat << ")" );
+
+  // Marginal pulls are statistics-only in state 2 (identical to None): they must straddle zero, i.e.
+  //  NOT sit on a coherent +/-Nsigma shelf.
+  BOOST_REQUIRE_EQUAL( prop.peaks.size(), 2u );
+  BOOST_REQUIRE_EQUAL( none.peaks.size(), 2u );
+  double min_pull = prop.peaks[0].numSigmaOff, max_pull = prop.peaks[0].numSigmaOff;
+  for( size_t i = 0; i < prop.peaks.size(); ++i )
+  {
+    min_pull = std::min( min_pull, prop.peaks[i].numSigmaOff );
+    max_pull = std::max( max_pull, prop.peaks[i].numSigmaOff );
+    // Stat-only => same pull as the None run.
+    BOOST_CHECK_MESSAGE( fabs(prop.peaks[i].numSigmaOff - none.peaks[i].numSigmaOff) < 1.0E-6,
+        "state-2 pull " << prop.peaks[i].numSigmaOff << " should equal stat-only "
+        << none.peaks[i].numSigmaOff );
+  }
+  BOOST_CHECK_MESSAGE( (min_pull < 0.0) && (max_pull > 0.0),
+      "state-2 marginal pulls should straddle zero, got [" << min_pull << ", " << max_pull << "]" );
+
+  // The WI-5 annotation trigger (results.efficiency_whitening) must be EMPTY in state 2 - the chart
+  //  shows no "correlations bias residuals" note when only propagating to the reported uncertainty.
+  BOOST_CHECK_EQUAL( prop.whitening_size, 0u );
+  BOOST_CHECK_EQUAL( none.whitening_size, 0u );
+}//BOOST_AUTO_TEST_CASE( DrfUncertaintyErrorPropagationOnly )
+
+
+/** State 3 (Likelihood): the correlated band enters the fit, so the WI-5 annotation trigger
+ (results.efficiency_whitening) becomes non-empty (n*n) - and ONLY then.  This is the exact signal
+ `ShieldingSourceFitPlot::jsonForData` keys the coherent-offset note on.
+
+ The band's presence in the likelihood is what makes the marginal pulls DIFFER from statistics-only:
+ each per-peak denominator gains the efficiency term (sqrt(stat^2 + (expected*frac_eff)^2), see
+ `expected_observed_chis`), so every Likelihood pull is strictly SMALLER in magnitude than the
+ corresponding None pull.  This is the exact mirror of DrfUncertaintyErrorPropagationOnly, which
+ asserts the state-2 pulls EQUAL the None pulls - so together the two tests pin WI-3's gate from both
+ sides: the efficiency term is in the pull denominator in Likelihood and absent in None/ErrorPropagation.
+ (We deliberately do NOT assert a shared-sign coherent offset here: with two peaks and a single free
+ activity the activity absorbs the common efficiency mode, so the signed mean is near zero - the
+ offset magnitude is model-dependent and is documented, not asserted.)
+ */
+BOOST_AUTO_TEST_CASE( DrfUncertaintyInLikelihoodCoherentOffset )
+{
+  set_data_dir();
+
+  const double frac_eff_uncert = 0.15;
+
+  const DrfUncertFitOut none = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::None, true, frac_eff_uncert );
+  const DrfUncertFitOut like = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood, true, frac_eff_uncert );
+
+  // The band is in the likelihood => the whitening matrix is computed and is n*n; in None it is empty.
+  BOOST_REQUIRE_EQUAL( like.peaks.size(), 2u );
+  BOOST_REQUIRE_EQUAL( none.peaks.size(), like.peaks.size() );
+  BOOST_CHECK_EQUAL( like.whitening_size, like.peaks.size()*like.peaks.size() );
+  BOOST_CHECK_EQUAL( none.whitening_size, 0u );
+
+  // The band entered the pull denominator: every Likelihood marginal pull must be strictly smaller in
+  //  magnitude than the corresponding statistics-only pull, and genuinely different from it (NOT the
+  //  bit-identical equality the ErrorPropagation test requires).  A large, fully-correlated 15% band
+  //  on high-stat peaks inflates the denominator far beyond the counting term, so the shrink is large.
+  bool any_differs = false;
+  for( size_t i = 0; i < like.peaks.size(); ++i )
+  {
+    const double like_pull = like.peaks[i].numSigmaOff;
+    const double none_pull = none.peaks[i].numSigmaOff;
+    BOOST_CHECK( std::isfinite(like_pull) );
+    BOOST_CHECK_MESSAGE( fabs(like_pull) < fabs(none_pull),
+        "Likelihood pull " << like_pull << " should be smaller in magnitude than stat-only "
+        << none_pull << " (efficiency term inflates the per-peak denominator)" );
+    if( fabs(like_pull - none_pull) > 1.0e-6 )
+      any_differs = true;
+  }
+  BOOST_CHECK_MESSAGE( any_differs,
+      "Likelihood marginal pulls must differ from statistics-only pulls (band is in the likelihood)" );
+}//BOOST_AUTO_TEST_CASE( DrfUncertaintyInLikelihoodCoherentOffset )
+
+
+/** Stale selection: ErrorPropagation/Likelihood chosen against a DRF that carries NO efficiency
+ uncertainty must (a) leave the fit bit-identical to None (central AND uncertainty), and (b) surface
+ the WI-3 non-fatal warning so the mismatch is not silent.
+ */
+BOOST_AUTO_TEST_CASE( DrfUncertaintyMethodNoUncertWarns )
+{
+  set_data_dir();
+
+  const DrfUncertFitOut none = run_drf_uncert_fit(
+              ShieldingSourceFitCalc::DrfUncertaintyMethod::None, false, 0.0 );
+
+  const ShieldingSourceFitCalc::DrfUncertaintyMethod stale_methods[2] = {
+    ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation,
+    ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood
+  };
+
+  for( const ShieldingSourceFitCalc::DrfUncertaintyMethod method : stale_methods )
+  {
+    const DrfUncertFitOut stale = run_drf_uncert_fit( method, false, 0.0 );
+
+    // No band => the non-None method is a no-op: bit-identical to None.
+    BOOST_CHECK_EQUAL( stale.act, none.act );
+    BOOST_CHECK_EQUAL( stale.act_uncert, none.act_uncert );
+
+    // ...but the mismatch is surfaced as a warning.
+    bool found = false;
+    for( const string &w : stale.warnings )
+      found = found || (w.find("no efficiency-uncertainty information") != string::npos);
+    BOOST_CHECK_MESSAGE( found,
+        "expected a stale-selection warning for method " << static_cast<int>(method)
+        << " against a DRF with no efficiency uncertainty" );
+
+    // The None run itself must NOT warn.
+    bool none_warned = false;
+    for( const string &w : none.warnings )
+      none_warned = none_warned || (w.find("no efficiency-uncertainty information") != string::npos);
+    BOOST_CHECK_MESSAGE( !none_warned, "the None run should not emit the stale-selection warning" );
+  }//for( method )
+}//BOOST_AUTO_TEST_CASE( DrfUncertaintyMethodNoUncertWarns )
+
+
+/** WI-6 (§9a): a DRF that carries a fit-coefficient covariance (M*M) propagates it to peak-energy
+ fractional-efficiency covariance via the log-power design matrix B, i.e.
+   efficiencyFracCovariance(energies) ~= B * C_coef * B^T,   B[i][k] = pow(log(E_i/units), k).
+ The result must be symmetric and positive-semidefinite.
+
+ Run with BOTH keV and MeV curve energy units.  keV makes E/units a no-op (units==1), so it alone
+ could not catch a regression that dropped the `/units` division; the MeV case (units==1000) exercises
+ that division with a non-trivial divisor - the reference log(E/units) then diverges from a bare log(E),
+ so a missing division fails the check.
+ */
+BOOST_AUTO_TEST_CASE( CoefCovariancePropagates )
+{
+  set_data_dir();
+
+  const double distance = 100.0*PhysicalUnits::cm;
+
+  // The same propagation math, checked for a given curve energy-unit convention.
+  auto check_units = [distance]( const float equationEnergyUnits, const char * const units_label )
+  {
+    BOOST_TEST_MESSAGE( "CoefCovariancePropagates: units = " << units_label );
+
+    // A 3-coefficient exp-of-log-power-series curve.
+    const vector<float> coefs = { -5.0f, 0.5f, -0.1f };
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromExpOfLogPowerSeries( coefs, {}, distance, 5*PhysicalUnits::cm, equationEnergyUnits,
+                                  0, 3000*PhysicalUnits::keV,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    BOOST_REQUIRE_EQUAL( drf->efficiencyFcnType(), DetectorPeakResponse::kExpOfLogPowerSeries );
+
+    const size_t M = coefs.size();
+
+    // A hand-built, symmetric PSD coefficient covariance (diagonal-dominant), row-major M*M.
+    vector<float> coefCov( M*M, 0.0f );
+    coefCov[0*M + 0] = 4.0e-2f;
+    coefCov[1*M + 1] = 1.0e-2f;
+    coefCov[2*M + 2] = 2.5e-3f;
+    coefCov[0*M + 1] = coefCov[1*M + 0] = 5.0e-3f;
+    coefCov[1*M + 2] = coefCov[2*M + 1] = 1.0e-3f;
+
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setCoefficientCovariance( coefCov );
+    drf->setEfficiencyUncert( uncert );
+
+    const vector<double> energies = { 100.0, 500.0, 1173.228, 1332.492, 2000.0 };
+    const vector<double> cov = drf->efficiencyFracCovariance( energies );
+    const size_t n = energies.size();
+    BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+
+    // Reference: B * C * B^T computed independently here.  units matches the curve convention, so this
+    //  diverges from a bare log(E) whenever units != 1 - i.e. the MeV case guards the `/units` divide.
+    const double units = static_cast<double>( drf->efficiencyEnergyUnits() );
+    BOOST_CHECK_CLOSE( units, static_cast<double>(equationEnergyUnits), 1.0e-4 );
+    vector<vector<double>> B( n, vector<double>( M, 0.0 ) );
+    for( size_t i = 0; i < n; ++i )
+    {
+      const double lnx = std::log( energies[i] / units );
+      double xp = 1.0;
+      for( size_t k = 0; k < M; ++k ){ B[i][k] = xp; xp *= lnx; }
+    }
+
+    double max_abs = 0.0;
+    for( size_t i = 0; i < n; ++i )
+      for( size_t j = 0; j < n; ++j )
+        max_abs = std::max( max_abs, fabs(cov[i*n + j]) );
+
+    for( size_t i = 0; i < n; ++i )
+    {
+      for( size_t j = 0; j < n; ++j )
+      {
+        double ref = 0.0;
+        for( size_t a = 0; a < M; ++a )
+          for( size_t b = 0; b < M; ++b )
+            ref += B[i][a] * static_cast<double>(coefCov[a*M + b]) * B[j][b];
+        BOOST_CHECK_MESSAGE( fabs(cov[i*n + j] - ref) < 1.0e-6*(1.0 + max_abs),
+            units_label << " coef-cov propagation mismatch at (" << i << "," << j << "): got "
+            << cov[i*n + j] << " vs ref " << ref );
+        // Symmetry.
+        BOOST_CHECK_SMALL( cov[i*n + j] - cov[j*n + i], 1.0e-9*(1.0 + max_abs) );
+      }
+    }
+
+    // Positive-semidefinite: every diagonal >= 0, and a few random quadratic forms x^T cov x >= 0.
+    for( size_t i = 0; i < n; ++i )
+      BOOST_CHECK_GE( cov[i*n + i], -1.0e-9*(1.0 + max_abs) );
+    for( int trial = 0; trial < 8; ++trial )
+    {
+      vector<double> x( n );
+      for( size_t i = 0; i < n; ++i )
+        x[i] = 2.0*((double)rand()/RAND_MAX) - 1.0;
+      double q = 0.0;
+      for( size_t i = 0; i < n; ++i )
+        for( size_t j = 0; j < n; ++j )
+          q += x[i]*cov[i*n + j]*x[j];
+      BOOST_CHECK_MESSAGE( q >= -1.0e-6*(1.0 + max_abs), units_label << " quadratic form negative: " << q );
+    }
+  };//check_units lambda
+
+  check_units( PhysicalUnits::keV, "keV" );   // units == 1: E/units is a no-op
+  check_units( PhysicalUnits::MeV, "MeV" );   // units == 1000: exercises the /units division
+}//BOOST_AUTO_TEST_CASE( CoefCovariancePropagates )
+
+
 /** Requesting cascade-summing correction with a DRF lacking total-efficiency
  info must throw at chi2-function creation (the batch/API contract).
  */
@@ -4890,7 +5315,7 @@ BOOST_AUTO_TEST_CASE( CascadeSummingRequiresTotalEff )
 
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
-  options.account_for_drf_uncert = false;
+  options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
   options.correct_for_cascade_summing = true;
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input;

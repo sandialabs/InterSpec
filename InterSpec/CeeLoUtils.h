@@ -488,6 +488,21 @@ namespace CeeLoUtils
    */
   bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
                                    double &areal_density_g_cm2 );
+
+  /** Whether a layer-material text means "nothing there": empty, or one of the
+   spellings of a vacuum gap ("void", "vacuum", "galactic", "galactic vacuum",
+   "none"), compared trimmed and case-insensitively.  The geometry form treats
+   such a layer as a gap that keeps its thickness.
+   */
+  bool isVacuumMaterialName( const std::string &name );
+
+  /** The near-transparent spacer that stands in for a vacuum gap (rho ~ 1e-25
+   g/cm3, single H): preserves a layer's physical extent - and so the crystal
+   recess - while attenuating ~nothing.  MaterialDB-independent; the same
+   spacer the ANGLE import uses for cryostat gaps.  Named "vacuum", which
+   #isVacuumMaterialName recognizes, so it round-trips through the geometry form.
+   */
+  ceelo::MaterialSpec vacuumMaterialSpec();
 }//namespace CeeLoUtils
 
 #endif //CeeLoUtils_h

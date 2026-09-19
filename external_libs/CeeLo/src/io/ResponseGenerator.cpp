@@ -108,6 +108,7 @@ struct Runner {
     std::vector<std::unique_ptr<Material>> owned;
     int nodes_done = 0;
     int nodes_total = 1;
+    NodeStat last;  ///< the most recent run_node, for the per-node progress callback
 
     Runner(const GeometryDescriptor& g, const GenerationOptions& o)
         : gd(g), opts(o) {
@@ -139,6 +140,17 @@ struct Runner {
             throw GenerationCancelled();
         if (opts.progress)
             opts.progress(std::min(1.0, double(nodes_done) / nodes_total), stage);
+        if (opts.node_progress) {
+            NodeProgress p;
+            p.nodes_done = nodes_done;
+            p.nodes_total = nodes_total;
+            p.stage = last.stage;
+            p.energy_keV = last.energy_keV;
+            p.events = last.events;
+            p.cpu_s = last.cpu_s;
+            p.wall_s = last.wall_s;
+            opts.node_progress(p);
+        }
     }
 
     // fep_only: FEP-only transport (skips the eps_tot tally) for nodes whose
@@ -157,22 +169,22 @@ struct Runner {
                           resolve_node_precision(opts, stage, energy_keV));
         cfg.seed = node_seed(opts.base_seed, stage, node);
         EfficiencyResult r = calc.compute(cfg);
-        if (opts.stats_out) {
-            NodeStat ns;
-            ns.stage = stage;
-            ns.energy_keV = energy_keV;
-            const double d = src.norm();
-            ns.d_cm = d;
-            ns.cos_theta = (d > 0.0) ? (-src.z() / d) : 1.0;
-            ns.events = r.num_events_simulated;
-            ns.cpu_s = r.cpu_time_seconds;
-            ns.wall_s = r.wall_time_seconds;
-            ns.stop = static_cast<uint8_t>(r.stop_reason);
-            ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
-                ? r.fep_uncertainty / r.full_energy_peak_efficiency
-                : 0.0;
+        NodeStat ns;
+        ns.stage = stage;
+        ns.energy_keV = energy_keV;
+        const double d = src.norm();
+        ns.d_cm = d;
+        ns.cos_theta = (d > 0.0) ? (-src.z() / d) : 1.0;
+        ns.events = r.num_events_simulated;
+        ns.cpu_s = r.cpu_time_seconds;
+        ns.wall_s = r.wall_time_seconds;
+        ns.stop = static_cast<uint8_t>(r.stop_reason);
+        ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
+            ? r.fep_uncertainty / r.full_energy_peak_efficiency
+            : 0.0;
+        last = ns;  // what tick() reports
+        if (opts.stats_out)
             opts.stats_out->add(ns);
-        }
         return r;
     }
 };
@@ -992,27 +1004,63 @@ int ResponseGenerator::estimated_node_count(const GeometryDescriptor& gd,
         const int cert = o.n_cert_probes + 4 * 8;
         return initial + std::max(0, o.max_refine_iters) * per_iter + cert;
     }
-    const bool box = gd.shape == DetectorShape::Box;
-    const int n_phi = box ? o.n_phi_nodes : 1;
-    const int backbone =
-        o.n_energy_scan + 2 * static_cast<int>(
-            crystal_edges(gd, o.e_min_keV, o.e_max_keV).size());
-    // EFFTRAN transfer mode: only the on-axis backbone (+ a few forced angle
-    // anchors when n_anchor_angles > 1); no near-field tensor.
-    if (o.transfer_mode) {
-        const int anchors = (o.n_anchor_angles > 1)
-            ? o.n_shape_energies * std::max(3, o.n_anchor_angles) : 0;
-        return backbone + anchors;
+    return plan_nodes(gd, o).total();
+}
+
+std::vector<double> ResponseGenerator::backbone_scan_energies(
+    const GeometryDescriptor& gd, const GenerationOptions& opts) {
+    // The max(1, ...) matters: n_energy_scan == 1 would divide by zero and put a NaN in the grid
+    // (and hence into std::sort). A single scan point is just the low end of the range.
+    std::vector<double> scan_E;
+    for (int i = 0; i < opts.n_energy_scan; ++i)
+        scan_E.push_back(opts.e_min_keV *
+                         std::pow(opts.e_max_keV / opts.e_min_keV,
+                                  double(i) / std::max(1, opts.n_energy_scan - 1)));
+    for (const double e : crystal_edges(gd, opts.e_min_keV, opts.e_max_keV)) {
+        scan_E.push_back(e * (1.0 - 1e-3));
+        scan_E.push_back(e * (1.0 + 1e-3));
     }
-    const int angular = o.n_shape_energies * o.n_cos_theta_scan * n_phi;
-    int near = 0;
+    std::sort(scan_E.begin(), scan_E.end());
+    scan_E.erase(std::unique(scan_E.begin(), scan_E.end(),
+                             [](double x, double y) { return y - x < x * 1e-6; }),
+                 scan_E.end());
+    return scan_E;
+}
+
+ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
+    const GeometryDescriptor& gd, const GenerationOptions& o) {
+    NodePlan plan;
+    plan.backbone_energies_keV = backbone_scan_energies(gd, o);
+
+    const bool box = gd.shape == DetectorShape::Box;
+    plan.n_phi = box ? std::max(1, o.n_phi_nodes) : 1;
+
+    // The stage-2/3 target energies; generate() snaps each to the nearest
+    // greedy backbone node (in log energy) and merges duplicates.
+    const int n_shape = std::max(0, o.n_shape_energies);
+    for (int i = 0; i < n_shape; ++i)
+        plan.shape_energies_keV.push_back(
+            o.e_min_keV * std::pow(o.e_max_keV / o.e_min_keV,
+                                   double(i) / std::max(1, n_shape - 1)));
+
+    // EFFTRAN transfer mode: only the on-axis backbone (+ a few forced angle
+    // anchors when n_anchor_angles > 1); never a near-field tensor.
+    if (o.transfer_mode) {
+        plan.transfer_anchors = true;
+        plan.n_cos_theta =
+            (o.n_anchor_angles > 1) ? std::max(3, o.n_anchor_angles) : 0;
+        plan.n_near_positions = 0;
+        return plan;
+    }
+
+    plan.n_cos_theta = o.n_cos_theta_scan;
     if (o.profile != ResponseProfile::FarField) {
         // 9 cos_theta nodes x (8 or 9) MC distance nodes per shape energy
         // (the outermost distance node is a no-MC ln N = 0 anchor).
         const int nd = (o.profile == ResponseProfile::Contact) ? 9 : 8;
-        near = o.n_shape_energies * nd * 9;
+        plan.n_near_positions = 9 * nd;
     }
-    return backbone + angular + near;
+    return plan;
 }
 
 std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
@@ -1079,19 +1127,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     resp->eta_fep.edges_keV = edges;
 
     // ---- 1. energy backbone (on-axis, far field) ---------------------------
-    std::vector<double> scan_E;
-    for (int i = 0; i < opts.n_energy_scan; ++i)
-        scan_E.push_back(opts.e_min_keV *
-                         std::pow(opts.e_max_keV / opts.e_min_keV,
-                                  double(i) / (opts.n_energy_scan - 1)));
-    for (const double e : edges) {
-        scan_E.push_back(e * (1.0 - 1e-3));
-        scan_E.push_back(e * (1.0 + 1e-3));
-    }
-    std::sort(scan_E.begin(), scan_E.end());
-    scan_E.erase(std::unique(scan_E.begin(), scan_E.end(),
-                             [](double x, double y) { return y - x < x * 1e-6; }),
-                 scan_E.end());
+    // The grid is shared with plan_nodes(), so a host's per-stage plan is what runs.
+    const std::vector<double> scan_E = backbone_scan_energies(gd, opts);
 
     const Eigen::Vector3d far_pos(0.0, 0.0, -d_far);
     const ApertureQuadrature q_far = resp->make_quadrature(far_pos);
@@ -1469,26 +1506,68 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
         p.model_eff = r.value;
     }
 
-    // Knots: 2-4 hats across the measured ln-E span (n scales with the
-    // number of distinct energies; a near-flat ratio needs few parameters).
+    // Knot selection.  The right number of hats depends on whether the points
+    // carry statistical scatter, so the two regimes are handled separately:
+    //
+    //  - `curve_derived` points are deterministic samples of an already-fitted
+    //    curve (e.g. a vendor characterization) with no scatter to smooth, so
+    //    one knot per distinct energy interpolates them exactly.  Anything
+    //    coarser discards real curve structure: measured on two HPGe vendor
+    //    characterizations, a 4-hat fit left 2.0-2.2% residual where exact
+    //    interpolation leaves none, and leave-one-out (which sees only genuine
+    //    between-node predictive error) improved from 1.3-1.4% to 0.5-0.7% --
+    //    i.e. the coarse fit was discarding signal, not suppressing noise.
+    //
+    //  - raw measured points DO carry scatter, and there more hats hurt: with
+    //    5% scatter, leave-one-out against the noiseless truth favours ~6 hats
+    //    over a saturated fit (2.7% vs 3.2% rms).  So cap at 6, and place the
+    //    knots at data quantiles rather than uniformly in ln-E, which keeps
+    //    ~2 points per interval and avoids the unsupported-knot degeneracy
+    //    that uniform placement produces on clustered energies.
+    //
+    // Sorted point ln-energies; knots are chosen from these, so every knot is
+    // supported by data by construction.
     std::vector<double> ln_es;
     for (const GroundingPoint& p : points) ln_es.push_back(std::log(p.energy_keV));
     std::sort(ln_es.begin(), ln_es.end());
-    ln_es.erase(std::unique(ln_es.begin(), ln_es.end(),
-                            [](double x, double y) { return y - x < 0.01; }),
-                ln_es.end());
-    const int n_knots =
-        std::max(1, std::min({4, static_cast<int>(ln_es.size()),
-                              static_cast<int>(points.size())}));
+
+    // Distinct energies, merging any within ~1% of each other (a hat pair that
+    // close is not separately determined).
+    std::vector<double> ln_distinct = ln_es;
+    ln_distinct.erase(std::unique(ln_distinct.begin(), ln_distinct.end(),
+                                  [](double x, double y) { return y - x < 0.01; }),
+                      ln_distinct.end());
+
     std::vector<double> knots;
-    if (n_knots == 1) {
-        knots.push_back(ln_es.front());
+    if (curve_derived) {
+        knots = ln_distinct;
     } else {
-        for (int i = 0; i < n_knots; ++i)
-            knots.push_back(ln_es.front() +
-                            (ln_es.back() - ln_es.front()) * double(i) /
-                                (n_knots - 1));
+        // <=6 hats, and enough points to keep ~2 per interval: n_knots-1
+        // intervals need 2*(n_knots-1) points, i.e. n_knots <= N/2 + 1.  Always
+        // allow the 2 needed to express a slope, since a linear ln-k trend is
+        // the dominant real structure and a constant would miss it entirely.
+        const int n_support = std::max(2, static_cast<int>(points.size()) / 2 + 1);
+        const int n_knots = std::max(1, std::min({6, static_cast<int>(ln_distinct.size()),
+                                                  n_support}));
+        if (n_knots == 1) {
+            knots.push_back(ln_es.front());
+        } else {
+            // Quantiles of the point energies, so intervals hold roughly equal
+            // numbers of points.
+            const size_t last = ln_es.size() - 1;
+            for (int i = 0; i < n_knots; ++i) {
+                const size_t idx = static_cast<size_t>(
+                    std::llround(double(i) * double(last) / double(n_knots - 1)));
+                knots.push_back(ln_es[idx]);
+            }
+            // Quantiles can coincide when energies are clustered; a repeated
+            // knot would make the basis singular.
+            knots.erase(std::unique(knots.begin(), knots.end(),
+                                    [](double x, double y) { return y - x < 0.01; }),
+                        knots.end());
+        }
     }
+    const int n_knots = static_cast<int>(knots.size());
 
     const size_t n = points.size();
     Eigen::MatrixXd X(n, n_knots);

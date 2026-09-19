@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <memory>
@@ -32,9 +34,11 @@
 #include <vector>
 #include <algorithm>
 
+#include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WMenu.h>
 #include <Wt/WTable.h>
+#include <Wt/WTableRow.h>
 #include <Wt/WLabel.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
@@ -51,9 +55,11 @@
 #include <Wt/WContainerWidget.h>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 
 #include "io/DetectorResponse.h"
 
+#include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/HelpSystem.h"
@@ -184,9 +190,15 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_tabStack( nullptr ),
     m_name( nullptr ),
     m_description( nullptr ),
+    m_generalChart( nullptr ),
+    m_infoTable( nullptr ),
+    m_infoValues{},
+    m_generalTabItem( nullptr ),
+    m_generalStale( true ),
     m_mcTool( nullptr ),
     m_fwhmTool( nullptr ),
     m_fwhmTabItem( nullptr ),
+    m_geomTabItem( nullptr ),
     m_modeToggle( nullptr ),
     m_geometryModeled( false ),
     m_anchorHelp( nullptr ),
@@ -222,7 +234,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_generateBtn( nullptr ),
     m_generatedFromFingerprint( 0 ),
     m_pendingSeedFingerprint( 0 ),
-    m_applyAfterGenerate( false ),
+    m_exportNote( nullptr ),
+    m_generateHint( nullptr ),
+    m_applyAfterGenerationId( -1 ),
     m_updatedDrf(),
     m_renderFlags(),
     m_currentState( nullptr ),
@@ -309,12 +323,13 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_anchorEnergyUnits = eff_curve->energyUnits();
 
   // Fixed-geometry DRFs have no geometry to model, so no Geom & MC tab and no mode toggle.  A
-  //  far-field DRF starts Geometry Modeled iff it already carries a Monte-Carlo response (or is a
-  //  geometry-only import that has no efficiency yet, and so needs one).
+  //  far-field DRF starts Geometry Modeled iff it already carries a Monte-Carlo response, knows its
+  //  physical shape (an ANGLE / Detector.dat import, or a geometry saved with it), or is a
+  //  geometry-only import that has no efficiency yet, and so needs one.
   const bool fixed_geom = (m_orig && m_orig->isFixedGeometry());
   const bool has_geom_tab = !fixed_geom;
   m_geometryModeled = has_geom_tab
-      && (!m_orig || m_orig->ceeloResponse() || !m_orig->isValid());
+      && (!m_orig || m_orig->ceeloResponse() || m_orig->geometry() || !m_orig->isValid());
 
   // --- Tab: General (name / description) -----------------------------------
   {
@@ -331,7 +346,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_name = idGrid->addNew<WLineEdit>();
     m_name->setTextSize( 32 );
     m_name->setText( WString::fromUTF8( m_orig ? m_orig->name() : string() ) );
-    m_name->changed().connect( this, &DrfModifyWidget::markEdited );
+    m_name->changed().connect( this, &DrfModifyWidget::markEditedNoRegen );
     nameLabel->setBuddy( m_name );
 
     WLabel *descLabel = idGrid->addNew<WLabel>( WString::tr("Description") );
@@ -339,11 +354,20 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_description->setColumns( 40 );
     m_description->setRows( 3 );
     m_description->setText( WString::fromUTF8( m_orig ? m_orig->description() : string() ) );
-    m_description->changed().connect( this, &DrfModifyWidget::markEdited );
+    m_description->changed().connect( this, &DrfModifyWidget::markEditedNoRegen );
     descLabel->setBuddy( m_description );
 
-    WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
-    make_item_selectable( m_tabMenu, item );
+    // What the detector carries and how it responds: a live chart of the efficiency + FWHM, and a
+    //  summary of what it has (measured points, geometry, Monte-Carlo support, uncertainty, ...).
+    //  Both follow every edit on the other tabs - see refreshGeneralTab().
+    m_generalChart = panel->addNew<DrfChart>();
+    m_generalChart->addStyleClass( "DrfModifyGeneralChart" );
+    m_generalChart->setShowFwhm( true );
+
+    buildInfoTable( panel );
+
+    m_generalTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
+    make_item_selectable( m_tabMenu, m_generalTabItem );
   }
 
   // --- Tab: Geom & MC characterization (far-field only) --------------------
@@ -375,9 +399,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     // ContentLoading::Eager: this tool posts work to a worker thread and gets back to itself with
     //  `findById(...)`; a Lazy tab parks its contents in `WMenuItem::uContents_`, outside the
     //  widget tree, where `findById` can not see it - see the FWHM tab below.
-    WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(panelOwned),
-                                          ContentLoading::Eager );
-    make_item_selectable( m_tabMenu, item );
+    m_geomTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(panelOwned),
+                                        ContentLoading::Eager );
+    make_item_selectable( m_tabMenu, m_geomTabItem );
 
     m_mcTool->setDisabled( !m_geometryModeled );  //Flat Disk greys the whole tool
   }//if( has_geom_tab )
@@ -716,6 +740,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   if( m_mcTool )
   {
     m_mcTool->userChanged().connect( this, &DrfModifyWidget::markEdited );
+    m_mcTool->userChangedNoRegen().connect( this, &DrfModifyWidget::markEditedNoRegen );
     m_mcTool->responseGenerated().connect( this, &DrfModifyWidget::handleResponseGenerated );
 
     // EVERY generation - the footer button, and the automatic one a geometry change triggers for the
@@ -736,7 +761,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   if( m_fwhmTool )
   {
     m_fwhmTool->setOwnerHandlesUndoRedo( true );
-    m_fwhmTool->stateChanged().connect( this, &DrfModifyWidget::markEdited );
+    m_fwhmTool->stateChanged().connect( this, &DrfModifyWidget::markEditedNoRegen );
   }//if( m_fwhmTool )
 
   m_tabMenu->select( 0 );
@@ -747,15 +772,24 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   WContainerWidget *footerRow = footerOwned.get();
   footerRow->addStyleClass( "DrfModifyFooterRow" );
 
-  WText *note = footerRow->addNew<WText>( WString::tr("dmw-export-note") );
-  note->addStyleClass( "DrfModifyNote" );
-  note->setInline( false );
+  m_exportNote = footerRow->addNew<WText>( WString::tr("dmw-export-note") );
+  m_exportNote->addStyleClass( "DrfModifyNote" );
+  m_exportNote->setInline( false );
 
   if( m_mcTool )
   {
+    // Why generation is blocked (an incomplete geometry, or one still guessed from the diameter);
+    //  takes the export tip's place while it applies, so the reason sits right by the button.
+    //  Plain text: the reason can quote what the user typed into a material field.
+    m_generateHint = footerRow->addNew<WText>();
+    m_generateHint->setTextFormat( TextFormat::Plain );
+    m_generateHint->addStyleClass( "DrfModifyNote DrfModifyGenerateHint" );
+    m_generateHint->setInline( false );
+    m_generateHint->hide();
+
     m_generateBtn = footerRow->addNew<WPushButton>( WString::tr("dmw-generate-btn") );
     m_generateBtn->addStyleClass( "DrfModifyGenerateBtn" );
-    m_generateBtn->clicked().connect( this, &DrfModifyWidget::handleGenerateResponse );
+    m_generateBtn->clicked().connect( this, [this](){ handleGenerateResponse(); } );
   }//if( m_mcTool )
 
   if( narrow_layout )
@@ -778,6 +812,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 
   updateGenerateButton();
   refreshUncertSummary();
+  refreshGeneralTab();
 }//DrfModifyWidget constructor
 
 
@@ -793,6 +828,14 @@ void DrfModifyWidget::handleTabSelected( Wt::WMenuItem *item )
   // `startAutomatedPeakSearch` is idempotent, so re-visiting the tab costs nothing.
   if( item && (item == m_fwhmTabItem) && m_fwhmTool )
     m_fwhmTool->startAutomatedPeakSearch();
+
+  if( item && (item == m_generalTabItem) && m_generalStale )
+    refreshGeneralTab();
+
+  // The run-time estimate is timed on a short test Monte Carlo the first time the tab is looked at
+  //  (and after the geometry changes); a tab never opened costs nothing.
+  if( item && (item == m_geomTabItem) && m_mcTool )
+    m_mcTool->scheduleTimeCalibration();
 }//void handleTabSelected( Wt::WMenuItem *item )
 
 
@@ -1303,9 +1346,10 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   //  about response staleness either - it is re-derived from the restored content, so an undo/redo
   //  cannot strand it in the "fresh" state the way clearing a flag here used to.
   m_renderFlags.clear( RenderActions::AddUndoRedoStep );
-  m_applyAfterGenerate = false;   //whatever was pending belonged to the state being replaced
+  m_applyAfterGenerationId = -1;   //no run this snapshot describes is one we armed
   updateGenerateButton();
   refreshUncertSummary();
+  markGeneralStale();
   m_restoringState = false;
 }//DrfModifyWidget::setState(...)
 
@@ -1325,18 +1369,344 @@ void DrfModifyWidget::markEdited()
   if( m_restoringState )
     return;
 
-  // A regenerate-then-use is only pending while the generation it is waiting on is actually running.
-  //  A run that fails, is cancelled, or is abandoned by a method/geometry change never emits
-  //  `responseGenerated`, and a flag left armed would make some later, unrelated generation apply and
-  //  close this dialog without the user asking.  (Every one of those paths emits `userChanged`,
-  //  which is what brings us here.)
-  if( m_applyAfterGenerate && m_mcTool && !m_mcTool->generationRunning() )
-    m_applyAfterGenerate = false;
-
   updateGenerateButton();
   m_renderFlags |= RenderActions::RefreshSummary;
+  markGeneralStale();
   scheduleUndoRedoStep();
 }//void markEdited()
+
+
+void DrfModifyWidget::markEditedNoRegen()
+{
+  if( m_restoringState )
+    return;
+
+  // For edits `DrfModifyCalc::seedFingerprint` does not cover - the name, the description, the FWHM
+  //  - so they cannot make a response stale and there is no point re-deriving that (which rebuilds
+  //  the working DRF).  The summary still has to be rebuilt (the name and the FWHM are both rows in
+  //  it) and the edit is still an undo step.
+  markGeneralStale();
+  scheduleUndoRedoStep();
+}//void markEditedNoRegen()
+
+
+void DrfModifyWidget::markGeneralStale()
+{
+  m_generalStale = true;
+  if( m_tabMenu && m_generalTabItem && (m_tabMenu->currentItem() == m_generalTabItem) )
+    refreshGeneralTab();
+}//void markGeneralStale()
+
+
+void DrfModifyWidget::refreshGeneralTab()
+{
+  // Deliberately NOT called from render(): this replaces the info table's widgets, and doing that
+  //  while Wt is rendering leaves it wiring event handlers to elements it has just replaced (which
+  //  threw, and took the rest of the dialog's client-side setup with it).  The chart does not need
+  //  deferring either - DrfChart re-sends whatever it holds when its client object is built.
+  //
+  // Nothing to do when nothing has changed - and it must NOT be done twice in one request, because
+  //  the second `clear()` destroys widgets whose client-side wiring Wt has already queued.
+  if( !m_generalStale )
+    return;
+
+  m_generalStale = false;
+  if( !m_generalChart || !m_infoTable )
+    return;
+
+  // A preview must not nag about, e.g., an FWHM form the user has not filled in yet, so whatever
+  //  could not be applied is collected and dropped - only `requestApply` shows any of it.
+  vector<DrfModifyCalc::Problem> problems;
+  const shared_ptr<DetectorPeakResponse> working = buildWorkingDrf( true, problems );
+  m_generalChart->updateChart( working );   //draws nothing for a DRF with no efficiency yet
+  fillInfoTable( working );
+}//void refreshGeneralTab()
+
+
+void DrfModifyWidget::buildInfoTable( Wt::WContainerWidget *parent )
+{
+  m_infoTable = parent->addNew<WTable>();
+  m_infoTable->addStyleClass( "DrfModifyInfoTable" );
+
+  const char *labelKeys[NumInfoRow] = {
+    "dmw-info-eff", "dmw-info-geom", "dmw-info-support", "dmw-info-uncert",
+    "dmw-info-fwhm", "dmw-info-total", "dmw-info-range", "dmw-info-diam"
+  };
+
+  for( int row = 0; row < NumInfoRow; ++row )
+  {
+    WText *label = m_infoTable->elementAt( row, 0 )->addNew<WText>( WString::tr( labelKeys[row] ) );
+    label->addStyleClass( "DrfModifyInfoLabel" );
+
+    //Plain: these values quote user text (a material name, a detector description).
+    m_infoValues[row] = m_infoTable->elementAt( row, 1 )->addNew<WText>();
+    m_infoValues[row]->setTextFormat( TextFormat::Plain );
+  }//for( each row )
+}//void buildInfoTable(...)
+
+
+void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakResponse> &drf )
+{
+  if( !m_infoTable )
+    return;
+
+  // Only the text changes - see buildInfoTable.  A row with nothing to say is hidden.
+  auto set_row = [this]( const InfoRow row, const WString &value ){
+    if( !m_infoValues[row] )
+      return;
+    m_infoValues[row]->setText( value );
+    if( m_infoTable->rowAt(row) )
+      m_infoTable->rowAt(row)->setHidden( value.empty() );
+  };
+
+  auto length_str = []( const double cm ) -> WString {
+    return WString::fromUTF8( PhysicalUnits::printToBestLengthUnits( cm * PhysicalUnits::cm, 3 ) );
+  };
+
+  const bool valid = (drf && drf->isValid());
+  const shared_ptr<const ceelo::DetectorResponse> mc = drf ? drf->ceeloResponse() : nullptr;
+  const shared_ptr<const MeasuredDrfPoints> points = drf ? drf->measuredPoints() : nullptr;
+  const bool have_points = (points && !points->empty());
+
+  // --- Efficiency: where the on-axis curve comes from -------------------------------------------
+  {
+    WString txt;
+    if( !valid )
+    {
+      // The "generate one on the Geom & MC tab" wording only makes sense when that tab exists; a
+      //  fixed-geometry DRF has no geometry to model and so no such tab.
+      txt = WString::tr( m_geomTabItem ? "dmw-info-eff-none" : "dmw-info-eff-none-nogeom" );
+    }else
+    {
+      switch( drf->efficiencyFcnType() )
+      {
+        case DetectorPeakResponse::kFunctialEfficienyForm:
+          txt = WString::tr("dmw-info-eff-formula");
+          break;
+
+        case DetectorPeakResponse::kExpOfLogPowerSeries:
+          txt = WString::tr("dmw-info-eff-exp-log")
+                  .arg( static_cast<int>( drf->efficiencyExpOfLogsCoeffs().size() ) );
+          break;
+
+        case DetectorPeakResponse::kEnergyEfficiencyPairs:
+          txt = WString::tr("dmw-info-eff-pairs")
+                  .arg( static_cast<int>( drf->efficiencyCurve()->energyEfficiencies().size() ) );
+          break;
+
+        case DetectorPeakResponse::kNumEfficiencyFnctForms:
+          txt = WString::tr( m_geomTabItem ? "dmw-info-eff-none" : "dmw-info-eff-none-nogeom" );
+          break;
+      }//switch( efficiency form )
+
+      if( have_points )
+        txt = WString::tr("dmw-info-eff-measured").arg( txt )
+                .arg( static_cast<int>( points->points().size() ) );
+    }//if( !valid ) / else
+
+    set_row( InfoEfficiency, txt );
+  }
+
+  // --- Geometry: flat disk / fixed / physical shape ----------------------------------------------
+  {
+    WString txt;
+    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->geometry() : nullptr;
+
+    if( drf && drf->isFixedGeometry() )
+    {
+      const string &postfix = DetectorPeakResponse::det_eff_geom_type_postfix( drf->geometryType() );
+      // `postfix` is an activity-UNIT suffix ("/cm2", "/m2", "/g"), so it has to be attached to a
+      //  unit, not to the words "Fixed source geometry" - which read as "Fixed source geometry/cm2".
+      txt = WString::tr("dmw-info-geom-fixed").arg( WString::fromUTF8(postfix) );
+    }else if( gd )
+    {
+      string crystal;
+      if( (gd->crystal_material_index >= 0)
+          && (gd->crystal_material_index < static_cast<int>(gd->materials.size())) )
+      {
+        crystal = gd->materials[gd->crystal_material_index].name;
+      }
+
+      // Transverse extents are stored as halves, the length in full (CeeLo's convention).
+      const vector<double> &dims = gd->dimensions_cm;
+      if( (gd->shape == ceelo::DetectorShape::Box) && (dims.size() >= 3) )
+        txt = WString::tr("dmw-info-geom-box").arg( WString::fromUTF8(crystal) )
+                .arg( length_str(2.0*dims[0]) ).arg( length_str(2.0*dims[1]) ).arg( length_str(dims[2]) );
+      else if( dims.size() >= 2 )
+        txt = WString::tr("dmw-info-geom-cyl").arg( WString::fromUTF8(crystal) )
+                .arg( length_str(2.0*dims[0]) ).arg( length_str(dims[1]) );
+      else
+        txt = WString::tr("dmw-info-geom-known");
+
+      txt = WString::tr("dmw-info-geom-layers").arg( txt ).arg( static_cast<int>( gd->layers.size() ) );
+    }else
+    {
+      const double diam_cm = drf ? (drf->detectorDiameter() / PhysicalUnits::cm) : 0.0;
+      txt = WString::tr("dmw-info-geom-flat").arg( length_str(diam_cm) );
+    }
+
+    set_row( InfoGeometry, txt );
+  }
+
+  // --- Location support: how off-axis / near-field queries are answered ----------------------------
+  {
+    WString txt;
+    if( mc )
+    {
+      const WString range = WString::tr("dmw-info-kev-range")
+                              .arg( static_cast<int>( std::round(mc->provenance.valid_e_min_keV) ) )
+                              .arg( static_cast<int>( std::round(mc->provenance.valid_e_max_keV) ) );
+      switch( mc->provenance.method )
+      {
+        case ceelo::ProductionMethod::FullMc:
+          txt = WString::tr("dmw-info-support-full")
+                  .arg( WString::fromUTF8( ceelo::to_string(mc->provenance.profile) ) ).arg( range );
+          break;
+
+        case ceelo::ProductionMethod::QuickMcTransfer:
+          txt = WString::tr("dmw-info-support-quick").arg( range );
+          break;
+
+        case ceelo::ProductionMethod::CurveTransfer:
+          txt = WString::tr("dmw-info-support-curve").arg( range );
+          break;
+      }//switch( method )
+
+      if( mc->model_transfer.has_value() )
+      {
+        // CeeLo quotes its floor from the crystal-face origin; the user is told a face distance.
+        const string min_dist = PhysicalUnits::printToBestLengthUnits(
+                CeeLoUtils::faceDistanceFromCrystalOrigin( mc->descriptor, mc->provenance.min_distance_cm )
+                * PhysicalUnits::cm );
+        txt = WString::tr("dmw-info-support-min-dist").arg( txt ).arg( WString::fromUTF8(min_dist) );
+      }//if( a transfer response )
+
+      if( !mc->grounding.empty() )
+        txt = WString::tr( mc->grounding.curve_derived ? "dmw-info-grounded-curve"
+                                                       : "dmw-info-grounded-points" ).arg( txt );
+    }else
+    {
+      txt = WString::tr("dmw-info-support-none");
+    }//if( mc ) / else
+
+    set_row( InfoSupport, txt );
+  }
+
+  // --- Uncertainty: which of the (mutually exclusive) sources applies ----------------------------
+  {
+    WString txt;
+    const shared_ptr<const DetectorEfficiencyUncert> uncert = drf ? drf->efficiencyUncert() : nullptr;
+
+    if( mc )
+    {
+      txt = WString::tr( mc->grounding.empty() ? "dmw-info-uncert-mc"
+                                               : "dmw-info-uncert-mc-grounded" );
+    }else if( have_points )
+    {
+      std::set<string> sources;
+      for( const MeasuredEffPoint &p : points->points() )
+        sources.insert( p.sourceKey );
+      txt = WString::tr("dmw-info-uncert-points")
+              .arg( static_cast<int>( points->points().size() ) ).arg( static_cast<int>( sources.size() ) );
+    }else if( uncert && uncert->hasNodeCovariance() )
+    {
+      txt = WString::tr("dmw-info-uncert-nodes").arg( static_cast<int>( uncert->covarianceEnergies().size() ) );
+    }else if( uncert && !uncert->isEmpty() )
+    {
+      txt = WString::tr("dmw-info-uncert-coef");
+    }else
+    {
+      txt = WString::tr("dmw-info-uncert-none");
+    }
+
+    set_row( InfoUncert, txt );
+  }
+
+  // --- FWHM -----------------------------------------------------------------------------------------
+  {
+    WString txt;
+    if( drf && drf->hasResolutionInfo() )
+    {
+      const char *formKey = "dmw-info-fwhm-gadras";
+      switch( drf->resolutionFcnType() )
+      {
+        case DetectorPeakResponse::kGadrasResolutionFcn:    formKey = "dmw-info-fwhm-gadras";     break;
+        case DetectorPeakResponse::kSqrtPolynomial:         formKey = "dmw-info-fwhm-sqrt-poly";  break;
+        case DetectorPeakResponse::kSqrtEnergyPlusInverse:  formKey = "dmw-info-fwhm-sqrt-inv";   break;
+        case DetectorPeakResponse::kConstantPlusSqrtEnergy: formKey = "dmw-info-fwhm-const-sqrt"; break;
+        case DetectorPeakResponse::kNumResolutionFnctForm:  break;
+      }//switch( resolution form )
+
+      txt = WString::tr("dmw-info-fwhm-form").arg( WString::tr(formKey) )
+              .arg( static_cast<int>( drf->resolutionFcnCoefficients().size() ) );
+
+      const float fwhm662 = drf->peakResolutionFWHM( 661.7f );
+      if( fwhm662 > 0.0f )
+        txt = WString::tr("dmw-info-fwhm-at-662").arg( txt )
+                .arg( WString::fromUTF8( SpecUtils::printCompact( fwhm662, 3 ) ) );
+    }else
+    {
+      txt = WString::tr("dmw-info-fwhm-none");
+    }
+
+    set_row( InfoFwhm, txt );
+  }
+
+  // --- Total efficiency (any energy deposited, not just the full peak) ---------------------------
+  //  A generated Monte-Carlo response always carries a total-efficiency model - the same photon
+  //  histories score both - so ask #hasAnyTotalEfficiencyInfo, not #hasTotalEfficiency (which only
+  //  knows about an explicitly-set curve and answers "No" for every MC-backed detector).
+  {
+    WString txt;
+    if( drf && drf->hasTotalEfficiency() )
+      txt = WString::tr("dmw-info-toteff-curve");
+    else if( drf && drf->hasAnyTotalEfficiencyInfo() )
+      txt = WString::tr("dmw-info-toteff-mc");
+    else
+      txt = WString::tr("dmw-info-no");
+
+    // The peak-to-total ratio is what decides whether cascade summing matters, so quote it at the
+    //  usual reference energy when that energy is one this detector actually covers.
+    const float ref_energy = 661.7f;
+    const bool in_range = valid && (ref_energy >= drf->lowerEnergy())
+                          && ((drf->upperEnergy() <= drf->lowerEnergy()) || (ref_energy <= drf->upperEnergy()));
+    if( in_range && drf->hasAnyTotalEfficiencyInfo() )
+    {
+      try
+      {
+        const float fep = drf->intrinsicEfficiency( ref_energy );
+        const float tot = drf->totalIntrinsicEfficiencyAny( ref_energy );
+        if( (fep > 0.0f) && (tot > fep) )
+          txt = WString::tr("dmw-info-toteff-ratio").arg( txt )
+                  .arg( WString::fromUTF8( SpecUtils::printCompact( tot/fep, 2 ) ) );
+      }catch( std::exception & )
+      {
+        //An efficiency formula that will not evaluate here; the source text alone is enough.
+      }
+    }//if( worth quoting a ratio )
+
+    set_row( InfoTotalEff, txt );
+  }
+
+  if( valid && (drf->upperEnergy() > (drf->lowerEnergy() + 1.0)) )
+    set_row( InfoRange, WString::tr("dmw-info-kev-range")
+                          .arg( static_cast<int>( std::round(drf->lowerEnergy()) ) )
+                          .arg( static_cast<int>( std::round(drf->upperEnergy()) ) ) );
+  else
+    set_row( InfoRange, WString() );
+
+  if( drf && (drf->detectorDiameter() > 0.0f) )
+  {
+    WString txt = length_str( drf->detectorDiameter() / PhysicalUnits::cm );
+    if( drf->detectorSetback() > 0.0 )
+      txt = WString::tr("dmw-info-diam-setback").arg( txt )
+              .arg( length_str( drf->detectorSetback() / PhysicalUnits::cm ) );
+    set_row( InfoDiameter, txt );
+  }else
+  {
+    set_row( InfoDiameter, WString() );
+  }
+}//void fillInfoTable(...)
 
 
 void DrfModifyWidget::render( Wt::WFlags<Wt::RenderFlag> flags )
@@ -1407,8 +1777,9 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
     working->setName( name );
   working->setDescription( m_description->text().toUTF8() );
 
-  // Anchor tab: apply whichever editor is showing.  Done before the MC step so a grounding sees
-  //  the edited points.
+  // Anchor tab: apply whichever editor this DRF gets - which follows how it represents its
+  //  efficiency, not the mode toggle, so there is no longer an editor the user could have typed
+  //  into that the apply skips.  Done before the MC step so a grounding sees the edited points.
   applyAnchorTab( *working, problems );
 
   // FWHM: take whatever the FWHM tab is showing, without triggering the tool's own
@@ -1464,6 +1835,17 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   //  manual points/covariance at query time (the very thing the regeneration is grounding on).
   const shared_ptr<const ceelo::DetectorResponse> resp
       = (includeMcResponse && m_geometryModeled && m_mcTool) ? m_mcTool->generatedResponse() : nullptr;
+
+  // What shape this detector knows, taken BEFORE any detach below.  `geometry()` prefers an attached
+  //  response's own descriptor, and the serializers write only one of the two - so for a DRF that
+  //  has been through a file or the database the shape lives *only* in the response, and detaching
+  //  it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps the
+  //  geometry, as this function has always claimed to.
+  //  Copied rather than aliased: `geometry()` hands back a pointer that shares ownership with the
+  //  response, which would keep the whole (~100 KB) response alive behind a detached DRF.
+  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->geometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> known_geom
+      = from_drf ? make_shared<const ceelo::GeometryDescriptor>( *from_drf ) : nullptr;
   if( includeMcResponse && m_geometryModeled && resp )
   {
     // A DRF built from geometry alone has no efficiency curve of its own, so sample the response
@@ -1487,12 +1869,31 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   }else if( includeMcResponse && !m_geometryModeled )
   {
     working->setCeeloResponse( nullptr );  //Flat Disk: detach any geometry-modeled response
+    working->setGeometry( known_geom );    //but the detector is still the shape it always was
   }else if( !includeMcResponse )
   {
     working->setCeeloResponse( nullptr );  //regeneration seed: manual points/covariance must drive
+    working->setGeometry( known_geom );    //the seed is re-characterized from this same shape
   }
   //else: Geometry Modeled with nothing newly generated - keep whatever response the DRF came with.
   //  Whether that response still describes these edits is #responseStale's job, not this one's.
+
+  // Geometry Modeled without any response (none generated, none carried): keep what was typed into
+  //  the form - the geometry is a fact about the detector, and is what a later generation, the
+  //  General tab, and an export read.  Only a complete, user-confirmed geometry, never the
+  //  length-equals-diameter guess.  (With a response attached, that carries its own geometry, and
+  //  setGeometry is ignored anyway.)
+  if( includeMcResponse && m_geometryModeled && m_mcTool && !working->ceeloResponse()
+      && m_mcTool->generationReady() )
+  {
+    try
+    {
+      working->setGeometry( make_shared<const ceelo::GeometryDescriptor>( m_mcTool->geometryDescriptor() ) );
+    }catch( std::exception & )
+    {
+      //generationReady() implies the form converts; nothing sensible to do if it somehow does not.
+    }
+  }//if( Geometry Modeled with no response )
 
   return working;
 }//buildWorkingDrf(...)
@@ -1554,7 +1955,12 @@ void DrfModifyWidget::requestApply()
   }
 
   // Flat Disk, but the original carried a geometry-modeled response: confirm the detach first.
-  if( !m_geometryModeled && m_orig && m_orig->ceeloResponse() )
+  // Either the response the detector arrived with, or one generated in this session - a Monte Carlo
+  //  the user just waited minutes for is exactly the thing not to discard without asking.
+  const bool losing_response = !m_geometryModeled
+                               && ((m_orig && m_orig->ceeloResponse())
+                                   || (m_mcTool && m_mcTool->generatedResponse()));
+  if( losing_response )
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-detach-title"),
                                                              WString::tr("dmw-detach-body") );
@@ -1564,29 +1970,69 @@ void DrfModifyWidget::requestApply()
     return;
   }//if( detaching a geometry-modeled response )
 
-  // A response that does not reflect the edits is not a cosmetic mismatch: while it is attached it
-  //  answers every efficiency and uncertainty query, so the edit would simply be ignored.  There is
-  //  therefore no "use anyway" - either the response is rebuilt, or it goes.
+  const bool canGen = (m_mcTool && m_mcTool->generationReady());
+
+  // Geometry Modeled with no response at all - none generated in this session, none carried by the
+  // original.  Using it silently would just give a flat-disk detector that happens to know its
+  // shape, so offer to generate first, or say what blocks generating.
+  const bool haveResp = (m_mcTool && m_mcTool->generatedResponse())
+                        || (m_orig && m_orig->ceeloResponse());
+  if( m_geometryModeled && m_mcTool && !haveResp )
+  {
+    if( canGen )
+    {
+      SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-nogen-title"),
+                                                               WString::tr("dmw-nogen-body") );
+      WPushButton *gen = dialog->addButton( WString::tr("dmw-nogen-generate") );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-nogen-use-anyway") );
+      dialog->addButton( WString::tr("Cancel") );
+      gen->clicked().connect( this, [this](){
+        //handleResponseGenerated applies once THIS run lands; a run that never starts, or that
+        //  fails part way, must not leave a later unrelated generation armed.
+        const bool started = handleGenerateResponse();
+        m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
+
+        // Otherwise this dialog just closes and nothing happens: the reason lands on the Geom & MC
+        //  tab's status line, which is not where the user is looking after pressing a footer button.
+        if( !started )
+          passMessage( WString::tr("dmw-nogen-not-started")
+                         .arg( WString::fromUTF8( m_mcTool->geometryProblem() ) ),
+                       WarningWidget::WarningMsgHigh );
+      } );
+      // No response is attached, so nothing is answering the queries in place of the edits - unlike
+      //  the stale case below, using it as-is is a coherent (flat-disk) detector.
+      useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
+    }else
+    {
+      // The reason can quote a typed material name, so encode it for the dialog's XHTML text.
+      const string problem = Wt::Utils::htmlEncode( m_mcTool->geometryProblem() );
+      SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-geom-incomplete-title"),
+                             WString::tr("dmw-geom-incomplete-body").arg( WString::fromUTF8(problem) ) );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-geom-incomplete-use-anyway") );
+      dialog->addButton( WString::tr("Cancel") );
+      useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
+    }//if( canGen ) / else
+
+    return;
+  }//if( Geometry Modeled with no response )
+
+  // A response that IS attached but does not reflect the edits is not a cosmetic mismatch: while it
+  //  is attached it answers every efficiency and uncertainty query, so the edit would simply be
+  //  ignored.  There is therefore no "use anyway" here - either the response is rebuilt, or it goes.
   if( m_geometryModeled && responseStale() )
   {
-    const bool canGen = (m_mcTool && m_mcTool->generationReady());
     const bool instant = (m_mcTool
              && (m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::CurveTransfer));
 
     // The curve-transfer method is deterministic and instant, so there is nothing to ask about.
     if( canGen && instant )
     {
-      m_applyAfterGenerate = true;
-      handleGenerateResponse();
-
-      // `startGeneration` can decline (an anchor it cannot build, a geometry that turned out not to
-      //  be ready).  Leaving the flag set would make some later, unrelated regeneration apply and
-      //  close this dialog without the user asking; so it only stays set while a run is in flight.
-      if( !m_mcTool->generationRunning() )
-      {
-        m_applyAfterGenerate = false;
+      // Keyed to the generation it arms: a run that never starts, or that fails part way, must not
+      //  leave some later, unrelated generation applying and closing this dialog.
+      const bool started = handleGenerateResponse();
+      m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
+      if( !started )
         passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
-      }
       return;
     }
 
@@ -1596,13 +2042,10 @@ void DrfModifyWidget::requestApply()
     {
       WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept") );
       regen->clicked().connect( this, [this](){
-        m_applyAfterGenerate = true;   //handleResponseGenerated applies once the response lands
-        handleGenerateResponse();
-        if( !m_mcTool->generationRunning() )   //declined; see the note in the instant path above
-        {
-          m_applyAfterGenerate = false;
+        const bool started = handleGenerateResponse();
+        m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
+        if( !started )
           passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
-        }
       } );
     }
     WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach") );
@@ -1637,6 +2080,9 @@ void DrfModifyWidget::handleModeToggle()
   // Deliberately does not touch which Anchor editor is showing: that follows how the efficiency is
   //  represented, and sending the apply down a different editor because of this toggle is what used
   //  to discard whichever editor's edits were not applied.
+  //  Nor does it make a current response stale: the toggle decides WHETHER a response is attached,
+  //  not what one built from these inputs would contain, and `responseStale()` fingerprints only
+  //  the latter.  (markEdited refreshes the generate button, whose visibility follows the mode.)
   updateAnchorEditorVisibility();
   markEdited();
 }//handleModeToggle()
@@ -2058,10 +2504,10 @@ bool DrfModifyWidget::responseStale()
 }//responseStale()
 
 
-void DrfModifyWidget::handleGenerateResponse()
+bool DrfModifyWidget::handleGenerateResponse()
 {
   if( !m_mcTool || !m_geometryModeled )
-    return;
+    return false;
 
   // The seed comes from the provider installed in the constructor (the live edits, with any response
   //  detached), so the manual points/covariance ground the regeneration rather than being overridden
@@ -2072,8 +2518,10 @@ void DrfModifyWidget::handleGenerateResponse()
   if( m_editor == DrfModifyCalc::AnchorEditor::RefitPoints )
     passMessage( WString::tr("dmw-regen-from-points-note"), WarningWidget::WarningMsgInfo );
 
-  m_mcTool->startGeneration();
+  const bool started = m_mcTool->startGeneration();
   updateGenerateButton();
+
+  return started;
 }//handleGenerateResponse()
 
 
@@ -2084,14 +2532,27 @@ void DrfModifyWidget::updateGenerateButton()
 
   const bool haveResp = (m_mcTool && m_mcTool->generatedResponse());
   const bool canGen = (m_mcTool && m_mcTool->generationReady());
+  // `m_result` is cleared for the whole duration of a run, so without this the button re-enables
+  //  itself the moment generation starts and a second click queues a second full-core Monte Carlo.
+  const bool running = (m_mcTool && m_mcTool->isGenerating());
 
-  // Shown only in Geometry-Modeled mode, once there is something to (re)generate from or a response
-  //  to refresh.  Enabled whenever the geometry is complete enough to run and there is work to do:
-  //  the first generation, or a regeneration when the response no longer reflects the edits.  It is
-  //  never disabled while stale - the user has to be able to fix it.
-  const bool show = m_geometryModeled && (canGen || haveResp);
-  m_generateBtn->setHidden( !show );
-  m_generateBtn->setEnabled( show && canGen && (!haveResp || responseStale()) );
+  // Shown whenever the mode is Geometry Modeled - a button that only appears once the geometry is
+  //  complete leaves the user hunting for it.  Enabled when the geometry is complete enough to run
+  //  and there is work to do: the first generation (no response yet), or a regeneration once the
+  //  response no longer reflects the edits.  While the geometry blocks it, the reason is spelled
+  //  out beside it, in the export tip's place.
+  m_generateBtn->setHidden( !m_geometryModeled );
+  m_generateBtn->setEnabled( m_geometryModeled && canGen && !running
+                             && (!haveResp || responseStale()) );
+
+  const string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
+  if( m_generateHint )
+  {
+    m_generateHint->setText( WString::fromUTF8( problem ) );
+    m_generateHint->setHidden( problem.empty() );
+  }
+  if( m_exportNote )
+    m_exportNote->setHidden( !problem.empty() );
 }//updateGenerateButton()
 
 
@@ -2105,13 +2566,15 @@ void DrfModifyWidget::handleResponseGenerated( std::shared_ptr<ceelo::DetectorRe
   updateGenerateButton();
   updateAnchorEditorVisibility();  //a response is now in charge of the queries
   refreshUncertSummary();
+  markGeneralStale();
 
-  if( m_applyAfterGenerate )
-  {
-    m_applyAfterGenerate = false;
-    if( response )
-      apply();   //the regenerate-then-use flow: the response now reflects the edits
-  }
+  // Only for the run "Generate & use" armed: a different run landing here is one the user started
+  //  themselves (or the transfer method rebuilding itself), and must not apply and close the dialog.
+  const bool armed = (m_applyAfterGenerationId >= 0) && m_mcTool
+                     && (m_applyAfterGenerationId == m_mcTool->generationId());
+  m_applyAfterGenerationId = -1;
+  if( armed && response )
+    apply();   //the regenerate-then-use flow: the response now reflects the edits
 }//handleResponseGenerated(...)
 
 

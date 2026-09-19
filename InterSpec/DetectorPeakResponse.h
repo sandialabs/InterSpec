@@ -261,6 +261,14 @@ public:
      Monte-Carlo characterization of that geometry.
      */
     GadrasDetectorDatOnly = 13,
+
+    /** From a binary detector-characterization parameter file (a spatial
+     full-energy-peak efficiency grid) plus its ASCII geometry record.  The
+     grid's angular + radial efficiency is reparameterized into a CeeLo
+     response; only full-energy-peak (not total) efficiency is available.
+     See DetectorEffG2kPar.h.
+     */
+    CharacterizationParFile = 14,
   };//enum DrfSource
   
 public:
@@ -815,9 +823,13 @@ public:
    model envelopes (regime floor, transfer envelope, ...) as fully correlated
    common modes; `model_part`, when given, receives the envelope-only matrix so
    the two kinds can be told apart (EffEval::sigmaModel is its per-query
-   counterpart).  Otherwise this is the curve's own
-   `DetectorEfficiencyCurve::fracCovariance` - all data-derived, so
-   `model_part` comes back all zero.
+   counterpart).  Use the (theta, distance) overload when the actual
+   measurement geometry is known.
+
+   Otherwise this is the curve's own `DetectorEfficiencyCurve::fracCovariance`,
+   which picks - mutually exclusively, never summed - the stored fit-coefficient
+   covariance for an equation, else the node-covariance path.  Either way it is
+   all data-derived, so `model_part` comes back all zero.
    */
   std::vector<double> efficiencyFracCovariance( const std::vector<double> &energies,
                                                 std::vector<double> *model_part = nullptr ) const;
@@ -841,18 +853,25 @@ public:
   bool hasTotalEfficiency() const;
 
   /** Whether cascade-summing corrections can be computed with this DRF: an
-   explicit total-efficiency curve, OR an attached CeeLo MC response (whose
-   total-efficiency payload #totalEfficiencyEval dispatches to).
+   explicit total-efficiency curve, OR an attached CeeLo response whose
+   total-efficiency payload is actually characterized (#totalEfficiencyEval
+   dispatches to it).
+
+   A response is NOT enough on its own - an FEP-only characterization, or a
+   curve transfer from a DRF that had no total curve, carries
+   `ceelo::TotEffTier::NotCharacterized`, where eps_total refuses instead of
+   returning a number.  Those DRFs answer false here.
    */
   bool hasAnyTotalEfficiencyInfo() const;
 
   /** Intrinsic total efficiency at `energy` (keV), dispatching to whichever
    total-efficiency source the DRF has: an explicit total-efficiency curve, or
    (backed out of) an attached CeeLo MC response evaluated far-field.  Returns
-   0 when the DRF has no total-efficiency info (unlike #totalIntrinsicEfficiency,
-   which throws).  Used by the per-element cascade-summing correction, which
-   needs an intrinsic (solid-angle-free) total efficiency for arbitrary source
-   geometries.
+   0 when the DRF has no total-efficiency info - i.e. exactly when
+   #hasAnyTotalEfficiencyInfo is false, which includes an FEP-only CeeLo
+   response - rather than throwing like #totalIntrinsicEfficiency.  Used by the
+   per-element cascade-summing correction, which needs an intrinsic
+   (solid-angle-free) total efficiency for arbitrary source geometries.
    */
   float totalIntrinsicEfficiencyAny( const float energy ) const;
 
@@ -975,6 +994,10 @@ public:
 
    Folded into the hash only when no response is attached (the response's content hash covers its
    descriptor), so attaching a response does not change the identity a stored DRF already has.
+   It does have to be in the hash otherwise: the "Previous" detectors in the user database are
+   keyed on it, and only a new hash gets a new row, so a detector that gains a geometry must not
+   collapse onto its geometry-less ancestor's row and silently keep the old contents.  Legacy DRFs
+   with no geometry keep their historical hash values.
    */
   void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
@@ -1016,6 +1039,32 @@ public:
    */
   EffEval fepEfficiencyEval( const float energy, const double theta,
                              const double phi, const double distance ) const;
+
+  /** An opaque, reusable ray set for one source position - see #apertureQuadrature. */
+  struct PositionedQuadrature;
+
+  /** The traced ray set (CeeLo's "aperture quadrature") for a point source at (`theta`, `phi`,
+   `distance` from the face).  Tracing it is essentially the entire cost of a Monte-Carlo-backed
+   efficiency query - ~1.7 ms of a 1.7 ms call for a 2048-ray response - and it depends only on
+   the source position, never on energy.  A caller sweeping many energies at ONE position should
+   therefore build it once here and hand it to the #fepEfficiencyEval overload below, which is
+   ~30x faster and bit-identical.
+
+   Returns nullptr when there is nothing to reuse (no ceelo response, or fixed geometry); the
+   overload then simply evaluates as usual, so callers need no special case.
+   */
+  std::shared_ptr<const PositionedQuadrature> apertureQuadrature( const double theta,
+                                    const double phi, const double distance ) const;
+
+  /** #fepEfficiencyEval reusing a quadrature from #apertureQuadrature.
+
+   `quadrature` must have been built for the SAME (theta, phi, distance) - a mismatch silently
+   answers for the position the quadrature was traced at (checked under
+   PERFORM_DEVELOPER_CHECKS).  A null `quadrature` is exactly the plain overload.
+   */
+  EffEval fepEfficiencyEval( const float energy, const double theta,
+                             const double phi, const double distance,
+                             const std::shared_ptr<const PositionedQuadrature> &quadrature ) const;
 
   /** Like #fepEfficiencyEval, but the probability of depositing *any* energy
    (for cascade-summing corrections).  Legacy path uses #m_totalEfficiency
@@ -1361,7 +1410,7 @@ public:
 
   static float akimaInterpolate( const float energy,
                                 const std::vector<EnergyEfficiencyPair> &xy );
-  
+
   //20190525: Why is m_user a raw index, and not a Wt::Dbo::ptr<InterSpecUser>?
   //          Maybe for database upgrade so Wt::Dbo doesnt need a reference to
   //          InterSpecUser?
