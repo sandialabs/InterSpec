@@ -651,7 +651,7 @@ T eval_physical_model_eqn_imp( const double energy,
       throw std::logic_error( "physical-model correction gives eqn NaN or Inf" );
   }//if( correction active )
   
-  const double det_part = drf ? drf->intrinsicEfficiency( energyf ) : 1.0;
+  const double det_part = drf ? drf->farFieldIntrinsicEfficiency( energyf ) : 1.0;
   answer *= det_part;
   
   assert( !isnan(answer) && !isinf(answer) );

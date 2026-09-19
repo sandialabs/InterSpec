@@ -111,11 +111,11 @@ class DetectorPeakResponse
      return;
    }//try / catch
    
-   std::cout << det.intrinsicEfficiency(121.78f) << std::endl; //0.625191
-   std::cout << det.intrinsicEfficiency(411.02f) << std::endl; //0.333307
-   std::cout << det.intrinsicEfficiency(500.0f) << std::endl;    //0.285503
-   std::cout << det.intrinsicEfficiency(700.0f) << std::endl;    //0.219004
-   std::cout << det.intrinsicEfficiency(800.0f) << std::endl;    //0.197117
+   std::cout << det.farFieldIntrinsicEfficiency(121.78f) << std::endl; //0.625191
+   std::cout << det.farFieldIntrinsicEfficiency(411.02f) << std::endl; //0.333307
+   std::cout << det.farFieldIntrinsicEfficiency(500.0f) << std::endl;    //0.285503
+   std::cout << det.farFieldIntrinsicEfficiency(700.0f) << std::endl;    //0.219004
+   std::cout << det.farFieldIntrinsicEfficiency(800.0f) << std::endl;    //0.197117
   */
   
 public:
@@ -362,11 +362,11 @@ public:
   //        "+ -83.8077567526*log(x)^2  + 12.9980559362*log(x)^3"
   //        "+ -1.0068649823*log(x)^4 + 0.0311640084*log(x)^5)";
   //Should give:
-  //  intrinsicEfficiency(121.78)==0.625191;
-  //  intrinsicEfficiency(411.02)==0.333307;
-  //  intrinsicEfficiency(500)   ==0.285503;
-  //  intrinsicEfficiency(700)   ==0.219004;
-  //  intrinsicEfficiency(800)   ==0.197117
+  //  farFieldIntrinsicEfficiency(121.78)==0.625191;
+  //  farFieldIntrinsicEfficiency(411.02)==0.333307;
+  //  farFieldIntrinsicEfficiency(500)   ==0.285503;
+  //  farFieldIntrinsicEfficiency(700)   ==0.219004;
+  //  farFieldIntrinsicEfficiency(800)   ==0.197117
   //
   //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm), and
   //  will not be used if 'fixedGeometry' is true..
@@ -715,7 +715,7 @@ public:
    Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
    
    If a fixed-geometry DRF, then distance must either be zero or negative, in which case will
-   just return the same thing as #intrinsicEfficiency
+   just return the same thing as #farFieldIntrinsicEfficiency
    
    Will throw `std::runtime_exception` if this object has not been initialized.
    Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
@@ -726,18 +726,29 @@ public:
   /** Returns the fraction of gamma rays, at the specified energy, striking the face of the detector,
    will result in a full-energy detection event.  Or for fixed-geometry efficiencies, returns the efficiency
    of a gamma to be detected, per bq of the source (or similar per unit area, if for a surface distribution).
-   
+
+   ALWAYS the legacy far-field efficiency curve, even when a #ceeloResponse is attached: this is the
+   per-photon-crossing-the-face number the DRF was characterized with, and the quantity every
+   serialization, export and DRF-editing path round-trips.  It is deliberately NOT kept in step with
+   #efficiency, which dispatches through #efficiencyEval.  For the response's own view of the
+   intrinsic efficiency, use #intrinsicEfficiencyEval.
+
    Will throw `std::runtime_exception` if this object has not been initialized.
    Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
    */
-  float intrinsicEfficiency( const float energy ) const;
+  float farFieldIntrinsicEfficiency( const float energy ) const;
 
-  /** Returns a std::function that gives intrinsic efficiency as a function
-  of energy.  Useful primarily for places when you don't want to have this
-  class as a dependancy.
+  /** Returns a std::function that gives the far-field intrinsic efficiency as a
+  function of energy.  Useful primarily for places when you don't want to have
+  this class as a dependancy.
   Returns null function if not available.
+
+  Note: unlike #farFieldIntrinsicEfficiency, this deliberately does NOT apply the
+  #EffGeometryType::FarFieldAbsolute correction, matching historical behavior - so for a
+  FarFieldAbsolute DRF the two disagree.  Kept as-is here; see the header note on
+  #absoluteToIntrinsicMultiple.
   */
-  std::function<float( float )> intrinsicEfficiencyFcn() const;
+  std::function<float( float )> farFieldIntrinsicEfficiencyFcn() const;
 
   /** The (optional) uncertainty of the full-energy efficiency; may be nullptr.
 
@@ -822,7 +833,7 @@ public:
   /** Returns the fraction of gammas, at the specified energy, striking the
    detector face, that deposit *any* energy in the detector (or for
    fixed-geometry DRFs, the probability per decay or similar - mirrors
-   #intrinsicEfficiency).
+   #farFieldIntrinsicEfficiency).
 
    Throws std::runtime_error if !hasTotalEfficiency().
    */
@@ -874,7 +885,7 @@ public:
   /** The (optional) Monte-Carlo-parameterized detector response; may be
    nullptr.  When set, the #EffEval query functions and
    #efficiencyFracCovariance dispatch to it; the legacy efficiency curve is
-   kept as the back-compat fallback/export, and #intrinsicEfficiency /
+   kept as the back-compat fallback/export, and #farFieldIntrinsicEfficiency /
    #efficiency are NOT affected (they keep evaluating the legacy curve
    bit-identically).
    */
@@ -924,9 +935,9 @@ public:
    */
   void setMeasuredPoints( std::shared_ptr<const MeasuredDrfPoints> points );
 
-  /** #intrinsicEfficiency with 1-sigma uncertainty and provenance flag.
+  /** #farFieldIntrinsicEfficiency with 1-sigma uncertainty and provenance flag.
 
-   Legacy path: value is bit-identical to #intrinsicEfficiency, sigma from
+   Legacy path: value is bit-identical to #farFieldIntrinsicEfficiency, sigma from
    #efficiencyUncert (0 if none).  With a ceelo response: derived from the
    parameterized far-field on-axis response.
    */
@@ -1340,7 +1351,7 @@ protected:
    DetectorPeakResponse safely share the immutable curve.
 
    The FarFieldAbsolute absolute-to-intrinsic and solid-angle corrections are
-   NOT baked into the curve; they are applied by #intrinsicEfficiency /
+   NOT baked into the curve; they are applied by #farFieldIntrinsicEfficiency /
    #efficiency.
    */
   std::shared_ptr<const DetectorEfficiencyCurve> m_efficiency;
@@ -1432,7 +1443,7 @@ protected:
    external_libs/CeeLo/src/io/DetectorResponse.h.
 
    The legacy efficiency curve remains the fallback (and back-compat export);
-   #intrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
+   #farFieldIntrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;

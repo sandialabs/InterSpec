@@ -1485,7 +1485,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
 
   WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
-  m_tool->intrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
+  m_tool->farFieldIntrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
 
   // Characterize the detector by Monte-Carlo: opens the geometry/MC tool; a
@@ -2167,7 +2167,7 @@ void MakeDrf::startSaveAs()
 }//void startSaveAs();
 
 
-Wt::Signal<bool> &MakeDrf::intrinsicEfficiencyIsValid()
+Wt::Signal<bool> &MakeDrf::farFieldIntrinsicEfficiencyIsValid()
 {
   return m_intrinsicEfficiencyIsValid;
 }

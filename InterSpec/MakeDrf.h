@@ -94,7 +94,7 @@ public:
   /** Signal emitted whenever the intrinsic efficiency becomes valid, or
      invalid.  Intended for enabling/disabling save button.
    */
-  Wt::Signal<bool> &intrinsicEfficiencyIsValid();
+  Wt::Signal<bool> &farFieldIntrinsicEfficiencyIsValid();
   
   /** Assembles a SpecMeas with a single (summed, if need be) spectrum for
    each sample number that has a peak being used; has peaks as well.

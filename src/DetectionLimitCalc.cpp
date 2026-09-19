@@ -248,7 +248,7 @@ void batch_test()
       
       try
       {
-      const double det_eff = fixed_geom ? det->intrinsicEfficiency(erp.energy)
+      const double det_eff = fixed_geom ? det->farFieldIntrinsicEfficiency(erp.energy)
                                         : det->efficiency( erp.energy, distance );
       const double shield_trans = shield_transmission( erp.energy );
       const double gammas_per_bq_per_sec = erp.numPerSecond / parent_act;
@@ -306,7 +306,7 @@ void batch_test()
            << SpecUtils::printCompact( result.detection_limit, 5 )
            << endl;
       cout << endl;
-      const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
+      const double intrinsic_eff = det->farFieldIntrinsicEfficiency( erp.energy );
       const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
       cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
            << SpecUtils::printCompact( intrinsic_eff, 5 )
@@ -2371,7 +2371,7 @@ PeakDef decon_trial_peak( const DeconComputeInput &input,
                         : static_cast<double>( input.drf->peakResolutionFWHM(peak_info.energy) );
   const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
   const bool fixed_geometry = input.drf->isFixedGeometry();
-  const double efficiency = fixed_geometry ? input.drf->intrinsicEfficiency( energy )
+  const double efficiency = fixed_geometry ? input.drf->farFieldIntrinsicEfficiency( energy )
                                            : input.drf->efficiency( energy, input.distance );
 
   double air_attenuation = 1.0;

@@ -1225,7 +1225,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
     {
       try
       {
-        const float fep = drf->intrinsicEfficiency( ref_energy );
+        const float fep = drf->farFieldIntrinsicEfficiency( ref_energy );
         const float tot = drf->totalIntrinsicEfficiencyAny( ref_energy );
         if( (fep > 0.0f) && (tot > fep) )
           txt = WString::tr("dmw-info-toteff-ratio").arg( txt )

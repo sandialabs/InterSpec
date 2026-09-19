@@ -2589,7 +2589,7 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   
   if( m_detectorDisplay->detector() )
   {
-    input.m_det_intrinsic_eff = m_detectorDisplay->detector()->intrinsicEfficiencyFcn();
+    input.m_det_intrinsic_eff = m_detectorDisplay->detector()->farFieldIntrinsicEfficiencyFcn();
     if( input.m_det_intrinsic_eff )
       input.m_detector_name = m_detectorDisplay->detector()->name();
   }//if( m_detectorDisplay->detector() )
@@ -3756,7 +3756,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         if( drf && drf->isValid() )
         {
           input.m_detector_name = drf->name();
-          input.m_det_intrinsic_eff = drf->intrinsicEfficiencyFcn();
+          input.m_det_intrinsic_eff = drf->farFieldIntrinsicEfficiencyFcn();
         }else
         {
           input.m_detector_name = "";
@@ -3809,7 +3809,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         if( pers_drf && pers_drf->isValid() )
         {
           input.m_detector_name = pers_drf->name();
-          input.m_det_intrinsic_eff = pers_drf->intrinsicEfficiencyFcn();
+          input.m_det_intrinsic_eff = pers_drf->farFieldIntrinsicEfficiencyFcn();
         }else
         {
           input.m_detector_name = "";

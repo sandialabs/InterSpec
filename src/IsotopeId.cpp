@@ -612,7 +612,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   if( expectedAbund == 0.0 )
     throw runtime_error( "fractionDetectedWeight(...): Peak with no candidates" );
   
-  const double det_sf = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(mean)
+  const double det_sf = (response ? (response->isFixedGeometry() ? response->farFieldIntrinsicEfficiency(mean)
                                                                  : response->efficiency( mean, distance ))
                                   : 1.0);
   const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, mean );
@@ -636,7 +636,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
       continue;
     
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
-    const double det_eff = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(energy)
+    const double det_eff = (response ? (response->isFixedGeometry() ? response->farFieldIntrinsicEfficiency(energy)
                                                                     : response->efficiency(energy, distance))
                                      : 1.0);
     const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, energy );
@@ -1998,7 +1998,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
     //Scale the yeilds for the detector response function and shielding specified
     for( auto &src : srcgammas )
     {
-      const double det_sf = (!!detector ? detector->intrinsicEfficiency(src.energy) : 1.0f);
+      const double det_sf = (!!detector ? detector->farFieldIntrinsicEfficiency(src.energy) : 1.0f);
       const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, src.energy );
       const double shielding_sf = exp( -shielding_ad * xs );
       

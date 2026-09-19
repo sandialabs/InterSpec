@@ -269,7 +269,7 @@ TransferAnchor transferAnchorForDrf(
   // Fallback: sample the fitted intrinsic curve and convert it to absolute
   //  efficiency at a single reference distance (mirrors
   //  MakeMcResponseForDrf::groundingPointsForDrf, the vetted recipe -
-  //  intrinsicEfficiency() already backs any air attenuation out, so the
+  //  farFieldIntrinsicEfficiency() already backs any air attenuation out, so the
   //  reconstructed absolute efficiencies are in-vacuum, consistent with the
   //  transfer kernel).
   answer.curve_derived = true;
@@ -322,7 +322,7 @@ TransferAnchor transferAnchorForDrf(
 
   for( size_t i = 0; i < ne; ++i )
   {
-    const double intrinsic = drf->intrinsicEfficiency( static_cast<float>(energies[i]) );
+    const double intrinsic = drf->farFieldIntrinsicEfficiency( static_cast<float>(energies[i]) );
     if( intrinsic <= 0.0 )
       continue;
 

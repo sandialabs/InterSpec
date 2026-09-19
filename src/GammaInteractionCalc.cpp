@@ -4060,7 +4060,7 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
     {
       // The curve IS the answer for a fixed geometry; only its fractional sigma and flag are
       //  borrowed from the Eval.
-      answer.value = m_detector->intrinsicEfficiency( energy_f );
+      answer.value = m_detector->farFieldIntrinsicEfficiency( energy_f );
       const EffEval ev = m_detector->intrinsicEfficiencyEval( energy_f );
       if( ev.value > 0.0 )
         answer.sigma = answer.value * (ev.sigma / ev.value);
@@ -5094,7 +5094,7 @@ vector<PeakResultPlotInfo>
         
         if( pos != end(*log_info) )
         {
-          const double deteff = m_detector->intrinsicEfficiency( energy_count.first );
+          const double deteff = m_detector->farFieldIntrinsicEfficiency( energy_count.first );
           pos->detEff = eff;
           pos->detIntrinsicEff = deteff;
           pos->detSolidAngle = eff / deteff;
@@ -5158,7 +5158,7 @@ vector<PeakResultPlotInfo>
       assert( (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
               == !calculator->m_effResponse );
       if( m_detector && m_detector->isValid() && !calculator->m_effResponse )
-        contrib *= m_detector->intrinsicEfficiency( calculator->m_energy );
+        contrib *= m_detector->farFieldIntrinsicEfficiency( calculator->m_energy );
 
       if( energy_count_map.find( calculator->m_energy ) != energy_count_map.end() )
       {
@@ -5285,7 +5285,7 @@ vector<PeakResultPlotInfo>
           src.inSituRelaxationLength = calculator->m_inSituRelaxationLength;
           src.detIntrinsicEff = 1.0;
           if( m_detector && m_detector->isValid() )
-            src.detIntrinsicEff = m_detector->intrinsicEfficiency( calculator->m_energy );
+            src.detIntrinsicEff = m_detector->farFieldIntrinsicEfficiency( calculator->m_energy );
           src.sourceName = calculator->m_nuclide ? calculator->m_nuclide->symbol : string("null");
           
           
@@ -5305,7 +5305,7 @@ vector<PeakResultPlotInfo>
           double det_intrinsic = 1.0, det_total_eff = 1.0;
           if( m_detector && m_detector->isValid() )
           {
-            det_intrinsic = m_detector->intrinsicEfficiency( peak.energy );
+            det_intrinsic = m_detector->farFieldIntrinsicEfficiency( peak.energy );
             if( calculator->m_effResponse )
               det_total_eff = pointSourceFepEff( peak.energy ).value;
             else

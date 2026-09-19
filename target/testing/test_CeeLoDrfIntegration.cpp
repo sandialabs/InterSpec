@@ -653,15 +653,15 @@ BOOST_AUTO_TEST_CASE( legacy_drf_untouched )
                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
   //The documented golden values (DetectorPeakResponse.h header comment).
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(121.78f), 0.625191, 0.01 );
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(411.02f), 0.333307, 0.01 );
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(700.0f), 0.219004, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(121.78f), 0.625191, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(411.02f), 0.333307, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(700.0f), 0.219004, 0.01 );
 
   //The Eval API must be bit-identical to the legacy call for legacy DRFs.
   for( const float E : {121.78f, 411.02f, 700.0f} )
   {
     const DetectorPeakResponse::EffEval eval = det->intrinsicEfficiencyEval( E );
-    BOOST_CHECK_EQUAL( eval.value, static_cast<double>(det->intrinsicEfficiency(E)) );
+    BOOST_CHECK_EQUAL( eval.value, static_cast<double>(det->farFieldIntrinsicEfficiency(E)) );
     BOOST_CHECK_EQUAL( eval.sigma, 0.0 );  //no uncertainty info attached
     BOOST_CHECK( eval.flag == DetectorPeakResponse::EffFlag::Ok );
 
@@ -1135,7 +1135,7 @@ BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
   vector<double> intrinsic_before, eff_before;
   for( const float energy : energies )
   {
-    intrinsic_before.push_back( det->intrinsicEfficiency(energy) );
+    intrinsic_before.push_back( det->farFieldIntrinsicEfficiency(energy) );
     eff_before.push_back( det->efficiency( energy, dist ) );
   }
 
@@ -1146,7 +1146,7 @@ BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
 
   for( size_t i = 0; i < energies.size(); ++i )
   {
-    BOOST_CHECK_EQUAL( static_cast<double>(det->intrinsicEfficiency(energies[i])),
+    BOOST_CHECK_EQUAL( static_cast<double>(det->farFieldIntrinsicEfficiency(energies[i])),
                        intrinsic_before[i] );
     BOOST_CHECK_EQUAL( det->efficiency( energies[i], dist ), eff_before[i] );
   }
@@ -1716,7 +1716,7 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   double worst_energy = 0.0;
   for( const double energy : { 60.0, 122.0, 300.0, 662.0, 1332.0, 2500.0 } )
   {
-    const float curve = bare->intrinsicEfficiency( static_cast<float>(energy) );
+    const float curve = bare->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
     const DetectorPeakResponse::EffEval mc
                   = backed->intrinsicEfficiencyEval( static_cast<float>(energy) );
     BOOST_REQUIRE_MESSAGE( mc.value > 0.0, "no CeeLo efficiency at "

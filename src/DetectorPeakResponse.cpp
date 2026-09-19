@@ -1240,7 +1240,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     return answer;
   }//if( m_ceeloResponse )
 
-  answer.value = intrinsicEfficiency( energy );
+  answer.value = farFieldIntrinsicEfficiency( energy );
 
   const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
   if( uncert && !uncert->isEmpty() )
@@ -5473,7 +5473,7 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
   const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
-  return fracSolidAngle * intrinsicEfficiency( energy );
+  return fracSolidAngle * farFieldIntrinsicEfficiency( energy );
 }//float efficiency( const float energy ) const
 
 
@@ -5575,7 +5575,7 @@ float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
 }//float expOfLogPowerSeriesEfficiency(...)
 
 
-float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
+float DetectorPeakResponse::farFieldIntrinsicEfficiency( const float energy ) const
 {
   // The curve handles the energy/units division and the form dispatch;
   //  throws if undefined.
@@ -5586,11 +5586,11 @@ float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
     eff *= absoluteToIntrinsicMultiple( energy );
 
   return eff;
-}//float intrinsicEfficiency( const float energy ) const;
+}//float farFieldIntrinsicEfficiency( const float energy ) const;
 
 
 
-std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyFcn() const
 {
   if( !m_efficiency || !m_efficiency->isValid() )
     return nullptr;
@@ -5616,7 +5616,7 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
     }
     return curve.efficiency( energy );
   };
-}//std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+}//std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyFcn() const
 
 
 
@@ -6363,7 +6363,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   //  that is what the chart plots, and what the `validation` block below asserts.  The stored curve
   //  of a `FarFieldAbsolute` DRF is instead ABSOLUTE efficiency at its reference distance, so it is
   //  sent verbatim together with the `absToIntrinsic` factor below, and the client applies the very
-  //  same product `intrinsicEfficiency()` does.  (Sending a curve the client would have to
+  //  same product `farFieldIntrinsicEfficiency()` does.  (Sending a curve the client would have to
   //  re-interpolate is what made this wrong before: first the factor was left off entirely, which
   //  drew the curve low by the solid angle - a factor of hundreds - and then resampling it could
   //  not reproduce the stored curve's own interpolation to better than a percent.)
@@ -6385,7 +6385,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
       const float energy = log_space
               ? static_cast<float>( minEnergy * std::pow( double(maxEnergy)/minEnergy, frac ) )
               : static_cast<float>( minEnergy + frac*(maxEnergy - minEnergy) );
-      const float efficiency = static_cast<float>( intrinsicEfficiency( energy ) );
+      const float efficiency = static_cast<float>( farFieldIntrinsicEfficiency( energy ) );
       
       // Skip invalid efficiency values
       if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
@@ -6572,7 +6572,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
         m_efficiency->form() == kEnergyEfficiencyPairs || 
         m_efficiency->form() == kExpOfLogPowerSeries )
     {
-      const double efficiency = intrinsicEfficiency( testEnergies[i] );
+      const double efficiency = farFieldIntrinsicEfficiency( testEnergies[i] );
       if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0 )
         json << "null";
       else

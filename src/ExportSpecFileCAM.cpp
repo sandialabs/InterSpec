@@ -1213,9 +1213,9 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
   const size_t min_useful_points = 2;
 
   // Genie wants absolute (per gamma emitted at the source) efficiency; InterSpec's
-  //  `intrinsicEfficiency(...)` is per gamma striking the detector face, so for a far-field DRF
+  //  `farFieldIntrinsicEfficiency(...)` is per gamma striking the detector face, so for a far-field DRF
   //  the solid angle has to be folded back in - this is the same
-  //  `fixed_geom ? intrinsicEfficiency(E) : efficiency(E,dist)` split the detection-limit and
+  //  `fixed_geom ? farFieldIntrinsicEfficiency(E) : efficiency(E,dist)` split the detection-limit and
   //  activity-fit code uses.
   const bool fixed_geom = drf.isFixedGeometry();
 
@@ -1224,7 +1224,7 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
                          " a non-fixed-geometry detector response function." );
 
   const auto absolute_eff = [&drf,fixed_geom,distance]( const double energy ) -> double {
-    return fixed_geom ? drf.intrinsicEfficiency( static_cast<float>(energy) )
+    return fixed_geom ? drf.farFieldIntrinsicEfficiency( static_cast<float>(energy) )
                       : drf.efficiency( static_cast<float>(energy), distance );
   };//absolute_eff lambda
 

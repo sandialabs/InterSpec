@@ -139,7 +139,7 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_detectors )
     for( const float energy : test_energies )
     {
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy * PhysicalUnits::keV) );
       BOOST_CHECK_MESSAGE( eff >= 0.0f, det_name + ": efficiency should be non-negative" );
     }
 
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_detectors )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = nai_3x3->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = nai_3x3->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 1% tolerance
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.01),
@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
     // Verify can evaluate efficiency
     const float test_energy = 661.7f * PhysicalUnits::keV; // Cs-137
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(test_energy) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(test_energy) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, drf->name() + ": efficiency should be non-negative" );
   }
 
@@ -307,7 +307,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = micro_detective->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = micro_detective->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 2% tolerance (to account for interpolation differences)
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.02),
@@ -370,7 +370,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = verifinder->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = verifinder->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 1% tolerance
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.01),
@@ -451,9 +451,9 @@ BOOST_AUTO_TEST_CASE( test_read_ecc_file )
     const float energy_kev = test.first;
     const double expected_eff = test.second;
 
-    // For fixed-geometry DRF, use distance=0 or intrinsicEfficiency
+    // For fixed-geometry DRF, use distance=0 or farFieldIntrinsicEfficiency
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, "Efficiency should be non-negative at " + to_string(energy_kev) + " keV" );
 
     // Check against expected value with 1% tolerance
@@ -639,7 +639,7 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
     const double expected_eff = test.second;
 
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, "Efficiency should be non-negative at " + to_string(energy_kev) + " keV" );
 
     // Check against expected value with 1% tolerance
@@ -1741,7 +1741,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
 
     for( const float E : test_energies )
     {
-      const float eff = drf->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       // Calculate expected: exp(c0 + c1*ln(E) + c2*ln(E)^2)
       const double ln_E = log(E);
@@ -1788,7 +1788,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
 
       const double expected_intrinsic = absolute_eff / (solid_angle * air_trans);
 
-      const float eff = drf->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_intrinsic, 1e-3),
                           "Intrinsic efficiency mismatch at " + to_string(E) + " keV: " +
@@ -1812,7 +1812,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
                                           DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
 
     // Both should give same intrinsic efficiency (air correction is applied during conversion)
-    const float eff_with = drf_with_air->intrinsicEfficiency( test_energy * PhysicalUnits::keV );
+    const float eff_with = drf_with_air->farFieldIntrinsicEfficiency( test_energy * PhysicalUnits::keV );
 
     BOOST_CHECK_MESSAGE( eff_with > 0.0f, "Efficiency with air should be positive" );
 
@@ -1844,7 +1844,7 @@ BOOST_AUTO_TEST_CASE( test_intrinsic_efficiency_formula )
 
     for( const float E_kev : test_energies_kev )
     {
-      const float eff = drf->intrinsicEfficiency( E_kev * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E_kev * PhysicalUnits::keV );
 
       // Calculate expected (formula is in MeV)
       const double E_mev = E_kev / 1000.0;
@@ -1889,7 +1889,7 @@ BOOST_AUTO_TEST_CASE( test_intrinsic_efficiency_formula )
 
     const double expected_intrinsic = absolute_eff / (solid_angle * air_trans);
 
-    const float eff = drf_abs->intrinsicEfficiency( E_kev * PhysicalUnits::keV );
+    const float eff = drf_abs->farFieldIntrinsicEfficiency( E_kev * PhysicalUnits::keV );
 
     BOOST_CHECK_MESSAGE( close_enough(eff, expected_intrinsic, 1e-3),
                         "Intrinsic efficiency should be corrected: " + to_string(eff) + " vs " + to_string(expected_intrinsic) );
@@ -1925,7 +1925,7 @@ BOOST_AUTO_TEST_CASE( test_efficiency_pairs )
   // Test interpolation at exact points
   for( const auto &pt : intrinsic_points )
   {
-    const float eff = drf_intrinsic->intrinsicEfficiency( pt.first * PhysicalUnits::keV );
+    const float eff = drf_intrinsic->farFieldIntrinsicEfficiency( pt.first * PhysicalUnits::keV );
     BOOST_CHECK_MESSAGE( close_enough(eff, pt.second, 1e-4),
                         "Efficiency should match at exact point " + to_string(pt.first) + " keV" );
   }
@@ -1953,8 +1953,8 @@ BOOST_AUTO_TEST_CASE( test_efficiency_pairs )
 
   for( const float E : test_energies )
   {
-    const float eff_intrinsic = drf_intrinsic->intrinsicEfficiency( E * PhysicalUnits::keV );
-    const float eff_absolute = drf_absolute->intrinsicEfficiency( E * PhysicalUnits::keV );
+    const float eff_intrinsic = drf_intrinsic->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+    const float eff_absolute = drf_absolute->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
     // Should match within tolerance
     BOOST_CHECK_MESSAGE( close_enough(eff_intrinsic, eff_absolute, 0.05), // 5% tolerance for interpolation
@@ -2016,8 +2016,8 @@ BOOST_AUTO_TEST_CASE( test_reinterpret_as_far_field )
     // Use efficiency() for fixed geometry (needs distance parameter)
     const float eff_fixed = drf_fixed->efficiency( E * PhysicalUnits::keV, 1.0 );
 
-    // Use intrinsicEfficiency() for far-field
-    const float eff_farfield = drf_farfield->intrinsicEfficiency( E * PhysicalUnits::keV );
+    // Use farFieldIntrinsicEfficiency() for far-field
+    const float eff_farfield = drf_farfield->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
     // These won't be exactly equal due to different geometry assumptions, but both should be valid
     BOOST_CHECK_MESSAGE( eff_fixed >= 0.0f && eff_farfield >= 0.0f,
@@ -2175,8 +2175,8 @@ BOOST_AUTO_TEST_CASE( test_xml_serialization_round_trip )
     const vector<float> test_energies = { 100.0f, 500.0f, 1000.0f };
     for( const float E : test_energies )
     {
-      const float eff_orig = original->intrinsicEfficiency( E * PhysicalUnits::keV );
-      const float eff_rest = restored->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_orig = original->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_rest = restored->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       BOOST_CHECK_MESSAGE( close_enough(eff_orig, eff_rest, 1e-4),
                           original->name() + ": efficiency mismatch at " + to_string(E) + " keV" );
@@ -2254,8 +2254,8 @@ BOOST_AUTO_TEST_CASE( test_url_serialization_round_trip )
     const vector<float> test_energies = { 150.0f, 661.7f, 1460.0f };
     for( const float E : test_energies )
     {
-      const float eff_orig = original->intrinsicEfficiency( E * PhysicalUnits::keV );
-      const float eff_rest = restored->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_orig = original->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_rest = restored->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       // URL encoding has limited precision, use 0.1% tolerance
       const double rel_diff = fabs(eff_orig - eff_rest) / (std::max)(fabs(eff_orig), fabs(eff_rest));
@@ -2658,7 +2658,7 @@ BOOST_AUTO_TEST_CASE( test_read_gameff_csv )
                        "gamEff DRF should have UserImportedEfficiencyCsvDrf source" );
 
   // Check first data point: 48.814 keV, 3.098e-03
-  const float eff_first = result.drf->intrinsicEfficiency( 48.814f * static_cast<float>(PhysicalUnits::keV) );
+  const float eff_first = result.drf->farFieldIntrinsicEfficiency( 48.814f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( close_enough( eff_first, 3.098e-03, 0.01 ),
     "gamEff first point efficiency: " + to_string( eff_first ) + " vs expected 3.098e-03" );
 
@@ -2695,7 +2695,7 @@ BOOST_AUTO_TEST_CASE( test_read_run_effoutput_csv )
                        "Run_effoutput DRF should have UserImportedEfficiencyCsvDrf source" );
 
   // Check first data point: Energy=34.9731 keV, Eff=2.93E-06 (column 4, "Eff")
-  const float eff_first = result.drf->intrinsicEfficiency( 34.9731f * static_cast<float>(PhysicalUnits::keV) );
+  const float eff_first = result.drf->farFieldIntrinsicEfficiency( 34.9731f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( close_enough( eff_first, 2.93e-06, 0.02 ),
     "Run_effoutput first point efficiency: " + to_string( eff_first ) + " vs expected 2.93e-06" );
 
@@ -2730,8 +2730,8 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_csv_standalone )
                        "GADRAS CSV DRF should have FixedGeomTotalAct geometry (before reinterpretation)" );
 
   // Efficiency at ~100 keV should be around 0.49899 (from file: 49.899%)
-  // The exact energy may not be in the file, so use intrinsicEfficiency which interpolates
-  const float eff_100 = result.drf->intrinsicEfficiency( 100.0f * static_cast<float>(PhysicalUnits::keV) );
+  // The exact energy may not be in the file, so use farFieldIntrinsicEfficiency which interpolates
+  const float eff_100 = result.drf->farFieldIntrinsicEfficiency( 100.0f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( (eff_100 > 0.0f) && (eff_100 <= 1.0f),
     "GADRAS CSV efficiency should be in [0, 1] after percentage conversion, got: " + to_string( eff_100 ) );
 
@@ -2766,7 +2766,7 @@ BOOST_AUTO_TEST_CASE( test_gadras_ptot_total_efficiency )
   //  there is no tight upper bound.
   for( const float energy : { 200.0f, 500.0f, 661.7f, 1332.5f, 2000.0f } )
   {
-    const float full = result.drf->intrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
+    const float full = result.drf->farFieldIntrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
     const float total = result.drf->totalIntrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( (total >= 0.0f) && std::isfinite(total),
       "Total efficiency invalid at " + to_string(energy) + " keV: " + to_string(total) );
@@ -2889,7 +2889,7 @@ BOOST_AUTO_TEST_CASE( test_total_efficiency_basics )
                              frac_solid * drf->totalIntrinsicEfficiency(661.0f), 1e-6 ) );
 
   // Total efficiency should be >= full-energy efficiency for a real detector
-  BOOST_CHECK_GT( drf->totalIntrinsicEfficiency(661.0f), drf->intrinsicEfficiency(661.0f) );
+  BOOST_CHECK_GT( drf->totalIntrinsicEfficiency(661.0f), drf->farFieldIntrinsicEfficiency(661.0f) );
 
   // Clearing restores the original hash
   drf->setTotalEfficiencyCurve( nullptr );
@@ -3299,7 +3299,7 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
   // The duplicate used to make calcA(...) compute 0/0, giving NaN over [58.268, 63.268)
   for( const float energy : { 54.0f, 56.0f, 58.268f, 60.0f, 62.0f, 63.268f, 70.0f, 85.0f } )
   {
-    const float eff = result.drf->intrinsicEfficiency( energy );
+    const float eff = result.drf->farFieldIntrinsicEfficiency( energy );
     BOOST_CHECK_MESSAGE( std::isfinite(eff),
       "Efficiency at " + to_string(energy) + " keV is not finite: " + to_string(eff) );
     BOOST_CHECK_MESSAGE( (eff > 1.0e-4f) && (eff < 1.0e-2f),
@@ -3332,8 +3332,8 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
   // Both orderings describe the same curve, so they must evaluate the same
   for( const float energy : { 54.0f, 60.0f, 70.0f, 85.0f } )
   {
-    const float inc_eff = result.drf->intrinsicEfficiency( energy );
-    const float dec_eff = dec_result.drf->intrinsicEfficiency( energy );
+    const float inc_eff = result.drf->farFieldIntrinsicEfficiency( energy );
+    const float dec_eff = dec_result.drf->farFieldIntrinsicEfficiency( energy );
     BOOST_CHECK_MESSAGE( close_enough( inc_eff, dec_eff, 1.0e-4 ),
       "Ascending vs descending CSV disagree at " + to_string(energy) + " keV: "
       + to_string(inc_eff) + " vs " + to_string(dec_eff) );

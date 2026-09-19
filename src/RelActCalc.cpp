@@ -1056,7 +1056,7 @@ std::function<double(double)> physical_model_eff_function( const std::optional<P
   if( hoerl_b.has_value() != hoerl_c.has_value() )
     throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
   
-  //const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
+  //const function<float(float)> drffcn = drf ? drf->farFieldIntrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
   
   return [drf, self_atten, external_attens, hoerl_b, hoerl_c,
           corr_lower_energy, corr_upper_energy, corr_pivot_energy, corr_fcn]( double energy ) -> double {

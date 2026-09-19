@@ -1456,7 +1456,7 @@ double TerminalModel::drfIntrinsicEff( const double energy )
   
   try
   {
-    return det->intrinsicEfficiency( static_cast<float>(energy) );
+    return det->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
   }catch( std::exception &e )
   {
     throw mup::ParserError( "Error getting intrinsic efficiency: " + std::string(e.what()) );

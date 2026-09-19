@@ -5363,7 +5363,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
         {
           if( m_efficiencyType->currentIndex() > 1 )
           {
-            const float eff_120 = det->intrinsicEfficiency( 120.0 );
+            const float eff_120 = det->farFieldIntrinsicEfficiency( 120.0 );
             const bool is_far_field = ((eff_120 >= 0.0f) && (eff_120 < 0.1f)); // Less than 10%
             m_efficiencyType->setCurrentIndex( is_far_field ? 1 : 0 ); // Far-Field Efficiency
           }

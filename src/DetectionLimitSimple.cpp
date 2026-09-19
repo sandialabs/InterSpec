@@ -1803,7 +1803,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         
         {//begin convert `br` to `gammas_per_bq`
           const float energy = m_currentCurrieInput->gamma_energy;
-          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+          const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(energy)
           : drf->efficiency(energy, distance);
           
           const double shield_transmission = !att_coef_fcn ? 1.0 : exp( -1.0*att_coef_fcn(energy) );
@@ -1826,7 +1826,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
           const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
           
-          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(peak_energy)
+          const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(peak_energy)
                                             : drf->efficiency(peak_energy, distance);
           
           peak.counts_4pi = counts_4pi * det_eff;
@@ -2404,7 +2404,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
   
   if( drf && drf->isValid() )
   {
-    const double intrinsic_eff = drf->intrinsicEfficiency( energy );
+    const double intrinsic_eff = drf->farFieldIntrinsicEfficiency( energy );
     
     label = WString::tr("dls-det-intrinsic-eff");
     value = SpecUtils::printCompact( intrinsic_eff, 5 );
@@ -2917,7 +2917,7 @@ void DetectionLimitSimple::updateResult()
         {
           const bool fixed_geom = drf->isFixedGeometry();
           const float energy = m_currentCurrieInput->gamma_energy;
-          const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy)
+          const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(energy)
                                             : drf->efficiency(energy, distance);
           
           std::function<double(float)> att_coef_fcn, air_atten_fcn;

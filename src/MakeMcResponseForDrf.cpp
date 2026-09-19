@@ -249,7 +249,7 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
     //  absolute efficiencies.  When the curve was specified as absolute
     //  efficiency at a stated distance, anchor there - that is where the curve
     //  is actually pinned to data; otherwise use a comfortably far-field
-    //  reference distance.  (intrinsicEfficiency() already backs out any air
+    //  reference distance.  (farFieldIntrinsicEfficiency() already backs out any air
     //  attenuation the absolute curve included, so the reconstructed absolute
     //  efficiencies below are in-vacuum - consistent with the ray-trace kernel
     //  the grounding fit compares against.)
@@ -290,7 +290,7 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
 
     for( size_t i = 0; i < energies.size(); ++i )
     {
-      const double intrinsic = drf->intrinsicEfficiency( static_cast<float>(energies[i]) );
+      const double intrinsic = drf->farFieldIntrinsicEfficiency( static_cast<float>(energies[i]) );
       if( intrinsic <= 0.0 )
         continue;
 
