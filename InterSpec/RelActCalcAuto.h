@@ -2473,7 +2473,16 @@ struct RelActAutoSolution
     /** The tied-enrichment likelihood ratio rejected one common composition (3-sigma-scaled bar).
      Preferred over every tier below whenever `m_tied_enrichment_comparison` is valid: it is the
      only one of them that isolates the composition difference from model error - see
-     `TiedEnrichmentComparison`. */
+     `TiedEnrichmentComparison`.  A MARGINAL rejection (below the 5-sigma-scaled bar) additionally
+     requires the merged single-curve comparison to reject at its own 5-sigma bar, since a two-curve
+     fit of a single disk clears the 3-sigma tied bar on noise alone.
+
+     Note this gates only THIS basis, not detection as a whole: a marginal uncorroborated tie declines
+     the Tier-0 accept and falls through, so for a non-stacked geometry `ZCorroboratedByMerged` can
+     still detect at its own (3-sigma) bar given a reliable marginal z.  That is intended - it is
+     separate evidence - but it means "requires 5 sigma" is true of the basis, not of the verdict.
+     (For a stacked geometry the short-circuit ends the question first, so it cannot arise there;
+     zero occurrences in the validation corpus.) */
     TiedEnrichment,
     ZScore,                 ///< a reliable enrichment-difference z >= 3 (not overruled by the merged fit)
     ZCorroboratedByMerged,  ///< marginal z (>= 1.5) + single-curve fit rejected at the 3-sigma-scaled bar
@@ -2497,6 +2506,58 @@ struct RelActAutoSolution
 
   /** Convenience: `curves_distinct_basis() != CurveDistinctBasis::None`. */
   bool curves_detected_distinct() const;
+
+  /** True when curve `rel_eff_index` has a fitted self-attenuation areal density railed to an
+   unphysically large fraction of the ceiling it was actually fit against.  Genuine
+   two-curve detections keep self-atten AD <= ~10 g/cm2; a railed value is the fit absorbing a free
+   composition degree of freedom in an unconstrained shield rather than describing a real second
+   curve.  Value-based on purpose: the solver's at-bound tolerance works out to ~0.5 g/cm2 against the
+   default [0, 500] bounds, so a shield that flattens the objective well short of the ceiling (376 of
+   500 on the one real single-disk false positive) is not flagged at-bound yet is equally unphysical -
+   and this test needs no fit layout, so it also holds on a merged/tied re-fit and in unit tests.
+
+   The ceiling is the curve's own `phys_model_self_atten->upper_fit_areal_density` when the caller set
+   one, else `PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2` (which is what the
+   solver itself falls back to when both bounds are left at zero).  Comparing against the global value
+   unconditionally would never flag a fit railed against a tighter user bound, and would flag a
+   legitimately thick shield in a config whose ceiling really is the global one. */
+  bool self_atten_ad_railed( const size_t rel_eff_index ) const;
+
+  /** True when ANY curve's self-atten AD is railed (`self_atten_ad_railed`).  A detection resting on
+   such a fit is not evidence of a second curve, so `curves_distinct_basis()` returns None. */
+  bool detection_rests_on_railed_self_atten() const;
+
+  /** True when the tied-enrichment comparison rejected one common composition only MARGINALLY (above
+   its 3-sigma-scaled bar but below the 5-sigma one) and the merged single-curve comparison did not
+   also reject at its own 5-sigma-scaled bar.
+
+   With the usual 2 extra DOF the 3-sigma tied bar sits at delta-chi2 ~8, which a two-curve fit of a
+   single object clears on counting noise alone (it has two spare composition DOF and Poisson
+   fluctuations to spend them on), so in that marginal band the tied statistic is not informative by
+   itself.  The merged comparison tests a DIFFERENT null (one curve AND one composition) and in that
+   band it discriminates where the tied statistic does not.
+
+   Not a statistically independent test, and deliberately not described as one: both deltas are
+   measured against the same free-fit chi2 on the same data, and across the validation corpus they
+   correlate at Pearson r ~ 0.65 (Spearman ~ 0.53).  The rule's value is empirical - requiring the
+   second, differently-nulled view removed 3 of 4 false positives at a cost of 1 true detection in a
+   80-file corpus - not an appeal to independence.  False when either comparison is missing/invalid,
+   and when the merged delta is negative (a bad fit, not evidence of sameness - see
+   `merged_overrules_z_detection`): a tie with nothing usable to corroborate it is left to stand,
+   since it is then the only evidence available.
+
+   Single source for both the Tier-0 accept in `curves_distinct_basis()` and the reason/verdict text,
+   so the decision and its explanation cannot disagree. */
+  bool tie_marginal_and_uncorroborated() const;
+
+  /** One machine-readable line for why `curves_distinct_basis()` is None: a railed self-atten AD, a
+   tied fit inconsistent with the merged fit that the independent merged/z evidence did not rescue, an
+   uncorroborated marginal tie, or (stacked geometry only) a tied fit that was not rejected at all.
+   Empty when the curves WERE detected as distinct, and for a None with none of these causes.
+
+   Reported next to the merged delta-chi2, which can be large while the verdict is still None; without
+   the reason the two read as a contradiction.  Single source for the CSV/report reason column. */
+  std::string distinct_basis_none_reason() const;
 
   /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
    single-material outcome does not read as an error, and so that the label always states what was

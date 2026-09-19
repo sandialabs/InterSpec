@@ -56,6 +56,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/BatchRelActAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -876,6 +877,355 @@ BOOST_AUTO_TEST_CASE( merged_only_detection_without_z_table )
   BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::MergedOnly );
   BOOST_CHECK( sol.curves_detected_distinct() );
 }//BOOST_AUTO_TEST_CASE( merged_only_detection_without_z_table )
+
+
+// Part 2 (soften D10): a tied fit that could not reach the merged fit's chi2 no longer hard-vetoes.
+//  Its delta-chi2 is untrustworthy (valid==false, set together with inconsistent_with_merged), so the
+//  Tier-0 tied block stays skipped - but a detection may still stand on the INDEPENDENT merged
+//  comparison.  The solution is still downgraded to PoorlySeparated.  With no independent merged
+//  support it must return to None (the previous hard-veto behaviour, now reached by evidence).
+BOOST_AUTO_TEST_CASE( inconsistent_tie_recovers_on_independent_merged )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;                              // model_error_scale == 1
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;                                          // below every z bar => isolate the merged basis
+
+  RelActAutoSolution::TiedEnrichmentComparison tied;
+  tied.valid = false;                                   // set together with inconsistent_with_merged
+  tied.inconsistent_with_merged = true;
+  tied.delta_chi2 = 82.0;                               // untrustworthy - must NOT be used
+  tied.extra_dof_of_free = 2;
+  sol.m_tied_enrichment_comparison = tied;
+
+  sol.m_merged_single_curve_comparison->delta_chi2 = 20.0;  // clears 5-sigma bar (2 + 5*sqrt(4) = 12)
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::MergedOnly );
+  BOOST_CHECK( sol.curves_detected_distinct() );
+  BOOST_CHECK( sol.curves_distinct_basis() != RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+  // The inconsistent tie keeps the status PoorlySeparated (finalize downgrade preserved).
+  BOOST_CHECK( sol.m_curve_separation_status
+               == RelActAutoSolution::CurveSeparationStatus::PoorlySeparated );
+  BOOST_CHECK( sol.distinct_basis_none_reason().empty() );  // detected => no reason
+
+  // Negative control: no independent merged support -> back to None (the old veto's result), with a
+  //  reason naming the tied inconsistency.
+  sol.m_merged_single_curve_comparison->delta_chi2 = -79.0;
+  sol.finalize_curve_separation_status();
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK( !sol.curves_detected_distinct() );
+  BOOST_CHECK_MESSAGE( contains( sol.distinct_basis_none_reason(), "tied" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+}//BOOST_AUTO_TEST_CASE( inconsistent_tie_recovers_on_independent_merged )
+
+
+// Part 2 (overfit guard): a self-atten areal density railed near the physical ceiling is the fit
+//  soaking up a free composition DOF (an Outer U232 with nothing to explain drives the Inner shield to
+//  376 of 500 g/cm2 on a single natural-U disk), not a real second curve.  It must suppress an
+//  otherwise-firing detection, regardless of tier.  Genuine two-curve detections keep AD <= ~10 g/cm2.
+BOOST_AUTO_TEST_CASE( railed_self_atten_ad_suppresses_detection )
+{
+  using PMFI = RelActAutoSolution::PhysicalModelFitInfo;
+
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;
+  sol.m_dof_data = 100;
+
+  RelActAutoSolution::TiedEnrichmentComparison tied;   // a VALID tie that would detect
+  tied.valid = true;
+  tied.inconsistent_with_merged = false;               // Problem-1 path untouched
+  tied.delta_chi2 = 82.0;                              // >> 3-sigma bar of 8
+  tied.extra_dof_of_free = 2;
+  sol.m_tied_enrichment_comparison = tied;
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );  // baseline detects
+
+  sol.m_phys_model_results.assign( 2, std::optional<PMFI>{} );
+  PMFI inner;
+  PMFI::ShieldInfo sa;
+  sa.areal_density_was_fit = true;
+  sa.areal_density = 376.0 * PhysicalUnits::g_per_cm2;  // ceiling is 500 g/cm2
+  inner.self_atten = sa;
+  sol.m_phys_model_results[0] = inner;
+
+  BOOST_CHECK(  sol.self_atten_ad_railed( 0 ) );
+  BOOST_CHECK( !sol.self_atten_ad_railed( 1 ) );        // empty optional
+  BOOST_CHECK(  sol.detection_rests_on_railed_self_atten() );
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK( !sol.curves_detected_distinct() );
+  BOOST_CHECK_MESSAGE( contains( sol.distinct_basis_none_reason(), "railed" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+
+  // Boundary: a genuine thin absorber (<= 10.2 g/cm2) is NOT railed and the detection stands.
+  sol.m_phys_model_results[0]->self_atten->areal_density = 10.2 * PhysicalUnits::g_per_cm2;
+  BOOST_CHECK( !sol.self_atten_ad_railed( 0 ) );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+
+  // A fit is railed relative to the bound it was ACTUALLY fit against, which is the curve's own
+  //  `upper_fit_areal_density` whenever the caller set one - not the global ceiling.  Both directions
+  //  matter, so both are pinned here: no config in the U-disk corpus sets the bound (all leave it 0,
+  //  i.e. "use the global default"), so without these two checks the per-shield lookup is dead code
+  //  that no test and no corpus row exercises.
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+                                   = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+  shield->lower_fit_areal_density = 0.0;
+  shield->upper_fit_areal_density = 20.0 * PhysicalUnits::g_per_cm2;
+  sol.m_options.rel_eff_curves[0].phys_model_self_atten = shield;
+
+  // 10.2 of a user-set 20 is railed (>= half), though it is nowhere near the global 500.
+  BOOST_CHECK( sol.self_atten_ad_railed( 0 ) );
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+
+  // ...and a legitimately thick shield is NOT railed when the ceiling it was fit against is high.
+  shield->upper_fit_areal_density = 400.0 * PhysicalUnits::g_per_cm2;
+  BOOST_CHECK( !sol.self_atten_ad_railed( 0 ) );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+
+  // A degenerate bound (upper == lower) is a FIXED value, not a fit range, so it must fall back to
+  //  the global ceiling rather than declare every such shield railed at 50% of itself.
+  shield->lower_fit_areal_density = shield->upper_fit_areal_density
+                                  = 10.2 * PhysicalUnits::g_per_cm2;
+  BOOST_CHECK( !sol.self_atten_ad_railed( 0 ) );
+}//BOOST_AUTO_TEST_CASE( railed_self_atten_ad_suppresses_detection )
+
+
+// The stacked short-circuit's explanation must describe the tie it actually got.  All three of its
+//  wordings are reachable, and the "not rejected" one must never be printed for a REJECTED tie - the
+//  report would then contradict the tied delta-chi2 printed beside it.
+BOOST_AUTO_TEST_CASE( stacked_none_reason_matches_the_tie_it_got )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;                              // model_error_scale == 1
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;                                          // silence Tiers 1-2
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;   // under its own bars
+
+  // Stacked geometry: the inner curve is shielded by the outer curve's shielding.
+  sol.m_options.rel_eff_curves[0].shielded_by_other_phys_model_curve_shieldings = { 1 };
+
+  RelActAutoSolution::TiedEnrichmentComparison tied;
+  tied.valid = true;
+  tied.inconsistent_with_merged = false;
+  tied.extra_dof_of_free = 2;                           // 3-sigma bar 8, 5-sigma bar 12
+  tied.delta_chi2 = 3.0;                                // adequate: one composition fits
+  sol.m_tied_enrichment_comparison = tied;
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK_MESSAGE( contains( sol.distinct_basis_none_reason(), "was not rejected" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+
+  // A REJECTED-but-marginal tie must NOT be described as "not rejected".  (This one is caught by the
+  //  marginal-tie clause, which is the ordering that makes the sign test accidentally correct.)
+  sol.m_tied_enrichment_comparison->delta_chi2 = 10.5;
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK_MESSAGE( !contains( sol.distinct_basis_none_reason(), "was not rejected" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+
+  // With NO valid merged comparison the marginal clause cannot intercept - and the documented rule is
+  //  that the tie is then all the evidence there is, so it DETECTS rather than reaching the stacked
+  //  branch at all.  Pinned here because it is what makes the branch above safe: a rejected tie can
+  //  never reach the "not rejected" wording, since it either detects here or was intercepted above.
+  sol.m_merged_single_curve_comparison->valid = false;
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+  BOOST_CHECK( sol.distinct_basis_none_reason().empty() );   // detected: no reason to give
+
+  // And the fit-defect wording for a negative tied delta.
+  sol.m_tied_enrichment_comparison->delta_chi2 = -5.0;
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK_MESSAGE( contains( sol.distinct_basis_none_reason(), "LOWER chi2" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+}//BOOST_AUTO_TEST_CASE( stacked_none_reason_matches_the_tie_it_got )
+
+
+// A tied rejection only marginally over the 3-sigma bar must be corroborated by the merged
+//  single-curve comparison, which nulls something different (one curve AND one composition).  With 2
+//  extra DOF the 3-sigma bar is chi2 ~8, which a two-curve fit of a SINGLE object clears on counting
+//  noise alone (measured 10.5-24.0 on four homogeneous/single-disk spectra, versus 10.9 for the
+//  weakest genuine two-disk detection), so the tied axis cannot separate those populations.  Inside
+//  this marginal band the merged axis does: the corpus false positives sit at merged 3.56/4.28/4.41
+//  sigma against 18.93 for the genuine pair.  NOT an independent test - both deltas are measured
+//  against the same free-fit chi2 (corpus r ~ 0.65) - so the warrant is that measured separation, and
+//  only inside the band.  A tie at or above 5 sigma keeps its documented standalone precedence.
+BOOST_AUTO_TEST_CASE( marginal_tie_requires_merged_corroboration )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;                              // model_error_scale == 1
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;                                          // silence Tiers 1-2 to isolate Tier 0
+
+  // extra_dof_of_free = 2 => 3-sigma bar 2 + 3*sqrt(4) = 8, 5-sigma bar 2 + 5*sqrt(4) = 12.
+  RelActAutoSolution::TiedEnrichmentComparison tied;
+  tied.valid = true;
+  tied.inconsistent_with_merged = false;
+  tied.delta_chi2 = 10.5;                               // marginal: over 8, under 12
+  tied.extra_dof_of_free = 2;
+  sol.m_tied_enrichment_comparison = tied;
+
+  // Merged bar is likewise 12 (extra_dof_of_multi = 2).  Uncorroborated -> no Tier-0 accept, and with
+  //  the z's silenced and the merged delta under its own bars, nothing else fires either.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK( !sol.curves_detected_distinct() );
+  BOOST_CHECK_MESSAGE( contains( sol.distinct_basis_none_reason(), "marginal" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+
+  // Same marginal tie, now corroborated by the merged comparison above its 5-sigma bar.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 20.0;
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+  BOOST_CHECK( sol.distinct_basis_none_reason().empty() );
+
+  // A CONFIDENT tie (>= 5 sigma) stands alone: it must still detect with the merged test silent,
+  //  which is the whole point of Tier 0 taking precedence in both directions.
+  sol.m_tied_enrichment_comparison->delta_chi2 = 30.0;
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+
+  // And a marginal tie with NO valid merged comparison to consult also stands - the tie is then the
+  //  only evidence available, so requiring corroboration would silently drop those files.
+  sol.m_tied_enrichment_comparison->delta_chi2 = 10.5;
+  sol.m_merged_single_curve_comparison->valid = false;
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+
+  // A NEGATIVE merged delta must not veto either: merging only removes freedom, so delta < 0 means
+  //  the multi-curve fit never reached its own optimum - a bad fit, not evidence of sameness.  Same
+  //  doctrine as merged_overrules_z_detection().  Letting it read as "failed to corroborate" would
+  //  suppress a genuine detection on the strength of a defective comparison.
+  sol.m_merged_single_curve_comparison->valid = true;
+  sol.m_merged_single_curve_comparison->delta_chi2 = -5.0;
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+
+  // Exact-bar boundaries.  Tier 0 needs a STRICT excess over the 3-sigma bar, and the marginal window
+  //  is open at both ends, so a delta sitting exactly on either bar must not be called marginal.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;   // uncorroborated, so only the tie decides
+  sol.m_tied_enrichment_comparison->delta_chi2 = 8.0;       // exactly the 3-sigma bar
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+
+  sol.m_tied_enrichment_comparison->delta_chi2 = 12.0;      // exactly the 5-sigma bar: not marginal
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+}//BOOST_AUTO_TEST_CASE( marginal_tie_requires_merged_corroboration )
+
+
+// The bars scale with chi2/dof (model error), and the whole real corpus runs at scale > 1, so pin the
+//  scaling itself: with scale = 2.5 the 3-sigma tied bar moves 8 -> 20 and the 5-sigma bar 12 -> 30.
+//  A tie at 10.5 is a comfortable Tier-0 accept at scale 1 and must NOT even be marginal at 2.5.
+BOOST_AUTO_TEST_CASE( marginal_tie_window_scales_with_model_error )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 250.0;                                // model_error_scale == 2.5
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;
+
+  RelActAutoSolution::TiedEnrichmentComparison tied;
+  tied.valid = true;
+  tied.inconsistent_with_merged = false;
+  tied.delta_chi2 = 10.5;                                 // under the scaled 3-sigma bar of 20
+  tied.extra_dof_of_free = 2;
+  sol.m_tied_enrichment_comparison = tied;
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;
+
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );   // below the window, not inside it
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+
+  // Inside the scaled window (20, 30): now marginal, and the merged delta of 8 cannot corroborate it
+  //  (its own scaled 5-sigma bar is 2.5*(2 + 5*2) = 30).
+  sol.m_tied_enrichment_comparison->delta_chi2 = 25.0;
+  BOOST_CHECK( sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+
+  // Corroborated at the scaled bar -> accepted.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 30.0;
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+}//BOOST_AUTO_TEST_CASE( marginal_tie_window_scales_with_model_error )
+
+
+// The dof arithmetic must not be hard-wired to 2 extra DOF: with 4 (two curves x two tied sources)
+//  the 3-sigma bar is 4 + 3*sqrt(8) = 12.49 and the 5-sigma bar 4 + 5*sqrt(8) = 18.14.
+BOOST_AUTO_TEST_CASE( marginal_tie_window_follows_extra_dof )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;                                // scale == 1
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;
+
+  RelActAutoSolution::TiedEnrichmentComparison tied;
+  tied.valid = true;
+  tied.inconsistent_with_merged = false;
+  tied.extra_dof_of_free = 4;
+  tied.delta_chi2 = 15.0;                                 // inside (12.49, 18.14)
+  sol.m_tied_enrichment_comparison = tied;
+  sol.m_merged_single_curve_comparison->delta_chi2 = 8.0;  // merged bar is still 12 -> no corroboration
+  BOOST_CHECK( sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+
+  // Above the 4-dof 5-sigma bar the tie stands alone again.
+  sol.m_tied_enrichment_comparison->delta_chi2 = 19.0;
+  BOOST_CHECK( !sol.tie_marginal_and_uncorroborated() );
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::TiedEnrichment );
+}//BOOST_AUTO_TEST_CASE( marginal_tie_window_follows_extra_dof )
+
+
+// `single_curve_adequate` is false above the 3-sigma-scaled bar, but Tier 3 MergedOnly needs the
+//  5-sigma one.  In the band between them the report prints "one merged curve cannot describe this
+//  data" next to a None verdict, so distinct_basis_none_reason() must not come back empty - an
+//  unexplained None beside a large delta-chi2 is the contradiction this accessor exists to prevent.
+BOOST_AUTO_TEST_CASE( merged_gap_band_none_still_explains_itself )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;                                // model_error_scale == 1
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &d : sol.m_enrichment_diff_z )
+    d.z = 1.0;                                            // silence Tiers 1-2
+  sol.m_tied_enrichment_comparison.reset();               // no tied comparison available
+
+  // extra_dof_of_multi = 2 => 3-sigma bar 8, 5-sigma bar 12.  10 sits in the gap.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 10.0;
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_REQUIRE( sol.m_merged_single_curve_comparison.has_value() );
+  BOOST_CHECK( !sol.m_merged_single_curve_comparison->single_curve_adequate );
+
+  const string reason = sol.distinct_basis_none_reason();
+  BOOST_CHECK_MESSAGE( !reason.empty(), "gap-band None must give a reason, got an empty string" );
+  BOOST_CHECK_MESSAGE( contains( reason, "not decisively enough" ), "reason: " << reason );
+  // With no tie available the reason should say so, rather than implying a composition test ran.
+  BOOST_CHECK_MESSAGE( contains( reason, "no common-enrichment (tied) comparison was available" ),
+                       "reason: " << reason );
+
+  // Above the 5-sigma bar it detects, and the reason goes quiet.
+  sol.m_merged_single_curve_comparison->delta_chi2 = 20.0;
+  sol.finalize_curve_separation_status();
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::MergedOnly );
+  BOOST_CHECK( sol.distinct_basis_none_reason().empty() );
+
+  // A NEGATIVE merged delta is a fit defect, not a two-curve claim: `single_curve_adequate` is false
+  //  there too, but this fallback must not fire and dress a defect up as weak evidence.
+  sol.m_merged_single_curve_comparison->delta_chi2 = -79.0;
+  sol.finalize_curve_separation_status();
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK_MESSAGE( !contains( sol.distinct_basis_none_reason(), "not decisively enough" ),
+                       "reason: " << sol.distinct_basis_none_reason() );
+}//BOOST_AUTO_TEST_CASE( merged_gap_band_none_still_explains_itself )
 
 
 // A decisive merged rejection with only a tiny z (< 1.5) detects the CURVES as distinct, but the

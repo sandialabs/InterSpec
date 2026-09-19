@@ -21016,8 +21016,19 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
                      : "Δχ² ≫ Δdof: one merged curve cannot describe this data - note this says more"
                        " than one curve is needed, not that the per-curve split is well determined"))
             << ").\n";
-        if( !merged.message.empty() )
+        if( !SpecUtils::trim_copy(merged.message).empty() )
           out << "    Note: " << merged.message << "\n";
+        // Without this the "more than one curve is needed" clause above sits next to a
+        //  "not distinguished" headline and reads as a contradiction: the merged delta-chi2 can be
+        //  arbitrarily large while some other criterion (an uncorroborated marginal tie, a
+        //  not-rejected tie on a stacked geometry) is what decides the verdict.  Mirrors the same
+        //  guard in the report templates.
+        //  Only on the "raises chi2" branch: the merged_better sentence reports a FIT DEFECT, not a
+        //  "more than one curve is needed" claim, so there is no contradiction there to explain.
+        const string none_reason = (merged_better || merged.single_curve_adequate)
+                                   ? string() : distinct_basis_none_reason();
+        if( !none_reason.empty() )
+          out << "    Note: this did not on its own establish two curves - " << none_reason << ".\n";
       }else
       {
         out << "  Single-curve comparison: not available (" << merged.message << ").\n";
@@ -21799,8 +21810,15 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                        " note this says more than one curve is needed, not that the per-curve split is"
                        " well determined"))
             << ").";
-          if( !merged.message.empty() )
+          if( !SpecUtils::trim_copy(merged.message).empty() )
             results_html << " Note: " << merged.message << ".";
+          // Same anti-contradiction note as print_summary() and the report templates - including
+          //  the merged_better exclusion (that branch reports a fit defect, not a two-curve claim).
+          const string none_reason = (merged_better || merged.single_curve_adequate)
+                                     ? string() : distinct_basis_none_reason();
+          if( !none_reason.empty() )
+            results_html << " Note: this did not on its own establish two curves - " << none_reason
+                         << ".";
           results_html << "</div>\n";
         }else
         {
@@ -24265,6 +24283,23 @@ std::string RelActAutoSolution::z_row_annotation( const EnrichmentDiffZ &diff ) 
 
 std::string RelActAutoSolution::curve_separation_trigger_text() const
 {
+  // A self-atten AD railed near the physical ceiling is the most specific/actionable diagnosis: an
+  //  unconstrained shield absorbing the free composition parameters rather than a genuine second curve.
+  for( size_t re = 0; re < m_phys_model_results.size(); ++re )
+  {
+    if( !self_atten_ad_railed( re ) )
+      continue;
+
+    const double ad_g_per_cm2 = m_phys_model_results[re]->self_atten->areal_density
+                                / PhysicalUnits::g_per_cm2;
+    return "the self-attenuation areal density of " + curve_label(re) + " is railed to an unphysical "
+           + SpecUtils::printCompact(ad_g_per_cm2, 4) + " g/cm2 (physical ceiling "
+           + SpecUtils::printCompact(
+               RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2, 4)
+           + " g/cm2), i.e. an unconstrained shield absorbing the free composition parameters rather"
+             " than a genuine second curve, so no separation statistic from this fit is usable";
+  }//for( each curve )
+
   if( m_tied_enrichment_comparison.has_value()
       && m_tied_enrichment_comparison->inconsistent_with_merged )
     return "the fits are not mutually consistent - constraining the curves to a common enrichment"
@@ -24697,6 +24732,104 @@ bool RelActAutoSolution::merged_overrules_z_detection() const
 }//bool merged_overrules_z_detection() const
 
 
+bool RelActAutoSolution::self_atten_ad_railed( const size_t rel_eff_index ) const
+{
+  // Genuine front-higher two-curve detections keep max self-atten AD <= ~10 g/cm2; a value pushed to
+  //  a large fraction of the physical ceiling is the fit absorbing a free composition DOF in an
+  //  unphysical shield (e.g. an Outer U232 with nothing to explain driving the Inner shield to 376 of
+  //  500 g/cm2 on a single natural-U disk), not a real second curve.  A VALUE test is used
+  //  deliberately, NOT `m_param_at_bound`: the solver's at-bound tolerance is ~0.5 g/cm2, so a shield
+  //  that flattens the objective short of the ceiling is never flagged at-bound yet is every bit as
+  //  unphysical - and this test needs no fit layout, so it also holds on a merged/tied re-fit and in
+  //  unit tests.
+  static constexpr double sm_railed_self_atten_ad_fraction = 0.5;
+
+  if( rel_eff_index >= m_phys_model_results.size() )
+    return false;
+
+  const std::optional<PhysicalModelFitInfo> &phys = m_phys_model_results[rel_eff_index];
+  if( !phys.has_value() || !phys->self_atten.has_value() )
+    return false;
+
+  // Compare against the bound this shield was ACTUALLY fit against, not the global ceiling: a user
+  //  may set `upper_fit_areal_density` per shield (RelActCalc.h), and the global default only applies
+  //  when both bounds are left at zero (see the AD setup in setup_physical_model_shield_par).  Using
+  //  the global 500 would never flag a fit railed against a user-set bound of, say, 20 g/cm2, and
+  //  would flag a legitimately thick shield in a config whose ceiling really is 500.
+  double ceiling
+      = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+  if( rel_eff_index < m_options.rel_eff_curves.size() )
+  {
+    const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+        = m_options.rel_eff_curves[rel_eff_index].phys_model_self_atten;
+    if( shield )
+    {
+      const double lower_ad = shield->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+      const double upper_ad = shield->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+      if( (upper_ad > 0.0) && (upper_ad != lower_ad) )
+        ceiling = upper_ad;
+    }
+  }
+
+  const PhysicalModelFitInfo::ShieldInfo &self_atten = *phys->self_atten;
+  if( !self_atten.areal_density_was_fit )
+    return false;
+
+  const double ad_g_per_cm2 = self_atten.areal_density / PhysicalUnits::g_per_cm2;
+
+  return (ad_g_per_cm2 >= sm_railed_self_atten_ad_fraction*ceiling);
+}//bool self_atten_ad_railed( const size_t rel_eff_index ) const
+
+
+bool RelActAutoSolution::detection_rests_on_railed_self_atten() const
+{
+  for( size_t re = 0; re < m_phys_model_results.size(); ++re )
+  {
+    if( self_atten_ad_railed( re ) )
+      return true;
+  }
+
+  return false;
+}//bool detection_rests_on_railed_self_atten() const
+
+
+bool RelActAutoSolution::tie_marginal_and_uncorroborated() const
+{
+  if( !m_tied_enrichment_comparison.has_value() || !m_tied_enrichment_comparison->valid
+      || !m_merged_single_curve_comparison.has_value() || !m_merged_single_curve_comparison->valid )
+    return false;
+
+  const double scale = (m_dof_data > 0)
+            ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+
+  const double tied_delta = m_tied_enrichment_comparison->delta_chi2;
+  const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+  const bool marginal = (tied_delta >= 0.0)
+            && (tied_delta > scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof)))
+            && (tied_delta < scale*(tied_dof + 5.0*std::sqrt(2.0*tied_dof)));
+  if( !marginal )
+    return false;
+
+  const double merged_delta = m_merged_single_curve_comparison->delta_chi2;
+
+  // A negative merged delta means the multi-curve fit never reached its own optimum (merging only
+  //  removes freedom), so the merged comparison is evidence of a BAD FIT, not of sameness - the same
+  //  doctrine merged_overrules_z_detection() states explicitly.  Letting it count as "failed to
+  //  corroborate" would let a defective merged fit veto the tie by omission, which is exactly the
+  //  sign-convention error that doctrine exists to prevent.  Not reachable on the current corpus
+  //  under the assigned configs, but the rule has to be right, not merely unexercised.
+  if( merged_delta < 0.0 )
+    return false;
+
+  const double merged_dof
+            = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
+  const bool corroborated
+            = (merged_delta >= scale*(merged_dof + 5.0*std::sqrt(2.0*merged_dof)));
+
+  return !corroborated;
+}//bool tie_marginal_and_uncorroborated() const
+
+
 RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis() const
 {
   // See the header doc for the three-tier rule.  The delta-chi2 thresholds are scaled by
@@ -24721,12 +24854,21 @@ RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis
   //  Δχ2 that only reflects the second curve soaking up model error.
   const double model_error_scale = (m_dof_data > 0)
             ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
-  // A tied fit that could not even match the merged fit is proof the fits are not mutually
-  //  consistent, and that undermines the per-curve compositions the z tiers below rest on just as
-  //  much as it undermines the tied delta-chi2.  Claim nothing.
-  if( m_tied_enrichment_comparison.has_value()
-      && m_tied_enrichment_comparison->inconsistent_with_merged )
+
+  // A detection resting on a self-atten areal density railed to an unphysically large value is the
+  //  fit soaking up a free composition DOF (e.g. an Outer U232 with nothing to explain driving the
+  //  Inner shield to 376 of 500 g/cm2 on a single natural-U disk), not evidence of a second curve.
+  //  Runs before every tier - including the Tier-0 tied accept below - because the railed shield
+  //  corrupts the tied, merged and per-curve-composition statistics alike.
+  if( detection_rests_on_railed_self_atten() )
     return CurveDistinctBasis::None;
+
+  // A tied fit that could not reach the merged fit's chi2 has valid==false and inconsistent==true set
+  //  together (see add_tied_enrichment_comparison), so the Tier-0 tied block below is skipped and its
+  //  untrustworthy delta-chi2 is never used.  We deliberately DO NOT return None here: a detection may
+  //  still stand on the SEPARATELY-NULLED merged-curve comparison (Tiers 2-3, which require
+  //  delta_chi2 >= 0 above their bar) or a reliable z (Tier 1) - evidence the bad tie does not taint.
+  //  finalize_curve_separation_status() still downgrades such a solution to PoorlySeparated.
 
   const bool tied_valid = (m_tied_enrichment_comparison.has_value()
                            && m_tied_enrichment_comparison->valid);
@@ -24736,9 +24878,31 @@ RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis
     const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
     // A negative delta means the tied (restricted) fit beat the free one, i.e. the free fit is not
     //  at its optimum - never a detection.
-    if( (tied_delta >= 0.0)
+    // A tied delta-chi2 only just over the 3-sigma bar is not, on its own, enough: with 2 extra DOF
+    //  that bar sits at chi2 ~8, and a two-curve fit of a SINGLE disk clears it on noise alone
+    //  (measured: 10.5-24.0 on four homogeneous/single-disk spectra, versus 10.9 for the weakest
+    //  genuine two-disk detection - the two populations are inseparable on this axis).  The merged
+    //  single-curve comparison nulls something DIFFERENT (one curve AND one composition), and inside
+    //  this marginal band it does discriminate: measured on the 80-file corpus, the false positives
+    //  sit at merged 3.56/4.28/4.41 sigma while the genuine pair sits at 18.93.  So a MARGINAL tie
+    //  must be corroborated by the merged test, at the same 5-sigma bar Tier 3 uses.
+    //  Not an independent test - both deltas share the free-fit chi2 (corpus r ~ 0.65) - so the
+    //  justification is the measured separation in this band, not an independence argument.  Outside
+    //  the band the merged axis does NOT cleanly separate (an FP reaches 49.3 on a bad basin, and
+    //  --robust-solve is what fixes that one), which is exactly why the rule is scoped to it.
+    //
+    //  Scoped to marginal ties on purpose: at or above 5 sigma the tied statistic keeps the
+    //  standalone precedence documented above (it must, since it detects where the merged test is
+    //  silent), and when no valid merged comparison exists the tie is all there is, so it stands.
+    if( (tied_delta >= 0.0) && !tie_marginal_and_uncorroborated()
         && (tied_delta > model_error_scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof))) )
       return CurveDistinctBasis::TiedEnrichment;
+
+    // An uncorroborated marginal tie only declines the Tier-0 ACCEPT rather than returning None, so
+    //  the independent tiers below can still stand on their own evidence - the same reasoning that
+    //  removed the blunt inconsistent-with-merged veto above.  (For a STACKED geometry the
+    //  short-circuit just below ends the question first, which is intended: that is the geometry
+    //  where the false positives live, and where equal composition really does mean one layer.)
 
     // "Same composition" ends the question only for a STACKED geometry, where same-material layers
     //  are exactly one thicker layer and there is nothing left to detect.  For co-located or
@@ -24787,6 +24951,110 @@ bool RelActAutoSolution::curves_detected_distinct() const
 {
   return (curves_distinct_basis() != CurveDistinctBasis::None);
 }//bool curves_detected_distinct()
+
+
+std::string RelActAutoSolution::distinct_basis_none_reason() const
+{
+  // Empty when the curves WERE detected as distinct - the reason column only explains a None.
+  if( curves_distinct_basis() != CurveDistinctBasis::None )
+    return std::string();
+
+  // The railed self-atten AD is the most specific cause; curve_separation_trigger_text() already
+  //  leads with it, so reuse that single source rather than re-wording here.
+  if( detection_rests_on_railed_self_atten() )
+    return curve_separation_trigger_text();
+
+  // A tied fit that could not reach the merged fit's chi2 no longer hard-vetoes (Tiers 1-3 could
+  //  still fire on independent evidence); when none did, say so.
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged )
+    return "the common-enrichment (tied) fit was inconsistent with the merged single-curve fit, and"
+           " the independent merged/z evidence did not on its own support two curves";
+
+  // A marginal tied rejection (3 to 5 sigma) that the merged comparison declined to corroborate:
+  //  worth naming, because the tied delta-chi2 shown in the report DID clear its own 3-sigma bar,
+  //  which without this note reads as a contradiction.
+  if( tie_marginal_and_uncorroborated() )
+    return "the common-enrichment (tied) fit was rejected only marginally (between the 3- and"
+           " 5-sigma-scaled chi2 bars, not a p-value), and the independent merged single-curve fit"
+           " did not corroborate two curves - a two-curve fit of a single object can clear the"
+           " marginal tied bar on counting noise alone";
+
+  // The stacked short-circuit: for layers in a beam, one composition IS one layer, so a tied fit that
+  //  was not rejected ends the question no matter how large the merged delta-chi2 is.  Named because
+  //  that merged number is printed right above, and a large one next to a "not distinguished"
+  //  headline otherwise looks like the report disagreeing with itself.
+  const bool tied_valid = (m_tied_enrichment_comparison.has_value()
+                           && m_tied_enrichment_comparison->valid);
+  if( tied_valid )
+  {
+    bool stacked = false;
+    for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
+      stacked = (stacked || !curve.shielded_by_other_phys_model_curve_shieldings.empty());
+
+    if( stacked )
+    {
+      // A negative delta means the tied (restricted) fit beat the free one - a fit defect rather than
+      //  a statement about the data, so it is worth wording differently.
+      if( m_tied_enrichment_comparison->delta_chi2 < 0.0 )
+        return "the common-enrichment (tied) fit reached a LOWER chi2 than the free two-curve fit, so"
+               " the two-curve fit is not at its own optimum and no composition difference is"
+               " established; for stacked layers one composition means one layer";
+
+      // Saying "not rejected" here is only correct because of the checks ABOVE: a tie over the
+      //  3-sigma bar either passed the Tier-0 accept (so we are not in a None at all) or was marginal
+      //  and uncorroborated (returned by the clause above).  Exhaustively enumerated - there is no
+      //  reachable state that lands here with a rejected tie - so this is not re-tested against the
+      //  bar; a branch for it would be dead code.  The dev check pins the invariant instead, so a
+      //  future reorder of either this function or the Tier-0 block trips a developer build rather
+      //  than silently printing "not rejected" next to a tied delta-chi2 that cleared its own bar.
+#if( PERFORM_DEVELOPER_CHECKS )
+      {
+        const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+        const double dev_scale = (m_dof_data > 0)
+                  ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+        const double bar_3sigma = dev_scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof));
+        // log_developer_error() rather than a bare assert(): developer builds are compiled -DNDEBUG
+        //  (see the Release flags), which expands assert() to nothing, so an assert here would be a
+        //  no-op in exactly the builds meant to catch this.
+        if( m_tied_enrichment_comparison->delta_chi2 > bar_3sigma )
+        {
+          char buffer[256];
+          snprintf( buffer, sizeof(buffer), "distinct_basis_none_reason: about to report the tied fit"
+                    " as \"not rejected\", but its delta-chi2 (%.6g) is over the 3-sigma-scaled bar"
+                    " (%.6g) - the Tier-0 ordering this wording relies on has changed.",
+                    m_tied_enrichment_comparison->delta_chi2, bar_3sigma );
+          log_developer_error( __func__, buffer );
+        }
+      }
+#endif
+
+      return "the common-enrichment (tied) fit was not rejected: one composition describes this data,"
+             " and for stacked layers that means one layer - a merged single-curve chi2 penalty can"
+             " still be large because merging also removes the per-curve shielding freedom";
+    }//if( stacked )
+  }//if( tied_valid )
+
+  // Last cause: the merged fit WAS rejected at the 3-sigma-scaled bar (which is what makes the
+  //  "one merged curve cannot describe this data" clause print) but fell short of the higher
+  //  5-sigma-scaled bar Tier 3 demands when delta-chi2 is the only evidence.  Without this the
+  //  gap between the two bars yields a None with no reason at all, next to a large printed
+  //  delta-chi2 - the exact contradiction this accessor exists to prevent.
+  if( m_merged_single_curve_comparison.has_value() && m_merged_single_curve_comparison->valid
+      && !m_merged_single_curve_comparison->single_curve_adequate
+      && (m_merged_single_curve_comparison->delta_chi2 >= 0.0) )
+  {
+    const bool no_tie = !tied_valid;
+    return string("the merged single-curve fit was rejected, but not decisively enough to establish two"
+                  " curves on that evidence alone (it did not reach the higher bar required when the"
+                  " merged chi2 difference is the only evidence)")
+           + (no_tie ? ", and no common-enrichment (tied) comparison was available - this data does not"
+                       " determine a shared element's composition on every curve"
+                     : " and no per-curve composition difference corroborated it");
+  }
+
+  return std::string();
+}//std::string distinct_basis_none_reason() const
 
 
 const char *RelActAutoSolution::curve_separation_display() const
@@ -24998,6 +25266,26 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
                                  " of its own best answer.  Treat the per-curve split as unreliable"
                                  " and re-fit (e.g. from different starting values) before using it.";
 
+  // Appended where the curves were NOT detected as distinct but a delta-chi2 printed elsewhere in the
+  //  report DID clear its own bar - an uncorroborated marginal tie, or a not-rejected tie on a stacked
+  //  geometry sitting next to a large merged delta-chi2.  Without it those numbers read as a
+  //  contradiction of the "not distinguished" headline.  Sourced from distinct_basis_none_reason() so
+  //  the wording lives in one place; empty when that has nothing specific to say.
+  //  Two causes are deliberately NOT repeated here: a railed self-atten AD (already the leading
+  //  sentence of this verdict, via curve_separation_trigger_text()), and a not-rejected stacked tie
+  //  when the merged fit was ALSO adequate (the merged_adequate && stacked branch below says it
+  //  better, naming the single-material interpretation).
+  //  `merged_rejected` rather than `!merged_adequate` on purpose: the latter is also true when the
+  //  merged comparison is invalid or absent, where there is no printed merged number to contradict.
+  const bool merged_rejected = (merged_valid
+                                && !m_merged_single_curve_comparison->single_curve_adequate);
+  const bool worth_naming = !curves_detected_distinct()
+            && !detection_rests_on_railed_self_atten()
+            && (tie_marginal_and_uncorroborated() || merged_rejected);
+  const string none_reason = worth_naming ? distinct_basis_none_reason() : string();
+  const string uncorroborated_tie_note
+        = none_reason.empty() ? string() : ("  Note: " + none_reason + ".");
+
   switch( m_curve_separation_status )
   {
     case CurveSeparationStatus::NotApplicable:
@@ -25040,6 +25328,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
           verdict += "  Note: whether the curves genuinely differ could not be assessed (no nuclide"
                      " shared between curves has usable uncertainties, and the single-curve"
                      " comparison was not available).";
+        verdict += uncorroborated_tie_note;
       }//if( no strong detection )
 
       if( merged_fits_better )
@@ -25084,6 +25373,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
           verdict += "  A composition difference is hinted at only marginal significance (z = "
                      + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
                      + RelActCalcAuto::to_name(max_z_entry->nuclide) + "; not conclusive).";
+        verdict += uncorroborated_tie_note;
       }
 
       const string caveat = blended_source_caveat_text( html );

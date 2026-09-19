@@ -511,6 +511,9 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     }
     data["curves_distinct_basis"] = string(basis_str);
 
+    // Why no tier fired (empty when the curves were detected as distinct).
+    data["distinct_basis_none_reason"] = sol.distinct_basis_none_reason();
+
     const auto corr_to_json = []( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr ) -> json {
       json entry;
       entry["curve_a"] = static_cast<int64_t>(corr.curve_a);
@@ -659,7 +662,9 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       const RelActCalcAuto::RelActAutoSolution::MergedCurveComparison &merged = *sol.m_merged_single_curve_comparison;
       json entry;
       entry["valid"] = merged.valid;
-      entry["message"] = merged.message;
+      // Trimmed: templates test this for truthiness, and a whitespace-only string is truthy, which
+      //  would print a dangling "Note:" with nothing after it.
+      entry["message"] = SpecUtils::trim_copy( merged.message );
       entry["multi_chi2"] = merged.multi_chi2_data;
       entry["multi_dof"] = static_cast<int64_t>(merged.multi_dof_data);
       entry["merged_chi2"] = merged.merged_chi2_data;
@@ -770,6 +775,11 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     {
       curve["equation_error"] = e.what();
     }
+
+    // Per-curve flag: a self-atten AD railed near the physical ceiling (see
+    //  RelActAutoSolution::self_atten_ad_railed) - an unphysical shield soaking up composition DOF,
+    //  which suppresses the multi-curve distinctness verdict.
+    curve["self_atten_ad_railed"] = sol.self_atten_ad_railed( i );
 
     data["rel_eff_curves"].push_back( curve );
   }
