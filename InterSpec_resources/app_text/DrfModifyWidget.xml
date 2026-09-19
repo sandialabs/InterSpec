@@ -165,7 +165,7 @@
     distance than the reference distance, and this detector does not describe enough geometry to move
     it there, so nothing was changed.</message>
   <message id="dmw-err-regen-failed">The response could not be regenerated, so this detector was not
-    changed.  Check the geometry on the &quot;Geom &amp; MC&quot; tab.</message>
+    changed.  Check the geometry on the &quot;Geom &amp;amp; MC&quot; tab.</message>
   <message id="dmw-err-refit-failed">The efficiency equation could not be re-fit to these points, so
     nothing was changed: {1}</message>
   <message id="dmw-err-uncert-not-built">The uncertainty could not be built from these rows, so
@@ -204,7 +204,7 @@
     current geometry and points, or remove it and go back to the flat-disk far-field model.</message>
   <message id="dmw-regen-impossible-body">While a geometry-modeled response is attached, it - not the
     curve or points you edited - answers every efficiency and uncertainty question about this detector,
-    so using it as it stands would simply ignore your edit.  The geometry on the &quot;Geom &amp;
+    so using it as it stands would simply ignore your edit.  The geometry on the &quot;Geom &amp;amp;
     MC&quot; tab is not complete enough to rebuild it, so the choice is to remove the response and go
     back to the flat-disk far-field model, or to cancel and finish the geometry.</message>
   <message id="dmw-regen-accept">Regenerate &amp; use</message>
