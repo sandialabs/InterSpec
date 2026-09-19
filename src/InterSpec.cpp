@@ -9253,6 +9253,14 @@ MakeFwhmForDrfWindow *InterSpec::fwhmFromForegroundWindow( const bool use_auto_f
   m_addFwhmTool->tool()->updatedDrf().connect( m_addFwhmTool.get(), &AuxWindow::hide );
   m_addFwhmTool->finished().connect( this, [this](){ deleteFwhmFromForegroundWindow(); } );
 
+  // The tool applies the detector to the session itself; record it under Detector Select ->
+  //  "Previous" as well.  (Detector Select, when open, records it too - harmless: the row is keyed
+  //  on the hash, and a repeat only moves its last-used time.)
+  m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( drf )
+      DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
+  } );
+
   if( m_drfSelectWindow )
   {
     m_addFwhmTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
@@ -9321,6 +9329,13 @@ MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
   m_mcResponseTool->tool()->updatedDrf().connect( m_mcResponseTool.get(), &AuxWindow::hide );
   m_mcResponseTool->finished().connect( this, [this](){ deleteMcResponseWindow(); } );
 
+  // As for the FWHM tool above: the tool applies the detector itself, so record it as a "Previous"
+  //  detector here.
+  m_mcResponseTool->tool()->updatedDrf().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> drf ){
+    if( drf )
+      DrfSelect::updateLastUsedTimeOrAddToDb( drf, user().id(), sql() );
+  } );
+
   if( m_drfSelectWindow )
   {
     m_mcResponseTool->tool()->updatedDrf().connect( this,
@@ -9384,6 +9399,10 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
     const std::shared_ptr<SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
     const std::shared_ptr<DetectorPeakResponse> prev_drf = foreground ? foreground->detector()
                                                                       : nullptr;
+
+    // Record it under Detector Select -> "Previous" too, the same as accepting from that dialog
+    //  does; otherwise a detector finished here is gone the moment another one is chosen.
+    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user().id(), sql() );
     detectorChanged().emit( new_drf );
 
     if( m_undo && m_undo->canAddUndoRedoNow() )

@@ -63,6 +63,7 @@
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/ShieldMaterialSuggestion.h"
+#include "InterSpec/DetectorGeometryDiagram.h"
 
 using namespace Wt;
 using namespace std;
@@ -96,7 +97,33 @@ namespace
   }//distance_cm(...)
 
 
+  /** A material by name, else by chemical formula ("C0.5H0.5 d=1.2"), else nullptr.
+   `MaterialDB::material()` throws on a miss rather than returning null, which is
+   what the catch is for - without it the formula fallback is never reached.
+   */
+  shared_ptr<const Material> lookup_material( const shared_ptr<const MaterialDB> &matDb,
+                                              const string &name )
+  {
+    if( !matDb || name.empty() )
+      return nullptr;
 
+    try
+    {
+      return matDb->material( name );
+    }catch( std::exception & )
+    {
+    }
+
+    try
+    {
+      const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
+      return matDb->materialFromChemicalFormula( name, nucDb );
+    }catch( std::exception & )
+    {
+    }
+
+    return nullptr;
+  }//lookup_material(...)
 
 
   /** The crystal-material combo entries, taken from the GADRAS material table.
@@ -248,6 +275,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorExtension( nullptr ),
     m_note( nullptr ),
     m_importNotes( nullptr ),
+    m_diagram( nullptr ),
     m_materialSuggestion( nullptr ),
     m_restoringState( false ),
     m_seededFromDiameterGuess( false ),
@@ -272,7 +300,14 @@ void DetectorGeometryInput::init()
 {
   m_materialSuggestion = addChild( std::make_unique<ShieldMaterialSuggestion>() );
 
-  WTable *table = addNew<WTable>();
+  // The controls, and beside them (below them when the form is narrow) a live drawing of what
+  //  they describe; the notes go full-width underneath the pair.
+  WContainerWidget *body = addNew<WContainerWidget>();
+  body->addStyleClass( "DgiBody" );
+  WContainerWidget *form = body->addNew<WContainerWidget>();
+  form->addStyleClass( "DgiForm" );
+
+  WTable *table = form->addNew<WTable>();
   table->addStyleClass( "DgiTable" );
 
   int row = 0;
@@ -333,8 +368,10 @@ void DetectorGeometryInput::init()
 
     for( WLineEdit *edit : { m_dim1, m_dim2, m_dim3 } )
     {
-      edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
-      edit->enterPressed().connect( this, &DetectorGeometryInput::handleUserInput );
+      // handleCrystalDimensionInput, not handleUserInput: these are the only fields that can retire
+      //  the fabricated length seedFromDrf() guesses (see m_seededFromDiameterGuess).
+      edit->changed().connect( this, &DetectorGeometryInput::handleCrystalDimensionInput );
+      edit->enterPressed().connect( this, &DetectorGeometryInput::handleCrystalDimensionInput );
     }
   }
 
@@ -380,7 +417,7 @@ void DetectorGeometryInput::init()
 
   //Concentric layers (endcap/window/housing); multiple allowed.
   {
-    WContainerWidget *layersHolder = addNew<WContainerWidget>();
+    WContainerWidget *layersHolder = form->addNew<WContainerWidget>();
     layersHolder->addStyleClass( "DgiLayers" );
     layersHolder->addNew<WText>( WString::tr("dgi-layers-label") );
 
@@ -403,10 +440,10 @@ void DetectorGeometryInput::init()
 
   //Collimator (optional)
   {
-    m_hasCollimator = addNew<WCheckBox>( WString::tr("dgi-collimator-cb") );
+    m_hasCollimator = form->addNew<WCheckBox>( WString::tr("dgi-collimator-cb") );
     m_hasCollimator->changed().connect( this, &DetectorGeometryInput::handleUserInput );
 
-    m_collimatorRow = addNew<WContainerWidget>();
+    m_collimatorRow = form->addNew<WContainerWidget>();
     m_collimatorRow->addStyleClass( "DgiCollimator" );
     m_collimatorRow->addNew<WLabel>( WString::tr("dgi-layer-material") );
     m_collimatorMaterial = m_collimatorRow->addNew<WLineEdit>();
@@ -423,6 +460,10 @@ void DetectorGeometryInput::init()
       edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
     m_collimatorRow->hide();
   }
+
+  m_diagram = body->addNew<DetectorGeometryDiagram>();
+  if( m_interspec && m_interspec->isPhone() )
+    m_diagram->hide();   //no room; the CSS hides it on narrow screens too
 
   m_note = addNew<WText>( "" );
   m_note->addStyleClass( "DgiNote" );
@@ -467,6 +508,19 @@ void DetectorGeometryInput::handleShapeChange()
 }//handleShapeChange()
 
 
+void DetectorGeometryInput::handleCrystalDimensionInput()
+{
+  // A crystal dimension was typed, so the form is no longer sitting on the length seedFromDrf()
+  //  fabricated from the diameter.  Only these fields clear the flag: it used to be cleared by ANY
+  //  edit, so typing an endcap thickness silently promoted "length = diameter" to a fact - and
+  //  since setGeometry() is part of hashValue(), that guess was then recorded as this detector's
+  //  geometry and saved as its own "Previous" entry.
+  m_seededFromDiameterGuess = false;
+
+  handleUserInput();
+}//handleCrystalDimensionInput()
+
+
 void DetectorGeometryInput::handleUserInput()
 {
   //init() wires this handler into widgets it creates along the way (e.g. the initial
@@ -476,22 +530,57 @@ void DetectorGeometryInput::handleUserInput()
 
   m_collimatorRow->setHidden( !m_hasCollimator->isChecked() );
 
-  // Any user edit means the form is no longer sitting on the fabricated diameter-guess length.
-  //  seedFromDrf() re-sets the flag after the handleShapeChange() it triggers runs through here.
-  m_seededFromDiameterGuess = false;
-
-  try
-  {
-    toDescriptor();
-    m_note->setText( "" );
-  }catch( std::exception &e )
-  {
-    m_note->setText( WString::fromUTF8( e.what() ) );
-  }
+  updateFromForm();
 
   if( !m_restoringState )
     m_changed.emit();
 }//handleUserInput()
+
+
+void DetectorGeometryInput::updateFromForm()
+{
+  const bool want_drawing = (m_diagram && !m_diagram->isHidden());
+
+  string problem;
+  try
+  {
+    const ceelo::GeometryDescriptor gd = toDescriptor();
+
+    // A valid form can still be the guess seedFromDrf() made, which must not be characterized
+    //  as-is - problemDescription() says so, and the note repeats it.
+    if( m_seededFromDiameterGuess )
+      problem = WString::tr("dgi-seeded-note").toUTF8();
+
+    if( want_drawing )
+      m_diagram->setGeometry( gd );
+  }catch( std::exception &e )
+  {
+    problem = e.what();
+    if( want_drawing )
+      m_diagram->setStale( true );   //keep the last valid drawing, dimmed
+  }
+
+  if( m_note )
+    m_note->setText( WString::fromUTF8( problem ) );
+}//updateFromForm()
+
+
+std::string DetectorGeometryInput::problemDescription() const
+{
+  try
+  {
+    toDescriptor();
+  }catch( std::exception &e )
+  {
+    return e.what();
+  }
+
+  // A valid form can still be the guess seedFromDrf() made, which must not be characterized as-is.
+  if( m_seededFromDiameterGuess )
+    return WString::tr("dgi-seeded-note").toUTF8();
+
+  return "";
+}//problemDescription()
 
 
 void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
@@ -505,13 +594,15 @@ void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
   layer.seeded = seeded;
   layer.seededName = material.toUTF8();
   layer.material = m_layersTable->elementAt( row, 0 )->addNew<WLineEdit>( material );
-  layer.material->setTextSize( 10 );
+  layer.material->setTextSize( 14 );
+  layer.material->setPlaceholderText( WString::tr("dgi-layer-material-ph") );  //blank = vacuum gap
   m_materialSuggestion->forEdit( layer.material,
                         PopupTrigger::Editing | PopupTrigger::DropDownIcon );
+  // Wide enough for "7.2000 mm" plus a unit, and for the column headers above them.
   layer.frontThickness = m_layersTable->elementAt( row, 1 )->addNew<WLineEdit>( frontThick );
-  layer.frontThickness->setTextSize( 6 );
+  layer.frontThickness->setTextSize( 9 );
   layer.sideThickness = m_layersTable->elementAt( row, 2 )->addNew<WLineEdit>( sideThick );
-  layer.sideThickness->setTextSize( 6 );
+  layer.sideThickness->setTextSize( 9 );
 
   for( WLineEdit *edit : { layer.material, layer.frontThickness, layer.sideThickness } )
     edit->changed().connect( this, &DetectorGeometryInput::handleUserInput );
@@ -732,14 +823,15 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 
   for( const LayerRow &layer : m_layers )
   {
-    const string mat_name = layer.material->text().toUTF8();
+    string mat_name = layer.material->text().toUTF8();
+    SpecUtils::trim( mat_name );
     const double front = distance_cm( layer.frontThickness, "layer front thickness", true );
     const double side = distance_cm( layer.sideThickness, "layer side thickness", true );
 
     if( mat_name.empty() && (front <= 0.0) && (side <= 0.0) )
       continue;  //blank row
 
-    if( mat_name.empty() || ((front <= 0.0) && (side <= 0.0)) )
+    if( (front <= 0.0) && (side <= 0.0) )
       throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
 
     // A layer seeded from an imported descriptor may name a material this
@@ -747,6 +839,21 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     //  materials inline, for instance).  As long as the user has not changed the
     //  name, the composition it came in with is the right answer.
     const bool use_seeded = layer.seeded && (mat_name == layer.seededName);
+
+    // No material (or "vacuum"/"void") with a thickness is a gap - an evacuated cryostat space,
+    //  say: it keeps its physical extent (recessing the crystal) and attenuates nothing.
+    if( !use_seeded && CeeLoUtils::isVacuumMaterialName( mat_name ) )
+    {
+      ceelo::LayerSpec gap;
+      gap.material_index = static_cast<int>( gd.materials.size() );
+      gd.materials.push_back( CeeLoUtils::vacuumMaterialSpec() );
+      gap.front_thickness_cm = front;
+      gap.side_thickness_cm = side;
+      gap.z_start_cm = 0.0;
+      gap.z_end_cm = crystal_len;
+      gd.layers.push_back( gap );
+      continue;
+    }//if( a vacuum gap )
 
     // A generic attenuator - "AN=13.2, AD=1.35 g/cm2" - is not a material name
     //  and never will resolve as one; it is how a GADRAS import expresses a
@@ -776,18 +883,7 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     shared_ptr<const Material> mat;
     if( !use_seeded )
     {
-      mat = matDb ? matDb->material( mat_name ) : nullptr;
-      if( !mat && matDb )
-      {
-        try
-        {
-          // Allows chemical formulas like "C0.5H0.5 d=1.2"
-          const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
-          mat = matDb->materialFromChemicalFormula( mat_name, nucDb );
-        }catch( std::exception & )
-        {
-        }
-      }
+      mat = lookup_material( matDb, mat_name );
       if( !mat )
         throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
     }//if( !use_seeded )
@@ -805,11 +901,16 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 
   if( m_hasCollimator->isChecked() )
   {
-    const string mat_name = m_collimatorMaterial->text().toUTF8();
+    string mat_name = m_collimatorMaterial->text().toUTF8();
+    SpecUtils::trim( mat_name );
     const double thickness = distance_cm( m_collimatorThickness, "collimator thickness", false );
     const double extension = distance_cm( m_collimatorExtension, "collimator extension", true );
 
-    shared_ptr<const Material> mat = matDb ? matDb->material( mat_name ) : nullptr;
+    // A collimator of nothing is no collimator - it needs a real material.  "galactic vacuum" is a
+    //  real MaterialDB entry (and "galactic" matches it by description), so it has to be refused
+    //  here explicitly, not just by failing to resolve.
+    const shared_ptr<const Material> mat = CeeLoUtils::isVacuumMaterialName( mat_name )
+                                             ? nullptr : lookup_material( matDb, mat_name );
     if( !mat )
       throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
 
@@ -1019,10 +1120,11 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
-  m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();
 
-  // Set AFTER handleShapeChange(): its handleUserInput() clears the flag, and the fabricated
-  //  length is a guess we must not let be Monte-Carlo characterized until the user fixes it.
+  // The fabricated length is a guess we must not let be Monte-Carlo characterized until the user
+  //  fixes it.  The note saying so stays up until one of the crystal dimension fields is edited
+  //  (handleCrystalDimensionInput); set after handleShapeChange() so the note it draws sees it.
   m_seededFromDiameterGuess = true;
+  updateFromForm();
 }//seedFromDrf(...)

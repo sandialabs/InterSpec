@@ -34,6 +34,7 @@
 class InterSpec;
 class DetectorPeakResponse;
 class ShieldMaterialSuggestion;
+class DetectorGeometryDiagram;
 
 namespace Wt
 {
@@ -99,6 +100,11 @@ public:
    */
   bool generationReady() const;
 
+  /** Why #generationReady is false: the validation error #toDescriptor would throw, else (when the
+   form still holds the length==diameter guess #seedFromDrf made) the note saying so, else an empty
+   string.  What #generationReady's owner should show beside its generate control. */
+  std::string problemDescription() const;
+
   /** Emitted on any user edit (after validity re-evaluation). */
   Wt::Signal<> &changed();
 
@@ -141,7 +147,17 @@ public:
 protected:
   void init();
   void handleShapeChange();
+  /** A crystal dimension edit: retires #m_seededFromDiameterGuess, then #handleUserInput.
+      Only these fields clear that flag - a layer thickness or a material choice says nothing
+      about how long the crystal is. */
+  void handleCrystalDimensionInput();
+
   void handleUserInput();
+
+  /** Re-reads the form once and refreshes everything that depends on it: the note beneath it and
+   the geometry diagram.  One pass, because building the descriptor resolves every layer
+   material through `MaterialDB`. */
+  void updateFromForm();
   void addLayerRow( const Wt::WString &material, const Wt::WString &frontThick,
                     const Wt::WString &sideThick,
                     const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
@@ -197,6 +213,10 @@ protected:
 
   /** Import notes rendered beneath the form; empty/hidden when there are none. */
   Wt::WText *m_importNotes;
+
+  /** The live side-elevation drawing of the geometry, beside the controls (below them when the
+   form is narrow; hidden on phones).  Follows every edit - see #updateFromForm. */
+  DetectorGeometryDiagram *m_diagram;
 
   /** The crystal a #setFromDescriptor named that this form has no entry for, and
    therefore substituted NaI for; empty when nothing was substituted.  Rendered

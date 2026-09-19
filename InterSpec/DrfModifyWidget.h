@@ -37,6 +37,7 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 
+class DrfChart;
 class InterSpec;
 class SwitchCheckbox;
 class DetectorPeakResponse;
@@ -127,6 +128,12 @@ public:
      attached) rather than Flat Disk.  Always false for fixed-geometry DRFs (no Geom & MC tab). */
     bool geometryModeled = false;
 
+    /** Whether the attached Monte-Carlo response is out of date with respect to the inputs it was
+     built from.  Part of the snapshot because it is not derivable from the rest: without it a redo
+     restored the edited points next to the pre-edit response and reported them as consistent, so
+     "Use" applied a stale response and the Generate button was disabled. */
+    bool changedSinceGenerate = false;
+
     /** The σ/ρ covariance-matrix editor's numeric shadow (display order), used when no measured
      points ground the response.  #covMatrix is the row-major N·N covariance of fractional
      efficiency error at #covEnergies (keV). */
@@ -172,9 +179,20 @@ protected:
   /** Flags this dialogs state as user-edited, so the next render records an undo/redo step. */
   void scheduleUndoRedoStep();
 
-  /** A user edit: records an undo/redo step, marks any generated response stale, and refreshes the
-   footer "Generate Response" button.  Every edit handler routes through here. */
+  /** A user edit to something the Monte-Carlo response is built from - the geometry, the run
+   options, or the measured points it is grounded to.  Records an undo/redo step, refreshes the
+   General-tab summary, and marks any generated response stale, which enables the footer
+   "Generate Response" button and makes "Use" offer to regenerate. */
   void markEdited();
+
+  /** A user edit the response does not depend on: the name, the description, or the FWHM (which is
+   a separate detector property the Monte Carlo never sees).  Everything #markEdited does except
+   marking the response stale - offering to regenerate over one of these is just confusing. */
+  void markEditedNoRegen();
+
+  /** A measured-point (or reference-distance / default-uncertainty) edit: #markEdited, and also
+   records that #applyAnchorEdits now has something to apply. */
+  void markAnchorsEdited();
 
   /** Re-baselines #m_currentState, and (when flagged) records the step from the old baseline. */
   void doAddUndoRedoStep( const bool add_step );
@@ -225,20 +243,53 @@ protected:
   void covEnergyChanged( const std::size_t i, const std::string &text );
 
   /** Writes the covariance shadow onto `working` (sorted ascending); clears the uncert when empty.
-   No-op when the covariance editor is not the visible one. */
-  void applyCovarianceEdits( DetectorPeakResponse &working );
+   No-op when the covariance editor is not the visible one.  `quiet` suppresses the user-facing
+   warnings about a malformed matrix (a preview build). */
+  void applyCovarianceEdits( DetectorPeakResponse &working, const bool quiet );
 
   /** Builds a working DRF from every tab: name/description, the visible Uncertainty editor, and
    FWHM.  When `includeMcResponse`, attaches the generated (or existing) Monte-Carlo response in
    Geometry-Modeled mode and detaches it in Flat Disk; otherwise (a regeneration seed) always
-   detaches, so the manual points/covariance drive grounding. */
-  std::shared_ptr<DetectorPeakResponse> buildWorkingDrf( const bool includeMcResponse );
+   detaches, so the manual points/covariance drive grounding.  In Geometry-Modeled mode with no
+   response at all, the geometry typed into the form is recorded on the DRF instead.
+
+   `quiet` suppresses the user-facing warnings (an FWHM form with no coefficients, say) - for a
+   preview build, which must not nag on every refresh. */
+  std::shared_ptr<DetectorPeakResponse> buildWorkingDrf( const bool includeMcResponse,
+                                                         const bool quiet = false );
+
+  /** Rebuilds the General tab's chart and summary table from a quiet preview of the working DRF
+   (see #buildWorkingDrf) - what "Use" would produce right now.  Cheap enough for every visit. */
+  void refreshGeneralTab();
+
+  /** An edit landed: refresh the General tab now if it is showing, else on its next visit. */
+  void markGeneralStale();
+
+  /** The rows of #m_infoTable, in order; #InfoRow::NumInfoRow is the row count. */
+  enum InfoRow
+  {
+    InfoEfficiency, InfoGeometry, InfoSupport, InfoUncert,
+    InfoFwhm, InfoTotalEff, InfoRange, InfoDiameter,
+    NumInfoRow
+  };//enum InfoRow
+
+  /** Builds #m_infoTable's rows once, with their fixed labels.  The values are only ever set with
+   `setText` afterwards (see #fillInfoTable) - rebuilding these widgets on each refresh left Wt
+   wiring client-side handlers to elements it had already replaced. */
+  void buildInfoTable( Wt::WContainerWidget *parent );
+
+  /** Sets each row of #m_infoTable from what `drf` carries: efficiency source, geometry, location
+   support, uncertainty, FWHM, total efficiency, energy range, diameter. */
+  void fillInfoTable( const std::shared_ptr<const DetectorPeakResponse> &drf );
 
   /** Footer "Generate Response": re-seeds the MC tool with the live edits (detached) and starts a
-   generation.  Geometry-Modeled only. */
-  void handleGenerateResponse();
+   generation.  Geometry-Modeled only.  Returns whether a generation actually started - a caller
+   that wants to apply the result afterwards must not arm itself for a run that never began. */
+  bool handleGenerateResponse();
 
-  /** Shows/enables the footer generate button per mode, geometry readiness, and pending edits. */
+  /** Shows the footer generate button whenever the mode is Geometry Modeled, enables it per
+   geometry readiness and pending edits, and puts the reason it is blocked (if any) in
+   #m_generateHint. */
   void updateGenerateButton();
 
   /** MC tool finished a generation: clears the stale flag (the following #userChanged is not a user
@@ -247,7 +298,6 @@ protected:
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_orig;
-  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
 
   Wt::WMenu *m_tabMenu;
   Wt::WStackedWidget *m_tabStack;
@@ -255,11 +305,27 @@ protected:
   Wt::WLineEdit *m_name;
   Wt::WTextArea *m_description;
 
+  /** General tab: a live chart of the efficiency + FWHM, and a summary of what the detector
+   carries; both rebuilt from a quiet preview of the working DRF (see #refreshGeneralTab). */
+  DrfChart *m_generalChart;
+  Wt::WTable *m_infoTable;
+
+  /** The value cell of each #InfoRow; only their text changes after construction. */
+  std::array<Wt::WText *,NumInfoRow> m_infoValues;
+  Wt::WMenuItem *m_generalTabItem;
+
+  /** An edit landed while another tab was showing; the General tab refreshes on its next visit. */
+  bool m_generalStale;
+
   MakeMcResponseForDrf *m_mcTool;   //null for a fixed-geometry DRF (no Geom & MC tab)
   MakeFwhmForDrf *m_fwhmTool;
 
   /** The FWHM tabs menu item, so selecting it can kick off the peak search. */
   Wt::WMenuItem *m_fwhmTabItem;
+
+  /** The Geom & MC tabs menu item, so selecting it can time the Monte-Carlo estimate; null for a
+   fixed-geometry DRF. */
+  Wt::WMenuItem *m_geomTabItem;
 
   /** Flat Disk / Geometry Modeled toggle (checked == Geometry Modeled), above the Geom & MC tool;
    null for a fixed-geometry DRF. */
@@ -300,6 +366,13 @@ protected:
    masquerade as them. */
   bool m_anchorIsAbsolute;
 
+  /** Whether the user actually touched the measured-point editor.  #applyAnchorEdits rewrites the
+   efficiency as an interpolated table of the rows, which for a fitted curve (a Make-Detector-
+   Response detector) throws away the fit and its coefficient uncertainties, narrows the energy
+   range to the measured span, and zeroes the setback - so it must not run for someone who only
+   renamed the detector. */
+  bool m_anchorsEdited;
+
   /** σ/ρ covariance-matrix editor. */
   Wt::WTable *m_covTable;
   Wt::WPushButton *m_addEnergy, *m_removeEnergy;
@@ -313,12 +386,24 @@ protected:
    the live edits. */
   Wt::WPushButton *m_generateBtn;
 
+  /** The export tip in the footer, hidden while #m_generateHint has something to say. */
+  Wt::WText *m_exportNote;
+
+  /** Why a response cannot be generated right now (an incomplete geometry, or one still guessed
+   from the diameter) - shown beside the disabled generate button; hidden when it can. */
+  Wt::WText *m_generateHint;
+
   /** Whether an edit has landed since the last generated response, i.e. the response is stale. */
   bool m_changedSinceGenerate;
 
   /** Set true just before a regenerate-then-use starts, so #handleResponseGenerated applies once the
    response lands. */
-  bool m_applyAfterGenerate;
+  /** The MakeMcResponseForDrf generation id that "Generate & use" armed, or -1.  Deliberately an
+   id rather than a bool: a generation that fails, is cancelled or is superseded never emits
+   `responseGenerated`, so a bool would stay armed and make the *next* generation - including the
+   transfer one that rebuilds itself whenever the geometry changes - silently apply the detector
+   and close the dialog. */
+  int m_applyAfterGenerationId;
 
   /** One-shot: the #userChanged that a generation emits right after #responseGenerated is not a user
    edit, so it must not re-mark the fresh response stale. */

@@ -2203,6 +2203,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_detectorDistance( nullptr ),
     m_eccUncertContainer( nullptr ),
     m_eccUncertWidget( nullptr ),
+    m_uploadedXmlDrf( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -3457,8 +3458,12 @@ void DrfSelect::openModifyWindow()
   }
 
   m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector );
-  m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
+
+  // Hide the Modify window BEFORE handling its result: handleModifyFinished accepts this dialog,
+  //  which closes it and (in ~DrfSelect) tears the Modify window down - the same order the
+  //  standalone FWHM / MC tools use in InterSpec::fwhmFromForegroundWindow / showMcResponseWindow.
   m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
+  m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
   m_modifyWindow->finished().connect( this, [this](){
     if( !m_modifyWindow )
       return;
@@ -3490,11 +3495,12 @@ void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf 
   if( !drf )
     return;
 
-  updateLastUsedTimeOrAddToDb( drf, m_interspec->user().id(), m_sql );
-
-  // Make the modified DRF the one this dialog is editing/showing; the user
-  //  still confirms with Accept to push it to the rest of the app.
+  // Make the modified DRF this dialog's detector, then accept exactly as pressing Accept would:
+  //  recorded under "Previous", applied to the session (with its undo/redo step), and this dialog
+  //  closed.  Having to press Accept a second time - with the built-in detector list visibly
+  //  de-selected, since the modified detector is no longer that entry - read as the edit being lost.
   setDetector( drf );
+  acceptAndFinish();
 }//void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
 
 
@@ -4586,6 +4592,14 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( co
 
 void DrfSelect::showWidgetsForCurrentEfficiencyType()
 {
+  if( m_uploadedXmlDrf )
+  {
+    // A DRF XML file is complete as read - nothing for these controls to decide.
+    m_efficiencyType->hide();
+    m_detectrDiameterDiv->hide();
+    return;
+  }//if( m_uploadedXmlDrf )
+
   const int eff_type_index = m_efficiencyType->currentIndex();
   if( eff_type_index >= 3 && eff_type_index <= 6 )
   {
@@ -4655,6 +4669,8 @@ void DrfSelect::updateUserNameFromCurrentDetEff()
 
 void DrfSelect::handleGadrasDetectorDotDatUpload()
 {
+  m_uploadedXmlDrf.reset();  //this upload is a GADRAS pair, not a DRF XML
+
   try
   {
     const string csv_spool = m_efficiencyCsvUpload->spoolFileName();
@@ -4708,6 +4724,17 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
 {
   if( m_efficiencyCsvUpload->empty() )
     return nullptr;
+
+  // An uploaded DRF XML is used exactly as read, plus whatever name the user typed - its geometry
+  //  type, diameter and distance are its own, and re-interpreting it would only tear its
+  //  Monte-Carlo response away from the geometry it was computed for.
+  if( m_uploadedXmlDrf )
+  {
+    auto det = make_shared<DetectorPeakResponse>( *m_uploadedXmlDrf );
+    if( !m_uploadedDetName->text().empty() )
+      det->setName( m_uploadedDetName->text().toUTF8() );
+    return det;
+  }//if( m_uploadedXmlDrf )
   
   
   float diameter = -1.0f;
@@ -5083,6 +5110,7 @@ void DrfSelect::handleEfficiencyCsvUpload()
     m_eccUncertContainer->clear();
     m_eccUncertContainer->hide();
   }
+  m_uploadedXmlDrf.reset();
 
   m_detectrDiameterDiv->enable();
   if( m_efficiencyCsvUpload->empty() )
@@ -5296,6 +5324,9 @@ void DrfSelect::handleEfficiencyCsvUpload()
 
       det = xml_det;
       can_accept = true;
+      // Set last, so a throw anywhere above leaves this an ordinary failed upload rather than one
+      //  the Import tab treats as a complete detector - see detectorFromEffUpload.
+      m_uploadedXmlDrf = xml_det;
     }catch( std::exception &e )
     {
       cerr << "Failed to parse uploaded DRF XML: " << e.what();
@@ -5317,39 +5348,48 @@ void DrfSelect::handleEfficiencyCsvUpload()
   }
   
   m_uploadedDetNameDiv->show();
-  m_efficiencyType->show();
-  
-  switch( det->geometryType() )
+
+  if( m_uploadedXmlDrf )
   {
-    case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-    case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
+    // A complete detector: there is nothing to interpret, so no type / diameter / distance controls
+    //  (and no re-interpretation of it below - detectorFromEffUpload hands it back as read).
+    m_efficiencyType->hide();
+    m_detectrDiameterDiv->hide();
+  }else
+  {
+    m_efficiencyType->show();
+
+    switch( det->geometryType() )
     {
-      if( isGadrasCsvFile(filename) )
+      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
+      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
       {
-        m_efficiencyType->setCurrentIndex( 2 ); //GADRAS
-      }else
-      {
-        if( m_efficiencyType->currentIndex() > 1 )
+        if( isGadrasCsvFile(filename) )
         {
-          const float eff_120 = det->intrinsicEfficiency( 120.0 );
-          const bool is_far_field = ((eff_120 >= 0.0f) && (eff_120 < 0.1f)); // Less than 10%
-          m_efficiencyType->setCurrentIndex( is_far_field ? 1 : 0 ); // Far-Field Efficiency
+          m_efficiencyType->setCurrentIndex( 2 ); //GADRAS
+        }else
+        {
+          if( m_efficiencyType->currentIndex() > 1 )
+          {
+            const float eff_120 = det->intrinsicEfficiency( 120.0 );
+            const bool is_far_field = ((eff_120 >= 0.0f) && (eff_120 < 0.1f)); // Less than 10%
+            m_efficiencyType->setCurrentIndex( is_far_field ? 1 : 0 ); // Far-Field Efficiency
+          }
         }
-      }
-      break;
-    }//case FarFieldIntrinsic or FarFieldAbsolute
-      
-    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-      if( m_efficiencyType->currentIndex() < 3 )
-        m_efficiencyType->setCurrentIndex( 3 ); //FixedGeomTotalAct
-      break;
-  }//switch( det->geometryType() )
-  
-  
-  showWidgetsForCurrentEfficiencyType();
+        break;
+      }//case FarFieldIntrinsic or FarFieldAbsolute
+
+      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+        if( m_efficiencyType->currentIndex() < 3 )
+          m_efficiencyType->setCurrentIndex( 3 ); //FixedGeomTotalAct
+        break;
+    }//switch( det->geometryType() )
+
+    showWidgetsForCurrentEfficiencyType();
+  }//if( m_uploadedXmlDrf ) / else
   
   det = detectorFromEffUpload();
   const bool det_changed = (m_detector != det);
@@ -5359,14 +5399,17 @@ void DrfSelect::handleEfficiencyCsvUpload()
   
   if( det_changed )
   {
-    updateUserNameFromCurrentDetEff();
+    // A DRF XML file brings its own name; the others get one from the file name.
+    if( !m_uploadedXmlDrf )
+      updateUserNameFromCurrentDetEff();
     emitChangedSignal();
   }
 
   // If this was an ANGLE file carrying a full detector model + reference curve,
   //  offer the "generic detector" import mode (the fixed-geometry curve set
   //  above is the default / Mode B).
-  offerAngleImportModeChoice( filename );
+  if( !m_uploadedXmlDrf )
+    offerAngleImportModeChoice( filename );
 }//void handleEfficiencyCsvUpload()
 
 
@@ -5568,7 +5611,7 @@ void DrfSelect::handleEfficiencyTypeChange()
   
   if( det )
     updateUserNameFromCurrentDetEff();
-  setAcceptButtonEnabled( !det );
+  setAcceptButtonEnabled( !!det );   //enabled when there IS a detector; every other call site agrees
   
   if( m_detector != det )
   {
@@ -5594,7 +5637,7 @@ void DrfSelect::handleDetectorDiameterOrDistanceChanged()
 
 void DrfSelect::handleUploadTabSelected()
 {
-  m_efficiencyType->setHidden( m_efficiencyCsvUpload->empty() );
+  m_efficiencyType->setHidden( m_efficiencyCsvUpload->empty() || !!m_uploadedXmlDrf );
   if( m_efficiencyCsvUpload->empty() )
   {
     m_detectrDiameterDiv->hide();

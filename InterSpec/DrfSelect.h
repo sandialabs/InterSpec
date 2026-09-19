@@ -459,6 +459,13 @@ protected:
   std::vector<float> m_eccBaselineFrac;
   std::vector<float> m_eccConvergenceFrac;
 
+  /** The DRF parsed from an uploaded `<DetectorPeakResponse>` XML file, when that is what the
+   Import tab holds; null for every other upload.  Such a file is a complete detector (geometry
+   type, diameter, distance, uncertainties, and any Monte-Carlo response or geometry included), so
+   it is used exactly as read: none of the interpretation controls apply to it, and
+   #detectorFromEffUpload hands back a copy of this rather than re-deriving anything. */
+  std::shared_ptr<DetectorPeakResponse> m_uploadedXmlDrf;
+
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;
   Wt::WPushButton *m_noDrfButton;

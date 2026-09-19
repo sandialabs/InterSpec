@@ -60,7 +60,10 @@
 #include <iostream>
 #include <algorithm>
 
+#include <nlohmann/json.hpp>
+
 #include <rapidxml/rapidxml.hpp>
+#include <rapidxml/rapidxml_print.hpp>
 
 #include "Minuit2/MnUserParameters.h"
 
@@ -384,6 +387,256 @@ BOOST_AUTO_TEST_CASE( drf_extra_round_trip )
     BOOST_CHECK_CLOSE( a.sigma, b.sigma, 1.0E-9 );
   }
 }//drf_extra_round_trip
+
+
+/** Reusing an aperture quadrature across energies must be an optimization only: tracing the ray set
+    is ~98% of a Monte-Carlo-backed query and depends solely on the source position, so a sweep that
+    builds one per position has to give the SAME numbers as letting every query trace its own.  A
+    drift here would silently change every efficiency the charts and fits report.
+ */
+BOOST_AUTO_TEST_CASE( aperture_quadrature_reuse_is_equivalent )
+{
+  const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+  BOOST_REQUIRE( drf->ceeloResponse() );
+
+  const vector<double> thetas = { 0.0, 0.2, 0.5, 1.2 };
+  const vector<double> distances = { 5.0*PhysicalUnits::cm, 25.0*PhysicalUnits::cm,
+                                     200.0*PhysicalUnits::cm };
+
+  for( const double dist : distances )
+  {
+    for( const double theta : thetas )
+    {
+      const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> quad
+                                            = drf->apertureQuadrature( theta, 0.0, dist );
+      BOOST_REQUIRE( quad );   //this DRF has a response and is not fixed-geometry
+
+      for( const float energy : { 40.0f, 88.0f, 121.8f, 356.0f, 661.7f, 1332.0f, 2614.0f } )
+      {
+        const DetectorPeakResponse::EffEval plain
+                          = drf->fepEfficiencyEval( energy, theta, 0.0, dist );
+        const DetectorPeakResponse::EffEval reused
+                          = drf->fepEfficiencyEval( energy, theta, 0.0, dist, quad );
+
+        BOOST_CHECK_EQUAL( plain.value, reused.value );   //bit-identical, not merely close
+        BOOST_CHECK_EQUAL( plain.sigma, reused.sigma );
+        BOOST_CHECK( plain.flag == reused.flag );
+      }//for( energy )
+    }//for( theta )
+  }//for( dist )
+
+  // A null quadrature is just the plain evaluation, so callers need no special case.
+  const DetectorPeakResponse::EffEval plain
+                    = drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm );
+  const DetectorPeakResponse::EffEval null_quad
+                    = drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm, nullptr );
+  BOOST_CHECK_EQUAL( plain.value, null_quad.value );
+
+  // A legacy (curve-only) DRF has no ray set to reuse; it must say so rather than hand back an
+  //  empty one that would evaluate to nothing.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( !legacy->apertureQuadrature( 0.0, 0.0, 25.0*PhysicalUnits::cm ) );
+  BOOST_CHECK_EQUAL( legacy->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm ).value,
+                     legacy->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm, nullptr ).value );
+
+  // The per-angle chart series is the caller this exists for: it must still be well-formed.
+  const string series = drf->responseAngleSeriesJSON( 25.0*PhysicalUnits::cm );
+  BOOST_REQUIRE( series != "null" );
+  const nlohmann::json j = nlohmann::json::parse( series );
+  BOOST_REQUIRE( j.contains("angles") && j["angles"].is_array() && (j["angles"].size() == 4) );
+  for( const nlohmann::json &a : j["angles"] )
+  {
+    BOOST_REQUIRE( a.contains("pairs") && a["pairs"].is_array() );
+    BOOST_CHECK( a["pairs"].size() > 50 );   //80 energies, less any the response rejects
+    for( const nlohmann::json &pr : a["pairs"] )
+      BOOST_CHECK( pr["eff"].get<double>() >= 0.0 );
+  }
+}//aperture_quadrature_reuse_is_equivalent
+
+
+/** The DRF *file* round trip (toXml / fromXml - what a downloaded .drf.xml goes through when it
+ is dragged back in, or uploaded on Detector Select's Import tab) must keep the Monte-Carlo
+ response, and, for a detector that knows its shape but has no response yet (an ANGLE or
+ Detector.dat import), the physical geometry - and give back the same hash, since the "Previous"
+ detectors in the user database are keyed on it.
+ */
+/** The gaps the round-trip test above leaves, each of which a real defect walked through:
+
+    - A DRF can carry a geometry AND a response at once (every GADRAS detector with an
+      Efficiency.csv does: applyGadrasDat sets the geometry, then attaches a curve-transfer
+      response).  Only one of the two is ever serialized, so identity has to ask `geometry()`
+      rather than the raw member - comparing the member reported every round-tripped MC-backed
+      detector as changed, and threw a developer-check error on every spectrum save.
+    - `hashValue()` equality after `fromXml` is vacuous: the hash is read verbatim out of the file.
+      What decides DB dedupe is the RECOMPUTED hash, which is what DrfSelect::detectorFromEffUpload
+      triggers via setName().
+    - Nothing pinned the emitted `version`, so a change that bumped every DRF would go unnoticed.
+    - Nothing covered the database extras codec for the geometry, in particular that an EMPTY
+      extras column must clear a geometry the object already had (a Dbo re-read of a reused object).
+ */
+BOOST_AUTO_TEST_CASE( round_trip_identity_and_extras_codec )
+{
+  auto to_text_and_back = []( const shared_ptr<const DetectorPeakResponse> &drf )
+                                                          -> shared_ptr<DetectorPeakResponse> {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    drf->toXml( root, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( doc2.first_node("root")->first_node("DetectorPeakResponse") );
+    return restored;
+  };
+
+  // --- a DRF carrying BOTH a geometry and a response ------------------------------------------
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+    BOOST_REQUIRE( drf->ceeloResponse() );
+    // Put a geometry in the member as well, the way the GADRAS and .detx importers do.
+    drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( drf->ceeloResponse()->descriptor ) );
+
+    const shared_ptr<DetectorPeakResponse> restored = to_text_and_back( drf );
+
+    // This is the assertion that fires on every save when identity asks the wrong question.
+    BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *drf, *restored ) );
+    BOOST_CHECK( (*drf) == (*restored) );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+
+    // The hash that DB dedupe actually uses is the recomputed one, not the one read from the file.
+    const uint64_t stored = restored->hashValue();
+    restored->setName( restored->name() );   //what detectorFromEffUpload does; recomputes the hash
+    BOOST_CHECK_EQUAL( stored, restored->hashValue() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+  }
+
+  // --- the version attribute is part of the file's contract with older readers ------------------
+  {
+    auto version_of = []( const shared_ptr<const DetectorPeakResponse> &drf ) -> int {
+      rapidxml::xml_document<char> doc;
+      rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+      doc.append_node( root );
+      drf->toXml( root, &doc );
+      const rapidxml::xml_node<char> *n = doc.first_node("root")->first_node("DetectorPeakResponse");
+      BOOST_REQUIRE( n );
+      const rapidxml::xml_attribute<char> *a = n->first_attribute("version");
+      return a ? std::stoi( string(a->value(), a->value_size()) ) : -1;
+    };
+
+    // A geometry (with or without a response) needs the version that can express it...
+    const shared_ptr<DetectorPeakResponse> geo = drf_with_golden( "nai3x3" );
+    BOOST_CHECK_GE( version_of( geo ), 6 );
+
+    // ...and a plain legacy DRF must NOT be dragged up to it.
+    auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no ceelo at all" );
+    legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    BOOST_CHECK_LT( version_of( legacy ), 6 );
+  }
+
+  // --- the database extras column: a geometry must survive it, and an empty one must CLEAR ------
+  {
+    const shared_ptr<DetectorPeakResponse> src = drf_with_golden( "hpge_coax" );
+
+    auto geom_only = make_shared<DetectorPeakResponse>( "geometry only", "extras codec" );
+    geom_only->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    geom_only->setGeometry( make_shared<const ceelo::GeometryDescriptor>( src->ceeloResponse()->descriptor ) );
+
+    const string extras = geom_only->drfExtraToXmlString();
+    BOOST_CHECK( !extras.empty() );
+
+    auto round = make_shared<DetectorPeakResponse>( *geom_only );
+    round->setDrfExtraFromXmlString( extras );
+    BOOST_REQUIRE( round->geometry() );
+    BOOST_CHECK_EQUAL( geom_only->geometry()->to_xml_string(), round->geometry()->to_xml_string() );
+
+    // Now the case a future refactor is most likely to lose: the SAME object, re-read from a row
+    //  whose extras column is empty, must not keep the geometry it already had.
+    round->setDrfExtraFromXmlString( string() );
+    BOOST_CHECK( !round->geometry() );
+    BOOST_CHECK( !round->ceeloResponse() );
+  }
+}//round_trip_identity_and_extras_codec
+
+
+BOOST_AUTO_TEST_CASE( file_xml_round_trip_keeps_ceelo )
+{
+  auto round_trip = []( const shared_ptr<const DetectorPeakResponse> &drf )
+                                                          -> shared_ptr<DetectorPeakResponse> {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    drf->toXml( root, &doc );
+
+    // Through text and back, as a file is.
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    const rapidxml::xml_node<char> *drf_node = doc2.first_node( "root" )->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( drf_node );
+    return restored;
+  };
+
+  // A Monte-Carlo-backed detector: the response, its geometry, and the hash all come back.
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "nai3x3" );
+    const shared_ptr<DetectorPeakResponse> restored = round_trip( drf );
+
+    BOOST_REQUIRE( restored->ceeloResponse() );
+    BOOST_CHECK_EQUAL( drf->ceeloResponse()->content_hash(),
+                       restored->ceeloResponse()->content_hash() );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+
+    for( const double E : {60.0, 121.8, 661.7, 2614.0} )
+    {
+      const DetectorPeakResponse::EffEval a
+                  = drf->fepEfficiencyEval( E, 0.3, 0.0, 30.0*PhysicalUnits::cm );
+      const DetectorPeakResponse::EffEval b
+                  = restored->fepEfficiencyEval( E, 0.3, 0.0, 30.0*PhysicalUnits::cm );
+      BOOST_CHECK_CLOSE( a.value, b.value, 1.0E-9 );
+      BOOST_CHECK_CLOSE( a.sigma, b.sigma, 1.0E-9 );
+    }
+  }
+
+  // A geometry-only detector (no response yet): the shape must not be lost on the way to a file.
+  {
+    const shared_ptr<DetectorPeakResponse> golden = drf_with_golden( "hpge_coax" );
+
+    auto drf = make_shared<DetectorPeakResponse>( "geometry only", "round-trip test" );
+    drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( golden->ceeloResponse()->descriptor ) );
+    BOOST_REQUIRE( drf->geometry() );
+    BOOST_REQUIRE( !drf->ceeloResponse() );
+
+    const shared_ptr<DetectorPeakResponse> restored = round_trip( drf );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK( !restored->ceeloResponse() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+  }
+}//file_xml_round_trip_keeps_ceelo
 
 
 /** Legacy DRFs (no MC response) must evaluate bit-identically through the
@@ -1428,9 +1681,30 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_REQUIRE_NO_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, resp ) );
   BOOST_CHECK_MESSAGE( bare->isValid(), "the DRF is still invalid after filling the backbone" );
 
-  const double a_cm = resp->transverse_half_extent();
-  BOOST_CHECK_CLOSE( bare->detectorDiameter() / PhysicalUnits::cm, 2.0*a_cm, 0.1 );
+  // The CRYSTAL diameter, not `transverse_half_extent()` - that sums the dead layer, every endcap
+  //  layer and any collimator onto the crystal radius, and an intrinsic efficiency quoted per photon
+  //  crossing THAT disk is low by (2a/d_crystal)^2.  For this 3x3 NaI in a 1 mm can the two differ
+  //  by 7.72 vs 7.62 cm; with a collimator the old value was 56% too large.
+  const double crystal_diam_cm = 2.0 * resp->descriptor.dimensions_cm[0];
+  BOOST_CHECK_CLOSE( bare->detectorDiameter() / PhysicalUnits::cm, crystal_diam_cm, 0.1 );
+  BOOST_CHECK_MESSAGE( bare->detectorDiameter()/PhysicalUnits::cm
+                         < 2.0*resp->transverse_half_extent() - 1.0E-6,
+                       "the stored diameter still includes the passive layers" );
   BOOST_CHECK( bare->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // Absolute efficiency is what must be invariant: the curve and the solid angle compensate, so
+  //  changing which disk the intrinsic is quoted against may not move any measurable prediction.
+  {
+    auto check_abs = make_shared<DetectorPeakResponse>( *bare );
+    check_abs->setCeeloResponse( resp );
+    for( const float energy : { 60.0f, 661.7f, 1332.0f } )
+    {
+      const double d = 400.0*PhysicalUnits::cm;   //far field, where the legacy model is valid
+      const double from_curve = bare->efficiency( energy, d );
+      const double from_resp = check_abs->fepEfficiencyEval( energy, 0.0, 0.0, d ).value;
+      BOOST_CHECK_CLOSE( from_curve, from_resp, 3.0 );
+    }
+  }
 
   // The curve and the response must not disagree: attach the response and check
   //  that the stored curve reproduces what the CeeLo dispatch answers.  A

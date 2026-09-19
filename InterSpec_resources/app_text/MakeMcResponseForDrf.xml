@@ -119,14 +119,37 @@
   <message id="mmr-anchor-src-points">Anchoring on the {1} measured efficiency points at {2}.</message>
   <message id="mmr-anchor-src-curve">Anchoring on the DRF efficiency curve, sampled at {1} energies, at {2}.</message>
   <message id="mmr-anchor-unusable">This DRF cannot anchor a transfer: {1}</message>
-  <message id="mmr-estimate">About {1} Monte-Carlo nodes; very roughly {2} minute(s).</message>
-  <message id="mmr-estimate-transfer">About {1} Monte-Carlo nodes ({2} minute(s) or so) -
-    a full characterization of this geometry would need about {3} nodes.</message>
+  <!-- The pre-run estimate: "About 814 Monte-Carlo nodes (40 on-axis energies + 14 angles x 9
+       energies + 72 near-field positions x 9 energies); roughly 7 minutes."  {2} of the estimate keys is the per-stage breakdown, {3} the duration phrase. -->
+  <message id="mmr-estimate-v2">About {1} Monte-Carlo nodes ({2}); {3}.</message>
+  <message id="mmr-estimate-transfer-v2">About {1} Monte-Carlo nodes ({2}); {3} -
+    a full characterization of this geometry would need about {4} nodes.</message>
   <message id="mmr-estimate-instant">No Monte Carlo - builds instantly from the measured curve.</message>
+  <message id="mmr-est-part-backbone">{1} on-axis energies</message>
+  <message id="mmr-est-part-angular">{1} angles × {2} energies</message>
+  <message id="mmr-est-part-angular-box">{1} angles × {2} azimuths × {3} energies</message>
+  <message id="mmr-est-part-anchors">{1} angle anchors × {2} energies</message>
+  <message id="mmr-est-part-near">{1} near-field positions × {2} energies</message>
+  <message id="mmr-est-part-join">{1} + {2}</message>
+  <message id="mmr-est-dur-model">very roughly {1}</message>
+  <message id="mmr-est-dur-measuring">very roughly {1} (timing a short test run...)</message>
+  <message id="mmr-est-dur-calibrated">roughly {1}</message>
+  <message id="mmr-est-dur-from-run">roughly {1} (from the last run)</message>
+  <message id="mmr-est-minutes">{1} minute(s)</message>
+  <message id="mmr-est-under-minute">under a minute</message>
+  <message id="mmr-est-hours">{1} hour(s)</message>
+
+  <!-- Status while a generation runs: "312/814 nodes - working on the near field - 5.2 of ~7 min". -->
+  <message id="mmr-progress-starting">Starting Monte Carlo ({1} nodes)...</message>
+  <message id="mmr-progress">{1}/{2} nodes - working on {3} - {4} of ~{5} min</message>
+  <message id="mmr-stage-backbone">the on-axis energy backbone</message>
+  <message id="mmr-stage-angular">the angular response</message>
+  <message id="mmr-stage-anchors">the angle anchors</message>
+  <message id="mmr-stage-near">the near field</message>
+  <message id="mmr-stage-finishing">finishing up</message>
   <message id="mmr-err-no-backbone">Could not build an efficiency curve from the generated response, so the detector was not changed: {1}</message>
   <message id="mmr-generate-btn">Generate Response</message>
   <message id="mmr-use-response-btn">Use Response</message>
-  <message id="mmr-status-running">Running Monte Carlo...</message>
   <message id="mmr-status-cancelling">Cancelling (finishes after the current node)...</message>
   <message id="mmr-status-cancelled">Generation cancelled.</message>
   <message id="mmr-status-error">Generation failed: {1}</message>
@@ -176,6 +199,7 @@
   <message id="dgi-dead-side-ph">side</message>
   <message id="dgi-layers-label">Endcap / housing layers (innermost first):</message>
   <message id="dgi-layer-material">Material</message>
+  <message id="dgi-layer-material-ph">blank = vacuum</message>
   <message id="dgi-layer-front">Front thickness</message>
   <message id="dgi-layer-side">Side thickness</message>
   <message id="dgi-add-layer">Add layer</message>
@@ -200,6 +224,6 @@
   <message id="dgi-err-bullet-wide">The front edge fillet radius must be less than the crystal radius.</message>
   <message id="dgi-err-bullet-long">The front edge fillet radius must be less than the crystal length.</message>
   <message id="dgi-err-bullet-dead">The dead layer leaves no room for the front edge fillet - reduce the fillet radius or the dead layer.</message>
-  <message id="dgi-err-layer">Each layer needs a material and a front and/or side thickness.</message>
+  <message id="dgi-err-layer">Each layer needs a front and/or side thickness (a blank material means a vacuum gap).</message>
   <message id="dgi-err-material">Material &apos;{1}&apos; was not found in the material database.</message>
 </messages>

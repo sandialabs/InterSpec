@@ -54,7 +54,11 @@ DrfChart::DrfChart()
   m_sourceDistance( 25.0 * PhysicalUnits::cm ),
   m_intrinsic( false ),
   m_showFwhm( true ),
-  m_jsgraph( jsRef() + ".chart" )
+  m_jsgraph( jsRef() + ".chart" ),
+  m_jsDefined( false ),
+  m_xRangeSet( false ),
+  m_xRangeMin( 0.0 ),
+  m_xRangeMax( 0.0 )
 {
   addStyleClass( "DrfChart" );
   setOverflow( Overflow::Hidden );
@@ -68,17 +72,21 @@ DrfChart::DrfChart()
 }//DrfChart constructor
 
 
+void DrfChart::doChartJs( const std::string &method_call )
+{
+  // See the note on this function in DrfChart.h: the element and the chart object may both be
+  //  absent, so the call has to check before it runs.
+  doJavaScript( "{const c=" + jsRef() + ";if(c&&c.chart){c.chart." + method_call + ";}}" );
+}//DrfChart::doChartJs(...)
+
+
 void DrfChart::updateChart( std::shared_ptr<const DetectorPeakResponse> det )
 {
   m_detector = det;
 
   // Generate and send detector data using DetectorPeakResponse JSON generation
-  string detectorData = (!det || !det->isValid()) ? string("null") : det->toJSON();
-  const string detectorJs = m_jsgraph + ".setDetectorData(" + detectorData + ");";
-  if( isRendered() )
-    doJavaScript( detectorJs );
-  else
-    m_pendingJs.push_back( detectorJs );
+  const string detectorData = (!det || !det->isValid()) ? string("null") : det->toJSON();
+  doChartJs( "setDetectorData(" + detectorData + ")" );
 
   pushAngleSeries();
 } //DrfChart::updateChart()
@@ -89,11 +97,7 @@ void DrfChart::pushAngleSeries()
   const string series = (m_showAngles && m_detector && m_detector->isValid())
                           ? m_detector->responseAngleSeriesJSON( m_sourceDistance )
                           : string("null");
-  const string js = m_jsgraph + ".setResponseSeries(" + series + ");";
-  if( isRendered() )
-    doJavaScript( js );
-  else
-    m_pendingJs.push_back( js );
+  doChartJs( "setResponseSeries(" + series + ")" );
 }//DrfChart::pushAngleSeries()
 
 
@@ -114,28 +118,21 @@ void DrfChart::setSourceDistance( const double distance )
 void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
 {
   m_intrinsic = intrinsic;
-  const string js = m_jsgraph + ".setEfficiencyMode('"
-                    + string(intrinsic ? "intrinsic" : "absolute") + "');";
-  if( isRendered() )
-    doJavaScript( js );
-  else
-    m_pendingJs.push_back( js );
+  doChartJs( "setEfficiencyMode('" + string(intrinsic ? "intrinsic" : "absolute") + "')" );
 }//DrfChart::setIntrinsicEfficiency(...)
 
 
 void DrfChart::setShowFwhm( const bool show )
 {
   m_showFwhm = show;
-  const string js = m_jsgraph + ".setShowFwhm(" + string(show ? "true" : "false") + ");";
-  if( isRendered() )
-    doJavaScript( js );
-  else
-    m_pendingJs.push_back( js );
+  doChartJs( "setShowFwhm(" + string(show ? "true" : "false") + ")" );
 }//DrfChart::setShowFwhm(...)
 
 
 void DrfChart::defineJavaScript()
 {
+  m_jsDefined = true;
+
   string options = "{ "
     "margins: {"
     " top: 5,"
@@ -144,7 +141,11 @@ void DrfChart::defineJavaScript()
     " left: 3"
     " } }";
   
-  setJavaScriptMember( "chart", "new DrfChart(" + jsRef() + ", " + options + ");");
+  // Guarded: `Wt4_x_y.$(id)` is a getElementById, which is null while this widget is only a stub
+  //  on a tab that has not been shown.  Wt re-applies JavaScript members (and issues a full render)
+  //  when the real element replaces the stub, so the object gets built then instead.
+  setJavaScriptMember( "chart",
+      "(function(){const e=" + jsRef() + ";return e ? new DrfChart(e, " + options + ") : null;})()" );
   
   setJavaScriptMember( "resizeObserver",
     "new ResizeObserver(entries => {"
@@ -160,12 +161,18 @@ void DrfChart::defineJavaScript()
   );
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
-  
-  // Execute any pending JS calls
-  for( const string &js : m_pendingJs )
-    doJavaScript( js );
-  m_pendingJs.clear();
-  m_pendingJs.shrink_to_fit();
+
+  // Re-send everything the chart is currently showing, rather than replaying a one-shot queue: this
+  //  runs again whenever the client-side object is (re)built - when a stub becomes a real element,
+  //  say - and the object that is built is empty.
+  const string detectorData = (!m_detector || !m_detector->isValid())
+                                ? string("null") : m_detector->toJSON();
+  doChartJs( "setDetectorData(" + detectorData + ")" );
+  doChartJs( "setShowFwhm(" + string(m_showFwhm ? "true" : "false") + ")" );
+  doChartJs( "setEfficiencyMode('" + string(m_intrinsic ? "intrinsic" : "absolute") + "')" );
+  pushAngleSeries();
+  if( m_xRangeSet )
+    doChartJs( "setXRange(" + std::to_string(m_xRangeMin) + ", " + std::to_string(m_xRangeMax) + ")" );
 }//void DrfChart::defineJavaScript()
 
 
@@ -175,19 +182,20 @@ void DrfChart::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   WContainerWidget::render( flags );
   
-  if( renderFull )
+  // `!m_jsDefined` as well as the Full flag: a first render does not always carry it (see
+  //  m_jsDefined), and without the client-side object every queued call hits `undefined`.
+  if( renderFull || !m_jsDefined )
     defineJavaScript();
 }//void DrfChart::render(...)
 
 
 void DrfChart::setXAxisRange( double minEnergy, double maxEnergy )
 {
-  const string js = m_jsgraph + ".setXRange(" + std::to_string(minEnergy) + ", " + std::to_string(maxEnergy) + ");";
-  
-  if( isRendered() )
-    doJavaScript( js );
-  else
-    m_pendingJs.push_back( js );
+  m_xRangeSet = true;
+  m_xRangeMin = minEnergy;
+  m_xRangeMax = maxEnergy;
+
+  doChartJs( "setXRange(" + std::to_string(minEnergy) + ", " + std::to_string(maxEnergy) + ")" );
 }//void DrfChart::setXAxisRange(...)
 
 

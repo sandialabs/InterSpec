@@ -919,9 +919,11 @@ public:
   /** Sets (or clears, with nullptr) the physical geometry.  Ignored while a
    #ceeloResponse is attached, since that carries its own.
 
-   NOT part of the hash: the geometry says what the detector *is*, not what it
-   answers, so recording it must not change the identity of an already-stored
-   DRF (see #hashValue).
+   Part of the hash (see #hashValue): the "Previous" detectors in the user
+   database are keyed on the hash, and only a new hash gets a new row, so a
+   detector that gains a geometry must not collapse onto its geometry-less
+   ancestor's row (which would silently keep the old contents).  Legacy DRFs
+   with no geometry keep their historical hash values.
    */
   void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
@@ -963,6 +965,32 @@ public:
    */
   EffEval fepEfficiencyEval( const float energy, const double theta,
                              const double phi, const double distance ) const;
+
+  /** An opaque, reusable ray set for one source position - see #apertureQuadrature. */
+  struct PositionedQuadrature;
+
+  /** The traced ray set (CeeLo's "aperture quadrature") for a point source at (`theta`, `phi`,
+   `distance` from the face).  Tracing it is essentially the entire cost of a Monte-Carlo-backed
+   efficiency query - ~1.7 ms of a 1.7 ms call for a 2048-ray response - and it depends only on
+   the source position, never on energy.  A caller sweeping many energies at ONE position should
+   therefore build it once here and hand it to the #fepEfficiencyEval overload below, which is
+   ~30x faster and bit-identical.
+
+   Returns nullptr when there is nothing to reuse (no ceelo response, or fixed geometry); the
+   overload then simply evaluates as usual, so callers need no special case.
+   */
+  std::shared_ptr<const PositionedQuadrature> apertureQuadrature( const double theta,
+                                    const double phi, const double distance ) const;
+
+  /** #fepEfficiencyEval reusing a quadrature from #apertureQuadrature.
+
+   `quadrature` must have been built for the SAME (theta, phi, distance) - a mismatch silently
+   answers for the position the quadrature was traced at (checked under
+   PERFORM_DEVELOPER_CHECKS).  A null `quadrature` is exactly the plain overload.
+   */
+  EffEval fepEfficiencyEval( const float energy, const double theta,
+                             const double phi, const double distance,
+                             const std::shared_ptr<const PositionedQuadrature> &quadrature ) const;
 
   /** Like #fepEfficiencyEval, but the probability of depositing *any* energy
    (for cascade-summing corrections).  Legacy path uses #m_totalEfficiency

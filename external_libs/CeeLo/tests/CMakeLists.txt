@@ -61,6 +61,9 @@ if(CEELO_BUILD_RESPONSE)
     add_ceelo_test(test_efficiency_transfer test_efficiency_transfer.cpp)
     # D-b structured probe family planner: pure (no MC), always registered.
     add_ceelo_test(test_structured_probe_bank test_structured_probe_bank.cpp)
+    # Node plan / per-node progress: mostly pure; its one MC case is a handful
+    # of few-thousand-event nodes (seconds), so it is always registered.
+    add_ceelo_test(test_node_plan test_node_plan.cpp)
 
     # End-to-end generation smoke test runs real (coarse) MC -- opt-in only.
     option(CEELO_RUN_MC_TESTS "Register MC-driven tests (slow) with ctest" OFF)

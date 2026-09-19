@@ -428,6 +428,15 @@ add_test( NAME TCeeLoDrfIntegration
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# The detector-geometry cross-section drawing's model (regions, volumes, masses, JSON): pure C++,
+# no Wt session needed.
+add_executable( test_DetectorGeometryDiagram test_DetectorGeometryDiagram.cpp )
+target_link_libraries( test_DetectorGeometryDiagram PRIVATE InterSpecLib )
+add_test( NAME TDetectorGeometryDiagram
+  COMMAND $<TARGET_FILE:test_DetectorGeometryDiagram> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Volumetric (trace / self-attenuating) source efficiency against extended-source Monte-Carlo truth.
 #  The MC itself is a disabled generator that records a goldens bank; the enabled cases only read it,
 #  so this target does NOT run Monte Carlo.  Two enabled passes over the bank: VolumetricNearFieldVsTruth
