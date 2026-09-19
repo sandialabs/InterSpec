@@ -337,6 +337,28 @@ namespace CeeLoUtils
 
   //====================== MC response -> legacy DRF curve =====================
 
+  /** The half-extent of the CRYSTAL alone, in cm - `descriptor.dimensions_cm[0]`, falling
+   back to `transverse_half_extent()` when that is unset or non-positive.
+
+   This is the disk every INTRINSIC efficiency in InterSpec is quoted against, and the one
+   `DetectorPeakResponse::m_detectorDiameter` records, so that `efficiency()` multiplying by
+   `fractionalSolidAngle(m_detectorDiameter, ...)` undoes exactly what the intrinsic was
+   divided by.
+
+   Deliberately NOT `ceelo::GeometryDescriptor::transverse_half_extent()`, whose own header
+   says not to use it as a physical radius: it sums the side dead layer, every endcap layer
+   and the collimator onto the crystal, and for a box it is the half-DIAGONAL.  Measured
+   (a/a_crystal)^2 on the shipped goldens, 2026-09-18: 1.03 for a canned 3x3 NaI, 1.09 for
+   an HPGe coax, 1.11 for a Detective-X, 2.00 for the CZT box, and 2.37 with a 2 cm lead
+   collar.  Quoting an intrinsic efficiency against that disk makes the detector look that
+   factor less efficient than it is.
+
+   `transverse_half_extent()` remains the right scale for a far-field DISTANCE, which is
+   about the whole object rather than the crystal.
+   */
+  double crystalHalfExtent( const ceelo::GeometryDescriptor &descriptor );
+
+
   /** Fills @p drf's ordinary (non-CeeLo) intrinsic efficiency curve by sampling
    @p response - the "backbone" efficiency points a Monte-Carlo characterization
    produces.

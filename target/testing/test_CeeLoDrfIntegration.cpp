@@ -1406,10 +1406,14 @@ BOOST_AUTO_TEST_CASE( response_angle_series_json )
                   DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   BOOST_CHECK_EQUAL( legacy->responseAngleSeriesJSON( 25.0*PhysicalUnits::cm ), string("null") );
 
-  // MC/transfer DRF: build a transfer response on the nai3x3 geometry.
+  // MC/transfer DRF: build a transfer response on the nai3x3 geometry.  The DRF's diameter is
+  //  the CRYSTAL's, not the transverse half-extent, so that the intrinsic comparison below
+  //  divides by the same disk intrinsicEfficiencyEval quotes against - see
+  //  CeeLoUtils::crystalHalfExtent.
   const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
   const double a_cm = geom.transverse_half_extent();
-  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  shared_ptr<DetectorPeakResponse> det
+                    = synthetic_curve_drf( 2.0*CeeLoUtils::crystalHalfExtent(geom) );
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
@@ -1818,9 +1822,12 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
 
   BOOST_TEST_MESSAGE( "backbone curve vs CeeLo dispatch: worst " << 100.0*worst
                       << "% at " << worst_energy << " keV" );
-  // The gap is interpolation between backbone points, not a different geometry,
-  //  so it is small; a frame or solid-angle error would be tens of percent.
-  BOOST_CHECK_MESSAGE( worst < 0.05, "backbone curve departs from the CeeLo dispatch by "
+  // The gap is interpolation between backbone points only - both sides now quote the
+  //  intrinsic against the same crystal disk (CeeLoUtils::crystalHalfExtent), so the
+  //  measured worst is 0.05% and the gate is 0.5%.  It used to be 5%, which is what a
+  //  systematic solid-angle-convention error looks like: intrinsicEfficiencyEval was
+  //  dividing by the transverse half-extent, 1.03x too big here and 2.0x for the CZT box.
+  BOOST_CHECK_MESSAGE( worst < 0.005, "backbone curve departs from the CeeLo dispatch by "
                        + std::to_string(100.0*worst) + "% at "
                        + std::to_string(worst_energy) + " keV" );
 

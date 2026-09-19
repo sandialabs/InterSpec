@@ -1500,6 +1500,14 @@ vector<double> responseSampleEnergies( const ceelo::DetectorResponse &response,
 }//namespace
 
 
+double crystalHalfExtent( const ceelo::GeometryDescriptor &descriptor )
+{
+  const double a_cm = descriptor.transverse_half_extent();
+  return (descriptor.dimensions_cm.empty() || !(descriptor.dimensions_cm[0] > 0.0))
+           ? a_cm : descriptor.dimensions_cm[0];
+}//crystalHalfExtent(...)
+
+
 std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
                     const std::shared_ptr<const DetectorPeakResponse> &drf,
                     const double distance,
@@ -1519,10 +1527,7 @@ std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
     //  setLegacyEfficiencyFromResponse below: the stored curve is quoted per photon crossing
     //  the CRYSTAL face, and `efficiency()` multiplies it back by the solid angle of the
     //  diameter we record here, so the two have to be the same disk.
-    const double a_cm = response->transverse_half_extent();
-    const double crystal_a_cm = (response->descriptor.dimensions_cm.empty()
-                                 || !(response->descriptor.dimensions_cm[0] > 0.0))
-                                  ? a_cm : response->descriptor.dimensions_cm[0];
+    const double crystal_a_cm = crystalHalfExtent( response->descriptor );
     if( !(crystal_a_cm > 0.0) )
       return drf;
 
@@ -1606,22 +1611,11 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   // Exactly what DetectorPeakResponse::intrinsicEfficiencyEval does for a
   //  CeeLo-backed DRF: on axis, in the response's own far field, over the same
   //  disk solid angle.  Any divergence here would put the stored curve and the
-  //  live query at odds.
+  //  live query at odds.  The far-field DISTANCE is set by the whole object's
+  //  extent; the SOLID ANGLE is the crystal's - see #crystalHalfExtent.
   const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
 
-  // The solid angle - and the diameter recorded on the DRF below - must be the CRYSTAL's, not
-  //  `transverse_half_extent()`.  That function sums the side dead layer, every endcap layer AND
-  //  the collimator onto the crystal radius (its own header says "do not use this" for a physical
-  //  radius): +4% for a canned 3x3 NaI, +12% for a typical p-type HPGe, +56% with a 2 cm
-  //  collimator.  Absolute efficiency comes out the same either way (the curve and the solid angle
-  //  compensate), but every INTRINSIC efficiency the DRF reports is per photon crossing that disk,
-  //  so an oversized one made the detector look (2a/d_crystal)^2 less efficient than it is - 2.45x
-  //  with that collimator - and the diameter shown to the user was simply wrong.
-  //  `transverse_half_extent()` is still the right scale for the far-field DISTANCE above, which is
-  //  about the whole object.
-  const double crystal_a_cm = (response->descriptor.dimensions_cm.empty()
-                               || !(response->descriptor.dimensions_cm[0] > 0.0))
-                                ? a_cm : response->descriptor.dimensions_cm[0];
+  const double crystal_a_cm = crystalHalfExtent( response->descriptor );
   const double omega = ceelo::disk_solid_angle_fraction( d_cm, crystal_a_cm );
   if( omega <= 0.0 )
     throw runtime_error( "setLegacyEfficiencyFromResponse: degenerate solid angle." );

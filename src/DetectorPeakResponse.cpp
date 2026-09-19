@@ -1233,14 +1233,24 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
 
   if( m_ceeloResponse )
   {
-    // Intrinsic = absolute / geometric solid angle, in the true far field of
-    //  the parameterized response (its transverse half-extent `a` is the
-    //  face radius the solid angle is defined against).
+    // Intrinsic = absolute / geometric solid angle, in the true far field of the
+    //  parameterized response.  Two DIFFERENT radii, deliberately:
+    //   - the far-field DISTANCE is set by `transverse_half_extent()`, which is about the
+    //     whole object (crystal + dead layer + endcaps + any collimator) - that is the
+    //     scale the inverse-square limit has to clear;
+    //   - the SOLID ANGLE is the CRYSTAL's, because "intrinsic" means per photon crossing
+    //     the crystal face.  This used to use the transverse extent for both, which put it
+    //     at odds with CeeLoUtils::setLegacyEfficiencyFromResponse - the function that
+    //     builds the stored curve, and that sets #m_detectorDiameter, which #efficiency
+    //     multiplies back in.  The two disagreed by (a/a_crystal)^2: 1.03x for a canned
+    //     3x3 NaI, 1.09x for an HPGe coax, 2.00x for the CZT box (a box's transverse
+    //     half-extent is its half-DIAGONAL) and 2.37x with a 2 cm lead collar.
     const double a_cm = m_ceeloResponse->transverse_half_extent();
     const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
     const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy,
               CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
-    const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
+    const double omega = ceelo::disk_solid_angle_fraction( d_cm,
+                                CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
     answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
