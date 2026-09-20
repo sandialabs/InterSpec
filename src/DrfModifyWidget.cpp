@@ -2095,7 +2095,9 @@ void DrfModifyWidget::showGeometryTab()
 }//void DrfModifyWidget::showGeometryTab()
 
 
-bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )
+bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method,
+                                              const ceelo::ResponseProfile profile,
+                                              const MakeMcResponseForDrf::Precision precision )
 {
   if( !m_mcTool || !m_geomTabItem )
     return false;   //fixed-geometry DRF: nothing to model
@@ -2109,7 +2111,12 @@ bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Metho
   }
   
   showGeometryTab();
+  
+  // Method first: it is what decides whether the other two are even consulted (QuickMc's
+  //  generation forces the far-field profile regardless of what the combo says).
   m_mcTool->setMethod( method );
+  m_mcTool->setProfile( profile );
+  m_mcTool->setPrecision( precision );
   
   return m_mcTool->startGeneration();
 }//bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )

@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -62,7 +63,7 @@ namespace Wt
   class WContainerWidget;
 }//namespace Wt
 
-namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
+namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; enum class ResponseProfile : uint8_t; }
 
 /** A single "Modify Detector" editor consolidating the actions that used to
  crowd the Detector Response Select footer: renaming, geometry + Monte-Carlo
@@ -225,7 +226,9 @@ public:
    Returns whether a generation actually started; false when the DRF has no geometry to model, the
    geometry is incomplete, or a run is already in flight.
    */
-  bool startMcCharacterization( const MakeMcResponseForDrf::Method method );
+  bool startMcCharacterization( const MakeMcResponseForDrf::Method method,
+                                const ceelo::ResponseProfile profile,
+                                const MakeMcResponseForDrf::Precision precision );
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;

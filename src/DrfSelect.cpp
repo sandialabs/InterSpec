@@ -3354,20 +3354,39 @@ namespace
  */
 enum class UrlDrfModeling : int
 {
-  /** Leave the DRF as the classic on-axis far-field curve.  The geometry is still stored. */
+  /** Leave the DRF as the classic far-field curve, accurate only at the reference location it was
+   characterized at.  The geometry is still stored with the detector.
+   */
   FlatDisk = 0,
   
   /** EFFTRAN-style transfer through the geometry, anchored on the DRF's own curve.  Instant and
    deterministic, and what every other geometry-bearing import does - see the
    CeeLoUtils::attachCurveTransferResponse call sites.
    */
-  CurveTransfer = 1,
+  GeometryTransfer = 1,
   
-  /** A full Monte-Carlo characterization, which takes minutes and so is handed to the Modify
-   Detector Response tool, already running, where the progress and cancel controls live.
+  /** Monte Carlo of only the on-axis energy backbone, with the ray-traced kernel carrying the
+   distance/angle transfer - roughly a tenth the work of a full characterization.
    */
-  MonteCarlo = 2
+  PartialMc = 2,
+  
+  /** A full characterization over the general profile. */
+  StandardMc = 3,
+  
+  /** A full characterization with the extra near-field detail of the contact profile. */
+  ExtendedMc = 4
 };//enum class UrlDrfModeling
+
+
+/** Whether a choice needs a Monte-Carlo run (and so the accuracy control, and the hand-off to the
+ tool that can show progress) rather than being instant.
+ */
+bool url_modeling_needs_mc( const UrlDrfModeling choice )
+{
+  return (choice == UrlDrfModeling::PartialMc)
+         || (choice == UrlDrfModeling::StandardMc)
+         || (choice == UrlDrfModeling::ExtendedMc);
+}//url_modeling_needs_mc(...)
 }//namespace
 
 
@@ -3395,11 +3414,12 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
     
     if( geom_only )
     {
-      // Shared by the three hooks below: the combo lives in the dialog, so it is reached through an
-      //  observing_ptr that nulls itself if the dialog goes first.
-      auto selector = make_shared<Wt::Core::observing_ptr<WComboBox>>();
+      // Shared by the hooks below: the combos live in the dialog, so they are reached through
+      //  observing_ptrs that null themselves if the dialog goes first.
+      auto modeling = make_shared<Wt::Core::observing_ptr<WComboBox>>();
+      auto accuracy = make_shared<Wt::Core::observing_ptr<WComboBox>>();
       
-      hooks.addContent = [selector]( WContainerWidget *parent ){
+      hooks.addContent = [modeling,accuracy]( WContainerWidget *parent ){
         WContainerWidget *row = parent->addNew<WContainerWidget>();
         row->addStyleClass( "DrfUrlModelingRow" );
         
@@ -3409,51 +3429,95 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         
         combo->addItem( WString::tr("ds-url-modeling-flat") );
         combo->addItem( WString::tr("ds-url-modeling-transfer") );
-        combo->addItem( WString::tr("ds-url-modeling-mc") );
-        combo->setCurrentIndex( static_cast<int>(UrlDrfModeling::CurveTransfer) );
+        combo->addItem( WString::tr("ds-url-modeling-partial-mc") );
+        combo->addItem( WString::tr("ds-url-modeling-standard-mc") );
+        combo->addItem( WString::tr("ds-url-modeling-extended-mc") );
+        combo->setCurrentIndex( static_cast<int>(UrlDrfModeling::GeometryTransfer) );
+        
+        // Only meaningful once a Monte Carlo is actually going to run.
+        WLabel *accLabel = row->addNew<WLabel>( WString::tr("ds-url-accuracy-label") );
+        WComboBox *acc = row->addNew<WComboBox>();
+        accLabel->setBuddy( acc );
+        acc->addItem( WString::tr("ds-url-accuracy-fast") );
+        acc->addItem( WString::tr("ds-url-accuracy-normal") );
+        acc->addItem( WString::tr("ds-url-accuracy-thorough") );
+        acc->setCurrentIndex( 1 );  //Normal
+        accLabel->hide();
+        acc->hide();
         
         // Most people meeting this dialog will not know what any of the options mean, so say what
-        //  each one does, right here, and follow the selection.
+        //  the selected one does, right here.
         WText *desc = parent->addNew<WText>( WString::tr("ds-url-modeling-desc-transfer") );
         desc->addStyleClass( "DrfUrlModelingDesc" );
         desc->setInline( false );
         
-        combo->changed().connect( combo, [combo,desc](){
+        combo->changed().connect( combo, [combo,desc,accLabel,acc](){
+          const UrlDrfModeling choice = static_cast<UrlDrfModeling>( combo->currentIndex() );
+          
           const char *key = "ds-url-modeling-desc-transfer";
-          switch( static_cast<UrlDrfModeling>(combo->currentIndex()) )
+          switch( choice )
           {
-            case UrlDrfModeling::FlatDisk:      key = "ds-url-modeling-desc-flat";     break;
-            case UrlDrfModeling::CurveTransfer: key = "ds-url-modeling-desc-transfer"; break;
-            case UrlDrfModeling::MonteCarlo:    key = "ds-url-modeling-desc-mc";       break;
+            case UrlDrfModeling::FlatDisk:         key = "ds-url-modeling-desc-flat";        break;
+            case UrlDrfModeling::GeometryTransfer: key = "ds-url-modeling-desc-transfer";    break;
+            case UrlDrfModeling::PartialMc:        key = "ds-url-modeling-desc-partial-mc";  break;
+            case UrlDrfModeling::StandardMc:       key = "ds-url-modeling-desc-standard-mc"; break;
+            case UrlDrfModeling::ExtendedMc:       key = "ds-url-modeling-desc-extended-mc"; break;
           }
           desc->setText( WString::tr(key) );
+          
+          accLabel->setHidden( !url_modeling_needs_mc(choice) );
+          acc->setHidden( !url_modeling_needs_mc(choice) );
         } );
         
-        *selector = combo;
+        *modeling = combo;
+        *accuracy = acc;
       };//hooks.addContent
       
       // Runs before the DB write, so what gets stored is the detector the user chose - attaching a
       //  response changes the hash the "Previous" row is keyed on.
-      hooks.beforeAccept = [selector]( shared_ptr<DetectorPeakResponse> accepted ){
+      hooks.beforeAccept = [modeling]( shared_ptr<DetectorPeakResponse> accepted ){
         if( !accepted )
           return;
         
         // Default to the transfer if the combo is somehow gone: it is what every other
         //  geometry-bearing import gives, and costs nothing.
-        const UrlDrfModeling choice = (*selector)
-                  ? static_cast<UrlDrfModeling>( (*selector)->currentIndex() )
-                  : UrlDrfModeling::CurveTransfer;
+        const UrlDrfModeling choice = (*modeling)
+                  ? static_cast<UrlDrfModeling>( (*modeling)->currentIndex() )
+                  : UrlDrfModeling::GeometryTransfer;
         
-        // The Monte-Carlo run happens after the detector is in use (see afterAccept); it needs a
-        //  seed with no response attached, which is exactly what we have here.
-        if( choice == UrlDrfModeling::CurveTransfer )
+        // A Monte-Carlo run happens after the detector is in use (see afterAccept); it needs a seed
+        //  with no response attached, which is exactly what we have here.
+        if( choice == UrlDrfModeling::GeometryTransfer )
           CeeLoUtils::attachCurveTransferResponse( *accepted );
       };//hooks.beforeAccept
       
-      hooks.afterAccept = [selector]( shared_ptr<DetectorPeakResponse> accepted ){
-        if( !accepted || !(*selector)
-           || (static_cast<UrlDrfModeling>((*selector)->currentIndex()) != UrlDrfModeling::MonteCarlo) )
+      hooks.afterAccept = [modeling,accuracy]( shared_ptr<DetectorPeakResponse> accepted ){
+        if( !accepted || !(*modeling) )
           return;
+        
+        const UrlDrfModeling choice = static_cast<UrlDrfModeling>( (*modeling)->currentIndex() );
+        if( !url_modeling_needs_mc(choice) )
+          return;
+        
+        // QuickMc's generation forces the far-field profile, so the profile only distinguishes the
+        //  two full characterizations.
+        const MakeMcResponseForDrf::Method method = (choice == UrlDrfModeling::PartialMc)
+                        ? MakeMcResponseForDrf::Method::QuickMc
+                        : MakeMcResponseForDrf::Method::FullMc;
+        const ceelo::ResponseProfile profile = (choice == UrlDrfModeling::ExtendedMc)
+                        ? ceelo::ResponseProfile::Contact
+                        : ceelo::ResponseProfile::General;
+        
+        MakeMcResponseForDrf::Precision precision = MakeMcResponseForDrf::Precision::Normal;
+        if( *accuracy )
+        {
+          switch( (*accuracy)->currentIndex() )
+          {
+            case 0:  precision = MakeMcResponseForDrf::Precision::Fast;     break;
+            case 2:  precision = MakeMcResponseForDrf::Precision::Thorough; break;
+            default: precision = MakeMcResponseForDrf::Precision::Normal;   break;
+          }
+        }//if( *accuracy )
         
         // Minutes of work, so it goes to the tool that already has progress, ETA and cancel -
         //  opened on the right tab with the run already started, so the user does not have to know
@@ -3466,7 +3530,7 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         if( !window || !window->tool() )
           return;
         
-        if( !window->tool()->startMcCharacterization( MakeMcResponseForDrf::Method::FullMc ) )
+        if( !window->tool()->startMcCharacterization( method, profile, precision ) )
           passMessage( WString::tr("ds-url-mc-not-started"), WarningWidget::WarningMsgHigh );
       };//hooks.afterAccept
     }//if( geom_only )

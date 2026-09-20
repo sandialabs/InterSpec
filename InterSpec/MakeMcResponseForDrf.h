@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <atomic>
+#include <cstdint>
 #include <chrono>
 #include <memory>
 #include <functional>
@@ -68,6 +69,7 @@ namespace ceelo
   struct GenerationStats;
   struct GenerationOptions;
   struct GeometryDescriptor;
+  enum class ResponseProfile : uint8_t;
 }//namespace ceelo
 
 /** Characterizes a detectors response over its geometry (CeeLo): the user
@@ -173,6 +175,25 @@ public:
 
   /** Selects the build method (as if the user picked it in the combo). */
   void setMethod( const Method method );
+  
+  /** The preset MC precision levels, in combo order.  "Custom" is deliberately absent: it takes a
+   free-text per-node precision, so it is only reachable through the combo itself.
+   */
+  enum class Precision : int
+  {
+    Fast = 0,       //1% per node
+    Normal = 1,     //0.3% per node
+    Balanced = 2,   //0.3% base, relaxed at high energy
+    Thorough = 3    //0.1% per node
+  };//enum class Precision
+  
+  /** Selects the response profile - what positions the run covers (as if the user picked it in
+   the combo).  Ignored by #Method::QuickMc, whose generation forces the far-field profile.
+   */
+  void setProfile( const ceelo::ResponseProfile profile );
+  
+  /** Selects one of the preset MC precision levels (as if the user picked it in the combo). */
+  void setPrecision( const Precision precision );
 
   /** Hides (or shows) the response-preview chart section - for an owner that has its own chart. */
   void setChartHidden( const bool hidden );

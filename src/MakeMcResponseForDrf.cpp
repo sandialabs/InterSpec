@@ -906,6 +906,28 @@ void MakeMcResponseForDrf::setMethod( const Method method )
 }//setMethod(...)
 
 
+void MakeMcResponseForDrf::setProfile( const ceelo::ResponseProfile profile )
+{
+  int index = 0;  //General
+  switch( profile )
+  {
+    case ceelo::ResponseProfile::FarField: index = 1; break;
+    case ceelo::ResponseProfile::Contact:  index = 2; break;
+    default:                               index = 0; break;
+  }
+  
+  m_profile->setCurrentIndex( index );
+  handleOptionChanged();
+}//setProfile(...)
+
+
+void MakeMcResponseForDrf::setPrecision( const Precision precision )
+{
+  m_precision->setCurrentIndex( static_cast<int>(precision) );
+  handlePrecisionChanged();
+}//setPrecision(...)
+
+
 void MakeMcResponseForDrf::setChartHidden( const bool hidden )
 {
   m_hideChart = hidden;
