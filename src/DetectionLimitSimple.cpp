@@ -2331,9 +2331,18 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     {
       label = WString::tr("dls-continuum-area");
       const PeakDef &peak = result.fit_peaks.front();
-      // CDF step types wont typically occur in detection limit context; if they do, use single peak
-      const PeakDef *peak_ptr = &peak;
-      const double cont_area = peak.continuum()->offset_integral( roi_start, roi_end, measurement, &peak_ptr, 1 );
+
+      // The peak-CDF step continua build their step from every peak sharing the ROI, so collect
+      //  the peers rather than passing just `peak`.
+      vector<const PeakDef *> roi_peaks;
+      for( const PeakDef &p : result.fit_peaks )
+      {
+        if( p.continuum() == peak.continuum() )
+          roi_peaks.push_back( &p );
+      }
+
+      const double cont_area = peak.continuum()->offset_integral( roi_start, roi_end, measurement,
+                                                                 roi_peaks.data(), roi_peaks.size() );
 
       // Deliberately NOT projected: the continuum belongs to the reference spectrum, which is the
       //  one drawn on the chart beside this dialog.  Saying so keeps it from being read against the

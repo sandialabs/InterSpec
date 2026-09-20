@@ -1,0 +1,6 @@
+Product,Value,Unit,Notes
+AM-241 Deposition at 28 hrs,3.2,uCi,leading token "AM-241" is used as the nuclide
+Pu239,150,nCi,extra columns like this one are ignored
+U-235,0.5,uCi/m2,areal suffix "/m2" is carried through to the output labels
+Sr90,8.0,kBq/cc,volumetric suffix "/cc" is carried through
+Th232,42,Bq,plain activity unit

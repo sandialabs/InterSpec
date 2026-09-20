@@ -943,7 +943,10 @@ public:
    The geometry comes from the DRF itself (`DetectorPeakResponse::geometry()`), so an importer
    that knows the detector's shape sets it there rather than passing it alongside.
    */
-  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf );
+  /** Shows the Modify DRF tool for `drf`; a null `drf` edits the foreground DRF, unless
+   `blank_if_null` - then a blank detector (the "Make without data..." flow). */
+  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf,
+                                        const bool blank_if_null = false );
 
   /** If a `DrfModifyWindow` opened via #showDrfModifyWindow is showing, deletes it. */
   void deleteDrfModifyWindow();

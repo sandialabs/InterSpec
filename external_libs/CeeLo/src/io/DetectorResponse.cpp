@@ -42,6 +42,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -63,7 +64,12 @@ namespace ceelo {
 // they can read correctly, and hard-fail (via the range test in from_xml)
 // on exactly the ones they would get wrong. Existing responses keep their bytes
 // and their hash. Follow this pattern for the next additive field.
-const int DetectorResponse::sm_xmlSerializationVersion = 2;
+//
+// v3 followed the pattern for TotEffTier::NotCharacterized: a pre-v3 reader maps
+// the unknown tier string onto KernelExact and would serve a bare kernel as a
+// verified total efficiency, so only responses that use that tier are stamped
+// v3.
+const int DetectorResponse::sm_xmlSerializationVersion = 3;
 
 namespace {
 
@@ -275,20 +281,7 @@ Geometry GeometryDescriptor::build_geometry(
     };
 
     Geometry g;
-    g.set_detector_from_dimensions_vector(shape, mat_at(crystal_material_index), dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after
-    // it; fillet first, so bore_fits() sees the final crystal profile.
-    if (bullet_radius_cm > 0.0) g.set_bullet_radius(bullet_radius_cm);
-    if (bore) g.set_bore_hole(bore->radius, bore->depth, bore->rounded_tip);
-    if (dead_layer)
-        g.set_dead_layer(dead_layer->front, dead_layer->side, dead_layer->back);
-    for (const LayerSpec& l : layers)
-        g.add_attenuator(mat_at(l.material_index), l.front_thickness_cm,
-                         l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (collimator)
-        g.add_collimator(mat_at(collimator->material_index),
-                         collimator->side_thickness_cm, collimator->z_start_cm,
-                         collimator->z_end_cm);
+    apply_detector_side(g, *this, mat_at);
     return g;
 }
 
@@ -846,8 +839,22 @@ double TotEffPayload::ln_b_at(double energy_keV) const {
 // Grounding
 // ---------------------------------------------------------------------------
 
-double SigmaTransferModel::eval(double d_over_a, double cos_theta,
-                                double energy_keV) const {
+bool crystal_is_cdte_class(const GeometryDescriptor& gd) {
+    if (gd.crystal_material_index < 0 ||
+        static_cast<size_t>(gd.crystal_material_index) >= gd.materials.size())
+        return false;
+    double cd_te = 0.0;
+    for (const MaterialComponent& c : gd.materials[static_cast<size_t>(
+             gd.crystal_material_index)].composition) {
+        if (c.Z == 48 || c.Z == 52) cd_te += c.mass_fraction;
+    }
+    return cd_te > 0.5;
+}
+
+SigmaTransferModel::Components SigmaTransferModel::components(
+    double d_over_a, double cos_theta, double energy_keV) const {
+    Components c;
+    c.far_onaxis = far_onaxis;
     const double s2 = std::max(0.0, 1.0 - cos_theta * cos_theta);
     // Low-E weight: 0 at/above mid_e_ref, 1 at/below low_e_ref (ln ramp).
     double w = 0.0;
@@ -856,14 +863,26 @@ double SigmaTransferModel::eval(double d_over_a, double cos_theta,
             (std::log(mid_e_ref_keV) - std::log(low_e_ref_keV));
         w = clamp(w, 0.0, 1.0);
     }
-    const double off = s2 * (offaxis_mid + offaxis_low_e * w * w);
-    double near = 0.0;
+    // Saturating in sin^2(theta): the measured residual flattens past ~30 degrees
+    // because beyond there you are looking at the crystal from the side and the
+    // distribution of path lengths stops changing much with further angle.
+    // offaxis_s2_half <= 0 selects the legacy unbounded form (old stored files).
+    const double amp = offaxis_mid + offaxis_low_e * w * w;
+    c.offaxis = (offaxis_s2_half > 0.0) ? (amp * s2 / (s2 + offaxis_s2_half))
+                                        : (amp * s2);
     if (d_over_a < near_gate_a) {
         const double t = clamp((near_gate_a - d_over_a) / (near_gate_a - 1.0),
                                0.0, 1.0);
-        near = near_contact * t;
+        c.near = near_contact * t;
     }
-    return std::sqrt(far_onaxis * far_onaxis + off * off + near * near);
+    return c;
+}
+
+double SigmaTransferModel::eval(double d_over_a, double cos_theta,
+                                double energy_keV) const {
+    const Components c = components(d_over_a, cos_theta, energy_keV);
+    return std::sqrt(c.far_onaxis * c.far_onaxis + c.offaxis * c.offaxis +
+                     c.near * c.near);
 }
 
 double GroundingBlock::eval_ln_k(double energy_keV, bool& clamped) const {
@@ -1091,6 +1110,13 @@ void DetectorResponse::total_ray_weights(
     std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
     // Mirrors eps_total_impl's tier dispatch - the EtaTotTable tier folds a measured eta_tot over
     // the FULL-mu kernel, the other tiers use the Rayleigh-free one.
+    if (!tot_eff.characterized()) {
+        // No total to differentiate through; empty weights make K == 0, matching
+        // eps_total_impl's refusal instead of implying a bare-kernel total.
+        w_out.clear();
+        dirs_out.clear();
+        return;
+    }
     const MuChoice mu = (tot_eff.tier == TotEffTier::EtaTotTable) ? MuChoice::Total
                                                                   : MuChoice::NoRayleigh;
     const double recap = (mu == MuChoice::NoRayleigh)
@@ -1102,6 +1128,34 @@ void DetectorResponse::total_ray_weights(
 // DetectorResponse -- evaluation
 // ---------------------------------------------------------------------------
 
+/// The fractional 1-sigma budget of one efficiency query, split by what it is made of: the
+/// data-derived variances (the MC's / the user's own statistics - trustable) and the model
+/// envelopes (model_sigma constants - how wrong the model may be where it is not measured).
+/// Every envelope is a common mode across energies at the query geometry, so frac_covariance
+/// builds its off-diagonals from exactly the terms the diagonal is made of.  Fixed size: this
+/// sits in the per-element hot path of the volumetric integrals.
+struct DetectorResponse::SigmaBudget {
+    // Data-derived
+    double node2 = 0.0;     // MC node variance (eta + near-field tables); independent per energy
+    double var_ln_k = 0.0;  // anchor / grounding fit variance; off-diagonals via cov_ln_k
+    // Model envelopes, each fully correlated across energies
+    enum Term : size_t { Floor, BehindPlane, Shadow, NearUnmodeled, Buildup,
+                         ModelFar, ModelOff, ModelNear, GroundFar, GroundOff, GroundNear,
+                         NumTerms };
+    std::array<double, NumTerms> model{};
+
+    // `var_ln_k` comes from a stored covariance matrix that nothing validates as positive
+    // semi-definite (it is read verbatim from XML, or handed over by set_anchor_covariance), so
+    // clamp rather than let a bad file turn into a NaN sigma halfway through somebody's fit.
+    double data2() const { return node2 + std::max(0.0, var_ln_k); }
+    double model2() const {
+        double s = 0.0;
+        for (const double m : model) s += m * m;
+        return s;
+    }
+    double frac2() const { return data2() + model2(); }
+};
+
 struct DetectorResponse::EvalCommon {
     double d_cm = 0.0;          // from crystal-face origin
     double cos_theta = 1.0;
@@ -1109,7 +1163,7 @@ struct DetectorResponse::EvalCommon {
     double a_cm = 0.0;          // transverse half-extent
     bool near_regime = false;
     ResponseFlag flag = ResponseFlag::Ok;
-    double extra_sigma2 = 0.0;  // shadow / behind-plane inflation
+    SigmaBudget budget;         // geometry-only terms filled here; the rest per quantity
 };
 
 namespace {
@@ -1140,9 +1194,10 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
 
     // Behind the face plane: unmodeled (theta > 90; Marinelli-class needs
     // dedicated nodes -- deferred). Value is a clamped guess.
+    SigmaBudget& b = ec.budget;
     if (ec.cos_theta < 0.0) {
         raise_flag(ec.flag, ResponseFlag::NeedsMc);
-        ec.extra_sigma2 += 0.30 * 0.30;
+        b.model[SigmaBudget::BehindPlane] = model_sigma::behind_plane;
     }
 
     // EFFTRAN transfer envelope: inflate sigma where the (angle-flat) eta of a
@@ -1150,21 +1205,23 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
     // residual. Applied UNCONDITIONALLY (independent of grounding), and to both
     // FEP and total via this shared path.
     if (model_transfer) {
-        const double st = model_transfer->eval(
+        const SigmaTransferModel::Components c = model_transfer->components(
             ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
-        ec.extra_sigma2 += st * st;
+        b.model[SigmaBudget::ModelFar] = c.far_onaxis;
+        b.model[SigmaBudget::ModelOff] = c.offaxis;
+        b.model[SigmaBudget::ModelNear] = c.near;
     }
 
     // Collimator shadow gate (spec sec 4.5): s = transmitted/geometric.
     if (descriptor.collimator && q.omega_frac_active > 0.0) {
         const double s = kernel_transmitted(energy_keV, q) / q.omega_frac_active;
-        if (s < 0.05) {
+        if (s < model_sigma::shadow_refuse_s) {
             raise_flag(ec.flag, ResponseFlag::NeedsMc);
-            ec.extra_sigma2 += 1.0;  // sigma ~ 100%
-        } else if (s < 0.3) {
+            b.model[SigmaBudget::Shadow] = model_sigma::shadow_refuse;
+        } else if (s < model_sigma::shadow_ramp_s) {
             raise_flag(ec.flag, ResponseFlag::Shadowed);
-            const double sh = 0.5 * (0.3 - s) / 0.3;
-            ec.extra_sigma2 += sh * sh;
+            b.model[SigmaBudget::Shadow] = model_sigma::shadow_ramp_max *
+                (model_sigma::shadow_ramp_s - s) / model_sigma::shadow_ramp_s;
         }
     }
     return ec;
@@ -1198,11 +1255,64 @@ double DetectorResponse::kernel_transmitted(double energy_keV,
     return total;
 }
 
+void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
+                                  double& ln_N, double& ln_k) const {
+    SigmaBudget& b = ec.budget;
+
+    // Near field: below the measured breakpoint apply N (general/contact profiles) or flag as
+    // unmodeled (far-field profile).  The gate is the near-field model's own breakpoint (energy
+    // and angle dependent) or the provenance floor - NOT the floor regime `near_regime`.
+    ln_N = 0.0;
+    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
+    double d_gate = std::max(d_break, provenance.min_distance_cm);
+    // With no near-field table the gate would be provenance.min_distance_cm, which the
+    // generator sets to 2a - but the boost the response cannot represent is still
+    // 1.75-2.07% out at 2.4-3a (measured on the goldens' ln_n), a regime where this term
+    // switched off and nothing else covered it.  Widen it to the floor's own near regime.
+    if (near_field.empty())
+        d_gate = std::max(d_gate, floors.near_regime_a * ec.a_cm);
+    if (ec.d_cm < d_gate) {
+        if (!near_field.empty()) {
+            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+            const double nf_sig =
+                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+            b.node2 += nf_sig * nf_sig;
+        } else {
+            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
+            // Charge this ONCE.  A curve transfer has no near-field table AND carries a
+            // model_transfer, so it used to pay near_unmodeled here and the transfer's
+            // near ramp in common_eval for the same physics - the ray-traced kernel
+            // cannot know the near-field boost, which is one limitation, not two.  The
+            // 2026-09 corpus measured both at ~4% and they are the same measurement.
+            // Where there is no model_transfer to carry it, this term still applies.
+            if (!model_transfer)
+                b.model[SigmaBudget::NearUnmodeled] = model_sigma::near_unmodeled;
+        }
+    }
+
+    // Grounding k(E): its fit covariance (data) and its transfer envelope (model).
+    ln_k = 0.0;
+    if (!grounding.empty()) {
+        bool k_clamped = false;
+        ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
+        if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+        b.var_ln_k = grounding.var_ln_k(energy_keV);
+        const SigmaTransferModel::Components c = grounding.transfer.components(
+            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
+        b.model[SigmaBudget::GroundFar] = c.far_onaxis;
+        b.model[SigmaBudget::GroundOff] = c.offaxis;
+        b.model[SigmaBudget::GroundNear] = c.near;
+    }
+
+    const double node_sig =
+        eta_fep.node_frac_sigma(energy_keV, ec.cos_theta, ec.phi_deg);
+    b.node2 += node_sig * node_sig;
+    b.model[SigmaBudget::Floor] = ec.near_regime ? floors.fep_near : floors.fep_far;
+}
+
 EffResult DetectorResponse::fep_prefactor(
     double energy_keV, const Eigen::Vector3d& src_cm,
     const ApertureQuadrature& q) const {
-    // Deliberately the same body as eps_fep_impl with the `* K` dropped, so a host that assembles
-    // K itself still gets the near-field gate, the grounding, the sigma budget and the flag.
     EvalCommon ec = common_eval(energy_keV, src_cm, q);
 
     bool clamped = false;
@@ -1210,39 +1320,14 @@ EffResult DetectorResponse::fep_prefactor(
         eta_fep.eval_ln(energy_keV, ec.cos_theta, ec.phi_deg, clamped);
     if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
 
-    double ln_N = 0.0;
-    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
-    const double d_gate = std::max(d_break, provenance.min_distance_cm);
-    if (ec.d_cm < d_gate) {
-        if (!near_field.empty()) {
-            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
-            const double nf_sig =
-                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
-            ec.extra_sigma2 += nf_sig * nf_sig;
-        } else {
-            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
-            ec.extra_sigma2 += 0.05 * 0.05;
-        }
-    }
-
-    double ln_k = 0.0, ground_var = 0.0;
-    if (!grounding.empty()) {
-        bool k_clamped = false;
-        ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
-        if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
-        const double st = grounding.transfer.eval(
-            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
-        ground_var = grounding.var_ln_k(energy_keV) + st * st;
-    }
+    double ln_N = 0.0, ln_k = 0.0;
+    fep_budget(energy_keV, ec, ln_N, ln_k);
 
     EffResult res;
     res.value = std::exp(ln_eta + ln_N + ln_k);
-    const double node_sig =
-        eta_fep.node_frac_sigma(energy_keV, ec.cos_theta, ec.phi_deg);
-    const double floor = ec.near_regime ? floors.fep_near : floors.fep_far;
-    const double frac2 = node_sig * node_sig + floor * floor + ground_var +
-                         ec.extra_sigma2;
-    res.sigma = res.value * std::sqrt(frac2);
+    const double model2 = ec.budget.model2();
+    res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
+    res.sigma_model = res.value * std::sqrt(model2);
     res.flag = ec.flag;
     return res;
 }
@@ -1255,8 +1340,19 @@ EffResult DetectorResponse::total_prefactor(
     // would double-count against a host that applies its own scatter augment.
     EvalCommon ec = common_eval(energy_keV, src_cm, q);
 
+    // Mirrors eps_total_impl's refusal: no total data, no prefactor.
+    if (!tot_eff.characterized()) {
+        EffResult res;
+        res.value = 0.0;
+        res.sigma = 0.0;
+        res.flag = ResponseFlag::NeedsMc;
+        return res;
+    }
+
     double value = 1.0, node_sig = 0.0;
     switch (tot_eff.tier) {
+        case TotEffTier::NotCharacterized:
+            break;                                   //handled above
         case TotEffTier::KernelExact:
             break;                                   //bare kernel; multiplier is 1
         case TotEffTier::BCurve:
@@ -1282,9 +1378,11 @@ EffResult DetectorResponse::total_prefactor(
 
     EffResult res;
     res.value = value;
-    const double floor = ec.near_regime ? floors.tot_near : floors.tot_far;
-    const double frac2 = node_sig * node_sig + floor * floor + ec.extra_sigma2;
-    res.sigma = res.value * std::sqrt(frac2);
+    ec.budget.node2 = node_sig * node_sig;
+    ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
+    const double model2 = ec.budget.model2();
+    res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
+    res.sigma_model = res.value * std::sqrt(model2);
     res.flag = ec.flag;
     return res;
 }
@@ -1293,52 +1391,13 @@ EffResult DetectorResponse::eps_fep_impl(
     double energy_keV, const Eigen::Vector3d& src_cm,
     const ApertureQuadrature& q,
     const std::function<double(const Eigen::Vector3d&)>* t_src) const {
-    EvalCommon ec = common_eval(energy_keV, src_cm, q);
-
-    bool clamped = false;
-    const double ln_eta =
-        eta_fep.eval_ln(energy_keV, ec.cos_theta, ec.phi_deg, clamped);
-    if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
-
+    // One body: everything but the kernel is the prefactor, so the near-field gate, the
+    // grounding, the sigma budget and the flag cannot drift between the two entry points.
+    EffResult res = fep_prefactor(energy_keV, src_cm, q);
     const double K = kernel_K(energy_keV, q, MuChoice::Total, t_src);
-
-    // Near field: below the measured breakpoint apply N (general/contact
-    // profiles) or flag as unmodeled (far-field profile).
-    double ln_N = 0.0;
-    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
-    const double d_gate = std::max(d_break, provenance.min_distance_cm);
-    if (ec.d_cm < d_gate) {
-        if (!near_field.empty()) {
-            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
-            const double nf_sig =
-                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
-            ec.extra_sigma2 += nf_sig * nf_sig;
-        } else {
-            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
-            ec.extra_sigma2 += 0.05 * 0.05;  // kernel-only near error (S1)
-        }
-    }
-
-    // Grounding k(E) + transfer inflation.
-    double ln_k = 0.0, ground_var = 0.0;
-    if (!grounding.empty()) {
-        bool k_clamped = false;
-        ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
-        if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
-        const double st = grounding.transfer.eval(
-            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
-        ground_var = grounding.var_ln_k(energy_keV) + st * st;
-    }
-
-    EffResult res;
-    res.value = std::exp(ln_eta + ln_N + ln_k) * K;
-    const double node_sig =
-        eta_fep.node_frac_sigma(energy_keV, ec.cos_theta, ec.phi_deg);
-    const double floor = ec.near_regime ? floors.fep_near : floors.fep_far;
-    const double frac2 = node_sig * node_sig + floor * floor + ground_var +
-                         ec.extra_sigma2;
-    res.sigma = res.value * std::sqrt(frac2);
-    res.flag = ec.flag;
+    res.value *= K;
+    res.sigma *= K;
+    res.sigma_model *= K;
     return res;
 }
 
@@ -1349,9 +1408,21 @@ EffResult DetectorResponse::eps_total_impl(
     const ShieldContext* sc) const {
     EvalCommon ec = common_eval(energy_keV, src_cm, q);
 
+    // No total-efficiency data: refuse rather than serve the bare kernel as if
+    // it were a verified total (see TotEffTier::NotCharacterized).
+    if (!tot_eff.characterized()) {
+        EffResult res;
+        res.value = 0.0;
+        res.sigma = 0.0;
+        res.flag = ResponseFlag::NeedsMc;
+        return res;
+    }
+
     double value = 0.0;
     double node_sig = 0.0;
     switch (tot_eff.tier) {
+        case TotEffTier::NotCharacterized:
+            break;                                   //handled above
         case TotEffTier::KernelExact:
             value = kernel_K(energy_keV, q, MuChoice::NoRayleigh, t_src);
             break;
@@ -1380,8 +1451,8 @@ EffResult DetectorResponse::eps_total_impl(
 
     EffResult res;
     res.value = value;
-    const double floor = ec.near_regime ? floors.tot_near : floors.tot_far;
-    double frac2 = node_sig * node_sig + floor * floor + ec.extra_sigma2;
+    ec.budget.node2 = node_sig * node_sig;
+    ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
 
     // Build-up seam (Stage E3 A1): only when a ShieldContext is supplied AND a
     // model is installed.  Ratio-only (>= 1), scales eps_total up; the build-up
@@ -1390,9 +1461,11 @@ EffResult DetectorResponse::eps_total_impl(
     if (sc && buildup_model) {
         const double B = std::max(1.0, buildup_model(energy_keV, *sc));
         res.value = value * B;
-        frac2 += kBuildupSigmaFloor * kBuildupSigmaFloor;
+        ec.budget.model[SigmaBudget::Buildup] = model_sigma::buildup_floor;
     }
-    res.sigma = res.value * std::sqrt(frac2);
+    const double model2 = ec.budget.model2();
+    res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
+    res.sigma_model = res.value * std::sqrt(model2);
     res.flag = ec.flag;
     return res;
 }
@@ -1455,33 +1528,51 @@ EffResult DetectorResponse::eps_total_element(
 }
 
 std::vector<double> DetectorResponse::frac_covariance(
-    const std::vector<double>& energies_keV, double theta_rad,
-    double dist_cm) const {
+    const std::vector<double>& energies_keV, const Eigen::Vector3d& src_cm,
+    const ApertureQuadrature& q, std::vector<double>* model_part) const {
     const size_t n = energies_keV.size();
-    std::vector<double> C(n * n, 0.0);
-    const double ct = std::cos(theta_rad);
-    const double a = descriptor.transverse_half_extent();
-    const double d_over_a = a > 0.0 ? dist_cm / a : 1e6;
-    const bool near = dist_cm < floors.near_regime_a * a;
-    const double floor = near ? floors.fep_near : floors.fep_far;
 
-    std::vector<double> node(n, 0.0), transfer(n, 0.0);
+    // The same budget eps_fep_at would report at each energy, through the same code.
+    std::vector<SigmaBudget> b(n);
     for (size_t i = 0; i < n; ++i) {
-        node[i] = eta_fep.node_frac_sigma(energies_keV[i], ct, 0.0);
-        if (!grounding.empty())
-            transfer[i] =
-                grounding.transfer.eval(d_over_a, ct, energies_keV[i]);
+        EvalCommon ec = common_eval(energies_keV[i], src_cm, q);
+        double ln_N = 0.0, ln_k = 0.0;
+        fep_budget(energies_keV[i], ec, ln_N, ln_k);
+        b[i] = ec.budget;
     }
+
+    std::vector<double> C(n * n, 0.0);
+    if (model_part) model_part->assign(n * n, 0.0);
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = i; j < n; ++j) {
-            double v = floor * floor + transfer[i] * transfer[j];
-            if (!grounding.empty())
+            // Every envelope is one rank-one block: m_t[i] * m_t[j].
+            double m = 0.0;
+            for (size_t t = 0; t < SigmaBudget::NumTerms; ++t)
+                m += b[i].model[t] * b[j].model[t];
+            double v = m;
+            if (i == j)
+                v = b[i].frac2();   // the diagonal IS the per-query budget
+            else if (!grounding.empty())
                 v += grounding.cov_ln_k(energies_keV[i], energies_keV[j]);
-            if (i == j) v += node[i] * node[i];
             C[i * n + j] = C[j * n + i] = v;
+            if (model_part) (*model_part)[i * n + j] = (*model_part)[j * n + i] = m;
         }
     }
     return C;
+}
+
+std::vector<double> DetectorResponse::frac_covariance(
+    const std::vector<double>& energies_keV, const Eigen::Vector3d& src_cm,
+    std::vector<double>* model_part) const {
+    const ApertureQuadrature q = make_quadrature(src_cm);
+    return frac_covariance(energies_keV, src_cm, q, model_part);
+}
+
+std::vector<double> DetectorResponse::frac_covariance(
+    const std::vector<double>& energies_keV, double theta_rad, double phi_rad,
+    double dist_cm, std::vector<double>* model_part) const {
+    return frac_covariance(energies_keV, query_position(theta_rad, phi_rad, dist_cm),
+                           model_part);
 }
 
 // ---------------------------------------------------------------------------
@@ -1702,8 +1793,15 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         // exact bytes (and content_hash) and stay loadable by older builds.
         const bool needs_v2 = (descriptor.bullet_radius_cm > 0.0)
                               || (descriptor.bore && descriptor.bore->rounded_tip);
+        // v3 = the eps_tot "not characterized" tier. A v2 reader maps an unknown
+        // tier string onto KernelExact, which is precisely the silent misread
+        // this tier exists to prevent (it would serve a bare kernel as a
+        // verified total), so such a file must hard-fail on older builds rather
+        // than load wrongly. Only responses that actually use the tier are
+        // stamped v3, so every existing file keeps its bytes and content_hash.
+        const bool needs_v3 = !tot_eff.characterized();
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", needs_v2 ? 2 : 1);
+        std::snprintf(buf, sizeof(buf), "%i", needs_v3 ? 3 : (needs_v2 ? 2 : 1));
         append_attrib(doc, root, "version", buf);
     }
 
@@ -1772,7 +1870,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         XmlNode* te = append_node(doc, root, "TotalEfficiency");
         const char* tier = tot_eff.tier == TotEffTier::KernelExact ? "kernel"
                            : tot_eff.tier == TotEffTier::BCurve    ? "bcurve"
-                                                                   : "etatable";
+                           : tot_eff.tier == TotEffTier::EtaTotTable ? "etatable"
+                                                                   : "none";
         append_attrib(doc, te, "tier", tier);
         if (scatter_in_recapture != 0.0)
             append_attrib(doc, te, "scatterInRecapture",
@@ -1803,6 +1902,7 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
             append_attrib(doc, tn, "midERefKeV", fmt_double(t.mid_e_ref_keV));
             append_attrib(doc, tn, "nearContact", fmt_double(t.near_contact));
             append_attrib(doc, tn, "nearGateA", fmt_double(t.near_gate_a));
+            append_attrib(doc, tn, "offAxisS2Half", fmt_double(t.offaxis_s2_half));
         }
         if (!grounding.points.empty()) {
             XmlNode* pts = append_node(doc, g, "Points");
@@ -1841,6 +1941,7 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, tn, "midERefKeV", fmt_double(t.mid_e_ref_keV));
         append_attrib(doc, tn, "nearContact", fmt_double(t.near_contact));
         append_attrib(doc, tn, "nearGateA", fmt_double(t.near_gate_a));
+            append_attrib(doc, tn, "offAxisS2Half", fmt_double(t.offaxis_s2_half));
     }
 
     // Accuracy certificate -- additive METADATA, excluded from content_hash
@@ -1873,6 +1974,17 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
             flat.push_back(r.pass ? 1.0 : 0.0);
         }
         append_value_node(doc, cn, "Rows", join_doubles(flat));
+        // Total efficiency rides in its OWN 4-column stream rather than
+        // widening "Rows": a reader of an older file parses Rows at its
+        // historical stride of 10 and simply finds no RowsTot, instead of
+        // silently mis-striding every row.
+        std::vector<double> flat_tot;
+        flat_tot.reserve(c.rows.size() * 4);
+        for (const AccuracyCertificate::Row& r : c.rows) {
+            flat_tot.push_back(r.mc_tot);    flat_tot.push_back(r.mc_tot_sig);
+            flat_tot.push_back(r.model_tot); flat_tot.push_back(r.model_tot_sig);
+        }
+        append_value_node(doc, cn, "RowsTot", join_doubles(flat_tot));
     }
 
     std::string out;
@@ -1969,6 +2081,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             resp->tot_eff.tier = TotEffTier::BCurve;
         else if (tier && std::strcmp(tier, "etatable") == 0)
             resp->tot_eff.tier = TotEffTier::EtaTotTable;
+        else if (tier && std::strcmp(tier, "none") == 0)
+            resp->tot_eff.tier = TotEffTier::NotCharacterized;
         else
             resp->tot_eff.tier = TotEffTier::KernelExact;
         resp->scatter_in_recapture = attrib_double(te, "scatterInRecapture", 0.0);
@@ -1994,6 +2108,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             t.mid_e_ref_keV = attrib_double(tn, "midERefKeV", t.mid_e_ref_keV);
             t.near_contact = attrib_double(tn, "nearContact", t.near_contact);
             t.near_gate_a = attrib_double(tn, "nearGateA", t.near_gate_a);
+            // Absent => 0 => the legacy sin^2 form, so old files are unchanged.
+            t.offaxis_s2_half = attrib_double(tn, "offAxisS2Half", 0.0);
         }
         if (const XmlNode* pts = g->first_node("Points")) {
             for (const XmlNode* pn = pts->first_node("Pt"); pn;
@@ -2031,6 +2147,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         t.mid_e_ref_keV = attrib_double(tn, "midERefKeV", t.mid_e_ref_keV);
         t.near_contact = attrib_double(tn, "nearContact", t.near_contact);
         t.near_gate_a = attrib_double(tn, "nearGateA", t.near_gate_a);
+            // Absent => 0 => the legacy sin^2 form, so old files are unchanged.
+            t.offaxis_s2_half = attrib_double(tn, "offAxisS2Half", 0.0);
         resp->model_transfer = t;
     }
 
@@ -2060,6 +2178,17 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
             r.tag = static_cast<uint8_t>(flat[i + 8]);
             r.pass = flat[i + 9] != 0.0;
             c.rows.push_back(r);
+        }
+        // Optional; absent in certificates written before the total-efficiency
+        // columns existed, which then keep their zeros.
+        const std::vector<double> flat_tot = parse_doubles(child_value(cn, "RowsTot"));
+        if (flat_tot.size() >= 4 * c.rows.size()) {
+            for (size_t k = 0; k < c.rows.size(); ++k) {
+                c.rows[k].mc_tot = flat_tot[4 * k];
+                c.rows[k].mc_tot_sig = flat_tot[4 * k + 1];
+                c.rows[k].model_tot = flat_tot[4 * k + 2];
+                c.rows[k].model_tot_sig = flat_tot[4 * k + 3];
+            }
         }
     }
 

@@ -786,7 +786,9 @@ public:
 
   void sameIsotopesAgeChanged();
   void decayCorrectChanged();
-  void accountForDrfUncertChanged();
+  /** Handler for the detector-efficiency-uncertainty method combo (None / ErrorPropagation /
+   Likelihood); records undo/redo and refits the chart. */
+  void drfUncertMethodChanged();
   void correctForCascadeChanged();
 
   /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
@@ -796,6 +798,12 @@ public:
    source exists and the DRF is not fixed-geometry; enables the MC / EFFTRAN items per-DRF, and sets
    the status text to the resolved active method.  Called on detector / geometry / source changes. */
   void updateVolEffMethodAvailability();
+
+  /** Shows the detector-efficiency-uncertainty method row only when the current DRF carries
+   efficiency-uncertainty information (an attached CeeLo MC response or a #DetectorEfficiencyUncert).
+   On the first invocation, if the DRF has no such information, defaults the selection to `None`
+   (see #m_drfUncertMethodDefaultApplied).  Called on detector / geometry changes. */
+  void updateDrfUncertMethodAvailability();
 
   /** "Compute DRF for this geometry (MC)": runs CeeLo over the current scene
    (worker thread) and switches to the resulting fixed-geometry DRF, which
@@ -951,8 +959,24 @@ protected:
   Wt::WCheckBox  *m_backgroundPeakSub;
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
-  Wt::WCheckBox  *m_accountForDrfUncert;
   Wt::WCheckBox  *m_correctForCascade;
+
+  /** How the detector-efficiency uncertainty is used by the fit: None / ErrorPropagation (default) /
+   Likelihood; index maps 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  Kept in its own row
+   (#m_drfUncertMethodRow) that is hidden when the current DRF carries no efficiency uncertainty. */
+  Wt::WComboBox *m_drfUncertMethodCombo = nullptr;
+
+  /** The row (label + #m_drfUncertMethodCombo) shown/hidden by #handleDetectorChanged so the control
+   only appears when the current DRF carries efficiency-uncertainty information. */
+  Wt::WContainerWidget *m_drfUncertMethodRow = nullptr;
+
+  /** The combo index before the most recent #drfUncertMethodChanged, for undo/redo. */
+  int m_lastDrfUncertMethodIndex = 1;
+
+  /** Set once #handleDetectorChanged has applied the first-load default (None when the initial DRF
+   carries no efficiency uncertainty); guards against clobbering the user's selection on later DRF
+   swaps. */
+  bool m_drfUncertMethodDefaultApplied = false;
 
   /** Volumetric-source detector-efficiency method override (Auto / Monte Carlo / EFFTRAN /
    Flat-disk); items are enabled per-DRF by #updateVolEffMethodAvailability.  Maps to

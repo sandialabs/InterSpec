@@ -129,8 +129,14 @@
   <message id="ssd-tt-same-el-same-age">Enforce isotopes for the same element should all have the same age.</message>
   <message id="ssd-cb-corr-for-decay">Correct for decay during meas.</message>
   <message id="ssd-tt-corr-for-decay">Corrects for decay and in-growth effects that happen during the time the measurement is being taken.  Resulting activities correspond to the start time of the measurement. May take take additional computation time to find solution.</message>
-  <message id="ssd-cb-drf-uncert">Include detector-efficiency uncertainty</message>
-  <message id="ssd-tt-drf-uncert">When the detector response carries efficiency uncertainties, fold them (including their correlation between nearby energies) into the fit and the reported activity/shielding uncertainties. A detector-wide efficiency error then shows up as a corresponding activity uncertainty rather than being averaged away across peaks. Uncheck to use only the peak counting-statistics uncertainties.</message>
+  <message id="ssd-drf-uncert-label">Det. eff. uncertainty</message>
+  <message id="ssd-drf-uncert-none">Don't use</message>
+  <message id="ssd-drf-uncert-prop">Propagate to results</message>
+  <message id="ssd-drf-uncert-like">Use in fit</message>
+  <message id="ssd-tt-drf-uncert">How the detector response's efficiency uncertainty (including its correlation between nearby energies) is used, when the response carries it:
+    "Don't use" - only the peak counting-statistics uncertainties are used (the historical behavior).
+    "Propagate to results" (default) - the best-fit activities/shieldings are the same as "Don't use", but the reported uncertainties are widened to include the efficiency uncertainty. This is usually what you want: a detector-wide efficiency error maps onto the reported activity uncertainty rather than being averaged away across peaks, without moving the answer.
+    "Use in fit" - folds the correlated efficiency uncertainty into the fit itself, so it can also shift the best-fit values when peaks disagree under the efficiency band. The residual chart then shows the coherent offset; see the Help for why.</message>
   <message id="ssd-cb-cascade-corr">Cascade summing corr.</message>
   <message id="ssd-tt-cascade-corr">Correct expected peak counts for true-coincidence (cascade) summing:
     gammas emitted in coincidence (e.g., Co-60, Eu-152, Ba-133 cascades) can sum in the detector,
@@ -315,6 +321,10 @@
   <message id="x2g-tt-counts-abbrev">cnts</message>
   <message id="x2g-tt-br-abbrev">br</message>
   <message id="x2g-dev-label"><![CDATA[<dev>]]></message>
+  <!-- {1} is the coherent efficiency-driven offset magnitude (in sigma).  Shown on the Chi chart only
+       when "Use in fit" (Likelihood) folds a correlated detector-efficiency band into the fit, where
+       every peak's pull shares one common offset - see the "Detector-efficiency uncertainty" help. -->
+  <message id="x2g-eff-corr-note">Det. eff. correlations bias residuals ~{1}σ from zero — see Help for why.</message>
 
   <!-- Pull-trend interpretation messages.  {1} is the confidence qualifier (x2g-trend-conf-*).
        The trend is fit to (observed-model)/uncert vs energy: a slope indicates the shielding

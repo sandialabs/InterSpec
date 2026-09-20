@@ -944,7 +944,7 @@ GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput build_scene_inpu
   options.background_peak_subtract = false;
   options.same_age_isotopes = false;
   options.compute_effective_shielding = false;
-  options.account_for_drf_uncert = false;
+  options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 #if( CASCADE_TRUTH_FULL )
   options.correct_for_cascade_summing = cascade_option;
 #else

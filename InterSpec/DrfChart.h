@@ -41,6 +41,18 @@ namespace Wt
   class WCssTextRule;
 }
 
+/** A measured data point drawn on a DrfChart: an efficiency marker with error bar on the left
+ axis, and/or a FWHM marker on the right axis (a value <= 0 draws nothing on that axis). */
+struct DrfChartPoint
+{
+  double energy = 0.0;               //keV
+  double efficiency = 0.0, efficiencyUncert = 0.0;
+  double fwhm = 0.0, fwhmUncert = 0.0;
+  std::string label;                 //tooltip text, e.g. "Cs137 661.7 keV: 12345 counts"
+  std::string color;                 //CSS color, or empty for the default
+};//struct DrfChartPoint
+
+
 class DrfChart : public Wt::WContainerWidget
 {
 protected:
@@ -69,11 +81,21 @@ protected:
    */
   const std::string m_jsgraph;
   
-  /** JS calls requested before the widget has been rendered, so wouldnt have
-     ended up doing anything are saved here, and then executed once the widget
-     is rendered.
-   */
-  std::vector<std::string> m_pendingJs;
+  /** Whether #defineJavaScript has run at least once. */
+  bool m_jsDefined;
+
+  /** The x-axis range #setXAxisRange was last given, so #defineJavaScript can restore it. */
+  bool m_xRangeSet;
+  double m_xRangeMin, m_xRangeMax;
+
+  /** The measured-point overlay and its options, held for the same reason as #m_xRangeSet: the
+   client-side object is rebuilt empty whenever a stub becomes a real element, so everything the
+   chart is showing has to be re-sendable.  #m_dataPointsJs is the serialized array literal
+   #setDataPoints last built. */
+  std::string m_dataPointsJs;
+  bool m_showEffPoints, m_showFwhmPoints;
+  bool m_keepZoom;
+  double m_dataRangeLow, m_dataRangeHigh;
   
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
 
@@ -105,10 +127,37 @@ public:
    efficiency response, which the FWHM has nothing to say about. */
   void setShowFwhm( const bool show );
 
+  /** Sets (or, with an empty vector, clears) measured data points to draw over the curves - the
+   efficiency points the Create DRF tool fits, with error bars, and their FWHM markers. */
+  void setDataPoints( const std::vector<DrfChartPoint> &points );
+
+  /** Show/hide the efficiency markers, and the FWHM markers, of #setDataPoints. */
+  void setShowEfficiencyPoints( const bool show );
+  void setShowFwhmPoints( const bool show );
+
+  /** Shades the energy regions outside [lowKeV, highKeV] - where the curve is extrapolated beyond
+   the data.  A range with high <= low clears the shading. */
+  void setDataRange( const double lowKeV, const double highKeV );
+
+  /** When true, #updateChart keeps the current x-axis zoom rather than resetting it to the new
+   detectors energy range - for a chart whose detector is re-pushed after every re-fit. */
+  void setKeepZoomOnUpdate( const bool keep );
+
 protected:
   /** Re-samples the per-angle series (at #m_sourceDistance) and pushes it to
    the client, or clears it when angle curves are disabled / unavailable. */
   void pushAngleSeries();
+
+  /** Calls one method on the client-side chart object, e.g. `setShowFwhm(true)`.
+
+   The emitted statement checks that the element and its chart object exist before calling, because
+   neither is guaranteed: a widget sitting on a tab that has never been shown is sent to the client
+   as a *stub*, so its element is simply not in the DOM.  Emitting a bare call in that state threw a
+   TypeError which aborted the rest of Wt's update block - taking the surrounding dialog's event
+   wiring with it.  #defineJavaScript re-sends the whole state once the element does exist, so
+   nothing is lost by a call that no-ops.
+   */
+  void doChartJs( const std::string &method_call );
 };//class DrfChart
 
 #endif //DrfChart_h

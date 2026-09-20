@@ -517,11 +517,18 @@ struct PeakDetail
 
   /** Fractional (1-sigma) detector-efficiency uncertainty at this peaks energy,
    from the DRFs uncertainty info; 0 when the DRF has none or the
-   `account_for_drf_uncert` option is off.  When non-zero, #observedUncert and
+   `drf_uncert_method` option is not `Likelihood` (states None/ErrorPropagation
+   leave the pulls statistics-only).  When non-zero, #observedUncert and
    #numSigmaOff include this component (added in quadrature as
    expectedCounts*drfEffFracUncert), matching the GLS-whitened fit.
    */
   double drfEffFracUncert = 0.0;
+
+  /** The part of #drfEffFracUncert that is the response's ad hoc model envelope (regime floor,
+   transfer envelope, near-field penalty - ceelo::model_sigma) rather than what the DRF's own data
+   supports; 0 for a legacy curve.  See DetectorPeakResponse::EffEval::sigmaModel.
+   */
+  double drfEffFracUncertModel = 0.0;
 
   /** Detector-efficiency validity flag at this peaks energy and the fit
    geometry (DetectorPeakResponse::EffFlag; Ok when inside the responses
@@ -1397,22 +1404,28 @@ public:
   std::vector<double> includedPeakEnergies() const;
 
   /** Row-major NxN fractional detector-efficiency covariance among the
-   included peaks (see #includedPeakEnergies), evaluated on-axis at the fit
-   distance; strongly correlated between nearby energies for grounded
-   Monte-Carlo-parameterized responses.  Empty if the detector has no
-   uncertainty information.
+   included peaks (see #includedPeakEnergies), through the same model and
+   geometry #pointSourceFepEff evaluates the point sources with - so its
+   diagonal is that evaluation's (sigma/value)^2 (a developer check asserts
+   it).  A CeeLo response's model envelopes (regime floor, transfer envelope,
+   near-field penalty) are fully correlated common modes in it, a fitted
+   curve's coefficient covariance is strongly correlated between nearby
+   energies; `model_part`, when given, receives the envelope-only matrix.
+   Empty if the detector has no uncertainty information.
 
-   Not yet folded into the fit residuals - available for the chi2 / reported
-   parameter covariance to consume (a common-mode efficiency error maps ~1:1
-   onto activity and must not be averaged down by sqrt(num-peaks)).
+   Consumed by #peakEffFracUncerts (displayed marginal pulls) and by
+   ShieldingSourceFitCalc's GLS whitening of the fit residuals, so a
+   common-mode efficiency error maps ~1:1 onto activity rather than being
+   averaged down by sqrt(num-peaks).
    */
-  std::vector<double> peakEffFracCovariance() const;
+  std::vector<double> peakEffFracCovariance( std::vector<double> *model_part = nullptr ) const;
 
   /** Square root of the diagonal of #peakEffFracCovariance - the per-peak
-   1-sigma fractional efficiency uncertainty envelope.  Empty if the detector
+   1-sigma fractional efficiency uncertainty envelope; `model_uncerts`, when
+   given, receives the model-envelope part of each.  Empty if the detector
    has no uncertainty information.
    */
-  std::vector<double> peakEffFracUncerts() const;
+  std::vector<double> peakEffFracUncerts( std::vector<double> *model_uncerts = nullptr ) const;
 
 
   /** Detector-efficiency validity flag for each included peak (same ordering
@@ -1590,10 +1603,11 @@ public:
   //  for the historical statistics-only behavior.
   //  `eff_flags`, when non-null, holds the per-peak detector-efficiency
   //  validity flags (from #peakDrfEffFlags, same inclusion rule and order) to
-  //  record on the PeakDetail log entries.
+  //  record on the PeakDetail log entries; `eff_frac_uncerts_model` likewise
+  //  the model-envelope part of `eff_frac_uncerts` (PeakDetail::drfEffFracUncertModel).
   //  `eff_frac_uncerts` governs the displayed observed-uncertainty column, and
   //  hence `numSigmaOff`, which is the MARGINAL pull
-  //  (obs - exp)/sqrt(stat^2 + obs^2*C_ii) - a genuine per-peak sigma taken from
+  //  (obs - exp)/sqrt(stat^2 + exp^2*C_ii) - a genuine per-peak sigma taken from
   //  the diagonal of the same covariance the correlated fit minimizes.  A GLS
   //  whitened residual would NOT be usable here: it mixes peaks in Cholesky
   //  order, so it is not a property of any one peak and cannot be read as a
@@ -1605,7 +1619,8 @@ public:
                               const std::map<double,double> &energy_count_map,
                               std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
                               const std::vector<double> *eff_frac_uncerts = nullptr,
-                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr );
+                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr,
+                              const std::vector<double> *eff_frac_uncerts_model = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );

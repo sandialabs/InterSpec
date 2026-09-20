@@ -49,7 +49,9 @@
 
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 using namespace ceelo;
@@ -68,11 +70,78 @@ int main(int argc, char** argv) {
             "  precision_profile: uniform (default) | relax_mild (D0 graded "
             "map). Committed goldens stay uniform.\n"
             "  certify: pass the literal 'certify' to attach an accuracy "
-            "certificate (default off; goldens ship without one).\n");
+            "certificate (default off; goldens ship without one).\n"
+            "\nmake_golden_response restamp <in.xml> <out.xml>\n"
+            "  Rewrites a stored response with the CURRENT model-envelope\n"
+            "  defaults (SigmaFloors / SigmaTransferModel) and no Monte Carlo.\n"
+            "  The payload does not depend on those, so the probe banks scored\n"
+            "  against it stay valid; only the envelope attributes move.\n");
         return 1;
     }
     const std::string preset = argv[1];
     const std::string out_dir = argv[2];
+
+    // restamp <in.xml> <out.xml>: rewrite a stored response with the CURRENT
+    // model-envelope defaults, running no Monte Carlo.
+    //
+    // This is sound because a response's payload does not depend on the
+    // envelopes: generate() never reads `floors` except in the closed loop's
+    // minor-model-form inflation, which no production path enters.  The eta and
+    // near-field tables, and hence the probe banks scored against them, stay
+    // valid.  So after the constants are re-derived, the goldens are brought up
+    // to date with an attributes-only diff instead of a second multi-hour
+    // regeneration - and the same tool migrates a user's stored DRF.
+    if (preset == "restamp") {
+        std::ifstream in(out_dir, std::ios::in | std::ios::binary);
+        if (!in) {
+            std::fprintf(stderr, "restamp: cannot open %s\n", out_dir.c_str());
+            return 1;
+        }
+        std::string xml((std::istreambuf_iterator<char>(in)),
+                        std::istreambuf_iterator<char>());
+        if (argc < 4) {
+            std::fprintf(stderr, "restamp: usage make_golden_response restamp <in.xml> <out.xml>\n");
+            return 1;
+        }
+        std::shared_ptr<DetectorResponse> r;
+        try {
+            r = DetectorResponse::from_xml_string(xml);
+        } catch (std::exception& e) {
+            std::fprintf(stderr, "restamp: %s\n", e.what());
+            return 1;
+        }
+        const uint64_t before = r->content_hash();
+        r->floors = SigmaFloors{};
+        if (r->model_transfer)
+            r->model_transfer = SigmaTransferModel{};
+        if (!r->grounding.empty()) {
+            if (r->model_transfer) {
+                // A response carrying its own model_transfer already applies the
+                // envelope on every query, so the grounding copy must stay
+                // ZEROED - restoring the defaults here would reintroduce exactly
+                // the double count ResponseGenerator::ground_to_points exists to
+                // prevent (and grounding_does_not_duplicate_the_transfer_envelope
+                // pins).
+                r->grounding.transfer.far_onaxis = 0.0;
+                r->grounding.transfer.offaxis_mid = 0.0;
+                r->grounding.transfer.offaxis_low_e = 0.0;
+                r->grounding.transfer.near_contact = 0.0;
+            } else {
+                r->grounding.transfer = SigmaTransferModel{};
+            }
+        }
+        std::ofstream out(argv[3], std::ios::out | std::ios::binary);
+        if (!out) {
+            std::fprintf(stderr, "restamp: cannot write %s\n", argv[3]);
+            return 1;
+        }
+        out << r->to_xml_string();
+        std::printf("restamp %s -> %s  content_hash %llu -> %llu\n",
+                    out_dir.c_str(), argv[3],
+                    static_cast<unsigned long long>(before),
+                    static_cast<unsigned long long>(r->content_hash()));
+        return 0;
+    }
 
     GenerationOptions opts;
     opts.detector_name = preset;

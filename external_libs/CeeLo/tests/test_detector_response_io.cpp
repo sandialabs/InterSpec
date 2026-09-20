@@ -30,11 +30,14 @@
 
 #include "geometry/Geometry.h"
 #include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
+#include "efficiency/EfficiencyCalculator.h"
 #include "io/Pchip.h"
 #include "io/ResponseKernel.h"
 #include "materials/Material.h"
 
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -111,6 +114,53 @@ std::shared_ptr<DetectorResponse> make_synthetic_nai(double eta0 = 0.5,
 
     r->finalize();
     return r;
+}
+
+// Z8-style W collimator around the 3"x3" NaI; a steep side view is shadow-dominated.
+std::shared_ptr<DetectorResponse> make_collimated_nai() {
+    auto r = std::make_shared<DetectorResponse>();
+    r->descriptor.set_dimensions(CylinderDims{3.81, 7.62});
+    r->descriptor.crystal_material_index = 0;
+    r->descriptor.materials = {MaterialSpec::from(make_NaI()),
+                               MaterialSpec::from(make_Aluminum()),
+                               MaterialSpec::from(make_Tungsten())};
+    LayerSpec can;
+    can.material_index = 1;
+    can.front_thickness_cm = 0.05;
+    can.side_thickness_cm = 0.05;
+    can.z_end_cm = 7.62;
+    r->descriptor.layers.push_back(can);
+    CollimatorSpec col;
+    col.material_index = 2;
+    col.side_thickness_cm = 1.5;
+    col.z_start_cm = -5.0;
+    col.z_end_cm = 7.62;
+    r->descriptor.collimator = col;
+    r->mu_tables.push_back(MuTable::sample(make_NaI(), 0));
+    r->mu_tables.push_back(MuTable::sample(make_Aluminum(), 1));
+    r->mu_tables.push_back(MuTable::sample(make_Tungsten(), 2));
+    r->eta_fep.energies_keV = {40.0, 200.0, 662.0, 3000.0};
+    r->eta_fep.cos_thetas = {0.02, 0.5, 1.0};
+    r->eta_fep.ln_eta.assign(12, std::log(0.5));
+    r->eta_fep.frac_sigma.assign(12, 0.003);
+    r->provenance.kernel_n_rays = 4096;
+    r->finalize();
+    return r;
+}
+
+// A small 2 x 3 x 4 near-field table (breakpoints 5-8 cm) on an already finalized response.
+void add_near_field_table(DetectorResponse& r) {
+    NearFieldModel& nf = r.near_field;
+    nf.energies_keV = {60.0, 662.0};
+    nf.cos_thetas = {0.02, 0.5, 1.0};
+    nf.dists_cm = {2.0, 5.0, 12.0, 20.0};
+    nf.ln_n.assign(2 * 3 * 4, 0.0);
+    for (size_t i = 0; i < nf.ln_n.size(); ++i)
+        nf.ln_n[i] = 0.12 - 0.01 * double(i);   // arbitrary smooth values
+    nf.frac_sigma.assign(nf.ln_n.size(), 0.005);
+    nf.break_cos_thetas = {0.02, 1.0};
+    nf.break_d_cm = {8.0, 6.0, 7.0, 5.0};
+    nf.finalize();
 }
 
 }  // namespace
@@ -296,34 +346,7 @@ BOOST_AUTO_TEST_CASE(flag_behind_plane_needs_mc) {
 }
 
 BOOST_AUTO_TEST_CASE(flag_collimator_shadow) {
-    // Z8-style W collimator; a steep side view is shadow-dominated.
-    auto r = std::make_shared<DetectorResponse>();
-    r->descriptor.set_dimensions(CylinderDims{3.81, 7.62});
-    r->descriptor.crystal_material_index = 0;
-    r->descriptor.materials = {MaterialSpec::from(make_NaI()),
-                               MaterialSpec::from(make_Aluminum()),
-                               MaterialSpec::from(make_Tungsten())};
-    LayerSpec can;
-    can.material_index = 1;
-    can.front_thickness_cm = 0.05;
-    can.side_thickness_cm = 0.05;
-    can.z_end_cm = 7.62;
-    r->descriptor.layers.push_back(can);
-    CollimatorSpec col;
-    col.material_index = 2;
-    col.side_thickness_cm = 1.5;
-    col.z_start_cm = -5.0;
-    col.z_end_cm = 7.62;
-    r->descriptor.collimator = col;
-    r->mu_tables.push_back(MuTable::sample(make_NaI(), 0));
-    r->mu_tables.push_back(MuTable::sample(make_Aluminum(), 1));
-    r->mu_tables.push_back(MuTable::sample(make_Tungsten(), 2));
-    r->eta_fep.energies_keV = {40.0, 200.0, 662.0, 3000.0};
-    r->eta_fep.cos_thetas = {0.02, 0.5, 1.0};
-    r->eta_fep.ln_eta.assign(12, std::log(0.5));
-    r->eta_fep.frac_sigma.assign(12, 0.003);
-    r->provenance.kernel_n_rays = 4096;
-    r->finalize();
+    auto r = make_collimated_nai();
 
     const EffResult open = r->eps_fep(662.0, 0.0, 0.0, 30.0);
     BOOST_CHECK(open.flag == ResponseFlag::Ok);
@@ -357,7 +380,7 @@ BOOST_AUTO_TEST_CASE(grounding_k_and_covariance) {
 
     // Multi-energy covariance: PSD-ish sanity + near-energy correlation.
     const std::vector<double> Es{121.8, 344.3, 661.7, 1408.0};
-    const std::vector<double> C = r->frac_covariance(Es, 0.0, 50.0);
+    const std::vector<double> C = r->frac_covariance(Es, 0.0, 0.0, 50.0);
     const size_t n = Es.size();
     for (size_t i = 0; i < n; ++i) {
         BOOST_CHECK_GT(C[i * n + i], 0.0);
@@ -366,7 +389,11 @@ BOOST_AUTO_TEST_CASE(grounding_k_and_covariance) {
             const double rho = C[i * n + j] /
                 std::sqrt(C[i * n + i] * C[j * n + j]);
             BOOST_CHECK_LE(std::fabs(rho), 1.0 + 1e-9);
-            if (i != j) BOOST_CHECK_GT(rho, 0.3);  // strongly correlated
+            // Correlated, because the model envelopes are common modes across energy
+            // while the node statistics are independent.  The threshold tracks the
+            // envelope size: a smaller shared envelope means a smaller shared FRACTION
+            // of the variance.  What this guards is that the common mode is still there.
+            if (i != j) BOOST_CHECK_GT(rho, 0.15);
         }
     }
 }
@@ -380,8 +407,366 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_shape) {
     const double contact = m.eval(1.0, 1.0, 662.0);
     BOOST_CHECK_LT(far_on, 0.01);
     BOOST_CHECK_GT(far_off, far_on);
-    BOOST_CHECK_GT(low_graze, 0.15);
-    BOOST_CHECK_GT(contact, 0.05);
+    // Low-energy grazing is the largest far-field case, but only moderately so: the
+    // measured off-axis amplitude rises by a factor ~1.4 below mid_e_ref_keV.
+    BOOST_CHECK_GT(low_graze, 0.03);
+    BOOST_CHECK_GT(low_graze, far_off);
+    // At contact the envelope is sqrt(far_onaxis^2 + near^2), so this bound tracks
+    // transfer_near_contact directly.  What it guards is that the near term is still
+    // materially present at contact, not its exact size.
+    BOOST_CHECK_GT(contact, 0.02);
+}
+
+// eval() is the quadrature sum of the three mechanisms components() reports.
+BOOST_AUTO_TEST_CASE(sigma_transfer_components_sum_to_eval) {
+    const SigmaTransferModel m;
+    for (const double d_over_a : {1.0, 3.0, 20.0}) {
+        for (const double ct : {1.0, 0.5, 0.05}) {
+            for (const double E : {45.0, 100.0, 662.0}) {
+                const SigmaTransferModel::Components c = m.components(d_over_a, ct, E);
+                const double sum = std::sqrt(c.far_onaxis * c.far_onaxis + c.offaxis * c.offaxis +
+                                             c.near * c.near);
+                BOOST_CHECK_CLOSE(m.eval(d_over_a, ct, E), sum, 1e-12);
+                BOOST_CHECK_EQUAL(c.far_onaxis, m.far_onaxis);
+                if (ct == 1.0) BOOST_CHECK_EQUAL(c.offaxis, 0.0);
+                if (d_over_a >= m.near_gate_a) BOOST_CHECK_EQUAL(c.near, 0.0);
+            }
+        }
+    }
+}
+
+// The one home for the ad hoc envelopes.  Two things are pinned: the struct defaults (which is
+// what gets SERIALIZED, so a drift would silently change stored responses and their content hash)
+// cannot diverge from the model_sigma constants, and the constants themselves still hold the
+// values the response campaign set.  Changing a number here is a deliberate act with a test to
+// update, not a tidy-up.
+BOOST_AUTO_TEST_CASE(model_sigma_constants_are_the_defaults) {
+    // Measured over the detector corpus, far field, calibrated to RMS pull 1.
+    BOOST_CHECK_EQUAL(model_sigma::fep_far_floor, 0.005);
+    // MEASURED: no near excess for FEP (ratio 0.38x), so set equal to fep_far_floor.
+    // Measured: no near excess for the peak efficiency (0.48x), so equal to fep_far_floor.
+    BOOST_CHECK_EQUAL(model_sigma::fep_near_floor, 0.005);
+    // Measured over the corpus EXCLUDING CdTe-class crystals, which need their own value.
+    BOOST_CHECK_EQUAL(model_sigma::tot_far_floor, 0.006);
+    // CdTe/CZT solves 3.2x higher.  Empirical split over a modelling gap that is not
+    // understood - delete it once the model is fixed, do not extend it.
+    BOOST_CHECK_EQUAL(model_sigma::tot_far_floor_cdte, 0.020);
+    // MEASURED: the total DOES degrade close in (2.01x), unlike the peak.
+    BOOST_CHECK_EQUAL(model_sigma::tot_near_floor, 0.020);
+    BOOST_CHECK_EQUAL(model_sigma::near_regime_a, 4.0);
+    BOOST_CHECK_EQUAL(model_sigma::transfer_far_onaxis, 0.005);
+    // MEASURED 2026-09: the saturating form's amplitude, not a per-sin^2 slope.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_mid, 0.037);
+    // MEASURED: amplitude rises x1.42 below mid_e_ref, not the x9 the old 0.25 implied.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_low_e, 0.016);
+    // MEASURED: sin^2(23 deg).  <= 0 would select the legacy unbounded sin^2 form.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_offaxis_s2_half, 0.153);
+    BOOST_CHECK_EQUAL(model_sigma::transfer_low_e_ref_keV, 45.0);
+    BOOST_CHECK_EQUAL(model_sigma::transfer_mid_e_ref_keV, 150.0);
+    // MEASURED against near-field MC; 0.10 over-covered by 2.5-5x inside 3.5a.
+    // Measured as the RMS over the full angular range at the worst distance; an
+    // on-axis-only statistic under-covers grazing by about two.
+    BOOST_CHECK_EQUAL(model_sigma::transfer_near_contact, 0.06);
+    BOOST_CHECK_EQUAL(model_sigma::transfer_near_gate_a, 5.0);
+    BOOST_CHECK_EQUAL(model_sigma::behind_plane, 0.30);
+    // MEASURED, and no longer double-counted against the transfer's near ramp.
+    // The same quantity as transfer_near_contact, kept equal to it on purpose.
+    BOOST_CHECK_EQUAL(model_sigma::near_unmodeled, 0.06);
+    BOOST_CHECK_EQUAL(model_sigma::buildup_floor, 0.10);
+
+    const SigmaFloors f;
+    BOOST_CHECK_EQUAL(f.fep_far, model_sigma::fep_far_floor);
+    BOOST_CHECK_EQUAL(f.fep_near, model_sigma::fep_near_floor);
+    BOOST_CHECK_EQUAL(f.tot_far, model_sigma::tot_far_floor);
+    BOOST_CHECK_EQUAL(f.tot_near, model_sigma::tot_near_floor);
+    BOOST_CHECK_EQUAL(f.near_regime_a, model_sigma::near_regime_a);
+    const SigmaTransferModel m;
+    BOOST_CHECK_EQUAL(m.far_onaxis, model_sigma::transfer_far_onaxis);
+    BOOST_CHECK_EQUAL(m.offaxis_mid, model_sigma::transfer_offaxis_mid);
+    BOOST_CHECK_EQUAL(m.offaxis_low_e, model_sigma::transfer_offaxis_low_e);
+    BOOST_CHECK_EQUAL(m.low_e_ref_keV, model_sigma::transfer_low_e_ref_keV);
+    BOOST_CHECK_EQUAL(m.mid_e_ref_keV, model_sigma::transfer_mid_e_ref_keV);
+    BOOST_CHECK_EQUAL(m.near_contact, model_sigma::transfer_near_contact);
+    BOOST_CHECK_EQUAL(m.near_gate_a, model_sigma::transfer_near_gate_a);
+}
+
+// The transfer envelope FORMULA, against values worked out by hand from the documented definition
+// - so a change to eval()/components() shows up here rather than only in the (necessarily
+// circular) check that eval() equals the quadrature sum of its own components.
+BOOST_AUTO_TEST_CASE(sigma_transfer_absolute_values) {
+    const SigmaTransferModel m;
+    const double ct60 = 0.5;      // 60 degrees: sin^2 = 0.75
+    // far field, on axis, mid energy: the on-axis floor alone
+    BOOST_CHECK_CLOSE(m.eval(20.0, 1.0, 662.0), 0.005, 1e-9);
+    // at contact (d = a), on axis: sqrt(0.005^2 + 0.10^2)
+    // at contact (d = a), on axis: sqrt(0.005^2 + 0.04^2)
+    // at contact (d = a), on axis: sqrt(0.005^2 + 0.06^2)
+    BOOST_CHECK_CLOSE(m.eval(1.0, 1.0, 662.0), 0.0602079729, 1e-5);
+    // halfway through the near ramp (d = 3a): near term 0.05
+    // halfway through the near ramp (d = 3a): near term 0.02
+    // halfway through the near ramp (d = 3a): near term 0.03
+    BOOST_CHECK_CLOSE(m.eval(3.0, 1.0, 662.0), 0.0304138127, 1e-5);
+    // far field, 60 deg, above the low-E ramp: off = 0.037 * 0.75/(0.75 + 0.153)
+    BOOST_CHECK_CLOSE(m.eval(20.0, ct60, 662.0), 0.0311349968, 1e-5);
+    // far field, grazing, at/below the low-E reference:
+    //   off = (0.037 + 0.016) * 1.0/(1.0 + 0.153)
+    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 45.0), 0.0462381767, 1e-5);
+    // the low-E boost is fully off at/above the mid reference
+    BOOST_CHECK_CLOSE(m.eval(20.0, 0.0, 150.0), 0.0324773906, 1e-5);
+
+    // The off-axis term SATURATES: doubling sin^2 past the half-saturation point
+    // must gain much less than a factor two, which is the whole reason the form
+    // changed.  (Under the old sin^2 law these would differ by exactly 2x.)
+    const SigmaTransferModel::Components c45 = m.components(20.0, std::sqrt(0.5), 662.0);
+    const SigmaTransferModel::Components c90 = m.components(20.0, 0.0, 662.0);
+    BOOST_CHECK_LT(c90.offaxis / c45.offaxis, 1.35);
+
+    // A stored response written before offaxis_s2_half existed must keep the legacy
+    // unbounded form, which <= 0 selects.
+    SigmaTransferModel legacy = m;
+    legacy.offaxis_s2_half = 0.0;
+    BOOST_CHECK_CLOSE(legacy.components(20.0, ct60, 662.0).offaxis, 0.75 * 0.037, 1e-9);
+}
+
+// --- multi-energy covariance ------------------------------------------------
+
+namespace {
+
+// Every fixture the sigma budget has a branch for.
+struct CovFixture {
+    const char* name;
+    std::shared_ptr<DetectorResponse> r;
+};
+
+std::vector<CovFixture> covariance_fixtures() {
+    std::vector<CovFixture> out;
+    out.push_back({"grounded NaI", make_synthetic_nai(0.5, true)});
+    {
+        auto r = make_synthetic_nai(0.5, true);
+        r->provenance.profile = ResponseProfile::FarField;
+        r->provenance.min_distance_cm = 2.0 * r->transverse_half_extent();
+        out.push_back({"far-field profile (near unmodeled)", r});
+    }
+    {
+        auto r = make_synthetic_nai(0.5, true);
+        add_near_field_table(*r);
+        r->finalize();
+        out.push_back({"near-field table", r});
+    }
+    {
+        auto r = make_synthetic_nai(0.5, false);
+        r->model_transfer = SigmaTransferModel{};
+        out.push_back({"model_transfer", r});
+    }
+    out.push_back({"collimated", make_collimated_nai()});
+    return out;
+}
+
+struct CovGeom { double theta_deg, dist_cm; };
+
+void check_psd(const std::vector<double>& C, size_t n, const char* what) {
+    Eigen::MatrixXd M(n, n);
+    double max_diag = 0.0;
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j) {
+            M(i, j) = C[i * n + j];
+            if (i == j) max_diag = std::max(max_diag, C[i * n + j]);
+        }
+    const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(M, Eigen::EigenvaluesOnly);
+    BOOST_REQUIRE(es.info() == Eigen::Success);
+    BOOST_CHECK_MESSAGE(es.eigenvalues().minCoeff() >= -1e-12 * max_diag,
+                        what << ": min eigenvalue " << es.eigenvalues().minCoeff());
+}
+
+}  // namespace
+
+// THE invariant: the covariance diagonal is the per-query sigma budget, through every branch of
+// it (near-field table and unmodeled, grounding transfer, model_transfer, behind-plane, collimator
+// shadow, both floor regimes) - and the position and distance forms agree.
+BOOST_AUTO_TEST_CASE(frac_covariance_diagonal_matches_eps_fep) {
+    const std::vector<double> Es{45.0, 60.0, 121.8, 344.3, 661.7, 1408.0};
+    const size_t n = Es.size();
+    for (const CovFixture& f : covariance_fixtures()) {
+        std::vector<CovGeom> geoms{{0.0, 50.0}, {0.0, 2.0}, {60.0, 30.0}, {143.0, 30.0}};
+        if (f.r->descriptor.collimator) geoms.push_back({75.0, 30.0});
+        for (const CovGeom& g : geoms) {
+            const double theta = g.theta_deg * kPi / 180.0;
+            std::vector<double> model_part;
+            const std::vector<double> C = f.r->frac_covariance(Es, theta, 0.0, g.dist_cm, &model_part);
+            BOOST_REQUIRE_EQUAL(C.size(), n * n);
+            BOOST_REQUIRE_EQUAL(model_part.size(), n * n);
+            for (size_t i = 0; i < n; ++i) {
+                const EffResult e = f.r->eps_fep(Es[i], theta, 0.0, g.dist_cm);
+                BOOST_REQUIRE_GT(e.value, 0.0);
+                const double frac2 = (e.sigma / e.value) * (e.sigma / e.value);
+                const double frac2_model = (e.sigma_model / e.value) * (e.sigma_model / e.value);
+                BOOST_CHECK_MESSAGE(std::fabs(C[i * n + i] - frac2) <= 1e-9 * frac2,
+                    f.name << " at " << g.theta_deg << " deg, " << g.dist_cm << " cm, " << Es[i]
+                           << " keV: C_ii " << C[i * n + i] << " vs sigma^2 " << frac2);
+                BOOST_CHECK_MESSAGE(std::fabs(model_part[i * n + i] - frac2_model) <= 1e-9 * frac2,
+                    f.name << ": model part " << model_part[i * n + i] << " vs " << frac2_model);
+                BOOST_CHECK_LE(e.sigma_model, e.sigma * (1.0 + 1e-12));
+                for (size_t j = 0; j < n; ++j) {
+                    BOOST_CHECK_CLOSE(C[i * n + j], C[j * n + i], 1e-9);
+                    BOOST_CHECK_LE(std::fabs(C[i * n + j]),
+                                   std::sqrt(C[i * n + i] * C[j * n + j]) * (1.0 + 1e-9));
+                }
+            }
+            check_psd(C, n, f.name);
+
+            // Same thing through the position-taking form eps_fep_at uses.
+            const Eigen::Vector3d pos = f.r->query_position(theta, 0.0, g.dist_cm);
+            const ApertureQuadrature q = f.r->make_quadrature(pos);
+            const std::vector<double> C2 = f.r->frac_covariance(Es, pos, q);
+            const std::vector<double> C3 = f.r->frac_covariance(Es, pos);
+            for (size_t k = 0; k < n * n; ++k) {
+                BOOST_CHECK_CLOSE(C2[k], C[k], 1e-12);
+                BOOST_CHECK_CLOSE(C3[k], C[k], 1e-12);
+            }
+        }
+    }
+}
+
+// Each model envelope is a rank-one block: with the data terms zeroed, two energies whose
+// envelopes are equal are perfectly correlated, and when they differ (the low-E off-axis ramp)
+// the off-diagonal is the product of the components, mechanism by mechanism.
+BOOST_AUTO_TEST_CASE(frac_covariance_common_modes_are_rank_one) {
+    auto r = make_synthetic_nai(0.5, false);
+    r->eta_fep.frac_sigma.assign(r->eta_fep.frac_sigma.size(), 0.0);
+    r->model_transfer = SigmaTransferModel{};
+    const double theta = 143.0 * kPi / 180.0, d = 30.0;   // behind the face plane, far regime
+
+    {
+        const std::vector<double> Es{300.0, 1000.0};   // both above mid_e_ref: same envelopes
+        const std::vector<double> C = r->frac_covariance(Es, theta, 0.0, d);
+        BOOST_CHECK_CLOSE(C[1], C[0], 1e-9);
+        BOOST_CHECK_CLOSE(C[3], C[0], 1e-9);
+    }
+    {
+        const std::vector<double> Es{45.0, 1000.0};   // the low-E ramp makes the off-axis term differ
+        const std::vector<double> C = r->frac_covariance(Es, theta, 0.0, d);
+        const Eigen::Vector3d pos = r->query_position(theta, 0.0, d);
+        const double d_over_a = pos.norm() / r->transverse_half_extent();
+        const double ct = -pos.z() / pos.norm();
+        const SigmaTransferModel::Components c0 = r->model_transfer->components(d_over_a, ct, Es[0]);
+        const SigmaTransferModel::Components c1 = r->model_transfer->components(d_over_a, ct, Es[1]);
+        BOOST_REQUIRE_GT(c1.offaxis, 0.0);
+        BOOST_REQUIRE_GT(c0.offaxis, c1.offaxis);
+        const double floor = r->floors.fep_far;
+        const double expected = floor * floor + model_sigma::behind_plane * model_sigma::behind_plane +
+                                c0.far_onaxis * c1.far_onaxis + c0.offaxis * c1.offaxis +
+                                c0.near * c1.near;
+        BOOST_CHECK_CLOSE(C[1], expected, 1e-9);
+        BOOST_CHECK_LT(C[1], std::sqrt(C[0] * C[3]));   // not one combined block
+    }
+}
+
+// eps_total gets the same shared budget: the geometry-only envelopes (behind-plane, the transfer
+// model, collimator shadow) must reach it exactly as they reach eps_fep, and it must report its
+// model part too.  Otherwise a host that trusts sigma_model on a total-efficiency query is misled.
+BOOST_AUTO_TEST_CASE(total_sigma_budget_carries_model_envelopes) {
+    auto r = make_synthetic_nai(0.5, false);
+    r->eta_fep.frac_sigma.assign(r->eta_fep.frac_sigma.size(), 0.0);
+    r->model_transfer = SigmaTransferModel{};
+
+    // Far field on axis: total floor + the transfer's on-axis floor, and nothing else.
+    const EffResult far = r->eps_total(662.0, 0.0, 0.0, 50.0);
+    BOOST_REQUIRE_GT(far.value, 0.0);
+    const double far_frac2 = (far.sigma / far.value) * (far.sigma / far.value);
+    const double expect_far = model_sigma::tot_far_floor * model_sigma::tot_far_floor +
+                              model_sigma::transfer_far_onaxis * model_sigma::transfer_far_onaxis;
+    BOOST_CHECK_CLOSE(far_frac2, expect_far, 1e-6);
+    // The b(E) total tier carries no node sigma, so ALL of this is model envelope.
+    BOOST_CHECK_CLOSE(far.sigma_model, far.sigma, 1e-9);
+
+    // Behind the face plane: the 30% guess must reach the total path as well.
+    const EffResult behind = r->eps_total(662.0, 2.5 /*~143 deg*/, 0.0, 30.0);
+    BOOST_REQUIRE_GT(behind.value, 0.0);
+    const double behind_frac2 = (behind.sigma / behind.value) * (behind.sigma / behind.value);
+    BOOST_CHECK_GT(behind_frac2, model_sigma::behind_plane * model_sigma::behind_plane);
+    BOOST_CHECK(behind.flag == ResponseFlag::NeedsMc);
+    BOOST_CHECK_LE(behind.sigma_model, behind.sigma * (1.0 + 1e-12));
+
+    // Off axis, the transfer envelope inflates the total the same way it inflates the peak.
+    const EffResult off = r->eps_total(662.0, 60.0 * kPi / 180.0, 0.0, 50.0);
+    BOOST_CHECK_GT(off.sigma / off.value, far.sigma / far.value);
+}
+
+// Grounding a response that already carries a transfer envelope must not give it a SECOND copy:
+// `resp.grounding = GroundingBlock()` restores the default (non-zero) grounding transfer, and the
+// covariance would then carry the same envelope as two correlated modes.
+BOOST_AUTO_TEST_CASE(grounding_does_not_duplicate_the_transfer_envelope) {
+    auto plain = make_synthetic_nai(0.5, false);
+    auto grounded = make_synthetic_nai(0.5, false);
+    grounded->model_transfer = SigmaTransferModel{};
+
+    std::vector<GroundingPoint> pts;
+    for (const double e : {60.0, 400.0, 1000.0}) {
+        GroundingPoint p;
+        p.energy_keV = e;
+        p.distance_cm = 50.0;
+        p.cos_theta = 1.0;
+        p.measured_eff = plain->eps_fep(e, 0.0, 0.0, 50.0).value;  // k(E) == 1, so only sigma moves
+        p.frac_stat_sigma = 0.01;
+        p.source_key = "src";
+        pts.push_back(p);
+    }
+    ResponseGenerator::ground_to_points(*grounded, pts, /*curve_derived=*/false);
+
+    BOOST_REQUIRE(!grounded->grounding.empty());
+    BOOST_CHECK_EQUAL(grounded->grounding.transfer.far_onaxis, 0.0);
+    BOOST_CHECK_EQUAL(grounded->grounding.transfer.offaxis_mid, 0.0);
+    BOOST_CHECK_EQUAL(grounded->grounding.transfer.near_contact, 0.0);
+
+    // Off axis and close in - where a doubled envelope would show most - the grounded response's
+    // sigma may exceed the ungrounded one only by the grounding FIT variance, never by a second
+    // copy of the envelope.
+    for (const double theta_deg : {0.0, 60.0}) {
+        const double theta = theta_deg * kPi / 180.0;
+        auto ungrounded = make_synthetic_nai(0.5, false);
+        ungrounded->model_transfer = SigmaTransferModel{};
+        const EffResult a = ungrounded->eps_fep(400.0, theta, 0.0, 3.0);
+        const EffResult b = grounded->eps_fep(400.0, theta, 0.0, 3.0);
+        const double fa = (a.sigma / a.value) * (a.sigma / a.value);
+        const double fb = (b.sigma / b.value) * (b.sigma / b.value);
+        const double fit_var = grounded->grounding.var_ln_k(400.0);
+        BOOST_CHECK_MESSAGE(std::fabs(fb - (fa + fit_var)) < 1e-9 * std::max(fb, 1e-12),
+                            theta_deg << " deg: grounded frac2 " << fb << " vs ungrounded " << fa
+                                      << " + fit variance " << fit_var);
+    }
+}
+
+// The distance form goes through query_position, so an EndcapFront descriptor's offset moves the
+// near-field gate exactly as it does for eps_fep - and NOT as a raw crystal-frame distance would.
+BOOST_AUTO_TEST_CASE(frac_covariance_distance_form_applies_reference_point) {
+    auto r = make_synthetic_nai(0.5, false);
+    r->descriptor.reference_point = ReferencePoint::EndcapFront;
+    r->provenance.profile = ResponseProfile::FarField;
+    const double a = r->transverse_half_extent();
+    r->provenance.min_distance_cm = 2.0 * a;
+    const double offset = r->descriptor.endcap_front_offset_cm();
+    BOOST_REQUIRE_GT(offset, 0.0);
+    // Just inside the gate from the crystal face, just outside it from the endcap front.
+    // Derive the distance FROM the gate rather than hard-coding 2a: with no near-field
+    // table the gate is max(provenance.min_distance_cm, near_regime_a * a), and it moved
+    // to 4a in 2026-09 when near_unmodeled was widened to cover 2a-4a (the boost is still
+    // 1.75-2.07% out there).  What this case tests is the REFERENCE-POINT conversion, so
+    // it must straddle whatever the gate currently is.
+    const double gate = std::max(r->provenance.min_distance_cm,
+                                 model_sigma::near_regime_a * a);
+    const double d = gate - 0.5 * offset;
+    const std::vector<double> Es{661.7};
+
+    const std::vector<double> C = r->frac_covariance(Es, 0.0, 0.0, d);
+    const EffResult e = r->eps_fep(661.7, 0.0, 0.0, d);
+    BOOST_CHECK(e.flag == ResponseFlag::Ok);
+    BOOST_CHECK_CLOSE(C[0], (e.sigma / e.value) * (e.sigma / e.value), 1e-9);
+
+    const std::vector<double> C_raw = r->frac_covariance(Es, Eigen::Vector3d(0.0, 0.0, -d));
+    const EffResult e_raw = r->eps_fep_at(661.7, Eigen::Vector3d(0.0, 0.0, -d));
+    BOOST_CHECK(e_raw.flag == ResponseFlag::NearFieldUnmodeled);
+    BOOST_CHECK_CLOSE(C_raw[0], (e_raw.sigma / e_raw.value) * (e_raw.sigma / e_raw.value), 1e-9);
+    BOOST_CHECK_GT(C_raw[0], C[0] + 0.5 * model_sigma::near_unmodeled * model_sigma::near_unmodeled);
 }
 
 // --- XML round trip ---------------------------------------------------------
@@ -393,17 +778,7 @@ BOOST_AUTO_TEST_CASE(xml_round_trip_bit_stable) {
     r->descriptor.bullet_radius_cm = 0.8;
     r->descriptor.bore = BoreHoleConfig{0.495, 5.54, /*rounded_tip=*/true};
     // Exercise the optional blocks too: a small 2 x 3 x 4 near-field table.
-    NearFieldModel& nf = r->near_field;
-    nf.energies_keV = {60.0, 662.0};
-    nf.cos_thetas = {0.02, 0.5, 1.0};
-    nf.dists_cm = {2.0, 5.0, 12.0, 20.0};
-    nf.ln_n.assign(2 * 3 * 4, 0.0);
-    for (size_t i = 0; i < nf.ln_n.size(); ++i)
-        nf.ln_n[i] = 0.12 - 0.01 * double(i);   // arbitrary smooth values
-    nf.frac_sigma.assign(nf.ln_n.size(), 0.005);
-    nf.break_cos_thetas = {0.02, 1.0};
-    nf.break_d_cm = {8.0, 6.0, 7.0, 5.0};
-    nf.finalize();   // r was finalized before these fields were set
+    add_near_field_table(*r);   // r was finalized before these fields were set
     r->finalize();   // ...and so was the geometry, before the bore/fillet above
 
     const std::string xml1 = r->to_xml_string();
@@ -1023,6 +1398,76 @@ BOOST_AUTO_TEST_CASE(production_method_absent_reads_as_full_mc) {
     BOOST_CHECK(back->provenance.method == ProductionMethod::FullMc);
 }
 
+// --- TotEffTier::NotCharacterized -------------------------------------------
+
+// An FEP-only response must REFUSE every eps_total query rather than fall back
+// on the bare-crystal kernel: KernelExact is a claim the generator only makes
+// after checking that kernel against MC, and a producer with no total data at
+// all (an imported FEP characterization, a curve transfer with no total anchor)
+// has not earned it.  For a real HPGe the bare kernel omits the housing and all
+// peak-to-total structure, and at low energy it lands BELOW the response's own
+// eps_fep - impossible - so a host gating cascade summing on "is there a total?"
+// would get a confident yes and a wrong correction.
+BOOST_AUTO_TEST_CASE(uncharacterized_total_refuses_instead_of_guessing) {
+    auto r = make_synthetic_nai();
+    r->tot_eff = TotEffPayload();
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->tot_eff.finalize();
+    BOOST_CHECK(!r->tot_eff.characterized());
+
+    const Eigen::Vector3d pos = r->query_position(0.0, 0.0, 25.0);
+    const ApertureQuadrature q = r->make_quadrature(pos);
+
+    // FEP is unaffected - the response still carries a real eta_fep table.
+    const EffResult fep = r->eps_fep_at(662.0, pos, q);
+    BOOST_CHECK_GT(fep.value, 0.0);
+    BOOST_CHECK(fep.flag == ResponseFlag::Ok);
+
+    // Every total path refuses, and says so with NeedsMc rather than a zero a
+    // caller could mistake for "the detector cannot see this".
+    for (const double E : {60.0, 662.0, 1500.0}) {
+        const EffResult tot = r->eps_total_at(E, pos, q);
+        BOOST_CHECK_EQUAL(tot.value, 0.0);
+        BOOST_CHECK(tot.flag == ResponseFlag::NeedsMc);
+
+        const EffResult pre = r->total_prefactor(E, pos, q);
+        BOOST_CHECK_EQUAL(pre.value, 0.0);
+        BOOST_CHECK(pre.flag == ResponseFlag::NeedsMc);
+
+        // Empty weights, so a host assembling the kernel itself gets K == 0
+        // instead of a bare-crystal kernel it would scale and trust.
+        std::vector<double> w{1.0, 2.0};
+        std::vector<Eigen::Vector3d> dirs{Eigen::Vector3d::UnitZ()};
+        r->total_ray_weights(E, q, w, dirs);
+        BOOST_CHECK(w.empty());
+        BOOST_CHECK(dirs.empty());
+    }
+}
+
+// The tier must survive the file, and a file that uses it must be unreadable by
+// a build that predates it: a pre-v3 reader maps an unknown tier string onto
+// KernelExact, which is exactly the misread the tier exists to prevent.
+BOOST_AUTO_TEST_CASE(uncharacterized_total_round_trips_and_stamps_v3) {
+    auto r = make_synthetic_nai();
+    r->tot_eff = TotEffPayload();
+    r->tot_eff.tier = TotEffTier::NotCharacterized;
+    r->tot_eff.finalize();
+
+    const std::string xml = r->to_xml_string();
+    BOOST_CHECK(xml.find("version=\"3\"") != std::string::npos);
+    BOOST_CHECK(xml.find("tier=\"none\"") != std::string::npos);
+
+    std::shared_ptr<DetectorResponse> back =
+        DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK(back->tot_eff.tier == TotEffTier::NotCharacterized);
+    BOOST_CHECK(!back->tot_eff.characterized());
+
+    // A characterized response keeps its old stamp, so no existing file's bytes
+    // (or content_hash) move for a feature it does not use.
+    BOOST_CHECK(make_synthetic_nai()->to_xml_string().find("version=\"1\"")
+                != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
     auto r = make_synthetic_nai();
     r->provenance.fep_window_keV = 1.5;
@@ -1041,4 +1486,81 @@ BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
         DetectorResponse::from_xml_string(xml);
     BOOST_CHECK_CLOSE(back2->provenance.fep_window_keV,
                       kDefaultFepWindowKeV, 1e-9);
+}
+
+// The detector side of a descriptor is declared onto three different sinks - the query-time
+// kernel's Geometry (via GeometryDescriptor::build_geometry), the generator's per-node
+// EfficiencyCalculator, and the public configure_calculator.  They must agree: eta is
+// measured through a calculator while K traces a Geometry, so a feature one honours and
+// another drops makes the response internally inconsistent, and the generator's own probe
+// banks cannot see it because they route through the same path it does.
+//
+// This pins that agreement DIRECTLY - by tracing both sinks and comparing chords - rather
+// than by trusting that both happen to call apply_detector_side.  That matters: a test that
+// only exercises configure_calculator would still pass if someone re-inlined the mapping
+// into the generator and dropped a feature from the copy.
+BOOST_AUTO_TEST_CASE(descriptor_declares_the_same_solid_to_every_sink) {
+    GeometryDescriptor gd;
+    gd.set_dimensions(CylinderDims{3.0, 6.0});
+    gd.crystal_material_index = 0;
+    gd.materials = {MaterialSpec::from(make_NaI())};
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = BoreHoleConfig{0.5, 4.0, /*rounded_tip=*/true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.07, 0.0};
+    BOOST_REQUIRE(gd.problems().empty());
+
+    std::vector<std::unique_ptr<Material>> owned;
+    EfficiencyCalculator calc;
+    ResponseGenerator::configure_calculator(calc, gd, owned);
+
+    const Geometry& g = calc.geometry();
+    BOOST_CHECK_CLOSE(g.bullet_radius(), 0.8, 1e-9);
+    BOOST_REQUIRE(g.has_bore_hole());
+    BOOST_CHECK(g.bore_hole()->rounded_tip);
+    BOOST_REQUIRE(g.has_dead_layer());
+    BOOST_CHECK_CLOSE(g.dead_layer()->front, 0.07, 1e-9);
+
+    // And the fillet is not merely recorded, it is traced: a ray clipping the
+    // front CORNER must see less active crystal than the same ray would on a
+    // sharp cylinder, while a ray down the axis is untouched by the fillet.
+    GeometryDescriptor sharp = gd;
+    sharp.bullet_radius_cm = 0.0;
+    sharp.bore->rounded_tip = false;
+    std::vector<std::unique_ptr<Material>> owned_sharp;
+    EfficiencyCalculator calc_sharp;
+    ResponseGenerator::configure_calculator(calc_sharp, sharp, owned_sharp);
+
+    auto active_len = [](const Geometry& geom, const Eigen::Vector3d& from,
+                         const Eigen::Vector3d& dir) {
+        double len = 0.0;
+        for (const PathSegment& s : geom.trace_ray(from, dir.normalized()))
+            if (s.is_scoring) len += s.length();
+        return len;
+    };
+
+    // Corner-clipping ray: aimed just inside the outer radius at the front face.
+    const Eigen::Vector3d src(0.0, 0.0, -20.0);
+    const Eigen::Vector3d corner(2.9, 0.0, 0.0);
+    BOOST_CHECK_LT(active_len(g, src, corner - src),
+                   active_len(calc_sharp.geometry(), src, corner - src));
+
+    // On-axis ray: the fillet is a front-EDGE feature, so it must not change it.
+    const Eigen::Vector3d axis(0.0, 0.0, 1.0);
+    BOOST_CHECK_CLOSE(active_len(g, src, axis),
+                      active_len(calc_sharp.geometry(), src, axis), 1e-6);
+
+    // THE INVARIANT.  Build the same descriptor through the OTHER sink - the query-time
+    // kernel's Geometry - and require both to trace identical chords.  This is the pair
+    // that actually disagreed: eta was measured on a sharp crystal while K traced the
+    // filleted one.  Rays chosen to touch every feature: the corner (fillet), the axis
+    // (bore and front dead layer) and a steep side entry (side dead layer, can).
+    std::vector<std::unique_ptr<Material>> owned_geom;
+    const Geometry kernel_solid = gd.build_geometry(owned_geom);
+    const Eigen::Vector3d side(4.5, 0.0, 3.0);
+    for (const Eigen::Vector3d& target : {corner, Eigen::Vector3d(0.0, 0.0, 1.0), side}) {
+        const Eigen::Vector3d dir =
+            (target - src).norm() > 0.0 ? (target - src) : Eigen::Vector3d(0.0, 0.0, 1.0);
+        BOOST_CHECK_CLOSE(active_len(kernel_solid, src, dir),
+                          active_len(g, src, dir), 1e-9);
+    }
 }

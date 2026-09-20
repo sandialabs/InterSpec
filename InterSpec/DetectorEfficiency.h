@@ -152,11 +152,58 @@ public:
   void setNodeCovariance( const std::vector<float> &energies,
                           const std::vector<float> &covRowMajor );
 
-  /** Sets the (optional) covariance of the efficiency-equation fit
-   coefficients - retained for provenance only; not used in any calculation
-   here.  Must be a square (M*M) row-major matrix, or empty.
+  /** Sets the (optional) M*M row-major covariance of the efficiency-equation fit coefficients, or
+   empty to clear it.
+
+   For a `kExpOfLogPowerSeries` curve this is the authoritative uncertainty: see
+   #DetectorEfficiencyCurve::fracCovariance, which propagates it to a fractional-efficiency
+   covariance.  Nothing in this class uses it - it is the curve that knows the representation, and
+   hence which of the two stores applies.
+
+   A matrix that is not a possible set of errors (asymmetric, or not positive semi-definite - see
+   #covarianceIsUsable) is REFUSED rather than stored: for an equation curve it would silently win
+   over a usable node covariance, and an impossible covariance propagates to *less* apparent
+   uncertainty (the fit's Cholesky whitening fails and falls back to counting statistics alone).
+   Throws std::runtime_error, naming the problem.
    */
   void setCoefficientCovariance( const std::vector<float> &covRowMajor );
+
+  /** Whether `covRowMajor` (row-major, size N*N) describes a possible set of errors: square,
+   symmetric to within rounding, and positive semi-definite to within `1.0E-6 * max(diagonal)`.
+
+   That tolerance is not arbitrary, and it must not be tightened without measuring first.  A real
+   `MakeDrfFit::performEfficiencyFit` covariance is badly conditioned and stored as float: measured
+   over an 11-energy calibration set, its smallest eigenvalue relative to the matrix scale is
+   -2.2E-10 at 6 terms but -1.45E-8 at 7, so a 1.0E-8 tolerance would start silently dropping the
+   coefficient covariance of every 7-term DRF.  A hand-entered impossible correlation set is negative
+   by of order 0.1 to 1 of the scale, which is four orders away from either.
+
+   `why`, when given, receives a short explanation when the answer is false.  An empty matrix is
+   usable (it just says "no covariance").
+   */
+  static bool covarianceIsUsable( const std::vector<double> &covRowMajor,
+                                  std::string *why = nullptr );
+
+  /** Sets the (optional) per-node correlated / uncorrelated fractional 1-sigma
+   components the node covariance was built from - retained as provenance so a
+   UI can show and re-edit the split, never used in any calculation here.
+
+   Must be called AFTER #setNodeCovariance, which clears the split (a directly
+   set covariance has none).
+
+   @param correlatedFrac Either empty, or one entry per covariance node energy.
+   @param uncorrelatedFrac Either empty, or one entry per covariance node energy.
+
+   Throws std::runtime_error if a non-empty vector does not match the number of
+   node energies, or holds a negative / non-finite value.
+   */
+  void setComponentSplit( const std::vector<float> &correlatedFrac,
+                          const std::vector<float> &uncorrelatedFrac );
+
+  /** Whether a per-node correlated/uncorrelated split is retained; false for a
+   covariance set directly, or restored from a URL/QR (which does not carry it).
+   */
+  bool hasComponentSplit() const;
 
   const std::vector<float> &covarianceEnergies() const;
 
@@ -165,6 +212,16 @@ public:
 
   /** Row-major M*M fit-coefficient covariance; empty if not defined. */
   const std::vector<float> &coefficientCovariance() const;
+
+  /** Per-node correlated fractional 1-sigma component; empty if not defined.
+   See #setComponentSplit.
+   */
+  const std::vector<float> &correlatedComponent() const;
+
+  /** Per-node uncorrelated (diagonal) fractional 1-sigma component; empty if
+   not defined, or if the covariance was built without one.
+   */
+  const std::vector<float> &uncorrelatedComponent() const;
 
   /** Log-energy correlation length used to construct the node covariance from
    per-point uncertainties; <= 0 if the covariance was not built that way.
@@ -177,10 +234,19 @@ public:
   /** Parses a "EfficiencyUncert" node; throws std::runtime_error on error. */
   void fromXml( const ::rapidxml::xml_node<char> *node );
 
-  /** Appends url query-string entries (keys prefix+"EFUE", prefix+"EFUC",
-   prefix+"EFUL") to `parts`.  The covariance matrix is encoded as its upper
-   triangle (including diagonal), N*(N+1)/2 values.
-   The coefficient covariance is never written to URLs.
+  /** Appends url query-string entries to `parts`:
+   - prefix+"EFUE" / prefix+"EFUC" / prefix+"EFUL": the node covariance - node energies, the upper
+     triangle (including diagonal, N*(N+1)/2 values) of the matrix, and the correlation length.
+   - prefix+"EFCC": the coefficient covariance, as the LOWER-TRIANGULAR CHOLESKY FACTOR L (column
+     by column, M*(M+1)/2 values), so what is read back is `L*L^T` - positive semi-definite by
+     construction, and perturbed smoothly by the rounding, where rounding the raw entries of a
+     strongly anti-correlated fit matrix can blow up the propagated variance through cancellation.
+     For an equation curve this is the authoritative uncertainty (see
+     #DetectorEfficiencyCurve::fracCovariance), and at 4 significant figures it costs about a third
+     of what the node covariance does.
+
+   The correlated/uncorrelated split is still not written (it is editing provenance only, and the
+   covariance it describes round-trips without it).
    */
   void toUrlParts( std::map<std::string,std::string> &parts, const std::string &prefix ) const;
 
@@ -249,6 +315,18 @@ private:
    */
   std::vector<float> m_coefCovMatrix;
 
+  /** Optional provenance: the per-node correlated (common-mode across energy)
+   fractional 1-sigma component the node covariance was built from; empty when
+   the covariance was set directly.  Same size as #m_covEnergies when set.
+   */
+  std::vector<float> m_corrComponent;
+
+  /** Optional provenance: the per-node uncorrelated (diagonal) fractional
+   1-sigma component; empty when there was none, or when the covariance was set
+   directly.  Same size as #m_covEnergies when set.
+   */
+  std::vector<float> m_uncorrComponent;
+
   /** Log-energy correlation length used by #fromPointUncerts; <= 0 if the
    node covariance was set directly.
    */
@@ -295,8 +373,74 @@ struct MeasuredEffPoint
    */
   float distance = -1.0f;
 
+  // Optional provenance, so the functional fit can be redone from the DRF alone.  All default
+  //  (absent) for points recorded before these existed; serialized and hashed only when set.
+
+  /** Net peak area (counts) the efficiency came from, after any background subtraction, and its
+   1-sigma uncertainty; 0 if unknown. */
+  float peakArea = 0.0f;
+  float peakAreaUncert = 0.0f;
+
+  /** Live time, in seconds, of the spectrum the peak was fit in; 0 if unknown. */
+  float liveTime = 0.0f;
+
+  /** 1-sigma uncertainty of #distance, PhysicalUnits; 0 if none/unknown. */
+  float distanceUncert = 0.0f;
+
+  /** Background peak area that was subtracted (already scaled to this spectrums live time) and
+   its 1-sigma uncertainty; < 0 if no background subtraction was done. */
+  float bkgPeakArea = -1.0f;
+  float bkgPeakAreaUncert = 0.0f;
+
+  /** Spectrum file name and sample numbers (e.g. "1,2,5-9") the peak came from - hints for a
+   human reader only, never dereferenced. */
+  std::string fileName;
+  std::string sampleNumbers;
+
+  /** True if any of the optional provenance fields is set. */
+  bool hasProvenance() const;
+
   bool operator==( const MeasuredEffPoint &rhs ) const;
 };//struct MeasuredEffPoint
+
+
+/** A calibration source the measured points came from, keyed by #MeasuredEffPoint::sourceKey.
+
+ Together with the per-point provenance this is what a later re-fit of the efficiency curve
+ needs; spectra themselves are deliberately not kept in the DRF (the N42 export carries those).
+ */
+struct MeasuredSourceInfo
+{
+  /** Matches #MeasuredEffPoint::sourceKey. */
+  std::string sourceKey;
+
+  /** SandiaDecay nuclide symbol (e.g. "Eu152"); empty for a user-branching-ratio source. */
+  std::string nuclide;
+
+  /** Activity at the time of the characterization spectrum, PhysicalUnits. */
+  double activity = 0.0;
+
+  /** Fractional 1-sigma (certificate) activity uncertainty. */
+  float fracActivityUncert = 0.0f;
+
+  /** Source age at the time of the spectrum, PhysicalUnits; < 0 if not applicable. */
+  double age = -1.0;
+
+  /** Source-to-detector-face distance and its 1-sigma uncertainty, PhysicalUnits;
+   distance < 0 if unknown / fixed geometry. */
+  float distance = -1.0f;
+  float distanceUncert = 0.0f;
+
+  /** Generic shielding around the source (0 if none), or a named material. */
+  float shieldAtomicNumber = 0.0f;
+  float shieldArealDensity = 0.0f;
+  std::string shieldMaterial;
+
+  /** Free text: assay date and activity, certificate/serial number, Source.lib line, ... */
+  std::string assayInfo;
+
+  bool operator==( const MeasuredSourceInfo &rhs ) const;
+};//struct MeasuredSourceInfo
 
 
 /** The raw per-peak efficiency points a DRF was characterized from.
@@ -322,6 +466,18 @@ public:
    point has a non-positive energy or negative uncertainty.
    */
   void setPoints( std::vector<MeasuredEffPoint> points );
+
+  /** The calibration sources the points came from; may be empty for points recorded before
+   source information was kept. */
+  const std::vector<MeasuredSourceInfo> &sources() const;
+  void setSources( std::vector<MeasuredSourceInfo> sources );
+
+  /** The source with the given key, or nullptr. */
+  const MeasuredSourceInfo *sourceForKey( const std::string &key ) const;
+
+  /** True if any point carries provenance beyond the original six fields, or a source table is
+   present - i.e., the XML needs the serialization version that carries them. */
+  bool hasProvenance() const;
 
   /** Builds the rich efficiency uncertainty implied by these points: node
    covariance C[i][j] = delta_ij*stat_i^2 + cert_i*cert_j*[same sourceKey].
@@ -354,6 +510,9 @@ public:
 private:
   /** Sorted by energy. */
   std::vector<MeasuredEffPoint> m_points;
+
+  /** See #sources. */
+  std::vector<MeasuredSourceInfo> m_sources;
 };//class MeasuredDrfPoints
 
 
@@ -449,6 +608,33 @@ public:
    #DetectorEfficiencyUncert returned by #uncertainty.)
    */
   const std::vector<float> &expOfLogPowerSeriesUncerts() const;
+
+  /** The fractional-efficiency-error covariance among `energies` (keV), row-major N*N; empty when
+   this curve carries no usable uncertainty.
+
+   Which of #DetectorEfficiencyUncert's two stores is authoritative is decided by the
+   representation, so an equation and a set of measured efficiencies each use the description that
+   actually belongs to them:
+     - `kExpOfLogPowerSeries` - the M*M coefficient covariance, propagated analytically.  With
+       `eff(E) = exp( sum_k a_k * L^k )` and `L = ln(E/energyUnits)`, `d ln(eff)/d a_k = L^k`, so the
+       fractional covariance is exactly `J*Sigma*J^T` for `J[i][k] = L_i^k` - no fitting, and it
+       correctly keeps the strong correlation between fitted coefficients.
+     - every other form - the energy-node covariance, which is what points-derived uncertainties
+       (and hand-authored ones) populate.
+   Each falls back to the other store when the authoritative one is absent or does not match the
+   curve (e.g. a coefficient covariance whose rank no longer matches the coefficient count), so a
+   detector made before its fit covariance was retained keeps working.
+
+   Note the two are never combined: for a fitted equation they describe overlapping information (the
+   node covariance being the raw input points, the coefficient covariance the curve fitted through
+   them), so adding them would double count.
+   */
+  std::vector<double> fracCovariance( const std::vector<double> &energies ) const;
+
+  /** Square root of the diagonal of #fracCovariance - the 1-sigma fractional uncertainty at each
+   requested energy (keV).  Empty when there is no usable uncertainty.
+   */
+  std::vector<double> fracUncertainties( const std::vector<double> &energies ) const;
 
   std::shared_ptr<const DetectorEfficiencyUncert> uncertainty() const;
   void setUncertainty( std::shared_ptr<const DetectorEfficiencyUncert> uncert );

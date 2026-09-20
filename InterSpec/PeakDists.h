@@ -91,18 +91,36 @@ extern template void photopeak_function_integral<double>( const double, const do
                          const PeakDef::SkewType, const double * const, const size_t, const float * const, double * );
 
 
-/** Returns the CDF (cumulative distribution function) at energy `x` for a unit-area peak
-   distribution with the given mean, sigma, and skew type.
+/** Returns an antiderivative of the unit-area peak distribution with the given mean, sigma, and
+   skew type, evaluated at energy `x`.
 
-   CDF(x) = integral from -infinity to x of the unit-area peak distribution.
-   Returns 0 for x far below the peak, 1 for x far above.
+   For most skew types this is the CDF proper - the integral from -infinity to x - running from 0
+   far below the peak to 1 far above.  The Exp*Gauss family is offset by a constant, however, since
+   those branches return `bortel_indefinite_integral` rather than a normalised CDF:
 
-   @param x Energy at which to evaluate the CDF
+     - Bortel and DoubleBortel run over [-0.5, +0.5], i.e. offset by -1/2.
+     - GaussPlusBortel, being `(1-R)*Gauss + R*Bortel`, runs over [-R/2, 1 - R/2].
+
+   (NoSkew, GaussExp, ExpGaussExp and the GADRAS shapes are exactly [0,1]; CrystalBall,
+   DoubleSidedCrystalBall and VoigtPlusBortel are [0,1] to within their tail-truncation error, of
+   order 1e-4.)
+
+   The offset is constant in `x`, so a **difference** `peak_cdf(b) - peak_cdf(a)` is always the
+   fraction of peak area between a and b, for every skew type - which is how nearly every caller
+   uses this (see `anchored_peak_cdf` and `bortel_integral`).  Only code that uses a single
+   returned value as an absolute probability has to care, and it must not assume a [0,1] range:
+     - `PeakContinuum::offset_integral_cdf_step`'s un-anchored fallback substitutes the literal
+       bounds 0 and 1 for `f0`/`f1`, which is only right for the un-offset types.
+     - The pre-version-3 BiLinearStepCDF conversion (`legacy_roi_peak_sums`,
+       `PeakContinuum::convert_legacy_bilinear_step_cdf`) deliberately keeps the offset, because
+       the version-2 continuum model blended with this same un-normalised quantity.
+
+   @param x Energy at which to evaluate
    @param mean Peak mean energy
    @param sigma Peak Gaussian width (standard deviation)
    @param skew_type The skew type of the peak
    @param skew_pars Pointer to skew parameters (may be nullptr for NoSkew)
-   @returns CDF value in [0,1]
+   @returns The antiderivative at `x`; in [0,1] except for the Exp*Gauss family noted above.
  */
 double peak_cdf( const double x, const double mean, const double sigma,
                  const PeakDef::SkewType skew_type, const double *skew_pars );

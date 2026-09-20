@@ -660,6 +660,18 @@ struct PeakFitDiffCostFunction
   // Returns degrees of freedom for a single ROI.
   // Shared skew parameters are not counted here (they span all ROIs).
   // When IndependentSkewValues is set, per-ROI skew parameters are counted here.
+  //
+  // KNOWN DISCREPANCY, pre-existing and deliberately left alone (2026-09): on the LLS path
+  //  `roi_cont_parameter_count(roi)` returns only `num_cdf_step_pars(type)`, which is zero for
+  //  every non-CDF continuum type, so the 1-4 polynomial coefficients that
+  //  `PeakFit::fit_amp_and_offset_imp(...)` solves never reduce DOF.  They are fit, so they do
+  //  consume it, and this overstates DOF by `num_linear_fit_pars(type)` for every ROI on this
+  //  path.  `get_chi2_and_dof_for_roi(...)` in src/PeakFit.cpp counts every free continuum
+  //  parameter and is the correct convention; see the long note there for why the fix has not been
+  //  applied (the stamped chi2/DOF gates automated peak acceptance) and for the other, deliberate,
+  //  divergences between the two.  If you fix this, count `continuum()->fitForParameter()`
+  //  directly - do NOT change `roi_cont_parameter_count()`, which also sizes and indexes the Ceres
+  //  parameter blocks.
   double dof_for_roi( const size_t roi_index ) const
   {
     assert( roi_index < m_rois.size() );

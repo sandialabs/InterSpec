@@ -1,0 +1,12 @@
+# Simple "nuclide, activity[units]" format for the Batch Decay tool.
+# Blank lines and lines starting with '#' are ignored.
+# A bare activity number (no unit) is interpreted as becquerel.
+
+I131, 5.9 uCi
+Cs137, 12.3 mCi
+Co60, 2.5e6 Bq
+Ba133, 1000000
+
+# Units are optional and can be Bq/Ci based (e.g. nCi, uCi, mCi, kBq, MBq):
+Eu152, 0.75 mCi
+Na22, 40 uCi

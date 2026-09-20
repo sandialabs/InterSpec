@@ -51,8 +51,6 @@
     これは低エネルギーまたは大きな校正距離で影響が大きくなります。
   </message>
   <message id="md-show-fwhm-markers">半値幅点表示</message>
-  <message id="md-display-energy-lower-label">表示エネルギー下限:</message>
-  <message id="md-display-energy-upper-label">上限:</message>
   <message id="md-mi-chart-phone">チャート/オプション</message>
   <message id="md-mi-peaks-phone">使用ピーク</message>
   <message id="md-export-btn">保存/エクスポート...</message>
@@ -95,7 +93,7 @@
   <message id="md-saved-to-db">'{1}'を内部データベースに保存しました。</message>
   <message id="md-peak-counts">{1} {2} keV、ピーク{3}カウント</message>
   <message id="md-peak-no-nuc">関連核種なし、{1} keV、ピーク{2}カウント</message>
-  <message id="md-err-det-diam-invalid">検出器直径が無効 - 2.54 cmと仮定。</message>
+  
   <message id="md-err-some-src">一部の線源でエラーが発生。</message>
   <message id="md-n-fit-pars">{1}フィットパラメータ</message>
   <message id="md-html-eff-table-caption">全エネルギー検出効率（全ガンマの%）</message>

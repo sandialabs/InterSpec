@@ -3422,14 +3422,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_decayCorrect->unChecked().connect( this, &ShieldingSourceDisplay::decayCorrectChanged );
 
 
-  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
-  lineDiv->addStyleClass( "FitOptionsRow" );
-  m_accountForDrfUncert = lineDiv->addNew<WCheckBox>( WString::tr("ssd-cb-drf-uncert") );
-  m_accountForDrfUncert->addStyleClass( "CbNoLineBreak" );
-  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-drf-uncert"), showToolTips );
-  m_accountForDrfUncert->setChecked( true );  //matches ShieldingSourceFitOptions default
-  m_accountForDrfUncert->checked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
-  m_accountForDrfUncert->unChecked().connect( this, &ShieldingSourceDisplay::accountForDrfUncertChanged );
+  // Detector-efficiency-uncertainty handling: a 3-option dropdown (None / propagate-to-results /
+  //  use-in-likelihood) mapping 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  The whole
+  //  row is hidden by #handleDetectorChanged when the current DRF carries no efficiency uncertainty.
+  m_drfUncertMethodRow = m_optionsDiv->addNew<WContainerWidget>();
+  m_drfUncertMethodRow->addStyleClass( "FitOptionsRow" );
+  WLabel *drfUncertLabel = m_drfUncertMethodRow->addNew<WLabel>( WString::tr("ssd-drf-uncert-label") );
+  HelpSystem::attachToolTipOn( m_drfUncertMethodRow, WString::tr("ssd-tt-drf-uncert"), showToolTips );
+  m_drfUncertMethodCombo = m_drfUncertMethodRow->addNew<WComboBox>();
+  drfUncertLabel->setBuddy( m_drfUncertMethodCombo );
+  // Items must match the DrfUncertaintyMethod enum order (None, ErrorPropagation, Likelihood).
+  m_drfUncertMethodCombo->addItem( WString::tr("ssd-drf-uncert-none") );
+  m_drfUncertMethodCombo->addItem( WString::tr("ssd-drf-uncert-prop") );
+  m_drfUncertMethodCombo->addItem( WString::tr("ssd-drf-uncert-like") );
+  m_drfUncertMethodCombo->setCurrentIndex( 1 );  //matches ShieldingSourceFitOptions default (ErrorPropagation)
+  m_lastDrfUncertMethodIndex = 1;
+  m_drfUncertMethodCombo->changed().connect( this, &ShieldingSourceDisplay::drfUncertMethodChanged );
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
   lineDiv->addStyleClass( "FitOptionsRow" );
@@ -3837,9 +3845,16 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.photopeak_cluster_sigma = m_photopeak_cluster_sigma;
   options.background_peak_subtract = m_backgroundPeakSub->isChecked();
   options.same_age_isotopes = m_sameIsotopesAge->isChecked();
-  options.account_for_drf_uncert = m_accountForDrfUncert->isChecked();
   options.correct_for_cascade_summing = (m_correctForCascade->isChecked()
                                          && m_correctForCascade->isEnabled());
+
+  // Combo index maps directly to the DrfUncertaintyMethod enum (None, ErrorPropagation, Likelihood).
+  //  Read unconditionally, even when the row is hidden (DRF carries no efficiency uncertainty): this
+  //  preserves the user's choice across DRF swaps and into serialization.  When the choice ends up
+  //  non-None against an uncertainty-free DRF the fit still runs statistics-only (empty
+  //  peakEffFracCovariance) and the calc surfaces a warning - see check_for_fit_warnings.
+  options.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>(
+                                std::max( 0, m_drfUncertMethodCombo->currentIndex() ) );
 
   // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
   //  Read unconditionally: fitOptions() also feeds serialization, so gating on the widget's enabled
@@ -5887,25 +5902,29 @@ void ShieldingSourceDisplay::decayCorrectChanged()
 }//void decayCorrectChanged()
 
 
-void ShieldingSourceDisplay::accountForDrfUncertChanged()
+void ShieldingSourceDisplay::drfUncertMethodChanged()
 {
+  const int new_index = m_drfUncertMethodCombo->currentIndex();
+  const int old_index = m_lastDrfUncertMethodIndex;
+  m_lastDrfUncertMethodIndex = new_index;
+
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  if( undoRedo && !undoRedo->isInUndoOrRedo() && (old_index != new_index) )
   {
-    auto undo_redo = [](){
+    auto set_to = []( const int index ){
       ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
       if( display )
       {
-        display->m_accountForDrfUncert->setChecked( !display->m_accountForDrfUncert->isChecked() );
-        display->accountForDrfUncertChanged();
+        display->m_drfUncertMethodCombo->setCurrentIndex( index );
+        display->drfUncertMethodChanged();
       }
     };
-
-    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Account for DRF uncertainty changed." );
+    undoRedo->addUndoRedoStep( std::bind(set_to, old_index), std::bind(set_to, new_index),
+                               "Detector-efficiency uncertainty method changed." );
   }//if( undoRedo )
 
   updateChi2Chart();
-}//void accountForDrfUncertChanged()
+}//void drfUncertMethodChanged()
 
 
 void ShieldingSourceDisplay::correctForCascadeChanged()
@@ -6957,9 +6976,36 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   m_fixedGeomLockedNote->setHidden( !locked_setup );
   m_addShieldingBtn->setHidden( locked_setup );
 
+  updateDrfUncertMethodAvailability();
   updateChi2Chart();
   updateCascadeAvailability();
 }//void handleDetectorChanged()
+
+
+void ShieldingSourceDisplay::updateDrfUncertMethodAvailability()
+{
+  // A DRF carries efficiency-uncertainty information when it has an attached CeeLo MC response or a
+  //  DetectorEfficiencyUncert - exactly the two branches DetectorPeakResponse::efficiencyFracCovariance
+  //  dispatches to (checking those is cheaper and more robust than probing the covariance itself).
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool has_uncert = ( det && (det->efficiencyUncert() || det->ceeloResponse()) );
+
+  if( m_drfUncertMethodRow )
+    m_drfUncertMethodRow->setHidden( !has_uncert );
+
+  // First-load default: if the very first DRF we see has no efficiency uncertainty, start on None
+  //  rather than the struct default (ErrorPropagation), per the requested first-load behavior.  This
+  //  fires once; later DRF swaps only toggle visibility, and a subsequent state restore overrides it.
+  if( !m_drfUncertMethodDefaultApplied )
+  {
+    m_drfUncertMethodDefaultApplied = true;
+    if( !has_uncert && m_drfUncertMethodCombo )
+    {
+      m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>(ShieldingSourceFitCalc::DrfUncertaintyMethod::None) );
+      m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();
+    }
+  }//if( !m_drfUncertMethodDefaultApplied )
+}//void updateDrfUncertMethodAvailability()
 
 void ShieldingSourceDisplay::updateChi2Chart()
 {
@@ -8572,9 +8618,16 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
-  m_accountForDrfUncert->setChecked( options.account_for_drf_uncert );
   m_correctForCascade->setChecked( options.correct_for_cascade_summing );
   updateCascadeAvailability();
+
+  // Restore the detector-efficiency-uncertainty method (a restore is authoritative - mark the
+  //  first-load default as already applied so it never clobbers the restored choice), then
+  //  re-evaluate the row's visibility against the current DRF.
+  m_drfUncertMethodDefaultApplied = true;
+  m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>( options.drf_uncert_method ) );
+  m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();  //else the next user change undoes to a stale index
+  updateDrfUncertMethodAvailability();
   m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();

@@ -47,8 +47,6 @@
     Il s'agit d'un effet plus important à basse énergie ou à des distances d'étalonnage plus grandes.
   </message>
   <message id="md-show-fwhm-markers">Afficher les points FWHM</message>
-  <message id="md-display-energy-lower-label">Afficher l'énergie, inférieure :</message>
-  <message id="md-display-energy-upper-label">Supérieure :</message>
   <message id="md-mi-chart-phone">Graphique/Options</message>
   <message id="md-mi-peaks-phone">Pics à utiliser</message>
   <message id="md-export-btn">Stocker/Exporter...</message>
@@ -91,7 +89,7 @@
   <message id="md-saved-to-db">'{1}' enregistré dans la base de données interne.</message>
   <message id="md-peak-counts">{1} {2} keV, Pic {3} comptes</message>
   <message id="md-peak-no-nuc">Aucun nucléide associé, {1} keV, Pic {2} comptes</message>
-  <message id="md-err-det-diam-invalid">Le diamètre du détecteur n'est pas valide - en supposant 2.54 cm.</message>
+  
   <message id="md-err-some-src">Certaines sources ont eu des erreurs.</message>
   <message id="md-n-fit-pars">{1} Paramètres d'ajustement</message>
   <message id="md-html-eff-table-caption">Efficacité de détection d'énergie totale (% gammas totaux)</message>

@@ -50,21 +50,27 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <ctime>
 #include <string>
 #include <vector>
 #include <memory>
 #include <limits>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <utility>
 #include <iostream>
 #include <algorithm>
 
+#include <nlohmann/json.hpp>
+
 #include <rapidxml/rapidxml.hpp>
+#include <rapidxml/rapidxml_print.hpp>
 
 #include "Minuit2/MnUserParameters.h"
 
 // CeeLo (external_libs/CeeLo/src)
+#include "io/SolidAngle.h"
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
 #include "io/EfficiencyTransfer.h"
@@ -104,6 +110,55 @@ namespace
    crystal family, which is what the per-family gates are actually asserted on.
    */
   bool g_gadras_full = false;
+
+  /** --envelope-out=<dir>: where the model-envelope study writes its raw
+   per-probe CSVs.  Empty (the default) disables every study case, so this
+   suite's normal run is untouched.  See envelope_corpus_geometry_audit.
+   */
+  string g_envelope_out;
+
+  /** --envelope-corpus: run the study's Monte-Carlo stages, not just the
+   free (no-MC) ones.  Hours of MC; always paired with --envelope-out.
+   */
+  bool g_envelope_corpus = false;
+
+  /** --envelope-precision= / --envelope-probe-precision=: the generation and
+   probe MC targets.  The floors are DERIVED AS A FUNCTION of the first, because
+   node placement is noise-aware (a coarser run gets fewer nodes AND wider gaps),
+   so a floor measured at one precision is not the floor at another.
+   */
+  double g_envelope_precision = 0.003;
+  double g_envelope_probe_precision = 0.003;
+
+  /** --envelope-only=<substring>: restrict the sweep to matching detectors.
+   --envelope-near: probe the near stratum instead of the far one.
+   --envelope-energies=<n>: energies per (d, theta) cell.
+   */
+  string g_envelope_only;
+  bool g_envelope_near = false;
+  /** --envelope-diag: the focused bulletized-crystal diagnostic. */
+  bool g_envelope_diag = false;
+
+  /** --envelope-threads=N: cap the MC worker threads, for both generation and
+   the probe bank.  0 (CeeLo's default) means hardware_concurrency, which on a
+   workstation takes every core and makes the machine unusable for hours.  The
+   study is a background job, so it should leave the box usable.
+   */
+  unsigned g_envelope_threads = 0;
+
+  /** --envelope-transfer: the curve-transfer envelope measurement.  No MC. */
+  bool g_envelope_transfer = false;
+
+  /** --envelope-chord: the chord-length predictor experiment.  No MC. */
+  bool g_envelope_chord = false;
+
+  /** --envelope-refuse: behind_plane and shadow_* - the refuse-grade terms. */
+  bool g_envelope_refuse = false;
+
+  /** --envelope-contact: generate the near stratum at ResponseProfile::Contact instead of
+   General.  Off by default so near and far are measured at the SAME profile. */
+  bool g_envelope_contact = false;
+  int g_envelope_energies = 10;
 
   struct ProbeRow
   {
@@ -309,6 +364,32 @@ struct TestFixture
         g_test_data_dir = arg.substr( 14 );
       else if( arg == "--gadras-full" )
         g_gadras_full = true;
+      else if( arg.find("--envelope-out=") == 0 )
+        g_envelope_out = arg.substr( 15 );
+      else if( arg == "--envelope-corpus" )
+        g_envelope_corpus = true;
+      else if( arg.find("--envelope-precision=") == 0 )
+        g_envelope_precision = std::stod( arg.substr( 21 ) );
+      else if( arg.find("--envelope-probe-precision=") == 0 )
+        g_envelope_probe_precision = std::stod( arg.substr( 27 ) );
+      else if( arg.find("--envelope-only=") == 0 )
+        g_envelope_only = arg.substr( 16 );
+      else if( arg == "--envelope-near" )
+        g_envelope_near = true;
+      else if( arg == "--envelope-diag" )
+        g_envelope_diag = true;
+      else if( arg == "--envelope-transfer" )
+        g_envelope_transfer = true;
+      else if( arg == "--envelope-chord" )
+        g_envelope_chord = true;
+      else if( arg == "--envelope-refuse" )
+        g_envelope_refuse = true;
+      else if( arg == "--envelope-contact" )
+        g_envelope_contact = true;
+      else if( arg.find("--envelope-threads=") == 0 )
+        g_envelope_threads = static_cast<unsigned>( std::stoul( arg.substr( 19 ) ) );
+      else if( arg.find("--envelope-energies=") == 0 )
+        g_envelope_energies = std::stoi( arg.substr( 20 ) );
     }
 
     if( !g_data_dir.empty() )
@@ -384,6 +465,256 @@ BOOST_AUTO_TEST_CASE( drf_extra_round_trip )
     BOOST_CHECK_CLOSE( a.sigma, b.sigma, 1.0E-9 );
   }
 }//drf_extra_round_trip
+
+
+/** Reusing an aperture quadrature across energies must be an optimization only: tracing the ray set
+    is ~98% of a Monte-Carlo-backed query and depends solely on the source position, so a sweep that
+    builds one per position has to give the SAME numbers as letting every query trace its own.  A
+    drift here would silently change every efficiency the charts and fits report.
+ */
+BOOST_AUTO_TEST_CASE( aperture_quadrature_reuse_is_equivalent )
+{
+  const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+  BOOST_REQUIRE( drf->ceeloResponse() );
+
+  const vector<double> thetas = { 0.0, 0.2, 0.5, 1.2 };
+  const vector<double> distances = { 5.0*PhysicalUnits::cm, 25.0*PhysicalUnits::cm,
+                                     200.0*PhysicalUnits::cm };
+
+  for( const double dist : distances )
+  {
+    for( const double theta : thetas )
+    {
+      const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> quad
+                                            = drf->apertureQuadrature( theta, 0.0, dist );
+      BOOST_REQUIRE( quad );   //this DRF has a response and is not fixed-geometry
+
+      for( const float energy : { 40.0f, 88.0f, 121.8f, 356.0f, 661.7f, 1332.0f, 2614.0f } )
+      {
+        const DetectorPeakResponse::EffEval plain
+                          = drf->fepEfficiencyEval( energy, theta, 0.0, dist );
+        const DetectorPeakResponse::EffEval reused
+                          = drf->fepEfficiencyEval( energy, theta, 0.0, dist, quad );
+
+        BOOST_CHECK_EQUAL( plain.value, reused.value );   //bit-identical, not merely close
+        BOOST_CHECK_EQUAL( plain.sigma, reused.sigma );
+        BOOST_CHECK( plain.flag == reused.flag );
+      }//for( energy )
+    }//for( theta )
+  }//for( dist )
+
+  // A null quadrature is just the plain evaluation, so callers need no special case.
+  const DetectorPeakResponse::EffEval plain
+                    = drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm );
+  const DetectorPeakResponse::EffEval null_quad
+                    = drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm, nullptr );
+  BOOST_CHECK_EQUAL( plain.value, null_quad.value );
+
+  // A legacy (curve-only) DRF has no ray set to reuse; it must say so rather than hand back an
+  //  empty one that would evaluate to nothing.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( !legacy->apertureQuadrature( 0.0, 0.0, 25.0*PhysicalUnits::cm ) );
+  BOOST_CHECK_EQUAL( legacy->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm ).value,
+                     legacy->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm, nullptr ).value );
+
+  // The per-angle chart series is the caller this exists for: it must still be well-formed.
+  const string series = drf->responseAngleSeriesJSON( 25.0*PhysicalUnits::cm );
+  BOOST_REQUIRE( series != "null" );
+  const nlohmann::json j = nlohmann::json::parse( series );
+  BOOST_REQUIRE( j.contains("angles") && j["angles"].is_array() && (j["angles"].size() == 4) );
+  for( const nlohmann::json &a : j["angles"] )
+  {
+    BOOST_REQUIRE( a.contains("pairs") && a["pairs"].is_array() );
+    BOOST_CHECK( a["pairs"].size() > 50 );   //80 energies, less any the response rejects
+    for( const nlohmann::json &pr : a["pairs"] )
+      BOOST_CHECK( pr["eff"].get<double>() >= 0.0 );
+  }
+}//aperture_quadrature_reuse_is_equivalent
+
+
+/** The DRF *file* round trip (toXml / fromXml - what a downloaded .drf.xml goes through when it
+ is dragged back in, or uploaded on Detector Select's Import tab) must keep the Monte-Carlo
+ response, and, for a detector that knows its shape but has no response yet (an ANGLE or
+ Detector.dat import), the physical geometry - and give back the same hash, since the "Previous"
+ detectors in the user database are keyed on it.
+ */
+/** The gaps the round-trip test above leaves, each of which a real defect walked through:
+
+    - A DRF can carry a geometry AND a response at once (every GADRAS detector with an
+      Efficiency.csv does: applyGadrasDat sets the geometry, then attaches a curve-transfer
+      response).  Only one of the two is ever serialized, so identity has to ask `geometry()`
+      rather than the raw member - comparing the member reported every round-tripped MC-backed
+      detector as changed, and threw a developer-check error on every spectrum save.
+    - `hashValue()` equality after `fromXml` is vacuous: the hash is read verbatim out of the file.
+      What decides DB dedupe is the RECOMPUTED hash, which is what DrfSelect::detectorFromEffUpload
+      triggers via setName().
+    - Nothing pinned the emitted `version`, so a change that bumped every DRF would go unnoticed.
+    - Nothing covered the database extras codec for the geometry, in particular that an EMPTY
+      extras column must clear a geometry the object already had (a Dbo re-read of a reused object).
+ */
+BOOST_AUTO_TEST_CASE( round_trip_identity_and_extras_codec )
+{
+  auto to_text_and_back = []( const shared_ptr<const DetectorPeakResponse> &drf )
+                                                          -> shared_ptr<DetectorPeakResponse> {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    drf->toXml( root, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( doc2.first_node("root")->first_node("DetectorPeakResponse") );
+    return restored;
+  };
+
+  // --- a DRF carrying BOTH a geometry and a response ------------------------------------------
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
+    BOOST_REQUIRE( drf->ceeloResponse() );
+    // Put a geometry in the member as well, the way the GADRAS and .detx importers do.
+    drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( drf->ceeloResponse()->descriptor ) );
+
+    const shared_ptr<DetectorPeakResponse> restored = to_text_and_back( drf );
+
+    // This is the assertion that fires on every save when identity asks the wrong question.
+    BOOST_CHECK_NO_THROW( DetectorPeakResponse::equalEnough( *drf, *restored ) );
+    BOOST_CHECK( (*drf) == (*restored) );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+
+    // The hash that DB dedupe actually uses is the recomputed one, not the one read from the file.
+    const uint64_t stored = restored->hashValue();
+    restored->setName( restored->name() );   //what detectorFromEffUpload does; recomputes the hash
+    BOOST_CHECK_EQUAL( stored, restored->hashValue() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+  }
+
+  // --- the version attribute is part of the file's contract with older readers ------------------
+  {
+    auto version_of = []( const shared_ptr<const DetectorPeakResponse> &drf ) -> int {
+      rapidxml::xml_document<char> doc;
+      rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+      doc.append_node( root );
+      drf->toXml( root, &doc );
+      const rapidxml::xml_node<char> *n = doc.first_node("root")->first_node("DetectorPeakResponse");
+      BOOST_REQUIRE( n );
+      const rapidxml::xml_attribute<char> *a = n->first_attribute("version");
+      return a ? std::stoi( string(a->value(), a->value_size()) ) : -1;
+    };
+
+    // A geometry (with or without a response) needs the version that can express it...
+    const shared_ptr<DetectorPeakResponse> geo = drf_with_golden( "nai3x3" );
+    BOOST_CHECK_GE( version_of( geo ), 6 );
+
+    // ...and a plain legacy DRF must NOT be dragged up to it.
+    auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no ceelo at all" );
+    legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    BOOST_CHECK_LT( version_of( legacy ), 6 );
+  }
+
+  // --- the database extras column: a geometry must survive it, and an empty one must CLEAR ------
+  {
+    const shared_ptr<DetectorPeakResponse> src = drf_with_golden( "hpge_coax" );
+
+    auto geom_only = make_shared<DetectorPeakResponse>( "geometry only", "extras codec" );
+    geom_only->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    geom_only->setGeometry( make_shared<const ceelo::GeometryDescriptor>( src->ceeloResponse()->descriptor ) );
+
+    const string extras = geom_only->drfExtraToXmlString();
+    BOOST_CHECK( !extras.empty() );
+
+    auto round = make_shared<DetectorPeakResponse>( *geom_only );
+    round->setDrfExtraFromXmlString( extras );
+    BOOST_REQUIRE( round->geometry() );
+    BOOST_CHECK_EQUAL( geom_only->geometry()->to_xml_string(), round->geometry()->to_xml_string() );
+
+    // Now the case a future refactor is most likely to lose: the SAME object, re-read from a row
+    //  whose extras column is empty, must not keep the geometry it already had.
+    round->setDrfExtraFromXmlString( string() );
+    BOOST_CHECK( !round->geometry() );
+    BOOST_CHECK( !round->ceeloResponse() );
+  }
+}//round_trip_identity_and_extras_codec
+
+
+BOOST_AUTO_TEST_CASE( file_xml_round_trip_keeps_ceelo )
+{
+  auto round_trip = []( const shared_ptr<const DetectorPeakResponse> &drf )
+                                                          -> shared_ptr<DetectorPeakResponse> {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    drf->toXml( root, &doc );
+
+    // Through text and back, as a file is.
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    const rapidxml::xml_node<char> *drf_node = doc2.first_node( "root" )->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+
+    auto restored = make_shared<DetectorPeakResponse>();
+    restored->fromXml( drf_node );
+    return restored;
+  };
+
+  // A Monte-Carlo-backed detector: the response, its geometry, and the hash all come back.
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "nai3x3" );
+    const shared_ptr<DetectorPeakResponse> restored = round_trip( drf );
+
+    BOOST_REQUIRE( restored->ceeloResponse() );
+    BOOST_CHECK_EQUAL( drf->ceeloResponse()->content_hash(),
+                       restored->ceeloResponse()->content_hash() );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+
+    for( const double E : {60.0, 121.8, 661.7, 2614.0} )
+    {
+      const DetectorPeakResponse::EffEval a
+                  = drf->fepEfficiencyEval( E, 0.3, 0.0, 30.0*PhysicalUnits::cm );
+      const DetectorPeakResponse::EffEval b
+                  = restored->fepEfficiencyEval( E, 0.3, 0.0, 30.0*PhysicalUnits::cm );
+      BOOST_CHECK_CLOSE( a.value, b.value, 1.0E-9 );
+      BOOST_CHECK_CLOSE( a.sigma, b.sigma, 1.0E-9 );
+    }
+  }
+
+  // A geometry-only detector (no response yet): the shape must not be lost on the way to a file.
+  {
+    const shared_ptr<DetectorPeakResponse> golden = drf_with_golden( "hpge_coax" );
+
+    auto drf = make_shared<DetectorPeakResponse>( "geometry only", "round-trip test" );
+    drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm,
+                    PhysicalUnits::keV, 0.0f, 0.0f,
+                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( golden->ceeloResponse()->descriptor ) );
+    BOOST_REQUIRE( drf->geometry() );
+    BOOST_REQUIRE( !drf->ceeloResponse() );
+
+    const shared_ptr<DetectorPeakResponse> restored = round_trip( drf );
+    BOOST_REQUIRE( restored->geometry() );
+    BOOST_CHECK( !restored->ceeloResponse() );
+    BOOST_CHECK_EQUAL( drf->geometry()->to_xml_string(), restored->geometry()->to_xml_string() );
+    BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
+  }
+}//file_xml_round_trip_keeps_ceelo
 
 
 /** Legacy DRFs (no MC response) must evaluate bit-identically through the
@@ -462,7 +793,7 @@ BOOST_AUTO_TEST_CASE( efficiency_covariance_structure )
   shared_ptr<DetectorPeakResponse> drf = drf_with_golden( "hpge_coax" );
 
   const vector<double> energies{ 121.78, 344.28, 661.66, 1173.23, 1408.01 };
-  const vector<double> cov = drf->efficiencyFracCovariance( energies, 0.0,
+  const vector<double> cov = drf->efficiencyFracCovariance( energies, 0.0, 0.0,
                                                             50.0*PhysicalUnits::cm );
   const size_t n = energies.size();
   BOOST_REQUIRE_EQUAL( cov.size(), n*n );
@@ -482,7 +813,7 @@ BOOST_AUTO_TEST_CASE( efficiency_covariance_structure )
 
   //Covariance must grow off-axis / close-in (sigma_transfer) when grounded;
   //  ungrounded fixtures still must not SHRINK off-axis.
-  const vector<double> cov_off = drf->efficiencyFracCovariance( energies, 1.2,
+  const vector<double> cov_off = drf->efficiencyFracCovariance( energies, 1.2, 0.0,
                                                             5.0*PhysicalUnits::cm );
   BOOST_CHECK_GE( cov_off[0] + 1.0E-12, cov[0] );
 }//efficiency_covariance_structure
@@ -764,6 +1095,197 @@ BOOST_AUTO_TEST_CASE( transfer_flags_and_sigma )
 }//transfer_flags_and_sigma
 
 
+/** THE invariant on the DRF: the covariance at a query geometry has, on its diagonal, exactly the
+ (sigma/value)^2 the efficiency evaluation at that geometry reports - through a Monte-Carlo
+ response with a near-field model, a far-field-only one (NearFieldUnmodeled inside its floor), and a
+ curve transfer - and the no-geometry covariance is the far-field intrinsic evaluation's.
+ */
+BOOST_AUTO_TEST_CASE( response_covariance_diagonal_matches_eval )
+{
+  struct Geom { double theta, phi, dist_cm; };
+  const vector<Geom> geoms = { {0.0, 0.0, 50.0}, {0.0, 0.0, 3.0}, {M_PI/3.0, 0.7, 20.0} };
+  const vector<double> energies = { 60.0, 121.8, 344.3, 661.7, 1408.0 };
+  const size_t n = energies.size();
+
+  vector<pair<string,shared_ptr<DetectorPeakResponse>>> drfs;
+  drfs.emplace_back( "nai3x3 golden", drf_with_golden( "nai3x3" ) );
+  drfs.emplace_back( "czt_box golden", drf_with_golden( "czt_box" ) );
+  {
+    const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+    shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*geom.transverse_half_extent() );
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
+    auto det2 = make_shared<DetectorPeakResponse>( *det );
+    det2->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "test" ) );
+    drfs.emplace_back( "curve transfer", det2 );
+  }
+
+  for( const auto &named : drfs )
+  {
+    const shared_ptr<DetectorPeakResponse> &drf = named.second;
+    BOOST_REQUIRE( drf && drf->ceeloResponse() );
+
+    for( const Geom &g : geoms )
+    {
+      vector<double> model_part;
+      const vector<double> cov = drf->efficiencyFracCovariance( energies, g.theta, g.phi,
+                                                        g.dist_cm*PhysicalUnits::cm, &model_part );
+      BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+      BOOST_REQUIRE_EQUAL( model_part.size(), n*n );
+      for( size_t i = 0; i < n; ++i )
+      {
+        const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval( static_cast<float>(energies[i]),
+                                                          g.theta, g.phi, g.dist_cm*PhysicalUnits::cm );
+        BOOST_REQUIRE_GT( ev.value, 0.0 );
+        const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
+        const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+        // float energy in the Eval API, double in the covariance: 1e-6 relative
+        BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= 1.0e-6*frac2,
+                             named.first << " at " << g.dist_cm << " cm, theta " << g.theta << ", "
+                             << energies[i] << " keV: C_ii " << cov[i*n+i] << " vs sigma^2 " << frac2 );
+        BOOST_CHECK_MESSAGE( std::fabs(model_part[i*n+i] - frac2_model) <= 1.0e-6*frac2,
+                             named.first << ": model part " << model_part[i*n+i] << " vs " << frac2_model );
+        BOOST_CHECK_LE( ev.sigmaModel, ev.sigma*(1.0 + 1.0e-12) );
+        BOOST_CHECK_GT( ev.sigmaModel, 0.0 );
+      }
+    }//for( each geometry )
+
+    // No-geometry overload: the far-field intrinsic evaluation
+    vector<double> model_part;
+    const vector<double> cov = drf->efficiencyFracCovariance( energies, &model_part );
+    BOOST_REQUIRE_EQUAL( cov.size(), n*n );
+    for( size_t i = 0; i < n; ++i )
+    {
+      const DetectorPeakResponse::EffEval ev = drf->intrinsicEfficiencyEval( static_cast<float>(energies[i]) );
+      BOOST_REQUIRE_GT( ev.value, 0.0 );
+      const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
+      BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= 1.0e-6*frac2,
+                           named.first << " far field, " << energies[i] << " keV: C_ii " << cov[i*n+i]
+                           << " vs sigma^2 " << frac2 );
+      const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+      BOOST_CHECK_MESSAGE( std::fabs(model_part[i*n+i] - frac2_model) <= 1.0e-6*frac2,
+                           named.first << ": far-field model part" );
+    }
+  }//for( each DRF )
+}//response_covariance_diagonal_matches_eval
+
+
+/** Corpus evidence for the curve-transfer model envelope (ceelo::model_sigma transfer_* constants).
+
+ A measured-curve transfer knows the detector's far-field on-axis efficiency and its geometry, and
+ nothing else: its eta is angle-flat and it has no near-field model, so off axis and close in it is
+ wrong by an amount the SigmaTransferModel envelope is supposed to cover.  Every golden Monte-Carlo
+ response is such a detector fully characterized, so building a curve transfer from the golden's
+ OWN far-field curve and comparing it to the golden off axis and near field measures that error per
+ detector type, angle, distance and energy, with no new Monte Carlo.  This prints, per detector and
+ (theta, d/a) cell: the mean signed error, the worst |error|, the worst |error|/sigma of the transfer,
+ and how one-signed the error is across energies (a common mode, as the covariance treats it).
+
+ SUPERSEDED as evidence by envelope_transfer_from_mc, which anchors on MEASURED MC
+ rather than on a golden and therefore is not circular.  The numbers in this block are
+ from before the 2026-09 re-derivation and NO LONGER DESCRIBE THE SHIPPED MODEL - the
+ off-axis term is now saturating (transfer_offaxis_mid 0.037 with a sin^2 half-saturation
+ at 0.153) rather than 0.03 x sin^2, and the near term is 0.06 rather than 0.10.  A reader
+ taking the percentages below as current will be off by ~2.5x.  Kept for the far-field
+ on-axis sanity check it still performs.
+
+ Original note: evidence, not a gate:*/
+BOOST_AUTO_TEST_CASE( curve_transfer_envelope_corpus )
+{
+  const vector<double> thetas_deg = { 0.0, 15.0, 30.0, 45.0, 60.0 };
+  // Distance from the detector FACE in units of the transverse half-extent (InterSpec's
+  //  convention).  CeeLo's own near gates count from the crystal-face origin, one endcap offset
+  //  further back, so the "envelope" column belongs to a slightly larger d/a than the row label.
+  const vector<double> d_over_as = { 1.0, 2.0, 3.0, 5.0, 10.0, 30.0 };
+
+  for( const char * const preset : { "nai3x3", "hpge_coax", "detective_x", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+    const shared_ptr<const ceelo::DetectorResponse> golden = drf->ceeloResponse();
+    BOOST_REQUIRE( golden );
+    const ceelo::GeometryDescriptor &gd = golden->descriptor;
+    const double a_cm = gd.transverse_half_extent();
+
+    // The golden's own far-field on-axis curve, sampled on its energy grid, is the anchor; no
+    //  anchor sigma, so the transfer's sigma is purely its model envelope (floor + transfer terms).
+    const Eigen::Vector3d far_pos = CeeLoUtils::farFieldSourcePosition( gd );
+    ceelo::AnchorCurve anchor;
+    for( const double e : golden->eta_fep.energies_keV )
+    {
+      if( (e < 40.0) || (e > 3000.0) )
+        continue;
+      const ceelo::EffResult r = golden->eps_fep_at( e, far_pos );
+      if( r.value <= 0.0 )
+        continue;
+      anchor.energies_keV.push_back( e );
+      anchor.eff.push_back( r.value );
+      anchor.frac_sigma.push_back( 0.0 );
+    }
+    BOOST_REQUIRE_GE( anchor.energies_keV.size(), 4u );
+    const shared_ptr<ceelo::DetectorResponse> transfer
+                  = ceelo::make_transfer_response( gd, anchor, far_pos, nullptr, ceelo::TransferResponseOptions{} );
+    BOOST_REQUIRE( transfer && transfer->model_transfer.has_value() );
+
+    BOOST_TEST_MESSAGE( "=== " << preset << " (a = " << a_cm << " cm, "
+                        << (golden->near_field.empty() ? "no near-field model" : "near-field model")
+                        << ", " << anchor.energies_keV.size() << " anchor energies) ===" );
+    BOOST_TEST_MESSAGE( "  theta   d/a    n   mean err   worst |err|  worst |err|/sig   envelope   same-sign" );
+
+    double far_onaxis_worst = 0.0;
+    for( const double theta_deg : thetas_deg )
+    {
+      for( const double d_over_a : d_over_as )
+      {
+        const double theta = theta_deg * M_PI / 180.0;
+        const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( gd, theta, 0.0, d_over_a*a_cm );
+        const ceelo::ApertureQuadrature q_golden = golden->make_quadrature( pos );
+        const ceelo::ApertureQuadrature q_transfer = transfer->make_quadrature( pos );
+
+        int n = 0, n_pos = 0;
+        double sum_err = 0.0, worst_err = 0.0, worst_pull = 0.0, envelope = 0.0;
+        for( const double e : anchor.energies_keV )
+        {
+          const ceelo::EffResult g = golden->eps_fep_at( e, pos, q_golden );
+          const ceelo::EffResult t = transfer->eps_fep_at( e, pos, q_transfer );
+          // Only where the golden is itself trustworthy: inside its validated regime
+          if( (g.flag != ceelo::ResponseFlag::Ok) || (g.value <= 0.0) || (t.value <= 0.0) )
+            continue;
+          const double err = t.value / g.value - 1.0;
+          const double sig = t.sigma / t.value;
+          ++n;
+          n_pos += (err > 0.0);
+          sum_err += err;
+          worst_err = std::max( worst_err, fabs(err) );
+          worst_pull = std::max( worst_pull, fabs(err) / sig );
+          envelope = std::max( envelope, transfer->model_transfer->eval( pos.norm()/a_cm, -pos.z()/pos.norm(), e ) );
+        }
+        if( n == 0 )
+          continue;
+
+        const double same_sign = std::max( n_pos, n - n_pos ) / double(n);
+        std::ostringstream row;
+        row << "  " << std::setw(5) << std::fixed << std::setprecision(0) << theta_deg
+            << std::setw(6) << std::setprecision(0) << d_over_a
+            << std::setw(5) << n
+            << std::setw(9) << std::setprecision(2) << 100.0*sum_err/n << "%"
+            << std::setw(11) << 100.0*worst_err << "%"
+            << std::setw(14) << worst_pull
+            << std::setw(12) << 100.0*envelope << "%"
+            << std::setw(9) << std::setprecision(2) << same_sign;
+        BOOST_TEST_MESSAGE( row.str() );
+
+        if( (theta_deg == 0.0) && (d_over_a >= 10.0) )
+          far_onaxis_worst = std::max( far_onaxis_worst, worst_err );
+      }//for( d_over_a )
+    }//for( theta )
+
+    // Sanity: far field on axis the transfer reproduces its own anchor, to well under 0.1%
+    //  (measured 2026-09-13: under 0.01% for all four).  This is the gate; the table above is
+    //  evidence for a human, not a pass/fail.
+    BOOST_CHECK_MESSAGE( far_onaxis_worst < 0.001, preset << ": far-field on-axis transfer error " << 100.0*far_onaxis_worst << "%" );
+  }//for( each golden )
+}//curve_transfer_envelope_corpus
+
+
 /** Anchor-source selection: raw single-distance measured points beat the
  curve; mixed distances fall back to the curve; fixed geometry throws.
  */
@@ -806,14 +1328,24 @@ BOOST_AUTO_TEST_CASE( transfer_anchor_source_selection )
   BOOST_CHECK_CLOSE( raw_anchor.curve.frac_sigma[0],
                      std::sqrt(0.01*0.01 + 0.03*0.03), 1.0 );
 
-  //Mixed-distance points: falls back to sampling the fitted curve.
+  //Mixed-distance points: still the raw branch - the points at the minority distance are
+  //  transferred to the most common distance (25 cm: energies 0,2,4) through the kernel ratio.
   shared_ptr<DetectorPeakResponse> det_mixed = synthetic_curve_drf( diam_cm );
   det_mixed->setMeasuredPoints( make_points(true) );
 
-  const CeeLoUtils::TransferAnchor curve_anchor
+  const CeeLoUtils::TransferAnchor mixed_anchor
                        = CeeLoUtils::transferAnchorForDrf( det_mixed, geom, -1.0 );
-  BOOST_CHECK( curve_anchor.curve_derived );
-  BOOST_CHECK_GE( curve_anchor.curve.energies_keV.size(), 16u );
+  BOOST_CHECK( !mixed_anchor.curve_derived );
+  BOOST_CHECK_EQUAL( mixed_anchor.curve.energies_keV.size(), 5u );
+  BOOST_CHECK_CLOSE( mixed_anchor.ref_distance_cm, 25.0, 0.1 );
+  {
+    //Points already at 25 cm are untouched; the 50 cm ones grow by ~K(25)/K(50) (~ 4x far-field)
+    const vector<MeasuredEffPoint> &raw_pts = det_mixed->measuredPoints()->points();
+    BOOST_CHECK_CLOSE( mixed_anchor.curve.eff[0], raw_pts[0].efficiency, 1.0e-3 );
+    const double ratio = mixed_anchor.curve.eff[1] / raw_pts[1].efficiency;
+    BOOST_CHECK_GT( ratio, 3.0 );
+    BOOST_CHECK_LT( ratio, 4.5 );
+  }
 
   //A user-specified reference distance overrides the automatic one.
   const CeeLoUtils::TransferAnchor override_anchor
@@ -1428,9 +1960,30 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_REQUIRE_NO_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, resp ) );
   BOOST_CHECK_MESSAGE( bare->isValid(), "the DRF is still invalid after filling the backbone" );
 
-  const double a_cm = resp->transverse_half_extent();
-  BOOST_CHECK_CLOSE( bare->detectorDiameter() / PhysicalUnits::cm, 2.0*a_cm, 0.1 );
+  // The CRYSTAL diameter, not `transverse_half_extent()` - that sums the dead layer, every endcap
+  //  layer and any collimator onto the crystal radius, and an intrinsic efficiency quoted per photon
+  //  crossing THAT disk is low by (2a/d_crystal)^2.  For this 3x3 NaI in a 1 mm can the two differ
+  //  by 7.72 vs 7.62 cm; with a collimator the old value was 56% too large.
+  const double crystal_diam_cm = 2.0 * resp->descriptor.dimensions_cm[0];
+  BOOST_CHECK_CLOSE( bare->detectorDiameter() / PhysicalUnits::cm, crystal_diam_cm, 0.1 );
+  BOOST_CHECK_MESSAGE( bare->detectorDiameter()/PhysicalUnits::cm
+                         < 2.0*resp->transverse_half_extent() - 1.0E-6,
+                       "the stored diameter still includes the passive layers" );
   BOOST_CHECK( bare->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // Absolute efficiency is what must be invariant: the curve and the solid angle compensate, so
+  //  changing which disk the intrinsic is quoted against may not move any measurable prediction.
+  {
+    auto check_abs = make_shared<DetectorPeakResponse>( *bare );
+    check_abs->setCeeloResponse( resp );
+    for( const float energy : { 60.0f, 661.7f, 1332.0f } )
+    {
+      const double d = 400.0*PhysicalUnits::cm;   //far field, where the legacy model is valid
+      const double from_curve = bare->efficiency( energy, d );
+      const double from_resp = check_abs->fepEfficiencyEval( energy, 0.0, 0.0, d ).value;
+      BOOST_CHECK_CLOSE( from_curve, from_resp, 3.0 );
+    }
+  }
 
   // The curve and the response must not disagree: attach the response and check
   //  that the stored curve reproduces what the CeeLo dispatch answers.  A
@@ -2619,3 +3172,1662 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
   //  that geometry is the max-error gate in angle_efficiency_cross_validation.
   BOOST_CHECK_LT( median, 0.02 );
 }//angle_cascade_summing_unit_test
+
+
+/** Points taken at different distances, all generated from ONE transfer response, must transfer
+ to the same anchor (within the kernel's own tolerance) whichever distance they were taken at.
+ */
+BOOST_AUTO_TEST_CASE( transfer_anchor_mixed_distance_consistency )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+
+  // A reference response to generate "measurements" from
+  shared_ptr<DetectorPeakResponse> truth = synthetic_curve_drf( diam_cm );
+  const CeeLoUtils::TransferAnchor truth_anchor = CeeLoUtils::transferAnchorForDrf( truth, geom, 50.0 );
+  const shared_ptr<ceelo::DetectorResponse> truth_resp
+        = CeeLoUtils::makeTransferResponse( geom, truth_anchor, ceelo::AnchorCurve{}, "truth" );
+  BOOST_REQUIRE( truth_resp );
+
+  vector<MeasuredEffPoint> pts;
+  size_t idx = 0;
+  for( const double E : {121.78, 244.7, 344.28, 661.66, 778.9, 1112.1, 1408.01} )
+  {
+    const double d_cm = ( (idx % 3) == 0 ) ? 25.0 : ( ((idx % 3) == 1) ? 50.0 : 100.0 );
+    idx += 1;
+    const ceelo::EffResult r = truth_resp->eps_fep_at( E,
+                                    CeeLoUtils::sourcePositionFromFace( geom, 0.0, 0.0, d_cm ) );
+    MeasuredEffPoint p;
+    p.energy = static_cast<float>( E );
+    p.efficiency = static_cast<float>( r.value );
+    p.fracStatUncert = 0.01f;
+    p.sourceKey = "src#" + std::to_string( idx % 3 );
+    p.distance = static_cast<float>( d_cm * PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  auto points = make_shared<MeasuredDrfPoints>();
+  points->setPoints( pts );
+
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( diam_cm );
+  det->setMeasuredPoints( points );
+
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, geom, 50.0 );
+  BOOST_CHECK( !anchor.curve_derived );
+  BOOST_REQUIRE_EQUAL( anchor.curve.energies_keV.size(), pts.size() );
+
+  // Every transferred point equals the truth response evaluated at the reference distance
+  for( size_t i = 0; i < anchor.curve.energies_keV.size(); ++i )
+  {
+    const ceelo::EffResult r = truth_resp->eps_fep_at( anchor.curve.energies_keV[i],
+                                    CeeLoUtils::sourcePositionFromFace( geom, 0.0, 0.0, 50.0 ) );
+    BOOST_CHECK_CLOSE( anchor.curve.eff[i], r.value, 0.5 );
+  }
+}//transfer_anchor_mixed_distance_consistency
+
+
+/** Far from the detector the kernel-based intrinsic factor is the flat-disk solid angle; close in
+ it is not, and it always falls with distance at about the inverse-square rate.
+ */
+BOOST_AUTO_TEST_CASE( far_field_factor_matches_flat_disk_far_away )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double a_cm = geom.transverse_half_extent();
+  const double diam = 2.0 * a_cm * PhysicalUnits::cm;
+
+  CeeLoUtils::GeometryKernel kernel( geom );
+  BOOST_CHECK_CLOSE( kernel.farFieldDistanceCm(), std::max( 1000.0*a_cm, 100.0 ), 1.0e-9 );
+
+  const vector<double> energies = { 60.0, 122.0, 662.0, 1332.0 };
+  for( const double d_cm : { 100.0*a_cm, 400.0 } )
+  {
+    const vector<double> g = CeeLoUtils::farFieldIntrinsicFactors( geom, energies,
+                                                        vector<double>( energies.size(), d_cm ) );
+    BOOST_REQUIRE_EQUAL( g.size(), energies.size() );
+    const double flat = DetectorPeakResponse::fractionalSolidAngle( diam, d_cm*PhysicalUnits::cm );
+    for( size_t i = 0; i < g.size(); ++i )
+      BOOST_CHECK_CLOSE( g[i], flat, 1.5 );  //percent
+  }
+
+  // At the far-field definition distance the factor IS the disk solid angle
+  const double d_far = kernel.farFieldDistanceCm();
+  BOOST_CHECK_CLOSE( kernel.intrinsicFactor( 662.0, d_far ),
+                     ceelo::disk_solid_angle_fraction( d_far, a_cm ), 1.0e-6 );
+
+  // Close in, the chord/attenuation physics departs from the flat disk (a few percent at 5 cm)
+  const double g_near = kernel.intrinsicFactor( 122.0, 5.0 );
+  const double flat_near = DetectorPeakResponse::fractionalSolidAngle( diam, 5.0*PhysicalUnits::cm );
+  BOOST_CHECK_GT( std::fabs( g_near/flat_near - 1.0 ), 0.005 );
+  BOOST_CHECK_LT( std::fabs( g_near/flat_near - 1.0 ), 0.5 );
+}//far_field_factor_matches_flat_disk_far_away
+
+
+BOOST_AUTO_TEST_CASE( far_field_factor_distance_slope_sign )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const vector<double> energies = { 122.0, 662.0, 1332.0 };
+  const vector<double> dists = { 25.0, 50.0, 100.0 };
+  const vector<double> slopes = CeeLoUtils::farFieldIntrinsicFactorDistanceSlopes( geom, energies, dists );
+  BOOST_REQUIRE_EQUAL( slopes.size(), 3u );
+  for( size_t i = 0; i < 3; ++i )
+  {
+    // d ln g / d d ~ -2/d in the far field (inverse square)
+    BOOST_CHECK_LT( slopes[i], 0.0 );
+    BOOST_CHECK_CLOSE( slopes[i], -2.0/dists[i], 15.0 );
+  }
+}//far_field_factor_distance_slope_sign
+
+
+/** A DRF carrying a coefficient covariance, anchored on its curve: the response's covariance at
+ the anchor energies is the curve's J*Sigma*J^T plus the model floor, the curve is reproduced at
+ the reference distance, and the raw points ride along as provenance.
+ */
+BOOST_AUTO_TEST_CASE( curve_anchor_covariance_flows_to_drf )
+{
+  const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
+  const double diam_cm = 2.0 * geom.transverse_half_extent();
+
+  auto det = make_shared<DetectorPeakResponse>( "cov", "test" );
+  const vector<float> coefs = { -4.5f, 1.9f, -0.22f };
+  det->fromExpOfLogPowerSeries( coefs, {}, 0.0, diam_cm*PhysicalUnits::cm, PhysicalUnits::keV,
+                                59.0f, 1500.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  auto uncert = make_shared<DetectorEfficiencyUncert>();
+  uncert->setCoefficientCovariance( { 4.0E-3f, -1.0E-3f, 1.0E-4f,
+                                     -1.0E-3f,  3.0E-4f, -3.0E-5f,
+                                      1.0E-4f, -3.0E-5f, 4.0E-6f } );
+  det->setEfficiencyUncert( uncert );
+
+  vector<MeasuredEffPoint> pts;
+  for( const float E : { 122.0f, 662.0f, 1332.0f } )
+  {
+    MeasuredEffPoint p;
+    p.energy = E;
+    p.efficiency = 1.0e-3f;
+    p.fracStatUncert = 0.02f;
+    p.sourceKey = "src#0";
+    p.distance = static_cast<float>( 25.0*PhysicalUnits::cm );
+    pts.push_back( p );
+  }
+  auto points = make_shared<MeasuredDrfPoints>();
+  points->setPoints( pts );
+  det->setMeasuredPoints( points );
+
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::curveAnchorWithCovarianceForDrf( det, geom, -1.0 );
+  const size_t ne = anchor.curve.energies_keV.size();
+  BOOST_REQUIRE_GE( ne, 24u );
+  BOOST_REQUIRE_EQUAL( anchor.curve.frac_cov.size(), ne*ne );
+  BOOST_CHECK_EQUAL( anchor.curve.points.size(), 3u );
+  BOOST_CHECK( anchor.curve_derived );
+
+  const vector<double> legacy_cov = det->efficiencyFracCovariance( anchor.curve.energies_keV );
+  BOOST_REQUIRE_EQUAL( legacy_cov.size(), ne*ne );
+  for( size_t i = 0; i < ne*ne; ++i )
+    BOOST_CHECK_CLOSE( anchor.curve.frac_cov[i], legacy_cov[i], 1.0e-6 );
+
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( geom, anchor, ceelo::AnchorCurve{}, "cov" );
+  BOOST_REQUIRE( resp );
+  BOOST_CHECK( !resp->grounding.empty() );
+  BOOST_CHECK_EQUAL( resp->grounding.points.size(), 3u );
+
+  auto det2 = make_shared<DetectorPeakResponse>( *det );
+  det2->setCeeloResponse( resp );
+
+  // The far-field intrinsic efficiency of the response is the legacy curve
+  for( const float E : { 80.0f, 200.0f, 662.0f, 1200.0f } )
+  {
+    const DetectorPeakResponse::EffEval ev = det2->intrinsicEfficiencyEval( E );
+    BOOST_CHECK_CLOSE( ev.value, det->intrinsicEfficiency( E ), 0.3 );
+  }
+
+  // ...and its covariance at the anchor energies is the curve covariance (data) plus the two model
+  //  envelopes active far field on axis - the regime floor and the transfer's on-axis floor - each
+  //  a common mode, and reported separately as the model part
+  BOOST_REQUIRE( resp->model_transfer.has_value() );
+  const double floor = resp->floors.fep_far;
+  const double st = resp->model_transfer->far_onaxis;
+  vector<double> model_part;
+  const vector<double> resp_cov = det2->efficiencyFracCovariance( anchor.curve.energies_keV, &model_part );
+  BOOST_REQUIRE_EQUAL( resp_cov.size(), ne*ne );
+  BOOST_REQUIRE_EQUAL( model_part.size(), ne*ne );
+  for( size_t i = 0; i < ne; ++i )
+  {
+    for( size_t j = 0; j < ne; ++j )
+    {
+      BOOST_CHECK_CLOSE( resp_cov[i*ne + j], legacy_cov[i*ne + j] + floor*floor + st*st, 1.0e-3 );
+      BOOST_CHECK_CLOSE( model_part[i*ne + j], floor*floor + st*st, 1.0e-6 );
+    }
+  }
+
+  // The correlations are real: a distant off-diagonal is non-zero and matches
+  BOOST_CHECK_GT( std::fabs( resp_cov[0*ne + (ne-1)] - floor*floor - st*st ), 1.0e-6 );
+
+  // Round trip through the DRF blob keeps it
+  auto det3 = make_shared<DetectorPeakResponse>( *det2 );
+  det3->setDrfExtraFromXmlString( det2->drfExtraToXmlString() );
+  BOOST_REQUIRE( det3->ceeloResponse() );
+  const vector<double> cov3 = det3->efficiencyFracCovariance( anchor.curve.energies_keV );
+  BOOST_REQUIRE_EQUAL( cov3.size(), ne*ne );
+  for( size_t i = 0; i < ne*ne; ++i )
+    BOOST_CHECK_CLOSE( cov3[i], resp_cov[i], 1.0e-6 );
+}//curve_anchor_covariance_flows_to_drf
+
+
+// ===========================================================================
+//  Model-envelope study (scratch/20260913_envolope_uncerts_study_prompt.md)
+//
+//  Re-derives the ad hoc constants in `ceelo::model_sigma` from measurement.
+//  Everything here is opt-in: the cases no-op unless --envelope-out=<dir> is
+//  given, and the Monte-Carlo stages additionally need --envelope-corpus.
+//
+//  Raw per-point rows go to CSV; NO statistic is computed here.  The analysis
+//  lives in scratch/20260913_envelope_study/ so a re-analysis costs seconds
+//  instead of re-simulating.  Each file ends with a "#complete" sentinel and
+//  is skipped on a re-run, so a killed multi-hour job resumes where it stopped.
+// ===========================================================================
+namespace
+{
+  /** One corpus detector: where its geometry came from, and how much that
+   description can be trusted.  A floor derived mostly from guessed cylinders
+   is a statement about guessing, not about the model, so the provenance
+   travels with every row the study emits.
+   */
+  struct CorpusDet
+  {
+    string name;
+    string source;      //"preset" | "angle" | "gadras"
+    string path;        //file or directory it came from (empty for presets)
+    string crystal;     //material name, when the source states one
+    string family;      //NaI | HPGe | LaBr3 | CZT | other
+    /** high: real stated dimensions and materials (ANGLE, presets).
+     low: GADRAS .dat, which often states little more than a guessed cylinder. */
+    string fidelity;
+    ceelo::GeometryDescriptor gd;
+    vector<string> warnings;   //what the importer could not carry
+    string error;              //non-empty => the import refused; gd is unusable
+  };//struct CorpusDet
+
+
+  /** Every directory holding a Detector.dat.  Deliberately NOT
+   gadras_both_file_dirs(): the envelope study needs the GEOMETRY only, so a
+   detector without an Efficiency.csv still counts (that adds the LaBr3 and
+   the second NaI 3x3 the efficiency corpus has to skip).
+   */
+  vector<pair<string,string>> corpus_gadras_dirs()   //(display name, path)
+  {
+    vector<pair<string,string>> answer;
+
+    const vector<string> bases = {
+      SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" ),
+      SpecUtils::append_path( g_test_data_dir, "gadras_detectors" )
+    };
+
+    for( const string &base : bases )
+    {
+      if( !SpecUtils::is_directory(base) )
+        continue;
+
+      vector<string> dirs = SpecUtils::ls_directories_in_directory( base );
+      std::sort( begin(dirs), end(dirs) );
+      for( const string &dir : dirs )
+      {
+        if( SpecUtils::is_file( SpecUtils::append_path(dir, "Detector.dat") ) )
+          answer.push_back( make_pair( SpecUtils::filename(dir), dir ) );
+      }
+    }//for( const string &base : bases )
+
+    return answer;
+  }//corpus_gadras_dirs()
+
+
+  /** Every ANGLE .outx/.detx in the test corpus. */
+  vector<pair<string,string>> corpus_angle_files()   //(display name, path)
+  {
+    vector<pair<string,string>> answer;
+
+    const string base = SpecUtils::append_path( g_test_data_dir, "det_eff" );
+    if( !SpecUtils::is_directory(base) )
+      return answer;
+
+    vector<string> files;
+    for( const char * const ending : { ".outx", ".detx" } )
+    {
+      const vector<string> some = SpecUtils::ls_files_in_directory( base, ending );
+      files.insert( end(files), begin(some), end(some) );
+    }
+    std::sort( begin(files), end(files) );
+    for( const string &f : files )
+      answer.push_back( make_pair( SpecUtils::filename(f), f ) );
+
+    return answer;
+  }//corpus_angle_files()
+
+
+
+
+  /** Builds every corpus descriptor, recording refusals rather than throwing:
+   a detector the importer cannot express is itself a result (the shipped
+   "HPGe 40%" states a zero crystal length, for instance).
+   */
+  vector<CorpusDet> build_corpus_descriptors()
+  {
+    vector<CorpusDet> answer;
+
+    // ---- the four CeeLo presets: stated by construction, the control group.
+    //  Rebuilt here rather than read from the golden XMLs so the study does not
+    //  inherit whatever engine the committed fixtures were generated on.
+    for( const string &preset : { "nai3x3", "hpge_coax", "detective_x", "czt_box" } )
+    {
+      CorpusDet d;
+      d.name = preset;
+      d.source = "preset";
+      d.fidelity = "high";
+      try
+      {
+        const string xml = read_file( fixture_path( preset + "_response.xml" ) );
+        const shared_ptr<ceelo::DetectorResponse> r
+              = ceelo::DetectorResponse::from_xml_string( xml );
+        d.gd = r->descriptor;
+        d.crystal = (d.gd.crystal_material_index >= 0
+                     && size_t(d.gd.crystal_material_index) < d.gd.materials.size())
+                    ? d.gd.materials[size_t(d.gd.crystal_material_index)].name : string();
+      }catch( std::exception &e )
+      {
+        d.error = e.what();
+      }
+      d.family = gadras_family( d.crystal.empty() ? d.name : d.crystal );
+      answer.push_back( d );
+    }
+
+    // ---- ANGLE: real stated dimensions and materials, and shapes the presets
+    //  do not cover (planar, well, Marinelli, coated).
+    for( const pair<string,string> &f : corpus_angle_files() )
+    {
+      CorpusDet d;
+      d.name = SpecUtils::filename( f.first );
+      d.source = "angle";
+      d.path = f.second;
+      d.fidelity = "high";
+      try
+      {
+        ifstream in( f.second.c_str(), ios::in | ios::binary );
+        if( !in.is_open() )
+          throw runtime_error( "could not open" );
+        // AngleOutxImport::parse, NOT DetectorPeakResponse::parseAngleOutxFileFull:
+        //  the latter builds a DRF and so refuses a file with no efficiency curve,
+        //  but the study wants the GEOMETRY.  A ".detx" detector definition and an
+        //  ".outx" computed without a reference curve both describe a real detector.
+        const AngleOutxContents contents = AngleOutx::parse( in );
+        if( !contents.hasGeometry )
+          throw runtime_error( "file states no detector geometry" );
+        // Shapes CeeLo cannot express (a well cavity, notably) are named here
+        //  rather than silently mis-modeled as a solid cylinder.
+        if( !contents.modeAObstruction.empty() )
+          throw runtime_error( contents.modeAObstruction );
+        d.gd = CeeLoUtils::buildAngleGeometry( contents, d.warnings );
+        d.crystal = (d.gd.crystal_material_index >= 0
+                     && size_t(d.gd.crystal_material_index) < d.gd.materials.size())
+                    ? d.gd.materials[size_t(d.gd.crystal_material_index)].name : string();
+      }catch( std::exception &e )
+      {
+        d.error = e.what();
+      }
+      d.family = gadras_family( d.crystal.empty() ? d.name : d.crystal );
+      answer.push_back( d );
+    }
+
+    // ---- GADRAS: the common case, and the low-fidelity half of the corpus.
+    for( const pair<string,string> &g : corpus_gadras_dirs() )
+    {
+      CorpusDet d;
+      d.name = g.first;
+      d.source = "gadras";
+      d.path = g.second;
+      d.fidelity = "low";
+      try
+      {
+        const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
+                                        SpecUtils::append_path(g.second, "Detector.dat") );
+        d.crystal = dat.materialName();
+        d.gd = CeeLoUtils::buildGadrasGeometry( dat, d.warnings );
+      }catch( std::exception &e )
+      {
+        d.error = e.what();
+      }
+      d.family = gadras_family( d.crystal.empty() ? d.name : d.crystal );
+      answer.push_back( d );
+    }
+
+    return answer;
+  }//build_corpus_descriptors()
+}//namespace
+
+
+/** Stage 0 of the envelope study: what the corpus actually is, and how far
+ each detector's geometry can be trusted.  Costs no Monte Carlo, so it runs on
+ every invocation of this suite and reports; --envelope-out=<dir> additionally
+ writes the audit CSV plus one GeometryDescriptor XML per detector.
+
+ Those XMLs are the study's reproducibility artefact: any single detector can
+ be re-simulated from its XML with no InterSpec and no MaterialDB.
+
+ The fidelity column is the point.  A floor derived mostly from GADRAS .dat
+ cylinders measures how well GADRAS guesses dimensions, not how well the model
+ interpolates, and the two must not be quoted as the same number.
+ */
+BOOST_AUTO_TEST_CASE( envelope_corpus_geometry_audit )
+{
+  // buildAngleGeometry resolves layer materials through MaterialDB; without it
+  //  every endcap/housing layer is silently dropped.
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  BOOST_REQUIRE_GE( corpus.size(), 30u );
+
+  map<string,int> n_by_family, n_by_source, n_refused;
+  size_t n_ok = 0, n_warned = 0;
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "Envelope-study corpus: " << corpus.size() << " detectors" );
+  BOOST_TEST_MESSAGE( "  name                        source  family  fid   a(cm)  endcap  shape   notes" );
+
+  for( const CorpusDet &d : corpus )
+  {
+    if( !d.error.empty() )
+    {
+      n_refused[d.source] += 1;
+      BOOST_TEST_MESSAGE( "  " << std::left << std::setw(26) << d.name << "  "
+                          << std::setw(6) << d.source << "  REFUSED: " << d.error );
+      continue;
+    }
+
+    ++n_ok;
+    n_by_family[d.family] += 1;
+    n_by_source[d.source] += 1;
+    if( !d.warnings.empty() )
+      ++n_warned;
+
+    const vector<ceelo::GeometryProblem> problems = d.gd.problems();
+
+    string notes;
+    for( const ceelo::GeometryProblem p : problems )
+      notes += string(notes.empty() ? "" : ",") + ceelo::to_string( p );
+    if( !d.warnings.empty() )
+      notes += (notes.empty() ? "" : "; ") + std::to_string(d.warnings.size()) + " warn";
+
+    char line[320];
+    std::snprintf( line, sizeof(line), "  %-26s  %-6s  %-6s  %-4s  %5.2f  %6.3f  %-6s  %s",
+                   d.name.c_str(), d.source.c_str(), d.family.c_str(), d.fidelity.c_str(),
+                   d.gd.transverse_half_extent(), d.gd.endcap_front_offset_cm(),
+                   (d.gd.shape == ceelo::DetectorShape::Box) ? "box" : "cyl",
+                   notes.c_str() );
+    BOOST_TEST_MESSAGE( line );
+
+    // A descriptor that violates a Geometry precondition traces silent garbage
+    //  in a release build (the preconditions are asserts).  Anything the study
+    //  simulates must be clean, so say so loudly here rather than at 3am.
+    BOOST_CHECK_MESSAGE( problems.empty(),
+                         d.name + ": descriptor has unresolved geometry problems (" + notes + ")" );
+  }//for( const CorpusDet &d : corpus )
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "  usable " << n_ok << " of " << corpus.size()
+                      << "; " << n_warned << " carry importer warnings" );
+  for( const pair<const string,int> &f : n_by_family )
+    BOOST_TEST_MESSAGE( "    family " << f.first << ": " << f.second );
+  for( const pair<const string,int> &s : n_by_source )
+    BOOST_TEST_MESSAGE( "    source " << s.first << ": " << s.second
+                        << " (" << n_refused[s.first] << " refused)" );
+
+  // The corpus is NaI-heavy by construction, so every derived number has to be
+  //  weighted by class.  Fail loudly if the class spread ever collapses.
+  BOOST_CHECK_GE( n_by_family.size(), 4u );
+
+  if( g_envelope_out.empty() )
+  {
+    BOOST_TEST_MESSAGE( "  (pass --envelope-out=<dir> to write the audit CSV and descriptor XMLs)" );
+    return;
+  }
+
+  const string geom_dir = SpecUtils::append_path( g_envelope_out, "geometry" );
+  if( !SpecUtils::is_directory(geom_dir) )
+    BOOST_REQUIRE( SpecUtils::create_directory(geom_dir) == 1 );
+
+  const string audit_path = SpecUtils::append_path( g_envelope_out, "corpus_audit.csv" );
+  ofstream audit( audit_path.c_str() );
+  BOOST_REQUIRE_MESSAGE( audit.is_open(), "could not write " + audit_path );
+
+  audit << "# Envelope-study corpus audit: geometry provenance and importer fidelity.\n"
+        << "# 'fidelity' high = real stated dimensions and materials (ANGLE, CeeLo presets);\n"
+        << "#            low  = GADRAS Detector.dat, often a fitted-equivalent cylinder with\n"
+        << "#                   no bore and a single front+side dead layer.\n"
+        << "name,source,path,crystal,family,fidelity,shape,a_cm,endcap_offset_cm,"
+           "n_layers,has_bore,has_dead_layer,n_warnings,problems,error\n";
+
+  for( const CorpusDet &d : corpus )
+  {
+    string problems;
+    if( d.error.empty() )
+    {
+      for( const ceelo::GeometryProblem p : d.gd.problems() )
+        problems += string(problems.empty() ? "" : " ") + ceelo::to_string( p );
+    }
+
+    audit << '"' << d.name << "\",\"" << d.source << "\",\"" << d.path << "\",\""
+          << d.crystal << "\",\"" << d.family << "\",\"" << d.fidelity << "\",";
+    if( d.error.empty() )
+    {
+      audit << ((d.gd.shape == ceelo::DetectorShape::Box) ? "box" : "cyl") << ','
+            << d.gd.transverse_half_extent() << ',' << d.gd.endcap_front_offset_cm() << ','
+            << d.gd.layers.size() << ',' << (d.gd.bore.has_value() ? 1 : 0) << ','
+            << (d.gd.dead_layer.has_value() ? 1 : 0) << ',' << d.warnings.size() << ',';
+    }else
+    {
+      audit << ",,,,,,,";
+    }
+    audit << '"' << problems << "\",\"" << d.error << "\"\n";
+
+    if( d.error.empty() )
+    {
+      const string leaf = SpecUtils::append_path( geom_dir, d.name + ".geom.xml" );
+      ofstream gx( leaf.c_str() );
+      if( gx.is_open() )
+        gx << d.gd.to_xml_string();
+    }
+  }//for( const CorpusDet &d : corpus )
+
+  // Importer warnings are the "what the description could not carry" record -
+  //  the other half of the fidelity story, kept per detector rather than summed.
+  const string warn_path = SpecUtils::append_path( g_envelope_out, "corpus_warnings.txt" );
+  ofstream warns( warn_path.c_str() );
+  for( const CorpusDet &d : corpus )
+  {
+    if( d.warnings.empty() && d.error.empty() )
+      continue;
+    warns << "=== " << d.name << " (" << d.source << ") ===\n";
+    if( !d.error.empty() )
+      warns << "  REFUSED: " << d.error << "\n";
+    for( const string &w : d.warnings )
+      warns << "  " << w << "\n";
+  }
+
+  audit << "#complete\n";
+  BOOST_TEST_MESSAGE( "  wrote " << audit_path << " and " << geom_dir );
+}//envelope_corpus_geometry_audit
+
+
+namespace
+{
+  /** The stratified (E, d/a, theta) grid the study probes on.
+
+   Deliberately NOT the Halton bank `ResponseGenerator::probe_bank` draws: that
+   samples distance log-uniform over [0.5, 100] cm, which for a 3"x3" NaI puts
+   about two thirds of its points inside 4a - so `fep_far`, the constant that
+   matters most, would be derived from a third of the bank.  Equal-count strata
+   let every regime carry its own statistic and its own coverage number.
+
+   Distances are FACE-referenced when placed (that is the only convention a user
+   ever sees, and it is the one that guarantees the source is outside the
+   detector); both the face and the crystal-origin distance are recorded, since
+   CeeLo's own gates count from the crystal-face origin.
+   */
+  struct EnvelopeGrid
+  {
+    vector<double> d_over_a_face;
+    vector<double> theta_deg;
+    vector<double> energies_keV;
+    vector<size_t> k_edge_index;   //indices into energies_keV that are edge flanks
+
+    size_t n_points() const
+    { return d_over_a_face.size() * theta_deg.size() * energies_keV.size(); }
+  };//struct EnvelopeGrid
+
+
+  /** Energies: log-spaced across the response's validated range, plus a flank
+   either side of each crystal K edge.  The edges are tagged rather than merely
+   included, so the analysis can down-weight them - a K edge is where the stored
+   interpolation is hardest and would otherwise quietly set the whole floor.
+   */
+  EnvelopeGrid make_envelope_grid( const ceelo::GeometryDescriptor &gd,
+                                   const ceelo::DetectorResponse &resp,
+                                   const bool near_stratum, const int n_energies )
+  {
+    EnvelopeGrid g;
+
+    g.d_over_a_face = near_stratum ? vector<double>{ 0.25, 0.5, 1.0, 2.0, 3.0 }
+                                   : vector<double>{ 5.0, 10.0, 25.0 };
+    g.theta_deg = near_stratum ? vector<double>{ 0.0, 22.0, 45.0 }
+                               : vector<double>{ 0.0, 15.0, 30.0, 45.0, 60.0, 75.0 };
+
+    double e_lo = resp.provenance.valid_e_min_keV;
+    double e_hi = resp.provenance.valid_e_max_keV;
+    if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+    {
+      BOOST_REQUIRE( !resp.eta_fep.energies_keV.empty() );
+      e_lo = resp.eta_fep.energies_keV.front();
+      e_hi = resp.eta_fep.energies_keV.back();
+    }
+    // Stay just inside the validated range: a query at the exact endpoint
+    //  raises OutOfRangeClamped, and a clamped answer is not a verdict on the
+    //  interpolation.
+    e_lo *= 1.01;
+    e_hi *= 0.99;
+
+    for( int i = 0; i < n_energies; ++i )
+    {
+      const double f = (n_energies > 1) ? (double(i) / (n_energies - 1)) : 0.0;
+      g.energies_keV.push_back( e_lo * std::pow( e_hi/e_lo, f ) );
+    }
+
+    for( const double edge : gd.crystal_k_edges( e_lo, e_hi ) )
+    {
+      for( const double off : { -3.0, 3.0 } )
+      {
+        const double e = edge + off;
+        if( (e <= e_lo) || (e >= e_hi) )
+          continue;
+        g.k_edge_index.push_back( g.energies_keV.size() );
+        g.energies_keV.push_back( e );
+      }
+    }
+
+    return g;
+  }//make_envelope_grid(...)
+
+
+  /** True when `path` was written to completion by an earlier run.  The study
+   is hours of MC, so every stage checkpoints: a killed job resumes instead of
+   starting over. */
+  bool envelope_stage_complete( const string &path )
+  {
+    ifstream in( path.c_str() );
+    if( !in.is_open() )
+      return false;
+    string line, last;
+    while( std::getline( in, line ) )
+    {
+      SpecUtils::trim( line );
+      if( !line.empty() )
+        last = line;
+    }
+    return (last == "#complete");
+  }//envelope_stage_complete(...)
+
+
+  /** Generates a response and scores it against fresh, never-fitted MC on the
+   stratified grid, writing ONE RAW ROW PER POINT.  No statistic is computed
+   here: percentiles, deconvolution and fits all live in the Python under
+   scratch/20260913_envelope_study/, so a re-analysis costs seconds rather than
+   re-simulating.
+
+   `model_sigma_total` and `model_sigma_model` are both recorded because their
+   difference is the response's own admitted DATA sigma - node statistics plus
+   any anchor covariance.  That has to come out of the measured spread along
+   with the probe's MC noise, or the derived floor double-counts the node
+   statistics `fep_budget` already adds.
+   */
+  void envelope_measure_detector( const CorpusDet &det, const bool near_stratum,
+                                  const double node_precision,
+                                  const double probe_precision,
+                                  const ceelo::ResponseProfile profile,
+                                  const int n_energies, const string &out_path,
+                                  const unsigned num_threads )
+  {
+    if( envelope_stage_complete( out_path ) )
+    {
+      BOOST_TEST_MESSAGE( "  " << det.name << ": already complete, skipping" );
+      return;
+    }
+
+    ceelo::GenerationOptions opts;
+    opts.detector_name = det.name;
+    opts.profile = profile;
+    opts.node_fep_precision = node_precision;
+    // The per-node caps must not bind before the precision target is reached,
+    //  or "measured at precision p" silently means something else.
+    opts.max_events_per_node = 200000000;
+    // NOTE this is CPU-seconds summed across workers, so the per-node budget is
+    //  invariant to the thread cap below - capping threads makes a node take
+    //  longer in WALL time but does not shorten it in events.
+    opts.max_cpu_seconds_per_node = 600.0;
+    opts.num_threads = num_threads;
+
+    const int est_nodes = ceelo::ResponseGenerator::estimated_node_count( det.gd, opts );
+
+    ceelo::GenerationStats stats;
+    opts.stats_out = &stats;
+
+    const double t0 = double(std::clock()) / CLOCKS_PER_SEC;
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try
+    {
+      resp = ceelo::ResponseGenerator::generate( det.gd, opts );
+    }catch( std::exception &e )
+    {
+      BOOST_TEST_MESSAGE( "  " << det.name << ": GENERATION FAILED: " << e.what() );
+      return;
+    }
+    BOOST_REQUIRE( resp );
+    const double gen_cpu_s = stats.total_cpu_s;
+
+    const double a_cm = det.gd.transverse_half_extent();
+    const double endcap = det.gd.endcap_front_offset_cm();
+    const EnvelopeGrid grid = make_envelope_grid( det.gd, *resp, near_stratum, n_energies );
+    const set<size_t> edge_idx( begin(grid.k_edge_index), end(grid.k_edge_index) );
+
+    // tot_eff.tier is the natural key for any per-class rule on the total
+    //  floor: decide_tot_tier picks KernelExact (analytic, exact for a bare
+    //  crystal), BCurve, or EtaTotTable, and the corpus shows the total error
+    //  tracking that choice far better than it tracks detector size - a 0.5 cm3
+    //  bare box measures 0.07% while a 1.0 cm3 box with one attenuator layer
+    //  measures 3.45%.
+    const char *tot_tier = "?";
+    switch( resp->tot_eff.tier )
+    {
+      case ceelo::TotEffTier::KernelExact: tot_tier = "KernelExact"; break;
+      case ceelo::TotEffTier::BCurve:      tot_tier = "BCurve";      break;
+      case ceelo::TotEffTier::EtaTotTable: tot_tier = "EtaTotTable"; break;
+    }
+
+    // Keep the generated response next to its measurements: answering a later
+    //  question about the model must not mean re-running hours of MC.
+    {
+      string resp_path = out_path;
+      const size_t dot = resp_path.rfind( ".csv" );
+      if( dot != string::npos )
+        resp_path = resp_path.substr( 0, dot ) + ".response.xml";
+      ofstream rx( resp_path.c_str() );
+      if( rx.is_open() )
+        rx << resp->to_xml_string();
+    }
+
+    ofstream out( out_path.c_str() );
+    BOOST_REQUIRE_MESSAGE( out.is_open(), "could not write " + out_path );
+    out << std::setprecision(10);
+    out << "# Envelope study raw probe rows.  One line per (E, d, theta) point.\n"
+        << "# detector=" << det.name << " source=" << det.source
+        << " family=" << det.family << " fidelity=" << det.fidelity << "\n"
+        << "# profile=" << ceelo::to_string(profile)
+        << " node_precision=" << node_precision
+        << " probe_precision=" << probe_precision << "\n"
+        << "# a_cm=" << a_cm << " endcap_front_offset_cm=" << endcap
+        << " est_nodes=" << est_nodes << " gen_cpu_s=" << gen_cpu_s
+        << " tot_tier=" << tot_tier
+        << " n_eta_e=" << resp->eta_fep.energies_keV.size()
+        << " n_eta_ct=" << resp->eta_fep.cos_thetas.size() << "\n"
+        << "# d_face_cm is measured from the endcap (InterSpec's convention);\n"
+        << "#   d_origin_cm from the crystal-face origin, which is what CeeLo's\n"
+        << "#   near/far gates count.  They differ by endcap_front_offset_cm.\n"
+        << "# model_sigma_model is the envelope-only part; the data part the\n"
+        << "#   analysis must deconvolve is sqrt(sigma_total^2 - sigma_model^2).\n"
+        << "stratum,E_keV,is_k_edge,d_face_cm,d_origin_cm,d_over_a_face,d_over_a_origin,"
+           "cos_theta,theta_deg,quantity,mc,mc_sig,model,model_sigma_total,model_sigma_model,"
+           "flag,mc_cpu_s\n";
+
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+    const char * const stratum = near_stratum ? "near" : "far";
+    size_t n_done = 0;
+    double probe_cpu_s = 0.0;
+
+    for( const double d_over_a : grid.d_over_a_face )
+    {
+      const double d_face = d_over_a * a_cm;
+      for( const double theta_deg : grid.theta_deg )
+      {
+        const double theta = theta_deg * M_PI / 180.0;
+        const Eigen::Vector3d src = CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, d_face );
+        const double d_origin = src.norm();
+        const double cos_theta = (d_origin > 0.0) ? (-src.z() / d_origin) : 1.0;
+
+        for( size_t ie = 0; ie < grid.energies_keV.size(); ++ie )
+        {
+          const double E = grid.energies_keV[ie];
+
+          calc.set_point_source( src );
+          ceelo::SimulationConfig cfg;
+          cfg.energy_keV = E;
+          cfg.termination.target_fep_rel_precision = probe_precision;
+          // Ask for the TOTAL target too: the two stop flags are AND-ed now, so
+          //  without this the run stops on whichever converges first (always
+          //  total, the larger efficiency) and eps_tot's quoted precision is
+          //  whatever happened to fall out.  tot_* floors are derived from it.
+          cfg.termination.target_total_rel_precision = probe_precision;
+          cfg.termination.max_events = 60000000;
+          cfg.termination.min_events = 40000;
+          cfg.num_threads = num_threads;
+          // Seeded from the point's coordinates so a resumed run reproduces,
+          //  and no two points share a stream.
+          cfg.seed = 900000000ull + uint64_t(std::llround(1000.0*E))
+                     + 7919ull*uint64_t(std::llround(100.0*d_face))
+                     + 104729ull*uint64_t(std::llround(theta_deg));
+          const ceelo::EfficiencyResult mc = calc.compute( cfg );
+          probe_cpu_s += mc.cpu_time_seconds;
+
+          const ceelo::ApertureQuadrature q = resp->make_quadrature( src );
+          const ceelo::EffResult fep = resp->eps_fep_at( E, src, q );
+          const ceelo::EffResult tot = resp->eps_total_at( E, src, q );
+
+          const int is_edge = edge_idx.count(ie) ? 1 : 0;
+          const char *fep_flag = ceelo::to_string( fep.flag );
+          const char *tot_flag = ceelo::to_string( tot.flag );
+
+          char pre[256];
+          std::snprintf( pre, sizeof(pre), "%s,%.4f,%d,%.5f,%.5f,%.4f,%.4f,%.6f,%.2f",
+                         stratum, E, is_edge, d_face, d_origin, d_over_a,
+                         d_origin/a_cm, cos_theta, theta_deg );
+
+          out << pre << ",fep," << mc.full_energy_peak_efficiency << ',' << mc.fep_uncertainty
+              << ',' << fep.value << ',' << fep.sigma << ',' << fep.sigma_model
+              << ',' << fep_flag << ',' << mc.cpu_time_seconds << '\n';
+          out << pre << ",tot," << mc.total_efficiency << ',' << mc.total_uncertainty
+              << ',' << tot.value << ',' << tot.sigma << ',' << tot.sigma_model
+              << ',' << tot_flag << ',' << mc.cpu_time_seconds << '\n';
+
+          ++n_done;
+        }//for( energies )
+      }//for( theta )
+      out.flush();
+    }//for( d_over_a )
+
+    const double t1 = double(std::clock()) / CLOCKS_PER_SEC;
+    out << "# points=" << n_done << " probe_cpu_s=" << probe_cpu_s
+        << " total_cpu_s=" << (t1 - t0) << "\n";
+    out << "#complete\n";
+
+    BOOST_TEST_MESSAGE( "  " << det.name << " [" << stratum << "]: " << n_done
+                        << " points, gen " << est_nodes << " nodes / "
+                        << std::fixed << std::setprecision(0) << gen_cpu_s
+                        << " CPU-s, probes " << probe_cpu_s << " CPU-s" );
+  }//envelope_measure_detector(...)
+}//namespace
+
+
+/** The study's Monte-Carlo sweep.  Opt-in and resumable: no-ops unless BOTH
+ --envelope-out=<dir> and --envelope-corpus are given, and any stage whose CSV
+ already carries its "#complete" sentinel is skipped, so a killed multi-hour run
+ picks up where it stopped.
+
+ Typical invocations (Release build, run serially - each MC node already uses
+ every core, so parallel detectors only thrash):
+
+   # cost calibration / precision law, one detector, three precisions
+   --run_test=envelope_corpus_measure -- --datadir=... --testfiledir=... \
+     --envelope-out=DIR --envelope-corpus --envelope-only=nai3x3 \
+     --envelope-precision=0.01 --envelope-energies=6
+
+   # the far-field floor, whole corpus
+   --run_test=envelope_corpus_measure -- ... --envelope-out=DIR --envelope-corpus
+
+   # the near-field floor and the d/a breakpoint
+   --run_test=envelope_corpus_measure -- ... --envelope-near
+ */
+BOOST_AUTO_TEST_CASE( envelope_corpus_measure )
+{
+  if( g_envelope_out.empty() || !g_envelope_corpus )
+  {
+    BOOST_TEST_MESSAGE( "envelope_corpus_measure: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-corpus; this is hours of MC)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const string raw_dir = SpecUtils::append_path( g_envelope_out, "raw" );
+  if( !SpecUtils::is_directory(raw_dir) )
+    BOOST_REQUIRE( SpecUtils::create_directory(raw_dir) != 0 );
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  const char * const stratum = g_envelope_near ? "near" : "far";
+
+  // Profile matters, and mixing it across strata is a trap: a near sweep at Contact
+  //  ("denser near scan") compared against a far sweep at General cannot separate
+  //  "near regime" from "generation profile", and the floors it would produce are
+  //  applied on distance alone to every profile.  Default to General for BOTH strata
+  //  so the comparison is like-for-like; --envelope-contact opts into Contact when the
+  //  question really is about that profile.
+  const ceelo::ResponseProfile profile = (g_envelope_near && g_envelope_contact)
+        ? ceelo::ResponseProfile::Contact : ceelo::ResponseProfile::General;
+
+  size_t n_run = 0;
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+    if( !g_envelope_only.empty() && !SpecUtils::icontains(det.name, g_envelope_only) )
+      continue;
+
+    // The probe precision is part of the identity of a measurement, not just
+    //  the node precision: the deconvolution subtracts the probe noise, so two
+    //  runs at the same node precision but different probe precision are
+    //  different experiments and must not collide on one filename.
+    char leaf[256];
+    std::snprintf( leaf, sizeof(leaf), "%s__%s%s__p%g__q%g.csv",
+                   det.name.c_str(), stratum,
+                   (profile == ceelo::ResponseProfile::Contact) ? "-contact" : "",
+                   g_envelope_precision, g_envelope_probe_precision );
+    string safe = leaf;
+    for( char &c : safe )
+    {
+      if( (c == ' ') || (c == '/') || (c == '\\') )
+        c = '_';
+    }
+
+    envelope_measure_detector( det, g_envelope_near, g_envelope_precision,
+                               g_envelope_probe_precision, profile,
+                               g_envelope_energies,
+                               SpecUtils::append_path( raw_dir, safe ),
+                               g_envelope_threads );
+    ++n_run;
+  }//for( const CorpusDet &det : corpus )
+
+  BOOST_TEST_MESSAGE( "envelope_corpus_measure: " << n_run << " detector(s), stratum "
+                      << stratum << ", node precision " << g_envelope_precision );
+  BOOST_CHECK_GT( n_run, 0u );
+}//envelope_corpus_measure
+
+
+/** Focused diagnostic for the low-energy bulletized-crystal discrepancy found
+ by the corpus sweep (scratch/20260913_envelope_study/NOTES.md).
+
+ Every corpus detector with `bullet_radius_cm > 0` is 9-17% wrong at 35 keV
+ while every detector without one is inside 2.3%, and the error scales with the
+ fillet radius.  This case separates the candidate causes, because they leave
+ different fingerprints:
+
+   - eta INTERPOLATION: the model is right AT the stored cos-theta nodes and
+     wrong between them, so the error oscillates and vanishes at node angles.
+   - the eta TABLE or the kernel K: the model is wrong AT the nodes too, i.e.
+     a smooth offset that node placement cannot explain.
+   - the fillet itself: zeroing `bullet_radius_cm` on the SAME descriptor makes
+     the error go away, with nothing else changed.
+
+ Run with --envelope-diag (plus --envelope-out and the usual data dirs);
+ --envelope-only=<substring> picks the detector, --envelope-precision the
+ generation precision.
+ */
+BOOST_AUTO_TEST_CASE( envelope_bullet_diagnostic )
+{
+  if( g_envelope_out.empty() || !g_envelope_diag )
+  {
+    BOOST_TEST_MESSAGE( "envelope_bullet_diagnostic: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-diag)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  const string want = g_envelope_only.empty() ? string("Angle-example-efficiency")
+                                              : g_envelope_only;
+
+  const CorpusDet *found = nullptr;
+  for( const CorpusDet &d : corpus )
+  {
+    if( d.error.empty() && SpecUtils::icontains(d.name, want) )
+    { found = &d; break; }
+  }
+  BOOST_REQUIRE_MESSAGE( found, "no corpus detector matching '" + want + "'" );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "bullet_diagnostic.txt" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+
+  // Same descriptor twice: as imported, and with the fillet removed.  Nothing
+  //  else differs, so a clean "sharp" run isolates the fillet as the cause.
+  for( int variant = 0; variant < 2; ++variant )
+  {
+    ceelo::GeometryDescriptor gd = found->gd;
+    const bool sharp = (variant == 1);
+    if( sharp )
+    {
+      if( gd.bullet_radius_cm <= 0.0 )
+        continue;   //nothing to remove; one variant is the whole experiment
+      gd.bullet_radius_cm = 0.0;
+      if( gd.bore )
+        gd.bore->rounded_tip = false;
+    }
+
+    ceelo::GenerationOptions opts;
+    opts.detector_name = found->name;
+    opts.profile = ceelo::ResponseProfile::General;
+    opts.node_fep_precision = g_envelope_precision;
+    opts.max_events_per_node = 200000000;
+    opts.max_cpu_seconds_per_node = 600.0;
+    opts.num_threads = g_envelope_threads;
+
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try
+    {
+      resp = ceelo::ResponseGenerator::generate( gd, opts );
+    }catch( std::exception &e )
+    {
+      BOOST_TEST_MESSAGE( "generation failed: " << e.what() );
+      continue;
+    }
+    BOOST_REQUIRE( resp );
+
+    const char * const tag = sharp ? "SHARP (fillet removed)" : "AS IMPORTED";
+    out << "=== " << found->name << " -- " << tag << " ===\n"
+        << "bullet_radius_cm=" << gd.bullet_radius_cm
+        << " rounded_tip=" << (gd.bore && gd.bore->rounded_tip ? 1 : 0)
+        << " dead_layer_front=" << (gd.dead_layer ? gd.dead_layer->front : 0.0)
+        << " a=" << gd.transverse_half_extent() << " cm\n";
+
+    // The stored angular nodes: the model is exact-by-construction nowhere, but
+    //  it is BEST at a node.  Printing them lets the sweep below be read.
+    out << "eta cos_theta nodes (" << resp->eta_fep.cos_thetas.size() << "): ";
+    for( const double ct : resp->eta_fep.cos_thetas )
+      out << ct << " ";
+    out << "\neta energy nodes (" << resp->eta_fep.energies_keV.size() << "), lowest 6: ";
+    for( size_t i = 0; i < resp->eta_fep.energies_keV.size() && i < 6; ++i )
+      out << resp->eta_fep.energies_keV[i] << " ";
+    out << "\n";
+
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+
+    const double a_cm = gd.transverse_half_extent();
+    const double d_face = 10.0 * a_cm;
+
+    for( const double E : { 35.35, 59.5, 122.0 } )
+    {
+      out << "\n  E = " << E << " keV,  d/a = 10 (face)\n"
+          << "    " << std::setw(7) << "theta" << std::setw(11) << "cos_theta"
+          << std::setw(9) << "at_node" << std::setw(14) << "mc"
+          << std::setw(14) << "model" << std::setw(10) << "err%" << "\n";
+
+      // Fine angular sweep: 21 angles, so several land on stored nodes and the
+      //  rest sit between them.
+      for( int i = 0; i <= 20; ++i )
+      {
+        const double theta_deg = 3.0 * i;   //0 .. 60 degrees
+        const double theta = theta_deg * M_PI / 180.0;
+        const Eigen::Vector3d src = CeeLoUtils::sourcePositionFromFace( gd, theta, 0.0, d_face );
+        const double dn = src.norm();
+        const double ct = (dn > 0.0) ? (-src.z() / dn) : 1.0;
+
+        bool at_node = false;
+        for( const double n : resp->eta_fep.cos_thetas )
+          at_node = at_node || (std::fabs(n - ct) < 0.004);
+
+        calc.set_point_source( src );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = E;
+        cfg.termination.target_fep_rel_precision = 0.004;
+        cfg.termination.max_events = 60000000;
+        cfg.termination.min_events = 40000;
+        cfg.num_threads = g_envelope_threads;
+        cfg.seed = 5150 + i;
+        const ceelo::EfficiencyResult mc = calc.compute( cfg );
+        const ceelo::EffResult m = resp->eps_fep_at( E, src );
+
+        char line[256];
+        std::snprintf( line, sizeof(line),
+                       "    %7.1f %10.5f %8s %13.5e %13.5e %9.2f",
+                       theta_deg, ct, at_node ? "YES" : "-",
+                       mc.full_energy_peak_efficiency, m.value,
+                       100.0*(m.value/std::max(mc.full_energy_peak_efficiency,1e-300) - 1.0) );
+        out << line << "\n";
+      }
+      out.flush();
+    }
+    out << "\n";
+  }//for( variant )
+
+  BOOST_TEST_MESSAGE( "envelope_bullet_diagnostic: wrote " << out_path );
+}//envelope_bullet_diagnostic
+
+
+/** Measures the curve-transfer envelope (`ceelo::model_sigma::transfer_*`) against
+ direct Monte Carlo, reusing the corpus MC this study already collected.
+
+ WHY NOT curve_transfer_envelope_corpus.  That case anchors a transfer on a golden
+ response's own far-field on-axis curve and then compares the transfer to the same
+ golden - model against model, inheriting the golden's own interpolation error, and
+ circular on axis by construction (its gate comment says so: the far-field on-axis
+ agreement it checks is a tautology, not an accuracy).
+
+ What this does instead: the anchor is the MEASURED MC on-axis far-field curve from
+ `envelope_corpus_measure`'s raw rows, and the transfer is scored against the MC at
+ every OTHER (theta, d/a, E) point in the same file.  Both sides are then real
+ numbers, the on-axis far-field point is a genuine held-out prediction rather than
+ the anchor itself, and it runs on all 35 corpus detectors that carry an anchor
+ rather than on the 4 goldens.
+
+ Costs NO Monte Carlo: `make_transfer_response` is deterministic and sub-second, and
+ the MC truth is already on disk.
+
+ Emits one raw row per (detector, theta, d/a, E) - as everywhere in this study, no
+ statistic is computed here.  The saturating-form fit, the per-energy split that
+ judges `transfer_offaxis_low_e`, and the aspect-ratio regression live in the Python
+ under scratch/20260913_envelope_study/.
+
+ Run with --envelope-out=<dir> --envelope-transfer (no --envelope-corpus needed).
+ */
+BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
+{
+  if( g_envelope_out.empty() || !g_envelope_transfer )
+  {
+    BOOST_TEST_MESSAGE( "envelope_transfer_from_mc: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-transfer)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string raw_dir = SpecUtils::append_path( g_envelope_out, "raw" );
+  BOOST_REQUIRE( SpecUtils::is_directory(raw_dir) );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "transfer_vs_mc.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "# Curve-transfer envelope vs direct MC.  Anchor = MEASURED MC on axis at the\n"
+         "#   largest far-field distance in the corpus grid; every other point is a\n"
+         "#   held-out prediction.  No Monte Carlo is run here.\n"
+         "# envelope_* are the SigmaTransferModel components the response reports at the\n"
+         "#   query point: far_onaxis, offaxis and near, evaluated at the CRYSTAL-ORIGIN\n"
+         "#   d/a and cos_theta (which is what SigmaTransferModel::components consumes).\n"
+         "detector,family,fidelity,a_cm,aspect_L_over_2R,E_keV,is_k_edge,theta_deg,cos_theta,"
+         "d_face_cm,d_over_a_face,d_over_a_origin,mc,mc_sig,transfer,rel_err,"
+         "envelope_far,envelope_off,envelope_near,envelope_total,flag\n";
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  size_t n_det = 0, n_rows = 0;
+
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+
+    string safe = det.name;
+    for( char &c : safe )
+    {
+      if( (c == ' ') || (c == '/') || (c == '\\') )
+        c = '_';
+    }
+    // Both strata: the far rows measure the off-axis term, the near rows measure
+    //  transfer_near_contact / near_gate_a and near_unmodeled - which are the SAME
+    //  physics charged twice today (a curve transfer has no near-field table AND a
+    //  model_transfer, so it pays both).  Measuring them from one file settles
+    //  whether they can be merged.
+    vector<string> csvs;
+    for( const char * const stratum : { "__far__p0.003__q0.003.csv", "__near__p0.003__q0.003.csv" } )
+    {
+      const string c = SpecUtils::append_path( raw_dir, safe + stratum );
+      if( SpecUtils::is_file(c) )
+        csvs.push_back( c );
+    }
+    if( csvs.empty() )
+      continue;
+
+    // ---- read this detector's measured MC rows -----------------------------
+    struct McRow { double E, theta, d_face, mc, mc_sig; int is_edge; };
+    vector<McRow> rows;
+    for( const string &csv : csvs )
+    {
+      ifstream in( csv.c_str() );
+      string line;
+      vector<string> hdr;
+      while( std::getline( in, line ) )
+      {
+        if( line.empty() || (line[0] == '#') )
+          continue;
+        vector<string> f;
+        SpecUtils::split( f, line, "," );
+        if( hdr.empty() )
+        { hdr = f; continue; }
+        if( f.size() != hdr.size() )
+          continue;
+        map<string,string> m;
+        for( size_t i = 0; i < f.size(); ++i )
+          m[hdr[i]] = f[i];
+        if( m["quantity"] != "fep" )
+          continue;
+        McRow r;
+        r.E = std::stod( m["E_keV"] );
+        r.theta = std::stod( m["theta_deg"] );
+        r.d_face = std::stod( m["d_face_cm"] );
+        r.mc = std::stod( m["mc"] );
+        r.mc_sig = std::stod( m["mc_sig"] );
+        r.is_edge = (m["is_k_edge"] == "1") ? 1 : 0;
+        if( r.mc > 0.0 )
+          rows.push_back( r );
+      }
+    }
+    if( rows.size() < 20 )
+      continue;
+
+    // ---- anchor: measured MC, on axis, at the largest distance -------------
+    // Anchor on the FARTHEST on-axis point: that is the curve a real user would
+    //  have measured, and it keeps every near row a held-out prediction.
+    double d_anchor = 0.0;
+    for( const McRow &r : rows )
+      if( std::fabs(r.theta) < 0.01 )
+        d_anchor = std::max( d_anchor, r.d_face );
+    if( d_anchor <= 0.0 )
+      continue;
+
+    ceelo::AnchorCurve anchor;
+    {
+      map<double,pair<double,double>> by_e;   //E -> (eff, frac_sigma)
+      for( const McRow &r : rows )
+      {
+        if( (std::fabs(r.theta) < 0.01) && (std::fabs(r.d_face - d_anchor) < 1e-6) && !r.is_edge )
+          by_e[r.E] = make_pair( r.mc, r.mc_sig / r.mc );
+      }
+      for( const pair<const double,pair<double,double>> &e : by_e )
+      {
+        anchor.energies_keV.push_back( e.first );
+        anchor.eff.push_back( e.second.first );
+        // The anchor is MC, so it carries real counting noise; declaring it keeps
+        //  the transfer's reported sigma honest rather than pretending the curve
+        //  is exact (which is what makes the golden-anchored version circular).
+        anchor.frac_sigma.push_back( e.second.second );
+      }
+    }
+    if( anchor.energies_keV.size() < 6 )
+      continue;
+
+    const Eigen::Vector3d ref_pos =
+          CeeLoUtils::sourcePositionFromFace( det.gd, 0.0, 0.0, d_anchor );
+    shared_ptr<ceelo::DetectorResponse> xfer;
+    try
+    {
+      xfer = ceelo::make_transfer_response( det.gd, anchor, ref_pos, nullptr,
+                                            ceelo::TransferResponseOptions{} );
+    }catch( std::exception &e )
+    {
+      BOOST_TEST_MESSAGE( "  " << det.name << ": transfer build failed: " << e.what() );
+      continue;
+    }
+    if( !xfer || !xfer->model_transfer.has_value() )
+      continue;
+
+    const double a_cm = det.gd.transverse_half_extent();
+    // Aspect ratio L/2R: the candidate geometric predictor of the off-axis
+    //  amplitude (how much the chord-length distribution changes with angle).
+    double aspect = 0.0;
+    if( det.gd.shape == ceelo::DetectorShape::Cylinder && det.gd.dimensions_cm.size() > 1 )
+      aspect = det.gd.dimensions_cm[1] / (2.0 * det.gd.dimensions_cm[0]);
+    else if( det.gd.dimensions_cm.size() > 2 )
+      aspect = det.gd.dimensions_cm[2] / (2.0 * std::min(det.gd.dimensions_cm[0],
+                                                         det.gd.dimensions_cm[1]));
+
+    for( const McRow &r : rows )
+    {
+      const double theta = r.theta * M_PI / 180.0;
+      const Eigen::Vector3d src =
+            CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, r.d_face );
+      const double d_origin = src.norm();
+      const double ct = (d_origin > 0.0) ? (-src.z() / d_origin) : 1.0;
+
+      // EXCLUDE the anchor point itself.  The transfer reproduces its own anchor to
+      //  machine precision, so scoring it contributes bit-exact zeros and silently
+      //  dilutes the RMS - a third of the on-axis far rows, in the first version of this
+      //  case, which made transfer_far_onaxis look better than it is (0.546% scored vs
+      //  0.669% held out).  Everything emitted here must be a held-out prediction.
+      if( (std::fabs(r.theta) < 0.01) && (std::fabs(r.d_face - d_anchor) < 1e-6) )
+        continue;
+
+      const ceelo::EffResult t = xfer->eps_fep_at( r.E, src );
+      // NearFieldUnmodeled is kept on purpose: it means "no near-field table, sigma
+      //  inflated", not "refused", and that flagged region is exactly where
+      //  near_unmodeled and transfer_near_contact apply - i.e. the thing being
+      //  measured.  NeedsMc and OutOfRangeClamped are still dropped: those are the
+      //  response declining to promise anything.
+      if( (t.value <= 0.0)
+          || ((t.flag != ceelo::ResponseFlag::Ok)
+              && (t.flag != ceelo::ResponseFlag::NearFieldUnmodeled)) )
+        continue;
+
+      const ceelo::SigmaTransferModel::Components c =
+            xfer->model_transfer->components( d_origin / a_cm, ct, r.E );
+
+      char line[512];
+      std::snprintf( line, sizeof(line),
+        "\"%s\",%s,%s,%.4f,%.4f,%.4f,%d,%.2f,%.6f,%.5f,%.4f,%.4f,%.6e,%.4e,%.6e,%.6f,"
+        "%.6f,%.6f,%.6f,%.6f,%s",
+        det.name.c_str(), det.family.c_str(), det.fidelity.c_str(), a_cm, aspect,
+        r.E, r.is_edge, r.theta, ct, r.d_face, r.d_face/a_cm, d_origin/a_cm,
+        r.mc, r.mc_sig, t.value, t.value/r.mc - 1.0,
+        c.far_onaxis, c.offaxis, c.near,
+        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near),
+        ceelo::to_string(t.flag) );
+      out << line << "\n";
+      ++n_rows;
+    }
+    ++n_det;
+    out.flush();
+  }//for( corpus )
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_transfer_from_mc: " << n_det << " detectors, "
+                      << n_rows << " rows -> " << out_path );
+  BOOST_CHECK_GT( n_det, 20u );
+}//envelope_transfer_from_mc
+
+
+/** Tests whether the off-axis curve-transfer residual can be PREDICTED (and so
+ corrected) from the chord-length distribution the kernel already computes.
+
+ The idea.  A transfer's only approximation is that eta - roughly "P(full-energy
+ deposit | the photon interacted in the crystal)" - is taken to be independent of
+ angle.  It is not, because at an angle a photon traverses a different distribution
+ of path lengths through the crystal, and the chance of containing the full cascade
+ depends on how much material is left around the interaction point.
+
+ The kernel ALREADY has that distribution: every KernelRay carries `active_len` and
+ a solid-angle weight, at query time, for free.  So the question is whether some
+ statistic of it predicts the residual.
+
+ The candidate that seemed to matter was NOT the plain mean chord - that is a pure
+ geometry number - but the chord weighted by INTERACTION probability,
+ 1 - exp(-mu(E) L), which is energy dependent through mu and so looked like the only
+ one of these able to reach the 55% of the variance that moves with energy.
+
+ RESULT (2026-09, 4245 joined points): IT DOES NOT WORK, and the code is kept because
+ a well-diagnosed negative result is worth more than an untested idea.
+
+     correlation with the residual   ratio_mean (geometry)          r = -0.378
+                                     ratio_iw   (interaction-wtd)   r = -0.355
+     RMS residual after correction   shape + aspect ratio           1.905%
+                                     shape + ratio_mean             1.894%
+                                     shape + ratio_iw               1.901%
+
+ The interaction weighting is implemented correctly and does carry real energy
+ information - for nai3x3 at 45 degrees ratio_iw runs 0.755 -> 0.871 across 40 keV to
+ 2.5 MeV while ratio_mean is flat by construction.  It is simply the WRONG energy
+ dependence: smooth and monotonic in mu, where the residual's is not.
+
+ Why, physically: the entry chord says where the first interaction is likely to
+ happen.  Whether the FULL energy is then contained depends on escape of scattered
+ photons and secondaries FROM that point, which is governed by the distance to the
+ crystal boundary in every direction around it - not by the incoming ray's path
+ length.  They are different geometric quantities, and only the second one is eta.
+ A predictor with a chance would have to be an escape-geometry statistic (something
+ like the mean distance-to-boundary averaged over the interaction-depth
+ distribution), which the kernel does not currently carry.
+
+ Emits per (detector, theta, E) so the regression can be done in Python against the
+ measured residual in transfer_vs_mc.csv.  No Monte Carlo.
+
+ Run with --envelope-out=<dir> --envelope-chord.
+ */
+BOOST_AUTO_TEST_CASE( envelope_chord_predictor )
+{
+  if( g_envelope_out.empty() || !g_envelope_chord )
+  {
+    BOOST_TEST_MESSAGE( "envelope_chord_predictor: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-chord)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "chord_predictor.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "# Chord-length statistics from the kernel quadrature, per (detector, theta, E).\n"
+         "# mean_chord      : solid-angle weighted mean active chord (pure geometry)\n"
+         "# iw_chord        : chord weighted by solid angle AND interaction probability\n"
+         "#                   1 - exp(-mu(E)*L); energy dependent through mu\n"
+         "# ratio_*         : the same statistic divided by its on-axis value at that energy,\n"
+         "#                   which is the form a correction to an angle-flat eta would take\n"
+         "# mu_cm           : crystal mu_total at E (1/cm)\n"
+         "detector,family,E_keV,theta_deg,mean_chord,iw_chord,ratio_mean,ratio_iw,mu_cm\n";
+
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  const vector<double> thetas = { 0.0, 15.0, 30.0, 45.0, 60.0, 75.0 };
+  size_t n_det = 0;
+
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+
+    // A bare transfer response is enough: we only want its geometry kernel and its
+    //  crystal mu table, not its eta.
+    ceelo::AnchorCurve anchor;
+    for( const double e : { 40.0, 100.0, 300.0, 1000.0, 2500.0 } )
+    {
+      anchor.energies_keV.push_back( e );
+      anchor.eff.push_back( 1.0e-3 );
+    }
+    const double a_cm = det.gd.transverse_half_extent();
+    const Eigen::Vector3d ref = CeeLoUtils::sourcePositionFromFace( det.gd, 0.0, 0.0, 10.0*a_cm );
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try
+    {
+      resp = ceelo::make_transfer_response( det.gd, anchor, ref, nullptr,
+                                            ceelo::TransferResponseOptions{} );
+    }catch( std::exception & )
+    {
+      continue;
+    }
+    if( !resp || resp->mu_tables.empty() )
+      continue;
+
+    // Crystal mu: the first mu table is the crystal's (materials are emitted in
+    //  descriptor order and the crystal is referenced by crystal_material_index).
+    const size_t mu_idx = (det.gd.crystal_material_index >= 0
+                           && size_t(det.gd.crystal_material_index) < resp->mu_tables.size())
+                          ? size_t(det.gd.crystal_material_index) : 0;
+
+    // Same energies the corpus measured at, so the two files join.
+    vector<double> energies;
+    {
+      double e_lo = resp->provenance.valid_e_min_keV, e_hi = resp->provenance.valid_e_max_keV;
+      if( (e_lo <= 0.0) || (e_hi <= e_lo) )
+      { e_lo = 35.0; e_hi = 3000.0; }
+      e_lo *= 1.01; e_hi *= 0.99;
+      for( int i = 0; i < 12; ++i )
+        energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/11.0 ) );
+    }
+
+    for( const double E : energies )
+    {
+      const double mu = resp->mu_tables[mu_idx].eval( E ).mu_total();
+
+      double base_mean = 0.0, base_iw = 0.0;
+      for( size_t it = 0; it < thetas.size(); ++it )
+      {
+        const double theta = thetas[it] * M_PI / 180.0;
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, 10.0*a_cm );
+        const ceelo::ApertureQuadrature q = resp->make_quadrature( src );
+
+        double w_sum = 0.0, wl_sum = 0.0, iw_sum = 0.0, iwl_sum = 0.0;
+        for( const ceelo::KernelRay &r : q.rays )
+        {
+          const double L = r.active_len;
+          if( L <= 0.0 )
+            continue;
+          const double w = r.omega_w;
+          // Only photons that INTERACT can contribute to eta, so weight by the
+          //  interaction probability - this is what makes the statistic depend on E.
+          const double p = 1.0 - std::exp( -mu * L );
+          w_sum += w;       wl_sum += w * L;
+          iw_sum += w * p;  iwl_sum += w * p * L;
+        }
+        if( (w_sum <= 0.0) || (iw_sum <= 0.0) )
+          continue;
+
+        const double mean_chord = wl_sum / w_sum;
+        const double iw_chord = iwl_sum / iw_sum;
+        if( it == 0 )
+        { base_mean = mean_chord; base_iw = iw_chord; }
+        if( (base_mean <= 0.0) || (base_iw <= 0.0) )
+          continue;
+
+        char line[384];
+        std::snprintf( line, sizeof(line),
+          "\"%s\",%s,%.4f,%.2f,%.6f,%.6f,%.6f,%.6f,%.6f",
+          det.name.c_str(), det.family.c_str(), E, thetas[it],
+          mean_chord, iw_chord, mean_chord/base_mean, iw_chord/base_iw, mu );
+        out << line << "\n";
+      }
+    }
+    ++n_det;
+    out.flush();
+  }
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_chord_predictor: " << n_det << " detectors -> " << out_path );
+  BOOST_CHECK_GT( n_det, 20u );
+}//envelope_chord_predictor
+
+
+/** Derives the two refuse-grade envelopes the corpus sweep could not reach:
+ `model_sigma::behind_plane` and the `shadow_*` collimator ramp.
+
+ Neither is measurable from the corpus sweep, for the same structural reason:
+ `ResponseGenerator::probe_bank` samples cos_theta over [cos_theta_min, 1] with
+ cos_theta_min = 0.02, so NOTHING ever probes behind the face plane, and no corpus
+ detector carries a collimator at all.  Both are cheap once you place the points by
+ hand, which is what this does.
+
+ behind_plane: MC with the source behind the crystal face (cos_theta < 0), against
+ the model's clamped guess.  The question to answer is not only "what is the number"
+ but "should there be a number at all" - the code already raises ResponseFlag::NeedsMc
+ there, and a 30% sigma on an answer the source itself calls a clamped guess may be
+ worse than declining to answer.
+
+ shadow_*: the transmitted hole fraction s = kernel_transmitted/omega_frac_active is
+ computable WITHOUT Monte Carlo, so probes can be PLACED at chosen s rather than
+ stumbled upon.  A tungsten-collimated NaI is built here because the corpus has no
+ collimated detector (the CeeLo suite's make_collimated_nai is a synthetic response,
+ not a descriptor this side can reach).
+
+ Run with --envelope-out=<dir> --envelope-refuse.
+ */
+BOOST_AUTO_TEST_CASE( envelope_refuse_grade_terms )
+{
+  if( g_envelope_out.empty() || !g_envelope_refuse )
+  {
+    BOOST_TEST_MESSAGE( "envelope_refuse_grade_terms: skipped (needs --envelope-out=<dir>"
+                        " and --envelope-refuse)." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string out_path = SpecUtils::append_path( g_envelope_out, "refuse_grade.csv" );
+  ofstream out( out_path.c_str() );
+  BOOST_REQUIRE( out.is_open() );
+  out << std::setprecision(10);
+  out << "term,detector,E_keV,theta_deg,cos_theta,d_face_cm,s_transmitted,"
+         "mc,mc_sig,model,rel_err,model_sigma,flag\n";
+
+  // ---- 1. behind_plane ----------------------------------------------------
+  // Three detectors of different shape; a source behind the face plane sees the
+  //  crystal through its back and sides, which the response has no nodes for.
+  const vector<CorpusDet> corpus = build_corpus_descriptors();
+  size_t n_behind = 0;
+  for( const CorpusDet &det : corpus )
+  {
+    if( !det.error.empty() )
+      continue;
+    if( !SpecUtils::icontains(det.name, "nai3x3")
+        && !SpecUtils::icontains(det.name, "hpge_coax")
+        && !SpecUtils::icontains(det.name, "czt_box") )
+      continue;
+
+    ceelo::GenerationOptions opts;
+    opts.detector_name = det.name;
+    opts.profile = ceelo::ResponseProfile::General;
+    opts.node_fep_precision = 0.005;
+    opts.num_threads = g_envelope_threads;
+    shared_ptr<ceelo::DetectorResponse> resp;
+    try { resp = ceelo::ResponseGenerator::generate( det.gd, opts ); }
+    catch( std::exception & ) { continue; }
+    if( !resp )
+      continue;
+
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+    const double a_cm = det.gd.transverse_half_extent();
+    for( const double theta_deg : { 100.0, 120.0, 150.0, 180.0 } )
+    {
+      const double theta = theta_deg * M_PI / 180.0;
+      for( const double E : { 60.0, 356.0, 1332.0 } )
+      {
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( det.gd, theta, 0.0, 5.0*a_cm );
+        calc.set_point_source( src );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = E;
+        cfg.termination.target_fep_rel_precision = 0.01;
+        cfg.termination.max_events = 20000000;
+        cfg.termination.min_events = 40000;
+        cfg.num_threads = g_envelope_threads;
+        cfg.seed = 777000 + int(theta_deg)*10 + int(E);
+        const ceelo::EfficiencyResult mc = calc.compute( cfg );
+        const ceelo::EffResult m = resp->eps_fep_at( E, src );
+        if( (mc.full_energy_peak_efficiency <= 0.0) || (m.value <= 0.0) )
+          continue;
+        char line[320];
+        std::snprintf( line, sizeof(line),
+          "behind_plane,\"%s\",%.1f,%.1f,%.6f,%.4f,,%.6e,%.3e,%.6e,%.6f,%.6f,%s",
+          det.name.c_str(), E, theta_deg, std::cos(theta), 5.0*a_cm,
+          mc.full_energy_peak_efficiency, mc.fep_uncertainty, m.value,
+          m.value/mc.full_energy_peak_efficiency - 1.0, m.sigma/m.value,
+          ceelo::to_string(m.flag) );
+        out << line << "\n";
+        ++n_behind;
+      }
+    }
+    out.flush();
+  }
+
+  // ---- 2. shadow_* --------------------------------------------------------
+  // A tungsten-collimated 3"x3" NaI, mirroring the CeeLo suite's make_collimated_nai.
+  ceelo::GeometryDescriptor cg;
+  cg.set_dimensions( ceelo::CylinderDims{3.81, 7.62} );
+  cg.crystal_material_index = 0;
+  {
+    const shared_ptr<const Material> nai = MaterialDB::instance()->material("NaI");
+    const shared_ptr<const Material> al = MaterialDB::instance()->material("Al");
+    const shared_ptr<const Material> w = MaterialDB::instance()->material("W");
+    BOOST_REQUIRE_MESSAGE( nai && al && w, "MaterialDB missing NaI/Al/W" );
+    cg.materials = { CeeLoUtils::to_ceelo_material(*nai),
+                     CeeLoUtils::to_ceelo_material(*al),
+                     CeeLoUtils::to_ceelo_material(*w) };
+  }
+  { ceelo::LayerSpec can; can.material_index = 1; can.front_thickness_cm = 0.05;
+    can.side_thickness_cm = 0.05; can.z_end_cm = 7.62; cg.layers.push_back(can); }
+  { ceelo::CollimatorSpec col; col.material_index = 2; col.side_thickness_cm = 1.5;
+    col.z_start_cm = -5.0; col.z_end_cm = 7.62; cg.collimator = col; }
+  BOOST_REQUIRE_MESSAGE( cg.problems().empty(), "collimated descriptor is invalid" );
+
+  ceelo::GenerationOptions copts;
+  copts.detector_name = "collimated_nai";
+  copts.profile = ceelo::ResponseProfile::General;
+  copts.node_fep_precision = 0.005;
+  copts.num_threads = g_envelope_threads;
+  shared_ptr<ceelo::DetectorResponse> cresp;
+  try { cresp = ceelo::ResponseGenerator::generate( cg, copts ); }
+  catch( std::exception &e )
+  { BOOST_TEST_MESSAGE( "collimated generation failed: " << e.what() ); }
+
+  size_t n_shadow = 0;
+  if( cresp )
+  {
+    std::vector<std::unique_ptr<ceelo::Material>> owned2;
+    ceelo::EfficiencyCalculator ccalc;
+    ceelo::ResponseGenerator::configure_calculator( ccalc, cg, owned2 );
+    const double a_cm = cg.transverse_half_extent();
+
+    // Sweep angle to walk s from wide open down through the refuse gate.
+    for( const double theta_deg : { 0.0, 20.0, 35.0, 45.0, 55.0, 65.0, 75.0, 85.0 } )
+    {
+      const double theta = theta_deg * M_PI / 180.0;
+      for( const double E : { 122.0, 662.0, 1332.0 } )
+      {
+        const Eigen::Vector3d src =
+              CeeLoUtils::sourcePositionFromFace( cg, theta, 0.0, 8.0*a_cm );
+        const ceelo::ApertureQuadrature q = cresp->make_quadrature( src );
+        const ceelo::EffResult m = cresp->eps_fep_at( E, src, q );
+        if( m.value <= 0.0 )
+          continue;
+
+        ccalc.set_point_source( src );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = E;
+        cfg.termination.target_fep_rel_precision = 0.01;
+        cfg.termination.max_events = 20000000;
+        cfg.termination.min_events = 40000;
+        cfg.num_threads = g_envelope_threads;
+        cfg.seed = 888000 + int(theta_deg)*10 + int(E);
+        const ceelo::EfficiencyResult mc = ccalc.compute( cfg );
+        if( mc.full_energy_peak_efficiency <= 0.0 )
+          continue;
+
+        char line[320];
+        std::snprintf( line, sizeof(line),
+          "shadow,\"collimated_nai\",%.1f,%.1f,%.6f,%.4f,%.6f,%.6e,%.3e,%.6e,%.6f,%.6f,%s",
+          E, theta_deg, std::cos(theta), 8.0*a_cm,
+          q.omega_frac_active > 0.0 ? -1.0 : -1.0,   // s is private; the flag reports the regime
+          mc.full_energy_peak_efficiency, mc.fep_uncertainty, m.value,
+          m.value/mc.full_energy_peak_efficiency - 1.0, m.sigma/m.value,
+          ceelo::to_string(m.flag) );
+        out << line << "\n";
+        ++n_shadow;
+      }
+      out.flush();
+    }
+  }
+
+  out << "#complete\n";
+  BOOST_TEST_MESSAGE( "envelope_refuse_grade_terms: " << n_behind << " behind-plane points, "
+                      << n_shadow << " shadow points -> " << out_path );
+  BOOST_CHECK_GT( n_behind, 10u );
+}//envelope_refuse_grade_terms

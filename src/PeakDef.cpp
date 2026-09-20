@@ -80,12 +80,6 @@ const bool PeakDef::sm_defaultUseForDrfIntrinsicEffFit = true;
 const bool PeakDef::sm_defaultUseForDrfFwhmFit = true;
 const bool PeakDef::sm_defaultUseForDrfDepthOfInteractionFit = false;
 
-/** Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types.
- Version 2 adds "FlatStepCDF", "LinearStepCDF", and "BiLinearStepCDF" continuum types.
- Version 3 changes the "BiLinearStepCDF" definition to a form that covers the same shapes, but is constructed to be better optimized.
- */
-const int PeakContinuum::sm_xmlSerializationVersion = 3;
-
 namespace
 {
   //clones 'source' into the document that 'result' is a part of.
@@ -2453,9 +2447,20 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     for( size_t i = 0; i < contents.size(); ++i )
       m_fitForValue[i] = (contents[i] > 0.5f); 
     
-    if( m_values.size() != m_uncertainties.size() 
+    if( m_values.size() != m_uncertainties.size()
         || m_fitForValue.size() != m_values.size() )
       throw runtime_error( "Continuum coefficients not consistent" );
+
+    // The coefficient vectors must match the type, or every later `m_values[i]` - notably
+    //  `offset_integral_cdf_step(...)` and `offset_eqn_integral(...)`, which index by type alone -
+    //  reads past the end.  `setType(...)` and both `setParameters(...)` overloads have always
+    //  enforced this size, so no InterSpec-written file has a differently sized vector.
+    const size_t num_expected = PeakContinuum::num_parameters( m_type );
+    if( m_values.size() != num_expected )
+      throw runtime_error( "PeakContinuum::fromXml: continuum type '"
+                          + string(offset_type_str(m_type)) + "' expects "
+                          + std::to_string(num_expected) + " coefficients, but XML had "
+                          + std::to_string(m_values.size()) + "." );
   }else
   {
     m_values.clear();
@@ -2476,53 +2481,66 @@ void PeakContinuum::fromXml( const rapidxml::xml_node<char> *cont_node, int &con
     meas->set_info_from_2006_N42_spectrum_node( node );
   }//if( node )
 
-  // Serialization versions 2 and earlier stored BiLinearStepCDF as two lines blended by an
-  //  amplitude-weighted CDF fraction, `(left_const, left_linear, right_const, right_linear)`;
-  //  version 3 stores `(const, linear, step0, step1)` - the same family of shapes, but linear in
-  //  the peak amplitudes.  Converting needs the ROI's total peak area, which lives in the <Peak>
-  //  nodes sitting alongside this one.
-  if( (version < 3) && (m_type == BiLinearStepCDF) && (m_values.size() == 4) )
+  // Serialization versions 2 and earlier stored BiLinearStepCDF under a different convention; the
+  //  ROI's peak sums needed to convert live in the <Peak> nodes sitting alongside this one.
+  if( (version < 3) && (m_type == BiLinearStepCDF) )
   {
+    // Guaranteed by the coefficient-count check above; a wrong size used to silently skip the
+    //  conversion, leaving the continuum in the old parameterization.
+    assert( m_values.size() == 4 );
+
     const LegacyRoiPeakSums sums = legacy_roi_peak_sums( cont_node->parent(), contId, m_lowerEnergy );
-
-    double step0 = 0.0, step1 = 0.0;
-    if( std::isfinite(sums.total_amp) && (sums.total_amp > 0.0) )
-    {
-      step0 = (m_values[2] - m_values[0]) / sums.total_amp;
-      step1 = (m_values[3] - m_values[1]) / sums.total_amp;
-    }else
-    {
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, ("Converting a pre-version-3 BiLinearStepCDF continuum, but"
-                          " found no peaks referencing continuum id " + std::to_string(contId)
-                          + " - its step will be dropped.").c_str() );
-#endif
-    }
-
-    if( !std::isfinite(step0) )
-      step0 = 0.0;
-    if( !std::isfinite(step1) )
-      step1 = 0.0;
-
-    // Version 2 blended with the CDF measured from -infinity, so it carried a constant offset of
-    //  `step_k * SUM_j(amp_j*CDF_j(roi_lower))` that the ROI-anchored version-3 model does not.
-    //  Folding it into the polynomial keeps the converted continuum the same shape - without this
-    //  a skewed ROI shifts by several percent on load, since a low-energy tail puts real CDF mass
-    //  below the ROI.
-    if( std::isfinite(sums.amp_cdf0) )
-    {
-      m_values[0] += step0 * sums.amp_cdf0;
-      m_values[1] += step1 * sums.amp_cdf0;
-    }
-
-    m_values[2] = step0;
-    m_values[3] = step1;
-
-    // The old uncertainties were on the right-hand line, not on a step; they do not carry over.
-    if( m_uncertainties.size() == 4 )
-      m_uncertainties[2] = m_uncertainties[3] = 0.0;
+    convert_legacy_bilinear_step_cdf( m_values, m_uncertainties, sums.total_amp, sums.amp_cdf0,
+                                     "continuum id " + std::to_string(contId) );
   }//if( a pre-version-3 BiLinearStepCDF )
 }//void PeakContinuum::fromXml(...)
+
+
+void PeakContinuum::convert_legacy_bilinear_step_cdf( vector<double> &values,
+                                                      vector<double> &uncertainties,
+                                                      const double total_amp,
+                                                      const double amp_cdf0,
+                                                      const string &context )
+{
+  if( values.size() != 4 )
+    return;
+
+  double step0 = 0.0, step1 = 0.0;
+  if( std::isfinite(total_amp) && (total_amp > 0.0) )
+  {
+    step0 = (values[2] - values[0]) / total_amp;
+    step1 = (values[3] - values[1]) / total_amp;
+  }else
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Converting a pre-version-3 BiLinearStepCDF continuum, but found"
+                        " no peaks sharing " + context + " - its step will be dropped.").c_str() );
+#endif
+  }
+
+  if( !std::isfinite(step0) )
+    step0 = 0.0;
+  if( !std::isfinite(step1) )
+    step1 = 0.0;
+
+  // Version 2 blended with the CDF measured from -infinity, so it carried a constant offset of
+  //  `step_k * SUM_j(amp_j*CDF_j(roi_lower))` that the ROI-anchored version-3 model does not.
+  //  Folding it into the polynomial keeps the converted continuum the same shape - without this
+  //  a skewed ROI shifts by several percent on load, since a low-energy tail puts real CDF mass
+  //  below the ROI.
+  if( std::isfinite(amp_cdf0) )
+  {
+    values[0] += step0 * amp_cdf0;
+    values[1] += step1 * amp_cdf0;
+  }
+
+  values[2] = step0;
+  values[3] = step1;
+
+  // The old uncertainties were on the right-hand line, not on a step; they do not carry over.
+  if( uncertainties.size() == 4 )
+    uncertainties[2] = uncertainties[3] = 0.0;
+}//void PeakContinuum::convert_legacy_bilinear_step_cdf(...)
 
 
 
@@ -4184,6 +4202,7 @@ double PeakDef::areaFromData( std::shared_ptr<const Measurement> data ) const
       const float e0 = std::max( energyStart, data->gamma_channel_lower(i) );
       const float e1 = std::min( energyEnd, data->gamma_channel_upper(i) );
       const double data_area_i = data->gamma_integral(e0, e1);
+      // `this` is passed as the ROI's only peer - see the limitation noted at the declaration.
       const PeakDef *self = this;
       const double cont_area_1 = m_continuum->offset_integral( e0, e1, data, &self, 1 );
       if( data_area_i > cont_area_1 )
@@ -6320,6 +6339,13 @@ bool PeakContinuum::cdf_step_anchor_energies( const std::shared_ptr<const SpecUt
   //  passes nullptr for multi-Measurement selections - so fall back to the raw ROI bounds, which
   //  differ by at most a fraction of a channel of CDF mass at the ROI edge.
   //  This mirrors what `offset_integral_non_cdf(...)` already does for the data-step types.
+  //
+  // `find_gamma_channel(...)` floors, which matches how every ROI in InterSpec is turned into a
+  //  channel range - except `RelActCalcAuto`s `RoiRangeChannels::channel_range()`, which rounds to
+  //  the nearest channel and then stores the caller's unrounded energies here.  For a RelAct ROI
+  //  the anchors below can therefore be one channel away from the ones the fit used; see the note
+  //  on `channel_range()` for the magnitude (<0.1% of the continuum) and for why the obvious fix
+  //  is wrong.
   if( data && data->num_gamma_channels() )
   {
     const std::shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();

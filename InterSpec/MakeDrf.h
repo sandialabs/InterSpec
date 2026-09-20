@@ -32,6 +32,8 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/MakeDrfCalc.h"
+#include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/DetectorEfficiency.h"
 
 namespace ceelo{ class DetectorResponse; }
@@ -39,9 +41,11 @@ namespace ceelo{ class DetectorResponse; }
 class PeakDef;
 class InterSpec;
 class MaterialDB;
-class MakeDrfChart;
+class DrfChart;
+class SwitchCheckbox;
 class DetectorPeakResponse;
 class PeakFitDetPrefsGui;
+class MakeMcResponseForDrf;
 
 namespace Wt
 {
@@ -97,14 +101,14 @@ public:
   Wt::Signal<bool> &intrinsicEfficiencyIsValid();
   
   /** Assembles a SpecMeas with a single (summed, if need be) spectrum for
-   each sample number that has a peak being used; has peaks as well.
+   each sample number that has a peak being used; has peaks as well, source information as
+   remarks ("Source: ..." GADRAS-style, and "InterSpec-Source: ..." with uncertainties and assay
+   details), and the assembled DRF (see #assembleDrf) embedded.
    
    Will return nullptr on error.
-   
-   Currently does not save source information to returned result (if we do this
-   then re-creating this widget is maybe complete?)
    */
-  std::shared_ptr<SpecMeas> assembleCalFile();
+  std::shared_ptr<SpecMeas> assembleCalFile( const std::string &drfname,
+                                             const std::string &drfdescrip );
   
   /** Creates a DRF from current fit parameters, and gui inputs..
    
@@ -131,8 +135,8 @@ public:
   /** Access the user input widget to check if equation is in MeV or keV. */
   bool isEffEqnInMeV() const;
   
-  /** Get the user-entered detector diameter.
-   Will throw if user input is invalid.
+  /** The detector diameter: the entered one in diameter mode, or the geometry's transverse
+   extent in geometry mode.  Will throw if user input is invalid.
    */
   double detectorDiameter() const;
 
@@ -140,6 +144,10 @@ public:
    Returns 0.0 if the field is empty or invalid.
    */
   double detectorSetback() const;
+
+  /** How the detector is currently described - see MakeDrfCalc::GeometryChoice.  Throws
+   std::runtime_error with a user message when the description is incomplete/invalid. */
+  MakeDrfCalc::GeometryChoice geometryChoice() const;
   
   /** Called when user drag-n-drops a Source.lib onto app.
    
@@ -153,7 +161,10 @@ protected:
   void handleFwhmTypeChanged();
   void handleShowFwhmPointsToggled();
   void handleFixedGeometryChanged();
-  void chartEnergyRangeChangedCallback( double lower, double upper );
+
+  /** "Diameter only" <-> "Detector geometry" toggle: seeds the geometry form from the diameter the
+   first time, back-fills the diameter from the geometry, and re-fits. */
+  void handleGeometryModeChanged();
   
   void peakPreviewShown( DrfPeak *peak );
   
@@ -163,13 +174,27 @@ protected:
                       const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm
                       const int fitid );
   
-  void fitEffEqn( std::vector<MakeDrfFit::DetEffDataPoint> data );
+  void fitEffEqn( std::vector<MakeDrfFit::EffFitPoint> data );
   
   /** Error message is not empty, only when there is an error. */
-  void updateEffEqn( std::vector<float> coefs, std::vector<float> uncerts,
-                     const double chi2,
+  void updateEffEqn( MakeDrfFit::EffFitResult result,
                     const float lowestEnergy, const float highestEnergy,
                     const int fitid, const std::string errormsg );
+
+  /** Pushes the current fit (as a preview DRF) and data points to the chart, and re-seeds the
+   embedded geometry/MC tool with it. */
+  void updateChartDetector();
+
+  /** The DRF the current fit describes, WITHOUT a CeeLo response or geometry attached - the
+   chart preview and the MC tool's seed.  Throws when there is no valid fit. */
+  std::shared_ptr<DetectorPeakResponse> assembleLegacyDrf() const;
+
+  /** Everything the fits produced, packaged for MakeDrfCalc::assembleDrf. */
+  MakeDrfCalc::FitResults currentFitResults() const;
+
+  /** A hint at the detector type ("HPGe", "NaI", ...) from the loaded spectra, for seeding the
+   crystal material of the geometry form. */
+  std::string detectorTypeHint() const;
 
   
   InterSpec *m_interspec;
@@ -181,9 +206,19 @@ protected:
    */
   Wt::Signal<> m_finished;
   
-  MakeDrfChart *m_chart;
+  DrfChart *m_chart;
   
   Wt::WContainerWidget *m_files;
+
+  /** The left column: diameter-only / full-geometry toggle, then either the diameter inputs or the
+   embedded geometry + location-support tool. */
+  Wt::WContainerWidget *m_geomPanel;
+  SwitchCheckbox *m_geomMode;
+  Wt::WContainerWidget *m_diameterDiv;
+  MakeMcResponseForDrf *m_mcTool;
+
+  /** Whether the geometry form has been seeded from the diameter yet (only done once). */
+  bool m_geomSeeded;
   
   GroupBox *m_detDiamGroup;
   
@@ -207,12 +242,10 @@ protected:
   GroupBox *m_effOptionGroup;
   
   Wt::WCheckBox *m_airAttenuate;
-  
-  /** ToDo: make chart properly interactive so user doesnt need to input the
-   energy range manually.
-   */
-  Wt::WDoubleSpinBox *m_chartLowerE;
-  Wt::WDoubleSpinBox *m_chartUpperE;
+
+  /** Whether the chart's x-range has been set from the data yet (only the first time; later
+   re-fits keep the users zoom). */
+  bool m_chartRangeSet;
   
   Wt::WText *m_errorMsg;
   Wt::WText *m_intrinsicEffAnswer;
@@ -233,13 +266,20 @@ protected:
   float m_effUpperEnergy; ///< The highest energy peak used for eff calculation
   std::vector<float> m_effEqnCoefs, m_effEqnCoefUncerts;
 
-  /** The raw per-peak efficiency points currently entering the efficiency
-   fit, with statistical and source-certificate uncertainties kept separate
-   (see #MeasuredEffPoint).  Rebuilt by #handleSourcesUpdates and persisted
-   into the assembled DRF - the raw points (not the fitted curve) are what a
-   Monte-Carlo-response grounding fit needs.
+  /** Row-major coefficient covariance of the efficiency fit (Birge-inflated), and the inflation. */
+  std::vector<float> m_effEqnCov;
+  double m_effBirgeScale;
+
+  /** The per-peak data behind the chart, CSV summary and reference sheet, and the (flat-disk)
+   diameter it was computed with. */
+  std::vector<MakeDrfChart::DataPoint> m_dataPoints;
+  double m_dataDiameter;
+
+  /** The raw per-peak efficiency points (absolute, at each source's own distance) and the sources
+   they came from - what the fit is derived from, and what the DRF stores for provenance and for
+   grounding a Monte-Carlo response.  Rebuilt by #handleSourcesUpdates.
    */
-  std::vector<MeasuredEffPoint> m_measuredEffPoints;
+  MeasuredDrfPoints m_measuredPoints;
 
   /** A Monte-Carlo-parameterized response generated (via the
    "Characterize by MC" tool) while this tool was open; attached - grounded

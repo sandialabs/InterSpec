@@ -1620,6 +1620,34 @@ void MakeFwhmForDrf::setState( shared_ptr<const MakeFwhmForDrf::ToolState> state
 
 void MakeFwhmForDrf::doAddUndoRedoStep()
 {
+  UndoRedoManager *undoManager = m_owner_handles_undo_redo ? nullptr
+                                                           : m_interspec->undoRedoManager();
+  if( !m_owner_handles_undo_redo && (!undoManager || !undoManager->canAddUndoRedoNow()) )
+    return;
+
+  shared_ptr<MakeFwhmForDrf::ToolState> state = currentState();
+  assert( state );
+  if( !state )
+    return;
+
+  // The two guards below apply whoever records the step, so they come before the owner branch: the
+  //  constructor schedules one call purely to baseline `m_current_state`, and a call whose state
+  //  matches that baseline is not a change at all.  Telling an owner otherwise means the mere
+  //  rendering of this tool reads as a user edit - which had DrfModifyWidget flag its Monte-Carlo
+  //  response stale, enable "Generate Response" and offer to regenerate, before the user had
+  //  touched anything.
+  if( !m_current_state )
+  {
+    m_current_state = state;
+    return;
+  }
+
+  if( (*state) == (*m_current_state) )
+    return;
+
+  shared_ptr<const MakeFwhmForDrf::ToolState> prev_state = m_current_state;
+  m_current_state = state;
+
   // An owner that records steps for us keeps them in ITS state, since our own steps below resolve
   //  their target through the standalone FWHM window - which, embedded, is not where we live.
   if( m_owner_handles_undo_redo )
@@ -1628,27 +1656,6 @@ void MakeFwhmForDrf::doAddUndoRedoStep()
     return;
   }//if( m_owner_handles_undo_redo )
 
-  UndoRedoManager *undoManager = m_interspec->undoRedoManager();
-  if( !undoManager || !undoManager->canAddUndoRedoNow() )
-    return;
-  
-  shared_ptr<MakeFwhmForDrf::ToolState> state = currentState();
-  assert( state );
-  if( !state )
-    return;
-  
-  if( !m_current_state )
-  {
-    m_current_state = state;
-    return;
-  }
-  
-  if( (*state) == (*m_current_state) )
-    return;
-  
-  shared_ptr<const MakeFwhmForDrf::ToolState> prev_state = m_current_state;
-  m_current_state = state;
-  
   auto undo = [prev_state](){
     InterSpec *viewer = InterSpec::instance();
     MakeFwhmForDrfWindow *window = viewer ? viewer->fwhmFromForegroundWindow(false) : nullptr;
@@ -1669,12 +1676,15 @@ void MakeFwhmForDrf::doAddUndoRedoStep()
 
 void MakeFwhmForDrf::scheduleUndoRedoStep()
 {
+  // An owner is told about a change whether or not undo/redo is currently taking steps - it tracks
+  //  its own state, and gating that on the undo manager would silently stop the owner noticing
+  //  edits (e.g. while undo/redo is disabled).
   UndoRedoManager *undoManager = m_interspec->undoRedoManager();
-  if( undoManager && undoManager->canAddUndoRedoNow() )
+  if( m_owner_handles_undo_redo || (undoManager && undoManager->canAddUndoRedoNow()) )
   {
     m_undo_redo_scheduled = true;
     scheduleRender();
-  }//if( undoManager && undoManager->canAddUndoRedoNow() )
+  }
 }//void scheduleUndoRedoStep()
 
 

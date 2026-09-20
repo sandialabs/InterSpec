@@ -50,8 +50,6 @@
     এটি নিম্ন শক্তিতে, অথবা বৃহত্তর ক্যালিব্রেশন দূরত্বে একটি বড় প্রভাব।
   </message>
   <message id="md-show-fwhm-markers">FWHM পয়েন্ট দেখান</message>
-  <message id="md-display-energy-lower-label">প্রদর্শন শক্তি, নিম্ন:</message>
-  <message id="md-display-energy-upper-label">উচ্চ:</message>
   <message id="md-mi-chart-phone">চার্ট/বিকল্প</message>
   <message id="md-mi-peaks-phone">ব্যবহার করার পিক</message>
   <message id="md-export-btn">সংরক্ষণ/এক্সপোর্ট...</message>
@@ -89,7 +87,7 @@
   <message id="md-saved-to-db">অভ্যন্তরীণ ডেটাবেসে '{1}' সংরক্ষিত।</message>
   <message id="md-peak-counts">{1} {2} keV, পিক {3} গণনা</message>
   <message id="md-peak-no-nuc">কোনো সংশ্লিষ্ট নিউক্লাইড নেই, {1} keV, পিক {2} গণনা</message>
-  <message id="md-err-det-diam-invalid">ডিটেক্টর ব্যাস অবৈধ - 2.54 cm অনুমান করা হচ্ছে।</message>
+  
   <message id="md-err-some-src">কিছু উৎসে ত্রুটি ছিল।</message>
   <message id="md-n-fit-pars">{1} ফিট প্যারাম</message>
   <message id="md-html-eff-table-caption">সম্পূর্ণ-শক্তি সনাক্তকরণ দক্ষতা (% মোট গামা)</message>

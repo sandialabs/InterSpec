@@ -18,7 +18,7 @@
   
   <message id="mffd-eqn-type-label">Equation Type:</message>
   <message id="mffd-eqn-none">None</message>
-  <message id="mffd-fit-cb">Fit FWHM to the peaks below</message>
+  <message id="mffd-fit-cb">Fit FWHM from peaks</message>
   <message id="mffd-original-btn">Original FWHM</message>
   <message id="mffd-tt-fit-cb">&lt;p&gt;When checked, the equation above is fit to the checked peaks in the
     table, and re-fit whenever you change the equation form or which peaks are used.&lt;/p&gt;

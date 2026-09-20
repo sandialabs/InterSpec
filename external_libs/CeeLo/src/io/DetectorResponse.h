@@ -95,11 +95,15 @@ enum class ResponseFlag : uint8_t {
 
 const char* to_string(ResponseFlag f);
 
-/// {value, 1-sigma absolute uncertainty, provenance flag}.
+/// {value, 1-sigma absolute uncertainty, provenance flag}.  `sigma` is the total; `sigma_model`
+/// is the part of it that comes from the ad hoc model envelopes alone (see model_sigma and
+/// frac_covariance) - the remainder is data-derived (MC node statistics, anchor/grounding fit
+/// covariance).  sigma_model <= sigma always.
 struct EffResult {
     double value = 0.0;
     double sigma = 0.0;
     ResponseFlag flag = ResponseFlag::Ok;
+    double sigma_model = 0.0;
 };
 
 // ---------------------------------------------------------------------------
@@ -128,10 +132,225 @@ struct ShieldContext {
 /// existing caller).  CeeLo ships the seam empty; InterSpec installs the model.
 using BuildupModel = std::function<double(double E_keV, const ShieldContext&)>;
 
-/// Fractional eps_total sigma added per build-up application, as a floor on the
-/// model-form uncertainty of the (ratio-only) build-up correction.  Combined in
-/// quadrature with the existing sigma when a ShieldContext is supplied.
-constexpr double kBuildupSigmaFloor = 0.10;
+// ---------------------------------------------------------------------------
+// Model-envelope uncertainty constants
+// ---------------------------------------------------------------------------
+
+/// EVERY ad hoc model-uncertainty constant CeeLo applies at query time lives here, and nowhere
+/// else.  They are ENVELOPES - "where the model is not measured it may be wrong by about this
+/// much" - not measurements, and DetectorResponse::SigmaBudget keeps them apart from the
+/// data-derived terms (MC node sigma, anchor/grounding fit covariance) so a host can tell the two
+/// kinds apart (EffResult::sigma_model, frac_covariance's `model_part`).  Each enters a query as a
+/// fully-correlated common mode across energies at the query geometry.
+///
+/// THE CORPUS.  Values marked MEASURED come from scoring generated responses against fresh,
+/// never-fitted MC on a stratified (E, d, theta) grid: 36 detectors - 4 CeeLo presets, 10 ANGLE
+/// imports, 22 GADRAS Detector.dat imports - spanning NaI / HPGe / LaBr3 / CZT and cylinder / box,
+/// generation and probes both at node_fep_precision = 0.003.  Harness: the `--envelope-*` flags on
+/// InterSpec's test_CeeLoDrfIntegration (`envelope_corpus_measure`, `envelope_transfer_from_mc`);
+/// raw per-probe CSVs and analysis under scratch/20260913_envelope_study/.  Re-run it when the
+/// engine changes.
+///
+/// THE STATISTIC.  These are consumed by a chi-square (InterSpec's
+/// compute_efficiency_whitening), so each measured value is the floor that makes the RMS pull
+/// about MC truth equal 1 over the relevant probes, with the response's own declared node sigma in
+/// the denominator.  That is NOT a 68% interval - the residual is heavy-tailed, so at these values
+/// about 75% (FEP) and 84% (total) of probes fall inside one sigma, and the two calibrations
+/// differ by ~1.6x.  State which one you targeted if you re-derive.
+///
+/// NOT INCLUDED, deliberately: CeeLo-vs-GEANT4 model error, bounded at <= 0.48% (FEP) and
+/// <= 0.23% (total) on the bare/lightly-shielded G4 configs {1,2,3,5,6,25,26} from the committed
+/// references in tests/data/{geant4,ceelo}_reference (scratch/20260913_envelope_study/
+/// mc_vs_geant4.py).  It is a bound rather than a measurement - the two codes' own counting noise
+/// is ~73% of the observed spread - it is code-vs-code rather than against data, and its
+/// applicability to an arbitrary user detector is not established.  A careful comparison against
+/// measured data is what would justify folding it in.
+namespace model_sigma {
+    /// theta > 90 degrees: no nodes behind the face plane; the value is a clamped guess.
+    ///
+    /// MEASURED, and deliberately NOT reduced.  Direct MC behind the face plane (three
+    /// detectors, 100-180 degrees, 60 keV to 1.3 MeV - `envelope_refuse_grade_terms`, since
+    /// `probe_bank` samples cos_theta over [cos_theta_min, 1] and never goes there) puts the
+    /// clamped guess within 1-4% of truth, against this 30%.
+    ///
+    /// That measures the model against the solid as DESCRIBED, and the descriptor is knowingly
+    /// incomplete exactly there: CeeLo models no attenuator behind the crystal (see LayerSpec),
+    /// which is where a real detector keeps its PMT, cryostat or electronics.  So the 1-4%
+    /// says the extrapolation is sound for a bare back, not that a query behind a real
+    /// detector is good to 4%.  The envelope stays wide because what it is covering is the
+    /// missing back structure, which this measurement cannot see.
+    ///
+    /// The query also raises ResponseFlag::NeedsMc, so a host can decline rather than use it.
+    constexpr double behind_plane = 0.30;
+
+    /// A response with no NearFieldModel queried inside the near-field gate: the kernel-only
+    /// near-field error, i.e. the near-field boost a ray-traced kernel cannot know.
+    ///
+    /// MEASURED as the RMS of |exp(lnN) - 1| over the stored NearFieldModel grid at its worst
+    /// distance (d/a ~ 1), pooled over three fully-characterized detectors.  Equal to
+    /// `transfer_near_contact` on purpose: it is the same limitation, and fep_budget applies
+    /// whichever one carries it, never both (see there for the angular structure).
+    ///
+    /// Gated at `near_regime_a`, not at provenance.min_distance_cm: the boost is still ~1.8-2.1%
+    /// out at 2.4-3a, which a 2a gate left uncovered.
+    constexpr double near_unmodeled = 0.06;
+
+    /// Collimator shadow, by transmitted hole fraction s: below `shadow_refuse_s` the query is
+    /// refuse-grade (sigma ~100%); up to `shadow_ramp_s` the sigma ramps linearly from
+    /// `shadow_ramp_max` down to 0.
+    ///
+    /// NOT DERIVED - none of the four.  No corpus detector carries a collimator.  They are cheap
+    /// to measure once points are placed by hand: s = kernel_transmitted/omega_frac_active is
+    /// computable without any MC, so probes can be placed at chosen s.
+    ///
+    /// Known defect independent of the values: the ramp is DISCONTINUOUS at the refuse boundary,
+    /// giving 0.417 just above shadow_refuse_s and 1.0 just below it.
+    constexpr double shadow_refuse = 1.0;
+    constexpr double shadow_refuse_s = 0.05;
+    constexpr double shadow_ramp_s = 0.30;
+    constexpr double shadow_ramp_max = 0.5;
+
+    /// Model-form floor on the (ratio-only) build-up correction of a shielded eps_total, added in
+    /// quadrature when a ShieldContext is supplied.
+    ///
+    /// NOT DERIVED.  CeeLo ships the build-up seam empty and the host installs the model, so
+    /// deriving this means comparing a corrected shielded eps_total against MC through real
+    /// shields with source geometry - a different experiment, and its own piece of work.
+    constexpr double buildup_floor = 0.10;
+
+    /// Far-field peak-efficiency floor - MEASURED over 36 detectors.  One constant serves every
+    /// crystal class: solving per class gives 0.475% excluding CdTe and 0.356% for CdTe alone, so
+    /// the class spread does not justify a split here (it does for the total).
+    constexpr double fep_far_floor = 0.005;
+
+    /// Near-field peak-efficiency floor - MEASURED, and the answer is that there is no near
+    /// excess: solving inside `near_regime_a` gives 0.21% against 0.43% outside it, over the
+    /// same detectors at the same generation profile.  The parameterization is if anything
+    /// MORE accurate close in, because the near-field table is measured there.
+    ///
+    /// Set equal to `fep_far_floor` rather than to the smaller measured value - a floor that
+    /// DROPS close in would be a strange promise, and the far value covers both regimes.  The
+    /// peak near/far split is therefore inert by construction; the TOTAL one is not (3.0x).
+    constexpr double fep_near_floor = 0.005;
+
+    /// Far-field total-efficiency floor - MEASURED, EXCLUDING CdTe-class crystals.
+    constexpr double tot_far_floor = 0.006;
+
+    /// Far-field total-efficiency floor for CdTe/CZT-class crystals - MEASURED separately because
+    /// one constant cannot serve: CdTe solves 3.2x higher than everything else.  Selected on
+    /// crystal COMPOSITION (`crystal_is_cdte_class`), not on the material's name, since names are
+    /// free-form user text.
+    ///
+    /// EMPIRICAL, and the root cause is not understood.  The excess tracks neither detector size
+    /// (the corpus's smallest crystal, a bare 0.5 cm3 CZT, is its most accurate) nor `TotEffTier`
+    /// (EtaTotTable spans the whole range); both were tested and rejected.  The leading remaining
+    /// idea is that an uncollided kernel plus an angle-flat b(E) cannot carry scatter-in from the
+    /// housing - see scratch/20260915_nonbare_det_uncert_investigate_prompt.md.  DELETE this
+    /// constant once the model is fixed; it should not outlive the defect.
+    constexpr double tot_far_floor_cdte = 0.020;
+
+    /// Near-field total-efficiency floor - MEASURED.  Unlike the peak efficiency, the total does
+    /// degrade close in: 1.92% inside `near_regime_a` against 0.64% outside, a factor 3.0.
+    ///
+    /// One value serves every class measured near-field, but that is weak evidence about CdTe: the
+    /// near subset's only two CdTe detectors are the two showing no far-field excess either, and
+    /// the three that motivate `tot_far_floor_cdte` were never measured near-field.
+    constexpr double tot_near_floor = 0.020;
+
+    /// Where the near regime begins, in transverse half-extents.
+    ///
+    /// NOT DETERMINED by the data.  Re-solving the total floors for gates from 1.5 to 5 leaves the
+    /// near/far ratio at 2.0-2.1 and the achieved coverage within half a point, because the total
+    /// error is a smooth ramp with distance (~1.7% at contact to ~0.6% at 4-6a), not a step.  Any
+    /// gate in that range performs about equally.  A ramp would fit the physics better than a step
+    /// and would need a new field.
+    constexpr double near_regime_a = 4.0;
+
+    /// Multiplier the closed loop applies to the FEP floors on a minor model-form failure.
+    ///
+    /// NOT DERIVED, and dead in practice: only `GenerationOptions::closed_loop` applies it, and
+    /// nothing in InterSpec enables that.
+    constexpr double generator_floor_inflation = 1.25;
+
+    // --- SigmaTransferModel defaults ---------------------------------------------------------
+    //
+    // All four were measured on eps_FEP only (`envelope_transfer_from_mc` scores the FEP rows),
+    // but common_eval applies them to eps_total as well.  There is no total-efficiency measurement
+    // behind any of them.
+    //
+    // The measurement anchors a transfer on a MEASURED MC curve at one distance and scores it
+    // against MC at every OTHER distance, angle and energy, so every scored point is held out.
+    // (Anchoring on a model and re-querying the anchor measures nothing - it is a tautology.)
+
+    /// Transfer floor on axis in the far field.  MEASURED at 0.669% RMS held out, and 0.815% at
+    /// the shortest far distance probed (d/a = 5), i.e. above this value by 1.3-1.6x.  Left at
+    /// 0.005 rather than raised: it is a floor under a term the anchor covariance also carries,
+    /// and raising it would double-count a measured curve's own uncertainty.
+    constexpr double transfer_far_onaxis = 0.005;
+
+    /// Off-axis amplitude, mid and high energy - MEASURED.  This is the amplitude the saturating
+    /// form approaches (see `transfer_offaxis_s2_half`), not a per-sin^2 slope.
+    constexpr double transfer_offaxis_mid = 0.037;
+
+    /// Extra off-axis amplitude at low energy, entering as (mid + low_e * w^2) with w the ln ramp
+    /// between the two reference energies below.  MEASURED: splitting the corpus at
+    /// `transfer_mid_e_ref_keV` gives amplitudes of 3.68% above and 5.23% below, a factor 1.42.
+    constexpr double transfer_offaxis_low_e = 0.016;
+
+    /// The low-energy ramp's endpoints.  NOT DERIVED - `transfer_mid_e_ref_keV` was used as the
+    /// SPLIT POINT when the amplitude either side of it was measured, which says nothing about
+    /// whether 45 and 150 are the right endpoints.  Testing that needs the amplitude resolved
+    /// across energy rather than pooled into two bins.
+    constexpr double transfer_low_e_ref_keV = 45.0;
+    constexpr double transfer_mid_e_ref_keV = 150.0;
+
+    /// Half-saturation of the off-axis term in sin^2(theta) - MEASURED at sin^2(23 deg); fitting
+    /// above and below `transfer_mid_e_ref_keV` separately gives sin^2(20 deg) and sin^2(27 deg),
+    /// so one value serves.
+    ///
+    /// The residual SATURATES with angle - past ~30 degrees you view the crystal from the side and
+    /// the distribution of path lengths through it stops changing much - where sin^2(theta) grows
+    /// without bound.  `A * s2/(s2 + s2_half)` beat sin^2 on HELD-OUT angles in every split tried
+    /// (fit {15,45,75} predict {30,60}: RMS 0.49% vs 1.15%, and the reverse 0.75% vs 1.53%), which
+    /// is the bar a change of functional form has to clear.
+    ///
+    /// <= 0 selects the legacy unbounded sin^2 form, which is what a stored response written
+    /// before this field existed gets on read.
+    ///
+    /// HOW MUCH OF THE OFF-AXIS ERROR IS REDUCIBLE, since adding angular resolution is the obvious
+    /// idea and buys less than it looks like: a shared shape takes the 3.08% RMS residual to
+    /// 2.65%, adding an aspect-ratio amplitude to 2.50%, and a PERFECT per-(detector, angle)
+    /// correction only to 2.28% - because just 45% of the variance is a fixed bias per (detector,
+    /// angle) and 55% varies with ENERGY at fixed angle.  Resolving energy off axis is what
+    /// collapses it, and that is a full characterization, not more anchor angles.
+    ///
+    /// Predictors tried and rejected, so they are not retried: crystal aspect ratio, the kernel's
+    /// solid-angle-weighted mean chord, and that chord weighted by interaction probability
+    /// 1 - exp(-mu(E)L).  On a common subset all three correlate at |r| ~ 0.35-0.38 and leave
+    /// ~1.9%; the interaction weighting buys nothing over plain geometry despite carrying real
+    /// energy dependence.  The entry chord says where a photon first interacts, while full-energy
+    /// containment depends on escape FROM that point - a different geometric quantity.  See
+    /// `envelope_chord_predictor`.
+    constexpr double transfer_offaxis_s2_half = 0.153;
+
+    /// Transfer near-field term at contact, ramping to zero at `transfer_near_gate_a`.
+    ///
+    /// MEASURED as the RMS over the full (E, cos theta) grid at the worst distance (d/a ~ 1).  The
+    /// angular range matters: the error is U-shaped in cos theta - for one HPGe at d/a = 1 it runs
+    /// 9.9% at grazing, a minimum of 1.6% near cos theta ~ 0.77, and 3.9% on axis - so an
+    /// on-axis-only measurement gives 4.0% and under-covers grazing queries by about two.  A single
+    /// number cannot carry that shape, and this is the honest one for a query of unknown angle.
+    ///
+    /// KNOWN SHORTCOMING: a query that is both near-grazing and close-in is still under-covered
+    /// (~10% real against ~6% declared).  Carrying it needs an angular term this struct does not
+    /// have, and the shape is not sin^2.
+    constexpr double transfer_near_contact = 0.06;
+
+    /// Where the transfer's near term switches off, in transverse half-extents.  With the
+    /// amplitude above the ramp tracks the measured decline out to ~4.5a, where the residual is
+    /// ~0.8% and the term is nearly off.
+    constexpr double transfer_near_gate_a = 5.0;
+}  // namespace model_sigma
 
 // ---------------------------------------------------------------------------
 // Geometry descriptor (storable; rebuilds the ray-trace Geometry)
@@ -307,6 +526,53 @@ struct GeometryDescriptor {
     static GeometryDescriptor from_xml_string(const std::string& xml);
 };
 
+/// True when the crystal is CdTe-class (CdTe, CZT): Cd + Te carry more than half the
+/// crystal's mass.  Keyed on COMPOSITION rather than on the material's name, because names
+/// are free-form user text ("CZT", "CdZnTe", "Cd0.9Zn0.1Te", ...) and a name test would
+/// quietly stop matching.
+///
+/// ONE definition, used by both response-building paths (ResponseGenerator::generate and
+/// make_transfer_response).  It selects model_sigma::tot_far_floor_cdte, which is an
+/// empirical patch over a modelling gap that is not understood, so this is expected to be
+/// DELETED along with that constant rather than extended.
+/// Declare a descriptor's detector side - crystal, fillet, bore, dead layer, attenuator
+/// layers, collimator - onto `sink`.
+///
+/// ONE definition, used by all three paths that build a detector from a descriptor:
+/// GeometryDescriptor::build_geometry (the query-time kernel), ResponseGenerator's per-node
+/// setup, and ResponseGenerator::configure_calculator.  `Geometry` and `EfficiencyCalculator`
+/// expose the same setter signatures, so both are valid sinks.
+///
+/// Keep it that way.  The eta table is measured through a calculator configured here while
+/// the query-time kernel K traces a Geometry configured here; if the two ever declare
+/// different solids the response is internally inconsistent, and the generator's own probe
+/// banks cannot detect it because they route through the same path.
+///
+/// `mat` maps a descriptor material index to an instantiated Material the caller owns and
+/// keeps alive for as long as the sink is used.
+template <class Sink, class MatFn>
+void apply_detector_side(Sink& sink, const GeometryDescriptor& gd, MatFn mat) {
+    sink.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
+                                             gd.dimensions_cm);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after it; fillet
+    // first, so bore_fits() sees the final crystal profile.
+    if (gd.bullet_radius_cm > 0.0) sink.set_bullet_radius(gd.bullet_radius_cm);
+    if (gd.bore)
+        sink.set_bore_hole(gd.bore->radius, gd.bore->depth, gd.bore->rounded_tip);
+    if (gd.dead_layer)
+        sink.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side, gd.dead_layer->back);
+    for (const LayerSpec& l : gd.layers)
+        sink.add_attenuator(mat(l.material_index), l.front_thickness_cm,
+                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
+    if (gd.collimator)
+        sink.add_collimator(mat(gd.collimator->material_index),
+                            gd.collimator->side_thickness_cm, gd.collimator->z_start_cm,
+                            gd.collimator->z_end_cm);
+}
+
+bool crystal_is_cdte_class(const GeometryDescriptor& gd);
+
+
 // ---------------------------------------------------------------------------
 // Stored mu tables (generation-time attenuation snapshot)
 // ---------------------------------------------------------------------------
@@ -430,7 +696,23 @@ private:
 enum class TotEffTier : uint8_t {
     KernelExact,   ///< bare crystal: eps_tot = K_{mu - mu_RS}
     BCurve,        ///< canned scintillator: eps_tot = b(E) * K_{mu - mu_RS}
-    EtaTotTable    ///< HPGe-class: eps_tot = k(E) * eta_tot(E,theta) * K
+    EtaTotTable,   ///< HPGe-class: eps_tot = k(E) * eta_tot(E,theta) * K
+    /// eps_tot is NOT CHARACTERIZED: the response carries FEP only, and the
+    /// eps_total_* queries return 0 flagged NeedsMc rather than a number.
+    ///
+    /// This exists because KernelExact is a POSITIVE claim, not a default:
+    /// ResponseGenerator only selects it after checking the bare kernel against
+    /// MC to 1% (see pick_tot_tier). A producer with no total-efficiency data at
+    /// all -- an FEP-only import, or a curve transfer whose source DRF had no
+    /// total curve -- was previously left at the KernelExact default, so it
+    /// silently served a bare-crystal kernel as if it were a verified total.
+    /// For a real HPGe that is not a small error: the kernel omits the passive
+    /// housing and every peak-to-total effect, and at low energy it falls BELOW
+    /// the response's own eps_fep, which is physically impossible. A host gating
+    /// cascade-summing on "does this response have a total?" got a confident yes
+    /// and a wrong correction. Being un-representable is the honest answer, so
+    /// it is a tier rather than a flag no caller has to read.
+    NotCharacterized
 };
 
 struct TotEffPayload {
@@ -441,6 +723,10 @@ struct TotEffPayload {
 
     void finalize();
     double ln_b_at(double energy_keV) const;   ///< clamped PCHIP over (lnE, ln b)
+
+    /// False only for #TotEffTier::NotCharacterized - i.e. whether an
+    /// eps_total query returns a modeled value at all.
+    bool characterized() const { return tier != TotEffTier::NotCharacterized; }
 
 private:
     Pchip b_curve_;
@@ -470,13 +756,25 @@ struct GroundingPoint {
 /// (S7-measured; constants from the spec sec 4 grounding table -- Level-1
 /// values; a Level-2 nuisance fit would shrink the near term to ~1%).
 struct SigmaTransferModel {
-    double far_onaxis = 0.005;      ///< far-field on-axis floor
-    double offaxis_mid = 0.03;      ///< x sin^2(theta), mid/high E
-    double offaxis_low_e = 0.25;    ///< extra x sin^2(theta) at low E
-    double low_e_ref_keV = 45.0;    ///< where the low-E term is fully on
-    double mid_e_ref_keV = 150.0;   ///< where the low-E term is off
-    double near_contact = 0.10;     ///< at contact (d ~ a), no Level-2
-    double near_gate_a = 5.0;       ///< near term active below this many a
+    double far_onaxis = model_sigma::transfer_far_onaxis;        ///< far-field on-axis floor
+    double offaxis_mid = model_sigma::transfer_offaxis_mid;      ///< x sin^2(theta), mid/high E
+    double offaxis_low_e = model_sigma::transfer_offaxis_low_e;  ///< extra x sin^2(theta) at low E
+    double low_e_ref_keV = model_sigma::transfer_low_e_ref_keV;  ///< where the low-E term is fully on
+    double mid_e_ref_keV = model_sigma::transfer_mid_e_ref_keV;  ///< where the low-E term is off
+    double near_contact = model_sigma::transfer_near_contact;    ///< at contact (d ~ a), no Level-2
+    double near_gate_a = model_sigma::transfer_near_gate_a;      ///< near term active below this many a
+    /// Half-saturation in sin^2(theta) of the off-axis term.  <= 0 selects the legacy
+    /// unbounded sin^2(theta) form, so a response deserialized from a file written before
+    /// this field existed behaves exactly as it did.
+    double offaxis_s2_half = model_sigma::transfer_offaxis_s2_half;
+
+    /// The three mechanisms separately - the on-axis floor, the off-axis (angle-flat eta)
+    /// residual and the near-field residual; eval() is their quadrature sum.  A covariance treats
+    /// each as its own fully-correlated common mode (rank-one block): their per-energy magnitudes
+    /// differ (the off-axis term ramps up below mid_e_ref_keV), and one combined block would
+    /// over-correlate energies whose magnitudes differ.
+    struct Components { double far_onaxis = 0.0, offaxis = 0.0, near = 0.0; };
+    Components components(double d_over_a, double cos_theta, double energy_keV) const;
 
     /// d in units of the transverse half-extent a.
     double eval(double d_over_a, double cos_theta, double energy_keV) const;
@@ -508,14 +806,15 @@ struct GroundingBlock {
 // ---------------------------------------------------------------------------
 
 /// Coverage-tuned per-{quantity x regime} model floors (fractional 1-sigma;
-/// spec sec 4/5). Defaults are the campaign's conservative envelope; the
-/// generator tunes them per detector on a held-out probe bank.
+/// spec sec 4/5). Defaults are the campaign's conservative envelope
+/// (model_sigma); the generator inflates the FEP pair on a minor model-form
+/// failure of its closed loop.
 struct SigmaFloors {
-    double fep_far = 0.014;
-    double fep_near = 0.023;
-    double tot_far = 0.016;
-    double tot_near = 0.029;
-    double near_regime_a = 4.0;   ///< near regime: d < this many a
+    double fep_far = model_sigma::fep_far_floor;
+    double fep_near = model_sigma::fep_near_floor;
+    double tot_far = model_sigma::tot_far_floor;
+    double tot_near = model_sigma::tot_near_floor;
+    double near_regime_a = model_sigma::near_regime_a;   ///< near regime: d < this many a
 };
 
 enum class ResponseProfile : uint8_t {
@@ -582,7 +881,13 @@ struct AccuracyCertificate {
     /// adds structured tags). `pass` is the noise-aware tolerance verdict.
     struct Row {
         double E_keV = 0.0, d_cm = 0.0, cos_theta = 1.0, phi_deg = 0.0;
+        /// Full-energy peak: the MC truth and the model, each with its sigma.
         double mc = 0.0, mc_sig = 0.0, model = 0.0, model_sig = 0.0;
+        /// Total efficiency, the same four.  Kept per row rather than summarized
+        /// away because the tot_* regime floors have to be DERIVED from this
+        /// distribution, and two percentiles cannot be deconvolved against the
+        /// MC noise that produced them.
+        double mc_tot = 0.0, mc_tot_sig = 0.0, model_tot = 0.0, model_tot_sig = 0.0;
         uint8_t tag = 0;
         bool pass = false;
     };
@@ -774,14 +1079,38 @@ public:
     double kernel_transmitted(double energy_keV, const ApertureQuadrature& q) const;
 
     // --- multi-energy covariance for fits (spec Eq. 8b) ---
-    /// Row-major NxN fractional covariance of eps_fep between the given
-    /// energies at a common query geometry: grounding basis covariance
-    /// (correlated) + node MC variance (diagonal) + model floor and
-    /// sigma_transfer (treated as fully correlated common modes -- a floor
-    /// that "the whole response may be off by x%" must not average down
-    /// across peaks).
+    /// Row-major NxN fractional covariance of eps_fep between `energies_keV` at ONE query
+    /// geometry (a crystal-face-frame position, as eps_fep_at takes):
+    ///
+    ///     C_ij = sum_t m_t[i] * m_t[j] + Cov[ln k](E_i, E_j) + delta_ij * node2_i
+    ///
+    /// m_t are the model-envelope terms of the per-query sigma budget (regime floor,
+    /// behind-plane, collimator shadow, near-field-unmodeled, and the far / off-axis / near
+    /// components of model_transfer and grounding.transfer): each says "the model may be off by
+    /// x% here" for a reason shared by every energy, so each is a fully-correlated common mode
+    /// that must NOT average down over a fit's peaks.  node2 is the MC node variance (independent
+    /// per energy) and Cov[ln k] the anchor / grounding fit covariance - the data-derived part.
+    ///
+    /// INVARIANT (pinned by tests): C_ii == (eps_fep_at(E_i, src_cm, q).sigma / value)^2 - the
+    /// same budget through the same code (fep_budget), so the two cannot drift.  PSD by
+    /// construction.  When `model_part` is given it receives the envelope-only matrix
+    /// sum_t m_t[i] m_t[j] (same layout), so a host can separate the ad hoc envelopes from the
+    /// uncertainty its own data supports.
+    ///
+    /// The quadrature only feeds the collimator shadow gate; the overload without one builds it
+    /// (as eps_fep_at does).  The distance form mirrors eps_fep(E, theta, phi, dist) and goes
+    /// through query_position().  eps_total has no covariance API: hosts consume its value only;
+    /// its budget is the same struct, so one could be added the same way.
     std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
-                                        double theta_rad, double dist_cm) const;
+                                        const Eigen::Vector3d& src_cm,
+                                        const ApertureQuadrature& q,
+                                        std::vector<double>* model_part = nullptr) const;
+    std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
+                                        const Eigen::Vector3d& src_cm,
+                                        std::vector<double>* model_part = nullptr) const;
+    std::vector<double> frac_covariance(const std::vector<double>& energies_keV,
+                                        double theta_rad, double phi_rad, double dist_cm,
+                                        std::vector<double>* model_part = nullptr) const;
 
     // --- XML (one codec for generator + InterSpec) ---
     /// Root element <CeeLoResponse version="1">; InterSpec convention
@@ -802,9 +1131,18 @@ private:
     /// so content_hash() can hash the certificate-free payload (invariance).
     std::string serialize_xml(bool include_certificate) const;
 
-    struct EvalCommon;  // internal per-query bundle
+    struct SigmaBudget;  // one query's fractional sigma budget: data-derived vs model envelopes
+    struct EvalCommon;   // internal per-query bundle
+    /// Geometry, flags and the geometry-only envelope terms (behind-plane, model_transfer,
+    /// collimator shadow) shared by the FEP and total paths.
     EvalCommon common_eval(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q) const;
+    /// THE one FEP sigma budget: the near-field gate, grounding (k and its transfer envelope),
+    /// the eta node sigma and the regime floor, on top of what common_eval filled in.  Raises
+    /// flags on `ec`; returns the near-field boost and grounding ln k for the value.
+    /// fep_prefactor (hence eps_fep) and frac_covariance are its only callers - which is what
+    /// makes the covariance diagonal equal the per-query sigma by construction.
+    void fep_budget(double energy_keV, EvalCommon& ec, double& ln_N, double& ln_k) const;
     /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
     /// the thing it decomposes cannot drift apart.
     void kernel_ray_weights_impl(double energy_keV, const ApertureQuadrature& q, MuChoice mu,

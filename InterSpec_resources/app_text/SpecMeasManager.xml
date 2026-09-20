@@ -138,6 +138,10 @@
   <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
   <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
   <message id="smm-outx-generic-geom">Generic detector (physical geometry + reference)</message>
+  <!-- The generic entry does not import anything on Accept: it opens the Modify Detector
+       Response dialog, and only "Use" there creates the detector.  Say so if that dialog is
+       closed, rather than letting the import vanish silently. -->
+  <message id="smm-outx-generic-discarded">The detector was not imported - the &quot;Modify Detector Response&quot; window was closed without pressing &quot;Use&quot;.  Drop the file again if you want another go at it.</message>
   <message id="smm-outx-note">ANGLE file: {1}</message>
   <message id="smm-outx-no-generic">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1}</message>
 

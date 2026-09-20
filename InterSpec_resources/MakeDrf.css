@@ -3,18 +3,57 @@
 }
 
 
-.MakeDrfOptions {
-  width: 150px;
+/* Left column: diameter-only / full-geometry description of the detector */
+.MakeDrfGeomPanel {
+  width: 310px;
   border: 1px solid grey;
   margin-bottom: 4px;
+  padding: 3px;
+  box-sizing: border-box;
 }
 
-.MakeDrfOptions > fieldset {
+.MakeDrfGeomModeRow {
+  padding: 2px 0 4px 0;
+}
+
+.MakeDrfGeomGuidance {
+  font-size: 90%;
+  opacity: 0.8;
+  padding: 0 2px 6px 2px;
+}
+
+.MakeDrfDiameterDiv > fieldset {
   border: none;
   padding-top: 1px;
   padding-bottom: 5px;
   margin-top: 5px;
   margin-bottom: 5px;
+}
+
+.MakeDrfMcTool .McGeomBox,
+.MakeDrfMcTool .McOptsBox {
+  margin: 2px 0;
+}
+
+.MakeDrfChart {
+  min-height: 200px;
+}
+
+/* Fit options, laid out in a row under the chart */
+.MakeDrfOptionsRow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 3px 0;
+}
+
+.MakeDrfOptionsRow > fieldset {
+  border: 1px solid #aaa;
+  border-radius: 3px;
+  padding: 1px 6px 4px 6px;
+  margin: 0;
 }
 
 .FixedGeomCombo {
@@ -169,13 +208,12 @@
   
 }
 
-.MakeDrfChartOptions {
-  padding-top: 3px;
-  padding-bottom: 4px;
+.MakeDrfLowerDiv {
+  padding-bottom: 2px;
 }
 
 .MakeDrfEqnAnswer {
-  display: inline-block;
+  display: block;
   /* margin: 5px 2px 3px 2 px; */
   padding-top: 5px;
   height: 26px;

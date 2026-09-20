@@ -19,10 +19,10 @@
 >   peaks, continua, optional energy-cal refit, and peak-source assignments.
 >
 > The two families share infrastructure (`foreground` / `background`, `EnergyCal`, chart
-> assets, application metadata, the Inja env, the two custom callbacks `printFixed` /
-> `printCompact`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
+> assets, application metadata, the Inja env, the three custom callbacks `printFixed` /
+> `printCompact` / `printExp`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
 >
-> **Last updated:** 2026-08-29
+> **Last updated:** 2026-09-12
 
 ## 1. What this is
 
@@ -431,7 +431,11 @@ it does not exist in the payload.
     "MultithreadSelfAttenCalc": true,
     "PhotopeakClusterSigma":  1.5,
     "BackgroundPeakSubtract": false,
-    "ElementNuclidesSameAge": true
+    "ElementNuclidesSameAge": true,
+    "DrfUncertaintyMethod":     1,
+    "DrfUncertaintyMethodName": "ErrorPropagation",
+    "AccountForDrfUncert":      true,
+    "CorrectForCascadeSumming": false
   }
 }
 ```
@@ -454,6 +458,10 @@ it does not exist in the payload.
 | `FitOptions.PhotopeakClusterSigma`    | number |  | Energies within this many σ are clustered into a single photopeak. |
 | `FitOptions.BackgroundPeakSubtract`   | bool   |  | Background peaks are subtracted from foreground peaks before fitting. |
 | `FitOptions.ElementNuclidesSameAge`   | bool   |  | Different isotopes of the same element share one age parameter. |
+| `FitOptions.DrfUncertaintyMethod`     | number |  | How the detector-efficiency uncertainty band is used: `0` none (statistics-only), `1` `ErrorPropagation` (default — central values identical to `0`, reported parameter uncertainties widened by the band post-fit), `2` `Likelihood` (band folded into the fit itself, so the central value may move and the per-peak pulls sit coherently off zero). |
+| `FitOptions.DrfUncertaintyMethodName` | string |  | The same value as a name: `"None"`, `"ErrorPropagation"` or `"Likelihood"`.  `act_fit.tmplt.html` keys its "DRF eff. uncert." column off this. |
+| `FitOptions.AccountForDrfUncert`      | bool   |  | Legacy field, kept so older report templates keep working: true whenever `DrfUncertaintyMethod` is not `0`.  It does **not** distinguish the two non-zero states — prefer `DrfUncertaintyMethod`. |
+| `FitOptions.CorrectForCascadeSumming` | bool   |  | Cascade (true-coincidence) summing corrections applied to predicted counts. |
 
 ### 5.4 `foreground` and `background`
 
@@ -469,6 +477,7 @@ only present if a background spectrum was loaded; `foreground` is always present
   "StartTime":     "2026-05-20T14:30:45.123456",
   "StartTime_iso": "2026-05-20T14:30:45",
   "StartTime_vax": "20-MAY-2026 14:30:45.12",
+  "StartTimeUsLocale": "5/20/26 2:30:45 PM",
   "StartTimeIsValid": true,
   "LowerSpectrumEnergy": 0.0,   "UpperSpectrumEnergy": 3000.0,
   "NumberChannels": 8192,
@@ -521,6 +530,7 @@ only present if a background spectrum was loaded; `foreground` is always present
 | `StartTime`           | string  |     | ISO-8601 extended (with microseconds). |
 | `StartTime_iso`       | string  |     | ISO-8601 basic (seconds resolution). |
 | `StartTime_vax`       | string  |     | VAX-style timestamp. |
+| `StartTimeUsLocale`   | string  |     | US-locale `M/d/yy h:mm:ss tt` (e.g. `5/20/26 2:30:45 PM`), for reports that follow that convention. The recorded wall-clock, with no timezone shift applied. **Only present if `StartTimeIsValid`** — guard on it. |
 | `StartTimeIsValid`    | bool    |     | False if the start-time field was missing from the input file. |
 | `LowerSpectrumEnergy` | number  | keV | Lower edge of the lowest channel. |
 | `UpperSpectrumEnergy` | number  | keV | Upper edge of the highest channel. |
@@ -687,6 +697,28 @@ structure is built by `BatchInfoLog::add_basic_src_details()` plus a per-source
 | `SelfAttenMassFracUncert`       | number | 0–1 | Mass-fraction uncertainty. Only present if `IsSelfAttenSource` and `SelfAttenIsVariableMassFrac`. |
 | `PeaksThisNucContributesTo`     | array[object] | | See §5.7. May be empty if no peaks were assigned to this nuclide. |
 
+**Batch-only detection-limit rollup.** In a **batch** activity/shielding run, each `Sources[]`
+element additionally carries a per-nuclide Currie detection-limit summary (added by
+`add_exemplar_detection_limit_rollup_to_sources()`; not present in the interactive GUI fit log).
+The limit is taken from a single representative gamma line per nuclide so that the reported Lc/MDA
+are comparable across every spectrum in the batch: the line chosen in the exemplar (its
+largest-amplitude used-for-fit peak) is preferred, and if that line was not fit in a given spectrum
+the nuclide's most prominent fitted line is used as a fallback (flagged by `UsedSubstitutePeak`).
+Limits are converted from counts to activity, so for a per-area fixed-geometry detector they are
+areal too (e.g. µCi/m²), matching `ActivityPostFix`.
+
+| Field | Type | Units | Notes |
+|---|---|---|---|
+| `HasDetectionLimit`         | bool   |     | True if an Lc/MDA could be computed. **Guard the numeric fields below on this.** |
+| `DetectionLimitStatus`      | string |     | Always present. Short human-readable explanation of which line the limit came from, or why none could be computed. Use it to explain an absent limit rather than leaving a blank cell. |
+| `Lc_uCi`                    | number | µCi | Currie decision threshold (Lc), as activity. Only present if `HasDetectionLimit`. |
+| `Lc_bq`                     | number | Bq  | Only present if `HasDetectionLimit`. |
+| `Mda_uCi`                   | number | µCi | Currie detection limit (MDA), as activity. Only present if `HasDetectionLimit`. |
+| `Mda_bq`                    | number | Bq  | Only present if `HasDetectionLimit`. |
+| `RepresentativePeakEnergy`  | number | keV | Energy of the line the limit was taken from. Only present if `HasDetectionLimit`. |
+| `UsedSubstitutePeak`        | bool   |     | True when the exemplar's designated line was not fit in this spectrum and a fallback line was used. Always present. |
+| `IsDetected`                | bool   |     | Always present. True if observed source counts ≥ Lc. Report wording (e.g. FRMAC "Approved" / "Less than Lc") is a template concern. Defaults to `true` when no limit was computed. |
+
 ### 5.7 `Sources[].PeaksThisNucContributesTo[]`
 
 Each element describes one fitted peak that the source contributes gammas to. Built by
@@ -723,6 +755,11 @@ Each element describes one fitted peak that the source contributes gammas to. Bu
 | `DetectorSolidAngleFraction` | number | 0–1   | Fraction of 4π subtended by the detector. |
 | `DetectorIntrinsicEff`       | number | 0–1   | Intrinsic photopeak efficiency. |
 | `DetectorEff`                | number | 0–1   | `DetectorSolidAngleFraction × DetectorIntrinsicEff`. |
+| `DrfEffFracUncert`           | number | 0–1   | Fractional 1σ detector-efficiency uncertainty at this energy, at the fit geometry.  Present only when `FitOptions.DrfUncertaintyMethod` is `2` (`Likelihood`) and the DRF carries uncertainty information; `SignalCountsUncert` then includes it, and it is therefore in the denominator of `PredictedNumSigmaOff` (which moves that pull toward zero).  NOT present under `ErrorPropagation`, which uses the same band but only post-fit, leaving the per-peak residuals statistics-only — so `AccountForDrfUncert` being true does not imply this field.  Typically 0.01–0.05 far-field, larger near-field or off-axis. |
+| `DrfEffFracUncertPercentStr` | string | %     | `DrfEffFracUncert` as a percent, for display. |
+| `DrfEffFracUncertModel`      | number | 0–1   | The part of `DrfEffFracUncert` that is the response's ad hoc model envelope (regime floor, geometry-transfer envelope, near-field penalty) rather than uncertainty the DRF's own data supports.  Always ≤ `DrfEffFracUncert`; 0 for a measured-curve DRF used in its measured regime.  A value close to `DrfEffFracUncert` means the uncertainty is a statement about the model, not about the measurement. |
+| `DrfEffFracUncertModelPercentStr` | string | % | `DrfEffFracUncertModel` as a percent, for display. |
+| `DrfEffFlag`                 | string |       | Detector-efficiency validity at this energy and geometry: `ok`, `out-of-range-clamped`, `near-field-unmodeled`, `shadowed`, or `needs-mc`.  Present only when not `ok`; non-`ok` values also appear as fit warnings. |
 | `ShieldAttenuations`         | array[number] | | One factor per shielding layer (`Shieldings.Shields[]` order). |
 | `AttenuationByShieldingFactor` | number |     | Product of `ShieldAttenuations[]`. |
 | `AttenuationByAirFactor`     | number |       | Air attenuation factor between source and detector. |
@@ -1754,7 +1791,7 @@ NaN / inf, and operator precedence. Things like `{{ src.Activity_uCi * 1000 }}` 
 when an operand is null or comes from a callback. **Prefer the pre-computed unit
 variants** — e.g. use `src.Activity_pCi` instead of `src.Activity_uCi * 1e6`. When you
 do need a derived value, compute it in C++ and add a field, or use `printFixed` /
-`printCompact` callbacks for formatting.
+`printCompact` / `printExp` callbacks for formatting.
 
 ### 8.3 No HTML auto-escaping
 
@@ -1835,7 +1872,7 @@ into a syntax error by adding text starting with `##`.
 
 ## 9. Custom callbacks
 
-`BatchInfoLog::get_default_inja_env()` registers two callbacks for this tool. (The
+`BatchInfoLog::get_default_inja_env()` registers three callbacks for this tool. (The
 Isotopics-by-Nuclides tool has additional callbacks like `pct`, `safe_html`,
 `scientific`, etc. — those are **not** registered for ShieldSourceFitLog and must not
 be used.)
@@ -1844,6 +1881,7 @@ be used.)
 |---|---|---|---|
 | `printFixed(value, decimals)`     | (number, int) | string | Format `value` with fixed-point notation and exactly `decimals` digits after the decimal point. E.g. `printFixed(3.14159, 2)` → `"3.14"`. |
 | `printCompact(value, sig_figs)`   | (number, int) | string | Format `value` with `sig_figs` significant figures, using whichever of fixed or scientific notation is more compact. Backed by `SpecUtils::printCompact`. E.g. `printCompact(1.23456e5, 4)` → `"1.234E5"`; `printCompact(0.0042, 3)` → `"0.00420"`. |
+| `printExp(value, decimals)`       | (number, int) | string | Format `value` in scientific notation with exactly `decimals` digits after the decimal point, always as `d.dddE±NN` (FRMAC/Genie convention). E.g. `printExp(18910.0, 3)` → `"1.891E+04"`. Unlike `printCompact` this never falls back to fixed-point, so a column stays aligned. The exponent carries at least two digits on every platform — MSVC natively pads to three, and the extra zero is trimmed back (a genuine three-digit exponent such as `1.000E-100` is kept). A `null` value — which is what a NaN or infinity becomes in JSON — prints as `"--"`. |
 
 Prefer these callbacks over Inja expression arithmetic for any formatting that
 involves a decimal point or scientific notation.
@@ -2094,7 +2132,8 @@ along these lines:
 > 2. **Pick the file extension.** `.tmplt.html` for an interactive report (you may
 >    embed the D3 spectrum chart and, for act/shield, the shielding/source-fit plot
 >    using §10.8). `.tmplt.txt` / `.tmplt.csv` / `.tmplt.md` for non-HTML outputs.
-> 3. **Format numerics with `printFixed(value, decimals)` or `printCompact(value, sig_figs)`** —
+> 3. **Format numerics with `printFixed(value, decimals)`, `printCompact(value, sig_figs)`
+>    or `printExp(value, decimals)`** —
 >    do not perform expression-side arithmetic; use the pre-computed unit variants
 >    instead (e.g. `Activity_uCi`, `Distance_m`).
 > 4. **Guard optional fields** with `exists("...")` or `existsIn(obj, "...")` — see

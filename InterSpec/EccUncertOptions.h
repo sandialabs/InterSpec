@@ -85,6 +85,24 @@ public:
    */
   std::shared_ptr<DetectorEfficiencyUncert> buildUncert() const;
 
+  /** Replaces the per-node uncertainty components this widget builds from, for hosts that drive it
+   from a live table rather than a parsed file.  Does not emit #changed.
+   */
+  void setPoints( const std::vector<float> &energies,
+                  const std::vector<float> &correlatedFrac,
+                  const std::vector<float> &uncorrelatedFrac );
+
+  /** Seeds the mode / correlation length from a correlation length - the inverse of
+   #effectiveCorrLength: <= 0 selects Uncorrelated, >= sm_fullyCorrelatedLength selects Fully
+   Correlated, anything else Gaussian with that length.  Does not emit #changed.
+   */
+  void setCorrelationLength( const double corrLength );
+
+  /** Hides the "import these uncertainties" checkbox, for hosts where opting out is not a
+   meaningful choice; #importUncertainties then always returns true.
+   */
+  void setImportToggleVisible( const bool visible );
+
   /** Emitted when the import toggle, correlation mode, or length changes. */
   Wt::Signal<> &changed();
 
@@ -93,9 +111,14 @@ protected:
   void handleImportToggled();
   void rebuildExampleTable();
 
-  const std::vector<float> m_energies;
-  const std::vector<float> m_baselineFrac;
-  const std::vector<float> m_convergenceFrac;
+  /** The show/hide/enable work shared by #handleModeChanged and #setCorrelationLength; the former
+   emits #changed afterwards, the latter does not.
+   */
+  void updateModeWidgets();
+
+  std::vector<float> m_energies;
+  std::vector<float> m_baselineFrac;
+  std::vector<float> m_convergenceFrac;
 
   Wt::WCheckBox *m_import;
   Wt::WComboBox *m_mode;

@@ -320,6 +320,31 @@ install(
 )
 
 
+# Remove developer artifacts that end up in the install prefix but are of no use to someone
+#  running InterSpec - roughly 21 MB of them in a Windows package.
+#  - include/ and lib/ come from the vendored Minuit2 and VoigtDistribution, which declare their
+#    own install() rules for headers, static libraries and CMake package files.  Those rules run
+#    because the projects are pulled in by the add_subdirectory() near the top of this file, and
+#    they inherit this project's install prefix.
+#  - bin/ is left behind empty by the `RUNTIME DESTINATION "bin/.."` workaround above: the path
+#    resolves to the prefix root, but CMake still creates `bin` on the way.
+#
+# This has to run after those subprojects install, which it does: CMake emits install rules in
+#  the order the commands appear, and the add_subdirectory() calls are far above this point.
+if( APPLE )
+  # `bin` is a real destination on macOS (see the RUNTIME DESTINATION above), so leave it alone.
+  install( CODE [[
+    file( REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/include" "${CMAKE_INSTALL_PREFIX}/lib" )
+  ]] )
+else( APPLE )
+  install( CODE [[
+    file( REMOVE_RECURSE "${CMAKE_INSTALL_PREFIX}/include"
+                         "${CMAKE_INSTALL_PREFIX}/lib"
+                         "${CMAKE_INSTALL_PREFIX}/bin" )
+  ]] )
+endif( APPLE )
+
+
 set(CPACK_PACKAGE_NAME "InterSpec")
 set(CPACK_PACKAGE_VENDOR "Sandia National Laboratories")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY

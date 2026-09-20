@@ -51,8 +51,6 @@
     Ez nagyobb hatás alacsonyabb energiákon vagy nagyobb kalibrációs távolságokon.
   </message>
   <message id="md-show-fwhm-markers">FWHM pontok mutatása</message>
-  <message id="md-display-energy-lower-label">Megjelenített energia, alsó:</message>
-  <message id="md-display-energy-upper-label">Felső:</message>
   <message id="md-mi-chart-phone">Diagram/Opciók</message>
   <message id="md-mi-peaks-phone">Használandó csúcsok</message>
   <message id="md-export-btn">Tárolás/Export...</message>
@@ -95,7 +93,7 @@
   <message id="md-saved-to-db">'{1}' elmentve a belső adatbázisba.</message>
   <message id="md-peak-counts">{1} {2} keV, csúcs {3} impulzus</message>
   <message id="md-peak-no-nuc">Nincs társított nuklid, {1} keV, csúcs {2} impulzus</message>
-  <message id="md-err-det-diam-invalid">A detektor átmérő érvénytelen - 2,54 cm-t feltételez.</message>
+  
   <message id="md-err-some-src">Néhány forrásnál hibák voltak.</message>
   <message id="md-n-fit-pars">{1} illesztési paraméter</message>
   <message id="md-html-eff-table-caption">Teljes energiájú detektálási hatásfok (% összes gamma)</message>

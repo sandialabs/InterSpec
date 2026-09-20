@@ -11,11 +11,17 @@
   fill: none;
 }
 
-/* Fractional efficiency uncertainty envelope (drawn under the efficiency line). */
+/* Fractional efficiency uncertainty envelopes (drawn under the efficiency line).  The solid-ish
+   inner band is what this detector's own data supports; the fainter, wider one adds the model
+   envelope, and together they are the total the analysis propagates. */
 .DrfChart .drf-eff-uncert-band {
   fill: var(--d3spec-fore-line-color, #B02B2C);
   fill-opacity: 0.18;
   stroke: none;
+}
+
+.DrfChart .drf-eff-uncert-band-model {
+  fill-opacity: 0.07;
 }
 
 /* FWHM line styling */
@@ -124,4 +130,29 @@ div.DrfChartTooltip {
     font-size: 11px;
     padding: 6px;
   }
+}
+
+/* Measured data points (Create DRF tool) */
+.DrfChart .drf-eff-marker {
+  fill: var(--d3spec-fore-line-color, #B02B2C);
+  stroke: var(--d3spec-text-color, #333);
+  stroke-width: 1px;
+}
+
+.DrfChart .drf-eff-errbar {
+  stroke: var(--d3spec-text-color, #333);
+  stroke-width: 1.5px;
+}
+
+.DrfChart .drf-fwhm-point {
+  stroke: var(--d3spec-back-line-color, #3F4C6B);
+  stroke-width: 2px;
+  fill: none;
+}
+
+/* Energy regions outside the measured data, where the curve is extrapolated */
+.DrfChart .drf-data-range-shade {
+  fill: var(--d3spec-text-color, #888);
+  fill-opacity: 0.08;
+  pointer-events: none;
 }

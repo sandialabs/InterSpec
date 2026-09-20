@@ -45,7 +45,9 @@ jobs:
         run: |
           echo "BUILD_DIR=${RUNNER_TEMP}/build_macos" >> "${GITHUB_ENV}"
           echo "INSTALLER_DIR=${RUNNER_TEMP}/mac_artifacts" >> "${GITHUB_ENV}"
-          echo "PAYLOAD_DIR=${RUNNER_TEMP}/mac_artifacts/InterSpec_macOS_latest" >> "${GITHUB_ENV}"
+          # This basename is what the user sees inside the mounted .dmg, so keep it in step with
+          # the .dmg name below.  The name is the warning - this branch is not the stable build.
+          echo "PAYLOAD_DIR=${RUNNER_TEMP}/mac_artifacts/InterSpec_macOS_Dangerously_Experimental" >> "${GITHUB_ENV}"
 
       - name: Prepare directories
         run: |
@@ -259,8 +261,14 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_DATE=$(date +%Y-%m-%d)
-          DMG_PATH="${INSTALLER_DIR}/InterSpec_app_macOS_latest_${BUILD_DATE}.dmg"
-          hdiutil create -volname "InterSpec" -srcfolder "${PAYLOAD_DIR}" -ov -format UDZO "${DMG_PATH}"
+          # One name drives both the file and the mounted volume, so the warning cannot survive
+          # in the filename but get lost the moment someone opens the image.  Including the date
+          # also means two different builds can be mounted at once without macOS disambiguating
+          # the second to "... 1".  (Verified this length is fine: hdiutil keeps volume names of
+          # this size verbatim - the old 27-character HFS+ limit does not apply here.)
+          DMG_NAME="InterSpec_macOS_Dangerously_Experimental_${BUILD_DATE}"
+          DMG_PATH="${INSTALLER_DIR}/${DMG_NAME}.dmg"
+          hdiutil create -volname "${DMG_NAME}" -srcfolder "${PAYLOAD_DIR}" -ov -format UDZO "${DMG_PATH}"
           codesign --force --options runtime --timestamp --sign "${MAC_SIGNING_IDENTITY}" "${DMG_PATH}"
           ls -lh "${INSTALLER_DIR}"
           echo "DMG_ARTIFACT=${DMG_PATH}" >> "${GITHUB_ENV}"

@@ -189,6 +189,16 @@ public:
    Does not cause the updated() signal to be emitted.
    */
   void setDistance( const double dist );
+
+  /** The user-entered 1-sigma distance uncertainty (PhysicalUnits); 0 when blank or invalid. */
+  double distanceUncertainty() const;
+
+  /** Sets (or, for <= 0, clears) the distance uncertainty; does not emit updated(). */
+  void setDistanceUncertainty( const double uncert );
+
+  /** Human-readable assay provenance ("Assay 2020-01-01: 12.3 uCi; age at assay 5 y; ..."),
+   empty when no assay information is being used. */
+  std::string assayInfoString() const;
   
   /** Set the activity, maybe from a hint in the spectrum file.
    Does not cause the updated() signal to be emitted.
@@ -272,6 +282,8 @@ protected:
   void handleUserChangedShielding();
   
   void handleUserChangedDistance();
+
+  void handleUserChangedDistanceUncert();
   
   void handleUserChangedActivity();
   
@@ -305,6 +317,10 @@ protected:
    When geometry is fixed, this will be hidden.
    */
   Wt::WLineEdit *m_distanceEdit;
+
+  /** Optional 1-sigma uncertainty of the distance; hidden with the distance for fixed geometry. */
+  Wt::WLabel *m_distanceUncertLabel;
+  Wt::WLineEdit *m_distanceUncertEdit;
   
   Wt::WLabel *m_activityLabel;
   

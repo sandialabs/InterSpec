@@ -323,6 +323,38 @@ Further detail about each peak, including these statistics, is available in the 
    an increase in computation time, and it is not usually necassary for life-times much
    greater than the measurement interval.
   </li>
+  <li><b>Det. eff. uncertainty</b>: Some detector response functions carry an estimate of
+   how uncertain their efficiency is, and that uncertainty is usually <em>correlated</em>
+   across energy (if the detector is a few percent more efficient than the curve says, it
+   tends to be so at every peak at once).  This control chooses whether, and how, that
+   efficiency uncertainty is used; it is shown only when the selected detector actually
+   carries one.
+   <br />
+   <ul>
+     <li><b>Don't use</b>: The fit uses only the counting (statistical) uncertainty of each
+       peak.  The efficiency uncertainty is ignored entirely.</li>
+     <li><b>Propagate to results</b> (the default): The best-fit activities and shielding are
+       exactly what you would get from &quot;Don't use&quot; &mdash; your <em>answer</em> does
+       not change &mdash; but the reported uncertainties are widened to include the detector's
+       efficiency uncertainty.  Because that uncertainty is correlated, a &plusmn;15% efficiency
+       band widens a fitted activity by about &plusmn;15% (it does not average away over many
+       peaks).  The residual chart still shows the statistical pulls, which straddle zero as
+       usual.</li>
+     <li><b>Use in fit</b>: The correlated efficiency uncertainty is folded directly into the
+       fit.  The fit is then allowed to apply one small common efficiency adjustment, shared by
+       every peak, to better reconcile peaks that disagree under the band.  This can shift the
+       best-fit activity slightly.</li>
+   </ul>
+   <br />
+   <b>Why the &quot;Use in fit&quot; pulls sit off-zero.</b>  When the fit applies that one
+   shared efficiency adjustment, and the adjustment is not zero, <em>every</em> residual on the
+   chart shifts the same way &mdash; so the pulls sit coherently above (or below) zero together,
+   even though the model fits the data well.  The chart notes this shift (&quot;Det. eff.
+   correlations bias residuals ~X&#963; from zero&quot;).  That coherent offset is expected, not a
+   sign of a bad fit &mdash; it is exactly the effect the default &quot;Propagate to results&quot;
+   option avoids by leaving the best-fit answer unchanged and only widening the reported
+   uncertainty.
+  </li>
 </ul>
 
 <h2>Fitting the Model</h2>

@@ -235,7 +235,31 @@ class DetectorPeakResponseJS {
     return [50, 3000]; // Default fallback
   }
   
-  // Calculate efficiency at given energy
+  // The absolute-to-intrinsic conversion factor at an energy, or 1 when the curve is already
+  // intrinsic.  A FarFieldAbsolute curve stores absolute efficiency at its reference distance; the
+  // factor is 1/(solid-angle fraction), times an air-attenuation correction when the detector asks
+  // for one (which is what makes it energy dependent).  Sampled by C++ and interpolated here, which
+  // mirrors DetectorPeakResponse::intrinsicEfficiency()'s own product.
+  absToIntrinsic(energy) {
+    const f = this.data && this.data.absToIntrinsic;
+    if (!f || !f.energies || !f.factors || f.energies.length < 1)
+      return 1.0;
+
+    const es = f.energies, fs = f.factors;
+    if (energy <= es[0]) return fs[0];
+    if (energy >= es[es.length - 1]) return fs[es.length - 1];
+
+    for (let i = 1; i < es.length; ++i) {
+      if (energy <= es[i]) {
+        const t = (energy - es[i-1]) / (es[i] - es[i-1]);
+        return fs[i-1] + t * (fs[i] - fs[i-1]);
+      }
+    }
+    return fs[fs.length - 1];
+  }
+
+  // Calculate efficiency at given energy.  Always the INTRINSIC efficiency (per gamma striking the
+  // detector face), whatever the stored curve happens to hold - see absToIntrinsic().
   efficiency(energy) {
     if (!this.hasEfficiency()) {
       return null;
@@ -244,13 +268,17 @@ class DetectorPeakResponseJS {
     const effData = this.data.efficiency;
     
     const energyInUnits = energy / effData.energyUnits;
+    let eff = null;
     if (effData.form === 'kEnergyEfficiencyPairs') {
-      return akimaInterpolate(energyInUnits, effData.pairs);
+      eff = akimaInterpolate(energyInUnits, effData.pairs);
     } else if (effData.form === 'kExpOfLogPowerSeries') {
-      return expOfLogPowerSeriesEfficiency(energyInUnits, effData.coefficients);
+      eff = expOfLogPowerSeriesEfficiency(energyInUnits, effData.coefficients);
     }
-    
-    return null;
+
+    if (eff === null)
+      return null;
+
+    return eff * this.absToIntrinsic(energy);
   }
   
   // Whether a fractional efficiency uncertainty envelope was provided.
@@ -261,13 +289,46 @@ class DetectorPeakResponseJS {
 
   // Fractional (1-sigma) efficiency uncertainty at the given energy, linearly
   // interpolated (constant extrapolation) over the exported sample points, or
-  // null when no envelope is available.
+  // null when no envelope is available.  This is the TOTAL - what the activity
+  // fit propagates.
   fracUncert(energy) {
+    return this.interpUncert(energy, 'fracUncerts');
+  }
+
+  // The part of fracUncert(energy) that is an ad hoc model envelope (a transfer
+  // model's off-axis allowance, a regime floor - things no measurement of this
+  // detector constrains) rather than something its own data supports.  0 for a
+  // plain curve DRF, whose uncertainty is all data-derived.
+  modelFracUncert(energy) {
+    const val = this.interpUncert(energy, 'modelFracUncerts');
+    return (val === null) ? 0 : val;
+  }
+
+  // The data-derived part: what is left of the total once the model envelope is
+  // taken out (they add in quadrature).
+  dataFracUncert(energy) {
+    const total = this.fracUncert(energy);
+    if (total === null)
+      return null;
+    const model = Math.min(this.modelFracUncert(energy), total);
+    return Math.sqrt(Math.max(0, total*total - model*model));
+  }
+
+  // Whether the data-derived part above is a measurement of this detector at all, or a default
+  // standing in for one (see DetectorPeakResponse::toJSON).
+  uncertDataIsAssumed() {
+    const u = this.data && this.data.effUncertFrac;
+    return !!(u && u.dataIsAssumed);
+  }
+
+  interpUncert(energy, field) {
     if (!this.hasEffUncert())
       return null;
 
     const es = this.data.effUncertFrac.energies;
-    const fs = this.data.effUncertFrac.fracUncerts;
+    const fs = this.data.effUncertFrac[field];
+    if (!fs || fs.length !== es.length)
+      return null;
     if (energy <= es[0]) return fs[0];
     if (energy >= es[es.length - 1]) return fs[es.length - 1];
 
