@@ -216,6 +216,16 @@ public:
    item rather than index on purpose: the indices shift with that tab's presence.
    */
   void showGeometryTab();
+  
+  /** Selects the "Geom & MC" tab, switches to Geometry Modeled, sets the build method, and starts
+   a run - so a caller that already knows what the user asked for (e.g. the app-URL import's
+   detector-modeling choice) lands them on a characterization already under way, with this tool's
+   own progress, ETA and cancel controls, rather than on a form they have to drive themselves.
+   
+   Returns whether a generation actually started; false when the DRF has no geometry to model, the
+   geometry is incomplete, or a run is already in flight.
+   */
+  bool startMcCharacterization( const MakeMcResponseForDrf::Method method );
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;

@@ -3079,7 +3079,7 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
                                        WString mainMsgHtml,
                                        string creditsHtml,
                                        std::function<void()> saveDrfsCallBack,
-                                       std::function<void(shared_ptr<DetectorPeakResponse>)> onAcceptedCallBack )
+                                       DrfSelect::ChooseDrfHooks hooks )
 {
   wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
   
@@ -3225,6 +3225,10 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     credits->addStyleClass( "DrfFileSelectCredits" );
   }//if( !descrip_html.empty() )
 
+  // Caller-specific controls sit between what the DRF *is* and what to do with it.
+  if( hooks.addContent )
+    hooks.addContent( dialog->contents() );
+  
   const bool makeDrfsSaveCb = !!saveDrfsCallBack;
   const bool makeSerialNumCb = (meas && !meas->instrument_id().empty());
   const bool makeModelCb = (meas
@@ -3274,6 +3278,12 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     if( !drf || !interspec )
       return;
       
+    // Before the DB write and before it is applied: a hook that modifies the DRF changes its hash,
+    //  which is the key the "Previous" row is stored under, so it has to run first or the stored
+    //  detector is not the one the user gets.
+    if( hooks.beforeAccept )
+      hooks.beforeAccept( drf );
+    
     auto sql = interspec->sql();
     const Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
@@ -3303,8 +3313,8 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     }//if( m_defaultForDetectorModel and is checked )
     
     // Last, so any follow-up the caller offers is on top of a detector already in use and saved.
-    if( onAcceptedCallBack )
-      onAcceptedCallBack( drf );
+    if( hooks.afterAccept )
+      hooks.afterAccept( drf );
   } );
   
   if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
@@ -3335,6 +3345,32 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
 }//createChooseDrfDialog(...)
 
 
+namespace
+{
+/** The detector-modeling choices offered when an app-URL brings in a DRF that knows its physical
+ shape.  A URL can never carry a Monte-Carlo response (~17 KB deflated, far past a QR code), so the
+ shape arrives inert - these are the ways to make it count.  Ordered cheapest first; the index is
+ the combo index.
+ */
+enum class UrlDrfModeling : int
+{
+  /** Leave the DRF as the classic on-axis far-field curve.  The geometry is still stored. */
+  FlatDisk = 0,
+  
+  /** EFFTRAN-style transfer through the geometry, anchored on the DRF's own curve.  Instant and
+   deterministic, and what every other geometry-bearing import does - see the
+   CeeLoUtils::attachCurveTransferResponse call sites.
+   */
+  CurveTransfer = 1,
+  
+  /** A full Monte-Carlo characterization, which takes minutes and so is handed to the Modify
+   Detector Response tool, already running, where the progress and cancel controls live.
+   */
+  MonteCarlo = 2
+};//enum class UrlDrfModeling
+}//namespace
+
+
 void DrfSelect::handle_app_url_drf( const std::string &url_query )
 {
   try
@@ -3348,39 +3384,94 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
     if( interspec )
       interspec->useMessageResourceBundle( "DrfSelect" );
     
-    // A URL never carries a Monte-Carlo response (far too large for a QR code), so a DRF that
-    //  arrives knowing its shape is one the user can finish characterizing - offer to.
-    const bool geom_only = (drf->geometry() && !drf->ceeloResponse());
+    // A URL never carries a Monte-Carlo response, so a DRF that arrives knowing its shape has a
+    //  choice to make about what that shape is used for.  Ask it here, where the user already is,
+    //  rather than leaving the detector a flat disk and hoping they find the Modify dialog.
+    const bool geom_only = (drf->geometry() && !drf->ceeloResponse() && !drf->isFixedGeometry());
     
     const WString msg = WString::tr( geom_only ? "ds-url-drf-geom-only" : "ds-url-drf-received" );
     
-    std::function<void(shared_ptr<DetectorPeakResponse>)> on_accept;
+    ChooseDrfHooks hooks;
+    
     if( geom_only )
     {
-      on_accept = []( shared_ptr<DetectorPeakResponse> accepted ){
+      // Shared by the three hooks below: the combo lives in the dialog, so it is reached through an
+      //  observing_ptr that nulls itself if the dialog goes first.
+      auto selector = make_shared<Wt::Core::observing_ptr<WComboBox>>();
+      
+      hooks.addContent = [selector]( WContainerWidget *parent ){
+        WContainerWidget *row = parent->addNew<WContainerWidget>();
+        row->addStyleClass( "DrfUrlModelingRow" );
+        
+        WLabel *label = row->addNew<WLabel>( WString::tr("ds-url-modeling-label") );
+        WComboBox *combo = row->addNew<WComboBox>();
+        label->setBuddy( combo );
+        
+        combo->addItem( WString::tr("ds-url-modeling-flat") );
+        combo->addItem( WString::tr("ds-url-modeling-transfer") );
+        combo->addItem( WString::tr("ds-url-modeling-mc") );
+        combo->setCurrentIndex( static_cast<int>(UrlDrfModeling::CurveTransfer) );
+        
+        // Most people meeting this dialog will not know what any of the options mean, so say what
+        //  each one does, right here, and follow the selection.
+        WText *desc = parent->addNew<WText>( WString::tr("ds-url-modeling-desc-transfer") );
+        desc->addStyleClass( "DrfUrlModelingDesc" );
+        desc->setInline( false );
+        
+        combo->changed().connect( combo, [combo,desc](){
+          const char *key = "ds-url-modeling-desc-transfer";
+          switch( static_cast<UrlDrfModeling>(combo->currentIndex()) )
+          {
+            case UrlDrfModeling::FlatDisk:      key = "ds-url-modeling-desc-flat";     break;
+            case UrlDrfModeling::CurveTransfer: key = "ds-url-modeling-desc-transfer"; break;
+            case UrlDrfModeling::MonteCarlo:    key = "ds-url-modeling-desc-mc";       break;
+          }
+          desc->setText( WString::tr(key) );
+        } );
+        
+        *selector = combo;
+      };//hooks.addContent
+      
+      // Runs before the DB write, so what gets stored is the detector the user chose - attaching a
+      //  response changes the hash the "Previous" row is keyed on.
+      hooks.beforeAccept = [selector]( shared_ptr<DetectorPeakResponse> accepted ){
         if( !accepted )
           return;
         
-        SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("ds-url-mc-title"),
-                                                                WString::tr("ds-url-mc-body") );
-        WPushButton *gen = dialog->addButton( WString::tr("ds-url-mc-generate") );
-        dialog->addButton( WString::tr("ds-url-mc-later") );
+        // Default to the transfer if the combo is somehow gone: it is what every other
+        //  geometry-bearing import gives, and costs nothing.
+        const UrlDrfModeling choice = (*selector)
+                  ? static_cast<UrlDrfModeling>( (*selector)->currentIndex() )
+                  : UrlDrfModeling::CurveTransfer;
         
-        // Resolve InterSpec when the button runs rather than capturing it - this dialog outlives
-        //  the call that made it.
-        gen->clicked().connect( gen, [accepted](){
-          InterSpec *viewer = InterSpec::instance();
-          if( !viewer )
-            return;
-          
-          DrfModifyWindow *window = viewer->showDrfModifyWindow( accepted );
-          if( window && window->tool() )
-            window->tool()->showGeometryTab();
-        } );
-      };
+        // The Monte-Carlo run happens after the detector is in use (see afterAccept); it needs a
+        //  seed with no response attached, which is exactly what we have here.
+        if( choice == UrlDrfModeling::CurveTransfer )
+          CeeLoUtils::attachCurveTransferResponse( *accepted );
+      };//hooks.beforeAccept
+      
+      hooks.afterAccept = [selector]( shared_ptr<DetectorPeakResponse> accepted ){
+        if( !accepted || !(*selector)
+           || (static_cast<UrlDrfModeling>((*selector)->currentIndex()) != UrlDrfModeling::MonteCarlo) )
+          return;
+        
+        // Minutes of work, so it goes to the tool that already has progress, ETA and cancel -
+        //  opened on the right tab with the run already started, so the user does not have to know
+        //  the tool exists, let alone how to drive it.
+        InterSpec *viewer = InterSpec::instance();
+        if( !viewer )
+          return;
+        
+        DrfModifyWindow *window = viewer->showDrfModifyWindow( accepted );
+        if( !window || !window->tool() )
+          return;
+        
+        if( !window->tool()->startMcCharacterization( MakeMcResponseForDrf::Method::FullMc ) )
+          passMessage( WString::tr("ds-url-mc-not-started"), WarningWidget::WarningMsgHigh );
+      };//hooks.afterAccept
     }//if( geom_only )
     
-    DrfSelect::createChooseDrfDialog( {drf}, msg, "", nullptr, on_accept );
+    DrfSelect::createChooseDrfDialog( {drf}, msg, "", nullptr, hooks );
   }catch( std::exception &e )
   {
     wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();

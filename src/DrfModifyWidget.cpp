@@ -2095,6 +2095,26 @@ void DrfModifyWidget::showGeometryTab()
 }//void DrfModifyWidget::showGeometryTab()
 
 
+bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )
+{
+  if( !m_mcTool || !m_geomTabItem )
+    return false;   //fixed-geometry DRF: nothing to model
+  
+  // Generating implies Geometry Modeled; going through the toggle keeps the uncertainty editor and
+  //  the rest of the dialog consistent, rather than setting the flag behind their backs.
+  if( !m_geometryModeled )
+  {
+    m_modeToggle->setChecked( true );
+    handleModeToggle();
+  }
+  
+  showGeometryTab();
+  m_mcTool->setMethod( method );
+  
+  return m_mcTool->startGeneration();
+}//bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )
+
+
 bool DrfModifyWidget::geometryModeled() const
 {
   return m_geometryModeled;

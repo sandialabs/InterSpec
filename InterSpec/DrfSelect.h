@@ -28,6 +28,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <functional>
 
 #include <Wt/WColor.h>
 #include <Wt/WSignal.h>
@@ -254,6 +255,33 @@ public:
                                                                    std::string manufacturer,
                                                                    std::string model );
   
+  /** Per-caller additions to the "Use DRF?" dialog #createChooseDrfDialog builds.
+   
+   Exists so one caller (the app-URL import, which offers detector-modeling choices) can add its
+   own control and act on the result, without every other caller of that dialog growing the same
+   parameters.  All three are optional.
+   */
+  struct ChooseDrfHooks
+  {
+    /** Called with the dialog's content area, after the DRF description and before the
+     "use as default" checkboxes, to add caller-specific controls.
+     */
+    std::function<void(Wt::WContainerWidget *)> addContent;
+    
+    /** Called with the chosen DRF when the user accepts, *before* it is written to the database or
+     applied to the session - so a hook that modifies the DRF (and therefore its hash) is what gets
+     stored and used.
+     */
+    std::function<void(std::shared_ptr<DetectorPeakResponse>)> beforeAccept;
+    
+    /** Called with the chosen DRF after it has been stored and applied - for a follow-up that
+     needs the detector already in use, such as opening another tool on it.
+     */
+    std::function<void(std::shared_ptr<DetectorPeakResponse>)> afterAccept;
+  };//struct ChooseDrfHooks
+
+  
+  
   /** Creates a dialog to allow the user to select to use (one of) the passed in DRFs.
    
    @param drfs The DRFs to allow the user to choose from; if empty (or only null or invalid drfs),
@@ -263,14 +291,13 @@ public:
    @param creditsHtml The HTML to show below the combo-box.
    @param saveDrfsCallBack If non-empty, a checkbox to allow saving DRFs will be shown, and if
           checked when the user accepts dialog, will call this callback.
-   @param onAcceptedCallBack If non-empty, called with the chosen DRF after it has been applied and
-          saved - for a follow-up the caller wants only on its own import path.
+   @param hooks Optional per-caller additions; see #ChooseDrfHooks.
    */
   static void createChooseDrfDialog( std::vector<std::shared_ptr<DetectorPeakResponse>> drfs,
                                     Wt::WString mainMsgHtml,
                                     std::string creditsHtml,
                                     std::function<void()> saveDrfsCallBack = nullptr,
-                                    std::function<void(std::shared_ptr<DetectorPeakResponse>)> onAcceptedCallBack = nullptr );
+                                    ChooseDrfHooks hooks = ChooseDrfHooks() );
   
   /** Checks if file at passed in path is a TSV/CSV file that contains
    coefficients for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.

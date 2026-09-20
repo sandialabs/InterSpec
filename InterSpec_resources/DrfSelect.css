@@ -294,3 +294,29 @@ div.RelEffFile select
   color: var(--interspec-label-color);
   opacity: 0.85;
 }
+
+
+/* The detector-modeling choice offered when an app-URL brings in a DRF that knows its shape. */
+.DrfUrlModelingRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 10px 0px 10px;
+}
+
+.DrfUrlModelingRow label
+{
+  white-space: nowrap;
+}
+
+.DrfUrlModelingDesc
+{
+  display: block;
+  margin: 4px 10px 6px 10px;
+  max-width: 40em;
+  font-size: x-small;
+  color: var(--interspec-label-color);
+  opacity: 0.85;
+}
