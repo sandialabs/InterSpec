@@ -752,6 +752,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   m_progress->hide();
   m_cancelBtn->hide();
   m_generating = false;
+  setEditingEnabled( true );   //abandons a run without a finish handler, as handleMethodChanged does
   if( m_progressTimer )
     m_progressTimer->stop();
   ++m_calibrationId;   //a probe in flight belongs to the state being replaced
@@ -1195,8 +1196,26 @@ void MakeMcResponseForDrf::updateResponseChart()
 }//updateResponseChart()
 
 
+void MakeMcResponseForDrf::invalidateResultForOptionChange()
+{
+  // The profile, precision, anchor-angle count and grounding choice all change what a run would
+  //  produce, but none of them is part of the DRF content `DrfModifyCalc::seedFingerprint` hashes -
+  //  so an owner's staleness test cannot see them, and a held result would read as still current.
+  //  Drop it, the same way a method or geometry change does, so the owner's "Generate Response"
+  //  offers the re-run the user just asked for instead of staying greyed over the old answer.
+  if( !m_result )
+    return;
+
+  m_result.reset();
+  m_validationChanged.emit( false );
+  m_status->setText( WString::tr("mmr-status-stale") );
+  updateResponseChart();
+}//invalidateResultForOptionChange()
+
+
 void MakeMcResponseForDrf::handleOptionChanged()
 {
+  invalidateResultForOptionChange();
   updateEstimate();
 
   if( !m_restoringState )
@@ -1221,6 +1240,7 @@ void MakeMcResponseForDrf::handleChartOptionChanged()
 void MakeMcResponseForDrf::handlePrecisionChanged()
 {
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
+  invalidateResultForOptionChange();
   updateEstimate();
 
   if( !m_restoringState )

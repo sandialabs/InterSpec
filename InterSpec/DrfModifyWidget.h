@@ -177,6 +177,14 @@ public:
      screen. */
     uint64_t drfHash = 0;
 
+    /** `DrfModifyCalc::seedFingerprint` of the content the currently-held response was generated
+     from - the other operand of #responseStale's comparison.
+
+     It has to be part of the state: the first operand is re-derived from the restored content, so
+     a fingerprint left over from a later generation would make the two describe different moments,
+     and a response built from content an undo has since replaced would read as current. */
+    std::size_t generatedFromFingerprint = 0;
+
     std::string name, description;
     int tabIndex = 0;
 

@@ -333,6 +333,10 @@ protected:
    the estimate, the node plan and the run itself, so they cannot disagree. */
   ceelo::GenerationOptions generationOptions() const;
 
+  /** Drops a held response when a build option that is invisible to an owner's staleness test
+   changes; see the comment on the definition. */
+  void invalidateResultForOptionChange();
+
   void startTimeCalibration();
   void handleTimeCalibrationFinished( const McTimeCalibration &calib, const int calibration_id );
 

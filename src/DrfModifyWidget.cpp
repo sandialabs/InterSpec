@@ -1232,6 +1232,8 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
   auto state = make_shared<ToolState>();
 
   state->drfHash = m_orig ? m_orig->hashValue() : uint64_t(0);
+  // Travels with the content it describes; see the note in setState.
+  state->generatedFromFingerprint = m_generatedFromFingerprint;
   state->name = m_name->text().toUTF8();
   state->description = m_description->text().toUTF8();
   state->tabIndex = m_tabMenu->currentIndex();
@@ -1360,6 +1362,13 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   //  cannot strand it in the "fresh" state the way clearing a flag here used to.
   m_renderFlags.clear( RenderActions::AddUndoRedoStep );
   m_applyAfterGenerationId = -1;   //no run this snapshot describes is one we armed
+  // Staleness is `seedFingerprint(current content) != m_generatedFromFingerprint`.  The first
+  //  operand follows the restored content; without this the second would keep whatever the last
+  //  completed generation left behind, and the two would describe different moments - reading
+  //  "fresh" for a response built from content the undo just replaced (which `requestApply` would
+  //  then attach), or "stale" for one that is not.
+  m_generatedFromFingerprint = state->generatedFromFingerprint;
+
   updateGenerateButton();
   refreshUncertSummary();
   markGeneralStale();
@@ -2602,6 +2611,12 @@ void DrfModifyWidget::updateGenerateButton()
   m_generateBtn->setHidden( !m_geometryModeled );
   m_generateBtn->setEnabled( m_geometryModeled && canGen && !running
                              && (!haveResp || responseStale()) );
+
+  // Flipping to Flat Disk calls `m_mcTool->setDisabled(true)`, which greys the whole tool - the run
+  //  row's Cancel button with it.  Mid-run that leaves a Monte Carlo burning every core with no way
+  //  to stop it, so the toggle is held while one is in flight.
+  if( m_modeToggle )
+    m_modeToggle->setDisabled( running );   //a WContainerWidget, so not setEnabled
 
   // This function is called at every point a run starts or ends, so it is where the transition is
   //  noticed - an owner gating its own footer buttons (DrfModifyWindow's "Use") listens for it.
