@@ -125,7 +125,7 @@
   <message id="ds-url-modeling-extended-mc">Extended MC (minutes)</message>
   <message id="ds-url-modeling-desc-flat">The geometry is saved with the detector, but not used.  Efficiencies are only right at the distance and angle the detector was characterized at.</message>
   <message id="ds-url-modeling-desc-transfer">Recommended.  Uses the geometry to correct the efficiency curve for sources off to the side, or close to the detector.  Instant, and the same thing a GADRAS Detector.dat import does.</message>
-  <message id="ds-url-modeling-desc-partial-mc">Simulates only the on-axis energies, and uses the geometry to carry those to other distances and angles.  About a tenth the work of a full run.</message>
+  <message id="ds-url-modeling-desc-partial-mc">Simulates the on-axis energies plus a few off-axis angles, and uses the geometry to carry those to other distances.  About a tenth the work of a full run.</message>
   <message id="ds-url-modeling-desc-standard-mc">Simulates radiation through the detector across distances and angles.  Takes minutes; opens in Modify Detector Response, where you can watch its progress or cancel it.</message>
   <message id="ds-url-modeling-desc-extended-mc">As Standard, with extra detail very close to the detector.  The slowest option; opens in Modify Detector Response, where you can watch its progress or cancel it.</message>
   <message id="ds-url-accuracy-label">Accuracy:</message>

@@ -3434,16 +3434,19 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         combo->addItem( WString::tr("ds-url-modeling-extended-mc") );
         combo->setCurrentIndex( static_cast<int>(UrlDrfModeling::GeometryTransfer) );
         
-        // Only meaningful once a Monte Carlo is actually going to run.
-        WLabel *accLabel = row->addNew<WLabel>( WString::tr("ds-url-accuracy-label") );
-        WComboBox *acc = row->addNew<WComboBox>();
+        // Its own row: it qualifies the choice above rather than sitting beside it, and only
+        //  appears once a Monte Carlo is actually going to run.
+        WContainerWidget *accRow = parent->addNew<WContainerWidget>();
+        accRow->addStyleClass( "DrfUrlModelingRow" );
+        
+        WLabel *accLabel = accRow->addNew<WLabel>( WString::tr("ds-url-accuracy-label") );
+        WComboBox *acc = accRow->addNew<WComboBox>();
         accLabel->setBuddy( acc );
         acc->addItem( WString::tr("ds-url-accuracy-fast") );
         acc->addItem( WString::tr("ds-url-accuracy-normal") );
         acc->addItem( WString::tr("ds-url-accuracy-thorough") );
         acc->setCurrentIndex( 1 );  //Normal
-        accLabel->hide();
-        acc->hide();
+        accRow->hide();
         
         // Most people meeting this dialog will not know what any of the options mean, so say what
         //  the selected one does, right here.
@@ -3451,7 +3454,7 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         desc->addStyleClass( "DrfUrlModelingDesc" );
         desc->setInline( false );
         
-        combo->changed().connect( combo, [combo,desc,accLabel,acc](){
+        combo->changed().connect( combo, [combo,desc,accRow](){
           const UrlDrfModeling choice = static_cast<UrlDrfModeling>( combo->currentIndex() );
           
           const char *key = "ds-url-modeling-desc-transfer";
@@ -3465,8 +3468,7 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
           }
           desc->setText( WString::tr(key) );
           
-          accLabel->setHidden( !url_modeling_needs_mc(choice) );
-          acc->setHidden( !url_modeling_needs_mc(choice) );
+          accRow->setHidden( !url_modeling_needs_mc(choice) );
         } );
         
         *modeling = combo;

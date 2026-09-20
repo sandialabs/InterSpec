@@ -194,6 +194,12 @@ public:
   
   /** Selects one of the preset MC precision levels (as if the user picked it in the combo). */
   void setPrecision( const Precision precision );
+  
+  /** For #Method::QuickMc: whether the run also simulates a few off-axis angles (the default), or
+   stays on the on-axis energy backbone alone.  The off-axis anchors are what give the transfer a
+   measured angular dependence rather than a purely ray-traced one.  Ignored by the other methods.
+   */
+  void setOffAxisAnchors( const bool use_off_axis );
 
   /** Hides (or shows) the response-preview chart section - for an owner that has its own chart. */
   void setChartHidden( const bool hidden );

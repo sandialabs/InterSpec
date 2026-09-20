@@ -2118,7 +2118,18 @@ bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Metho
   m_mcTool->setProfile( profile );
   m_mcTool->setPrecision( precision );
   
-  return m_mcTool->startGeneration();
+  // A partial run is only worth more than the plain geometry transfer if it actually measures some
+  //  off-axis angles, so ask for them rather than relying on the combo's default.
+  if( method == MakeMcResponseForDrf::Method::QuickMc )
+    m_mcTool->setOffAxisAnchors( true );
+  
+  const bool started = m_mcTool->startGeneration();
+  
+  // Same as handleGenerateResponse: the footer button keys off a result that is null for the whole
+  //  run, so without this it sits enabled while the run it would duplicate is in flight.
+  updateGenerateButton();
+  
+  return started;
 }//bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )
 
 

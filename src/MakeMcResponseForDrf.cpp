@@ -928,6 +928,13 @@ void MakeMcResponseForDrf::setPrecision( const Precision precision )
 }//setPrecision(...)
 
 
+void MakeMcResponseForDrf::setOffAxisAnchors( const bool use_off_axis )
+{
+  m_anchorAngles->setCurrentIndex( use_off_axis ? 1 : 0 );
+  handleOptionChanged();
+}//setOffAxisAnchors(...)
+
+
 void MakeMcResponseForDrf::setChartHidden( const bool hidden )
 {
   m_hideChart = hidden;
