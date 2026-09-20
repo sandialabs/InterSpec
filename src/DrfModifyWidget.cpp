@@ -233,12 +233,12 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_seedState( nullptr ),
     m_generateBtn( nullptr ),
     m_generatedFromFingerprint( 0 ),
-    m_wasGenerating( false ),
     m_pendingSeedFingerprint( 0 ),
     m_exportNote( nullptr ),
     m_generateHint( nullptr ),
     m_applyAfterGenerationId( -1 ),
     m_updatedDrf(),
+    m_wasGenerating( false ),
     m_renderFlags(),
     m_currentState( nullptr ),
     m_restoringState( false )
@@ -2089,6 +2089,7 @@ void DrfModifyWidget::detachResponseAndApply()
     m_mcTool->setDisabled( true );
 
   updateGenerateButton();
+  updateAnchorEditorVisibility();  //the response note follows the mode, as in handleModeToggle
   apply();
 }//detachResponseAndApply()
 
@@ -2626,7 +2627,32 @@ void DrfModifyWidget::updateGenerateButton()
     m_generatingChanged.emit( running );
   }
 
-  const string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
+  string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
+
+  // A blocking edit elsewhere (an unparseable anchor cell, a covariance that is not positive
+  //  semi-definite) does not stop a generation starting, but the seed it runs against ignores the
+  //  edit - so the run is wasted, and nothing says so until the user presses "Use".
+  //
+  // Only when there is no response yet: that is both where it matters (the button is enabled, so
+  //  the wasted run is one click away) and where `responseStale()` above returned without building
+  //  a seed - so this stays at one `buildWorkingDrf` per refresh rather than two.  It is not free:
+  //  for the refit-points editor that call re-fits the efficiency equation.
+  if( problem.empty() && m_geometryModeled && !haveResp )
+  {
+    vector<DrfModifyCalc::Problem> problems;
+    buildWorkingDrf( false, problems );
+    for( const DrfModifyCalc::Problem &p : problems )
+    {
+      if( !p.blocking )
+        continue;
+
+      WString msg = WString::tr( p.messageId );
+      if( !p.arg.empty() )
+        msg = msg.arg( WString::fromUTF8(p.arg) );
+      problem = msg.toUTF8();
+      break;
+    }//for( const DrfModifyCalc::Problem &p : problems )
+  }//if( problem.empty() && m_geometryModeled )
   if( m_generateHint )
   {
     m_generateHint->setText( WString::fromUTF8( problem ) );
@@ -2795,7 +2821,16 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   //  does nothing, since only one generation may run at a time.
   DrfModifyWidget * const tool = m_tool;
   const bool needs_mc = tool->needsMcResponse();
-  auto have_resp = make_shared<bool>( !needs_mc );
+
+  // Seeded from the response the tool is actually holding, not from `!needs_mc` as a stand-in for
+  //  it: `MakeMcResponseForDrf`'s constructor emits `validationChanged(true)` for a DRF that
+  //  arrives carrying one, and that happens inside `DrfModifyWidget`'s constructor - before the
+  //  connection below exists.  A DRF with a response but no legacy efficiency curve would miss
+  //  that emission and leave "Use" disabled over a perfectly good detector.  Every current writer
+  //  guards against producing that DRF, but the XML and database readers both accept it, so the
+  //  invariant is not enforced anywhere.
+  const shared_ptr<const DetectorPeakResponse> orig = tool->originalDrf();
+  auto have_resp = make_shared<bool>( !needs_mc || (orig && orig->ceeloResponse()) );
 
   auto refresh_use = [use,tool,have_resp](){
     use->setEnabled( *have_resp && !tool->isGenerating() );

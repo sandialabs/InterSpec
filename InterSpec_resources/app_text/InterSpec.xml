@@ -95,6 +95,7 @@
   <message id="QR Code">QR Code</message>
   <message id="Dose">Dose</message>
   <message id="Shielding">Shielding</message>
+  <message id="app-drf-modify-already-open">The &quot;Modify Detector Response&quot; window is already open for another detector.  Close it first, then try again.</message>
   <message id="app-qr-err">Error creating QR code: {1}</message>
   <message id="intrinsic-activity">Intrinsic Activity</message>
   <message id="Calibration">Calibration</message>

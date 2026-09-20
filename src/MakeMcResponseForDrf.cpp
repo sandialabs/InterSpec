@@ -638,7 +638,14 @@ void MakeMcResponseForDrf::setGenerateButtonHidden( bool hidden )
 {
   m_hideGenerateButton = hidden;
   if( m_generate && hidden )
+  {
     m_generate->hide();
+    // Its click handler calls startGeneration() directly rather than through the owner, so a run
+    //  started that way would leave the owner's footer button enabled over it.  No path shows this
+    //  button again while the flag is set, so this is defence in depth against a forged
+    //  client-side signal rather than a fix for anything reachable.
+    m_generate->setEnabled( false );
+  }
 }//setGenerateButtonHidden(...)
 
 
