@@ -509,6 +509,10 @@ double minDetectableCounts( std::shared_ptr<const PeakDef> peak, std::shared_ptr
   if( peak->continuum()->parametersProbablySet() )
   {
     const double lowx = peak->lowerX(), upperx = peak->upperX();
+    // Passes `peak` as the ROI's only peer; a peak-CDF step continuum shared with other peaks will
+    //  come back too small here, making the returned limit slightly optimistic.  The caller
+    //  (`fractionDetectedWeight`) does have the full peak list, so this is fixable by taking it as
+    //  an argument.
     const PeakDef *peak_ptr = peak.get();
     contArea = peak->continuum()->offset_integral( lowx, upperx, data, &peak_ptr, 1 );
   }else

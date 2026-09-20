@@ -33,6 +33,7 @@
 #include <Wt/WLength.h>
 #include <Wt/WJavaScript.h>
 #include <Wt/WApplication.h>
+#include <Wt/WWebWidget.h>
 #include <Wt/WStringStream.h>
 #include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
@@ -58,7 +59,13 @@ DrfChart::DrfChart()
   m_jsDefined( false ),
   m_xRangeSet( false ),
   m_xRangeMin( 0.0 ),
-  m_xRangeMax( 0.0 )
+  m_xRangeMax( 0.0 ),
+  m_dataPointsJs(),
+  m_showEffPoints( true ),
+  m_showFwhmPoints( true ),
+  m_keepZoom( false ),
+  m_dataRangeLow( 0.0 ),
+  m_dataRangeHigh( 0.0 )
 {
   addStyleClass( "DrfChart" );
   setOverflow( Overflow::Hidden );
@@ -122,6 +129,55 @@ void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
 }//DrfChart::setIntrinsicEfficiency(...)
 
 
+void DrfChart::setDataPoints( const std::vector<DrfChartPoint> &points )
+{
+  WStringStream js;
+  js << "[";
+  for( size_t i = 0; i < points.size(); ++i )
+  {
+    const DrfChartPoint &p = points[i];
+    js << (i ? "," : "") << "{e:" << p.energy
+       << ",eff:" << p.efficiency << ",effSig:" << p.efficiencyUncert
+       << ",fwhm:" << p.fwhm << ",fwhmSig:" << p.fwhmUncert
+       << ",label:" << WWebWidget::jsStringLiteral(p.label)
+       << ",color:" << WWebWidget::jsStringLiteral(p.color) << "}";
+  }
+  js << "]";
+
+  m_dataPointsJs = js.str();
+  doChartJs( "setDataPoints(" + m_dataPointsJs + ")" );
+}//setDataPoints(...)
+
+
+void DrfChart::setShowEfficiencyPoints( const bool show )
+{
+  m_showEffPoints = show;
+  doChartJs( "setShowEffPoints(" + string(show ? "true" : "false") + ")" );
+}//setShowEfficiencyPoints(...)
+
+
+void DrfChart::setShowFwhmPoints( const bool show )
+{
+  m_showFwhmPoints = show;
+  doChartJs( "setShowFwhmPoints(" + string(show ? "true" : "false") + ")" );
+}//setShowFwhmPoints(...)
+
+
+void DrfChart::setDataRange( const double lowKeV, const double highKeV )
+{
+  m_dataRangeLow = lowKeV;
+  m_dataRangeHigh = highKeV;
+  doChartJs( "setDataRange(" + std::to_string(lowKeV) + "," + std::to_string(highKeV) + ")" );
+}//setDataRange(...)
+
+
+void DrfChart::setKeepZoomOnUpdate( const bool keep )
+{
+  m_keepZoom = keep;
+  doChartJs( "setKeepZoom(" + string(keep ? "true" : "false") + ")" );
+}//setKeepZoomOnUpdate(...)
+
+
 void DrfChart::setShowFwhm( const bool show )
 {
   m_showFwhm = show;
@@ -170,6 +226,14 @@ void DrfChart::defineJavaScript()
   doChartJs( "setDetectorData(" + detectorData + ")" );
   doChartJs( "setShowFwhm(" + string(m_showFwhm ? "true" : "false") + ")" );
   doChartJs( "setEfficiencyMode('" + string(m_intrinsic ? "intrinsic" : "absolute") + "')" );
+  doChartJs( "setShowEffPoints(" + string(m_showEffPoints ? "true" : "false") + ")" );
+  doChartJs( "setShowFwhmPoints(" + string(m_showFwhmPoints ? "true" : "false") + ")" );
+  doChartJs( "setKeepZoom(" + string(m_keepZoom ? "true" : "false") + ")" );
+  if( m_dataRangeHigh > m_dataRangeLow )
+    doChartJs( "setDataRange(" + std::to_string(m_dataRangeLow) + ","
+                               + std::to_string(m_dataRangeHigh) + ")" );
+  if( !m_dataPointsJs.empty() )
+    doChartJs( "setDataPoints(" + m_dataPointsJs + ")" );
   pushAngleSeries();
   if( m_xRangeSet )
     doChartJs( "setXRange(" + std::to_string(m_xRangeMin) + ", " + std::to_string(m_xRangeMax) + ")" );

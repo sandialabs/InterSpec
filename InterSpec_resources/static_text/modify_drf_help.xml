@@ -1,0 +1,104 @@
+<div align="center">
+  <h1 id="modify-drf"><b>Modify Detector Response</b></h1>
+  <hr />
+</div>
+
+<div style="display:table-row">
+<h4>Overview</h4>
+<p>
+This tool edits the detector response function (DRF) currently in use, or builds one from scratch
+when opened with a blank detector (the &quot;Make without data...&quot; button of the
+&quot;Create Detector Response Function&quot; tool, or when no detector is loaded).  Nothing is
+changed until you press <b>Use</b>; <b>Cancel</b> discards the edits.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>General</h4>
+<p>The DRF's name and description.</p>
+</div>
+
+<div style="display:table-row">
+<h4>Geom &amp; MC</h4>
+<p>
+How the detector is modeled for sources close to the detector or off its axis.  &quot;Flat Disk&quot;
+is the traditional model: the crystal is a disk of the stated diameter, and only the source
+distance matters.  &quot;Geometry Modeled&quot; describes the crystal (shape, material, dimensions,
+dead layer, endcap layers) and uses that description to evaluate the response for any source
+position:
+</p>
+<ul>
+  <li><em>No MC support (from measured curve)</em>: instant.  The DRF's own measured efficiency
+      (or its curve) is transferred to other positions through the ray-traced geometry.  Accurate on
+      axis and mildly off-axis; the reported uncertainty grows off-axis and very close in.</li>
+  <li><em>Quick MC</em> and <em>Full MC</em>: run a Monte-Carlo characterization of the geometry
+      (minutes), which is then corrected (&quot;grounded&quot;) to the DRF's measured efficiency
+      points when it has them.  Full MC also models the response well off-axis and at contact.</li>
+</ul>
+<p>
+While a response is attached it - not the curve or points on the Anchor tab - is what answers every
+efficiency and uncertainty question about this detector.  So an edit the response does not reflect is
+an edit the program would ignore, and <b>Use</b> will not do that: it rebuilds the response (instantly,
+for <em>No MC support</em>) or offers to remove it and go back to the flat-disk model.  Press
+<b>Generate Response</b> yourself at any time; whether a rebuild is needed is worked out from the
+content, so it is right after an undo or redo as well.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>FWHM</h4>
+<p>Fits, or lets you enter, the peak-width (FWHM) equation of the detector from the peaks in the
+current spectrum.</p>
+</div>
+
+<div style="display:table-row">
+<h4>Anchor</h4>
+<p>
+The efficiency this DRF states, and its uncertainty.  Which editor you get follows how the DRF
+represents its efficiency - not the Flat Disk / Geometry Modeled choice, which is about where the
+detector can be asked about rather than how well it is known:
+</p>
+<ul>
+  <li><em>A DRF from the &quot;Create Detector Response Function&quot; tool</em>: the measured peaks,
+      each with its <b>absolute</b> efficiency at its own source distance, its source, and its
+      statistical and certificate uncertainties.  The efficiency equation is <b>re-fit from these
+      points when you press Use</b>, so the curve, its covariance and the points always describe the
+      same detector.  Editing a point therefore moves the curve; editing only an uncertainty changes
+      how strongly that point pulls on the fit, which moves the curve very slightly and the
+      uncertainty a lot.</li>
+  <li><em>An ANGLE .outx reference curve</em>: the same table, where the points <b>are</b> the curve -
+      absolute efficiencies at the one reference distance shown above the table.</li>
+  <li><em>A GADRAS Efficiency.csv or ISOCS .ecc curve</em>: the curve's own energy/efficiency pairs,
+      plus a per-energy uncertainty split into the part that is independent from one energy to the next
+      and the part that moves together across energy (how strongly is set below the table).</li>
+  <li><em>An efficiency equation with no measured points</em>: its coefficients and the covariance
+      among them.  For an equation that covariance <b>is</b> the uncertainty every analysis
+      propagates, and fitted coefficients are strongly correlated, so the off-diagonal matters as much
+      as the diagonal.  If the DRF only ever stored per-coefficient uncertainties, the table opens on
+      those with all correlations zero - a starting point that overstates the band, and one that is
+      not written back unless you edit it.</li>
+  <li><em>An efficiency formula</em>: the formula text, and either one flat uncertainty or a
+      per-energy table of them.</li>
+</ul>
+<p>
+Nothing you type is silently dropped or reinterpreted: if an edit cannot be applied - a cell that is
+not a number, too few points, a set of correlations that cannot describe any real errors - you are
+told why and nothing changes.
+</p>
+<p>
+The line under the editor is what this detector actually reports at one representative energy, read
+through the same code the Activity/Shielding fit uses, and split into the part your data supports and
+the part that is a model envelope - an allowance for asking a model about a position nobody measured.
+A geometry-modeled response answers with its own budget rather than the curve's - which for a
+measured-curve transfer is that curve's uncertainty plus the envelope, and for a Monte-Carlo
+characterization is its own statistics and grounding fit plus the envelope.  A detector with no
+measured uncertainty at all (a GADRAS <code>Detector.dat</code>) reports about 5% that is purely an
+assumed default plus that allowance.  The band on the efficiency chart is drawn from the same
+numbers, with the inner band the data-derived part.
+</p>
+<p>
+One thing to know before sharing: a DRF XML file (and an N42 with the DRF in it) keeps all of this.
+An app URL or QR code keeps the efficiency, the equation's coefficient covariance and the per-energy
+covariance, but not the Monte-Carlo response, the geometry or the raw measured points.
+</p>
+</div>

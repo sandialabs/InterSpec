@@ -60,6 +60,9 @@ IDB*
 .bin
 .vs
 .claude
+*.PAR
+*.par
+DETECTOR.txt
 WtsRsrcs
 XcodeFiles
 build

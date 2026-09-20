@@ -6712,10 +6712,11 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
     nfitamp += p->fitFor(PeakDef::CoefficientType::GaussAmplitude);
   }
 
-  // FWHMs across an ROI are tied via a linear relation sigma(E) = a + b*E by default,
-  //  so the FWHM cost is at most 2 parameters per ROI (matches the LM default in
-  //  PeakFitLMChi2Fcn::number_sigma_parameters()).  The independent-FWHM refit option
-  //  is rare and not distinguishable here, so we always assume the linked convention.
+  // FWHMs across an ROI are tied via a linear relation sigma(E) = a + b*E by default, so the FWHM
+  //  cost is at most 2 parameters per ROI (matches the LM default in
+  //  PeakFitDiffCostFunction::roi_sigma_parameter_count()).  That function returns every fitted
+  //  sigma under the AllPeakFwhmIndependent option; this site cannot see the option flags, so it
+  //  always assumes the linked convention.
   const int num_sigmas_fit = std::min( nfitsigma, 2 );
 
   // Continuum parameters consume DOF whether they are fit by the optimizer directly or solved
@@ -6726,8 +6727,31 @@ void get_chi2_and_dof_for_roi( double &chi2, double &dof,
   for( const bool fit : continuum->fitForParameter() )
     num_fit_continuum_pars += (fit ? 1 : 0);
 
-  // Mirror PeakFitLMChi2Fcn::dof() so the chi2/DOF stamped here matches what the
-  //  LM-based fitters (e.g. refit) stamp for the same peak configuration.
+  // The LM fitter's counterpart is PeakFitDiffCostFunction::dof_for_roi() (src/PeakFitLM.cpp), and
+  //  the two do NOT presently agree.  KNOWN DISCREPANCY, pre-existing and deliberately left alone
+  //  (2026-09): on its least-squares path `dof_for_roi()` subtracts only
+  //  `num_cdf_step_pars(type)` - zero for every non-CDF type - so it never charges for the
+  //  polynomial coefficients `PeakFit::fit_amp_and_offset_imp(...)` solves, and overstates DOF by
+  //  `num_linear_fit_pars(type)`: 1 for Constant, 2 for Linear, 4 for Cubic.  The convention used
+  //  *here* is the correct one - a parameter that is fit costs a degree of freedom whether Ceres
+  //  or the linear solve fits it - so the fix belongs on the LM side.  It is not applied because
+  //  `PeakDef::chi2dof()` also gates automated peak acceptance (`max_chi2dof_roi`,
+  //  `lowres_max_chi2dof`, and the one-vs-two-peak rule `twoPeaksChi2 <= chi2dof() + 1.2` in this
+  //  file), so correcting it changes which peaks a search keeps, not just what is reported.
+  //
+  // Measured 2026-09-12 over 1362 auto-fit peaks (26 spectra, mixed HPGe/NaI): correcting the LM
+  //  side raises reported chi2/DOF by 5-7% (median ratio 1.069 and 1.048 on the two corpora, range
+  //  1.008-1.167) and, for every one of those peaks, changes *only* the divisor - chi2 itself did
+  //  not move, and no peak was gained or lost.  The rule above that could still bite is the
+  //  one-vs-two-peak margin, which is absolute rather than relative.
+  //
+  // Three further divergences are deliberate rather than defects, and should not be "fixed" in
+  //  isolation:
+  //   - skew: shared skew parameters are amortized across every ROI of an LM fit, so there is no
+  //     correct per-ROI count to make here.
+  //   - this function floors `dof` at 1.0; the LM side instead refuses the fit in its constructor.
+  //   - the ROI channel window below uses a +-1e-7 keV epsilon that the LM side does not, which
+  //     matters only when a ROI edge lands exactly on a channel boundary.
   const double num_channels = 1.0 + endchannel - startchannel;
   dof = num_channels - nfitamp - nfitmean - num_sigmas_fit - num_fit_continuum_pars;
 
@@ -7305,8 +7329,6 @@ bool chi2_significance_test( const PeakDef &peak,
     return false;
 
 
-  const size_t poly_order = PeakContinuum::num_linear_fit_pars( offset_type );
-
   const double xmin = is_step ? cont->lowerEnergy() : std::max( cont->lowerEnergy(), peak.mean() - 2.5*peak.sigma() );
   const double xmax = is_step ? cont->upperEnergy() : std::min( cont->upperEnergy(), peak.mean() + 2.5*peak.sigma() );
 
@@ -7347,8 +7369,6 @@ bool chi2_significance_test( const PeakDef &peak,
     p.gauss_integral( energies, &(original_counts[0]), num_roi_channel );
 
   vector<double> without_peak_counts;
-
-  const bool is_cdf_step = PeakContinuum::is_peak_cdf_step_continuum( cont->type() );
 
   // Build arrays of ROI peak pointers for offset_integral calls
   vector<const PeakDef *> all_roi_peak_ptrs;   // peak + other_peaks
@@ -7392,18 +7412,32 @@ bool chi2_significance_test( const PeakDef &peak,
     without_peak_counts = original_counts;
     const double ref_energy = cont->referenceEnergy();
     const double * const skew_pars = peak.coefficients() + static_cast<size_t>(PeakDef::CoefficientType::SkewPar0);
+
+    // The null hypothesis is the same continuum family with the peak removed - not a different
+    //  continuum model.  The peak-CDF step coefficients are bilinear with the peak amplitudes so
+    //  the least-squares solve cannot fit them; hand it the fitted ones as known inputs, exactly
+    //  as the fitters do.  Dropping the peak from the ROI already removes its own term from
+    //  SUM_j(amp_j*CDFbar_j), which is the part of the step the peak is responsible for.
+    const size_t num_poly_pars = PeakContinuum::num_linear_fit_pars( offset_type );
+    const size_t num_step_pars = PeakContinuum::num_cdf_step_pars( offset_type );
+    const vector<double> &fit_cont_pars = cont->parameters();
+    assert( fit_cont_pars.size() == (num_poly_pars + num_step_pars) );
+    const double * const step_coeffs = num_step_pars ? (fit_cont_pars.data() + num_poly_pars)
+                                                     : nullptr;
+
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
     PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
-                                    nullptr, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                    step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                     amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+
     // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
-    //  step coefficients appended.  They are zero here, since we are refitting the null-hypothesis
-    //  continuum without optimizing the step.
-    for( size_t k = 0; k < PeakContinuum::num_cdf_step_pars( cont->type() ); ++k )
+    //  step coefficients appended - and they are the fitted ones we just handed it as known.
+    for( size_t k = 0; k < num_step_pars; ++k )
     {
-      continuum_coeffs.push_back( 0.0 );
+      continuum_coeffs.push_back( fit_cont_pars[num_poly_pars + k] );
       cont_uncerts.push_back( 0.0 );
     }
+
     shared_ptr<PeakContinuum> tmp_continuum = make_shared<PeakContinuum>( *cont );
     tmp_continuum->setParameters( ref_energy, continuum_coeffs, cont_uncerts );
     tmp_continuum->offset_integral( energies, &(without_peak_counts[0]), num_roi_channel, data, other_peak_ptrs.data(), other_peak_ptrs.size() );

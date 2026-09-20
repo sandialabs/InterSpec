@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <deque>
 #include <string>
 #include <vector>
@@ -513,12 +514,6 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
           peak.continuum()->setType( type );
           continuums_with_type_set.insert( peak.continuum() );
 
-          // Version 2 and earlier wrote BiLinearStepCDF's four coefficients under a different
-          //  convention.  Converting needs the ROI's total peak area, so it has to wait until every
-          //  row sharing this continuum has been read - see the pass after this loop.
-          if( (type == PeakContinuum::BiLinearStepCDF) && (cont_version < 3) )
-            legacy_bilinear_cdf_continua.insert( peak.continuum() );
-
           if( (cont_coef_index >= 0) && (cont_coef_index < nfields) )
           {
             const string &flt_list_str = fields[cont_coef_index];
@@ -534,6 +529,18 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
               const float ref_energy = values[0];
               vector<double> dvalues( begin(values) + 1, end(values) );
               peak.continuum()->setParameters( ref_energy, dvalues, {} );
+
+              // Version 2 and earlier wrote BiLinearStepCDF's four coefficients under a different
+              //  convention.  Converting needs the ROI's total peak area, so it has to wait until
+              //  every row sharing this continuum has been read - see the pass after this loop.
+              //  Only coefficients we actually read are marked: a continuum still holding the
+              //  linear fit from the data has nothing to convert, and converting it anyway would
+              //  read the zeroed step slots as the legacy right-hand line and cancel the continuum.
+              static_assert( PeakContinuum::sm_xmlSerializationVersion == 3,
+                  "PeakModel::csv_to_candidate_fit_peaks needs updating for a new"
+                  " serialization version." );
+              if( (type == PeakContinuum::BiLinearStepCDF) && (cont_version < 3) )
+                legacy_bilinear_cdf_continua.insert( peak.continuum() );
             }else if( (num_cont_par == 0) && values.empty() )
             {
               // NoOffset and External have no coefficients, so `write_peak_csv` leaves the field
@@ -770,47 +777,48 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   // Bring any pre-version-3 BiLinearStepCDF continua up to the current convention.  This has to be
   //  a second pass: the conversion needs the ROI's total peak area, and a continuum is only shared
   //  out to its other peaks by the ROI-matching block above, as their rows are read.
-  //  Walking the peaks rather than the marked continua skips the ones a peak left behind when it
-  //  joined an earlier peak's ROI - those have no peaks, so nothing to convert them with.
-  set<shared_ptr<PeakContinuum>> converted;
-  for( const PeakDef &peak : answer )
+  //  Summing by continuum, rather than re-scanning the peaks for each one, also skips the continua
+  //  a peak left behind when it joined an earlier peak's ROI - those have no peaks at all.
+  struct RoiSums{ double total_amp = 0.0, amp_cdf0 = 0.0; };
+  std::map<shared_ptr<PeakContinuum>,RoiSums> legacy_roi_sums;
+
+  for( const PeakDef &p : answer )
   {
     const shared_ptr<PeakContinuum> cont
-                          = std::const_pointer_cast<PeakContinuum>( peak.continuum() );
-    if( !legacy_bilinear_cdf_continua.count(cont) || !converted.insert(cont).second )
+                          = std::const_pointer_cast<PeakContinuum>( p.continuum() );
+    if( !legacy_bilinear_cdf_continua.count(cont) )
       continue;
 
-    double total_amp = 0.0, amp_cdf0 = 0.0;
-    for( const PeakDef &p : answer )
-    {
-      if( p.continuum() != cont )
-        continue;
+    const double amp = (std::max)( p.amplitude(), 0.0 );
+    if( !std::isfinite(amp) )
+      continue;
 
-      const double amp = std::max( p.amplitude(), 0.0 );
-      if( !std::isfinite(amp) )
-        continue;
+    RoiSums &sums = legacy_roi_sums[cont];
+    sums.total_amp += amp;
 
-      total_amp += amp;
+    if( !p.gausPeak() || (p.sigma() <= 0.0) )
+      continue;
 
-      if( !p.gausPeak() || (p.sigma() <= 0.0) )
-        continue;
+    // The version-2 model used the CDF measured from -infinity, so it carried a constant offset
+    //  of CDF(ROI lower edge) that the anchored version-3 model does not.
+    const double * const skew_pars = p.coefficients() + PeakDef::CoefficientType::SkewPar0;
+    const double cdf0 = PeakDists::peak_cdf( cont->lowerEnergy(), p.mean(), p.sigma(),
+                                            p.skewType(), skew_pars );
+    if( std::isfinite(cdf0) )
+      sums.amp_cdf0 += amp * cdf0;
+  }//for( loop over peaks, summing each legacy ROI )
 
-      // The version-2 model used the CDF measured from -infinity, so it carried a constant offset
-      //  of CDF(ROI lower edge) that the anchored version-3 model does not.
-      const double * const skew_pars = p.coefficients() + PeakDef::CoefficientType::SkewPar0;
-      const double cdf0 = PeakDists::peak_cdf( cont->lowerEnergy(), p.mean(), p.sigma(),
-                                              p.skewType(), skew_pars );
-      if( std::isfinite(cdf0) )
-        amp_cdf0 += amp * cdf0;
-    }//for( loop over peaks sharing this continuum )
-
+  for( const std::pair<const shared_ptr<PeakContinuum>,RoiSums> &roi : legacy_roi_sums )
+  {
+    const shared_ptr<PeakContinuum> &cont = roi.first;
     vector<double> values = cont->parameters();
     vector<double> uncerts = cont->uncertainties();
-    PeakContinuum::convert_legacy_bilinear_step_cdf( values, uncerts, total_amp, amp_cdf0,
+    PeakContinuum::convert_legacy_bilinear_step_cdf( values, uncerts,
+                          roi.second.total_amp, roi.second.amp_cdf0,
                           "the ROI [" + std::to_string(cont->lowerEnergy()) + ", "
                           + std::to_string(cont->upperEnergy()) + "] keV" );
     cont->setParameters( cont->referenceEnergy(), values, uncerts );
-  }//for( loop over peaks, converting legacy BiLinearStepCDF continua )
+  }//for( loop over legacy BiLinearStepCDF ROIs )
 
   return answer;
 }//csv_to_candidate_fit_peaks(...)
@@ -3908,16 +3916,21 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
       {
         try
         {
-          // In principle we should collect all peaks in the ROI to pass to `offset_integral(...)`,
-          //. but we dont have that information, and I wouldnt exactly matter
+          // Only reached when there is no spectrum.  Passes each peak as its own ROI's only peer,
+          //  which the comparator cannot avoid - it is handed two peaks, not the peak list.  The
+          //  data-based step types throw here (caught below); the peak-CDF step types do NOT -
+          //  they fall back to the raw ROI bounds for their anchor - so for one of those shared by
+          //  several peaks this sort key is computed from a step that is missing the other peaks'
+          //  `amp_j*CDFbar_j` terms.  It only affects row ordering, and only with no spectrum
+          //  loaded.
           const PeakDef *rhs_ptr = rhs.get();
           rhs_area = rhs->continuum()->offset_integral( rhs->lowerX(), rhs->upperX(), data, &rhs_ptr, 1 );
           const PeakDef *lhs_ptr = lhs.get();
           lhs_area = lhs->continuum()->offset_integral( lhs->lowerX(), lhs->upperX(), data, &lhs_ptr, 1 );
         }catch(...)
         {
-          //Will fail for step continua (FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF)
-          //  - which I doubt we will ever get here anyway.
+          //The data-based step continua (FlatStep, LinearStep, BiLinearStep) throw without a
+          //  spectrum; the peak-CDF ones do not - see the note above.
         }
       }
       
@@ -4333,15 +4346,15 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
     assert( continuum );
     const PeakContinuum::OffsetType cont_type = continuum->type();
-    string continuum_type = PeakContinuum::offset_type_str( cont_type );
-
     // BiLinearStepCDF's four coefficients changed meaning in serialization version 3, and the CSV
     //  has no other version field, so tag the type with the convention its coefficients follow.
-    //  See the format notes on `PeakModel::csv_to_candidate_fit_peaks`.
+    //  The HTML variants get the tag too - they are the clipboard's `text/html` rendering of this
+    //  same export, so they must stay re-importable.  See the format notes on
+    //  `PeakModel::csv_to_candidate_fit_peaks`.
     static_assert( PeakContinuum::sm_xmlSerializationVersion == 3,
                   "PeakModel::write_peak_csv needs to be updated for a new serialization version." );
-    if( cont_type == PeakContinuum::BiLinearStepCDF )
-      continuum_type += "(v3)";
+    const string continuum_type = string( PeakContinuum::offset_type_str( cont_type ) )
+                    + ((cont_type == PeakContinuum::BiLinearStepCDF) ? "(v3)" : "");
 
     const string skew_type = PeakDef::to_string( peak.skewType() );
     const char *peak_type = PeakDef::to_str( peak.type() );

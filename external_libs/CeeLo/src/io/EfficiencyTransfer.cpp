@@ -203,6 +203,8 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
     t.cos_thetas = {opts.cos_theta_lo, 1.0};
     t.edges_keV = edges;
     const size_t ne = t.energies_keV.size();
+    // With a full anchor covariance the per-node sigma would double count it.
+    const bool have_cov = (fep_anchor.frac_cov.size() == ne * ne);
     t.ln_eta.assign(ne * 2, 0.0);
     t.frac_sigma.assign(ne * 2, 0.0);
     for (size_t e = 0; e < ne; ++e) {
@@ -211,7 +213,7 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
         if (E <= 0.0 || fep_anchor.eff[e] <= 0.0 || K <= 0.0)
             throw std::runtime_error("make_transfer_response: zero kernel/eff");
         const double ln_eta = std::log(fep_anchor.eff[e] / K);
-        const double fs = e < fep_anchor.frac_sigma.size()
+        const double fs = (!have_cov && e < fep_anchor.frac_sigma.size())
                               ? fep_anchor.frac_sigma[e] : 0.0;
         for (size_t c = 0; c < 2; ++c) {
             t.ln_eta[t.index(e, c, 0)] = ln_eta;
@@ -220,8 +222,12 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
     }
     t.finalize();
 
-    // Total-efficiency tier: b(E) from the total anchor (angle-flat), else the
-    // bare-crystal kernel-exact tier.
+    // Total-efficiency tier: b(E) from the total anchor (angle-flat).  With no
+    // usable total anchor there is NO total-efficiency information to transfer,
+    // so the tier is NotCharacterized: this producer is fed a measured FEP curve
+    // and knows nothing about the detector's peak-to-total, and the previous
+    // KernelExact fallback quietly turned that absence into a bare-crystal
+    // number a host could not tell from a verified one.
     if (tot_anchor && tot_anchor->energies_keV.size() >= 2 &&
         tot_anchor->eff.size() == tot_anchor->energies_keV.size()) {
         resp->tot_eff.tier = TotEffTier::BCurve;
@@ -234,16 +240,57 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
             resp->tot_eff.ln_b.push_back(std::log(tot_anchor->eff[i] / K_nors));
         }
         if (resp->tot_eff.b_energies_keV.size() < 2)
-            resp->tot_eff.tier = TotEffTier::KernelExact;  // fall back
+            resp->tot_eff.tier = TotEffTier::NotCharacterized;   // nothing usable
     } else {
-        resp->tot_eff.tier = TotEffTier::KernelExact;
+        resp->tot_eff.tier = TotEffTier::NotCharacterized;
     }
     resp->tot_eff.finalize();
 
     // Honest off-axis/near sigma (the angle-flat eta has no theta residual).
     resp->model_transfer = opts.model_transfer;
+    // The measured floors are per-response and were only ever stamped by
+    // ResponseGenerator::generate(), so a curve transfer - which runs no MC and never
+    // goes through it - shipped the CdTe-class total floor at its non-CdTe value,
+    // under-covering by 3.3x on exactly the detectors that motivated the split.
+    if (crystal_is_cdte_class(descriptor))
+        resp->floors.tot_far = model_sigma::tot_far_floor_cdte;
+
+    if (have_cov)
+        set_anchor_covariance(*resp, fep_anchor);
 
     return resp;
+}
+
+void set_anchor_covariance(DetectorResponse& response, const AnchorCurve& anchor) {
+    const size_t n = anchor.energies_keV.size();
+    if (n < 1 || anchor.frac_cov.size() != n * n)
+        throw std::runtime_error("set_anchor_covariance: covariance is not N*N");
+
+    // Validate BEFORE touching `response`: this overwrites whatever grounding it had, so a throw
+    // partway through would silently discard a real measured-point grounding.
+    std::vector<double> knot_ln_energies(n);
+    for (size_t i = 0; i < n; ++i) {
+        if (anchor.energies_keV[i] <= 0.0 ||
+            (i > 0 && anchor.energies_keV[i] <= anchor.energies_keV[i - 1]))
+            throw std::runtime_error("set_anchor_covariance: energies must be ascending");
+        knot_ln_energies[i] = std::log(anchor.energies_keV[i]);
+    }
+
+    GroundingBlock& g = response.grounding;
+    g = GroundingBlock();
+    // The covariance describes a FITTED CURVE, and ln_k is identically zero - nothing here was
+    // grounded to raw peaks, so a host must not advertise this as a measured-point grounding.
+    g.curve_derived = true;
+    g.points = anchor.points;
+    g.knot_ln_energies = std::move(knot_ln_energies);
+    g.ln_k.assign(n, 0.0);
+    g.cov = anchor.frac_cov;
+
+    // model_transfer already carries the off-axis/near envelope for this response.
+    g.transfer.far_onaxis = 0.0;
+    g.transfer.offaxis_mid = 0.0;
+    g.transfer.offaxis_low_e = 0.0;
+    g.transfer.near_contact = 0.0;
 }
 
 } // namespace ceelo

@@ -90,6 +90,17 @@ double resolve_node_precision(const GenerationOptions& opts, uint32_t stage,
                                : opts.node_fep_precision;
 }
 
+/// Stamp the measured per-quantity floors onto a freshly generated response.
+///
+/// Called from every generate() return path. The defaults in SigmaFloors already carry
+/// the corpus-measured values; the only thing that varies with the detector is the
+/// total-efficiency floor for CdTe-class crystals, which the 2026-09 corpus measured
+/// 3.2x higher than everything else.
+void apply_measured_floors(DetectorResponse& resp, const GeometryDescriptor& gd) {
+    if (crystal_is_cdte_class(gd))
+        resp.floors.tot_far = model_sigma::tot_far_floor_cdte;
+}
+
 // Shared per-run state: configured calculator + progress/cancel bookkeeping.
 struct Runner {
     const GeometryDescriptor& gd;
@@ -113,28 +124,14 @@ struct Runner {
     }
 
     void configure(EfficiencyCalculator& calc) const {
-        // Same mapping as the public helper, but reusing this Runner's
-        // already-instantiated materials (one instantiation per run, not per
-        // node).
-        //
         // Every calculator the generator builds routes through here, so setting
         //  the FEP window once here is what makes ResponseProvenance's recorded
         //  value true of every node that went into the response.
         calc.set_fep_window_keV(opts.fep_window_keV);
-        calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                                 gd.dimensions_cm);
-        if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
-        if (gd.dead_layer)
-            calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
-                                gd.dead_layer->back);
-        for (const LayerSpec& l : gd.layers)
-            calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                                l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-        if (gd.collimator)
-            calc.add_collimator(mat(gd.collimator->material_index),
-                                gd.collimator->side_thickness_cm,
-                                gd.collimator->z_start_cm,
-                                gd.collimator->z_end_cm);
+        // The detector-side mapping itself is shared with the public
+        //  configure_calculator() -- see apply_detector_side().
+        apply_detector_side(calc, gd,
+                            [this](int i) { return this->mat(i); });
     }
 
     void tick(const std::string& stage) {
@@ -825,8 +822,8 @@ std::shared_ptr<DetectorResponse> generate_closed_loop(
             // A few random fails but structured clean => minor model-form:
             // inflate the fep floors, record, and treat the grid as converged.
             if (n_random_fail > 0) {
-                resp->floors.fep_far *= 1.25;
-                resp->floors.fep_near *= 1.25;
+                resp->floors.fep_far *= model_sigma::generator_floor_inflation;
+                resp->floors.fep_near *= model_sigma::generator_floor_inflation;
             }
             converged = true;
             break;
@@ -1190,6 +1187,7 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         resp->provenance.min_distance_cm = 2.0 * a;  // far-field validity floor
         resp->model_transfer = SigmaTransferModel{};  // honest off-axis/near sigma
         resp->scatter_in_recapture = kTotalScatterInRecapture;  // total near-field
+        apply_measured_floors(*resp, gd);
         resp->finalize();
         if (opts.progress) opts.progress(1.0, "Done");
         return resp;
@@ -1483,6 +1481,7 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         resp->scatter_in_recapture = kTotalScatterInRecapture;
     }
 
+    apply_measured_floors(*resp, gd);
     resp->finalize();
     if (opts.progress) opts.progress(1.0, "Done");
     return resp;
@@ -1507,26 +1506,68 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
         p.model_eff = r.value;
     }
 
-    // Knots: 2-4 hats across the measured ln-E span (n scales with the
-    // number of distinct energies; a near-flat ratio needs few parameters).
+    // Knot selection.  The right number of hats depends on whether the points
+    // carry statistical scatter, so the two regimes are handled separately:
+    //
+    //  - `curve_derived` points are deterministic samples of an already-fitted
+    //    curve (e.g. a vendor characterization) with no scatter to smooth, so
+    //    one knot per distinct energy interpolates them exactly.  Anything
+    //    coarser discards real curve structure: measured on two HPGe vendor
+    //    characterizations, a 4-hat fit left 2.0-2.2% residual where exact
+    //    interpolation leaves none, and leave-one-out (which sees only genuine
+    //    between-node predictive error) improved from 1.3-1.4% to 0.5-0.7% --
+    //    i.e. the coarse fit was discarding signal, not suppressing noise.
+    //
+    //  - raw measured points DO carry scatter, and there more hats hurt: with
+    //    5% scatter, leave-one-out against the noiseless truth favours ~6 hats
+    //    over a saturated fit (2.7% vs 3.2% rms).  So cap at 6, and place the
+    //    knots at data quantiles rather than uniformly in ln-E, which keeps
+    //    ~2 points per interval and avoids the unsupported-knot degeneracy
+    //    that uniform placement produces on clustered energies.
+    //
+    // Sorted point ln-energies; knots are chosen from these, so every knot is
+    // supported by data by construction.
     std::vector<double> ln_es;
     for (const GroundingPoint& p : points) ln_es.push_back(std::log(p.energy_keV));
     std::sort(ln_es.begin(), ln_es.end());
-    ln_es.erase(std::unique(ln_es.begin(), ln_es.end(),
-                            [](double x, double y) { return y - x < 0.01; }),
-                ln_es.end());
-    const int n_knots =
-        std::max(1, std::min({4, static_cast<int>(ln_es.size()),
-                              static_cast<int>(points.size())}));
+
+    // Distinct energies, merging any within ~1% of each other (a hat pair that
+    // close is not separately determined).
+    std::vector<double> ln_distinct = ln_es;
+    ln_distinct.erase(std::unique(ln_distinct.begin(), ln_distinct.end(),
+                                  [](double x, double y) { return y - x < 0.01; }),
+                      ln_distinct.end());
+
     std::vector<double> knots;
-    if (n_knots == 1) {
-        knots.push_back(ln_es.front());
+    if (curve_derived) {
+        knots = ln_distinct;
     } else {
-        for (int i = 0; i < n_knots; ++i)
-            knots.push_back(ln_es.front() +
-                            (ln_es.back() - ln_es.front()) * double(i) /
-                                (n_knots - 1));
+        // <=6 hats, and enough points to keep ~2 per interval: n_knots-1
+        // intervals need 2*(n_knots-1) points, i.e. n_knots <= N/2 + 1.  Always
+        // allow the 2 needed to express a slope, since a linear ln-k trend is
+        // the dominant real structure and a constant would miss it entirely.
+        const int n_support = std::max(2, static_cast<int>(points.size()) / 2 + 1);
+        const int n_knots = std::max(1, std::min({6, static_cast<int>(ln_distinct.size()),
+                                                  n_support}));
+        if (n_knots == 1) {
+            knots.push_back(ln_es.front());
+        } else {
+            // Quantiles of the point energies, so intervals hold roughly equal
+            // numbers of points.
+            const size_t last = ln_es.size() - 1;
+            for (int i = 0; i < n_knots; ++i) {
+                const size_t idx = static_cast<size_t>(
+                    std::llround(double(i) * double(last) / double(n_knots - 1)));
+                knots.push_back(ln_es[idx]);
+            }
+            // Quantiles can coincide when energies are clustered; a repeated
+            // knot would make the basis singular.
+            knots.erase(std::unique(knots.begin(), knots.end(),
+                                    [](double x, double y) { return y - x < 0.01; }),
+                        knots.end());
+        }
     }
+    const int n_knots = static_cast<int>(knots.size());
 
     const size_t n = points.size();
     Eigen::MatrixXd X(n, n_knots);
@@ -1559,6 +1600,17 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
     g.points = std::move(points);
     g.knot_ln_energies = knots;
     g.ln_k.assign(c.data(), c.data() + n_knots);
+    // A response that carries `model_transfer` already applies the off-axis/near envelope on every
+    // query, unconditionally.  The grounding block's own transfer would be a SECOND copy of the
+    // same envelope -- and since frac_covariance carries both as correlated common modes, a doubled
+    // one.  Same rule as set_anchor_covariance (io/EfficiencyTransfer.cpp); reachable whenever a
+    // quick-MC or EFFTRAN response is grounded to measured points.
+    if (resp.model_transfer) {
+        g.transfer.far_onaxis = 0.0;
+        g.transfer.offaxis_mid = 0.0;
+        g.transfer.offaxis_low_e = 0.0;
+        g.transfer.near_contact = 0.0;
+    }
     g.cov.resize(static_cast<size_t>(n_knots) * n_knots);
     for (int i = 0; i < n_knots; ++i)
         for (int j = 0; j < n_knots; ++j)
@@ -1847,15 +1899,21 @@ std::vector<ProbePoint> ResponseGenerator::adversarial_probe_bank(
 void ResponseGenerator::certify(DetectorResponse& resp,
                                 const GeometryDescriptor& gd,
                                 const GenerationOptions& opts, int n_probes,
-                                int seed_offset, ProbeFamilyMask cert_families) {
-    // Fresh quasi-random probe bank at a fixed UNIFORM precision (0.005),
-    // Halton offset seed_offset (7000 -- disjoint from generation's 5000 and
-    // never parity-split). Uniform so the certificate MC never inherits the
-    // graded generation map.
+                                int seed_offset, ProbeFamilyMask cert_families,
+                                double probe_precision) {
+    // Fresh quasi-random probe bank at a fixed UNIFORM precision, Halton offset
+    // seed_offset (7000 -- disjoint from generation's 5000 and never
+    // parity-split). Uniform so the certificate MC never inherits the graded
+    // generation map.
+    //
+    // The default stays 0.005 so every historical caller is bit-identical, but
+    // it is a floor on what a certificate can resolve: scored against a model
+    // whose error is 0.2%, a 0.5%-precision bank reports its own noise. Pass
+    // `probe_precision` when certifying something finer than about 0.5%.
     GenerationOptions probe_opts = opts;
     probe_opts.node_precision = nullptr;
     probe_opts.precision_profile = PrecisionProfile::Uniform;
-    probe_opts.node_fep_precision = 0.005;
+    probe_opts.node_fep_precision = (probe_precision > 0.0) ? probe_precision : 0.005;
     probe_opts.progress = nullptr;
     probe_opts.cancel = nullptr;
     GenerationStats stats;
@@ -1918,10 +1976,17 @@ void ResponseGenerator::certify(DetectorResponse& resp,
                               std::max(0.01 * pp.eps_fep, noise));
         cert.rows.push_back(row);
 
-        if (pp.eps_tot > 0.0 && pp.tot_unc / pp.eps_tot <= 0.05) {
-            const EffResult mt = resp.eps_total_at(pp.energy_keV, src);
+        // Total efficiency: recorded per row, not just percentiled away. The
+        // tot_* regime floors have to be derived from this distribution, and a
+        // pair of percentiles cannot be deconvolved against the MC noise that
+        // produced them.
+        const EffResult mt = resp.eps_total_at(pp.energy_keV, src);
+        cert.rows.back().mc_tot = pp.eps_tot;
+        cert.rows.back().mc_tot_sig = pp.tot_unc;
+        cert.rows.back().model_tot = mt.value;
+        cert.rows.back().model_tot_sig = mt.sigma;
+        if (pp.eps_tot > 0.0 && pp.tot_unc / pp.eps_tot <= 0.05)
             tot_errs.push_back(std::fabs(mt.value / pp.eps_tot - 1.0));
-        }
     }
 
     auto percentile = [](std::vector<double> v, double q) -> double {
@@ -1967,24 +2032,8 @@ void ResponseGenerator::configure_calculator(
         return owned_materials[base + static_cast<size_t>(idx)].get();
     };
 
-    calc.set_detector_from_dimensions_vector(gd.shape, mat(gd.crystal_material_index),
-                                             gd.dimensions_cm);
-    // set_detector() clears the fillet/bore/dead layer, so declare them after
-    // it; fillet first, so bore_fits() sees the final crystal profile.
-    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
-    if (gd.bore)
-        calc.set_bore_hole(gd.bore->radius, gd.bore->depth,
-                           gd.bore->rounded_tip);
-    if (gd.dead_layer)
-        calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
-                            gd.dead_layer->back);
-    for (const LayerSpec& l : gd.layers)
-        calc.add_attenuator(mat(l.material_index), l.front_thickness_cm,
-                            l.side_thickness_cm, l.z_start_cm, l.z_end_cm);
-    if (gd.collimator)
-        calc.add_collimator(mat(gd.collimator->material_index),
-                            gd.collimator->side_thickness_cm,
-                            gd.collimator->z_start_cm, gd.collimator->z_end_cm);
+    // Shared with the generator's own per-node setup; see apply_detector_side.
+    apply_detector_side(calc, gd, mat);
 }
 
 } // namespace ceelo

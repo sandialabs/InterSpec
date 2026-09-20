@@ -227,12 +227,49 @@ based on a simulation with arbitrary gamma sources.
 
 
 <div style="display:table-row">
-<h4>Fitting Options:</h4>
+<h4>Describing the Detector:</h4>
 <div align="center" style="" >
   <img src="InterSpec_resources/static_text/images/make_drf_options.jpg"  class="imageBorder" style="max-width:66%;" />
 </div>
 <p>
-You can choose how many coefficients you want the <em>Intrinsic Efficiency</em>
+The panel to the left of the chart is where you say what the detector is.  Usually the
+<em>crystal diameter</em> is all you need: with &quot;<span style="font-weight: bold;">Diameter only</span>&quot;
+selected, enter the diameter of the active crystal (not the housing), and optionally the
+<em>setback</em> - the distance from the outside face of the detector to the crystal - if you know it.
+The response is then modeled as a flat disk of that diameter, which is accurate for sources
+more than a few detector-diameters away, on the detector axis.
+</p>
+<p>
+If you also know the crystal material and length (and, better still, the endcap or housing
+layers), switch to &quot;<span style="font-weight: bold;">Detector geometry</span>&quot;.  The
+same geometry form as the &quot;Modify Detector Response&quot; tool appears, pre-filled from the
+diameter you entered; the crystal length shown is a guess until you set it.  With a real geometry,
+the tool
+</p>
+<ul>
+  <li>puts calibration sources measured at <em>different</em> distances onto one efficiency curve
+      correctly - the ray-traced detector geometry, not a flat disk, converts each point to the
+      far-field intrinsic efficiency - so you can mix, say, 25 cm and 100 cm measurements;</li>
+  <li>attaches a geometry-aware response to the saved DRF, so the &quot;Activity/Shielding Fit&quot;
+      tool answers correctly close to the detector and somewhat off-axis.  By default this uses the
+      instant &quot;No MC support (from measured curve)&quot; method - no Monte Carlo is run.  You
+      may instead select a Monte-Carlo method under <em>Location Support</em> and press
+      <em>Generate</em>; this takes minutes but models the detector in full, and the result is
+      corrected (&quot;grounded&quot;) to your measured points.  You can always add a Monte-Carlo
+      characterization later from the &quot;Modify Detector Response&quot; tool.</li>
+</ul>
+<p>
+Nothing here changes what you need to measure: the same characterization spectra and source
+information are used either way.  The uncertainties of the source activities (and, if you enter
+them, of the source distances) are carried through the fit into the DRF, and on into the activity
+uncertainties reported by the analysis tools; you do not need to do anything for that to happen.
+</p>
+</div>
+
+<div style="display:table-row">
+<h4>Fitting Options:</h4>
+<p>
+Below the chart you can choose how many coefficients you want the <em>Intrinsic Efficiency</em>
 equation to use, with the guiding criteria usually being how well the fit
 equation matches the data, without being over-fitted.
 A maximum of eight coefficients can be used.
@@ -240,14 +277,22 @@ You can also choose if you would like the coefficients fit for energy in keV or
 MeV.  Usually MeV gives coefficient values that are slightly more natural
 looking, but the only time the choice really matters is if you want to use the
 coefficients in another application that expects one unit or another.
+The fit is a least-squares fit that accounts for the peak-area statistics of each point and for
+the correlated activity (and distance) uncertainty of each source; the full covariance of the
+coefficients is saved with the DRF and shown as the band around the curve.  If the points scatter
+more than their stated uncertainties allow, the uncertainties are inflated to match and a note
+says by how much - usually a sign that a source activity, distance, or a peak fit is off.
+</p>
+<p>
+The chart zooms like the spectrum chart: click and drag to the right to zoom in on an energy
+range, drag to the left to zoom back out.  The shaded regions are energies outside your measured
+points, where the equation is an extrapolation.
 </p>
 <p>
 The detector Full Width Half Maximum (FWHM) as a function of energy is also fit
-at the same time as the <em>Intrinsic Efficiency</em>.  However, since
-<code>InterSpec</code> does not really use this information, it is not
-emphasized in the user interface, but the information is saved as part of the
-DRF, and is also written to the CSV file available from the &quot;Save As...&quot;
-dialog.
+at the same time as the <em>Intrinsic Efficiency</em>.  The information is saved as part of the
+DRF (with its coefficient uncertainties), and is also written to the CSV file available from the
+&quot;Store/Export...&quot; dialog.
 </p>
 <p>
 The FWHM can be fit using either the square root of a power series in energy:
@@ -263,22 +308,19 @@ def getFWHM( energy ):
     //P6---&gt; resolution @ E=0 (energy in keV)
     //P7---&gt; % FWHM @ 661 keV
     //P8---&gt; resolution power
-    if energy ≥ 661 or P6=0
+    if energy &gt; 661
         return 6.61×P7×(energy/661)<sup>P8</sup>
     if P6 &lt; 0.0
         var p = P8<sup>1.0/log(1.0-P6)</sup>
-        return 6.61×P7×(energy/661)<sup>p</sup>
-
-    if P6 &gt; 6.61×P7
-        return P6;
-
-    var p = sqrt((6.61×P7)<sup>2</sup>-P6<sup>2</sup>)/6.61;
-    return sqrt(P6<sup>2</sup>+(6.61×p×(energy/661)<sup>P8</sup>)<sup>2</sup>)
+        return 6.61×P7×(max(30,energy)/661)<sup>p</sup>
+    var zero = P6×(661-energy)/661
+    return sqrt(zero<sup>2</sup> + (6.61×P7×(energy/661)<sup>P8</sup>)<sup>2</sup>)
 </pre>
 </div>
 <div>
-You can also choose to show this fit and peak FWHM  data on the chart by selecting the
-&quot;Show FWHM points&quot; checkbox.
+The sign of P6 selects a different low-energy behaviour, so the fit tries both branches and keeps
+the better one.  You can also choose to show this fit and peak FWHM data on the chart by selecting
+the &quot;Show FWHM points&quot; checkbox.
 </div>
 <div style="margin-top: 10px;">
 When the &quot;<span style="font-weight: bold;">Atten. for air</span>&quot; option is checked, the source distance will be used to
@@ -293,7 +335,7 @@ The &quot;<span style="font-weight: bold;">Fixed Geometry</span>&quot; option is
 the measurements to be analyzed, will be in the same configuration and distance as the
 check source data.  Some common use cases for this is Marinelli beakers measurements (e.g.,
 lab-based soil contamination), <em>in-situ</em> measurements, or repetitive lab-based measurements.
-When this option is checked, the detector diameter, the source distances, and air attenuation
+When this option is checked, the detector description, the source distances, and air attenuation
 option, will all be hidden, as they become moot.  Source shielding will not normally be applicable
 to these characterizations (since you normally <em>want</em> the DRF to already include attenuations
 of your sample), but you will still be allowed to enter a shielding in-case you need to compensate
@@ -303,12 +345,29 @@ When using a DRF created with this option, the <b>Activity/Shielding fit</b> too
 will not allow you to enter a distance or geometry, as they will assume the exact same geometry
 is being used for the measurement, as for the characterization.
 </div>
+</div>
 
+<div style="display:table-row">
+<h4>What the DRF Stores:</h4>
+<p>
+Besides the fitted equations, the saved DRF keeps the measured efficiency point of every peak you
+used (with its peak area, live time, distance and uncertainties) and a table of the sources they
+came from (nuclide, activity and its uncertainty, age, distance, shielding, assay details).  That
+is enough to revisit or redo the fit later from the DRF alone, and it is what a later Monte-Carlo
+characterization is corrected to.  The spectra themselves are not stored in the DRF; the N42 file
+available from the &quot;Store/Export...&quot; dialog contains the spectra, the peak fits, the
+source information and the DRF, and is the complete record of the characterization.
+</p>
+<p>
+If you have no characterization data at all, the &quot;<span style="font-weight: bold;">Make
+without data...</span>&quot; button opens the &quot;Modify Detector Response&quot; tool on a
+blank detector, where an approximate response can be built from the detector geometry (by Monte
+Carlo) or entered by hand.
 </p>
 </div>
 
 <div style="display:table-row">
-<h4>Save As Dialog:</h4>
+<h4>Store/Export Dialog:</h4>
 <div style="padding-top: 10px; padding-left: 10px" >
 <img src="InterSpec_resources/static_text/images/make_drf_save_as.jpg"  class="imageBorder" style="max-width: 30%; margin-left: 10px; margin-right: 10px;" align="left" />
 When saving the DRF it gets saved into <code>InterSpec</code>'s internal database

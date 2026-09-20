@@ -913,6 +913,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       peak_json["DrfEffFracUncert"] = peak.drfEffFracUncert;
       peak_json["DrfEffFracUncertPercentStr"]
                      = SpecUtils::printCompact( 100.0*peak.drfEffFracUncert, 3 );
+      // The part of it that is the response's ad hoc model envelope rather than the DRF's data
+      peak_json["DrfEffFracUncertModel"] = peak.drfEffFracUncertModel;
+      peak_json["DrfEffFracUncertModelPercentStr"]
+                     = SpecUtils::printCompact( 100.0*peak.drfEffFracUncertModel, 3 );
     }
 
     // Validity flag of the detector-efficiency query at this energy/geometry;

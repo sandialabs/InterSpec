@@ -2113,6 +2113,24 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
    
    @returns The lower and upper channels for the energy range; its guaranteed the \c .first element
             will be less than or equal to the \c .second element.
+
+   KNOWN INCONSISTENCY (pre-existing, deliberately not fixed - 2026-09).  This nearest-channel
+   rounding is unique to RelActCalcAuto; everywhere else in InterSpec a ROI's channels come from
+   `SpecUtils::Measurement::find_gamma_channel()`, which floors (see `PeakFitLM`s RoiInfo builder
+   and `PeakContinuum::cdf_step_anchor_energies()`).  `peaks_for_energy_range_imp(...)` stores the
+   caller's unrounded `RoiRange` energies on the continuum, so when `lower_energy` falls in the
+   upper half of its channel the channels actually integrated and the channels the evaluator later
+   derives from the stored range differ by one.  For the peak-CDF step continua that offsets the
+   drawn/reported continuum from the fitted one by
+   `step_coeff * SUM_j(amp_j*(CDF_j(e_first) - CDF_j(e_floor)))` per channel - of order 0.02 to 0.2
+   counts on a 300 counts/channel continuum, i.e. under 0.1%.  Every other continuum type is
+   unaffected, since only the CDF step types anchor anything to the ROI edge.
+
+   The trap for anyone fixing this: storing `gamma_channel_upper(last_channel)` as the continuum's
+   upper energy does NOT work - `find_gamma_channel` resolves an exact channel edge to the channel
+   *above* it, so the anchor lands one channel too far and a later ordinary refit would fit an extra
+   channel.  A fix has to store an energy strictly inside the last fitted channel, or hand the
+   anchor helper the channel range explicitly.
    */
   static pair<size_t,size_t> channel_range( const double lower_energy, const double upper_energy,
                                           const size_t wanted_nchan,
@@ -17448,146 +17466,7 @@ RoiRange::RangeLimitsType RoiRange::range_limits_type_from_str( const char *str 
 }//RoiRange::range_limits_type_from_str(str)
 
 
-/** This function is the same as `DetectorPeakResponse::peakResolutionFWHM(...)`, but templated to allow Jets
- TODO: refactor this function and the equivalent `DetectorPeakResponse` function into a single imlpementation.
- */
-template<typename T>
-T positive_c1_continuation( const T &value, const double floor )
-{
-  double scalar = 0.0;
-  if constexpr ( std::is_same_v<T,double> )
-    scalar = value;
-  else
-    scalar = value.a;
-  if( scalar >= floor )
-    return value;
-
-  // Equals `value` in both value and derivative at `floor`, stays strictly positive for every
-  // finite trial, and approaches zero monotonically as the raw argument tends to -infinity.
-  return T(floor*floor) / (T(2.0*floor) - value);
-}
-
-
-template<typename T>
-T upper_c1_continuation( const T &value, const T &upper )
-{
-  double scalar = 0.0, upper_scalar = 0.0;
-  if constexpr ( std::is_same_v<T,double> )
-  {
-    scalar = value;
-    upper_scalar = upper;
-  }else
-  {
-    scalar = value.a;
-    upper_scalar = upper.a;
-  }
-  const T join = T(0.5) * upper;
-  if( scalar <= 0.5*upper_scalar )
-    return value;
-
-  // Exact below half the gamma energy, C1 at the join, and monotonically approaches (but never
-  // reaches) `upper`.  Physical detector widths are far below the join; this only regularizes
-  // otherwise-invalid optimizer trials.
-  const T distance = upper - join;
-  return upper - distance*distance / (value - join + distance);
-}
-
-
-template<typename T>
-T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
-                     const T * const pars, const size_t num_pars )
-{
-  switch( fcnFrm )
-  {
-    case DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn:
-    {
-      if( num_pars != 3 )
-        throw std::runtime_error( "RelActCalcAuto::peakResolutionSigma():"
-                                 " pars not defined" );
-      // Straight-forward translation of the GADRAS Fortran GetFWHM ("form C", shared with
-      //  PeakDists::gadras_fwhm and DetectorPeakResponse::peakResolutionFWHM).  See the note in
-      //  DetectorPeakResponse.cpp: this replaces an earlier A7 variant so all GADRAS FWHM
-      //  computations use the same Fortran-faithful form.
-      const T &a = pars[0];   // resolution offset ("FWHM @ 0")
-      const T &b = pars[1];   // resolution @ 661 (percent)
-      const T &c = pars[2];   // resolution power
-
-      if( energy > 661.0 )
-        return 6.61 * b * pow(energy/661.0, c);
-
-      if( a >= 0.0 )
-      {
-        // a >= 0 here, so fabs(a) == a; (661 - energy) >= 0 since energy <= 661 in this branch.
-        T zero_limit = a * (661.0 - energy) / 661.0;
-        if( zero_limit < 0.0 )
-          zero_limit = T( 0.0 );
-        const T fwhm = 6.61 * b * pow( energy/661.0, c );
-        return sqrt( zero_limit*zero_limit + fwhm*fwhm );
-      }//if( a >= 0.0 )
-
-      T e_clamped = energy;
-      if( e_clamped < 30.0 )
-        e_clamped = T( 30.0 );
-      const T p = pow( c, T(1.0)/log(1.0-a) );
-      return 6.61 * b * pow( e_clamped/661.0, p );
-    }//case kGadrasResolutionFcn:
-      
-    case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
-    {
-      if( num_pars != 3 )
-        throw std::runtime_error( "RelActCalcAuto::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      const T width_squared = pars[0] + pars[1]*energy + pars[2]/energy;
-      return sqrt( positive_c1_continuation(width_squared, 1.0e-12) );
-    }//case kSqrtEnergyPlusInverse:
-      
-    case DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy:
-    {
-      if( num_pars != 2 )
-        throw std::runtime_error( "RelActCalcAuto::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      return pars[0] + pars[1]*sqrt(energy);
-    }//case kConstantPlusSqrtEnergy:
-      
-    case DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial:
-    {
-      if( num_pars < 1 )
-        throw runtime_error( "RelActCalcAuto::peakResolutionSigma():"
-                            " pars not defined" );
-      
-      energy /= PhysicalUnits::MeV;
-      //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-
-      // Use Horner's method to evaluate the polynomial - more stable.
-      T val = pars[num_pars - 1];
-      for( int i = static_cast<int>(num_pars) - 2; i >= 0; i -= 1 )
-        val = val * energy + pars[i];
-
-#ifndef NDEBUG
-      T unstable_val(0.0);
-      for( size_t i = 0; i < num_pars; ++i )
-        unstable_val += pars[i] * pow(energy, static_cast<double>(i) );
-      const T diff = abs(unstable_val - val);
-      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(abs(unstable_val), abs(val))) );
-#endif
-
-      return sqrt( positive_c1_continuation(val, 1.0e-12) );
-    }//case kSqrtPolynomial:
-      
-    case DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm:
-      throw std::runtime_error( "RelActCalcAuto::peakResolutionSigma():"
-                               " Resolution not defined" );
-      break;
-  }//switch( m_resolutionForm )
-  
-  //Lets keep MSVS happy
-  assert(0);
-  return T(0.0);
-}//static T peakResolutionFWHM(...)
+// The templated FWHM evaluator and the C1 continuations now live in DetectorPeakResponse.h
 
 
 /** Berstein polynomial FWHM function.
@@ -17695,14 +17574,14 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
         T local_pars[6]; //Avoid allocation overhead of std::vector
         for( size_t i = 0; i < num_drf_coefs; ++i )
           local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-        local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
+        local_val = DetectorPeakResponse::peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
       }else
       {
         //Dont expect to ever get here
         vector<T> local_pars( num_drf_coefs );
         for( size_t i = 0; i < num_drf_coefs; ++i )
           local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-        local_val = peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
+        local_val = DetectorPeakResponse::peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
       }//if( num_drf_coefs < 7 ) / else
 
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -17722,9 +17601,9 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
     throw runtime_error( "eval_fwhm: invalid FwhmForm" );
   
   //return
-  T answer = peakResolutionFWHM( energy, fctntype, pars, num_pars );
-  answer = positive_c1_continuation( answer, 1.0e-6 );
-  answer = upper_c1_continuation( answer, energy );
+  T answer = DetectorPeakResponse::peakResolutionFWHM( energy, fctntype, pars, num_pars );
+  answer = DetectorPeakResponse::positive_c1_continuation( answer, 1.0e-6 );
+  answer = DetectorPeakResponse::upper_c1_continuation( answer, energy );
 
   if( isnan(answer) || isinf(answer) )
     throw runtime_error( "eval_fwhm: inf/NaN result." );
@@ -17768,8 +17647,8 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
   //  join (|f(a)-f(b)| <= |a-b|), so applying them can only tighten this check, never mask a real
   //  mismatch.
   double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
-  drf_answer = positive_c1_continuation( drf_answer, 1.0e-6 );
-  drf_answer = upper_c1_continuation( drf_answer, energy_scalar );
+  drf_answer = DetectorPeakResponse::positive_c1_continuation( drf_answer, 1.0e-6 );
+  drf_answer = DetectorPeakResponse::upper_c1_continuation( drf_answer, energy_scalar );
 
   // The reference is evaluated from float-cast energy and parameters (~6e-8 relative each), and the
   //  sqrt-of-a-sum FWHM forms amplify that wherever their terms cancel, so the tolerance has to be

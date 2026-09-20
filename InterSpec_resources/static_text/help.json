@@ -116,6 +116,18 @@
         "keywords":"Detectors Relative Efficiency Full Width at Half Maximum FWHM Absolute"
       },
       {
+        "id":"modify-drf",
+        "title":"Modify Detector Response",
+        "help-xml":"modify_drf_help.xml",
+        "keywords":"Detectors Efficiency Geometry Monte Carlo Uncertainty Anchor FWHM"
+      },
+      {
+        "id":"make-mc-response",
+        "title":"Characterize Detector by Monte Carlo",
+        "help-xml":"make_mc_response_help.xml",
+        "keywords":"Detectors Geometry Monte Carlo Near Field Off Axis Efficiency Transfer"
+      },
+      {
         "id":"add-fwhm-to-drf",
         "title":"Fit FWHM from current spectrum",
         "help-xml":"add_fwhm_to_drf_help.xml",

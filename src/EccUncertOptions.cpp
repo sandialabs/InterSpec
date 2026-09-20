@@ -77,7 +77,13 @@ EccUncertOptions::EccUncertOptions( const vector<float> &energies,
   m_import->setChecked( true );
   m_import->changed().connect( this, &EccUncertOptions::handleImportToggled );
 
-  WTable *table = addNew<WTable>();
+  // The controls on the left, the worked example to the right of them: the example is only there to
+  //  answer "what does this length mean", so it belongs beside the length rather than below
+  //  everything.
+  WContainerWidget *row = addNew<WContainerWidget>();
+  row->addStyleClass( "EccUncertOptsRow" );
+
+  WTable *table = row->addNew<WTable>();
   table->addStyleClass( "EccUncertOptsTable" );
 
   {
@@ -107,10 +113,13 @@ EccUncertOptions::EccUncertOptions( const vector<float> &energies,
     HelpSystem::attachToolTipOn( m_corrLenLabel, WString::tr("euo-tt-corrlen"), true );
   }
 
-  m_exampleTitle = addNew<WText>( WString::tr("euo-example-title") );
+  WContainerWidget *exampleWrap = row->addNew<WContainerWidget>();
+  exampleWrap->addStyleClass( "EccUncertExampleWrap" );
+
+  m_exampleTitle = exampleWrap->addNew<WText>( WString::tr("euo-example-title") );
   m_exampleTitle->addStyleClass( "EccUncertExampleTitle" );
 
-  m_exampleTable = addNew<WTable>();
+  m_exampleTable = exampleWrap->addNew<WTable>();
   m_exampleTable->addStyleClass( "EccUncertExampleTable" );
   m_exampleTable->setHeaderCount( 1 );  // Render the first row as <th> cells.
 
@@ -179,17 +188,17 @@ Wt::Signal<> &EccUncertOptions::changed()
 
 void EccUncertOptions::handleImportToggled()
 {
-  const bool import = m_import->isChecked();
-  m_mode->setEnabled( import );
-  m_corrLen->setEnabled( import && (m_mode->currentIndex() == Gaussian) );
-  m_exampleTitle->setHidden( !import );
-  m_exampleTable->setHidden( !import );
+  m_mode->setEnabled( m_import->isChecked() );
+
+  // Everything else (the length field, and whether the example is worth showing) is decided in one
+  //  place, so re-checking the box cannot bring the example back in a mode that has nothing to show.
+  updateModeWidgets();
 
   m_changed.emit();
 }//handleImportToggled()
 
 
-void EccUncertOptions::handleModeChanged()
+void EccUncertOptions::updateModeWidgets()
 {
   const bool gaussian = (m_mode->currentIndex() == Gaussian);
   m_corrLenLabel->setHidden( !gaussian );
@@ -197,24 +206,74 @@ void EccUncertOptions::handleModeChanged()
   m_corrLen->setEnabled( m_import->isChecked() && gaussian );
 
   rebuildExampleTable();
+}//updateModeWidgets()
+
+
+void EccUncertOptions::handleModeChanged()
+{
+  updateModeWidgets();
 
   m_changed.emit();
 }//handleModeChanged()
+
+
+void EccUncertOptions::setPoints( const vector<float> &energies,
+                                  const vector<float> &correlatedFrac,
+                                  const vector<float> &uncorrelatedFrac )
+{
+  m_energies = energies;
+  m_baselineFrac = correlatedFrac;
+  m_convergenceFrac = uncorrelatedFrac;
+
+  rebuildExampleTable();
+}//setPoints(...)
+
+
+void EccUncertOptions::setCorrelationLength( const double corrLength )
+{
+  if( corrLength <= 0.0 )
+  {
+    m_mode->setCurrentIndex( Uncorrelated );
+  }else if( corrLength >= DetectorEfficiencyUncert::sm_fullyCorrelatedLength )
+  {
+    m_mode->setCurrentIndex( FullyCorrelated );
+  }else
+  {
+    m_mode->setCurrentIndex( Gaussian );
+    char buf[32] = { '\0' };
+    snprintf( buf, sizeof(buf), "%.2f", corrLength );
+    m_corrLen->setText( WString::fromUTF8(buf) );
+  }
+
+  updateModeWidgets();
+}//setCorrelationLength(...)
+
+
+void EccUncertOptions::setImportToggleVisible( const bool visible )
+{
+  m_import->setHidden( !visible );
+  if( !visible )
+    m_import->setChecked( true );  //importUncertainties() is then pinned true
+
+  updateModeWidgets();
+}//setImportToggleVisible(...)
 
 
 void EccUncertOptions::rebuildExampleTable()
 {
   m_exampleTable->clear();
 
-  if( m_energies.size() < 2 )
-  {
-    m_exampleTitle->hide();
-    m_exampleTable->hide();
-    return;
-  }
+  // Deliberately NOT gated on how many nodes this detector has: the example pairs below are fixed
+  //  illustrations of what the correlation length means, and the one host that starts with no rows
+  //  (a formula curve with no stored covariance) is exactly where the user most needs to see it.
 
-  m_exampleTitle->setHidden( !m_import->isChecked() );
-  m_exampleTable->setHidden( !m_import->isChecked() );
+  // Only the Gaussian mode has anything to illustrate: the other two are their own description
+  //  ("everything moves together", "nothing does"), and a table of 1.000s or 0.000s is noise.
+  const bool show = (m_import->isChecked() && (m_mode->currentIndex() == Gaussian));
+  m_exampleTitle->setHidden( !show );
+  m_exampleTable->setHidden( !show );
+  if( !show )
+    return;
 
   const double corrLength = effectiveCorrLength();
 

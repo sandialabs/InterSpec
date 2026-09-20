@@ -51,8 +51,6 @@
     这在较低能量或较大刻度距离下影响更大。
   </message>
   <message id="md-show-fwhm-markers">显示FWHM点</message>
-  <message id="md-display-energy-lower-label">显示能量，下限：</message>
-  <message id="md-display-energy-upper-label">上限：</message>
   <message id="md-mi-chart-phone">图表/选项</message>
   <message id="md-mi-peaks-phone">要使用的峰</message>
   <message id="md-export-btn">存储/导出...</message>
@@ -95,7 +93,7 @@
   <message id="md-saved-to-db">已将'{1}'保存到内部数据库。</message>
   <message id="md-peak-counts">{1} {2} keV，峰{3}计数</message>
   <message id="md-peak-no-nuc">无关联核素，{1} keV，峰{2}计数</message>
-  <message id="md-err-det-diam-invalid">探测器直径无效 - 假设为2.54厘米。</message>
+  
   <message id="md-err-some-src">某些源有错误。</message>
   <message id="md-n-fit-pars">{1}拟合参数</message>
   <message id="md-html-eff-table-caption">全能检测效率（总伽马的%）</message>

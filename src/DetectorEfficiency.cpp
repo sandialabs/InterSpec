@@ -28,10 +28,13 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <iostream>
 #include <algorithm>
 #include <stdexcept>
 
 #include <boost/functional/hash.hpp>
+
+#include <Eigen/Dense>  // eigenvalues for the positive-semi-definite check, Cholesky for the URL form
 
 #include "rapidxml/rapidxml.hpp"
 
@@ -311,6 +314,13 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromPointUncerts(
   answer->setNodeCovariance( node_energies, cov );
   answer->m_corrLength = (corrLength > 0.0) ? corrLength : -1.0;
 
+  // Provenance, taken from the sorted/de-duplicated nodes so it stays index-aligned with them.
+  //  This model is purely correlated, so there is no uncorrelated component.
+  vector<float> corr_frac( nnode );
+  for( size_t i = 0; i < nnode; ++i )
+    corr_frac[i] = pts[i].second;
+  answer->setComponentSplit( corr_frac, {} );
+
   return answer;
 }//fromPointUncerts(...)
 
@@ -396,6 +406,18 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromCorrelatedPlu
   answer->setNodeCovariance( node_energies, cov );
   answer->m_corrLength = (corrLength > 0.0) ? corrLength : -1.0;
 
+  // Provenance, taken from the sorted/de-duplicated nodes so it stays index-aligned with them.
+  vector<float> corr_frac( nnode ), uncorr_frac;
+  for( size_t i = 0; i < nnode; ++i )
+    corr_frac[i] = pts[i].corr;
+  if( have_diag )
+  {
+    uncorr_frac.resize( nnode );
+    for( size_t i = 0; i < nnode; ++i )
+      uncorr_frac[i] = pts[i].uncorr;
+  }
+  answer->setComponentSplit( corr_frac, uncorr_frac );
+
   return answer;
 }//fromCorrelatedPlusDiagonal(...)
 
@@ -410,6 +432,8 @@ void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
     m_covEnergies.clear();
     m_covMatrix.clear();
     m_corrLength = -1.0;
+    m_corrComponent.clear();
+    m_uncorrComponent.clear();
     return;
   }
 
@@ -462,7 +486,81 @@ void DetectorEfficiencyUncert::setNodeCovariance( const vector<float> &energies,
   m_covEnergies = energies;
   m_covMatrix = cov;
   m_corrLength = -1.0;
+
+  // A directly-set covariance has no correlated/uncorrelated split; the factories that do know the
+  //  split call setComponentSplit(...) after this.
+  m_corrComponent.clear();
+  m_uncorrComponent.clear();
 }//setNodeCovariance(...)
+
+
+bool DetectorEfficiencyUncert::covarianceIsUsable( const vector<double> &covRowMajor,
+                                                   std::string *why )
+{
+  auto fail = [why]( const char *msg ) -> bool {
+    if( why )
+      *why = msg;
+    return false;
+  };//fail lambda
+
+  if( covRowMajor.empty() )
+    return true;  //"no covariance" is a usable statement
+
+  const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(covRowMajor.size()) ) ) );
+  if( (n * n) != covRowMajor.size() )
+    return fail( "matrix is not square" );
+
+  double max_diag = 0.0;
+  for( size_t i = 0; i < n; ++i )
+  {
+    const double val = covRowMajor[i*n + i];
+    if( IsNan(val) || IsInf(val) )
+      return fail( "matrix holds a non-finite value" );
+    if( val < 0.0 )
+      return fail( "matrix has a negative variance on its diagonal" );
+    max_diag = std::max( max_diag, val );
+  }//for( size_t i = 0; i < n; ++i )
+
+  if( max_diag <= 0.0 )
+    return true;  //all-zero: no information, but not impossible
+
+  // Symmetry, scaled by the matrix's own magnitude so the test means the same for a covariance of
+  //  1e-3-sized entries and one of 1e3-sized ones.
+  for( size_t i = 0; i < n; ++i )
+  {
+    for( size_t j = i + 1; j < n; ++j )
+    {
+      const double a = covRowMajor[i*n + j], b = covRowMajor[j*n + i];
+      if( IsNan(a) || IsInf(a) || IsNan(b) || IsInf(b) )
+        return fail( "matrix holds a non-finite value" );
+      if( fabs(a - b) > (1.0E-5 * max_diag) )
+        return fail( "matrix is not symmetric" );
+    }
+  }//for( size_t i = 0; i < n; ++i )
+
+  // Positive semi-definite: no direction may imply a negative variance.  The tolerance is relative
+  //  to the matrix scale, so a fit covariance whose smallest eigenvalue is a rounding artifact is
+  //  accepted, while a hand-entered impossible correlation set (e.g. rho01 = rho02 = 0.99 with
+  //  rho12 = -0.99) is not.
+  Eigen::MatrixXd m( n, n );
+  for( size_t i = 0; i < n; ++i )
+    for( size_t j = 0; j < n; ++j )
+      m(i,j) = 0.5*(covRowMajor[i*n + j] + covRowMajor[j*n + i]);
+
+  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver( m, Eigen::EigenvaluesOnly );
+  if( solver.info() != Eigen::Success )
+    return fail( "matrix eigenvalues could not be computed" );
+
+  // The tolerance is what separates float rounding from an impossible entry.  A fitted covariance can
+  //  be badly conditioned (a log-power-series fit routinely is), and storing it as float perturbs its
+  //  smallest eigenvalue by of order 1e-7 of the matrix scale; a hand-entered impossible set of
+  //  correlations is negative by of order 0.1 to 1 of it.
+  if( solver.eigenvalues().minCoeff() < (-1.0E-6 * max_diag) )
+    return fail( "matrix is not positive semi-definite - these uncertainties and correlations"
+                 " cannot describe any real set of errors" );
+
+  return true;
+}//covarianceIsUsable(...)
 
 
 void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &covRowMajor )
@@ -478,8 +576,55 @@ void DetectorEfficiencyUncert::setCoefficientCovariance( const vector<float> &co
     throw runtime_error( "DetectorEfficiencyUncert::setCoefficientCovariance:"
                          " matrix must be square" );
 
+  // Refused rather than stored: for an equation curve this matrix takes precedence over the node
+  //  covariance, so an impossible one would both hide a usable covariance and (through a failed
+  //  Cholesky in the fit) reduce the apparent uncertainty.
+  const vector<double> as_dbl( begin(covRowMajor), end(covRowMajor) );
+  std::string why;
+  if( !covarianceIsUsable( as_dbl, &why ) )
+    throw runtime_error( "DetectorEfficiencyUncert::setCoefficientCovariance: " + why );
+
   m_coefCovMatrix = covRowMajor;
 }//setCoefficientCovariance(...)
+
+
+void DetectorEfficiencyUncert::setComponentSplit( const vector<float> &correlatedFrac,
+                                                  const vector<float> &uncorrelatedFrac )
+{
+  const size_t nnode = m_covEnergies.size();
+
+  // setNodeCovariance(...) clears the split, so it must be called first; otherwise the provenance
+  //  we are being handed has nothing to be index-aligned with.
+  assert( nnode || (correlatedFrac.empty() && uncorrelatedFrac.empty()) );
+
+  const auto check = []( const vector<float> &vals, const size_t nnode, const char *which ){
+    if( vals.empty() )
+      return;
+
+    if( vals.size() != nnode )
+      throw runtime_error( string("DetectorEfficiencyUncert::setComponentSplit: ") + which
+                           + " component must be empty or match the number of node energies" );
+
+    for( const float val : vals )
+    {
+      if( (val < 0.0f) || IsNan(val) || IsInf(val) )
+        throw runtime_error( string("DetectorEfficiencyUncert::setComponentSplit: ") + which
+                             + " component values must be >= 0" );
+    }
+  };//check lambda
+
+  check( correlatedFrac, nnode, "correlated" );
+  check( uncorrelatedFrac, nnode, "uncorrelated" );
+
+  m_corrComponent = correlatedFrac;
+  m_uncorrComponent = uncorrelatedFrac;
+}//setComponentSplit(...)
+
+
+bool DetectorEfficiencyUncert::hasComponentSplit() const
+{
+  return (!m_corrComponent.empty() || !m_uncorrComponent.empty());
+}
 
 
 const vector<float> &DetectorEfficiencyUncert::covarianceEnergies() const
@@ -497,6 +642,18 @@ const vector<float> &DetectorEfficiencyUncert::covarianceMatrix() const
 const vector<float> &DetectorEfficiencyUncert::coefficientCovariance() const
 {
   return m_coefCovMatrix;
+}
+
+
+const vector<float> &DetectorEfficiencyUncert::correlatedComponent() const
+{
+  return m_corrComponent;
+}
+
+
+const vector<float> &DetectorEfficiencyUncert::uncorrelatedComponent() const
+{
+  return m_uncorrComponent;
 }
 
 
@@ -518,6 +675,13 @@ void DetectorEfficiencyUncert::toXml( ::rapidxml::xml_node<char> *parent,
   {
     append_float_list_node( base_node, doc, "CovEnergies", m_covEnergies );
     append_float_list_node( base_node, doc, "CovMatrix", m_covMatrix );
+
+    // Provenance only: the split the covariance above was built from.  Optional, so older readers
+    //  (which look up children by name) simply ignore these and rebuild the identical covariance.
+    if( !m_corrComponent.empty() )
+      append_float_list_node( base_node, doc, "CorrFrac", m_corrComponent );
+    if( !m_uncorrComponent.empty() )
+      append_float_list_node( base_node, doc, "UncorrFrac", m_uncorrComponent );
   }
 
   if( !m_coefCovMatrix.empty() )
@@ -548,17 +712,44 @@ void DetectorEfficiencyUncert::fromXml( const ::rapidxml::xml_node<char> *node )
   m_covMatrix.clear();
   m_coefCovMatrix.clear();
   m_corrLength = -1.0;
+  m_corrComponent.clear();
+  m_uncorrComponent.clear();
 
   const vector<float> cov_energies = parse_float_list_node( node, "CovEnergies" );
   if( !cov_energies.empty() )
   {
     const vector<float> cov_matrix = parse_float_list_node( node, "CovMatrix" );
     setNodeCovariance( cov_energies, cov_matrix );
+
+    // After setNodeCovariance(...), which clears the split.
+    const vector<float> corr_frac = parse_float_list_node( node, "CorrFrac" );
+    const vector<float> uncorr_frac = parse_float_list_node( node, "UncorrFrac" );
+    if( !corr_frac.empty() || !uncorr_frac.empty() )
+      setComponentSplit( corr_frac, uncorr_frac );
   }
 
+  // A stored covariance that is not a possible set of errors is dropped, not thrown on: these files
+  //  predate the check, and losing the whole DRF (or, through the DB blob's catch, all of its extras)
+  //  over one unusable matrix would be a worse answer than losing the matrix.  It is dropped rather
+  //  than kept because for an equation curve it would take precedence over the node covariance while
+  //  contributing nothing but a failed Cholesky downstream.
   const vector<float> coef_cov = parse_float_list_node( node, "CoefCovMatrix" );
   if( !coef_cov.empty() )
-    setCoefficientCovariance( coef_cov );
+  {
+    try
+    {
+      setCoefficientCovariance( coef_cov );
+    }catch( std::exception &e )
+    {
+      m_coefCovMatrix.clear();
+      cerr << "DetectorEfficiencyUncert::fromXml: dropping the stored coefficient covariance: "
+           << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Stored coefficient covariance was unusable: "
+                                      + string(e.what())).c_str() );
+#endif
+    }
+  }//if( !coef_cov.empty() )
 
   const ::rapidxml::xml_node<char> *corr_node = node->first_node( "CorrelationLength" );
   if( corr_node && corr_node->value_size() )
@@ -590,7 +781,66 @@ void DetectorEfficiencyUncert::toUrlParts( map<string,string> &parts, const stri
 
     if( m_corrLength > 0.0 )
       parts[prefix + "EFUL"] = SpecUtils::printCompact( m_corrLength, 5 );
+
+    // The correlated/uncorrelated split is deliberately not encoded - it is editing provenance, and
+    //  the covariance written above round-trips without it.
   }//if( !m_covEnergies.empty() )
+
+  // The coefficient covariance, as the lower-triangular Cholesky factor - see the header.  For an
+  //  equation curve this is the authoritative uncertainty, so it is written whether or not there is
+  //  a node covariance (and is the last uncertainty the size-reduction ladder gives up).
+  if( !m_coefCovMatrix.empty() )
+  {
+    const size_t n = static_cast<size_t>( std::lround( std::sqrt( static_cast<double>(m_coefCovMatrix.size()) ) ) );
+    if( (n*n) == m_coefCovMatrix.size() )
+    {
+      Eigen::MatrixXd m( n, n );
+      double max_diag = 0.0;
+      for( size_t i = 0; i < n; ++i )
+      {
+        max_diag = std::max( max_diag, static_cast<double>(m_coefCovMatrix[i*n + i]) );
+        for( size_t j = 0; j < n; ++j )
+          m(i,j) = 0.5*(m_coefCovMatrix[i*n + j] + m_coefCovMatrix[j*n + i]);
+      }
+
+      // A fit covariance is positive definite, but a rank-deficient one (a coefficient the data did
+      //  not constrain) needs a nudge before it will factor; the nudge is far below the 4
+      //  significant figures written out.
+      //  The last rung is above `covarianceIsUsable`'s tolerance, so a matrix that only just passed
+      //  that check still factors rather than being dropped from the URL without a word.
+      Eigen::MatrixXd factor;
+      bool have_factor = false;
+      for( const double rel_jitter : { 0.0, 1.0E-12, 1.0E-9, 1.0E-6, 1.0E-4 } )
+      {
+        Eigen::MatrixXd trial = m;
+        if( rel_jitter > 0.0 )
+          trial += (rel_jitter * std::max(max_diag, 1.0E-300)) * Eigen::MatrixXd::Identity( n, n );
+
+        const Eigen::LLT<Eigen::MatrixXd> llt( trial );
+        if( llt.info() == Eigen::Success )
+        {
+          factor = llt.matrixL();
+          have_factor = true;
+          break;
+        }
+      }//for( const double rel_jitter : ... )
+
+      if( have_factor )
+      {
+        vector<float> lower;
+        lower.reserve( (n * (n + 1)) / 2 );
+        for( size_t j = 0; j < n; ++j )        //column by column, so a row of L is contiguous on read
+          for( size_t i = j; i < n; ++i )
+            lower.push_back( static_cast<float>( factor(i,j) ) );
+
+        parts[prefix + "EFCC"] = to_url_flt_array( lower, 4 );
+      }else
+      {
+        cerr << "DetectorEfficiencyUncert::toUrlParts: the coefficient covariance would not factor,"
+                " so it is not in this URL." << endl;
+      }//if( have_factor ) / else
+    }//if( the matrix is square )
+  }//if( !m_coefCovMatrix.empty() )
 }//DetectorEfficiencyUncert::toUrlParts(...)
 
 
@@ -601,12 +851,14 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
   const auto energies_pos = parts.find( prefix + "EFUE" );
   const auto cov_pos = parts.find( prefix + "EFUC" );
   const auto corr_pos = parts.find( prefix + "EFUL" );
+  const auto coef_pos = parts.find( prefix + "EFCC" );
 
-  if( energies_pos == end(parts) )
+  if( (energies_pos == end(parts)) && (coef_pos == end(parts)) )
     return nullptr;
 
   auto answer = make_shared<DetectorEfficiencyUncert>();
 
+  if( energies_pos != end(parts) )
   {
     if( cov_pos == end(parts) )
       throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: EFUE without EFUC" );
@@ -642,6 +894,49 @@ shared_ptr<DetectorEfficiencyUncert> DetectorEfficiencyUncert::fromUrlParts(
     }
   }//if( energies_pos != end(parts) )
 
+  // The coefficient covariance arrives as the lower triangle of its Cholesky factor (column by
+  //  column), so rebuilding it as L*L^T is positive semi-definite however the values were rounded.
+  if( coef_pos != end(parts) )
+  {
+    const vector<float> lower = from_url_flt_array( coef_pos->second );
+
+    // n from n*(n+1)/2 entries
+    size_t n = 0;
+    while( ((n * (n + 1)) / 2) < lower.size() )
+      ++n;
+    if( ((n * (n + 1)) / 2) != lower.size() )
+      throw runtime_error( "DetectorEfficiencyUncert::fromUrlParts: EFCC has wrong number of entries" );
+
+    vector<double> L( n * n, 0.0 );
+    size_t pos = 0;
+    for( size_t j = 0; j < n; ++j )
+      for( size_t i = j; i < n; ++i )
+        L[i*n + j] = lower[pos++];
+
+    vector<float> cov( n * n, 0.0f );
+    for( size_t i = 0; i < n; ++i )
+    {
+      for( size_t j = 0; j <= i; ++j )
+      {
+        double sum = 0.0;
+        for( size_t k = 0; k <= j; ++k )   //L is lower triangular
+          sum += L[i*n + k] * L[j*n + k];
+        cov[i*n + j] = cov[j*n + i] = static_cast<float>( sum );
+      }
+    }//for( size_t i = 0; i < n; ++i )
+
+    // A malformed factor must not abandon the whole DRF the URL carries - that is a deep-link or QR
+    //  load, where the rest of the detector is still perfectly good.  Dropped, like on the XML path.
+    try
+    {
+      answer->setCoefficientCovariance( cov );
+    }catch( std::exception &e )
+    {
+      cerr << "DetectorEfficiencyUncert::fromUrlParts: dropping the coefficient covariance: "
+           << e.what() << endl;
+    }
+  }//if( coef_pos != end(parts) )
+
   return answer;
 }//DetectorEfficiencyUncert::fromUrlParts(...)
 
@@ -659,6 +954,11 @@ void DetectorEfficiencyUncert::appendToHash( std::size_t &seed ) const
 
   if( m_corrLength > 0.0 )
     boost::hash_combine( seed, m_corrLength );
+
+  // The correlated/uncorrelated split is presentation-only provenance, and is dropped by the
+  //  URL/QR encoding - hashing it would make the same DRF hash differently depending on how it
+  //  reached us, and would change the identity of every .ecc DRF already in a users database.
+  //  The covariance it describes is already hashed above.
 }//DetectorEfficiencyUncert::appendToHash(...)
 
 
@@ -667,6 +967,8 @@ bool DetectorEfficiencyUncert::operator==( const DetectorEfficiencyUncert &rhs )
   return (m_covEnergies == rhs.m_covEnergies)
          && (m_covMatrix == rhs.m_covMatrix)
          && (m_coefCovMatrix == rhs.m_coefCovMatrix)
+         && (m_corrComponent == rhs.m_corrComponent)
+         && (m_uncorrComponent == rhs.m_uncorrComponent)
          && (m_corrLength == rhs.m_corrLength);
 }//DetectorEfficiencyUncert::operator==
 
@@ -707,6 +1009,10 @@ void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
                              "DetectorEfficiencyUncert covariance matrix" );
   check_float_vectors_close( lhs.m_coefCovMatrix, rhs.m_coefCovMatrix,
                              "DetectorEfficiencyUncert coefficient covariance" );
+  check_float_vectors_close( lhs.m_corrComponent, rhs.m_corrComponent,
+                             "DetectorEfficiencyUncert correlated component" );
+  check_float_vectors_close( lhs.m_uncorrComponent, rhs.m_uncorrComponent,
+                             "DetectorEfficiencyUncert uncorrelated component" );
 
   const double corr_diff = fabs( lhs.m_corrLength - rhs.m_corrLength );
   const double corr_scale = std::max( fabs(lhs.m_corrLength), fabs(rhs.m_corrLength) );
@@ -718,6 +1024,14 @@ void DetectorEfficiencyUncert::equalEnough( const DetectorEfficiencyUncert &lhs,
 #endif //PERFORM_DEVELOPER_CHECKS
 
 
+bool MeasuredEffPoint::hasProvenance() const
+{
+  return (peakArea != 0.0f) || (peakAreaUncert != 0.0f) || (liveTime != 0.0f)
+         || (distanceUncert != 0.0f) || (bkgPeakArea >= 0.0f) || (bkgPeakAreaUncert != 0.0f)
+         || !fileName.empty() || !sampleNumbers.empty();
+}//MeasuredEffPoint::hasProvenance()
+
+
 bool MeasuredEffPoint::operator==( const MeasuredEffPoint &rhs ) const
 {
   return (energy == rhs.energy)
@@ -725,8 +1039,32 @@ bool MeasuredEffPoint::operator==( const MeasuredEffPoint &rhs ) const
          && (fracStatUncert == rhs.fracStatUncert)
          && (fracCertUncert == rhs.fracCertUncert)
          && (sourceKey == rhs.sourceKey)
-         && (distance == rhs.distance);
+         && (distance == rhs.distance)
+         && (peakArea == rhs.peakArea)
+         && (peakAreaUncert == rhs.peakAreaUncert)
+         && (liveTime == rhs.liveTime)
+         && (distanceUncert == rhs.distanceUncert)
+         && (bkgPeakArea == rhs.bkgPeakArea)
+         && (bkgPeakAreaUncert == rhs.bkgPeakAreaUncert)
+         && (fileName == rhs.fileName)
+         && (sampleNumbers == rhs.sampleNumbers);
 }//MeasuredEffPoint::operator==
+
+
+bool MeasuredSourceInfo::operator==( const MeasuredSourceInfo &rhs ) const
+{
+  return (sourceKey == rhs.sourceKey)
+         && (nuclide == rhs.nuclide)
+         && (activity == rhs.activity)
+         && (fracActivityUncert == rhs.fracActivityUncert)
+         && (age == rhs.age)
+         && (distance == rhs.distance)
+         && (distanceUncert == rhs.distanceUncert)
+         && (shieldAtomicNumber == rhs.shieldAtomicNumber)
+         && (shieldArealDensity == rhs.shieldArealDensity)
+         && (shieldMaterial == rhs.shieldMaterial)
+         && (assayInfo == rhs.assayInfo);
+}//MeasuredSourceInfo::operator==
 
 
 MeasuredDrfPoints::MeasuredDrfPoints()
@@ -750,7 +1088,8 @@ void MeasuredDrfPoints::setPoints( vector<MeasuredEffPoint> points )
 {
   for( const MeasuredEffPoint &p : points )
   {
-    if( (p.energy <= 0.0f) || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f) )
+    if( (p.energy <= 0.0f) || (p.fracStatUncert < 0.0f) || (p.fracCertUncert < 0.0f)
+        || (p.peakAreaUncert < 0.0f) || (p.distanceUncert < 0.0f) || (p.bkgPeakAreaUncert < 0.0f) )
       throw runtime_error( "MeasuredDrfPoints::setPoints: invalid point" );
   }
 
@@ -761,6 +1100,50 @@ void MeasuredDrfPoints::setPoints( vector<MeasuredEffPoint> points )
 
   m_points = std::move( points );
 }//setPoints(...)
+
+
+const vector<MeasuredSourceInfo> &MeasuredDrfPoints::sources() const
+{
+  return m_sources;
+}
+
+
+void MeasuredDrfPoints::setSources( vector<MeasuredSourceInfo> sources )
+{
+  for( const MeasuredSourceInfo &s : sources )
+  {
+    if( s.sourceKey.empty() || (s.fracActivityUncert < 0.0f) || (s.distanceUncert < 0.0f) )
+      throw runtime_error( "MeasuredDrfPoints::setSources: invalid source" );
+  }
+
+  m_sources = std::move( sources );
+}//setSources(...)
+
+
+const MeasuredSourceInfo *MeasuredDrfPoints::sourceForKey( const std::string &key ) const
+{
+  for( const MeasuredSourceInfo &s : m_sources )
+  {
+    if( s.sourceKey == key )
+      return &s;
+  }
+  return nullptr;
+}//sourceForKey(...)
+
+
+bool MeasuredDrfPoints::hasProvenance() const
+{
+  if( !m_sources.empty() )
+    return true;
+
+  for( const MeasuredEffPoint &p : m_points )
+  {
+    if( p.hasProvenance() )
+      return true;
+  }
+
+  return false;
+}//hasProvenance()
 
 
 std::shared_ptr<DetectorEfficiencyUncert> MeasuredDrfPoints::toEfficiencyUncert() const
@@ -814,6 +1197,9 @@ std::shared_ptr<DetectorEfficiencyUncert> MeasuredDrfPoints::toEfficiencyUncert(
   auto answer = make_shared<DetectorEfficiencyUncert>();
   answer->setNodeCovariance( energies, cov );
 
+  // Deliberately no setComponentSplit(...): the cert part is correlated in blocks per sourceKey,
+  //  not as one common mode across all energies, so a two-vector split cannot represent it.
+
   return answer;
 }//toEfficiencyUncert()
 
@@ -838,18 +1224,81 @@ void MeasuredDrfPoints::toXml( ::rapidxml::xml_node<char> *parent,
       pt->append_attribute( doc->allocate_attribute( name, val ) );
     };
 
+    auto add_str_attrib = [&]( const char *name, const std::string &value ){
+      if( value.empty() )
+        return;
+      const char *val = doc->allocate_string( value.c_str() );
+      pt->append_attribute( doc->allocate_attribute( name, val ) );
+    };
+
     add_attrib( "E", p.energy );
     add_attrib( "eff", p.efficiency );
     add_attrib( "statSig", p.fracStatUncert );
     add_attrib( "certSig", p.fracCertUncert );
-    if( !p.sourceKey.empty() )
-    {
-      const char *val = doc->allocate_string( p.sourceKey.c_str() );
-      pt->append_attribute( doc->allocate_attribute( "src", val ) );
-    }
+    add_str_attrib( "src", p.sourceKey );
     if( p.distance >= 0.0f )
       add_attrib( "d", p.distance );
+
+    // Provenance (all optional; omitted when at their defaults so pre-existing files are unchanged)
+    if( p.distanceUncert > 0.0f )
+      add_attrib( "dSig", p.distanceUncert );
+    if( (p.peakArea != 0.0f) || (p.peakAreaUncert != 0.0f) )
+    {
+      add_attrib( "area", p.peakArea );
+      add_attrib( "areaSig", p.peakAreaUncert );
+    }
+    if( p.liveTime > 0.0f )
+      add_attrib( "lt", p.liveTime );
+    if( p.bkgPeakArea >= 0.0f )
+    {
+      add_attrib( "bkgArea", p.bkgPeakArea );
+      add_attrib( "bkgAreaSig", p.bkgPeakAreaUncert );
+    }
+    add_str_attrib( "file", p.fileName );
+    add_str_attrib( "samples", p.sampleNumbers );
   }//for( const MeasuredEffPoint &p : m_points )
+
+  if( !m_sources.empty() )
+  {
+    xml_node<char> *srcs_node = doc->allocate_node( node_element, "Sources" );
+    base_node->append_node( srcs_node );
+
+    for( const MeasuredSourceInfo &s : m_sources )
+    {
+      xml_node<char> *src = doc->allocate_node( node_element, "Src" );
+      srcs_node->append_node( src );
+
+      auto add_dbl = [&]( const char *name, const double value ){
+        snprintf( buffer, sizeof(buffer), "%1.16E", value );  //17 significant digits: exact for a double
+        const char *val = doc->allocate_string( buffer );
+        src->append_attribute( doc->allocate_attribute( name, val ) );
+      };
+      auto add_str = [&]( const char *name, const std::string &value ){
+        if( value.empty() )
+          return;
+        const char *val = doc->allocate_string( value.c_str() );
+        src->append_attribute( doc->allocate_attribute( name, val ) );
+      };
+
+      add_str( "key", s.sourceKey );
+      add_str( "nuc", s.nuclide );
+      add_dbl( "act", s.activity );
+      add_dbl( "actSig", s.fracActivityUncert );
+      if( s.age >= 0.0 )
+        add_dbl( "age", s.age );
+      if( s.distance >= 0.0f )
+        add_dbl( "d", s.distance );
+      if( s.distanceUncert > 0.0f )
+        add_dbl( "dSig", s.distanceUncert );
+      if( (s.shieldAtomicNumber > 0.0f) || (s.shieldArealDensity > 0.0f) )
+      {
+        add_dbl( "shieldAN", s.shieldAtomicNumber );
+        add_dbl( "shieldAD", s.shieldArealDensity );
+      }
+      add_str( "shieldMat", s.shieldMaterial );
+      add_str( "info", s.assayInfo );
+    }//for( const MeasuredSourceInfo &s : m_sources )
+  }//if( !m_sources.empty() )
 }//MeasuredDrfPoints::toXml(...)
 
 
@@ -880,20 +1329,78 @@ void MeasuredDrfPoints::fromXml( const ::rapidxml::xml_node<char> *node )
                              + name + "' attribute" );
     };
 
+    auto attrib_str = [&]( const char *name, std::string &value ){
+      const auto att = pt->first_attribute( name );
+      if( att && att->value_size() )
+        value = string( att->value(), att->value() + att->value_size() );
+    };
+
     MeasuredEffPoint p;
     attrib_float( "E", p.energy, true );
     attrib_float( "eff", p.efficiency, true );
     attrib_float( "statSig", p.fracStatUncert, true );
     attrib_float( "certSig", p.fracCertUncert, false );
     attrib_float( "d", p.distance, false );
-    const auto src = pt->first_attribute( "src" );
-    if( src && src->value_size() )
-      p.sourceKey = string( src->value(), src->value() + src->value_size() );
+    attrib_str( "src", p.sourceKey );
+
+    // Optional provenance - absent in files written before it was recorded
+    attrib_float( "dSig", p.distanceUncert, false );
+    attrib_float( "area", p.peakArea, false );
+    attrib_float( "areaSig", p.peakAreaUncert, false );
+    attrib_float( "lt", p.liveTime, false );
+    attrib_float( "bkgArea", p.bkgPeakArea, false );
+    attrib_float( "bkgAreaSig", p.bkgPeakAreaUncert, false );
+    attrib_str( "file", p.fileName );
+    attrib_str( "samples", p.sampleNumbers );
 
     points.push_back( std::move(p) );
   }//for( loop over Pt nodes )
 
+  vector<MeasuredSourceInfo> sources;
+  const auto srcs_node = node->first_node( "Sources", 7 );
+  for( auto src = (srcs_node ? srcs_node->first_node("Src",3) : nullptr);
+       src; src = src->next_sibling("Src",3) )
+  {
+    auto attrib_dbl = [&]( const char *name, double &value ){
+      const auto att = src->first_attribute( name );
+      if( !att || !att->value_size() )
+        return;
+      if( !SpecUtils::parse_double( att->value(), att->value_size(), value ) )
+        throw runtime_error( string("MeasuredDrfPoints::fromXml: invalid source '")
+                             + name + "' attribute" );
+    };
+    auto attrib_flt = [&]( const char *name, float &value ){
+      double dval = value;
+      attrib_dbl( name, dval );
+      value = static_cast<float>( dval );
+    };
+    auto attrib_str = [&]( const char *name, std::string &value ){
+      const auto att = src->first_attribute( name );
+      if( att && att->value_size() )
+        value = string( att->value(), att->value() + att->value_size() );
+    };
+
+    MeasuredSourceInfo info;
+    attrib_str( "key", info.sourceKey );
+    attrib_str( "nuc", info.nuclide );
+    attrib_dbl( "act", info.activity );
+    attrib_flt( "actSig", info.fracActivityUncert );
+    attrib_dbl( "age", info.age );
+    attrib_flt( "d", info.distance );
+    attrib_flt( "dSig", info.distanceUncert );
+    attrib_flt( "shieldAN", info.shieldAtomicNumber );
+    attrib_flt( "shieldAD", info.shieldArealDensity );
+    attrib_str( "shieldMat", info.shieldMaterial );
+    attrib_str( "info", info.assayInfo );
+
+    if( info.sourceKey.empty() )
+      throw runtime_error( "MeasuredDrfPoints::fromXml: source without a key" );
+
+    sources.push_back( std::move(info) );
+  }//for( loop over Src nodes )
+
   setPoints( std::move(points) );
+  setSources( std::move(sources) );
 }//MeasuredDrfPoints::fromXml(...)
 
 
@@ -907,13 +1414,41 @@ void MeasuredDrfPoints::appendToHash( std::size_t &seed ) const
     boost::hash_combine( seed, p.fracCertUncert );
     boost::hash_combine( seed, p.sourceKey );
     boost::hash_combine( seed, p.distance );
-  }
+
+    // Provenance is hashed only when present, so DRFs stored before it existed keep their hash.
+    if( p.hasProvenance() )
+    {
+      boost::hash_combine( seed, p.peakArea );
+      boost::hash_combine( seed, p.peakAreaUncert );
+      boost::hash_combine( seed, p.liveTime );
+      boost::hash_combine( seed, p.distanceUncert );
+      boost::hash_combine( seed, p.bkgPeakArea );
+      boost::hash_combine( seed, p.bkgPeakAreaUncert );
+      boost::hash_combine( seed, p.fileName );
+      boost::hash_combine( seed, p.sampleNumbers );
+    }
+  }//for( const MeasuredEffPoint &p : m_points )
+
+  for( const MeasuredSourceInfo &s : m_sources )
+  {
+    boost::hash_combine( seed, s.sourceKey );
+    boost::hash_combine( seed, s.nuclide );
+    boost::hash_combine( seed, s.activity );
+    boost::hash_combine( seed, s.fracActivityUncert );
+    boost::hash_combine( seed, s.age );
+    boost::hash_combine( seed, s.distance );
+    boost::hash_combine( seed, s.distanceUncert );
+    boost::hash_combine( seed, s.shieldAtomicNumber );
+    boost::hash_combine( seed, s.shieldArealDensity );
+    boost::hash_combine( seed, s.shieldMaterial );
+    boost::hash_combine( seed, s.assayInfo );
+  }//for( const MeasuredSourceInfo &s : m_sources )
 }//MeasuredDrfPoints::appendToHash(...)
 
 
 bool MeasuredDrfPoints::operator==( const MeasuredDrfPoints &rhs ) const
 {
-  return m_points == rhs.m_points;
+  return (m_points == rhs.m_points) && (m_sources == rhs.m_sources);
 }
 
 
@@ -928,15 +1463,38 @@ void MeasuredDrfPoints::equalEnough( const MeasuredDrfPoints &lhs,
   {
     const MeasuredEffPoint &a = lhs.m_points[i];
     const MeasuredEffPoint &b = rhs.m_points[i];
-    if( a.sourceKey != b.sourceKey )
-      throw runtime_error( "MeasuredDrfPoints: source key of point "
+    if( (a.sourceKey != b.sourceKey) || (a.fileName != b.fileName)
+        || (a.sampleNumbers != b.sampleNumbers) )
+      throw runtime_error( "MeasuredDrfPoints: source key/file/samples of point "
                            + std::to_string(i) + " doesnt match" );
     check_float_vectors_close( { a.energy, a.efficiency, a.fracStatUncert,
-                                 a.fracCertUncert, a.distance },
+                                 a.fracCertUncert, a.distance, a.peakArea, a.peakAreaUncert,
+                                 a.liveTime, a.distanceUncert, a.bkgPeakArea, a.bkgPeakAreaUncert },
                                { b.energy, b.efficiency, b.fracStatUncert,
-                                 b.fracCertUncert, b.distance },
+                                 b.fracCertUncert, b.distance, b.peakArea, b.peakAreaUncert,
+                                 b.liveTime, b.distanceUncert, b.bkgPeakArea, b.bkgPeakAreaUncert },
                                "MeasuredDrfPoints point" );
   }//for( size_t i = 0; i < lhs.m_points.size(); ++i )
+
+  if( lhs.m_sources.size() != rhs.m_sources.size() )
+    throw runtime_error( "MeasuredDrfPoints: number of sources doesnt match" );
+
+  for( size_t i = 0; i < lhs.m_sources.size(); ++i )
+  {
+    const MeasuredSourceInfo &a = lhs.m_sources[i];
+    const MeasuredSourceInfo &b = rhs.m_sources[i];
+    if( (a.sourceKey != b.sourceKey) || (a.nuclide != b.nuclide)
+        || (a.shieldMaterial != b.shieldMaterial) || (a.assayInfo != b.assayInfo) )
+      throw runtime_error( "MeasuredDrfPoints: strings of source "
+                           + std::to_string(i) + " dont match" );
+    check_float_vectors_close( { static_cast<float>(a.activity), a.fracActivityUncert,
+                                 static_cast<float>(a.age), a.distance, a.distanceUncert,
+                                 a.shieldAtomicNumber, a.shieldArealDensity },
+                               { static_cast<float>(b.activity), b.fracActivityUncert,
+                                 static_cast<float>(b.age), b.distance, b.distanceUncert,
+                                 b.shieldAtomicNumber, b.shieldArealDensity },
+                               "MeasuredDrfPoints source" );
+  }//for( size_t i = 0; i < lhs.m_sources.size(); ++i )
 }//MeasuredDrfPoints::equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 
@@ -1185,6 +1743,102 @@ const vector<float> &DetectorEfficiencyCurve::expOfLogPowerSeriesUncerts() const
 {
   return m_expOfLogCoeffUncerts;
 }
+
+
+vector<double> DetectorEfficiencyCurve::fracCovariance( const vector<double> &energies ) const
+{
+  if( energies.empty() || !m_uncert )
+    return {};
+
+  const size_t ne = energies.size();
+  const size_t ncoef = m_expOfLogCoeffs.size();
+  const vector<float> &coef_cov = m_uncert->coefficientCovariance();
+
+  // An equation's uncertainty is the uncertainty of its coefficients.  Only trust the matrix while
+  //  its rank still matches the coefficient count - a term added or removed since it was stored
+  //  makes it meaningless, and falling back beats silently misapplying it.
+  const bool use_coefs = (m_form == DetectorPeakResponse::kExpOfLogPowerSeries)
+                         && ncoef && (coef_cov.size() == (ncoef * ncoef));
+
+  if( use_coefs )
+  {
+    // J[i][k] = L_i^k, L_i = ln(E_i / energyUnits); fractional covariance = J * Sigma * J^T.
+    vector<double> jac( ne * ncoef, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      const double x = energies[i] / static_cast<double>( m_energyUnits );
+      if( x <= 0.0 )
+        continue;  //no information at or below zero energy; leave the row zero
+
+      const double lx = std::log( x );
+      double term = 1.0;
+      for( size_t k = 0; k < ncoef; ++k )
+      {
+        jac[i*ncoef + k] = term;
+        term *= lx;
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    // tmp = J * Sigma, size (ne x ncoef)
+    vector<double> tmp( ne * ncoef, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t k = 0; k < ncoef; ++k )
+      {
+        const double j_ik = jac[i*ncoef + k];
+        if( j_ik == 0.0 )
+          continue;
+        for( size_t l = 0; l < ncoef; ++l )
+          tmp[i*ncoef + l] += j_ik * static_cast<double>( coef_cov[k*ncoef + l] );
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    vector<double> answer( ne * ne, 0.0 );
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t j = 0; j < ne; ++j )
+      {
+        double sum = 0.0;
+        for( size_t l = 0; l < ncoef; ++l )
+          sum += tmp[i*ncoef + l] * jac[j*ncoef + l];
+        answer[i*ne + j] = sum;
+      }
+    }//for( size_t i = 0; i < ne; ++i )
+
+    // Symmetrize away the last-bit asymmetry the two passes can leave.
+    for( size_t i = 0; i < ne; ++i )
+    {
+      for( size_t j = i + 1; j < ne; ++j )
+      {
+        const double sym = 0.5 * (answer[i*ne + j] + answer[j*ne + i]);
+        answer[i*ne + j] = answer[j*ne + i] = sym;
+      }
+    }
+
+    return answer;
+  }//if( use_coefs )
+
+  if( m_uncert->hasNodeCovariance() )
+    return m_uncert->efficiencyFracCovariance( energies );
+
+  // No node covariance, and any coefficient matrix does not apply to this form.  Nothing usable.
+  return {};
+}//DetectorEfficiencyCurve::fracCovariance(...)
+
+
+vector<double> DetectorEfficiencyCurve::fracUncertainties( const vector<double> &energies ) const
+{
+  const vector<double> cov = fracCovariance( energies );
+  if( cov.size() != (energies.size() * energies.size()) )
+    return {};
+
+  const size_t ne = energies.size();
+  vector<double> answer( ne, 0.0 );
+  for( size_t i = 0; i < ne; ++i )
+    answer[i] = std::sqrt( std::max( 0.0, cov[i*ne + i] ) );
+
+  return answer;
+}//DetectorEfficiencyCurve::fracUncertainties(...)
 
 
 shared_ptr<const DetectorEfficiencyUncert> DetectorEfficiencyCurve::uncertainty() const

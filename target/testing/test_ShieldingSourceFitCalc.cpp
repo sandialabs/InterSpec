@@ -2559,6 +2559,122 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
  attenuation factor of ~1, which it only does when the log divides the integral by the same absolute
  efficiency the integration multiplied in.
  */
+/** The per-peak detector-efficiency covariance the fit whitens with must be THE same uncertainty
+ the point-source evaluation reports - one budget, whichever efficiency model the fit resolved to:
+ the attached transfer response (Auto), the flat-disk escape hatch with a response still attached,
+ an EFFTRAN transfer the fit built itself, and a legacy curve with a node covariance.  Its diagonal
+ is (sigma/value)^2 of pointSourceFepEff at every included peak; the model-envelope part is the
+ (sigmaModel/value)^2 of the same evaluation, and zero for the legacy curve.
+ */
+BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )
+{
+  set_data_dir();
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+  using ShieldingSourceFitCalc::PointEffModel;
+
+  struct Case { const char *name; shared_ptr<DetectorPeakResponse> det; VolumetricEffMethod method; PointEffModel expect; };
+
+  // A legacy curve with a fully correlated 5% node covariance, as DrfUncertaintyInActivityFit
+  auto legacy = make_shared<DetectorPeakResponse>();
+  legacy->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm, 5*PhysicalUnits::cm,
+                                   PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                   DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  {
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setNodeCovariance( { 1.0f, 3000.0f }, { 0.0025f, 0.0025f, 0.0025f, 0.0025f } );
+    legacy->setEfficiencyUncert( uncert );
+  }
+
+  // A fixed-geometry DRF: its efficiency is a probability per decay, with no geometry to query,
+  //  so both the value and the covariance must come from the intrinsic (far-field) evaluation.
+  const shared_ptr<DetectorPeakResponse> fixed_geom
+        = legacy->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  BOOST_REQUIRE( fixed_geom && fixed_geom->isFixedGeometry() );
+
+  const vector<Case> cases = {
+    { "transfer attached, Auto", make_synthetic_nai_drf( true ), VolumetricEffMethod::Auto, PointEffModel::Response },
+    { "transfer attached, FlatDisk by name", make_synthetic_nai_drf( true ), VolumetricEffMethod::FlatDisk, PointEffModel::FlatDisk },
+    { "geometry only, Auto (EFFTRAN built by the fit)", make_synthetic_nai_drf( false ), VolumetricEffMethod::Auto, PointEffModel::Response },
+    { "legacy curve", legacy, VolumetricEffMethod::Auto, PointEffModel::FlatDisk },
+    { "fixed geometry", fixed_geom, VolumetricEffMethod::Auto, PointEffModel::FixedGeomIntrinsic },
+  };
+
+  for( const double offset : { 0.0, 2.0*PhysicalUnits::cm } )
+  {
+    for( const Case &c : cases )
+    {
+      // A fixed-geometry DRF has no notion of an off-axis source; create() refuses the combination
+      if( (offset > 0.0) && c.det->isFixedGeometry() )
+        continue;
+
+      const string where = string(c.name) + ((offset > 0.0) ? " (off-axis)" : " (on-axis)");
+      const ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+                          = make_ba133_point_input( c.det, 5.0*PhysicalUnits::cm, offset, c.method );
+      const shared_ptr<ShieldingSourceChi2Fcn> fcn = ShieldingSourceChi2Fcn::create( chi_input ).first;
+      BOOST_REQUIRE( fcn );
+      BOOST_REQUIRE_MESSAGE( fcn->pointSourceEffModel() == c.expect, where << ": unexpected efficiency model" );
+
+      const vector<double> energies = fcn->includedPeakEnergies();
+      const size_t n = energies.size();
+      BOOST_REQUIRE_EQUAL( n, 5u );
+
+      vector<double> model_cov, model_uncerts;
+      const vector<double> cov = fcn->peakEffFracCovariance( &model_cov );
+      const vector<double> uncerts = fcn->peakEffFracUncerts( &model_uncerts );
+      BOOST_REQUIRE_MESSAGE( cov.size() == n*n, where << ": no covariance" );
+      BOOST_REQUIRE_EQUAL( model_cov.size(), n*n );
+      BOOST_REQUIRE_EQUAL( uncerts.size(), n );
+      BOOST_REQUIRE_EQUAL( model_uncerts.size(), n );
+
+      // Exact for every model: the non-Response branches now ask the covariance at the same
+      //  float-rounded energies their sigma is evaluated at.
+      const double tol = 1.0e-9;
+      for( size_t i = 0; i < n; ++i )
+      {
+        const DetectorPeakResponse::EffEval ev = fcn->pointSourceFepEff( energies[i] );
+        BOOST_REQUIRE_GT( ev.value, 0.0 );
+        const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
+        const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+        BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= tol*frac2,
+                             where << " at " << energies[i] << " keV: C_ii " << cov[i*n+i] << " vs sigma^2 " << frac2 );
+        BOOST_CHECK_MESSAGE( std::fabs(model_cov[i*n+i] - frac2_model) <= tol*std::max(frac2_model, 1.0e-12),
+                             where << " at " << energies[i] << " keV: model part " << model_cov[i*n+i] << " vs " << frac2_model );
+        BOOST_CHECK_CLOSE( uncerts[i], std::sqrt(cov[i*n+i]), 1.0e-9 );
+        BOOST_CHECK_CLOSE( model_uncerts[i], std::sqrt(model_cov[i*n+i]), 1.0e-9 );
+        BOOST_CHECK_LE( ev.sigmaModel, ev.sigma*(1.0 + 1.0e-12) );
+        for( size_t j = 0; j < n; ++j )
+          BOOST_CHECK_CLOSE( cov[i*n+j], cov[j*n+i], 1.0e-9 );
+      }//for( each included peak )
+
+      if( (c.det == legacy) || (c.det == fixed_geom) )
+      {
+        // A legacy curve's uncertainty is all data-derived
+        for( size_t i = 0; i < n*n; ++i )
+          BOOST_CHECK_EQUAL( model_cov[i], 0.0 );
+      }else if( c.expect == PointEffModel::Response )
+      {
+        // 5 cm is inside the transfer's near gate, so the model envelopes are present and
+        //  they are common modes: every pair of peaks stays positively, substantially
+        //  correlated.  What this guards is that the common mode is THERE - a fit that
+        //  treated a shared efficiency error as independent per peak would report an
+        //  activity several times more certain than it is (uncert overview sec 4).
+        //
+        // The threshold tracks the near-field envelope size: a smaller shared envelope
+        //  means a smaller shared FRACTION of the variance, so the data covariance
+        //  competes rather than being swamped.  It is a floor on "the common mode is
+        //  present", not a calibration - that is act_fit_pulls_calibrated.
+        for( size_t i = 0; i < n; ++i )
+          for( size_t j = 0; j < n; ++j )
+            BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.3,
+                                 where << ": rho(" << energies[i] << "," << energies[j] << ") = "
+                                 << cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) );
+      }
+    }//for( each case )
+  }//for( on-axis, off-axis )
+}//BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )
+
+
 BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
 {
   set_data_dir();

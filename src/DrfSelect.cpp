@@ -98,6 +98,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -3533,14 +3534,49 @@ void DrfSelect::updateDrfContentSummary()
   add_chip( WString::tr("ds-chip-fwhm"), WString::tr("ds-chip-tt-fwhm"),
             det->hasResolutionInfo() );
 
-  //Efficiency uncertainty
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = det->efficiencyUncert();
-  add_chip( WString::tr("ds-chip-uncert"), WString::tr("ds-chip-tt-uncert"),
-            (uncert && !uncert->isEmpty()) );
+  // Efficiency uncertainty: whether this detector actually reports one, asked the way the
+  //  activity/shielding fit asks (DrfModifyCalc::uncertSummary -> efficiencyFracCovariance), not by
+  //  looking at one of the three stores.  Reading `efficiencyUncert()` was wrong in both directions:
+  //  blank for a response-bearing detector that reports several percent, and present for an equation
+  //  DRF whose stored node covariance no query uses.  The tooltip carries the data/model split.
+  {
+    const DrfModifyCalc::UncertSummary summary = DrfModifyCalc::uncertSummary( *det );
+    const bool have_uncert = (summary.valid && (summary.total > 0.0));
 
-  //Total efficiency (cascade summing input)
-  add_chip( WString::tr("ds-chip-total-eff"), WString::tr("ds-chip-tt-total-eff"),
-            det->hasTotalEfficiency() );
+    WString tooltip = WString::tr("ds-chip-tt-uncert");
+    if( have_uncert )
+    {
+      char energy[32], total[32], data[32], model[32];
+      snprintf( energy, sizeof(energy), "%.1f", summary.energy );
+      snprintf( total, sizeof(total), "%.2g", 100.0*summary.total );
+      snprintf( data, sizeof(data), "%.2g", 100.0*summary.data );
+      snprintf( model, sizeof(model), "%.2g", 100.0*summary.model );
+
+      const char *id = "ds-chip-tt-uncert-data";
+      if( summary.dataIsAssumed )
+        id = "ds-chip-tt-uncert-assumed";
+      else if( summary.model > 0.0 )
+        id = "ds-chip-tt-uncert-split";
+
+      tooltip = WString::tr( id ).arg( energy ).arg( total );
+      if( summary.model > 0.0 || summary.dataIsAssumed )
+        tooltip = tooltip.arg( data ).arg( model );
+    }//if( have_uncert )
+
+    add_chip( WString::tr("ds-chip-uncert"), tooltip, have_uncert );
+  }
+
+  //Total efficiency (cascade summing input).  Must use the same predicate the
+  //  cascade-summing code gates on (CascadeSummingCalc::drfHasNeededInfo), not
+  //  hasTotalEfficiency() - that one is true only for the LEGACY total-efficiency
+  //  curve, so a DRF whose total comes from an attached MC response would be shown
+  //  as lacking one while cascade summing was in fact available.
+  const bool has_tot_eff = det->hasAnyTotalEfficiencyInfo();
+  add_chip( WString::tr("ds-chip-total-eff"),
+            WString::tr( !has_tot_eff        ? "ds-chip-tt-total-eff"
+                         : det->hasTotalEfficiency() ? "ds-chip-tt-total-eff-curve"
+                                                     : "ds-chip-tt-total-eff-mc" ),
+            has_tot_eff );
 
   //Raw measured points (provenance / grounding input)
   const shared_ptr<const MeasuredDrfPoints> points = det->measuredPoints();

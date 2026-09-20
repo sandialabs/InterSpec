@@ -90,6 +90,22 @@ public:
    */
   void seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
 
+  /** Seeds the form from just a diameter (PhysicalUnits): a cylinder with the guessed
+   length == diameter (flagged, see #generationReady), an optional crystal setback from the
+   detector face represented as a front vacuum-gap layer, and the crystal material guessed from
+   `crystal_hint` (e.g. a detector description or type name) when it names one.
+   Does nothing for a non-positive diameter.
+   */
+  void seedFromDiameter( const double diameter, const double setback,
+                         const std::string &crystal_hint );
+
+  /** The crystal diameter (PhysicalUnits) currently entered, or 0 if blank/invalid or a box. */
+  double enteredDiameter() const;
+
+  /** Compact presentation: the fillet, bore and dead-layer rows start hidden behind a
+   "More geometry..." link, so a user who only knows the basics is not faced with them. */
+  void setCompact( const bool compact );
+
   /** Whether toDescriptor() would currently succeed. */
   bool isValid() const;
 
@@ -210,6 +226,10 @@ protected:
   Wt::WLineEdit *m_collimatorMaterial, *m_collimatorThickness, *m_collimatorExtension;
 
   Wt::WText *m_note;
+
+  /** See #setCompact; `m_showDetails` toggles the advanced rows back on. */
+  bool m_compact, m_showDetails;
+  Wt::WPushButton *m_detailsLink;
 
   /** Import notes rendered beneath the form; empty/hidden when there are none. */
   Wt::WText *m_importNotes;

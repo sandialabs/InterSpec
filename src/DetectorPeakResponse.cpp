@@ -83,7 +83,7 @@
 using namespace std;
 using SpecUtils::Measurement;
 
-const int DetectorPeakResponse::sm_xmlSerializationVersion = 6;
+const int DetectorPeakResponse::sm_xmlSerializationVersion = 7;
 
 namespace
 {
@@ -704,6 +704,10 @@ void DetectorPeakResponse::computeHash()
   boost::hash_combine( seed, m_resolutionForm );
   for( const float val : m_resolutionCoeffs )
     boost::hash_combine( seed, val );
+  // Only when present, so DRFs stored before FWHM uncertainties were kept retain their hash
+  if( m_resolutionUncerts.size() == m_resolutionCoeffs.size() )
+    for( const float val : m_resolutionUncerts )
+      boost::hash_combine( seed, val );
 
   boost::hash_combine( seed, m_efficiencySource );
   boost::hash_combine( seed, eff.form() );
@@ -863,10 +867,10 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
-          // `geometry()`, not `m_geometry`: a response carries its own descriptor and the
-          //  serializers write only one of the two, so a DRF that has been through a file or the
-          //  database has the same shape in the other member.  Comparing the raw member reports
-          //  every round-tripped MC-backed detector as changed.
+          // `geometry()`, not `m_geometry`: a response carries its own descriptor, which is what
+          //  `geometry()` prefers, and a DRF assembled in memory need not have it copied into
+          //  `m_geometry` as well.  Comparing the raw member reports every round-tripped MC-backed
+          //  detector as changed.
           && ((!geometry() && !rhs.geometry())
               || (geometry() && rhs.geometry()
                   && (geometry()->to_xml_string() == rhs.geometry()->to_xml_string())))
@@ -907,118 +911,48 @@ void DetectorPeakResponse::setEfficiencyUncert( shared_ptr<const DetectorEfficie
 }//setEfficiencyUncert(...)
 
 
-vector<double> DetectorPeakResponse::coefCovFracCovariance( const vector<double> &energies ) const
-{
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( !uncert || !m_efficiency )
-    return {};
-
-  const vector<float> &coefCov = uncert->coefficientCovariance();
-  if( coefCov.empty() )
-    return {};
-
-  // Only exp-of-log-power-series curves have coefficients that this design matrix matches.
-  if( efficiencyFcnType() != kExpOfLogPowerSeries )
-    return {};
-
-  const vector<float> &coefs = efficiencyExpOfLogsCoeffs();
-  const size_t M = coefs.size();
-  if( (M == 0) || (coefCov.size() != M*M) )
-    return {};   //covariance does not correspond to this curve's coefficients
-
-  const double energyUnits = static_cast<double>( efficiencyEnergyUnits() );
-  if( (energyUnits <= 0.0) || IsNan(energyUnits) || IsInf(energyUnits) )
-    return {};
-
-  const size_t n = energies.size();
-
-  // B[i][k] = pow( log( energies[i]/energyUnits ), k ), matching how the curve evaluates
-  //  (see #expOfLogPowerSeriesEfficiency: x = energy/energyUnits, then log(x)).  Energies are in keV.
-  vector<vector<double>> B( n, vector<double>( M, 0.0 ) );
-  for( size_t i = 0; i < n; ++i )
-  {
-    const double x = energies[i] / energyUnits;
-    if( x <= 0.0 )
-      return {};   //cannot take the log; fall back to the node path
-    const double lnx = std::log( x );
-    double xpow = 1.0;
-    for( size_t k = 0; k < M; ++k )
-    {
-      B[i][k] = xpow;
-      xpow *= lnx;
-    }
-  }//for( each energy )
-
-  // Return B * C_coef * B^T (row-major n*n).  This is the fractional-efficiency covariance to first
-  //  order: d(ln eff)/d(coef_k) = B[i][k], and the fractional efficiency error is ~ d(ln eff).
-  vector<double> result( n*n, 0.0 );
-  for( size_t i = 0; i < n; ++i )
-  {
-    for( size_t j = 0; j < n; ++j )
-    {
-      double sum = 0.0;
-      for( size_t a = 0; a < M; ++a )
-      {
-        double bc = 0.0;   //(C_coef * B[j]^T)[a] = sum_b C[a][b]*B[j][b]
-        for( size_t b = 0; b < M; ++b )
-          bc += static_cast<double>( coefCov[a*M + b] ) * B[j][b];
-        sum += B[i][a] * bc;
-      }
-      result[i*n + j] = sum;
-    }//for( j )
-  }//for( i )
-
-  return result;
-}//coefCovFracCovariance(...)
-
-
-vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies ) const
+vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies,
+                                                               vector<double> *model_part ) const
 {
   if( m_ceeloResponse )
   {
-    // Far-field on-axis default geometry; use the (theta, distance) overload
-    //  when the measurement geometry is known.
-    const double d_cm = std::max( 100.0, 20.0 * m_ceeloResponse->transverse_half_extent() );
-    return m_ceeloResponse->frac_covariance( energies, 0.0, d_cm );
+    // The far-field on-axis query intrinsicEfficiencyEval takes its sigma from.
+    return m_ceeloResponse->frac_covariance( energies,
+                    CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor ), model_part );
   }
 
-  // A stored fit-coefficient covariance (e.g. from XML deserialization) takes precedence over the
-  //  node-covariance path; the two describe the same thing, so we never sum them.
-  const vector<double> coefCov = coefCovFracCovariance( energies );
-  if( !coefCov.empty() )
-    return coefCov;
-
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( !uncert )
-    return {};
-
-  return uncert->efficiencyFracCovariance( energies );
+  // The curve picks between the coefficient covariance and the node covariance per its
+  //  representation - see DetectorEfficiencyCurve::fracCovariance.  All of it is data-derived, so
+  //  the model part is all zeros - but it must still be SIZED, or a caller reusing a vector across
+  //  calls is left holding the previous answer.
+  const vector<double> cov = m_efficiency ? m_efficiency->fracCovariance( energies )
+                                          : vector<double>{};
+  if( model_part )
+    model_part->assign( cov.size(), 0.0 );
+  return cov;
 }//efficiencyFracCovariance(...)
 
 
 vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<double> &energies,
                                                                const double theta,
-                                                               const double distance ) const
+                                                               const double phi,
+                                                               const double distance,
+                                                               vector<double> *model_part ) const
 {
-  if( m_ceeloResponse )
+  // A fixed-geometry DRF has no query geometry to speak of, and #fepEfficiencyEval short-circuits
+  //  to the intrinsic (far-field) evaluation for one; the covariance must follow it there, or the
+  //  two would disagree for a fixed-geometry DRF that also carries a response.
+  if( m_ceeloResponse && !isFixedGeometry() )
   {
-    // `distance` is from the detector face (InterSpec's one convention); CeeLo's covariance wants
-    //  the source's distance from the crystal-face origin, which only gates its near/far regime.
-    const double d_cm = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, theta, 0.0,
-                                                            distance / PhysicalUnits::cm ).norm();
-    return m_ceeloResponse->frac_covariance( energies, theta, d_cm );
+    // `distance` is from the detector face - InterSpec's one convention - so the query position is
+    //  formed exactly as fepEfficiencyEval forms it.
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                                    theta, phi, distance / PhysicalUnits::cm );
+    return m_ceeloResponse->frac_covariance( energies, pos, model_part );
   }
 
-  // The legacy DetectorEfficiencyUncert path ignores the geometry; coefficient covariance likewise.
-  const vector<double> coefCov = coefCovFracCovariance( energies );
-  if( !coefCov.empty() )
-    return coefCov;
-
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( !uncert )
-    return {};
-
-  return uncert->efficiencyFracCovariance( energies );
+  // The legacy curve path ignores the geometry (coefficient and node covariance alike).
+  return efficiencyFracCovariance( energies, model_part );
 }//efficiencyFracCovariance(...)
 
 
@@ -1030,9 +964,15 @@ bool DetectorPeakResponse::hasTotalEfficiency() const
 
 bool DetectorPeakResponse::hasAnyTotalEfficiencyInfo() const
 {
-  // A CeeLo MC response always carries a total-efficiency payload (see
-  //  #totalEfficiencyEval, which dispatches to it unconditionally).
-  return ( !!m_totalEfficiency || !!m_ceeloResponse );
+  if( m_totalEfficiency )
+    return true;
+
+  // Most CeeLo responses carry a total-efficiency payload, but not all do: an
+  //  FEP-only characterization, or a curve transfer whose source DRF had no
+  //  total curve, leaves the tier at `NotCharacterized`, where eps_total
+  //  refuses (0, flagged NeedsMc) rather than returning a number.  Answering
+  //  "yes" for those let cascade summing run off an uncharacterized total.
+  return ( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() );
 }//hasAnyTotalEfficiencyInfo()
 
 
@@ -1095,16 +1035,16 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
   if( m_totalEfficiency )
     return m_totalEfficiency->efficiency( energy );
 
-  if( m_ceeloResponse )
+  if( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() )
   {
     // Back the intrinsic total out of a far-field absolute evaluation, where
     //  eps_total ~= (solid angle) x (intrinsic total).
-    const double a_cm = m_ceeloResponse->transverse_half_extent();
-    // The SAME far-field distance #intrinsicEfficiencyEval uses for the FEP.  20a is not converged
-    //  for the total, whose effective interaction depth is the whole crystal rather than the first
-    //  attenuation length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would
-    //  ride into both the peak-to-total the General tab prints and the cascade-summing correction.
-    const double d_cm = std::max( 1000.0*a_cm, 100.0 );
+    // The SAME far-field distance #intrinsicEfficiencyEval uses for the FEP - through the one
+    //  shared definition, so the two cannot drift apart.  20a is not converged for the total,
+    //  whose effective interaction depth is the whole crystal rather than the first attenuation
+    //  length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would ride into
+    //  both the peak-to-total the General tab prints and the cascade-summing correction.
+    const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
     const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy,
               CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
     const double omega = fractionalSolidAngle( m_detectorDiameter,
@@ -1124,6 +1064,17 @@ shared_ptr<const ceelo::DetectorResponse> DetectorPeakResponse::ceeloResponse() 
 
 void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorResponse> response )
 {
+  // Detaching a response: keep the geometry it was ray-traced for, unless one was stated
+  //  separately.  Otherwise the detector forgets what it physically is (a Detector.dat's shape, an
+  //  ANGLE model, the Create-DRF geometry) the moment it is put back on the flat-disk model, and no
+  //  response can ever be attached to it again.
+  //
+  //  Not for a fixed-geometry DRF: nothing will ever ray-trace it (see MakeFixedGeomResponse, which
+  //  detaches as part of the conversion), so the descriptor would be dead weight that changes the
+  //  converted detector's identity.
+  if( !response && m_ceeloResponse && !m_geometry && !isFixedGeometry() )
+    m_geometry = make_shared<const ceelo::GeometryDescriptor>( m_ceeloResponse->descriptor );
+
   m_ceeloResponse = response;
   computeHash();
 }//setCeeloResponse(...)
@@ -1245,25 +1196,24 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     //     multiplies back in.  The two disagreed by (a/a_crystal)^2: 1.03x for a canned
     //     3x3 NaI, 1.09x for an HPGe coax, 2.00x for the CZT box (a box's transverse
     //     half-extent is its half-DIAGONAL) and 2.37x with a 2 cm lead collar.
-    const double a_cm = m_ceeloResponse->transverse_half_extent();
-    const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy,
-              CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
+    const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
+    const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
     const double omega = ceelo::disk_solid_angle_fraction( d_cm,
                                 CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
     answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
+    answer.sigmaModel = (omega > 0.0) ? (res.sigma_model / omega) : 0.0;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
 
   answer.value = farFieldIntrinsicEfficiency( energy );
 
-  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
-  if( uncert && !uncert->isEmpty() )
+  if( m_efficiency )
   {
-    const vector<double> sig = uncert->fracUncertainties( { static_cast<double>(energy) } );
+    const vector<double> sig = m_efficiency->fracUncertainties( { static_cast<double>(energy) } );
     if( sig.size() == 1 )
       answer.sigma = answer.value * sig[0];
   }
@@ -1351,6 +1301,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
                                    : m_ceeloResponse->eps_fep_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
+    answer.sigmaModel = res.sigma_model;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
@@ -1361,6 +1312,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
                                                       distance + m_detectorSetback );
   answer.value = fracSolidAngle * intrinsic.value;
   answer.sigma = fracSolidAngle * intrinsic.sigma;
+  answer.sigmaModel = fracSolidAngle * intrinsic.sigmaModel;
   answer.flag = intrinsic.flag;
 
   // The legacy curve cannot model an off-axis response; flag meaningful
@@ -1379,13 +1331,17 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
 {
   EffEval answer;
 
-  if( m_ceeloResponse )
+  // An FEP-only response has no total to give; fall through to the legacy curve
+  //  if one is attached, so a DRF that carries both is not made worse by the
+  //  response (`eps_total` would refuse with 0/NeedsMc).
+  if( m_ceeloResponse && m_ceeloResponse->tot_eff.characterized() )
   {
     const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
                                                     theta, phi, distance / PhysicalUnits::cm );
     const ceelo::EffResult res = m_ceeloResponse->eps_total_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
+    answer.sigmaModel = res.sigma_model;
     answer.flag = to_eff_flag( res.flag );
     return answer;
   }//if( m_ceeloResponse )
@@ -1432,8 +1388,12 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
-  else if( m_geometry )
-    append_ceelo_geometry_node( base_node, &doc, *m_geometry );  //a response carries its own
+
+  // Written alongside a response as well: a response carries its own descriptor, but detaching one
+  //  (Modify Detector Response -> Flat Disk) must not lose the geometry - without this the DRF comes
+  //  back with m_geometry null and can never have a response attached again.
+  if( m_geometry )
+    append_ceelo_geometry_node( base_node, &doc, *m_geometry );
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -1525,11 +1485,11 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( ceelo_node )
       m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
 
-    // A response carries its own geometry, and `geometry()` answers with that one - so a standalone
-    //  geometry is only read when there is no response (the same rule both writers use, and the
-    //  same guard `fromXml` applies).
+    // Read even when a response is attached - `drfExtraToXmlString` writes it there, and
+    //  `geometry()` still prefers the response's own descriptor.  Dropping it here is what used to
+    //  leave a detached response with no shape to re-attach to.
     const rapidxml::xml_node<char> *geom_node = base_node->first_node( "CeeLoGeometry" );
-    if( geom_node && !m_ceeloResponse )
+    if( geom_node )
       m_geometry = parse_ceelo_geometry_node( geom_node );
 
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
@@ -1700,9 +1660,12 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
   for( const EnergyEfficiencyPair &p : parsed_pairs )
   {
     EnergyEfficiencyPair point;
-    // The parsed pairs have energies in the units determined by parseEfficiencyCsvFile;
-    //  convert to the energy units requested by the caller.
-    point.energy = p.energy * (energyUnits / parsed_energy_units);
+    // A pair's energy field is the PHYSICAL energy divided by the curve's units (see
+    //  DetectorEfficiencyCurve::efficiency, which evaluates at energy/m_energyUnits), so going from
+    //  the parsed units to the requested ones multiplies by parsed/requested.  Both are keV for
+    //  every caller today, which is why the reciprocal went unnoticed - asking for MeV would have
+    //  stored a 59 keV point as 59000 (i.e. 59 GeV).
+    point.energy = p.energy * (parsed_energy_units / energyUnits);
     point.efficiency = p.efficiency;
     pairs.push_back( point );
   }
@@ -1727,8 +1690,13 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
 
   m_flags = 0;
 
-  m_lowerEnergy = pairs.front().energy;
-  m_upperEnergy = pairs.back().energy;
+  // keV, whatever units the curve itself is written in - and read back from the curve, which sorted
+  //  and de-duplicated the pairs, rather than assuming the parsed order.
+  {
+    const std::vector<EnergyEfficiencyPair> &stored = eff->energyEfficiencies();
+    m_lowerEnergy = stored.front().energy * energyUnits;
+    m_upperEnergy = stored.back().energy * energyUnits;
+  }
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
@@ -1826,6 +1794,32 @@ void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakRe
 
   computeHash();
 }//void setEfficiencyPoints(...)
+
+
+void DetectorPeakResponse::replaceEfficiencyCurve( shared_ptr<const DetectorEfficiencyCurve> curve )
+{
+  if( !curve || !curve->isValid() )
+    throw runtime_error( "DetectorPeakResponse::replaceEfficiencyCurve(): invalid efficiency curve." );
+
+  // Only the pairs form defines its own energy range; a formula or power series says nothing about
+  //  where it is meant to be valid, so the existing range is kept for those.
+  //
+  //  The pairs are in the CURVE's energy units (a GADRAS Efficiency.csv may be MeV) while
+  //  m_lowerEnergy/m_upperEnergy are keV, so they have to be converted - without this an MeV curve
+  //  ends up claiming a 0.06 to 3 keV validity range, which flags every real query as out of range
+  //  and gives the anchor samplers a nonsense range to work in.
+  if( curve->form() == kEnergyEfficiencyPairs )
+  {
+    const float units = (curve->energyUnits() > 0.0f) ? curve->energyUnits() : 1.0f;
+    const vector<EnergyEfficiencyPair> &pairs = curve->energyEfficiencies();
+    m_lowerEnergy = pairs.front().energy * units;
+    m_upperEnergy = pairs.back().energy * units;
+  }//if( curve->form() == kEnergyEfficiencyPairs )
+
+  m_efficiency = curve;
+
+  computeHash();
+}//void replaceEfficiencyCurve(...)
 
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
@@ -2884,6 +2878,19 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( eff_uncert && !eff_uncert->isEmpty() )
     eff_uncert->toUrlParts( parts, "" );
 
+  // "EFCC" is only meaningful for an equation curve - it is that curve's coefficient covariance - so
+  //  it is not worth QR budget on any other form, where nothing would read it.
+  if( eff.form() != EfficiencyFnctForm::kExpOfLogPowerSeries )
+    parts.erase( "EFCC" );
+  if( m_totalEfficiency && (m_totalEfficiency->form() != EfficiencyFnctForm::kExpOfLogPowerSeries) )
+    parts.erase( "TEFCC" );
+
+  // NOTE: "EFFU" (the legacy per-coefficient sigmas) is deliberately still written alongside "EFCC",
+  //  even though it is the covariance's diagonal.  Dropping it looks like free space, but the decode
+  //  cannot tell "it was dropped because EFCC carries it" from "this DRF never had one", so it would
+  //  have to fabricate the field - and `computeHash` folds that field in, so a DRF shared by URL or
+  //  QR would come back with a different identity than it was sent with.
+
   if( m_totalEfficiency )
   {
     m_totalEfficiency->toUrlParts( parts, "T" );
@@ -2956,12 +2963,23 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( remove_part("EFUL") )
     return combine_parts();
 
-  // ...then the total-efficiency curve itself.
+  // ...then the equation's own coefficient covariance.  It goes after the node covariance (and costs
+  //  about a third as much) because for an equation curve it is the authoritative uncertainty, while
+  //  the node covariance is the fallback for the other representations.  It goes BEFORE the
+  //  total-efficiency curve so that adding it cannot cost a DRF the cascade-summing input it used to
+  //  keep.  "EFFU" is written alongside it, so the per-coefficient sigmas survive this.
+  if( remove_part("EFCC") )
+    return combine_parts();
+
+  // ...then the total-efficiency curve itself (and the coefficient covariance of ITS curve, which is
+  //  meaningless without it).
+  remove_part("TEFCC");
   remove_part("TEFT");
   remove_part("TEFX");
   remove_part("TEFY");
   remove_part("TEFE");
   remove_part("TEFC");
+  remove_part("TEFU");   //the total curve's per-coefficient sigmas; nothing to describe without it
   if( remove_part("TEUNIT") )
     return combine_parts();
 
@@ -3293,6 +3311,8 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
       case static_cast<int>(DrfSource::IsocsEcc):
       case static_cast<int>(DrfSource::AngleOutx):
       case static_cast<int>(DrfSource::UserImportedEfficiencyCsvDrf):
+      case static_cast<int>(DrfSource::GadrasDetectorDatOnly):
+      case static_cast<int>(DrfSource::CharacterizationParFile):
         drf_source = static_cast<DrfSource>( val );
         break;
 
@@ -3349,12 +3369,17 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   m_detectorSetback = detectorSetback;
 
   // Assemble the efficiency curve from the parsed representation, plus its
-  //  optional uncertainty ("EFUE"/"EFUC"/"EFUL" keys).
+  //  optional uncertainty ("EFUE"/"EFUC"/"EFUL" node covariance, "EFCC" coefficient covariance).
   {
+    // Nothing is inferred here: what the URL carried is what the DRF gets, so a shared detector comes
+    //  back with the same content - and therefore the same `hashValue()` - as it was sent with.
+    const shared_ptr<DetectorEfficiencyUncert> uncert
+        = DetectorEfficiencyUncert::fromUrlParts( parts, "" );
+
     std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
     eff->setRawFields( eff_form, efficiencyEnergyUnits, energyEfficiencies, eqn,
                        expOfLogPowerSeriesCoeffs, expOfLogPowerSeriesUncerts );
-    eff->setUncertainty( DetectorEfficiencyUncert::fromUrlParts( parts, "" ) );
+    eff->setUncertainty( uncert );
     m_efficiency = eff;
   }
 
@@ -4476,6 +4501,23 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
 void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
                          const ResolutionFnctForm form )
 {
+  setFwhmCoefficients( coefs, form, {} );
+}
+
+
+const std::vector<float> &DetectorPeakResponse::resolutionFcnUncertainties() const
+{
+  return m_resolutionUncerts;
+}
+
+
+void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
+                         const ResolutionFnctForm form,
+                         const std::vector<float> &uncerts )
+{
+  if( !uncerts.empty() && (uncerts.size() != coefs.size()) )
+    throw runtime_error( "setFwhmCoefficients: number of uncertainties must match coefficients." );
+
   switch( form )
   {
     case ResolutionFnctForm::kSqrtPolynomial:
@@ -4506,6 +4548,7 @@ void DetectorPeakResponse::setFwhmCoefficients( const std::vector<float> &coefs,
   
   m_resolutionForm = form;
   m_resolutionCoeffs = coefs;
+  m_resolutionUncerts = uncerts;
   
   computeHash();
 }//void setFwhmCoefficients(...)
@@ -4528,16 +4571,30 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   // - Version 3: Added FarFieldAbsolute geometry type with absolute efficiency parameters (20251130)
   // - Version 4: Added PeakFitDetPrefs (20260221)
   // - Version 5: Added EfficiencyUncert and TotalEfficiency (20260610)
-  // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707);
-  //              CeeLoGeometry (a physical geometry carried without a response) (20260916)
-  static_assert( sm_xmlSerializationVersion == 6, "Update DetectorPeakResponse sm_xmlSerializationVersion");
+  // - Version 6: Added CeeLoResponse (MC-parameterized response) and MeasuredEffPoints (20260707)
+  // - Version 7: Added ResolutionCoefficientUncerts, CeeLoGeometry (a physical geometry carried on
+  //              its own, and beside a response), and MeasuredEffPoints provenance (per-point
+  //              peak/background/distance-uncert details plus a Sources table) (20260912)
+  static_assert( sm_xmlSerializationVersion == 7, "Update DetectorPeakResponse sm_xmlSerializationVersion");
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
   const bool have_eff_uncert = (eff_uncert && !eff_uncert->isEmpty());
+  const bool have_res_uncerts = (!m_resolutionUncerts.empty()
+                                 && (m_resolutionUncerts.size() == m_resolutionCoeffs.size()));
+  // A <CeeLoGeometry> element is version-7 content wherever it appears - including beside a
+  //  <CeeLoResponse>, which is now written as well so that detaching the response does not lose the
+  //  geometry.  Gating this on "geometry and NO response" would declare version 6 on a document that
+  //  contains a v7 element, and a reader that gates on the declared version would drop exactly the
+  //  thing this is here to preserve.
+  const bool have_geometry = !!m_geometry;
+  const bool have_provenance = (m_measuredPoints && m_measuredPoints->hasProvenance());
 
   int version_to_write = 0;
 
-  if( m_ceeloResponse || m_geometry || (m_measuredPoints && !m_measuredPoints->empty()) )
+  if( have_res_uncerts || have_geometry || have_provenance )
+  {
+    version_to_write = 7;
+  }else if( m_ceeloResponse || (m_measuredPoints && !m_measuredPoints->empty()) )
   {
     // MC-parameterized response / physical geometry / raw measured points require version 6
     version_to_write = 6;
@@ -4610,6 +4667,8 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     case FromSpectrumFileDrf:               val = "FromSpectrumFileDrf";               break;
     case DrfSource::IsocsEcc:               val = "ISOCS";                             break;
     case DrfSource::AngleOutx:              val = "AngleOutx";                         break;
+    case DrfSource::GadrasDetectorDatOnly:  val = "GadrasDetectorDatOnly";             break;
+    case DrfSource::CharacterizationParFile: val = "CharacterizationParFile";          break;
   }//switch( m_efficiencySource )
   
   node = doc->allocate_node( node_element, "EfficiencySource", val );
@@ -4655,6 +4714,16 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
     val = doc->allocate_string( valstrm.str().c_str() );
     node = doc->allocate_node( node_element, "ResolutionCoefficients", val );
     base_node->append_node( node );
+
+    if( have_res_uncerts )
+    {
+      stringstream uncertstrm;
+      for( size_t i = 0; i < m_resolutionUncerts.size(); ++i )
+        uncertstrm << (i?" ":"") << m_resolutionUncerts[i];
+      val = doc->allocate_string( uncertstrm.str().c_str() );
+      node = doc->allocate_node( node_element, "ResolutionCoefficientUncerts", val );
+      base_node->append_node( node );
+    }//if( have_res_uncerts )
   }//if( m_resolutionCoeffs.size() )
 
   if( eff.energyEfficiencies().size() )
@@ -4800,11 +4869,13 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   if( m_measuredPoints && !m_measuredPoints->empty() )
     m_measuredPoints->toXml( base_node, doc );
 
-  // A response carries its own geometry; a DRF that knows its shape but has no response writes
-  //  the geometry on its own (the same rule drfExtraToXmlString uses for the database column).
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, doc, *m_ceeloResponse );
-  else if( m_geometry )
+
+  // The geometry is written alongside a response, not just instead of one - see the same note in
+  //  drfExtraToXmlString().  A response carries its own descriptor, but detaching it must not be
+  //  what loses the detector its shape.
+  if( m_geometry )
     append_ceelo_geometry_node( base_node, doc, *m_geometry );
 
   if( !m_fixedGeomSetupXml.empty() )
@@ -4990,6 +5061,12 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   }else if( compare(node->value(),node->value_size(),"AngleOutx",9,false) )
   {
     m_efficiencySource = AngleOutx;
+  }else if( compare(node->value(),node->value_size(),"GadrasDetectorDatOnly",21,false) )
+  {
+    m_efficiencySource = GadrasDetectorDatOnly;
+  }else if( compare(node->value(),node->value_size(),"CharacterizationParFile",23,false) )
+  {
+    m_efficiencySource = CharacterizationParFile;
   }else
   {
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencySource value" );
@@ -5048,6 +5125,7 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
     throw runtime_error( "DetectorPeakResponse: invalid EfficiencyForm value" );
 
   m_resolutionCoeffs.clear();
+  m_resolutionUncerts.clear();
   if( m_resolutionForm != kNumResolutionFnctForm )
   {
     node = parent->first_node( "ResolutionCoefficients", 22 );
@@ -5056,6 +5134,15 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
       SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionCoeffs );
       if( m_resolutionCoeffs.size() > 20 )
         throw runtime_error( "DetectorPeakResponse: too many resolution coefficients" );
+    }
+
+    // Optional (version 7); discarded if it doesnt match the coefficients
+    node = XML_FIRST_NODE(parent, "ResolutionCoefficientUncerts");
+    if( node && node->value() )
+    {
+      SpecUtils::split_to_floats( node->value(), node->value_size(), m_resolutionUncerts );
+      if( m_resolutionUncerts.size() != m_resolutionCoeffs.size() )
+        m_resolutionUncerts.clear();
     }
   }//if( m_resolutionForm != kNumResolutionFnctForm )
 
@@ -5246,11 +5333,11 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
     m_ceeloResponse = parse_ceelo_response_node( node );  //throws on invalid content
 
-  // The physical geometry of a DRF that has no response (see toXml); a response's own descriptor
-  //  is what geometry() answers with, so this is only read when there is no response.
+  // The stated physical geometry (version 7).  Read even when a response is attached (whose own
+  //  descriptor `geometry()` prefers), so detaching the response leaves the geometry behind.
   m_geometry.reset();
   node = parent->first_node( "CeeLoGeometry", 13 );
-  if( node && !m_ceeloResponse )
+  if( node )
     m_geometry = parse_ceelo_geometry_node( node );  //throws on invalid content
 
   m_fixedGeomSetupXml.clear();
@@ -5326,6 +5413,27 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
     {
       snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: resolution"
       " coefficient %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
+      throw runtime_error( buffer );
+    }
+  }
+
+  if( lhs.m_resolutionUncerts.size() != rhs.m_resolutionUncerts.size() )
+  {
+    snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: size of"
+             " resolution coefficient uncertainties of LHS (%i) doesnt match RHS (%i)",
+             int(lhs.m_resolutionUncerts.size()),
+             int(rhs.m_resolutionUncerts.size()) );
+    throw runtime_error(buffer);
+  }
+
+  for( size_t i = 0; i < lhs.m_resolutionUncerts.size(); ++i )
+  {
+    const float a = lhs.m_resolutionUncerts[i];
+    const float b = rhs.m_resolutionUncerts[i];
+    if( fabs(a-b) > (1.0E-5 * std::max(fabs(a),fabs(b))) )
+    {
+      snprintf( buffer, sizeof(buffer), "DetectorPeakResponse: resolution"
+      " coefficient uncertainty %i of LHS (%1.8E) doesnt match RHS (%1.8E)", int(i), a, b );
       throw runtime_error( buffer );
     }
   }
@@ -5625,11 +5733,8 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
 float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                            const std::vector<float> &coefs )
 {
-  double exparg = 0.0;
-  const double x = log( static_cast<double>(energy) );
-  for( size_t i = 0; i < coefs.size(); ++i )
-    exparg += coefs[i] * pow(x,static_cast<double>(i));
-  const double answer = exp( exparg );
+  const double answer = expOfLogPowerSeriesEfficiency( static_cast<double>(energy),
+                                                       coefs.data(), coefs.size() );
   return (answer >= 0.0) ? static_cast<float>(answer) : 0.0f;
 }//float expOfLogPowerSeriesEfficiency(...)
 
@@ -5683,102 +5788,11 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
                                                 ResolutionFnctForm fcnFrm,
                                                 const std::vector<float> &pars )
 {
-  // Clamp energy to >= 10 keV.  Below that the resolution forms are physically
-  //  ill-defined (e.g. kSqrtEnergyPlusInverse divides by energy) and the FWHM
-  //  at a few keV doesn't carry useful information for our use cases.  Treat
-  //  any sub-10-keV input as if it were 10 keV.
-  const float min_energy = 10.0f * static_cast<float>( PhysicalUnits::keV );
-  if( energy < min_energy )
-    energy = min_energy;
-
-  switch( fcnFrm )
-  {
-    case kGadrasResolutionFcn:
-    {
-      if( pars.size() != 3 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      assert( PhysicalUnits::keV == 1.0 );
-
-      // Straight-forward translation of the GADRAS Fortran GetFWHM (the "form C" shared with
-      //  PeakDists::gadras_fwhm).  This replaces an earlier variant that used a different
-      //  low-energy positive-offset branch (A7 = sqrt((6.61b)^2 - a^2)/6.61); the two agree for
-      //  E > 661 and for negative offset (aside from the max(30,E) floor below), but differ for
-      //  positive resolution-offset detectors (e.g. HPGe, LaBr3) below 661 keV.  Form C is the
-      //  Fortran-faithful form and is now used everywhere GADRAS FWHM is computed.
-      const double a = pars[0];   // resolution offset ("FWHM @ 0")
-      const double b = pars[1];   // resolution @ 661 (percent)
-      const double c = pars[2];   // resolution power
-
-      if( energy > 661.0f )
-        return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
-
-      if( a >= 0.0 )
-      {
-        const double zero_limit = std::max( 0.0, fabs(a) * (661.0 - energy) / 661.0 );
-        const double fwhm = 6.61 * b * pow( energy/661.0, c );
-        return static_cast<float>( sqrt( zero_limit*zero_limit + fwhm*fwhm ) );
-      }//if( a >= 0.0 )
-
-      const double p = pow( c, 1.0/log(1.0-a) );
-      return static_cast<float>( 6.61 * b * pow( std::max(30.0,static_cast<double>(energy))/661.0, p ) );
-    }//case kGadrasResolutionFcn:
-    
-    case kSqrtEnergyPlusInverse:
-    {
-      if( pars.size() != 3 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      return sqrt(pars[0] + pars[1]*energy + pars[2]/energy);
-    }//case kSqrtEnergyPlusInverse:
-      
-    case kConstantPlusSqrtEnergy:
-    {
-      if( pars.size() != 2 )
-        throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                 " pars not defined" );
-      energy /= PhysicalUnits::keV;
-      
-      return pars[0] + pars[1]*sqrt(energy);
-    }//case kConstantPlusSqrtEnergy:
-      
-    case kSqrtPolynomial:
-    {
-      if( pars.size() < 1 )
-        throw runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                             " pars not defined" );
-
-      energy /= PhysicalUnits::MeV;
-      //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-
-      // Use Horner's method to evaluate the polynomial - more stable.
-      double val = pars.back();
-      for( int i = static_cast<int>(pars.size()) - 2; i >= 0; i -= 1 )
-        val = val * energy + pars[i]; // Multiply by x and add the next coefficient
-
-#ifndef NDEBUG
-      double nonstable_val = pars[0];
-      for( size_t i = 1; i < pars.size(); ++i )
-        nonstable_val += pars[i] * pow(static_cast<double>(energy), static_cast<double>(i) );
-      const double diff = fabs(nonstable_val - val);
-      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(fabs(nonstable_val), fabs(val))) );
-#endif
-
-      return sqrt( val );
-    }//case kSqrtPolynomial:
-      
-    case kNumResolutionFnctForm:
-      throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
-                                " Resolution not defined" );
-    break;
-  }//switch( m_resolutionForm )
-  
-  //Lets keep MSVS happy
-  assert(0);
-  return 0.0f;
-}//static float peakResolutionFwhmGadras(...)
+  // The templated implementation clamps energy to >= 10 keV, and uses a smooth positive
+  //  continuation (rather than NaN) where a form would take the square root of a negative.
+  return static_cast<float>( peakResolutionFWHM( static_cast<double>(energy), fcnFrm,
+                                                 pars.data(), pars.size() ) );
+}//float peakResolutionFWHM(...)
 
 
 float DetectorPeakResponse::peakResolutionSigma( const float energy,
@@ -5903,6 +5917,53 @@ void DetectorPeakResponse::setDetectorSetback( const double distance )
 double DetectorPeakResponse::absoluteEfficiencyDistance() const
 {
   return m_absoluteEfficiencyDistance;
+}
+
+bool DetectorPeakResponse::statesOwnEfficiencyUncert() const
+{
+  const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
+  if( uncert )
+  {
+    for( const float val : uncert->coefficientCovariance() )
+    {
+      if( val != 0.0f )
+        return true;
+    }
+
+    const vector<float> &node_cov = uncert->covarianceMatrix();
+    const size_t nnode = uncert->covarianceEnergies().size();
+    if( node_cov.size() == (nnode*nnode) )
+    {
+      for( size_t i = 0; i < nnode; ++i )
+      {
+        if( node_cov[i*nnode + i] > 0.0f )
+          return true;
+      }
+    }
+  }//if( uncert )
+
+  if( m_measuredPoints )
+  {
+    for( const MeasuredEffPoint &point : m_measuredPoints->points() )
+    {
+      if( (point.fracStatUncert > 0.0f) || (point.fracCertUncert > 0.0f) )
+        return true;
+    }
+  }//if( m_measuredPoints )
+
+  return false;
+}//statesOwnEfficiencyUncert()
+
+
+bool DetectorPeakResponse::absEffCorrectForAirAtten() const
+{
+  return m_absEffCorrectForAirAtten;
+}
+
+void DetectorPeakResponse::setAbsEffCorrectForAirAtten( const bool correct )
+{
+  m_absEffCorrectForAirAtten = correct;
+  computeHash();
 }
 
 void DetectorPeakResponse::printDetectorParameterizationToStdout() const
@@ -6371,6 +6432,7 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   MakeDrfFit::performResolutionFit( peaks, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
+  m_resolutionUncerts = (uncerts.size() == coefficients.size()) ? uncerts : vector<float>{};
   m_resolutionForm = fnctnlForm;
   
   computeHash();
@@ -6521,26 +6583,78 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     json << "null";
   }
 
-  // Add the fractional efficiency uncertainty envelope, if defined - sampled
-  //  at evenly spaced energies, ready for chart error-band rendering.
-  const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = efficiencyUncert();
-  if( eff_uncert && !eff_uncert->isEmpty() )
+  // The fractional efficiency uncertainty envelope, ready for chart error-band rendering.
+  //
+  //  This asks #efficiencyFracCovariance - the same call the activity/shielding fit uses - rather
+  //  than reading the uncertainty store, so the band drawn is the uncertainty actually propagated:
+  //  it follows an attached response, and for an equation curve it follows the coefficient
+  //  covariance.  `model_part` splits out the part that is an ad hoc model envelope
+  //  (`ceelo::model_sigma`: regime floor, transfer envelope, ...) rather than something the
+  //  detector's own data supports, so the chart can draw the two separately - "data" is
+  //  sqrt(total^2 - model^2).
+  //
+  //  Sampled one energy at a time with #intrinsicEfficiencyEval rather than by asking for a
+  //  covariance over all of them: the band only needs the diagonal, and the covariance would compute
+  //  (and throw away) every off-diagonal - for a collimated response that is a ray sweep per pair.
+  //  The contract that makes this identical is documented on #efficiencyFracCovariance: with a
+  //  response attached its diagonal IS that evaluation's (sigma/value)^2, at the same far-field
+  //  on-axis position.
+  if( efficiencyUncert() || m_ceeloResponse )
   {
-    const size_t num_points = 100;
-    vector<double> energies( num_points );
+    const size_t num_points = 64;
+    vector<double> energies( num_points ), frac( num_points, 0.0 ), model_frac( num_points, 0.0 );
+
+    bool any_uncert = false;
     for( size_t i = 0; i < num_points; ++i )
+    {
       energies[i] = minEnergy + (double(i)/(num_points - 1.0)) * (maxEnergy - minEnergy);
 
-    const vector<double> uncerts = eff_uncert->fracUncertainties( energies );
+      try
+      {
+        const EffEval eval = intrinsicEfficiencyEval( static_cast<float>(energies[i]) );
+        if( (eval.value > 0.0) && !IsNan(eval.sigma) && !IsInf(eval.sigma) )
+        {
+          // A non-finite here would be written into the chart's JSON as `inf`, which is not valid
+          //  JSON - and a parse error there takes the whole chart down, not just the band.
+          frac[i] = std::max( 0.0, eval.sigma / eval.value );
+          model_frac[i] = std::min( frac[i], std::max( 0.0, eval.sigmaModel / eval.value ) );
+          if( IsNan(frac[i]) || IsInf(frac[i]) )
+            frac[i] = model_frac[i] = 0.0;
+          if( IsNan(model_frac[i]) || IsInf(model_frac[i]) )
+            model_frac[i] = 0.0;
+          any_uncert = (any_uncert || (frac[i] > 0.0));
+        }
+      }catch( std::exception & )
+      {
+        //energy outside what this DRF can answer; leave the sample at zero
+      }
+    }//for( size_t i = 0; i < num_points; ++i )
 
-    json << ",\"effUncertFrac\":{\"energies\":[";
-    for( size_t i = 0; i < num_points; ++i )
-      json << (i ? "," : "") << energies[i];
-    json << "],\"fracUncerts\":[";
-    for( size_t i = 0; i < num_points; ++i )
-      json << (i ? "," : "") << uncerts[i];
-    json << "]}";
-  }//if( eff_uncert )
+    if( any_uncert )
+    {
+      // Whether the "data-derived" part is a measurement of this detector or a default standing in
+      //  for one - the same question, and the same answer, as DrfModifyCalc::uncertSummary's
+      //  `dataIsAssumed`, which the Detector Select chip and the Modify tool word.  `any_data` keeps
+      //  the two in step where there is no data-derived part at all to characterize.
+      bool any_data = false;
+      for( size_t i = 0; i < num_points; ++i )
+        any_data = (any_data || (frac[i] > model_frac[i]));
+
+      const bool data_is_assumed = (any_data && !statesOwnEfficiencyUncert());
+
+      json << ",\"effUncertFrac\":{\"dataIsAssumed\":" << (data_is_assumed ? "true" : "false")
+           << ",\"energies\":[";
+      for( size_t i = 0; i < num_points; ++i )
+        json << (i ? "," : "") << energies[i];
+      json << "],\"fracUncerts\":[";
+      for( size_t i = 0; i < num_points; ++i )
+        json << (i ? "," : "") << frac[i];
+      json << "],\"modelFracUncerts\":[";
+      for( size_t i = 0; i < num_points; ++i )
+        json << (i ? "," : "") << model_frac[i];
+      json << "]}";
+    }//if( any_uncert )
+  }//if( this DRF could report an uncertainty at all )
 
   // Add the total efficiency curve, if defined - sampled the same way.
   if( m_totalEfficiency && m_totalEfficiency->isValid() )

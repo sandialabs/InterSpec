@@ -329,6 +329,7 @@ set(sources
     src/MassAttenuationTool.cpp
     src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
+    src/DetectorEffG2kPar.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
     src/GammaInteractionCalc.cpp
@@ -410,6 +411,7 @@ set(sources
     src/MakeDrfSrcDef.cpp
     src/MakeDrfChart.cpp
     src/MakeDrfFit.cpp
+    src/MakeDrfCalc.cpp
     src/MakeFwhmForDrf.cpp
     src/CeeLoUtils.cpp
     src/CascadeSummingCalc.cpp
@@ -419,6 +421,7 @@ set(sources
     src/DetectorGeometryDiagram.cpp
     src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
+    src/DrfModifyCalc.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
     src/SwitchCheckbox.cpp
@@ -479,6 +482,7 @@ set(headers
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
+    InterSpec/DetectorEffG2kPar.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
@@ -559,6 +563,7 @@ set(headers
     InterSpec/MakeDrfSrcDef.h
     InterSpec/MakeDrfChart.h
     InterSpec/MakeDrfFit.h
+    InterSpec/MakeDrfCalc.h
     InterSpec/MakeFwhmForDrf.h
     InterSpec/CeeLoUtils.h
     InterSpec/CascadeSummingCalc.h
@@ -568,6 +573,7 @@ set(headers
     InterSpec/DetectorGeometryDiagram.h
     InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
+    InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
     InterSpec/SwitchCheckbox.h

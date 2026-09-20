@@ -339,11 +339,12 @@ BOOST_AUTO_TEST_CASE(mc_consistency) {
      eps_total == total_prefactor * sum(total_ray_weights)
  If those ever drift apart, every such host is silently wrong with no symptom at the seam.
 
- Covers ALL THREE total tiers.  That is the point of the test as much as the identity is: the tiers
- disagree about which MuChoice the total kernel uses (EtaTotTable takes Total, the others
- NoRayleigh) and about the scatter-in recapture, and a caller that assembled the wrong pair would
- get a plausible number with no error.  Production MC-parameterized responses are EtaTotTable, which
- make_transfer_response never produces - hence the synthesized case.
+ Covers ALL THREE CHARACTERIZED total tiers.  That is the point of the test as much as the identity
+ is: the tiers disagree about which MuChoice the total kernel uses (EtaTotTable takes Total, the
+ others NoRayleigh) and about the scatter-in recapture, and a caller that assembled the wrong pair
+ would get a plausible number with no error.  Neither KernelExact nor EtaTotTable is what
+ make_transfer_response produces (it emits BCurve with a total anchor, NotCharacterized without),
+ hence the two synthesized cases.
  */
 BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
     const GeometryDescriptor gd = nai3x3_descriptor();
@@ -353,11 +354,15 @@ BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
     TransferResponseOptions opts;
     opts.detector_name = "nai3x3-decomposition";
 
-    // KernelExact: no total anchor.
+    // KernelExact: this producer never claims it (a measured FEP curve says nothing about
+    //  peak-to-total, so no total anchor -> NotCharacterized), so synthesize the tier to exercise
+    //  its NoRayleigh kernel branch.
     const std::shared_ptr<DetectorResponse> kernel_exact =
         make_transfer_response(gd, make_anchor(), ref, nullptr, opts);
     BOOST_REQUIRE(kernel_exact);
-    BOOST_REQUIRE(kernel_exact->tot_eff.tier == TotEffTier::KernelExact);
+    BOOST_REQUIRE(kernel_exact->tot_eff.tier == TotEffTier::NotCharacterized);
+    kernel_exact->tot_eff.tier = TotEffTier::KernelExact;
+    kernel_exact->tot_eff.finalize();
 
     // BCurve: a total anchor scaled off the FEP one (values are irrelevant to the identity).
     const AnchorCurve tot_anchor = make_anchor(4.0);
@@ -421,4 +426,105 @@ BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
         BOOST_CHECK_MESSAGE(worst_fep < 1.0e-12, c.name << ": FEP decomposition off by " << worst_fep);
         BOOST_CHECK_MESSAGE(worst_tot < 1.0e-12, c.name << ": total decomposition off by " << worst_tot);
     }
+}
+
+
+// An anchor carrying a full covariance stores it as the grounding block (ln k = 0), so the
+// response reproduces the anchor exactly while frac_covariance() carries the correlations;
+// the per-node sigma and the grounding transfer are zero so nothing is counted twice.
+BOOST_AUTO_TEST_CASE(anchor_covariance_reproduces_input) {
+    const GeometryDescriptor gd = nai3x3_descriptor();
+    AnchorCurve a = make_anchor();
+    const size_t n = a.energies_keV.size();
+    BOOST_REQUIRE_GE(n, 2u);
+
+    a.frac_sigma.assign(n, 0.10);  // must be ignored once frac_cov is set
+    a.frac_cov.assign(n * n, 0.0);
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j)
+            a.frac_cov[i * n + j] = 0.01 * 0.01 + ((i == j) ? 0.02 * 0.02 : 0.0);
+
+    const double a_ext = gd.transverse_half_extent();
+    const double d_ref = 10.0 * a_ext;  // far field, on axis
+    const Eigen::Vector3d ref(0.0, 0.0, -d_ref);
+    auto resp = make_transfer_response(gd, a, ref);
+
+    BOOST_REQUIRE(!resp->grounding.empty());
+    BOOST_CHECK_EQUAL(resp->grounding.knot_ln_energies.size(), n);
+    BOOST_CHECK(resp->grounding.curve_derived);  // covariance carrier for a fitted curve
+    for (const double lnk : resp->grounding.ln_k) BOOST_CHECK_EQUAL(lnk, 0.0);
+
+    // The anchor is reproduced, and the per-node sigma was not taken from frac_sigma.
+    for (size_t i = 0; i < n; ++i) {
+        const EffResult r = resp->eps_fep(a.energies_keV[i], 0.0, 0.0, d_ref);
+        BOOST_CHECK_CLOSE(r.value, a.eff[i], 0.2);
+        BOOST_CHECK_EQUAL(resp->eta_fep.node_frac_sigma(a.energies_keV[i], 1.0, 0.0), 0.0);
+    }
+
+    // frac_covariance at the anchor energies == frac_cov (data) + floor^2 + far_onaxis^2 (the two
+    // model envelopes active far field on axis, each a common mode) - and the model part alone
+    // is reported separately.
+    BOOST_REQUIRE(resp->model_transfer.has_value());
+    const double floor = resp->floors.fep_far;
+    const double st = resp->model_transfer->far_onaxis;
+    std::vector<double> model_part;
+    const std::vector<double> C = resp->frac_covariance(a.energies_keV, 0.0, 0.0, d_ref, &model_part);
+    BOOST_REQUIRE_EQUAL(C.size(), n * n);
+    BOOST_REQUIRE_EQUAL(model_part.size(), n * n);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            BOOST_CHECK_CLOSE(C[i * n + j], a.frac_cov[i * n + j] + floor * floor + st * st, 1e-6);
+            BOOST_CHECK_CLOSE(model_part[i * n + j], floor * floor + st * st, 1e-6);
+        }
+    }
+
+    // Per-query sigma: floor^2 + Var[ln k] + model_transfer far_onaxis^2, nothing else - and it
+    // IS the covariance diagonal.
+    const EffResult r0 = resp->eps_fep(a.energies_keV[0], 0.0, 0.0, d_ref);
+    const double frac2 = (r0.sigma / r0.value) * (r0.sigma / r0.value);
+    BOOST_CHECK_CLOSE(frac2, floor * floor + a.frac_cov[0] + st * st, 1e-4);
+    BOOST_CHECK_CLOSE(frac2, C[0], 1e-6);
+    const double frac2_model = (r0.sigma_model / r0.value) * (r0.sigma_model / r0.value);
+    BOOST_CHECK_CLOSE(frac2_model, floor * floor + st * st, 1e-6);
+
+    // Size mismatch is rejected
+    AnchorCurve bad = a;
+    bad.frac_cov.resize(n * n - 1);
+    BOOST_CHECK_THROW(set_anchor_covariance(*resp, bad), std::runtime_error);
+}
+
+// The anchor covariance survives the XML codec.
+BOOST_AUTO_TEST_CASE(anchor_covariance_xml_roundtrip) {
+    const GeometryDescriptor gd = nai3x3_descriptor();
+    AnchorCurve a = make_anchor();
+    const size_t n = a.energies_keV.size();
+    a.frac_cov.assign(n * n, 0.0);
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j)
+            a.frac_cov[i * n + j] = 0.03 * 0.03 * std::exp(-0.5 * double(i > j ? i - j : j - i));
+
+    GroundingPoint gp;
+    gp.energy_keV = 661.7;
+    gp.measured_eff = 1.0e-3;
+    gp.frac_stat_sigma = 0.01;
+    gp.source_key = "Cs137#0";
+    gp.distance_cm = 25.0;
+    a.points.push_back(gp);
+
+    const Eigen::Vector3d ref(0.0, 0.0, -40.0);
+    auto resp = make_transfer_response(gd, a, ref);
+    BOOST_REQUIRE_EQUAL(resp->grounding.points.size(), 1u);
+
+    const std::string xml = resp->to_xml_string();
+    auto resp2 = DetectorResponse::from_xml_string(xml);
+    BOOST_REQUIRE(resp2);
+    BOOST_REQUIRE_EQUAL(resp2->grounding.cov.size(), n * n);
+    for (size_t i = 0; i < n * n; ++i)
+        BOOST_CHECK_CLOSE(resp2->grounding.cov[i], a.frac_cov[i], 1e-9);
+    BOOST_CHECK_EQUAL(resp2->grounding.transfer.far_onaxis, 0.0);
+
+    const std::vector<double> c1 = resp->frac_covariance(a.energies_keV, 0.0, 0.0, 40.0);
+    const std::vector<double> c2 = resp2->frac_covariance(a.energies_keV, 0.0, 0.0, 40.0);
+    BOOST_REQUIRE_EQUAL(c1.size(), c2.size());
+    for (size_t i = 0; i < c1.size(); ++i) BOOST_CHECK_CLOSE(c1[i], c2[i], 1e-9);
 }

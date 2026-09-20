@@ -28,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,7 @@
 class DrfChart;
 class InterSpec;
 class DetectorPeakResponse;
+namespace CeeLoUtils{ struct TransferAnchor; }
 
 /** Measured Monte-Carlo throughput of a geometry (defined in the .cpp). */
 struct McTimeCalibration;
@@ -169,6 +171,24 @@ public:
   /** The currently selected build method. */
   Method selectedMethod() const;
 
+  /** Selects the build method (as if the user picked it in the combo). */
+  void setMethod( const Method method );
+
+  /** Hides (or shows) the response-preview chart section - for an owner that has its own chart. */
+  void setChartHidden( const bool hidden );
+
+  /** Emitted after any user edit of the geometry form (after this tool has reacted to it). */
+  Wt::Signal<> &geometryChanged();
+
+  /** Whether the geometry form currently describes a complete geometry (DetectorGeometryInput::isValid). */
+  bool geometryValid() const;
+
+  /** The geometry form's descriptor; throws std::runtime_error (with a user message) when invalid. */
+  ceelo::GeometryDescriptor geometryDescriptor() const;
+
+  /** The embedded geometry form. */
+  DetectorGeometryInput *geometryInput();
+
   /** Replaces the seed DRF a future generation grounds/anchors to, and refreshes the anchor,
    grounding, chart and estimate rows that read it - WITHOUT re-running the DRF-derived geometry
    guess, resetting method/precision selections, or auto-generating.
@@ -178,6 +198,18 @@ public:
    response cleared, since an attached response overrides the manual points/covariance at query time.
    */
   void setSeedDrf( std::shared_ptr<const DetectorPeakResponse> seed_drf );
+
+  /** Installs a callback that supplies the seed DRF, consulted at the start of EVERY generation -
+   the owner's "Generate Response" button, and the automatic regeneration a geometry change triggers
+   for #Method::CurveTransfer.
+
+   An owner whose edits belong in the seed (DrfModifyWidget) must use this rather than #setSeedDrf:
+   a seed pushed in once goes stale the moment the user edits anything, and the automatic
+   regeneration would then rebuild the response from the pre-edit curve while looking current.  The
+   callback must return a DRF with any CeeLo response detached, for the reason given on #setSeedDrf.
+   Pass an empty function to go back to whatever #setSeedDrf last provided.
+   */
+  void setSeedProvider( std::function<std::shared_ptr<const DetectorPeakResponse>()> provider );
 
   /** Whether the geometry form currently holds enough real geometry to generate a response
    (delegates to DetectorGeometryInput::generationReady). */
@@ -194,15 +226,21 @@ public:
    shows the reason beside its own generate control (see DetectorGeometryInput::problemDescription). */
   std::string geometryProblem() const;
 
-  /** The geometry currently in the form.  Throws std::runtime_error, with a user-displayable
-   message, when the form is not valid. */
-  ceelo::GeometryDescriptor geometryDescriptor() const;
-
   /** Kicks off a response generation from the current geometry/method selections; a no-op (with a
    status message) when the geometry is not #generationReady.  Public so an owner can drive a
    regenerate-then-use flow.  Returns whether a generation was actually started, so an owner that
-   means to act on the result does not arm itself for a run that never happens. */
+   means to act on the result does not arm itself for a run that never happens (see also
+   #generationRunning). */
   bool startGeneration();
+
+  /** Whether a generation posted by #startGeneration is still in flight.
+
+   An owner that queues something to happen when the response lands (DrfModifyWidget's
+   regenerate-then-use) needs this: #startGeneration can decline - an incomplete geometry, an anchor
+   it cannot build - and a queued action left armed would then fire on some later, unrelated
+   generation.
+   */
+  bool generationRunning() const;
 
   /** Hides (or shows) the tool's own "Generate Response" button in the Location Support section.
    An owner that embeds this tool and provides its own generate control (e.g. DrfModifyWidget's
@@ -281,6 +319,11 @@ protected:
    reference-distance edit) from the seed DRF and current geometry. */
   void updateAnchorInfo();
 
+  /** The measured-curve transfer anchor for the seed DRF and `gd`: the DRF's fitted curve with
+   its covariance when the curve carries one (CeeLoUtils::curveAnchorWithCovarianceForDrf), else
+   its raw points / sampled curve (CeeLoUtils::transferAnchorForDrf).  Throws like those do. */
+  CeeLoUtils::TransferAnchor transferAnchor( const ceelo::GeometryDescriptor &gd ) const;
+
   /** Refreshes the "ground to measured efficiency" row: what the DRF offers as an anchor (raw
    measured points, a sampled efficiency curve, or nothing), and whether the checkbox can be used. */
   void updateGroundingInfo();
@@ -318,6 +361,13 @@ protected:
 
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_seedDrf;
+
+  /** See #setSeedProvider; when set, #refreshSeedFromProvider replaces #m_seedDrf from it before
+   every generation. */
+  std::function<std::shared_ptr<const DetectorPeakResponse>()> m_seedProvider;
+
+  /** Pulls a fresh seed from #m_seedProvider, if one is installed. */
+  void refreshSeedFromProvider();
 
   DetectorGeometryInput *m_geometry;
 
@@ -383,7 +433,9 @@ protected:
 
   Wt::Signal<bool> m_validationChanged;
   Wt::Signal<> m_userChanged;
+  Wt::Signal<> m_geometryChanged;
   Wt::Signal<> m_userChangedNoRegen;
+  bool m_hideChart;
   Wt::Signal<std::shared_ptr<ceelo::DetectorResponse>> m_responseGenerated;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 
@@ -404,7 +456,10 @@ protected:
   std::unique_ptr<Wt::WTimer> m_calibTimer;
 
   // --- Progress of a running generation ----------------------------------------------------------
-  /** Whether a Monte-Carlo generation is in flight (the run row shows its progress). */
+  /** Whether a Monte-Carlo generation is in flight (the run row shows its progress): true from the
+   moment a worker is posted until that run finishes, is cancelled, or is abandoned by a change
+   that invalidates it.  Exposed as #generationRunning, and what the one-run-at-a-time guard in
+   #startGeneration tests. */
   bool m_generating;
 
   /** What the worker fills in after every node; read by #refreshProgressText. */
