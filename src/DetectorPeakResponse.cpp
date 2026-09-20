@@ -65,6 +65,8 @@
 #include "io/SolidAngle.h"
 #include "io/DetectorResponse.h"
 
+#include "SpecUtils/UriSpectrum.h"
+
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakModel.h"
@@ -2846,11 +2848,57 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   parts["ORIGIN"] = std::to_string( static_cast<int>(m_efficiencySource) );
   
-  if( m_hash )
-    parts["HASH"] = std::to_string( m_hash );
+  // The detector's physical shape, when it has one.  `geometry()` prefers an attached response's
+  //  own descriptor, so this covers both a geometry-only DRF and an MC-characterized one.
+  //
+  // The Monte-Carlo response itself is deliberately NOT carried: it deflates to ~17 KB against a
+  //  QR ceiling of a few thousand characters, so no encoding closes that gap.  The geometry is
+  //  ~377 bytes deflated, which fits - and it is what lets the receiver re-run the
+  //  characterization rather than start over from a flat disk.
+  //
+  // base32 rather than base45: base45's alphabet is the whole QR-alphanumeric set, including '%',
+  //  ' ' and '+', so every one of those would need percent-escaping here - which costs more than
+  //  its higher density returns.  See AppUtils::base32_encode.
+  uint64_t hash_to_send = m_hash, parent_to_send = m_parentHash;
   
-  if( m_parentHash )
-    parts["HASHP"] = std::to_string( m_parentHash );
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = geometry();
+  if( geom )
+  {
+    try
+    {
+      const string xml = geom->to_xml_string();
+      vector<uint8_t> deflated;
+      SpecUtils::deflate_compress( xml.data(), xml.size(), deflated );
+      parts["DETGEOM"] = AppUtils::base32_encode( deflated );
+    }catch( std::exception &e )
+    {
+      // A shape we cannot encode must not cost the user the rest of the DRF.
+      cerr << "toAppUrl: failed to encode detector geometry (" << e.what() << ") - omitting" << endl;
+    }
+  }//if( geom )
+  
+  if( m_ceeloResponse )
+  {
+    // `computeHash` folds in the response's content_hash when one is attached, and the geometry's
+    //  XML otherwise - so the hash this DRF carries describes something the receiver, who gets no
+    //  response, can never reproduce.  Since that hash is the sole de-duplication key for the
+    //  "Previous" detector rows, send the identity of what is actually being sent, and record the
+    //  real one as the parent so the lineage survives.
+    DetectorPeakResponse reduced( *this );
+    reduced.setCeeloResponse( nullptr );
+    // Deep copy: geometry() hands back a pointer that shares ownership with the response, which
+    //  would keep the whole (~100 KB) response alive behind the detached DRF.
+    reduced.setGeometry( geom ? make_shared<const ceelo::GeometryDescriptor>(*geom) : nullptr );
+    
+    hash_to_send = reduced.hashValue();
+    parent_to_send = m_hash;
+  }//if( m_ceeloResponse )
+  
+  if( hash_to_send )
+    parts["HASH"] = std::to_string( hash_to_send );
+  
+  if( parent_to_send )
+    parts["HASHP"] = std::to_string( parent_to_send );
   
   if( (fabs(m_lowerEnergy - m_upperEnergy) > 1.0) && (m_upperEnergy > 0.0) )
   {
@@ -3054,6 +3102,13 @@ std::string DetectorPeakResponse::toAppUrl() const
 
   // PeakFitDetPrefs is optional metadata - drop first of the pre-existing parts
   if( remove_part("PFP") )
+    return combine_parts();
+
+  // ...then the detector's shape.  It goes after the covariances (it is smaller than either, and
+  //  more useful - it is what lets the receiver regenerate a Monte-Carlo response) but before
+  //  everything that was in the URL before it existed, so adding it can never cost a DRF a field
+  //  that used to survive.
+  if( remove_part("DETGEOM") )
     return combine_parts();
 
   if( remove_part("LASTUSED") )
@@ -3505,6 +3560,39 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     m_peakFitDetPrefs.reset();
   }
+
+  // The detector's physical shape, if the sender had one.  Absent for every URL made before this
+  //  existed, and by an older build that dropped it in its shortening cascade - so a missing key
+  //  is simply a DRF that does not know its shape, never an error.
+  m_geometry.reset();
+  if( parts.count("DETGEOM") )
+  {
+    try
+    {
+      const vector<uint8_t> deflated = AppUtils::base32_decode( parts["DETGEOM"] );
+      if( deflated.empty() )
+        throw runtime_error( "empty payload" );
+      
+      string xml;
+      vector<uint8_t> mutable_copy( deflated );  //deflate_decompress takes a non-const pointer
+      SpecUtils::deflate_decompress( mutable_copy.data(), mutable_copy.size(), xml );
+      
+      // `GeometryDescriptor::from_xml_string` throws rapidxml::parse_error for malformed XML,
+      //  which derives from std::exception but NOT std::runtime_error - so catch broadly.
+      ceelo::GeometryDescriptor descriptor = ceelo::GeometryDescriptor::from_xml_string( xml );
+      
+      // The codec is fully permissive: "<CeeLoGeometry><Detector/></CeeLoGeometry>" parses into a
+      //  nonsense descriptor.  A shape we cannot use is worse than none, but the efficiency curve
+      //  is still worth having, so drop the geometry rather than failing the whole import.
+      if( descriptor.problems().empty() )
+        m_geometry = make_shared<const ceelo::GeometryDescriptor>( std::move(descriptor) );
+      else
+        cerr << "fromAppUrl: ignoring unusable detector geometry" << endl;
+    }catch( std::exception &e )
+    {
+      cerr << "fromAppUrl: failed to decode detector geometry (" << e.what() << ") - ignoring" << endl;
+    }
+  }//if( parts.count("DETGEOM") )
 
   // `toAppUrl` url-encodes "TEFE" after DetectorEfficiencyCurve::toUrlParts writes it, so undo
   //  that here - fromUrlParts takes the formula verbatim.

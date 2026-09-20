@@ -3595,6 +3595,174 @@ BOOST_AUTO_TEST_CASE( test_parse_from_app_url_accepts_qr_uri )
 }//test_parse_from_app_url_accepts_qr_uri
 
 
+namespace
+{
+  /** A coaxial HPGe: fillet, rounded bore, dead layer, two Al layers - the richest shape the
+   descriptor supports, so the URL round trip has something to lose.
+   */
+  ceelo::GeometryDescriptor hpge_coax_geometry()
+  {
+    ceelo::LayerSpec can;
+    can.material_index = 1;
+    can.front_thickness_cm = 0.15;
+    can.side_thickness_cm = 0.15;
+    can.z_start_cm = 0.0;
+    can.z_end_cm = 6.0;
+
+    ceelo::GeometryDescriptor gd;
+    gd.set_dimensions( ceelo::CylinderDims{ 3.0, 6.0 } );
+    gd.materials = { ceelo::MaterialSpec::from( ceelo::make_HPGe() ),
+                     ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+    gd.crystal_material_index = 0;
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = ceelo::BoreHoleConfig{ 0.5, 5.0, true };
+    gd.dead_layer = ceelo::DeadLayerConfig{ 0.07, 0.07, 0.0 };
+    gd.layers.push_back( can );
+    return gd;
+  }
+
+  std::shared_ptr<DetectorPeakResponse> plain_hpge_drf( const string &name )
+  {
+    const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+    auto drf = make_shared<DetectorPeakResponse>( name, "url geometry test" );
+    drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 6.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setFwhmCoefficients( { 1.0f, 0.02f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+    return drf;
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_base32_round_trip )
+{
+  cout << "\n\nTesting base32 codec..." << endl;
+
+  // Every length modulo 5 exercises a different trailing partial group.
+  for( size_t len = 0; len < 64; ++len )
+  {
+    vector<uint8_t> data( len );
+    for( size_t i = 0; i < len; ++i )
+      data[i] = static_cast<uint8_t>( (i*37 + len*11) & 0xFF );
+
+    const string encoded = AppUtils::base32_encode( data );
+
+    // Alphabet must be QR-alphanumeric and need no url-escaping - that is the whole reason we are
+    //  not using base45 or base64url here.
+    for( const char c : encoded )
+      BOOST_REQUIRE_MESSAGE( ((c >= 'A') && (c <= 'Z')) || ((c >= '2') && (c <= '7')),
+                             "base32 emitted '" << c << "', which is outside its alphabet" );
+
+    const vector<uint8_t> decoded = AppUtils::base32_decode( encoded );
+    BOOST_REQUIRE_EQUAL( decoded.size(), data.size() );
+    BOOST_CHECK( decoded == data );
+  }//for( size_t len = 0; len < 64; ++len )
+
+  // Lower-case is accepted...
+  BOOST_CHECK( AppUtils::base32_decode("mzxw6") == AppUtils::base32_decode("MZXW6") );
+
+  // ...but junk is not.
+  BOOST_CHECK_THROW( AppUtils::base32_decode("MZXW1"), std::runtime_error );   //'1' not in alphabet
+  BOOST_CHECK_THROW( AppUtils::base32_decode("A"), std::runtime_error );       //impossible length
+  BOOST_CHECK_THROW( AppUtils::base32_decode("ABC"), std::runtime_error );     //impossible length
+}//test_base32_round_trip
+
+
+/** The point of the feature: a detector that knows its shape keeps it through a QR code, so the
+ receiver can re-run the Monte-Carlo characterization instead of starting from a flat disk.
+ */
+BOOST_AUTO_TEST_CASE( test_url_geometry_round_trip )
+{
+  cout << "\n\nTesting detector geometry survives the app-URL..." << endl;
+
+  auto drf = plain_hpge_drf( "GeomDet" );
+  const ceelo::GeometryDescriptor gd = hpge_coax_geometry();
+  BOOST_REQUIRE( gd.problems().empty() );
+  drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( gd ) );
+  BOOST_REQUIRE( drf->geometry() );
+
+  const string url = drf->toAppUrl();
+  BOOST_REQUIRE_MESSAGE( url.find("DETGEOM=") != string::npos, "the geometry is not in the URL" );
+  cout << "  URL with geometry: " << url.size() << " chars" << endl;
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+
+  BOOST_REQUIRE_MESSAGE( restored->geometry(), "the geometry did not survive the round trip" );
+  BOOST_CHECK_EQUAL( restored->geometry()->to_xml_string(), gd.to_xml_string() );
+
+  // Identity is preserved: computeHash folds the geometry XML in, and the URL carries the hash.
+  BOOST_CHECK_MESSAGE( restored->hashValue() == drf->hashValue(),
+                       "a geometry round trip changed the DRF's identity: " << drf->hashValue()
+                       << " -> " << restored->hashValue() );
+
+  // ...and the hash the receiver ends up with is one it could have computed itself.
+  auto recomputed = make_shared<DetectorPeakResponse>( *restored );
+  recomputed->setGeometry( make_shared<const ceelo::GeometryDescriptor>( *restored->geometry() ) );
+  BOOST_CHECK_MESSAGE( recomputed->hashValue() == restored->hashValue(),
+                       "the transmitted hash does not describe the DRF that was rebuilt" );
+
+  // The whole thing still fits a QR code, alphanumerically.
+  const string qr = drf->toAppUrlQr();
+  const string qr_alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  for( const char c : qr )
+    BOOST_REQUIRE_MESSAGE( qr_alnum.find(c) != string::npos,
+                           "geometry-carrying QR URI has non-alphanumeric '" << c << "'" );
+  cout << "  QR URI with geometry: " << qr.size() << " chars" << endl;
+}//test_url_geometry_round_trip
+
+
+/** A URL with no geometry key - every URL made before this existed - must still import, and must
+ leave the DRF saying it does not know its shape rather than inventing one.
+ */
+BOOST_AUTO_TEST_CASE( test_url_without_geometry_key_imports )
+{
+  cout << "\n\nTesting a URL with no geometry still imports..." << endl;
+
+  auto drf = plain_hpge_drf( "NoGeomDet" );
+  const string url = drf->toAppUrl();
+  BOOST_REQUIRE( url.find("DETGEOM=") == string::npos );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK( !restored->geometry() );
+  BOOST_CHECK( restored->isValid() );
+
+  // A DRF object being reused must not keep a geometry from a previous decode.
+  restored->setGeometry( make_shared<const ceelo::GeometryDescriptor>( hpge_coax_geometry() ) );
+  BOOST_REQUIRE( restored->geometry() );
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK_MESSAGE( !restored->geometry(),
+                       "decoding a geometry-less URL left a stale geometry on the DRF" );
+}//test_url_without_geometry_key_imports
+
+
+/** A malformed geometry payload costs the shape, not the detector.  The efficiency curve is the
+ part the user actually needs.
+ */
+BOOST_AUTO_TEST_CASE( test_url_bad_geometry_is_ignored )
+{
+  cout << "\n\nTesting a corrupt geometry payload does not fail the import..." << endl;
+
+  auto drf = plain_hpge_drf( "CorruptGeom" );
+  drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( hpge_coax_geometry() ) );
+
+  string url = drf->toAppUrl();
+  const string::size_type pos = url.find( "DETGEOM=" );
+  BOOST_REQUIRE( pos != string::npos );
+
+  // Corrupt the payload without changing its length, so it is still well-formed base32.
+  url[pos + 10] = (url[pos + 10] == 'A') ? 'B' : 'A';
+  url[pos + 11] = (url[pos + 11] == 'A') ? 'B' : 'A';
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK_MESSAGE( restored->isValid(), "a corrupt geometry cost us the whole detector" );
+  BOOST_CHECK( !restored->geometry() );
+}//test_url_bad_geometry_is_ignored
+
+
+
 
 /** A `<CeeLoGeometry>` element is version-7 content, so a DRF that carries one must not declare an
  older format version - a reader that gates v7 features on the declared version would drop exactly

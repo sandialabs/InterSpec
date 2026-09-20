@@ -3004,8 +3004,18 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     try
     {
       const string url = m_detector->toAppUrlQr();
-      QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
+      SimpleDialog *dialog = QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
                                  WString::fromUTF8(m_detector->description()) );
+
+      // The URL carries the detector's shape, but a Monte-Carlo response is ~17 KB deflated - far
+      //  past any QR code - so say so rather than letting the recipient believe they received the
+      //  characterized detector.
+      if( dialog && m_detector->ceeloResponse() )
+      {
+        WText *note = dialog->contents()->addNew<WText>( WString::tr("ds-qr-no-mc-note") );
+        note->addStyleClass( "DrfQrNoMcNote" );
+        note->setInline( false );
+      }
     }catch( std::exception &e )
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -3068,7 +3078,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> inputdrfs,
                                        WString mainMsgHtml,
                                        string creditsHtml,
-                                       std::function<void()> saveDrfsCallBack )
+                                       std::function<void()> saveDrfsCallBack,
+                                       std::function<void(shared_ptr<DetectorPeakResponse>)> onAcceptedCallBack )
 {
   wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
   
@@ -3290,6 +3301,10 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
         DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
       } ) );
     }//if( m_defaultForDetectorModel and is checked )
+    
+    // Last, so any follow-up the caller offers is on top of a detector already in use and saved.
+    if( onAcceptedCallBack )
+      onAcceptedCallBack( drf );
   } );
   
   if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
@@ -3329,7 +3344,43 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
     
     assert( drf->isValid() );
     
-    DrfSelect::createChooseDrfDialog( {drf}, "DRF received from external program.", "" );
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
+      interspec->useMessageResourceBundle( "DrfSelect" );
+    
+    // A URL never carries a Monte-Carlo response (far too large for a QR code), so a DRF that
+    //  arrives knowing its shape is one the user can finish characterizing - offer to.
+    const bool geom_only = (drf->geometry() && !drf->ceeloResponse());
+    
+    const WString msg = WString::tr( geom_only ? "ds-url-drf-geom-only" : "ds-url-drf-received" );
+    
+    std::function<void(shared_ptr<DetectorPeakResponse>)> on_accept;
+    if( geom_only )
+    {
+      on_accept = []( shared_ptr<DetectorPeakResponse> accepted ){
+        if( !accepted )
+          return;
+        
+        SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("ds-url-mc-title"),
+                                                                WString::tr("ds-url-mc-body") );
+        WPushButton *gen = dialog->addButton( WString::tr("ds-url-mc-generate") );
+        dialog->addButton( WString::tr("ds-url-mc-later") );
+        
+        // Resolve InterSpec when the button runs rather than capturing it - this dialog outlives
+        //  the call that made it.
+        gen->clicked().connect( gen, [accepted](){
+          InterSpec *viewer = InterSpec::instance();
+          if( !viewer )
+            return;
+          
+          DrfModifyWindow *window = viewer->showDrfModifyWindow( accepted );
+          if( window && window->tool() )
+            window->tool()->showGeometryTab();
+        } );
+      };
+    }//if( geom_only )
+    
+    DrfSelect::createChooseDrfDialog( {drf}, msg, "", nullptr, on_accept );
   }catch( std::exception &e )
   {
     wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();

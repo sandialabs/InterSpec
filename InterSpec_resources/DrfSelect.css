@@ -278,3 +278,19 @@ div.RelEffFile select
   text-decoration: line-through;
   border-style: dashed;
 }
+
+
+/* The "shape but not the characterization" caveat under a shared DRF's QR code. */
+.DrfQrNoMcNote
+{
+  display: block;
+  clear: both;             /* the copy-url and SVG links either side of it are floated */
+  margin: 10px 10px 0px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--interspec-label-color);
+  max-width: 34em;
+  text-align: left;
+  font-size: x-small;
+  color: var(--interspec-label-color);
+  opacity: 0.85;
+}

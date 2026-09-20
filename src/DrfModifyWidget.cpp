@@ -2088,6 +2088,13 @@ void DrfModifyWidget::handleModeToggle()
 }//handleModeToggle()
 
 
+void DrfModifyWidget::showGeometryTab()
+{
+  if( m_geomTabItem && m_tabMenu )
+    m_tabMenu->select( m_geomTabItem );
+}//void DrfModifyWidget::showGeometryTab()
+
+
 bool DrfModifyWidget::geometryModeled() const
 {
   return m_geometryModeled;

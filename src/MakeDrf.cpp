@@ -4255,11 +4255,16 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
-  string qr_code;
+  string qr_code, qr_note;
   try
   {
     shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
     assert( drf && drf->isValid() );
+    
+    // The URL carries the detector's shape, but not a Monte-Carlo response - that is orders of
+    //  magnitude past what a QR code holds.  Say so on the sheet.
+    if( drf->ceeloResponse() )
+      qr_note = WString::tr("md-qr-no-mc-note").toUTF8();
     
     const string url = drf->toAppUrlQr();
     
@@ -4290,6 +4295,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   tmplt.bindString("qr-code-title", drfname, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code", qr_code, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-note", qr_note, TextFormat::UnsafeXHTML );
   
   
   tmplt.renderTemplate( output );

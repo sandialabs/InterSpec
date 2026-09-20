@@ -208,6 +208,14 @@ public:
 
   /** Restores a #currentState snapshot; records no undo/redo step of its own. */
   void setState( const std::shared_ptr<const ToolState> &state );
+  
+  /** Selects the "Geom & MC" tab, for an opener that already knows the user came here to
+   characterize a detector - e.g. one just imported from a QR code with a shape but no response.
+   
+   No-op when the tab does not exist (a fixed-geometry DRF has no geometry to model).  Selects by
+   item rather than index on purpose: the indices shift with that tab's presence.
+   */
+  void showGeometryTab();
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;

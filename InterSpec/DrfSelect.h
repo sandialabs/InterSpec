@@ -263,11 +263,14 @@ public:
    @param creditsHtml The HTML to show below the combo-box.
    @param saveDrfsCallBack If non-empty, a checkbox to allow saving DRFs will be shown, and if
           checked when the user accepts dialog, will call this callback.
+   @param onAcceptedCallBack If non-empty, called with the chosen DRF after it has been applied and
+          saved - for a follow-up the caller wants only on its own import path.
    */
   static void createChooseDrfDialog( std::vector<std::shared_ptr<DetectorPeakResponse>> drfs,
                                     Wt::WString mainMsgHtml,
                                     std::string creditsHtml,
-                                    std::function<void()> saveDrfsCallBack = nullptr );
+                                    std::function<void()> saveDrfsCallBack = nullptr,
+                                    std::function<void(std::shared_ptr<DetectorPeakResponse>)> onAcceptedCallBack = nullptr );
   
   /** Checks if file at passed in path is a TSV/CSV file that contains
    coefficients for the exp( c0 + c1*logx + c2*logx^2 + ...) equation.
