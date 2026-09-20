@@ -314,6 +314,17 @@ public:
 
   /** Re-enabling (Flat Disk -> Geometry Modeled) is when the estimate starts to matter. */
   virtual void setDisabled( bool disabled ) override;
+  
+  /** Enables or disables everything the user could edit - the geometry form and the build
+   settings - leaving the run row (its status, progress and Cancel) alone.
+   
+   Used to hold the inputs still while a generation is in flight.  A run captures its geometry and
+   options by value at the start, and neither a settings change nor a geometry edit cancels it or
+   marks its result stale, so without this the run finishes against the old inputs and is accepted
+   while the form shows something else.  Not #setDisabled, which would take the Cancel button with
+   it.
+   */
+  void setEditingEnabled( const bool enabled );
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;

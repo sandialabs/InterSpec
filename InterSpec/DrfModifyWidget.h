@@ -125,6 +125,17 @@ public:
    response is the only thing that can give it one.
    */
   Wt::Signal<bool> &mcResponseAvailable();
+  
+  /** Emitted when a Monte-Carlo run starts or ends, with whether one is now in flight.
+   
+   For an owner with footer buttons that must not act during a run - "Use" would offer to generate
+   a response while the run that would produce it is already going, and then silently do nothing,
+   since only one generation may be in flight at a time.
+   */
+  Wt::Signal<bool> &generatingChanged();
+  
+  /** Whether a Monte-Carlo run is in flight right now. */
+  bool isGenerating() const;
 
   /** Whether the DRF being modified needs a Monte-Carlo response before it can
    be used at all, i.e. it came in with no efficiency curve. */
@@ -594,6 +605,11 @@ protected:
   int m_applyAfterGenerationId;
 
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
+
+  Wt::Signal<bool> m_generatingChanged;
+
+  /** What #m_generatingChanged last reported, so it only fires on a transition. */
+  bool m_wasGenerating;
 
   Wt::WFlags<RenderActions> m_renderFlags;
 

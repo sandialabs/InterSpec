@@ -841,6 +841,7 @@ void MakeMcResponseForDrf::handleMethodChanged()
   m_progress->hide();
   m_cancelBtn->hide();
   m_generating = false;
+  setEditingEnabled( true );   //this path abandons a run without a finish handler
   if( m_progressTimer )
     m_progressTimer->stop();
   if( m_result )
@@ -926,6 +927,32 @@ void MakeMcResponseForDrf::setPrecision( const Precision precision )
   m_precision->setCurrentIndex( static_cast<int>(precision) );
   handlePrecisionChanged();
 }//setPrecision(...)
+
+
+void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
+{
+  // Individually, rather than disabling a parent: the run row must stay live so the user can still
+  //  cancel, and Wt's isEnabled() reports an ancestor's state as the child's.
+  if( m_geometry )
+    m_geometry->setDisabled( !enabled );
+  
+  if( m_method )
+    m_method->setEnabled( enabled );
+  if( m_profile )
+    m_profile->setEnabled( enabled );
+  if( m_precision )
+    m_precision->setEnabled( enabled );
+  if( m_customPrecision )
+    m_customPrecision->setEnabled( enabled );
+  if( m_anchorAngles )
+    m_anchorAngles->setEnabled( enabled );
+  
+  // Deliberately NOT the grounding checkbox: `groundToMeasured()` is defined as
+  //  "enabled and checked", so disabling it here would read back as unchecked - and
+  //  `currentState()` would record that, letting an undo/redo snapshot taken during a run
+  //  silently turn grounding off.  It is one checkbox, and the run has already captured its
+  //  grounding points by the time we get here.
+}//setEditingEnabled(...)
 
 
 void MakeMcResponseForDrf::setOffAxisAnchors( const bool use_off_axis )
@@ -1419,6 +1446,7 @@ bool MakeMcResponseForDrf::startGeneration()
     m_status->setText( WString::tr("mmr-status-transfer-building") );
 
     m_generating = true;   //handleGenerationFinished clears it, as for the MC methods
+    setEditingEnabled( false );
     wApp->enableUpdates( true );
     WServer::instance()->ioService().boost::asio::io_service::post( worker );
     return true;
@@ -1537,6 +1565,7 @@ bool MakeMcResponseForDrf::startGeneration()
   m_progress->show();
   m_status->setText( WString::tr("mmr-progress-starting").arg( m_nodesTotal ) );
   m_generating = true;
+  setEditingEnabled( false );
   m_progressTimer->start();
 
   wApp->enableUpdates( true );
@@ -1816,6 +1845,7 @@ void MakeMcResponseForDrf::handleGenerationFinished(
     return;  //stale run - a newer run/state owns the UI
 
   m_generating = false;
+  setEditingEnabled( true );
   if( m_progressTimer )
     m_progressTimer->stop();
 

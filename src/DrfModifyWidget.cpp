@@ -233,6 +233,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_seedState( nullptr ),
     m_generateBtn( nullptr ),
     m_generatedFromFingerprint( 0 ),
+    m_wasGenerating( false ),
     m_pendingSeedFingerprint( 0 ),
     m_exportNote( nullptr ),
     m_generateHint( nullptr ),
@@ -850,6 +851,18 @@ Wt::Signal<bool> &DrfModifyWidget::mcResponseAvailable()
   // Only reached when #needsMcResponse, which is false without an MC tool.
   assert( m_mcTool );
   return m_mcTool->validationChanged();
+}
+
+
+Wt::Signal<bool> &DrfModifyWidget::generatingChanged()
+{
+  return m_generatingChanged;
+}
+
+
+bool DrfModifyWidget::isGenerating() const
+{
+  return (m_mcTool && m_mcTool->isGenerating());
 }
 
 
@@ -2590,6 +2603,14 @@ void DrfModifyWidget::updateGenerateButton()
   m_generateBtn->setEnabled( m_geometryModeled && canGen && !running
                              && (!haveResp || responseStale()) );
 
+  // This function is called at every point a run starts or ends, so it is where the transition is
+  //  noticed - an owner gating its own footer buttons (DrfModifyWindow's "Use") listens for it.
+  if( running != m_wasGenerating )
+  {
+    m_wasGenerating = running;
+    m_generatingChanged.emit( running );
+  }
+
   const string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
   if( m_generateHint )
   {
@@ -2750,18 +2771,37 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   WPushButton *use = footer()->addNew<WPushButton>( WString::tr("dmw-use-btn") );
   use->clicked().connect( m_tool, &DrfModifyWidget::requestApply );
 
-  // A DRF with no efficiency curve of its own - a Detector.dat or .detx imported
-  //  for its geometry alone - is not usable until the Monte Carlo has produced
-  //  one.  Hold "Use" closed until it has, rather than letting the dialog be
-  //  dismissed with an invalid detector.
-  if( m_tool->needsMcResponse() )
-  {
-    use->disable();
+  // "Use" has two independent reasons to be closed, so they are combined in one place rather than
+  //  each setting the button and clobbering the other.
+  //
+  // A DRF with no efficiency curve of its own - a Detector.dat or .detx imported for its geometry
+  //  alone - is not usable until the Monte Carlo has produced one.  And while a run is in flight
+  //  there is nothing to apply yet: "Use" would offer to generate a response, and that offer then
+  //  does nothing, since only one generation may run at a time.
+  DrfModifyWidget * const tool = m_tool;
+  const bool needs_mc = tool->needsMcResponse();
+  auto have_resp = make_shared<bool>( !needs_mc );
+
+  auto refresh_use = [use,tool,have_resp](){
+    use->setEnabled( *have_resp && !tool->isGenerating() );
+  };
+
+  if( needs_mc )
     HelpSystem::attachToolTipOn( use, WString::tr("dmw-tt-use-needs-mc"), true );
-    m_tool->mcResponseAvailable().connect( std::bind( [use]( const bool have ){
-      use->setEnabled( have );
+
+  if( needs_mc )
+  {
+    tool->mcResponseAvailable().connect( std::bind( [have_resp,refresh_use]( const bool have ){
+      *have_resp = have;
+      refresh_use();
     }, std::placeholders::_1 ) );
-  }//if( m_tool->needsMcResponse() )
+  }
+
+  tool->generatingChanged().connect( std::bind( [refresh_use]( const bool ){
+    refresh_use();
+  }, std::placeholders::_1 ) );
+
+  refresh_use();
 
   show();
   resizeToFitOnScreen();
