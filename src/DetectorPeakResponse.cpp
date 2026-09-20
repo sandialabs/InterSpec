@@ -331,7 +331,14 @@ namespace
     return answer;
   }//from_url_flt_array(...)
 
-  std::string url_encode( const std::string& url, const std::string &not_allowed, const bool qr_ascii_only )
+  /** Percent-encodes `url`.
+   
+   With `qr_ascii_only`, additionally escapes every character outside the QR "Alphanumeric" set, so
+   the result leaves only "0-9 A-Z * - ." unescaped.  Those, plus the '%' and hex digits the escapes
+   themselves introduce, are all QR-alphanumeric - which lets the whole URI encode at 5.5 bits per
+   character instead of the 8 a byte-mode segment costs.  See #DetectorPeakResponse::toAppUrlQr.
+   */
+  std::string url_encode( const std::string& url, const bool qr_ascii_only )
   {
     auto to_hex = [](int n) -> char {
       return "0123456789ABCDEF"[(n & 0xF)];
@@ -346,12 +353,16 @@ namespace
     {
       unsigned char c = (unsigned char)url[i];
       
-      bool allowable = ((c <= 31) || (c >= 127) || (unsafe_chars.find(c) != std::string::npos));
+      bool escape = ((c <= 31) || (c >= 127) || (unsafe_chars.find(c) != std::string::npos));
       
-      if( qr_ascii_only && allowable )
-        allowable = (qr_ascii_allowed.find(url[i]) != string::npos);
+      // Note this *widens* the escaped set (lower-case, '_', '!', ... are not QR-alphanumeric).
+      //  It used to narrow it, which un-escaped ' ', '%', '+', ':' and '/' and left lower-case
+      //  alone - the exact opposite of what the flag is for - but nothing passed true, so the
+      //  bug never fired.
+      if( qr_ascii_only )
+        escape = escape || (qr_ascii_allowed.find(c) == string::npos);
       
-      if( allowable )
+      if( escape )
         result << '%' << to_hex(c >> 4) << to_hex(c);
       else
         result << (char)c;
@@ -2682,8 +2693,38 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
 
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
 {
+  // Unlike the in-app path (`InterSpec::handleAppUrl` -> `AppUtils::split_uri` ->
+  //  `DrfSelect::handle_app_url_drf`), callers here hand us whatever the user had - a bare query
+  //  string, or the whole URI copied out of a QR code.  Normalize both to the query string that
+  //  `fromAppUrl` documents, so `--drf` on the command line takes either.
+  string query = url_query;
+  SpecUtils::trim( query );
+  
+  for( const string &scheme : { string("interspec://"), string("raddata://") } )
+  {
+    if( SpecUtils::istarts_with( query, scheme ) )
+      query = query.substr( scheme.size() );
+  }
+  
+  // "?" or, from a QR-alphanumeric URI, its escaped form
+  string::size_type q_pos = query.find( '?' );
+  size_t q_len = 1;
+  if( q_pos == string::npos )
+  {
+    q_pos = SpecUtils::ifind_substr_ascii( query, "%3F" );
+    q_len = 3;
+  }
+  
+  if( q_pos != string::npos )
+    query = query.substr( q_pos + q_len );
+  
+  // A QR-alphanumeric URI escapes the separators too; `handleAppUrl` would have undone that for us.
+  if( (query.find('&') == string::npos)
+     && (SpecUtils::ifind_substr_ascii(query, "%26") != string::npos) )
+    query = Wt::Utils::urlDecode( query );
+  
   auto drf = make_shared<DetectorPeakResponse>();
-  drf->fromAppUrl( url_query );
+  drf->fromAppUrl( query );
   assert( drf->isValid() );
   
   return drf;
@@ -2697,22 +2738,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   //  Alphanumeric: Max. 4,296 characters (0–9, A–Z [upper-case only], space, $, %, *, +, -, ., /, :)
   //  Binary/byte:  Max. 2,953 characters (8-bit bytes) (23624 bits)
   //
-  // So we will try to fit the DRF inside of this limitation, by first not changing anything, and
-  // strlen("interspec://drf/specify?") == 24, so we'll round up to 30.
-  const size_t max_binary_num = 2953 - 30;
-  //const size_t max_alpha_num = 4296 - 30;
-  
-  // Currently we are just trying to fit everything in the binary size
-  
-  //*********************************************************************
-  // A note for the future:
-  //  We are actually pretty close to being an QR Alphanumeric code.
-  //  The '&' and '=' would have to be replaced by say like '/' and ':'
-  //  and also the '?' that indicates the query string would have to
-  //  become say '%3F', but we're mostly there.
-  //  Also we would need to change calls to url_encode to be like:
-  //    url_encode(...,"",true);
-  //*********************************************************************
+  // #toAppUrlQr escapes this string so the whole URI is QR-alphanumeric, so the budget that
+  //  applies is the 4,296 one, measured in escaped characters (see `current_url_len`).  Leaves
+  //  strlen("INTERSPEC://DRF/SPECIFY%3F") == 26 for the prefix, rounded up to 30.
+  const size_t max_url_len = 4296 - 30;
   
   
   if( !isValid() )
@@ -2724,10 +2753,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   parts["VER"] = (m_geomType == EffGeometryType::FarFieldAbsolute) ? "2" : "1";
 
   if( !m_name.empty() )
-    parts["NAME"] = url_encode( m_name, "", false );
+    parts["NAME"] = url_encode( m_name, false );
   
   if( !m_description.empty() )
-    parts["DESC"] = url_encode( m_description, "", false );
+    parts["DESC"] = url_encode( m_description, false );
 
   if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
@@ -2768,7 +2797,7 @@ std::string DetectorPeakResponse::toAppUrl() const
       assert( eff.formula().size() );
 
       parts["EFFT"] = "F";
-      parts["EFFE"] = url_encode(eff.formula(), "", false);
+      parts["EFFE"] = url_encode( eff.formula(), false );
       break;
     }
 
@@ -2871,7 +2900,7 @@ std::string DetectorPeakResponse::toAppUrl() const
   {
     const string pfp_url = m_peakFitDetPrefs->toUrlQueryParts();
     if( !pfp_url.empty() )
-      parts["PFP"] = url_encode( pfp_url, "", false );
+      parts["PFP"] = url_encode( pfp_url, false );
   }
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = eff.uncertainty();
@@ -2897,16 +2926,56 @@ std::string DetectorPeakResponse::toAppUrl() const
 
     // A formula needs url-encoding, same as "EFFE"
     if( parts.count("TEFE") )
-      parts["TEFE"] = url_encode( parts["TEFE"], "", false );
+      parts["TEFE"] = url_encode( parts["TEFE"], false );
   }//if( m_totalEfficiency )
 
+  // The length that matters is the one that goes into the QR code, which is what #toAppUrlQr
+  //  produces - so count the escaped size, not the raw one.  Keys and '&'/'=' are pure overhead
+  //  here: '&' and '=' cost three characters each once escaped.
   auto current_url_len = [&parts]() -> size_t {
-    size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
+    size_t nchar = parts.size() ? (3 * ((2 * parts.size()) - 1)) : 0;  //the '&' and '=' separators
     for( const auto &p : parts )
-      nchar += p.first.size() + p.second.size();
+      nchar += p.first.size() + url_encode( p.second, true ).size();
     return nchar;
   };//current_url_len(...)
 
+  
+  // Escaping costs three characters for every one outside "0-9 A-Z * - .", so prose is 3x its
+  //  length here while coefficients (digits, '.', '-', '*', 'E') are free.  That lets a long
+  //  description swallow the whole budget and push every covariance out of the cascade below -
+  //  so cap its share first.  A description is cosmetic; a covariance is data.
+  //  Truncation is of the *raw* text, on a UTF-8 boundary, then re-encoded - cutting the encoded
+  //  string could leave a dangling "%2" and make the whole URL unparseable.
+  if( parts.count("DESC") )
+  {
+    const size_t max_desc_len = max_url_len / 4;
+    
+    if( url_encode( parts["DESC"], true ).size() > max_desc_len )
+    {
+      string desc = m_description;
+      
+      // Each raw character costs url_encode(url_encode(c,false),true) characters; walk the string
+      //  and keep what fits.
+      size_t used = 0, nbytes = 0;
+      for( size_t i = 0; i < desc.size(); ++i )
+      {
+        const string one( 1, desc[i] );
+        const size_t cost = url_encode( url_encode( one, false ), true ).size();
+        if( (used + cost) > max_desc_len )
+          break;
+        used += cost;
+        nbytes += 1;
+      }//for( size_t i = 0; i < desc.size(); ++i )
+      
+      SpecUtils::utf8_limit_str_size( desc, nbytes );
+      
+      if( desc.empty() )
+        parts.erase( "DESC" );
+      else
+        parts["DESC"] = url_encode( desc, false );
+    }//if( the description is using more than its share )
+  }//if( parts.count("DESC") )
+  
   
   auto combine_parts = [&parts]() -> string {
     string answer;
@@ -2938,15 +3007,15 @@ std::string DetectorPeakResponse::toAppUrl() const
   //  For the DRFs I have, as of 20220408, they all come in under 1000 bytes, so we wont really
   //  usually need to shorten things, but we'll add this code in anyway
   
-  if( current_url_len() < max_binary_num )
+  if( current_url_len() < max_url_len )
     return combine_parts();
   
   // Remove part of URL, and return if now short engough
-  auto remove_part = [&parts,&current_url_len,max_binary_num]( const string &part ) -> bool {
+  auto remove_part = [&parts,&current_url_len,max_url_len]( const string &part ) -> bool {
     if( parts.count(part) )
       parts.erase( part );
     
-    return (current_url_len() < max_binary_num);
+    return (current_url_len() < max_url_len);
   };//remove_part
   
   // The new (20260610) optional additions get dropped before anything that
@@ -3035,6 +3104,24 @@ std::string DetectorPeakResponse::toAppUrl() const
 }//std::string toAppUrl() const
 
 
+std::string DetectorPeakResponse::toAppUrlQr() const
+{
+  // Nayuki's encoder picks one segment mode for the whole text (QrSegment::makeSegments): unless
+  //  every character is QR-alphanumeric it falls back to a single byte-mode segment at 8 bits per
+  //  character instead of 5.5.  So the scheme is upper-cased and the '?' is written "%3F" - both
+  //  are undone by the single `Wt::Utils::urlDecode` that `InterSpec::handleAppUrl` does before
+  //  `AppUtils::split_uri` ever sees the URI, and `split_uri`/`query_str_key_values` match the
+  //  host and path case-insensitively.
+  //
+  // That same decode is why the query is escaped here rather than by the callers: it removes
+  //  exactly one layer, so this must add exactly one.  `toAppUrl` percent-encodes individual
+  //  values already, and escaping again is what turns that inner "%20" into "%2520" so it survives
+  //  as "%20" - which is the form `fromAppUrl` expects.  Older builds therefore read this URI
+  //  unchanged, and a URI from an older build still reads here.
+  return "INTERSPEC://DRF/SPECIFY%3F" + url_encode( toAppUrl(), true );
+}//std::string toAppUrlQr() const
+
+
 void DetectorPeakResponse::fromAppUrl( std::string url_query )
 {
   map<string,string> parts = AppUtils::query_str_key_values( url_query );
@@ -3069,10 +3156,14 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   if( parts.count("DESC") )
     desc = parts["DESC"];
 
-  SpecUtils::ireplace_all( name, "%20", " " );
+  // `toAppUrl` url-encodes these, so undo the whole encoding rather than just the spaces.  Only
+  //  "%20" used to be undone, which meant a detector named "Det A&B" came back called
+  //  "Det A%26B" - and a name is hashed, so it came back a different detector too.  Decoding is
+  //  backward compatible: "%20" still becomes a space, every other escape now also survives.
+  name = Wt::Utils::urlDecode( name );
   SpecUtils::trim( name );
 
-  SpecUtils::ireplace_all( desc, "%20", " " );
+  desc = Wt::Utils::urlDecode( desc );
   SpecUtils::trim( desc );
 
   if( parts.count("FIXGEOM") )
@@ -3189,7 +3280,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( !parts.count("EFFE") )
       throw runtime_error( "fromAppUrl: missing required EFFE component for Eff Eqn" );
     
-    eqn = parts["EFFE"];
+    // url-encoded by `toAppUrl` - a formula is full of characters that are not URL-safe ('+',
+    //  '/', '^'), so without this the expression handed to FormulaWrapper is still escaped.
+    eqn = Wt::Utils::urlDecode( parts["EFFE"] );
     
     try
     {
@@ -3412,6 +3505,11 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     m_peakFitDetPrefs.reset();
   }
+
+  // `toAppUrl` url-encodes "TEFE" after DetectorEfficiencyCurve::toUrlParts writes it, so undo
+  //  that here - fromUrlParts takes the formula verbatim.
+  if( parts.count("TEFE") )
+    parts["TEFE"] = Wt::Utils::urlDecode( parts["TEFE"] );
 
   // Optional total efficiency ("TEFT"/etc keys); returns nullptr if absent.
   //  (The full-energy efficiency uncertainty was applied to m_efficiency above.)

@@ -565,15 +565,31 @@ public:
              uncertainties, FWHM info, and finally name
    - Admit failure and throw an exception.
    
-   In the future it may be implemented that the description is only cut down as much as needed,
-   or all characters converted to QR-ascii so the available number of characters is larger.
+   An over-long description is trimmed to a quarter of the budget before any of the above, so
+   that prose cannot cost the DRF its covariances.
    
-   The returned string is url-encoded - unlike the `toAppUrl()` function of other classes; this
-   is to allow the returned string to be represented as a ASCII-mode QR code.
+   Individual *values* are url-encoded - unlike the `toAppUrl()` function of other classes - but
+   the "&" and "=" separators are not, so the result is the canonical query string that
+   #fromAppUrl accepts.  Use #toAppUrlQr to get the form that actually goes into a QR code.
    
    If this DRF is not valid, will throw an exception.
    */
   std::string toAppUrl() const;
+  
+  /** Returns the complete app-URI for this DRF, escaped so that every character is in the QR
+   "Alphanumeric" set - i.e. "INTERSPEC://DRF/SPECIFY%3F" followed by an escaped #toAppUrl.
+   
+   Encoding a QR code from this rather than from a lower-case "interspec://..." string is worth
+   about a third of the code's bits, because the encoder picks one segment mode for the whole
+   text and a single non-alphanumeric character forces all of it into byte mode.
+   
+   This is the *only* thing that should be handed to `QrCode::displayTxtAsQrCode` or
+   `QrCode::utf8_string_to_svg_qr` for a DRF; in particular do not url-encode the result again,
+   since `InterSpec::handleAppUrl` removes exactly one layer of escaping.
+   
+   If this DRF is not valid, will throw an exception.
+   */
+  std::string toAppUrlQr() const;
   
   /** Decodes the "query" portion of a URL to form the DRF.
    

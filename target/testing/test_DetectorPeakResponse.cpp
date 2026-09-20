@@ -63,8 +63,11 @@
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
+
+#include <Wt/Utils.h>
 
 using namespace std;
 
@@ -3436,6 +3439,161 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_preserves_identity )
 
   cout << "URL round-trip identity passed" << endl;
 }//test_url_roundtrip_preserves_identity
+
+
+/** The QR "Alphanumeric" mode holds 5.5 bits per character where byte mode costs 8, and Nayuki's
+ encoder (QrSegment::makeSegments) picks one mode for the *whole* text - so a single character
+ outside this set pushes the entire DRF into byte mode.  `toAppUrlQr` therefore has to escape
+ everything, including the lower-case in the scheme and in the detector's own name.
+ */
+BOOST_AUTO_TEST_CASE( test_url_qr_is_alphanumeric )
+{
+  cout << "\n\nTesting DRF QR URI is entirely QR-alphanumeric..." << endl;
+
+  const string qr_alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+
+  // Names/descriptions chosen to exercise the characters that break either the QR charset or the
+  //  query grammar: lower-case, space, '&', '=', '%', '+', '/' and non-ASCII.
+  const vector<pair<string,string>> names = {
+    { "Detective X", "a plain name with a space" },
+    { "Det A&B=C", "separators that would otherwise split the query" },
+    { "100% efficient", "a literal percent sign" },
+    { "a+b/c:d", "the QR-alphanumeric punctuation that is still URL-unsafe" },
+    { "D\xc3\xa9tecteur \xc3\xa0 germanium", "non-ASCII UTF-8" }
+  };
+
+  for( const pair<string,string> &nd : names )
+  {
+    auto drf = make_shared<DetectorPeakResponse>( nd.first, nd.second );
+    drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+
+    string qr;
+    BOOST_REQUIRE_NO_THROW( qr = drf->toAppUrlQr() );
+
+    BOOST_CHECK_MESSAGE( SpecUtils::istarts_with( qr, "INTERSPEC://DRF/SPECIFY%3F" ),
+                         "QR URI does not start with the escaped app-URI prefix: "
+                         << qr.substr(0, 40) );
+
+    string offenders;
+    for( const char c : qr )
+    {
+      if( qr_alnum.find(c) == string::npos )
+        offenders += c;
+    }
+
+    BOOST_CHECK_MESSAGE( offenders.empty(),
+                         "'" << nd.first << "' produced a QR URI with non-alphanumeric character(s) '"
+                         << offenders << "' - the whole code falls back to byte mode" );
+  }//for( const pair<string,string> &nd : names )
+}//test_url_qr_is_alphanumeric
+
+
+/** Walks the exact path a scanned QR code takes in the app: `InterSpec::handleAppUrl` url-decodes
+ the whole URI once, `AppUtils::split_uri` splits it, and `DrfSelect::handle_app_url_drf` hands the
+ query to `fromAppUrl`.  The escaping `toAppUrlQr` adds must be precisely the one layer that decode
+ removes - one too few and the '&' separators arrive already split, one too many and every value
+ keeps a stray "%25".
+ */
+BOOST_AUTO_TEST_CASE( test_url_qr_matches_app_dispatch_path )
+{
+  cout << "\n\nTesting DRF QR URI survives the app's decode path..." << endl;
+
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+  auto drf = make_shared<DetectorPeakResponse>( "Det A&B", "50% eff, 2 m\xc2\xb3 crystal" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+
+  const string qr = drf->toAppUrlQr();
+
+  // 1) What InterSpec::handleAppUrl does first.
+  const string decoded = Wt::Utils::urlDecode( qr );
+
+  // 2) The one decode must land exactly on the canonical query string.
+  BOOST_CHECK_EQUAL( decoded, "INTERSPEC://DRF/SPECIFY?" + drf->toAppUrl() );
+
+  // 3) AppUtils::split_uri matches host/path case-insensitively, so the upper-casing is safe.
+  string host, path, query, frag;
+  AppUtils::split_uri( decoded, host, path, query, frag );
+  BOOST_CHECK( SpecUtils::iequals_ascii( host, "drf" ) );
+  BOOST_CHECK( SpecUtils::iequals_ascii( path, "specify" ) );
+  BOOST_REQUIRE( !query.empty() );
+
+  // 4) ...and the query that falls out is the one fromAppUrl documents.
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( query ) );
+
+  BOOST_CHECK_EQUAL( restored->name(), drf->name() );
+  BOOST_CHECK_EQUAL( restored->description(), drf->description() );
+  BOOST_CHECK_MESSAGE( restored->hashValue() == drf->hashValue(),
+                       "a QR round trip changed the DRF's identity: " << drf->hashValue()
+                       << " -> " << restored->hashValue() );
+
+  // The whole point of the exercise: the QR payload is alphanumeric, so it is 5.5 bits per
+  //  character rather than 8.  Report both so a regression is visible in the log.
+  cout << "  QR URI: " << qr.size() << " chars alphanumeric = " << ((qr.size()*11 + 1)/2)
+       << " bits (byte mode would be " << (8*qr.size()) << ")" << endl;
+}//test_url_qr_matches_app_dispatch_path
+
+
+/** URLs made by shipped builds - and the examples in the FAQ - are bare "KEY=value&..." queries.
+ Nothing about going QR-alphanumeric may stop those being read.
+ */
+BOOST_AUTO_TEST_CASE( test_url_legacy_query_still_reads )
+{
+  cout << "\n\nTesting a pre-existing DRF URL still imports..." << endl;
+
+  const string legacy = "VER=1&NAME=Legacy%20Det&DESC=made%20by%20an%20older%20build"
+                        "&DIAM=7.62&EFFT=E&EFFC=-5.2*0.83*-0.21&FWHMT=GAD&FWHMC=2.1*0.031*0"
+                        "&LOWE=50&HIGHE=3000&ORIGIN=0";
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( drf->fromAppUrl( legacy ) );
+
+  BOOST_CHECK( drf->isValid() );
+  BOOST_CHECK_EQUAL( drf->name(), "Legacy Det" );
+  BOOST_CHECK_EQUAL( drf->description(), "made by an older build" );
+  BOOST_CHECK( drf->hasResolutionInfo() );
+
+  // And the static helper takes it too, since that is what the batch "--drf" option uses.
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::parseFromAppUrl( legacy ) );
+}//test_url_legacy_query_still_reads
+
+
+/** `--drf` on the command line gets whatever the user pasted, which is as likely to be the whole
+ URI off a QR code as the bare query.
+ */
+BOOST_AUTO_TEST_CASE( test_parse_from_app_url_accepts_qr_uri )
+{
+  cout << "\n\nTesting parseFromAppUrl accepts a full QR URI..." << endl;
+
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f };
+  auto drf = make_shared<DetectorPeakResponse>( "PasteMe", "from a QR code" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // Each of the three forms a user could plausibly hand us.
+  const string bare_query = drf->toAppUrl();
+  const string qr_uri     = drf->toAppUrlQr();
+  const string plain_uri  = "interspec://drf/specify?" + bare_query;
+
+  for( const string &form : { bare_query, qr_uri, plain_uri } )
+  {
+    shared_ptr<DetectorPeakResponse> parsed;
+    BOOST_REQUIRE_NO_THROW( parsed = DetectorPeakResponse::parseFromAppUrl( form ) );
+    BOOST_REQUIRE( parsed );
+    BOOST_CHECK_EQUAL( parsed->name(), drf->name() );
+    BOOST_CHECK_MESSAGE( parsed->hashValue() == drf->hashValue(),
+                         "identity lost parsing form: " << form.substr(0,32) );
+  }
+}//test_parse_from_app_url_accepts_qr_uri
+
 
 
 /** A `<CeeLoGeometry>` element is version-7 content, so a DRF that carries one must not declare an

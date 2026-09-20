@@ -3003,7 +3003,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
     try
     {
-      const string url = "interspec://drf/specify?" + Wt::Utils::urlEncode(m_detector->toAppUrl());
+      const string url = m_detector->toAppUrlQr();
       QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
                                  WString::fromUTF8(m_detector->description()) );
     }catch( std::exception &e )

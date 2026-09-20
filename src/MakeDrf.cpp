@@ -4261,7 +4261,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
     shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
     assert( drf && drf->isValid() );
     
-    const string url = "interspec://drf/specify?" + drf->toAppUrl();
+    const string url = drf->toAppUrlQr();
     
     tuple<std::string,int,QrCode::ErrorCorrLevel> qr_and_size
               = QrCode::utf8_string_to_svg_qr( url, QrCode::ErrorCorrLevel::About30Percent, 5 );
