@@ -9378,9 +9378,6 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
 {
   if( m_drfModifyWindow )
   {
-    m_drfModifyWindow->show();
-    m_drfModifyWindow->centerWindowHeavyHanded();
-
     // The open window is editing whatever DRF it was constructed with, and this function cannot
     //  re-seat it - so a caller asking for a *different* detector must be refused rather than
     //  silently handed the wrong one.  The app-URL import then drives
@@ -9389,6 +9386,8 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
     //  Refusing costs nothing: no window is created or destroyed, so no lifetime rule is touched.
     //  Closing and reopening would be worse - it discards whatever the user had typed, and kills an
     //  in-flight characterization, from a path they never associated with this dialog.
+    //  Checked before showing: a refused request must leave the window exactly as it was, rather
+    //  than pull an unrelated dialog to the front of whatever the user was doing.
     const DrfModifyWidget * const open_tool = m_drfModifyWindow->tool();
     const shared_ptr<const DetectorPeakResponse> open_drf = open_tool ? open_tool->originalDrf()
                                                                       : nullptr;
@@ -9399,6 +9398,9 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
       passMessage( WString::tr("app-drf-modify-already-open"), WarningWidget::WarningMsgHigh );
       return nullptr;
     }
+
+    m_drfModifyWindow->show();
+    m_drfModifyWindow->centerWindowHeavyHanded();
 
     return m_drfModifyWindow.get();
   }//if( m_drfModifyWindow )

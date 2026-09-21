@@ -286,14 +286,18 @@ namespace
 
     // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
     //    >10 keV (CZT ~2%, LaBr ~3%, NaI ~7%), so the gap is wide and a loose threshold is safe.
+    //
+    //    A not-HPGe answer is not the end of the search: the FWHM alone does not separate the
+    //    scintillators, but tier 4 below may still name one.  It only vetoes tier 4 answering
+    //    HPGe, since a measured resolution outranks a recorded preference.
+    bool fwhm_says_not_hpge = false;
     if( drf && drf->hasResolutionInfo() )
     {
       const float fwhm = drf->peakResolutionFWHM( 661.7f );
       if( (fwhm > 0.0f) && (fwhm < 5.0f) )
         return crystal_index_from_text( "HPGe" );
 
-      if( fwhm > 0.0f )
-        return -1;   //resolved as not-HPGe, but not which scintillator
+      fwhm_says_not_hpge = (fwhm > 0.0f);
     }//if( drf && drf->hasResolutionInfo() )
 
     // 4) The DRF's own peak-fit preferences, when it recorded a detector type.
@@ -309,7 +313,9 @@ namespace
     {
       switch( prefs->m_det_type )
       {
-        case PeakFitUtils::CoarseResolutionType::High: return crystal_index_from_text( "HPGe" );
+        // The DRF's measured resolution wins over what it recorded as its type
+        case PeakFitUtils::CoarseResolutionType::High:
+          return fwhm_says_not_hpge ? -1 : crystal_index_from_text( "HPGe" );
         case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
         case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
 
@@ -1277,9 +1283,10 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
   //  geometry really is incomplete, and the note below says what is missing.
   m_dim2->setText( "" );
 
-  int crystal = crystal_index_from_text( crystal_hint );
-  if( crystal < 0 )
-    crystal = crystal_index_from_resolution( nullptr );
+  // Only the hint can name a crystal here; there is no DRF to read a resolution from (that is
+  //  what `seedFromDrf` is for).  When it names nothing, the combo keeps its default and the
+  //  note below asks the user to check it.
+  const int crystal = crystal_index_from_text( crystal_hint );
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 

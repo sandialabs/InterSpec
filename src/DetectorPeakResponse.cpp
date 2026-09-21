@@ -2708,15 +2708,33 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( con
       query = query.substr( scheme.size() );
   }
   
-  // "?" or, from a QR-alphanumeric URI, its escaped form
+  // "?" or, from a QR-alphanumeric URI, its escaped form.
+  //
+  // Only the separator between path and query is meant.  A '?' is in the escaped set, and the
+  //  free-text fields (name, description) routinely hold one, so a bare query string can contain
+  //  "%3F" inside a *value* - taking that as the separator would silently drop every field ahead
+  //  of it.  What tells the two apart is that everything before a real separator is host/path,
+  //  which carries no key/value punctuation.
   string::size_type q_pos = query.find( '?' );
   size_t q_len = 1;
   if( q_pos == string::npos )
   {
-    q_pos = SpecUtils::ifind_substr_ascii( query, "%3F" );
-    q_len = 3;
-  }
-  
+    const string::size_type esc_pos = SpecUtils::ifind_substr_ascii( query, "%3F" );
+    if( esc_pos != string::npos )
+    {
+      const string before = query.substr( 0, esc_pos );
+      const bool has_kv = (before.find('&') != string::npos)
+                          || (before.find('=') != string::npos)
+                          || (SpecUtils::ifind_substr_ascii(before, "%26") != string::npos)
+                          || (SpecUtils::ifind_substr_ascii(before, "%3D") != string::npos);
+      if( !has_kv )
+      {
+        q_pos = esc_pos;
+        q_len = 3;
+      }
+    }//if( esc_pos != string::npos )
+  }//if( no literal '?' )
+
   if( q_pos != string::npos )
     query = query.substr( q_pos + q_len );
   
