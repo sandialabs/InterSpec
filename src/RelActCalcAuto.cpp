@@ -3426,7 +3426,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         // Putting a narrow window first is numerically destructive in two ways: the remaining
         // fractions become differences of nearly-equal numbers, and the stick/hinge radius - a
         // fraction of the window width - collapses onto a scale where the hinge corner sits right
-        // where the fit lives.  Concretely, the "HPGe U inside U" preset constrains U-234 to a 1e-2
+        // where the fit lives.  Concretely, the "Multi-enrich U - back higher" preset constrains U-234 to a 1e-2
         // window and U-232 to 3e-6; with U-232 carrying, that fixture fits at chi2/dof 33.4 instead
         // of 0.78.  Widest-first also guarantees the general invariant: the conditional interval at
         // every later step is at least as wide as that step's own window, so no window is ever
@@ -23797,7 +23797,7 @@ void RelActAutoSolution::compute_curve_separation_metrics()
               //  an activity (see the block setup and the ROI warm transfer, which both special-case
               //  it).  The correlation is still a real statement about how the two curves trade this
               //  source off, so report it - but do not label it "Act(...)", which reads as an
-              //  activity correlation.  The shipped "HPGe U inside U" preset constrains three
+              //  activity correlation.  The shipped "Multi-enrich U - back higher" preset constrains three
               //  nuclides, so this is the two-disk fixture's normal case, not a corner.
               const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide( src_curve.first );
               const auto is_mass_constrained = [&]( const size_t curve_index ) -> bool {
@@ -27016,7 +27016,7 @@ static RelActAutoSolution merged_null_nuisance_seed( const RelActAutoSolution &s
  physical-model curve when one exists, else the first physical one.
 
  Basing the merge on a shielded (inner) curve loses that curve's external shielding entirely - the
- "HPGe U inside U" preset's inner curve carries no Fe-case external of its own, it inherits it
+ "Multi-enrich U - back higher" preset's inner curve carries no Fe-case external of its own, it inherits it
  through ShieldedByCurves, which the merge clears - which produced a merged model with no Fe case
  and a spuriously huge delta-chi2 even where a single curve is exactly equivalent (stacked
  EQUAL-enrichment objects: homogeneous slab attenuation composes, so one summed-AD slab reproduces

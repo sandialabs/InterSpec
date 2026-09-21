@@ -169,7 +169,7 @@ namespace
 
   RelActCalcAuto::Options load_u_inside_u_options()
   {
-    const string preset = SpecUtils::append_path( g_data_dir, "rel_act/HPGe U inside U.xml" );
+    const string preset = SpecUtils::append_path( g_data_dir, "rel_act/Multi-enrich U - back higher.xml" );
     shared_ptr<RelActCalcAuto::RelActAutoGuiState> state;
     // This load path also exercises the M7 headless-validity fix (the preset used to pair
     //  FwhmForm NotApplicable with a non-Fixed estimation method, which solve() rejects).
@@ -337,7 +337,7 @@ namespace
 
 // First multi-curve regression test (2026-07 review, M8e): the simulated "easy" two-disk case
 //  (1 mm DU front disk, 3 mm 93.3% HEU back disk, both behind 1 g/cm2 Fe; see
-//  test_data/multicurve/README.md) fit with the shipped "HPGe U inside U" preset from DEFAULT seeds
+//  test_data/multicurve/README.md) fit with the shipped "Multi-enrich U - back higher" preset from DEFAULT seeds
 //  must reach the truth basin - this is the M1 seed-attribution fix working end-to-end (before it,
 //  this exact fit crawled a false valley into a solver-budget hard failure).
 //  NOTE: a full two-curve solve - takes a few tens of seconds in Release, several minutes in Debug.
