@@ -48,6 +48,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -171,6 +172,12 @@ public:
     m_interspec = m_app->viewer();
     BOOST_REQUIRE( m_interspec );
 
+    // Each session auto-saves its state into `InterSpecUserData.db` in the CWD and the next
+    //  restores it, so without this a fixture can start with a previous session's spectrum
+    //  already displayed - which makes `InterSpec::userOpenFile` treat the file we want as a
+    //  possible background and only show a dialog no headless test answers.
+    UserPreferences::setPreferenceValue<bool>( "AutoSaveSpectraToDb", false, m_interspec );
+
     // Load the Co56 test spectrum for escape peak tests
     const string test_file = SpecUtils::append_path( g_test_file_dir, "AnalystTests/escape_peak_check_Co56_Shielded_Fulcrum40h.n42" );
     BOOST_REQUIRE( SpecUtils::is_file(test_file) );
@@ -180,6 +187,9 @@ public:
 
     shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
     BOOST_REQUIRE( meas );
+    BOOST_REQUIRE_MESSAGE( meas->filename() == test_file,
+                          "Fixture spectrum was not loaded as the foreground: expected '"
+                          << test_file << "', got '" << meas->filename() << "'" );
   }
 
   ~InterSpecTestFixture()
@@ -350,7 +360,14 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
   m_interspec->userOpenFileFromFilesystem( test_file, test_file );
 
   // Give the app a moment to load the file
-  BOOST_REQUIRE( m_interspec->measurment(SpecUtils::SpectrumType::Foreground) );
+  const shared_ptr<SpecMeas> sum_meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  BOOST_REQUIRE( sum_meas );
+  // The fixture already loaded a different spectrum, so this open can be turned into a
+  //  "is this a background?" prompt and silently skipped, leaving the fixture's spectrum on
+  //  display - which would test the wrong data rather than fail.
+  BOOST_REQUIRE_MESSAGE( sum_meas->filename() == test_file,
+                        "Sum-peak spectrum was not loaded as the foreground: expected '"
+                        << test_file << "', got '" << sum_meas->filename() << "'" );
 
   // Helper lambda to check sum peak results
   auto check_sum_peak = []( const double energy,

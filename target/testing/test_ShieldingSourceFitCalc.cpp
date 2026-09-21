@@ -64,6 +64,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -192,6 +193,15 @@ public:
     // Get the InterSpec viewer instance
     m_interspec = m_app->viewer();
     BOOST_REQUIRE( m_interspec );
+
+    // A fresh fixture is only fresh in C++ terms: each session auto-saves its state into
+    //  `InterSpecUserData.db` in the CWD, and the next session restores it at startup - so without
+    //  this, a test that makes one fixture per file starts each file already displaying the
+    //  previous one's spectrum.  `InterSpec::userOpenFile` then sees a foreground with a different
+    //  UUID but matching instrument id and channel count, decides the new file could be a
+    //  background, and only shows a dialog that no headless test ever answers - leaving the wrong
+    //  spectrum in place while the open still reports success.
+    UserPreferences::setPreferenceValue<bool>( "AutoSaveSpectraToDb", false, m_interspec );
   }
 
   ~InterSpecTestFixture()
@@ -4521,6 +4531,16 @@ BOOST_AUTO_TEST_CASE( ShieldingSourceDisplayGuiRoundTrip )
     shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
     BOOST_CHECK_MESSAGE( meas, "Analyst file '" << n42_filename << "' failed to load into InterSpec - skipping test." );
     if( !meas )
+      continue;
+    
+    // `userOpenFileFromFilesystem` returns true even when it only put up the "is this a
+    //  background?" dialog, so check the file we asked for is actually the one on display.  Without
+    //  this a skipped open silently compares this file's model against whatever was showing, which
+    //  reads as a geometry/distance mismatch rather than as the load failure it is.
+    BOOST_CHECK_MESSAGE( meas->uuid() == specfile.uuid(),
+                        "Analyst file '" << n42_filename << "' was not loaded as the foreground"
+                        " (the open was skipped) - a different spectrum is on display." );
+    if( meas->uuid() != specfile.uuid() )
       continue;
     
     // Verify the measurement has the shielding source model
