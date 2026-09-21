@@ -267,14 +267,23 @@ div.RelEffFile select
   margin: 1px 3px 1px 0px;
   border-radius: 9px;
   font-size: smaller;
-  border: 1px solid var(--interspec-outline-color, #a5b7c8);
-  background: var(--interspec-alt-row-background, #eef3f7);
+  border: 1px solid var(--interspec-border-color, #a5b7c8);
+
+  /* A neutral wash rather than a colour: it darkens a light background and lightens a dark one, so
+     the chip separates from whatever is behind it without needing a theme variable of its own.
+     This used to be `--interspec-alt-row-background`, which no theme defines - so it always took
+     the light fallback while the text followed the theme, leaving white-on-#eef3f7 (1.1:1) in the
+     dark theme.  Only variables `InterSpec::applyColorTheme` actually sets are used here. */
+  background: rgba(128, 128, 128, 0.18);
   color: var(--interspec-text-color, #333);
 }
 
 .DrfContentChips .DrfChipAbsent
 {
-  opacity: 0.45;
+  /* Muted by colour, not by `opacity`: fading the whole chip took its text down with it, which is
+     what made these unreadable rather than merely quiet. */
+  background: rgba(128, 128, 128, 0.07);
+  color: var(--interspec-label-color, #6e6e6e);  /* #767676 measured 4.2:1 here - just under AA */
   text-decoration: line-through;
   border-style: dashed;
 }
