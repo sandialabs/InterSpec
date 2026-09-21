@@ -1503,7 +1503,20 @@ bool MakeMcResponseForDrf::startGeneration()
   // What the run will do, and what each node is predicted to cost: the prior the ETA refines from
   //  the measured rate as nodes land (see refreshProgressText).
   m_runGeometryKey = gd.to_xml_string();
-  const ceelo::ResponseGenerator::NodePlan plan = ceelo::ResponseGenerator::plan_nodes( gd, opts );
+  // plan_nodes() throws on a malformed scan range (e_min_keV <= 0, or e_max_keV not above it).
+  //  generationOptions() cannot currently produce one - both fields keep their defaults - but this
+  //  is an event handler, so an escaping throw would take the session with it.  Not const only
+  //  because the assignment has to happen inside the try.
+  ceelo::ResponseGenerator::NodePlan plan;
+  try
+  {
+    plan = ceelo::ResponseGenerator::plan_nodes( gd, opts );
+  }catch( std::exception &e )
+  {
+    m_status->setText( WString::fromUTF8( e.what() ) );
+    return false;
+  }
+
   const McTimeCalibration *calib
       = (m_calibration && (m_calibration->geometry_key == m_runGeometryKey)) ? m_calibration.get() : nullptr;
   m_nodesTotal = plan.total();
