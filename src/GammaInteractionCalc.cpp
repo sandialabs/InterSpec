@@ -364,11 +364,14 @@ double fep_survival_removal_coefficient( const Material *material, const float e
   //  THICKNESS is deliberately not in the key - it changes every iteration - so the Rayleigh term
   //  below is evaluated per call from the cached material (a ~100-exp sum, cheap).
   //
-  //  The key holds the material's ADDRESS.  That is only safe because every caller passes a
-  //  material owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
-  //  shared_ptr<const Material>), which outlives the fit.  Do NOT call this with a stack temporary:
-  //  a freed material's address can be reused and would silently collide with a stale entry.  The
-  //  density is part of the key as a cheap guard against exactly that.
+  //  The key holds the material's ADDRESS, because this is called per shielding, per energy, per
+  //  chi2 evaluation, and a pointer compare is the cheapest thing there is.  Callers pass materials
+  //  owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
+  //  shared_ptr<const Material>), which outlive the fit - but a freed material's address can later
+  //  be reused by a different material (the GUI mints a fresh copy every time the user edits a
+  //  density, for example), so each entry also records the composition it was computed for, and a
+  //  hit whose composition differs from the caller's is treated as a miss and overwritten.  The
+  //  density is part of the key as well, since the Rayleigh term depends on it.
   struct Key
   {
     const Material *mat; float energy; double window; double density;
@@ -385,6 +388,16 @@ double fep_survival_removal_coefficient( const Material *material, const float e
   {
     double f_win = 0.0;                          ///< in-window Compton fraction (0 if no window)
     std::shared_ptr<const ceelo::Material> mat;  ///< null if CeeLo cannot represent the material
+
+    /// The composition the entry was computed for; guards against address reuse (see above).
+    std::string name;
+    std::vector<Material::ElementFractionPair> elements;
+    std::vector<Material::NuclideFractionPair> nuclides;
+
+    bool isFor( const Material &m ) const
+    {
+      return (name == m.name) && (elements == m.elements) && (nuclides == m.nuclides);
+    }
   };
 
   static std::mutex s_mutex;
@@ -392,20 +405,27 @@ double fep_survival_removal_coefficient( const Material *material, const float e
 
   const Key key{ material, energy, want_window ? window_keV : 0.0, material->density };
 
-  Cached cached;
+  double f_win = 0.0;
+  std::shared_ptr<const ceelo::Material> ceelo_mat;
   bool have_cached = false;
   {
     std::lock_guard<std::mutex> lock( s_mutex );
     const std::map<Key,Cached>::const_iterator pos = s_cache.find( key );
-    if( pos != s_cache.end() )
+    if( (pos != s_cache.end()) && pos->second.isFor( *material ) )
     {
-      cached = pos->second;
+      f_win = pos->second.f_win;
+      ceelo_mat = pos->second.mat;
       have_cached = true;
     }
   }
 
   if( !have_cached )
   {
+    Cached cached;
+    cached.name = material->name;
+    cached.elements = material->elements;
+    cached.nuclides = material->nuclides;
+
     try
     {
       cached.mat = std::make_shared<ceelo::Material>(
@@ -421,8 +441,11 @@ double fep_survival_removal_coefficient( const Material *material, const float e
 
     cached.f_win = std::max( 0.0, std::min( 1.0, cached.f_win ) );
 
+    f_win = cached.f_win;
+    ceelo_mat = cached.mat;
+
     std::lock_guard<std::mutex> lock( s_mutex );
-    s_cache[key] = cached;
+    s_cache[key] = std::move( cached );
   }//if( not cached )
 
   // A sub-process coefficient, summed exactly as transmition_length_coefficient sums.
@@ -437,23 +460,23 @@ double fep_survival_removal_coefficient( const Material *material, const float e
     return mu;
   };
 
-  const double mu_compton = (cached.f_win > 0.0)
+  const double mu_compton = (f_win > 0.0)
                               ? process_mu( MassAttenuation::GammaEmProcces::ComptonScatter ) : 0.0;
 
   // Rayleigh DEFLECTION loss: the fraction h of this layer's coherent scatters that are absorbed
   //  because the deflection lengthened their remaining path, evaluated at the layer's normal
   //  non-Rayleigh depth.  Zero for a thin layer; 0.25 behind 0.5 cm of Fe at 60 keV.
   double mu_rayleigh = 0.0, h_loss = 0.0;
-  if( want_rayleigh && cached.mat )
+  if( want_rayleigh && ceelo_mat )
   {
     mu_rayleigh = process_mu( MassAttenuation::GammaEmProcces::RayleighScatter );
     if( mu_rayleigh > 0.0 )
       h_loss = ceelo::rayleigh_deflection_loss_fraction( energy, mu_total * normal_thickness,
-                                                         *cached.mat );
+                                                         *ceelo_mat );
     h_loss = std::max( 0.0, std::min( 1.0, h_loss ) );
   }
 
-  const double mu_rem = mu_total - cached.f_win*mu_compton + h_loss*mu_rayleigh;
+  const double mu_rem = mu_total - f_win*mu_compton + h_loss*mu_rayleigh;
 
   // The credit is a partial one against mu_total and the loss a partial one of mu_Rayleigh;
   //  anything outside [mu_total - mu_Compton, mu_total + mu_Rayleigh] means the sub-coefficients

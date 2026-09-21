@@ -10123,22 +10123,21 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       throw logic_error( "Number of shieldings changed during fitting - should not happen." );
     
     // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
-    const vector<shared_ptr<const Material>> massfracFitMaterials
-                                           = m_currentFitFcn->materialsFittingMassFracsFor();
-    
     for( size_t shielding_index = 0; shielding_index < nshieldings; ++shielding_index )
     {
       ShieldingSelect *select = gui_shieldings[shielding_index];
       assert( select );
-      
+
       if( select->isGenericMaterial() )
         continue;
-      
+
       shared_ptr<const Material> usrmaterial = select->material();
       if( !usrmaterial )  //e.g., a material shielding with no material selected - just skip it
         continue;
-      
-      const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial);
+
+      // Ask by shielding index, not by material identity: the widget may hold a different Material
+      //  object than the fit started with (e.g., the user edited its density during a live fit).
+      const bool calcFitMassFrac = m_currentFitFcn->hasVariableMassFraction( shielding_index );
       if( calcFitMassFrac != select->fitForAnyMassFractions() )
       {
         throw logic_error( "GUI fit mass fraction for material '" + usrmaterial->name

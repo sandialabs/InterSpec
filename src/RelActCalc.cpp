@@ -718,7 +718,8 @@ void PhysicalModelShieldInput::check_valid() const
 bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
 {
   return (atomic_number == rhs.atomic_number)
-    && (material == rhs.material)
+    && ((!material) == (!rhs.material))
+    && (!material || (*material == *rhs.material))
     && (areal_density == rhs.areal_density)
     && (fit_atomic_number == rhs.fit_atomic_number)
     && (lower_fit_atomic_number == rhs.lower_fit_atomic_number)
@@ -745,8 +746,16 @@ void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs,
   if( !lhs.material != !rhs.material )
     throw runtime_error( "PhysicalModelShieldInput::equalEnough: material being present mismatch" );
   
-  if( lhs.material && (lhs.material->name != rhs.material->name) )
-    throw runtime_error( "PhysicalModelShieldInput::equalEnough: material name mismatch" );
+  if( lhs.material )
+  {
+    try
+    {
+      Material::equalEnough( *lhs.material, *rhs.material );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "PhysicalModelShieldInput::equalEnough: material mismatch: " + string(e.what()) );
+    }
+  }//if( lhs.material )
   
   if( fabs(lhs.areal_density - rhs.areal_density) > 1.0E-3 )
     throw runtime_error( "PhysicalModelShieldInput::equalEnough: areal density mismatch" );
@@ -790,7 +799,12 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
   
   XmlUtils::append_float_node( base_node, "AtomicNumber", atomic_number );
   if( material )
+  {
     XmlUtils::append_string_node( base_node, "Material", material->name );
+    // The full definition, so a user-modified density round-trips, and the material still loads
+    //  if it is removed from the MaterialDB (older versions ignore this node)
+    material->toXml( base_node );
+  }
   XmlUtils::append_float_node( base_node, "ArealDensity", areal_density / PhysicalUnits::g_per_cm2 );
   XmlUtils::append_bool_node( base_node, "FitAtomicNumber", fit_atomic_number );
   XmlUtils::append_float_node( base_node, "LowerFitAtomicNumber", lower_fit_atomic_number );
@@ -889,23 +903,13 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
     
     if( material_node )
     {
-      const std::shared_ptr<const MaterialDB> materialDB = MaterialDB::instance();
-      if( !materialDB )
-        throw runtime_error( "PhysicalModelShieldInput::fromXml: need MaterialDB" );
-
+      // Prefer the full definition (written alongside the name), which carries a user-modified
+      //  density, and works even if the material is no longer in the MaterialDB; otherwise the
+      //  name may be a database material or a chemical formula.
       const string name = SpecUtils::xml_value_str(material_node);
-      std::shared_ptr<const Material> mat = materialDB->material( name );
-      if( !mat )
-      {
-        try
-        {
-          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-          mat = MaterialDB::materialFromChemicalFormula( name, db );
-        }catch( std::exception & )
-        {
-        }
-      }//if( !mat )
-
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      const rapidxml::xml_node<char> * const def_node = XML_FIRST_NODE( parent, "MaterialDefinition" );
+      const std::shared_ptr<const Material> mat = MaterialDB::materialFromDefinitionOrName( def_node, name, db );
       if( !mat )
         throw runtime_error( "Invalid material name '" + name + "'" );
 

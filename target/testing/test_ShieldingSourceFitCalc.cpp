@@ -299,6 +299,86 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
     }// End test URI
     
     
+    {// Begin test a user-modified density round-trips through the URI and XML
+      const double g_cm3 = PhysicalUnits::g / PhysicalUnits::cm3;
+
+      ShieldingInfo modified_info = info;
+      auto modified_iron = make_shared<Material>( *iron );
+      modified_iron->density = static_cast<float>( 7.5 * g_cm3 );
+      modified_info.m_material = modified_iron;
+
+      const string uri = modified_info.encodeStateToUrl();
+      BOOST_CHECK( uri.find("&ND=") != string::npos );
+      BOOST_CHECK( info.encodeStateToUrl().find("&ND=") == string::npos );
+
+      ShieldingInfo from_uri;
+      BOOST_REQUIRE_NO_THROW( from_uri.handleAppUrl( uri ) );
+      try
+      {
+        ShieldingInfo::equalEnough( modified_info, from_uri );
+      }catch( std::exception &e )
+      {
+        BOOST_ERROR( "Modified density didnt round-trip through URI '" << uri << "': " << e.what() );
+      }
+      BOOST_CHECK_THROW( ShieldingInfo::equalEnough( info, from_uri ), std::exception );
+
+      rapidxml::xml_document<char> doc;
+      BOOST_REQUIRE_NO_THROW( modified_info.serialize( &doc ) );
+      const rapidxml::xml_node<char> * const material_node = XML_FIRST_NODE( doc.first_node(), "Material" );
+      BOOST_REQUIRE( material_node );
+      BOOST_REQUIRE( XML_FIRST_NODE( material_node, "MaterialDefinition" ) );
+
+      ShieldingInfo from_xml;
+      BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
+      BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( modified_info, from_xml ) );
+      BOOST_REQUIRE( from_xml.m_material );
+      BOOST_CHECK_CLOSE( from_xml.m_material->density / g_cm3, 7.5, 1.0E-4 );
+      BOOST_CHECK( from_xml.m_material != iron );
+    }// End test a user-modified density round-trips
+
+
+    {// Begin test a material not in the database, and legacy XML without a definition
+      auto renamed = make_shared<Material>( *iron );
+      renamed->name = "Unobtainium";
+      BOOST_CHECK_THROW( matdb->material( renamed->name ), std::exception );
+
+      ShieldingInfo renamed_info = info;
+      renamed_info.m_material = renamed;
+
+      rapidxml::xml_document<char> renamed_doc;
+      BOOST_REQUIRE_NO_THROW( renamed_info.serialize( &renamed_doc ) );
+      ShieldingInfo renamed_from_xml;
+      BOOST_REQUIRE_NO_THROW( renamed_from_xml.deSerialize( renamed_doc.first_node() ) );
+      BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( renamed_info, renamed_from_xml ) );
+
+      // XML written before version 0.3 only has the materials name - it must still load, and gives
+      //  the database material.
+      rapidxml::xml_document<char> legacy_doc;
+      BOOST_REQUIRE_NO_THROW( info.serialize( &legacy_doc ) );
+      rapidxml::xml_node<char> * const legacy_material = XML_FIRST_NODE( legacy_doc.first_node(), "Material" );
+      BOOST_REQUIRE( legacy_material );
+      rapidxml::xml_node<char> * const def_node = XML_FIRST_NODE( legacy_material, "MaterialDefinition" );
+      BOOST_REQUIRE( def_node );
+      legacy_material->remove_node( def_node );
+
+      ShieldingInfo legacy_from_xml;
+      BOOST_REQUIRE_NO_THROW( legacy_from_xml.deSerialize( legacy_doc.first_node() ) );
+      BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( info, legacy_from_xml ) );
+      BOOST_CHECK( legacy_from_xml.m_material == iron );
+
+      // But a name nobody knows, with no definition, fails as it always has
+      rapidxml::xml_document<char> unknown_doc;
+      BOOST_REQUIRE_NO_THROW( renamed_info.serialize( &unknown_doc ) );
+      rapidxml::xml_node<char> * const unknown_material = XML_FIRST_NODE( unknown_doc.first_node(), "Material" );
+      BOOST_REQUIRE( unknown_material );
+      rapidxml::xml_node<char> * const unknown_def = XML_FIRST_NODE( unknown_material, "MaterialDefinition" );
+      BOOST_REQUIRE( unknown_def );
+      unknown_material->remove_node( unknown_def );
+      ShieldingInfo unknown_from_xml;
+      BOOST_CHECK_THROW( unknown_from_xml.deSerialize( unknown_doc.first_node() ), std::exception );
+    }// End test a material not in the database
+
+
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     // Truth info only tested for XML serialization
     info.m_truthDimensions[0] = 1.11E-6f;
@@ -318,9 +398,12 @@ BOOST_AUTO_TEST_CASE( ShieldingInfoUri )
       ShieldingInfo from_xml;
       BOOST_REQUIRE_NO_THROW( from_xml.deSerialize( doc.first_node() ) );
       BOOST_REQUIRE_NO_THROW( ShieldingInfo::equalEnough( info, from_xml ) );
+
+      // An un-modified material comes back as the databases own instance
+      BOOST_CHECK( from_xml.m_material == iron );
     }
-    
-    
+
+
     // Now modify `info` to include trace and self-attenuating sources
     info.m_material = make_shared<Material>( *uranium );
     

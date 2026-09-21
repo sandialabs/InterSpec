@@ -390,6 +390,13 @@ add_test( NAME TShieldingSourceFitCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_MaterialDB test_MaterialDB.cpp )
+target_link_libraries( test_MaterialDB PRIVATE InterSpecLib )
+add_test( NAME TMaterialDB
+  COMMAND $<TARGET_FILE:test_MaterialDB> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_VolumetricIntegration test_VolumetricIntegration.cpp VolumetricIntegrationFixtures.h )
 target_link_libraries( test_VolumetricIntegration PRIVATE InterSpecLib )
 add_test( NAME TVolumetricIntegration
