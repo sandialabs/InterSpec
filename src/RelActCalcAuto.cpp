@@ -24463,6 +24463,23 @@ void RelActAutoSolution::finalize_curve_separation_status()
       && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
     m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
 
+  // The plain nesting violation: a model NESTED inside the two-curve fit (the merged single curve, or
+  //  the common-enrichment tie) reached a strictly lower data chi2.  That cannot happen at a proper
+  //  optimum - the two-curve fit contains both as special cases - so the two-curve fit did not reach
+  //  its own optimum and no per-curve statement it makes is trustworthy.  A rescue is attempted
+  //  earlier (add_merged/tied_..._comparison); if a negative delta still stands here, the rescue did
+  //  not recover it, so the status must not read "well separated".  Distinct from the flag above:
+  //  that one is tied-vs-merged (two nulls disagreeing); this one is null-vs-free (a null beating the
+  //  model that contains it).  Guarded on `valid` so a merge that legitimately gained freedom - where
+  //  a negative delta can be honest - does not trip it.
+  const auto null_beats_free = []( const auto &comparison ) -> bool {
+    return comparison.has_value() && comparison->valid && (comparison->delta_chi2 < 0.0);
+  };
+  if( (null_beats_free(m_merged_single_curve_comparison)
+       || null_beats_free(m_tied_enrichment_comparison))
+      && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
+    m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
+
   // A fit that does not describe the data cannot support ANY confident statement about the curves -
   //  neither "per-curve results can be used with their reported uncertainties" nor "consistent with a
   //  single material of one enrichment".  Without this, a pair with no nuclide in common has neither
@@ -27580,9 +27597,18 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                                    background, retained_drf, retained_peaks, det_type, cancel_calc ) )
         continue;
 
+      // `merged_out` must be forwarded: it was already written above, against the solution this
+      //  rescue just replaced.  The caller compares the tied chi2 against it, so leaving the stale
+      //  value in place can void a perfectly good tied statistic (and print a self-contradictory
+      //  "tied is HIGHER than merged" message quoting two numbers in the other order).  Cleared
+      //  first so that a recursive merged solve which fails leaves no stale pointer behind either -
+      //  the caller treats null as "no merged solution to compare against".
       sol.m_merged_single_curve_comparison.reset();
+      if( merged_out )
+        merged_out->reset();
       add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
-                                          all_peaks, det_type, cancel_calc, rescue_depth + 1 );
+                                          all_peaks, det_type, cancel_calc, rescue_depth + 1,
+                                          merged_out );
       return;
     }//for( each rescue strategy, cheapest first )
 
