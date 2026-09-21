@@ -7,7 +7,7 @@
 }
 
 .ColorThemeWindowContents{
-  border-left: solid 1px #e1e1e1;
+  border-left: solid 1px var(--interspec-border-color);
   margin-left: 5px;
   padding-left: 10px;
 }
@@ -17,7 +17,7 @@
   
   height: 25px;
   
-  border-top: solid 1px #e1e1e1;
+  border-top: solid 1px var(--interspec-border-color);
 }
 
 .AddColorTheme, .DeleteColorTheme

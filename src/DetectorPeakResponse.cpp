@@ -476,7 +476,7 @@ FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
     //msg << "Error evaluating expression \"" << e.GetExpr() << "\": " << e.GetMsg();
     
     std::string msg = e.GetMsg();
-    msg = "<span style=\"color:black;font-weight:bold;\">" + msg + ": </span>";
+    msg = "<span style=\"font-weight:bold;\">" + msg + ": </span>";
     
     const int errorpos = e.GetPos();
     std::string preeqn, posteqn, errorstr;
@@ -492,10 +492,10 @@ FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
     else if( errorpos < int(m_fcnstr.size()) )
       preeqn = m_fcnstr.substr(0,errorpos);
     
-    msg += "<span style=\"font-family:monospace;color:black;\">"
+    msg += "<span style=\"font-family:monospace;\">"
     + preeqn
-    + "<span style=\"color:red;text-decoration:underline\">"
-    + errorstr + "</span><span style=\"color:#2F4F4F;\">"
+    + "<span class=\"ErrorTxt\" style=\"text-decoration:underline\">"
+    + errorstr + "</span><span class=\"SecondaryTxt\">"
     + posteqn+ "</span></span>";
     
     throw std::runtime_error( msg );

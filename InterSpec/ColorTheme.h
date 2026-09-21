@@ -37,8 +37,9 @@
 
 class ColorThemeInfo;
 
-/** Color theme of the app.
-  Currently only the coloring of the charts is supported.
+/** Color theme of the app: the chart colours, the reference-line colours, and the app
+  (non-chart) colours.  The app colours are CSS tokens (see #appColorTokens); this struct only
+  holds the user's explicit overrides of them.
  
  ToDo:
  -Allow specifying peak fill and line colors seperately.
@@ -123,71 +124,57 @@ struct ColorTheme
   Wt::WDateTime creation_time;
   Wt::WDateTime modified_time;
   
-  /** CSS theme to styla the rest of the app besides the charts.
-      To create one of these themes you need to at least creat a CSS file at:
-        InterSpec_resources/themes/<theme name>/<theme name>.css
+  /** One user-overridable app (non-chart) colour, i.e. a `--interspec-<name>` CSS token.
+
+   This table is the single list of app colours: JSON I/O (#toJson / #fromJson), the CSS
+   publishing in InterSpec::applyColorTheme, and the rows of the theme editor are all generated
+   from it.  The tokens' light and dark values live in CSS, not here; see
+   InterSpec_resources/themes/default/default.css.  To add a colour: declare it in default.css and
+   in every themes/<name>/<name>.css, add a row to the table in ColorTheme.cpp, and add its two
+   i18n strings to InterSpec_resources/app_text/ColorThemeWidget.xml.
+   */
+  struct AppColorToken
+  {
+    /** Token name without the `--interspec-` prefix, e.g. "text-color"; also its JSON key. */
+    const char *name;
+    /** camelCase JSON key written by older versions of InterSpec, or nullptr. */
+    const char *legacyJsonKey;
+    /** i18n key stem: the editor uses "ctwidget-app-<trKey>" and "ctwidget-app-<trKey>-desc". */
+    const char *trKey;
+    /** Editor section the row is shown under; i18n key "ctwidget-app-group-<group>". */
+    const char *group;
+  };//struct AppColorToken
+
+  static const std::vector<AppColorToken> &appColorTokens();
+
+  /** Returns the table entry for `name` (without the `--interspec-` prefix), or nullptr. */
+  static const AppColorToken *appColorToken( const std::string &name );
+
+  /** Reads the `:root { --interspec-*: ...; }` declarations of the base CSS theme, then of
+   `themes/<cssTheme>/<cssTheme>.css` (when `cssTheme` names one), later values overriding earlier,
+   and returns token name (without prefix) to CSS value text.  This is what an unset #appColors
+   entry resolves to in the browser; the theme editor shows it.
+   `resourcesDir` is the `InterSpec_resources` directory.
+   */
+  static std::map<std::string,std::string> cssThemeTokenDefaults( const std::string &resourcesDir,
+                                                                  const std::string &cssTheme );
+
+  /** Lists the CSS themes available on disk, i.e. each `<resourcesDir>/themes/<name>/<name>.css`,
+   with "default" first.
+   */
+  static std::vector<std::string> availableCssThemes( const std::string &resourcesDir );
+
+  /** CSS theme that styles the rest of the app besides the charts: the `<name>` of
+      InterSpec_resources/themes/<name>/<name>.css.  Empty (or "default") means the base light
+      theme, which is always loaded.
    */
   std::string nonChartAreaTheme;
 
-  /** Background color for non-chart areas (dialogs, main app background, etc.).
-      Applied via CSS variable --interspec-background-color.
+  /** Explicit overrides of the app colour tokens, keyed by token name (see #appColorTokens).
+   A token that is absent takes the value the CSS theme declares for it.  Present entries are
+   published as `--interspec-<name>` on `html:root` by InterSpec::applyColorTheme.
    */
-  Wt::WColor appBackgroundColor;
-
-  /** Text color for non-chart areas.
-      Applied via CSS variable --interspec-text-color.
-   */
-  Wt::WColor appTextColor;
-
-  /** Border color for UI elements (tabs, buttons, panels, etc.).
-      Applied via CSS variable --interspec-border-color.
-   */
-  Wt::WColor appBorderColor;
-
-  /** Link and accent color for interactive elements.
-      Applied via CSS variable --interspec-link-color.
-   */
-  Wt::WColor appLinkColor;
-
-  /** Label text color for Wt labels, tab text, and certain headers.
-      Applied via CSS variable --interspec-label-color.
-   */
-  Wt::WColor appLabelColor;
-
-  /** Background color for input fields.
-      Applied via CSS variable --interspec-input-background.
-   */
-  Wt::WColor appInputBackground;
-
-  /** Background color for buttons.
-      Applied via CSS variable --interspec-button-background.
-   */
-  Wt::WColor appButtonBackground;
-
-  /** Border color for buttons.
-      Applied via CSS variable --interspec-button-border-color.
-   */
-  Wt::WColor appButtonBorderColor;
-
-  /** Text color for buttons.
-      Applied via CSS variable --interspec-button-text-color.
-   */
-  Wt::WColor appButtonTextColor;
-
-  /** Background color for the menu bar and menu-bar buttons (default, non-hover, non-active state).
-      Applied via CSS variable --interspec-menubar-background.
-   */
-  Wt::WColor appMenuBarBackground;
-
-  /** Background color for menu-bar buttons when the menu is open (active state).
-      Applied via CSS variable --interspec-menubar-active-color.
-   */
-  Wt::WColor appMenuBarActiveColor;
-
-  /** Background color for menu-bar buttons on hover (non-active state).
-      Applied via CSS variable --interspec-menubar-hover-color.
-   */
-  Wt::WColor appMenuBarHoverColor;
+  std::map<std::string,Wt::WColor> appColors;
 
   /** Line color of foreground spectrum. */
   Wt::WColor foregroundLine;

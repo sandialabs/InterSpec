@@ -62,19 +62,19 @@
   text-align: left;
   padding: 8px;
   font: 0.85em sans-serif;
-  background: #ffffcc;
-  border: 1px solid #444422;
+  background: var(--interspec-tooltip-background);
+  border: 1px solid var(--interspec-tooltip-border-color);
   border-radius: 4px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s;
   z-index: 1000;
   box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-  color: black;
+  color: var(--interspec-text-color);
 }
 
 .detector-shape.detector-rect text {
-  fill: black !important;
+  fill: var(--interspec-text-color) !important;
 }
 
 .shielding-controls {

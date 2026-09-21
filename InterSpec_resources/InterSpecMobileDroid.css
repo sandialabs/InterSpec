@@ -28,7 +28,7 @@
 
 .CenterBtnInMblAuxWindowHeader
 {
-  border: 1px solid #ffffff !important;
+  border: 1px solid var(--interspec-button-text-color) !important;
 }
 
 .CenterBtnInMblAuxWindowHeader[disabled]

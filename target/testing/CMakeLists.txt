@@ -586,6 +586,13 @@ add_test( NAME TAppTextBundles
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ColorTheme test_ColorTheme.cpp )
+target_link_libraries( test_ColorTheme PRIVATE InterSpecLib )
+add_test( NAME TColorTheme
+  COMMAND $<TARGET_FILE:test_ColorTheme> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ShieldSourcePullTrend test_ShieldSourcePullTrend.cpp )
 target_link_libraries( test_ShieldSourcePullTrend PRIVATE InterSpecLib )
 add_test( NAME TShieldSourcePullTrend

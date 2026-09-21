@@ -17,8 +17,8 @@ body {
 }
 
 .Wt-domRoot, .dialog-layout, .Wt-panel .body, textarea {
-  background-color: var(--interspec-background-color, white);
-  color: var(--interspec-text-color, black);
+  background-color: var(--interspec-background-color);
+  color: var(--interspec-text-color);
 }
 
 
@@ -26,23 +26,34 @@ body {
 /* On Safari if we out .Wt-domRoot:fullscreen in with the list of the above, it makes the statement
  fail for some reason, so we'll keep it separate, even though the contents are identical to above.
  */
-.Wt-domRoot:fullscreen {
-  background-color: var(--interspec-background-color, white) !important;
-  color: var(--interspec-text-color, black);
+/* The two "mode" tokens from themes/default/default.css: native scrollbars and form controls
+   follow the theme, and the black raster/SVG icons are flipped by dark themes. */
+:root {
+  color-scheme: var(--interspec-color-scheme);
 }
 
-input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
-  background-color: var(--interspec-input-background, white);
-  color: var(--interspec-text-color, black);
+.InvertInDark, .MobileMenuButton {
+  filter: var(--interspec-icon-filter);
+}
+
+.Wt-domRoot:fullscreen {
+  background-color: var(--interspec-background-color) !important;
+  color: var(--interspec-text-color);
+}
+
+/* `:not(.pm-textarea)` keeps this away from the text annotations on the Leaflet maps. */
+input[type="text"], input[type="number"], textarea:not(.pm-textarea) {
+  background-color: var(--interspec-input-background);
+  color: var(--interspec-text-color);
 }
 
 textarea, select {
   outline: none;
-  color: var(--interspec-text-color, black);
-  background-color: var(--interspec-input-background, white);
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-input-background);
 }
 
-textarea:disabled, select:disabled, button:disabled,
+textarea:disabled, select:disabled,
 input[type="text"]:disabled, input[type="number"]:disabled {
   opacity: 0.4;
 }
@@ -64,14 +75,14 @@ label:has(input[type="checkbox"]) {
 
 .imageBorder {
   padding:1px;
-  border:1px solid #021a40;
+  border:1px solid var(--interspec-outline-color);
 }
 
 .FileUploadCover
 {
   width: 100%;
   height: 100%;
-  background: gray;
+  background: var(--interspec-dialog-cover-color);
   position: fixed; 
   top: 0; 
   left: 0;
@@ -134,7 +145,7 @@ label:has(input[type="checkbox"]) {
 
 .UpDivTxt.disabled
 {
-  color: #B8B8B8;
+  color: var(--interspec-disabled-text-color);
 }
 
 .UpCenterDiv.disabled
@@ -233,7 +244,7 @@ button.Wt-btn.LightButton, .btn-group.LightButton
 {
   font-weight: normal;
   background-color: rgba(0,0,0,0);
-  color: rgb(86,88,90);
+  color: var(--interspec-secondary-text-color);
 }
 
 /* .btn-group is for WSplitButton */
@@ -302,6 +313,7 @@ button.Wt-btn.LightButton, .btn-group.LightButton
   background-repeat: no-repeat;
   background-position: center left;
   height: 16px;
+  filter: var(--interspec-icon-filter);
 }
 
 
@@ -380,14 +392,14 @@ button.Wt-btn.LightButton, .btn-group.LightButton
   height: 45px;
   min-height: 45px;
   box-sizing: border-box;
-  border-top: 1px solid #ddd;
+  /* One hairline, the same weight as every other separator.  There used to be a white inset
+     highlight under it as well (a Bootstrap-era bevel); it was invisible against the light theme
+     but drew a second, bright line on a dark background. */
+  border-top: 1px solid var(--interspec-border-color);
   -webkit-border-radius: 0 0 0px 0px;
      -moz-border-radius: 0 0 0px 0px;
           border-radius: 0 0 0px 0px;
   *zoom: 1;
-  -webkit-box-shadow: inset 0 1px 0 #ffffff;
-     -moz-box-shadow: inset 0 1px 0 #ffffff;
-          box-shadow: inset 0 1px 0 #ffffff;
 }
 
 .modal-footer button,.modal-footer button:hover{
@@ -398,7 +410,7 @@ button.Wt-btn.LightButton, .btn-group.LightButton
 
 .NeutDetCbItem
 {
-  color: blue;
+  color: var(--interspec-link-color);
 }
 
 
@@ -413,8 +425,8 @@ font-size: 80%;
 opacity:1.0;
 top:-8px;
 left:15px;
-background-color: rgb(253, 255, 218);
-border: 1px solid #73a7f0;
+background-color: var(--interspec-tooltip-background);
+border: 1px solid var(--interspec-tooltip-border-color);
 width: 200px;
 height: 100px;
 border-radius: 4px;
@@ -433,7 +445,7 @@ padding-left:10px;
 
 .UseInfoStack
 {
-  border-left: solid 1px var(--interspec-border-color, #e1e1e1);
+  border-left: solid 1px var(--interspec-border-color);
   margin-left: 5px;
   padding-left: 10px;
 }
@@ -452,7 +464,7 @@ padding-left:10px;
 
 .UseInfoTabsStack
 {
-  border: 1px solid gray;
+  border: 1px solid var(--interspec-outline-color);
   border-top: none;
 }
 
@@ -522,17 +534,15 @@ ul.HorizontalMenu > li {
 
 
 /* For navigation-style menu, we break the CSS into two parts:
- The coloring part: .HeavyNavMenu and .LightNavMenu . These take their colors from the color-theme
-   CSS variables, so light/dark follows the theme with no theme-specific stylesheet.  The one
-   exception is the `.itemselected` background, which has no matching theme variable yet and so is
-   still overridden in dark.css.
+ The coloring part: .HeavyNavMenu and .LightNavMenu . These take every colour from the theme
+   tokens, so light/dark follows the theme with no theme-specific rules.
  The actual layout part: .VerticalNavMenu
 
  */
 
 .HeavyNavMenu li
 {
-  color: var(--interspec-button-text-color, #ffffff);
+  color: var(--interspec-button-text-color);
   
   white-space: nowrap;
   overflow: hidden;
@@ -541,22 +551,22 @@ ul.HorizontalMenu > li {
 
 .HeavyNavMenu li.item > a
 {
-  color: var(--interspec-button-text-color, white);
+  color: var(--interspec-button-text-color);
 }
 
 .HeavyNavMenu li.itemselected > a
 {
-  color: #E0F5FF;
+  color: var(--interspec-selected-text-color);
 }
 
 .HeavyNavMenu li :hover
 {
-  border-color: #eeeeee #eeeeee #dddddd;
+  border-color: var(--interspec-border-color) var(--interspec-border-color) var(--interspec-border-color);
 }
 
 .HeavyNavMenu li.itemselected
 {
-  background: #C6C6C6;
+  background: var(--interspec-selected-background);
 }
 
 .HeavyNavMenu li.itemselected:hover
@@ -565,19 +575,19 @@ ul.HorizontalMenu > li {
 
 .HeavyNavMenu li.item
 {
-  background: var(--interspec-button-background, #888888);
+  background: var(--interspec-button-background);
 }
 
 .HeavyNavMenu li.item:hover
 {
-  background: #9B9B9B;
+  background: var(--interspec-button-hover-background);
 }
 
 
 .LightNavMenu li
 {
   /* color: #ffffff; */
-  border: 1px solid var(--interspec-border-color, #e1e1e1);
+  border: 1px solid var(--interspec-border-color);
 }
 
 .LightNavMenu li.item > a
@@ -587,17 +597,17 @@ ul.HorizontalMenu > li {
 
 .LightNavMenu li.itemselected > a
 {
-  color: #E0F5FF;
+  color: var(--interspec-selected-text-color);
 }
 
 .LightNavMenu li :hover
 {
-  border-color: #eeeeee #eeeeee #dddddd;
+  border-color: var(--interspec-border-color) var(--interspec-border-color) var(--interspec-border-color);
 }
 
 .LightNavMenu li.itemselected
 {
-  background: #C6C6C6;
+  background: var(--interspec-selected-background);
 }
 
 .LightNavMenu li.itemselected:hover
@@ -611,7 +621,7 @@ ul.HorizontalMenu > li {
 
 .HeavyNavMenu li.item:hover
 {
-  background: #9B9B9B;
+  background: var(--interspec-button-hover-background);
 }
 
 
@@ -656,28 +666,83 @@ ul.Wt-popupmenu > li > a {
 ul.Wt-popupmenu > li > a > span > span
 {
   font-weight: normal;
-  color: var(--interspec-text-color, black);
+  color: var(--interspec-text-color);
 }
 
 ul.Wt-popupmenu > li > label > span
 {
-  color: var(--interspec-text-color, black);
+  color: var(--interspec-text-color);
 }
 
 .Wt-suggest a
 {
-  color: var(--interspec-text-color, black);
+  color: var(--interspec-text-color);
   text-decoration: none;
 }
 
 .Wt-popupmenu .active
 {
-  background-color: var(--interspec-menubar-active-color, rgba(128, 128, 128, 1.0));
+  background-color: var(--interspec-menubar-active-color);
 }
 
 ul.Wt-popupmenu > li.active > a > span > span
 {
- color: #E0F5FF;
+ color: var(--interspec-selected-text-color);
+}
+
+/* Wt's own widgets: its default theme (wt.css) is light-only, so the pieces that show a colour are
+   re-pointed at the tokens here.  `!important` is only where wt.css or a Wt inline style would
+   otherwise win. */
+.Wt-dialogcover {
+  background: var(--interspec-dialog-cover-color) !important;
+}
+
+.Wt-popup.Wt-outset, ul.Wt-popupmenu {
+  background-color: var(--interspec-popup-background) !important;
+}
+
+ul.Wt-popupmenu > li.Wt-disabled > a > span > span {
+  color: var(--interspec-disabled-text-color) !important;
+}
+
+.Wt-separator {
+  border-top: 1px solid var(--interspec-border-color) !important;
+  border-bottom: 1px solid var(--interspec-background-color) !important;
+}
+
+/* Item views (tables and trees): rows, zebra striping, selection, and headers - including the
+   top-right header corner that Wt styles inline.  Wt paints alternating rows with an inline,
+   light-only stripe image; for tree views (whose rows are elements) that image is dropped and the
+   rows stripe themselves from the tokens instead. */
+.Wt-treeview div[style*="stripes/"] {
+  background-image: none !important;
+}
+
+ul.Wt-tv-root > li {
+  color: var(--interspec-text-color);
+  background: var(--interspec-background-color);
+}
+
+ul.Wt-tv-root > li:nth-child(odd) {
+  background: var(--interspec-alt-row-background);
+}
+
+.Wt-itemview .Wt-selected, .Wt-tree .Wt-selected, ul.Wt-tv-root > li.Wt-selected {
+  background: var(--interspec-selected-background) !important;
+  color: var(--interspec-selected-text-color) !important;
+}
+
+.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th {
+  background-color: var(--interspec-header-background);
+}
+
+.Wt-itemview > div[style*="top: 0px"][style*="right: 0px"] {
+  background-color: var(--interspec-header-background) !important;
+}
+
+/* Link-style buttons carry their icon as an <img>, which dark themes flip. */
+.LinkBtn img, .DownloadBtn img, .UploadBtn img, .MoreInfoBtn img {
+  filter: var(--interspec-icon-filter);
 }
 
 
@@ -774,7 +839,7 @@ ul.Wt-popupmenu > li.active > a > span > span
 
 .PeakInfoDisplay .PeakEditHint
 {
-  color: gray;
+  color: var(--interspec-fainter-text-color);
   margin-left: 2em;
   font-size: 66%;
   white-space: nowrap;
@@ -789,7 +854,7 @@ ul.Wt-popupmenu > li.active > a > span > span
   float: right;
   background: none !important;
   border: none !important;
-  color: blue;
+  color: var(--interspec-link-color);
   opacity: 0.7;
 }
 
@@ -844,7 +909,9 @@ padding: 0px;
   width:auto;
   padding: 0px;
   height: 25px;
-  background-color: #5492EE;
+  background-color: var(--interspec-accent-color);
+  /* Solid accent surface, so the ink is the theme background (see themes/default/default.css). */
+  color: var(--interspec-background-color);
 }
 
 .helpIconTitleBar
@@ -861,17 +928,19 @@ height: 16px;
  * overriding `height`.  Use min-height so the title bar is at least 25px in
  * either layout.
  */
-.titlebar
+.titlebar, .Wt-dialog .titlebar
 {
-width:auto;
-padding: 0px;
-height: 25px;
-min-height: 25px;
+  width: auto;
+  padding: 0px;
+  height: 25px;
+  min-height: 25px;
+  background: var(--interspec-titlebar-background);
+  color: var(--interspec-button-text-color);
 }
 
-.titlebar:hover
+.titlebar:hover, .Wt-dialog .titlebar:hover
 {
-background-color: #909090;
+  background: var(--interspec-titlebar-hover-background);
 }
 
 /* Wt4's default theme adds `.Wt-hrh2 { background-color: #CCC }` (the horizontal
@@ -889,7 +958,7 @@ background-color: #909090;
 
 .InfoLink
 {
-  color:grey;
+  color:var(--interspec-fainter-text-color);
   text-decoration:underline;
   cursor:pointer;
   border: none;
@@ -902,29 +971,26 @@ button, button:hover,
 {
   font-weight:bold;
   vertical-align: middle;
-  border:1px solid var(--interspec-border-color, #e1e1e1);
-  color: var(--interspec-button-text-color, white);
-  background-color: var(--interspec-button-background, #888888);
+  border:1px solid var(--interspec-border-color);
+  color: var(--interspec-button-text-color);
+  background-color: var(--interspec-button-background);
   border-radius: 5px;
   height: 23px;
 }
 
 button:hover, .submit:hover, .clr-picker button.ColorisBtn:hover {
-  color: #f2f2f2;
+  color: var(--interspec-button-text-color);
   border-style: solid;
-  border:1px solid #e6e6e6;
+  border:1px solid var(--interspec-border-color);
   cursor: pointer;
-  background-color: #737373;
+  background-color: var(--interspec-button-hover-background);
 }
 
 button[disabled]
 {
-  background-color: #999999;
-  color: #aaaaaa;
-  opacity: 0.8;
+  background-color: var(--interspec-disabled-background);
+  color: var(--interspec-disabled-text-color);
   cursor: not-allowed;
-  -webkit-filter: grayscale(100%);
-  filter: grayscale(100%);
 }
 
 button, button:hover {
@@ -937,8 +1003,34 @@ table { margin-bottom:0; }
 
 /* Links use CSS variable for theming */
 a, .InfoLink {
-  color: var(--interspec-link-color, blue);
+  color: var(--interspec-link-color);
   text-decoration: none;
+}
+
+/* Shared semantic text classes; use these (from C++ too) rather than an inline colour. */
+.ErrorTxt { color: var(--interspec-error-color); }
+.WarnTxt { color: var(--interspec-warning-color); }
+.OkTxt { color: var(--interspec-success-color); }
+.FainterTxt { color: var(--interspec-fainter-text-color); }
+.SecondaryTxt { color: var(--interspec-secondary-text-color); }
+.InfoTxt { color: var(--interspec-link-color); }
+
+/* Peak Manager colour column: the swatch's own colour is inline (it is data), the rest is here. */
+.PeakColorSwatch {
+  margin: 5px;
+  border: 1px solid var(--interspec-outline-color);
+}
+.PeakColorSwatch.HasPicker {
+  margin: 0px;
+  border: none;
+}
+
+/* Non-clickable heading rows in popup menus (e.g. the assigned nuclide atop the suggestions). */
+ul.Wt-popupmenu > li.PopupMenuHeaderItem {
+  background: var(--interspec-header-background);
+}
+ul.Wt-popupmenu > li.PopupMenuHeaderItem > a > span > span {
+  color: var(--interspec-label-color);
 }
 
 /* Light buttons (link-style buttons) use link color */
@@ -946,22 +1038,22 @@ button.Wt-btn.with-label.LightButton,
   button.Wt-btn.dropdown-toggle,
   .btn-group.LightButton
 {
-  color: var(--interspec-link-color, blue);
+  color: var(--interspec-link-color);
 }
 
 /* Label text color */
 .Wt-label {
-  color: var(--interspec-label-color, black);
+  color: var(--interspec-label-color);
 }
 
 /* Tab text */
 .Wt-tabs a {
-  color: var(--interspec-label-color, black);
+  color: var(--interspec-label-color);
 }
 
 /* DevPair headers and similar */
 .DevPairTitle, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
-  color: var(--interspec-label-color, black);
+  color: var(--interspec-label-color);
 }
 
   th, td { border: none; padding: 0; vertical-align: none; text-align: none; }
@@ -980,7 +1072,7 @@ button.Wt-btn.with-label.LightButton,
   
   h1
   {
-    color: var(--interspec-text-color, black);
+    color: var(--interspec-text-color);
     font-size: 2em;
     font-weight: bold;
     margin-bottom:0;
@@ -1024,13 +1116,13 @@ button.Wt-btn.with-label.LightButton,
   {
     padding: 3px;
     padding-top: 4px;
-    border: 1px solid grey;
+    border: 1px solid var(--interspec-outline-color);
 
     cursor: pointer;
     -moz-border-radius: 4px;
     -webkit-border-radius: 4px;
     border-radius: 4px;
-    background-color: #EEEEEE;
+    background-color: var(--interspec-panel-background);
   }
   
   .clearsessiontxt
@@ -1070,9 +1162,9 @@ button.Wt-btn.with-label.LightButton,
    */
   .MenuBar
   {
-    border-bottom: 1px solid grey;
-    background: var(--interspec-menubar-background, #ffffff);
-    color: var(--interspec-text-color, black) !important;
+    border-bottom: 1px solid var(--interspec-outline-color);
+    background: var(--interspec-menubar-background);
+    color: var(--interspec-text-color) !important;
   }
   
   /* The WebMenuBar CSS class is added to the title bar, for browser-based desktop app sessions (e.g.,
@@ -1105,8 +1197,13 @@ button.Wt-btn.with-label.LightButton,
    */
   .PopupDivMenu
   {
-    background-color: #FAFAFA;
-    border: solid 1px var(--interspec-border-color, #e1e1e1);
+    background-color: var(--interspec-popup-background);
+    border: solid 1px var(--interspec-border-color);
+    /* Keep this a percentage.  Wt's fitToWindow() reads max-height with a pixel parser, so "90%"
+       comes back as 90px and it treats the menu as short.  That is what keeps a sub-menu anchored
+       to the item it belongs to: given the real height it reserves the whole thing, decides the
+       menu cannot fit below, and pins it to the bottom of the window instead - which throws the
+       second and later sub-menus far away from their parent item. */
     max-height: 90%;
     overflow-y: auto;
     /* right click on a peak, then "Change Nuclide" submenu can overflow with a long list, which adding
@@ -1121,11 +1218,18 @@ button.Wt-btn.with-label.LightButton,
   .PopupDivMenu.AppMenu
   {
     box-shadow: 0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12);
-    
-    /* If vertical scroll-bars show, then sub-menus will be inside the parent
-     (this is due, I think, to positionAtWidget JS function in Wt/src/web/skeleton/Wt.js),
-     so we will just disable vertical scroll-bars, for the moment.
+
+    /* Scroll-bar handling, which is a trade-off forced by Wt.
+     `positionAtWidget` (Wt/src/web/skeleton/Wt.js) walks up from the item a sub-menu belongs to
+     and re-parents the sub-menu into the first ancestor that is actually scrolling, so a menu with
+     a scroll-bar swallows its own sub-menu and the sub-menu then draws on top of it.
+     So: menus that contain a sub-menu keep their overflow hidden, and every other menu (Tools is
+     the tall one) may scroll, which is what makes its last items reachable in a short window.
      */
+  }
+
+  .PopupDivMenu.AppMenu:has(.submenu)
+  {
     overflow-y: hidden;
   }
   
@@ -1172,8 +1276,8 @@ button.Wt-btn.with-label.LightButton,
     padding: 4px 8px 3px 8px;
     margin:0px 0px;
     font-weight:normal;
-    background: var(--interspec-menubar-background, #ffffff);
-    color: var(--interspec-label-color, black);
+    background: var(--interspec-menubar-background);
+    color: var(--interspec-label-color);
     border: none;
     vertical-align: top; /* necessary or else on Safari the titlebar border will be partially overlapped - not entirely sure why*/
     -moz-border-radius: 2px;
@@ -1189,12 +1293,12 @@ button.Wt-btn.with-label.LightButton,
 
   button.Wt-btn.PopupMenuParentButton:hover:not(.active)
   {
-    background: var(--interspec-menubar-hover-color, rgba(128, 128, 128, 0.25));
+    background: var(--interspec-menubar-hover-color);
   }
 
   button.Wt-btn.PopupMenuParentButton.active
   {
-    background: var(--interspec-menubar-active-color, rgba(128, 128, 128, 1.0));
+    background: var(--interspec-menubar-active-color);
 
     -moz-box-shadow: none !important;
     -webkit-box-shadow: none !important;
@@ -1204,14 +1308,14 @@ button.Wt-btn.with-label.LightButton,
   
   .PopupDivMenuWidget.active
   {
-    background-color: #FAFAFA;
-    color: black;
+    background-color: var(--interspec-panel-background);
+    color: var(--interspec-text-color);
   }
   
   
   .NumPeakSelect
   {
-    border:2px solid blue;
+    border:2px solid var(--interspec-link-color);
   }
   
   .RoundMenuIcon, .RoundMenuIcon:hover, button.RoundMenuIcon, button.RoundMenuIcon:hover {
@@ -1265,7 +1369,7 @@ button.Wt-btn.with-label.LightButton,
     -moz-border-radius-bottomleft: 5px;
     border-bottom-right-radius: 5px;
     border-bottom-left-radius: 5px;
-    color:#000000;
+    color:var(--interspec-text-color);
   }
   
   .legend-body
@@ -1295,8 +1399,8 @@ button.Wt-btn.with-label.LightButton,
   
   .legend-title:hover
   {
-    background-color: #909090 !important;
-    border: solid 1px #909090;
+    background-color: var(--interspec-button-background) !important;
+    border: solid 1px var(--interspec-outline-color);
   }
   
   .closeicon-wtdefault
@@ -1339,14 +1443,23 @@ button.Wt-btn.with-label.LightButton,
     padding-right: 1px;
   }
   
+  /* The download icon is a pseudo-element, so dark themes can flip it without touching the text. */
   a.DownloadLink > span
   {
-    background-image: url('../InterSpec_resources/images/download_small.svg');
-    padding-left: 24px;
-    background-repeat: no-repeat;
-    background-position: bottom 0px left 0px;
     display: inline-block;
     margin-top: 5px;
+  }
+
+  a.DownloadLink > span::before
+  {
+    content: "";
+    display: inline-block;
+    width: 16pt;
+    height: 16pt;
+    margin-right: 3px;
+    vertical-align: bottom;
+    background: url('../InterSpec_resources/images/download_small.svg') no-repeat left bottom / 16pt 16pt;
+    filter: var(--interspec-icon-filter);
   }
   
   .loading
@@ -1391,8 +1504,9 @@ button.Wt-btn.with-label.LightButton,
     padding-right: 2px;
     margin: 0px;
     font-weight: bold;
-    background: #888888; color: #FFFFFF;
-    border: 1px solid var(--interspec-border-color, #e1e1e1);
+    background: var(--interspec-button-background);
+    color: var(--interspec-button-text-color);
+    border: 1px solid var(--interspec-border-color);
     cursor: pointer;
     height: 24px;
     white-space: nowrap;
@@ -1418,7 +1532,7 @@ button.Wt-btn.with-label.LightButton,
   
   .UseInstructionSection
   {
-    border: solid 1px grey;
+    border: solid 1px var(--interspec-outline-color);
     margin-bottom:10px;
   }
   
@@ -1437,12 +1551,12 @@ button.Wt-btn.with-label.LightButton,
     overflow-x: auto;          /* wt.css already sets overflow-y: auto */
     font-size: 10.5px;
     line-height: 14px;
-    background-color: #FFFFA3;
-    border: 1px solid #F1D031;
+    background-color: var(--interspec-tooltip-background);
+    border: 1px solid var(--interspec-tooltip-border-color);
     border-radius: 5px;
     box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.15);
     padding: 5px 9px;
-    color: #555;
+    color: var(--interspec-tooltip-text-color);
     z-index: 200000;
   }
 
@@ -1475,7 +1589,7 @@ button.Wt-btn.with-label.LightButton,
     list-style: none;
     list-style-type: none;
     background: none;
-    border-bottom: 1px solid rgba(136, 136, 136, 1);
+    border-bottom: 1px solid var(--interspec-border-color);
     overflow: visible; /* necessary - took a few hours to figure this out. */
   }
   
@@ -1506,14 +1620,14 @@ button.Wt-btn.with-label.LightButton,
   .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
     background-position: 0%;
     /* Mask the tab bar's bottom border using the current theme background. */
-    border-color: grey grey var(--interspec-background-color, white) grey;
+    border-color: grey grey var(--interspec-background-color) grey;
     background-color: inherit;
   }
   
   
   .Wt-popup .Wt-tabs .itemselected a, .Wt-popup .Wt-tabs .itemselected a:hover {
     /* Keep selected tabs open to their contents in an AuxWindow. */
-    border-color: grey grey var(--interspec-background-color, white) grey;
+    border-color: grey grey var(--interspec-background-color) grey;
   }
   
   .Wt-tabs a {
@@ -1521,7 +1635,7 @@ button.Wt-btn.with-label.LightButton,
     background: none;
     white-space: nowrap;
     padding: 6px 9px 4px;
-    color: var(--interspec-text-color, black);
+    color: var(--interspec-text-color);
     text-decoration: none;
     border: 1px solid transparent;
     -moz-border-top-left-radius: .25rem;
@@ -1545,12 +1659,12 @@ button.Wt-btn.with-label.LightButton,
   
   .Wt-tabs .itemselected a:focus, .Wt-tabs .itemselected a:hover {
     /* Get rid of line on selected tab when you mouse over it */
-    border-bottom: 1px solid var(--interspec-background-color, white);
+    border-bottom: 1px solid var(--interspec-background-color);
   }
   
   .Wt-popup .Wt-tabs .itemselected a:focus, .Wt-popup .Wt-tabs .itemselected a:hover {
     /* For AuxWindow, get rid of line on selected tab when you mouse over it */
-    border-bottom: 1px solid var(--interspec-background-color, white);
+    border-bottom: 1px solid var(--interspec-background-color);
   }
   
   .Wt-tabs .Wt-closable a {
@@ -1595,18 +1709,18 @@ button.Wt-btn.with-label.LightButton,
   
   
   .FloatInput:invalid {
-    background-color: pink;
+    background-color: var(--interspec-error-background);
   }
   
   
   .ToolTabSection
   {
-    border: 2px solid var(--interspec-border-color, #e1e1e1);
+    border: 2px solid var(--interspec-border-color);
   }
 
   .ToolTabTitledColumn
   {
-    border-right: 1px solid var(--interspec-border-color, #e1e1e1);
+    border-right: 1px solid var(--interspec-border-color);
     padding-bottom: 3px;
   }
 
@@ -1629,7 +1743,7 @@ button.Wt-btn.with-label.LightButton,
     padding-left: 3px;
     padding-right: 3px;
     margin-bottom: 2px;
-    border-bottom: 1px solid var(--interspec-border-color, #e1e1e1);
+    border-bottom: 1px solid var(--interspec-border-color);
   }
   
   .IsPhone.Portrait .ToolTabTitledColumn .ToolTabColumnTitle {
@@ -1706,27 +1820,27 @@ button.Wt-btn.with-label.LightButton,
   justify-content: center;
   text-align: center;
   cursor: pointer;
-  border: 2px dashed var(--interspec-outline-color, #b0b0b0);
+  border: 2px dashed var(--interspec-outline-color);
   border-radius: 8px;
-  color: var(--interspec-fainter-text-color, #777);
+  color: var(--interspec-fainter-text-color);
   font-size: smaller;
 }
 
 .PairFileDrop.DomIsDrugOver
 {
-  border: 3px dashed grey;
+  border: 3px dashed var(--interspec-outline-color);
   background-color: rgba(128, 128, 128, 0.5);
 }
 
 .PairFileDrop.DragedOver,
 .PairFileDrop.DragedOver.DomIsDrugOver
 {
-  border: 3px dashed green;
+  border: 3px dashed var(--interspec-success-color);
   background-color: transparent;
 }
 
 .PairFileDrop.Uploading
 {
-  border: 3px dashed green;
+  border: 3px dashed var(--interspec-success-color);
   animation: blink 1s infinite;
 }

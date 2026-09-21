@@ -83,7 +83,7 @@
    colour is ever added to ColorTheme, these pick it up with no further change. */
 .DetectorGeometryInput .DgiNote
 {
-  color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+  color: var(--interspec-warning-color);
   font-style: italic;
   font-size: smaller;
 }
@@ -91,13 +91,13 @@
 .MakeMcResponseForDrf .McEstimate
 {
   font-size: smaller;
-  color: var(--interspec-fainter-text-color, #888);
+  color: var(--interspec-fainter-text-color);
 }
 
 .MakeMcResponseForDrf .McUpgradeNote
 {
   font-size: smaller;
-  color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+  color: var(--interspec-warning-color);
   font-style: italic;
   margin: 2px 0 4px 0;
 }
@@ -248,13 +248,13 @@
 .DrfModifyAnchorPanel .DrfModifyCovTable { display: block; max-height: 260px; overflow: auto; margin: 6px 0; }
 .DrfModifyCovTable td { text-align: center; white-space: nowrap; }
 .DrfModifyCovTable tr:first-child td,
-.DrfModifyCovTable td:first-child { font-size: smaller; color: var(--interspec-fainter-text-color, #666); }
+.DrfModifyCovTable td:first-child { font-size: smaller; color: var(--interspec-fainter-text-color); }
 .DrfModifyCovTable input { text-align: right; }
 /* The diagonal (σ) stands out; the lower-triangle mirror is muted and non-interactive. */
 .DrfModifyCovTable input.DrfCovDiag { font-weight: bold; }
 .DrfModifyCovTable input.DrfCovMirror
 {
-  color: var(--interspec-fainter-text-color, #999);
+  color: var(--interspec-fainter-text-color);
   background: transparent;
   border-color: transparent;
 }
@@ -264,8 +264,8 @@
   margin-top: 4px;
   padding: 3px 6px;
   font-size: smaller;
-  color: var(--interspec-fainter-text-color, #666);
-  border-top: 1px solid var(--interspec-outline-color, #ccc);
+  color: var(--interspec-fainter-text-color);
+  border-top: 1px solid var(--interspec-outline-color);
 }
 
 /* Footer: the export note on the left, the "Generate Response" button (Geometry-Modeled only) on
@@ -285,5 +285,5 @@
 }
 .DrfModifyFooterRow .DrfModifyGenerateBtn { flex: 0 0 auto; margin-left: auto; }
 /* Why the generate button is disabled; stands in for the export tip while it applies. */
-.DrfModifyFooterRow .DrfModifyGenerateHint { color: var(--interspec-warning-color, var(--interspec-text-color, #333));
+.DrfModifyFooterRow .DrfModifyGenerateHint { color: var(--interspec-warning-color);
   font-style: italic; }

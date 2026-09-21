@@ -28,7 +28,7 @@
   margin-left: 5px;
   margin-right: 5px;
   
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   padding: 2px;
 
   display: flex;
@@ -273,7 +273,7 @@ padding-bottom: 1px;
 .RelActAutoGui .RelActAutoErrMsg
 {
   flex: 1 1 auto;
-  color: #ff6600; /* dark orange */
+  color: var(--interspec-warning-color); /* dark orange */
 }
 
 .RelActAutoGui .RelActAutoChi2Msg
@@ -283,8 +283,8 @@ padding-bottom: 1px;
 
 .RelActAutoGui .RelActAutoStatusMsg
 {
-  background: red;
-  color: white;
+  background: var(--interspec-error-background);
+  color: var(--interspec-error-color);
  
  /*
   padding-right: 5px;
@@ -307,7 +307,7 @@ padding-bottom: 1px;
   display: flex;
   flex-direction: row;
   
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   padding: 2px;
 
   gap: 5px;
@@ -484,7 +484,7 @@ padding-bottom: 1px;
 
   padding-top: 0px; /* The legend takes care of top padding */
 
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .RelActAutoGui .NuclidesHolder legend
@@ -529,7 +529,7 @@ padding-bottom: 1px;
   
   flex: 1 1 auto;
   
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .RelActAutoGui .EnergyNucContent
@@ -538,14 +538,14 @@ padding-bottom: 1px;
   overflow-x: auto;
   overflow-y: auto;
 
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .RelActAutoGui .EnergyNucFooter
 {
-  border-left: 1px solid #e1e1e1;
-  border-right: 1px solid #e1e1e1;
-  border-bottom: 1px solid #e1e1e1;
+  border-left: 1px solid var(--interspec-border-color);
+  border-right: 1px solid var(--interspec-border-color);
+  border-bottom: 1px solid var(--interspec-border-color);
   display: flex;
   padding-right: 5px;
   align-items: center;
@@ -664,7 +664,7 @@ padding-bottom: 1px;
 .RelActAutoGui .RelActAutoGuiNuclide,
 .RelActAutoGui .RelActAutoGuiFreePeak
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   margin: 5px;
   padding: 5px;
 }
@@ -738,7 +738,7 @@ padding-bottom: 1px;
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText.PendingResult
 {
   font-style: italic;
-  color: #888;
+  color: var(--interspec-fainter-text-color);
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect
@@ -847,7 +847,7 @@ padding-bottom: 1px;
 
 .RelActAutoGui .InvalidFreePeakEnergy
 {
-  color: red;
+  color: var(--interspec-error-color);
   place-self: center;
 }
 
@@ -927,14 +927,14 @@ a.DownloadLink.RelActDownload > span
 {
   display: block;
   
-  color: navy;
+  color: var(--interspec-warning-color);
   font-weight: bold;
   text-align: center;
 
   padding: 2px;
   margin: 1px;
-  border: 1px solid grey;
-  background: yellow;
+  border: 1px solid var(--interspec-outline-color);
+  background: var(--interspec-warning-background);
 }
 
 
@@ -999,7 +999,7 @@ a.DownloadLink.RelActDownload > span
   padding: 0;
   margin: 0;
   list-style: none;
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--interspec-border-color);
   flex: 0 0 auto;
 }
 
@@ -1025,7 +1025,7 @@ a.DownloadLink.RelActDownload > span
 .RelActAutoGui.Phone ul.PhoneSubTabs li.Wt-selected,
 .RelActAutoGui.Phone ul.PhoneSubTabs li.active
 {
-  border-bottom-color: #2a6cb0;
+  border-bottom-color: var(--interspec-accent-color);
 }
 
 .RelActAutoGui.Phone .PhoneSubStack

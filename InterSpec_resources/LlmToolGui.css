@@ -31,7 +31,7 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  background-color: var(--interspec-background-color, #ffffff);
+  background-color: var(--interspec-background-color);
 }
 
 /* Container holding all interaction displays.  The bottom padding keeps the last turn clear of the
@@ -64,8 +64,8 @@
   align-items: flex-end;
   gap: 6px;
   padding: 6px;
-  background-color: var(--interspec-background-color, #ffffff);
-  border: 1px solid var(--interspec-border-color, #d0d0d0);
+  background-color: var(--interspec-background-color);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
 }
@@ -79,15 +79,15 @@
   overflow-y: hidden;   /* grow JS toggles to auto once the max height is reached */
   line-height: 1.4;
   padding: 6px 8px;
-  border: 1px solid var(--interspec-border-color, #ced4da);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 6px;
-  background-color: var(--interspec-input-background, #ffffff);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-input-background);
+  color: var(--interspec-text-color);
 }
 
 .llm-input-edit.disabled {
   opacity: 0.6;
-  background-color: var(--interspec-input-background, #f5f5f5);
+  background-color: var(--interspec-input-background);
   cursor: not-allowed;
 }
 
@@ -119,7 +119,7 @@
 
 /* Subtle hover tint (skipped while disabled). */
 .llm-send-button:hover:not([disabled]) {
-  background: var(--interspec-menubar-hover-color, rgba(128, 128, 128, 0.25));
+  background: var(--interspec-menubar-hover-color);
 }
 
 /* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding). */
@@ -140,31 +140,23 @@
   background: transparent;
 }
 
-/* The dark theme has a global disabled-button rule; keep the other assistant controls (menu, config
-   buttons) tied to the active theme.  The icon send/stop button opts out via the rule above. */
-.LlmToolGui button[disabled] {
-  color: var(--interspec-button-text-color, white);
-  background-color: var(--interspec-button-background, #888888);
-  border-color: var(--interspec-button-border-color, #e1e1e1);
-}
-
 /* ============================================ */
 /* LlmInteractionDisplay - Main interaction panel */
 /* ============================================ */
 
 .LlmInteractionDisplay {
   margin-bottom: 15px;
-  border: 1px solid var(--interspec-border-color, #d0d0d0);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 6px;
-  background-color: var(--interspec-input-background, #fafafa);
+  background-color: var(--interspec-input-background);
 }
 
 .LlmInteractionDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-input-background, #e8f4f8) !important;
-  border-bottom: 1px solid var(--interspec-border-color, #b8d4dc);
+  background-color: var(--interspec-input-background) !important;
+  border-bottom: 1px solid var(--interspec-border-color);
   padding: 10px 12px;
   font-weight: 600;
-  color: var(--interspec-text-color, #2c3e50);
+  color: var(--interspec-text-color);
   display: flex;
   /* justify-content: space-between; */
   align-items: center;
@@ -182,24 +174,24 @@
 
 .LlmInteractionDisplay.Wt-panel > .body {
   padding: 12px;
-  background-color: var(--interspec-input-background, #ffffff);
+  background-color: var(--interspec-input-background);
 }
 
 /* Status indicator in title */
 .LlmStatusIndicator {
   font-weight: normal;
   font-size: 13px;
-  color: var(--interspec-label-color, #666);
+  color: var(--interspec-label-color);
   margin-left: 8px;
 }
 
 /* Summary section at top of interaction */
 .LlmInteractionSummary {
   padding: 8px 12px;
-  background-color: var(--interspec-background-color, #f8f9fa);
-  border-bottom: 1px solid var(--interspec-border-color, #dee2e6);
+  background-color: var(--interspec-background-color);
+  border-bottom: 1px solid var(--interspec-border-color);
   font-size: 12px;
-  color: var(--interspec-label-color, #6c757d);
+  color: var(--interspec-label-color);
   margin-bottom: 10px;
 }
 
@@ -212,7 +204,7 @@
 .LlmSubAgentNesting {
   margin-left: 20px;
   margin-top: 10px;
-  border-left: 3px solid var(--interspec-border-color, #6c757d);
+  border-left: 3px solid var(--interspec-border-color);
 }
 
 .LlmUserQuestion {
@@ -246,16 +238,16 @@
 
 .LlmInteractionTurnDisplay {
   margin-bottom: 10px;
-  border: 1px solid var(--interspec-border-color, #e0e0e0);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
-  background-color: var(--interspec-input-background, #ffffff);
+  background-color: var(--interspec-input-background);
 }
 
 .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-background-color, #f5f5f5) !important;
+  background-color: var(--interspec-background-color) !important;
   padding: 8px 10px;
   font-size: 14px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
   display: flex;
   /* justify-content: space-between; */
   align-items: center;
@@ -283,24 +275,24 @@
 /* ============================================ */
 
 .LlmFinalResponseDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-background-color, #e7f3e7) !important;
-  border-bottom: 1px solid var(--interspec-border-color, #c3e6cb);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-background-color) !important;
+  border-bottom: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 
 .LlmResponseContent {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.6;
-  color: var(--interspec-text-color, #212529);
+  color: var(--interspec-text-color);
   margin-bottom: 12px;
 }
 
 .LlmMetadata {
   font-size: 12px;
-  color: var(--interspec-label-color, #6c757d);
+  color: var(--interspec-label-color);
   padding-top: 8px;
-  border-top: 1px solid var(--interspec-border-color, #e9ecef);
+  border-top: 1px solid var(--interspec-border-color);
 }
 
 .LlmTimestamp, .LlmDuration, .LlmTokenUsage {
@@ -311,21 +303,21 @@
 .LlmThinkingContent {
   margin-top: 12px;
   padding: 10px;
-  background-color: var(--interspec-background-color, #fff3cd);
-  border-left: 3px solid #ffc107;
+  background-color: var(--interspec-background-color);
+  border-left: 3px solid var(--interspec-warning-color);
   border-radius: 4px;
 }
 
 .LlmThinkingLabel {
   font-weight: 600;
-  color: var(--interspec-text-color, #856404);
+  color: var(--interspec-text-color);
   display: block;
   margin-bottom: 6px;
 }
 
 .LlmThinkingContent > .Wt-text,
 .LlmThinkingContent > .LlmMarkdownBody {
-  color: var(--interspec-text-color, #856404);
+  color: var(--interspec-text-color);
   font-size: 13px;
 }
 
@@ -334,28 +326,28 @@
 /* ============================================ */
 
 .LlmToolRequestDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-background-color, #e8f0fe) !important;
-  border-bottom: 1px solid var(--interspec-border-color, #c5d9f1);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-background-color) !important;
+  border-bottom: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 
 .LlmToolCallItem {
   margin-bottom: 12px;
   padding: 10px;
-  background-color: var(--interspec-background-color, #f8f9fa);
-  border-left: 3px solid var(--interspec-link-color, #007bff);
+  background-color: var(--interspec-background-color);
+  border-left: 3px solid var(--interspec-link-color);
   border-radius: 4px;
 }
 
 .LlmToolName {
   font-size: 14px;
-  color: var(--interspec-link-color, #0056b3);
+  color: var(--interspec-link-color);
   font-weight: 600;
 }
 
 .LlmInvocationId {
   font-size: 12px;
-  color: var(--interspec-label-color, #6c757d);
+  color: var(--interspec-label-color);
   font-family: "Courier New", monospace;
 }
 
@@ -365,15 +357,15 @@
   margin-bottom: 4px;
   font-weight: 600;
   font-size: 13px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
 }
 
 .LlmToolParams {
   font-family: "Courier New", monospace;
   font-size: 12px;
-  background-color: var(--interspec-input-background, #ffffff);
-  border: 1px solid var(--interspec-border-color, #ced4da);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
   padding: 8px;
   border-radius: 3px;
   width: 100%;
@@ -384,34 +376,34 @@
 /* ============================================ */
 
 .LlmToolResultsDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-background-color, #f0e8ff) !important;
-  border-bottom: 1px solid var(--interspec-border-color, #d4c5f1);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-background-color) !important;
+  border-bottom: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 
 .LlmToolResultItem {
   margin-bottom: 12px;
   padding: 10px;
-  background-color: var(--interspec-background-color, #f8f9fa);
-  border-left: 3px solid var(--interspec-link-color, #6f42c1);
+  background-color: var(--interspec-background-color);
+  border-left: 3px solid var(--interspec-link-color);
   border-radius: 4px;
 }
 
 /* Error state for tool results */
 .LlmToolResultItem.LlmToolResultError {
-  background-color: var(--interspec-background-color, #fff5f5);
-  border-left: 3px solid #dc3545;
+  background-color: var(--interspec-background-color);
+  border-left: 3px solid var(--interspec-error-color);
 }
 
 /* Status indicators */
 .LlmToolStatusError {
-  color: #dc3545;
+  color: var(--interspec-error-color);
   font-weight: bold;
   font-size: 12px;
 }
 
 .LlmToolStatusPending {
-  color: #ffc107;
+  color: var(--interspec-warning-color);
   font-weight: bold;
   font-size: 12px;
 }
@@ -422,15 +414,15 @@
   margin-bottom: 4px;
   font-weight: 600;
   font-size: 13px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
 }
 
 .LlmToolResult {
   font-family: "Courier New", monospace;
   font-size: 12px;
-  background-color: var(--interspec-input-background, #ffffff);
-  border: 1px solid var(--interspec-border-color, #ced4da);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
   padding: 8px;
   border-radius: 3px;
   width: 100%;
@@ -442,7 +434,7 @@
 
 .LlmToolVisual {
   margin-top: 8px;
-  border: 1px solid var(--interspec-border-color, #ddd);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -452,18 +444,18 @@
   font-weight: bold;
   font-size: 0.85em;
   padding: 4px 8px;
-  background: var(--interspec-background-color, #f5f5f5);
-  border-bottom: 1px solid var(--interspec-border-color, #ddd);
-  color: var(--interspec-text-color, #495057);
+  background: var(--interspec-background-color);
+  border-bottom: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 
 .LlmToolVisualDesc {
   display: block;
   font-size: 0.8em;
   padding: 2px 8px 4px 8px;
-  color: var(--interspec-label-color, #6c757d);
-  background: var(--interspec-background-color, #f5f5f5);
-  border-bottom: 1px solid var(--interspec-border-color, #ddd);
+  color: var(--interspec-label-color);
+  background: var(--interspec-background-color);
+  border-bottom: 1px solid var(--interspec-border-color);
 }
 
 .LlmToolVisualChart {
@@ -483,7 +475,7 @@
   margin-bottom: 6px;
   font-weight: 600;
   font-size: 13px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
 }
 
 /* ============================================ */
@@ -491,15 +483,15 @@
 /* ============================================ */
 
 .LlmErrorDisplay.Wt-panel > .titlebar {
-  background-color: var(--interspec-background-color, #f8d7da) !important;
-  border-bottom: 1px solid var(--interspec-border-color, #f5c6cb);
-  color: var(--interspec-text-color, #721c24);
+  background-color: var(--interspec-background-color) !important;
+  border-bottom: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 
 .LlmErrorMessage {
-  color: var(--interspec-text-color, #721c24);
-  background-color: var(--interspec-input-background, #fff5f5);
-  border-left: 4px solid #dc3545;
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-input-background);
+  border-left: 4px solid var(--interspec-error-color);
   border-radius: 4px;
   margin-bottom: 12px;
   white-space: pre-wrap;
@@ -512,39 +504,39 @@
 }
 
 .LlmRetryButton {
-  background-color: #dc3545;
-  color: var(--interspec-button-text-color, white);
+  background-color: var(--interspec-error-color);
+  color: var(--interspec-background-color);
   cursor: pointer;
   margin-right: 8px;
 }
 
 .LlmRetryButton:hover {
-  background-color: #c82333;
+  background-color: var(--interspec-error-color);
 }
 
 .LlmContinueButton {
-  background-color: var(--interspec-button-background, #6c757d);
-  border-color: var(--interspec-button-border-color, #6c757d);
-  color: var(--interspec-button-text-color, white);
+  background-color: var(--interspec-button-background);
+  border-color: var(--interspec-button-border-color);
+  color: var(--interspec-button-text-color);
   cursor: pointer;
 }
 
 .LlmContinueButton:hover {
-  background-color: var(--interspec-button-background, #5a6268);
+  background-color: var(--interspec-button-background);
 }
 
 .LlmErrorRetryInfo {
-  color: var(--interspec-text-color, #856404);
-  background-color: var(--interspec-background-color, #fff3cd);
+  color: var(--interspec-text-color);
+  background-color: var(--interspec-background-color);
   padding: 8px 10px;
-  border-left: 3px solid #ffc107;
+  border-left: 3px solid var(--interspec-warning-color);
   border-radius: 4px;
   margin-bottom: 10px;
   font-size: 13px;
 }
 
 .LlmErrorHelpText {
-  color: var(--interspec-label-color, #6c757d);
+  color: var(--interspec-label-color);
   font-size: 13px;
   margin-top: 12px;
   font-style: italic;
@@ -558,9 +550,9 @@
   font-family: "Courier New", "Consolas", monospace;
   font-size: 12px;
   line-height: 1.4;
-  background-color: var(--interspec-input-background, #f8f9fa);
-  border: 1px solid var(--interspec-border-color, #ced4da);
-  color: var(--interspec-text-color, #212529);
+  background-color: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
   padding: 10px;
   width: 100%;
   max-width: 800px;
@@ -571,7 +563,7 @@
 /* ============================================ */
 
 .LlmEmptyMessage {
-  color: var(--interspec-label-color, #6c757d);
+  color: var(--interspec-label-color);
   font-style: italic;
   font-size: 13px;
 }
@@ -585,14 +577,14 @@
   max-width: 640px;
   margin: 24px auto;
   padding: 4px 8px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
 }
 
 .LlmWelcomeTitle {
   display: block;
   font-size: 18px;
   font-weight: 600;
-  color: var(--interspec-text-color, #2c3e50);
+  color: var(--interspec-text-color);
   margin-bottom: 10px;
 }
 
@@ -606,7 +598,7 @@
 .LlmWelcomeLearnMore {
   font-size: 14px;
   cursor: pointer;
-  color: var(--interspec-link-color, #0d6efd);
+  color: var(--interspec-link-color);
 }
 
 /* ============================================ */
@@ -628,8 +620,8 @@
   align-items: center;
   padding: 3px 4px;
   gap: 4px;
-  background-color: var(--interspec-background-color, #f0f4f8);
-  border: 1px solid var(--interspec-border-color, #d0d8e0);
+  background-color: var(--interspec-background-color);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   margin-bottom: 4px;
 }
@@ -639,7 +631,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background-color: var(--interspec-input-background, #e8ecf0);
+  background-color: var(--interspec-input-background);
   border-radius: 3px;
   padding: 2px 4px;
 }
@@ -649,12 +641,12 @@
   max-height: 40px;
   border-radius: 2px;
   object-fit: cover;
-  border: 1px solid var(--interspec-border-color, #ccc);
+  border: 1px solid var(--interspec-border-color);
 }
 
 .LlmStagedImageName {
   font-size: 11px;
-  color: var(--interspec-text-color, #495057);
+  color: var(--interspec-text-color);
   max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -664,7 +656,7 @@
 .LlmStagedImageRemove {
   background: none;
   border: none;
-  color: var(--interspec-label-color, #999);
+  color: var(--interspec-label-color);
   font-size: 14px;
   cursor: pointer;
   padding: 0 3px;
@@ -672,7 +664,7 @@
 }
 
 .LlmStagedImageRemove:hover {
-  color: #dc3545;
+  color: var(--interspec-error-color);
 }
 
 /* ============================================ */
@@ -691,7 +683,7 @@
   max-width: 120px;
   max-height: 120px;
   border-radius: 4px;
-  border: 1px solid var(--interspec-border-color, #ccc);
+  border: 1px solid var(--interspec-border-color);
   object-fit: contain;
   cursor: pointer;
 }
@@ -705,7 +697,7 @@
   max-width: 300px;
   max-height: 200px;
   border-radius: 4px;
-  border: 1px solid var(--interspec-border-color, #ccc);
+  border: 1px solid var(--interspec-border-color);
   object-fit: contain;
   margin-top: 6px;
   margin-bottom: 4px;
@@ -779,7 +771,7 @@
 
 .LlmMarkdownBody th,
 .LlmMarkdownBody td {
-  border: 1px solid var(--interspec-border-color, #d0d0d0);
+  border: 1px solid var(--interspec-border-color);
   padding: 3px 8px;
   text-align: left;
   vertical-align: top;
@@ -787,11 +779,11 @@
 
 .LlmMarkdownBody th {
   font-weight: 600;
-  background-color: var(--interspec-alt-row-background, rgba(128, 128, 128, 0.12));
+  background-color: var(--interspec-alt-row-background);
 }
 
 .LlmMarkdownBody tbody tr:nth-child(even) {
-  background-color: var(--interspec-alt-row-background, rgba(128, 128, 128, 0.06));
+  background-color: var(--interspec-alt-row-background);
 }
 
 .LlmMarkdownBody code {
@@ -799,7 +791,7 @@
   font-size: 0.9em;
   padding: 1px 4px;
   border-radius: 3px;
-  background-color: var(--interspec-alt-row-background, rgba(128, 128, 128, 0.12));
+  background-color: var(--interspec-alt-row-background);
 }
 
 .LlmMarkdownBody pre {
@@ -827,7 +819,7 @@
 
 .LlmMarkdownBody hr {
   border: none;
-  border-top: 1px solid var(--interspec-border-color, #d0d0d0);
+  border-top: 1px solid var(--interspec-border-color);
   margin: 12px 0;
 }
 
@@ -852,5 +844,5 @@
    without !important, and which is hard to read on the dark theme.  Restate it in a tone that works
    on either ground. */
 .LlmMarkdownBody .katex-error {
-  color: #e06c75 !important;
+  color: var(--interspec-error-color) !important;
 }

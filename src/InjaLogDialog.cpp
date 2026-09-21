@@ -318,7 +318,7 @@ void InjaLogDialog::updateDisplay()
 {
   if( m_template_options.empty() )
   {
-    const std::string error_msg = "<p style='color: red;'>" + Wt::WString::tr( "ild-no-templates" ).toUTF8() + "</p>";
+    const std::string error_msg = "<p class='ErrorTxt'>" + Wt::WString::tr( "ild-no-templates" ).toUTF8() + "</p>";
     m_iframe_holder->setText( error_msg );
     m_iframe_holder->setTextFormat( Wt::TextFormat::UnsafeXHTML );
     return;

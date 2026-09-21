@@ -679,9 +679,9 @@ void RelEffChart::setCssRules()
   if( !m_cssRules.count(rulename) )
     m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedPanel, "
                                           "#" + id() + " .RelEffPlotOmittedIcon",
-                                         "background: var(--interspec-background-color, #ffffee);"
-                                         " color: var(--interspec-text-color, #333322);"
-                                         " border-color: var(--interspec-border-color, #cccc99);" );
+                                         "background: var(--interspec-background-color);"
+                                         " color: var(--interspec-text-color);"
+                                         " border-color: var(--interspec-border-color);" );
 
   if( theme )
   {

@@ -7,7 +7,7 @@
 }
 
 .DoseEnterDiv {
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
   min-height: 255px;
 }
 
@@ -28,7 +28,7 @@
 }
 
 .DoseAnswerDiv {
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
   overflow-y: auto;
   overflow-x: hidden;
   margin-right: 10px; /* to be about symetric with white-space on left side of dose tool*/
@@ -69,7 +69,7 @@
 }
 
 .DoseIntroTxtDetail {
-  color: gray;
+  color: var(--interspec-fainter-text-color);
   font-size:75%
 }
 
@@ -80,14 +80,14 @@
   text-align: center;
   font-size: 25px;
   font-weight: bold;
-  background: white;
+  background: var(--interspec-panel-background);
   -webkit-border-radius: 3px;
   -moz-border-radius: 3px;
   border-radius: 3px;
 }
 
 .DoseIssueTxt {
-  color: red;
+  color: var(--interspec-error-color);
   text-align: center;
 }
 
@@ -96,7 +96,7 @@
   text-align: center;
   font-size: 100%;
   color: dark-grey;
-  border-bottom: 1px solid #d1d1d1;
+  border-bottom: 1px solid var(--interspec-border-color);
 }
 
 
@@ -105,11 +105,11 @@
 
 .DoseStayTimeHeader {
   text-align: center;
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .DoseStayLabelDiv {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   border-top: none;
 }
 
@@ -126,15 +126,15 @@
 
 .DoseStayTimeAnsw {
   text-align: center;
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   border-top: none;
   border-left: none;
 }
 
 
 .DoseCalcRuntimeCheckFailMsg {
-  background: white;
-  border: 1px solid red;
+  background: var(--interspec-background-color);
+  border: 1px solid var(--interspec-error-color);
   border-radius: 5px;
   padding: 5px;
 }
@@ -151,14 +151,14 @@
 }
 
 .DoseCalcRuntimeCheckFailBanner {
-  color: red;
+  color: var(--interspec-error-color);
   font-size: 24px;
   font-weight: bold;
   padding: 5px;
 }
 
 .DoseCalcRuntimeCheckInstuct {
-  color: orange;
+  color: var(--interspec-warning-color);
   font-size: 14px;
   padding: 5px;
   padding-top: 0px;

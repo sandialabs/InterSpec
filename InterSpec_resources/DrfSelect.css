@@ -116,7 +116,7 @@ table.FormulaDrfTbl label
 {
   width: 100%;
   padding-top: 3px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
   display: flex;
   flex-flow: row nowrap;
 }
@@ -131,7 +131,7 @@ table.FormulaDrfTbl label
 
 .RelEffFile
 {
-  border: 1px solid #A7A7A7;
+  border: 1px solid var(--interspec-outline-color);
   padding: 4px;
   margin-bottom: 3px;
 }
@@ -267,7 +267,7 @@ div.RelEffFile select
   margin: 1px 3px 1px 0px;
   border-radius: 9px;
   font-size: smaller;
-  border: 1px solid var(--interspec-border-color, #a5b7c8);
+  border: 1px solid var(--interspec-border-color);
 
   /* A neutral wash rather than a colour: it darkens a light background and lightens a dark one, so
      the chip separates from whatever is behind it without needing a theme variable of its own.
@@ -275,7 +275,7 @@ div.RelEffFile select
      the light fallback while the text followed the theme, leaving white-on-#eef3f7 (1.1:1) in the
      dark theme.  Only variables `InterSpec::applyColorTheme` actually sets are used here. */
   background: rgba(128, 128, 128, 0.18);
-  color: var(--interspec-text-color, #333);
+  color: var(--interspec-text-color);
 }
 
 .DrfContentChips .DrfChipAbsent
@@ -283,7 +283,7 @@ div.RelEffFile select
   /* Muted by colour, not by `opacity`: fading the whole chip took its text down with it, which is
      what made these unreadable rather than merely quiet. */
   background: rgba(128, 128, 128, 0.07);
-  color: var(--interspec-label-color, #6e6e6e);  /* #767676 measured 4.2:1 here - just under AA */
+  color: var(--interspec-label-color);  /* #767676 measured 4.2:1 here - just under AA */
   text-decoration: line-through;
   border-style: dashed;
 }

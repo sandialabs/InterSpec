@@ -1206,23 +1206,23 @@ void RelEffFile::initDetectors()
     }
     
     if( m_responses.empty() )
-      credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
+      credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
     
     for( const auto &det : m_responses )
       m_detectorSelect->addItem( det->name() );
   }else
   {
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
+    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
 #else
-    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
+    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
 #endif
     m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-no-drfs-available") ) );
     m_detectorSelect->hide();
   }//if( file_opened )
   
   if( file_opened && m_responses.empty() )
-    credits.push_back( WString::tr("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
+    credits.push_back( WString::tr("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
   
   string creditHtml;
   for( string credit : credits )
@@ -1975,7 +1975,7 @@ void GadrasDirectory::initDetectors()
   
   if( !SpecUtils::is_directory( basedir ) )
   {
-    m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
+    m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
     m_msg->show();
     m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-invalid-dir") ) );
     m_detectorSelect->setCurrentIndex( 0 );
@@ -2033,7 +2033,7 @@ void GadrasDirectory::initDetectors()
     
     if( m_responses.empty() )
     {
-      m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
+      m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
       m_msg->show();
     }else
     {
@@ -2110,7 +2110,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addNew<WLabel>( WString::tr("detector-label") );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
 
-  WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+  WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
                 .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
 
   m_text = addNew<WText>( txt, Wt::TextFormat::XHTML );
@@ -2159,7 +2159,7 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
   }else
   {
     const bool isMobile = (m_interspec && m_interspec->isMobile());
-    WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+    WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
                   .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
     m_text->setText( txt );
   }

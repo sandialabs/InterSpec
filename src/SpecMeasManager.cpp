@@ -3037,7 +3037,7 @@ bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
     errort->addStyleClass( "NonSpecError" );
 
     WText *detail = contents->addNew<WText>( string(e.what()) );
-    detail->setAttributeValue( "style", "color: red; " );
+    detail->addStyleClass( "ErrorTxt" );
 
     registerNonSpecDialogUndoRedo( dialog, displayName, fileSize, infile, type );
 
@@ -3303,7 +3303,7 @@ bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
     for( const string &s : warnings )
     {
       if( !s.empty() )
-        creditsHtml += "<div style=\"color: red\"><b>Warning</b>: " + Wt::Utils::htmlEncode(s) + "</div>";
+        creditsHtml += "<div class=\"WarnTxt\"><b>Warning</b>: " + Wt::Utils::htmlEncode(s) + "</div>";
     }
   }//if( !warnings.empty() )
   

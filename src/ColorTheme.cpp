@@ -24,7 +24,9 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <regex>
 #include <chrono>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <typeinfo>
@@ -38,10 +40,12 @@
 #include <Wt/Json/Object.h>
 #include <Wt/Json/Serializer.h>
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecUser.h"
 
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
 using namespace std;
@@ -72,7 +76,144 @@ namespace
     assert( themestr == ColorTheme::toJson(duplicate) );
   }//void minimal_test()
    */
+
+  /** Adds the `--interspec-<name>: <value>;` declarations found in the CSS file at `filePath`
+   to `tokens` (later files override earlier ones).  Does nothing if the file does not exist.
+   */
+  void add_css_token_declarations( const string &filePath, map<string,string> &tokens )
+  {
+    if( !SpecUtils::is_file(filePath) )
+      return;
+
+    string css;
+    try
+    {
+      css = AppUtils::file_contents( filePath );
+    }catch( const std::exception &e )
+    {
+      // Only cosmetic (the editor shows the theme's default beside each colour), so an unreadable
+      //  file must not take the dialog down with it.
+      cerr << "Failed to read theme CSS '" << filePath << "': " << e.what() << endl;
+      return;
+    }
+
+    // Strip comments, so a commented-out declaration is not picked up
+    css = std::regex_replace( css, std::regex("/\\*[\\s\\S]*?\\*/"), "" );
+
+    const std::regex declaration( "--interspec-([a-z0-9-]+)\\s*:\\s*([^;{}]+);" );
+    const std::sregex_iterator end_it;
+    for( std::sregex_iterator it( begin(css), end(css), declaration ); it != end_it; ++it )
+    {
+      string value = (*it)[2].str();
+      SpecUtils::trim( value );
+      tokens[(*it)[1].str()] = value;
+    }
+  }//void add_css_token_declarations(...)
 }//namespace
+
+
+const std::vector<ColorTheme::AppColorToken> &ColorTheme::appColorTokens()
+{
+  // Same order and grouping as InterSpec_resources/themes/default/default.css.
+  static const vector<AppColorToken> tokens{
+    // token name,                  legacy JSON key,       i18n stem,            editor group
+    { "background-color",          "backgroundColor",     "background",         "surfaces" },
+    { "input-background",          "inputBackground",     "input-bg",           "surfaces" },
+    { "panel-background",          nullptr,               "panel-bg",           "surfaces" },
+    { "header-background",         nullptr,               "header-bg",          "surfaces" },
+    { "alt-row-background",        nullptr,               "alt-row-bg",         "surfaces" },
+    { "popup-background",          nullptr,               "popup-bg",           "surfaces" },
+    { "tooltip-background",        nullptr,               "tooltip-bg",         "surfaces" },
+    { "tooltip-text-color",        nullptr,               "tooltip-text",       "surfaces" },
+    { "tooltip-border-color",      nullptr,               "tooltip-border",     "surfaces" },
+    { "dialog-cover-color",        nullptr,               "dialog-cover",       "surfaces" },
+    { "titlebar-background",       nullptr,               "titlebar-bg",        "surfaces" },
+    { "titlebar-hover-background", nullptr,               "titlebar-hover-bg",  "surfaces" },
+    { "text-color",                "textColor",           "text",               "text" },
+    { "label-color",               "labelColor",          "label",              "text" },
+    { "secondary-text-color",      nullptr,               "secondary-text",     "text" },
+    { "fainter-text-color",        nullptr,               "fainter-text",       "text" },
+    { "disabled-text-color",       nullptr,               "disabled-text",      "text" },
+    { "disabled-background",       nullptr,               "disabled-bg",        "text" },
+    { "border-color",              "borderColor",         "border",             "lines" },
+    { "outline-color",             nullptr,               "outline",            "lines" },
+    { "link-color",                "linkColor",           "link",               "interactive" },
+    { "accent-color",              nullptr,               "accent",             "interactive" },
+    { "highlight-background",      nullptr,               "highlight-bg",       "interactive" },
+    { "selected-background",       nullptr,               "selected-bg",        "interactive" },
+    { "selected-text-color",       nullptr,               "selected-text",      "interactive" },
+    { "hover-background",          nullptr,               "hover-bg",           "interactive" },
+    { "button-background",         "buttonBackground",    "button-bg",          "interactive" },
+    { "button-hover-background",   nullptr,               "button-hover-bg",    "interactive" },
+    { "button-border-color",       "buttonBorderColor",   "button-border",      "interactive" },
+    { "button-text-color",         "buttonTextColor",     "button-text",        "interactive" },
+    { "menubar-background",        "menuBarBackground",   "menubar-bg",         "interactive" },
+    { "menubar-active-color",      "menuBarActiveColor",  "menubar-active",     "interactive" },
+    { "menubar-hover-color",       "menuBarHoverColor",   "menubar-hover",      "interactive" },
+    { "warning-color",             nullptr,               "warning",            "semantic" },
+    { "warning-background",        nullptr,               "warning-bg",         "semantic" },
+    { "warning-border-color",      nullptr,               "warning-border",     "semantic" },
+    { "error-color",               nullptr,               "error",              "semantic" },
+    { "error-background",          nullptr,               "error-bg",           "semantic" },
+    { "error-border-color",        nullptr,               "error-border",       "semantic" },
+    { "success-color",             nullptr,               "success",            "semantic" },
+    { "success-background",        nullptr,               "success-bg",         "semantic" },
+    { "success-border-color",      nullptr,               "success-border",     "semantic" },
+  };
+
+  return tokens;
+}//appColorTokens()
+
+
+const ColorTheme::AppColorToken *ColorTheme::appColorToken( const std::string &name )
+{
+  for( const AppColorToken &token : appColorTokens() )
+  {
+    if( name == token.name )
+      return &token;
+  }
+
+  return nullptr;
+}//appColorToken( name )
+
+
+std::map<std::string,std::string> ColorTheme::cssThemeTokenDefaults( const std::string &resourcesDir,
+                                                                    const std::string &cssTheme )
+{
+  map<string,string> tokens;
+  const string themesDir = SpecUtils::append_path( resourcesDir, "themes" );
+
+  const string baseDir = SpecUtils::append_path( themesDir, "default" );
+  add_css_token_declarations( SpecUtils::append_path( baseDir, "default.css" ), tokens );
+
+  if( !cssTheme.empty() && !SpecUtils::iequals_ascii(cssTheme, "default") )
+  {
+    const string themeDir = SpecUtils::append_path( themesDir, cssTheme );
+    add_css_token_declarations( SpecUtils::append_path( themeDir, cssTheme + ".css" ), tokens );
+  }
+
+  return tokens;
+}//cssThemeTokenDefaults(...)
+
+
+std::vector<std::string> ColorTheme::availableCssThemes( const std::string &resourcesDir )
+{
+  vector<string> themes{ "default" };
+
+  const string themesDir = SpecUtils::append_path( resourcesDir, "themes" );
+  vector<string> dirs = SpecUtils::ls_directories_in_directory( themesDir );
+  std::sort( begin(dirs), end(dirs) );
+
+  for( const string &dir : dirs )
+  {
+    const string name = SpecUtils::filename( dir );
+    const string cssFile = SpecUtils::append_path( SpecUtils::append_path(themesDir, name), name + ".css" );
+    if( (name != "default") && SpecUtils::is_file(cssFile) )
+      themes.push_back( name );
+  }
+
+  return themes;
+}//availableCssThemes(...)
 
 
 std::string ColorTheme::predefinedThemeName( const PredefinedColorTheme theme )
@@ -107,18 +248,7 @@ std::unique_ptr<ColorTheme> ColorTheme::predefinedTheme( const PredefinedColorTh
         "description" : "Dark InterSpec color scheme.",
         "modified" : "2018-12-26T02:58:03+0000",
         "name" : "Dark",
-        "nonChartArea": {
-          "cssTheme" : "dark",
-          "backgroundColor": "rgb(44,45,48)",
-          "textColor": "white",
-          "borderColor": "rgb(136,136,136)",
-          "linkColor": "rgb(18,101,200)",
-          "labelColor": "rgb(197,198,201)",
-          "inputBackground": "rgb(59,60,63)",
-          "buttonBackground": "rgb(86,88,90)",
-          "buttonBorderColor": "rgb(106,107,109)",
-          "buttonTextColor": "rgb(230,230,230)"
-        },
+        "nonChartArea": { "cssTheme" : "dark" },
         "peaksTakeOnReferenceLineColor" : true,
         "referenceLines" : {
           "lineColors" : ["#c0c0c0", "#ffff99", "#b8d9f0", "#9933FF", "#FF66FF", "#CC3333", "#FF6633", "#FFFF99", "#CCFFCC", "#0000CC", "#666666", "#003333"],
@@ -191,21 +321,9 @@ ColorTheme::ColorTheme()
   creation_time = WDateTime( WDate(2018,11,1), WTime(22,56) );  //when I originally created this class
   modified_time = WDateTime( WDate(2022,8,3), WTime(14,00) );   //when I slightly modified it
 
+  // The base (light) CSS theme is always loaded, and `appColors` stays empty: the app colours
+  //  come from InterSpec_resources/themes/default/default.css unless a theme overrides them.
   nonChartAreaTheme = "";
-
-  // Non-chart area colors; defaults match the CSS fallback values in InterSpec.css
-  appBackgroundColor = WColor( "white" );
-  appTextColor = WColor( Wt::StandardColor::Black );
-  appBorderColor = WColor( "#e1e1e1" );
-  appLinkColor = WColor( "blue" );
-  appLabelColor = WColor( Wt::StandardColor::Black );
-  appInputBackground = WColor( "white" );
-  appButtonBackground = WColor( "#888888" );
-  appButtonBorderColor = WColor( "#e1e1e1" );
-  appButtonTextColor = WColor( "white" );
-  appMenuBarBackground = WColor( "#ffffff" );
-  appMenuBarActiveColor = WColor( 128, 128, 128 );      //rgba(128,128,128,1.0)
-  appMenuBarHoverColor = WColor( 128, 128, 128, 64 );   //rgba(128,128,128,0.25)
 
   foregroundLine = Wt::WColor(0x00, 0x00, 0x00); //Wt::Wt::StandardColor::Black
   backgroundLine = Wt::WColor(0x00, 0xff, 0xff); //Wt::GlobalColor::cyan
@@ -279,30 +397,14 @@ std::string ColorTheme::toJson( const ColorTheme &info )
     nonChartArea["cssTheme"] = WString("default");
   else
     nonChartArea["cssTheme"] = WString( info.nonChartAreaTheme );
-  if( !info.appBackgroundColor.isDefault() )
-    nonChartArea["backgroundColor"] = WString( info.appBackgroundColor.cssText(false) );
-  if( !info.appTextColor.isDefault() )
-    nonChartArea["textColor"] = WString( info.appTextColor.cssText(false) );
-  if( !info.appBorderColor.isDefault() )
-    nonChartArea["borderColor"] = WString( info.appBorderColor.cssText(false) );
-  if( !info.appLinkColor.isDefault() )
-    nonChartArea["linkColor"] = WString( info.appLinkColor.cssText(false) );
-  if( !info.appLabelColor.isDefault() )
-    nonChartArea["labelColor"] = WString( info.appLabelColor.cssText(false) );
-  if( !info.appInputBackground.isDefault() )
-    nonChartArea["inputBackground"] = WString( info.appInputBackground.cssText(false) );
-  if( !info.appButtonBackground.isDefault() )
-    nonChartArea["buttonBackground"] = WString( info.appButtonBackground.cssText(false) );
-  if( !info.appButtonBorderColor.isDefault() )
-    nonChartArea["buttonBorderColor"] = WString( info.appButtonBorderColor.cssText(false) );
-  if( !info.appButtonTextColor.isDefault() )
-    nonChartArea["buttonTextColor"] = WString( info.appButtonTextColor.cssText(false) );
-  if( !info.appMenuBarBackground.isDefault() )
-    nonChartArea["menuBarBackground"] = WString( info.appMenuBarBackground.cssText(false) );
-  if( !info.appMenuBarActiveColor.isDefault() )
-    nonChartArea["menuBarActiveColor"] = WString( info.appMenuBarActiveColor.cssText(false) );
-  if( !info.appMenuBarHoverColor.isDefault() )
-    nonChartArea["menuBarHoverColor"] = WString( info.appMenuBarHoverColor.cssText(false) );
+
+  // Only explicit overrides are written, keyed by CSS token name.  Alpha is kept, since the
+  //  hover/highlight colours are translucent.
+  for( const auto &nameAndColor : info.appColors )
+  {
+    if( !nameAndColor.second.isDefault() )
+      nonChartArea[nameAndColor.first] = WString( nameAndColor.second.cssText(true) );
+  }
 
   Json::Object &spectrum = base["spectrum"] = Json::Value(Json::Type::Object);
   if( !info.foregroundLine.isDefault() )
@@ -429,6 +531,7 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   
   
   info.nonChartAreaTheme = "";
+  info.appColors.clear();
   const Json::Value &nonChartArea = base.get("nonChartArea");
   if( nonChartArea.type()==Json::Type::Object
       && static_cast<const Json::Object &>(nonChartArea).contains("cssTheme") )
@@ -448,94 +551,30 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
     }else
       cout << "CssThemeVal is type " << static_cast<int>(cssThemeVal.type()) << endl;
 
-    if( SpecUtils::iequals_ascii(info.nonChartAreaTheme, "default") )
+    // "default" is the always-loaded base theme, which is represented by an empty name
+    if( SpecUtils::iequals_ascii(val, "default") )
       val = "";
 
     info.nonChartAreaTheme = val;
 
-    // Set defaults based on nonChartAreaTheme if not specified in JSON
-    if( nonChartAreaObj.contains("backgroundColor") )
-      info.appBackgroundColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("backgroundColor")) );
-    else
+    // Only the colours the JSON lists become overrides; the rest keep the CSS theme's values.
+    //  Older versions of InterSpec wrote camelCase keys, so those are accepted too.
+    for( const AppColorToken &token : appColorTokens() )
     {
-      // Default based on theme
-      if( info.nonChartAreaTheme == "dark" )
-        info.appBackgroundColor = WColor("rgb(44,45,48)");
-      else
-        info.appBackgroundColor = WColor("#ffffff");
-    }
+      const char *key = nullptr;
+      if( nonChartAreaObj.contains(token.name) )
+        key = token.name;
+      else if( token.legacyJsonKey && nonChartAreaObj.contains(token.legacyJsonKey) )
+        key = token.legacyJsonKey;
 
-    if( nonChartAreaObj.contains("textColor") )
-      info.appTextColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("textColor")) );
-    else
-    {
-      // Default based on theme
-      if( info.nonChartAreaTheme == "dark" )
-        info.appTextColor = WColor("white");
-      else
-        info.appTextColor = WColor(); // Browser default (empty)
-    }
+      if( !key )
+        continue;
 
-    // Border color
-    if( nonChartAreaObj.contains("borderColor") )
-      info.appBorderColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("borderColor")) );
-    else
-      info.appBorderColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(136,136,136)" : "#e1e1e1" );
-
-    // Link color
-    if( nonChartAreaObj.contains("linkColor") )
-      info.appLinkColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("linkColor")) );
-    else
-      info.appLinkColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(18,101,200)" : "blue" );
-
-    // Label text color
-    if( nonChartAreaObj.contains("labelColor") )
-      info.appLabelColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("labelColor")) );
-    else
-      info.appLabelColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(197,198,201)" : "black" );
-
-    // Input background
-    if( nonChartAreaObj.contains("inputBackground") )
-      info.appInputBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("inputBackground")) );
-    else
-      info.appInputBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(59,60,63)" : "white" );
-
-    // Button background
-    if( nonChartAreaObj.contains("buttonBackground") )
-      info.appButtonBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonBackground")) );
-    else
-      info.appButtonBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(86,88,90)" : "#888888" );
-
-    // Button border color
-    if( nonChartAreaObj.contains("buttonBorderColor") )
-      info.appButtonBorderColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonBorderColor")) );
-    else
-      info.appButtonBorderColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(106,107,109)" : "#e1e1e1" );
-
-    // Button text color
-    if( nonChartAreaObj.contains("buttonTextColor") )
-      info.appButtonTextColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("buttonTextColor")) );
-    else
-      info.appButtonTextColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(230,230,230)" : "white" );
-
-    // Menu bar background (default/non-hover/non-active state)
-    if( nonChartAreaObj.contains("menuBarBackground") )
-      info.appMenuBarBackground = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarBackground")) );
-    else
-      info.appMenuBarBackground = WColor( info.nonChartAreaTheme == "dark" ? "rgb(65,65,65)" : "#ffffff" );
-
-    // Menu bar active color (button background when menu is open)
-    if( nonChartAreaObj.contains("menuBarActiveColor") )
-      info.appMenuBarActiveColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarActiveColor")) );
-    else
-      info.appMenuBarActiveColor = WColor( info.nonChartAreaTheme == "dark" ? "rgb(18,101,200)" : "rgba(128,128,128,1.0)" );
-
-    // Menu bar hover color (button background on hover, non-active)
-    if( nonChartAreaObj.contains("menuBarHoverColor") )
-      info.appMenuBarHoverColor = WColor( static_cast<const WString &>(nonChartAreaObj.get("menuBarHoverColor")) );
-    else
-      info.appMenuBarHoverColor = WColor( info.nonChartAreaTheme == "dark" ? "rgba(18,101,200,0.25)" : "rgba(128,128,128,0.25)" );
-  }
+      const string colorStr = static_cast<const WString &>(nonChartAreaObj.get(key)).toUTF8();
+      if( !colorStr.empty() )
+        info.appColors[token.name] = WColor( colorStr );
+    }//for( const AppColorToken &token : appColorTokens() )
+  }//if( nonChartArea object with a cssTheme )
   
   if( base.contains("spectrum") /*&& base["spectrum"].type()==Json::Type::Object*/ )
   {

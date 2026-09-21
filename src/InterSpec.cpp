@@ -2364,8 +2364,7 @@ void InterSpec::updateRightClickNuclidesMenu(
         && (peak->parentNuclide() || peak->reaction() || peak->xrayElement())  )
     {
       PopupDivMenuItem *item = menu->addMenuItem( nuc, "", true );
-      item->setAttributeValue("style", "background: grey; color: white;"
-                                       + item->attributeValue("style"));
+      item->addStyleClass( "PopupMenuHeaderItem" );
     }else if( nuc.size() )
     {
       PopupDivMenuItem *item = menu->addMenuItem( nuc, "", true );
@@ -2403,8 +2402,7 @@ void InterSpec::updateRightClickNuclidesMenu(
   if( nuclides->empty() )
   {
     PopupDivMenuItem *item = menu->addMenuItem( WString::tr("rclick-mi-no-nuc-suggestions"), "", true );
-    item->setAttributeValue("style", "background: grey; color: white;"
-                            + item->attributeValue("style"));
+    item->addStyleClass( "PopupMenuHeaderItem" );
   }
   
   WApplication *app = wApp;
@@ -4943,39 +4941,30 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_timeSeries->applyColorTheme( theme );
 
-  // Apply non-chart area colors via CSS variables
+  // Publish the theme's explicit app-colour overrides as CSS tokens.  The themes' own values
+  //  live in InterSpec_resources/themes/*/*.css; only what this theme explicitly sets goes here.
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   if( app )
   {
-    auto setNonChartCssVar = [app]( const string &var_name, const WColor &color ) {
-      const string rulename = "global_interspec_" + var_name;
+    for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
+    {
+      const string rulename = "global_interspec_" + string(token.name);
+      const map<string,WColor>::const_iterator pos = theme->appColors.find( token.name );
 
-      if( color.isDefault() )
+      if( (pos == end(theme->appColors)) || pos->second.isDefault() )
       {
         app->removeGlobalCssRule( rulename );
       }else
       {
-        app->setGlobalCssRule(
-          rulename,
-          ":root",
-          "--interspec-" + var_name + ": " + color.cssText() + ";"
-        );
+        // Wt renders its internal stylesheet (where these rules live) before every linked
+        //  stylesheet, so a plain `:root` rule would lose to the `:root` token blocks in
+        //  themes/default/default.css and themes/<name>/<name>.css at equal specificity.
+        //  `html:root` is more specific, so the user's explicit colours always win.
+        app->setGlobalCssRule( rulename, "html:root",
+                          "--interspec-" + string(token.name) + ": " + pos->second.cssText() + ";" );
       }
-    };
-
-    setNonChartCssVar( "background-color", theme->appBackgroundColor );
-    setNonChartCssVar( "text-color", theme->appTextColor );
-    setNonChartCssVar( "border-color", theme->appBorderColor );
-    setNonChartCssVar( "link-color", theme->appLinkColor );
-    setNonChartCssVar( "label-color", theme->appLabelColor );
-    setNonChartCssVar( "input-background", theme->appInputBackground );
-    setNonChartCssVar( "button-background", theme->appButtonBackground );
-    setNonChartCssVar( "button-border-color", theme->appButtonBorderColor );
-    setNonChartCssVar( "button-text-color", theme->appButtonTextColor );
-    setNonChartCssVar( "menubar-background", theme->appMenuBarBackground );
-    setNonChartCssVar( "menubar-active-color", theme->appMenuBarActiveColor );
-    setNonChartCssVar( "menubar-hover-color", theme->appMenuBarHoverColor );
-  }
+    }//for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
+  }//if( app )
 
   setReferenceLineColors( theme );
   

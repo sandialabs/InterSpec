@@ -5,19 +5,19 @@
 
 .DetectionLimitSimple .ErrMsg {
   display: block;
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .DetectionLimitSimple button.MdaFitFwhm.Wt-btn.with-label.LightButton
 {
   align-self: center;
-  color: red;
-  border: 1px solid red;
+  color: var(--interspec-error-color);
+  border: 1px solid var(--interspec-error-color);
   
 }
 
 .DetectionLimitSimple .ResultsArea {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   margin-bottom: 5px;
 }
 
@@ -27,7 +27,7 @@
   align-items: center; /* Align vertical */
   text-align: center;
   
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   margin-left: 10px;
   margin-right: 10px;
   
@@ -38,7 +38,7 @@
   
   font-size: 14px;
   font-weight: 500;
-  background: white;
+  background: var(--interspec-panel-background);
   border-radius: 3px;
 }
 
@@ -133,7 +133,7 @@
   align-items: center;
   margin: 8px 20px 0 20px;
   padding-top: 8px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
 }
 
 .DetectionLimitSimple .AdvancedInput > label {
@@ -275,10 +275,10 @@
 
 /* Soft warnings qualify a limit that WAS produced; hard errors (.ErrMsg) mean there is no limit.
    Duplicated from DetectionLimitTool.css because this widget loads only its own stylesheet.
-   The dark-theme colour lives in themes/dark/dark.css. */
+   Both themes' values come from the --interspec-warning-color token. */
 .DetectionLimitSimple .MdaWarnMsg {
   display: block;
-  color: #9a6400;
+  color: var(--interspec-warning-color);
 }
 
 /* Phone: shrink the advanced inputs to match the rest of the tool, and let the Calc. Method row wrap

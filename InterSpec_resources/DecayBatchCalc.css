@@ -12,7 +12,7 @@
 /* --- Nuclide input area --- */
 .DecayBatchCalcWidget .DbcNuclideArea
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   margin-bottom: 6px;
   flex: 0 0 auto;
@@ -73,7 +73,7 @@
   align-items: center;
   gap: 8px;
   padding: 2px 5px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
 }
 
 /* "+" / "-" buttons: strip the default button chrome, matching "Isotopics by nuclides". */
@@ -127,10 +127,10 @@
 {
   flex: 0 0 auto;
   margin-left: auto;
-  border: 1px dashed #bbb;
+  border: 1px dashed var(--interspec-outline-color);
   border-radius: 4px;
   padding: 2px 8px;
-  color: #888;
+  color: var(--interspec-fainter-text-color);
   cursor: pointer;
   font-size: 0.85em;
 }
@@ -138,8 +138,8 @@
 .DecayBatchCalcWidget .DbcDropArea.DragedOver,
 .DecayBatchCalcWidget .DbcDropArea.DomIsDrugOver
 {
-  border-color: #4a90d9;
-  background: rgba(74, 144, 217, 0.08);
+  border-color: var(--interspec-accent-color);
+  background: var(--interspec-highlight-background);
 }
 
 /* --- Results area --- */
@@ -147,7 +147,7 @@
 {
   flex: 1 1 auto;
   min-height: 120px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   padding: 4px;
   overflow: auto;
@@ -161,7 +161,7 @@
 
 .DecayBatchCalcWidget .DbcWarning
 {
-  color: #a00;
+  color: var(--interspec-error-color);
   white-space: pre-wrap;
   margin-bottom: 4px;
 }
@@ -175,7 +175,7 @@
 .DecayBatchCalcWidget table.DbcResultTable th,
 .DecayBatchCalcWidget table.DbcResultTable td
 {
-  border: 1px solid #ddd;
+  border: 1px solid var(--interspec-border-color);
   padding: 2px 8px;
   text-align: right;
   white-space: nowrap;
@@ -185,13 +185,13 @@
 {
   position: sticky;
   top: 0;
-  background: #f3f3f3;
+  background: var(--interspec-header-background);
 }
 
 .DecayBatchCalcWidget table.DbcResultTable tbody th
 {
   text-align: left;
-  background: #fafafa;
+  background: var(--interspec-panel-background);
 }
 
 /* --- Export row --- */

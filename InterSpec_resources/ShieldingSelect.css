@@ -24,7 +24,7 @@
 
 .ShieldingSelect
 {
-  border: 1px solid var(--interspec-border-color, #e1e1e1);
+  border: 1px solid var(--interspec-border-color);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -37,8 +37,8 @@
 {
   display: inline-flex;
   flex: 0 0 auto;
-  background: var(--interspec-background-color, #ececef);
-  border: 1px solid var(--interspec-border-color, #d2d2d8);
+  background: var(--interspec-background-color);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 7px;
   padding: 2px;
   gap: 2px;
@@ -63,7 +63,7 @@
 
 .ShieldingSelect .ShieldTypeToggle .TypeBtn.on
 {
-  background: var(--interspec-input-background, #ffffff);
+  background: var(--interspec-input-background);
   opacity: 1.0;
   box-shadow: 0 1px 2px rgba(20,20,30,.14);
 }
@@ -161,8 +161,8 @@
   margin-right: 3px;
 }
 
-/* The color themes force a background and borders onto every input (see themes/dark/dark.css),
-   with !important - so this one needs !important to read as text until hovered or focused.
+/* Dark themes force borders onto every input with !important (see themes/dark/dark.css), so this
+   one needs !important too, to read as text until hovered or focused.
  */
 .ShieldingSelect .MaterialSummary input.DensityEdit
 {
@@ -186,8 +186,8 @@
 .ShieldingSelect .MaterialSummary:hover input.DensityEdit,
 .ShieldingSelect .MaterialSummary input.DensityEdit:focus
 {
-  border-color: var(--interspec-nonlinked-color, #999) !important;
-  background: var(--interspec-input-background, transparent) !important;
+  border-color: var(--interspec-outline-color) !important;
+  background: var(--interspec-input-background) !important;
   outline: none;
 }
 
@@ -238,9 +238,9 @@
 .ShieldingAsSourceCBDiv
 {
 /*background: #888888; color: #FFFFFF;*/
-  border-color: var(--interspec-border-color, #E1E1E1);
+  border-color: var(--interspec-border-color);
   border-style: solid;
-  border:2px solid var(--interspec-border-color, #e1e1e1);
+  border:2px solid var(--interspec-border-color);
 }
 
 .ShieldingSelect .LinkBtn.AddTrcSrcBtn
@@ -254,7 +254,7 @@
   
 .ShieldingSelect .warning
 {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .TraceSrcContainer

@@ -127,13 +127,11 @@ void DecaySelectNuclide::setNuclideSearchToFocus()
 void DecaySelectNuclide::setAddButtonToAdd()
 {
   m_acceptButton->setText( WString::tr("Add") );
-  m_acceptButton->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
 }
 
 void DecaySelectNuclide::setAddButtonToAccept()
 {
   m_acceptButton->setText( WString::tr("Accept") );
-  m_acceptButton->setIcon( "InterSpec_resources/images/accept.png" );
 }
 
 
@@ -321,7 +319,6 @@ void DecaySelectNuclide::init()
   cancelButton->clicked().connect( this, &DecaySelectNuclide::emitDone );
 
   m_elementSelection->addStyleClass( "m_elementSelection" );
-  m_acceptButton->addStyleClass("AddIcon");
     
 
   m_nuclideActivityEdit->addStyleClass( "m_nuclideActivityEdit" );

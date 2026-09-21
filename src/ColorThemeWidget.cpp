@@ -23,6 +23,10 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <string>
+#include <vector>
+
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WTable.h>
@@ -34,6 +38,8 @@
 #include <Wt/WApplication.h>
 #include <Wt/WSuggestionPopup.h>
 #include <Wt/WContainerWidget.h>
+
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -112,153 +118,53 @@ ColorThemeWidget::ColorThemeWidget()
   cell->addNew<WLabel>(WString::tr("ctwidget-backdrop-theme"));
   cell = table->elementAt(row, 1);
 
-  //ToDo: right m_nonChartAreaCssTheme only lists names given by ColorTheme::predefinedThemeName(),
-  //      but what we should *really* do is list options in InterSpec_resources/themes
+  // Every InterSpec_resources/themes/<name>/<name>.css is offered; "default" is first.
   m_nonChartAreaCssTheme = cell->addNew<WComboBox>();
   m_nonChartAreaCssTheme->setNoSelectionEnabled( true );
-  
-  for( ColorTheme::PredefinedColorTheme t = ColorTheme::DefaultColorTheme;
-      t < ColorTheme::NumPredefinedColorTheme;
-      t = ColorTheme::PredefinedColorTheme(t+1) )
-  {
-    m_nonChartAreaCssTheme->addItem( ColorTheme::predefinedThemeName(t) );
-  }
+
+  const string resourcesDir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
+  m_cssThemeNames = ColorTheme::availableCssThemes( resourcesDir );
+  for( const string &name : m_cssThemeNames )
+    m_nonChartAreaCssTheme->addItem( name );
   
   cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
   cell->addNew<WText>(WString::tr("ctwidget-backdrop-desc"));
 
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-background"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppBackground] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-background-desc"));
+  // The app (non-chart) colour rows are generated from ColorTheme::appColorTokens().  A picker
+  //  left unset means the CSS theme's own value applies; that value is shown as a hint.
+  string currentGroup;
+  for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
+  {
+    if( currentGroup != token.group )
+    {
+      currentGroup = token.group;
+      ++row;
+      cell = table->elementAt(row, 0);
+      cell->setColumnSpan(3);
+      cell->addStyleClass( "CTGroupTitle" );
+      cell->addNew<WText>( WString::tr( "ctwidget-app-group-" + currentGroup ) );
+    }
 
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-text"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppText] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-text-desc"));
+    const string name = token.name;
+    const string trKey = string("ctwidget-app-") + token.trKey;
 
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-border"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppBorder] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-border-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-link"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppLink] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-link-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-label"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppLabel] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-label-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-input-bg"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppInputBackground] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-input-bg-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-button-bg"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppButtonBackground] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-button-bg-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-button-border"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppButtonBorder] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-button-border-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-button-text"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppButtonText] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-button-text-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-menubar-bg"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppMenuBarBackground] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-menubar-bg-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-menubar-active"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppMenuBarActiveColor] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-menubar-active-desc"));
-
-  ++row;
-  cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-  cell->addNew<WLabel>(WString::tr("ctwidget-app-menubar-hover"));
-  cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-  m_colorSelects[AppMenuBarHoverColor] = cell->addNew<ColorSelect>(Wt::WFlags<ColorSelect::ColorSelectOptions>{});
-  cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-  cell->addNew<WText>(WString::tr("ctwidget-app-menubar-hover-desc"));
+    ++row;
+    cell = table->elementAt(row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    cell->addNew<WLabel>( WString::tr(trKey) );
+    cell = table->elementAt(row, 1);
+    cell->addStyleClass( "CTSelect" );
+    ColorSelect *select = cell->addNew<ColorSelect>( ColorSelect::AllowNoColor );
+    select->cssColorChanged().connect( this, [this, name](){ appColorChanged( name ); } );
+    m_appColorSelects[name] = select;
+    cell = table->elementAt(row, 2);
+    cell->addStyleClass( "CTRowDesc" );
+    cell->addNew<WText>( WString::tr(trKey + "-desc") );
+    WText *hint = cell->addNew<WText>();
+    hint->addStyleClass( "CTDefaultHint" );
+    m_appColorDefaultTxt[name] = hint;
+  }//for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
 
 	++row;
 	cell = table->elementAt(row, 0);
@@ -803,6 +709,8 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
     //  theme)
     for( auto i : m_colorSelects )
       i->setDisabled( !modifieable );
+    for( const auto &nameAndSelect : m_appColorSelects )
+      nameAndSelect.second->setDisabled( !modifieable );
     for( auto i : m_referenceLineColor )
       i->setDisabled( !modifieable );
     for( auto i : m_specificRefLineColor )
@@ -832,25 +740,14 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
   else
     m_logYAxisMin->setValue( 0.1f );
   
-  if( theme->nonChartAreaTheme.empty() || theme->nonChartAreaTheme=="default" )
+  const string cssTheme = (theme->nonChartAreaTheme.empty() || (theme->nonChartAreaTheme == "default"))
+                          ? string("default") : theme->nonChartAreaTheme;
+  m_nonChartAreaCssTheme->setCurrentIndex( -1 );  // stays unselected if the CSS theme is not on disk
+  for( size_t i = 0; i < m_cssThemeNames.size(); ++i )
   {
-    m_nonChartAreaCssTheme->setCurrentIndex( 0 );
-  }else
-  {
-    m_nonChartAreaCssTheme->setCurrentIndex( -1 );
-    for( ColorTheme::PredefinedColorTheme t = ColorTheme::DefaultColorTheme;
-        t < ColorTheme::NumPredefinedColorTheme;
-        t = ColorTheme::PredefinedColorTheme(t+1) )
-    {
-      //ToDo: right m_nonChartAreaCssTheme only lists names given by ColorTheme::predefinedThemeName(),
-      //      but what we should *really* do is list options in InterSpec_resources/themes
-      if( theme->nonChartAreaTheme == ColorTheme::predefinedThemeName(t) )
-      {
-        m_nonChartAreaCssTheme->setCurrentIndex( t - ColorTheme::DefaultColorTheme );
-        break;
-      }
-    }
-  }//if( default ) / else
+    if( m_cssThemeNames[i] == cssTheme )
+      m_nonChartAreaCssTheme->setCurrentIndex( static_cast<int>(i) );
+  }
   
 	m_peaksTakeRefLineColor->setChecked(theme->peaksTakeOnReferenceLineColor);
 
@@ -934,18 +831,12 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
                                                   Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color ) :
                                                   theme->dynamicRefLineOtherColor );
 
-  m_colorSelects[AppBackground]->setColor( theme->appBackgroundColor );
-  m_colorSelects[AppText]->setColor( theme->appTextColor );
-  m_colorSelects[AppBorder]->setColor( theme->appBorderColor );
-  m_colorSelects[AppLink]->setColor( theme->appLinkColor );
-  m_colorSelects[AppLabel]->setColor( theme->appLabelColor );
-  m_colorSelects[AppInputBackground]->setColor( theme->appInputBackground );
-  m_colorSelects[AppButtonBackground]->setColor( theme->appButtonBackground );
-  m_colorSelects[AppButtonBorder]->setColor( theme->appButtonBorderColor );
-  m_colorSelects[AppButtonText]->setColor( theme->appButtonTextColor );
-  m_colorSelects[AppMenuBarBackground]->setColor( theme->appMenuBarBackground );
-  m_colorSelects[AppMenuBarActiveColor]->setColor( theme->appMenuBarActiveColor );
-  m_colorSelects[AppMenuBarHoverColor]->setColor( theme->appMenuBarHoverColor );
+  for( const auto &nameAndSelect : m_appColorSelects )
+  {
+    const map<string,WColor>::const_iterator pos = theme->appColors.find( nameAndSelect.first );
+    nameAndSelect.second->setColor( (pos == end(theme->appColors)) ? WColor() : pos->second );
+  }
+  updateAppColorDefaults();
 
   for( int i = 0; i < sm_numRefLineColors; ++i )
   {
@@ -1153,53 +1044,6 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
       m_currentTheme->dynamicRefLineOtherColor = m_colorSelects[color]->color();
       break;
 
-    case AppBackground:
-      m_currentTheme->appBackgroundColor = m_colorSelects[color]->color();
-      break;
-
-    case AppText:
-      m_currentTheme->appTextColor = m_colorSelects[color]->color();
-      break;
-
-    case AppBorder:
-      m_currentTheme->appBorderColor = m_colorSelects[color]->color();
-      break;
-
-    case AppLink:
-      m_currentTheme->appLinkColor = m_colorSelects[color]->color();
-      break;
-
-    case AppLabel:
-      m_currentTheme->appLabelColor = m_colorSelects[color]->color();
-      break;
-
-    case AppInputBackground:
-      m_currentTheme->appInputBackground = m_colorSelects[color]->color();
-      break;
-
-    case AppButtonBackground:
-      m_currentTheme->appButtonBackground = m_colorSelects[color]->color();
-      break;
-
-    case AppButtonBorder:
-      m_currentTheme->appButtonBorderColor = m_colorSelects[color]->color();
-      break;
-
-    case AppButtonText:
-      m_currentTheme->appButtonTextColor = m_colorSelects[color]->color();
-      break;
-
-    case AppMenuBarBackground:
-      m_currentTheme->appMenuBarBackground = m_colorSelects[color]->color();
-      break;
-
-    case AppMenuBarActiveColor:
-      m_currentTheme->appMenuBarActiveColor = m_colorSelects[color]->color();
-      break;
-
-    case AppMenuBarHoverColor:
-      m_currentTheme->appMenuBarHoverColor = m_colorSelects[color]->color();
-      break;
 
 	  case NumSelectableColors:
 		  break;
@@ -1241,11 +1085,12 @@ void ColorThemeWidget::descriptionChangedCallback()
 
 void ColorThemeWidget::nonChartAreaThemeChanged()
 {
-  const ColorTheme::PredefinedColorTheme theme = ColorTheme::PredefinedColorTheme(ColorTheme::DefaultColorTheme + m_nonChartAreaCssTheme->currentIndex());
-  string themeName = ColorTheme::predefinedThemeName(theme);
-  if( theme == ColorTheme::DefaultColorTheme )
+  const int index = m_nonChartAreaCssTheme->currentIndex();
+  string themeName = ((index >= 0) && (index < static_cast<int>(m_cssThemeNames.size())))
+                     ? m_cssThemeNames[index] : string();
+  if( themeName == "default" )
     themeName = "";
-  
+
   if( !m_currentTheme )
   {
     assert( m_origTheme );
@@ -1253,11 +1098,59 @@ void ColorThemeWidget::nonChartAreaThemeChanged()
       return;
     m_currentTheme.reset( new ColorTheme(*m_origTheme) );
   }
-  
+
   m_currentTheme->nonChartAreaTheme = themeName;
-  
+  updateAppColorDefaults();
+
   m_edited.emit();
 }//void nonChartAreaThemeChanged()
+
+
+void ColorThemeWidget::appColorChanged( const std::string &token )
+{
+  const map<string,ColorSelect *>::const_iterator pos = m_appColorSelects.find( token );
+  assert( pos != end(m_appColorSelects) );
+  if( pos == end(m_appColorSelects) )
+    return;
+
+  if( !m_currentTheme )
+  {
+    assert( m_origTheme );
+    m_currentTheme.reset( new ColorTheme(*m_origTheme) );
+  }
+
+  // Clearing the picker removes the override, so the CSS theme's value applies again
+  const WColor color = pos->second->color();
+  if( color.isDefault() )
+    m_currentTheme->appColors.erase( token );
+  else
+    m_currentTheme->appColors[token] = color;
+
+  m_edited.emit();
+}//void appColorChanged( const std::string &token )
+
+
+void ColorThemeWidget::updateAppColorDefaults()
+{
+  const ColorTheme * const theme = m_currentTheme ? m_currentTheme.get() : m_origTheme.get();
+  const string cssTheme = theme ? theme->nonChartAreaTheme : string();
+  const string resourcesDir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
+  const map<string,string> defaults = ColorTheme::cssThemeTokenDefaults( resourcesDir, cssTheme );
+
+  for( const auto &nameAndTxt : m_appColorDefaultTxt )
+  {
+    const map<string,string>::const_iterator pos = defaults.find( nameAndTxt.first );
+    if( pos == end(defaults) )
+    {
+      nameAndTxt.second->setText( "" );
+      continue;
+    }
+
+    // The swatch shows the value itself, so an inline background is the right tool here
+    const string swatch = "<span class=\"CTDefaultSwatch\" style=\"background:" + pos->second + "\"></span>";
+    nameAndTxt.second->setText( WString::tr("ctwidget-app-theme-default").arg( swatch + pos->second ) );
+  }//for( const auto &nameAndTxt : m_appColorDefaultTxt )
+}//void updateAppColorDefaults()
 
 
 void ColorThemeWidget::peaksTakeRefLineColorChangedCallback()

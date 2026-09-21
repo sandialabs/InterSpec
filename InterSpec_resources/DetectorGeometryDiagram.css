@@ -43,7 +43,7 @@
    are only defined where a spectrum chart has set them, hence the fallback chain. */
 .DetectorGeometryDiagram .DgdFill
 {
-  fill: var(--d3spec-axis-color, var(--interspec-text-color, #333));
+  fill: var(--d3spec-axis-color, var(--interspec-text-color));
   stroke: none;
   pointer-events: all;
 }
@@ -64,21 +64,21 @@
 .DetectorGeometryDiagram .DgdOutline path
 {
   fill: none;
-  stroke: var(--d3spec-axis-color, var(--interspec-text-color, #333));
+  stroke: var(--d3spec-axis-color, var(--interspec-text-color));
   stroke-width: 1px;
   pointer-events: none;
 }
 .DetectorGeometryDiagram .DgdAxis
 {
   fill: none;
-  stroke: var(--d3spec-axis-color, var(--interspec-text-color, #333));
+  stroke: var(--d3spec-axis-color, var(--interspec-text-color));
   stroke-width: 1px;
   stroke-dasharray: 3 3;
   stroke-opacity: 0.5;
 }
 .DetectorGeometryDiagram .DgdLabel
 {
-  fill: var(--d3spec-text-color, var(--interspec-text-color, #333));
+  fill: var(--d3spec-text-color, var(--interspec-text-color));
   font: 11px sans-serif;
 }
 
@@ -101,9 +101,9 @@ div.DgdTooltip
   width: max-content;
   max-width: calc(100% - 20px);
   box-sizing: border-box;
-  background: var(--interspec-background-color, #ffffcc);
-  color: var(--interspec-text-color, #333);
-  border: 1px solid var(--interspec-border-color, #888);
+  background: var(--interspec-background-color);
+  color: var(--interspec-text-color);
+  border: 1px solid var(--interspec-border-color);
   box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
 }
 

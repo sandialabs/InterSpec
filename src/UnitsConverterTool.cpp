@@ -553,7 +553,7 @@ UnitsConverterTool::UnitsConverterTool()
 
   m_message = layout->addWidget( std::make_unique<WText>( "&nbsp", Wt::TextFormat::UnsafeXHTML ), 3, 0, 1, 3 );
   m_message->setHeight( WLength(50, WLength::Unit::Pixel) );
-  m_message->setAttributeValue( "style", "color: rgb(18,101,200);" );
+  m_message->addStyleClass( "InfoTxt" );
 //  m_message->setHiddenKeepsGeometry( true );
   m_message->hide();
   layout->setColumnStretch(1, 1);

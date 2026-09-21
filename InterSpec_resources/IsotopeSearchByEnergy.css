@@ -107,8 +107,8 @@
 .IsotopeSearchInProgress
 {
   /* Displayed only while a search is in progress */
-  background: red;
-  color: white;
+  background: var(--interspec-warning-background);
+  color: var(--interspec-warning-color);
   
   padding-right: 5px;
   padding-left: 5px;
@@ -135,7 +135,7 @@
 
 .ActiveSearchEnergy
 {
-  background: rgba(36, 169, 211, 0.25);
+  background: var(--interspec-highlight-background);
 }
 
 
@@ -171,7 +171,7 @@ div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
 
 .SearchEnergy
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   margin: 2px;
   margin-top: 0px;
   margin-bottom: 5px;

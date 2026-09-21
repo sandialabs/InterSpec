@@ -79,7 +79,7 @@
 
 .BatchGuiWidget .ExemplarFileDrop
 {
-  border: 1px #e1e1e1;
+  border: 1px var(--interspec-border-color);
   border-radius: 5px;
   width: 125px;  /* same as BatchGuiInputSpectrumFile */
   height: 100px; /* same as BatchGuiInputSpectrumFile */
@@ -89,8 +89,8 @@
 {
   content: "Drop file or click";
   display: block;
-  background-color: lightgray;
-  color: darkgray;
+  background-color: var(--interspec-panel-background);
+  color: var(--interspec-secondary-text-color);
   text-align: center;
   line-height: 100px;
   width: 125px;
@@ -121,7 +121,7 @@
 .BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader,
 .BatchGuiWidget .DetectorFileDrop
 {
-  border: solid 1px #e1e1e1;
+  border: solid 1px var(--interspec-border-color);
   border-radius: 5px;
 
   display: flex;
@@ -137,8 +137,8 @@
 {
   content: "Drop/click here";
   display: block;
-  background-color: lightgray;
-  color: darkgray;
+  background-color: var(--interspec-panel-background);
+  color: var(--interspec-secondary-text-color);
   text-align: center;
   line-height: 20px;
   font-size: 9px;
@@ -149,7 +149,7 @@
 .BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver,
 .BatchGuiWidget .DetectorFileDrop.DomIsDrugOver
 {
-  border: 3px dashed grey;
+  border: 3px dashed var(--interspec-outline-color);
   border-radius: 8px;
 
   /* Add styles to grey out the element */
@@ -187,7 +187,7 @@
 
 .simple-dialog.BatchAnalysisWarningDialog .body
 {
-  color: orange;
+  color: var(--interspec-warning-color);
 }
 
 .simple-dialog.BatchAnalysisWarningDialog ul.body

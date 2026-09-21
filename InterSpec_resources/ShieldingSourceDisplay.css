@@ -32,7 +32,7 @@
 {
   border-width: 2px;
   border-style: inset;
-  border-color: var(--interspec-border-color, rgb(255, 255, 255));
+  border-color: var(--interspec-border-color);
 
   margin-top:    3px;
   margin-bottom: 3px;
@@ -40,13 +40,13 @@
 
 .InfoLink
 {
-  color:var(--interspec-label-color, grey);
+  color:var(--interspec-label-color);
 }
 
 
 .InfoLink:hover
 {
-  color:blue;
+  color:var(--interspec-link-color);
 }
 
 
@@ -54,7 +54,7 @@
 .ShieldingSourceDisplay .SourceView
 {
 /*   height: 100%; */
-   border:2px solid var(--interspec-border-color, #e1e1e1);
+   border:2px solid var(--interspec-border-color);
 }
 
 
@@ -134,7 +134,7 @@
   font-size: smaller;
   font-style: italic;
   opacity: 0.8;
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   white-space: nowrap;
 }
 
@@ -202,7 +202,7 @@
   display: block;
   font-size: 12.5px;
   font-weight: 700;
-  color: var(--interspec-text-color, #34343a);
+  color: var(--interspec-text-color);
   letter-spacing: 0.2px;
   padding: 0 0 3px 1px;
   white-space: nowrap;
@@ -224,9 +224,9 @@
    (the inner .ShieldingSelectContainer scroll area is itself borderless). */
 .ShieldingSourceDisplay .ShieldBox
 {
-  border: 1px solid var(--interspec-border-color, #d2d2d8);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
-  background: var(--interspec-background-color, #f8f8fa);
+  background: var(--interspec-background-color);
   overflow: hidden;          /* clip the footer's corners to the rounded box */
 }
 
@@ -239,8 +239,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 5px 9px;
-  border-top: 1px solid var(--interspec-border-color, #e3e3e7);
-  background: var(--interspec-background-color, #fbfbfc);
+  border-top: 1px solid var(--interspec-border-color);
+  background: var(--interspec-background-color);
 }
 
 /* "+" add-shielding button: matches the "Isotopics by nuclides" tool's add icon
@@ -276,7 +276,7 @@
   padding: 0;
   margin: 0;
   min-width: 0;
-  color: #1f6feb;
+  color: var(--interspec-accent-color);
   font-weight: 600;
   cursor: pointer;
 }
@@ -338,21 +338,21 @@
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgInfo
 {
-  background: #eef5ff;
-  border: 1px solid #cfe0fb;
-  color: #1c3a63;
+  background: var(--interspec-highlight-background);
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-text-color);
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgWarn
 {
-  background: #fff6e6;
-  border: 1px solid #f0d59a;
-  color: #8a5a00;
+  background: var(--interspec-warning-background);
+  border: 1px solid var(--interspec-warning-border-color);
+  color: var(--interspec-warning-color);
 }
 .ShieldingSourceDisplay .FitMessage.FitMsgError
 {
-  background: #fdecec;
-  border: 1px solid #f0b9b9;
-  color: #9a2222;
+  background: var(--interspec-error-background);
+  border: 1px solid var(--interspec-error-border-color);
+  color: var(--interspec-error-color);
 }
 
 /* Phase 3: live/manual fit split-button states (classes set on the action button half).
@@ -402,25 +402,25 @@
 .ShieldingSourceDisplay .FitActions .FitUpToDate,
 .ShieldingSourceDisplay .FitActions .FitUpToDate:hover
 {
-  background: #e7f6ec;
-  border-color: #b6e3c4;
-  color: #1d7a3a;
+  background: var(--interspec-success-background);
+  border-color: var(--interspec-success-border-color);
+  color: var(--interspec-success-color);
 }
 .ShieldingSourceDisplay .FitActions .FitUpToDate::before
 {
-  color: #1faa4d;
+  color: var(--interspec-success-color);
 }
 /* updating = amber, with a gently pulsing dot */
 .ShieldingSourceDisplay .FitActions .FitUpdating,
 .ShieldingSourceDisplay .FitActions .FitUpdating:hover
 {
-  background: #fff4e2;
-  border-color: #f0d09a;
-  color: #8a5a00;
+  background: var(--interspec-warning-background);
+  border-color: var(--interspec-warning-border-color);
+  color: var(--interspec-warning-color);
 }
 .ShieldingSourceDisplay .FitActions .FitUpdating::before
 {
-  color: #f0a020;
+  color: var(--interspec-warning-color);
   animation: ssdFitPulse 1s ease-in-out infinite;
 }
 @keyframes ssdFitPulse
@@ -442,8 +442,8 @@
 {
   overflow: hidden;
 }
-.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk { border-color: #b6e3c4; }
-.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking { border-color: #f0d09a; }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk { border-color: var(--interspec-success-border-color); }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking { border-color: var(--interspec-warning-border-color); }
 .ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.Wt-btn,
 .ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.Wt-btn
 {
@@ -460,13 +460,13 @@
 }
 .ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle
 {
-  background: #e7f6ec;      /* match .FitUpToDate */
-  border-color: #b6e3c4;
+  background: var(--interspec-success-background);      /* match .FitUpToDate */
+  border-color: var(--interspec-success-border-color);
 }
 .ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle
 {
-  background: #fff4e2;      /* match .FitUpdating */
-  border-color: #f0d09a;
+  background: var(--interspec-warning-background);      /* match .FitUpdating */
+  border-color: var(--interspec-warning-border-color);
 }
 /* Draw the caret (▾) ourselves in the matching ink (we removed the default glyph image above). */
 .ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle::after,
@@ -476,21 +476,51 @@
   font-size: 10px;
   line-height: 1;
 }
-.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle::after { color: #1d7a3a; }
-.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle::after { color: #8a5a00; }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitLiveOk > button.dropdown-toggle::after { color: var(--interspec-success-color); }
+.ShieldingSourceDisplay .FitActions .SsdFitSplit.SsdFitWorking > button.dropdown-toggle::after { color: var(--interspec-warning-color); }
 /* hide any theme caret child so we don't get a double caret */
 .ShieldingSourceDisplay .FitActions .SsdFitSplit > button.dropdown-toggle > .caret { display: none; }
 
-/* Footer icon buttons (export / import / database) */
-.SsdFooterIcon
+/* Footer icon buttons (export / import / database).  They sit next to the help icon, which is a
+   bare image, so they carry no button chrome either - just the icon, dimmed at rest and at full
+   strength on hover, which is the affordance .FooterHelpBtn uses.  The `:hover` selector is
+   included here so hovering does not bring the button background back. */
+.SsdFooterIcon,
+.SsdFooterIcon:hover
 {
   min-width: 0;
+  padding: 0 4px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  opacity: 0.6;
 }
+
+.SsdFooterIcon:hover
+{
+  opacity: 1.0;
+}
+
+/* Disabled while a fit runs; `button[disabled]` would otherwise put its grey surface back. */
+.SsdFooterIcon[disabled],
+.SsdFooterIcon.Wt-disabled,
+.SsdFooterIcon[disabled]:hover,
+.SsdFooterIcon.Wt-disabled:hover
+{
+  background: none;
+  border: none;
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+/* Wt renders a WPushButton's icon as a bare <img> with no class, so the .Wt-icon rule that flips
+   black icons for dark themes never reaches these; apply the filter here. */
 .SsdFooterIcon img
 {
   width: 16px;
   height: 16px;
   vertical-align: middle;
+  filter: var(--interspec-icon-filter);
 }
 
 /* Desktop footer: float the model icons (export/import/database) to the left, just after the help
@@ -521,9 +551,9 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 1px solid var(--interspec-border-color, #d2d2d8);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
-  background: var(--interspec-background-color, #f8f8fa);
+  background: var(--interspec-background-color);
   padding: 7px;
   display: flex;
   flex-direction: column;
@@ -531,8 +561,8 @@
 }
 .ShieldingSourceDisplay .NucCard
 {
-  background: var(--interspec-input-background, #fff);
-  border: 1px solid var(--interspec-border-color, #e3e3e7);
+  background: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 9px;
   padding: 9px 11px 8px;
   box-shadow: 0 1px 2px rgba(20,20,30,.05);
@@ -558,7 +588,7 @@
 .ShieldingSourceDisplay .NucHl
 {
   font-size: 11px;
-  color: var(--interspec-label-color, #86868f);
+  color: var(--interspec-label-color);
   white-space: nowrap;
 }
 .ShieldingSourceDisplay .NucTag
@@ -567,8 +597,8 @@
   font-weight: 700;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-  color: var(--interspec-label-color, #76767e);
-  background: var(--interspec-background-color, #f0f0f3);
+  color: var(--interspec-label-color);
+  background: var(--interspec-background-color);
   border-radius: 5px;
   padding: 2px 6px;
 }
@@ -581,7 +611,7 @@
 .ShieldingSourceDisplay .NucRowLbl
 {
   font-size: 11.5px;
-  color: var(--interspec-text-color, #54545c);
+  color: var(--interspec-text-color);
   white-space: nowrap;
   width: 50px;
   flex: 0 0 auto;
@@ -595,9 +625,9 @@
 }
 .ShieldingSourceDisplay .NucField.NucFieldRo
 {
-  background: #f4f8ff;
-  color: #1c3a63;
-  border-color: #d4e2f7;
+  background: var(--interspec-highlight-background);
+  color: var(--interspec-text-color);
+  border-color: var(--interspec-border-color);
 }
 .ShieldingSourceDisplay .NucFitCb
 {
@@ -608,7 +638,7 @@
 .ShieldingSourceDisplay .NucMass
 {
   font-size: 11px;
-  color: var(--interspec-label-color, #86868f);
+  color: var(--interspec-label-color);
   padding-left: 59px;
   margin-top: -3px;
   display: flex;
@@ -617,14 +647,14 @@
 }
 .ShieldingSourceDisplay .NucT0
 {
-  color: var(--interspec-text-color, #54545c);
+  color: var(--interspec-text-color);
 }
 .ShieldingSourceDisplay .NucProgeny
 {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  border-top: 1px dashed var(--interspec-border-color, #e3e3e7);
+  border-top: 1px dashed var(--interspec-border-color);
   padding-top: 7px;
 }
 .ShieldingSourceDisplay .NpLbl
@@ -633,7 +663,7 @@
   font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: var(--interspec-label-color, #86868f);
+  color: var(--interspec-label-color);
   white-space: nowrap;
   flex: 0 0 auto;
 }
@@ -648,8 +678,8 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  background: var(--interspec-input-background, #f6f4f0);
-  border: 1px solid var(--interspec-border-color, #e3e3e7);
+  background: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 6px;
   padding: 2px 7px;
 }
@@ -661,7 +691,7 @@
 .ShieldingSourceDisplay .NpEn
 {
   font-size: 10.5px;
-  color: var(--interspec-label-color, #86868f);
+  color: var(--interspec-label-color);
 }
 
 /* Peak-table nuclide cell: small color swatch + nuclide name */
@@ -682,38 +712,17 @@
    scoped under .SsdPhone (set on the tool root only in the isPhone() branch) or
    the phone-only .SourceNuclideDisplayPhone, so desktop styling is untouched.
    ============================================================ */
-.ShieldingSourceDisplay.SsdPhone
-{
-  --ssd-accent: #2d7ff9;
-  --ssd-accent-ink: #1f6feb;
-  --ssd-accent-soft: #eaf2ff;
-  /* Selected-row highlight as a translucent accent tint, so it works on both themes (light-blue on
-     white, dark-blue on the dark surface) and the row text stays legible either way. */
-  --ssd-sel: rgba(45,127,249,0.18);
-  --ssd-hair: var(--interspec-border-color, #e6e6ea);
-  --ssd-hair-strong: var(--interspec-border-color, #d4d4da);
-  --ssd-ink: var(--interspec-text-color, #1d1d22);
-  --ssd-ink-2: var(--interspec-text-color, #54545c);
-  --ssd-ink-3: var(--interspec-label-color, #86868f);
-  --ssd-warn-bg: #fff6e6;
-  --ssd-warn-bd: #f0d59a;
-  --ssd-warn-ink: #8a5a00;
-  --ssd-ok-bg: #eaf7ee;
-  --ssd-ok-bd: #b6e2c4;
-  --ssd-ok-ink: #1f7a3d;
-}
-
 /* pinned chart at the top */
 .ShieldingSourceDisplay.SsdPhone .SsdPhoneChartZone
 {
-  background: var(--interspec-input-background, #fff);
-  border-bottom: 1px solid var(--ssd-hair);
+  background: var(--interspec-input-background);
+  border-bottom: 1px solid var(--interspec-border-color);
 }
 
 /* tab strip + scrolling panels */
 .ShieldingSourceDisplay.SsdPhone .SsdPhoneTabs
 {
-  background: var(--interspec-background-color, #f3f3f6);
+  background: var(--interspec-background-color);
 }
 .ShieldingSourceDisplay.SsdPhone .SsdPhoneOptionsTab,
 .ShieldingSourceDisplay.SsdPhone .SsdPhoneTabs .Wt-stack > *
@@ -735,8 +744,8 @@
    true toggle switches would need the SwitchCheckbox widget (a larger, shared-with-desktop change). */
 .ShieldingSourceDisplay.SsdPhone .FitOptions
 {
-  background: var(--interspec-input-background, #fff);
-  border: 1px solid var(--ssd-hair);
+  background: var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 12px;
   /* Scroll the option list if it is taller than the (layout-bounded) Options tab area. */
   overflow-y: auto;
@@ -754,7 +763,7 @@
   min-height: 48px;
   margin: 0;
   padding: 6px 13px;
-  border-top: 1px solid var(--interspec-border-color, #f1f1f4);
+  border-top: 1px solid var(--interspec-border-color);
   box-sizing: border-box;
 }
 .ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:first-child
@@ -782,7 +791,7 @@
   order: 1;
   flex: 1 1 auto;
   font-size: 14.5px;
-  color: var(--ssd-ink);
+  color: var(--interspec-text-color);
   white-space: normal;
 }
 .ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow:not(.InterfRow) > .CbNoLineBreak > label > input
@@ -804,7 +813,7 @@
 .ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow.InterfRow > .CbNoLineBreak > label > span
 {
   font-size: 14.5px;
-  color: var(--ssd-ink);
+  color: var(--interspec-text-color);
 }
 .ShieldingSourceDisplay.SsdPhone .FitOptions .FitOptionsRow.InterfRow > .GroupingWidth
 {
@@ -816,7 +825,7 @@
 .ShieldingSourceDisplay.SsdPhone .FitOptions .GroupingWidth input
 {
   font-size: 14.5px;
-  color: var(--ssd-ink-2);
+  color: var(--interspec-secondary-text-color);
 }
 
 /* ---------- sticky bottom status / fit bar ---------- */
@@ -825,8 +834,8 @@
   flex: 0 0 auto;
   /* var() fallback may itself be a gradient: light mode keeps the original sheen, dark mode uses the
      theme bg (the border-top separates the bar from the content). */
-  background: var(--interspec-background-color, linear-gradient(#fbfbfd, #f1f1f4));
-  border-top: 1px solid var(--ssd-hair-strong);
+  background: var(--interspec-background-color);
+  border-top: 1px solid var(--interspec-outline-color);
   padding: 8px 10px;
   display: flex;
   align-items: center;
@@ -843,9 +852,9 @@
   padding: 0 7px;
   border-radius: 8px;
   /* translucent accent so it reads as a tappable accent chip on both themes (the value text uses
-     --ssd-ink, the icon uses the theme link color - both legible light & dark). */
-  background: rgba(45,127,249,0.18);
-  border: 1px solid rgba(45,127,249,0.5);
+     the text colour, the icon uses the theme link color - both legible light & dark). */
+  background: var(--interspec-highlight-background);
+  border: 1px solid var(--interspec-accent-color);
   cursor: pointer;
 }
 .ShieldingSourceDisplay.SsdPhone .SsdDistIcon
@@ -853,7 +862,7 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  color: var(--interspec-link-color, var(--ssd-accent-ink));
+  color: var(--interspec-link-color);
 }
 /* "↔" reads as a distance/measurement (source-to-detector) far better than a plain circle. */
 .ShieldingSourceDisplay.SsdPhone .SsdDistIcon::before
@@ -867,7 +876,7 @@
 {
   font-size: 11.5px;
   font-weight: 700;
-  color: var(--ssd-ink);
+  color: var(--interspec-text-color);
   white-space: nowrap;
 }
 /* spinner + "Updating fit…" */
@@ -884,8 +893,8 @@
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  border: 2px solid rgba(45,127,249,.25);
-  border-top-color: var(--ssd-accent);
+  border: 2px solid var(--interspec-accent-color);
+  border-top-color: var(--interspec-accent-color);
   animation: ssdMSpin .7s linear infinite;
   flex: 0 0 auto;
 }
@@ -915,8 +924,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--interspec-input-background, #fff);
-  border: 1px solid var(--ssd-hair-strong);
+  background: var(--interspec-input-background);
+  border: 1px solid var(--interspec-outline-color);
   border-radius: 9px;
   padding: 4px 8px;
 }
@@ -931,13 +940,13 @@
 {
   font-size: 11px;
   font-weight: 600;
-  color: var(--ssd-ink-3);
+  color: var(--interspec-fainter-text-color);
 }
 .ShieldingSourceDisplay.SsdPhone .SsdActVal
 {
   font-size: 12.5px;
   font-weight: 700;
-  color: var(--ssd-ink);
+  color: var(--interspec-text-color);
   white-space: nowrap;
 }
 /* amber warning pill */
@@ -946,9 +955,9 @@
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 700;
-  color: var(--ssd-warn-ink);
-  background: var(--ssd-warn-bg);
-  border: 1px solid var(--ssd-warn-bd);
+  color: var(--interspec-warning-color);
+  background: var(--interspec-warning-background);
+  border: 1px solid var(--interspec-warning-border-color);
   border-radius: 8px;
   padding: 3px 8px;
   white-space: nowrap;
@@ -984,8 +993,8 @@
   box-shadow: none;
   font-size: 15px;
   font-weight: 700;
-  background: linear-gradient(#3f8bfb, #2d7ff9);
-  color: #fff;
+  background: var(--interspec-accent-color);
+  color: var(--interspec-background-color);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1018,8 +1027,8 @@
 /* fitting: amber pill + a spinner glyph on the action half (its text is empty) */
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitWorking > button.Wt-btn
 {
-  background: linear-gradient(#fbd989, #f0c25f);
-  color: var(--ssd-warn-ink);
+  background: var(--interspec-warning-background);
+  color: var(--interspec-warning-color);
 }
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitWorking > button:not(.dropdown-toggle)::before
 {
@@ -1028,20 +1037,20 @@
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  border: 2px solid rgba(138,90,0,.35);
-  border-top-color: var(--ssd-warn-ink);
+  border: 2px solid var(--interspec-warning-border-color);
+  border-top-color: var(--interspec-warning-color);
   animation: ssdMSpin .7s linear infinite;
 }
 /* live + up to date: green pill + ● status dot on the action half (its text is empty) */
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitLiveOk > button.Wt-btn
 {
-  background: linear-gradient(#d6f3df, #bfead0);
-  color: var(--ssd-ok-ink);
+  background: var(--interspec-success-background);
+  color: var(--interspec-success-color);
 }
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitLiveOk > button:not(.dropdown-toggle)::before
 {
   content: "\25CF";
-  color: #1faa4d;
+  color: var(--interspec-success-color);
   font-size: 13px;
 }
 /* manual mode: the iOS mobile theme paints button text/carets iOS-blue (!important), but the base
@@ -1050,9 +1059,9 @@
    default button look).  Working/live states keep their colored backgrounds above. */
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitManual > button.Wt-btn
 {
-  /* raised surface so it stands out from the bar; the iOS-blue label/caret read on both light(#fff)
-     and the dark theme's input bg. */
-  background: var(--interspec-input-background, #fff);
+  /* Raised surface so it stands out from the bar; the accent-coloured label and caret read on the
+     input surface in either theme. */
+  background: var(--interspec-input-background);
 }
 /* manual "needs fit": subtle accent attention ring on the action half (was white - invisible on the
    light button, an odd strip on the dark one; a translucent accent reads on both). */
@@ -1068,7 +1077,7 @@
 {
   text-align: left;
   padding: 7px 8px;
-  border-bottom: 1px solid var(--interspec-border-color, #f2f2f4);
+  border-bottom: 1px solid var(--interspec-border-color);
   font-size: 13.5px;
 }
 .SsdResultsSheet .SsdResultsTable th
@@ -1077,7 +1086,7 @@
   font-weight: 700;
   letter-spacing: .4px;
   text-transform: uppercase;
-  color: var(--interspec-label-color, #86868f);
+  color: var(--interspec-label-color);
 }
 .SsdResultsSheet .SsdResultMono { font-family: var(--mono, monospace); font-size: 12.5px; }
 .SsdResultsSheet .SsdResultsWarn
@@ -1087,9 +1096,9 @@
   padding: 11px;
   font-size: 13px;
   line-height: 1.5;
-  background: var(--ssd-warn-bg, #fff6e6);
-  border: 1px solid var(--ssd-warn-bd, #f0d59a);
-  color: var(--ssd-warn-ink, #8a5a00);
+  background: var(--interspec-warning-background);
+  border: 1px solid var(--interspec-warning-border-color);
+  color: var(--interspec-warning-color);
 }
 .SsdResultsSheet .SsdViewLog { margin-top: 10px; }
 .SsdResultsSheet .SsdResultsTable .PeakSwatch
@@ -1113,7 +1122,7 @@
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCard
 {
-  border: 1px solid var(--ssd-hair, var(--interspec-border-color, #e6e6ea));
+  border: 1px solid var(--interspec-border-color);
   border-radius: 14px;
   padding: 0;
   gap: 0;
@@ -1139,20 +1148,20 @@
 {
   font-size: 12px;
   font-weight: 700;
-  color: var(--ssd-ink-2, var(--interspec-text-color, #54545c));
-  background: var(--interspec-background-color, #f0f1f4);
+  color: var(--interspec-secondary-text-color);
+  background: var(--interspec-background-color);
   border-radius: 8px;
   padding: 3px 9px;
   white-space: nowrap;
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucCount.NucCountHas
 {
-  background: var(--ssd-sel, #e7f6f5);
-  color: #1c6b66;
+  background: var(--interspec-highlight-background);
+  color: var(--interspec-success-color);
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucChev
 {
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   font-size: 18px;
   font-weight: 700;
   line-height: 1;
@@ -1164,12 +1173,12 @@
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakSummary
 {
   font-size: 12px;
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   padding: 0 13px 12px;
   margin-top: -2px;
   line-height: 1.5;
 }
-.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakSummary b { color: var(--ssd-ink-2, var(--interspec-text-color, #54545c)); font-weight: 600; }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakSummary b { color: var(--interspec-secondary-text-color); font-weight: 600; }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucBody
 {
   padding: 2px 13px 12px;
@@ -1180,11 +1189,11 @@
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucMass { padding-left: 2px; }
 
 /* nested peak list */
-.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakList { border-top: 1px solid var(--ssd-hair, var(--interspec-border-color, #e6e6ea)); }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakList { border-top: 1px solid var(--interspec-border-color); }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NucPeakListHead
 {
   padding: 8px 13px 6px;
-  background: var(--interspec-background-color, #fafafb);
+  background: var(--interspec-background-color);
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpListLbl
 {
@@ -1192,7 +1201,7 @@
   font-weight: 700;
   letter-spacing: .4px;
   text-transform: uppercase;
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow
 {
@@ -1200,25 +1209,25 @@
   align-items: center;
   gap: 11px;
   padding: 4px 13px;
-  border-top: 1px solid var(--interspec-border-color, #f2f2f4);
+  border-top: 1px solid var(--interspec-border-color);
   cursor: pointer;
   min-height: 30px;
 }
-.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn { background: var(--ssd-sel, #e7f6f5); }
+.ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn { background: var(--interspec-highlight-background); }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpBox
 {
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  border: 1.5px solid var(--ssd-hair-strong, var(--interspec-border-color, #d4d4da));
-  background: var(--interspec-input-background, #fff);
+  border: 1.5px solid var(--interspec-outline-color);
+  background: var(--interspec-input-background);
   flex: 0 0 auto;
   position: relative;
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn .NpBox
 {
-  background: var(--ssd-accent, #2d7ff9);
-  border-color: var(--ssd-accent, #2d7ff9);
+  background: var(--interspec-accent-color);
+  border-color: var(--interspec-accent-color);
 }
 /* check-mark drawn with a rotated border (no SVG needed) */
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpRow.NpRowOn .NpBox::after
@@ -1229,7 +1238,7 @@
   top: 3px;
   width: 5px;
   height: 10px;
-  border: solid #fff;
+  border: solid var(--interspec-background-color);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
@@ -1243,15 +1252,15 @@
 {
   font-size: 11.5px;
   font-weight: 500;
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   margin-left: 3px;
 }
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpProg
 {
   font-size: 10px;
   font-weight: 700;
-  color: #8a6d3b;
-  background: #f6f1e8;
+  color: var(--interspec-warning-color);
+  background: var(--interspec-warning-background);
   border-radius: 5px;
   padding: 1px 6px;
   margin-left: 6px;
@@ -1259,7 +1268,7 @@
 .ShieldingSourceDisplay .SourceNuclideDisplayPhone .NpSub
 {
   font-size: 11px;
-  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   margin-left: 8px;
   font-weight: 500;
   white-space: nowrap;
@@ -1277,7 +1286,7 @@
   text-overflow: ellipsis;
   font-size: 12px;
   font-style: italic;
-  color: var(--ssd-ink-3, var(--d3spec-text-color, #86868f));
+  color: var(--interspec-fainter-text-color);
   opacity: 0.9;
 }
 
