@@ -560,8 +560,8 @@ void DetectorGeometryInput::updateFromForm()
   {
     const ceelo::GeometryDescriptor gd = toDescriptor();
 
-    // A valid form can still be the guess seedFromDrf() made, which must not be characterized
-    //  as-is - problemDescription() says so, and the note repeats it.
+    // A form that parses can still be the material-only guess the seeders made, which must not be
+    //  characterized as-is - problemDescription() says so, and the note repeats it.
     if( m_seededFromDiameterGuess )
       problem = WString::tr("dgi-seeded-note").toUTF8();
 
@@ -569,7 +569,10 @@ void DetectorGeometryInput::updateFromForm()
       m_diagram->setGeometry( gd );
   }catch( std::exception &e )
   {
-    problem = e.what();
+    // While the form is still the seeded skeleton, say why it is incomplete rather than naming
+    //  the first field that fails to parse: "Please enter the length." on its own does not tell
+    //  the user that nothing about this detector's shape was ever recorded.
+    problem = m_seededFromDiameterGuess ? WString::tr("dgi-seeded-note").toUTF8() : string(e.what());
     if( want_drawing )
       m_diagram->setStale( true );   //keep the last valid drawing, dimmed
   }
@@ -581,6 +584,11 @@ void DetectorGeometryInput::updateFromForm()
 
 std::string DetectorGeometryInput::problemDescription() const
 {
+  // Checked before the field-level errors: while the form is still the seeded skeleton the useful
+  //  thing to say is that this detector has no recorded geometry, not which box is empty.
+  if( m_seededFromDiameterGuess )
+    return WString::tr("dgi-seeded-note").toUTF8();
+
   try
   {
     toDescriptor();
@@ -588,10 +596,6 @@ std::string DetectorGeometryInput::problemDescription() const
   {
     return e.what();
   }
-
-  // A valid form can still be the guess seedFromDrf() made, which must not be characterized as-is.
-  if( m_seededFromDiameterGuess )
-    return WString::tr("dgi-seeded-note").toUTF8();
 
   return "";
 }//problemDescription()
@@ -1126,7 +1130,7 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   const double diam_cm = drf->detectorDiameter() / PhysicalUnits::cm;
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
-  m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+  m_dim2->setText( "" );  //length genuinely unknown - see the note in seedFromDiameter
 
   // No geometry at all: the description (and often the name) still says what the crystal is, and
   //  taking the default NaI for, say, a LaBr detector would simulate the wrong material entirely.
@@ -1159,7 +1163,12 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
   const double diam_cm = diameter / PhysicalUnits::cm;
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
-  m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+
+  // Left blank on purpose.  A length copied from the diameter looks like a measurement, and the
+  //  form then reads as complete while the generate button stays disabled - the user has to guess
+  //  that editing something is what unlocks it.  Blank makes the refusal self-explanatory: the
+  //  geometry really is incomplete, and the note below says what is missing.
+  m_dim2->setText( "" );
 
   const int crystal = crystal_index_from_text( crystal_hint );
   if( crystal >= 0 )
