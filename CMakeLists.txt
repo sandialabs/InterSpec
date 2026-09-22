@@ -904,7 +904,6 @@ set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
-add_subdirectory(external_libs/Minuit2)
 add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
@@ -997,7 +996,6 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    Minuit2::Minuit2
     Cuba-3.0
     muparserx
     Boost::thread
