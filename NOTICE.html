@@ -84,7 +84,7 @@ of additional open-source libraries.
       </div>
     </li>
 
-    <li><b><a href="https://electronjs.org/" target="_blank">Electron</a></b> (version 13.6.9): Package based on the Chromium web browser to build cross platform desktop apps with JavaScript, HTML, and CSS.
+    <li><b><a href="https://electronjs.org/" target="_blank">Electron</a></b> (version 43): Package based on the Chromium web browser to build cross platform desktop apps with JavaScript, HTML, and CSS.
       <div style="margin-left: 1em; font-size: small;">
         <b>Electron</b> is used to display app contents for the Electron-based Windows and Linux versions of <b>InterSpec</b>.
         <b>Electron</b> is licensed under the <a href="#mit">MIT License</a>,
@@ -116,14 +116,8 @@ of additional open-source libraries.
     </li>
 
     <!-- jQuery is no longer used by InterSpec -->
-    <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a></b> (version 3.0.3): javascript library that provides tooltip and notification tools.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
-        <b>qTip2</b> is licensed under the <a href="#mit">MIT License</a>.
-      </div>
-    </li>
-
-    <li><b><a href="https://d3js.org/" target="_blank">d3.js</a></b> (version 3.5.15): a JavaScript charting library.
+    <!-- qTip2 is no longer used by InterSpec -->
+    <li><b><a href="https://d3js.org/" target="_blank">d3.js</a></b> (version 3.5.17): a JavaScript charting library.
       <div style="margin-left: 1em; font-size: small;">
         <b>d3.js</b> powers rendering and interactions of the spectrum chart, gross-count time chart, and decay tool.
         <b>d3.js</b> is licensed under the <a href="#bsd3clause">BSD License</a>.
@@ -182,23 +176,34 @@ of additional open-source libraries.
       <b>QR Code generator library</b> is <a href="#mit">MIT licensed</a> library.
       </div>
     </li>
-    <li><b><a href=”http://ceres-solver.org” target=”_blank”>Ceres Solver</a></b>: Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
-      <div style=”margin-left: 1em; font-size: small;”>
+    <li><b><a href="http://ceres-solver.org" target="_blank">Ceres Solver</a></b>: Ceres Solver is an open source C++ library for modeling and solving large, complicated optimization problems.
+      <div style="margin-left: 1em; font-size: small;">
       <b>Ceres Solver</b> is used for the the <em>Relative Efficiency</em> tools (&quot;Isotopics by nuclides&quot; and &quot;Isotopics from peaks&quot;); it may be used for peak-fitting as well in the future.
-      <b>Ceres Solver</b> is <a href=”#bsd3clause”>BSD License</a> library.
+      <b>Ceres Solver</b> is <a href="#bsd3clause">BSD License</a> library.
       </div>
     </li>
-    <li><b><a href=”https://eigen.tuxfamily.org/index.php” target=”_blank”>Eigen</a></b> (version 5.0.1): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
-      <div style=”margin-left: 1em; font-size: small;”>
+    <li><b><a href="https://eigen.tuxfamily.org/index.php" target="_blank">Eigen</a></b> (version 5.0.1): Eigen is a C++ template library for linear algebra: matrices, vectors, numerical solvers, and related algorithms.
+      <div style="margin-left: 1em; font-size: small;">
       <b>Eigen</b> is used by the <b>Ceres Solver</b> library, as well as a few places within the <em>Relative Efficiency</em> tools for some matrix operations.
-      <b>Eigen</b> is <a href=”#mozilla”>Mozilla Public License Version 2.0</a> library. <br />
+      <b>Eigen</b> is <a href="#mozilla">Mozilla Public License Version 2.0</a> library. <br />
       “This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.  If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0.”
       </div>
     </li>
-    <li><b><a href=”https://abseil.io/” target=”_blank”>Abseil</a></b> (LTS 20260107.1): an open-source collection of C++ code designed to augment the C++ standard library.
-      <div style=”margin-left: 1em; font-size: small;”>
+    <li><b><a href="https://abseil.io/" target="_blank">Abseil</a></b> (LTS 20260107.1): an open-source collection of C++ code designed to augment the C++ standard library.
+      <div style="margin-left: 1em; font-size: small;">
       <b>Abseil</b> is used as a dependency of the <b>Ceres Solver</b> library.
-      <b>Abseil</b> is <a href=”#Apache-2.0”>Apache License 2.0</a> library.
+      <b>Abseil</b> is <a href="#Apache-2.0">Apache License 2.0</a> library.
+      </div>
+    </li>
+
+    <li><b><a href="http://ab-initio.mit.edu/faddeeva/" target="_blank">Faddeeva Package</a></b> (updated 12 May 2015): computation of the Faddeeva function w(z) and related complex error functions.
+      <div style="margin-left: 1em; font-size: small;">
+        Code by Steven G. Johnson (MIT), adapted within <b>InterSpec</b> into a templated form so it can be
+        evaluated with <b>Ceres Solver</b>'s automatic-differentiation types; it is used for the Voigt and
+        Bortel peak shapes.
+        The <b>Faddeeva Package</b> is licensed under the <a href="#mit">MIT License</a>.
+        The following copyright statement applies to this library: <br />
+        “Copyright (c) 2012 Massachusetts Institute of Technology.  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.”
       </div>
     </li>
 
@@ -243,7 +248,7 @@ of additional open-source libraries.
       </ul>
     </li>
 
-    <li><b><a href="https://github.com/zxing-cpp/zxing-cpp" target="_blank">ZXing-C++</a></b> (git hash 720f62b): ZXing-C++ ("zebra crossing") is an open-source, multi-format linear/matrix barcode image processing library implemented in C++. 
+    <li><b><a href="https://github.com/zxing-cpp/zxing-cpp" target="_blank">ZXing-C++</a></b> (git hash 9ca0684): ZXing-C++ ("zebra crossing") is an open-source, multi-format linear/matrix barcode image processing library implemented in C++. 
       <div style="margin-left: 1em; font-size: small;">
       <b>ZXing-C++</b> is used to look for QR-codes in images that are opened in InterSpec.
       <b>ZXing-C++</b> is <a href="#Apache-2.0">Apache License 2.0</a> library.
