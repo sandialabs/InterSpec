@@ -156,9 +156,6 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
   auto topDivOwner = std::make_unique<WContainerWidget>();
   WContainerWidget *topDiv = topDivOwner.get();
   
-  WBorder border( Wt::BorderStyle::Solid, Wt::BorderWidth::Explicit, Wt::StandardColor::Gray );
-  border.setWidth( Wt::BorderWidth::Explicit, WLength(1) );
-  
   //Populate topDiv before moving ownership to layout
   //The SNL/NTESS copywrite must appear before any open source software licenses
   string apptitle, copyright;
@@ -183,9 +180,9 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
     layout->setRowStretch( 2, 1 );
   }else
   {
-    topDiv->decorationStyle().setBorder( border, Wt::Side::Bottom );
-    stack->decorationStyle().setBorder( border, Wt::Side::Right | Wt::Side::Left );
-    m_menu->decorationStyle().setBorder( border, Wt::Side::Left );
+    topDiv->addStyleClass( "LadBorderBottom" );
+    stack->addStyleClass( "LadBorderSides" );
+    m_menu->addStyleClass( "LadBorderLeft" );
 
     layout->addWidget( std::move(topDivOwner), 0, 0, 1, 2 );
     layout->addWidget( std::move(menuOwner),   1, 0 );

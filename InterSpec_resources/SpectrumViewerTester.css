@@ -28,13 +28,13 @@ font-size:16px;
 .StaticSummarryTable
 {
 margin-top: 10px;
-border:1px solid black; 
+border:1px solid var(--interspec-outline-color); 
 border-collapse:collapse;
 }
 
 .StaticSummarryTable td, .StaticSummarryTable th
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 padding-left: 5px;
 padding-right: 5px;
 }
@@ -57,14 +57,14 @@ text-align:center;
 .StaticLinkToIndividualTestsTable
 {
 margin-top: 15px;
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 border-collapse:collapse;
 max-width: 95%
 }
 
 .StaticLinkToIndividualTestsTable td, .StaticLinkToIndividualTestsTable th
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 padding-left: 5px;
 padding-right: 5px;
 }
@@ -96,7 +96,7 @@ margin-top: 10px;
 
 .TestNotDone
 {
-border:2px solid blue; 
+border:2px solid var(--interspec-link-color); 
 }
 
 .ScoreDisplay, .ScoreDisplayStatic
@@ -120,18 +120,18 @@ text-align:center;
 
 .ScoreDisplayTitleStatic
 {
-color: white;
-background-color: #909090;
+color: var(--interspec-button-text-color);
+background-color: var(--interspec-button-background);
 }
 
 .ScoreDisplayNotes
 {
-border:1px solid #e1e1e1; 
+border:1px solid var(--interspec-border-color); 
 }
 
 .ScoreDisplayNoteItem
 {
-border:2px solid black; 
+border:2px solid var(--interspec-outline-color); 
 margin-top: 10px;
 margin-bottom: 5px;
 margin-left: 4px;
@@ -146,14 +146,14 @@ text-align:center;
 
 .ScoreDisplayNoteText
 {
-  border:1px solid grey; 
+  border:1px solid var(--interspec-outline-color); 
   margin: 3px;
 }
 
 .FailedConditionNote
 {
-color: red;
-border:1px solid red; 
+color: var(--interspec-error-color);
+border:1px solid var(--interspec-error-color); 
 margin-right: auto;
 margin-left: auto;
 margin-top: 3px;
@@ -167,39 +167,39 @@ width: 90%;
 .ScoreDisplayNoteTable
 {
 width: 95%;
-border:1px solid black; 
+border:1px solid var(--interspec-outline-color); 
 margin-left: auto;
 margin-right: auto;
 }
 
 .PeakSummarryTable
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 border-collapse:collapse;
 }
 
 .ScoreSummarryTable, .OverViewScoreSummarryTable
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 }
 
 
 
 .PeakSummarryTableCell
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 }
 
 .ScoreDisplayNoteTestImage
 {
-color: red;
-border:1px solid red;
+color: var(--interspec-error-color);
+border:1px solid var(--interspec-error-color);
 }
 
 .ScoreDisplayNoteOriginalImage
 {
-color: green;
-border:1px solid green;
+color: var(--interspec-success-color);
+border:1px solid var(--interspec-success-color);
 }
 
 .ScoreImageTitle
@@ -245,7 +245,7 @@ padding:0; margin:0;
 margin-top: 20px;	
 margin-left: auto;
 margin-right: auto;
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 }
 
 
@@ -258,7 +258,7 @@ text-align:center;
 
 .StateTestStateInfoTable
 {
-border:1px solid black;
+border:1px solid var(--interspec-outline-color);
 border-collapse:collapse;
 text-align: left;
 max-width: 90%;
@@ -272,7 +272,7 @@ margin-right: auto;
 
 .ScoreDisplayNoteContentStatic
 {
-border:1px solid grey;
+border:1px solid var(--interspec-outline-color);
 }
 
 .ScoreDisplayNoteContentHide

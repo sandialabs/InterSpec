@@ -63,8 +63,11 @@
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
+
+#include <Wt/Utils.h>
 
 using namespace std;
 
@@ -147,7 +150,7 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_detectors )
     for( const float energy : test_energies )
     {
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy * PhysicalUnits::keV) );
       BOOST_CHECK_MESSAGE( eff >= 0.0f, det_name + ": efficiency should be non-negative" );
     }
 
@@ -180,7 +183,7 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_detectors )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = nai_3x3->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = nai_3x3->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 1% tolerance
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.01),
@@ -249,7 +252,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
     // Verify can evaluate efficiency
     const float test_energy = 661.7f * PhysicalUnits::keV; // Cs-137
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(test_energy) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(test_energy) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, drf->name() + ": efficiency should be non-negative" );
   }
 
@@ -315,7 +318,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = micro_detective->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = micro_detective->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 2% tolerance (to account for interpolation differences)
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.02),
@@ -378,7 +381,7 @@ BOOST_AUTO_TEST_CASE( test_read_common_drfs_tsv )
       const double expected_eff = test.second;
 
       float eff = 0.0f;
-      BOOST_CHECK_NO_THROW( eff = verifinder->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+      BOOST_CHECK_NO_THROW( eff = verifinder->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
 
       // Check against expected value with 1% tolerance
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_eff, 0.01),
@@ -459,9 +462,9 @@ BOOST_AUTO_TEST_CASE( test_read_ecc_file )
     const float energy_kev = test.first;
     const double expected_eff = test.second;
 
-    // For fixed-geometry DRF, use distance=0 or intrinsicEfficiency
+    // For fixed-geometry DRF, use distance=0 or farFieldIntrinsicEfficiency
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, "Efficiency should be non-negative at " + to_string(energy_kev) + " keV" );
 
     // Check against expected value with 1% tolerance
@@ -647,7 +650,7 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
     const double expected_eff = test.second;
 
     float eff = 0.0f;
-    BOOST_CHECK_NO_THROW( eff = drf->intrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
+    BOOST_CHECK_NO_THROW( eff = drf->farFieldIntrinsicEfficiency(energy_kev * PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( eff >= 0.0f, "Efficiency should be non-negative at " + to_string(energy_kev) + " keV" );
 
     // Check against expected value with 1% tolerance
@@ -1749,7 +1752,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
 
     for( const float E : test_energies )
     {
-      const float eff = drf->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       // Calculate expected: exp(c0 + c1*ln(E) + c2*ln(E)^2)
       const double ln_E = log(E);
@@ -1796,7 +1799,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
 
       const double expected_intrinsic = absolute_eff / (solid_angle * air_trans);
 
-      const float eff = drf->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       BOOST_CHECK_MESSAGE( close_enough(eff, expected_intrinsic, 1e-3),
                           "Intrinsic efficiency mismatch at " + to_string(E) + " keV: " +
@@ -1820,7 +1823,7 @@ BOOST_AUTO_TEST_CASE( test_exp_of_log_power_series )
                                           DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
 
     // Both should give same intrinsic efficiency (air correction is applied during conversion)
-    const float eff_with = drf_with_air->intrinsicEfficiency( test_energy * PhysicalUnits::keV );
+    const float eff_with = drf_with_air->farFieldIntrinsicEfficiency( test_energy * PhysicalUnits::keV );
 
     BOOST_CHECK_MESSAGE( eff_with > 0.0f, "Efficiency with air should be positive" );
 
@@ -1852,7 +1855,7 @@ BOOST_AUTO_TEST_CASE( test_intrinsic_efficiency_formula )
 
     for( const float E_kev : test_energies_kev )
     {
-      const float eff = drf->intrinsicEfficiency( E_kev * PhysicalUnits::keV );
+      const float eff = drf->farFieldIntrinsicEfficiency( E_kev * PhysicalUnits::keV );
 
       // Calculate expected (formula is in MeV)
       const double E_mev = E_kev / 1000.0;
@@ -1897,7 +1900,7 @@ BOOST_AUTO_TEST_CASE( test_intrinsic_efficiency_formula )
 
     const double expected_intrinsic = absolute_eff / (solid_angle * air_trans);
 
-    const float eff = drf_abs->intrinsicEfficiency( E_kev * PhysicalUnits::keV );
+    const float eff = drf_abs->farFieldIntrinsicEfficiency( E_kev * PhysicalUnits::keV );
 
     BOOST_CHECK_MESSAGE( close_enough(eff, expected_intrinsic, 1e-3),
                         "Intrinsic efficiency should be corrected: " + to_string(eff) + " vs " + to_string(expected_intrinsic) );
@@ -1933,7 +1936,7 @@ BOOST_AUTO_TEST_CASE( test_efficiency_pairs )
   // Test interpolation at exact points
   for( const auto &pt : intrinsic_points )
   {
-    const float eff = drf_intrinsic->intrinsicEfficiency( pt.first * PhysicalUnits::keV );
+    const float eff = drf_intrinsic->farFieldIntrinsicEfficiency( pt.first * PhysicalUnits::keV );
     BOOST_CHECK_MESSAGE( close_enough(eff, pt.second, 1e-4),
                         "Efficiency should match at exact point " + to_string(pt.first) + " keV" );
   }
@@ -1961,8 +1964,8 @@ BOOST_AUTO_TEST_CASE( test_efficiency_pairs )
 
   for( const float E : test_energies )
   {
-    const float eff_intrinsic = drf_intrinsic->intrinsicEfficiency( E * PhysicalUnits::keV );
-    const float eff_absolute = drf_absolute->intrinsicEfficiency( E * PhysicalUnits::keV );
+    const float eff_intrinsic = drf_intrinsic->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+    const float eff_absolute = drf_absolute->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
     // Should match within tolerance
     BOOST_CHECK_MESSAGE( close_enough(eff_intrinsic, eff_absolute, 0.05), // 5% tolerance for interpolation
@@ -2021,14 +2024,21 @@ BOOST_AUTO_TEST_CASE( test_reinterpret_as_far_field )
   const vector<float> test_energies = { 100.0f, 500.0f, 1000.0f };
   for( const float E : test_energies )
   {
-    // Use efficiency() for fixed geometry (needs distance parameter)
-    const float eff_fixed = drf_fixed->efficiency( E * PhysicalUnits::keV, 1.0 );
+    // For a fixed-geometry DRF, efficiency() ignores the distance and gives the intrinsic
+    //  value - it dispatches through efficiencyEval, whose fixed-geometry short circuit says
+    //  distance and angles are meaningless.  It used to reach the flat-disk product instead,
+    //  which for a DRF whose diameter is -1 depended on the caller passing a NEGATIVE
+    //  distance; passing 1.0, as here, silently gave a solid-angle-scaled number.
+    const double eff_fixed = drf_fixed->efficiency( E * PhysicalUnits::keV, 1.0 );
+    BOOST_CHECK_EQUAL( eff_fixed,
+                       static_cast<double>(drf_fixed->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV )) );
+    BOOST_CHECK_EQUAL( eff_fixed, drf_fixed->efficiency( E * PhysicalUnits::keV, -1.0 ) );
 
-    // Use intrinsicEfficiency() for far-field
-    const float eff_farfield = drf_farfield->intrinsicEfficiency( E * PhysicalUnits::keV );
+    // Use farFieldIntrinsicEfficiency() for far-field
+    const float eff_farfield = drf_farfield->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
     // These won't be exactly equal due to different geometry assumptions, but both should be valid
-    BOOST_CHECK_MESSAGE( eff_fixed >= 0.0f && eff_farfield >= 0.0f,
+    BOOST_CHECK_MESSAGE( eff_fixed >= 0.0 && eff_farfield >= 0.0f,
                         "Both efficiencies should be non-negative at " + to_string(E) + " keV" );
   }
 
@@ -2183,8 +2193,8 @@ BOOST_AUTO_TEST_CASE( test_xml_serialization_round_trip )
     const vector<float> test_energies = { 100.0f, 500.0f, 1000.0f };
     for( const float E : test_energies )
     {
-      const float eff_orig = original->intrinsicEfficiency( E * PhysicalUnits::keV );
-      const float eff_rest = restored->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_orig = original->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_rest = restored->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       BOOST_CHECK_MESSAGE( close_enough(eff_orig, eff_rest, 1e-4),
                           original->name() + ": efficiency mismatch at " + to_string(E) + " keV" );
@@ -2262,8 +2272,8 @@ BOOST_AUTO_TEST_CASE( test_url_serialization_round_trip )
     const vector<float> test_energies = { 150.0f, 661.7f, 1460.0f };
     for( const float E : test_energies )
     {
-      const float eff_orig = original->intrinsicEfficiency( E * PhysicalUnits::keV );
-      const float eff_rest = restored->intrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_orig = original->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
+      const float eff_rest = restored->farFieldIntrinsicEfficiency( E * PhysicalUnits::keV );
 
       // URL encoding has limited precision, use 0.1% tolerance
       const double rel_diff = fabs(eff_orig - eff_rest) / (std::max)(fabs(eff_orig), fabs(eff_rest));
@@ -2666,7 +2676,7 @@ BOOST_AUTO_TEST_CASE( test_read_gameff_csv )
                        "gamEff DRF should have UserImportedEfficiencyCsvDrf source" );
 
   // Check first data point: 48.814 keV, 3.098e-03
-  const float eff_first = result.drf->intrinsicEfficiency( 48.814f * static_cast<float>(PhysicalUnits::keV) );
+  const float eff_first = result.drf->farFieldIntrinsicEfficiency( 48.814f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( close_enough( eff_first, 3.098e-03, 0.01 ),
     "gamEff first point efficiency: " + to_string( eff_first ) + " vs expected 3.098e-03" );
 
@@ -2703,7 +2713,7 @@ BOOST_AUTO_TEST_CASE( test_read_run_effoutput_csv )
                        "Run_effoutput DRF should have UserImportedEfficiencyCsvDrf source" );
 
   // Check first data point: Energy=34.9731 keV, Eff=2.93E-06 (column 4, "Eff")
-  const float eff_first = result.drf->intrinsicEfficiency( 34.9731f * static_cast<float>(PhysicalUnits::keV) );
+  const float eff_first = result.drf->farFieldIntrinsicEfficiency( 34.9731f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( close_enough( eff_first, 2.93e-06, 0.02 ),
     "Run_effoutput first point efficiency: " + to_string( eff_first ) + " vs expected 2.93e-06" );
 
@@ -2738,8 +2748,8 @@ BOOST_AUTO_TEST_CASE( test_read_gadras_csv_standalone )
                        "GADRAS CSV DRF should have FixedGeomTotalAct geometry (before reinterpretation)" );
 
   // Efficiency at ~100 keV should be around 0.49899 (from file: 49.899%)
-  // The exact energy may not be in the file, so use intrinsicEfficiency which interpolates
-  const float eff_100 = result.drf->intrinsicEfficiency( 100.0f * static_cast<float>(PhysicalUnits::keV) );
+  // The exact energy may not be in the file, so use farFieldIntrinsicEfficiency which interpolates
+  const float eff_100 = result.drf->farFieldIntrinsicEfficiency( 100.0f * static_cast<float>(PhysicalUnits::keV) );
   BOOST_CHECK_MESSAGE( (eff_100 > 0.0f) && (eff_100 <= 1.0f),
     "GADRAS CSV efficiency should be in [0, 1] after percentage conversion, got: " + to_string( eff_100 ) );
 
@@ -2774,7 +2784,7 @@ BOOST_AUTO_TEST_CASE( test_gadras_ptot_total_efficiency )
   //  there is no tight upper bound.
   for( const float energy : { 200.0f, 500.0f, 661.7f, 1332.5f, 2000.0f } )
   {
-    const float full = result.drf->intrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
+    const float full = result.drf->farFieldIntrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
     const float total = result.drf->totalIntrinsicEfficiency( energy * static_cast<float>(PhysicalUnits::keV) );
     BOOST_CHECK_MESSAGE( (total >= 0.0f) && std::isfinite(total),
       "Total efficiency invalid at " + to_string(energy) + " keV: " + to_string(total) );
@@ -2897,7 +2907,7 @@ BOOST_AUTO_TEST_CASE( test_total_efficiency_basics )
                              frac_solid * drf->totalIntrinsicEfficiency(661.0f), 1e-6 ) );
 
   // Total efficiency should be >= full-energy efficiency for a real detector
-  BOOST_CHECK_GT( drf->totalIntrinsicEfficiency(661.0f), drf->intrinsicEfficiency(661.0f) );
+  BOOST_CHECK_GT( drf->totalIntrinsicEfficiency(661.0f), drf->farFieldIntrinsicEfficiency(661.0f) );
 
   // Clearing restores the original hash
   drf->setTotalEfficiencyCurve( nullptr );
@@ -3339,11 +3349,11 @@ BOOST_AUTO_TEST_CASE( test_efficiency_csv_energy_units )
   // Asked at the same PHYSICAL energy, both give the same efficiency.
   for( const pair<float,float> &p : points )
   {
-    BOOST_CHECK_MESSAGE( close_enough( in_mev->intrinsicEfficiency(p.first),
-                                       in_kev->intrinsicEfficiency(p.first), 1.0E-4 ),
+    BOOST_CHECK_MESSAGE( close_enough( in_mev->farFieldIntrinsicEfficiency(p.first),
+                                       in_kev->farFieldIntrinsicEfficiency(p.first), 1.0E-4 ),
                          "at " << p.first << " keV the MeV-stored curve gives "
-                         << in_mev->intrinsicEfficiency(p.first) << " and the keV-stored one "
-                         << in_kev->intrinsicEfficiency(p.first) );
+                         << in_mev->farFieldIntrinsicEfficiency(p.first) << " and the keV-stored one "
+                         << in_kev->farFieldIntrinsicEfficiency(p.first) );
   }
 
   // And the stated validity range is keV in both.
@@ -3429,6 +3439,329 @@ BOOST_AUTO_TEST_CASE( test_url_roundtrip_preserves_identity )
 
   cout << "URL round-trip identity passed" << endl;
 }//test_url_roundtrip_preserves_identity
+
+
+/** The QR "Alphanumeric" mode holds 5.5 bits per character where byte mode costs 8, and Nayuki's
+ encoder (QrSegment::makeSegments) picks one mode for the *whole* text - so a single character
+ outside this set pushes the entire DRF into byte mode.  `toAppUrlQr` therefore has to escape
+ everything, including the lower-case in the scheme and in the detector's own name.
+ */
+BOOST_AUTO_TEST_CASE( test_url_qr_is_alphanumeric )
+{
+  cout << "\n\nTesting DRF QR URI is entirely QR-alphanumeric..." << endl;
+
+  const string qr_alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+
+  // Names/descriptions chosen to exercise the characters that break either the QR charset or the
+  //  query grammar: lower-case, space, '&', '=', '%', '+', '/' and non-ASCII.
+  const vector<pair<string,string>> names = {
+    { "Detective X", "a plain name with a space" },
+    { "Det A&B=C", "separators that would otherwise split the query" },
+    { "100% efficient", "a literal percent sign" },
+    { "a+b/c:d", "the QR-alphanumeric punctuation that is still URL-unsafe" },
+    { "D\xc3\xa9tecteur \xc3\xa0 germanium", "non-ASCII UTF-8" }
+  };
+
+  for( const pair<string,string> &nd : names )
+  {
+    auto drf = make_shared<DetectorPeakResponse>( nd.first, nd.second );
+    drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+
+    string qr;
+    BOOST_REQUIRE_NO_THROW( qr = drf->toAppUrlQr() );
+
+    BOOST_CHECK_MESSAGE( SpecUtils::istarts_with( qr, "INTERSPEC://DRF/SPECIFY%3F" ),
+                         "QR URI does not start with the escaped app-URI prefix: "
+                         << qr.substr(0, 40) );
+
+    string offenders;
+    for( const char c : qr )
+    {
+      if( qr_alnum.find(c) == string::npos )
+        offenders += c;
+    }
+
+    BOOST_CHECK_MESSAGE( offenders.empty(),
+                         "'" << nd.first << "' produced a QR URI with non-alphanumeric character(s) '"
+                         << offenders << "' - the whole code falls back to byte mode" );
+  }//for( const pair<string,string> &nd : names )
+}//test_url_qr_is_alphanumeric
+
+
+/** Walks the exact path a scanned QR code takes in the app: `InterSpec::handleAppUrl` url-decodes
+ the whole URI once, `AppUtils::split_uri` splits it, and `DrfSelect::handle_app_url_drf` hands the
+ query to `fromAppUrl`.  The escaping `toAppUrlQr` adds must be precisely the one layer that decode
+ removes - one too few and the '&' separators arrive already split, one too many and every value
+ keeps a stray "%25".
+ */
+BOOST_AUTO_TEST_CASE( test_url_qr_matches_app_dispatch_path )
+{
+  cout << "\n\nTesting DRF QR URI survives the app's decode path..." << endl;
+
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+  auto drf = make_shared<DetectorPeakResponse>( "Det A&B", "50% eff, 2 m\xc2\xb3 crystal" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf->setFwhmCoefficients( { 2.1f, 0.031f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+
+  const string qr = drf->toAppUrlQr();
+
+  // 1) What InterSpec::handleAppUrl does first.
+  const string decoded = Wt::Utils::urlDecode( qr );
+
+  // 2) The one decode must land exactly on the canonical query string.
+  BOOST_CHECK_EQUAL( decoded, "INTERSPEC://DRF/SPECIFY?" + drf->toAppUrl() );
+
+  // 3) AppUtils::split_uri matches host/path case-insensitively, so the upper-casing is safe.
+  string host, path, query, frag;
+  AppUtils::split_uri( decoded, host, path, query, frag );
+  BOOST_CHECK( SpecUtils::iequals_ascii( host, "drf" ) );
+  BOOST_CHECK( SpecUtils::iequals_ascii( path, "specify" ) );
+  BOOST_REQUIRE( !query.empty() );
+
+  // 4) ...and the query that falls out is the one fromAppUrl documents.
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( query ) );
+
+  BOOST_CHECK_EQUAL( restored->name(), drf->name() );
+  BOOST_CHECK_EQUAL( restored->description(), drf->description() );
+  BOOST_CHECK_MESSAGE( restored->hashValue() == drf->hashValue(),
+                       "a QR round trip changed the DRF's identity: " << drf->hashValue()
+                       << " -> " << restored->hashValue() );
+
+  // The whole point of the exercise: the QR payload is alphanumeric, so it is 5.5 bits per
+  //  character rather than 8.  Report both so a regression is visible in the log.
+  cout << "  QR URI: " << qr.size() << " chars alphanumeric = " << ((qr.size()*11 + 1)/2)
+       << " bits (byte mode would be " << (8*qr.size()) << ")" << endl;
+}//test_url_qr_matches_app_dispatch_path
+
+
+/** URLs made by shipped builds - and the examples in the FAQ - are bare "KEY=value&..." queries.
+ Nothing about going QR-alphanumeric may stop those being read.
+ */
+BOOST_AUTO_TEST_CASE( test_url_legacy_query_still_reads )
+{
+  cout << "\n\nTesting a pre-existing DRF URL still imports..." << endl;
+
+  const string legacy = "VER=1&NAME=Legacy%20Det&DESC=made%20by%20an%20older%20build"
+                        "&DIAM=7.62&EFFT=E&EFFC=-5.2*0.83*-0.21&FWHMT=GAD&FWHMC=2.1*0.031*0"
+                        "&LOWE=50&HIGHE=3000&ORIGIN=0";
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( drf->fromAppUrl( legacy ) );
+
+  BOOST_CHECK( drf->isValid() );
+  BOOST_CHECK_EQUAL( drf->name(), "Legacy Det" );
+  BOOST_CHECK_EQUAL( drf->description(), "made by an older build" );
+  BOOST_CHECK( drf->hasResolutionInfo() );
+
+  // And the static helper takes it too, since that is what the batch "--drf" option uses.
+  BOOST_CHECK_NO_THROW( DetectorPeakResponse::parseFromAppUrl( legacy ) );
+}//test_url_legacy_query_still_reads
+
+
+/** `--drf` on the command line gets whatever the user pasted, which is as likely to be the whole
+ URI off a QR code as the bare query.
+ */
+BOOST_AUTO_TEST_CASE( test_parse_from_app_url_accepts_qr_uri )
+{
+  cout << "\n\nTesting parseFromAppUrl accepts a full QR URI..." << endl;
+
+  const vector<float> coeffs = { -5.2f, 0.83f, -0.21f };
+  auto drf = make_shared<DetectorPeakResponse>( "PasteMe", "from a QR code" );
+  drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 7.62*PhysicalUnits::cm, PhysicalUnits::keV,
+                                50.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // Each of the three forms a user could plausibly hand us.
+  const string bare_query = drf->toAppUrl();
+  const string qr_uri     = drf->toAppUrlQr();
+  const string plain_uri  = "interspec://drf/specify?" + bare_query;
+
+  for( const string &form : { bare_query, qr_uri, plain_uri } )
+  {
+    shared_ptr<DetectorPeakResponse> parsed;
+    BOOST_REQUIRE_NO_THROW( parsed = DetectorPeakResponse::parseFromAppUrl( form ) );
+    BOOST_REQUIRE( parsed );
+    BOOST_CHECK_EQUAL( parsed->name(), drf->name() );
+    BOOST_CHECK_MESSAGE( parsed->hashValue() == drf->hashValue(),
+                         "identity lost parsing form: " << form.substr(0,32) );
+  }
+}//test_parse_from_app_url_accepts_qr_uri
+
+
+namespace
+{
+  /** A coaxial HPGe: fillet, rounded bore, dead layer, two Al layers - the richest shape the
+   descriptor supports, so the URL round trip has something to lose.
+   */
+  ceelo::GeometryDescriptor hpge_coax_geometry()
+  {
+    ceelo::LayerSpec can;
+    can.material_index = 1;
+    can.front_thickness_cm = 0.15;
+    can.side_thickness_cm = 0.15;
+    can.z_start_cm = 0.0;
+    can.z_end_cm = 6.0;
+
+    ceelo::GeometryDescriptor gd;
+    gd.set_dimensions( ceelo::CylinderDims{ 3.0, 6.0 } );
+    gd.materials = { ceelo::MaterialSpec::from( ceelo::make_HPGe() ),
+                     ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+    gd.crystal_material_index = 0;
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = ceelo::BoreHoleConfig{ 0.5, 5.0, true };
+    gd.dead_layer = ceelo::DeadLayerConfig{ 0.07, 0.07, 0.0 };
+    gd.layers.push_back( can );
+    return gd;
+  }
+
+  std::shared_ptr<DetectorPeakResponse> plain_hpge_drf( const string &name )
+  {
+    const vector<float> coeffs = { -5.2f, 0.83f, -0.21f, 0.031f };
+    auto drf = make_shared<DetectorPeakResponse>( name, "url geometry test" );
+    drf->fromExpOfLogPowerSeries( coeffs, {}, 0.0, 6.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                  50.0f, 3000.0f,
+                                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setFwhmCoefficients( { 1.0f, 0.02f, 0.0f }, DetectorPeakResponse::kGadrasResolutionFcn );
+    return drf;
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_base32_round_trip )
+{
+  cout << "\n\nTesting base32 codec..." << endl;
+
+  // Every length modulo 5 exercises a different trailing partial group.
+  for( size_t len = 0; len < 64; ++len )
+  {
+    vector<uint8_t> data( len );
+    for( size_t i = 0; i < len; ++i )
+      data[i] = static_cast<uint8_t>( (i*37 + len*11) & 0xFF );
+
+    const string encoded = AppUtils::base32_encode( data );
+
+    // Alphabet must be QR-alphanumeric and need no url-escaping - that is the whole reason we are
+    //  not using base45 or base64url here.
+    for( const char c : encoded )
+      BOOST_REQUIRE_MESSAGE( ((c >= 'A') && (c <= 'Z')) || ((c >= '2') && (c <= '7')),
+                             "base32 emitted '" << c << "', which is outside its alphabet" );
+
+    const vector<uint8_t> decoded = AppUtils::base32_decode( encoded );
+    BOOST_REQUIRE_EQUAL( decoded.size(), data.size() );
+    BOOST_CHECK( decoded == data );
+  }//for( size_t len = 0; len < 64; ++len )
+
+  // Lower-case is accepted...
+  BOOST_CHECK( AppUtils::base32_decode("mzxw6") == AppUtils::base32_decode("MZXW6") );
+
+  // ...but junk is not.
+  BOOST_CHECK_THROW( AppUtils::base32_decode("MZXW1"), std::runtime_error );   //'1' not in alphabet
+  BOOST_CHECK_THROW( AppUtils::base32_decode("A"), std::runtime_error );       //impossible length
+  BOOST_CHECK_THROW( AppUtils::base32_decode("ABC"), std::runtime_error );     //impossible length
+}//test_base32_round_trip
+
+
+/** The point of the feature: a detector that knows its shape keeps it through a QR code, so the
+ receiver can re-run the Monte-Carlo characterization instead of starting from a flat disk.
+ */
+BOOST_AUTO_TEST_CASE( test_url_geometry_round_trip )
+{
+  cout << "\n\nTesting detector geometry survives the app-URL..." << endl;
+
+  auto drf = plain_hpge_drf( "GeomDet" );
+  const ceelo::GeometryDescriptor gd = hpge_coax_geometry();
+  BOOST_REQUIRE( gd.problems().empty() );
+  drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( gd ) );
+  BOOST_REQUIRE( drf->geometry() );
+
+  const string url = drf->toAppUrl();
+  BOOST_REQUIRE_MESSAGE( url.find("DETGEOM=") != string::npos, "the geometry is not in the URL" );
+  cout << "  URL with geometry: " << url.size() << " chars" << endl;
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+
+  BOOST_REQUIRE_MESSAGE( restored->geometry(), "the geometry did not survive the round trip" );
+  BOOST_CHECK_EQUAL( restored->geometry()->to_xml_string(), gd.to_xml_string() );
+
+  // Identity is preserved: computeHash folds the geometry XML in, and the URL carries the hash.
+  BOOST_CHECK_MESSAGE( restored->hashValue() == drf->hashValue(),
+                       "a geometry round trip changed the DRF's identity: " << drf->hashValue()
+                       << " -> " << restored->hashValue() );
+
+  // ...and the hash the receiver ends up with is one it could have computed itself.
+  auto recomputed = make_shared<DetectorPeakResponse>( *restored );
+  recomputed->setGeometry( make_shared<const ceelo::GeometryDescriptor>( *restored->geometry() ) );
+  BOOST_CHECK_MESSAGE( recomputed->hashValue() == restored->hashValue(),
+                       "the transmitted hash does not describe the DRF that was rebuilt" );
+
+  // The whole thing still fits a QR code, alphanumerically.
+  const string qr = drf->toAppUrlQr();
+  const string qr_alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  for( const char c : qr )
+    BOOST_REQUIRE_MESSAGE( qr_alnum.find(c) != string::npos,
+                           "geometry-carrying QR URI has non-alphanumeric '" << c << "'" );
+  cout << "  QR URI with geometry: " << qr.size() << " chars" << endl;
+}//test_url_geometry_round_trip
+
+
+/** A URL with no geometry key - every URL made before this existed - must still import, and must
+ leave the DRF saying it does not know its shape rather than inventing one.
+ */
+BOOST_AUTO_TEST_CASE( test_url_without_geometry_key_imports )
+{
+  cout << "\n\nTesting a URL with no geometry still imports..." << endl;
+
+  auto drf = plain_hpge_drf( "NoGeomDet" );
+  const string url = drf->toAppUrl();
+  BOOST_REQUIRE( url.find("DETGEOM=") == string::npos );
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK( !restored->geometry() );
+  BOOST_CHECK( restored->isValid() );
+
+  // A DRF object being reused must not keep a geometry from a previous decode.
+  restored->setGeometry( make_shared<const ceelo::GeometryDescriptor>( hpge_coax_geometry() ) );
+  BOOST_REQUIRE( restored->geometry() );
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK_MESSAGE( !restored->geometry(),
+                       "decoding a geometry-less URL left a stale geometry on the DRF" );
+}//test_url_without_geometry_key_imports
+
+
+/** A malformed geometry payload costs the shape, not the detector.  The efficiency curve is the
+ part the user actually needs.
+ */
+BOOST_AUTO_TEST_CASE( test_url_bad_geometry_is_ignored )
+{
+  cout << "\n\nTesting a corrupt geometry payload does not fail the import..." << endl;
+
+  auto drf = plain_hpge_drf( "CorruptGeom" );
+  drf->setGeometry( make_shared<const ceelo::GeometryDescriptor>( hpge_coax_geometry() ) );
+
+  string url = drf->toAppUrl();
+  const string::size_type pos = url.find( "DETGEOM=" );
+  BOOST_REQUIRE( pos != string::npos );
+
+  // Corrupt the payload without changing its length, so it is still well-formed base32.
+  url[pos + 10] = (url[pos + 10] == 'A') ? 'B' : 'A';
+  url[pos + 11] = (url[pos + 11] == 'A') ? 'B' : 'A';
+
+  auto restored = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( restored->fromAppUrl( url ) );
+  BOOST_CHECK_MESSAGE( restored->isValid(), "a corrupt geometry cost us the whole detector" );
+  BOOST_CHECK( !restored->geometry() );
+}//test_url_bad_geometry_is_ignored
+
+
 
 
 /** A `<CeeLoGeometry>` element is version-7 content, so a DRF that carries one must not declare an
@@ -3710,7 +4043,7 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
   // The duplicate used to make calcA(...) compute 0/0, giving NaN over [58.268, 63.268)
   for( const float energy : { 54.0f, 56.0f, 58.268f, 60.0f, 62.0f, 63.268f, 70.0f, 85.0f } )
   {
-    const float eff = result.drf->intrinsicEfficiency( energy );
+    const float eff = result.drf->farFieldIntrinsicEfficiency( energy );
     BOOST_CHECK_MESSAGE( std::isfinite(eff),
       "Efficiency at " + to_string(energy) + " keV is not finite: " + to_string(eff) );
     BOOST_CHECK_MESSAGE( (eff > 1.0e-4f) && (eff < 1.0e-2f),
@@ -3743,8 +4076,8 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
   // Both orderings describe the same curve, so they must evaluate the same
   for( const float energy : { 54.0f, 60.0f, 70.0f, 85.0f } )
   {
-    const float inc_eff = result.drf->intrinsicEfficiency( energy );
-    const float dec_eff = dec_result.drf->intrinsicEfficiency( energy );
+    const float inc_eff = result.drf->farFieldIntrinsicEfficiency( energy );
+    const float dec_eff = dec_result.drf->farFieldIntrinsicEfficiency( energy );
     BOOST_CHECK_MESSAGE( close_enough( inc_eff, dec_eff, 1.0e-4 ),
       "Ascending vs descending CSV disagree at " + to_string(energy) + " keV: "
       + to_string(inc_eff) + " vs " + to_string(dec_eff) );
@@ -4048,7 +4381,7 @@ BOOST_AUTO_TEST_CASE( test_replace_efficiency_curve_preserves_geometry )
   const DetectorPeakResponse::DrfSource orig_source = drf->drfSource();
   const size_t orig_hash = drf->hashValue();
   const float test_energy = 661.0f;
-  const double orig_eff = drf->intrinsicEfficiency( test_energy );
+  const double orig_eff = drf->farFieldIntrinsicEfficiency( test_energy );
 
   BOOST_REQUIRE( drf->isFixedGeometry() );
   BOOST_REQUIRE_MESSAGE( orig_diam <= 0.0f, "An .ecc DRF is expected to have no diameter" );
@@ -4094,7 +4427,7 @@ BOOST_AUTO_TEST_CASE( test_replace_efficiency_curve_preserves_geometry )
   BOOST_CHECK( drf->isFixedGeometry() );
   BOOST_CHECK_EQUAL( drf->detectorDiameter(), orig_diam );
   BOOST_CHECK( drf->drfSource() == orig_source );
-  BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(drf->intrinsicEfficiency(test_energy)),
+  BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(drf->farFieldIntrinsicEfficiency(test_energy)),
                                      static_cast<float>(2.0*orig_eff), 1.0e-4 ),
                        "Efficiency should have doubled" );
   BOOST_CHECK( close_enough( drf->lowerEnergy(), pairs.front().energy, 1.0e-4 ) );
@@ -4264,7 +4597,7 @@ BOOST_AUTO_TEST_CASE( test_replace_curve_keeps_curve_energy_units )
   BOOST_CHECK_EQUAL( drf->efficiencyCurve()->energyUnits(), static_cast<float>(PhysicalUnits::MeV) );
 
   // 1 MeV == 1000 keV should give the efficiency written for the 1.0 (MeV) pair.
-  const double eff_1mev = drf->intrinsicEfficiency( 1000.0f );
+  const double eff_1mev = drf->farFieldIntrinsicEfficiency( 1000.0f );
   BOOST_CHECK_MESSAGE( close_enough( static_cast<float>(eff_1mev), 0.25f, 1.0e-3 ),
     "Efficiency at 1 MeV should be 0.25, got " + to_string(eff_1mev) );
 

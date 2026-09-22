@@ -1,0 +1,114 @@
+/* InterSpec: an application to analyze spectral gamma radiation data.
+
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+/* =============================================================================
+   InterSpec colour theme: the LIGHT ("default") palette.
+
+   Every colour used by the non-chart parts of the app is a CSS custom property
+   (a "token") declared here.  Component stylesheets never hard-code a colour;
+   they write e.g. `color: var(--interspec-text-color);`.
+
+   The cascade, lowest to highest precedence:
+     1. this file - always loaded first; the only place the light values live.
+     2. themes/<name>/<name>.css - loaded when a colour theme selects that CSS
+        theme (e.g. "dark"); it re-declares the same tokens with its own values.
+     3. `html:root {}` rules that InterSpec::applyColorTheme publishes for the
+        colours a user explicitly set in a saved theme; these win over 1 and 2.
+
+   To make a new CSS theme: copy this file to
+   InterSpec_resources/themes/<name>/<name>.css, change the values (keep every
+   token - a unit test checks the two lists agree), then pick it under
+   Help -> Color Themes.  Chart colours (`--d3spec-*`) are separate: they come
+   from the ColorTheme itself so server-side rendering can use them too.
+
+   Text tokens are chosen to give at least a 4.5:1 contrast ratio on the
+   background they are meant for (WCAG AA); if you change one, re-check with
+   target/testing/PlaywrightThemeContrast.
+   ============================================================================= */
+:root {
+  /* ---- Surfaces ---- */
+  --interspec-background-color: white;                 /* app, dialog and panel background */
+  --interspec-input-background: white;                 /* text inputs, selects, text areas */
+  --interspec-panel-background: #f0f0f0;               /* secondary/raised panels and result boxes */
+  --interspec-header-background: #eeeeee;              /* table and list headers */
+  --interspec-alt-row-background: rgba(25,255,225,0.10);  /* zebra striping; over white this composites
+                                                             to rgb(232,255,252), the pale mint Wt's
+                                                             stripe images have always used */
+  --interspec-popup-background: white;                 /* popup menus, dropdowns, suggestion lists */
+  --interspec-tooltip-background: #FFFFA3;
+  --interspec-tooltip-text-color: #555555;
+  --interspec-tooltip-border-color: #F1D031;
+  --interspec-dialog-cover-color: rgb(204,204,204);    /* modal scrim colour (Wt applies its own 50% opacity) */
+  --interspec-titlebar-background: #888888;            /* dialog title bars; their text uses --interspec-button-text-color */
+  --interspec-titlebar-hover-background: #909090;
+
+  /* ---- Text ---- */
+  --interspec-text-color: black;                       /* body text */
+  --interspec-label-color: black;                      /* labels, tab titles, section headers */
+  --interspec-secondary-text-color: #555555;           /* de-emphasised but fully readable: descriptions, hints */
+  --interspec-fainter-text-color: #6e6e6e;             /* quiet text: units, placeholders, "absent" markers */
+  --interspec-disabled-text-color: #5f5f5f;            /* muted, but still legible (3.5:1 on the disabled surface) */
+  --interspec-disabled-background: #c0c0c0;            /* disabled buttons */
+
+  /* ---- Lines ---- */
+  --interspec-border-color: #e1e1e1;                   /* hairlines: panels, tabs, table cells */
+  --interspec-outline-color: #8c8c8c;                  /* stronger boundary: table grids, chips, swatches, focus rings */
+
+  /* ---- Interactive ----
+     `alt-row-background`, `highlight-background` and `hover-background` are deliberately
+     translucent, so they read on any surface.  An element that has a background of its own must
+     therefore layer them over it (`linear-gradient(<token>, <token>), <surface>`) rather than
+     replace it; a button-like element uses `button-hover-background` instead.
+
+     Text drawn on a *solid* accent or status colour takes `background-color` as its ink: those
+     colours are dark in light themes and light in dark ones, so the theme background always
+     contrasts with them and no separate "ink" token is needed. */
+  --interspec-link-color: blue;
+  --interspec-accent-color: rgb(0,102,214);            /* toggles, switches, and other "on" indicators */
+  --interspec-highlight-background: rgba(47,111,214,0.12); /* soft "current item" tint */
+  --interspec-selected-background: #c6c6c6;            /* strongly selected list row or menu entry */
+  --interspec-selected-text-color: black;
+  --interspec-hover-background: rgba(128,128,128,0.20); /* list / menu item hover */
+  --interspec-button-background: #707070;               /* trial: 5.0:1 under white button text (#888888 was 3.5:1) */
+  --interspec-button-hover-background: #737373;
+  --interspec-button-border-color: #e1e1e1;
+  --interspec-button-text-color: white;
+  --interspec-menubar-background: #ffffff;             /* the menu bar and its buttons */
+  --interspec-menubar-active-color: rgb(128,128,128);  /* a menu-bar button while its menu is open */
+  --interspec-menubar-hover-color: rgba(128,128,128,0.25);
+
+  /* ---- Semantic: text colour / banner background / banner border ---- */
+  --interspec-warning-color: #b45309;
+  --interspec-warning-background: #fff6e6;
+  --interspec-warning-border-color: #f0d59a;
+  --interspec-error-color: #c62828;
+  --interspec-error-background: #fdecea;
+  --interspec-error-border-color: #f5c6cb;
+  --interspec-success-color: #1f7a3d;
+  --interspec-success-background: #eaf7ee;
+  --interspec-success-border-color: #b6e2c4;
+
+  /* ---- Mode (not colours, and not overridable from a saved theme) ---- */
+  --interspec-icon-filter: none;                       /* dark themes use invert(100%) to flip black icons */
+  --interspec-color-scheme: light;                     /* feeds `color-scheme`, so native scrollbars and form controls follow the theme */
+}

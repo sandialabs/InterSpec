@@ -385,7 +385,7 @@ void DoseCalcWidget::init()
     m_sourceType->addButton( neutronButton, 1 );
     neutronButton->disable();
     neutronButton->setToolTip( WString::tr("dcw-tt-neut-not-imp") );
-    neutronButton->setAttributeValue( "style", "color: grey;" );
+    neutronButton->addStyleClass( "FainterTxt" );
 
     m_sourceType->setSelectedButtonIndex( 0 );
 

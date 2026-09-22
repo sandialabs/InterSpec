@@ -1348,7 +1348,7 @@ BOOST_AUTO_TEST_CASE( efficiencyFixedGeometryIgnoresDistance )
   BOOST_REQUIRE( !result.points.empty() );
 
   for( const CAMInputOutput::EfficiencyPoint &pt : result.points )
-    BOOST_CHECK_CLOSE( pt.Efficiency, drf->intrinsicEfficiency( pt.Energy ), 0.1 );
+    BOOST_CHECK_CLOSE( pt.Efficiency, drf->farFieldIntrinsicEfficiency( pt.Energy ), 0.1 );
 }//BOOST_AUTO_TEST_CASE( efficiencyFixedGeometryIgnoresDistance )
 
 

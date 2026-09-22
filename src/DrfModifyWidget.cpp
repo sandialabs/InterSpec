@@ -238,6 +238,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_generateHint( nullptr ),
     m_applyAfterGenerationId( -1 ),
     m_updatedDrf(),
+    m_wasGenerating( false ),
     m_renderFlags(),
     m_currentState( nullptr ),
     m_restoringState( false )
@@ -853,6 +854,18 @@ Wt::Signal<bool> &DrfModifyWidget::mcResponseAvailable()
 }
 
 
+Wt::Signal<bool> &DrfModifyWidget::generatingChanged()
+{
+  return m_generatingChanged;
+}
+
+
+bool DrfModifyWidget::isGenerating() const
+{
+  return (m_mcTool && m_mcTool->isGenerating());
+}
+
+
 bool DrfModifyWidget::needsMcResponse() const
 {
   // A fixed-geometry DRF has no MC tool, so a Monte-Carlo response can neither be generated nor is
@@ -1219,6 +1232,8 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
   auto state = make_shared<ToolState>();
 
   state->drfHash = m_orig ? m_orig->hashValue() : uint64_t(0);
+  // Travels with the content it describes; see the note in setState.
+  state->generatedFromFingerprint = m_generatedFromFingerprint;
   state->name = m_name->text().toUTF8();
   state->description = m_description->text().toUTF8();
   state->tabIndex = m_tabMenu->currentIndex();
@@ -1347,6 +1362,13 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   //  cannot strand it in the "fresh" state the way clearing a flag here used to.
   m_renderFlags.clear( RenderActions::AddUndoRedoStep );
   m_applyAfterGenerationId = -1;   //no run this snapshot describes is one we armed
+  // Staleness is `seedFingerprint(current content) != m_generatedFromFingerprint`.  The first
+  //  operand follows the restored content; without this the second would keep whatever the last
+  //  completed generation left behind, and the two would describe different moments - reading
+  //  "fresh" for a response built from content the undo just replaced (which `requestApply` would
+  //  then attach), or "stale" for one that is not.
+  m_generatedFromFingerprint = state->generatedFromFingerprint;
+
   updateGenerateButton();
   refreshUncertSummary();
   markGeneralStale();
@@ -1674,7 +1696,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
     {
       try
       {
-        const float fep = drf->intrinsicEfficiency( ref_energy );
+        const float fep = drf->farFieldIntrinsicEfficiency( ref_energy );
         const float tot = drf->totalIntrinsicEfficiencyAny( ref_energy );
         if( (fep > 0.0f) && (tot > fep) )
           txt = WString::tr("dmw-info-toteff-ratio").arg( txt )
@@ -2067,6 +2089,7 @@ void DrfModifyWidget::detachResponseAndApply()
     m_mcTool->setDisabled( true );
 
   updateGenerateButton();
+  updateAnchorEditorVisibility();  //the response note follows the mode, as in handleModeToggle
   apply();
 }//detachResponseAndApply()
 
@@ -2086,6 +2109,51 @@ void DrfModifyWidget::handleModeToggle()
   updateAnchorEditorVisibility();
   markEdited();
 }//handleModeToggle()
+
+
+void DrfModifyWidget::showGeometryTab()
+{
+  if( m_geomTabItem && m_tabMenu )
+    m_tabMenu->select( m_geomTabItem );
+}//void DrfModifyWidget::showGeometryTab()
+
+
+bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method,
+                                              const ceelo::ResponseProfile profile,
+                                              const MakeMcResponseForDrf::Precision precision )
+{
+  if( !m_mcTool || !m_geomTabItem )
+    return false;   //fixed-geometry DRF: nothing to model
+  
+  // Generating implies Geometry Modeled; going through the toggle keeps the uncertainty editor and
+  //  the rest of the dialog consistent, rather than setting the flag behind their backs.
+  if( !m_geometryModeled )
+  {
+    m_modeToggle->setChecked( true );
+    handleModeToggle();
+  }
+  
+  showGeometryTab();
+  
+  // Method first: it is what decides whether the other two are even consulted (QuickMc's
+  //  generation forces the far-field profile regardless of what the combo says).
+  m_mcTool->setMethod( method );
+  m_mcTool->setProfile( profile );
+  m_mcTool->setPrecision( precision );
+  
+  // A partial run is only worth more than the plain geometry transfer if it actually measures some
+  //  off-axis angles, so ask for them rather than relying on the combo's default.
+  if( method == MakeMcResponseForDrf::Method::QuickMc )
+    m_mcTool->setOffAxisAnchors( true );
+  
+  const bool started = m_mcTool->startGeneration();
+  
+  // Same as handleGenerateResponse: the footer button keys off a result that is null for the whole
+  //  run, so without this it sits enabled while the run it would duplicate is in flight.
+  updateGenerateButton();
+  
+  return started;
+}//bool DrfModifyWidget::startMcCharacterization( const MakeMcResponseForDrf::Method method )
 
 
 bool DrfModifyWidget::geometryModeled() const
@@ -2545,7 +2613,46 @@ void DrfModifyWidget::updateGenerateButton()
   m_generateBtn->setEnabled( m_geometryModeled && canGen && !running
                              && (!haveResp || responseStale()) );
 
-  const string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
+  // Flipping to Flat Disk calls `m_mcTool->setDisabled(true)`, which greys the whole tool - the run
+  //  row's Cancel button with it.  Mid-run that leaves a Monte Carlo burning every core with no way
+  //  to stop it, so the toggle is held while one is in flight.
+  if( m_modeToggle )
+    m_modeToggle->setDisabled( running );   //a WContainerWidget, so not setEnabled
+
+  // This function is called at every point a run starts or ends, so it is where the transition is
+  //  noticed - an owner gating its own footer buttons (DrfModifyWindow's "Use") listens for it.
+  if( running != m_wasGenerating )
+  {
+    m_wasGenerating = running;
+    m_generatingChanged.emit( running );
+  }
+
+  string problem = (m_geometryModeled && !canGen) ? m_mcTool->geometryProblem() : string();
+
+  // A blocking edit elsewhere (an unparseable anchor cell, a covariance that is not positive
+  //  semi-definite) does not stop a generation starting, but the seed it runs against ignores the
+  //  edit - so the run is wasted, and nothing says so until the user presses "Use".
+  //
+  // Only when there is no response yet: that is both where it matters (the button is enabled, so
+  //  the wasted run is one click away) and where `responseStale()` above returned without building
+  //  a seed - so this stays at one `buildWorkingDrf` per refresh rather than two.  It is not free:
+  //  for the refit-points editor that call re-fits the efficiency equation.
+  if( problem.empty() && m_geometryModeled && !haveResp )
+  {
+    vector<DrfModifyCalc::Problem> problems;
+    buildWorkingDrf( false, problems );
+    for( const DrfModifyCalc::Problem &p : problems )
+    {
+      if( !p.blocking )
+        continue;
+
+      WString msg = WString::tr( p.messageId );
+      if( !p.arg.empty() )
+        msg = msg.arg( WString::fromUTF8(p.arg) );
+      problem = msg.toUTF8();
+      break;
+    }//for( const DrfModifyCalc::Problem &p : problems )
+  }//if( problem.empty() && m_geometryModeled )
   if( m_generateHint )
   {
     m_generateHint->setText( WString::fromUTF8( problem ) );
@@ -2705,18 +2812,46 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   WPushButton *use = footer()->addNew<WPushButton>( WString::tr("dmw-use-btn") );
   use->clicked().connect( m_tool, &DrfModifyWidget::requestApply );
 
-  // A DRF with no efficiency curve of its own - a Detector.dat or .detx imported
-  //  for its geometry alone - is not usable until the Monte Carlo has produced
-  //  one.  Hold "Use" closed until it has, rather than letting the dialog be
-  //  dismissed with an invalid detector.
-  if( m_tool->needsMcResponse() )
-  {
-    use->disable();
+  // "Use" has two independent reasons to be closed, so they are combined in one place rather than
+  //  each setting the button and clobbering the other.
+  //
+  // A DRF with no efficiency curve of its own - a Detector.dat or .detx imported for its geometry
+  //  alone - is not usable until the Monte Carlo has produced one.  And while a run is in flight
+  //  there is nothing to apply yet: "Use" would offer to generate a response, and that offer then
+  //  does nothing, since only one generation may run at a time.
+  DrfModifyWidget * const tool = m_tool;
+  const bool needs_mc = tool->needsMcResponse();
+
+  // Seeded from the response the tool is actually holding, not from `!needs_mc` as a stand-in for
+  //  it: `MakeMcResponseForDrf`'s constructor emits `validationChanged(true)` for a DRF that
+  //  arrives carrying one, and that happens inside `DrfModifyWidget`'s constructor - before the
+  //  connection below exists.  A DRF with a response but no legacy efficiency curve would miss
+  //  that emission and leave "Use" disabled over a perfectly good detector.  Every current writer
+  //  guards against producing that DRF, but the XML and database readers both accept it, so the
+  //  invariant is not enforced anywhere.
+  const shared_ptr<const DetectorPeakResponse> orig = tool->originalDrf();
+  auto have_resp = make_shared<bool>( !needs_mc || (orig && orig->ceeloResponse()) );
+
+  auto refresh_use = [use,tool,have_resp](){
+    use->setEnabled( *have_resp && !tool->isGenerating() );
+  };
+
+  if( needs_mc )
     HelpSystem::attachToolTipOn( use, WString::tr("dmw-tt-use-needs-mc"), true );
-    m_tool->mcResponseAvailable().connect( std::bind( [use]( const bool have ){
-      use->setEnabled( have );
+
+  if( needs_mc )
+  {
+    tool->mcResponseAvailable().connect( std::bind( [have_resp,refresh_use]( const bool have ){
+      *have_resp = have;
+      refresh_use();
     }, std::placeholders::_1 ) );
-  }//if( m_tool->needsMcResponse() )
+  }
+
+  tool->generatingChanged().connect( std::bind( [refresh_use]( const bool ){
+    refresh_use();
+  }, std::placeholders::_1 ) );
+
+  refresh_use();
 
   show();
   resizeToFitOnScreen();

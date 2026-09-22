@@ -737,7 +737,8 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     m_nrows = 0;
     
     WText *txt = addNew<WText>( WString::tr("sb-err-making-browser-txt") );
-    txt->setAttributeValue( "style", "color: red; font-weight: bold; font-size: 22px;" );
+    txt->addStyleClass( "ErrorTxt" );
+    txt->setAttributeValue( "style", "font-weight: bold; font-size: 22px;" );
     
     passMessage( WString::tr("sb-err-making-browser-msg").arg(e.what()),
                 WarningWidget::WarningMsgHigh );

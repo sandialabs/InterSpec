@@ -24,7 +24,7 @@
 
 .ShieldingSelect
 {
-  border: 1px solid var(--interspec-border-color, #e1e1e1);
+  border: 1px solid var(--interspec-border-color);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -37,8 +37,8 @@
 {
   display: inline-flex;
   flex: 0 0 auto;
-  background: var(--interspec-background-color, #ececef);
-  border: 1px solid var(--interspec-border-color, #d2d2d8);
+  background: var(--interspec-background-color);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 7px;
   padding: 2px;
   gap: 2px;
@@ -63,7 +63,7 @@
 
 .ShieldingSelect .ShieldTypeToggle .TypeBtn.on
 {
-  background: var(--interspec-input-background, #ffffff);
+  background: var(--interspec-input-background);
   opacity: 1.0;
   box-shadow: 0 1px 2px rgba(20,20,30,.14);
 }
@@ -136,13 +136,69 @@
 }
 
 
+/* The material summary ("ρ=7.87 g/cm³", plus the effective atomic number when fitting).
+   The density is an <input> styled to look exactly like the surrounding text, so the user can
+   click it and type a different density; because it is always an input, and is sized to its
+   content in C++ (see ShieldingSelect::updateMaterialSummary), nothing moves when it is edited.
+ */
 .ShieldingSelect .MaterialSummary
 {
-  overflow-x: hidden;
   white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Outside the Act/Shielding fit tool the summary shares the thickness row, where it has always
+   had a fixed, right-aligned box.  In the fit tool it gets a layout cell of its own, and is left
+   to size itself, as the plain text it replaced did.
+ */
+.ShieldingSelect .MaterialSummary:not(.MaterialSummaryFit)
+{
+  display: inline-block;
+  box-sizing: border-box;
+  overflow-x: hidden;
   width: 95px;
   text-align: right;
   margin-right: 3px;
+}
+
+/* Dark themes force borders onto every input with !important (see themes/dark/dark.css), so this
+   one needs !important too, to read as text until hovered or focused.
+ */
+.ShieldingSelect .MaterialSummary input.DensityEdit
+{
+  display: inline-block;
+  height: 1.3em;
+  line-height: 1.2em;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 1px;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 2px;
+  color: inherit;
+  font: inherit;
+  text-align: right;
+  vertical-align: baseline;
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+}
+
+.ShieldingSelect .MaterialSummary:hover input.DensityEdit,
+.ShieldingSelect .MaterialSummary input.DensityEdit:focus
+{
+  border-color: var(--interspec-outline-color) !important;
+  background: var(--interspec-input-background) !important;
+  outline: none;
+}
+
+.ShieldingSelect .MaterialSummary.DensityOverridden input.DensityEdit
+{
+  font-style: italic;
+}
+
+.ShieldingSelect .MaterialSummary .InvalidMat
+{
+  font-style: italic;
 }
 
 .ShieldingSelect .SourceCheckbox 
@@ -182,9 +238,9 @@
 .ShieldingAsSourceCBDiv
 {
 /*background: #888888; color: #FFFFFF;*/
-  border-color: var(--interspec-border-color, #E1E1E1);
+  border-color: var(--interspec-border-color);
   border-style: solid;
-  border:2px solid var(--interspec-border-color, #e1e1e1);
+  border:2px solid var(--interspec-border-color);
 }
 
 .ShieldingSelect .LinkBtn.AddTrcSrcBtn
@@ -198,7 +254,7 @@
   
 .ShieldingSelect .warning
 {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .TraceSrcContainer

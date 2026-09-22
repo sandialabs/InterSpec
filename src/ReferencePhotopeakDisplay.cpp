@@ -366,10 +366,16 @@ namespace
           assert( refinfo.m_input.m_shielding_an.empty() );
           assert( refinfo.m_input.m_shielding_ad.empty() );
           
+          // Prefer the widgets material when it is what the lines were computed with, since the
+          //  user may have edited its density; otherwise resolve the name (which may be a formula)
           std::shared_ptr<const Material> material;
-          const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
-          if( matDB )
-            material = matDB->material( refinfo.m_input.m_shielding_name );
+          const ShieldingSelect * const shield_select = m_display->shieldingSelect();
+          const std::shared_ptr<const Material> widget_material = shield_select ? shield_select->currentMaterial() : nullptr;
+          if( widget_material && (widget_material->name == refinfo.m_input.m_shielding_name) )
+            material = widget_material;
+          else
+            material = MaterialDB::materialFromNameOrFormula( refinfo.m_input.m_shielding_name,
+                                                              DecayDataBaseServer::database() );
 
           if( !material )
             throw runtime_error( "Invalid shielding '" + refinfo.m_input.m_shielding_name + "'" );
@@ -2589,7 +2595,7 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   
   if( m_detectorDisplay->detector() )
   {
-    input.m_det_intrinsic_eff = m_detectorDisplay->detector()->intrinsicEfficiencyFcn();
+    input.m_det_intrinsic_eff = m_detectorDisplay->detector()->farFieldIntrinsicEfficiencyFcn();
     if( input.m_det_intrinsic_eff )
       input.m_detector_name = m_detectorDisplay->detector()->name();
   }//if( m_detectorDisplay->detector() )
@@ -3756,7 +3762,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         if( drf && drf->isValid() )
         {
           input.m_detector_name = drf->name();
-          input.m_det_intrinsic_eff = drf->intrinsicEfficiencyFcn();
+          input.m_det_intrinsic_eff = drf->farFieldIntrinsicEfficiencyFcn();
         }else
         {
           input.m_detector_name = "";
@@ -3809,7 +3815,7 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         if( pers_drf && pers_drf->isValid() )
         {
           input.m_detector_name = pers_drf->name();
-          input.m_det_intrinsic_eff = pers_drf->intrinsicEfficiencyFcn();
+          input.m_det_intrinsic_eff = pers_drf->farFieldIntrinsicEfficiencyFcn();
         }else
         {
           input.m_detector_name = "";

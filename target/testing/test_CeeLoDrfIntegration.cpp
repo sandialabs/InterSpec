@@ -51,6 +51,7 @@
 #include <set>
 #include <cmath>
 #include <ctime>
+#include <chrono>
 #include <string>
 #include <vector>
 #include <memory>
@@ -731,15 +732,15 @@ BOOST_AUTO_TEST_CASE( legacy_drf_untouched )
                     DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
 
   //The documented golden values (DetectorPeakResponse.h header comment).
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(121.78f), 0.625191, 0.01 );
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(411.02f), 0.333307, 0.01 );
-  BOOST_CHECK_CLOSE( det->intrinsicEfficiency(700.0f), 0.219004, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(121.78f), 0.625191, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(411.02f), 0.333307, 0.01 );
+  BOOST_CHECK_CLOSE( det->farFieldIntrinsicEfficiency(700.0f), 0.219004, 0.01 );
 
   //The Eval API must be bit-identical to the legacy call for legacy DRFs.
   for( const float E : {121.78f, 411.02f, 700.0f} )
   {
     const DetectorPeakResponse::EffEval eval = det->intrinsicEfficiencyEval( E );
-    BOOST_CHECK_EQUAL( eval.value, static_cast<double>(det->intrinsicEfficiency(E)) );
+    BOOST_CHECK_EQUAL( eval.value, static_cast<double>(det->farFieldIntrinsicEfficiency(E)) );
     BOOST_CHECK_EQUAL( eval.sigma, 0.0 );  //no uncertainty info attached
     BOOST_CHECK( eval.flag == DetectorPeakResponse::EffFlag::Ok );
 
@@ -1399,14 +1400,17 @@ BOOST_AUTO_TEST_CASE( transfer_drf_round_trip )
 }//transfer_drf_round_trip
 
 
-/** Attaching a transfer response must leave the legacy efficiency entry
- points bit-identical.
+/** Attaching a transfer response freezes the legacy INTRINSIC curve and moves #efficiency.
+
+ This is the contract flip: before, both accessor families were frozen, which meant a
+ response-backed DRF answered one way through #efficiency and another through
+ #fepEfficiencyEval - and the Act/Shield fit had already moved to the latter.  Now
+ #farFieldIntrinsicEfficiency is the frozen one and #efficiency follows the response.
  */
-BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
+BOOST_AUTO_TEST_CASE( transfer_changes_absolute_not_intrinsic )
 {
   const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
-  const double a_cm = geom.transverse_half_extent();
-  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*geom.dimensions_cm[0] );
 
   const vector<float> energies{ 59.5f, 121.78f, 661.7f, 1332.5f, 2614.0f };
   const double dist = 30.0 * PhysicalUnits::cm;
@@ -1414,7 +1418,7 @@ BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
   vector<double> intrinsic_before, eff_before;
   for( const float energy : energies )
   {
-    intrinsic_before.push_back( det->intrinsicEfficiency(energy) );
+    intrinsic_before.push_back( det->farFieldIntrinsicEfficiency(energy) );
     eff_before.push_back( det->efficiency( energy, dist ) );
   }
 
@@ -1425,11 +1429,98 @@ BOOST_AUTO_TEST_CASE( transfer_legacy_invariance )
 
   for( size_t i = 0; i < energies.size(); ++i )
   {
-    BOOST_CHECK_EQUAL( static_cast<double>(det->intrinsicEfficiency(energies[i])),
+    const float energy = energies[i];
+
+    // Frozen: the stored curve, bit for bit.
+    BOOST_CHECK_EQUAL( static_cast<double>(det->farFieldIntrinsicEfficiency(energy)),
                        intrinsic_before[i] );
-    BOOST_CHECK_EQUAL( det->efficiency( energies[i], dist ), eff_before[i] );
+
+    // Moved: #efficiency is the response's answer now, and all three spellings of the
+    //  absolute query must agree exactly - the whole point of the change.
+    const double after = det->efficiency( energy, dist );
+    BOOST_CHECK_EQUAL( after, det->efficiencyEval( energy, dist ).value );
+    BOOST_CHECK_EQUAL( after, det->fepEfficiencyEval( energy, 0.0, 0.0, dist ).value );
+
+    // A curve transfer at 30 cm is a correction to the flat disk, not a different detector:
+    //  exact equality would mean the transfer never engaged, and a factor outside this
+    //  bracket would mean it is broken.  Measured span on 2026-09-18 was 1.00-1.10.
+    BOOST_CHECK_NE( after, eff_before[i] );
+    BOOST_CHECK_GT( after/eff_before[i], 0.7 );
+    BOOST_CHECK_LT( after/eff_before[i], 1.4 );
+
+    // And the flat-disk model is still reachable, unchanged, under its own name.
+    BOOST_CHECK_EQUAL( det->flatDiskEfficiency( energy, dist ), eff_before[i] );
   }
-}//transfer_legacy_invariance
+}//transfer_changes_absolute_not_intrinsic
+
+
+/** The two efficiency accessor families must not answer differently for the same query.
+
+ Each check below is a divergence that used to be possible: `efficiency()` evaluated the
+ stored curve times a flat-disk solid angle while `fepEfficiencyEval()` dispatched to the
+ Monte-Carlo response, so the same object gave two answers depending on which accessor a
+ caller happened to reach for - ~19% apart at 25 cm for a 3x3 NaI.
+ */
+BOOST_AUTO_TEST_CASE( accessor_families_agree )
+{
+  for( const char *preset : { "nai3x3", "hpge_coax", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+
+    for( const double dist_cm : { 25.0, 100.0, 400.0 } )
+    {
+      const double d = dist_cm * PhysicalUnits::cm;
+      for( const float E : { 60.0f, 122.0f, 661.7f, 1332.0f, 2614.0f } )
+      {
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ), drf->efficiencyEval( E, d ).value );
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ),
+                           drf->fepEfficiencyEval( E, 0.0, 0.0, d ).value );
+
+        // A caller-traced quadrature is an optimization only, never a different answer.
+        const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> q
+                                        = drf->apertureQuadrature( 0.0, 0.0, d );
+        BOOST_REQUIRE( q );
+        BOOST_CHECK_EQUAL( drf->efficiency( E, d ),
+                           drf->fepEfficiencyEval( E, 0.0, 0.0, d, q ).value );
+      }//for( E )
+
+      if( drf->hasAnyTotalEfficiencyInfo() )
+        BOOST_CHECK_EQUAL( drf->totalEfficiency( 661.7f, d ),
+                           drf->totalEfficiencyEval( 661.7f, 0.0, 0.0, d ).value );
+    }//for( dist_cm )
+
+    // The flat-disk model stays exactly what it always was, and - for a response-backed DRF -
+    //  is no longer what #efficiency answers.
+    const double d = 100.0*PhysicalUnits::cm;
+    BOOST_CHECK_CLOSE( drf->flatDiskEfficiency( 661.7f, d ),
+                       DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
+                                                       d + drf->detectorSetback() )
+                         * drf->farFieldIntrinsicEfficiency( 661.7f ), 1.0E-9 );
+  }//for( preset )
+
+  // A curve-only DRF: every accessor agrees AND equals the flat-disk value, i.e. the legacy
+  //  path really is untouched by the change.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  const double d = 25.0*PhysicalUnits::cm;
+  BOOST_CHECK_EQUAL( legacy->efficiency( 661.7f, d ), legacy->flatDiskEfficiency( 661.7f, d ) );
+  BOOST_CHECK_EQUAL( legacy->efficiency( 661.7f, d ), legacy->efficiencyEval( 661.7f, d ).value );
+  BOOST_CHECK( !legacy->apertureQuadrature( 0.0, 0.0, d ) );
+
+  // totalEfficiency must not recurse through totalEfficiencyEval's legacy branch - if it did
+  //  this call would blow the stack rather than fail an assertion.
+  BOOST_CHECK_THROW( legacy->totalEfficiency( 661.7f, d ), std::runtime_error );
+
+  // An uninitialized DRF throws, and keeps throwing once a response is attached: the contract
+  //  used to come from the curve, which the response branch never touches.
+  auto bare = make_shared<DetectorPeakResponse>( "bare", "" );
+  BOOST_CHECK_THROW( bare->efficiency( 661.7f, d ), std::runtime_error );
+  bare->setCeeloResponse( drf_with_golden("nai3x3")->ceeloResponse() );
+  BOOST_CHECK( !bare->isValid() );
+  BOOST_CHECK_THROW( bare->efficiency( 661.7f, d ), std::runtime_error );
+}//accessor_families_agree
 
 
 /** Crystal K-edges: the sampled anchor must flank each edge (eta = eff/K
@@ -1594,10 +1685,14 @@ BOOST_AUTO_TEST_CASE( response_angle_series_json )
                   DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   BOOST_CHECK_EQUAL( legacy->responseAngleSeriesJSON( 25.0*PhysicalUnits::cm ), string("null") );
 
-  // MC/transfer DRF: build a transfer response on the nai3x3 geometry.
+  // MC/transfer DRF: build a transfer response on the nai3x3 geometry.  The DRF's diameter is
+  //  the CRYSTAL's, not the transverse half-extent, so that the intrinsic comparison below
+  //  divides by the same disk intrinsicEfficiencyEval quotes against - see
+  //  CeeLoUtils::crystalHalfExtent.
   const ceelo::GeometryDescriptor geom = golden_descriptor( "nai3x3" );
   const double a_cm = geom.transverse_half_extent();
-  shared_ptr<DetectorPeakResponse> det = synthetic_curve_drf( 2.0*a_cm );
+  shared_ptr<DetectorPeakResponse> det
+                    = synthetic_curve_drf( 2.0*CeeLoUtils::crystalHalfExtent(geom) );
   const CeeLoUtils::TransferAnchor anchor
                        = CeeLoUtils::transferAnchorForDrf( det, geom, -1.0 );
   det->setCeeloResponse( CeeLoUtils::makeTransferResponse( geom, anchor,
@@ -1995,7 +2090,7 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   double worst_energy = 0.0;
   for( const double energy : { 60.0, 122.0, 300.0, 662.0, 1332.0, 2500.0 } )
   {
-    const float curve = bare->intrinsicEfficiency( static_cast<float>(energy) );
+    const float curve = bare->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
     const DetectorPeakResponse::EffEval mc
                   = backed->intrinsicEfficiencyEval( static_cast<float>(energy) );
     BOOST_REQUIRE_MESSAGE( mc.value > 0.0, "no CeeLo efficiency at "
@@ -2006,9 +2101,12 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
 
   BOOST_TEST_MESSAGE( "backbone curve vs CeeLo dispatch: worst " << 100.0*worst
                       << "% at " << worst_energy << " keV" );
-  // The gap is interpolation between backbone points, not a different geometry,
-  //  so it is small; a frame or solid-angle error would be tens of percent.
-  BOOST_CHECK_MESSAGE( worst < 0.05, "backbone curve departs from the CeeLo dispatch by "
+  // The gap is interpolation between backbone points only - both sides now quote the
+  //  intrinsic against the same crystal disk (CeeLoUtils::crystalHalfExtent), so the
+  //  measured worst is 0.05% and the gate is 0.5%.  It used to be 5%, which is what a
+  //  systematic solid-angle-convention error looks like: intrinsicEfficiencyEval was
+  //  dividing by the transverse half-extent, 1.03x too big here and 2.0x for the CZT box.
+  BOOST_CHECK_MESSAGE( worst < 0.005, "backbone curve departs from the CeeLo dispatch by "
                        + std::to_string(100.0*worst) + "% at "
                        + std::to_string(worst_energy) + " keV" );
 
@@ -2033,6 +2131,188 @@ BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
   BOOST_CHECK_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, nullptr ),
                      std::exception );
 }//backbone_efficiency_from_response
+
+/** A flat-disk snapshot must reproduce the response it was sampled from, at the distance it
+ was built for, to within interpolation error - and must degrade to a no-op (the same pointer
+ back) for every DRF that has nothing to snapshot, so call sites need no special case.
+
+ The whole point of the snapshot is that a caller sweeping energies at one position can keep
+ using the cheap `efficiency()` call and still get the Monte-Carlo answer; if it drifted from
+ the response, that caller would be quietly back on the flat-disk approximation.
+ */
+BOOST_AUTO_TEST_CASE( flat_disk_snapshot_matches_response )
+{
+  const vector<double> distances{ 25.0, 100.0, 400.0 };
+  const vector<float> energies{ 60.0f, 122.0f, 356.0f, 661.7f, 1332.0f, 2614.0f };
+
+  double worst_overall = 0.0;
+  for( const char *preset : { "nai3x3", "hpge_coax", "czt_box" } )
+  {
+    const shared_ptr<DetectorPeakResponse> drf = drf_with_golden( preset );
+
+    for( const double dist_cm : distances )
+    {
+      const double dist = dist_cm * PhysicalUnits::cm;
+      const shared_ptr<const DetectorPeakResponse> snap
+                                  = CeeLoUtils::flatDiskSnapshotAt( drf, dist );
+
+      BOOST_REQUIRE_MESSAGE( snap && (snap != drf),
+                  string("no snapshot built for ") + preset + " at "
+                  + std::to_string(dist_cm) + " cm" );
+      BOOST_CHECK( !snap->ceeloResponse() );   //else efficiency() would dispatch, not interpolate
+      BOOST_CHECK_CLOSE( snap->flatDiskSnapshotDistance(), dist, 1.0E-9 );
+
+      double worst = 0.0, worst_energy = 0.0;
+      for( const float energy : energies )
+      {
+        const double exact = drf->fepEfficiencyEval( energy, 0.0, 0.0, dist ).value;
+        const double approx = snap->efficiency( energy, dist );
+        BOOST_REQUIRE( exact > 0.0 );
+
+        const double rel = fabs( approx - exact ) / exact;
+        if( rel > worst ){ worst = rel; worst_energy = energy; }
+      }//for( const float energy : energies )
+
+      BOOST_TEST_MESSAGE( string(preset) + " @ " + std::to_string((int)dist_cm)
+                          + " cm: worst " + std::to_string(100.0*worst) + "% at "
+                          + std::to_string((int)worst_energy) + " keV" );
+      worst_overall = std::max( worst_overall, worst );
+
+      // Interpolation between backbone points, nothing else - measured 0.12% (hpge_coax) to
+      //  0.69% (czt_box) on 2026-09-18, always worst at the top of the energy grid.  The gate
+      //  is ~3x that: a solid-angle or frame error would be tens of percent, not a few.
+      BOOST_CHECK_MESSAGE( worst < 0.02, string("snapshot for ") + preset + " at "
+                  + std::to_string((int)dist_cm) + " cm departs from the response by "
+                  + std::to_string(100.0*worst) + "%" );
+    }//for( const double dist_cm : distances )
+  }//for( preset )
+
+  BOOST_TEST_MESSAGE( "flat-disk snapshot: worst over all presets/distances "
+                      + std::to_string(100.0*worst_overall) + "%" );
+
+  // Why the snapshot exists, reported rather than gated (timings are machine-dependent):
+  //  a Monte-Carlo query traces an aperture quadrature, the snapshot interpolates a curve.
+  {
+    const shared_ptr<DetectorPeakResponse> timed = drf_with_golden( "nai3x3" );
+    const double dist = 25.0*PhysicalUnits::cm;
+    const size_t n_eval = 200;
+
+    const auto t0 = std::chrono::steady_clock::now();
+    for( size_t i = 0; i < n_eval; ++i )
+      timed->fepEfficiencyEval( 100.0f + (i % 50)*40.0f, 0.0, 0.0, dist );
+    const auto t1 = std::chrono::steady_clock::now();
+
+    const shared_ptr<const DetectorPeakResponse> snap = CeeLoUtils::flatDiskSnapshotAt( timed, dist );
+    const auto t2 = std::chrono::steady_clock::now();
+    for( size_t i = 0; i < n_eval; ++i )
+      snap->efficiency( 100.0f + (i % 50)*40.0f, dist );
+    const auto t3 = std::chrono::steady_clock::now();
+
+    const double us_raw = std::chrono::duration<double,std::micro>(t1-t0).count() / n_eval;
+    const double us_build = std::chrono::duration<double,std::micro>(t2-t1).count();
+    const double us_snap = std::chrono::duration<double,std::micro>(t3-t2).count() / n_eval;
+    BOOST_TEST_MESSAGE( "snapshot cost: raw " + std::to_string(us_raw) + " us/eval, build "
+                        + std::to_string(us_build) + " us, snapshot "
+                        + std::to_string(us_snap) + " us/eval (break-even near "
+                        + std::to_string( (int)(us_build/std::max(1.0,us_raw-us_snap)) )
+                        + " evaluations)" );
+  }
+
+  // A DRF with no response is already its own flat-disk model: same pointer, no copy.
+  auto legacy = make_shared<DetectorPeakResponse>( "legacy", "no response" );
+  legacy->setIntrinsicEfficiencyFormula( "0.3*exp(-0.001*x)", 5.0*PhysicalUnits::cm,
+                  PhysicalUnits::keV, 0.0f, 0.0f,
+                  DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( legacy, 25.0*PhysicalUnits::cm ) == legacy );
+  BOOST_CHECK( legacy->flatDiskSnapshotDistance() < 0.0 );
+
+  // Nor is there anything to snapshot for a non-positive distance, a null DRF, or an
+  //  uninitialized one.
+  const shared_ptr<DetectorPeakResponse> golden = drf_with_golden( "nai3x3" );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( golden, -1.0 ) == golden );
+  BOOST_CHECK( CeeLoUtils::flatDiskSnapshotAt( golden, 0.0 ) == golden );
+  BOOST_CHECK( !CeeLoUtils::flatDiskSnapshotAt( nullptr, 25.0*PhysicalUnits::cm ) );
+
+  // The snapshot carries the source's setback into its own solid angle, so a DRF with one
+  //  still reproduces its response.
+  auto with_setback = make_shared<DetectorPeakResponse>( *golden );
+  with_setback->setDetectorSetback( 2.0*PhysicalUnits::cm );
+  const double dist = 30.0*PhysicalUnits::cm;
+  const shared_ptr<const DetectorPeakResponse> sb_snap
+                              = CeeLoUtils::flatDiskSnapshotAt( with_setback, dist );
+  BOOST_REQUIRE( sb_snap && (sb_snap != with_setback) );
+  BOOST_CHECK_CLOSE( sb_snap->detectorSetback(), 2.0*PhysicalUnits::cm, 1.0E-6 );
+  BOOST_CHECK_CLOSE( sb_snap->efficiency( 661.7f, dist ),
+                     with_setback->fepEfficiencyEval( 661.7f, 0.0, 0.0, dist ).value, 5.0 );
+}//flat_disk_snapshot_matches_response
+
+
+/** The shipped GADRAS detectors are the population this change actually moves.
+
+ Each data/GenericGadrasDetectors/<name>/ ships a Detector.dat AND an Efficiency.csv - both
+ halves of an efficiency transfer - so DetectorPeakResponse::applyGadrasDat attaches a
+ curve-transfer response as the DRF list is built, and efficiency() answers through it.  A
+ diameter-only DRF (common_drfs.tsv, a CSV import, a formula) has no geometry to transfer
+ through and is untouched; this case pins which of those two a shipped detector is, and that
+ the near-field departure from the flat disk is real but bounded.
+ */
+BOOST_AUTO_TEST_CASE( shipped_gadras_detectors_use_their_response )
+{
+  const string gadras_dir = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(gadras_dir),
+                         "no GenericGadrasDetectors in " + g_data_dir );
+
+  const vector<string> subdirs = SpecUtils::recursive_ls( gadras_dir, "Detector.dat" );
+  BOOST_REQUIRE_MESSAGE( !subdirs.empty(), "no shipped GADRAS detectors found" );
+
+  size_t num_with_response = 0, num_total = 0;
+  for( const string &dat : subdirs )
+  {
+    const string dir = SpecUtils::parent_path( dat );
+    auto drf = make_shared<DetectorPeakResponse>();
+    try
+    {
+      drf->fromGadrasDirectory( dir );
+    }catch( std::exception & )
+    {
+      continue;   //a .dat this build cannot parse is not what this case is about
+    }
+
+    ++num_total;
+    if( !drf->ceeloResponse() )
+      continue;   //e.g. a crystal dimension of zero, which buildGadrasGeometry rejects
+    ++num_with_response;
+
+    // efficiency() is the response's answer; flatDiskEfficiency() is what it used to be.  They
+    //  must differ near the detector and converge far from it - the interaction-depth term the
+    //  flat disk cannot carry falls off as ~2*z_eff/d.
+    const double near_ratio = drf->efficiency( 661.7f, 25.0*PhysicalUnits::cm )
+                              / drf->flatDiskEfficiency( 661.7f, 25.0*PhysicalUnits::cm );
+    const double far_ratio = drf->efficiency( 661.7f, 400.0*PhysicalUnits::cm )
+                             / drf->flatDiskEfficiency( 661.7f, 400.0*PhysicalUnits::cm );
+
+    BOOST_TEST_MESSAGE( SpecUtils::filename(dir) + ": efficiency/flatDisk = "
+                        + std::to_string(near_ratio) + " at 25 cm, "
+                        + std::to_string(far_ratio) + " at 400 cm" );
+
+    // Sane bounds rather than golden values: this is a physics correction, not a new detector.
+    BOOST_CHECK_GT( near_ratio, 0.5 );
+    BOOST_CHECK_LT( near_ratio, 1.5 );
+    BOOST_CHECK_GT( far_ratio, 0.8 );
+    BOOST_CHECK_LT( far_ratio, 1.25 );
+
+    // Whatever efficiency() answers, every spelling of the absolute query must agree.
+    BOOST_CHECK_EQUAL( drf->efficiency( 661.7f, 25.0*PhysicalUnits::cm ),
+                       drf->fepEfficiencyEval( 661.7f, 0.0, 0.0, 25.0*PhysicalUnits::cm ).value );
+  }//for( const string &dat : subdirs )
+
+  BOOST_TEST_MESSAGE( "shipped GADRAS detectors: " + std::to_string(num_with_response)
+                      + " of " + std::to_string(num_total) + " carry a transfer response" );
+  BOOST_CHECK_MESSAGE( num_with_response > 0,
+              "no shipped GADRAS detector got a transfer response - either the Efficiency.csv"
+              " files stopped being shipped, or attachCurveTransferResponse stopped running" );
+}//shipped_gadras_detectors_use_their_response
+
 
 //========================= GADRAS Efficiency.csv cross-validation ============
 // Does our Monte Carlo reproduce the intrinsic efficiency GADRAS reports for
@@ -3332,11 +3612,34 @@ BOOST_AUTO_TEST_CASE( curve_anchor_covariance_flows_to_drf )
   auto det2 = make_shared<DetectorPeakResponse>( *det );
   det2->setCeeloResponse( resp );
 
-  // The far-field intrinsic efficiency of the response is the legacy curve
+  // What the transfer preserves is the DRF's ABSOLUTE efficiency - the quantity a measurement
+  //  actually sees, and the one every analysis path consumes.  At the anchor distance that is
+  //  exact by construction: the anchor is the curve converted with the very same object disk
+  //  `transferAnchorForDrf` uses, so eta*K(q_ref) returns it unchanged.
+  const double d_far_cm = CeeLoUtils::farFieldDistanceCm( geom );
+  const double d_far = d_far_cm * PhysicalUnits::cm;
+
+  // The far-field INTRINSIC is NOT the stored curve, and must not be asserted to be: the two
+  //  quote against different disks.  intrinsicEfficiencyEval divides by the CRYSTAL disk
+  //  (CeeLoUtils::crystalHalfExtent), because "intrinsic" means per photon crossing the crystal
+  //  face, while this curve is stored against `diam_cm` - the whole object's transverse extent -
+  //  and CeeLoUtils::GeometryKernel::intrinsicFactor converts with that same object disk, so the
+  //  transfer reproduces the absolute efficiency rather than the intrinsic.  The gap is exactly
+  //  the ratio of the two disks: ~2.7% for this nai3x3, and 2.0x for the czt_box, whose
+  //  transverse half-extent is its half-DIAGONAL.  Pinned here rather than gated away, so a
+  //  change in either convention fails loudly.
+  const double omega_obj = DetectorPeakResponse::fractionalSolidAngle( diam_cm*PhysicalUnits::cm, d_far );
+  const double omega_crys = DetectorPeakResponse::fractionalSolidAngle(
+                              2.0*CeeLoUtils::crystalHalfExtent(geom)*PhysicalUnits::cm, d_far );
+  BOOST_REQUIRE( omega_crys > 0.0 );
+  const double disk_ratio = omega_obj / omega_crys;
+
   for( const float E : { 80.0f, 200.0f, 662.0f, 1200.0f } )
   {
+    BOOST_CHECK_CLOSE( det2->efficiency( E, d_far ), det->flatDiskEfficiency( E, d_far ), 0.3 );
+
     const DetectorPeakResponse::EffEval ev = det2->intrinsicEfficiencyEval( E );
-    BOOST_CHECK_CLOSE( ev.value, det->intrinsicEfficiency( E ), 0.3 );
+    BOOST_CHECK_CLOSE( ev.value, det->farFieldIntrinsicEfficiency( E ) * disk_ratio, 0.3 );
   }
 
   // ...and its covariance at the anchor energies is the curve covariance (data) plus the two model

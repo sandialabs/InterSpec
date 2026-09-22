@@ -2244,10 +2244,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
             << "\t\t<div>Peak " << i << " at " << orig->mean() << " keV has: "
             << issue << "</div>"
             << "\t\t<div style=\"display: inline-block; padding-top:10px;\">"
-               "<div style=\"color:green;\"><b>Expected</b></div>\n\t\t"
+               "<div class=\"OkTxt\"><b>Expected</b></div>\n\t\t"
             << makePeakSummarryTable(*orig, data) << "</div>"
             << "\t\t<div style=\"display: inline-block; padding-top:10px;\">"
-               "<div style=\"color:red;\"><b>Found</b></div>\n\t\t"
+               "<div class=\"ErrorTxt\"><b>Found</b></div>\n\t\t"
             << makePeakSummarryTable(*found, data) << "</div>\n";
         msg << "\t</div>\n";
         
@@ -2387,10 +2387,10 @@ SpectrumViewerTester::Score SpectrumViewerTester::testMultiplePeakFitRangeVaried
         stringstream msg;
         msg << "\t<div>\n"
             << "\t\t<div style=\"display: inline-block;\">\n"
-               "\t\t\t<div style=\"color:green;\"><b>Expected</b></div>\n\t\t\t"
+               "\t\t\t<div class=\"OkTxt\"><b>Expected</b></div>\n\t\t\t"
             << makePeakSummarryTable(*pre, data) << "\n\t\t</div>"
             << "\t\t<div style=\"display: inline-block;\">\n"
-               "\t\t\t<div style=\"color:red;\"><b>Found</b></div>\n\t\t\t"
+               "\t\t\t<div class=\"ErrorTxt\"><b>Found</b></div>\n\t\t\t"
             << makePeakSummarryTable(post, data) << "\n\t\t</div>\n"
             << "\t</div>\n";
         thisnote.m_text += msg.str();

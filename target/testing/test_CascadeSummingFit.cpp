@@ -1294,7 +1294,7 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
         std::function<double(double)> Tf; const ShieldScatterAugment *sc;
         double an, ad; bool use_scatter;
         double fep( double e ) const override {
-          return omega * drf->intrinsicEfficiency( (float)e ) * Tf(e);
+          return omega * drf->farFieldIntrinsicEfficiency( (float)e ) * Tf(e);
         }
         double total( double e ) const override {
           double shield_part = Tf(e);

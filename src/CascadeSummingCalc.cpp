@@ -353,7 +353,7 @@ double CascadeSummingCalc::detectorFepEffAbs( const std::shared_ptr<const Detect
   try
   {
     if( drf->isFixedGeometry() )
-      return drf->intrinsicEfficiency( static_cast<float>(energy) );
+      return drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
 
     const DetectorPeakResponse::EffEval eval
           = drf->fepEfficiencyEval( static_cast<float>(energy), theta, phi, distance );

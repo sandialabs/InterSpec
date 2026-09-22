@@ -37,6 +37,7 @@ struct PeakFitDetPrefs;
 namespace SpecUtils
 {
   class Measurement;
+  enum class DetectorType : int;
 }
 
 
@@ -123,6 +124,15 @@ bool is_likely_high_res( InterSpec *viewer );
 CoarseResolutionType classify_det_type(
   const std::vector<PeakDef> &peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &spectrum = nullptr );
+
+
+/** The resolution class a parsed `SpecUtils::DetectorType` implies, or `Unknown` when the model
+ does not pin one down (an ambiguous or unrecognised type).
+
+ Split out of #coarse_det_type's first tier so that callers holding a detector *model* - rather
+ than a spectrum - can use the same mapping instead of keeping a second list of model names.
+ */
+CoarseResolutionType coarse_type_for_detector_type( const SpecUtils::DetectorType type );
 
 
 /** Determines the coarse detector resolution type using a three-tier approach:

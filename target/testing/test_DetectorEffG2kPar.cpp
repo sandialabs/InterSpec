@@ -435,7 +435,7 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
     for( const float E : { 60.0f, 300.0f, 1332.0f } )
     {
       BOOST_CHECK_EQUAL( drf->totalIntrinsicEfficiencyAny( E ), 0.0f );
-      BOOST_CHECK( drf->intrinsicEfficiency( E ) > 0.0f );   //FEP is unaffected
+      BOOST_CHECK( drf->farFieldIntrinsicEfficiency( E ) > 0.0f );   //FEP is unaffected
     }
     BOOST_CHECK_EQUAL(
       GammaInteractionCalc::CascadeSummingCalc::estimateMaxSummingMagnitude(

@@ -1238,6 +1238,18 @@ void AuxWindow::setMaximumSize( const Wt::WLength &width, const Wt::WLength &hei
 
 void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: incorportate WAnimation
 {
+  /* Note on why hiding needs the JavaScript below.
+
+   `isHidden()` is overridden to report `m_auxIsHidden`, which is assigned before Wt is told, and
+   Wt decides whether there is anything to do by comparing the request against `isHidden()`:
+   `WPopupWidget::setHidden()` returns immediately when it sees no change, and
+   `WDialog::setHidden()` guards the dialog-cover push/pop the same way.  So the calls below are
+   no-ops as far as the DOM is concerned - which is also why `show()` has to clear `visibility`
+   itself.  Assigning `m_auxIsHidden` after the call instead makes Wt do the real work, but that
+   turns on the dialog-cover machinery this port has never used, and Wt then segfaults in
+   `DialogCover::render()` on the next page render.  So: hide the element the same way `show()`
+   reveals it, and leave Wt's dialog plumbing alone.
+   */
   if( m_destructing )
   {
     WDialog::setHidden( hide );
@@ -1262,6 +1274,10 @@ void AuxWindow::setHidden( bool hide, const WAnimation &/*animation*/ ) //TODO: 
     }//if( m_escapeIsReject )
 
     WDialog::setHidden( true, WAnimation() );
+
+    // Counterpart of the `visibility` clear in show(); without it the dialog stays on screen.
+    doJavaScript( "(function(){var el=document.getElementById('" + id() + "');"
+                    "if(el){el.style.visibility='hidden';}})();" );
 
     emitReject();
   }else

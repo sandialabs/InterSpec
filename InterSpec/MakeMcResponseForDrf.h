@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <atomic>
+#include <cstdint>
 #include <chrono>
 #include <memory>
 #include <functional>
@@ -68,6 +69,7 @@ namespace ceelo
   struct GenerationStats;
   struct GenerationOptions;
   struct GeometryDescriptor;
+  enum class ResponseProfile : uint8_t;
 }//namespace ceelo
 
 /** Characterizes a detectors response over its geometry (CeeLo): the user
@@ -173,6 +175,31 @@ public:
 
   /** Selects the build method (as if the user picked it in the combo). */
   void setMethod( const Method method );
+  
+  /** The preset MC precision levels, in combo order.  "Custom" is deliberately absent: it takes a
+   free-text per-node precision, so it is only reachable through the combo itself.
+   */
+  enum class Precision : int
+  {
+    Fast = 0,       //1% per node
+    Normal = 1,     //0.3% per node
+    Balanced = 2,   //0.3% base, relaxed at high energy
+    Thorough = 3    //0.1% per node
+  };//enum class Precision
+  
+  /** Selects the response profile - what positions the run covers (as if the user picked it in
+   the combo).  Ignored by #Method::QuickMc, whose generation forces the far-field profile.
+   */
+  void setProfile( const ceelo::ResponseProfile profile );
+  
+  /** Selects one of the preset MC precision levels (as if the user picked it in the combo). */
+  void setPrecision( const Precision precision );
+  
+  /** For #Method::QuickMc: whether the run also simulates a few off-axis angles (the default), or
+   stays on the on-axis energy backbone alone.  The off-axis anchors are what give the transfer a
+   measured angular dependence rather than a purely ray-traced one.  Ignored by the other methods.
+   */
+  void setOffAxisAnchors( const bool use_off_axis );
 
   /** Hides (or shows) the response-preview chart section - for an owner that has its own chart. */
   void setChartHidden( const bool hidden );
@@ -287,6 +314,17 @@ public:
 
   /** Re-enabling (Flat Disk -> Geometry Modeled) is when the estimate starts to matter. */
   virtual void setDisabled( bool disabled ) override;
+  
+  /** Enables or disables everything the user could edit - the geometry form and the build
+   settings - leaving the run row (its status, progress and Cancel) alone.
+   
+   Used to hold the inputs still while a generation is in flight.  A run captures its geometry and
+   options by value at the start, and neither a settings change nor a geometry edit cancels it or
+   marks its result stale, so without this the run finishes against the old inputs and is accepted
+   while the form shows something else.  Not #setDisabled, which would take the Cancel button with
+   it.
+   */
+  void setEditingEnabled( const bool enabled );
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
@@ -294,6 +332,10 @@ protected:
   /** The options a generation would run with right now (method, profile, precision) - shared by
    the estimate, the node plan and the run itself, so they cannot disagree. */
   ceelo::GenerationOptions generationOptions() const;
+
+  /** Drops a held response when a build option that is invisible to an owner's staleness test
+   changes; see the comment on the definition. */
+  void invalidateResultForOptionChange();
 
   void startTimeCalibration();
   void handleTimeCalibrationFinished( const McTimeCalibration &calib, const int calibration_id );

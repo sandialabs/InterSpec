@@ -963,6 +963,24 @@ std::shared_ptr<DetectorResponse> generate_closed_loop(
     return resp;
 }
 
+/// A log-spaced energy grid needs a positive, ordered range.
+///   e_min_keV <= 0 is the dangerous one: e_max/e_min is inf (or negative), so every point past
+///     the first is 0 * inf = NaN. A NaN then violates the strict weak ordering std::sort needs
+///     (undefined behaviour, not just a wrong order), and MC at a NaN energy never terminates --
+///     the rejection sampler loops forever.
+///   e_max_keV <= e_min_keV produces no NaN; it is rejected as degenerate. Equal ends collapse
+///     the grid to one point, and an inverted range yields the same grid as the ordered one while
+///     recording an inverted provenance.valid_e_min/max_keV on the result.
+/// The !(x > y) forms reject NaN as well as the out-of-range values. Every entry point that
+/// builds energies from these two fields calls this: backbone_scan_energies (and so plan_nodes,
+/// estimated_node_count and generate) plus the probe banks, which roll their own grid.
+void require_valid_energy_range(const GenerationOptions& opts) {
+    if (!(opts.e_min_keV > 0.0))
+        throw std::runtime_error("ResponseGenerator: e_min_keV must be > 0");
+    if (!(opts.e_max_keV > opts.e_min_keV))
+        throw std::runtime_error("ResponseGenerator: e_max_keV must exceed e_min_keV");
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -1009,6 +1027,12 @@ int ResponseGenerator::estimated_node_count(const GeometryDescriptor& gd,
 
 std::vector<double> ResponseGenerator::backbone_scan_energies(
     const GeometryDescriptor& gd, const GenerationOptions& opts) {
+    require_valid_energy_range(opts);
+    // At least one scan point: a non-positive count leaves the backbone with only the K-edge
+    // flanks (none at all, for a crystal with no edge in range), and the greedy node selection
+    // downstream then underflows `n - 1` on an empty vector.
+    if (opts.n_energy_scan < 1)
+        throw std::runtime_error("ResponseGenerator: n_energy_scan must be >= 1");
     // The max(1, ...) matters: n_energy_scan == 1 would divide by zero and put a NaN in the grid
     // (and hence into std::sort). A single scan point is just the low end of the range.
     std::vector<double> scan_E;
@@ -1053,7 +1077,11 @@ ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
         return plan;
     }
 
-    plan.n_cos_theta = o.n_cos_theta_scan;
+    // max(0, ...) mirrors n_shape above: the scan loop in generate() executes zero times for a
+    // non-positive count, so an unclamped copy here reported a negative n_angular() (and a short
+    // total()) against a run that did no angular nodes at all. Exact for n <= 0 and n >= 2; n == 1
+    // is planned as one angle but refused by generate(), which wants >= 2.
+    plan.n_cos_theta = std::max(0, o.n_cos_theta_scan);
     if (o.profile != ResponseProfile::FarField) {
         // 9 cos_theta nodes x (8 or 9) MC distance nodes per shape energy
         // (the outermost distance node is a no-MC ln N = 0 anchor).
@@ -1090,6 +1118,31 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     }
     if (opts.stats_out)
         *opts.stats_out = GenerationStats{};
+
+    // Degenerate grid options, rejected here so nothing is spent on MC first.
+    //
+    // A real angular scan needs at least two angles. The scan's LAST point is the on-axis (ct = 1)
+    // reference shape_at() normalizes every angular shape against, so a single point leaves that
+    // reference at the grazing cutoff -- the shape collapses to 0 and the response comes back
+    // angle-flat at the on-axis backbone value, with the whole grazing scan discarded. A count of
+    // 0 or less is worse: scan_ct stays empty and greedy_ct_nodes' `n - 1` underflows to SIZE_MAX,
+    // which is then used to index it. The angle-flat transfer variant returns before the scan, and
+    // the anchored one has already forced n_cos_theta_scan >= 3 just above, so neither is caught.
+    if (!(opts.transfer_mode && opts.n_anchor_angles <= 1) && opts.n_cos_theta_scan < 2)
+        throw std::runtime_error("ResponseGenerator: n_cos_theta_scan must be >= 2");
+    // Stages 2/3 hang the angular and near-field scans off the shape energies; with none of them
+    // shape_E comes out empty and the tensor assembly below indexes it anyway.
+    if (opts.n_shape_energies < 1)
+        throw std::runtime_error("ResponseGenerator: n_shape_energies must be >= 1");
+    // cos_theta_min is the grazing END of a scan that always reaches 1.0, so at 1.0 or above the
+    // scan stops ascending and the cos-theta table has duplicate nodes. Pchip does catch this,
+    // but only as "x must be strictly ascending", which never names the option at fault.
+    if (!(opts.cos_theta_min < 1.0))
+        throw std::runtime_error("ResponseGenerator: cos_theta_min must be < 1");
+    // Boxes scan azimuth too. plan_nodes() already reports max(1, n_phi_nodes), so clamp rather
+    // than reject and the plan and the run agree; left alone, phi_nodes is empty and np == 0
+    // makes every stage-2/3 tensor row zero-length.
+    opts.n_phi_nodes = std::max(1, opts.n_phi_nodes);
 
     Runner run(gd, opts);
     run.nodes_total = estimated_node_count(gd, opts);
@@ -1212,11 +1265,14 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         shape_E.assign(uniq.begin(), uniq.end());
     }
 
+    // The max(1, ...) below is unreachable as written -- the >= 2 check in generate() above
+    // already guarantees it -- but it is kept so this loop cannot reintroduce 0/0 on its own if
+    // that check is ever moved or relaxed. Matches the sibling loops above and below.
     std::vector<double> scan_ct;
     for (int i = 0; i < opts.n_cos_theta_scan; ++i)
         scan_ct.push_back(opts.cos_theta_min +
                           (1.0 - opts.cos_theta_min) * double(i) /
-                              (opts.n_cos_theta_scan - 1));
+                              std::max(1, opts.n_cos_theta_scan - 1));
 
     std::vector<double> phi_nodes;
     if (box)
@@ -1622,6 +1678,9 @@ void ResponseGenerator::ground_to_points(DetectorResponse& resp,
 std::vector<ProbePoint> ResponseGenerator::probe_bank(
     const GeometryDescriptor& gd, const GenerationOptions& opts, int n_points,
     int start_index, double d_min_cm, double d_max_cm) {
+    // This bank rolls its own log-spaced energies rather than going through
+    // backbone_scan_energies, so it needs the range check in its own right.
+    require_valid_energy_range(opts);
     Runner run(gd, opts);
     run.nodes_total = n_points;
     const bool box = gd.shape == DetectorShape::Box;
@@ -1702,6 +1761,8 @@ ResponseGenerator::plan_structured_probes(
     const GeometryDescriptor& gd, const GenerationOptions& opts,
     const DetectorResponse& resp, ProbeFamilyMask families, int n_per_family,
     int start_index, double d_min_cm, double d_max_cm) {
+    // As probe_bank: the Random family builds its own log-spaced energies.
+    require_valid_energy_range(opts);
     std::vector<StructuredProbe> out;
     if (n_per_family <= 0) return out;
 

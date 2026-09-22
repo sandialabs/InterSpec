@@ -103,23 +103,22 @@
 
 .MdaErrMsg
 {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 /* A warning qualifies a limit that WAS produced; an error means there is no limit.  Amber rather
    than red so a qualified answer does not read as a failure.
-   The dark-theme colour is in themes/dark/dark.css - the theme is user-selected, not OS-driven, so
-   a `prefers-color-scheme` rule here would not follow it. */
+   Both themes' values come from the --interspec-warning-color token. */
 .MdaWarnMsg
 {
-  color: #9a6400;
+  color: var(--interspec-warning-color);
 }
 
 .DetectionLimitTool button.MdaFitFwhm.Wt-btn.with-label.LightButton
 {
   align-self: center;
-  color: red;
-  border: 1px solid red;
+  color: var(--interspec-error-color);
+  border: 1px solid var(--interspec-error-color);
 }
 
 .DetectionLimitTool .MdaChartLogLin
@@ -134,7 +133,7 @@
   flex-direction: column;
   justify-content: flex-start;
   
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
   overflow: hidden;
 }
 
@@ -143,7 +142,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #d1d1d1;
+  border-bottom: 1px solid var(--interspec-border-color);
   
   padding-left: 5px;
   padding-right: 2px;
@@ -186,7 +185,7 @@
   
   justify-content: space-around;
   
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .MdaRowSettings .MdaRoiInput
@@ -205,7 +204,7 @@
   flex-direction: column;
   padding: 3px;
   margin: 5px;
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
   row-gap: 2.5px;
   font-size: smaller;
 }
@@ -272,7 +271,7 @@
   margin-bottom: 0px;
   padding: 0px;
   padding-top: 0px;
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .MdaResultTxt

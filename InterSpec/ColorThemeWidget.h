@@ -25,7 +25,10 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <Wt/WContainerWidget.h>
 
@@ -34,6 +37,7 @@
 //Forward declarations
 namespace Wt
 {
+  class WText;
   class WCheckBox;
   class WLineEdit;
   class WComboBox;
@@ -84,18 +88,6 @@ public:
 		DynamicRefLineSnm,
 		DynamicRefLineCommon,
 		DynamicRefLineOther,
-		AppBackground,
-		AppText,
-		AppBorder,
-		AppLink,
-		AppLabel,
-		AppInputBackground,
-		AppButtonBackground,
-		AppButtonBorder,
-		AppButtonText,
-		AppMenuBarBackground,
-		AppMenuBarActiveColor,
-		AppMenuBarHoverColor,
 		NumSelectableColors
 	};//enum class EditableColor
 
@@ -104,6 +96,12 @@ public:
   void titleChangedCallback();
   void descriptionChangedCallback();
   void nonChartAreaThemeChanged();
+
+  /** An app (non-chart) colour picker changed; `token` is the CSS token name. */
+  void appColorChanged( const std::string &token );
+
+  /** Re-reads the selected CSS theme's token values and refreshes the "theme default" hints. */
+  void updateAppColorDefaults();
   void peaksTakeRefLineColorChangedCallback();
   void peakLabelFontSizeChanged();
   void peakLabelRotationChanged();
@@ -120,9 +118,17 @@ public:
 	Wt::WLineEdit       *m_themeTitle;
 	Wt::WLineEdit       *m_themeDescription;
 
-  //ToDo: right this combo box only lists names given by ColorTheme::predefinedThemeName(),
-  //      but what we should *really* do is list options in InterSpec_resources/themes
+  /** CSS themes found on disk (see ColorTheme::availableCssThemes); combo index to name. */
+  std::vector<std::string> m_cssThemeNames;
   Wt::WComboBox *m_nonChartAreaCssTheme;
+
+  /** One picker per entry of ColorTheme::appColorTokens(), keyed by token name.  An unset
+   picker means the CSS theme's value applies.
+   */
+  std::map<std::string,ColorSelect *> m_appColorSelects;
+
+  /** The "theme default: ..." hint beside each app colour picker, keyed by token name. */
+  std::map<std::string,Wt::WText *> m_appColorDefaultTxt;
   
 	ColorSelect *m_colorSelects[NumSelectableColors];
 

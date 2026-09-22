@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Загрузить</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Слишком большой файл.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">Слишком большой файл.</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Шпаргалка (PDF)</message>

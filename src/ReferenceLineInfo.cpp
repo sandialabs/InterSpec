@@ -2658,11 +2658,11 @@ void ReferenceLineInfo::markMajorLines()
       {
         const double energy_kev = line->m_energy;
         if( (generic_detector->lowerEnergy() > 10.0) && (energy_kev < generic_detector->lowerEnergy()) )
-          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->lowerEnergy() );
+          line->m_normalized_intensity *= generic_detector->farFieldIntrinsicEfficiency( generic_detector->lowerEnergy() );
         else if( (generic_detector->upperEnergy() > 10.0) && (energy_kev > generic_detector->upperEnergy()) )
-          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->upperEnergy() );
+          line->m_normalized_intensity *= generic_detector->farFieldIntrinsicEfficiency( generic_detector->upperEnergy() );
         else
-          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( energy_kev );
+          line->m_normalized_intensity *= generic_detector->farFieldIntrinsicEfficiency( energy_kev );
       }
     }catch( const std::exception &e )
     {

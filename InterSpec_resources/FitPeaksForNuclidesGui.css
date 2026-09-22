@@ -3,7 +3,7 @@
 {
   display: block;
   margin-top: 0.6em;
-  color: #856404;
+  color: var(--interspec-warning-color);
   font-style: italic;
   font-size: 0.9em;
 }
@@ -135,7 +135,7 @@
 
 .FitPeaksAdvancedWidget .fpn-status.calculating
 {
-  color: #c00;
+  color: var(--interspec-error-color);
 }
 
 /* Warnings area: always visible, fixed height; must not shrink in flex layout */
@@ -147,7 +147,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px 6px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 3px;
   font-size: 0.9em;
   flex-shrink: 0;
@@ -156,30 +156,30 @@
 .FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-computing,
 .FitSourcesResultContents .fpn-warnings.fpn-warnings-computing
 {
-  background: #f5f5f5;
-  border-color: #bbb;
+  background: var(--interspec-panel-background);
+  border-color: var(--interspec-outline-color);
 }
 
 .FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-success,
 .FitSourcesResultContents .fpn-warnings.fpn-warnings-success
 {
-  background: #e8f5e9;
-  border-color: #81c784;
+  background: var(--interspec-success-background);
+  border-color: var(--interspec-success-border-color);
 }
 
 .FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-has-warnings,
 .FitSourcesResultContents .fpn-warnings.fpn-warnings-has-warnings
 {
-  background: #fff3e0;
-  border-color: #ffb74d;
+  background: var(--interspec-warning-background);
+  border-color: var(--interspec-warning-border-color);
 }
 
 .FitPeaksAdvancedWidget .fpn-warnings.fpn-warnings-error,
 .FitSourcesResultContents .fpn-warnings.fpn-warnings-error
 {
-  background: #c62828;
-  color: #fff;
-  border-color: #b71c1c;
+  background: var(--interspec-error-background);
+  color: var(--interspec-error-color);
+  border-color: var(--interspec-error-border-color);
 }
 
 /* Simple result dialog: small gap between chart and warnings box */

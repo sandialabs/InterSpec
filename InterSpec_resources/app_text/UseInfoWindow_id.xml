@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Muat</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">File terlalu besar.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">File terlalu besar.</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Lembar Contekan (PDF)</message>

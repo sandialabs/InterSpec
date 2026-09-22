@@ -77,6 +77,16 @@ public:
                   const double age, const std::string &activityStr );
   
   void clearAllNuclides();
+
+  
+  /** Asks first when more than one nuclide would be thrown away (nothing here is undoable). */
+  
+  void confirmClearAllNuclides();
+
+  
+  /** Shows the placeholder, and enables "remove all", according to whether any nuclide is added. */
+  
+  void updateNuclideAreaState();
   
   void setDecayChartTimeRange( double dt );
   
@@ -182,6 +192,9 @@ public:
   Wt::WContainerWidget        *m_parentNuclidesDiv;
   Wt::WContainerWidget        *m_addParentNuclideDiv;
   Wt::WContainerWidget        *m_nuclidesAddedDiv;
+
+  /** Placeholder shown inside m_nuclidesAddedDiv while no nuclide has been added. */
+  Wt::WText                   *m_noNuclidesTxt;
   Wt::WPushButton             *m_createNewNuclideButton;
 
   Wt::WPushButton             *m_clearNuclidesButton;

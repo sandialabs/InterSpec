@@ -14,16 +14,16 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--interspec-background-color, #f6f7f8);
-  color: var(--interspec-text-color, #23272b);
+  background: var(--interspec-background-color);
+  color: var(--interspec-text-color);
   font-size: 12.5px;
 }
 
 .LcwCard
 {
-  border: 1px solid var(--interspec-border-color, #dde1e6);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
-  background: var(--interspec-input-background, #fff);
+  background: var(--interspec-input-background);
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
   padding: 11px 12px;
 }
@@ -44,14 +44,14 @@
   gap: 1px;
 }
 
-.LcwTitle { font-size: 13px; font-weight: 600; color: var(--interspec-text-color, #23272b); }
-.LcwSubtle { font-size: 11px; color: var(--interspec-label-color, #8a9099); opacity: 0.75; }
+.LcwTitle { font-size: 13px; font-weight: 600; color: var(--interspec-text-color); }
+.LcwSubtle { font-size: 11px; color: var(--interspec-label-color); opacity: 0.75; }
 
 .LcwActiveSummary
 {
   margin-left: auto;
   font-size: 11px;
-  color: var(--interspec-link-color, #2f6fd6);
+  color: var(--interspec-link-color);
   font-weight: 600;
   text-align: right;
 }
@@ -68,7 +68,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .05em;
-  color: var(--interspec-label-color, #8a9099);
+  color: var(--interspec-label-color);
   opacity: 0.8;
 }
 .LcwModelsHeader { margin-top: 4px; }
@@ -83,13 +83,13 @@
 
 .LcwProviderCard
 {
-  border: 1px solid var(--interspec-border-color, #dde1e6);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 8px;
   overflow: hidden;
-  background: var(--interspec-input-background, #fff);
+  background: var(--interspec-input-background);
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-.LcwProviderCard.LcwActive { border-color: var(--interspec-link-color, #9cc2f3); }
+.LcwProviderCard.LcwActive { border-color: var(--interspec-link-color); }
 
 .LcwProviderHeader
 {
@@ -98,7 +98,7 @@
   gap: 10px;
   padding: 10px 12px;
   cursor: pointer;
-  background: var(--interspec-input-background, #fafbfc);
+  background: var(--interspec-input-background);
 }
 /* Faint accent tint for the active provider/model - layered over the themed background so it reads
    on both light and dark. */
@@ -107,7 +107,7 @@
   background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
 }
 
-.LcwChevron { color: var(--interspec-label-color, #9aa0a8); opacity: 0.7; font-size: 10px; flex: none; }
+.LcwChevron { color: var(--interspec-label-color); opacity: 0.7; font-size: 10px; flex: none; }
 
 .LcwProviderTitleStack
 {
@@ -121,7 +121,7 @@
 {
   font-size: 13px;
   font-weight: 600;
-  color: var(--interspec-text-color, #23272b);
+  color: var(--interspec-text-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,7 +129,7 @@
 .LcwProviderSub
 {
   font-size: 11px;
-  color: var(--interspec-label-color, #8a9099);
+  color: var(--interspec-label-color);
   opacity: 0.8;
   white-space: nowrap;
   overflow: hidden;
@@ -156,7 +156,7 @@
   align-self: center;
 }
 .LcwRemoveIcon:hover { opacity: 1.0; }
-.LcwRemoveIcon img { width: 16px; height: 16px; display: block; }
+.LcwRemoveIcon img { width: 16px; height: 16px; display: block; filter: var(--interspec-icon-filter); }
 
 .LcwProviderBody
 {
@@ -164,7 +164,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  border-top: 1px solid var(--interspec-border-color, #eceff2);
+  border-top: 1px solid var(--interspec-border-color);
 }
 
 /* Fields */
@@ -173,10 +173,10 @@
   display: block;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--interspec-label-color, #5b6066);
+  color: var(--interspec-label-color);
   margin-bottom: 4px;
 }
-.LcwFieldLabelInline { font-size: 11.5px; font-weight: 600; color: var(--interspec-label-color, #5b6066); }
+.LcwFieldLabelInline { font-size: 11.5px; font-weight: 600; color: var(--interspec-label-color); }
 
 .LcwInput
 {
@@ -185,10 +185,10 @@
   padding: 6px 8px;
   font: inherit;
   font-size: 12.5px;
-  border: 1px solid var(--interspec-border-color, #c4c8cd);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 5px;
-  background: var(--interspec-input-background, #fff);
-  color: var(--interspec-text-color, #23272b);
+  background: var(--interspec-input-background);
+  color: var(--interspec-text-color);
 }
 .LcwMono { font-family: ui-monospace, Menlo, Consolas, monospace; }
 
@@ -199,17 +199,17 @@
   gap: 8px;
   flex-wrap: wrap;
   font-size: 11px;
-  color: var(--interspec-label-color, #71777e);
+  color: var(--interspec-label-color);
   opacity: 0.9;
 }
 .LcwBadge
 {
   font-size: 10.5px;
   font-weight: 600;
-  color: var(--interspec-link-color, #3a6fbf);
-  background-color: var(--interspec-input-background, #e8f0fd);
+  color: var(--interspec-link-color);
+  background-color: var(--interspec-input-background);
   background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
-  border: 1px solid rgba(47,111,214,0.35);
+  border: 1px solid var(--interspec-accent-color);
   border-radius: 4px;
   padding: 1px 7px;
 }
@@ -225,10 +225,10 @@
   padding: 4px 6px;
   font: inherit;
   font-size: 11.5px;
-  border: 1px solid var(--interspec-border-color, #c4c8cd);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 5px;
-  background: var(--interspec-input-background, #fff);
-  color: var(--interspec-text-color, #23272b);
+  background: var(--interspec-input-background);
+  color: var(--interspec-text-color);
 }
 
 .LcwTokenRow
@@ -242,29 +242,29 @@
 
 /* Semantic accent colors (warning/error/success): translucent boxes that read on any theme; the text
    color is the one thing tweaked for dark mode at the bottom of this file. */
-.LcwWarn { font-size: 11px; color: #9a6a00; }
+.LcwWarn { font-size: 11px; color: var(--interspec-warning-color); }
 .LcwFetchOk
 {
   font-size: 11.5px; padding: 6px 9px; border-radius: 5px;
-  background: rgba(63,164,91,0.12); color: #1f7a3d; border: 1px solid rgba(63,164,91,0.35);
+  background: var(--interspec-success-background); color: var(--interspec-success-color); border: 1px solid var(--interspec-success-border-color);
 }
 .LcwFetchErr
 {
   font-size: 11.5px; padding: 6px 9px; border-radius: 5px;
-  background: rgba(214,69,65,0.12); color: #b3261e; border: 1px solid rgba(214,69,65,0.35);
+  background: var(--interspec-error-background); color: var(--interspec-error-color); border: 1px solid var(--interspec-error-border-color);
 }
 .LcwNoModels
 {
-  font-size: 12px; color: var(--interspec-label-color, #9aa0a8); opacity: 0.85; text-align: center;
-  padding: 10px; border: 1px dashed var(--interspec-border-color, #d4d8dd); border-radius: 7px;
+  font-size: 12px; color: var(--interspec-label-color); opacity: 0.85; text-align: center;
+  padding: 10px; border: 1px dashed var(--interspec-border-color); border-radius: 7px;
 }
 
 /* Model editor cards */
 .LcwModelsList { display: flex; flex-direction: column; gap: 9px; }
 .LcwModelCard
 {
-  border: 1px solid var(--interspec-border-color, #e3e6ea);
-  background: var(--interspec-input-background, #fbfcfd);
+  border: 1px solid var(--interspec-border-color);
+  background: var(--interspec-input-background);
   border-radius: 7px;
   padding: 11px 12px;
   display: flex;
@@ -273,7 +273,7 @@
 }
 .LcwModelCard.LcwActive
 {
-  border-color: var(--interspec-link-color, #9cc2f3);
+  border-color: var(--interspec-link-color);
   background-image: linear-gradient(rgba(47,111,214,0.12), rgba(47,111,214,0.12));
 }
 
@@ -294,31 +294,31 @@
 .LcwNumCell
 {
   display: flex; flex-direction: column; gap: 3px;
-  font-size: 10.5px; color: var(--interspec-label-color, #71777e); opacity: 0.9; font-weight: 600;
+  font-size: 10.5px; color: var(--interspec-label-color); opacity: 0.9; font-weight: 600;
 }
 .LcwNumInput
 {
   box-sizing: border-box; width: 100%;
   padding: 5px 7px; font: inherit; font-size: 12px;
-  border: 1px solid var(--interspec-border-color, #c4c8cd); border-radius: 5px;
-  background: var(--interspec-input-background, #fff); color: var(--interspec-text-color, #23272b);
+  border: 1px solid var(--interspec-border-color); border-radius: 5px;
+  background: var(--interspec-input-background); color: var(--interspec-text-color);
 }
 
 .LcwModelRow3
 {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-  font-size: 12px; color: var(--interspec-text-color, #3a3f44);
+  font-size: 12px; color: var(--interspec-text-color);
 }
 .LcwReasonWrap
 {
   display: inline-flex; align-items: center; gap: 7px;
-  margin-left: auto; font-size: 11.5px; color: var(--interspec-label-color, #5b6066); font-weight: 600;
+  margin-left: auto; font-size: 11.5px; color: var(--interspec-label-color); font-weight: 600;
 }
 
 .LcwError
 {
-  font-size: 11px; color: #b3261e;
-  background: rgba(214,69,65,0.12); border: 1px solid rgba(214,69,65,0.35); border-radius: 5px; padding: 5px 8px;
+  font-size: 11px; color: var(--interspec-error-color);
+  background: var(--interspec-error-background); border: 1px solid var(--interspec-error-border-color); border-radius: 5px; padding: 5px 8px;
 }
 .LcwModelError { margin-top: 2px; }
 
@@ -331,7 +331,7 @@
 .LcwXmlPre
 {
   display: block;
-  background: #1e2227; color: #dfe3e8;
+  background: var(--interspec-panel-background); color: var(--interspec-text-color);
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 11px; line-height: 1.5;
   padding: 12px; border-radius: 8px;
@@ -351,8 +351,8 @@
   float: left;
 }
 .LcwValidation { font-size: 11.5px; font-weight: 600; }
-.LcwValidOk { color: #1f7a3d; }
-.LcwValidWarn { color: #9a6a00; }
+.LcwValidOk { color: var(--interspec-success-color); }
+.LcwValidWarn { color: var(--interspec-warning-color); }
 
 /* Not-configured panel inside the LLM assistant */
 .LlmNotConfigured
@@ -361,18 +361,5 @@
   gap: 14px; height: 100%; min-height: 180px; width: 100%; box-sizing: border-box;
   padding: 24px; text-align: center;
 }
-.LlmNotConfiguredMsg { font-size: 14px; line-height: 1.5; color: var(--interspec-label-color, #5b6066); max-width: 440px; }
+.LlmNotConfiguredMsg { font-size: 14px; line-height: 1.5; color: var(--interspec-label-color); max-width: 440px; }
 
-
-/* ============================================================= */
-/* Dark theme: only the semantic accent text colors (the theme    */
-/* variables above handle everything structural), plus the black  */
-/* minus icon which needs inverting.                              */
-/* ============================================================= */
-body.dark-theme .LcwWarn,
-body.dark-theme .LcwValidWarn { color: #ffd43b; }
-body.dark-theme .LcwValidOk,
-body.dark-theme .LcwFetchOk { color: #7fdca0; }
-body.dark-theme .LcwError,
-body.dark-theme .LcwFetchErr { color: #ff8a82; }
-body.dark-theme .LcwRemoveIcon img { filter: invert(1); }

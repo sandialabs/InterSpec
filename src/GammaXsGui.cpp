@@ -456,7 +456,7 @@ void GammaXsGui::updateDetectorCalc()
     char buffer[32];
     const string energystr = m_energyEdit->text().toUTF8();
     const float energy = static_cast<float>( std::stod( energystr ) );
-    const double intrinsic_eff =  m_detector->intrinsicEfficiency( energy );
+    const double intrinsic_eff =  m_detector->farFieldIntrinsicEfficiency( energy );
     
     if( m_detector->isFixedGeometry() )
     {

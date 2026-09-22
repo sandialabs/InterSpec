@@ -394,6 +394,8 @@ bool is_likely_high_res( InterSpec *viewer )
   if( fitPrefs && (fitPrefs->m_det_type != CoarseResolutionType::Unknown) )
     return (fitPrefs->m_det_type == CoarseResolutionType::High);
 
+
+
   switch( meas->detector_type() )
   {
     case SpecUtils::DetectorType::Fulcrum:
@@ -488,34 +490,9 @@ bool is_likely_high_res( InterSpec *viewer )
   return true;
 }//bool is_likely_high_res( InterSpec *viewer )
   
-CoarseResolutionType coarse_det_type(
-  const shared_ptr<const SpecUtils::Measurement> &meas,
-  const shared_ptr<const SpecMeas> &spec )
+CoarseResolutionType coarse_type_for_detector_type( const SpecUtils::DetectorType type )
 {
-  // Lambda to perform FWHM-based classification (Tier 3)
-  const auto fwhm_classify = [&meas]() -> CoarseResolutionType {
-    if( meas && (meas->num_gamma_channels() >= 16) )
-    {
-      const PeakFitSpec::SpecClassType spec_class = PeakFitSpec::initial_lowres_highres_classify( meas );
-      switch( spec_class )
-      {
-        case PeakFitSpec::SpecClassType::High:
-          return CoarseResolutionType::High;
-        case PeakFitSpec::SpecClassType::LowOrMedRes:
-          return CoarseResolutionType::LowOrMedRes;
-        case PeakFitSpec::SpecClassType::Unknown:
-          return is_high_res( meas ) ? CoarseResolutionType::High : CoarseResolutionType::LowOrMedRes;
-      }
-    }
-    return CoarseResolutionType::Unknown;
-  };//fwhm_classify lambda
-  
-  // If no SpecMeas provided, can only do FWHM-based classification
-  if( !spec )
-    return fwhm_classify();
-
-  // Tier 1: Check SpecUtils::DetectorType from file parsing (most reliable)
-  switch( spec->detector_type() )
+  switch( type )
   {
     // HPGe detectors
     case SpecUtils::DetectorType::DetectiveUnknown:
@@ -585,7 +562,44 @@ CoarseResolutionType coarse_det_type(
     case SpecUtils::DetectorType::IdentiFinderTungsten:
     case SpecUtils::DetectorType::RadiaCodeGAGG10:
       break;
-  }//switch( spec->detector_type() )
+  }//switch( type )
+
+  return CoarseResolutionType::Unknown;
+}//coarse_type_for_detector_type(...)
+
+
+CoarseResolutionType coarse_det_type(
+  const shared_ptr<const SpecUtils::Measurement> &meas,
+  const shared_ptr<const SpecMeas> &spec )
+{
+  // Lambda to perform FWHM-based classification (Tier 3)
+  const auto fwhm_classify = [&meas]() -> CoarseResolutionType {
+    if( meas && (meas->num_gamma_channels() >= 16) )
+    {
+      const PeakFitSpec::SpecClassType spec_class = PeakFitSpec::initial_lowres_highres_classify( meas );
+      switch( spec_class )
+      {
+        case PeakFitSpec::SpecClassType::High:
+          return CoarseResolutionType::High;
+        case PeakFitSpec::SpecClassType::LowOrMedRes:
+          return CoarseResolutionType::LowOrMedRes;
+        case PeakFitSpec::SpecClassType::Unknown:
+          return is_high_res( meas ) ? CoarseResolutionType::High : CoarseResolutionType::LowOrMedRes;
+      }
+    }
+    return CoarseResolutionType::Unknown;
+  };//fwhm_classify lambda
+  
+  // If no SpecMeas provided, can only do FWHM-based classification
+  if( !spec )
+    return fwhm_classify();
+
+  // Tier 1: Check SpecUtils::DetectorType from file parsing (most reliable)
+  {
+    const CoarseResolutionType from_type = coarse_type_for_detector_type( spec->detector_type() );
+    if( from_type != CoarseResolutionType::Unknown )
+      return from_type;
+  }
 
 
   // Tier 2: Search instrument metadata strings for detector-type keywords

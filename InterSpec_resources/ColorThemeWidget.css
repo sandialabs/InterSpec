@@ -19,6 +19,27 @@
   font-weight: bold;
 }
 
+.CTGroupTitle{
+  padding-top: 12px;
+  font-weight: bold;
+}
+
+/* "Theme default: <swatch> <value>" hint under an app colour's description */
+.CTDefaultHint{
+  display: block;
+  font-size: smaller;
+  color: var(--interspec-fainter-text-color);
+}
+
+.CTDefaultSwatch{
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.4em;
+  vertical-align: -0.15em;
+  border: 1px solid var(--interspec-outline-color);
+}
+
 .CTRowLabel{
   
 }
@@ -58,13 +79,13 @@
 .GenericRefLineColors,
 .DynamicRefLineColors
 {
-  border-top: solid 1px #e1e1e1;
-  border-right: solid 1px #e1e1e1;
+  border-top: solid 1px var(--interspec-border-color);
+  border-right: solid 1px var(--interspec-border-color);
   padding-right: 8px;
 }
 
 .SpecificRefLineColors{
-  border-top: solid 1px #e1e1e1;
+  border-top: solid 1px var(--interspec-border-color);
 }
 
 
@@ -81,6 +102,6 @@
 }
 
 .ColorThemeOtherOptionsTable{
-  border-top: solid 1px #e1e1e1;
+  border-top: solid 1px var(--interspec-border-color);
   margin-top: 5px;
 }

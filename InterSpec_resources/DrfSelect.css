@@ -116,7 +116,7 @@ table.FormulaDrfTbl label
 {
   width: 100%;
   padding-top: 3px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
   display: flex;
   flex-flow: row nowrap;
 }
@@ -131,7 +131,7 @@ table.FormulaDrfTbl label
 
 .RelEffFile
 {
-  border: 1px solid #A7A7A7;
+  border: 1px solid var(--interspec-outline-color);
   padding: 4px;
   margin-bottom: 3px;
 }
@@ -267,14 +267,65 @@ div.RelEffFile select
   margin: 1px 3px 1px 0px;
   border-radius: 9px;
   font-size: smaller;
-  border: 1px solid var(--interspec-outline-color, #a5b7c8);
-  background: var(--interspec-alt-row-background, #eef3f7);
-  color: var(--interspec-text-color, #333);
+  border: 1px solid var(--interspec-border-color);
+
+  /* A neutral wash rather than a colour: it darkens a light background and lightens a dark one, so
+     the chip separates from whatever is behind it without needing a theme variable of its own.
+     This used to be `--interspec-alt-row-background`, which no theme defines - so it always took
+     the light fallback while the text followed the theme, leaving white-on-#eef3f7 (1.1:1) in the
+     dark theme.  Only variables `InterSpec::applyColorTheme` actually sets are used here. */
+  background: rgba(128, 128, 128, 0.18);
+  color: var(--interspec-text-color);
 }
 
 .DrfContentChips .DrfChipAbsent
 {
-  opacity: 0.45;
+  /* Muted by colour, not by `opacity`: fading the whole chip took its text down with it, which is
+     what made these unreadable rather than merely quiet. */
+  background: rgba(128, 128, 128, 0.07);
+  color: var(--interspec-label-color);  /* #767676 measured 4.2:1 here - just under AA */
   text-decoration: line-through;
   border-style: dashed;
+}
+
+
+/* The "shape but not the characterization" caveat under a shared DRF's QR code. */
+.DrfQrNoMcNote
+{
+  display: block;
+  clear: both;             /* the copy-url and SVG links either side of it are floated */
+  margin: 10px 10px 0px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--interspec-label-color);
+  max-width: 34em;
+  text-align: left;
+  font-size: x-small;
+  color: var(--interspec-label-color);
+  opacity: 0.85;
+}
+
+
+/* The detector-modeling choice offered when an app-URL brings in a DRF that knows its shape. */
+.DrfUrlModelingRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 10px 0px 10px;
+}
+
+.DrfUrlModelingRow label
+{
+  white-space: nowrap;
+}
+
+.DrfUrlModelingDesc
+{
+  display: block;
+  margin: 4px 10px 6px 10px;
+  max-width: 40em;
+  font-size: x-small;
+  color: var(--interspec-label-color);
+  opacity: 0.85;
 }

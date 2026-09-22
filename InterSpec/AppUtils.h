@@ -28,6 +28,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <utility>
 #include <functional>
 
@@ -67,6 +68,26 @@ namespace AppUtils
   
   /** Similar to #query_str_key_values, but keeps key-value pairs in original order, allows duplicates, and empty values. */
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
+  
+  
+  /** Encodes binary data as unpadded RFC 4648 base32 ("A"-"Z" and "2"-"7").
+   
+   Unlike base64url, and unlike SpecUtils' base45, every character of the result is both in the QR
+   "Alphanumeric" set and safe in a URL query with no percent-escaping - base45 spends six of its
+   45 characters (' ', '$', '%', '+', '/', ':') on ones a URL has to escape, which costs more than
+   its higher density returns.  That makes this the encoding to use for a binary blob carried in an
+   app-URL destined for a QR code.
+   
+   Padding is omitted because '=' is neither QR-alphanumeric nor safe in a query string.
+   */
+  InterSpec_API std::string base32_encode( const std::vector<uint8_t> &input );
+  
+  /** Reverses #base32_encode.
+   
+   Lower-case input is accepted.  Throws std::runtime_error if the input contains a character
+   outside the base32 alphabet, or has a length that no input could have produced.
+   */
+  InterSpec_API std::vector<uint8_t> base32_decode( const std::string &input );
   
   /** Sanatizes a string so it can be a CSS class name. */
   //std::string sanitize_css_class_name( const std::string &src_name );

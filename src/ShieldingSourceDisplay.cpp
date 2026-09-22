@@ -29,6 +29,7 @@
 #include <limits>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 
 #include <boost/scope_exit.hpp>
 
@@ -2731,6 +2732,9 @@ void SourceFitModel::sort( int column, Wt::SortOrder order )
 }//void sort(...)
 
 
+const double ShieldingSourceDisplay::sm_maxInitialWindowWidth = 1024.0;
+
+
 pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow( InterSpec *viewer )
 {
   assert( viewer );
@@ -2866,13 +2870,18 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
         {
           windowWidth = 0.8*windowWidth;
           windowHeight = 0.8*windowHeight;
-          window->resizeWindow( windowWidth, windowHeight );
         }else
         {
           windowWidth = 0.9*windowWidth;
           windowHeight = 0.9*windowHeight;
-          window->resizeWindow( windowWidth, windowHeight );
         }
+
+        // Nothing in the tool reads better for being wider than this, and on a wide monitor the
+        //  scaled width just strands the content across the dialog.  Only the size the window
+        //  opens at is capped - the user can still drag it wider.
+        windowWidth = std::min( windowWidth, sm_maxInitialWindowWidth );
+
+        window->resizeWindow( windowWidth, windowHeight );
       }//if( !viewer->isPhone() )
 
       //Give the m_shieldingSourceFitWindow a hint about what size it will be
@@ -8206,7 +8215,7 @@ void ShieldingSourceDisplay::finishGuiSaveModelToDatabase( WLineEdit *name_edit,
   {
     WText *txt = m_modelDbSaveWindow->contents()->addNew<WText>( WString::tr("ssd-must-enter-name") );
     txt->setInline( false );
-    txt->setAttributeValue( "style", "color:red;" );
+    txt->addStyleClass( "ErrorTxt" );
     return;
   }//if( name_edit && name_edit->valueText().empty() )
   
@@ -9703,7 +9712,7 @@ void ShieldingSourceDisplay::updatePhoneFitBar()
 
       WContainerWidget *cdot = chip->addNew<WContainerWidget>();
       cdot->addStyleClass( "SsdActDot" );
-      cdot->setAttributeValue( "style", "background:" + (s.colorCss.empty() ? string("#888") : s.colorCss) + ";" );
+      cdot->setAttributeValue( "style", "background:" + (s.colorCss.empty() ? string("var(--interspec-fainter-text-color)") : s.colorCss) + ";" );
 
       WText *nuc = chip->addNew<WText>( WString::fromUTF8(s.symbol) );
       nuc->addStyleClass( "SsdActNuc" );
@@ -10123,22 +10132,21 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       throw logic_error( "Number of shieldings changed during fitting - should not happen." );
     
     // First we'll update mass-fractions of self-attenuating sources, if we were fitting any of them
-    const vector<shared_ptr<const Material>> massfracFitMaterials
-                                           = m_currentFitFcn->materialsFittingMassFracsFor();
-    
     for( size_t shielding_index = 0; shielding_index < nshieldings; ++shielding_index )
     {
       ShieldingSelect *select = gui_shieldings[shielding_index];
       assert( select );
-      
+
       if( select->isGenericMaterial() )
         continue;
-      
+
       shared_ptr<const Material> usrmaterial = select->material();
       if( !usrmaterial )  //e.g., a material shielding with no material selected - just skip it
         continue;
-      
-      const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial);
+
+      // Ask by shielding index, not by material identity: the widget may hold a different Material
+      //  object than the fit started with (e.g., the user edited its density during a live fit).
+      const bool calcFitMassFrac = m_currentFitFcn->hasVariableMassFraction( shielding_index );
       if( calcFitMassFrac != select->fitForAnyMassFractions() )
       {
         throw logic_error( "GUI fit mass fraction for material '" + usrmaterial->name

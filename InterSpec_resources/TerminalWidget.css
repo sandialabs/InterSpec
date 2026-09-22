@@ -15,7 +15,7 @@
 
 .command-button
 {
-    background: #cccccc;
+    background: var(--interspec-panel-background);
     -moz-border-radius: 25%;
     -webkit-border-radius: 25%;
     border-radius: 25%;
@@ -23,7 +23,9 @@
 
 .command-button:hover
 {
-    background-color: #e7e7e7;
+    /* The hover token is a translucent overlay, so it layers over the button's own surface. */
+    background: linear-gradient(var(--interspec-hover-background), var(--interspec-hover-background)),
+                var(--interspec-panel-background);
 }
 
 .command-menu
@@ -38,12 +40,12 @@
 {
     display: none;
     position: absolute;
-    background-color: #f9f9f9;
+    background-color: var(--interspec-panel-background);
 }
 
 .command-menu-content a
 {
-    color: black;
+    color: var(--interspec-text-color);
     padding: 2px 2px;
     text-decoration: none;
     display: block;
@@ -60,8 +62,8 @@
 }
 
 .TerminalSearchBox {
-    background: url(../InterSpec_resources/images/search-white.png) no-repeat 7px 2px #fcfcfc;
-    border: 1px solid #d1d1d1;
+    background: url(../InterSpec_resources/images/search-white.png) no-repeat 7px 2px var(--interspec-input-background);
+    border: 1px solid var(--interspec-border-color);
     width: 150px;
     padding: 0px 15px 0px 35px;
     -webkit-border-radius: 20px;

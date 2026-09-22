@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Load</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Too Large of file.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">Too Large of file.</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Cheat Sheet (PDF)</message>

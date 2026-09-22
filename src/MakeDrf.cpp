@@ -1496,7 +1496,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
 
   WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
-  m_tool->intrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
+  m_tool->farFieldIntrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
 
   // No characterization data: build an approximate response by hand in the Modify DRF tool
@@ -2188,7 +2188,7 @@ void MakeDrf::startSaveAs()
 }//void startSaveAs();
 
 
-Wt::Signal<bool> &MakeDrf::intrinsicEfficiencyIsValid()
+Wt::Signal<bool> &MakeDrf::farFieldIntrinsicEfficiencyIsValid()
 {
   return m_intrinsicEfficiencyIsValid;
 }
@@ -4255,13 +4255,18 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   stringstream eff_chart_svg;
   eff_chart.write( eff_chart_svg );
   
-  string qr_code;
+  string qr_code, qr_note;
   try
   {
     shared_ptr<DetectorPeakResponse> drf = assembleDrf( drfname, drfdescrip );
     assert( drf && drf->isValid() );
     
-    const string url = "interspec://drf/specify?" + drf->toAppUrl();
+    // The URL carries the detector's shape, but not a Monte-Carlo response - that is orders of
+    //  magnitude past what a QR code holds.  Say so on the sheet.
+    if( drf->ceeloResponse() )
+      qr_note = WString::tr("md-qr-no-mc-note").toUTF8();
+    
+    const string url = drf->toAppUrlQr();
     
     tuple<std::string,int,QrCode::ErrorCorrLevel> qr_and_size
               = QrCode::utf8_string_to_svg_qr( url, QrCode::ErrorCorrLevel::About30Percent, 5 );
@@ -4290,6 +4295,7 @@ void MakeDrf::writeRefSheet( std::ostream &output, std::string drfname, std::str
   tmplt.bindString("qr-code-title", drfname, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code", qr_code, TextFormat::UnsafeXHTML );
   tmplt.bindString("qr-code-summary", drfdescrip, TextFormat::UnsafeXHTML );
+  tmplt.bindString("qr-code-note", qr_note, TextFormat::UnsafeXHTML );
   
   
   tmplt.renderTemplate( output );

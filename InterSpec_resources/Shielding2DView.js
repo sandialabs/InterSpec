@@ -786,7 +786,7 @@ Shielding2DView.prototype.render = function() {
           .attr("cy", scaleY(0))
           .attr("r", 3) // Fixed pixel radius
           .attr("fill", "red")
-          .attr("stroke", "black")
+          .attr("stroke", "var(--d3spec-axis-color, black)")
           .style("stroke-width", "1px") // Fixed pixel width
           .style("cursor", "pointer");
       
@@ -1094,7 +1094,7 @@ Shielding2DView.prototype.render = function() {
               .attr("dy", "0.3em")
               .text("Detector")
               .style("font-size", Math.min(scaleX(detDiam/4), scaleY(detLen/4), 12) + "px") // Scale with box size, but ensure it fits
-              .attr("fill", "black")
+              .attr("fill", "var(--d3spec-text-color, black)")
               .style("pointer-events", "none");
 
           // Dashed indicator from the on-axis point to the offset detector center.
@@ -1128,7 +1128,7 @@ Shielding2DView.prototype.render = function() {
               .attr("dy", "0.3em")
               .text("Detector")
               .style("font-size", Math.min(scaleX(detLen/4), scaleY(detDiam/4), 12) + "px") // Scale with box size, but ensure it fits
-              .attr("fill", "black")
+              .attr("fill", "var(--d3spec-text-color, black)")
               .style("pointer-events", "none");
 
           // Dashed indicator from the on-axis point to the offset detector center.

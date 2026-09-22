@@ -28,7 +28,7 @@
   display: flex;
   flex-direction: column;
   padding: 6px 8px;
-  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  border-top: 1px solid var(--interspec-border-color);
   gap: 4px;
   overflow-y: auto;
   max-height: 45%;
@@ -94,14 +94,14 @@
 .GainMatchStatusCell
 {
   font-size: 11px;
-  color: var(--interspec-secondary-text-color, #777);
+  color: var(--interspec-secondary-text-color);
 }
 
 .GainMatchStatus
 {
   font-size: 11px;
   min-height: 1.2em;
-  color: var(--interspec-warning-text-color, #b45309);
+  color: var(--interspec-warning-color);
 }
 
 /* Multi-peak refinement controls */
@@ -113,7 +113,7 @@
 .GainMatchPeaksStatus
 {
   font-size: 11px;
-  color: var(--interspec-secondary-text-color, #777);
+  color: var(--interspec-secondary-text-color);
 }
 
 /* The shared-peaks table: a wrapping row of "peak (in n/m)" checkboxes */
@@ -138,6 +138,6 @@
 
 .GainMatchPeakFound
 {
-  color: var(--interspec-secondary-text-color, #999);
+  color: var(--interspec-secondary-text-color);
   font-size: 10px;
 }

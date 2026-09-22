@@ -2364,8 +2364,7 @@ void InterSpec::updateRightClickNuclidesMenu(
         && (peak->parentNuclide() || peak->reaction() || peak->xrayElement())  )
     {
       PopupDivMenuItem *item = menu->addMenuItem( nuc, "", true );
-      item->setAttributeValue("style", "background: grey; color: white;"
-                                       + item->attributeValue("style"));
+      item->addStyleClass( "PopupMenuHeaderItem" );
     }else if( nuc.size() )
     {
       PopupDivMenuItem *item = menu->addMenuItem( nuc, "", true );
@@ -2403,8 +2402,7 @@ void InterSpec::updateRightClickNuclidesMenu(
   if( nuclides->empty() )
   {
     PopupDivMenuItem *item = menu->addMenuItem( WString::tr("rclick-mi-no-nuc-suggestions"), "", true );
-    item->setAttributeValue("style", "background: grey; color: white;"
-                            + item->attributeValue("style"));
+    item->addStyleClass( "PopupMenuHeaderItem" );
   }
   
   WApplication *app = wApp;
@@ -4943,39 +4941,30 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_timeSeries->applyColorTheme( theme );
 
-  // Apply non-chart area colors via CSS variables
+  // Publish the theme's explicit app-colour overrides as CSS tokens.  The themes' own values
+  //  live in InterSpec_resources/themes/*/*.css; only what this theme explicitly sets goes here.
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
   if( app )
   {
-    auto setNonChartCssVar = [app]( const string &var_name, const WColor &color ) {
-      const string rulename = "global_interspec_" + var_name;
+    for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
+    {
+      const string rulename = "global_interspec_" + string(token.name);
+      const map<string,WColor>::const_iterator pos = theme->appColors.find( token.name );
 
-      if( color.isDefault() )
+      if( (pos == end(theme->appColors)) || pos->second.isDefault() )
       {
         app->removeGlobalCssRule( rulename );
       }else
       {
-        app->setGlobalCssRule(
-          rulename,
-          ":root",
-          "--interspec-" + var_name + ": " + color.cssText() + ";"
-        );
+        // Wt renders its internal stylesheet (where these rules live) before every linked
+        //  stylesheet, so a plain `:root` rule would lose to the `:root` token blocks in
+        //  themes/default/default.css and themes/<name>/<name>.css at equal specificity.
+        //  `html:root` is more specific, so the user's explicit colours always win.
+        app->setGlobalCssRule( rulename, "html:root",
+                          "--interspec-" + string(token.name) + ": " + pos->second.cssText() + ";" );
       }
-    };
-
-    setNonChartCssVar( "background-color", theme->appBackgroundColor );
-    setNonChartCssVar( "text-color", theme->appTextColor );
-    setNonChartCssVar( "border-color", theme->appBorderColor );
-    setNonChartCssVar( "link-color", theme->appLinkColor );
-    setNonChartCssVar( "label-color", theme->appLabelColor );
-    setNonChartCssVar( "input-background", theme->appInputBackground );
-    setNonChartCssVar( "button-background", theme->appButtonBackground );
-    setNonChartCssVar( "button-border-color", theme->appButtonBorderColor );
-    setNonChartCssVar( "button-text-color", theme->appButtonTextColor );
-    setNonChartCssVar( "menubar-background", theme->appMenuBarBackground );
-    setNonChartCssVar( "menubar-active-color", theme->appMenuBarActiveColor );
-    setNonChartCssVar( "menubar-hover-color", theme->appMenuBarHoverColor );
-  }
+    }//for( const ColorTheme::AppColorToken &token : ColorTheme::appColorTokens() )
+  }//if( app )
 
   setReferenceLineColors( theme );
   
@@ -9378,8 +9367,30 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
 {
   if( m_drfModifyWindow )
   {
+    // The open window is editing whatever DRF it was constructed with, and this function cannot
+    //  re-seat it - so a caller asking for a *different* detector must be refused rather than
+    //  silently handed the wrong one.  The app-URL import then drives
+    //  `DrfModifyWidget::startMcCharacterization` on what it is given, which would otherwise spend
+    //  minutes of Monte Carlo on a detector the user did not just import.
+    //  Refusing costs nothing: no window is created or destroyed, so no lifetime rule is touched.
+    //  Closing and reopening would be worse - it discards whatever the user had typed, and kills an
+    //  in-flight characterization, from a path they never associated with this dialog.
+    //  Checked before showing: a refused request must leave the window exactly as it was, rather
+    //  than pull an unrelated dialog to the front of whatever the user was doing.
+    const DrfModifyWidget * const open_tool = m_drfModifyWindow->tool();
+    const shared_ptr<const DetectorPeakResponse> open_drf = open_tool ? open_tool->originalDrf()
+                                                                      : nullptr;
+    if( drf && (drf != open_drf) )
+    {
+      // Several callers ignore the return value, so the message is what tells the user anything
+      //  happened at all.
+      passMessage( WString::tr("app-drf-modify-already-open"), WarningWidget::WarningMsgHigh );
+      return nullptr;
+    }
+
     m_drfModifyWindow->show();
     m_drfModifyWindow->centerWindowHeavyHanded();
+
     return m_drfModifyWindow.get();
   }//if( m_drfModifyWindow )
 

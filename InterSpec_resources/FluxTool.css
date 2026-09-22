@@ -35,11 +35,11 @@
 }
 
 .FluxMsg {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .FluxTable {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   border-radius: 2px;
 }
 

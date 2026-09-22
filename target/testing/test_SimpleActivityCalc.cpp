@@ -521,6 +521,74 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_RoundTrip )
 }//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_RoundTrip )
 
 
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ModifiedDensity )
+{
+  set_data_dir();
+  
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const std::shared_ptr<const Material> iron = matdb->material( "Fe (iron)" );
+  BOOST_REQUIRE( iron );
+  
+  const double g_cm3 = PhysicalUnits::g / PhysicalUnits::cm3;
+  
+  SimpleActivityCalcState original_state;
+  original_state.peakEnergy = 661.657;
+  original_state.nuclideName = "Cs137";
+  original_state.distanceStr = "50 cm";
+  original_state.geometryType = SimpleActivityGeometryType::Point;
+  original_state.shielding = ShieldingSourceFitCalc::ShieldingInfo();
+  original_state.shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  original_state.shielding->m_isGenericMaterial = false;
+  original_state.shielding->m_forFitting = false;
+  original_state.shielding->m_material = iron;
+  original_state.shielding->m_dimensions[0] = 1.0*PhysicalUnits::cm;
+  
+  // The default density is not written to the URL
+  {
+    const std::string url = original_state.encodeToUrl();
+    BOOST_CHECK( url.find("MATDENS") == std::string::npos );
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    BOOST_REQUIRE( decoded_state.shielding.has_value() && decoded_state.shielding->m_material );
+    BOOST_CHECK( decoded_state.shielding->m_material == iron );
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( *decoded_state.shielding, *original_state.shielding ) );
+  }
+  
+  // A user-modified density is, and round-trips
+  auto modified_iron = std::make_shared<Material>( *iron );
+  modified_iron->density = static_cast<float>( 7.5 * g_cm3 );
+  SimpleActivityCalcState modified_state = original_state;
+  modified_state.shielding->m_material = modified_iron;
+  BOOST_CHECK( modified_state != original_state );
+  
+  {
+    const std::string url = modified_state.encodeToUrl();
+    BOOST_CHECK( url.find("&MATDENS=") != std::string::npos );
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    BOOST_REQUIRE( decoded_state.shielding.has_value() && decoded_state.shielding->m_material );
+    BOOST_CHECK_CLOSE( decoded_state.shielding->m_material->density / g_cm3, 7.5, 1.0E-3 );
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( *decoded_state.shielding, *modified_state.shielding ) );
+    BOOST_CHECK_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( *decoded_state.shielding, *original_state.shielding ), std::exception );
+  }
+  
+  // A chemical formula material decodes too (this used to throw)
+  SimpleActivityCalcState formula_state = original_state;
+  formula_state.shielding->m_material = MaterialDB::materialFromChemicalFormula( "C0.5H0.2Ni0.6", DecayDataBaseServer::database() );
+  BOOST_REQUIRE( formula_state.shielding->m_material );
+  {
+    const std::string url = formula_state.encodeToUrl();
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    BOOST_REQUIRE( decoded_state.shielding.has_value() && decoded_state.shielding->m_material );
+    BOOST_CHECK_CLOSE( decoded_state.shielding->m_material->density / g_cm3, 1.3, 1.0E-3 );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ModifiedDensity )
+
+
 BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_AllGeometryTypes )
 {
   set_data_dir();

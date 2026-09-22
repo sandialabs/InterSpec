@@ -101,7 +101,7 @@ div.RadMapMarker{
 }
 
 div.RadMapMarkerInner {
-  border-color: black;
+  border-color: var(--interspec-outline-color);
   border-radius: 5px;
   border-style: solid;
   border-width: 1px;
@@ -122,7 +122,7 @@ div.RadMapMarkerMulti {
 }
 
 div.RadMapMarkerInner.DispAsFore, div.RadMapMarkerMulti.DispAsFore {
-  border-color: black;
+  border-color: var(--interspec-outline-color);
   border-radius: 0px;
 }
 
@@ -157,9 +157,8 @@ div.RadMapMarkerInner.DispAsSecond, div.RadMapMarkerMulti.DispAsSecond {
 
 
 .pm-text-marker > textarea.pm-textarea {
-  /* Currently in dark.css we have a `textarea :not(.pm-textarea)` clause
-so dark styling wont be applied to the text annotation area; however,
-we could do something like below, as well as specifying the border
+  /* The themed `textarea:not(.pm-textarea)` rules skip the text annotation area, so it keeps the
+Leaflet plugin's own styling; if that ever changes, something like the below would pin it.
   background-color: #fff !important;
   color: #000 !important;
   */
@@ -168,14 +167,14 @@ we could do something like below, as well as specifying the border
   font-size: 14.5px;
 }
 
-/* Make sure the legend is always visible, even if using dark.css. */
+/* Make sure the legend is always visible, whatever theme is in use. */
 .LegEntry {
   border-radius: 5px;
   padding: 2px;
   padding-left: 5px;
   padding-right: 5px;
-  background-color: #fff;
-  color: #000 !important;
+  background-color: var(--interspec-background-color);
+  color: var(--interspec-text-color) !important;
 }
 
 

@@ -139,8 +139,14 @@
     that is the &quot;true&quot; net signal level which may be, <i>a priori</i>.
     expected to lead to detection.</message>
   <message id="dlt-tt-detector-intrinsic-eff">The efficiency for a gamma hitting the detector face,
-    to be detected in the full-energy peak.</message>
-  <message id="dlt-tt-solid-angle-fraction">The fraction of the solid angle, the detector face takes up, at the specified distance.</message>
+    to be detected in the full-energy peak.  This is the detector&apos;s far-field efficiency curve.
+    When the detector has a characterized response, the efficiency actually used in this
+    calculation comes from that response, so it is not exactly this value times the solid angle
+    fraction below - near the detector the flat-disk product is an approximation, because the
+    gammas interact some way inside the crystal rather than at its face.</message>
+  <message id="dlt-tt-solid-angle-fraction">The fraction of the solid angle, the detector face takes up, at the specified distance.
+    This is the nominal flat-disk geometry; see the note on the intrinsic efficiency above for why
+    the two do not necessarily multiply to the efficiency used.</message>
   <message id="dlt-tt-shielding-transmission">The fraction of gammas, at this energy, that will make it through the shielding without interacting.</message>
   <message id="dlt-tt-air-transmission">The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting.</message>
   <message id="dlt-tt-branching-ratio">The number of gamma rays emitted at this energy, from the radioactive
