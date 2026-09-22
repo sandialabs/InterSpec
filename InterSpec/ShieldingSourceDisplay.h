@@ -831,7 +831,7 @@ public:
   
 
   std::pair<std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
-            ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn();
+            ShieldingSourceFitCalc::FitParameters> shieldingFitnessFcn();
   
 
   //toggle checkbox/chart

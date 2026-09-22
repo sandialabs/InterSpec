@@ -46,18 +46,6 @@
 #include <Wt/WServer.h>
 #include <Wt/WIOService.h>
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -1027,7 +1015,7 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
 }//resolveVolumetricEffMethod()
 
 
-std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> ShieldingSourceChi2Fcn::create(
+std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> ShieldingSourceChi2Fcn::create(
                                 const ShieldSourceInput &input )
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
@@ -1044,7 +1032,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   const auto &foreground = input.foreground;
   const auto &background = input.background;
     
-  ROOT::Minuit2::MnUserParameters inputPrams;
+  ShieldingSourceFitCalc::FitParameters inputPrams;
   
   //Get the peaks we'll be using in the fit
   vector<PeakDef> peaks;
@@ -1216,7 +1204,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   }
 #endif
 
-  //I think num_fit_params will end up same as inputPrams.VariableParameters()
+  //I think num_fit_params will end up same as inputPrams.numVariable()
   size_t num_fit_params = 0;
   
   // TODO: need to check that if we are fitting a shielding thickness we have an
@@ -1268,18 +1256,18 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
       num_fit_params += fitAn + fitAD;
       
       if( fitAn )
-        inputPrams.Add( name + "_AN", an, std::max(0.1*an,2.5),
+        inputPrams.add( name + "_AN", an, std::max(0.1*an,2.5),
                        1.0*MassAttenuation::sm_min_xs_atomic_number,
                        1.0*MassAttenuation::sm_max_xs_atomic_number );
       else
-        inputPrams.Add( name + "_AN_FIXED", an );
+        inputPrams.add( name + "_AN_FIXED", an );
       
       if( fitAD )
-        inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
+        inputPrams.add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
       else
-        inputPrams.Add( name + "_AD", ad );
+        inputPrams.add( name + "_AD", ad );
       
-      inputPrams.Add( name + "_dummyshielding2", 0.0 );
+      inputPrams.add( name + "_dummyshielding2", 0.0 );
     }else
     {
       std::shared_ptr<const Material> mat = info.m_material;
@@ -1317,12 +1305,12 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitThickness;
           
           if( fitThickness )
-            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
           else
-            inputPrams.Add( name + "_thickness", thickness );
+            inputPrams.add( name + "_thickness", thickness );
           
-          inputPrams.Add( name + "_dummyshielding1", 0.0 );
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          inputPrams.add( name + "_dummyshielding1", 0.0 );
+          inputPrams.add( name + "_dummyshielding2", 0.0 );
           
           break;
         }//case GeometryType::Spherical:
@@ -1340,16 +1328,16 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitLen;
           
           if( fitRad )
-            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
-            inputPrams.Add( name + "_dr", rad );
+            inputPrams.add( name + "_dr", rad );
           
           if( fitLen )
-            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
-            inputPrams.Add( name + "_dz", len );
+            inputPrams.add( name + "_dz", len );
           
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          inputPrams.add( name + "_dummyshielding2", 0.0 );
           
           break;
         }//case GeometryType::CylinderEndOn and CylinderSideOn:
@@ -1370,19 +1358,19 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitDepth;
           
           if( fitWidth )
-            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
-            inputPrams.Add( name + "_dx", width );
+            inputPrams.add( name + "_dx", width );
           
           if( fitHeight )
-            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
-            inputPrams.Add( name + "_dy", height );
+            inputPrams.add( name + "_dy", height );
           
           if( fitDepth )
-            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
           else
-            inputPrams.Add( name + "_dz", depth );
+            inputPrams.add( name + "_dz", depth );
           
           break;
         }//case GeometryType::Rectangular:
@@ -1487,26 +1475,26 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           val = nmf.second / remaining_frac;
         
         usedmassfrac += nmf.second;
-        inputPrams.Add( name, val, max(0.1*val,0.01), 0, 1.0 );
+        inputPrams.add( name, val, max(0.1*val,0.01), 0, 1.0 );
         ++num_fit_params;
       }//for( size_t j = 0; i < nmassfrac; ++j )
     }//for( const auto &el_nucs : shield.m_nuclideFractions_ )
   }//for( size_t shielding_index = 0; shielding_index < shieldings.size(); ++shielding_index )
   
   
-  if( num_fit_params != inputPrams.VariableParameters() )
+  if( num_fit_params != inputPrams.numVariable() )
     throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...): "
                         "there is a serious logic error in this function, "
                         "please let wcjohns@sandia.gov know about this." );
   
   const size_t num_expected = answer->numExpectedFitParameters();
-  const size_t num_input_pars = inputPrams.Parameters().size();
+  const size_t num_input_pars = inputPrams.parameters().size();
   assert( num_expected == num_input_pars );
   if( num_expected != num_input_pars )
     throw logic_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...): "
                       "mismatch between num expected fit parameters, and number actual fit pars." );
   return {answer, inputPrams};
-}//pair<shared_ptr<ShieldingSourceChi2Fcn>,ROOT::Minuit2::MnUserParameters> create(...)
+}//pair<shared_ptr<ShieldingSourceChi2Fcn>,ShieldingSourceFitCalc::FitParameters> create(...)
   
 
 //This class evaluated the chi2 of a given hypothesis, where it is assumed the
@@ -1764,7 +1752,7 @@ void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
 size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                         const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                        ROOT::Minuit2::MnUserParameters &inputPrams )
+                        ShieldingSourceFitCalc::FitParameters &inputPrams )
 {
   assert( m_initialSrcDefinitions.empty() );
   if( !m_initialSrcDefinitions.empty() )
@@ -1954,15 +1942,15 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       //  such a large range will make Minuit2 choke and give a completely
       //  in-accurate answer (returns not even the best chi2 it found), if only
       //  one fit parameter.
-      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
+      //      inputPrams.add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
       //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
       const string name = nuclide->symbol + "Strength";
       const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
-      inputPrams.Add( name, activity, activityStep );
-      inputPrams.SetLowerLimit( name, 0.0 );
+      inputPrams.add( name, activity, activityStep );
+      inputPrams.setLowerLimit( name, 0.0 );
     }else
     {
-      inputPrams.Add( nuclide->symbol + "Strength", activity );
+      inputPrams.add( nuclide->symbol + "Strength", activity );
     }
     
     
@@ -2048,12 +2036,12 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       
       //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
       
-      inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
+      inputPrams.add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )
     {
       const double age = srcdef->age;
-      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", age );
+      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.parameters().size() << endl;
+      inputPrams.add( nuclide->symbol + "Age", age );
     }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
     {
       assert( ageDefiningNuc );
@@ -2081,8 +2069,8 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       
       const double ageIndexVal = -1.0*(age_defining_index + 1);
       //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
-      //<< " going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
+      //<< " going in as param " << inputPrams.parameters().size() << endl;
+      inputPrams.add( nuclide->symbol + "Age", ageIndexVal );
     }
   }//for( size_t src_index = 0; src_index < src_definitions.size(); ++src_index )
   

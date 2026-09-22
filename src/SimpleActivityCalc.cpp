@@ -43,7 +43,6 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -2350,11 +2349,11 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     chi_input.background_peaks = background_peaks;
     chi_input.background_sf = input.background_sf;
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
       GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
-    auto inputPrams = std::make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     
     auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto fit_results = std::make_shared<ShieldingSourceFitCalc::ModelFitResults>();

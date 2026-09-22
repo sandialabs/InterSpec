@@ -908,7 +908,7 @@ public:
     std::shared_ptr<const CascadeSummingCalc> reuse_cascade_calc;
   };//struct ShieldSourceInput
 
-  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
+  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> create(
                                      const ShieldSourceInput &input );
   
 protected:
@@ -1007,7 +1007,7 @@ public:
    */
   size_t setInitialSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     ROOT::Minuit2::MnUserParameters &inputPrams );
+                                     ShieldingSourceFitCalc::FitParameters &inputPrams );
   
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
   
@@ -1274,8 +1274,7 @@ public:
   /** The increase in chi2 that corresponds to a one-sigma parameter uncertainty.
 
    Always 1.0 for a chi2 (rather than log-likelihood) objective.  Used when walking a
-   chi2 profile out to estimate an uncertainty.  Was `Up()` while this class derived from
-   ROOT::Minuit2::FCNBase.
+   chi2 profile out to estimate an uncertainty.
    */
   double oneSigmaChi2Increase() const;
 

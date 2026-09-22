@@ -37,9 +37,6 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-//Roots Minuit2 includes
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
 
 
 #include <Wt/WText.h>
@@ -3939,7 +3936,7 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
 }//ShieldingSourceDisplay destructor constructor
 
 
-pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
                                                       ShieldingSourceDisplay::shieldingFitnessFcn()
 {
   //make sure fitting for at least one nuclide:
@@ -4107,7 +4104,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
       = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
 
   return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
-}//pair<ShieldingSourceChi2Fcn,ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn()
+}//pair<ShieldingSourceChi2Fcn,ShieldingSourceFitCalc::FitParameters> shieldingFitnessFcn()
 
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
@@ -7126,10 +7123,10 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       auto fcnAndPars = shieldingFitnessFcn();
 
       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      ShieldingSourceFitCalc::FitParameters &inputPrams = fcnAndPars.second;
 
-      const vector<double> params = inputPrams.Params();
-      const vector<double> errors = inputPrams.Errors();
+      const vector<double> params = inputPrams.values();
+      const vector<double> errors = inputPrams.stepSizes();
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
 
       vector<GammaInteractionCalc::PeakDetail> peak_details;
@@ -7137,7 +7134,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
               = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &peak_details );
 
       // Build temporary results object for the chart
-      temp_results.numDOF = inputPrams.VariableParameters();
+      temp_results.numDOF = inputPrams.numVariable();
       temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
       temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( peak_details ) );
 
@@ -7302,10 +7299,10 @@ void ShieldingSourceDisplay::showCalcLog()
       {
         auto fcnAndPars = shieldingFitnessFcn();
         std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-        ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+        ShieldingSourceFitCalc::FitParameters &inputPrams = fcnAndPars.second;
 
-        const vector<double> params = inputPrams.Params();
-        const vector<double> errors = inputPrams.Errors();
+        const vector<double> params = inputPrams.values();
+        const vector<double> errors = inputPrams.stepSizes();
         GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
 
         vector<GammaInteractionCalc::PeakDetail> peak_details;
@@ -8756,11 +8753,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
       auto fcnAndPars = shieldingFitnessFcn();
       
       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      ShieldingSourceFitCalc::FitParameters &inputPrams = fcnAndPars.second;
       
-      const unsigned int ndof = inputPrams.VariableParameters();
-      const vector<double> params = inputPrams.Params();
-      const vector<double> errors = inputPrams.Errors();
+      const unsigned int ndof = inputPrams.numVariable();
+      const vector<double> params = inputPrams.values();
+      const vector<double> errors = inputPrams.stepSizes();
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
       const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
       = chi2Fcn->energy_chi_contributions( params, errors, mixcache );
@@ -10727,7 +10724,7 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   
   //make sure fitting for at least one nuclide:
   
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  auto inputPrams = make_shared<ShieldingSourceFitCalc::FitParameters>();
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> initial_shieldings;
   
   try

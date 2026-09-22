@@ -34,18 +34,6 @@
 #include <Wt/WServer.h>
 #include <Wt/WApplication.h>
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnUserParameters.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameterState.h"
 
 #include "ceres/ceres.h"
 
@@ -2528,9 +2516,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       if( shield.m_fitDimensions[1] )
         shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors );
 
-      // There looks to be a bug in Minuit that IsFixed() doesnt work
-      //assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
-      //assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
     }else
     {
       const map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,double,bool>>>
@@ -2594,8 +2579,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
         trace.m_type = chi2Fcn->traceSourceActivityType( nuc );
         const int ind = static_cast<int>( chi2Fcn->nuclideIndex( nuc ) );
           
-        // There looks to be a bug in Minuit that IsFixed() doesnt work
-        //trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
         bool foundTrace = false;
         for( size_t i = 0; !foundTrace && (i < initial_shield.m_traceSources.size()); ++i )
         {
@@ -2619,8 +2602,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       {
         case GammaInteractionCalc::GeometryType::Spherical:
           shield.m_dimensions[0] = chi2Fcn->sphericalThickness( shielding_index, params );
-          // There looks to be a bug in Minuit that IsFixed() doesnt work
-          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
           //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
           shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
             
@@ -2632,9 +2613,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
         case GammaInteractionCalc::GeometryType::CylinderSideOn:
           shield.m_dimensions[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, params );
           shield.m_dimensions[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, params );
-          // There looks to be a bug in Minuit that IsFixed() doesnt work
-          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
-          //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
           //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
           //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
           shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
@@ -2650,10 +2628,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
           shield.m_dimensions[0] = chi2Fcn->rectangularWidthThickness( shielding_index, params );
           shield.m_dimensions[1] = chi2Fcn->rectangularHeightThickness( shielding_index, params );
           shield.m_dimensions[2] = chi2Fcn->rectangularDepthThickness( shielding_index, params );
-          // There looks to be a bug in Minuit that IsFixed() doesnt work
-          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par ).IsFixed();
-          //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
-          //shield.m_fitDimensions[2] = !fitParams.Parameter(shield_start_par + 2 ).IsFixed();
           //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
           //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
           //assert( shield.m_fitDimensions[2] == initial_shield.m_fitDimensions[2] );
@@ -3002,7 +2976,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
   try
   {
     const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
-               ROOT::Minuit2::MnUserParameters> fcn_pars
+               ShieldingSourceFitCalc::FitParameters> fcn_pars
             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( aug_input );
 
     aug_fcn = fcn_pars.first;
@@ -3010,7 +2984,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
     // Adding peaks whose nuclides are already fitted leaves the nuclide set - and therefore the
     //  parameter layout - unchanged.  If that ever stopped being true, every parameter would
     //  silently shift, and the numbers below would be garbage; so check before evaluating.
-    const size_t num_aug_pars = fcn_pars.second.Parameters().size();
+    const size_t num_aug_pars = fcn_pars.second.parameters().size();
     const bool layout_matches = (aug_fcn->numNuclides() == chi2Fcn.numNuclides())
                                 && (num_aug_pars == params.size());
     assert( layout_matches );
@@ -3287,51 +3261,6 @@ namespace
   }//is_dimension_param_name(...)
 
 
-  /** A Minuit2-independent description of one fit parameter.
-
-   The fit interface hands the Ceres driver a ROOT::Minuit2::MnUserParameters (it is the
-   projects current lingua franca for the activity/shielding fit setup), but everything
-   inside the driver works off these instead, so that Minuit2 can eventually be removed
-   from the project without touching the Ceres machinery -
-   #to_fit_parameter_defs is the single conversion point.
-   */
-  struct FitParameterDef
-  {
-    std::string name;
-    double value = 0.0;
-
-    /** Initial step size (what Minuit calls the parameter "error"); zero if not set. */
-    double step = 0.0;
-
-    /** True for constant/fixed parameters (including the "_FIXED"-named ones). */
-    bool is_const = true;
-
-    bool has_lower = false, has_upper = false;
-    double lower = 0.0, upper = 0.0;
-  };//struct FitParameterDef
-
-
-  /** The single place the Minuit2 parameter description is converted for the Ceres driver. */
-  std::vector<FitParameterDef> to_fit_parameter_defs( const ROOT::Minuit2::MnUserParameters &input )
-  {
-    std::vector<FitParameterDef> defs;
-
-    for( const ROOT::Minuit2::MinuitParameter &p : input.Parameters() )
-    {
-      FitParameterDef def;
-      def.name = p.GetName();
-      def.value = p.Value();
-      def.step = p.Error();
-      def.is_const = p.IsConst() || p.IsFixed() || (def.name.find("_FIXED") != std::string::npos);
-      def.has_lower = p.HasLowerLimit();
-      def.has_upper = p.HasUpperLimit();
-      def.lower = def.has_lower ? p.LowerLimit() : 0.0;
-      def.upper = def.has_upper ? p.UpperLimit() : 0.0;
-      defs.push_back( def );
-    }//for( loop over Minuit parameters )
-
-    return defs;
-  }//to_fit_parameter_defs(...)
 
 
   /** The Minuit2-style transform between the bounded "external" parameters the physics
@@ -3369,7 +3298,7 @@ namespace
      */
     bool use_plain_bounds = false;
 
-    static BoundTransform from_par( const FitParameterDef &p )
+    static BoundTransform from_par( const ShieldingSourceFitCalc::FitParameter &p )
     {
       BoundTransform tf;
 
@@ -3628,7 +3557,7 @@ namespace
    @returns the chi2 (=2*final_cost) at the solution.
    */
   double run_ceres_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
                           const std::vector<double> &start_full,
                           const std::vector<size_t> &var_indices,
                           const std::vector<double> &observed,
@@ -3695,7 +3624,7 @@ namespace
       if( !transforms[i].use_plain_bounds )
         continue;
 
-      const FitParameterDef &p = par_defs[var_indices[i]];
+      const ShieldingSourceFitCalc::FitParameter &p = par_defs[var_indices[i]];
       if( p.has_lower )
         problem.SetParameterLowerBound( u.data(), static_cast<int>(i), p.lower );
       if( p.has_upper )
@@ -3779,7 +3708,7 @@ namespace
       for( size_t i = 0; i < num_vars; ++i )
       {
         const BoundTransform &tf = transforms[i];
-        const FitParameterDef &p = par_defs[var_indices[i]];
+        const ShieldingSourceFitCalc::FitParameter &p = par_defs[var_indices[i]];
 
         // "Pinned at a limit" is judged in external (physical) units, on the scale of
         //  the parameters Minuit step size - a thickness of 22 mm with limits
@@ -3912,7 +3841,7 @@ namespace
    immediately with no extra work.  Same parameters and return value as #run_ceres_solve.
    */
   double run_ceres_solve_with_recovery( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
                           const std::vector<double> &start_full,
                           const std::vector<size_t> &var_indices,
                           const std::vector<double> &observed,
@@ -3947,7 +3876,7 @@ namespace
     std::vector<size_t> dim_indices;
     for( const size_t idx : var_indices )
     {
-      const FitParameterDef &p = par_defs[idx];
+      const ShieldingSourceFitCalc::FitParameter &p = par_defs[idx];
       if( is_dimension_param_name( p.name ) && p.has_lower && p.has_upper && (p.upper > p.lower) )
         dim_indices.push_back( idx );
     }
@@ -3968,7 +3897,7 @@ namespace
     std::vector<DimRange> ranges;
     for( const size_t idx : dim_indices )
     {
-      const FitParameterDef &p = par_defs[idx];
+      const ShieldingSourceFitCalc::FitParameter &p = par_defs[idx];
 
       // Clamp the range to a sane physical scale (some non-fit dims carry a 1000 m sanity bound).
       double hi_raw = (distance > 0.0) ? std::min( p.upper, distance ) : p.upper;
@@ -4095,7 +4024,7 @@ namespace
    final solve, whose varied set excludes the scanned AN).  Same out-params/return as those.
    */
   double run_iterated_gls_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
                           const std::vector<double> &start_full,
                           const std::vector<size_t> &var_indices,
                           const std::vector<double> &observed,
@@ -4201,9 +4130,94 @@ namespace
 }//namespace
 
 
+void FitParameters::add( const std::string &name, const double value )
+{
+  FitParameter par;
+  par.name = name;
+  par.value = value;
+  par.is_const = true;
+  m_pars.push_back( par );
+}//void FitParameters::add( name, value )
+
+
+void FitParameters::add( const std::string &name, const double value, const double step )
+{
+  FitParameter par;
+  par.name = name;
+  par.value = value;
+  par.step = step;
+  par.is_const = false;
+  m_pars.push_back( par );
+}//void FitParameters::add( name, value, step )
+
+
+void FitParameters::add( const std::string &name, const double value, const double step,
+                        const double lower, const double upper )
+{
+  FitParameter par;
+  par.name = name;
+  par.value = value;
+  par.step = step;
+  par.is_const = false;
+  par.has_lower = par.has_upper = true;
+  par.lower = lower;
+  par.upper = upper;
+  m_pars.push_back( par );
+}//void FitParameters::add( name, value, step, lower, upper )
+
+
+void FitParameters::setLowerLimit( const std::string &name, const double lower )
+{
+  for( FitParameter &par : m_pars )
+  {
+    if( par.name == name )
+    {
+      par.has_lower = true;
+      par.lower = lower;
+      return;
+    }
+  }//for( loop over parameters )
+
+  throw std::runtime_error( "FitParameters::setLowerLimit: no parameter named '" + name + "'" );
+}//void FitParameters::setLowerLimit(...)
+
+
+const std::vector<FitParameter> &FitParameters::parameters() const
+{
+  return m_pars;
+}//const std::vector<FitParameter> &FitParameters::parameters() const
+
+
+std::vector<double> FitParameters::values() const
+{
+  std::vector<double> answer( m_pars.size() );
+  for( size_t i = 0; i < m_pars.size(); ++i )
+    answer[i] = m_pars[i].value;
+  return answer;
+}//std::vector<double> FitParameters::values() const
+
+
+std::vector<double> FitParameters::stepSizes() const
+{
+  std::vector<double> answer( m_pars.size() );
+  for( size_t i = 0; i < m_pars.size(); ++i )
+    answer[i] = m_pars[i].step;
+  return answer;
+}//std::vector<double> FitParameters::stepSizes() const
+
+
+size_t FitParameters::numVariable() const
+{
+  size_t answer = 0;
+  for( const FitParameter &par : m_pars )
+    answer += (par.is_const ? 0 : 1);
+  return answer;
+}//size_t FitParameters::numVariable() const
+
+
 void fit_model( const std::string wtsession,
                       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                      std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                      std::shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams,
                       std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
                       std::function<void()> progress_fcn,
                       std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
@@ -4259,10 +4273,13 @@ void fit_model( const std::string wtsession,
     if( !chi2Fcn )
       throw runtime_error( "Programming logic error - Chi2Function pointer is null." );
 
-    // Convert to the Minuit2-independent parameter description the driver works off of,
-    //  and decompose into constant values and varied indices.  All further logic uses these,
-    //  so to_fit_parameter_defs() is the only Minuit2 dependency in this driver.
-    const vector<FitParameterDef> par_defs = to_fit_parameter_defs( *inputPrams );
+    // Decompose the parameters into constant values and varied indices; all further logic
+    //  works off these.  A parameter whose name carries the "_FIXED" suffix is held constant
+    //  however it was added - currently every such parameter is already added as constant, so
+    //  this only enforces the naming convention documented on `FitParameters`.
+    vector<ShieldingSourceFitCalc::FitParameter> par_defs = inputPrams->parameters();
+    for( ShieldingSourceFitCalc::FitParameter &def : par_defs )
+      def.is_const = (def.is_const || (def.name.find("_FIXED") != std::string::npos));
 
     vector<double> initial_full( par_defs.size(), 0.0 );
     vector<size_t> variable_indices;
@@ -4303,7 +4320,7 @@ void fit_model( const std::string wtsession,
     vector<size_t> fit_generic_an_indices;
     for( size_t i = 0; i < par_defs.size(); ++i )
     {
-      const FitParameterDef &p = par_defs[i];
+      const ShieldingSourceFitCalc::FitParameter &p = par_defs[i];
       if( !p.is_const
           && (p.name.find("Generic_") != string::npos)
           && (p.name.find("_AN") != string::npos) )

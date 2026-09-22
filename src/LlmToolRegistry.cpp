@@ -20,7 +20,6 @@
 #include <Wt/WApplication.h>
 #include <Wt/Dbo/Dbo.h>
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 

@@ -95,7 +95,6 @@
 
 #include <Eigen/Core>
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay.h"
 
@@ -597,10 +596,10 @@ ActFit fit_ba133_activity( const shared_ptr<DetectorPeakResponse> &drf, const do
   input.foreground = foreground;
   input.foreground_peaks = peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
   auto progress_fcn = [](){};

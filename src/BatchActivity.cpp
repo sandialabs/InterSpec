@@ -33,7 +33,6 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
@@ -1948,11 +1947,11 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       }//for( const BatchPeak::NotFitPeakMda &mda : peak_fit_results->not_fit_peak_mdas )
     }//if( there are limits to convert to activities )
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
     GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();

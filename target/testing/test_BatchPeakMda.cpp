@@ -30,7 +30,6 @@
 #define BOOST_TEST_MODULE BatchPeakMda_suite
 #include <boost/test/included/unit_test.hpp>
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -1379,13 +1378,13 @@ struct NominalActivityFixture
     chi_input.foreground = foreground;
     chi_input.foreground_peaks = foreground_peaks;
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
                 fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
     chi2_fcn = fcn_pars.first;
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
