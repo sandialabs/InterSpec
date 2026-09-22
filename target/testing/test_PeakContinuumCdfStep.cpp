@@ -57,7 +57,6 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakFit_imp.hpp"
 
 using namespace std;
@@ -847,41 +846,6 @@ BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_converts_on_read )
 }
 
 
-// PeakFitChi2Fcn packs the shared-continuum index and the OffsetType into a single double that it
-// hands Minuit2 as a parameter.  The OffsetType field was one decimal digit wide, so the two types
-// numbered 10 and 11 - BiLinearStepCDF and External - decoded back as NoOffset, tripping the
-// round-trip check in addPeaksToFitter(...) and aborting the fit for any ROI using them.
-// This is the revival of the commented-out `PeakFitChi2Fcn::testOffsetConversions()`.
-BOOST_AUTO_TEST_CASE( continuum_info_encoding_round_trips_every_type )
-{
-  for( const PeakContinuum::OffsetType type : all_offset_types() )
-  {
-    for( const int index : { -1, 0, 1, 2, 37, 500, 9998 } )
-    {
-      const string ctx = string(PeakContinuum::offset_type_str(type)) + " / index " + to_string(index);
-
-      // Both orders of setting the two fields must work.
-      double info = 0.0;
-      PeakFitChi2Fcn::setSharedIndexToContinuumInfo( info, index );
-      PeakFitChi2Fcn::setOffsetTypeToContinuumInfo( info, type );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToSharedIndex(info) == index,
-        ctx << ": index decoded as " << PeakFitChi2Fcn::continuumInfoToSharedIndex(info) );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToOffsetType(info) == type,
-        ctx << ": type decoded as "
-            << PeakContinuum::offset_type_str( PeakFitChi2Fcn::continuumInfoToOffsetType(info) ) );
-
-      info = 0.0;
-      PeakFitChi2Fcn::setOffsetTypeToContinuumInfo( info, type );
-      PeakFitChi2Fcn::setSharedIndexToContinuumInfo( info, index );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToSharedIndex(info) == index,
-        ctx << " (reversed order): index decoded as "
-            << PeakFitChi2Fcn::continuumInfoToSharedIndex(info) );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToOffsetType(info) == type,
-        ctx << " (reversed order): type decoded as "
-            << PeakContinuum::offset_type_str( PeakFitChi2Fcn::continuumInfoToOffsetType(info) ) );
-    }//for( index )
-  }//for( type )
-}
 
 
 // BiLinearStepCDF was reparameterised from two blended lines

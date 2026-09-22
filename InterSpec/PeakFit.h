@@ -32,8 +32,6 @@
 #include <vector>
 #include <functional>
 
-#include "Minuit2/FCNBase.h"
-
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFitLM.h" //necassary because we cant forward-declare the PeakFitLM::PeakFitLMOptions
 
@@ -41,32 +39,12 @@
 struct PeakFitDetPrefs;
 class DetectorPeakResponse;
 
-namespace ROOT
-{
-  namespace Minuit2
-  {
-    class MnUserParameters;
-  }//namespace Minuit2
-}//namespace ROOT
-
 namespace SpecUtils{ class Measurement; }
 
 typedef std::shared_ptr<const DetectorPeakResponse> DetctorPtr;
 typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
 // TODO: put everything in this file into a namespace
-
-
-/** Using google Ceres to fit peaks.
- 
- As of 20250501, it looks like using Ceres via PeakFitLM.h/.cpp is the best way to
- go for peak fitting.
- 
- 
- MultiPeakFitChi2Fcn and LinearProblemSubSolveChi2Fcn classes should be removed once we are fully into moving to using Ceres based peak fitter
- The followwing functions will also need to be removed: `refitPeaksThatShareROI_imp`, `fit_peak_for_user_click`
- */
-#define USE_LM_PEAK_FIT 1
 
 
 // 20240911: The minimum uncertainty allowed for a gamma spectrum channel.
@@ -324,21 +302,6 @@ std::vector< std::shared_ptr<const PeakDef> >
                             const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options );
 
 
-//For meaning of stat_threshold and hypothesis_threshold see notes for
-//  the chi2_significance_test(..) function
-//The fixedpeaks passed in are not included in the results, and are taken as
-//  fixed in the fit, and will not be deleted even if are not significant;
-//  also, they do not influence the X-range fit for.
-//  Note 20250502: during transition to LM-based fitting, only the MediumRefinementOnly and SmallRefinementOnly flags of
-//                 `fit_options` are checked for.  And they both map to PeakFitChi2Fcn::kRefitPeakParameters.
-void fitPeaks( const std::vector<PeakDef> &input_peaks,
-                      const double stat_threshold,
-                      const double hypothesis_threshold,
-                      std::shared_ptr<const SpecUtils::Measurement> data,
-                      std::vector<PeakDef> &results,
-                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
-                      const bool isHPGe ) throw();
-
 enum MultiPeakInitialGuessMethod
 {
   UniformInitialGuess,    //With a rough prefit performed
@@ -546,158 +509,6 @@ namespace ExperimentalAutomatedPeakSearch
 }//namespace ExperimentalAutomatedPeakSearch
 
 
-#define WRITE_CANDIDATE_PEAK_INFO_TO_FILE 0
-#define WRITE_CANDIDATE_PEAK_TERMINAL_DEBUG_LEVEL 0
 
-namespace ExperimentalPeakSearch
-{
-  
-  //search_for_peaks(): a convienience function to call below
-  //  search_for_peaks(...) that uses the current best guess of arguments
-  std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
-                                         const std::vector<PeakDef> &origpeaks,
-                                        const PeakFitUtils::CoarseResolutionType det_type );
-  
-  
-bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
-                               size_t &lower_channel,
-                               size_t &upper_channel );
-
-std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const SpecUtils::Measurement> meas,
-                                      const double min_chi2_dof_thresh,
-                                      const double min_gross_counts_sig_thresh,
-                                      const double above_line_chi2_thresh,
-                                      const int side_bins,
-                                      const int smooth_order,
-                                      const double second_deriv_thresh,
-                                      const double stat_thresh,
-                                      const double width_thresh,
-                                      const std::vector<PeakDef> &origpeaks, /*included in result, unmodified, wont have duplciate */
-                                      const PeakFitUtils::CoarseResolutionType det_type
-#if( WRITE_CANDIDATE_PEAK_INFO_TO_FILE )
-                                      , std::shared_ptr<const DetectorPeakResponse> detector
-#endif
-                                       );
-  
-  
-  class AutoPeakSearchChi2Fcn : public ROOT::Minuit2::FCNBase
-  {
-  public:
-    enum ResolutionType
-    {
-      Polynomial0thOrder,
-      Polynomial1stOrder,
-      Polynomial2ndOrder,
-      Polynomial3rdOrder,
-      SqrtEnergy
-    };//enum ResolutionType
-    
-    // TODO: currently doesn't account for/fit peak skew
-    
-  protected:
-    bool m_inited;
-    const PeakFitUtils::CoarseResolutionType m_det_type;
-    const bool m_isHighRes;
-    
-    std::shared_ptr< const std::vector<float> > m_y;
-    std::shared_ptr< const std::vector<float> > m_x;
-    std::shared_ptr<const SpecUtils::Measurement> m_meas;
-    
-    std::vector<PeakDef> m_candidates;
-    std::vector<PeakDef> m_fixed_peaks;
-    
-    std::vector< std::vector<bool> > m_grouped_isfixed;
-    std::vector< std::vector<PeakDef> > m_grouped_candidates;
-    
-    //precalculate the begining and ending iterators over energy and counts
-    std::vector< std::pair<const float *,const float *> > m_group_counts;
-    std::vector< std::pair<const float *,const float *> > m_group_energies;
-    
-    size_t m_lower_channel;
-    size_t m_upper_channel;
-    
-    size_t m_num_peakstotal;
-    size_t m_nbins_used;
-    
-    ResolutionType m_resolution_type;
-    
-  public:
-    int m_side_bins;
-    int m_smooth_order;
-    double m_second_deriv_thresh;
-    double m_stat_thresh;
-    double m_width_thresh;
-    
-    //m_nsigma_near_group: how near, in terms of average sigma, two peaks must be
-    //  to eachother in order to be in the same ROI.  The second-derivative ROI
-    //  must also overlap as well.
-    double m_nsigma_near_group;
-    
-    //m_min_chi2_dof_thresh: the minimum a peak must reduce a regions chi2/DOF
-    //  in order to be kept by significance_test(...)
-    double m_min_chi2_dof_thresh;
-    double m_min_gross_counts_sig_thresh;
-    
-  public:
-    //fixed_peaks: peaks that will be subtracted from data before finding aditional
-    //             candidate peaks.  These peaks will then be included in the fit,
-    //             and their properties allowed to vary, but in a more restricted
-    //             manor then the new peaks.
-    AutoPeakSearchChi2Fcn( std::shared_ptr<const SpecUtils::Measurement> data,
-                          const std::vector<PeakDef > &fixed_peaks,
-                          const PeakFitUtils::CoarseResolutionType det_type );
-    
-    size_t lower_spectrum_channel() const;
-    size_t upper_spectrum_channel() const;
-    size_t num_initial_candidate_peaks() const;
-    
-    void second_derivative( const std::vector<float> &input, std::vector<float> &results );
-    
-    std::vector<PeakDef> candidate_peaks( const std::vector<float> &energies,
-                                         const std::vector<float> &channel_counts );
-    
-    
-    
-    //init(): returns if fitting can proced;
-    bool init();
-    
-    virtual double Up() const;
-    virtual double operator()( const std::vector<double> &params ) const;
-    double peak_sigma( const double energy, const std::vector<double> &pars ) const;
-    
-    ROOT::Minuit2::MnUserParameters initial_parameters() const;
-    
-    double eval_chi2( const std::vector<double> &params ) const;
-    
-    void fit_peak_group( const std::vector<PeakDef> &peaks,
-                        const std::vector<double> &resolution_coefs,
-                        const size_t group,
-                        const double *pars,
-                        double &chi2,
-                        std::vector<PeakDef> &results ) const;
-    //pars_to_peaks(): returns chi2
-    double pars_to_peaks( std::vector<PeakDef> &resultpeaks,
-                         const std::vector<double> &pars,
-                         const std::vector<double> &errors = std::vector<double>() ) const;
-    
-    //punishment(..): the punishment to the chi2 for peaks being to close together
-    //  or not statistically significant
-    double punishment( const std::vector<PeakDef> &peaks ) const;
-    
-    double closeness_punishment( const std::vector<double> &means,
-                                const std::vector<double> &sigmas ) const;
-    //other_peaks may contain peak
-    bool significance_test( const PeakDef &peak,
-                           std::vector<PeakDef> other_peaks,
-                           double *chi2DOF = 0,
-                           double *grosCountsSigma = 0
-                           ) const;
-    
-    std::vector<PeakDef> filter_peaks( const std::vector<PeakDef> &all_peaks ) const;
-  };//class AutoPeakSearchChi2Fcn
-
-  
-
-}//namespace ExperimentalPeakSearch
 
 #endif //#ifndef PeakFit_h

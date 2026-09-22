@@ -76,7 +76,6 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
 #include "InterSpec/OneOverR2Calc.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/SpecMeasManager.h"

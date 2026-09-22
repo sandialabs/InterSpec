@@ -276,8 +276,6 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const PeakFitUtils::CoarseResolutionType det_type,
                                    const Wt::WFlags<PeakFitLMOptions> fit_options = {} );
 
-// Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.
-// Also, the `searchForPeakFromUser(...)` 
 
   
 /** Results of `fit_peaks_in_spectrum_LM(...)`.

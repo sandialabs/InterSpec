@@ -552,7 +552,7 @@ size_t findROILimit( const PeakDef &peak,
   if( direction < 0 && ((float(lastchannel)/float(nchannel)) < 0.04) )
   {
     size_t lower_channel = 0, upper_channel = 0;
-    ExperimentalPeakSearch::find_spectroscopic_extent( dataH, lower_channel, upper_channel );
+    PeakFitUtils::find_spectroscopic_extent( dataH, lower_channel, upper_channel );
     if( static_cast<int>(lower_channel) >= lastchannel )
     {
       lastchannel = lower_channel ? static_cast<indexing_t>(lower_channel - 1) : 0;
