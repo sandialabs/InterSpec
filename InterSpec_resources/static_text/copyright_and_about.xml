@@ -132,8 +132,6 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
-    <!-- jQuery is no longer used by InterSpec -->
-    <!-- qTip2 is no longer used by InterSpec -->
     <li><b><a href="https://d3js.org/" target="_blank">d3.js</a>:</b> a JavaScript charting library.
       <div style="margin-left: 1em; font-size: small;">
         <b>d3.js</b> powers rendering and interactions of the spectrum chart, gross-count time chart, and decay tool.
