@@ -214,8 +214,9 @@ namespace CeeLoUtils
     double farFieldDistanceCm() const;
 
     /** g(E,d) = K(E,d) * Omega_disk(d_far,a) / K(E,d_far): absolute efficiency at `face_dist_cm`
-     divided by this is the far-field intrinsic efficiency.  Reduces to the flat-disk solid angle
-     fraction far from the detector. */
+     divided by this is the far-field intrinsic efficiency on the OBJECT-disk footing described
+     above - not DetectorPeakResponse::intrinsicEfficiencyEval's crystal-disk one.  Reduces to the
+     flat-disk solid angle fraction far from the detector. */
     double intrinsicFactor( double energy_keV, double face_dist_cm );
 
     /** d ln(g)/d(d) at `face_dist_cm`, per cm (central difference) - about -2/d far from the

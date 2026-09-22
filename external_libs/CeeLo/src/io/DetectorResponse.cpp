@@ -50,6 +50,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace ceelo {
 
@@ -604,32 +605,111 @@ void EtaTable::finalize() {
     if (frac_sigma.size() != ln_eta.size())
         throw std::runtime_error("EtaTable: frac_sigma size mismatch");
 
-    // Group energy nodes into K-edge segments (both flanks are nodes).
+    // Normalize the edge list before anything reads it positionally.  `edges_keV`
+    //  is a public member and the deserializer takes it verbatim from the XML, so
+    //  an ascending, de-duplicated, in-range list cannot be assumed - while
+    //  `segment_of` only counts edges below E (order-agnostic), the stub-reach
+    //  test below indexes edges[s-1]/edges[s] as the segment's BOUNDS, which is
+    //  only meaningful when sorted.  Unsorted input could otherwise invert those
+    //  bounds and silently restore the fabricated-discontinuity bug this merge
+    //  exists to prevent.  Edges at or outside the node span are dropped: every
+    //  node lies on one side of such an edge, so it cannot separate any nodes,
+    //  and keeping it would only corrupt a neighbouring segment's bounds.
+    std::sort(edges_keV.begin(), edges_keV.end());
+    edges_keV.erase(std::unique(edges_keV.begin(), edges_keV.end(),
+                                [](double a, double b) { return b - a < 0.01; }),
+                    edges_keV.end());
+    edges_keV.erase(std::remove_if(edges_keV.begin(), edges_keV.end(),
+                                   [this](double e) {
+                                       return !(e > energies_keV.front())
+                                              || !(e < energies_keV.back());
+                                   }),
+                    edges_keV.end());
+
+    // Group energy nodes into K-edge segments (both flanks are nodes).  The
+    //  runs depend only on the energy axis, not on (c, p), so compute them once.
     std::vector<size_t> seg_id(ne);
     for (size_t e = 0; e < ne; ++e)
         seg_id[e] = segment_of(energies_keV[e], edges_keV);
+
+    std::vector<std::pair<size_t, size_t>> runs;   // inclusive [first, last]
+    for (size_t e0 = 0; e0 < ne;) {
+        size_t e1 = e0;
+        while (e1 + 1 < ne && seg_id[e1 + 1] == seg_id[e0]) ++e1;
+        runs.emplace_back(e0, e1);
+        e0 = e1 + 1;
+    }
+
+    // Fold a single-node run into a neighbour (following preferred, else
+    //  preceding) WHEN its lone node cannot stand in for its whole segment.
+    //  A one-node run becomes a constant stub below, and `SegCurve::eval`
+    //  clamps to the nearest segment, so that node's value is returned across
+    //  the segment's entire width.  Whether that is faithful or fabricated
+    //  depends on how far it has to reach:
+    //
+    //   - A lone node that IS a flank sits ~0.1% from the edge it brackets, and
+    //     pinning the edge value from one side is exactly what a flank is for.
+    //     The stub is then correct to within the flank width, and the clamp
+    //     reproduces the discontinuity - keep it.
+    //   - A lone node far from its segment's bounds is a fabrication.  Seen in
+    //     the wild: a 10/12 keV node pair with a retained 11.107 keV Ge K-edge
+    //     between them left 10 keV alone in its segment, so eval froze at the
+    //     10 keV value below the geometric crossover and at the 12 keV value
+    //     above it - a hard 95x jump at 10.95 keV that is nowhere in the data
+    //     (the two source pages were bit-identical).
+    //
+    //  `kStubReach` is 10x the 1e-3 relative flank half-width producers use, so
+    //  a somewhat wider flank convention still keeps its stub.  A lone node
+    //  bounded by two edges cannot pin both, and merging it does bridge an
+    //  edge; a monotone interpolant spanning the edge is a weaker guarantee
+    //  than segmentation, but it is continuous and bounded by its node values,
+    //  which freezing flat and inventing a jump is not.  A genuinely
+    //  single-node table (one run) always keeps the stub: constant is then the
+    //  only defensible answer.
+    const double kStubReach = 1.0e-2;
+    for (size_t i = 0; runs.size() > 1 && i < runs.size();) {
+        if (runs[i].second > runs[i].first) { ++i; continue; }
+
+        // How far this node must be extrapolated to cover its segment.
+        const double e_lone = energies_keV[runs[i].first];
+        const size_t s = seg_id[runs[i].first];
+        const double lo = (s == 0) ? energies_keV.front() : edges_keV[s - 1];
+        const double hi = (s >= edges_keV.size()) ? energies_keV.back()
+                                                  : edges_keV[s];
+        const double reach = std::max(e_lone / std::max(lo, 1e-300),
+                                      std::max(hi, 0.0) / std::max(e_lone, 1e-300))
+                             - 1.0;
+        if (reach <= kStubReach) { ++i; continue; }
+
+        if (i + 1 < runs.size())
+            runs[i + 1].first = runs[i].first;
+        else
+            runs[i - 1].second = runs[i].second;
+        runs.erase(runs.begin() + static_cast<long>(i));
+    }
 
     curves_.resize(nc * np);
     for (size_t c = 0; c < nc; ++c) {
         for (size_t p = 0; p < np; ++p) {
             SegCurve& curve = curves_[c * np + p];
-            size_t e0 = 0;
-            while (e0 < ne) {
-                size_t e1 = e0;
-                while (e1 + 1 < ne && seg_id[e1 + 1] == seg_id[e0]) ++e1;
+            curve.segs.reserve(runs.size());
+            curve.seg_lo.reserve(runs.size());
+            curve.seg_hi.reserve(runs.size());
+            for (const std::pair<size_t, size_t>& run : runs) {
                 std::vector<double> xs, ys;
-                for (size_t e = e0; e <= e1; ++e) {
+                xs.reserve(run.second - run.first + 2);
+                ys.reserve(run.second - run.first + 2);
+                for (size_t e = run.first; e <= run.second; ++e) {
                     xs.push_back(std::log(energies_keV[e]));
                     ys.push_back(ln_eta[index(e, c, p)]);
                 }
-                if (xs.size() == 1) {  // lone node: constant stub segment
+                if (xs.size() == 1) {  // lone node table: constant stub segment
                     xs.push_back(xs[0] + 1e-9);
                     ys.push_back(ys[0]);
                 }
                 curve.seg_lo.push_back(xs.front());
                 curve.seg_hi.push_back(xs.back());
                 curve.segs.emplace_back(std::move(xs), std::move(ys));
-                e0 = e1 + 1;
             }
         }
     }

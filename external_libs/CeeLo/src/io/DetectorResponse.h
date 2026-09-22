@@ -605,6 +605,13 @@ struct MuTable {
 /// SEGMENTED at the crystal K-edges (both flanks are nodes; no interpolant
 /// spans an edge); then PCHIP across cos-theta; then linear across phi
 /// (boxes only). Outside the node range: clamp (never extrapolate).
+///
+/// "Both flanks are nodes" is the producer's job, and `finalize()` no longer
+/// trusts it: a segment left with a single node is MERGED into a neighbour
+/// (see finalize()), because a one-node segment would otherwise interpolate
+/// as a constant and fabricate a discontinuity at the edge - for a Ge K-edge
+/// falling between a file's 10 and 12 keV nodes that was a ~95x jump that
+/// existed nowhere in the source data.
 class EtaTable {
 public:
     std::vector<double> energies_keV;   ///< ascending; edge flanks as nodes
@@ -612,7 +619,10 @@ public:
     std::vector<double> phis_deg;       ///< empty (axial) or quadrant nodes
     std::vector<double> ln_eta;         ///< [e][c][p] energy-major flattened
     std::vector<double> frac_sigma;     ///< per-node MC fractional sigma
-    std::vector<double> edges_keV;      ///< crystal K-edges (segment breaks)
+    /// Crystal K-edges (segment breaks).  `finalize()` sorts, de-duplicates and
+    ///  drops out-of-span entries in place, so a producer or a deserialized file
+    ///  need not supply them ordered.
+    std::vector<double> edges_keV;
 
     bool empty() const { return energies_keV.empty(); }
     size_t index(size_t e, size_t c, size_t p) const {
