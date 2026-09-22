@@ -25,7 +25,7 @@
 
 .DecayChainChartTable td, .DecayChainChartTable th
 {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color, #8c8c8c);
   padding: 4px;
 }
 

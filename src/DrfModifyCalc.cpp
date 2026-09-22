@@ -859,7 +859,7 @@ std::size_t seedFingerprint( const DetectorPeakResponse &drf )
   //  the air-attenuation flag are in here because the anchor builders read them: the range picks the
   //  energies a curve-derived anchor is sampled at (CeeLoUtils::transferAnchorForDrf,
   //  curveAnchorWithCovarianceForDrf, MakeMcResponseForDrf::groundingPointsForDrf), and the flag
-  //  changes what `intrinsicEfficiency` returns for an absolute curve, which is what they sample.
+  //  changes what `farFieldIntrinsicEfficiency` returns for an absolute curve, which is what they sample.
   boost::hash_combine( seed, drf.detectorDiameter() );
   boost::hash_combine( seed, drf.detectorSetback() );
   boost::hash_combine( seed, static_cast<int>(drf.geometryType()) );

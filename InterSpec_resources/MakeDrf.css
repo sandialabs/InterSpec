@@ -6,7 +6,7 @@
 /* Left column: diameter-only / full-geometry description of the detector */
 .MakeDrfGeomPanel {
   width: 310px;
-  border: 1px solid grey;
+  border: 1px solid var(--interspec-outline-color);
   margin-bottom: 4px;
   padding: 3px;
   box-sizing: border-box;
@@ -50,7 +50,7 @@
 }
 
 .MakeDrfOptionsRow > fieldset {
-  border: 1px solid #aaa;
+  border: 1px solid var(--interspec-outline-color);
   border-radius: 3px;
   padding: 1px 6px 4px 6px;
   margin: 0;
@@ -66,8 +66,8 @@
 .MakeDrfErrTxt {
   padding: 1em;
   margin: 2px;
-  color: red;
-  border: 1px solid grey;
+  color: var(--interspec-error-color);
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .MakeDrfFiles {
@@ -95,7 +95,7 @@
 
 .DrfSpecFile {
   /* border: 1px solid green; */
-  border: 3px solid #888888;
+  border: 3px solid var(--interspec-outline-color);
   border-radius: 3px;
 }
 
@@ -113,7 +113,7 @@
 
 .DrfSpecFileSample {
   margin-bottom: 3px;
-  border: 2px solid #888888;
+  border: 2px solid var(--interspec-outline-color);
   border-radius: 3px;
   -webkit-border-radius: 3px;
   -moz-border-radius: 3px;
@@ -135,7 +135,7 @@
 }
 
 .DrfPeak {
-  border: 1px solid grey;
+  border: 1px solid var(--interspec-outline-color);
   height: 28px;
   vertical-align: middle;
   margin-bottom: 3px;
@@ -193,7 +193,7 @@
 }
 
 .DrfSpecFileSampleBackgroundTxt {
-  color: red;
+  color: var(--interspec-error-color);
   padding-left: 1em;
 }
 
@@ -220,7 +220,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: normal;
-  background: white;
+  background: var(--interspec-panel-background);
   border-radius: 3px;
   -webkit-border-radius: 3px;
   -moz-border-radius: 3px;

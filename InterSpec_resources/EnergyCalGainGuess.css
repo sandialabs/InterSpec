@@ -28,7 +28,7 @@
   display: flex;
   flex-direction: column;
   padding: 6px 8px;
-  border-top: 1px solid var(--interspec-border-color, #e1e1e1);
+  border-top: 1px solid var(--interspec-border-color);
   gap: 6px;
   overflow-y: auto;
   max-height: 55%;
@@ -65,9 +65,9 @@
   align-items: center;
   gap: 4px;
   padding: 1px 6px;
-  border: 1px solid var(--interspec-border-color, #c4c4c4);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 9px;
-  background: var(--interspec-input-background, #f2f2f2);
+  background: var(--interspec-input-background);
 }
 
 .GainGuessChipClose
@@ -79,7 +79,7 @@
 
 .GainGuessChipClose:hover
 {
-  color: #c00;   /* semantic danger red - reads in light and dark */
+  color: var(--interspec-error-color);   /* semantic danger red - reads in light and dark */
 }
 
 /* Fixed-height, scrollable, bordered frame around the candidate table */
@@ -88,7 +88,7 @@
   height: 165px;
   overflow-y: auto;
   overflow-x: auto;
-  border: 1px solid var(--interspec-border-color, #e1e1e1);
+  border: 1px solid var(--interspec-border-color);
   border-radius: 3px;
   box-sizing: border-box;
 }
@@ -98,13 +98,13 @@
 {
   border-collapse: collapse;
   width: 100%;
-  color: var(--interspec-text-color, black);
+  color: var(--interspec-text-color);
 }
 
 .GainGuessTable td
 {
   padding: 2px 10px;
-  border-bottom: 1px solid var(--interspec-border-color, #e1e1e1);
+  border-bottom: 1px solid var(--interspec-border-color);
   white-space: nowrap;
 }
 
@@ -115,8 +115,8 @@
   top: 0;
   z-index: 1;
   font-weight: bold;
-  background: var(--interspec-input-background, #f2f2f2);
-  border-bottom: 2px solid var(--interspec-border-color, #c4c4c4);
+  background: var(--interspec-input-background);
+  border-bottom: 2px solid var(--interspec-border-color);
 }
 
 .GainGuessResultRow
@@ -126,12 +126,12 @@
 
 .GainGuessResultRow:hover td
 {
-  background: rgba(125, 175, 225, 0.15);   /* semantic accent blue */
+  background: var(--interspec-hover-background);   /* semantic accent blue */
 }
 
 .GainGuessResultRow.selected td
 {
-  background: rgba(125, 175, 225, 0.35);
+  background: var(--interspec-highlight-background);
 }
 
 /* The implied-nuclides cell can be long - let it wrap */
@@ -144,10 +144,10 @@
 {
   font-style: italic;
   padding: 2px 0px;
-  color: var(--interspec-text-color, black);
+  color: var(--interspec-text-color);
 }
 
 .GainGuessLowConfidence
 {
-  color: #c00;   /* semantic danger red */
+  color: var(--interspec-error-color);   /* semantic danger red */
 }

@@ -30,7 +30,7 @@
 
 .faqs-subject
 {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   margin-top: 15px
 }
 
@@ -57,7 +57,7 @@
 
 .faqs-subject-content
 {
-  border-top: 1px solid black;
+  border-top: 1px solid var(--interspec-outline-color);
   margin-top: 2px;
   width: calc( 100% - 20px );
   display: block;

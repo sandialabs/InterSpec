@@ -56,7 +56,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFit_imp.hpp"
-#include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -248,7 +248,7 @@ void batch_test()
       
       try
       {
-      const double det_eff = fixed_geom ? det->intrinsicEfficiency(erp.energy)
+      const double det_eff = fixed_geom ? det->farFieldIntrinsicEfficiency(erp.energy)
                                         : det->efficiency( erp.energy, distance );
       const double shield_trans = shield_transmission( erp.energy );
       const double gammas_per_bq_per_sec = erp.numPerSecond / parent_act;
@@ -306,7 +306,7 @@ void batch_test()
            << SpecUtils::printCompact( result.detection_limit, 5 )
            << endl;
       cout << endl;
-      const double intrinsic_eff = det->intrinsicEfficiency( erp.energy );
+      const double intrinsic_eff = det->farFieldIntrinsicEfficiency( erp.energy );
       const double geom_eff = det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
       cout << std::left << std::setw(label_width) << "\tDetector Intrinsic Eff.:"
            << SpecUtils::printCompact( intrinsic_eff, 5 )
@@ -2371,7 +2371,7 @@ PeakDef decon_trial_peak( const DeconComputeInput &input,
                         : static_cast<double>( input.drf->peakResolutionFWHM(peak_info.energy) );
   const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
   const bool fixed_geometry = input.drf->isFixedGeometry();
-  const double efficiency = fixed_geometry ? input.drf->intrinsicEfficiency( energy )
+  const double efficiency = fixed_geometry ? input.drf->farFieldIntrinsicEfficiency( energy )
                                            : input.drf->efficiency( energy, input.distance );
 
   double air_attenuation = 1.0;
@@ -3651,7 +3651,9 @@ decon_characteristic_limits( const DeconCharacteristicLimitInput &input )
   DeconCharacteristicLimitResult answer;
   answer.input = input;
 
-  const DeconComputeInput &base = input.decon_input;
+  // A value, not a reference: the detector response is swapped for a flat-disk snapshot
+  //  once the input has been validated (below), and every trial copies `base`.
+  DeconComputeInput base = input.decon_input;
   if( !std::isfinite(input.alpha) || !std::isfinite(input.beta)
      || !(input.alpha > 0.0) || !(input.alpha < 0.5)
      || !(input.beta > 0.0) || !(input.beta < 0.5) )
@@ -3689,6 +3691,13 @@ decon_characteristic_limits( const DeconCharacteristicLimitInput &input )
     answer.error_message = "invalid distance, shielding, detector response, or spectrum input";
     return answer;
   }
+
+  // The profile scan re-enters decon_compute_peaks for every trial activity, and each of those
+  //  evaluates the efficiency once per ROI peak - hundreds of lookups, all at this one distance.
+  //  Sample the response once here instead; `answer.input` above already holds the caller's
+  //  original input, so the snapshot cannot escape in the results.  A DRF with no Monte-Carlo
+  //  response (or a fixed-geometry one) comes back unchanged.
+  base.drf = CeeLoUtils::flatDiskSnapshotAt( base.drf, base.distance );
 
   for( const DeconRoiInfo &roi : base.roi_info )
   {

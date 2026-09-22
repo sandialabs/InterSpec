@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Carregar</message>
 
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Arquivo muito grande.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">Arquivo muito grande.</span>]]></message>
 
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Folha de Dicas (PDF)</message>

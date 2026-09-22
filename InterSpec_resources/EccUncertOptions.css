@@ -24,14 +24,14 @@
 {
   margin: 2px 0px 0px 0px;
   border-collapse: collapse;
-  border: 1px solid #888;
+  border: 1px solid var(--interspec-outline-color);
   font-size: smaller;
 }
 
 .EccUncertOptions .EccUncertExampleTable th,
 .EccUncertOptions .EccUncertExampleTable td
 {
-  border: 1px solid #888;
+  border: 1px solid var(--interspec-outline-color);
   padding: 0px 5px;
   text-align: center;
 }

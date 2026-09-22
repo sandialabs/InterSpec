@@ -29,13 +29,13 @@ div.RelActManualGui
   border-radius: 5px;
   
   background: none;
-  border: 1px solid #e1e1e1; /* To be consistent with LightNavMenu */
+  border: 1px solid var(--interspec-border-color); /* To be consistent with LightNavMenu */
 }
 
 .ManRelEffNucDisp.Wt-panel .titlebar {
   /* background: #C6C6C6; */
   background: none;
-  color: black;
+  color: var(--interspec-text-color);
   border-radius: 5px;
   height: 20px;
 }
@@ -89,7 +89,7 @@ div.RelActManualGui
 
 .RelActManualGui .ResultStack
 {
-  border-left: 1px solid gray;
+  border-left: 1px solid var(--interspec-outline-color);
   /* border-top: none; */
 }
 
@@ -193,26 +193,26 @@ div.RelActManualGui
 
 .RelActManualGui .CalcError
 {
-  color: red;
+  color: var(--interspec-error-color);
   font-weight: bold;
   text-align: center;
   
   padding: 1em;
   margin: 2px;
-  border: 1px solid red;
-  background: yellow;
+  border: 1px solid var(--interspec-error-color);
+  background: var(--interspec-error-background);
 }
 
 .RelActManualGui .CalcWarning
 {
-  color: navy;
+  color: var(--interspec-warning-color);
   font-weight: bold;
   text-align: center;
   
   padding: 1em;
   margin: 2px;
-  border: 1px solid grey;
-  background: yellow;
+  border: 1px solid var(--interspec-outline-color);
+  background: var(--interspec-warning-background);
 }
 
 .RelActManualGui .ToolAlphaWarning
@@ -230,13 +230,13 @@ div.RelActManualGui
   margin-top: 15px;
   table-layout: fixed;
   border-collapse: collapse;
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .resulttable th, .resulttable td {
   padding-left: 5px;
   padding-right: 5px;
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .releffeqn

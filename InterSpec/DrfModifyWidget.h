@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -62,7 +63,7 @@ namespace Wt
   class WContainerWidget;
 }//namespace Wt
 
-namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
+namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; enum class ResponseProfile : uint8_t; }
 
 /** A single "Modify Detector" editor consolidating the actions that used to
  crowd the Detector Response Select footer: renaming, geometry + Monte-Carlo
@@ -124,6 +125,17 @@ public:
    response is the only thing that can give it one.
    */
   Wt::Signal<bool> &mcResponseAvailable();
+  
+  /** Emitted when a Monte-Carlo run starts or ends, with whether one is now in flight.
+   
+   For an owner with footer buttons that must not act during a run - "Use" would offer to generate
+   a response while the run that would produce it is already going, and then silently do nothing,
+   since only one generation may be in flight at a time.
+   */
+  Wt::Signal<bool> &generatingChanged();
+  
+  /** Whether a Monte-Carlo run is in flight right now. */
+  bool isGenerating() const;
 
   /** Whether the DRF being modified needs a Monte-Carlo response before it can
    be used at all, i.e. it came in with no efficiency curve. */
@@ -164,6 +176,14 @@ public:
      `RowState::seedIndex` provenance.  #setState ignores a state whose detector is not the one on
      screen. */
     uint64_t drfHash = 0;
+
+    /** `DrfModifyCalc::seedFingerprint` of the content the currently-held response was generated
+     from - the other operand of #responseStale's comparison.
+
+     It has to be part of the state: the first operand is re-derived from the restored content, so
+     a fingerprint left over from a later generation would make the two describe different moments,
+     and a response built from content an undo has since replaced would read as current. */
+    std::size_t generatedFromFingerprint = 0;
 
     std::string name, description;
     int tabIndex = 0;
@@ -208,6 +228,26 @@ public:
 
   /** Restores a #currentState snapshot; records no undo/redo step of its own. */
   void setState( const std::shared_ptr<const ToolState> &state );
+  
+  /** Selects the "Geom & MC" tab, for an opener that already knows the user came here to
+   characterize a detector - e.g. one just imported from a QR code with a shape but no response.
+   
+   No-op when the tab does not exist (a fixed-geometry DRF has no geometry to model).  Selects by
+   item rather than index on purpose: the indices shift with that tab's presence.
+   */
+  void showGeometryTab();
+  
+  /** Selects the "Geom & MC" tab, switches to Geometry Modeled, sets the build method, and starts
+   a run - so a caller that already knows what the user asked for (e.g. the app-URL import's
+   detector-modeling choice) lands them on a characterization already under way, with this tool's
+   own progress, ETA and cancel controls, rather than on a form they have to drive themselves.
+   
+   Returns whether a generation actually started; false when the DRF has no geometry to model, the
+   geometry is incomplete, or a run is already in flight.
+   */
+  bool startMcCharacterization( const MakeMcResponseForDrf::Method method,
+                                const ceelo::ResponseProfile profile,
+                                const MakeMcResponseForDrf::Precision precision );
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
@@ -573,6 +613,11 @@ protected:
   int m_applyAfterGenerationId;
 
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
+
+  Wt::Signal<bool> m_generatingChanged;
+
+  /** What #m_generatingChanged last reported, so it only fires on a transition. */
+  bool m_wasGenerating;
 
   Wt::WFlags<RenderActions> m_renderFlags;
 

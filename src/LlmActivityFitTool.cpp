@@ -32,7 +32,6 @@
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
 
-#include "Minuit2/MnUserParameters.h"
 
 #include <Wt/WDialog.h>
 #include <Wt/WServer.h>
@@ -843,6 +842,7 @@ nlohmann::json format_shielding_source_state_to_json(
     if( shield.m_material )
     {
       shield_json["material"] = shield.m_material->name;
+      shield_json["density_g_per_cm3"] = shield.m_material->density * PhysicalUnits::cm3 / PhysicalUnits::g;
       shield_json["is_generic"] = false;
     }
     else if( shield.m_isGenericMaterial )
@@ -1244,13 +1244,27 @@ nlohmann::json executeModifyShieldingSourceConfig(
     ShieldingSourceFitCalc::ShieldingInfo shielding;
     shielding.m_geometry = modified_config.geometry;
 
-    // Try to find the material and normalize the name to match what's in the database
-    const std::shared_ptr<const Material> mat = materialDB->material( material );
+    // Try to find the material (a database name, or a chemical formula), and normalize the name
+    //  to match what's in the database
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    std::shared_ptr<const Material> mat = MaterialDB::materialFromNameOrFormula( material, db );
     if( !mat )
       throw runtime_error( "Material '" + material + "' not found in database" );
 
     // Use the canonical material name from the database (e.g., "Fe (iron)" instead of "Fe")
     material = mat->name;
+
+    // An optional density, if the actual object differs from the materials default
+    if( params.contains( "density_g_per_cm3" ) )
+    {
+      const double density_g_cm3 = params.value( "density_g_per_cm3", 0.0 );
+      if( (density_g_cm3 <= 0.0) || (density_g_cm3 > 50.0) )
+        throw runtime_error( "density_g_per_cm3 must be between 0 and 50 g/cm3" );
+
+      auto modified = make_shared<Material>( *mat );
+      modified->density = static_cast<float>( density_g_cm3 * PhysicalUnits::g / PhysicalUnits::cm3 );
+      mat = modified;
+    }//if( params.contains( "density_g_per_cm3" ) )
 
     shielding.m_material = mat;
     shielding.m_isGenericMaterial = false;
@@ -2467,7 +2481,6 @@ nlohmann::json fit_results_to_comprehensive_json(
                                   ? (fit_results->chi2 / fit_results->numDOF)
                                   : 0.0;
   fit_quality["num_peaks_used"] = fit_results->foreground_peaks.size();
-  fit_quality["edm"] = fit_results->edm;
   fit_quality["num_fcn_calls"] = fit_results->num_fcn_calls;
 
   // 2. Fit configuration
@@ -3170,10 +3183,25 @@ nlohmann::json executeActivityFitOneOff(
         throw runtime_error( "Each shielding must have a 'material' field (string)" );
 
       const string material_name = shield_json["material"].get<string>();
-      const std::shared_ptr<const Material> mat = materialDB->material( material_name );
+      std::shared_ptr<const Material> mat = MaterialDB::materialFromNameOrFormula( material_name, db );
 
       if( !mat )
         throw runtime_error( "Material '" + material_name + "' not found in database" );
+
+      // Optional field: density_g_per_cm3, if the actual object differs from the materials default
+      if( shield_json.contains("density_g_per_cm3") )
+      {
+        if( !shield_json["density_g_per_cm3"].is_number() )
+          throw runtime_error( "Shielding 'density_g_per_cm3' must be a number" );
+
+        const double density_g_cm3 = shield_json["density_g_per_cm3"].get<double>();
+        if( (density_g_cm3 <= 0.0) || (density_g_cm3 > 50.0) )
+          throw runtime_error( "Shielding 'density_g_per_cm3' must be between 0 and 50 g/cm3" );
+
+        auto modified = make_shared<Material>( *mat );
+        modified->density = static_cast<float>( density_g_cm3 * PhysicalUnits::g / PhysicalUnits::cm3 );
+        mat = modified;
+      }//if( shield_json.contains("density_g_per_cm3") )
 
       // Create ShieldingInfo object
       ShieldingSourceFitCalc::ShieldingInfo shielding;
@@ -3426,7 +3454,7 @@ nlohmann::json executeActivityFitOneOff(
   ShieldingSourceFitCalc::fit_model(
     "",  // Empty wtsession = synchronous
     chi2Fcn,
-    std::make_shared<ROOT::Minuit2::MnUserParameters>(inputParams),
+    std::make_shared<ShieldingSourceFitCalc::FitParameters>(inputParams),
     progress,
     [](){},  // No progress callback
     fit_results,

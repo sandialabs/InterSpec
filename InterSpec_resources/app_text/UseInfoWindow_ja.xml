@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">読み込み</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">ファイルが大きすぎます。</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">ファイルが大きすぎます。</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">チートシート (PDF)</message>

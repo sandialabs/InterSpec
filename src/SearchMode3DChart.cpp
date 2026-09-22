@@ -254,7 +254,7 @@ void SearchMode3DChart::initChart()
   m_chart = m_layout->addWidget( std::make_unique<Chart::WCartesian3DChart>(), 0, 0 );
   m_chart->setType( Chart::ChartType::Scatter );
   
-  m_chart->decorationStyle().setBorder( WBorder(BorderStyle::Solid, BorderWidth::Thin, WColor(StandardColor::Black)) );
+  m_chart->addStyleClass( "SearchMode3DChartArea" );
   
   double w = 800.0, h = 600.0;
   if( m_viewer )

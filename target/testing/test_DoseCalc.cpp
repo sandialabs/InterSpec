@@ -385,8 +385,6 @@ namespace
   // Round-trip helper: compute the "true" dose at (an, ad, distance) using
   // the forward model, then verify fit_areal_density recovers that ad.
   // Tolerance: 0.05 g/cm^2 absolute or 0.5% relative, whichever is looser.
-  // (May be loosened temporarily while the Minuit2 implementation is the
-  //  backing fit; will tighten back once the boost-bisect rewrite lands.)
   static void check_fit_ad( const std::string &nuclabel,
                             const double age,
                             const float distance,

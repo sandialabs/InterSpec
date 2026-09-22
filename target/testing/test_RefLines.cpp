@@ -699,7 +699,7 @@ BOOST_AUTO_TEST_CASE( testDrfEffect )
 
   // With a DRF, the 1173.23 line becomes largest
   input.m_detector_name = drf->name();
-  input.m_det_intrinsic_eff = drf->intrinsicEfficiencyFcn();
+  input.m_det_intrinsic_eff = drf->farFieldIntrinsicEfficiencyFcn();
   BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
   BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for '" << input.m_input_txt << "' should not be null");
   check_most_input_same( input, ref_lines->m_input );

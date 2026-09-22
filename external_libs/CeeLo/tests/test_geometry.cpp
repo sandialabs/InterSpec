@@ -35,6 +35,8 @@
 #include <cmath>
 #include <optional>
 #include <random>
+#include <vector>
+#include <utility>
 
 using namespace ceelo;
 
@@ -1030,6 +1032,563 @@ BOOST_AUTO_TEST_CASE(bore_hole_geometry_trace) {
     // On-axis ray: bore from z=2 to z=6 (depth=4, back face at z=6)
     // Active crystal only from z=0 to z=2
     BOOST_CHECK_CLOSE(scoring_length, 2.0, 1e-2);
+}
+
+
+// ============================================================
+//  The bore is empty over its WHOLE length, including where it
+//  passes through the dead layer.
+//
+//  Geometry::trace_cylinder_geometry used to build the dead layer as
+//  (outer crystal - UNBORED active cylinder), which refills with germanium
+//  every part of the bore that lies outside the active volume.  The bore
+//  escapes the active volume in four ways:
+//      z > dl_z_max    a back dead layer to drill through
+//      z < dl_z_min    a bore deep enough to reach the front dead layer
+//      rho > dl_r      a bore wider than the active radius
+//      the removed front corner of a bulletized crystal
+//  The tests below pin each one, plus the invariant that ties the tracer to
+//  the polycone Geant4Export writes and to the volumes
+//  src/DetectorGeometryDiagram.cpp reports.
+//
+//  These go through Geometry::trace_ray on purpose.  The older
+//  rounded_bore_tip_volume_matches_closed_form calls
+//  intersect_shaped_bored_cylinder directly, so it never reaches the
+//  dead-layer block and structurally cannot see any of this.
+// ============================================================
+
+namespace {
+
+struct Interval { double lo, hi; };
+
+std::vector<Interval> segments_of(const std::vector<PathSegment>& segs, bool scoring) {
+    std::vector<Interval> out;
+    for (const auto& s : segs) {
+        if (s.is_scoring == scoring) out.push_back({s.t_start, s.t_end});
+    }
+    return out;
+}
+
+double summed_length(const std::vector<PathSegment>& segs) {
+    double s = 0.0;
+    for (const auto& g : segs) s += g.length();
+    return s;
+}
+
+/// Chord through the solid the crystal actually IS: the outer cylinder (filleted
+/// or sharp) minus the bore.  Independent of the dead layer, and the same
+/// description Geant4Export's polycone uses, so the tracer's active + dead
+/// segments must reproduce it exactly.
+double solid_chord(const Eigen::Vector3d& o, const Eigen::Vector3d& d,
+                   double R, double L, double r_bore, double depth,
+                   double bullet_radius, bool rounded) {
+    const FrontFillet f = (bullet_radius > 0.0)
+        ? make_front_fillet(R, 0.0, bullet_radius)
+        : FrontFillet{0.0, 0.0, 0.0, 0.0};
+    RayHit segs[2];
+    const int n = intersect_shaped_bored_cylinder(o, d, R, r_bore, 0.0, L,
+                                                  L - depth, L, f, rounded, segs);
+    double s = 0.0;
+    for (int i = 0; i < n; ++i) {
+        if (segs[i].valid()) s += segs[i].length();
+    }
+    return s;
+}
+
+/// A seeded fan of rays: origins on a shell around the crystal plus some
+/// interior ones, directions uniform on the sphere.  Deterministic.
+std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>
+ray_fan(unsigned seed, int n, double R, double L) {
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> u(-1.0, 1.0), phi(0.0, 2.0 * M_PI);
+    std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> out;
+    out.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        // Half the origins outside the crystal, half inside it.
+        const double scale = (i % 2 == 0) ? 3.0 : 0.9;
+        const double cz = u(rng), sz = std::sqrt(std::max(0.0, 1.0 - cz * cz));
+        const double p = phi(rng);
+        Eigen::Vector3d o(scale * R * sz * std::cos(p), scale * R * sz * std::sin(p),
+                          0.5 * L + scale * L * cz);
+        const double dcz = u(rng), dsz = std::sqrt(std::max(0.0, 1.0 - dcz * dcz));
+        const double dp = phi(rng);
+        Eigen::Vector3d d(dsz * std::cos(dp), dsz * std::sin(dp), dcz);
+        out.emplace_back(o, d.normalized());
+    }
+    return out;
+}
+
+} // namespace
+
+
+/// T7 -- the no-op proof.  Whenever the bore lies entirely inside the active
+/// volume (no back dead layer, apex behind the front one, inside the active
+/// radius, clear of the active fillet) the new bore subtraction is provably a
+/// no-op, and "provably" here means BIT FOR BIT, not to some tolerance.  That
+/// is what keeps the innermost transport loop of every ordinary coaxial HPGe --
+/// and every stored golden response, all of which use back = 0 -- unchanged.
+///
+/// The pre-fix arithmetic is re-implemented below as the reference, so this
+/// test is meaningful run against either version of the tracer.  It was written
+/// first and confirmed green on the UNMODIFIED tracer.
+BOOST_AUTO_TEST_CASE(bore_inside_active_volume_leaves_dead_layer_bit_identical) {
+    auto ge = make_HPGe();
+    const double R = 3.0, L = 6.0, r_bore = 0.5, depth = 4.0;
+    const double t_f = 0.07, t_s = 0.07;
+
+    for (double bullet : {0.0, 0.8}) {
+        for (bool rounded : {false, true}) {
+            Geometry geom;
+            geom.set_detector(&ge, CylinderDims{R, L});
+            if (bullet > 0.0) geom.set_bullet_radius(bullet);
+            geom.set_bore_hole(r_bore, depth, rounded);
+            geom.set_dead_layer(t_f, t_s, 0.0);   // back = 0: the bore cannot escape
+
+            const double dl_r = R - t_s, dl_z0 = t_f, dl_z1 = L;
+            const bool bulletized = (bullet > 0.0);
+            const FrontFillet outer_f = bulletized
+                ? make_front_fillet(R, 0.0, bullet) : FrontFillet{0.0, 0.0, 0.0, 0.0};
+            const FrontFillet active_f = bulletized
+                ? make_front_fillet(dl_r, dl_z0, std::max(0.0, bullet - std::max(t_f, t_s)))
+                : FrontFillet{0.0, 0.0, 0.0, 0.0};
+
+            for (const auto& ray : ray_fan(20260918u, 2000, R, L)) {
+                const Eigen::Vector3d& o = ray.first;
+                const Eigen::Vector3d& d = ray.second;
+
+                // --- the pre-fix dead-layer arithmetic, verbatim ---
+                std::vector<Interval> ref;
+                auto outer_hit = bulletized
+                    ? intersect_bulletized_cylinder(o, d, R, 0.0, L, outer_f)
+                    : intersect_cylinder(o, d, R, 0.0, L);
+                auto inner_hit = bulletized
+                    ? intersect_bulletized_cylinder(o, d, dl_r, dl_z0, dl_z1, active_f)
+                    : intersect_cylinder(o, d, dl_r, dl_z0, dl_z1);
+                if (outer_hit && outer_hit->valid()) {
+                    const double t0_out = std::max(outer_hit->t_enter, 0.0);
+                    const double t1_out = outer_hit->t_exit;
+                    if (inner_hit && inner_hit->valid()) {
+                        const double t0_in = std::max(inner_hit->t_enter, 0.0);
+                        const double t1_in = inner_hit->t_exit;
+                        if (t0_out < t0_in - 1e-12) ref.push_back({t0_out, t0_in});
+                        if (t1_in < t1_out - 1e-12) ref.push_back({t1_in, t1_out});
+                    } else {
+                        ref.push_back({t0_out, t1_out});
+                    }
+                }
+
+                const std::vector<Interval> got =
+                    segments_of(geom.trace_ray(o, d), /*scoring=*/false);
+
+                BOOST_REQUIRE_EQUAL(got.size(), ref.size());
+                for (size_t k = 0; k < ref.size(); ++k) {
+                    // Deliberate == on doubles: the claim is bit identity.
+                    BOOST_CHECK_EQUAL(got[k].lo, ref[k].lo);
+                    BOOST_CHECK_EQUAL(got[k].hi, ref[k].hi);
+                }
+            }
+        }
+    }
+}
+
+
+/// T1 -- the plain case: a back dead layer the bore is drilled through.
+BOOST_AUTO_TEST_CASE(back_dead_layer_does_not_plug_the_bore) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_bore_hole(0.5, 4.0);            // bore z in [2, 6]
+    geom.set_dead_layer(0.05, 0.05, 0.5);    // active z in [0.05, 5.5]
+
+    const auto segs = geom.trace_ray(Eigen::Vector3d(0.0, 0.0, -10.0),
+                                     Eigen::Vector3d(0.0, 0.0, 1.0));
+
+    // Front dead layer, then active crystal up to the bore apex.  Nothing
+    // beyond z = 2 (t = 12): the rest of the chord is the hole.  Before the fix
+    // there was a third segment, a spurious [15.5, 16] of dead germanium.
+    BOOST_REQUIRE_EQUAL(segs.size(), 2u);
+    BOOST_CHECK(!segs[0].is_scoring);
+    BOOST_CHECK_CLOSE(segs[0].t_start, 10.0, 1e-9);
+    BOOST_CHECK_CLOSE(segs[0].t_end, 10.05, 1e-9);
+    BOOST_CHECK(segs[1].is_scoring);
+    BOOST_CHECK_CLOSE(segs[1].t_start, 10.05, 1e-9);
+    BOOST_CHECK_CLOSE(segs[1].t_end, 12.0, 1e-9);
+    for (const auto& s : segs) BOOST_CHECK_LE(s.t_start, 12.0 + 1e-9);
+}
+
+
+/// T2 -- the control for T1: a ray that misses the bore must still see the
+/// whole back dead layer.  Fails if someone "fixes" T1 by deleting it.
+BOOST_AUTO_TEST_CASE(back_dead_layer_survives_clear_of_the_bore) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_bore_hole(0.5, 4.0);
+    geom.set_dead_layer(0.05, 0.05, 0.5);
+
+    const auto segs = geom.trace_ray(Eigen::Vector3d(0.8, 0.0, -10.0),
+                                     Eigen::Vector3d(0.0, 0.0, 1.0));
+
+    BOOST_REQUIRE_EQUAL(segs.size(), 3u);
+    BOOST_CHECK(!segs[0].is_scoring);
+    BOOST_CHECK(segs[1].is_scoring);
+    BOOST_CHECK(!segs[2].is_scoring);
+    BOOST_CHECK_CLOSE(segs[2].t_start, 15.5, 1e-9);
+    BOOST_CHECK_CLOSE(segs[2].t_end, 16.0, 1e-9);
+}
+
+
+/// T3 -- a bore whose apex sits AHEAD of the active slab, so on the axis there
+/// is no active crystal at all and only the front dead layer is material.
+BOOST_AUTO_TEST_CASE(bore_reaching_past_the_front_dead_layer_is_empty) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_bore_hole(0.5, 5.9);            // apex at z = 0.1
+    geom.set_dead_layer(0.2, 0.05, 0.3);     // active z in [0.2, 5.7]
+
+    const auto segs = geom.trace_ray(Eigen::Vector3d(0.0, 0.0, -10.0),
+                                     Eigen::Vector3d(0.0, 0.0, 1.0));
+
+    // Only z in [0, 0.1] is germanium.  Pre-fix: two dead segments, 0.5 cm.
+    BOOST_REQUIRE_EQUAL(segs.size(), 1u);
+    BOOST_CHECK(!segs[0].is_scoring);
+    BOOST_CHECK_CLOSE(segs[0].t_start, 10.0, 1e-9);
+    BOOST_CHECK_CLOSE(segs[0].t_end, 10.1, 1e-9);
+}
+
+
+/// T4 -- the inner_hit == nullopt branch, which used to be the worst case: a ray
+/// crossing the front dead layer ahead of a deep bore misses the active cylinder
+/// entirely, and the WHOLE crystal chord -- hole included -- was scored as
+/// germanium.
+BOOST_AUTO_TEST_CASE(ray_missing_the_active_cylinder_still_sees_the_bore) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_bore_hole(0.5, 5.9);
+    geom.set_dead_layer(0.2, 0.05, 0.3);
+
+    // z = 0.15 is inside the front dead layer, ahead of the active slab.
+    const auto segs = geom.trace_ray(Eigen::Vector3d(-10.0, 0.0, 0.15),
+                                     Eigen::Vector3d(1.0, 0.0, 0.0));
+
+    BOOST_REQUIRE_EQUAL(segs.size(), 2u);
+    BOOST_CHECK(!segs[0].is_scoring);
+    BOOST_CHECK(!segs[1].is_scoring);
+    BOOST_CHECK_CLOSE(segs[0].t_start, 7.0, 1e-9);
+    BOOST_CHECK_CLOSE(segs[0].t_end, 9.5, 1e-9);
+    BOOST_CHECK_CLOSE(segs[1].t_start, 10.5, 1e-9);
+    BOOST_CHECK_CLOSE(segs[1].t_end, 13.0, 1e-9);
+}
+
+
+/// T5 -- T4 with a round-tipped drill, so the hole's half-width at the ray's
+/// depth comes off the tip hemisphere rather than the straight tube.
+BOOST_AUTO_TEST_CASE(rounded_bore_tip_is_empty_in_the_front_dead_layer) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_bore_hole(0.5, 5.9, /*rounded_tip=*/true);  // apex 0.1, centre 0.6
+    geom.set_dead_layer(0.2, 0.05, 0.3);
+
+    const auto segs = geom.trace_ray(Eigen::Vector3d(-10.0, 0.0, 0.15),
+                                     Eigen::Vector3d(1.0, 0.0, 0.0));
+
+    // Ball centred (0,0,0.6) of radius 0.5; at z = 0.15 the half-width is
+    // sqrt(0.5^2 - 0.45^2) = sqrt(0.0475).
+    const double h = std::sqrt(0.0475);
+    BOOST_REQUIRE_EQUAL(segs.size(), 2u);
+    BOOST_CHECK_SMALL(segs[0].t_start - 7.0, 1e-12);
+    BOOST_CHECK_SMALL(segs[0].t_end - (10.0 - h), 1e-12);
+    BOOST_CHECK_SMALL(segs[1].t_start - (10.0 + h), 1e-12);
+    BOOST_CHECK_SMALL(segs[1].t_end - 13.0, 1e-12);
+}
+
+
+/// T6 -- the radial escape: a bore wider than the ACTIVE radius, because the
+/// side dead layer ate the crystal down past it.  GeometryDescriptor::problems()
+/// rejects this on the load path (GeometryProblem::BoreInsideDeadLayer), but
+/// Geometry's own API accepts it -- set_bore_hole only checks the OUTER radius
+/// and set_dead_layer checks nothing -- so the tracer has to be right anyway.
+BOOST_AUTO_TEST_CASE(bore_wider_than_the_active_radius_is_still_empty) {
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, 6.0});
+    geom.set_dead_layer(0.0, 2.6, 0.0);      // active radius 0.4
+    geom.set_bore_hole(0.5, 4.0);            // wider than that; bore z in [2, 6]
+
+    // rho = 0.45 lies between the active radius and the bore radius.
+    const auto segs = geom.trace_ray(Eigen::Vector3d(0.45, 0.0, -10.0),
+                                     Eigen::Vector3d(0.0, 0.0, 1.0));
+
+    BOOST_REQUIRE_EQUAL(segs.size(), 1u);
+    BOOST_CHECK(!segs[0].is_scoring);
+    BOOST_CHECK_CLOSE(segs[0].t_start, 10.0, 1e-9);
+    BOOST_CHECK_CLOSE(segs[0].t_end, 12.0, 1e-9);   // pre-fix: 16.0
+}
+
+
+/// T11 -- a BLUNT round-tipped bore (depth < 2*bore_radius, which set_bore_hole
+/// permits) must not eat material past its own mouth.  The capping ball would
+/// otherwise reach beyond bore_z_end, where the union with the straight tube is
+/// NOT convex -- the profile steps down from bore_radius to the ball's radius --
+/// so the hull of the two intervals spans non-bore space.
+///
+/// Callers clamp the bore to the solid they cut, which hides this for every
+/// geometry whose solid ends at the crystal back face.  A NEGATIVE back dead
+/// layer is the exception: the active cylinder then extends past that face, the
+/// gap falls inside it, and real active material was dropped (1.8% of the
+/// overhang band before intersect_bore() started confining the ball).
+BOOST_AUTO_TEST_CASE(blunt_rounded_bore_does_not_eat_past_its_mouth) {
+    // The bore solid, stated directly rather than as an interval.
+    const double r_bore = 0.5, L = 6.0, depth = 0.6;   // blunt: 0.6 < 2*0.5
+    const double z_apex = L - depth, z_tip = z_apex + r_bore;   // ball top 6.4 > L
+    // Tolerance is on the SURFACE, not along the ray: a grazing chord turns a
+    // 1e-14 cm surface error into millimetres of arc length, so testing the
+    // ray-parameter span would flag rounding as a defect.
+    const double kSurf = 1e-9;
+    auto in_bore = [&](const Eigen::Vector3d& p) {
+        const double rho = std::hypot(p.x(), p.y());
+        if (p.z() > L + kSurf || p.z() < z_apex - kSurf) return false;
+        if (p.z() >= z_tip) return rho <= r_bore + kSurf;
+        const double dz = p.z() - z_tip;
+        return std::hypot(rho, dz) <= r_bore + kSurf;
+    };
+
+    // (a) the interval never covers anything that is not bore
+    std::mt19937 rng(31337u);
+    std::uniform_real_distribution<double> ut(0.0, 1.0);
+    int checked = 0;
+    for (const auto& ray : ray_fan(5150u, 14000, 3.0, L)) {
+        const std::optional<RayHit> h = intersect_bore(ray.first, ray.second, r_bore,
+                                                       z_apex, L, /*rounded_tip=*/true);
+        if (!h || !h->valid()) continue;
+        const double a = std::max(h->t_enter, 0.0), b = h->t_exit;
+        for (int k = 0; k <= 60; ++k) {
+            const Eigen::Vector3d p = ray.first + (a + (b - a) * k / 60.0) * ray.second;
+            BOOST_REQUIRE_MESSAGE(in_bore(p),
+                "intersect_bore covers a point outside the bore at z=" << p.z());
+            ++checked;
+        }
+    }
+    BOOST_CHECK_GT(checked, 1000);   // the fan must actually be hitting the bore
+
+    // (b) and nothing downstream drops active material past the back face
+    auto ge = make_HPGe();
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{3.0, L});
+    geom.set_bore_hole(r_bore, depth, /*rounded_tip=*/true);
+    geom.set_dead_layer(0.07, 0.07, -0.4);   // NEGATIVE: active runs to z = 6.4
+    const double dl_r = 3.0 - 0.07, dl_z1 = L + 0.4;
+
+    int overhang = 0, dropped = 0;
+    for (const auto& ray : ray_fan(6161u, 14000, 3.0, L)) {
+        const auto segs = geom.trace_ray(ray.first, ray.second);
+        for (int k = 0; k < 40; ++k) {
+            const double t = 30.0 * ut(rng);
+            const Eigen::Vector3d p = ray.first + t * ray.second;
+            // the band above the crystal back face where the active cylinder still reaches
+            if (p.z() <= L + 1e-6 || p.z() >= dl_z1 - 1e-6) continue;
+            if (std::hypot(p.x(), p.y()) > dl_r - 1e-6 || in_bore(p)) continue;
+            ++overhang;
+            bool scoring = false;
+            for (const auto& sg : segs) {
+                if (t > sg.t_start && t < sg.t_end) { scoring = sg.is_scoring; break; }
+            }
+            if (!scoring) ++dropped;
+        }
+    }
+    BOOST_CHECK_GT(overhang, 500);          // the probe has to reach the band
+    BOOST_CHECK_EQUAL(dropped, 0);
+}
+
+/// T8 -- the invariant that ties all three descriptions of the crystal together:
+/// active + dead is the chord of (outer solid - bore), whatever the ray.  That
+/// is exactly what Geant4Export writes as a single polycone and what
+/// src/DetectorGeometryDiagram.cpp reports as v_solid - v_bore.
+BOOST_AUTO_TEST_CASE(active_plus_dead_is_the_crystal_minus_the_bore) {
+    auto ge = make_HPGe();
+    const double R = 3.0, L = 6.0, r_bore = 0.5, depth = 4.5;
+
+    for (double bullet : {0.0, 0.8}) {
+        for (bool rounded : {false, true}) {
+            Geometry geom;
+            geom.set_detector(&ge, CylinderDims{R, L});
+            if (bullet > 0.0) geom.set_bullet_radius(bullet);
+            geom.set_bore_hole(r_bore, depth, rounded);
+            geom.set_dead_layer(0.07, 0.07, 0.3);   // the combination that used to break
+
+            for (const auto& ray : ray_fan(4242u, 1500, R, L)) {
+                const auto segs = geom.trace_ray(ray.first, ray.second);
+
+                BOOST_CHECK_SMALL(summed_length(segs)
+                                      - solid_chord(ray.first, ray.second, R, L,
+                                                    r_bore, depth, bullet, rounded),
+                                  1e-9);
+
+                // Structure: sorted, non-overlapping, positive, and never more
+                // than the three dead pieces the geometry can produce.
+                int n_dead = 0;
+                for (size_t i = 0; i < segs.size(); ++i) {
+                    BOOST_CHECK_GE(segs[i].t_end, segs[i].t_start);
+                    if (!segs[i].is_scoring) ++n_dead;
+                    if (i) BOOST_CHECK_GE(segs[i].t_start, segs[i - 1].t_end - 1e-12);
+                }
+                BOOST_CHECK_LE(n_dead, 3);
+            }
+        }
+    }
+}
+
+
+/// T9 -- absolute dead-layer volume against the closed form, by the same
+/// parallel-beam quadrature rounded_bore_tip_volume_matches_closed_form uses,
+/// but summing the NON-scoring segments of a full trace_ray.
+BOOST_AUTO_TEST_CASE(traced_dead_layer_volume_matches_closed_form) {
+    auto ge = make_HPGe();
+    const double R = 3.0, L = 6.0, r_bore = 0.5, depth = 4.0;
+    const double t_f = 0.05, t_s = 0.05, t_b = 0.5;
+
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{R, L});
+    geom.set_bore_hole(r_bore, depth);
+    geom.set_dead_layer(t_f, t_s, t_b);
+
+    // Midpoint quadrature error here is set by the radial discontinuities the
+    // chord length has -- at the bore edge and at the active radius -- so this
+    // needs more rings than rounded_bore_tip_volume_matches_closed_form, which
+    // crosses only one.
+    const int N = 200000;
+    double dead_v = 0.0;
+    std::vector<PathSegment> segs;
+    for (int i = 0; i < N; ++i) {
+        const double rho = R * (i + 0.5) / N;
+        const double w = 2.0 * M_PI * rho * (R / N);
+        geom.trace_ray(Eigen::Vector3d(rho, 0.0, -20.0), Eigen::Vector3d(0.0, 0.0, 1.0), segs);
+        for (const auto& s : segs) {
+            if (!s.is_scoring) dead_v += s.length() * w;
+        }
+    }
+
+    // dead = solid - bore - active, with the bore counted over its whole length.
+    const double dl_r = R - t_s, dl_z0 = t_f, dl_z1 = L - t_b;
+    const double bore_z0 = L - depth;
+    const double v_solid = M_PI * R * R * L;
+    const double v_bore = M_PI * r_bore * r_bore * depth;
+    const double v_bore_in_active =
+        M_PI * r_bore * r_bore * std::max(0.0, std::min(dl_z1, L) - std::max(bore_z0, dl_z0));
+    const double v_active = M_PI * dl_r * dl_r * (dl_z1 - dl_z0) - v_bore_in_active;
+    const double v_dead = v_solid - v_bore - v_active;
+
+    BOOST_CHECK_CLOSE(dead_v, v_dead, 0.02);
+
+    // And record the size of the error the fix removed: the pre-fix tracer
+    // reported the phantom plug pi*r^2*t_b on top, which this check rejects.
+    const double v_dead_prefix = v_dead + M_PI * r_bore * r_bore * t_b;
+    BOOST_CHECK_GT(std::fabs(dead_v - v_dead_prefix) / v_dead_prefix, 0.01);
+}
+
+
+/// T10 -- an independent oracle.  Classify points along the ray with direct
+/// predicates instead of interval algebra, and require the segment list to
+/// agree; immune to exactly the class of mistake being fixed.  Run on the
+/// configuration where every code path meets: bulletized, round-tipped bore,
+/// and a back dead layer.
+BOOST_AUTO_TEST_CASE(segments_agree_with_a_direct_point_classifier) {
+    auto ge = make_HPGe();
+    const double R = 3.0, L = 6.0, bullet = 0.8;
+    const double r_bore = 0.5, depth = 4.5;
+    const double t_f = 0.07, t_s = 0.07, t_b = 0.3;
+
+    Geometry geom;
+    geom.set_detector(&ge, CylinderDims{R, L});
+    geom.set_bullet_radius(bullet);
+    geom.set_bore_hole(r_bore, depth, /*rounded_tip=*/true);
+    geom.set_dead_layer(t_f, t_s, t_b);
+
+    const double dl_r = R - t_s, dl_z0 = t_f, dl_z1 = L - t_b;
+    const double bore_z0 = L - depth, z_tip = bore_z0 + r_bore;
+    const FrontFillet outer_f = make_front_fillet(R, 0.0, bullet);
+    const FrontFillet active_f =
+        make_front_fillet(dl_r, dl_z0, std::max(0.0, bullet - std::max(t_f, t_s)));
+
+    // Inside a (possibly filleted) cylinder: within the sharp cylinder and not
+    // in the removed corner.
+    auto in_cyl = [](const Eigen::Vector3d& p, double r, double z0, double z1,
+                     const FrontFillet& f) {
+        const double rho = std::hypot(p.x(), p.y());
+        if (rho > r || p.z() < z0 || p.z() > z1) return false;
+        if (f.r_b <= 0.0 || rho <= f.rho_c || p.z() >= f.z_c) return true;
+        const double dr = rho - f.rho_c, dz = p.z() - f.z_c;
+        return dr * dr + dz * dz <= f.r_b * f.r_b;
+    };
+    auto in_bore = [&](const Eigen::Vector3d& p) {
+        const double rho = std::hypot(p.x(), p.y());
+        if (p.z() > L || p.z() < bore_z0) return false;
+        if (p.z() >= z_tip) return rho <= r_bore;
+        const double dz = p.z() - z_tip;
+        return rho * rho + dz * dz <= r_bore * r_bore;
+    };
+    // Distance-to-surface proxies, so samples that graze a boundary are skipped.
+    auto near_surface = [&](const Eigen::Vector3d& p) {
+        const double rho = std::hypot(p.x(), p.y());
+        const double eps = 1e-7;
+        return std::fabs(rho - R) < eps || std::fabs(rho - dl_r) < eps
+            || std::fabs(rho - r_bore) < eps || std::fabs(p.z()) < eps
+            || std::fabs(p.z() - L) < eps || std::fabs(p.z() - dl_z0) < eps
+            || std::fabs(p.z() - dl_z1) < eps || std::fabs(p.z() - bore_z0) < eps
+            || std::fabs(std::hypot(rho - outer_f.rho_c, p.z() - outer_f.z_c)
+                         - outer_f.r_b) < eps
+            || std::fabs(std::hypot(rho - active_f.rho_c, p.z() - active_f.z_c)
+                         - active_f.r_b) < eps
+            || std::fabs(std::hypot(rho, p.z() - z_tip) - r_bore) < eps;
+    };
+
+    std::mt19937 rng(777u);
+    std::uniform_real_distribution<double> ut(0.0, 1.0);
+
+    // Sample t only where the ray is inside the crystal's bounding cylinder.
+    // Spraying t over the whole line puts almost every sample in empty space,
+    // and the plug being tested for is a 0.24 cm3 disk -- it would be missed.
+    int sampled_in_bore_beyond_active = 0;
+    for (const auto& ray : ray_fan(909u, 2000, R, L)) {
+        const auto segs = geom.trace_ray(ray.first, ray.second);
+        auto span = intersect_cylinder(ray.first, ray.second, R, 0.0, L);
+        if (!span || !span->valid()) continue;
+        const double t_lo = std::max(span->t_enter, 0.0), t_hi = span->t_exit;
+        for (int k = 0; k < 80; ++k) {
+            const double t = t_lo + (t_hi - t_lo) * ut(rng);
+            const Eigen::Vector3d p = ray.first + t * ray.second;
+            if (near_surface(p)) continue;
+
+            const bool solid = in_cyl(p, R, 0.0, L, outer_f) && !in_bore(p);
+            const bool active = solid && in_cyl(p, dl_r, dl_z0, dl_z1, active_f);
+
+            const PathSegment* found = nullptr;
+            for (const auto& s : segs) {
+                if (t > s.t_start && t < s.t_end) { found = &s; break; }
+            }
+
+            if (in_bore(p) && p.z() > dl_z1) ++sampled_in_bore_beyond_active;
+
+            if (!solid) {
+                BOOST_CHECK_MESSAGE(found == nullptr,
+                    "point outside the crystal (or inside the bore) landed in a segment");
+            } else {
+                BOOST_REQUIRE_MESSAGE(found != nullptr, "solid point landed in no segment");
+                BOOST_CHECK_EQUAL(found->is_scoring, active);
+            }
+        }
+    }
+
+    // The oracle is only worth anything if it actually visited the region the
+    // fix is about -- the part of the bore past the active volume, where the
+    // phantom plug used to be.  Guard against a future edit quietly sampling
+    // its way around the bug.
+    BOOST_CHECK_MESSAGE(sampled_in_bore_beyond_active > 20,
+        "only " << sampled_in_bore_beyond_active << " samples landed in the bore"
+        " beyond the active volume; the oracle is not exercising the fix");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

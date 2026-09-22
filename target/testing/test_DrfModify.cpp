@@ -279,8 +279,8 @@ double worst_intrinsic_diff( const DetectorPeakResponse &lhs, const DetectorPeak
   double worst = 0.0;
   for( const double energy : sm_energies )
   {
-    const double a = lhs.intrinsicEfficiency( static_cast<float>(energy) );
-    const double b = rhs.intrinsicEfficiency( static_cast<float>(energy) );
+    const double a = lhs.farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+    const double b = rhs.farFieldIntrinsicEfficiency( static_cast<float>(energy) );
     if( (a > 0.0) && (b > 0.0) )
       worst = std::max( worst, fabs( a/b - 1.0 ) );
   }
@@ -803,8 +803,8 @@ BOOST_AUTO_TEST_CASE( blanking_the_uncertainty_columns_clears_it )
                        "emptying every uncertainty cell left the node covariance in place" );
   for( const double energy : sm_energies )
   {
-    const double before_eff = drf->intrinsicEfficiency( static_cast<float>(energy) );
-    const double after_eff = working->intrinsicEfficiency( static_cast<float>(energy) );
+    const double before_eff = drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+    const double after_eff = working->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
     BOOST_CHECK_MESSAGE( fabs(after_eff - before_eff) <= 1.0E-5*before_eff,
                          "clearing the uncertainty moved the efficiency at " << energy << " keV: "
                          << before_eff << " -> " << after_eff );
@@ -1210,7 +1210,7 @@ BOOST_AUTO_TEST_CASE( a_formula_edit_writes_the_formula_and_its_uncertainty )
   BOOST_REQUIRE( drf->isValid() );
   BOOST_REQUIRE( !drf->efficiencyUncert() || drf->efficiencyUncert()->isEmpty() );
 
-  const double before_661 = drf->intrinsicEfficiency( 661.7f );
+  const double before_661 = drf->farFieldIntrinsicEfficiency( 661.7f );
 
   // The rows of a formula editor carry ONLY the uncertainty columns - the formula is the efficiency.
   vector<DrfModifyCalc::PointRow> rows;
@@ -1238,7 +1238,7 @@ BOOST_AUTO_TEST_CASE( a_formula_edit_writes_the_formula_and_its_uncertainty )
                          problems_to_string(problems) );
 
   // The formula edit took (that coefficient change is e^0.1 = 1.105x) ...
-  const double after_661 = working->intrinsicEfficiency( 661.7f );
+  const double after_661 = working->farFieldIntrinsicEfficiency( 661.7f );
   BOOST_CHECK_MESSAGE( fabs( after_661/before_661 - std::exp(0.1) ) < 0.01,
                        "the formula edit did not take: " << before_661 << " -> " << after_661 );
 
@@ -1263,7 +1263,7 @@ BOOST_AUTO_TEST_CASE( a_formula_edit_writes_the_formula_and_its_uncertainty )
     BOOST_CHECK( !DrfModifyCalc::applyFormula( *bad, "exp( -6.4 + ", 
                               static_cast<float>(PhysicalUnits::keV), rows, options, probs ) );
     BOOST_CHECK_MESSAGE( !probs.empty(), "a formula that does not parse was refused silently" );
-    BOOST_CHECK_CLOSE( bad->intrinsicEfficiency(661.7f), before_661, 1.0E-4 );
+    BOOST_CHECK_CLOSE( bad->farFieldIntrinsicEfficiency(661.7f), before_661, 1.0E-4 );
   }
 }//BOOST_AUTO_TEST_CASE( a_formula_edit_writes_the_formula_and_its_uncertainty )
 

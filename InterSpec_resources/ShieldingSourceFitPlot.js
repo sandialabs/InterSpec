@@ -454,7 +454,7 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
     .attr("x2", this.xScale(max_x + x_padding))
     .attr("y1", this.yScale(refLineY))
     .attr("y2", this.yScale(refLineY))
-    .style("stroke", "grey")
+    .style("stroke", "var(--interspec-fainter-text-color, grey)")
     .style("stroke-width", 1)
     .style("stroke-dasharray", "5,5");
 
@@ -607,7 +607,7 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
       .attr("y", 31)
       .style("text-anchor", "end")
       .style("font-size", "11px")
-      .style("fill", "#a0a0a0")
+      .style("fill", "var(--interspec-fainter-text-color, #a0a0a0)")
       .text( note );
   }
 };//ShieldingSourceFitPlot.prototype.setData

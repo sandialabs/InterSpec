@@ -8,7 +8,7 @@ table.PeakSelectorTable
 
 table.PeakSelectorTable td, table.PeakSelectorTable th
 {
-  border:1px solid black;
+  border:1px solid var(--interspec-outline-color);
   padding: 2px;
 }
 
@@ -105,7 +105,7 @@ table.PeakSelectorTable td.NewNucCell .DontAssignCb{
 
   table.PeakSelectorTable tr
   {
-    border: 1px solid #888;
+    border: 1px solid var(--interspec-outline-color);
     border-radius: 4px;
     margin-bottom: 8px;
     padding: 6px;

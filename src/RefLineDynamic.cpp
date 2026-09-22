@@ -908,7 +908,7 @@ void RefLineDynamic::startUpdateLines()
     if( detector && detector->isValid() )
     {
       base_input.m_detector_name = detector->name();
-      base_input.m_det_intrinsic_eff = detector->intrinsicEfficiencyFcn();
+      base_input.m_det_intrinsic_eff = detector->farFieldIntrinsicEfficiencyFcn();
     }
     
     //cout << "Before always_srcs working_answer={";

@@ -3832,7 +3832,7 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
 
 
   // === Test: Pure refit (energy + refit=true) on single-peak ROI ===
-  // Note: refit may fail with an assertion in Minuit2 for some narrow peaks, so we check
+  // Note: refit may fail for some narrow peaks, so we check
   //  for success but don't require it; the important thing is it doesn't crash.
   params = json::object();
   params["energy"] = single_peak_energy;
@@ -3851,7 +3851,7 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
   }
 
 
-  // === Test: Set skew type (suppress refit to avoid Minuit2 assertion on narrow peaks) ===
+  // === Test: Set skew type (suppress refit to avoid fit failures on narrow peaks) ===
   params = json::object();
   params["energy"] = single_peak_energy;
   params["skewType"] = "Bortel";
@@ -3911,7 +3911,7 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
   BOOST_CHECK( result["success"].get<bool>() );
 
 
-  // === Test: Set continuum type (suppress refit to avoid potential Minuit2 issues) ===
+  // === Test: Set continuum type (suppress refit to avoid potential fit issues) ===
   params = json::object();
   params["energy"] = single_peak_energy;
   params["continuumType"] = "Quadratic";
@@ -4058,7 +4058,7 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
     params = json::object();
     params["energy"] = multi_peak_energy_1;
     params["skewType"] = "Bortel";
-    params["refit"] = false;  // suppress refit to avoid Minuit2 assertion issues
+    params["refit"] = false;  // suppress refit to avoid fit failures on narrow peaks
     BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "edit_analysis_peak", params, fixture.m_interspec ) );
     BOOST_CHECK( result["success"].get<bool>() );
 

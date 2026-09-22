@@ -183,9 +183,21 @@ namespace CeeLoUtils
 
    Used to put measurements taken at different source distances onto one footing: the absolute
    efficiency at distance d is eta(E)*K(E,d), so dividing a measured point by
-   #intrinsicFactor(E, d) gives the same far-field intrinsic efficiency that
-   DetectorPeakResponse::intrinsicEfficiencyEval reports for a geometry-modeled DRF, whatever
-   distance the point was taken at.  Sub-millisecond per evaluation; the ray quadrature is built once
+   #intrinsicFactor(E, d) puts points taken at different distances on one far-field footing,
+   whatever distance each was taken at.
+
+   That footing is the OBJECT disk - `transverse_half_extent()` - which is the disk a stored
+   efficiency curve is quoted against (#MakeDrfCalc pairs this with a flat-disk factor built from
+   the DRF's own stated diameter, and DetectorPeakResponse::efficiency multiplies that same disk
+   back in).  It is therefore NOT in general what
+   DetectorPeakResponse::intrinsicEfficiencyEval reports: that quotes the intrinsic against the
+   CRYSTAL disk (#crystalHalfExtent), since "intrinsic" means per photon crossing the crystal
+   face.  The two differ by the ratio of the disks - ~2.7% for the nai3x3 golden, 2.0x for the
+   czt_box - and that is deliberate: a curve transfer must preserve the ABSOLUTE efficiency, which
+   is what a measurement sees, rather than agree about a convention.  Pinned in
+   test_CeeLoDrfIntegration's `curve_anchor_covariance_flows_to_drf`.
+
+   Sub-millisecond per evaluation; the ray quadrature is built once
    per distinct distance.  Not thread-safe (build one per thread); the geometry is copied in.
    */
   class GeometryKernel
@@ -202,8 +214,9 @@ namespace CeeLoUtils
     double farFieldDistanceCm() const;
 
     /** g(E,d) = K(E,d) * Omega_disk(d_far,a) / K(E,d_far): absolute efficiency at `face_dist_cm`
-     divided by this is the far-field intrinsic efficiency.  Reduces to the flat-disk solid angle
-     fraction far from the detector. */
+     divided by this is the far-field intrinsic efficiency on the OBJECT-disk footing described
+     above - not DetectorPeakResponse::intrinsicEfficiencyEval's crystal-disk one.  Reduces to the
+     flat-disk solid angle fraction far from the detector. */
     double intrinsicFactor( double energy_keV, double face_dist_cm );
 
     /** d ln(g)/d(d) at `face_dist_cm`, per cm (central difference) - about -2/d far from the
@@ -445,6 +458,28 @@ namespace CeeLoUtils
 
   //====================== MC response -> legacy DRF curve =====================
 
+  /** The half-extent of the CRYSTAL alone, in cm - `descriptor.dimensions_cm[0]`, falling
+   back to `transverse_half_extent()` when that is unset or non-positive.
+
+   This is the disk every INTRINSIC efficiency in InterSpec is quoted against, and the one
+   `DetectorPeakResponse::m_detectorDiameter` records, so that `efficiency()` multiplying by
+   `fractionalSolidAngle(m_detectorDiameter, ...)` undoes exactly what the intrinsic was
+   divided by.
+
+   Deliberately NOT `ceelo::GeometryDescriptor::transverse_half_extent()`, whose own header
+   says not to use it as a physical radius: it sums the side dead layer, every endcap layer
+   and the collimator onto the crystal, and for a box it is the half-DIAGONAL.  Measured
+   (a/a_crystal)^2 on the shipped goldens, 2026-09-18: 1.03 for a canned 3x3 NaI, 1.09 for
+   an HPGe coax, 1.11 for a Detective-X, 2.00 for the CZT box, and 2.37 with a 2 cm lead
+   collar.  Quoting an intrinsic efficiency against that disk makes the detector look that
+   factor less efficient than it is.
+
+   `transverse_half_extent()` remains the right scale for a far-field DISTANCE, which is
+   about the whole object rather than the crystal.
+   */
+  double crystalHalfExtent( const ceelo::GeometryDescriptor &descriptor );
+
+
   /** Fills @p drf's ordinary (non-CeeLo) intrinsic efficiency curve by sampling
    @p response - the "backbone" efficiency points a Monte-Carlo characterization
    produces.
@@ -471,6 +506,50 @@ namespace CeeLoUtils
    */
   void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
+                      const size_t num_points = 48 );
+
+
+  /** A copy of @p drf whose ordinary efficiency curve reproduces the attached Monte-Carlo
+   response's ABSOLUTE full-energy efficiency for an on-axis point source at @p distance -
+   a "flat-disk equivalent" of the detector, valid at that one position.
+
+   Why: `DetectorPeakResponse::efficiency` dispatches to the response, and a Monte-Carlo
+   query traces an aperture quadrature - ~1.7 ms, versus ~1 us for a curve interpolation.
+   A caller sweeping many energies at one fixed source position (an MDA profile scan, a
+   nuclide-ID candidate sweep, a CAM efficiency export) pays that per call.  This samples
+   the response ONCE - a single traced quadrature shared across the whole energy grid - and
+   quotes the result against the flat-disk solid angle at @p distance, so that afterwards
+   `snapshot->efficiency( energy, distance )` gives the Monte-Carlo answer through plain
+   Akima interpolation.  Worth it above roughly 80 evaluations at one position.
+
+   Returns @p drf ITSELF - not a copy - when there is nothing to snapshot: no attached
+   response, a fixed-geometry DRF (distance is meaningless), an invalid DRF, or a
+   non-positive @p distance.  So a call site needs no branch and no special case.
+
+   Three things to know before using one:
+
+    - It is valid at @p distance only.  Evaluating it at another distance silently
+      re-extrapolates by the flat-disk solid-angle ratio, i.e. reintroduces exactly the
+      approximation this exists to avoid.  The distance is recorded on the returned object
+      (`DetectorPeakResponse::flatDiskSnapshotDistance`) and `efficiency` asserts on the
+      mismatch under PERFORM_DEVELOPER_CHECKS.
+    - It launders the response's provenance flag.  A snapshot reports EffFlag::Ok where the
+      response would have said NearFieldUnmodeled or OutOfRangeClamped, because a curve has
+      nowhere to carry a flag.  A snapshot is a substitute for `efficiency()`, which returns
+      a bare double and drops flags anyway - never use one where an `EffEval`'s flag is
+      consumed (the Act/Shield fit, `peakDrfEffFlags`, `responseAngleSeriesJSON`).
+    - It is a transient.  It has its own hash and is NOT the user's detector: never store
+      one in a SpecMeas, hand it to a setter, or let it reach the "Previous" DRF database.
+      Its name is suffixed so one that escapes is recognizable.
+
+   Interpolation between the sampled points makes it an approximation to the response of
+   order a percent - the same grid, K-edge flanking and per-point Monte-Carlo sigma that
+   #setLegacyEfficiencyFromResponse uses.  Throws nothing: any failure to sample returns
+   @p drf unchanged, since every caller's fallback is simply the slower exact path.
+   */
+  std::shared_ptr<const DetectorPeakResponse> flatDiskSnapshotAt(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const double distance,
                       const size_t num_points = 48 );
 
   /** The canonical text for a generic attenuator - one specified only by an

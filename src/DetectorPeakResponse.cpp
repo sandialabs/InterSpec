@@ -65,6 +65,8 @@
 #include "io/SolidAngle.h"
 #include "io/DetectorResponse.h"
 
+#include "SpecUtils/UriSpectrum.h"
+
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PeakModel.h"
@@ -331,7 +333,14 @@ namespace
     return answer;
   }//from_url_flt_array(...)
 
-  std::string url_encode( const std::string& url, const std::string &not_allowed, const bool qr_ascii_only )
+  /** Percent-encodes `url`.
+   
+   With `qr_ascii_only`, additionally escapes every character outside the QR "Alphanumeric" set, so
+   the result leaves only "0-9 A-Z * - ." unescaped.  Those, plus the '%' and hex digits the escapes
+   themselves introduce, are all QR-alphanumeric - which lets the whole URI encode at 5.5 bits per
+   character instead of the 8 a byte-mode segment costs.  See #DetectorPeakResponse::toAppUrlQr.
+   */
+  std::string url_encode( const std::string& url, const bool qr_ascii_only )
   {
     auto to_hex = [](int n) -> char {
       return "0123456789ABCDEF"[(n & 0xF)];
@@ -346,12 +355,16 @@ namespace
     {
       unsigned char c = (unsigned char)url[i];
       
-      bool allowable = ((c <= 31) || (c >= 127) || (unsafe_chars.find(c) != std::string::npos));
+      bool escape = ((c <= 31) || (c >= 127) || (unsafe_chars.find(c) != std::string::npos));
       
-      if( qr_ascii_only && allowable )
-        allowable = (qr_ascii_allowed.find(url[i]) != string::npos);
+      // Note this *widens* the escaped set (lower-case, '_', '!', ... are not QR-alphanumeric).
+      //  It used to narrow it, which un-escaped ' ', '%', '+', ':' and '/' and left lower-case
+      //  alone - the exact opposite of what the flag is for - but nothing passed true, so the
+      //  bug never fired.
+      if( qr_ascii_only )
+        escape = escape || (qr_ascii_allowed.find(c) == string::npos);
       
-      if( allowable )
+      if( escape )
         result << '%' << to_hex(c >> 4) << to_hex(c);
       else
         result << (char)c;
@@ -463,7 +476,7 @@ FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
     //msg << "Error evaluating expression \"" << e.GetExpr() << "\": " << e.GetMsg();
     
     std::string msg = e.GetMsg();
-    msg = "<span style=\"color:black;font-weight:bold;\">" + msg + ": </span>";
+    msg = "<span style=\"font-weight:bold;\">" + msg + ": </span>";
     
     const int errorpos = e.GetPos();
     std::string preeqn, posteqn, errorstr;
@@ -479,10 +492,10 @@ FormulaWrapper::FormulaWrapper( const std::string &fcnstr, const bool isMev )
     else if( errorpos < int(m_fcnstr.size()) )
       preeqn = m_fcnstr.substr(0,errorpos);
     
-    msg += "<span style=\"font-family:monospace;color:black;\">"
+    msg += "<span style=\"font-family:monospace;\">"
     + preeqn
-    + "<span style=\"color:red;text-decoration:underline\">"
-    + errorstr + "</span><span style=\"color:#2F4F4F;\">"
+    + "<span class=\"ErrorTxt\" style=\"text-decoration:underline\">"
+    + errorstr + "</span><span class=\"SecondaryTxt\">"
     + posteqn+ "</span></span>";
     
     throw std::runtime_error( msg );
@@ -1017,8 +1030,16 @@ float DetectorPeakResponse::totalIntrinsicEfficiency( const float energy ) const
 
 double DetectorPeakResponse::totalEfficiency( const float energy, const double dist ) const
 {
-  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
-  return fracSolidAngle * totalIntrinsicEfficiency( energy );
+  // Mirrors #efficiency: dispatches to an attached response.  The predicate is widened from
+  //  `m_totalEfficiency` to #hasAnyTotalEfficiencyInfo so a response-backed DRF stops throwing,
+  //  but a DRF with NO total-efficiency information still does - #totalEfficiencyEval's
+  //  {0,0,NeedsMc} would turn a cascade-summing correction the caller asked for into a silent
+  //  no-op, which is the failure this throw was protecting against.
+  if( !hasAnyTotalEfficiencyInfo() )
+    throw runtime_error( "DetectorPeakResponse::totalEfficiency:"
+                         " no total efficiency defined" );
+
+  return totalEfficiencyEval( energy, 0.0, 0.0, dist ).value;
 }//totalEfficiency(...)
 
 
@@ -1031,12 +1052,12 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
   {
     // Back the intrinsic total out of a far-field absolute evaluation, where
     //  eps_total ~= (solid angle) x (intrinsic total).
-    const double a_cm = m_ceeloResponse->transverse_half_extent();
-    // The SAME far-field distance #intrinsicEfficiencyEval uses for the FEP.  20a is not converged
-    //  for the total, whose effective interaction depth is the whole crystal rather than the first
-    //  attenuation length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would
-    //  ride into both the peak-to-total the General tab prints and the cascade-summing correction.
-    const double d_cm = std::max( 1000.0*a_cm, 100.0 );
+    // The SAME far-field distance #intrinsicEfficiencyEval uses for the FEP - through the one
+    //  shared definition, so the two cannot drift apart.  20a is not converged for the total,
+    //  whose effective interaction depth is the whole crystal rather than the first attenuation
+    //  length: it reads ~4.7% low at 662 keV and ~5.7% at 2.6 MeV, and that error would ride into
+    //  both the peak-to-total the General tab prints and the cascade-summing correction.
+    const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
     const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy,
               CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
     const double omega = fractionalSolidAngle( m_detectorDiameter,
@@ -1176,14 +1197,23 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
 
   if( m_ceeloResponse )
   {
-    // Intrinsic = absolute / geometric solid angle, in the true far field of
-    //  the parameterized response (its transverse half-extent `a` is the
-    //  face radius the solid angle is defined against).
-    const double a_cm = m_ceeloResponse->transverse_half_extent();
+    // Intrinsic = absolute / geometric solid angle, in the true far field of the
+    //  parameterized response.  Two DIFFERENT radii, deliberately:
+    //   - the far-field DISTANCE is set by `transverse_half_extent()`, which is about the
+    //     whole object (crystal + dead layer + endcaps + any collimator) - that is the
+    //     scale the inverse-square limit has to clear;
+    //   - the SOLID ANGLE is the CRYSTAL's, because "intrinsic" means per photon crossing
+    //     the crystal face.  This used to use the transverse extent for both, which put it
+    //     at odds with CeeLoUtils::setLegacyEfficiencyFromResponse - the function that
+    //     builds the stored curve, and that sets #m_detectorDiameter, which #efficiency
+    //     multiplies back in.  The two disagreed by (a/a_crystal)^2: 1.03x for a canned
+    //     3x3 NaI, 1.09x for an HPGe coax, 2.00x for the CZT box (a box's transverse
+    //     half-extent is its half-DIAGONAL) and 2.37x with a 2 cm lead collar.
     const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( m_ceeloResponse->descriptor );
     const double d_cm = CeeLoUtils::farFieldDistanceCm( m_ceeloResponse->descriptor );
     const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
-    const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
+    const double omega = ceelo::disk_solid_angle_fraction( d_cm,
+                                CeeLoUtils::crystalHalfExtent( m_ceeloResponse->descriptor ) );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
     answer.sigma = (omega > 0.0) ? (res.sigma / omega) : 0.0;
@@ -1192,7 +1222,7 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     return answer;
   }//if( m_ceeloResponse )
 
-  answer.value = intrinsicEfficiency( energy );
+  answer.value = farFieldIntrinsicEfficiency( energy );
 
   if( m_efficiency )
   {
@@ -1335,8 +1365,11 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
     return answer;
   }
 
-  answer.value = isFixedGeometry() ? totalIntrinsicEfficiency( energy )
-                                   : totalEfficiency( energy, distance );
+  // Inlined rather than calling #totalEfficiency, which now delegates back here.
+  answer.value = isFixedGeometry()
+                   ? totalIntrinsicEfficiency( energy )
+                   : fractionalSolidAngle( m_detectorDiameter, distance + m_detectorSetback )
+                       * totalIntrinsicEfficiency( energy );
   if( fabs(theta) > 0.087 )
     answer.flag = EffFlag::NeedsMc;
 
@@ -2662,8 +2695,56 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
 
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
 {
+  // Unlike the in-app path (`InterSpec::handleAppUrl` -> `AppUtils::split_uri` ->
+  //  `DrfSelect::handle_app_url_drf`), callers here hand us whatever the user had - a bare query
+  //  string, or the whole URI copied out of a QR code.  Normalize both to the query string that
+  //  `fromAppUrl` documents, so `--drf` on the command line takes either.
+  string query = url_query;
+  SpecUtils::trim( query );
+  
+  for( const string &scheme : { string("interspec://"), string("raddata://") } )
+  {
+    if( SpecUtils::istarts_with( query, scheme ) )
+      query = query.substr( scheme.size() );
+  }
+  
+  // "?" or, from a QR-alphanumeric URI, its escaped form.
+  //
+  // Only the separator between path and query is meant.  A '?' is in the escaped set, and the
+  //  free-text fields (name, description) routinely hold one, so a bare query string can contain
+  //  "%3F" inside a *value* - taking that as the separator would silently drop every field ahead
+  //  of it.  What tells the two apart is that everything before a real separator is host/path,
+  //  which carries no key/value punctuation.
+  string::size_type q_pos = query.find( '?' );
+  size_t q_len = 1;
+  if( q_pos == string::npos )
+  {
+    const string::size_type esc_pos = SpecUtils::ifind_substr_ascii( query, "%3F" );
+    if( esc_pos != string::npos )
+    {
+      const string before = query.substr( 0, esc_pos );
+      const bool has_kv = (before.find('&') != string::npos)
+                          || (before.find('=') != string::npos)
+                          || (SpecUtils::ifind_substr_ascii(before, "%26") != string::npos)
+                          || (SpecUtils::ifind_substr_ascii(before, "%3D") != string::npos);
+      if( !has_kv )
+      {
+        q_pos = esc_pos;
+        q_len = 3;
+      }
+    }//if( esc_pos != string::npos )
+  }//if( no literal '?' )
+
+  if( q_pos != string::npos )
+    query = query.substr( q_pos + q_len );
+  
+  // A QR-alphanumeric URI escapes the separators too; `handleAppUrl` would have undone that for us.
+  if( (query.find('&') == string::npos)
+     && (SpecUtils::ifind_substr_ascii(query, "%26") != string::npos) )
+    query = Wt::Utils::urlDecode( query );
+  
   auto drf = make_shared<DetectorPeakResponse>();
-  drf->fromAppUrl( url_query );
+  drf->fromAppUrl( query );
   assert( drf->isValid() );
   
   return drf;
@@ -2677,22 +2758,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   //  Alphanumeric: Max. 4,296 characters (0–9, A–Z [upper-case only], space, $, %, *, +, -, ., /, :)
   //  Binary/byte:  Max. 2,953 characters (8-bit bytes) (23624 bits)
   //
-  // So we will try to fit the DRF inside of this limitation, by first not changing anything, and
-  // strlen("interspec://drf/specify?") == 24, so we'll round up to 30.
-  const size_t max_binary_num = 2953 - 30;
-  //const size_t max_alpha_num = 4296 - 30;
-  
-  // Currently we are just trying to fit everything in the binary size
-  
-  //*********************************************************************
-  // A note for the future:
-  //  We are actually pretty close to being an QR Alphanumeric code.
-  //  The '&' and '=' would have to be replaced by say like '/' and ':'
-  //  and also the '?' that indicates the query string would have to
-  //  become say '%3F', but we're mostly there.
-  //  Also we would need to change calls to url_encode to be like:
-  //    url_encode(...,"",true);
-  //*********************************************************************
+  // #toAppUrlQr escapes this string so the whole URI is QR-alphanumeric, so the budget that
+  //  applies is the 4,296 one, measured in escaped characters (see `current_url_len`).  Leaves
+  //  strlen("INTERSPEC://DRF/SPECIFY%3F") == 26 for the prefix, rounded up to 30.
+  const size_t max_url_len = 4296 - 30;
   
   
   if( !isValid() )
@@ -2704,10 +2773,10 @@ std::string DetectorPeakResponse::toAppUrl() const
   parts["VER"] = (m_geomType == EffGeometryType::FarFieldAbsolute) ? "2" : "1";
 
   if( !m_name.empty() )
-    parts["NAME"] = url_encode( m_name, "", false );
+    parts["NAME"] = url_encode( m_name, false );
   
   if( !m_description.empty() )
-    parts["DESC"] = url_encode( m_description, "", false );
+    parts["DESC"] = url_encode( m_description, false );
 
   if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
@@ -2748,7 +2817,7 @@ std::string DetectorPeakResponse::toAppUrl() const
       assert( eff.formula().size() );
 
       parts["EFFT"] = "F";
-      parts["EFFE"] = url_encode(eff.formula(), "", false);
+      parts["EFFE"] = url_encode( eff.formula(), false );
       break;
     }
 
@@ -2797,11 +2866,57 @@ std::string DetectorPeakResponse::toAppUrl() const
   
   parts["ORIGIN"] = std::to_string( static_cast<int>(m_efficiencySource) );
   
-  if( m_hash )
-    parts["HASH"] = std::to_string( m_hash );
+  // The detector's physical shape, when it has one.  `geometry()` prefers an attached response's
+  //  own descriptor, so this covers both a geometry-only DRF and an MC-characterized one.
+  //
+  // The Monte-Carlo response itself is deliberately NOT carried: it deflates to ~17 KB against a
+  //  QR ceiling of a few thousand characters, so no encoding closes that gap.  The geometry is
+  //  ~377 bytes deflated, which fits - and it is what lets the receiver re-run the
+  //  characterization rather than start over from a flat disk.
+  //
+  // base32 rather than base45: base45's alphabet is the whole QR-alphanumeric set, including '%',
+  //  ' ' and '+', so every one of those would need percent-escaping here - which costs more than
+  //  its higher density returns.  See AppUtils::base32_encode.
+  uint64_t hash_to_send = m_hash, parent_to_send = m_parentHash;
   
-  if( m_parentHash )
-    parts["HASHP"] = std::to_string( m_parentHash );
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = geometry();
+  if( geom )
+  {
+    try
+    {
+      const string xml = geom->to_xml_string();
+      vector<uint8_t> deflated;
+      SpecUtils::deflate_compress( xml.data(), xml.size(), deflated );
+      parts["DETGEOM"] = AppUtils::base32_encode( deflated );
+    }catch( std::exception &e )
+    {
+      // A shape we cannot encode must not cost the user the rest of the DRF.
+      cerr << "toAppUrl: failed to encode detector geometry (" << e.what() << ") - omitting" << endl;
+    }
+  }//if( geom )
+  
+  if( m_ceeloResponse )
+  {
+    // `computeHash` folds in the response's content_hash when one is attached, and the geometry's
+    //  XML otherwise - so the hash this DRF carries describes something the receiver, who gets no
+    //  response, can never reproduce.  Since that hash is the sole de-duplication key for the
+    //  "Previous" detector rows, send the identity of what is actually being sent, and record the
+    //  real one as the parent so the lineage survives.
+    DetectorPeakResponse reduced( *this );
+    reduced.setCeeloResponse( nullptr );
+    // Deep copy: geometry() hands back a pointer that shares ownership with the response, which
+    //  would keep the whole (~100 KB) response alive behind the detached DRF.
+    reduced.setGeometry( geom ? make_shared<const ceelo::GeometryDescriptor>(*geom) : nullptr );
+    
+    hash_to_send = reduced.hashValue();
+    parent_to_send = m_hash;
+  }//if( m_ceeloResponse )
+  
+  if( hash_to_send )
+    parts["HASH"] = std::to_string( hash_to_send );
+  
+  if( parent_to_send )
+    parts["HASHP"] = std::to_string( parent_to_send );
   
   if( (fabs(m_lowerEnergy - m_upperEnergy) > 1.0) && (m_upperEnergy > 0.0) )
   {
@@ -2851,7 +2966,7 @@ std::string DetectorPeakResponse::toAppUrl() const
   {
     const string pfp_url = m_peakFitDetPrefs->toUrlQueryParts();
     if( !pfp_url.empty() )
-      parts["PFP"] = url_encode( pfp_url, "", false );
+      parts["PFP"] = url_encode( pfp_url, false );
   }
 
   const shared_ptr<const DetectorEfficiencyUncert> eff_uncert = eff.uncertainty();
@@ -2877,16 +2992,56 @@ std::string DetectorPeakResponse::toAppUrl() const
 
     // A formula needs url-encoding, same as "EFFE"
     if( parts.count("TEFE") )
-      parts["TEFE"] = url_encode( parts["TEFE"], "", false );
+      parts["TEFE"] = url_encode( parts["TEFE"], false );
   }//if( m_totalEfficiency )
 
+  // The length that matters is the one that goes into the QR code, which is what #toAppUrlQr
+  //  produces - so count the escaped size, not the raw one.  Keys and '&'/'=' are pure overhead
+  //  here: '&' and '=' cost three characters each once escaped.
   auto current_url_len = [&parts]() -> size_t {
-    size_t nchar = (2 * parts.size()) - (parts.size() ? 1 : 0);
+    size_t nchar = parts.size() ? (3 * ((2 * parts.size()) - 1)) : 0;  //the '&' and '=' separators
     for( const auto &p : parts )
-      nchar += p.first.size() + p.second.size();
+      nchar += p.first.size() + url_encode( p.second, true ).size();
     return nchar;
   };//current_url_len(...)
 
+  
+  // Escaping costs three characters for every one outside "0-9 A-Z * - .", so prose is 3x its
+  //  length here while coefficients (digits, '.', '-', '*', 'E') are free.  That lets a long
+  //  description swallow the whole budget and push every covariance out of the cascade below -
+  //  so cap its share first.  A description is cosmetic; a covariance is data.
+  //  Truncation is of the *raw* text, on a UTF-8 boundary, then re-encoded - cutting the encoded
+  //  string could leave a dangling "%2" and make the whole URL unparseable.
+  if( parts.count("DESC") )
+  {
+    const size_t max_desc_len = max_url_len / 4;
+    
+    if( url_encode( parts["DESC"], true ).size() > max_desc_len )
+    {
+      string desc = m_description;
+      
+      // Each raw character costs url_encode(url_encode(c,false),true) characters; walk the string
+      //  and keep what fits.
+      size_t used = 0, nbytes = 0;
+      for( size_t i = 0; i < desc.size(); ++i )
+      {
+        const string one( 1, desc[i] );
+        const size_t cost = url_encode( url_encode( one, false ), true ).size();
+        if( (used + cost) > max_desc_len )
+          break;
+        used += cost;
+        nbytes += 1;
+      }//for( size_t i = 0; i < desc.size(); ++i )
+      
+      SpecUtils::utf8_limit_str_size( desc, nbytes );
+      
+      if( desc.empty() )
+        parts.erase( "DESC" );
+      else
+        parts["DESC"] = url_encode( desc, false );
+    }//if( the description is using more than its share )
+  }//if( parts.count("DESC") )
+  
   
   auto combine_parts = [&parts]() -> string {
     string answer;
@@ -2918,15 +3073,15 @@ std::string DetectorPeakResponse::toAppUrl() const
   //  For the DRFs I have, as of 20220408, they all come in under 1000 bytes, so we wont really
   //  usually need to shorten things, but we'll add this code in anyway
   
-  if( current_url_len() < max_binary_num )
+  if( current_url_len() < max_url_len )
     return combine_parts();
   
   // Remove part of URL, and return if now short engough
-  auto remove_part = [&parts,&current_url_len,max_binary_num]( const string &part ) -> bool {
+  auto remove_part = [&parts,&current_url_len,max_url_len]( const string &part ) -> bool {
     if( parts.count(part) )
       parts.erase( part );
     
-    return (current_url_len() < max_binary_num);
+    return (current_url_len() < max_url_len);
   };//remove_part
   
   // The new (20260610) optional additions get dropped before anything that
@@ -2965,6 +3120,13 @@ std::string DetectorPeakResponse::toAppUrl() const
 
   // PeakFitDetPrefs is optional metadata - drop first of the pre-existing parts
   if( remove_part("PFP") )
+    return combine_parts();
+
+  // ...then the detector's shape.  It goes after the covariances (it is smaller than either, and
+  //  more useful - it is what lets the receiver regenerate a Monte-Carlo response) but before
+  //  everything that was in the URL before it existed, so adding it can never cost a DRF a field
+  //  that used to survive.
+  if( remove_part("DETGEOM") )
     return combine_parts();
 
   if( remove_part("LASTUSED") )
@@ -3015,6 +3177,24 @@ std::string DetectorPeakResponse::toAppUrl() const
 }//std::string toAppUrl() const
 
 
+std::string DetectorPeakResponse::toAppUrlQr() const
+{
+  // Nayuki's encoder picks one segment mode for the whole text (QrSegment::makeSegments): unless
+  //  every character is QR-alphanumeric it falls back to a single byte-mode segment at 8 bits per
+  //  character instead of 5.5.  So the scheme is upper-cased and the '?' is written "%3F" - both
+  //  are undone by the single `Wt::Utils::urlDecode` that `InterSpec::handleAppUrl` does before
+  //  `AppUtils::split_uri` ever sees the URI, and `split_uri`/`query_str_key_values` match the
+  //  host and path case-insensitively.
+  //
+  // That same decode is why the query is escaped here rather than by the callers: it removes
+  //  exactly one layer, so this must add exactly one.  `toAppUrl` percent-encodes individual
+  //  values already, and escaping again is what turns that inner "%20" into "%2520" so it survives
+  //  as "%20" - which is the form `fromAppUrl` expects.  Older builds therefore read this URI
+  //  unchanged, and a URI from an older build still reads here.
+  return "INTERSPEC://DRF/SPECIFY%3F" + url_encode( toAppUrl(), true );
+}//std::string toAppUrlQr() const
+
+
 void DetectorPeakResponse::fromAppUrl( std::string url_query )
 {
   map<string,string> parts = AppUtils::query_str_key_values( url_query );
@@ -3049,10 +3229,14 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   if( parts.count("DESC") )
     desc = parts["DESC"];
 
-  SpecUtils::ireplace_all( name, "%20", " " );
+  // `toAppUrl` url-encodes these, so undo the whole encoding rather than just the spaces.  Only
+  //  "%20" used to be undone, which meant a detector named "Det A&B" came back called
+  //  "Det A%26B" - and a name is hashed, so it came back a different detector too.  Decoding is
+  //  backward compatible: "%20" still becomes a space, every other escape now also survives.
+  name = Wt::Utils::urlDecode( name );
   SpecUtils::trim( name );
 
-  SpecUtils::ireplace_all( desc, "%20", " " );
+  desc = Wt::Utils::urlDecode( desc );
   SpecUtils::trim( desc );
 
   if( parts.count("FIXGEOM") )
@@ -3169,7 +3353,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
     if( !parts.count("EFFE") )
       throw runtime_error( "fromAppUrl: missing required EFFE component for Eff Eqn" );
     
-    eqn = parts["EFFE"];
+    // url-encoded by `toAppUrl` - a formula is full of characters that are not URL-safe ('+',
+    //  '/', '^'), so without this the expression handed to FormulaWrapper is still escaped.
+    eqn = Wt::Utils::urlDecode( parts["EFFE"] );
     
     try
     {
@@ -3392,6 +3578,44 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   {
     m_peakFitDetPrefs.reset();
   }
+
+  // The detector's physical shape, if the sender had one.  Absent for every URL made before this
+  //  existed, and by an older build that dropped it in its shortening cascade - so a missing key
+  //  is simply a DRF that does not know its shape, never an error.
+  m_geometry.reset();
+  if( parts.count("DETGEOM") )
+  {
+    try
+    {
+      const vector<uint8_t> deflated = AppUtils::base32_decode( parts["DETGEOM"] );
+      if( deflated.empty() )
+        throw runtime_error( "empty payload" );
+      
+      string xml;
+      vector<uint8_t> mutable_copy( deflated );  //deflate_decompress takes a non-const pointer
+      SpecUtils::deflate_decompress( mutable_copy.data(), mutable_copy.size(), xml );
+      
+      // `GeometryDescriptor::from_xml_string` throws rapidxml::parse_error for malformed XML,
+      //  which derives from std::exception but NOT std::runtime_error - so catch broadly.
+      ceelo::GeometryDescriptor descriptor = ceelo::GeometryDescriptor::from_xml_string( xml );
+      
+      // The codec is fully permissive: "<CeeLoGeometry><Detector/></CeeLoGeometry>" parses into a
+      //  nonsense descriptor.  A shape we cannot use is worse than none, but the efficiency curve
+      //  is still worth having, so drop the geometry rather than failing the whole import.
+      if( descriptor.problems().empty() )
+        m_geometry = make_shared<const ceelo::GeometryDescriptor>( std::move(descriptor) );
+      else
+        cerr << "fromAppUrl: ignoring unusable detector geometry" << endl;
+    }catch( std::exception &e )
+    {
+      cerr << "fromAppUrl: failed to decode detector geometry (" << e.what() << ") - ignoring" << endl;
+    }
+  }//if( parts.count("DETGEOM") )
+
+  // `toAppUrl` url-encodes "TEFE" after DetectorEfficiencyCurve::toUrlParts writes it, so undo
+  //  that here - fromUrlParts takes the formula verbatim.
+  if( parts.count("TEFE") )
+    parts["TEFE"] = Wt::Utils::urlDecode( parts["TEFE"] );
 
   // Optional total efficiency ("TEFT"/etc keys); returns nullptr if absent.
   //  (The full-energy efficiency uncertainty was applied to m_efficiency above.)
@@ -5581,9 +5805,47 @@ double DetectorPeakResponse::fractionalSolidAngle( const double detDiam, const d
 
 double DetectorPeakResponse::efficiency( const float energy, const double dist ) const
 {
-  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
-  return fracSolidAngle * intrinsicEfficiency( energy );
+#if( PERFORM_DEVELOPER_CHECKS )
+  // A flat-disk snapshot's curve reproduces its response at ONE distance; at any other it
+  //  silently re-extrapolates by the solid-angle ratio - the approximation the snapshot was
+  //  built to avoid.  See CeeLoUtils::flatDiskSnapshotAt.
+  if( (m_flatDiskSnapshotDistance > 0.0)
+      && (fabs(dist - m_flatDiskSnapshotDistance) > 1.0E-6*m_flatDiskSnapshotDistance) )
+  {
+    log_developer_error( __func__, "A flat-disk snapshot was queried at a different distance"
+                                   " than the one it was built for." );
+    assert( 0 );
+  }
+#endif
+
+  // The throw-on-uninitialized contract used to come for free from the efficiency curve; the
+  //  response branch below never touches the curve, so a response-only DRF would otherwise
+  //  answer with a number where it used to throw.
+  if( !isValid() )
+    throw runtime_error( "DetectorPeakResponse::efficiency: detector response has not"
+                         " been initialized" );
+
+  return efficiencyEval( energy, dist ).value;
 }//float efficiency( const float energy ) const
+
+
+double DetectorPeakResponse::flatDiskSnapshotDistance() const
+{
+  return m_flatDiskSnapshotDistance;
+}//flatDiskSnapshotDistance()
+
+
+void DetectorPeakResponse::setFlatDiskSnapshotDistance( const double distance )
+{
+  m_flatDiskSnapshotDistance = distance;
+}//setFlatDiskSnapshotDistance(...)
+
+
+double DetectorPeakResponse::flatDiskEfficiency( const float energy, const double dist ) const
+{
+  const double fracSolidAngle = fractionalSolidAngle( m_detectorDiameter, dist + m_detectorSetback );
+  return fracSolidAngle * farFieldIntrinsicEfficiency( energy );
+}//double flatDiskEfficiency( const float energy, const double dist ) const
 
 
 const vector<DetectorPeakResponse::EnergyEfficiencyPair> &DetectorPeakResponse::getEnergyEfficiencyPair() const
@@ -5681,7 +5943,7 @@ float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
 }//float expOfLogPowerSeriesEfficiency(...)
 
 
-float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
+float DetectorPeakResponse::farFieldIntrinsicEfficiency( const float energy ) const
 {
   // The curve handles the energy/units division and the form dispatch;
   //  throws if undefined.
@@ -5692,11 +5954,11 @@ float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
     eff *= absoluteToIntrinsicMultiple( energy );
 
   return eff;
-}//float intrinsicEfficiency( const float energy ) const;
+}//float farFieldIntrinsicEfficiency( const float energy ) const;
 
 
 
-std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyFcn() const
 {
   if( !m_efficiency || !m_efficiency->isValid() )
     return nullptr;
@@ -5722,7 +5984,7 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
     }
     return curve.efficiency( energy );
   };
-}//std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
+}//std::function<float( float )> DetectorPeakResponse::farFieldIntrinsicEfficiencyFcn() const
 
 
 
@@ -6426,7 +6688,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   //  that is what the chart plots, and what the `validation` block below asserts.  The stored curve
   //  of a `FarFieldAbsolute` DRF is instead ABSOLUTE efficiency at its reference distance, so it is
   //  sent verbatim together with the `absToIntrinsic` factor below, and the client applies the very
-  //  same product `intrinsicEfficiency()` does.  (Sending a curve the client would have to
+  //  same product `farFieldIntrinsicEfficiency()` does.  (Sending a curve the client would have to
   //  re-interpolate is what made this wrong before: first the factor was left off entirely, which
   //  drew the curve low by the solid angle - a factor of hundreds - and then resampling it could
   //  not reproduce the stored curve's own interpolation to better than a percent.)
@@ -6448,7 +6710,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
       const float energy = log_space
               ? static_cast<float>( minEnergy * std::pow( double(maxEnergy)/minEnergy, frac ) )
               : static_cast<float>( minEnergy + frac*(maxEnergy - minEnergy) );
-      const float efficiency = static_cast<float>( intrinsicEfficiency( energy ) );
+      const float efficiency = static_cast<float>( farFieldIntrinsicEfficiency( energy ) );
       
       // Skip invalid efficiency values
       if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
@@ -6687,7 +6949,7 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
         m_efficiency->form() == kEnergyEfficiencyPairs || 
         m_efficiency->form() == kExpOfLogPowerSeries )
     {
-      const double efficiency = intrinsicEfficiency( testEnergies[i] );
+      const double efficiency = farFieldIntrinsicEfficiency( testEnergies[i] );
       if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0 )
         json << "null";
       else

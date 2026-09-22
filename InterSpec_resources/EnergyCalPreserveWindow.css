@@ -40,7 +40,7 @@ table.RecalibCoefTable
 
 table.RecalibCoefTable td, table.RecalibCoefTable th
 {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   padding: 2px;
   padding-left: 3px;
   padding-right: 5px;

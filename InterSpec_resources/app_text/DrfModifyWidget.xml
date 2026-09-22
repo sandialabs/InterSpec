@@ -17,31 +17,31 @@
   <!-- Flat Disk / Geometry Modeled mode toggle (Geom &amp; MC tab). -->
   <message id="dmw-mode-flat">Flat Disk</message>
   <message id="dmw-mode-geom">Geometry Modeled</message>
-  <message id="dmw-tt-mode">&lt;p&gt;How this far-field detector answers off-axis, near-field and
-    uncertainty-aware queries.&lt;/p&gt;
-    &lt;ul&gt;
-    &lt;li&gt;&lt;b&gt;Flat Disk&lt;/b&gt; - the classic far-field model: efficiency is the on-axis
+  <message id="dmw-tt-mode"><p>How this far-field detector answers off-axis, near-field and
+    uncertainty-aware queries.</p>
+    <ul>
+    <li><b>Flat Disk</b> - the classic far-field model: efficiency is the on-axis
     curve scaled by solid angle, with an energy-correlated uncertainty you edit on the Anchor tab.
-    No geometry is modeled.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Geometry Modeled&lt;/b&gt; - a Monte-Carlo response, built from the detector
+    No geometry is modeled.</li>
+    <li><b>Geometry Modeled</b> - a Monte-Carlo response, built from the detector
     geometry below and grounded to the efficiency points on the Anchor tab, supplies the distance/angle
-    dependence and its own finer uncertainty.&lt;/li&gt;
-    &lt;/ul&gt;
-    &lt;p&gt;Switching a geometry-modeled detector back to Flat Disk detaches its response on
-    &quot;Use&quot; (you will be asked to confirm).&lt;/p&gt;</message>
+    dependence and its own finer uncertainty.</li>
+    </ul>
+    <p>Switching a geometry-modeled detector back to Flat Disk detaches its response on
+    &quot;Use&quot; (you will be asked to confirm).</p></message>
 
   <!-- Anchor tab: help text, then one of three editors, chosen by how the efficiency is
        represented (energy/efficiency points, an exp-of-log power series, or a formula).  The
        wording tracks whichever editor - and which columns - are currently shown. -->
   <message id="dmw-anchor-help-points">The detector&apos;s measured efficiency points, which are also
-    what its efficiency curve is: the &lt;em&gt;absolute&lt;/em&gt; efficiency at the reference
+    what its efficiency curve is: the <em>absolute</em> efficiency at the reference
     distance below.  Edit each point - its energy, efficiency, and the statistical and certificate
     uncertainties on that efficiency.  &quot;Stat. %&quot; is independent from one point to the next;
     &quot;Cert. %&quot; is the source activity uncertainty, and points sharing a source are treated as
     sharing it.</message>
   <message id="dmw-anchor-help-refit">The peaks this detector was characterized from: the
-    &lt;em&gt;absolute&lt;/em&gt; efficiency measured at each source&apos;s own distance.  The
-    efficiency &lt;b&gt;equation is re-fit from these points when you press &quot;Use&quot;&lt;/b&gt;,
+    <em>absolute</em> efficiency measured at each source&apos;s own distance.  The
+    efficiency <b>equation is re-fit from these points when you press &quot;Use&quot;</b>,
     so the curve, its covariance and these points always describe the same detector - editing a point
     therefore moves the curve, and editing only an uncertainty changes how strongly that point pulls
     on the fit.  &quot;Stat. %&quot; is independent from one point to the next; &quot;Cert. %&quot; is
@@ -54,12 +54,12 @@
     &quot;together&quot; reaches is set by &quot;Correlated part, across energy&quot; below.  A blank
     cell means none.</message>
   <message id="dmw-anchor-help-coefs">The efficiency equation
-    &lt;code&gt;exp( A0 + A1*log(x) + A2*log(x)&lt;sup&gt;2&lt;/sup&gt; + ... )&lt;/code&gt; and the
+    <code>exp( A0 + A1*log(x) + A2*log(x)<sup>2</sup> + ... )</code> and the
     covariance among its coefficients, which the Activity/Shielding fit can fold into its results.
     The diagonal is the 1-sigma uncertainty of each coefficient (absolute, not a percent - these are
     logs), and the off-diagonal is the correlation between them.  Fitted coefficients are strongly
     correlated, so the off-diagonal matters as much as the diagonal.</message>
-  <message id="dmw-anchor-help-formula">The efficiency formula, with energy as &lt;code&gt;x&lt;/code&gt;,
+  <message id="dmw-anchor-help-formula">The efficiency formula, with energy as <code>x</code>,
     and its uncertainty.  The formula gives the efficiency, so the rows below are uncertainty only:
     one row per energy you want to state one at, split into the part that is independent from one
     energy to the next (&quot;Uncorr. %&quot;) and the part that moves together across energy
@@ -83,22 +83,22 @@
     never stated one, and {4}% is the model envelope.  Enter what you know about it above.</message>
   <message id="dmw-uncert-summary-none">This detector reports no efficiency uncertainty, so analyses
     using it will report only counting statistics.</message>
-  <message id="dmw-tt-uncert-summary">&lt;p&gt;The fractional efficiency uncertainty the
+  <message id="dmw-tt-uncert-summary"><p>The fractional efficiency uncertainty the
     Activity/Shielding fit would propagate, at one representative energy - the same number the band on
-    the efficiency chart is drawn from.&lt;/p&gt;
-    &lt;p&gt;It can read lower than any single number in the table above, and that is not a mistake:
+    the efficiency chart is drawn from.</p>
+    <p>It can read lower than any single number in the table above, and that is not a mistake:
     between two stated energies the uncertainty is interpolated, so a part that is independent from
     one energy to the next partly averages out in between (by up to a factor of √2 exactly
-    half way).  A part that moves together across energy does not.&lt;/p&gt;
-    &lt;p&gt;&lt;b&gt;From its own data&lt;/b&gt; is measurement: counting statistics, source
+    half way).  A part that moves together across energy does not.</p>
+    <p><b>From its own data</b> is measurement: counting statistics, source
     certificates, and the fit or Monte-Carlo statistics behind the curve.  More or better data shrinks
-    it.  Typically 0.3 - 5%.&lt;/p&gt;
-    &lt;p&gt;&lt;b&gt;Model envelope&lt;/b&gt; is an allowance for the model being asked about a
+    it.  Typically 0.3 - 5%.</p>
+    <p><b>Model envelope</b> is an allowance for the model being asked about a
     position nobody measured - a few tenths of a percent on axis and far away, 1.5 - 2.5% for a
     Monte-Carlo response&apos;s regime floor, and up to 10 - 25% very close in or well off axis at low
     energy.  It does not shrink with more counting, and it is the same error for every peak at once.
     A detector with no measured uncertainty at all (a GADRAS Detector.dat) reports about 5% here that
-    is purely this kind of allowance.&lt;/p&gt;</message>
+    is purely this kind of allowance.</p></message>
 
   <!-- Point editor (energy / efficiency / statistical % / correlated or certificate % / source).
        Which columns exist depends on the curve - see DrfModifyWidget::addAnchorRow. -->
@@ -134,7 +134,7 @@
   <message id="dmw-anchor-formula-label">Efficiency f(x) = </message>
   <message id="dmw-anchor-formula-empty">Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2)</message>
   <message id="dmw-tt-anchor-formula">The full-energy intrinsic efficiency as a function of energy,
-    with energy written as &lt;code&gt;x&lt;/code&gt; in the units selected below.</message>
+    with energy written as <code>x</code> in the units selected below.</message>
 
   <!-- Energy units the equation / formula above is written in. -->
   <message id="dmw-anchor-energy-units">Equation energy units:</message>
@@ -217,7 +217,7 @@
   <message id="dmw-nogen-use-anyway">Use without a response</message>
   <message id="dmw-nogen-not-started">The Monte-Carlo run could not be started, so the detector was not applied: {1}</message>
   <message id="dmw-geom-incomplete-title">Detector geometry incomplete</message>
-  <message id="dmw-geom-incomplete-body">A Monte-Carlo response cannot be generated yet: {1}&lt;br /&gt;&lt;br /&gt;Use the detector anyway?  It will behave as a flat disk, and the incomplete geometry is not kept.</message>
+  <message id="dmw-geom-incomplete-body">A Monte-Carlo response cannot be generated yet: {1}<br /><br />Use the detector anyway?  It will behave as a flat disk, and the incomplete geometry is not kept.</message>
   <message id="dmw-geom-incomplete-use-anyway">Use anyway</message>
 
   <!-- General tab: the summary table of what the detector carries. -->
@@ -273,5 +273,7 @@
 
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
-    again later under the &quot;Previous&quot; tab of Detector Select.</message>
+    again later under the &quot;Previous&quot; tab of Detector Select.  Only the XML keeps a
+    Monte-Carlo response - a QR code carries the geometry, but the response must be generated
+    again from it.</message>
 </messages>

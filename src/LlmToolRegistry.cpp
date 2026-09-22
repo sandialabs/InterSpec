@@ -20,7 +20,6 @@
 #include <Wt/WApplication.h>
 #include <Wt/Dbo/Dbo.h>
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -5678,7 +5677,7 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
     
     const float energy_float = static_cast<float>(energy);
-    const double det_eff = fixed_geom ? drf->intrinsicEfficiency(energy_float)
+    const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(energy_float)
                                       : drf->efficiency(energy_float, distance);
     
     const float live_time = spectrum->live_time();
@@ -5705,7 +5704,7 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
       if( drf )
       {
-        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( drf->intrinsicEfficiency(energy_float), 6 );
+        result_json["detectorIntrinsicEfficiency"] = round_to_sig_figs( drf->farFieldIntrinsicEfficiency(energy_float), 6 );
 
         if( distance >= 0.0 && !fixed_geom )
         {
@@ -6895,7 +6894,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     // Calculate detector intrinsic efficiency
     if( detector && detector->isValid() )
     {
-      const float intrinsic_eff = detector->intrinsicEfficiency( energy );
+      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( energy );
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
       final_efficiency *= intrinsic_eff;
     }
@@ -7719,7 +7718,7 @@ nlohmann::json ToolRegistry::executeLoadDetectorEfficiency( const nlohmann::json
     {
       try
       {
-        const float eff = drf->intrinsicEfficiency( energy );
+        const float eff = drf->farFieldIntrinsicEfficiency( energy );
         if( (std::isnan)( eff ) || (std::isinf)( eff ) )
         {
           throw std::runtime_error( "DRF gives NaN/Inf efficiency at " + to_string( static_cast<int>( energy ) )
@@ -7899,7 +7898,7 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
 
       try
       {
-        const float eff = drf->intrinsicEfficiency( energy );
+        const float eff = drf->farFieldIntrinsicEfficiency( energy );
         effData["intrinsicEfficiency"] = round_to_sig_figs( eff, 6 );
       }catch( std::exception &e )
       {

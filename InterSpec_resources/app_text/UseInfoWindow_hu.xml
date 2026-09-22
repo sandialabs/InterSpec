@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Betöltés</message>
 
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Túl nagy fájl.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">Túl nagy fájl.</span>]]></message>
 
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Gyorsreferencia (PDF)</message>

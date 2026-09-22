@@ -6285,11 +6285,11 @@ std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const Sp
   sgcoeffs.smooth_with_variance( channel_counts, smoothed_2nd, smoothed_2nd_variance );
 
   // Lower extent: delegate to the unified resolution-aware estimator ("C1") now living in
-  //  ExperimentalPeakSearch::find_spectroscopic_extent(); see its definition for the method.
+  //  PeakFitUtils::find_spectroscopic_extent(); see its definition for the method.
   //  This function keeps its own upper-extent logic (below), which callers rely on.
   {
     size_t lo_ch = 0, hi_ch_ignored = 0;
-    if( ExperimentalPeakSearch::find_spectroscopic_extent( meas, lo_ch, hi_ch_ignored ) )
+    if( PeakFitUtils::find_spectroscopic_extent( meas, lo_ch, hi_ch_ignored ) )
       lower_channel = lo_ch;
     else
       lower_channel = nbin;  // force the simple fallback below (lower_channel > nbin/3)
@@ -10645,7 +10645,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_without_peaks(
         continue;
 
       const double br = photon.numPerSecond;  // BR since we used unit activity
-      const double eff = drf_to_use->intrinsicEfficiency( static_cast<float>(photon.energy) );
+      const double eff = drf_to_use->farFieldIntrinsicEfficiency( static_cast<float>(photon.energy) );
       const double score = br * eff;
 
       if( score > 0.0 )
@@ -10823,7 +10823,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   // whatever shielding is present.  Only sources with no matched peak fall back to the generic-DRF
   // brightest-gamma estimate.
   const auto eff_drf = [&drf_to_use]( double energy ) -> double {
-    return std::max( 1.0e-12, static_cast<double>( drf_to_use->intrinsicEfficiency( static_cast<float>(energy) ) ) );
+    return std::max( 1.0e-12, static_cast<double>( drf_to_use->farFieldIntrinsicEfficiency( static_cast<float>(energy) ) ) );
   };
 
   std::vector<tuple<RelActCalcAuto::SrcVariant, double, double>> source_age_and_acts;
@@ -10978,7 +10978,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_fallback(
   }else
   {
     fallback_rel_eff = [drf_to_use]( double energy ) -> double {
-      return drf_to_use->intrinsicEfficiency( static_cast<float>(energy) );
+      return drf_to_use->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
     };
   }
 
@@ -11077,7 +11077,7 @@ std::shared_ptr<const DetectorPeakResponse> generic_drf_for_rel_eff_extrap(
 
 // Shape a boundary rel-eff value to a higher energy using the DRF intrinsic-efficiency falloff:
 //   rel_eff(E) = rel_eff(E_hi) * drf_eff(E)/drf_eff(E_hi),  for E > E_hi.
-// DetectorPeakResponse::intrinsicEfficiency() self-clamps at the DRF's own energy-range edges, so
+// DetectorPeakResponse::farFieldIntrinsicEfficiency() self-clamps at the DRF's own energy-range edges, so
 // the multiplier is bounded (no blow-up).  Degrades to a flat hold (returns re_hi) when no usable
 // DRF is available or the boundary efficiency is non-positive.  Used for UPPER-side extrapolation
 // only; the lower side keeps a flat clamp (extrapolating rel-eff downward is unreliable too, and
@@ -11087,10 +11087,10 @@ double shape_rel_eff_above_boundary( const double re_hi, const double energy, co
 {
   if( !drf )
     return re_hi;
-  const double eff_hi = drf->intrinsicEfficiency( static_cast<float>(e_hi) );
+  const double eff_hi = drf->farFieldIntrinsicEfficiency( static_cast<float>(e_hi) );
   if( eff_hi <= 0.0 )
     return re_hi;
-  const double eff_e = drf->intrinsicEfficiency( static_cast<float>(energy) );
+  const double eff_e = drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
   return re_hi * (eff_e / eff_hi);
 }//shape_rel_eff_above_boundary
 

@@ -88,6 +88,51 @@ std::optional<RayHit> intersect_cylinder(
     double z_min,
     double z_max);
 
+/// Ray interval through the BORE SOLID itself -- the hole, independent of
+/// whatever surrounds it.  One named definition of "the bore", because three
+/// places now remove it (the active volume and the dead layer in
+/// Geometry::trace_cylinder_geometry, plus the bored-cylinder helpers below)
+/// and they must not drift apart.
+///
+/// The solid is the cylinder of `bore_radius` spanning [bore_z_start,
+/// bore_z_end], closed either flat at `bore_z_start` or, with `rounded_tip`, by
+/// a hemisphere of the same radius whose APEX sits at `bore_z_start` (a
+/// round-tipped drill; the stated bore depth is preserved).  Either way it is
+/// convex and confined to [bore_z_start, bore_z_end], so a ray meets it in
+/// exactly one interval and the returned interval never covers anything that is
+/// not bore.
+///
+/// That confinement is enforced, not assumed: for a BLUNT rounded tip
+/// (depth < 2*bore_radius, which set_bore_hole permits -- it only asserts
+/// bore_radius <= bore_depth) the capping ball would otherwise reach past
+/// `bore_z_end` and break convexity.  See rounded_bore_interval() in the .cpp
+/// for why that matters and what it used to cost.
+///
+/// @param direction  Ray direction (must be normalized)
+std::optional<RayHit> intersect_bore(
+    const Eigen::Vector3d& origin,
+    const Eigen::Vector3d& direction,
+    double bore_radius,
+    double bore_z_start,
+    double bore_z_end,
+    bool rounded_tip);
+
+/// Subtract a bore interval from a material interval on the SAME ray, leaving
+/// the 0-2 surviving pieces in `segments_out`; returns how many.
+///
+/// `bore_hit` is clamped to `outer_hit` first, so a bore that pokes out of the
+/// material -- a blunt tip's hemisphere past the back face, a bore deeper than
+/// the slab being cut -- needs no special case.  Pieces shorter than kEpsilon
+/// are dropped.
+///
+/// NOTE: `outer_hit.t_enter` is copied through UNCHANGED (not clamped to >= 0)
+/// when the bore leaves the front of the interval intact, while the comparison
+/// that decides that uses the clamped value.  Callers either clamp the result
+/// themselves or hand in an already-clamped interval, for which the two agree.
+int subtract_bore_interval(const RayHit& outer_hit,
+                           const std::optional<RayHit>& bore_hit,
+                           RayHit segments_out[2]);
+
 /// Compute ray intersection with a bore hole (subtracted cylinder).
 /// Returns up to two active segments when the ray passes through the bore.
 ///

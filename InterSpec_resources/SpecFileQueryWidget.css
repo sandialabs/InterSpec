@@ -1,19 +1,19 @@
 .SpecFileQueryConditions {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   border-radius: 2px;
   overflow-y: auto;
   overflow-x: hidden;
 }
   
 .SpecFileQueryResults {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   border-radius: 2px;
 }
   
 
 .SpecFileQueryErrorTxt {
     font-weight: bold;
-    color: red;
+    color: var(--interspec-error-color);
 }
 
 .SpecFileQueryOptionsBtn, .SpecFileQueryOptionsBtn:hover{

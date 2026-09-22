@@ -112,11 +112,11 @@ class DetectorPeakResponse
      return;
    }//try / catch
    
-   std::cout << det.intrinsicEfficiency(121.78f) << std::endl; //0.625191
-   std::cout << det.intrinsicEfficiency(411.02f) << std::endl; //0.333307
-   std::cout << det.intrinsicEfficiency(500.0f) << std::endl;    //0.285503
-   std::cout << det.intrinsicEfficiency(700.0f) << std::endl;    //0.219004
-   std::cout << det.intrinsicEfficiency(800.0f) << std::endl;    //0.197117
+   std::cout << det.farFieldIntrinsicEfficiency(121.78f) << std::endl; //0.625191
+   std::cout << det.farFieldIntrinsicEfficiency(411.02f) << std::endl; //0.333307
+   std::cout << det.farFieldIntrinsicEfficiency(500.0f) << std::endl;    //0.285503
+   std::cout << det.farFieldIntrinsicEfficiency(700.0f) << std::endl;    //0.219004
+   std::cout << det.farFieldIntrinsicEfficiency(800.0f) << std::endl;    //0.197117
   */
   
 public:
@@ -394,11 +394,11 @@ public:
   //        "+ -83.8077567526*log(x)^2  + 12.9980559362*log(x)^3"
   //        "+ -1.0068649823*log(x)^4 + 0.0311640084*log(x)^5)";
   //Should give:
-  //  intrinsicEfficiency(121.78)==0.625191;
-  //  intrinsicEfficiency(411.02)==0.333307;
-  //  intrinsicEfficiency(500)   ==0.285503;
-  //  intrinsicEfficiency(700)   ==0.219004;
-  //  intrinsicEfficiency(800)   ==0.197117
+  //  farFieldIntrinsicEfficiency(121.78)==0.625191;
+  //  farFieldIntrinsicEfficiency(411.02)==0.333307;
+  //  farFieldIntrinsicEfficiency(500)   ==0.285503;
+  //  farFieldIntrinsicEfficiency(700)   ==0.219004;
+  //  farFieldIntrinsicEfficiency(800)   ==0.197117
   //
   //The 'detector_diameter' is in units of PhysicalUnits (e.g. mm), and
   //  will not be used if 'fixedGeometry' is true..
@@ -565,15 +565,31 @@ public:
              uncertainties, FWHM info, and finally name
    - Admit failure and throw an exception.
    
-   In the future it may be implemented that the description is only cut down as much as needed,
-   or all characters converted to QR-ascii so the available number of characters is larger.
+   An over-long description is trimmed to a quarter of the budget before any of the above, so
+   that prose cannot cost the DRF its covariances.
    
-   The returned string is url-encoded - unlike the `toAppUrl()` function of other classes; this
-   is to allow the returned string to be represented as a ASCII-mode QR code.
+   Individual *values* are url-encoded - unlike the `toAppUrl()` function of other classes - but
+   the "&" and "=" separators are not, so the result is the canonical query string that
+   #fromAppUrl accepts.  Use #toAppUrlQr to get the form that actually goes into a QR code.
    
    If this DRF is not valid, will throw an exception.
    */
   std::string toAppUrl() const;
+  
+  /** Returns the complete app-URI for this DRF, escaped so that every character is in the QR
+   "Alphanumeric" set - i.e. "INTERSPEC://DRF/SPECIFY%3F" followed by an escaped #toAppUrl.
+   
+   Encoding a QR code from this rather than from a lower-case "interspec://..." string is worth
+   about a third of the code's bits, because the encoder picks one segment mode for the whole
+   text and a single non-alphanumeric character forces all of it into byte mode.
+   
+   This is the *only* thing that should be handed to `QrCode::displayTxtAsQrCode` or
+   `QrCode::utf8_string_to_svg_qr` for a DRF; in particular do not url-encode the result again,
+   since `InterSpec::handleAppUrl` removes exactly one layer of escaping.
+   
+   If this DRF is not valid, will throw an exception.
+   */
+  std::string toAppUrlQr() const;
   
   /** Decodes the "query" portion of a URL to form the DRF.
    
@@ -753,34 +769,90 @@ public:
    as #resolutionFcnCoefficients(). */
   const std::vector<float> &resolutionFcnUncertainties() const;
   
-  /** Returns efficiency of a full energy detection event, per decay measured at `distance`.
-   
+  /** Efficiency of a full energy detection event, per decay, for an on-axis point source at
+   `distance` - the DRF's best answer.
+
+   Identical to `efficiencyEval( energy, distance ).value`, so it honours any response
+   attached to this DRF: a Monte-Carlo characterization (#ceeloResponse), or the EFFTRAN
+   curve-transfer response CeeLoUtils::attachCurveTransferResponse gives every
+   geometry-bearing DRF at load.  With no response attached this is the legacy flat-disk
+   value - #flatDiskEfficiency - bit for bit.
+
+   Note this is therefore NOT in general
+   `fractionalSolidAngle(...) * farFieldIntrinsicEfficiency(energy)`: the intrinsic accessor
+   stays on the frozen curve, so the two only coincide when no response is attached.  A
+   caller that wants the flat-disk MODEL, rather than this DRF's best answer, must say so -
+   see #flatDiskEfficiency.
+
+   For a fixed-geometry DRF, `distance` is ignored and this returns
+   #farFieldIntrinsicEfficiency.
+
    Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
-   
-   If a fixed-geometry DRF, then distance must either be zero or negative, in which case will
-   just return the same thing as #intrinsicEfficiency
-   
+
    Will throw `std::runtime_exception` if this object has not been initialized.
    Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
    */
   double efficiency( const float energy, const double distance ) const;
 
 
+  /** The flat-disk absolute efficiency: the geometric solid-angle fraction of a disk of
+   #detectorDiameter at `distance` + #detectorSetback, times #farFieldIntrinsicEfficiency.
+
+   This is what #efficiency computes, and it is deliberately blind to any attached
+   #ceeloResponse.  Use it only where the flat-disk MODEL is what is wanted - not merely
+   where a number is wanted: the Act/Shield fit's `PointEffModel::FlatDisk` branch, whose
+   volumetric integrand is on the same model, and the results assembly that recovers a solid
+   angle by dividing this by the intrinsic efficiency.  Everything else should call
+   #efficiency.
+
+   Will throw `std::runtime_exception` if this object has not been initialized.
+   */
+  double flatDiskEfficiency( const float energy, const double distance ) const;
+
+
+  /** The source distance a #CeeLoUtils::flatDiskSnapshotAt snapshot was built for, or a
+   negative value for an ordinary DRF.
+
+   A snapshot's curve reproduces its response's absolute efficiency at ONE distance; asking
+   it for another silently re-extrapolates by the flat-disk solid-angle ratio, which is the
+   approximation the snapshot exists to avoid.  #efficiency asserts on that misuse under
+   PERFORM_DEVELOPER_CHECKS.  Not part of the DRF's value: not hashed and not serialized,
+   since a snapshot is a transient that must never be stored.
+   */
+  double flatDiskSnapshotDistance() const;
+
+  /** Sets (or clears, with a negative value) the snapshot distance above.  Intended for
+   #CeeLoUtils::flatDiskSnapshotAt; nothing else should mark a DRF as a snapshot.
+   */
+  void setFlatDiskSnapshotDistance( const double distance );
+
+
   /** Returns the fraction of gamma rays, at the specified energy, striking the face of the detector,
    will result in a full-energy detection event.  Or for fixed-geometry efficiencies, returns the efficiency
    of a gamma to be detected, per bq of the source (or similar per unit area, if for a surface distribution).
-   
+
+   ALWAYS the legacy far-field efficiency curve, even when a #ceeloResponse is attached: this is the
+   per-photon-crossing-the-face number the DRF was characterized with, and the quantity every
+   serialization, export and DRF-editing path round-trips.  It is deliberately NOT kept in step with
+   #efficiency, which dispatches through #efficiencyEval.  For the response's own view of the
+   intrinsic efficiency, use #intrinsicEfficiencyEval.
+
    Will throw `std::runtime_exception` if this object has not been initialized.
    Above or below maximum energies of the efficiency will return upper or lower efficiencies, respectively.
    */
-  float intrinsicEfficiency( const float energy ) const;
+  float farFieldIntrinsicEfficiency( const float energy ) const;
 
-  /** Returns a std::function that gives intrinsic efficiency as a function
-  of energy.  Useful primarily for places when you don't want to have this
-  class as a dependancy.
+  /** Returns a std::function that gives the far-field intrinsic efficiency as a
+  function of energy.  Useful primarily for places when you don't want to have
+  this class as a dependancy.
   Returns null function if not available.
+
+  Note: unlike #farFieldIntrinsicEfficiency, this deliberately does NOT apply the
+  #EffGeometryType::FarFieldAbsolute correction, matching historical behavior - so for a
+  FarFieldAbsolute DRF the two disagree.  Kept as-is here; see the header note on
+  #absoluteToIntrinsicMultiple.
   */
-  std::function<float( float )> intrinsicEfficiencyFcn() const;
+  std::function<float( float )> farFieldIntrinsicEfficiencyFcn() const;
 
   /** The (optional) uncertainty of the full-energy efficiency; may be nullptr.
 
@@ -899,16 +971,20 @@ public:
   /** Returns the fraction of gammas, at the specified energy, striking the
    detector face, that deposit *any* energy in the detector (or for
    fixed-geometry DRFs, the probability per decay or similar - mirrors
-   #intrinsicEfficiency).
+   #farFieldIntrinsicEfficiency).
 
    Throws std::runtime_error if !hasTotalEfficiency().
    */
   float totalIntrinsicEfficiency( const float energy ) const;
 
-  /** Returns probability of an emitted gamma, from a point source at
-   `distance`, depositing any energy in the detector - mirrors #efficiency.
+  /** Probability of an emitted gamma, from a point source at `distance`, depositing any
+   energy in the detector - the total-efficiency mirror of #efficiency, and like it equal to
+   `totalEfficiencyEval( energy, 0, 0, distance ).value`, so it honours an attached
+   #ceeloResponse's total-efficiency payload.
 
-   Throws std::runtime_error if !hasTotalEfficiency().
+   Throws std::runtime_error when the DRF has neither a total-efficiency curve nor a CeeLo
+   response (i.e. !#hasAnyTotalEfficiencyInfo).  Prefer #totalEfficiencyEval, which returns
+   {0, 0, NeedsMc} instead of throwing, or #totalIntrinsicEfficiencyAny.
    */
   double totalEfficiency( const float energy, const double distance ) const;
 
@@ -957,10 +1033,13 @@ public:
 
   /** The (optional) Monte-Carlo-parameterized detector response; may be
    nullptr.  When set, the #EffEval query functions and
-   #efficiencyFracCovariance dispatch to it; the legacy efficiency curve is
-   kept as the back-compat fallback/export, and #intrinsicEfficiency /
-   #efficiency are NOT affected (they keep evaluating the legacy curve
-   bit-identically).
+   #efficiencyFracCovariance dispatch to it, and so do #efficiency and
+   #totalEfficiency (through #efficiencyEval / #totalEfficiencyEval).
+
+   The legacy efficiency curve is kept as the back-compat fallback/export, and
+   #farFieldIntrinsicEfficiency / #totalIntrinsicEfficiency keep evaluating it
+   bit-identically - they are the frozen half of the pair.  #flatDiskEfficiency
+   is the explicit opt-out for a caller that needs the flat-disk model itself.
    */
   std::shared_ptr<const ceelo::DetectorResponse> ceeloResponse() const;
 
@@ -1013,9 +1092,9 @@ public:
    */
   void setMeasuredPoints( std::shared_ptr<const MeasuredDrfPoints> points );
 
-  /** #intrinsicEfficiency with 1-sigma uncertainty and provenance flag.
+  /** #farFieldIntrinsicEfficiency with 1-sigma uncertainty and provenance flag.
 
-   Legacy path: value is bit-identical to #intrinsicEfficiency, sigma from
+   Legacy path: value is bit-identical to #farFieldIntrinsicEfficiency, sigma from
    #efficiencyUncert (0 if none).  With a ceelo response: derived from the
    parameterized far-field on-axis response.
    */
@@ -1472,7 +1551,7 @@ protected:
    DetectorPeakResponse safely share the immutable curve.
 
    The FarFieldAbsolute absolute-to-intrinsic and solid-angle corrections are
-   NOT baked into the curve; they are applied by #intrinsicEfficiency /
+   NOT baked into the curve; they are applied by #farFieldIntrinsicEfficiency /
    #efficiency.
    */
   std::shared_ptr<const DetectorEfficiencyCurve> m_efficiency;
@@ -1564,10 +1643,16 @@ protected:
    external_libs/CeeLo/src/io/DetectorResponse.h.
 
    The legacy efficiency curve remains the fallback (and back-compat export);
-   #intrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
+   #farFieldIntrinsicEfficiency / #efficiency never dispatch here - only the #EffEval
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** See #flatDiskSnapshotDistance - negative for every DRF that is not a snapshot.
+   Deliberately absent from #computeHash, #operator== and #equalEnough: it says how this
+   object was made, not what it answers.
+   */
+  double m_flatDiskSnapshotDistance = -1.0;
 
   /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
   std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;

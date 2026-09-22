@@ -121,8 +121,11 @@
  1400, 2000 keV) that is the same for every detector and unrelated to that
  detector's ".PAR" energy nodes.  Only some of those energies are grid nodes:
 
-   * AT a node (45/60/80/100/300/500 here) we reproduce ".ecc" to ~6 digits, so
-     both tools demonstrably hold the same stored values.
+   * AT a node (45/60/80/100/300/500 here) we agree with ".ecc" to between ~6
+     digits (the best cases) and 0.0785% (the worst, which is what `EccMatch`
+     gates, at 0.1%), so both tools demonstrably hold the same stored values and
+     the residue is the vendor's own 4-significant-figure ASCII rounding plus its
+     geometry handling, not a difference in the numbers.
    * OFF a node (150/200/700/1000/1400/2000) ".ecc" is the reference tool's own
      interpolation of those same values - not ground truth.  So the worst gap of 
      ~1-2% (at 150/200 keV), is two interpolators drawing different curves
@@ -163,65 +166,265 @@
  characterization energies through 150-300 keV, which the files do not carry,
  would satisfy both goals.
 
+ A note that applies to the section below as well: when the assembled response's
+ low-energy accuracy was fixed, node DENSITY was the lever, not the interpolator.
+ PCHIP is unchanged, and the ".ecc" between-node comparison stayed bit-identical
+ (worst 0.017222) across that work - which is the correct outcome, since the
+ Monte-Carlo arbiter above says closing that gap would make us less accurate.
+
  -----------------------------------------------------------------------------
-  LOW-ENERGY VALIDITY FLOOR: TRUST THE ASSEMBLED RESPONSE ABOVE ~45 keV
-  (measured; a property of the files, not of our code)
+  HOW ACCURATELY THE ASSEMBLED RESPONSE REPRODUCES THE GRID
+  (all figures below are printed by `GridReproductionByBand` in
+   "target/testing/test_DetectorEffG2kPar.cpp"; regenerate, do not trust prose)
  -----------------------------------------------------------------------------
  The grid ITSELF is exact at its own nodes at every energy - the round-trip test
- reproduces stored values to ~6 digits down to the lowest node.  What degrades at
- low energy is the ASSEMBLED CeeLo response, which does not store the grid: it
- factorizes efficiency into an analytic kernel times a PCHIP-in-ln(E) correction
- (see step 7 of `makeDrf`).  Below the absorption knee the true efficiency falls
- by ~5 DECADES over a handful of nodes (on 18211381, on-axis at 25 cm: 8.2e-11 at
- 12 keV, 1.4e-05 at 22 keV, 1.6e-03 at 45 keV).  Twenty log-spaced nodes cannot
- resolve a cliff that steep, and the analytic kernel's endcap cutoff does not
- have the same shape as the file's, so the correction term carries the entire
- mismatch: its on-axis node values swing over ~4.6 in ln (0.74 -> -3.81 -> -1.31
- -> -0.81 -> -0.09) across 10-32 keV before settling to ~0.1 for the whole rest
- of the range.  PCHIP through that whipsaws between nodes.
+ reproduces stored values to ~6 digits down to the lowest node.  The ASSEMBLED
+ CeeLo response does not store the grid: it factorizes efficiency into an
+ analytic kernel times PCHIP-interpolated corrections (see step 7 of `makeDrf`),
+ so all of its error is interpolation error in that factorization.  This section
+ was previously a list of double-digit percentages attributed to the files; most
+ of that was ours, and two defects and three under-resolved axes have since been
+ fixed.  What remains, and why, is below.
 
- Measured worst |error| of the assembled response against the grid it was built
- from, over theta 0-88 deg and d in {2, 5, 10, 25, 100} cm (detector 18211381,
- whose grid starts at 10 keV):
+ THREE METRICS, NEVER TO BE CONFLATED.  Every number here is one of:
+   1. ON-LATTICE - a file energy node, an exact grid row, an exact grid column.
+      Truth is the stored uint16 with NO interpolation anywhere.  This isolates
+      our representation error and is the only thing gated.
+   2. OFF-NODE IN ENERGY - geometric midpoints of adjacent response nodes, the
+      worst case for cubic-Hermite error.  Truth still needs `ParEfficiency`'s
+      own energy PCHIP, so this is us-versus-us.
+   3. OFF-NODE IN d/theta - truth includes `interp_grid_V`'s bilinear-in-raw-V
+      kinks, which are an artifact of the reader, not of the detector.  Reported
+      for context; never gated.
+ Relative error is also meaningless where the efficiency is eight decades below
+ the crystal's peak, so the sub-22 keV bands are gated on ABSOLUTE error and the
+ report prints the efficiency each worst-case relative error sits on.
 
-     energy band     worst error      efficiency there (rel. to its peak)
-     10 -  16 keV    astronomical     ~1e-8   (efficiency is ~1e-10; meaningless)
-     16 -  22 keV    ~530%            ~1e-5 - 4e-3
-     22 -  32 keV    ~91%             0.004 - 0.10
-     32 -  45 keV    ~17%             0.10 - 0.52
-     45 -  60 keV    ~5.2%            0.52 - 0.80
-     60 - 2000 keV   ~2.8%            0.80 - 1.00   <-- the usable range
+ DEFECT 1, a real bug: a fabricated ~95x discontinuity at 11.107 keV.
+ `EtaTable` interpolates in ln E segmented at the crystal K-edges, and its
+ contract is that both flanks of every edge are nodes.  `makeDrf` asked for the
+ edges and stored them but never added the flanks - the one producer in the tree
+ that skipped it.  On 18211381 the Ge K-edge at 11.107 keV falls between the
+ file's 10 and 12 keV nodes, leaving 10 keV ALONE in its segment, which
+ `EtaTable::finalize` served as a constant stub: ln eta froze at the 10 keV value
+ below the crossover and at the 12 keV value above it, 4.55 apart in ln.  The
+ grid's own 10 and 12 keV pages are bit-identical, so the truth across that
+ interval is exactly flat in eps - the entire jump was invented.  `makeDrf` now
+ builds its energy axis (flanks included) before filling either table, and
+ `EtaTable::finalize` folds a lone-node run into a neighbour when that node
+ cannot stand in for its segment - see the comment there for why a lone FLANK
+ legitimately keeps its stub.  The test measures the step across the edge:
+ response 0.999508x against the grid's 1.000000x, where pre-fix it was ~3.8e8x.
+ LAB06 never had this: its grid starts at 45 keV, so no edge is retained.
 
- The error is confined to where the absolute efficiency is a small fraction of
- its peak, i.e. it is large in RELATIVE terms exactly where the response is
- negligible in ABSOLUTE terms.  On LAB06 (whose grid starts at 45 keV) there is
- no such region at all: worst ~2.2% across every band.
+ DEFECT 2, under-resolution, on THREE axes rather than the one first suspected.
+ Each was found the same way - hold the other axes node-exact and the error goes
+ to exactly 0.00000, so the residual always needed two axes off-node together:
+   * ENERGY.  Twenty log-spaced nodes cannot resolve an absorption knee that
+     falls ~5 decades across a handful of them while the kernel's analytic cutoff
+     falls on a DIFFERENT curve, leaving the whole mismatch in the ratio.  Fixed
+     by density, not by changing the interpolator: 20 file energies -> 363 eta
+     nodes and 63 near-field energies (LAB06: 15 -> 141 and 31).  The near-field
+     axis in particular must contain the FILE's own nodes, not just a resampling.
+   * DISTANCE.  The grid stores 440 radial rows at 3.03% each and truth is
+     bilinear in raw V, so there is a kink on EVERY row; the original 18-rung
+     ladder spanned ~10 of them per rung.  Now 60 rungs (58 on LAB06), uniform
+     with the [5, 30] cm window subdivided - `distance_ladder` in
+     "src/DetectorEffG2kPar.cpp" documents why the rungs are ADDED rather than
+     moved, and why the window ends at 30 cm.
+   * ANGLE.  `makeDrf` fills all 37 of the grid's columns on [0, 90] deg, and an
+     earlier note concluded from that the angular axis was "already node-exact".
+     IT IS NOT, and that claim is struck.  The response's angular nodes are
+     CRYSTAL-frame cosines while the grid is indexed in the ENDCAP-FACE frame,
+     and the two origins differ by `endcap_front_offset_cm`.  Measured AT 45 deg
+     on 18211381 (offset 0.5700 cm), the skew against 2.5 deg columns is +0.077
+     deg at 300 cm, +0.280 at 83 cm and +3.04 at 8 cm - it grows as the offset
+     becomes a bigger fraction of the standoff, and by 1 cm (+34 deg at 45 deg,
+     and larger at steeper angles) the frame correspondence is gone rather than
+     merely perturbed.  State the angle when quoting these: the skew depends on
+     it, rising toward theta = 90 deg (at 83 cm it is +0.28 at 45 deg but +0.39
+     approaching 90).  Refining the eta angular axis does not help - it is cheap
+     (1.13x bytes) and made a fixed 22-32 keV on-axis locus WORSE (0.00893 ->
+     0.01033 at 289 nodes; that is one locus, NOT the band maximum in the table
+     below), because the axis is not what is misaligned.
 
- Two things were checked and ruled out as causes, so this is not a latent bug:
+ ACHIEVED ON-LATTICE WORST |error|, and the efficiency it sits on.  MAIN is
+ d >= 5 cm and theta <= 75 deg; CORNER is everything else and is gated loosely
+ (see below).  18211381 (grid starts at 10 keV), then LAB06 (starts at 45 keV):
+
+     band        MAIN      eps there   band peak  | CORNER
+     10- 16 keV  0.49031   2.18e-09    2.18e-09   | 0.94210   <- abs 1.1e-09
+     16- 22 keV  0.04210   1.45e-10    5.71e-08   | 0.60479   <- abs 2.7e-10
+     22- 32 keV  0.02710   7.93e-07    1.77e-04   | 0.25616
+     32- 45 keV  0.01734   3.42e-04    7.08e-03   | 0.11716
+     45- 60 keV  0.00469   4.52e-03    2.38e-02   | 0.06269
+     60-200 keV  0.00254   2.80e-02    4.67e-02   | 0.04767
+     200-1k keV  0.00325   1.27e-03    3.03e-02   | 0.02642
+     1k -7k keV  0.00434   4.16e-03    1.08e-02   | 0.02723
+
+     LAB06:      MAIN                             | CORNER
+     45- 60 keV  0.00344   4.33e-02    4.50e-02   | 0.08930
+     60-200 keV  0.00365   2.47e-02    5.01e-02   | 0.06240
+     200-1k keV  0.00594   1.37e-02    2.67e-02   | 0.03301
+     1k -7k keV  0.00955   4.20e-04    9.23e-03   | 0.07592
+
+ Read the 10-16 keV row with its magnitude: the band's PEAK efficiency is
+ 2.18e-09, just over eight decades below the crystal's ~3e-1, and the worst ABSOLUTE error
+ is 1.07e-09.  A 49% relative error on a quantity that small cannot affect a
+ spectrum, which is why that band and 16-22 keV are gated absolutely.
+
+ WHAT STILL LIMITS EACH REGIME.  Three different things, and they are not
+ interchangeable:
+   * >= 45 keV, MAIN - the ladder was the cause and refinement fixes it fast: a
+     fixed 16-22 keV locus went 0.171 -> 0.00071 over 36 -> 144 rungs, i.e. 241x
+     for a 4x refinement, which is ~4th order (4^4 = 256) and is what cubic
+     Hermite gives on a locally smooth curve.  The |D2|*(H/h)^2/8 amplifier that
+     motivated densifying in the first place is a SECOND-order bound (it would
+     predict only 16x), so it is the conservative side of this and not an
+     explanation of the observed rate - do not quote the two as one result.
+     Every MAIN band on both detectors is now under
+     1%.  It is NOT quantization-limited: our error against a radially smoothed
+     grid equals our error against the raw bilinear, while the grid's own
+     self-inconsistency at those loci is 0.00007-0.0068.  Do not write the
+     "quantization-limited" claim for these bands.
+   * Sub-45 keV, MAIN - a sharp off-axis feature that the frame skew shears, and
+     no ladder fixes it.  At 16 keV and 9 cm the grid falls by a factor of 44 out
+     to 57.5 deg, with a second difference along theta of about
+     -32 raw-V LSB per 2.5 deg column at that row; because the skew moves where a
+     crystal-frame column lands in the face frame, and moves it BY A DIFFERENT
+     AMOUNT at each distance, no separable crystal-frame lattice tracks that
+     feature at all distances at once.  Contrast 122 keV at 5 cm, which departs
+     from its on-axis value by only ~30 LSB over the whole 0-77.5 deg sweep with
+     the largest single column-to-column step under 5 LSB - i.e. smooth on the
+     scale of a column.  That contrast is why >= 60 keV was ladder-fixable and
+     this is not.
+   * CORNER - ladder- and frame-limited, and partly the deferred past-90-deg
+     work.  Gated separately so a known-deferred regime cannot mask an on-axis
+     regression.  The V == 0 no-data sentinel matters here and ONLY here: it is
+     the endcap volume itself, which lies entirely behind the face plane (zero
+     such cells at theta <= 90 deg, onset at 92.5 deg), so it costs near-field
+     reach only in the grazing columns where a crystal-frame rung maps to a
+     face-frame point inside the can.  Those rungs are TRUNCATED - the column
+     holds its innermost valid value, which is what Pchip's flat clamp below its
+     first node does anyway - rather than filled with the sentinel, which would
+     anchor the ladder on an impossible number.  See `makeDrf`'s step for the
+     measured cost (48 of 666 rungs on one detector, 39 on the other).
+
+ MONTE-CARLO SPOT-CHECKS AT THE KNEE, and what they can and cannot settle.
+ The band table above measures FIDELITY TO THE FILE.  That cannot tell us whether
+ the file is right, so CeeLo transport through the SAME descriptor was run at the
+ knee, on-axis at 25 cm in vacuum, seeded, asking 1% relative FEP precision but
+ capped at 4e6 events and 180 s CPU - so the achieved precision is whatever the
+ cap allowed, which is the "MC sigma" note on the 16 keV row below.  Percentages
+ are against `ParEfficiency` at the same point; the energies are FILE NODES and
+ on-axis is column 0 exactly, but 25 cm is NOT a grid row (the rows are log-spaced
+ at 3.034%, and ln(250 mm)/r_step = 184.72), so the truth side still goes through
+ the reader's own interpolation in d.  By the taxonomy above this table is
+ therefore metric 3, not metric 1 (18211381, then LAB06):
+
+  Only the RATIOS are recorded - the absolute stored efficiencies they were formed
+  from are the vendor's characterization output, and this repository does not carry
+  those files or transcribe their content.  Re-measure with a throwaway against a
+  local corpus if the absolute numbers are ever needed.
+
+     E keV    | resp/grid   MC/grid
+      16.0    | +0.0064%    (unmeasurable, see below)
+      22.0    | -0.0356%    -3.68%
+      32.0    | -0.0175%    +1.03%
+      45.0    | -0.0091%    -1.30%
+     122.0    | +0.0171%    -1.36%
+     LAB06  45.0  | +0.0088%   -18.17%
+     LAB06 122.0  | +0.0323%    -6.56%
+
+ Two separate readings, and conflating them is the trap:
+   * `resp/grid` is our error against the reader at a point that is node-exact in
+     ENERGY and in ANGLE but off-node in DISTANCE by 0.72 of a row: 0.006-0.036%,
+     at or below the +-1 LSB storage floor.  It is a useful corroboration that
+     "we add essentially nothing" survives a query a user would actually make -
+     but it is NOT the on-lattice claim, which is the gated band table above, and
+     it is not a tighter figure than that table because the two measure different
+     things.  What it does show is that the distance ladder is dense enough here
+     that being 0.72 of a row off-node costs less than storage rounding.
+   * `MC/grid` is NOT our error.  `eps_fep_at` is grounded to the grid, so the
+     response tracks the file by construction; MC is ungrounded absolute
+     transport, and this column compares the vendor's characterization against
+     first-principles physics through the descriptor the files describe.  A few
+     percent at 22-122 keV is consistent with the 200 keV datum above and shows
+     no gross error at the knee.  LAB06's -18% at 45 keV is a real
+     descriptor-versus-vendor discrepancy, on the detector whose files pin the
+     geometry least well; it is an absolute-grounding question, NOT something
+     node density affects, and it is out of scope here.
+   * 16 keV is genuinely unmeasurable this way, and it is the run that hit the cap
+     rather than the 1% request: at eps ~6e-9 the whole 4e6-event budget yields a
+     handful of FEP counts, 57.7% statistical, so no comparison is reportable.
+     The other rows did reach ~1%, which is why they are quoted and this one is
+     not.  Adjudicating that band against truth needs position-biased MC, not more
+     nodes.
+ So the MC confirms we converged toward the file AND that the file is not grossly
+ wrong at the knee; it is not tight enough to adjudicate at the 0.1% level, and
+ the gated numbers remain fidelity-to-file by design.
+
+ THE FLOOR, AND WHY IT IS NOT WHAT LIMITS US.  The file stores
+ eff = 10^(-V/1000) as a uint16, so one raw-V step is 0.002305 in ln (0.2305%)
+ and +-1 LSB is 0.001152 (0.1152%).  That is the tightest claim definable against
+ the file's content, and every MAIN band above sits ABOVE it - 2.2x (18211381
+ 60-200 keV) to 8.3x (LAB06 1k-7k) over the bands >= 45 keV, and 15x and 23x for
+ 32-45 and 22-32 keV where the sheared angular feature dominates.  So no MAIN
+ band is storage-limited; each is limited by the method named for its regime
+ above.
+
+ ONE RESIDUE THAT IS NOT FIXABLE BY NODES, and is not a bug.  Within +-2% of a
+ retained K-edge the kernel is MID-CLIFF: `K` falls ~9 decades (2.9e-09 ->
+ 4.5e-18 over 11.11-11.20 keV) as the dead layer's tau jumps through the edge,
+ and `eta` has to cancel that to reproduce a grid which is flat there.  The
+ cancellation is exact only where both sides share an interpolation basis, and
+ they do not - eta is a cubic in ln E, while `K`'s attenuation is exp(-tau) off
+ the mu table's own log-log grid.  What is left is a ~10% bump over ~0.09 keV
+ that recovers to 1.0002 as soon as `K` clears the transition.  It was measured on
+ the synthetic `KEdgeSegmentsHaveBothFlanks` fixture, so take the SHAPE from there
+ and the MAGNITUDE from the band table above: on a real detector that window sits
+ inside 10-16 keV, whose peak efficiency is 2.18e-09, so the residue is ~2e-10
+ absolute at worst - which is why that band is gated absolutely.  Adding nodes
+ does not remove it (both sides refine, the bases still differ); only putting eta
+ on the kernel's basis would, which means changing the interpolator for that.
+ Outside those windows the
+ response is monotone across 10-45 keV to 0.1%, and the edge RATIO is pinned at
+ 0.999508x against the grid's 1.000000x.  `KEdgeSegmentsHaveBothFlanks` measures
+ both figures, and excludes the window explicitly rather than by a loose gate.
+
+ ANOTHER RESULT WORTH RECORDING, because it is counter-intuitive and will
+ otherwise be re-discovered: the achieved worst error is NOT monotone in ladder
+ density.
+ LAB06's 1k-7k MAIN band measures 0.03111 / 0.00955 / 0.02110 at 2 / 3 / 4
+ subdivisions, at three different loci.  Rung PHASE against the file's fixed
+ 3.03%/row grid matters as much as rung spacing, and row alignment is
+ unachievable for the same reason the angular axis is skewed: a crystal-frame
+ rung sitting on a grid row does not map to a grid row in the face frame.  Gates
+ therefore carry phase headroom instead of being set tight against one run.
+
+ COSTS.  The serialized response grows from 398,932 bytes to 3,554,015 for
+ 18211381 (8.91x) and 1,739,328 for LAB06 (4.36x) - far more than the ~2.5x first
+ predicted, because `ln_n` is the dominant block and scales with the ladder.
+ `makeDrf` fill cost is ne*nc*nd, and the gated corpus test runs ~7 min against
+ its 7200 s timeout.
+
+ KNOCK-ON, deliberate: `CeeLoUtils::setLegacyEfficiencyFromResponse` samples 48
+ points from `valid_e_min_keV` (10 keV) through `eps_fep_at`, so its lowest
+ points stop being garbage and the exported legacy curve - hence
+ `intrinsicEfficiency` below ~30 keV - changes.  That is this fix working on a
+ second user-visible path.
+
+ Two candidate causes were checked and RULED OUT; do not re-test them:
    * 18211381's two lowest nodes (10 and 12 keV) are BIT-IDENTICAL across all
      32120 grid cells - the file duplicates its first node.  Dropping the
-     duplicate changes the errors by exactly nothing, so the degeneracy is not
-     the mechanism.
-   * The behaviour is not near-field or grazing-angle specific: it is just as
-     large on-axis at 25 cm and 100 cm as at 2 cm.
- It is the energy factorization alone.
+     duplicate changes the errors by exactly nothing.
+   * It was never a near-field or grazing-angle effect at the original diagnosis
+     level: the blowup was just as large on-axis at 25 and 100 cm as at 2 cm.
 
- CONSEQUENCE, and why this is acceptable: 20 keV is the lower end of trustworthy
- nuclear data in InterSpec generally, and reference-tool output ("*.ecc") is never
- tabulated below 45 keV anywhere in the validation corpus - there is no ground
- truth below that to validate against even in principle.  So:
-
-     >= 60 keV     trust to ~3% (the between-node figure above)
-     45 - 60 keV   trust to ~5%
-     32 - 45 keV   indicative only (~17%)
-     <  32 keV     DO NOT USE the assembled response
-
- Callers needing values below ~45 keV should query `ParEfficiency::efficiency`
- directly, which reads the grid and is exact at its nodes.  Fixing the assembled
- path would mean changing the energy representation (more nodes through the knee,
- or a kernel whose low-energy cutoff matches the file's) - deliberately NOT done
- here, since it would trade a documented limit outside InterSpec's quantitative
- range for churn in the well-validated 60-7000 keV region.
+ Callers can now use the assembled response over the files' full range, reading
+ the table above for the bound that applies.  `ParEfficiency::efficiency` remains
+ available and is exact at grid nodes, so it is still the right call for anything
+ that must reproduce the vendor's stored values bit-for-bit.
  =============================================================================
 */
 

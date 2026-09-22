@@ -57,7 +57,6 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakFit_imp.hpp"
 
 using namespace std;
@@ -674,7 +673,7 @@ BOOST_AUTO_TEST_CASE( peakfitlm_recovers_step_from_zero_seed )
     BOOST_REQUIRE( peak->continuum()->parameters().back() == 0.0 );
 
     vector<shared_ptr<const PeakDef>> results;
-    PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                              PeakFitUtils::CoarseResolutionType::High );
 
     const string ctx = PeakContinuum::offset_type_str( type );
@@ -727,7 +726,7 @@ BOOST_AUTO_TEST_CASE( pinned_continuum_coefficient_still_fits_amplitude )
     const string ctx = PeakContinuum::offset_type_str( type );
 
     vector<shared_ptr<const PeakDef>> results;
-    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                                                      PeakFitUtils::CoarseResolutionType::High ) );
 
     BOOST_REQUIRE_MESSAGE( results.size() == 1,
@@ -774,7 +773,7 @@ BOOST_AUTO_TEST_CASE( pinned_step_coefficient_keeps_lls_path )
     const string ctx = PeakContinuum::offset_type_str( type );
 
     vector<shared_ptr<const PeakDef>> results;
-    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                                                      PeakFitUtils::CoarseResolutionType::High ) );
     BOOST_REQUIRE_MESSAGE( results.size() == 1, ctx << ": got " << results.size() << " peaks, not 1" );
 
@@ -847,41 +846,6 @@ BOOST_AUTO_TEST_CASE( legacy_bilinear_step_cdf_converts_on_read )
 }
 
 
-// PeakFitChi2Fcn packs the shared-continuum index and the OffsetType into a single double that it
-// hands Minuit2 as a parameter.  The OffsetType field was one decimal digit wide, so the two types
-// numbered 10 and 11 - BiLinearStepCDF and External - decoded back as NoOffset, tripping the
-// round-trip check in addPeaksToFitter(...) and aborting the fit for any ROI using them.
-// This is the revival of the commented-out `PeakFitChi2Fcn::testOffsetConversions()`.
-BOOST_AUTO_TEST_CASE( continuum_info_encoding_round_trips_every_type )
-{
-  for( const PeakContinuum::OffsetType type : all_offset_types() )
-  {
-    for( const int index : { -1, 0, 1, 2, 37, 500, 9998 } )
-    {
-      const string ctx = string(PeakContinuum::offset_type_str(type)) + " / index " + to_string(index);
-
-      // Both orders of setting the two fields must work.
-      double info = 0.0;
-      PeakFitChi2Fcn::setSharedIndexToContinuumInfo( info, index );
-      PeakFitChi2Fcn::setOffsetTypeToContinuumInfo( info, type );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToSharedIndex(info) == index,
-        ctx << ": index decoded as " << PeakFitChi2Fcn::continuumInfoToSharedIndex(info) );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToOffsetType(info) == type,
-        ctx << ": type decoded as "
-            << PeakContinuum::offset_type_str( PeakFitChi2Fcn::continuumInfoToOffsetType(info) ) );
-
-      info = 0.0;
-      PeakFitChi2Fcn::setOffsetTypeToContinuumInfo( info, type );
-      PeakFitChi2Fcn::setSharedIndexToContinuumInfo( info, index );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToSharedIndex(info) == index,
-        ctx << " (reversed order): index decoded as "
-            << PeakFitChi2Fcn::continuumInfoToSharedIndex(info) );
-      BOOST_CHECK_MESSAGE( PeakFitChi2Fcn::continuumInfoToOffsetType(info) == type,
-        ctx << " (reversed order): type decoded as "
-            << PeakContinuum::offset_type_str( PeakFitChi2Fcn::continuumInfoToOffsetType(info) ) );
-    }//for( index )
-  }//for( type )
-}
 
 
 // BiLinearStepCDF was reparameterised from two blended lines

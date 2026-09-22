@@ -1433,6 +1433,9 @@ ShieldingSelect::ShieldingSelect()
   m_materialEdit( nullptr ),
   m_isGenericMaterial( false ),
   m_materialSummary( nullptr ),
+  m_densityEdit( nullptr ),
+  m_materialSummaryAn( nullptr ),
+  m_materialSummaryErr( nullptr ),
   m_closeIcon( nullptr ),
   m_addIcon( nullptr ),
   m_addTraceSrcBtn( nullptr ),
@@ -1479,6 +1482,9 @@ ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
     m_materialEdit( nullptr ),
     m_isGenericMaterial( false ),
     m_materialSummary( nullptr ),
+    m_densityEdit( nullptr ),
+    m_materialSummaryAn( nullptr ),
+    m_materialSummaryErr( nullptr ),
     m_closeIcon( nullptr ),
     m_addIcon( nullptr ),
     m_addTraceSrcBtn( nullptr ),
@@ -2324,16 +2330,44 @@ void ShieldingSelect::init()
     "},true);}";
   m_materialEdit->doJavaScript( escapeJs );
 
-  if( m_forFitting )
   {
-    auto materialSummaryUniq = std::make_unique<WText>( "", TextFormat::XHTML );
-    m_materialSummary = materialSummaryUniq.get();
-    materialDivLayout->addWidget( std::move(materialSummaryUniq), 1, 1, AlignmentFlag::Middle );
-  }else
-  {
-    m_materialSummary = addNew<WText>( "", TextFormat::XHTML );
+    // The material summary: "ρ=7.87 g/cm³" (plus the effective atomic number when fitting).
+    //  The density is an input styled to look like the surrounding text (see ShieldingSelect.css),
+    //  so the user can click it and type a different density, without anything moving.
+    auto summaryUniq = std::make_unique<WContainerWidget>();
+    m_materialSummary = summaryUniq.get();
+    m_materialSummary->setInline( true );
     m_materialSummary->addStyleClass( "MaterialSummary" );
-    // Not added to layout yet; will be moved to sphericalLayout below
+    if( m_forFitting )
+      m_materialSummary->addStyleClass( "MaterialSummaryFit" );
+
+    m_materialSummary->addNew<WText>( "&rho;=", TextFormat::XHTML );
+
+    m_densityEdit = m_materialSummary->addNew<NativeFloatSpinBox>();
+    m_densityEdit->addStyleClass( "DensityEdit" );
+    m_densityEdit->setFormatString( "%.3g" );
+    m_densityEdit->setRange( 0.0f, 50.0f );
+    m_densityEdit->setSpinnerHidden( true );
+    m_densityEdit->valueChanged().connect( this, &ShieldingSelect::handleUserChangedDensity );
+    // Escape puts the current density back.  Its propagation is stopped so it doesnt also reach
+    //  the enclosing AuxWindow, several of which call `rejectWhenEscapePressed()` and would
+    //  otherwise close the whole tool (same reasoning as Wt's own WInPlaceEdit).
+    m_densityEdit->escapePressed().connect( this, &ShieldingSelect::updateMaterialSummary );
+    m_densityEdit->escapePressed().preventPropagation();
+
+    m_materialSummary->addNew<WText>( " g/cm<sup>3</sup>", TextFormat::XHTML );
+
+    if( m_forFitting )
+      m_materialSummaryAn = m_materialSummary->addNew<WText>( "", TextFormat::XHTML );
+
+    m_materialSummaryErr = m_materialSummary->addNew<WText>( WString::tr("ss-invalid-mat") );
+    m_materialSummaryErr->addStyleClass( "InvalidMat" );
+    m_materialSummaryErr->hide();
+
+    if( m_forFitting )
+      materialDivLayout->addWidget( std::move(summaryUniq), 1, 1, AlignmentFlag::Middle );
+    else
+      addWidget( std::move(summaryUniq) );  //will be moved into the thickness row below
   }
   
   materialDivLayout->setColumnStretch(1,1);
@@ -4485,21 +4519,16 @@ void ShieldingSelect::handleToggleGeneric()
   
   if( m_isGenericMaterial )
   {
-    const string oldmaterial = m_materialEdit->text().toUTF8();
-    
     //See if we can convert the current material into AN, AD
     m_dimensionsStack->setCurrentWidget( m_genericDiv );
-    m_materialSummary->setText( "" );
+    m_materialSummary->hide();
     m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
     updateMaterialTypeToggle();
-    
-    std::shared_ptr<const Material> mat;
-    try
-    {
-      mat = MaterialDB::instance()->material( oldmaterial );
-    }catch(std::exception &)
-    {}
+
+    // Use the current material, rather than looking the name up again, so a chemical formula, or
+    //  a user-modified density, converts correctly
+    const std::shared_ptr<const Material> mat = m_currentMaterial;
 
     double ad = -1.0;
     if( mat )
@@ -4687,6 +4716,7 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
     if( m_currentMaterial || !m_currentMaterialDescrip.empty() )
     {
       m_currentMaterial.reset();
+      m_baseMaterial.reset();
       m_currentMaterialDescrip = "";
     }
     
@@ -4702,6 +4732,7 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
     if( m_currentMaterial || !m_currentMaterialDescrip.empty() )
     {
       m_currentMaterial.reset();
+      m_baseMaterial.reset();
       m_currentMaterialDescrip = "";
     }
     
@@ -4713,10 +4744,13 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
   if( mat )
   {
     m_currentMaterialDescrip = text;
+    m_baseMaterial = mat;
+    // A private copy, so the user can change its density without touching the database
     m_currentMaterial = std::make_shared<Material>( *mat );
   }else
   {
     m_currentMaterial.reset();
+    m_baseMaterial.reset();
     m_currentMaterialDescrip = "";
   }
 }//void updateMaterialFromUserInputTxt()
@@ -4724,18 +4758,25 @@ void ShieldingSelect::updateMaterialFromUserInputTxt()
 
 void ShieldingSelect::handleMaterialChange()
 {
-  typedef pair<const SandiaDecay::Element *,float> ElementFrac;
-  typedef pair<const SandiaDecay::Nuclide *,float> NuclideFrac;
+  const std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
+  
+  if( !m_isGenericMaterial )
+    updateMaterialFromUserInputTxt();
+  
+  updateForNewMaterial( previousMaterial );
+}//void handleMaterialChange()
 
+
+void ShieldingSelect::updateForNewMaterial( const std::shared_ptr<const Material> &previousMaterial )
+{
   std::shared_ptr<const Material> newMaterial;
-  std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
   
   displayInputsForCurrentGeometry();
   setTraceSourceBtnStatus();
   
   if( m_isGenericMaterial )
   {
-    m_materialSummary->setText( "" );
+    m_materialSummary->hide();
     m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
     updateMaterialTypeToggle();
@@ -4757,86 +4798,18 @@ void ShieldingSelect::handleMaterialChange()
     updateMaterialTypeToggle();
     m_materialEdit->enable();
     
-    string tooltip = "nothing";
-    char summary[128];
-    summary[0] = '\0';
-   
-    updateMaterialFromUserInputTxt();
-    
     newMaterial = m_currentMaterial;
     
-    if( newMaterial )
+    if( newMaterial && m_forFitting )
+      m_fitThicknessCB->show();
+    
+    updateMaterialSummary();
+    
+    if( !newMaterial && m_materialEdit->text().narrow().length() )
     {
-//      if( SpecUtils::iequals_ascii(newMaterial->name, "void") )
-//      {
-//        if( m_forFitting )
-//        {
-//          m_fitThicknessCB->setChecked( false );
-//          m_fitThicknessCB->hide();
-//        }//if( m_forFitting )
-//        tooltip = "";
-//      }else
-      {
-        if( m_forFitting )
-          m_fitThicknessCB->show();
-
-        const double density = newMaterial->density
-                               * PhysicalUnits::cm3 / PhysicalUnits::gram;
-        
-        if( m_forFitting )
-        {
-          const float effAtomicNumber = newMaterial->massWeightedAtomicNumber();
-          snprintf( summary, sizeof(summary),
-                    "&rho;=%.3g g/cm<sup>3</sup>, <span style=\"text-decoration:overline\">AN</span>&#126;%.1f",
-                    density, effAtomicNumber );
-        }else
-        {
-          snprintf( summary, sizeof(summary),
-                    "&rho;=%.3g g/cm<sup>3</sup>", density );
-        }//if( m_forFitting ) / else
-        
-        
-        
-        tooltip += newMaterial->name + " " + WString::tr("ss-consists-of-mass-frac").toUTF8() + ":\n";
-
-        for( const ElementFrac &ef : newMaterial->elements )
-        {
-          if( ef.first )
-          {
-            char buffer[256];
-            snprintf( buffer, sizeof(buffer), "%.4f %s\n",
-                      ef.second, ef.first->name.c_str() );
-            tooltip += buffer;
-          }
-        }//for( const ElementFrac &ef : newMaterial->elements )
-
-        for( const NuclideFrac &ef : newMaterial->nuclides )
-        {
-          if( ef.first )
-          {
-            char buffer[256];
-            snprintf( buffer, sizeof(buffer), "\t%.4f %s\n",
-                      ef.second, ef.first->symbol.c_str() );
-            tooltip += buffer;
-          }
-        }//for( const NuclideFrac &ef : newMaterial->nuclides )
-
-        //Could consider putting attenuiation coefficients here...
-      }//if( newMaterial->name == "void" )
-    }else if( m_materialEdit->text().narrow().length() )
-    {
-      snprintf( summary, sizeof(summary), "invalid mat." );
       passMessage( WString::tr("ss-err-invalid-material").arg(m_materialEdit->text()),
                   WarningWidget::WarningMsgInfo );
-    }//if( material ) / else
-    
-
-//NOTE: can't add tooltip to this, causes WT error when toggling.  Can't fix.
-//    InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
-//    const bool showToolTips = true;//UserPreferences::preferenceValue<bool>( "ShowTooltips", app->viewer() );
-//    HelpSystem::attachToolTipOn( this,tooltip, showToolTips );
-    
-    m_materialSummary->setText( summary );
+    }
     
     if( m_traceSources )
     {
@@ -4883,8 +4856,15 @@ void ShieldingSelect::handleMaterialChange()
   }//if( generic material ) / else
   
   
+  // The same material (e.g., only its density was edited, or the text was re-resolved to an
+  //  equivalent definition) keeps the self-attenuating source selections and just refreshes
+  //  their activities; a different material rebuilds the source checkboxes.
+  const bool sameMaterial = (!previousMaterial && !newMaterial)
+                            || (previousMaterial && newMaterial
+                                && Material::sameComposition( *previousMaterial, *newMaterial ));
+  
   //Now we need to update the activities for any isotopes that are
-  if( !!newMaterial && m_asSourceCBs && (previousMaterial == newMaterial) )
+  if( newMaterial && m_asSourceCBs && sameMaterial )
   {
     //setMassFractionDisplaysToMaterial( newMaterial );
 
@@ -4898,10 +4878,10 @@ void ShieldingSelect::handleMaterialChange()
           m_activityFromVolumeNeedUpdating.emit( this, cb->isotope() );
       }//for( WWidget *child : children )
     }//for(...)
-  }//if( (previousMaterial == newMaterial) && m_asSourceCBs )
+  }//if( newMaterial && m_asSourceCBs && sameMaterial )
 
 
-  if( (previousMaterial != newMaterial) && m_asSourceCBs )
+  if( !sameMaterial && m_asSourceCBs )
   {
     for( ElementToNuclideMap::value_type &vt : m_sourceIsotopes )
     {
@@ -4929,7 +4909,7 @@ void ShieldingSelect::handleMaterialChange()
     }//if( newMaterial )
 
     m_asSourceCBs->setHidden( m_sourceIsotopes.empty() || m_fixedGeometry );
-  }//if( previousMaterial != newMaterial )
+  }//if( !sameMaterial && m_asSourceCBs )
 
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -4969,11 +4949,94 @@ void ShieldingSelect::handleMaterialChange()
    */
 #endif
   
-  if( previousMaterial != newMaterial )
-    m_materialModifiedSignal.emit( this );
-  else
+  if( sameMaterial )
     m_materialChangedSignal.emit( this );
-}//void handleMaterialChange()
+  else
+    m_materialModifiedSignal.emit( this );
+}//void updateForNewMaterial( const std::shared_ptr<const Material> &previousMaterial )
+
+
+void ShieldingSelect::updateMaterialSummary()
+{
+  const std::shared_ptr<const Material> mat = m_isGenericMaterial ? nullptr : m_currentMaterial;
+  const string material_txt = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
+  const bool invalid = (!m_isGenericMaterial && !mat && !material_txt.empty());
+
+  m_materialSummary->setHidden( m_isGenericMaterial );
+  m_materialSummaryErr->setHidden( !invalid );
+  for( WWidget *w : m_materialSummary->children() )
+  {
+    if( w != m_materialSummaryErr )
+      w->setHidden( !mat );
+  }
+
+  if( !mat )
+    return;
+
+  const double cm3_per_g = PhysicalUnits::cm3 / PhysicalUnits::g;
+  const double density = mat->density * cm3_per_g;
+  const double default_density = (m_baseMaterial ? m_baseMaterial->density : mat->density) * cm3_per_g;
+  const bool overridden = (fabs(density - default_density)
+                           > 1.0E-6*std::max(fabs(density), fabs(default_density)));
+
+  m_densityEdit->setValue( static_cast<float>(density) );
+  m_materialSummary->toggleStyleClass( "DensityOverridden", overridden );
+
+  // Size the input to its content, so it reads as text rather than as a form field.  Quantized
+  //  to half-em steps, so typing a value of similar length doesnt nudge the rest of the row.
+  const size_t nchar = std::max( size_t(3), m_densityEdit->valueText().toUTF8().size() );
+  const double width_em = std::min( 7.0, std::ceil( 2.0*(0.62*nchar + 0.5) ) / 2.0 );
+  m_densityEdit->setWidth( WLength( width_em, LengthUnit::FontEm ) );
+
+  char buffer[128];
+  snprintf( buffer, sizeof(buffer), "%.3g", default_density );
+  m_densityEdit->setPlaceholderText( WString::fromUTF8(buffer) );
+
+  InterSpec * const interspec = InterSpec::instance();
+  const bool showToolTips = interspec ? UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec ) : false;
+  HelpSystem::attachToolTipOn( m_materialSummary, WString::tr("ss-tt-density").arg(buffer), showToolTips );
+
+  if( m_materialSummaryAn )
+  {
+    snprintf( buffer, sizeof(buffer),
+              ", <span style=\"text-decoration:overline\">AN</span>&#126;%.1f",
+              mat->massWeightedAtomicNumber() );
+    m_materialSummaryAn->setText( buffer );
+  }//if( m_materialSummaryAn )
+}//void updateMaterialSummary()
+
+
+void ShieldingSelect::handleUserChangedDensity( const float density_g_cm3 )
+{
+  if( m_isGenericMaterial || !m_currentMaterial )
+    return;
+
+  const float g_per_cm3 = static_cast<float>( PhysicalUnits::g / PhysicalUnits::cm3 );
+  const std::shared_ptr<const Material> base = m_baseMaterial ? m_baseMaterial : m_currentMaterial;
+
+  // Blank (or zero) restores the materials default density
+  const float new_density = (density_g_cm3 > 0.0f) ? (density_g_cm3 * g_per_cm3) : base->density;
+  const float old_density = m_currentMaterial->density;
+
+  // NativeFloatSpinBox emits for both changed() and enterPressed(), so we often get here with
+  //  the density unchanged - just re-format the text (e.g., if the user typed "7.8740")
+  if( fabs(new_density - old_density) <= 1.0E-6f*std::max(fabs(new_density), fabs(old_density)) )
+  {
+    updateMaterialSummary();
+    return;
+  }
+
+  // A modified copy, rather than modifying in place: the current object may be referenced by an
+  //  in-progress fit, or a ShieldingInfo someone else holds.
+  auto modified = std::make_shared<Material>( *m_currentMaterial );
+  modified->density = new_density;
+
+  const std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
+  m_currentMaterial = modified;
+  updateForNewMaterial( previousMaterial );
+
+  handleUserChangeForUndoRedo();
+}//void handleUserChangedDensity( const float density_g_cm3 )
 
 
 void ShieldingSelect::handleUserChangedMaterialName()
@@ -5263,8 +5326,30 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       
     const string material_name = info.m_material ? info.m_material->name : string();
     m_materialEdit->setValueText( WString::fromUTF8(material_name) );
-    
-    handleMaterialChange();
+
+    // Adopt the supplied material, rather than re-resolving its name through the MaterialDB: it
+    //  may carry a user-modified density, or be a definition no longer in the database.
+    const std::shared_ptr<const Material> previousMaterial = m_currentMaterial;
+    if( info.m_material )
+    {
+      m_currentMaterial = std::make_shared<Material>( *info.m_material );
+
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      m_baseMaterial = MaterialDB::materialFromNameOrFormula( material_name, db );
+      if( !m_baseMaterial )
+        m_baseMaterial = m_currentMaterial;
+
+      // Must be exactly what updateMaterialFromUserInputTxt() compares the edit text against,
+      //  or the next call to it will replace the adopted material with the database one.
+      m_currentMaterialDescrip = SpecUtils::trim_copy( m_materialEdit->text().toUTF8() );
+    }else
+    {
+      m_currentMaterial.reset();
+      m_baseMaterial.reset();
+      m_currentMaterialDescrip.clear();
+    }//if( info.m_material ) / else
+
+    updateForNewMaterial( previousMaterial );
     
     // We dont have uncertainties of mass fraction, so to use `setMassFractions(...)` we need to
     //  slightly convert formats from `info.m_nuclideFractions` to the format with uncertainty
@@ -5707,101 +5792,6 @@ std::string ShieldingSelect::encodeStateToUrl() const
       break;
   }//switch( m_geometry )
   
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  // TODO: 20230705: remove this section of code after initial testing
-  
-  // "V=1&G=S&D1=1.2cm&N=Fe&NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
-  // "V": version
-  // "G": geometry
-  // "F": for fitting; if not specified than false
-  // "D1": "D2": Thickness, depth, etc
-  // "FD1": "FD2": fit the corresponding dimensions
-  // "N": material name
-  // "AN": atomic number
-  // "FAN": fit atomic number - if not specified than false
-  // "AD": areal density
-  // "FAD": fit areal density - if not specified than false
-  // ...
-  
-  string answer = "V=1";
-  
-  if( m_forFitting )
-    answer += "&F=1";
-  
-  if( m_isGenericMaterial )
-  {
-    answer += "&AD=" + m_arealDensityEdit->text().toUTF8();
-    answer += "&AN=" + m_atomicNumberEdit->text().toUTF8();
-    
-    if( m_forFitting && m_fitAtomicNumberCB->isChecked() )
-      answer += "&FAN=1";
-    if( m_forFitting && m_fitArealDensityCB->isChecked() )
-      answer += "&FAD=1";
-  }else
-  {
-    std::string material_name = m_materialEdit->text().toUTF8();
-    SpecUtils::ireplace_all(material_name, "#", "%23" );
-    SpecUtils::ireplace_all(material_name, "&", "%26" );
-    const string::size_type open_pos = material_name.find('(');
-    if( open_pos != string::npos )
-    {
-      const string::size_type close_pos = material_name.find(')', open_pos);
-      if( close_pos != string::npos )
-        material_name.erase(open_pos, close_pos - open_pos + 1);
-    }
-    SpecUtils::trim( material_name );
-    
-    if( !m_currentMaterial )
-      material_name = "";
-    
-    answer += "&N=" + material_name;
-      
-    switch( m_geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Spherical:
-        answer += "&G=S&D1=" + m_thicknessEdit->text().toUTF8();
-        if( m_forFitting && m_fitThicknessCB->isChecked() )
-          answer += "&FD1=1";
-        break;
-        
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-        if( m_geometry == GammaInteractionCalc::GeometryType::CylinderEndOn )
-          answer += "&G=CE";
-        else
-          answer += "&G=CS";
-        answer += "&D1=" + m_cylRadiusEdit->text().toUTF8();
-        answer += "&D2=" + m_cylLengthEdit->text().toUTF8();
-        if( m_forFitting && m_fitCylRadiusCB->isChecked() )
-          answer += "&FD1=1";
-        if( m_forFitting && m_fitCylLengthCB->isChecked() )
-          answer += "&FD2=1";
-        break;
-        
-      case GammaInteractionCalc::GeometryType::Rectangular:
-        answer += "&G=R";
-        answer += "&D1=" + m_rectWidthEdit->text().toUTF8();
-        answer += "&D2=" + m_rectHeightEdit->text().toUTF8();
-        answer += "&D3=" + m_rectDepthEdit->text().toUTF8();
-        if( m_forFitting && m_fitRectWidthCB->isChecked() )
-          answer += "&FD1=1";
-        if( m_forFitting && m_fitRectHeightCB->isChecked() )
-          answer += "&FD2=1";
-        if( m_forFitting && m_fitRectDepthCB->isChecked() )
-          answer += "&FD3=1";
-        break;
-        
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( m_geometry )
-    
-    // TODO: encode self-attenuating and trace sources, and maybe "truth" value; with a string like "NTRACE=3&TRACEN=1&V=1&N=U238&A=1.2uCi&T=total&F=1"
-  }//if( m_isGenericMaterial ) / else
-  
-  assert( uri == answer );
-#endif
   
   return uri;
 }//std::string encodeStateToUrl() const

@@ -10,7 +10,7 @@
   <message id="raagfp-not-in-roi">Nincs ROI-ban.</message>
 
   <!-- Tooltips -->
-  <message id="raagfp-constrain-fwhm-tt">Ha be van jelölve, ez a csúcs a gamma- és röntgencsúcsokra normálisan alkalmazott FWHM funkcionális formára lesz korlátozva.&lt;br /&gt;Ha nincs bejelölve, a csúcs FWHM-jét az adatokból illesztjük, az összes többi csúcsszélességtől függetlenül.&lt;br /&gt;A jelölés feloldása hasznos annihilációs és reakció-fotocsúcsok esetén.</message>
-  <message id="raagfp-true-energy-tt">Jelölje be, ha a csúcs ismert energiájú gammához tartozik.&lt;br /&gt;Törölje a jelölést, ha ez egy megfigyelt csúcs a spektrumban, amelynek valódi energiája ismeretlen.</message>
+  <message id="raagfp-constrain-fwhm-tt">Ha be van jelölve, ez a csúcs a gamma- és röntgencsúcsokra normálisan alkalmazott FWHM funkcionális formára lesz korlátozva.<br />Ha nincs bejelölve, a csúcs FWHM-jét az adatokból illesztjük, az összes többi csúcsszélességtől függetlenül.<br />A jelölés feloldása hasznos annihilációs és reakció-fotocsúcsok esetén.</message>
+  <message id="raagfp-true-energy-tt">Jelölje be, ha a csúcs ismert energiájú gammához tartozik.<br />Törölje a jelölést, ha ez egy megfigyelt csúcs a spektrumban, amelynek valódi energiája ismeretlen.</message>
 
 </messages>

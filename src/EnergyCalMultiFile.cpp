@@ -943,7 +943,7 @@ void EnergyCalMultiFile::applyCurrentFit()
     const string &filename = error_msgs[i].first;
     const string &msg = error_msgs[i].second;
     errmsg += "<p>" + error_msgs[i].first + ":"
-              " <span style=\"font-style: italic; font-family: monospace; color: red;\">"
+              " <span class=\"ErrorTxt\" style=\"font-style: italic; font-family: monospace;\">"
               + error_msgs[i].second
               + "</span></p>";
   }//for( loop over err messages )

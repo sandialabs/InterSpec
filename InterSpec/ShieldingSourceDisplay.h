@@ -73,14 +73,6 @@ namespace SandiaDecay
   struct Element;
 }//namespace SandiaDecay
 
-namespace ROOT
-{
-  namespace Minuit2
-  {
-    class MnUserParameters;
-  }//namespace Minuit2
-}//namespace ROOT
-
 //A Forward declaration
 namespace rapidxml
 {
@@ -345,6 +337,13 @@ public:
   ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakModel,
                           InterSpec *specViewer );
   
+  /** The widest #createWindow will open the window at, in pixels.
+
+   Only the initial size is capped; the user can still resize the window wider.  On a wide monitor
+   the previous purely proportional size stranded the tool's content across the dialog.
+   */
+  static const double sm_maxInitialWindowWidth;
+
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
    
    @returns the created ShieldingSourceDisplay and AuxWindow. If for some reason there was an issue
@@ -824,7 +823,7 @@ public:
   
 
   std::pair<std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
-            ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn();
+            ShieldingSourceFitCalc::FitParameters> shieldingFitnessFcn();
   
 
   //toggle checkbox/chart
@@ -1092,7 +1091,7 @@ protected:
    teardown paths) can wait for the worker on `WServer::ioService()` to fully
    return before this widget's memory is freed.  Without this, `cancelFit()`
    only signals the chi2 function to throw at its next `DoEval` - the worker
-   thread itself may still be unwinding the Minuit2 call stack and posting
+   thread itself may still be unwinding the fit call stack and posting
    completion callbacks when `~ShieldingSourceDisplay` returns, which can
    keep `WServer::stop()` from draining on shutdown.
    */

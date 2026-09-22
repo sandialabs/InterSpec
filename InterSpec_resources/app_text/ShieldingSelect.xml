@@ -49,6 +49,7 @@
   <message id="ss-consists-of-mass-frac">consist of (mass fraction, element)</message>
   <message id="ss-err-invalid-material">{1} is not a valid material</message>
   <message id="ss-invalid-mat">invalid mat.</message>
+  <message id="ss-tt-density">Click to edit the density of the material, in g/cm<sup>3</sup>; the value used in calculations is shown italic if it differs from the default of {1} g/cm<sup>3</sup>. Leave blank to restore the default.</message>
   <message id="ss-src-mass-frac-label">mass frac of {1}:</message>
   <message id="ss-non-src-frac">Non Source Frac</message>
   <message id="ss-add-shield-before">Add shielding before</message>

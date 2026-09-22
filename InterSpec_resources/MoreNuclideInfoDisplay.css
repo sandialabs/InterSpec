@@ -132,13 +132,13 @@ uses to control its maximum width.
 .MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton,
 .MoreNuclideInfoDisplay a
 {
-  color: rgb(18,101,200);
+  color: var(--interspec-link-color);
 }
 
 .MoreNuclideInfoDisplay button.with-label.Wt-btn.LightButton:hover,
 .MoreNuclideInfoDisplay a:hover
 {
-  color: rgb(99, 161, 236);
+  color: var(--interspec-link-color);
 }
 
 

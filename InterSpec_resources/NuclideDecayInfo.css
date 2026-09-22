@@ -4,16 +4,14 @@
 .mycloseicon, .mycloseicon:hover
 {
 background: transparent url(images/closeicons-tab.png) no-repeat scroll right top;
-margin: 0px 4px 0px 0px;
+margin: 0px;
 height: 13px;
 width: 13px;
+min-width: 13px;
 border: 0px;
 padding: 0px;
-margin-left: 5px;
-cursor: default;
-position: relative;
-top: -1px;
-vertical-align: middle
+cursor: pointer;
+flex: 0 0 auto;
 }
 
 .mycloseicon:hover
@@ -76,7 +74,7 @@ cursor: default;
 
 .displayOptionsDiv
 {
-  border: 1px solid #888888;
+  border: 1px solid var(--interspec-outline-color);
   padding-top: 6px;
   padding-bottom: 6px;
   padding-left: 12px;
@@ -100,35 +98,155 @@ cursor: default;
   flex-shrink: 1;
 }
 
+/* The two actions are icon-only: no button surface, and black artwork that the theme's icon filter
+   flips for dark, so they read as icons rather than as buttons. */
+.NucActions button,
+.NucActions button:hover
+{
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 2px;
+  margin: 0px;
+  height: auto;
+  min-width: 0;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.NucActions button:hover
+{
+  opacity: 1.0;
+}
+
+.NucActions button[disabled],
+.NucActions button[disabled]:hover
+{
+  background: none;
+  border: none;
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.NucActions button img
+{
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 0px;
+  padding: 0px;
+  filter: var(--interspec-icon-filter);
+}
+
+/* Header: the nuclides live in their own outlined area, with the add / remove-all actions grouped
+   at its right.  Everything is centred on one line rather than left to inline flow, which is what
+   used to leave the buttons and the nuclides sitting at different heights. */
+.m_parentNuclidesDiv
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0px;
+}
+
+.m_nuclidesAddedDiv
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  /* Holds one chip row exactly, so adding or removing the last nuclide does not resize the area. */
+  min-height: 34px;
+  padding: 3px 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--interspec-border-color);
+  border-radius: 5px;
+}
+
+.NoNuclidesTxt
+{
+  /* Same box as a .Nuclide chip (padding plus a transparent border), so the area does not change
+     height as the last nuclide is removed. */
+  display: inline-flex;
+  align-items: center;
+  /* Same box as a .Nuclide chip: its padding and border, plus the height its icons give it. */
+  min-height: 20px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  color: var(--interspec-fainter-text-color);
+  font-style: italic;
+}
+
+.NucActions
+{
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .Nuclide /*this is what contains the info about nuclides added*/
 {
-  border: 1px solid #888888;
-  margin-top: 6px;
-  margin-left: 2px;
-  margin-right: 2px;
-  padding: 3px 1px 3px 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--interspec-outline-color);
+  padding: 2px 4px;
   -moz-border-radius: 5px;
   border-radius: 5px;
+}
+
+/* Always shown: the tooltip was the only hint that a nuclide could be edited at all. */
+.Nuclide .NucEditIcon
+{
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0px;
+  margin: 0px;
+  height: auto;
+  min-width: 0;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.Nuclide .NucEditIcon:hover
+{
+  opacity: 1.0;
+}
+
+.Nuclide .NucEditIcon img
+{
+  display: block;
+  /* The pencil is taller than it is wide, so height drives it and the width follows. */
+  height: 12px;
+  width: auto;
+  margin: 0px;
+  padding: 0px;
+  /* Wt gives a button's icon no class, so the .Wt-icon rule that flips dark-theme icons misses it */
+  filter: var(--interspec-icon-filter);
 }
 
 
 .Nuclide:hover
 {
-  background: rgba(115,187,235,0.1);
+  background: var(--interspec-hover-background);
 }
 
 .EditingNuclide, .EditingNuclide:hover
 {
-  border: 1px solid red;
-  background: blue; /*for IEs sake*/
-  background: rgba(115,187,235,0.4);
+  border: 1px solid var(--interspec-error-color);
+  background: var(--interspec-selected-background); /*for IEs sake*/
+  background: var(--interspec-highlight-background);
 }
 
 .ActiveDecayChainNuc
 {
-  border: 1px solid blue;
-  background: blue; /*for IEs sake*/
-  background: rgba(115,187,235,0.05);
+  border: 1px solid var(--interspec-link-color);
+  background: var(--interspec-selected-background); /*for IEs sake*/
+  background: var(--interspec-highlight-background);
 }
 
 
@@ -189,12 +307,12 @@ cursor: default;
 
 .DecayedNucInfoTable
 {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .DecayedNucInfoTable > thead > tr > th
 {
-  border-bottom: 1px solid black;
+  border-bottom: 1px solid var(--interspec-outline-color);
 }
 .DecayedNucInfoTable > tbody > tr > td
 {
@@ -209,7 +327,7 @@ cursor: default;
 }
 
 .ChartTabWidgetStack {
-  border: solid 1px grey;
+  border: solid 1px var(--interspec-outline-color);
   border-top: none;
 }
 
@@ -230,7 +348,7 @@ cursor: default;
 
 .NuclideInfo
 {
-  background-color: #DDDDDD;
+  background-color: var(--interspec-panel-background);
   border: solid;
   border-width:1px;
   margin-left: 2ex;

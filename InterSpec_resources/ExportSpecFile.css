@@ -37,7 +37,7 @@
   display: flex;
   flex-direction: column;
   height: calc(100% - 2px);
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 3px;
 }
 
@@ -79,7 +79,7 @@
   padding-left: 3px;
   padding-right: 3px;
   margin-bottom: 2px;
-  border-bottom: 1px solid #e1e1e1;
+  border-bottom: 1px solid var(--interspec-border-color);
 }
 
 .ExportSpecFileTool .ExportSpecSelect,
@@ -87,7 +87,7 @@
 .ExportSpecFileTool .ExportSpecSamples,
 .ExportSpecFileTool .ExportSpecOptions
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 3px;
   display: flex;
   flex-direction: column;
@@ -267,7 +267,7 @@
   padding-bottom: 5px;
   display: flex;
   margin-top: 10px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
   justify-content: space-between;
   align-items: center;
 }
@@ -292,9 +292,9 @@
 
 .ExportSpecFileTool button.Wt-btn.with-label.LightButton.LinkBtn.ExportSpecExportBtn
 {
-  color: blue;
+  color: var(--interspec-link-color);
   float: none;
-  border: 1px solid blue !important;
+  border: 1px solid var(--interspec-link-color) !important;
 }
 
 
@@ -319,7 +319,7 @@
   overflow-y: auto;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid #e1e1e1;
+  border-top: 1px solid var(--interspec-border-color);
 }
 
 .ExportSpecFileTool .GenieCnfOptions > *
@@ -390,7 +390,7 @@
 .ExportSpecFileTool .GenieCnfWarnings
 {
   font-size: x-small;
-  color: #b35c00;
+  color: var(--interspec-warning-color);
   white-space: normal;
 }
 
@@ -402,6 +402,6 @@
 
 .ExportSpecFileTool .GenieCnfOptions input.InvalidInput
 {
-  background: #ffe8e8;
-  border: 1px solid #d00;
+  background: var(--interspec-error-background);
+  border: 1px solid var(--interspec-error-color);
 }

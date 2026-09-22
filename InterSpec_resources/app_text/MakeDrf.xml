@@ -133,4 +133,5 @@
   <message id="md-export-n42-anchor">Export data as N42-2012 file.</message>
   <message id="md-err-window-title">Error</message>
   <message id="md-drf-not-valid">Sorry, DRF not valid.</message>
+  <message id="md-qr-no-mc-note">Note: this QR code carries the detector&apos;s shape, but not its Monte-Carlo characterization - that is far too large to encode.  Scanning it gives the efficiency curve and the geometry; the response must be generated again from that geometry.</message>
 </messages>

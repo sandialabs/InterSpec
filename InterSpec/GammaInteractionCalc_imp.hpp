@@ -1421,10 +1421,10 @@ struct DistributedSrcCalcT
    with `det` the detector geometry that produced it) to the per-element efficiency actually applied
    to the integrand.
 
-   FlatDisk (or null #m_effResponse): returns `flat` unchanged (post-integration intrinsicEfficiency
+   FlatDisk (or null #m_effResponse): returns `flat` unchanged (post-integration farFieldIntrinsicEfficiency
    then reproduces the legacy result).  MCTransfer/EffTran: returns the absolute FEP efficiency
    `m_effResponse->eps_fep( m_energy, incidence-angle, 0, dist/cm )` - solid angle and intrinsic
-   response already folded in, so intrinsicEfficiency must NOT be applied afterward.
+   response already folded in, so farFieldIntrinsicEfficiency must NOT be applied afterward.
 
    Autodiff-safe: the value equals eps_fep exactly, while the (dominant) 1/r^2 gradient is carried by
    the exact Jet-differentiated `flat`, scaled by the frozen-double near-field/off-axis correction
@@ -4384,7 +4384,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
       double fep_int = 0.0, tot_int = 0.0;
       try
       {
-        fep_int = m_detector->intrinsicEfficiency( static_cast<float>(energy) );
+        fep_int = m_detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
         // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no
         //  total-efficiency info - the CeeLo-response case, where the total
         //  lives in the response, not a separate curve.
@@ -5111,12 +5111,12 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
       // FlatDisk folds intrinsic efficiency in here (the integrand carried only the flat-disk solid
       //  angle); MCTransfer/EffTran already applied the absolute FEP efficiency per element, so
-      //  applying intrinsicEfficiency again would double-count it.  Keyed on the RESPONSE, not the
+      //  applying farFieldIntrinsicEfficiency again would double-count it.  Keyed on the RESPONSE, not the
       //  method enum, so this can never disagree with what eff_response_factor actually did.
       assert( (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
               == !calculator->m_effResponse );
       if( m_detector && m_detector->isValid() && !calculator->m_effResponse )
-        contrib *= m_detector->intrinsicEfficiency( static_cast<float>(calculator->m_energy) );
+        contrib *= m_detector->farFieldIntrinsicEfficiency( static_cast<float>(calculator->m_energy) );
 
       energy_count_map[calculator->m_energy] += contrib;
     }//for( loop over calculators )

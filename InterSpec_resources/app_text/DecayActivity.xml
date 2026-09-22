@@ -45,6 +45,10 @@
   <message id="dad-alpha-rate">Alpha Rate</message>
   <message id="dad-click-for-more-info">Click for more information</message>
   <message id="dad-tt-double-click">Double click to edit this source nuclide. Single click to make the decay chain to display this nuclide</message>
+  <message id="dad-tt-edit-nuclide">Edit this nuclide</message>
+  <message id="dad-tt-remove-nuclide">Remove this nuclide</message>
+  <message id="dad-no-nuclides">No nuclides added</message>
+  <message id="dad-remove-all-confirm">Remove all of the nuclides you have added?</message>
   <message id="dad-summary-at-time">Summary at t={1}</message>
   <message id="dad-hdr-date">Date ({1})</message>
   <message id="dad-hdr-total-act">Total Activity</message>

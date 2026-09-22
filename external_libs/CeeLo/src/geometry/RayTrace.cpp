@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cassert>
 #include <limits>
+#include <optional>
 #include <random>
 
 namespace ceelo {
@@ -297,9 +298,41 @@ void Geometry::trace_cylinder_geometry(
                "Dead layer leaves no room for the bulletized active volume");
     }
 
+    // Apex of the bore, i.e. where the drilled hole's closed end sits.
+    // set_bore_hole asserts 0 < depth < length, so the bore never breaks out of
+    // the front face.
+    const double bore_z_start = bore_hole_ ? (crystal_z_max - bore_hole_->depth) : 0.0;
+
+    // Does the WHOLE bore already lie inside the active volume?  Then removing
+    // it from the dead layer below is a no-op -- the dead layer is the crystal
+    // minus the active volume minus the bore, and a bore already inside the
+    // active volume is already gone -- so that block runs exactly the code it
+    // always ran, bit for bit.  Which is what the innermost transport loops of
+    // an ordinary coaxial HPGe (no back dead layer) want.
+    //
+    // Non-strict comparisons on purpose: equality means the bore touches the
+    // active volume's boundary from inside, a measure-zero difference that
+    // cannot change any interval of positive length.  back == 0.0 gives
+    // dl_z_max == crystal_z_max exactly, so the common case takes this path
+    // with no epsilon fudge.
+    //
+    // Tested against the STRAIGHT, flat-bottomed bore, which covers the
+    // round-tipped one too: intersect_bore() confines either shape to
+    // [bore_z_start, bore_z_end] and the rounded one is never wider than
+    // bore_radius, so the rounded bore is a subset of the flat one.
+    bool bore_inside_active_volume = false;
+    if (bore_hole_ && dead_layer_) {   // only the dead-layer block below reads this
+        bore_inside_active_volume =
+               (bore_hole_->radius <= dl_r)      // inside the active radius
+            && (bore_z_start       >= dl_z_min)  // apex behind the front dead layer
+            && (crystal_z_max      <= dl_z_max)  // no back dead layer to drill through
+            && (!bulletized                      // and clear of the active fillet
+                || bore_hole_->radius <= active_fillet.rho_c
+                || bore_z_start       >= active_fillet.z_c);
+    }
+
     // Active crystal (innermost)
     if (bore_hole_) {
-        double bore_z_start = crystal_z_max - bore_hole_->depth;
         RayHit bore_segments[2];
         int n_seg = (bulletized || bore_hole_->rounded_tip)
             ? intersect_shaped_bored_cylinder(
@@ -334,7 +367,32 @@ void Geometry::trace_cylinder_geometry(
         }
     }
 
-    // Dead layer
+    // Dead layer.
+    //
+    // The dead layer is what is left of the crystal once BOTH the active volume
+    // and the bore are removed:  dead = solid - active - bore.  A bore is a hole
+    // drilled in from the back face and is empty over its WHOLE length, so
+    // wherever it runs through dead material rather than active there is no
+    // germanium either.  That happens in four ways:
+    //     z > dl_z_max   a back dead layer to drill through
+    //     z < dl_z_min   a bore deep enough to reach the front dead layer
+    //     rho > dl_r     a bore wider than the active radius
+    //     inside the removed front corner of a bulletized crystal
+    //
+    // The library's two other descriptions of this same solid already agree,
+    // and all three have to stay in step:
+    //   * src/DetectorGeometryDiagram.cpp (InterSpec) reports the user-facing
+    //     volumes and masses as v_dead = v_solid - v_bore - v_active;
+    //   * src/export/Geant4Export.cpp writes ONE polycone whose rmin is the bore
+    //     over the whole crystal profile -- the geometry GEANT4 validates
+    //     against.
+    //
+    // Both subtrahends are convex, so each meets the ray in a single interval
+    // and no union logic is needed: cut the active volume out of the crystal
+    // interval (the 0-2 pieces this block has always produced), then cut the
+    // bore out of each piece.  At most 3 survive -- a bore interval that reached
+    // both pieces would have to span the active gap between them, so it trims a
+    // suffix from one and a prefix from the other rather than splitting either.
     if (dead_layer_) {
         auto outer_hit = bulletized
             ? intersect_bulletized_cylinder(origin, direction, crystal_r,
@@ -350,20 +408,58 @@ void Geometry::trace_cylinder_geometry(
             double t0_out = std::max(outer_hit->t_enter, 0.0);
             double t1_out = outer_hit->t_exit;
 
+            // Crystal minus active volume.  This is the original arithmetic,
+            // unchanged, only held in an array so the bore can be cut out of it
+            // below -- deliberately NOT routed through subtract_bore_interval(),
+            // which differs from it when the active and outer chords are
+            // disjoint along the ray (unreachable with non-negative dead layers,
+            // reachable with the negative ones test_bounding_cone.cpp supports).
+            // Keeping it verbatim is what makes the no-op guarantee
+            // unconditional and checkable by inspection.
+            RayHit dead[2];
+            int n_dead = 0;
+
             if (inner_hit && inner_hit->valid()) {
                 double t0_in = std::max(inner_hit->t_enter, 0.0);
                 double t1_in = inner_hit->t_exit;
 
                 // Dead layer segments: [t0_out, t0_in] and [t1_in, t1_out]
                 if (t0_out < t0_in - 1e-12) {
-                    segments.push_back({t0_out, t0_in, detector_material_, false});
+                    dead[n_dead++] = RayHit{t0_out, t0_in};
                 }
                 if (t1_in < t1_out - 1e-12) {
-                    segments.push_back({t1_in, t1_out, detector_material_, false});
+                    dead[n_dead++] = RayHit{t1_in, t1_out};
                 }
             } else {
-                // Inner crystal missed — entire outer hit is dead layer
-                segments.push_back({t0_out, t1_out, detector_material_, false});
+                // Inner crystal missed — entire outer hit is dead layer.  This
+                // is the branch that used to hurt most: a ray crossing the front
+                // dead layer ahead of a deep bore misses the active cylinder
+                // entirely, and the whole crystal chord -- hole included -- was
+                // scored as germanium.
+                dead[n_dead++] = RayHit{t0_out, t1_out};
+            }
+
+            std::optional<RayHit> bore_hit;
+            if (bore_hole_ && !bore_inside_active_volume) {
+                bore_hit = intersect_bore(origin, direction, bore_hole_->radius,
+                                          bore_z_start, crystal_z_max,
+                                          bore_hole_->rounded_tip);
+            }
+
+            for (int i = 0; i < n_dead; ++i) {
+                if (!bore_hit) {
+                    segments.push_back({dead[i].t_enter, dead[i].t_exit,
+                                        detector_material_, false});
+                    continue;
+                }
+                // dead[i] is already clamped to t >= 0, so subtract_bore_interval's
+                // unclamped t_enter passthrough gives the same value either way.
+                RayHit pieces[2];
+                const int n = subtract_bore_interval(dead[i], bore_hit, pieces);
+                for (int j = 0; j < n; ++j) {
+                    segments.push_back({pieces[j].t_enter, pieces[j].t_exit,
+                                        detector_material_, false});
+                }
             }
         }
     }

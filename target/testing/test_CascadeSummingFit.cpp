@@ -76,8 +76,6 @@
 #define BOOST_TEST_MODULE CascadeSummingFit_suite
 #include <boost/test/included/unit_test.hpp>
 
-//Roots Minuit2 includes
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay.h"
 
@@ -983,11 +981,11 @@ double fit_activity( const TruthScene &sc, const bool cascade_option )
   const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
                                                         = build_scene_input( sc, cascade_option );
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
         fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1011,11 +1009,11 @@ double fit_activity( const TruthScene &sc, const bool cascade_option )
 void fit_params( const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &chi_input,
                  vector<double> &values, vector<double> &errors )
 {
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
         fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1294,7 +1292,7 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
         std::function<double(double)> Tf; const ShieldScatterAugment *sc;
         double an, ad; bool use_scatter;
         double fep( double e ) const override {
-          return omega * drf->intrinsicEfficiency( (float)e ) * Tf(e);
+          return omega * drf->farFieldIntrinsicEfficiency( (float)e ) * Tf(e);
         }
         double total( double e ) const override {
           double shield_part = Tf(e);
@@ -1357,9 +1355,9 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
   const auto evaluate = [&]( const ShieldingSourceChi2Fcn::ShieldSourceInput &input,
                              const VolumetricIntegrator path ) -> vector<PeakResultPlotInfo>
   {
-    pair<shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+    pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                                                      = ShieldingSourceChi2Fcn::create( input );
-    const vector<double> params = fcn_pars.second.Params();
+    const vector<double> params = fcn_pars.second.values();
     const vector<double> errors( params.size(), 0.0 );
     ShieldingSourceChi2Fcn::NucMixtureCache cache;
     const ScopedVolumetricIntegratorOverride force( path );
@@ -1526,7 +1524,7 @@ BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )
               ? ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer
               : ShieldingSourceFitCalc::VolumetricEffMethod::Auto;
 
-      pair<shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+      pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                                                    = ShieldingSourceChi2Fcn::create( input );
       const shared_ptr<ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
       BOOST_REQUIRE( fcn );
@@ -1546,7 +1544,7 @@ BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )
                           << fcn->volumetricEffResolveNote() << "' error='" << fcn->volumetricEffResolveError() << "'" );
 
       // And the model still evaluates, on flat-disk.
-      const vector<double> params = fcn_pars.second.Params();
+      const vector<double> params = fcn_pars.second.values();
       const vector<double> errors( params.size(), 0.0 );
       ShieldingSourceChi2Fcn::NucMixtureCache cache;
       vector<PeakResultPlotInfo> plot;

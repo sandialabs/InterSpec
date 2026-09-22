@@ -41,6 +41,7 @@
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AnalystChecks.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -567,6 +568,9 @@ map<const SandiaDecay::Nuclide *, int> characteristics(
 
 
 
+const double sm_assumed_distance = 100.0*PhysicalUnits::cm;
+
+
 double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &source_gammas, //normailization doent matter
                            std::shared_ptr<const DetectorPeakResponse> response,
                            double shielding_an,
@@ -587,7 +591,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   const double mean  = test_peak->mean();
   const double lowE  = (test_peak->gausPeak() ? (mean-1.5*fabs(test_peak->sigma())) : test_peak->lowerX());
   const double highE = (test_peak->gausPeak() ? (mean+1.5*fabs(test_peak->sigma())) : test_peak->upperX());
-  const double distance = 1.0*PhysicalUnits::m;
+  const double distance = IsotopeId::sm_assumed_distance;
   const bool hasResolutionResponse = (!!response && response->hasResolutionInfo());
   
   
@@ -616,9 +620,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   if( expectedAbund == 0.0 )
     throw runtime_error( "fractionDetectedWeight(...): Peak with no candidates" );
   
-  const double det_sf = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(mean)
-                                                                 : response->efficiency( mean, distance ))
-                                  : 1.0);
+  const double det_sf = (response ? response->efficiency( mean, distance ) : 1.0);
   const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
@@ -640,9 +642,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
       continue;
     
     const double exp_resolution = (hasResolutionResponse ? response->peakResolutionSigma( energy ) : float((highE-lowE)/3.0) );
-    const double det_eff = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(energy)
-                                                                    : response->efficiency(energy, distance))
-                                     : 1.0);
+    const double det_eff = (response ? response->efficiency( energy, distance ) : 1.0);
     const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
@@ -803,6 +803,14 @@ void suggestNuclides(
   double max_hl = 0.0;
   
   vector<NuclideStatWeightPair> candidates;
+
+  // fractionDetectedWeight evaluates the detector efficiency once per gamma line of every
+  //  candidate nuclide, at one fixed distance - thousands of lookups.  On a DRF with a
+  //  Monte-Carlo response each of those would trace an aperture quadrature (~0.4 ms); one
+  //  snapshot makes them curve interpolations instead.  A DRF without a response comes back
+  //  unchanged, so there is nothing to branch on.
+  const shared_ptr<const DetectorPeakResponse> eff_response
+            = CeeLoUtils::flatDiskSnapshotAt( response, IsotopeId::sm_assumed_distance );
   
   //We may get duplicate isotopes back from gammasNearInEnergy(...) if there are
   //  multiple photopeaks
@@ -826,7 +834,7 @@ void suggestNuclides(
     nearNucs[i].weight = 0.0;
     for( int j = 0; j < 3; ++j )
     {
-      const double val = fractionDetectedWeight( gammas, response,
+      const double val = fractionDetectedWeight( gammas, eff_response,
                                            atomic_nums[j], areal_density[j],
                                            data, peak, peaks );
       nearNucs[i].weight = max( nearNucs[i].weight, val );
@@ -2002,7 +2010,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
     //Scale the yeilds for the detector response function and shielding specified
     for( auto &src : srcgammas )
     {
-      const double det_sf = (!!detector ? detector->intrinsicEfficiency(src.energy) : 1.0f);
+      const double det_sf = (!!detector ? detector->farFieldIntrinsicEfficiency(src.energy) : 1.0f);
       const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, src.energy );
       const double shielding_sf = exp( -shielding_ad * xs );
       

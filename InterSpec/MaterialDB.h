@@ -33,6 +33,11 @@
 
 class MaterialDB;
 
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
+
 namespace SandiaDecay
 {
   struct Nuclide;
@@ -88,6 +93,49 @@ struct Material
   double massFractionOfElementInMaterial( const SandiaDecay::Element * const element ) const;
 
   float massWeightedAtomicNumber() const;
+
+  /** Version of the XML written by #toXml.
+   Change log:
+   - 20260920, version 0: initial version.
+   */
+  static const int sm_xmlSerializationVersion;
+
+  /** Serializes the full definition of this material (name, description, density, and
+   elemental/nuclide composition) as a `<MaterialDefinition>` child of `parent`, so the material
+   can later be reconstructed without the `MaterialDB` - e.g., after the user has changed its
+   density, or if the material is removed from the database in a future version.
+
+   Density is written in g/cm3; mass fractions are of the whole material.
+
+   Returns the created node.  Throws std::exception on error.
+   */
+  rapidxml::xml_node<char> *toXml( rapidxml::xml_node<char> *parent ) const;
+
+  /** Creates a material from a `<MaterialDefinition>` node written by #toXml.
+
+   Element and nuclide symbols are resolved through `db`.
+
+   Throws std::exception on any problem.
+   */
+  static std::shared_ptr<const Material> fromXml( const rapidxml::xml_node<char> *node,
+                                                  const SandiaDecay::SandiaDecayDataBase *db );
+
+  /** Exact comparison of name, description, density, and composition (#source is provenance
+   metadata, and is not compared).
+   */
+  bool operator==( const Material &rhs ) const;
+  bool operator!=( const Material &rhs ) const;
+
+  /** Returns true if the two materials have the same name and identical element and nuclide
+   components (same order, exact fractions) - i.e., they are the same material, differing at
+   most in density or description.  Use to decide if a material change is only a density edit.
+   */
+  static bool sameComposition( const Material &lhs, const Material &rhs );
+
+  /** Throws std::runtime_error describing the first difference, if the materials differ in
+   name, description, composition, or density (relative tolerance 1E-6).
+   */
+  static void equalEnough( const Material &lhs, const Material &rhs );
 
   std::string name;
   std::string description;
@@ -204,6 +252,34 @@ public:
    */
   static std::shared_ptr<const Material> materialFromChemicalFormula(
     const std::string &formula,
+    const SandiaDecay::SandiaDecayDataBase *db );
+
+  /** Looks `text` up as a material name (see #material(const std::string &)), and if that
+   fails, tries to parse it as a chemical formula (see #materialFromChemicalFormula).
+
+   This is how user-entered material text should be resolved everywhere, since #material
+   throws for unknown names.
+
+   Returns nullptr if `text` is neither a material name nor a chemical formula, or if the
+   singleton is not available.  Never throws.
+   */
+  static std::shared_ptr<const Material> materialFromNameOrFormula(
+    const std::string &text,
+    const SandiaDecay::SandiaDecayDataBase *db );
+
+  /** Resolves a serialized material.
+
+   If `definition_node` (a `<MaterialDefinition>` written by Material::toXml) is non-null and
+   parses, that definition is used - unless the database has a material that is
+   `Material::equalEnough` to it, in which case the databases shared instance is returned
+   instead (stable address, no duplicated memory).  Otherwise, or if the definition fails to
+   parse, `name` is resolved with #materialFromNameOrFormula.
+
+   Returns nullptr if the material could not be resolved.  Never throws.
+   */
+  static std::shared_ptr<const Material> materialFromDefinitionOrName(
+    const rapidxml::xml_node<char> *definition_node,
+    const std::string &name,
     const SandiaDecay::SandiaDecayDataBase *db );
 
   //Performs a case-insensitive comparison (eg string::operator<) comparison

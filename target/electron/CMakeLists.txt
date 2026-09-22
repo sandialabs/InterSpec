@@ -7,7 +7,7 @@ endif()
 
 project( InterSpecAddOn )
 
-# Several InterSpec sub-dependencies (notably Minuit2) declare unconditional
+# Several InterSpec sub-dependencies (notably VoigtDistribution) declare unconditional
 # install() rules that, with the default CMAKE_INSTALL_PREFIX of /usr/local,
 # would write into system include/lib directories during `--target install`.
 # We don't ship those headers — only the contents of build_dir/app — so

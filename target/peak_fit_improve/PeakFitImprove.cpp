@@ -3161,7 +3161,7 @@ int main( int argc, char **argv )
           }
 
           const PeakFitUtils::CoarseResolutionType det_type = info.det_type;
-          const bool amplitudeOnly = false;
+          const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
           vector<PeakDef> zeroth_fit_results, initial_fit_results;
           
           
@@ -3177,24 +3177,15 @@ int main( int argc, char **argv )
               
               // Check why one of these seems to be multithreaded, but not the other
               
-              //We need to actually score using these two methods; using `fitPeaks(...)` takes
-              //  {11.3/11.3}s, while `fitPeaksInRange(...)` takes {0.071/0.45}s.
-              //  Although `fitPeaksInRange(...)` actually uses `fitPeaks(...)` to do the
-              //  work - maybe fitPeaks doesnt separate ROIs???
-              //  Also, need to compare to using `LinearProblemSubSolveChi2Fcn`, which is used by
-              //  `refitPeaksThatShareROI(...)` and `refit_for_new_roi(...)` and `fit_peak_for_user_click(...)`
-              //And also could try using Ceres to see if it works better than Minuit.
+              //We should score `fit_peaks_LM(...)` against `fitPeaksInRange(...)` here; the
+              //  old Minuit2 timings this note used to quote are gone with that fitter.
               vector<PeakDef> peaks;
-#if( USE_LM_PEAK_FIT )
               vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
               for( const auto &p : candidate_peaks )
                 input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, amplitudeOnly, det_type );
+              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, lm_fit_options, det_type );
               for( const auto &p : results_tmp )
                 peaks.push_back( *p );
-#else
-              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
-#endif
 
               //vector<PeakDef> peaksInRange = fitPeaksInRange( 0.0, data->gamma_energy_max(), 1.5, 0.0, 0.0, candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
               

@@ -46,18 +46,6 @@
 #include <Wt/WServer.h>
 #include <Wt/WIOService.h>
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinos.h"
-//#include "Minuit2/Minuit2Minimizer.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/MnPrint.h"
-#include "Minuit2/SimplexMinimizer.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnMinimize.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -364,11 +352,14 @@ double fep_survival_removal_coefficient( const Material *material, const float e
   //  THICKNESS is deliberately not in the key - it changes every iteration - so the Rayleigh term
   //  below is evaluated per call from the cached material (a ~100-exp sum, cheap).
   //
-  //  The key holds the material's ADDRESS.  That is only safe because every caller passes a
-  //  material owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
-  //  shared_ptr<const Material>), which outlives the fit.  Do NOT call this with a stack temporary:
-  //  a freed material's address can be reused and would silently collide with a stale entry.  The
-  //  density is part of the key as a cheap guard against exactly that.
+  //  The key holds the material's ADDRESS, because this is called per shielding, per energy, per
+  //  chi2 evaluation, and a pointer compare is the cheapest thing there is.  Callers pass materials
+  //  owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
+  //  shared_ptr<const Material>), which outlive the fit - but a freed material's address can later
+  //  be reused by a different material (the GUI mints a fresh copy every time the user edits a
+  //  density, for example), so each entry also records the composition it was computed for, and a
+  //  hit whose composition differs from the caller's is treated as a miss and overwritten.  The
+  //  density is part of the key as well, since the Rayleigh term depends on it.
   struct Key
   {
     const Material *mat; float energy; double window; double density;
@@ -385,6 +376,16 @@ double fep_survival_removal_coefficient( const Material *material, const float e
   {
     double f_win = 0.0;                          ///< in-window Compton fraction (0 if no window)
     std::shared_ptr<const ceelo::Material> mat;  ///< null if CeeLo cannot represent the material
+
+    /// The composition the entry was computed for; guards against address reuse (see above).
+    std::string name;
+    std::vector<Material::ElementFractionPair> elements;
+    std::vector<Material::NuclideFractionPair> nuclides;
+
+    bool isFor( const Material &m ) const
+    {
+      return (name == m.name) && (elements == m.elements) && (nuclides == m.nuclides);
+    }
   };
 
   static std::mutex s_mutex;
@@ -392,20 +393,27 @@ double fep_survival_removal_coefficient( const Material *material, const float e
 
   const Key key{ material, energy, want_window ? window_keV : 0.0, material->density };
 
-  Cached cached;
+  double f_win = 0.0;
+  std::shared_ptr<const ceelo::Material> ceelo_mat;
   bool have_cached = false;
   {
     std::lock_guard<std::mutex> lock( s_mutex );
     const std::map<Key,Cached>::const_iterator pos = s_cache.find( key );
-    if( pos != s_cache.end() )
+    if( (pos != s_cache.end()) && pos->second.isFor( *material ) )
     {
-      cached = pos->second;
+      f_win = pos->second.f_win;
+      ceelo_mat = pos->second.mat;
       have_cached = true;
     }
   }
 
   if( !have_cached )
   {
+    Cached cached;
+    cached.name = material->name;
+    cached.elements = material->elements;
+    cached.nuclides = material->nuclides;
+
     try
     {
       cached.mat = std::make_shared<ceelo::Material>(
@@ -421,8 +429,11 @@ double fep_survival_removal_coefficient( const Material *material, const float e
 
     cached.f_win = std::max( 0.0, std::min( 1.0, cached.f_win ) );
 
+    f_win = cached.f_win;
+    ceelo_mat = cached.mat;
+
     std::lock_guard<std::mutex> lock( s_mutex );
-    s_cache[key] = cached;
+    s_cache[key] = std::move( cached );
   }//if( not cached )
 
   // A sub-process coefficient, summed exactly as transmition_length_coefficient sums.
@@ -437,23 +448,23 @@ double fep_survival_removal_coefficient( const Material *material, const float e
     return mu;
   };
 
-  const double mu_compton = (cached.f_win > 0.0)
+  const double mu_compton = (f_win > 0.0)
                               ? process_mu( MassAttenuation::GammaEmProcces::ComptonScatter ) : 0.0;
 
   // Rayleigh DEFLECTION loss: the fraction h of this layer's coherent scatters that are absorbed
   //  because the deflection lengthened their remaining path, evaluated at the layer's normal
   //  non-Rayleigh depth.  Zero for a thin layer; 0.25 behind 0.5 cm of Fe at 60 keV.
   double mu_rayleigh = 0.0, h_loss = 0.0;
-  if( want_rayleigh && cached.mat )
+  if( want_rayleigh && ceelo_mat )
   {
     mu_rayleigh = process_mu( MassAttenuation::GammaEmProcces::RayleighScatter );
     if( mu_rayleigh > 0.0 )
       h_loss = ceelo::rayleigh_deflection_loss_fraction( energy, mu_total * normal_thickness,
-                                                         *cached.mat );
+                                                         *ceelo_mat );
     h_loss = std::max( 0.0, std::min( 1.0, h_loss ) );
   }
 
-  const double mu_rem = mu_total - cached.f_win*mu_compton + h_loss*mu_rayleigh;
+  const double mu_rem = mu_total - f_win*mu_compton + h_loss*mu_rayleigh;
 
   // The credit is a partial one against mu_total and the loss a partial one of mu_Rayleigh;
   //  anything outside [mu_total - mu_Compton, mu_total + mu_Rayleigh] means the sub-coefficients
@@ -1004,7 +1015,7 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
 }//resolveVolumetricEffMethod()
 
 
-std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> ShieldingSourceChi2Fcn::create(
+std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> ShieldingSourceChi2Fcn::create(
                                 const ShieldSourceInput &input )
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
@@ -1021,7 +1032,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   const auto &foreground = input.foreground;
   const auto &background = input.background;
     
-  ROOT::Minuit2::MnUserParameters inputPrams;
+  ShieldingSourceFitCalc::FitParameters inputPrams;
   
   //Get the peaks we'll be using in the fit
   vector<PeakDef> peaks;
@@ -1193,7 +1204,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   }
 #endif
 
-  //I think num_fit_params will end up same as inputPrams.VariableParameters()
+  //I think num_fit_params will end up same as inputPrams.numVariable()
   size_t num_fit_params = 0;
   
   // TODO: need to check that if we are fitting a shielding thickness we have an
@@ -1245,18 +1256,18 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
       num_fit_params += fitAn + fitAD;
       
       if( fitAn )
-        inputPrams.Add( name + "_AN", an, std::max(0.1*an,2.5),
+        inputPrams.add( name + "_AN", an, std::max(0.1*an,2.5),
                        1.0*MassAttenuation::sm_min_xs_atomic_number,
                        1.0*MassAttenuation::sm_max_xs_atomic_number );
       else
-        inputPrams.Add( name + "_AN_FIXED", an );
+        inputPrams.add( name + "_AN_FIXED", an );
       
       if( fitAD )
-        inputPrams.Add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
+        inputPrams.add( name + "_AD", ad, std::max(5.0*adUnits, 0.1*ad), 0.0, 400.0*adUnits );  //400g/cm2 is about 35cm Pb
       else
-        inputPrams.Add( name + "_AD", ad );
+        inputPrams.add( name + "_AD", ad );
       
-      inputPrams.Add( name + "_dummyshielding2", 0.0 );
+      inputPrams.add( name + "_dummyshielding2", 0.0 );
     }else
     {
       std::shared_ptr<const Material> mat = info.m_material;
@@ -1294,12 +1305,12 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitThickness;
           
           if( fitThickness )
-            inputPrams.Add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_thickness", thickness, std::max(10.0*PhysicalUnits::mm,0.25*thickness), dimLowerBound, dim_fit_upper );
           else
-            inputPrams.Add( name + "_thickness", thickness );
+            inputPrams.add( name + "_thickness", thickness );
           
-          inputPrams.Add( name + "_dummyshielding1", 0.0 );
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          inputPrams.add( name + "_dummyshielding1", 0.0 );
+          inputPrams.add( name + "_dummyshielding2", 0.0 );
           
           break;
         }//case GeometryType::Spherical:
@@ -1317,16 +1328,16 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitLen;
           
           if( fitRad )
-            inputPrams.Add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dr", rad, std::max(2.5*PhysicalUnits::mm,0.25*rad), dimLowerBound, ((det_dim == 0) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
-            inputPrams.Add( name + "_dr", rad );
+            inputPrams.add( name + "_dr", rad );
           
           if( fitLen )
-            inputPrams.Add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
+            inputPrams.add( name + "_dz", len, std::max(2.5*PhysicalUnits::mm,0.25*len), dimLowerBound, ((det_dim == 1) ? dim_fit_upper : 1000.0*PhysicalUnits::m) );
           else
-            inputPrams.Add( name + "_dz", len );
+            inputPrams.add( name + "_dz", len );
           
-          inputPrams.Add( name + "_dummyshielding2", 0.0 );
+          inputPrams.add( name + "_dummyshielding2", 0.0 );
           
           break;
         }//case GeometryType::CylinderEndOn and CylinderSideOn:
@@ -1347,19 +1358,19 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           num_fit_params += fitDepth;
           
           if( fitWidth )
-            inputPrams.Add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dx", width, std::max(2.5*PhysicalUnits::mm,0.25*width), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
-            inputPrams.Add( name + "_dx", width );
+            inputPrams.add( name + "_dx", width );
           
           if( fitHeight )
-            inputPrams.Add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
+            inputPrams.add( name + "_dy", height, std::max(2.5*PhysicalUnits::mm,0.25*height), dimLowerBound, 1000.0*PhysicalUnits::m );
           else
-            inputPrams.Add( name + "_dy", height );
+            inputPrams.add( name + "_dy", height );
           
           if( fitDepth )
-            inputPrams.Add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
+            inputPrams.add( name + "_dz", depth, std::max(2.5*PhysicalUnits::mm,0.25*depth), dimLowerBound, dim_fit_upper );
           else
-            inputPrams.Add( name + "_dz", depth );
+            inputPrams.add( name + "_dz", depth );
           
           break;
         }//case GeometryType::Rectangular:
@@ -1464,26 +1475,26 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           val = nmf.second / remaining_frac;
         
         usedmassfrac += nmf.second;
-        inputPrams.Add( name, val, max(0.1*val,0.01), 0, 1.0 );
+        inputPrams.add( name, val, max(0.1*val,0.01), 0, 1.0 );
         ++num_fit_params;
       }//for( size_t j = 0; i < nmassfrac; ++j )
     }//for( const auto &el_nucs : shield.m_nuclideFractions_ )
   }//for( size_t shielding_index = 0; shielding_index < shieldings.size(); ++shielding_index )
   
   
-  if( num_fit_params != inputPrams.VariableParameters() )
+  if( num_fit_params != inputPrams.numVariable() )
     throw runtime_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...): "
                         "there is a serious logic error in this function, "
                         "please let wcjohns@sandia.gov know about this." );
   
   const size_t num_expected = answer->numExpectedFitParameters();
-  const size_t num_input_pars = inputPrams.Parameters().size();
+  const size_t num_input_pars = inputPrams.parameters().size();
   assert( num_expected == num_input_pars );
   if( num_expected != num_input_pars )
     throw logic_error( "ShieldingSourceDisplay::shieldingFitnessFcn(...): "
                       "mismatch between num expected fit parameters, and number actual fit pars." );
   return {answer, inputPrams};
-}//pair<shared_ptr<ShieldingSourceChi2Fcn>,ROOT::Minuit2::MnUserParameters> create(...)
+}//pair<shared_ptr<ShieldingSourceChi2Fcn>,ShieldingSourceFitCalc::FitParameters> create(...)
   
 
 //This class evaluated the chi2 of a given hypothesis, where it is assumed the
@@ -1517,8 +1528,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                  const GeometryType geometry,
                                  const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options )
-  : ROOT::Minuit2::FCNBase(),
-    m_cancel( CalcStatus::NotCanceled ),
+  : m_cancel( CalcStatus::NotCanceled ),
     m_isFitting( false ),
     m_distance( distance ),
     m_liveTime( liveTime ),
@@ -1742,7 +1752,7 @@ void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
 size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                         const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                        ROOT::Minuit2::MnUserParameters &inputPrams )
+                        ShieldingSourceFitCalc::FitParameters &inputPrams )
 {
   assert( m_initialSrcDefinitions.empty() );
   if( !m_initialSrcDefinitions.empty() )
@@ -1932,15 +1942,15 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       //  such a large range will make Minuit2 choke and give a completely
       //  in-accurate answer (returns not even the best chi2 it found), if only
       //  one fit parameter.
-      //      inputPrams.Add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
+      //      inputPrams.add( nuclide->symbol + "Strength", activity, activityStep, 0.0,
       //                     10000.0*PhysicalUnits::curie/ShieldingSourceChi2Fcn::sm_activityUnits );
       const string name = nuclide->symbol + "Strength";
       const double activityStep = (activity < 0.0001 ? 0.0001 : 0.1*activity);
-      inputPrams.Add( name, activity, activityStep );
-      inputPrams.SetLowerLimit( name, 0.0 );
+      inputPrams.add( name, activity, activityStep );
+      inputPrams.setLowerLimit( name, 0.0 );
     }else
     {
-      inputPrams.Add( nuclide->symbol + "Strength", activity );
+      inputPrams.add( nuclide->symbol + "Strength", activity );
     }
     
     
@@ -2026,12 +2036,12 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       
       //cout << "For nuclide " << nuclide->symbol << " adding age=" << age << ", with step " << ageStep << " and max age " << maxAge << endl;
       
-      inputPrams.Add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
+      inputPrams.add( nuclide->symbol + "Age", age, ageStep, 0, maxAge  );
     }else if( hasOwnAge )
     {
       const double age = srcdef->age;
-      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", age );
+      //cout << nuclide->symbol << " has own non-fitting age going in as param " << inputPrams.parameters().size() << endl;
+      inputPrams.add( nuclide->symbol + "Age", age );
     }else  //see if defining nuclide age is fixed, if so use it, else put in negative integer of index of age...
     {
       assert( ageDefiningNuc );
@@ -2059,8 +2069,8 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
       
       const double ageIndexVal = -1.0*(age_defining_index + 1);
       //cout << nuclide->symbol << ": ageIndexVal=" << ageIndexVal
-      //<< " going in as param " << inputPrams.Parameters().size() << endl;
-      inputPrams.Add( nuclide->symbol + "Age", ageIndexVal );
+      //<< " going in as param " << inputPrams.parameters().size() << endl;
+      inputPrams.add( nuclide->symbol + "Age", ageIndexVal );
     }
   }//for( size_t src_index = 0; src_index < src_definitions.size(); ++src_index )
   
@@ -2084,16 +2094,10 @@ const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const size_t nuc_in
 }//const Nuclide *nuclide( const int nucN ) const
 
 
-double ShieldingSourceChi2Fcn::operator()( const std::vector<double> &x ) const
-{
-  return DoEval( x );
-}//double operator()(...)
-
-
-double ShieldingSourceChi2Fcn::Up() const
+double ShieldingSourceChi2Fcn::oneSigmaChi2Increase() const
 {
   return 1.0;
-}//double Up();
+}//double oneSigmaChi2Increase();
 
   
 bool ShieldingSourceChi2Fcn::isVariableMassFraction( const size_t material_index,
@@ -3515,7 +3519,7 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
 std::vector<double> ShieldingSourceChi2Fcn::includedPeakEnergies() const
 {
   // Same inclusion rule and ordering as the residual assembly (see
-  //  `fit_model_ceres` in ShieldingSourceFitCalc.cpp and
+  //  `fit_model` in ShieldingSourceFitCalc.cpp and
   //  #expected_observed_chis), so per-peak quantities line up one-to-one
   //  with the fit residuals.
   std::vector<double> energies;
@@ -4087,7 +4091,7 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
     {
       // The curve IS the answer for a fixed geometry; only its fractional sigma and flag are
       //  borrowed from the Eval.
-      answer.value = m_detector->intrinsicEfficiency( energy_f );
+      answer.value = m_detector->farFieldIntrinsicEfficiency( energy_f );
       const EffEval ev = m_detector->intrinsicEfficiencyEval( energy_f );
       if( ev.value > 0.0 )
       {
@@ -4128,6 +4132,7 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
       // Intrinsic curve x flat-disk solid angle - the legacy, theta-blind model.  A response the
       //  DRF may carry is deliberately NOT consulted: the model was chosen by name, or nothing
       //  better could be built, and the volumetric sources are on flat-disk for the same reason.
+      //  Hence `flatDiskEfficiency` and not `efficiency`, which dispatches to the response.
       //
       // TODO: the flat-disk model has NO uncertainty of its own for being used outside the regime
       //  it can represent, though it is measured badly wrong there: against CeeLo MC truth for a
@@ -4139,7 +4144,7 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const d
       //  near-field penalty plus a flag, ceelo::model_sigma::near_unmodeled - and the flat-disk
       //  path needs the same before its uncertainties can be called honest.  Deferred 2026-09-13;
       //  it needs an envelope calibrated on a corpus, not a guessed constant.
-      answer.value = m_detector->efficiency( energy_f, true_dist );
+      answer.value = m_detector->flatDiskEfficiency( energy_f, true_dist );
       const EffEval intr = m_detector->intrinsicEfficiencyEval( energy_f );
       if( intr.value > 0.0 )
       {
@@ -5147,7 +5152,7 @@ vector<PeakResultPlotInfo>
         
         if( pos != end(*log_info) )
         {
-          const double deteff = m_detector->intrinsicEfficiency( energy_count.first );
+          const double deteff = m_detector->farFieldIntrinsicEfficiency( energy_count.first );
           pos->detEff = eff;
           pos->detIntrinsicEff = deteff;
           pos->detSolidAngle = eff / deteff;
@@ -5211,7 +5216,7 @@ vector<PeakResultPlotInfo>
       assert( (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
               == !calculator->m_effResponse );
       if( m_detector && m_detector->isValid() && !calculator->m_effResponse )
-        contrib *= m_detector->intrinsicEfficiency( calculator->m_energy );
+        contrib *= m_detector->farFieldIntrinsicEfficiency( calculator->m_energy );
 
       if( energy_count_map.find( calculator->m_energy ) != energy_count_map.end() )
       {
@@ -5338,7 +5343,7 @@ vector<PeakResultPlotInfo>
           src.inSituRelaxationLength = calculator->m_inSituRelaxationLength;
           src.detIntrinsicEff = 1.0;
           if( m_detector && m_detector->isValid() )
-            src.detIntrinsicEff = m_detector->intrinsicEfficiency( calculator->m_energy );
+            src.detIntrinsicEff = m_detector->farFieldIntrinsicEfficiency( calculator->m_energy );
           src.sourceName = calculator->m_nuclide ? calculator->m_nuclide->symbol : string("null");
           
           
@@ -5358,12 +5363,15 @@ vector<PeakResultPlotInfo>
           double det_intrinsic = 1.0, det_total_eff = 1.0;
           if( m_detector && m_detector->isValid() )
           {
-            det_intrinsic = m_detector->intrinsicEfficiency( peak.energy );
+            det_intrinsic = m_detector->farFieldIntrinsicEfficiency( peak.energy );
             if( calculator->m_effResponse )
               det_total_eff = pointSourceFepEff( peak.energy ).value;
             else
+              // `flatDiskEfficiency`, not `efficiency`: `detSolidAngle` below is this divided by
+              //  the intrinsic efficiency, so it is only a solid angle while both come from the
+              //  flat-disk model - which is the model this branch's integrand used.
               det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic
-                                                            : m_detector->efficiency( peak.energy, m_distance );
+                                                            : m_detector->flatDiskEfficiency( peak.energy, m_distance );
           }
           const double model_eff = calculator->m_effResponse ? det_total_eff : (det_total_eff / det_intrinsic);
           peak.detIntrinsicEff = det_intrinsic;

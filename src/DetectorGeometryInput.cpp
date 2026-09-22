@@ -49,14 +49,20 @@
 
 #include "SandiaDecay.h"
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+
 // CeeLo (external_libs/CeeLo/src)
 #include "io/DetectorResponse.h"
 #include "materials/Material.h"
 
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/CeeLoUtils.h"
@@ -222,6 +228,109 @@ namespace
 
     return -1;
   }//crystal_index_from_text(...)
+
+
+  /** The crystal combo index a detector's resolution implies, or -1 when nothing usable says.
+
+   Ordered by how specific the evidence is.  A DRF that states its own FWHM describes *this*
+   detector, so it is preferred over anything read off whatever spectrum happens to be loaded.
+
+   Only ever returns a crystal the evidence actually identifies: below HPGe the FWHM alone does
+   not separate NaI from CsI from LaBr from CZT, and guessing one of them would be no better than
+   the NaI the combo already defaults to - while looking like a determination.
+   */
+  int crystal_index_from_resolution( const std::shared_ptr<const DetectorPeakResponse> &drf )
+  {
+    // 1) A detector model named in the DRF's own name/description.  These are the shipped
+    //    relative-efficiency DRFs ("ORTEC Detective EX-100", "GR135"), which carry no FWHM and no
+    //    peak-fit preferences - the model name is the only thing that knows what they are, and
+    //    SpecUtils already names every type it can parse.  Matched longest-first so "Detective EX"
+    //    cannot shadow "Detective EX-100".
+    if( drf )
+    {
+      std::string haystack = drf->name() + " " + drf->description();
+      SpecUtils::to_lower_ascii( haystack );
+
+      SpecUtils::DetectorType best = SpecUtils::DetectorType::Unknown;
+      size_t best_len = 0;
+      for( int i = 0; i < static_cast<int>(SpecUtils::DetectorType::Unknown); ++i )
+      {
+        const SpecUtils::DetectorType type = static_cast<SpecUtils::DetectorType>( i );
+        std::string name = SpecUtils::detectorTypeToString( type );
+        if( name.size() <= best_len )
+          continue;
+
+        SpecUtils::to_lower_ascii( name );
+        if( !name.empty() && (haystack.find(name) != std::string::npos) )
+        {
+          best = type;
+          best_len = name.size();
+        }
+      }//for( each DetectorType )
+
+      if( best != SpecUtils::DetectorType::Unknown )
+      {
+        switch( PeakFitUtils::coarse_type_for_detector_type( best ) )
+        {
+          case PeakFitUtils::CoarseResolutionType::High: return crystal_index_from_text( "HPGe" );
+          case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
+          case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
+          case PeakFitUtils::CoarseResolutionType::Low:  return crystal_index_from_text( "NaI" );
+          case PeakFitUtils::CoarseResolutionType::MedRes:
+          case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+          case PeakFitUtils::CoarseResolutionType::Unknown:
+            break;
+        }//switch( coarse_type_for_detector_type(best) )
+      }//if( a model was recognised )
+    }//if( drf )
+
+    // 2) The DRF's own FWHM.  At 661 keV an HPGe is 1-2 keV where every scintillator here is
+    //    >10 keV (CZT ~2%, LaBr ~3%, NaI ~7%), so the gap is wide and a loose threshold is safe.
+    //
+    //    A not-HPGe answer is not the end of the search: the FWHM alone does not separate the
+    //    scintillators, but tier 4 below may still name one.  It only vetoes tier 4 answering
+    //    HPGe, since a measured resolution outranks a recorded preference.
+    bool fwhm_says_not_hpge = false;
+    if( drf && drf->hasResolutionInfo() )
+    {
+      const float fwhm = drf->peakResolutionFWHM( 661.7f );
+      if( (fwhm > 0.0f) && (fwhm < 5.0f) )
+        return crystal_index_from_text( "HPGe" );
+
+      fwhm_says_not_hpge = (fwhm > 0.0f);
+    }//if( drf && drf->hasResolutionInfo() )
+
+    // 4) The DRF's own peak-fit preferences, when it recorded a detector type.
+    //
+    // Deliberately NOT the loaded spectrum, which was tried and measurably misleads: picking a DRF
+    // in Detector Select makes it the foreground's detector, so "is this the spectrum's detector?"
+    // is always true there, and with an HPGe file open every unrecognised DRF - a GR135, a SAM 945
+    // - came back HPGe.  A spectrum describes the detector that recorded it, not whichever
+    // response the user is about to look at.  When nothing above knows, the combo keeps its
+    // default and the note asks the user to check it.
+    const std::shared_ptr<const PeakFitDetPrefs> prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+    if( prefs )
+    {
+      switch( prefs->m_det_type )
+      {
+        // The DRF's measured resolution wins over what it recorded as its type
+        case PeakFitUtils::CoarseResolutionType::High:
+          return fwhm_says_not_hpge ? -1 : crystal_index_from_text( "HPGe" );
+        case PeakFitUtils::CoarseResolutionType::LaBr: return crystal_index_from_text( "LaBr3" );
+        case PeakFitUtils::CoarseResolutionType::CZT:  return crystal_index_from_text( "CZT" );
+
+        // Low is NaI *or* CsI, and the Med/LowOrMed cases are explicitly "cannot tell which" - so
+        //  leave the default rather than dress a coin flip up as an answer.
+        case PeakFitUtils::CoarseResolutionType::Low:
+        case PeakFitUtils::CoarseResolutionType::MedRes:
+        case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+        case PeakFitUtils::CoarseResolutionType::Unknown:
+          break;
+      }//switch( prefs->m_det_type )
+    }//if( prefs )
+
+    return -1;
+  }//crystal_index_from_resolution(...)
 
 
   /** Exact match of a stored MaterialSpec back to a crystal combo entry, or -1. */
@@ -560,8 +669,8 @@ void DetectorGeometryInput::updateFromForm()
   {
     const ceelo::GeometryDescriptor gd = toDescriptor();
 
-    // A valid form can still be the guess seedFromDrf() made, which must not be characterized
-    //  as-is - problemDescription() says so, and the note repeats it.
+    // A form that parses can still be the material-only guess the seeders made, which must not be
+    //  characterized as-is - problemDescription() says so, and the note repeats it.
     if( m_seededFromDiameterGuess )
       problem = WString::tr("dgi-seeded-note").toUTF8();
 
@@ -569,7 +678,10 @@ void DetectorGeometryInput::updateFromForm()
       m_diagram->setGeometry( gd );
   }catch( std::exception &e )
   {
-    problem = e.what();
+    // While the form is still the seeded skeleton, say why it is incomplete rather than naming
+    //  the first field that fails to parse: "Please enter the length." on its own does not tell
+    //  the user that nothing about this detector's shape was ever recorded.
+    problem = m_seededFromDiameterGuess ? WString::tr("dgi-seeded-note").toUTF8() : string(e.what());
     if( want_drawing )
       m_diagram->setStale( true );   //keep the last valid drawing, dimmed
   }
@@ -581,6 +693,11 @@ void DetectorGeometryInput::updateFromForm()
 
 std::string DetectorGeometryInput::problemDescription() const
 {
+  // Checked before the field-level errors: while the form is still the seeded skeleton the useful
+  //  thing to say is that this detector has no recorded geometry, not which box is empty.
+  if( m_seededFromDiameterGuess )
+    return WString::tr("dgi-seeded-note").toUTF8();
+
   try
   {
     toDescriptor();
@@ -588,10 +705,6 @@ std::string DetectorGeometryInput::problemDescription() const
   {
     return e.what();
   }
-
-  // A valid form can still be the guess seedFromDrf() made, which must not be characterized as-is.
-  if( m_seededFromDiameterGuess )
-    return WString::tr("dgi-seeded-note").toUTF8();
 
   return "";
 }//problemDescription()
@@ -1126,11 +1239,15 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   const double diam_cm = drf->detectorDiameter() / PhysicalUnits::cm;
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
-  m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+  m_dim2->setText( "" );  //length genuinely unknown - see the note in seedFromDiameter
 
   // No geometry at all: the description (and often the name) still says what the crystal is, and
   //  taking the default NaI for, say, a LaBr detector would simulate the wrong material entirely.
-  const int crystal = crystal_index_from_text( drf->description() + " " + drf->name() );
+  //  A model name that never spells the crystal out ("ORTEC Detective EX-100") falls through to
+  //  what the detector's resolution implies.
+  int crystal = crystal_index_from_text( drf->description() + " " + drf->name() );
+  if( crystal < 0 )
+    crystal = crystal_index_from_resolution( drf );
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );
 
@@ -1159,8 +1276,16 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
   const double diam_cm = diameter / PhysicalUnits::cm;
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
-  m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
 
+  // Left blank on purpose.  A length copied from the diameter looks like a measurement, and the
+  //  form then reads as complete while the generate button stays disabled - the user has to guess
+  //  that editing something is what unlocks it.  Blank makes the refusal self-explanatory: the
+  //  geometry really is incomplete, and the note below says what is missing.
+  m_dim2->setText( "" );
+
+  // Only the hint can name a crystal here; there is no DRF to read a resolution from (that is
+  //  what `seedFromDrf` is for).  When it names nothing, the combo keeps its default and the
+  //  note below asks the user to check it.
   const int crystal = crystal_index_from_text( crystal_hint );
   if( crystal >= 0 )
     m_crystalMaterial->setCurrentIndex( crystal );

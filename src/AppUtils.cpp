@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -181,6 +182,80 @@ namespace AppUtils
     
     return parts;
   }//std::map<std::string,std::string> split_query_str( const std::string &query )
+  
+  
+  namespace
+  {
+    const char * const sm_base32_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  }
+  
+  
+  std::string base32_encode( const std::vector<uint8_t> &input )
+  {
+    std::string answer;
+    answer.reserve( ((input.size() + 4) / 5) * 8 );
+    
+    // Standard 5-bits-in, 8-bits-out bit accumulator; the trailing partial group is left-aligned
+    //  (zero-filled), which is what lets the decoder recover the original byte count without
+    //  padding characters.
+    uint32_t buffer = 0;
+    int nbits = 0;
+    
+    for( const uint8_t byte : input )
+    {
+      buffer = (buffer << 8) | byte;
+      nbits += 8;
+      
+      while( nbits >= 5 )
+      {
+        nbits -= 5;
+        answer += sm_base32_chars[(buffer >> nbits) & 0x1F];
+      }
+    }//for( const uint8_t byte : input )
+    
+    if( nbits > 0 )
+      answer += sm_base32_chars[(buffer << (5 - nbits)) & 0x1F];
+    
+    return answer;
+  }//std::string base32_encode( const std::vector<uint8_t> &input )
+  
+  
+  std::vector<uint8_t> base32_decode( const std::string &input )
+  {
+    // 8 base32 characters carry 5 bytes; the leftovers a partial group can legitimately produce
+    //  are 2, 4, 5 and 7 characters (1, 2, 3 and 4 bytes).  Lengths of 1, 3 and 6 (mod 8) cannot
+    //  come from any input.
+    const size_t tail = input.size() % 8;
+    if( (tail == 1) || (tail == 3) || (tail == 6) )
+      throw std::runtime_error( "base32_decode: invalid input length ("
+                                + std::to_string(input.size()) + ")" );
+    
+    std::vector<uint8_t> answer;
+    answer.reserve( (input.size() * 5) / 8 );
+    
+    uint32_t buffer = 0;
+    int nbits = 0;
+    
+    for( const char c : input )
+    {
+      const char upper = ((c >= 'a') && (c <= 'z')) ? static_cast<char>(c - 'a' + 'A') : c;
+      
+      const char * const pos = strchr( sm_base32_chars, upper );
+      if( !pos || !upper )
+        throw std::runtime_error( std::string("base32_decode: invalid character '") + c + "'" );
+      
+      buffer = (buffer << 5) | static_cast<uint32_t>( pos - sm_base32_chars );
+      nbits += 5;
+      
+      if( nbits >= 8 )
+      {
+        nbits -= 8;
+        answer.push_back( static_cast<uint8_t>( (buffer >> nbits) & 0xFF ) );
+      }
+    }//for( const char c : input )
+    
+    return answer;
+  }//std::vector<uint8_t> base32_decode( const std::string &input )
   
   /*
   vector<pair<string,string>> query_key_values( const string &query_str )

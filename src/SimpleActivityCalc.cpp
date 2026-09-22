@@ -43,7 +43,6 @@
 
 #include "rapidxml/rapidxml.hpp"
 
-#include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -222,7 +221,15 @@ bool SimpleActivityCalcState::operator==( const SimpleActivityCalcState &rhs ) c
       return true;
 #else
       // For non-test builds, we'll do a simpler comparison since equalEnough throws exceptions
-      return (shielding->m_geometry == rhs.shielding->m_geometry)
+      const std::shared_ptr<const Material> &lhs_mat = shielding->m_material;
+      const std::shared_ptr<const Material> &rhs_mat = rhs.shielding->m_material;
+      const bool same_material = ((!lhs_mat) == (!rhs_mat))
+        && (!lhs_mat || ((lhs_mat->name == rhs_mat->name)
+                         && (std::abs(lhs_mat->density - rhs_mat->density)
+                             <= 1.0E-6f*std::max(std::abs(lhs_mat->density), std::abs(rhs_mat->density)))));
+
+      return same_material
+             && (shielding->m_geometry == rhs.shielding->m_geometry)
              && (shielding->m_isGenericMaterial == rhs.shielding->m_isGenericMaterial)
              && (shielding->m_forFitting == rhs.shielding->m_forFitting)
              && (std::abs(shielding->m_dimensions[0] - rhs.shielding->m_dimensions[0]) < 1e-9)
@@ -300,6 +307,17 @@ std::string SimpleActivityCalcState::encodeToUrl() const
       SpecUtils::ireplace_all(mat_name, "&", "%26");
       answer += "&MAT=" + mat_name;
       answer += "&THICK=" + PhysicalUnits::printToBestLengthUnits(shielding->m_dimensions[0],3);
+
+      // A user-modified density is only written when it differs from the materials default
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      const shared_ptr<const Material> base = MaterialDB::materialFromNameOrFormula( shielding->m_material->name, db );
+      const float density = shielding->m_material->density;
+      const float base_density = base ? base->density : density;
+      if( fabs(density - base_density) > 1.0E-6f*std::max(fabs(density), fabs(base_density)) )
+      {
+        const double density_g_cm3 = density * PhysicalUnits::cm3 / PhysicalUnits::g;
+        answer += "&MATDENS=" + SpecUtils::printCompact( density_g_cm3, 7 );
+      }
     }
   }
   
@@ -415,19 +433,27 @@ void SimpleActivityCalcState::decodeFromUrl( const std::string &uri )
         SpecUtils::ireplace_all(mat_name, "%23", "#");
         SpecUtils::ireplace_all(mat_name, "%26", "&");
         
-        // Look up material in MaterialDB
-        const std::shared_ptr<const MaterialDB> matDB = MaterialDB::instance();
-        if( matDB )
+        // Look up material in MaterialDB, or parse it as a chemical formula
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        std::shared_ptr<const Material> material = MaterialDB::materialFromNameOrFormula( mat_name, db );
+        if( !material )
+          throw std::runtime_error( "Material '" + mat_name + "' not found in MaterialDB" );
+        
+        // A user-modified density is only present when it differs from the materials default
+        const auto dens_iter = values.find( "MATDENS" );
+        if( dens_iter != end(values) )
         {
-          std::shared_ptr<const Material> material = matDB->material( mat_name );
-          if( material )
-            shielding->m_material = material;
-          else
-            throw std::runtime_error( "Material '" + mat_name + "' not found in MaterialDB" );
-        }else
-        {
-          throw std::runtime_error( "MaterialDB required for material-based shielding decoding" );
-        }
+          double density_g_cm3 = 0.0;
+          if( !SpecUtils::parse_double( dens_iter->second.c_str(), dens_iter->second.size(), density_g_cm3 )
+             || (density_g_cm3 <= 0.0) )
+            throw std::runtime_error( "Invalid material density '" + dens_iter->second + "'" );
+          
+          auto modified = std::make_shared<Material>( *material );
+          modified->density = static_cast<float>( density_g_cm3 * PhysicalUnits::g / PhysicalUnits::cm3 );
+          material = modified;
+        }//if( a density was specified )
+        
+        shielding->m_material = material;
         
         // Set thickness
         const double thick = PhysicalUnits::stringToDistance( thick_iter->second );
@@ -2323,11 +2349,11 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     chi_input.background_peaks = background_peaks;
     chi_input.background_sf = input.background_sf;
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
       GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
-    auto inputPrams = std::make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     
     auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto fit_results = std::make_shared<ShieldingSourceFitCalc::ModelFitResults>();

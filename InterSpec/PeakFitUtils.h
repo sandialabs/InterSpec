@@ -37,6 +37,7 @@ struct PeakFitDetPrefs;
 namespace SpecUtils
 {
   class Measurement;
+  enum class DetectorType : int;
 }
 
 
@@ -125,6 +126,15 @@ CoarseResolutionType classify_det_type(
   const std::shared_ptr<const SpecUtils::Measurement> &spectrum = nullptr );
 
 
+/** The resolution class a parsed `SpecUtils::DetectorType` implies, or `Unknown` when the model
+ does not pin one down (an ambiguous or unrecognised type).
+
+ Split out of #coarse_det_type's first tier so that callers holding a detector *model* - rather
+ than a spectrum - can use the same mapping instead of keeping a second list of model names.
+ */
+CoarseResolutionType coarse_type_for_detector_type( const SpecUtils::DetectorType type );
+
+
 /** Determines the coarse detector resolution type using a three-tier approach:
  1. Check SpecUtils::DetectorType from file parsing (most reliable)
  2. Search instrument metadata strings for detector-type keywords
@@ -157,6 +167,26 @@ CoarseResolutionType effective_det_type(
   const std::shared_ptr<const PeakFitDetPrefs> &prefs,
   const std::shared_ptr<const SpecUtils::Measurement> &meas,
   const std::shared_ptr<const SpecMeas> &spec );
+
+
+/** Finds the channel range over which the spectrum holds actual spectroscopic data.
+
+ Below the lower extent is electronic-noise / low-energy junk; above the upper extent the
+ spectrum has run out of counts.  The lower extent uses a resolution-aware, statistically
+ thresholded second-derivative estimator (see the implementation comment); the upper extent
+ walks down from the top until the counts per channel stay above a floor.
+
+ Requires a valid energy calibration and at least 7 channels.
+
+ @param meas          The spectrum to examine.
+ @param lower_channel Set to the first channel of real spectroscopic data.
+ @param upper_channel Set to the last channel of real spectroscopic data.
+ @returns Whether an extent could be determined; `lower_channel`/`upper_channel` are only
+          meaningful when this returns true.
+ */
+bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
+                               size_t &lower_channel,
+                               size_t &upper_channel );
 }//namespace PeakFitUtils
 
 #endif //PeakFitUtils_h

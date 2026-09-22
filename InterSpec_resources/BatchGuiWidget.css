@@ -192,13 +192,13 @@ height in all browsers, so for the moment we'll just match
 .BatchGuiWidget .DragedOver,
 .BatchGuiWidget .DragedOver.DomIsDrugOver
 {
-  border: 3px dashed green;
+  border: 3px dashed var(--interspec-success-color);
   border-radius: 8px;
 }
 
 .BatchGuiWidget .Uploading
 {
-  border: 3px dashed green;
+  border: 3px dashed var(--interspec-success-color);
   border-radius: 8px;
   animation: blink 1s infinite;
 }
@@ -220,7 +220,7 @@ height in all browsers, so for the moment we'll just match
 .BatchGuiWidget .BatchGuiInputFile.DomIsDrugOver,
 .BatchGuiWidget .BatchGuiInputSpectrumFile.DomIsDrugOver
 {
-  border: 3px dashed grey;
+  border: 3px dashed var(--interspec-outline-color);
   border-radius: 8px;
 
   /* Add styles to grey out the element */
@@ -254,7 +254,7 @@ height in all browsers, so for the moment we'll just match
 
 .BatchGuiWidget .ReasonCantAnalyzeMsg
 {
-  color: orange;
+  color: var(--interspec-warning-color);
 }
 
 

@@ -241,8 +241,8 @@ namespace {
         const mup::char_type* GetDesc() const { return withParticleArgument ? "nuclideIntensityForParticle( particle, energy )" : "nuclideIntensity( energy )"; }
         std::string tags() const { return "br B.R. energy nuclides age particles highest"; }
         std::string toolTip() const { return withParticleArgument ?
-            "Gets nuclide’s <b>intensity value</b> at specified <i>energy</i> and <i>particle</i>. Returns <b><font color='red'>error message</font></b> if both of these parameters could not be matched." :
-            "Gets the nuclide’s <b>intensity value</b> at a specified <i>energy</i>. Returns <b><font color='red'>error message</font></b> if no energy value could be matched with user’s specification or no nuclide is shown."; }
+            "Gets nuclide’s <b>intensity value</b> at specified <i>energy</i> and <i>particle</i>. Returns <b><span class='ErrorTxt'>error message</span></b> if both of these parameters could not be matched." :
+            "Gets the nuclide’s <b>intensity value</b> at a specified <i>energy</i>. Returns <b><span class='ErrorTxt'>error message</span></b> if no energy value could be matched with user’s specification or no nuclide is shown."; }
         mup::IToken* Clone() const { return new NuclideIntensity(*this); }
     private: TerminalModel *tm; bool withParticleArgument;
     };
@@ -262,8 +262,8 @@ namespace {
         const mup::char_type* GetDesc() const { return withArgument ? "liveTimeOf( spectrum )" : "liveTime()"; }
         std::string tags() const { return "live_time live time spectra foreground fg background bg secondary sfg"; }
         std::string toolTip() const { return withArgument ?
-            "Returns the <b>live time</b> (in seconds) of <i>spectrum</i>, or <b>0</b> if not known. Returns <b><font color='red'>error message</font></b> if <i>spectrum</i> was not detected." :
-            "Automatically detects single spectrum and returns its <b>live time value</b>. Returns <b><font color='red'>error message</font></b> if multiple or no spectra detected."; }
+            "Returns the <b>live time</b> (in seconds) of <i>spectrum</i>, or <b>0</b> if not known. Returns <b><span class='ErrorTxt'>error message</span></b> if <i>spectrum</i> was not detected." :
+            "Automatically detects single spectrum and returns its <b>live time value</b>. Returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected."; }
         mup::IToken* Clone() const { return new LiveTime(*this); }
     private: TerminalModel *tm; bool withArgument;
     };
@@ -281,8 +281,8 @@ namespace {
         const mup::char_type* GetDesc() const { return withArgument ? "realTimeOf( spectrum )" : "realTime()"; }
         std::string tags() const { return "real_time real time spectra foreground fg background bg secondary sfg"; }
         std::string toolTip() const { return withArgument ?
-            "Returns the <b>real time</b> (in seconds) of <i>spectrum</i>, or <b>0</b> if not known. Returns <b><font color='red'>error message</font></b> if <i>spectrum</i> was not detected." :
-            "Automatically detects single spectrum and returns its <b>real time value</b>. Returns <b><font color='red'>error message</font></b> if multiple or no spectra detected."; }
+            "Returns the <b>real time</b> (in seconds) of <i>spectrum</i>, or <b>0</b> if not known. Returns <b><span class='ErrorTxt'>error message</span></b> if <i>spectrum</i> was not detected." :
+            "Automatically detects single spectrum and returns its <b>real time value</b>. Returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected."; }
         mup::IToken* Clone() const { return new RealTime(*this);}
     private: TerminalModel *tm; bool withArgument;
     };
@@ -459,29 +459,29 @@ namespace {
       std::string toolTip() const
       {
         if( functionName == "gammaChannel" )
-          return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>gamma channel</b> containing energy. If <i>energy</i> is below zero, then 0 is returned. If the <i>energy</i> is above the last channel, the last channel is returned. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaContent" )
-          return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>gamma channel contents</b> for a specified spectrum in a specified channel. Returns 0 if channel <i>energies</i> is not defined or <i>channel</i> is invalid (too large). Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaLower" )
-          return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>lower energy</b> of specified <i>gamma channel</i> for a specified spectrum. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaCenter" )
-          return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>central energy</b> of specified <i>gamma channel</i> for a specified spectrum. For last channel, returns width of second-to-last channel. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaUpper" )
-          return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>energy</b> for a spectra just past energy range the specified <i>channel</i> contains. Returns error if channel is invalid. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaWidth" )
-          return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>energy width</b> of a channel. If at last channel, then <b>width of second-to-last channel</b> is returned. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if( functionName == "gammaEnergyForChannel" )
-          return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns the energy corresponding to the provided fractional channel; e.x., if you pass in integer, will return lower energy of the channel. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "numGammas" )
-          return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>minimum number of channels</b> of channel energies or gamma counts for spectrum. Returns 0 if neither is defined. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaMin" )
-          return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>minimum gamma energy</b>. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaMax" )
-          return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Returns <b>maximum gamma energy</b>. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaSum" )
-          return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Get the <b>sum of gamma channel contents</b> for all channels in between (inclusive) <i>start_bin</i> and <i>end_bin</i> for a spectrum. Returns 0 if start_bin too large or gamma counts invalid. If end_bin too large, then it will be clamped to number of channels. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if ( functionName == "gammaIntegral" )
-          return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><font color='red'>error message</font></b> if multiple or no spectra detected.";
+          return "Get <b>integral of gamma counts</b> between <i>energy_low</i> and <i>energy_high</i> for a spectrum. Returns <b>0</b> if channel energies or gamma counts invalid. Automatically detects displayed spectrum, returns <b><span class='ErrorTxt'>error message</span></b> if multiple or no spectra detected.";
         else if( functionName == "drfFWHM" )
           return "Returns the full-width-at-half-maximum according to the current detector response function, for the specified energy.";
         else if( functionName == "drfIntrinsicEff" )
@@ -1456,7 +1456,7 @@ double TerminalModel::drfIntrinsicEff( const double energy )
   
   try
   {
-    return det->intrinsicEfficiency( static_cast<float>(energy) );
+    return det->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
   }catch( std::exception &e )
   {
     throw mup::ParserError( "Error getting intrinsic efficiency: " + std::string(e.what()) );
@@ -1705,13 +1705,13 @@ void TerminalModel::addCommand(const std::string& command, CommandType type)
       addDropDownListItem( "darken()",
                            "command line cli black interface",
                            "<b>Darkens</b> the text areas for the Terminal and"
-                           " <b><font color='white'>whitens</font></b> the text font." );
+                           " <b><span class='FainterTxt'>whitens</span></b> the text font." );
     break;
     
     case LightenCommand:
       addDropDownListItem( "lighten()",
                            "command line cli white interface",
-                           "<b><font color='white'>Whitens</font></b> the text areas for the"
+                           "<b><span class='FainterTxt'>Whitens</span></b> the text areas for the"
                            " Terminal and <b>darkens</b> the font. Currently set to default." );
     break;
     
@@ -1728,7 +1728,7 @@ void TerminalModel::addCommand(const std::string& command, CommandType type)
       addDropDownListItem( "clearVariable( variable )",
                            "variables delete map vars variablemap varmap",
                            "Deletes a stored <i>variable</i>. If the <i>variable</i>"
-                           " does not exist, then an <b><font color='red'>error message</font></b>"
+                           " does not exist, then an <b><span class='ErrorTxt'>error message</span></b>"
                            " is returned." );
     break;
     
