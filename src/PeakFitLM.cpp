@@ -2794,7 +2794,6 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       {
         for( size_t i = 0; i < num_fit_pars; ++i )
         {
-          // TODO: compare uncertainties with Minuit method - should maybe check out.
           if( row_major_covariance[i*num_fit_pars + i] > 0.0 )
             uncertainties[i] = sqrt( row_major_covariance[i*num_fit_pars + i] );
         }

@@ -73,14 +73,6 @@ namespace SandiaDecay
   struct Element;
 }//namespace SandiaDecay
 
-namespace ROOT
-{
-  namespace Minuit2
-  {
-    class MnUserParameters;
-  }//namespace Minuit2
-}//namespace ROOT
-
 //A Forward declaration
 namespace rapidxml
 {
@@ -1099,7 +1091,7 @@ protected:
    teardown paths) can wait for the worker on `WServer::ioService()` to fully
    return before this widget's memory is freed.  Without this, `cancelFit()`
    only signals the chi2 function to throw at its next `DoEval` - the worker
-   thread itself may still be unwinding the Minuit2 call stack and posting
+   thread itself may still be unwinding the fit call stack and posting
    completion callbacks when `~ShieldingSourceDisplay` returns, which can
    keep `WServer::stop()` from draining on shutdown.
    */

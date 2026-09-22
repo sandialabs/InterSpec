@@ -1044,7 +1044,8 @@ deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
 }//namespace
 
 
-/** Minuit2 baseline: fit generic-shielding atomic number + areal density + source
+/** Baseline (values originally established with the Minuit2 fitter): fit generic-shielding
+ atomic number + areal density + source
  activity on synthetic peak areas generated from the forward model, so the true
  minimum is at known parameter values.
 
@@ -1317,7 +1318,8 @@ BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
 }//BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
 
 
-/** Minuit2 baseline: fit source age (plus activity) for a Ra226 point source,
+/** Baseline (values originally established with the Minuit2 fitter): fit source age
+ (plus activity) for a Ra226 point source,
  where the in-growth of Rn222 progeny (Pb214/Bi214 lines vs Ra226s own 186 keV
  line) determines the age.  Synthetic peak areas are generated from the forward
  model, so the chi2 minimum is at known truth values.

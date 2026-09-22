@@ -2357,7 +2357,7 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
  final_shieldings, and the calculation-detail logs) from the final parameter
  values and their uncertainties.
 
- Shared by the Minuit2 and Ceres fit drivers; the caller must hold results->m_mutex.
+ The caller must hold results->m_mutex.
  */
 static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                               const std::vector<double> &params,
@@ -3423,7 +3423,7 @@ namespace
 
     std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_fcn;
 
-    /** Full Minuit-layout parameter vector, supplying the constant parameters. */
+    /** Full parameter vector (constants included), as `FitParameters` lays them out. */
     std::vector<double> m_initial_params;
 
     /** Index into the full parameter vector, for each parameter Ceres is varying. */
@@ -3543,7 +3543,7 @@ namespace
 
    @param chi2Fcn The chi2 function (only expected_peak_counts_imp and cancel status used).
    @param par_defs Source of the parameter bounds and step sizes.
-   @param start_full Full Minuit-layout starting parameter values.
+   @param start_full Full starting parameter values, constants included.
    @param var_indices Which entries of start_full to vary.
    @param observed,observed_uncert Per-included-peak observed counts.
    @param[out] final_full start_full with the varied entries updated to the solution.
@@ -3711,7 +3711,7 @@ namespace
         const ShieldingSourceFitCalc::FitParameter &p = par_defs[var_indices[i]];
 
         // "Pinned at a limit" is judged in external (physical) units, on the scale of
-        //  the parameters Minuit step size - a thickness of 22 mm with limits
+        //  the parameters step size - a thickness of 22 mm with limits
         //  [0, 1 km] is fine, but a mass fraction of 0.9999999 with limits [0,1] and
         //  a step size of ~0.1 is pinned.
         const double step_scale = (p.step > 0.0) ? p.step
@@ -3749,7 +3749,7 @@ namespace
                                 " (check starting values and limits)." );
 
     // Surface non-convergence (e.g. hit the iteration cap, or a numeric failure) so the
-    //  user gets the same "fit may not be reliable" signal the Minuit path provides.  A
+    //  user gets a "fit may not be reliable" signal.  A
     //  user-canceled solve (USER_FAILURE / USER_SUCCESS) is handled separately and not warned.
     if( convergence_msg
         && (best_termination != ceres::CONVERGENCE)
@@ -4330,7 +4330,7 @@ void fit_model( const std::string wtsession,
     }//for( loop over parameters )
 
     // With a self-attenuating or trace source, computation time becomes pretty large,
-    //  so skip the detailed AN scan in that case (same policy as the Minuit2 driver).
+    //  so skip the detailed AN scan in that case.
     if( !fit_generic_an_indices.empty() )
     {
       for( size_t i = 0; i < chi2Fcn->numNuclides(); ++i )
@@ -4755,7 +4755,7 @@ void fit_model( const std::string wtsession,
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
     results->paramValues = fit_full;
     results->paramErrors = errors;
-    results->edm = -1.0;  //no Minuit-style estimated-distance-to-minimum from Ceres
+    results->edm = -1.0;  //no estimated-distance-to-minimum from Ceres
     results->num_fcn_calls = static_cast<int>( num_evals );
     results->numDOF = ndof;
 

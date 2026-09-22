@@ -2428,7 +2428,7 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
 }//void setup_physical_model_shield_par( ceres::Problem... )
 
 
-struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
+struct RelActAutoCostFcn
 {
   /** How to perform differentiation for jacobians; either "auto" or numeric.
 
@@ -15008,10 +15008,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       chi2 += d*d;
     
     return chi2;
-  }//operator() - for minuit
+  }//operator()
   
   
-  // For Minuit2
+  /** The chi2 increase corresponding to a one-sigma parameter uncertainty. */
   virtual double Up() const
   {
     return 1.0;

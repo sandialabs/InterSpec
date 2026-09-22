@@ -147,9 +147,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       roi_to_peaks_map[p.continuum().get()].push_back( p );
 
     vector<vector<PeakDef>> fit_rois( roi_to_peaks_map.size() );
-#if( USE_LM_PEAK_FIT )
     vector<vector<shared_ptr<const PeakDef>>> fit_rois_tmp( roi_to_peaks_map.size() );
-#endif
 
     if( multithread && (PeakFitImprove::sm_num_threads_per_individual > 1) )
     {
@@ -160,7 +158,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         const vector<PeakDef> &peaks = roi_peaks.second;
 
-#if( USE_LM_PEAK_FIT )
         vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
         vector<shared_ptr<const PeakDef>> input_peaks_tmp;
         for( const auto &p : peaks )
@@ -174,18 +171,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      fit_settings.initial_hypothesis_threshold,
                                      amplitudeOnly,
                                      det_type ) );
-#else
-        vector<PeakDef> &results = fit_rois[fit_rois_index];
-
-        threadpool.post( boost::bind( &fitPeaks,
-                                     boost::cref(peaks),
-                                     fit_settings.initial_stat_threshold,
-                                     fit_settings.initial_hypothesis_threshold,
-                                     data,
-                                     boost::ref( results ),
-                                     amplitudeOnly,
-                                     (det_type == PeakFitUtils::CoarseResolutionType::High) ) );
-#endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
 
@@ -197,7 +182,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         const vector<PeakDef> &peaks = roi_peaks.second;
 
-#if( USE_LM_PEAK_FIT )
         vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
         vector<shared_ptr<const PeakDef>> input_peaks_tmp;
         for( const auto &p : peaks )
@@ -206,16 +190,10 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         PeakFitLM::fit_peaks_LM( results, input_peaks_tmp, data,
                                 fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
                                 amplitudeOnly, det_type );
-#else
-        vector<PeakDef> &results = fit_rois[fit_rois_index];
-        fitPeaks( peaks, fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                 data, results, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
-#endif
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
     }//if( multithread ) / else
 
-#if( USE_LM_PEAK_FIT )
     for( size_t i = 0; i < fit_rois.size(); ++i )
     {
       vector<PeakDef> &to_fil = fit_rois[i];
@@ -224,7 +202,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       for( const auto &p : to_fill_from )
         to_fil.push_back( *p );
     }
-#endif
 
     if( PeakFitImprove::debug_upper_energy > PeakFitImprove::debug_lower_energy )
     {

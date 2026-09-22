@@ -29,18 +29,6 @@
 #include <iostream>
 
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnScan.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnSimplex.h"
-#include "Minuit2/MinosError.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/CombinedMinimizer.h"
-#include "Minuit2/SimplexMinimizer.h"
 
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/post.hpp> // For boost::asio::post
@@ -84,73 +72,6 @@ const bool ns_final_peak_fit_parrallel = false;
 
 
 
-class FitFinalPeakFitSettingsChi2
-: public ROOT::Minuit2::FCNBase
-{
-  std::function<double( const FinalPeakFitSettings &)> m_eval_fcn;
-
-
-public:
-
-  FitFinalPeakFitSettingsChi2( std::function<double( const FinalPeakFitSettings &)> eval_fcn )
-    : m_eval_fcn( eval_fcn )
-  {
-  }
-
-  virtual double Up() const { return 1.0; }
-  size_t nfitPars() const { return 1; }
-
-  static FinalPeakFitSettings params_to_settings( const std::vector<double> &params )
-  {
-    assert( params.size() == 15 );
-    if( params.size() != 15 )
-      throw std::runtime_error( "params_to_settings: invalid number of parameters." );
-
-    FinalPeakFitSettings settings;
-
-    size_t index = 0;
-    settings.require_combine_num_fwhm_near = params[index++];
-    settings.not_allow_combine_num_fwhm_near = params[index++];
-    //settings.combine_ROI_overlap_frac = params[index++];
-    settings.cont_type_peak_nsigma_threshold = params[index++];
-    settings.cont_type_left_right_nsigma = params[index++];
-    settings.cont_poly_order_increase_chi2dof_required = params[index++];
-    settings.cont_step_type_increase_chi2dof_required = params[index++];
-    settings.skew_nsigma = params[index++];
-    settings.left_residual_sum_min_to_try_skew = params[index++];
-    settings.right_residual_sum_min_to_try_skew = params[index++];
-    settings.skew_improve_chi2_dof_threshold = params[index++];
-    settings.roi_extent_low_num_fwhm_base_highstat = params[index++];
-    settings.roi_extent_high_num_fwhm_base_highstat = params[index++];
-    settings.roi_extent_low_num_fwhm_base_lowstat = params[index++];
-    settings.roi_extent_high_num_fwhm_base_lowstat = params[index++];
-    settings.high_stat_threshold = params[index++];
-    settings.roi_extent_low_num_fwhm_extra = params[index++];
-    settings.roi_extent_high_num_fwhm_extra = params[index++];
-    settings.roi_end_second_deriv_thresh = params[index++];
-    settings.break_multi_roi_up_continuum_away_sigma = params[index++];
-    settings.break_multi_roi_up_required_chi2dof_improve = params[index++];
-
-    assert( index == params.size() );
-
-    return settings;
-  }
-
-  virtual double operator()( const std::vector<double> &params ) const
-  {
-    const FinalPeakFitSettings settings = params_to_settings( params );
-
-    try
-    {
-      return m_eval_fcn( settings );
-    }catch( std::exception &e )
-    {
-      std::cerr << "FitFinalPeakFitSettingsChi2::operator() caught: " << e.what() << endl;
-    }
-
-    return std::numeric_limits<double>::max();
-  }//operator()
-};//class FitFinalPeakFitSettingsChi2
 
 
 }//namespace
@@ -231,7 +152,6 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     const bool amplitudeOnly = false;
 
     vector<PeakDef> these_fit_peaks;
-#if( USE_LM_PEAK_FIT )
       vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
       for( const PeakDef &p : these_input_peaks )
         input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
@@ -239,10 +159,6 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
                           initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, det_type );
     for( const shared_ptr<const PeakDef> &p : results_tmp )
       these_fit_peaks.push_back( *p );
-#else
-      fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                data, initial_peaks, amplitudeOnly, (det_type == PeakFitUtils::CoarseResolutionType::High) );
-#endif
 
     return these_fit_peaks;
   };
@@ -1795,85 +1711,6 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
 }//double eval_final_peak_fit(...)
 
 
-FinalPeakFitSettings minuit_fit_final_pars( std::function<double( const FinalPeakFitSettings &)> ga_eval_fcn )
-{
-  /* Run on 20250511, using just Detective-X (14 hours on M4 - population of 100, and max of 1000 generations)
-   best_final_fit_settings.combine_nsigma_near = 13.288225;
-   //best_final_fit_settings.combine_ROI_overlap_frac = 0.802212;
-   best_final_fit_settings.cont_type_peak_nsigma_threshold = 45.340986;
-   best_final_fit_settings.cont_type_left_right_nsigma = 9.624457;
-   best_final_fit_settings.cont_poly_order_increase_chi2dof_required = 1.157370;
-   best_final_fit_settings.cont_step_type_increase_chi2dof_required = 0.549378;
-   best_final_fit_settings.skew_nsigma = 5.420989;
-   best_final_fit_settings.left_residual_sum_min_to_try_skew = 1.482605;
-   best_final_fit_settings.right_residual_sum_min_to_try_skew = 4.213049;
-   best_final_fit_settings.skew_improve_chi2_dof_threshold = 3.138754;
-   best_final_fit_settings.roi_extent_low_num_fwhm_base = 3.519398;
-   best_final_fit_settings.roi_extent_high_num_fwhm_base = 8.373682;
-   best_final_fit_settings.roi_extent_mult_type = RoiExtentMultType::Linear;
-   best_final_fit_settings.roi_extent_lower_side_stat_multiple = 0.266548;
-   best_final_fit_settings.roi_extent_upper_side_stat_multiple = 0.724294;
-   best_final_fit_settings.multi_roi_extent_lower_side_fwhm_mult = 0.613304;
-   best_final_fit_settings.multi_roi_extent_upper_side_fwhm_mult = -0.680065;
-
-   */
-
-  FitFinalPeakFitSettingsChi2 chi2Fcn( ga_eval_fcn );
-
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  inputPrams.Add( "require_combine_num_fwhm_near", 2.0, 0.5, 1.0, 8.5 );
-  inputPrams.Add( "not_allow_combine_num_fwhm_near", 4.0, 0.5, 2.0, 15.0 );
-  //inputPrams.Add( "combine_ROI_overlap_frac", 0.802212, 0.25, -1.0, 1.0 );
-  inputPrams.Add( "cont_type_peak_nsigma_threshold", 45.340986, 5, 10.0, 100 );
-  inputPrams.Add( "cont_type_left_right_nsigma", 9.624457, 3, 1.0, 40.0 );
-  inputPrams.Add( "cont_poly_order_increase_chi2dof_required", 1.157370, 0.2, 0.0, 4.0 );
-  inputPrams.Add( "cont_step_type_increase_chi2dof_required", 0.549378, 0.2, 0.0, 4.0 );
-  inputPrams.Add( "skew_nsigma", 5.420989, 5, 0.0, 25.0 );
-  inputPrams.Add( "left_residual_sum_min_to_try_skew", 1.482605, 0.5, 0.0, 10.0 );
-  inputPrams.Add( "right_residual_sum_min_to_try_skew", 4.213049, 2.0, 0.0, 10.0 );
-  inputPrams.Add( "skew_improve_chi2_dof_threshold", 3.138754, 0.5, 0.0, 5.0 );
-  inputPrams.Add( "roi_extent_low_num_fwhm_base", 2.5, 0.5, 0.5, 9.0 );
-  inputPrams.Add( "roi_extent_high_num_fwhm_base", 3.5, 0.5, 0.5, 9.0 );
-  inputPrams.Add( "roi_extent_low_num_fwhm_extra", 1.5, 0.5, 0.0, 6.0 );
-  inputPrams.Add( "roi_extent_high_num_fwhm_extra", 1.5, 0.5, 0.0, 6.0 );
-  inputPrams.Add( "roi_end_second_deriv_thresh", 3, 0.0, 0, 20 );
-  inputPrams.Add( "break_multi_roi_up_continuum_away_sigma", 4, 1.0, 0.0, 20.0 );
-  inputPrams.Add( "break_multi_roi_up_required_chi2dof_improve", 0.5, 0.1, 0.1, 2.0 );
-
-  cerr << "Returning ititial paramaters..." << endl;
-  return FitFinalPeakFitSettingsChi2::params_to_settings( inputPrams.Params() );
-
-
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-
-  const unsigned int maxFcnCall = 2000;
-  const double tolerance = 0.001;
-  ROOT::Minuit2::CombinedMinimizer fitter;
-  ROOT::Minuit2::FunctionMinimum minimum
-  = fitter.Minimize( chi2Fcn, inputParamState,
-                    strategy, maxFcnCall, tolerance );
-
-  //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
-  //  rather than showing the user an error message, we'll give it anither try
-  if( minimum.IsAboveMaxEdm() )
-  {
-    ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
-    minimum = fitter( maxFcnCall, tolerance );
-  }//if( minimum.IsAboveMaxEdm() )
-
-  if( !minimum.IsValid() )
-    throw runtime_error( Wt::WString::tr("dcw-err-failed-fit-AD").toUTF8() );
-
-  const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
-  const vector<double> pars = params.Params();
-  cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
-
-
-  FinalPeakFitSettings final_settings = FitFinalPeakFitSettingsChi2::params_to_settings( pars );
-
-  return final_settings;
-}//FinalPeakFitSettings minuit_fit_final_pars( std::function<double( const FinalPeakFitSettings &)> ga_eval_fcn )
 
 
 void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_settings,
@@ -2055,8 +1892,6 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   };// set InitialFit_GA::ns_ga_eval_fcn
 
 
-  //cout << "Doing minuit_fit_final_pars..." << endl;
-  //const FinalPeakFitSettings best_final_fit_settings = minuit_fit_final_pars( ga_eval_fcn );
 
   //cerr << "\n\n\nWarning - not doign genetic optimzation!!!\n\n" << endl;
   const FinalPeakFitSettings best_final_fit_settings = FinalFit_GA::do_ga_eval( ga_eval_fcn );
@@ -2102,11 +1937,8 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
 
 
   //TODO:
-  // - Should time using LinearProblemSubSolveChi2Fcn - may be faster/better?
-  // - Also, try using Ceres instead of Minuit.  Look for `USE_LM_PEAK_FIT`
-  // -Compare using PeakFitLM::fit_peak_for_user_click_LM(...) vs
-  //  `refitPeaksThatShareROI(...)`
-  // - See what works better for peaks - `LinearProblemSubSolveChi2Fcn` or `PeakFitChi2Fcn` - e.g. more accurate answers for some default fit scenarios.
+  // - Compare using PeakFitLM::fit_peak_for_user_click_LM(...) vs
+  //   `refitPeaksThatShareROI(...)`
 
 }//void do_final_peak_fit_ga_optimization(...)
 

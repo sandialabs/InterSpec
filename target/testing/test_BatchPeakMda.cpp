@@ -1015,7 +1015,7 @@ BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
   options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
 
   // Counts below 1000 keV, nothing above it - so the 661 keV peak fits normally while the
-  //  1173 keV region is empty.  (An entirely empty spectrum instead trips a pre-existing Minuit
+  //  1173 keV region is empty.  (An entirely empty spectrum instead trips a pre-existing
   //  assertion in the peak fitter, which is a separate issue.)
   auto counts = make_shared<vector<float>>( sm_num_channels, 0.0f );
   auto cal = make_shared<SpecUtils::EnergyCalibration>();

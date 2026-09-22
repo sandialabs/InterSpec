@@ -12,7 +12,7 @@ come from three places:
 
 1. Prebuilt static libraries built by `target/patches/dep_build_msvc2022.bat` (pinned versions).
 2. Git submodules compiled in-tree (SpecUtils, SandiaDecay, QR-Code-generator).
-3. Vendored source under `external_libs/` (Minuit2, Cuba, muParserX, pugixml, Faddeeva, and
+3. Vendored source under `external_libs/` (Cuba, muParserX, pugixml, Faddeeva, and
    SpecUtils' header-only `date` / `nlohmann-json` / `rapidxml`).
 
 Every major dependency is **statically linked** into `InterSpec.exe` / `InterSpec.dll`. So:
@@ -53,7 +53,7 @@ The generator resolves submodule commit SHAs from the checked-out tree, so run i
 
 The InterSpec application itself (top-level component, with version + build git SHA), plus:
 Boost, zlib, Wt, Eigen, Ceres Solver, wxWidgets, Microsoft WebView2 Loader; SpecUtils,
-SandiaDecay, QR-Code-generator (C++ variant); Minuit2, Cuba, muParserX, pugixml, Faddeeva;
+SandiaDecay, QR-Code-generator (C++ variant); Cuba, muParserX, pugixml, Faddeeva;
 the header-only `date`, `nlohmann-json`, `rapidxml`; and the D3.js v3 runtime asset shipped
 in the installer.
 

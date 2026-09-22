@@ -124,15 +124,6 @@
     },
 
     {
-      "name": "Minuit2",
-      "version": "6.34.02",
-      "type": "library",
-      "license": "LGPL-2.1-or-later",
-      "url": "https://root.cern/",
-      "notes": "Vendored CERN/ROOT minimizer; corresponds to ROOT 6.34.02.",
-      "version_source": "vendored:external_libs/Minuit2"
-    },
-    {
       "name": "cuba",
       "version": "3.0",
       "type": "library",

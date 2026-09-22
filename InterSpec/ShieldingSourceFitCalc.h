@@ -116,7 +116,7 @@ struct FitParameter
  Parameter order is meaningful: it matches the order the chi2 function expects its argument
  vector in, and `ModelFitResults::paramValues` comes back in the same order.
 
- This replaces ShieldingSourceFitCalc::FitParameters, which was the interface type while Minuit2
+ This replaces ROOT::Minuit2::MnUserParameters, which was the interface type while Minuit2
  was the fitter.
  */
 class FitParameters
@@ -430,8 +430,7 @@ private:
      Pertinent Puzzle.  A common-mode efficiency error then maps ~1:1 onto activity (it is
      NOT averaged down by sqrt(Npeaks)).  The central value MAY legitimately move when peaks
      are mutually inconsistent under the band, and the marginal chart pulls sit coherently
-     off-zero; the chart annotates the coherent shift.  (The legacy Minuit2 path uses a
-     diagonal, uncorrelated inflation only.) */
+     off-zero; the chart annotates the coherent shift. */
     Likelihood = 2
   };//enum class DrfUncertaintyMethod
 
