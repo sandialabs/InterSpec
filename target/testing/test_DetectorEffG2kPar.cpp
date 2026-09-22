@@ -55,7 +55,13 @@
       the .ecc within a per-geometry tolerance (tight for vacuum points/off-axis,
       looser for air and volumetric; Marinelli/theta>90 is informational only);
    5. the DRF serializes and round-trips (toXml -> fromXml), preserving the
-      efficiency and the DrfSource provenance.
+      efficiency and the DrfSource provenance;
+   6. `GridReproductionByBand`: how well the ASSEMBLED response reproduces the
+      grid, per energy band, gated on the file's own uint16 lattice (see that
+      case for why that is the only unambiguous truth the file carries).
+
+ Two cases need no vendor files and so run in CI on `--datadir=` alone:
+ `LayerMaterialsResolveAnyElement` and `KEdgeSegmentsHaveBothFlanks`.
  =============================================================================
 */
 
@@ -558,6 +564,277 @@ BOOST_AUTO_TEST_CASE( LayerMaterialsResolveAnyElement )
 }//BOOST_AUTO_TEST_CASE( LayerMaterialsResolveAnyElement )
 
 
+/** No K-edge segment of the assembled eta table may hold a single node, and the
+ assembled efficiency must be CONTINUOUS across every edge.
+
+ `EtaTable` interpolates ln eta in ln E segmented at the crystal K-edges, and its
+ contract is that both flanks of each edge are nodes.  A segment left with one
+ node can only be represented as a constant stub, which freezes ln eta across the
+ whole sub-edge interval while `K(E)` keeps moving - fabricating a discontinuity
+ that exists nowhere in the file.  That is not hypothetical: with the file's own
+ 20 energies as the axis, the Ge K-edge at 11.107 keV falls between the 10 and
+ 12 keV nodes, leaving 10 keV alone in its segment, and the assembled efficiency
+ jumped by 3.8e8 across the edge - where the grid's 10 and 12 keV pages are
+ bit-identical, so the truth ratio is exactly 1.
+
+ Needs no vendor files (a synthetic grid straddling the edge drives makeDrf), and
+ the edge at issue is a property of the crystal, so this runs in CI.  `--datadir=`
+ is required for the element/cross-section lookups.
+ */
+BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
+{
+  if( g_data_dir.empty() )
+  {
+    BOOST_TEST_MESSAGE( "KEdgeSegmentsHaveBothFlanks: skipped (needs --datadir=)." );
+    return;
+  }
+
+  // A germanium detector with a dead layer, so the Ge K-edge at 11.107 keV is in
+  //  play, and a grid whose range STRADDLES it: crystal_k_edges keeps an edge only
+  //  when it is inside the range by its 1.02/0.98 margins, which 11.107 is for a
+  //  10 keV first node.  This is the geometry LAB06 does not have (its grid starts
+  //  at 45 keV, so no edge is retained and it never showed the bug).
+  const string detector_txt =
+    "# 99999 - SYNTHETIC-KEDGE - S/N-TEST-2\n"
+    "KEdgeDet,70.0,60.0,0,80.0,150.0,4.0,4.0,26,kedge.par,4, #\n"
+    "ge,0.23,5.35, #\n"
+    "be,0.5,1.848, #\n"
+    "al,1.5,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "al,1.0,2.70, #\n"
+    "al,2.0,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "cu,3.0,8.96, #\n"
+    "al,5.0,2.70\n";
+
+  istringstream txt( detector_txt );
+  const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+  BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+  const DetEffG2kPar::DetectorDef &def = defs.front();
+
+  // The file's own energies bracket the edge without flanking it - exactly the
+  //  vendor layout that produced the bug.
+  DetEffG2kPar::ParFile par;
+  par.emin_keV = 10.0;
+  par.emax_keV = 1332.0;
+  par.energies_keV = { 10.0, 12.0, 16.0, 22.0, 45.0, 100.0, 1332.0 };
+  for( size_t e = 0; e < par.energies_keV.size(); ++e )
+  {
+    DetEffG2kPar::ParGrid g;
+    g.ncols = 19;                    // 0..180 deg in 10 deg steps
+    g.nrows = 40;
+    g.theta_step_rad = 10.0 * pi / 180.0;
+    g.r_step = 0.2;                  // ln(mm)
+    g.V.resize( static_cast<size_t>(g.nrows) * g.ncols );
+    for( int r = 0; r < g.nrows; ++r )
+    {
+      for( int c = 0; c < g.ncols; ++c )
+      {
+        // The 10 and 12 keV pages are deliberately IDENTICAL, mirroring the
+        //  corpus file: the truth is then exactly flat across the edge, so any
+        //  jump the assembled response shows is entirely fabricated.
+        const double V = 2000.0 + 40.0*r + 15.0*c
+                         + ((e < 2) ? 0.0 : 300.0*static_cast<double>(e-1));
+        g.V[r*g.ncols + c] = static_cast<uint16_t>( V );
+      }
+    }
+    par.grids.push_back( g );
+  }
+
+  shared_ptr<DetectorPeakResponse> drf;
+  BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrf( par, def ) );
+  BOOST_REQUIRE( !!drf );
+  const shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+  BOOST_REQUIRE( !!resp );
+
+  const ceelo::EtaTable &eta = resp->eta_fep;
+  BOOST_REQUIRE( !eta.energies_keV.empty() );
+
+  // The fixture must actually retain an edge, or everything below is vacuous.
+  BOOST_REQUIRE_MESSAGE( !eta.edges_keV.empty(),
+      "fixture retained no K-edge, so this case would pass without testing anything"
+      " - crystal_k_edges keeps an edge only inside the range by its 1.02/0.98"
+      " margins; check the crystal material and the grid's energy range" );
+
+  BOOST_TEST_MESSAGE( "  K-edge fixture: " + std::to_string(par.energies_keV.size())
+                      + " file nodes -> " + std::to_string(eta.energies_keV.size())
+                      + " eta nodes, " + std::to_string(eta.edges_keV.size())
+                      + " retained edge(s)" );
+
+  // (1) Structural, tolerance-free: >= 2 nodes strictly each side of every edge.
+  //     This is the assertion that cannot silently pass.
+  for( const double edge : eta.edges_keV )
+  {
+    size_t below = 0, above = 0;
+    for( const double E : eta.energies_keV )
+    {
+      if( E < edge )
+        ++below;
+      else if( E > edge )
+        ++above;
+    }
+    BOOST_TEST_MESSAGE( "  edge " + std::to_string(edge) + " keV: "
+                        + std::to_string(below) + " nodes below, "
+                        + std::to_string(above) + " above" );
+    BOOST_CHECK_MESSAGE( below >= 2 && above >= 2,
+        "K-edge " + std::to_string(edge) + " keV has " + std::to_string(below)
+        + " nodes below and " + std::to_string(above) + " above; a segment with"
+        " fewer than 2 interpolates as a constant stub, freezing ln eta on that"
+        " side of the edge and fabricating a discontinuity" );
+  }
+
+  // (2) The assembled efficiency is continuous across each edge.  The grid is
+  //     flat across 10-12 keV here, so the truth ratio over +-1% is the ratio the
+  //     KERNEL contributes - itself modest.  Pre-fix this returned ~3.8e8.
+  const Eigen::Vector3d src
+      = CeeLoUtils::sourcePositionFromFace( resp->descriptor, 0.0, 0.0, 25.0 );
+  for( const double edge : eta.edges_keV )
+  {
+    const ceelo::EffResult lo = resp->eps_fep_at( edge*0.99, src );
+    const ceelo::EffResult hi = resp->eps_fep_at( edge*1.01, src );
+    BOOST_REQUIRE_MESSAGE( lo.value > 0.0 && hi.value > 0.0,
+        "assembled efficiency vanished at the " + std::to_string(edge) + " keV edge" );
+
+    const DetEffG2kPar::ParEfficiency parEff( par );
+    const double t_lo = parEff.efficiency( edge*0.99, 250.0, 0.0 );
+    const double t_hi = parEff.efficiency( edge*1.01, 250.0, 0.0 );
+    BOOST_REQUIRE( t_lo > 0.0 && t_hi > 0.0 );
+
+    // Compare the JUMP, not the absolute value: the ratio across the edge must
+    //  track the grid's own ratio.  A stub segment breaks this by many decades
+    //  while leaving each one-sided value superficially plausible.
+    const double ours = hi.value / lo.value;
+    const double truth = t_hi / t_lo;
+    BOOST_TEST_MESSAGE( "  across edge " + std::to_string(edge) + " keV: response steps "
+                        + std::to_string(ours) + "x, grid steps " + std::to_string(truth)
+                        + "x (pre-fix the response stepped ~3.8e8x)" );
+    BOOST_CHECK_MESSAGE( std::fabs( std::log( ours / truth ) ) < 0.05,
+        "across the " + std::to_string(edge) + " keV edge the response steps by "
+        + std::to_string(ours) + "x but the grid steps by " + std::to_string(truth)
+        + "x - a lone-node segment freezes ln eta on one side of the edge" );
+  }
+
+  {
+    // (2b) The edge-ratio check above is local to one edge; this sweeps the whole
+    //  sub-knee range for a jump ANYWHERE.  The grid here is flat below the knee,
+    //  so any step the response takes that the grid does not is ours - and a
+    //  lone-node segment produces exactly that, at whatever energy it occurs,
+    //  which is what this catches that (2) cannot.  Deliberately OUTSIDE the
+    //  per-edge loop above: the sweep already tests every edge through
+    //  `near_edge`, so running it once per edge would only reset its counters and
+    //  repeat the work, reporting a per-iteration figure as if it were global.
+    const DetEffG2kPar::ParEfficiency parEff( par );
+    //
+    //  A +-2% window around each edge is EXCLUDED, and the reason is physics, not
+    //  tolerance shopping.  Inside it `K` is mid-cliff: it falls ~9 decades
+    //  (2.9e-09 -> 4.5e-18 over 11.11-11.20 keV on this fixture) as the dead
+    //  layer's tau jumps through the edge, and `eta` has to cancel that to
+    //  reproduce a flat grid.  Cancellation is exact only where the two agree on
+    //  an interpolation basis, and they do not: eta is a cubic in ln E while
+    //  `K`'s attenuation is exp(-tau) off the mu table's own log-log grid.  The
+    //  measured residue is a ~10% bump over ~0.09 keV that recovers to 1.0002 the
+    //  moment `K` clears the transition.  On a REAL detector that window is deep
+    //  in the sub-16 keV region whose peak efficiency is ~2e-09 (see the band
+    //  table in "DetectorEffG2kPar.h"), which is why that band is gated on
+    //  ABSOLUTE error and passes; on this synthetic fixture the efficiency there
+    //  is much larger (~8e-04) because the fixture's grid is not a real detector's,
+    //  so do not read a magnitude off this case.  Fixing the residue means putting
+    //  eta on the kernel's basis, i.e. changing the interpolator - out of scope.
+    //  The in-window figure is reported rather than hidden, and (2) pins the ratio
+    //  across the edge.
+    const auto near_edge = [&eta]( const double E ) -> bool
+    {
+      for( const double ed : eta.edges_keV )
+        if( E > ed*0.98 && E < ed*1.02 )
+          return true;
+      return false;
+    };
+
+    double prev_ours = -1.0, prev_truth = -1.0, prev_E = 0.0;
+    double worst_drop = 0.0, at_E = 0.0, worst_in_win = 0.0;
+    for( double E = 10.0; E <= 45.0 + 1e-9; E *= 1.01 )
+    {
+      const double v = resp->eps_fep_at( E, src ).value;
+      const double t = parEff.efficiency( E, 250.0, 0.0 );
+      if( !(v > 0.0) || !(t > 0.0) )
+      {
+        prev_ours = prev_truth = -1.0;
+        prev_E = E;   // reset too, else `near_edge(prev_E)` reads a stale energy
+        continue;
+      }
+      if( prev_ours > 0.0 && t >= prev_truth )   // grid rising: we must rise too
+      {
+        const double drop = prev_ours / v - 1.0;
+        if( near_edge( E ) || near_edge( prev_E ) )
+          worst_in_win = std::max( worst_in_win, drop );
+        else if( drop > worst_drop ){ worst_drop = drop; at_E = E; }
+      }
+      prev_ours = v;
+      prev_truth = t;
+      prev_E = E;
+    }
+    BOOST_TEST_MESSAGE( "  10-45 keV monotonicity: worst relative DROP where the grid"
+                        " rises is " + std::to_string(worst_drop)
+                        + " (at " + std::to_string(at_E) + " keV); inside the +-2%"
+                        " edge windows, where the K cliff makes exact cancellation"
+                        " unachievable, " + std::to_string(worst_in_win) );
+    BOOST_CHECK_MESSAGE( worst_drop < 0.005,
+        "the assembled response FALLS by " + std::to_string(worst_drop)
+        + " across " + std::to_string(at_E) + " keV while the grid rises - a"
+        " fabricated discontinuity in the sub-knee region" );
+
+    // The in-window figure is GATED too, just loosely.  It must not be merely
+    //  reported: the `reach <= kStubReach` branch in `EtaTable::finalize`
+    //  deliberately keeps a stub for a lone FLANK node, and the artifact such a
+    //  stub produces lands exactly inside this excluded window - where check (2),
+    //  which samples only edge*0.99 and edge*1.01, would step straight over it.
+    //  The bound is set by what the two failure modes look like, not by the
+    //  measured value: the K-cliff basis mismatch is a ~10% bump, while a stub
+    //  freezing ln eta across a segment is the ~95x (9400%) jump this whole change
+    //  exists to prevent.  Anything between those is also a defect.
+    BOOST_CHECK_MESSAGE( worst_in_win < 0.5,
+        "inside the +-2% edge window the response falls by "
+        + std::to_string(worst_in_win) + " where the grid rises.  The kernel-basis"
+        " residue is ~10%; a drop this large is a frozen segment, not that" );
+  }
+
+  // (3) Direct library guard: hand-build an EtaTable whose edge list leaves the
+  //     first node alone in its segment, and require eval_ln in the gap to lie
+  //     BETWEEN the neighbouring node values rather than frozen at one of them.
+  //     Reachable from any producer or any already-serialized response, so the
+  //     library must not be able to produce the stub when a neighbour exists.
+  {
+    ceelo::EtaTable t;
+    t.energies_keV = { 10.0, 12.0, 16.0, 22.0 };
+    t.cos_thetas = { 1.0 };
+    t.edges_keV = { 11.107 };              // between node 0 and node 1: lone node
+    t.ln_eta = { -4.0, 0.0, 0.5, 0.6 };    // a big step 10 -> 12 keV
+    t.frac_sigma.assign( t.ln_eta.size(), 0.0 );
+    BOOST_REQUIRE_NO_THROW( t.finalize() );
+
+    bool clamped = false;
+    const double mid = t.eval_ln( 11.0, 1.0, 0.0, clamped );
+    BOOST_CHECK_MESSAGE( mid > -4.0 + 1e-9 && mid < 0.0 - 1e-9,
+        "EtaTable::eval_ln at 11.0 keV returned " + std::to_string(mid)
+        + ", not strictly between the bracketing node values -4.0 and 0.0:"
+        " the lone first segment is still being served as a constant stub" );
+    BOOST_CHECK_MESSAGE( !clamped,
+        "EtaTable::eval_ln clamped at 11.0 keV, which is interior to the node"
+        " range - the query fell outside a stub segment's degenerate span" );
+
+    // A genuinely single-node table must still evaluate, as a constant.
+    ceelo::EtaTable one;
+    one.energies_keV = { 661.657 };
+    one.cos_thetas = { 1.0 };
+    one.ln_eta = { -0.25 };
+    one.frac_sigma.assign( 1, 0.0 );
+    BOOST_REQUIRE_NO_THROW( one.finalize() );
+    bool one_clamped = false;
+    BOOST_CHECK_CLOSE( one.eval_ln( 661.657, 1.0, 0.0, one_clamped ), -0.25, 1e-9 );
+  }
+}//BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
+
+
 BOOST_AUTO_TEST_CASE( NodeRoundTripIdentity )
 {
   if( g_par_dir.empty() )
@@ -672,6 +949,386 @@ BOOST_AUTO_TEST_CASE( NodeRoundTripIdentity )
         " small grazing-angle corner, so this suggests a frame or geometry error" );
   }//for( each case )
 }//BOOST_AUTO_TEST_CASE( NodeRoundTripIdentity )
+
+
+/** How well the assembled response reproduces the grid, measured per energy band -
+ the measurement the header's validity table should come from, rather than an
+ ad-hoc script.
+
+ THE METRIC, and why this one.  There are three distinct things one could call
+ "error against the file", and conflating them is how the previous band table came
+ to read as though the low energies were unusable:
+
+   (a) ON the file's own lattice - E a file node, d an exact grid row, theta an
+       exact grid column.  `ParEfficiency::efficiency` then returns the stored
+       uint16 with NO interpolation in ANY dimension, so this is the file's literal
+       content and the only unambiguous truth it has.  THIS is what we gate.
+   (b) OFF-node in ENERGY.  Truth is `ParEfficiency`'s log-log PCHIP - our own
+       curve.  An in-tree Monte-Carlo arbiter already ruled it more physical than
+       the reference tool's interpolation of the same grid (see the
+       DetectorEffG2kPar.h header), so it is worth matching, and it is reported.
+   (c) OFF-node in d or theta.  Truth then includes `interp_grid_V`'s bilinear
+       interpolation in RAW V, which puts a kink on every one of the 440 radial
+       rows and 73 angular columns.  That is the vendor's storage scheme, not
+       physics - the same category as the `.ecc` between-node gap, which the header
+       explains we deliberately do not chase.  Reported, never gated.
+
+ WHAT SETS THE FLOOR.  The file stores eff = 10^(-V/1000) with V an integer, so
+ one raw-V step is 0.2305% and +-1 LSB is 0.1153%.  A smooth interpolant through
+ lattice-quantized nodes cannot beat that scatter, so an on-lattice result at or
+ below ~0.1% is representation-limited, not method-limited, and no tighter claim
+ against this file is definable.  The gates below are set just above the measured
+ values in that spirit; they are change-detectors at the floor, not headroom.
+ */
+BOOST_AUTO_TEST_CASE( GridReproductionByBand )
+{
+  if( g_par_dir.empty() )
+    return;
+
+  // Bands chosen to isolate the absorption knee, where the vendor's 20 energy
+  //  nodes are genuinely sparse (the truth's own curvature in ln E across them is
+  //  ~4.5 at 22-32 keV vs ~0.08 at 200-1000 keV).
+  // `gate`/`corner_gate` are RELATIVE bounds on the on-lattice error; `abs_gate`
+  //  is an ABSOLUTE bound in efficiency units.  Below 22 keV the absolute bound is
+  //  the one that carries the argument, but BOTH are applied there: an absolute
+  //  gate alone leaves the relative error completely unpoliced, so a regression
+  //  that multiplied it while staying under a floor of ~1e-9 would pass silently.
+  //  The sub-22 relative gates are therefore set loosely (~1.5x measured), to
+  //  catch a change in kind rather than to assert a tolerance.
+  //
+  // Why the two lowest bands are gated absolutely.  A relative bound is only
+  //  meaningful next to the efficiency it sits on, and below 22 keV this crystal's
+  //  stored efficiency is 1e-11 to 1e-9 - seven to ten decades below its ~3e-1
+  //  peak.  The worst 10-16 keV locus is a 49% error on eps = 2.2e-09, i.e. an
+  //  absolute error of 6e-10, which cannot move any spectrum.  That residual is
+  //  also not reachable by node density: it is the crystal-frame lattice reading a
+  //  face-frame grid, whose origins differ by `endcap_front_offset_cm`, so the
+  //  angular skew grows from +0.08 deg at 300 cm to +3 deg at 8 cm against the
+  //  grid's 2.5 deg columns, shearing the file's sharp off-axis shoulder (a factor
+  //  of 44 over 57 deg at 16 keV / 9 cm) into the radial direction.  A separable
+  //  product lattice cannot align with a sheared kink; refining the ladder 4x
+  //  (nd 36 -> 144) left the worst 10-16 locus at 0.067, and refining the angular
+  //  axis alone made it slightly worse.  So the absolute gate is what states the
+  //  guarantee that matters, instead of a 50% relative tolerance that would look
+  //  like a measurement while policing nothing.  The loose relative gate is kept
+  //  alongside it so the error cannot change by an order of magnitude unnoticed.
+  //
+  // Why the >= 22 keV relative gates carry headroom over the achieved figures.
+  //  The achieved worst is not monotone in ladder density: rung phase against the
+  //  file's fixed 3.03%-per-row grid matters as much as rung spacing, and no
+  //  crystal-frame ladder can be row-aligned in the face frame anyway.  Measured
+  //  across subdivisions 2/3/4, one band swung 0.031 / 0.0096 / 0.021.  Gates sit
+  //  ~1.5x above the achieved value so a benign re-phasing is not a red build,
+  //  while a real regression still trips them.
+  struct Band { double lo, hi; const char *name; double gate, corner_gate,
+                abs_gate, corner_abs_gate; };
+  const Band bands[] = {
+    {   10.0,    16.0, "10-16",  0.75,  1.45, 1.8e-09, 1.3e-08 },
+    {   16.0,    22.0, "16-22",  0.065, 0.92, 4.6e-10, 6.0e-08 },
+    {   22.0,    32.0, "22-32",  0.040, 0.40, 0.0,     0.0     },
+    {   32.0,    45.0, "32-45",  0.025, 0.20, 0.0,     0.0     },
+    {   45.0,    60.0, "45-60",  0.008, 0.15, 0.0,     0.0     },
+    {   60.0,   200.0, "60-200", 0.006, 0.10, 0.0,     0.0     },
+    {  200.0,  1000.0, "200-1k", 0.009, 0.06, 0.0,     0.0     },
+    { 1000.0,  7100.0, "1k-7k",  0.015, 0.12, 0.0,     0.0     },
+  };
+  const size_t nbands = sizeof(bands)/sizeof(bands[0]);
+
+  // The uint16 quantization figures, so the numbers below are interpretable.
+  const double lsb_rel = std::pow( 10.0, 0.5/1000.0 ) - 1.0;   // +-1 LSB, ~0.1153%
+  BOOST_TEST_MESSAGE( "  uint16 storage floor: one raw-V step "
+                      + std::to_string( std::pow(10.0,1.0/1000.0) - 1.0 )
+                      + ", +-1 LSB " + std::to_string(lsb_rel) );
+
+  // Per REGIME as well as per band: counting only MAIN would leave every CORNER
+  //  gate provable by an empty bucket.
+  size_t global_count[2][16] = {{0}};
+  bool any_case = false;
+
+  const vector<DetectorCase> cases = discoverCases();
+  for( const DetectorCase &c : cases )
+  {
+    DetEffG2kPar::ParFile par;
+    BOOST_REQUIRE_NO_THROW( par = DetEffG2kPar::parseParFile( c.parPath ) );
+    BOOST_REQUIRE( !par.grids.empty() && !par.energies_keV.empty() );
+
+    ifstream txt( c.detectorTxtPath.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( txt.is_open() );
+    const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+    const DetEffG2kPar::DetectorDef def
+                = DetEffG2kPar::selectDetectorDef( defs, SpecUtils::filename( c.parPath ) );
+
+    shared_ptr<DetectorPeakResponse> drf;
+    BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrf( par, def ) );
+    const shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+    BOOST_REQUIRE( !!resp );
+    any_case = true;
+
+    const DetEffG2kPar::ParEfficiency parEff( par );
+    const ceelo::EtaTable &eta = resp->eta_fep;
+    const ceelo::NearFieldModel &nf = resp->near_field;
+    const double r_step = par.grids.front().r_step;
+    const double t_step = par.grids.front().theta_step_rad;
+
+    BOOST_TEST_MESSAGE( "  " + SpecUtils::filename(c.dir) + ": "
+        + std::to_string(par.energies_keV.size()) + " file energies -> eta "
+        + std::to_string(eta.energies_keV.size()) + " x "
+        + std::to_string(eta.cos_thetas.size()) + ", near field "
+        + std::to_string(nf.energies_keV.size()) + " x "
+        + std::to_string(nf.cos_thetas.size()) + " x "
+        + std::to_string(nf.dists_cm.size()) + ", serialized "
+        + std::to_string(resp->to_xml_string().size()) + " bytes" );
+
+    // Probe positions: exact grid rows over the near field's span, and exact grid
+    //  columns.  `sourcePositionFromFace` is the inverse of makeDrf's face_sample,
+    //  so |src - face| == d_cm and the polar angle == theta identically; the
+    //  truth-side arguments are then just 10*d_cm and theta, with no round trip
+    //  and no chance of the axial-vs-radial inversion EccMatch warns about.  Do
+    //  NOT use hypot here for the same reason.
+    vector<double> d_rows;                       // exact grid rows, cm
+    {
+      const double d_lo_cm = nf.dists_cm.empty() ? 1.0 : nf.dists_cm.front();
+      const double d_hi_cm = nf.dists_cm.empty() ? 300.0 : nf.dists_cm.back();
+      const int i_lo = static_cast<int>( std::ceil( std::log( d_lo_cm*10.0 ) / r_step ) );
+      const int i_hi = static_cast<int>( std::floor( std::log( d_hi_cm*10.0 ) / r_step ) );
+      for( int i = i_lo; i <= i_hi; i += 4 )     // every 4th row: ~12% apart
+        d_rows.push_back( std::exp( static_cast<double>(i) * r_step ) / 10.0 );
+    }
+    vector<double> thetas;                       // exact grid columns on [0, 90]
+    for( int j = 0; j*t_step <= 0.5*pi + 1e-9; j += 2 )
+      thetas.push_back( static_cast<double>(j) * t_step );
+
+    BOOST_REQUIRE_MESSAGE( !d_rows.empty() && !thetas.empty(),
+        "no on-lattice probe positions were generated - the grid step or the near"
+        " field's distance span is not what this test assumes" );
+
+    // Per-band accumulators: (a) on-lattice (gated), (b) off-node in energy only
+    //  (reported), (c) off-node in d and theta too (reported).
+    //
+    // Each is split by REGIME, because two of the three regimes are limited by
+    //  different things and folding them together hides both:
+    //    MAIN   d >= 5 cm and theta <= 75 deg - the regime a user query lands in,
+    //           limited only by our own table resolution.  Gated per band.
+    //    CORNER near contact (d < 5 cm) or grazing (theta > 75 deg) - limited by
+    //           the distance ladder's rung spacing against the grid's 440 radial
+    //           rows and by the face-frame geometry at grazing incidence, which is
+    //           entangled with the deferred theta>90 work.  Measured and reported
+    //           with a loose change-detector gate, never folded into MAIN: a
+    //           known-deferred regime must not mask an on-axis regression, and an
+    //           on-axis number must not be flattered by being averaged with it.
+    enum Regime { kMain = 0, kCorner = 1, kNRegimes = 2 };
+    double worst_a[kNRegimes][16] = {{0}}, worst_b[kNRegimes][16] = {{0}};
+    double worst_c[kNRegimes][16] = {{0}}, sum2_a[kNRegimes][16] = {{0}};
+    size_t n_a[kNRegimes][16] = {{0}}, n_b[kNRegimes][16] = {{0}};
+    // On-lattice ABSOLUTE error, and the efficiency the worst RELATIVE error sits
+    //  on, so every relative figure below can be read next to its magnitude.
+    double absw_a[kNRegimes][16] = {{0}}, eps_at_worst[kNRegimes][16] = {{0}};
+    double eps_max[kNRegimes][16] = {{0}};
+    size_t n_c[kNRegimes][16] = {{0}};
+
+    auto band_of = [&]( const double E ) -> size_t
+    {
+      for( size_t b = 0; b < nbands; ++b )
+      {
+        if( E >= bands[b].lo && E < bands[b].hi )
+          return b;
+      }
+      return nbands;
+    };
+
+    // Off-node energies: geometric midpoints of adjacent eta nodes are the
+    //  worst-case location for cubic-Hermite error.  Assert they really are
+    //  off-node, so a coincidence cannot turn this into a second node check.
+    auto is_eta_node = [&eta]( const double E ) -> bool
+    {
+      for( const double n : eta.energies_keV )
+        if( std::fabs( std::log( E / n ) ) < 1.0e-4 )
+          return true;
+      return false;
+    };
+    vector<double> e_offnode;
+    for( size_t i = 0; (i + 1) < eta.energies_keV.size(); i += 17 )
+    {
+      const double E = std::sqrt( eta.energies_keV[i] * eta.energies_keV[i+1] );
+      if( !is_eta_node( E ) )
+        e_offnode.push_back( E );
+    }
+
+    for( const double theta : thetas )
+    {
+      for( const double d_cm : d_rows )
+      {
+        const Eigen::Vector3d src
+            = CeeLoUtils::sourcePositionFromFace( resp->descriptor, theta, 0.0, d_cm );
+        const double d_face_mm = d_cm * 10.0;
+        const size_t rg = ((d_cm < 5.0) || (theta > 75.0*pi/180.0)) ? kCorner : kMain;
+
+        // One quadrature per position, reused across every energy: the header
+        //  documents this overload as ~30x faster and bit-identical.
+        const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> quad
+            = drf->apertureQuadrature( theta, 0.0, d_cm*PhysicalUnits::cm );
+
+        // Returns the signed-magnitude relative error, or -1 where the file has
+        //  nothing to be compared TO (the V==0 no-data corner behind the endcap).
+        //  `q` must be the quadrature traced at (th_truth, d_truth_mm) - a
+        //  mismatch silently answers for the wrong position (and trips the
+        //  developer-check assert, which is how this was caught).
+        //  `absw`/`eps_w`/`eps_hi`, when given, additionally track the worst
+        //  ABSOLUTE error, the efficiency the worst RELATIVE error sits on, and the
+        //  band's peak efficiency - the magnitude context that makes a relative
+        //  figure interpretable (and, below 22 keV, what is gated instead).
+        auto compare = [&]( const double E, double &worst, double *sum2,
+                            size_t &n, const double d_truth_mm, const double th_truth,
+                  const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> &q,
+                            double *absw = nullptr, double *eps_w = nullptr,
+                            double *eps_hi = nullptr )
+                            -> double
+        {
+          bool no_data = false;
+          const double truth = parEff.efficiency( E, d_truth_mm, th_truth, &no_data );
+          if( no_data || !(truth > 1.0e-30) )
+            return -1.0;
+          const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval(
+                          static_cast<float>(E), th_truth, 0.0,
+                          (d_truth_mm/10.0)*PhysicalUnits::cm, q );
+          if( !(ev.value > 0.0) )
+            return -1.0;
+          const double rel = std::fabs( ev.value/truth - 1.0 );
+          if( eps_w && (rel > worst) )
+            *eps_w = truth;
+          worst = std::max( worst, rel );
+          if( absw )
+            *absw = std::max( *absw, std::fabs( ev.value - truth ) );
+          if( eps_hi )
+            *eps_hi = std::max( *eps_hi, truth );
+          if( sum2 )
+            *sum2 += rel*rel;
+          ++n;
+          return rel;
+        };
+
+        // (a) ON the lattice: file-node energies at this exact row and column.
+        for( const double E : par.energies_keV )
+        {
+          const size_t b = band_of( E );
+          if( b >= nbands )
+            continue;
+          const double rel = compare( E, worst_a[rg][b], &sum2_a[rg][b], n_a[rg][b],
+                                      d_face_mm, theta, quad, &absw_a[rg][b],
+                                      &eps_at_worst[rg][b], &eps_max[rg][b] );
+          if( rel >= 0.0 )
+            ++global_count[rg][b];
+        }
+
+        // (b) OFF node in ENERGY only - still an exact row and column, so the
+        //     same quadrature applies.
+        for( const double E : e_offnode )
+        {
+          const size_t b = band_of( E );
+          if( b < nbands )
+            compare( E, worst_b[rg][b], nullptr, n_b[rg][b], d_face_mm, theta, quad );
+        }
+
+        // (c) OFF node in d and theta as well: half a grid row out and half a
+        //     column over, where `interp_grid_V`'s bilinear-in-raw-V kinks live.
+        //     A different position, so it needs its own traced quadrature.
+        const double d_mid_mm = d_face_mm * std::exp( 0.5*r_step );
+        const double th_mid = std::min( theta + 0.5*t_step, 0.5*pi );
+        const shared_ptr<const DetectorPeakResponse::PositionedQuadrature> quad_mid
+            = drf->apertureQuadrature( th_mid, 0.0, (d_mid_mm/10.0)*PhysicalUnits::cm );
+        for( const double E : e_offnode )
+        {
+          const size_t b = band_of( E );
+          if( b < nbands )
+            compare( E, worst_c[rg][b], nullptr, n_c[rg][b], d_mid_mm, th_mid, quad_mid );
+        }
+      }//for( each grid row )
+    }//for( each grid column )
+
+    // Report every metric for both regimes; gate MAIN per band, CORNER loosely.
+    for( size_t rg = 0; rg < kNRegimes; ++rg )
+    {
+      BOOST_TEST_MESSAGE( string("    ") + ((rg == kMain)
+              ? "MAIN (d >= 5 cm, theta <= 75 deg) - gated per band"
+              : "CORNER (d < 5 cm or theta > 75 deg) - ladder/frame limited, loose gate" ) );
+      BOOST_TEST_MESSAGE( "      band      n     ON-lattice  (rms)      off-node-E"
+                          "  off-node-d,theta   abs@worst   eps@worst    eps_max" );
+
+      for( size_t b = 0; b < nbands; ++b )
+      {
+        if( !n_a[rg][b] && !n_b[rg][b] )
+          continue;   // LAB06 starts at 45 keV: its four low bands are legitimately empty
+        const double rms_a = n_a[rg][b]
+            ? std::sqrt( sum2_a[rg][b]/static_cast<double>(n_a[rg][b]) ) : 0.0;
+        char line[320];
+        std::snprintf( line, sizeof(line),
+            "      %-8s %6zu   %9.5f (%7.5f)   %9.5f    %9.5f   %9.2e  %9.2e  %9.2e",
+            bands[b].name, n_a[rg][b], worst_a[rg][b], rms_a,
+            n_b[rg][b] ? worst_b[rg][b] : 0.0, n_c[rg][b] ? worst_c[rg][b] : 0.0,
+            absw_a[rg][b], eps_at_worst[rg][b], eps_max[rg][b] );
+        BOOST_TEST_MESSAGE( line );
+
+        if( !n_a[rg][b] )
+          continue;
+
+        // Absolute gate where one is set (below 22 keV); the relative gate below
+        //  then applies IN ADDITION, not instead.
+        const double abs_gate = (rg == kMain) ? bands[b].abs_gate
+                                             : bands[b].corner_abs_gate;
+        if( abs_gate > 0.0 )
+        {
+          char msg[512];
+          std::snprintf( msg, sizeof(msg),
+              "%s keV, %s: worst ON-LATTICE ABSOLUTE error %.3e over %zu probes"
+              " exceeds %.3e.  This band is gated absolutely because its stored"
+              " efficiency (peak %.2e here) is many decades below the crystal's"
+              " ~3e-1 peak, where a relative bound polices nothing; the worst"
+              " relative error was %.5f on eps %.2e.  The limit is the crystal-frame"
+              " lattice reading a face-frame grid, not node density",
+              bands[b].name, (rg == kMain) ? "MAIN" : "CORNER", absw_a[rg][b],
+              n_a[rg][b], abs_gate, eps_max[rg][b], worst_a[rg][b],
+              eps_at_worst[rg][b] );
+          BOOST_CHECK_MESSAGE( absw_a[rg][b] <= abs_gate, msg );
+          // no `continue` - the relative gate below is a second, looser guard
+        }
+
+        const double gate = (rg == kMain) ? bands[b].gate : bands[b].corner_gate;
+        BOOST_CHECK_MESSAGE( worst_a[rg][b] <= gate,
+            string(bands[b].name) + " keV, "
+            + ((rg == kMain) ? "MAIN" : "CORNER") + ": worst ON-LATTICE error "
+            + std::to_string(worst_a[rg][b]) + " over " + std::to_string(n_a[rg][b])
+            + " probes exceeds " + std::to_string(gate)
+            + ".  On the lattice the file returns its stored uint16 with no"
+            " interpolation anywhere, so this is our representation error against"
+            " the file's literal content" );
+      }
+    }
+
+    // A band gate that passes because its bucket is empty proves nothing: any
+    //  detector whose grid reaches 12 keV must populate the lowest band.
+    if( par.energies_keV.front() <= 12.0 )
+      BOOST_CHECK_MESSAGE( n_a[kMain][0] > 0,
+          "the 10-16 keV band has no on-lattice MAIN probes even though the grid starts at "
+          + std::to_string(par.energies_keV.front()) + " keV - the probe list is broken,"
+          " not the band empty" );
+  }//for( each case )
+
+  // Across all detectors every band must have been exercised somewhere, or the
+  //  sweep silently stopped covering part of the range.
+  if( any_case )
+  {
+    for( size_t b = 0; b < nbands; ++b )
+    {
+      // `Regime` is scoped to the per-case block above; 0 is kMain, 1 is kCorner.
+      for( size_t rg = 0; rg < 2; ++rg )
+        BOOST_CHECK_MESSAGE( global_count[rg][b] > 0,
+            string("band ") + bands[b].name + " keV, "
+            + ((rg == 0) ? "MAIN" : "CORNER") + " was never probed by ANY"
+            " detector - a per-band gate over an empty bucket passes without"
+            " measuring" );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( GridReproductionByBand )
 
 
 BOOST_AUTO_TEST_CASE( GridVsPython )
@@ -926,27 +1583,64 @@ BOOST_AUTO_TEST_CASE( EccMatch )
       //  Querying the TRUE radial range is what makes this check discriminating.
       //
       // This is a coarser check than the node round-trip: the assembled CeeLo
-      //  tables subsample the grid (an ~18-node near-field distance ladder and
-      //  the ~2.5 deg cos-theta nodes) and interpolate on their own manifold, so
-      //  a query that is NOT exactly a fill node differs from the raw-grid
-      //  bilinear by the table-vs-grid interpolation gap (<~0.6% at the mid-index
-      //  energy probed below; that gap is much larger - tens of percent - at the
-      //  10-16 keV low end and at extreme angles, which is why this check probes
-      //  a mid energy rather than sweeping).
-      //  Its job is to catch a gross frame/convention error in the dispatch path
-      //  (which would show up as many-percent off-axis, as the pre-fix slant
-      //  sampling did), not to re-prove the node identity.  Probe at an energy
-      //  node so only the spatial dimension is between-node.
+      //  tables subsample the grid (a 60-rung near-field distance ladder against
+      //  the grid's 440 radial rows) and interpolate on their own manifold, so a
+      //  query that is NOT exactly a fill node differs from the raw-grid
+      //  bilinear by the table-vs-grid gap.  Note the cos-theta nodes being the
+      //  grid's own 37 columns does NOT make the angular axis node-exact, as an
+      //  earlier version of this comment claimed: those nodes are CRYSTAL-frame
+      //  cosines while the grid is indexed in the ENDCAP-FACE frame, and the
+      //  origins differ by `endcap_front_offset_cm` (a +0.28 deg skew at 83 cm
+      //  against 2.5 deg columns, +3.0 at 8 cm).  Unlike the vendor's `.ecc`
+      //  between-node values, that gap is OURS, and it is what
+      //  `GridReproductionByBand` measures per band.
+      //  This check's job is to catch a gross frame/convention error in the
+      //  dispatch path (which would show up as many-percent off-axis, as the
+      //  pre-fix slant sampling did).  Probe at energy nodes so only the spatial
+      //  dimension is between-node - including a LOW one, which is what turns the
+      //  old "probes a mid energy rather than sweeping" caveat into a real check:
+      //  the 10-16 keV end was where the fabricated K-edge discontinuity lived.
       if( gis.pressure <= 0.0 && !par.energies_keV.empty() )
       {
-        const double E_node = par.energies_keV[ par.energies_keV.size()/2 ];
-        const double eff_eval = parEff.efficiency( E_node, dist_mm, theta );
-        const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval(
-                    static_cast<float>(E_node), theta, 0.0, (dist_mm/10.0)*PhysicalUnits::cm );
-        BOOST_CHECK_MESSAGE(
-            std::fabs(ev.value - eff_eval) <= 0.015 * std::max(eff_eval,1e-300) + 1e-30,
-            tag + ": DRF dispatch " + std::to_string(ev.value) + " != evaluator "
-            + std::to_string(eff_eval) + " at node " + std::to_string(E_node) + " keV" );
+        const double probes[] = { par.energies_keV.front(),
+                                  par.energies_keV[ par.energies_keV.size()/2 ] };
+        for( const double E_node : probes )
+        {
+          const double eff_eval = parEff.efficiency( E_node, dist_mm, theta );
+          if( !(eff_eval > 0.0) )
+            continue;
+          const DetectorPeakResponse::EffEval ev = drf->fepEfficiencyEval(
+                      static_cast<float>(E_node), theta, 0.0, (dist_mm/10.0)*PhysicalUnits::cm );
+
+          // Relative OR absolute, whichever is looser.  A purely relative bound
+          //  is not meaningful where the file's own efficiency is ~1e-9 (10 keV at
+          //  a grazing angle is eight decades below this crystal's peak), and that
+          //  is exactly the regime `GridReproductionByBand` shows is limited by
+          //  the crystal/face frame skew rather than by anything this check can
+          //  police.  The absolute floor is still far below the defects this check
+          //  exists to catch: the pre-fix slant-sampling bug was 92% at 45 deg and
+          //  8427% at 84 deg, and the fabricated K-edge discontinuity - the reason
+          //  a LOW probe is here at all - was ~95x, i.e. ~1e-7 absolute at this
+          //  locus.
+          //
+          //  The floor is 1e-10 rather than a rounder 1e-8 because of how little
+          //  the low probe is worth otherwise: at 10 keV and a grazing angle
+          //  `eff_eval` is itself ~1e-9, so a 1e-8 floor would tolerate an absolute
+          //  error TEN TIMES the entire efficiency at that point, and a recurrence
+          //  of the K-edge defect merely 5x smaller than the original would pass.
+          //  1e-10 keeps the floor below the value being checked while staying far
+          //  above double-rounding on this path.
+          const double rel_tol = 0.015 * std::max(eff_eval,1e-300);
+          const double abs_tol = 1.0e-10;
+          const double diff = std::fabs(ev.value - eff_eval);
+          char buf[256];
+          snprintf( buf, sizeof(buf), "%s: DRF dispatch %.6g != evaluator %.6g"
+                    " (rel %.4f, abs %.3g) at node %.1f keV, %.1f mm, %.1f deg",
+                    tag.c_str(), ev.value, eff_eval,
+                    diff/std::max(eff_eval,1e-300), diff, E_node, dist_mm,
+                    theta*180.0/pi );
+          BOOST_CHECK_MESSAGE( diff <= std::max(rel_tol,abs_tol) + 1e-30, buf );
+        }
       }
     }//for( each ecc run )
   }//for( each case )

@@ -33,8 +33,9 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
-#include <stdexcept>
 #include <algorithm>
+#include <functional>
+#include <stdexcept>
 
 #include <Eigen/Core>
 
@@ -796,6 +797,338 @@ void sanitize_geometry( ceelo::GeometryDescriptor &gd )
 }//sanitize_geometry(...)
 
 
+/** Subdivision density below `sm_resample_split_keV`, in samples per decade.
+ Above the split the mu grid's own 45/decade sampling is left to carry the axis;
+ the measured cost of going finer up there is nil (see the band table in the
+ header), because `ln_eta` is nearly flat over 60-7000 keV. */
+const double sm_resample_per_decade = 240.0;
+
+/** Below this energy the ln-E criterion densifies; above it the mu grid alone
+ sets the spacing.  Bounding insertion also bounds the change to the already
+ validated high-energy region: Pchip's derivative at node j depends only on the
+ slopes m[j-1] and m[j], so inserting nodes strictly below j perturbs the
+ interpolant only out to the next node above j - one interval. */
+const double sm_resample_split_keV = 60.0;
+
+/** Maximum change in tau = mu_pe(crystal)*t_dead permitted across one interval.
+ This is the "cross-section x dead-layer" criterion; see `response_energy_axis`
+ for why it is the one that matters at an absorption edge. */
+const double sm_resample_tau_step = 0.5;
+
+/** Ceiling on the subdivision of any ONE interval, so a pathological mu table
+ cannot demand a runaway axis.  The Ge K-edge - the most violent feature in the
+ corpus - asks for ~43 at `sm_resample_tau_step`. */
+const size_t sm_max_nodes_per_interval = 64;
+
+/** The uniform distance ladder, before the near-field window is subdivided. */
+const size_t sm_ladder_base_rungs = 36;
+
+/** Each base interval overlapping [`sm_ladder_lo_cm`, `sm_ladder_hi_cm`] is split
+ into `sm_ladder_subdiv` geometric pieces; every base rung is kept, so the ladder
+ is a strict SUPERSET of the uniform one.  See `distance_ladder`. */
+const size_t sm_ladder_subdiv = 3;
+const double sm_ladder_lo_cm = 5.0;
+const double sm_ladder_hi_cm = 30.0;
+
+
+/** The response's energy axis.
+
+ The response does not store the grid: it stores `ln_eta = ln(eps/K)` and
+ multiplies `K(E)` back in at eval time.  That makes the factorization exact at
+ every node regardless of how well `K` models the detector, so ALL of the error
+ is interpolation between nodes - and the axis' only job is to resolve every
+ feature of the integrand.  Densifying introduces no new assumption because
+ `ParEfficiency::efficiency` is evaluable at any energy (it PCHIPs the grid
+ internally), so each added node gets a true value and the table CONVERGES to the
+ grid's own curve rather than relocating the error.
+
+ What the features actually are, measured rather than assumed:
+
+ (1) `ln eps` is piecewise cubic with knots at the FILE's nodes - keep those.
+
+ (2) `ln K` has a KINK at every energy in the stored `MuTable`s: `MuTable::eval`
+     is log-log LINEAR between its samples, so the cross-section curve the kernel
+     integrates is only piecewise smooth, and `ln_eta` inherits every kink.  A
+     dense-but-misaligned axis is then approximating a function with interior
+     kinks - which no amount of density fixes cheaply.  Adopting the mu grid as
+     nodes turns those kinks into node points and is nearly free: it also brings
+     `MuTable::sample`'s own edge flank pairs along with it, so no separate
+     K-edge flank logic is needed.
+
+ (3) Across an absorption edge `mu_pe` jumps by ~7x, and `K` carries that through
+     the dead layer as `exp(-mu_pe*t_dead)`: for Ge at 11.107 keV, tau =
+     mu_pe*t_dead goes 3.3 -> 24, and `K` falls by 10 decades across a window
+     +-4.4 eV wide.  In ln E that window is 8e-4 wide, so ANY uniform ln-E
+     density either misses it or pays for that density everywhere.  The fix is a
+     second criterion in the natural variable - tau itself, the cross-section
+     times the dead layer - which demands nodes in proportion to how much
+     attenuation changes rather than to how much energy changes.  It is
+     self-limiting: tau < 0.05 above 100 keV, so it costs nothing there, and it
+     needs no list of edge energies because an edge IS a jump in tau.
+     Measured on the corpus' Ge detector, the residual AT the edge:
+     4.806 with ln-E density alone (796 nodes), 0.0018 with the tau criterion
+     (225 nodes) - better accuracy from fewer nodes.
+
+ So: nodes = file nodes + mu-table energies, each interval then subdivided
+ geometrically into `max(m_lnE, m_tau)` pieces.
+
+ The rule is FIXED, not residual-adaptive, and that is deliberate: the node set
+ is serialized, `content_hash()` hashes the serialization, and DRF identity (and
+ parent-hash lineage) is that hash - so a residual-vs-tolerance rule would let
+ one ULP of libm difference flip a node in or out and give the same `.PAR` a
+ different identity on macOS vs Windows.  This rule depends only on the file's
+ nodes, the mu tables and two constants, so it is bit-reproducible by
+ construction.
+
+ Only INTERIOR nodes are ever added: Pchip clamps outside its node range and the
+ grid has no data outside the file's range, so the endpoints stay the file's. */
+std::vector<double> response_energy_axis( const std::vector<double> &file_energies,
+                                         const std::vector<double> &mu_energies,
+                                         const std::function<double(double)> &tau )
+{
+  // Strict ascent for Pchip; also what keeps a mu sample that coincides with a
+  //  file node from becoming a duplicate.  Well below any real feature width -
+  //  the narrowest thing here is an edge flank pair at 8e-4 in ln E.
+  const double kMinSepLn = 1.0e-8;
+
+  if( file_energies.size() < 2 )
+    return file_energies;
+
+  const double e_first = file_energies.front();
+  const double e_last = file_energies.back();
+
+  std::vector<double> nodes = file_energies;
+  for( const double E : mu_energies )
+  {
+    if( E > e_first && E < e_last )
+      nodes.push_back( E );
+  }
+
+  const auto ascending = []( std::vector<double> &v, const double min_sep_ln )
+  {
+    std::sort( v.begin(), v.end() );
+    std::vector<double> uniq;
+    uniq.reserve( v.size() );
+    for( const double E : v )
+    {
+      if( uniq.empty() || (std::log( E / uniq.back() ) > min_sep_ln) )
+        uniq.push_back( E );
+    }
+    v.swap( uniq );
+  };
+
+  ascending( nodes, kMinSepLn );
+
+  const double h = std::log(10.0) / sm_resample_per_decade;
+
+  std::vector<double> out = nodes;
+  for( size_t i = 0; (i + 1) < nodes.size(); ++i )
+  {
+    const double e_lo = nodes[i];
+    const double e_hi = nodes[i+1];
+    const double span = std::log( e_hi / e_lo );
+
+    // (a) smooth-background criterion, only below the split.
+    size_t m = 1;
+    if( e_lo < sm_resample_split_keV )
+      m = static_cast<size_t>( std::max( 1.0, std::ceil( span/h - 1.0e-9 ) ) );
+
+    // (b) cross-section x dead-layer criterion, everywhere (it is self-limiting).
+    const double d_tau = std::fabs( tau( e_hi ) - tau( e_lo ) );
+    m = std::max( m, static_cast<size_t>( std::max( 1.0,
+                        std::ceil( d_tau/sm_resample_tau_step - 1.0e-9 ) ) ) );
+
+    m = std::min( m, sm_max_nodes_per_interval );
+
+    for( size_t k = 1; k < m; ++k )
+      out.push_back( e_lo * std::exp( span * static_cast<double>(k)
+                                      / static_cast<double>(m) ) );
+  }
+
+  ascending( out, kMinSepLn );
+
+  // Endpoints must be the file's exactly - the grid has no data outside its
+  //  range, and Pchip clamps flat there.
+  out.front() = e_first;
+  out.back() = e_last;
+
+  return out;
+}//response_energy_axis(...)
+
+
+/** Every `sm_near_field_energy_stride`-th node of the eta axis is kept for the
+ near-field table, on top of the file's own nodes which are ALWAYS kept. */
+const size_t sm_near_field_energy_stride = 8;
+
+
+/** The near-field table's energy axis: a SUBSET of the eta axis that always
+ contains every one of the file's own energy nodes.
+
+ Two facts make this the right shape, and neither is obvious:
+
+ (1) It may be a subset at all.  Step 7 writes
+     `ln_n = ln(eps/K) - eta.eval_ln(E, ct, 0)`, reading the far term back
+     through the same call eval time makes, so the two tables' axes need not
+     agree: at every near-field node the far term cancels identically whatever
+     the eta axis is.  (Measured: the node identity holds to ~1e-15 for every
+     subset tried.)  `ln_n` costs `ne*nc*nd` while eta costs `ne*nc`, so the
+     near field is ~nd times the price per energy node - making it the axis
+     worth trimming, and eta the one to leave dense.
+
+ (2) It must contain the file's nodes.  `ParEfficiency` PCHIPs the grid between
+     the file's ~20 stored energies, so those are exactly where the target's
+     energy KINKS are, and `NearFieldModel` interpolates energy LINEARLY in
+     ln E (`ln_boost` is unsegmented linear) - which is exact at a kink it lands
+     on and only first-order accurate across one it straddles.  Measured on the
+     corpus' Ge detector at a fixed position, a stride subset that skipped the
+     898 keV file node erred by -1.34% there while its neighbouring file nodes
+     sat at +0.03% to +0.4%; including all 20 removes that whole family of
+     errors for 20 planes.  It is also why simply adding density does not help:
+     4x more nodes placed off the kinks left the residual at ~0.19%.
+
+ Stride nodes between them carry the smooth remainder.  A stride of 8 measured
+ rms 0.00085 against the file's own stored (quantized) content - below the file's
+ +-1 LSB of 0.1152%, so this axis' own RMS contribution is at the storage floor.
+ Note that is an rms claim about this axis only: the WORST on-lattice error still
+ sits at 2.2-8.3x the LSB over the bands >= 45 keV (15-23x at 22-45 keV) and is
+ method-limited, by the distance ladder above ~45 keV and by the sheared angular
+ feature below it.  See the header. */
+std::vector<double> near_field_energy_axis( const std::vector<double> &eta_energies,
+                                           const std::vector<double> &file_energies )
+{
+  assert( !eta_energies.empty() );
+
+  // The eta axis was seeded WITH the file's nodes, so each file node is present
+  //  in it exactly; find it by value rather than assuming an index, because the
+  //  resample inserts a variable number of nodes between them.
+  const auto nearest_eta = [&eta_energies]( const double E ) -> double
+  {
+    double best = eta_energies.front();
+    double best_dist = std::fabs( std::log( best / E ) );
+    for( const double a : eta_energies )
+    {
+      const double dist = std::fabs( std::log( a / E ) );
+      if( dist < best_dist )
+      {
+        best_dist = dist;
+        best = a;
+      }
+    }
+    return best;
+  };
+
+  std::vector<double> out;
+  out.reserve( file_energies.size() + eta_energies.size()/sm_near_field_energy_stride + 2 );
+
+  for( const double E : file_energies )
+    out.push_back( nearest_eta( E ) );
+
+  for( size_t i = 0; i < eta_energies.size(); i += sm_near_field_energy_stride )
+    out.push_back( eta_energies[i] );
+
+  // Endpoints: Pchip clamps flat outside its range, so the near-field span must
+  //  cover eta's or a query near either end would leave the near term frozen.
+  out.push_back( eta_energies.front() );
+  out.push_back( eta_energies.back() );
+
+  std::sort( out.begin(), out.end() );
+  std::vector<double> uniq;
+  uniq.reserve( out.size() );
+  for( const double E : out )
+  {
+    if( uniq.empty() || (std::log( E / uniq.back() ) > 1.0e-8) )
+      uniq.push_back( E );
+  }
+
+  assert( uniq.size() >= 2 );
+  assert( uniq.front() == eta_energies.front() );
+  assert( uniq.back() == eta_energies.back() );
+
+  return uniq;
+}//near_field_energy_axis(...)
+
+
+/** The near-field distance ladder: a uniform log ladder over [d_min, d_ref], with
+ the intervals that overlap [`sm_ladder_lo_cm`, `sm_ladder_hi_cm`] subdivided.
+
+ Why a superset rather than a graded ladder.  The error scales as the square of
+ the rung spacing measured in grid rows (the target is bilinear in raw V, so it
+ has a kink on every one of the file's 440 radial rows).  Two regions need
+ different spacings: inside ~5 cm the crystal/face frame translation makes `ln_n`
+ strongly curved, and beyond it the falloff is nearly 1/r^2 where `V` is linear in
+ ln d and even a coarse ladder is exact.  Grading at a fixed rung count was
+ measured and is a bad trade - it MOVES rungs out of the near-contact region
+ (11 below 5 cm became 5) and made that region ~8x worse to buy ~2x in the middle.
+ Inserting rungs instead keeps every base node, and because Pchip's derivative at
+ node j depends only on the slopes m[j-1] and m[j], nodes added above an interval
+ cannot perturb the interpolant below it: the near-contact region comes out
+ bit-identical to the uniform ladder, which is what the band table shows.
+
+ Why the window closes at 30 cm.  Past there the response is 1/r^2 to within the
+ file's own quantization, so subdividing buys nothing measurable and `ln_n` is
+ `ne*nc*nd` - the dominant serialized block.  Extending the window to `d_ref`
+ was measured: identical accuracy in every band, 26 more rungs.
+
+ `sm_ladder_subdiv` is 3 because the achieved worst error is not monotone in it -
+ the rung phase against the file's fixed 3.03%-per-row grid matters as much as the
+ spacing, and no crystal-frame ladder can align with face-frame rows anyway (the
+ frame translation is d-dependent).  3 measured best across the corpus; 2 and 4
+ both leave a high-energy off-axis band above 1%.
+ */
+std::vector<double> distance_ladder( const double d_min_cm, const double d_ref_cm )
+{
+  assert( d_min_cm > 0.0 && d_ref_cm > d_min_cm );
+
+  std::vector<double> base( sm_ladder_base_rungs );
+  for( size_t i = 0; i < sm_ladder_base_rungs; ++i )
+  {
+    const double f = static_cast<double>(i) / (sm_ladder_base_rungs - 1);
+    base[i] = std::exp( std::log(d_min_cm)
+                        + f * (std::log(d_ref_cm) - std::log(d_min_cm)) );
+  }
+  // Both ends assigned exactly, not left to exp(log(x)): that round-trip is NOT
+  //  an identity in IEEE double (it misses by 1 ULP for ~6% of values in the
+  //  d_min range these detectors produce), and the top rung being exactly
+  //  d_ref_cm is what makes ln_n == 0 there.
+  base.front() = d_min_cm;
+  base.back() = d_ref_cm;
+
+  std::vector<double> out;
+  out.reserve( sm_ladder_base_rungs * sm_ladder_subdiv );
+  for( size_t i = 0; i + 1 < base.size(); ++i )
+  {
+    out.push_back( base[i] );
+
+    // Overlap, not containment: the interval STRADDLING the window edge must be
+    //  subdivided too, else a query just inside the window sits in a full-width
+    //  interval.  Measured - it pinned one band's worst error to the same value
+    //  across a 2.3x refinement.
+    if( (base[i+1] < sm_ladder_lo_cm) || (base[i] > sm_ladder_hi_cm) )
+      continue;
+
+    for( size_t k = 1; k < sm_ladder_subdiv; ++k )
+      out.push_back( std::exp( std::log(base[i])
+                     + (static_cast<double>(k)/sm_ladder_subdiv)
+                       * std::log(base[i+1]/base[i]) ) );
+  }
+  out.push_back( base.back() );
+
+  // Every base rung is pushed, so `>= base_rungs` would hold whatever subdivision
+  //  did; assert that subdivision actually happened when the window is in play.
+  assert( out.size() == sm_ladder_base_rungs
+          || (d_min_cm < sm_ladder_hi_cm && d_ref_cm > sm_ladder_lo_cm
+              && out.size() > sm_ladder_base_rungs) );
+  assert( out.front() == d_min_cm );
+  assert( out.back() == d_ref_cm );
+#if( PERFORM_DEVELOPER_CHECKS )
+  for( size_t i = 1; i < out.size(); ++i )
+    assert( out[i] > out[i-1] );
+#endif
+
+  return out;
+}//distance_ladder(...)
+
+
 /** Builds a CeeLo GeometryDescriptor from a parsed DetectorDef.  Reuses only
  the field->CeeLo structure of the research prototype; every number comes from
  `def`.  Bore + fillet are not in DETECTOR.txt, so conservative defaults are
@@ -923,26 +1256,103 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   if( par.energies_keV.size() < 2 || par.grids.size() != par.energies_keV.size() )
     throw std::runtime_error( "makeDrf: the parameter grid has fewer than two energies." );
 
-  const std::vector<double> &energies = par.energies_keV;
-  const size_t ne = energies.size();
+  const std::vector<double> &file_energies = par.energies_keV;
 
   // ---- 1) Geometry from the parsed record ---------------------------------
   std::vector<std::string> geom_warnings;
   GeometryDescriptor gd = build_geometry( def, geom_warnings );
 
   // ---- 2) Response shell + stored mu tables (self-contained) --------------
+  // The mu tables are sampled BEFORE the energy axis is built, because the axis
+  //  is derived from them: `MuTable::eval` is log-log linear between samples, so
+  //  ln K kinks at each one, and the axis adopts those energies as nodes.
   auto resp = std::make_shared<DetectorResponse>();
   resp->descriptor = gd;
   for( size_t i = 0; i < gd.materials.size(); ++i )
     resp->mu_tables.push_back( MuTable::sample( gd.materials[i].to_material(),
                                                 static_cast<int>(i) ) );
 
+  // ---- 3) The response's energy axis --------------------------------------
+  // The K-edges in play are decided by the FILE's range (crystal_k_edges' 1.02 /
+  //  0.98 retention margins are applied to whatever range it is handed), so both
+  //  the edges and the response's energy axis derive from `file_energies`.  See
+  //  `response_energy_axis` for what the axis resolves and why the rule is fixed
+  //  rather than residual-adaptive.
+  const std::vector<double> edges = gd.crystal_k_edges( file_energies.front(),
+                                                       file_energies.back() );
+
+  std::vector<double> mu_energies;
+  for( const MuTable &t : resp->mu_tables )
+    mu_energies.insert( mu_energies.end(), t.energy_keV.begin(), t.energy_keV.end() );
+
+  // tau = mu_pe(crystal) * front dead layer: the "cross-section x dead-layer"
+  //  curve.  This is what `ln K` is exponential in at low energy, so it is the
+  //  variable an absorption edge is a jump IN - which is how the axis finds the
+  //  edges without being told where they are.  Zero if the descriptor carries no
+  //  dead layer, in which case the criterion simply never fires.
+  const ceelo::MuTable *crystal_mu = nullptr;
+  for( const MuTable &t : resp->mu_tables )
+  {
+    if( t.material_index == gd.crystal_material_index )
+      crystal_mu = &t;
+  }
+
+  const double t_dead_cm = gd.dead_layer ? gd.dead_layer->front : 0.0;
+  const std::function<double(double)> tau_of_E
+      = [crystal_mu,t_dead_cm]( const double E ) -> double {
+          return crystal_mu ? (crystal_mu->eval(E).mu_pe * t_dead_cm) : 0.0;
+        };
+
+  const std::vector<double> energies = response_energy_axis( file_energies,
+                                                             mu_energies, tau_of_E );
+  const size_t ne = energies.size();
+
+  assert( ne >= file_energies.size() );
+  assert( energies.front() == file_energies.front() );
+  assert( energies.back() == file_energies.back() );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  {
+    // The axis must be strictly ascending, and every K-edge segment must hold at
+    //  least two nodes - a lone-node segment is what `EtaTable::finalize()` can
+    //  only represent as a constant stub, which freezes ln_eta on one side of the
+    //  edge and fabricates a discontinuity that exists nowhere in the file.
+    //  `MuTable::sample` puts a flank pair at each edge and the axis adopts them,
+    //  so this holds by construction; the check is here because the consequence
+    //  of it not holding is silent and severe.
+    for( size_t i = 1; i < ne; ++i )
+      assert( energies[i] > energies[i-1] );
+
+    for( const double edge : edges )
+    {
+      size_t below = 0, above = 0;
+      for( const double E : energies )
+      {
+        if( E < edge ) ++below;
+        else if( E > edge ) ++above;
+      }
+
+      if( below < 2 || above < 2 )
+      {
+        log_developer_error( __func__, ("makeDrf: K-edge at "
+              + std::to_string(edge) + " keV has " + std::to_string(below)
+              + " node(s) below and " + std::to_string(above) + " above; EtaTable"
+              " needs >= 2 per segment or finalize() builds a constant stub and"
+              " fabricates a discontinuity at the edge.").c_str() );
+        assert( 0 );
+      }
+    }//for( const double edge : edges )
+  }
+#endif
+
   resp->provenance.method = ProductionMethod::CurveTransfer;   // no Monte Carlo
   resp->provenance.profile = ResponseProfile::General;         // we carry a near model
   resp->provenance.kernel_n_rays = 2048;
   resp->provenance.detector_name = def.name;
-  resp->provenance.valid_e_min_keV = energies.front();
-  resp->provenance.valid_e_max_keV = energies.back();
+  // The FILE's range, not the response axis'.  They are identical (the axis only
+  //  ever adds interior nodes) but validity is a property of the characterization.
+  resp->provenance.valid_e_min_keV = file_energies.front();
+  resp->provenance.valid_e_max_keV = file_energies.back();
   // min_distance_cm is set in step 7, once the near-field ladder's floor is
   //  known: it is that floor, so a closer query is flagged rather than served
   //  from an extrapolation of the bottom node.
@@ -989,8 +1399,6 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
     theta_face = (n > 0.0) ? std::acos( std::max( -1.0, std::min( 1.0, -v.z() / n ) ) ) : 0.0;
   };
 
-  const std::vector<double> edges = gd.crystal_k_edges( energies.front(), energies.back() );
-
   // ---- 6) eta_fep at the far reference; cache ln_eta for the near term ------
   EtaTable &eta = resp->eta_fep;
   eta.energies_keV = energies;
@@ -1017,19 +1425,6 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
     }
   }//for( each cos-theta )
   eta.finalize();
-
-  // Read the far term back through eval_ln (exact at nodes) so the near-field
-  //  subtraction below uses the SAME value eval-time will add - making the far
-  //  term cancel algebraically no matter how finalize()/eval_ln evolve.
-  std::vector<double> ln_eta_far( ne * nc, 0.0 );   // [e*nc + c]
-  for( size_t c = 0; c < nc; ++c )
-  {
-    for( size_t e = 0; e < ne; ++e )
-    {
-      bool clamped = false;
-      ln_eta_far[e * nc + c] = eta.eval_ln( energies[e], cos_thetas[c], 0.0, clamped );
-    }
-  }
 
   // ---- 7) Near field: reproduce close-in points via the node identity ------
   // Distance ladder (crystal frame), geometric from near-contact up to the far
@@ -1062,27 +1457,54 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  theta_face of ~126 deg (still real grid data - `interp_grid_V` interpolates
   //  the full column span, it does not clamp at 90 deg).  So ln_n, expressed on
   //  the crystal-frame axes it is interpolated over, has curvature near contact
-  //  that this lattice cannot resolve.  Measured against the raw grid, dispatch
-  //  is exact AT the nodes but errs by tens to thousands of percent between them
-  //  for face-frame queries inside ~5 cm at grazing angles.  See the header note;
-  //  callers needing contact geometry off-axis must not use this response yet.
-  const size_t nd = 18;
+  //  that this lattice resolves only as well as its rung spacing allows.
+  //
+  // Why the ladder is dense, and denser over the near field.  The grid stores 440
+  //  radial rows at 3.03% each, and `interp_grid_V` is bilinear in raw V, so the
+  //  target is piecewise linear with a kink on EVERY row: a rung spanning many
+  //  rows cannot reproduce it.  The original 18 rungs left ~10 rows per rung and
+  //  measured 0.0107 worst against the file's own stored content; 36 uniform gives
+  //  0.0100, and 36 + a subdivided [5,30] cm window gives 0.0060 for the bands
+  //  where the file carries real signal.  `distance_ladder` documents why the
+  //  window is where the rungs go, and why adding rather than moving them.
   const double d_face_margin_cm = 0.2;   // >= 2 mm of face-frame standoff
   const double d_min_cm = -face.z() + d_face_margin_cm;   // face is (0,0,-offset)
-  std::vector<double> dists_cm( nd );
-  for( size_t i = 0; i < nd; ++i )
-  {
-    const double f = static_cast<double>(i) / (nd - 1);
-    dists_cm[i] = std::exp( std::log(d_min_cm) + f * (std::log(d_ref_cm) - std::log(d_min_cm)) );
-  }
-  dists_cm.back() = d_ref_cm;
+  const std::vector<double> dists_cm = distance_ladder( d_min_cm, d_ref_cm );
+  const size_t nd = dists_cm.size();
+
+  // The near field carries its own, coarser energy axis - a subset of eta's that
+  //  keeps every file node.  See `near_field_energy_axis` for why a subset is
+  //  exact here (the far term is read back through eta, so it cancels at every
+  //  near-field node whatever eta's axis is) and why the file's nodes are the
+  //  ones that must survive (they are the target's energy kinks, and `ln_boost`
+  //  is linear in ln E).
+  const std::vector<double> nf_energies
+      = near_field_energy_axis( energies, file_energies );
+  const size_t nf_ne = nf_energies.size();
+  assert( nf_ne >= file_energies.size() );
+  assert( nf_ne <= ne );
 
   NearFieldModel &nf = resp->near_field;
-  nf.energies_keV = energies;
+  nf.energies_keV = nf_energies;
   nf.cos_thetas = cos_thetas;
   nf.dists_cm = dists_cm;
-  nf.ln_n.assign( ne * nc * nd, 0.0 );
-  nf.frac_sigma.assign( ne * nc * nd, 0.0 );
+  nf.ln_n.assign( nf_ne * nc * nd, 0.0 );
+  nf.frac_sigma.assign( nf_ne * nc * nd, 0.0 );
+
+  // The far term to subtract, evaluated through the SAME call eval time makes -
+  //  `eta_fep.eval_ln` - at the near field's own energies.  That identity is what
+  //  makes a subset axis exact: `eps_fep_at` adds this term back, so whatever eta
+  //  interpolates to here cancels to the last bit at every near-field node.
+  std::vector<double> nf_ln_eta_far( nf_ne * nc, 0.0 );
+  for( size_t c = 0; c < nc; ++c )
+  {
+    for( size_t e = 0; e < nf_ne; ++e )
+    {
+      bool clamped = false;
+      nf_ln_eta_far[e * nc + c]
+          = resp->eta_fep.eval_ln( nf_energies[e], cos_thetas[c], 0.0, clamped );
+    }
+  }
 
   // Each angular column's ladder is TRUNCATED at its first valid rung: rungs
   //  whose face-frame position falls in the grid's no-data zone are not filled
@@ -1144,7 +1566,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
         //  uncharacterized by the file, not modelled by us, so a query landing
         //  here should be honestly uncertain rather than confidently wrong.
         ++n_truncated;
-        for( size_t e = 0; e < ne; ++e )
+        for( size_t e = 0; e < nf_ne; ++e )
         {
           const size_t idx = nf.index( e, c, di );
           nf.ln_n[idx] = have_valid ? nf.ln_n[nf.index( e, c, di + 1 )] : 0.0;
@@ -1154,13 +1576,13 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
       }
 
       const ApertureQuadrature q = resp->make_quadrature( src );
-      for( size_t e = 0; e < ne; ++e )
+      for( size_t e = 0; e < nf_ne; ++e )
       {
-        const double E = energies[e];
+        const double E = nf_energies[e];
         const double K = resp->kernel_K( E, q, MuChoice::Total );
         const double eps = parEff.efficiency( E, d_face_mm, theta_face );
         const double ln_ratio = std::log( std::max( eps, 1e-300 ) / std::max( K, 1e-300 ) );
-        nf.ln_n[nf.index( e, c, di )] = ln_ratio - ln_eta_far[e * nc + c];
+        nf.ln_n[nf.index( e, c, di )] = ln_ratio - nf_ln_eta_far[e * nc + c];
       }
       have_valid = true;
     }//for( each distance, far -> near )
@@ -1177,8 +1599,20 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   // Near gate covers the whole filled region (break at the far reference), so
   //  every query inside d_ref_cm picks up the near-field term.
   nf.break_cos_thetas = { 0.0, 1.0 };
-  nf.break_d_cm.assign( ne * 2, d_ref_cm );
+  // Size this off the tables themselves rather than off `ne`: `breakpoint_d_cm`
+  //  answers 0.0 on a size mismatch, with no error and no flag, which silently
+  //  disables the entire near-field term.  Nothing downstream would notice.
+  nf.break_d_cm.assign( nf.energies_keV.size() * nf.break_cos_thetas.size(), d_ref_cm );
   nf.finalize();
+
+  // ... and check it, because that failure mode is otherwise invisible.  The
+  //  probe energy is off the break table's own axis on purpose (that table is
+  //  keyed on `nf.energies_keV`, a subset of `energies`), so the answer comes out
+  //  of the bilinear blend rather than off a node - and blending equal values is
+  //  not bit-exact in IEEE double.  A relative tolerance is therefore the right
+  //  test: the failure being guarded against returns 0.0, not 300 +- 1 ULP.
+  assert( std::fabs( nf.breakpoint_d_cm( energies[ne/2], 1.0 ) - d_ref_cm )
+          <= 1.0e-9 * d_ref_cm );
 
   // Below the ladder's first node there is no data to interpolate, only the
   //  bottom-node extrapolation `ln_boost` clamps to - and a source that close is
