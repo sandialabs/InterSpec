@@ -1540,8 +1540,7 @@ ShieldingSourceChi2Fcn::ShieldingSourceChi2Fcn(
                                  const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                  const GeometryType geometry,
                                  const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options )
-  : ROOT::Minuit2::FCNBase(),
-    m_cancel( CalcStatus::NotCanceled ),
+  : m_cancel( CalcStatus::NotCanceled ),
     m_isFitting( false ),
     m_distance( distance ),
     m_liveTime( liveTime ),
@@ -2107,16 +2106,10 @@ const SandiaDecay::Nuclide *ShieldingSourceChi2Fcn::nuclide( const size_t nuc_in
 }//const Nuclide *nuclide( const int nucN ) const
 
 
-double ShieldingSourceChi2Fcn::operator()( const std::vector<double> &x ) const
-{
-  return DoEval( x );
-}//double operator()(...)
-
-
-double ShieldingSourceChi2Fcn::Up() const
+double ShieldingSourceChi2Fcn::oneSigmaChi2Increase() const
 {
   return 1.0;
-}//double Up();
+}//double oneSigmaChi2Increase();
 
   
 bool ShieldingSourceChi2Fcn::isVariableMassFraction( const size_t material_index,
@@ -3538,7 +3531,7 @@ const std::vector<PeakDef> &ShieldingSourceChi2Fcn::backgroundPeaks() const
 std::vector<double> ShieldingSourceChi2Fcn::includedPeakEnergies() const
 {
   // Same inclusion rule and ordering as the residual assembly (see
-  //  `fit_model_ceres` in ShieldingSourceFitCalc.cpp and
+  //  `fit_model` in ShieldingSourceFitCalc.cpp and
   //  #expected_observed_chis), so per-peak quantities line up one-to-one
   //  with the fit residuals.
   std::vector<double> energies;

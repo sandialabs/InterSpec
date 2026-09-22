@@ -41,7 +41,6 @@
 
 #include <Wt/WColor.h>
 
-#include "Minuit2/FCNBase.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -790,7 +789,6 @@ struct ShieldSourceConfig
 
   
 class ShieldingSourceChi2Fcn
-    : public ROOT::Minuit2::FCNBase
 {
 //This class evaluated the chi2 of a given hypothesis, where it is assumed the
 //  radioactive source is a point source located at the center of concentric
@@ -1129,8 +1127,6 @@ public:
   void reportCompletedEval( const double chi2, const std::vector<double> &params ) const;
 
   
-  /** For interface compatibility; calls directly to #DoEval */
-  virtual double operator()( const std::vector<double> &x ) const;
   
   
   /** Gives the chi2 contributions for each peak
@@ -1275,7 +1271,13 @@ public:
   ShieldingSourceChi2Fcn( const ShieldingSourceChi2Fcn & ) = delete;
   ShieldingSourceChi2Fcn &operator=( const ShieldingSourceChi2Fcn & ) = delete;
 
-  virtual double Up() const;
+  /** The increase in chi2 that corresponds to a one-sigma parameter uncertainty.
+
+   Always 1.0 for a chi2 (rather than log-likelihood) objective.  Used when walking a
+   chi2 profile out to estimate an uncertainty.  Was `Up()` while this class derived from
+   ROOT::Minuit2::FCNBase.
+   */
+  double oneSigmaChi2Increase() const;
 
   size_t numExpectedFitParameters() const;
 

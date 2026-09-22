@@ -716,33 +716,6 @@ namespace ShieldingSourceFitCalc
                   std::shared_ptr<ModelFitResults> results,
                   std::function<void()> finished_fcn );
 
-  /** The Minuit2-based implementation of #fit_model (numeric gradients).
-
-   #fit_model dispatches to this or #fit_model_ceres according to the
-   USE_CERES_FOR_ACTIVITY_FIT compile option; both are always compiled, so they can
-   be compared against each other in tests.
-   */
-  void fit_model_minuit2( const std::string wtsession,
-                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                  std::shared_ptr<ModelFitProgress> progress,
-                  std::function<void()> progress_fcn,
-                  std::shared_ptr<ModelFitResults> results,
-                  std::function<void()> finished_fcn );
-
-  /** The Ceres-based implementation of #fit_model: automatic differentiation through
-   the whole expected-counts computation (including volumetric-source integration),
-   which is generally more reliable at finding the true minimum than Minuit2s
-   numeric gradients.  See #fit_model_minuit2.
-   */
-  void fit_model_ceres( const std::string wtsession,
-                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                  std::shared_ptr<ModelFitProgress> progress,
-                  std::function<void()> progress_fcn,
-                  std::shared_ptr<ModelFitResults> results,
-                  std::function<void()> finished_fcn );
-
 
   /** Computes the per-peak supplemental information; see `SupplementalPeakInfo`.
 

@@ -3722,11 +3722,16 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
 
 
-/** Runs both fit drivers on a self-attenuating U+Np analyst problem (mass fractions
- in two elements plus a fit thickness - historically the hardest configuration), and
- requires they agree with each other.
+/** Pins the activity/shielding fit on a self-attenuating U+Np analyst problem (mass
+ fractions in two elements plus a fit thickness - historically the hardest configuration).
+
+ This was `CeresVsMinuitDrivers`, which ran the Ceres and Minuit2 drivers against each
+ other and required they agree.  Minuit2 has been removed from the project, so the values
+ both drivers agreed on (to better than 1%) are recorded here instead, and the surviving
+ driver is required to reproduce them.  The point is unchanged: catch a regression in this
+ configuration.  Captured 2026-09-21; Minuit2 chi2 was 161.097 against Ceres' 161.194.
  */
-BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+BOOST_AUTO_TEST_CASE( SelfAttenUNpFitGoldenValues )
 {
   set_data_dir();
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -3737,83 +3742,67 @@ BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
 
-  vector<double> chi2s;
-  vector<vector<double>> param_sets;
-  ROOT::Minuit2::MnUserParameters initial_pars;
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  for( const bool use_ceres : { false, true } )
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  auto finished_fcn = [](){};
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                     progress_fcn, fit_results, finished_fcn );
+
+  BOOST_REQUIRE( fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+
+  // The expected values, in the order `create()` lays the parameters out.
+  struct ExpectedPar { const char *name; double value; double step; };
+  const ExpectedPar expected[] = {
+    { "Np237Strength",               0.001730691181,    0.0  },
+    { "Np237Age",                    631139040.0,       0.0  },
+    { "U235Strength",                13.789089745,      0.0  },
+    { "U235Age",                     631139040.0,       0.0  },
+    { "U238Strength",                8.7871713947,      0.0  },
+    { "U238Age",                    -2.0,               0.0  },
+    { "U18.0Np0.10_thickness",       22.6340151781,    10.0  },
+    { "U18.0Np0.10_dummyshielding1",  0.0,              0.0  },
+    { "U18.0Np0.10_dummyshielding2",  0.0,              0.0  },
+    { "U18.0Np0.1_U235_0",            0.196203499255,   0.05 },
+    { "U18.0Np0.1_Np237_0",           8.39058037494e-08, 0.05 },
+  };
+  const size_t num_expected = sizeof(expected) / sizeof(expected[0]);
+
+  BOOST_CHECK_CLOSE( fit_results->chi2, 161.194097258, 1.0 );
+
+  BOOST_REQUIRE_EQUAL( fit_results->paramValues.size(), num_expected );
+  BOOST_REQUIRE_EQUAL( fcn_pars.second.Parameters().size(), num_expected );
+
+  for( size_t i = 0; i < num_expected; ++i )
   {
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
-                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+    // The parameter layout is part of what is being pinned - a silent reordering would make
+    //  every value below meaningless.
+    BOOST_CHECK_EQUAL( fcn_pars.second.Parameters()[i].GetName(), string(expected[i].name) );
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    // Compare each parameter on its own scale.  A purely *relative* tolerance is meaningless for
+    //  a parameter driven to (numerically) zero: a mass fraction of 7.6E-8 vs 8.4E-8 is the same
+    //  answer - "this nuclide is not present" - yet differs by 10% relative.  So floor the scale
+    //  with the initial step `create()` chose for that parameter, which is the size of a change
+    //  that matters for the quantity (0.05 for a mass fraction, 10mm for a thickness, 10% of an
+    //  activity).  Constant parameters carry a zero step, so they stay on the tight path.
+    const double fit_val = fit_results->paramValues[i];
+    const double scale = std::max( {fabs(expected[i].value), fabs(fit_val),
+                                    1.0E-3*fabs(expected[i].step), 1.0E-9} );
 
-    // Both drivers are handed the same parameter definitions; keep a copy so the comparison
-    //  below can name each parameter and know the scale `create()` chose for it.
-    if( !use_ceres )
-      initial_pars = fcn_pars.second;
-
-    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-    auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
-    auto progress_fcn = [](){};
-    auto finished_fcn = [](){};
-
-    const auto start_time = std::chrono::steady_clock::now();
-
-    if( use_ceres )
-      ShieldingSourceFitCalc::fit_model_ceres( "", fcn_pars.first, inputPrams, progress,
-                                               progress_fcn, fit_results, finished_fcn );
-    else
-      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn_pars.first, inputPrams, progress,
-                                                 progress_fcn, fit_results, finished_fcn );
-
-    const auto finish_time = std::chrono::steady_clock::now();
-    const double seconds = 1.0E-3 * std::chrono::duration_cast<std::chrono::milliseconds>(finish_time - start_time).count();
-    cout << (use_ceres ? "Ceres" : "Minuit") << " driver took " << seconds << " s, "
-         << fit_results->num_fcn_calls << " evals" << endl;
-
-    BOOST_REQUIRE( fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
-
-    chi2s.push_back( fit_results->chi2 );
-    param_sets.push_back( fit_results->paramValues );
-  }//for( both drivers )
-
-  BOOST_REQUIRE_EQUAL( chi2s.size(), size_t(2) );
-  BOOST_REQUIRE_EQUAL( param_sets[0].size(), param_sets[1].size() );
-
-  cout << "CeresVsMinuitDrivers: Minuit chi2=" << chi2s[0] << ", Ceres chi2=" << chi2s[1] << endl;
-
-  // Both drivers should find (essentially) the same minimum
-  BOOST_CHECK_MESSAGE( fabs(chi2s[0] - chi2s[1]) <= 0.01*std::max(chi2s[0], chi2s[1]),
-                       "Driver chi2s differ: Minuit=" << chi2s[0] << " vs Ceres=" << chi2s[1] );
-
-  BOOST_REQUIRE_EQUAL( initial_pars.Parameters().size(), param_sets[0].size() );
-
-  for( size_t i = 0; i < param_sets[0].size(); ++i )
-  {
-    const unsigned int par_num = static_cast<unsigned int>( i );
-    const double minuit_val = param_sets[0][i];
-    const double ceres_val = param_sets[1][i];
-
-    // Compare each parameter on its own scale.  A purely *relative* tolerance is meaningless for a
-    //  parameter both drivers drove to (numerically) zero: a mass fraction that comes out 7.6E-8
-    //  from one and 8.4E-8 from the other is the same answer - "this nuclide is not present" - yet
-    //  differs by 10% relative.  So floor the scale with the initial step `create()` chose for that
-    //  parameter, which is the size of a change that matters for the quantity (0.05 for a mass
-    //  fraction, 10mm for a thickness, 2.5 for an atomic number, 10% of an activity).  One part in
-    //  a thousand of that step is negligible for every parameter type here, and constant parameters
-    //  carry a zero step, so they stay on the exact-equality path they were already on.
-    const double par_step = fabs( initial_pars.Error( par_num ) );
-    const double scale = std::max( {fabs(minuit_val), fabs(ceres_val), 1.0E-3*par_step, 1.0E-9} );
-
-    BOOST_CHECK_MESSAGE( fabs(minuit_val - ceres_val) <= 0.01*scale,
-                         "Parameter " << i << " (" << initial_pars.Name(par_num) << ") differs:"
-                         << " Minuit=" << minuit_val << " vs Ceres=" << ceres_val
-                         << " (differ by " << fabs(minuit_val - ceres_val)
+    BOOST_CHECK_MESSAGE( fabs(fit_val - expected[i].value) <= 0.01*scale,
+                         "Parameter " << i << " (" << expected[i].name << ") drifted:"
+                         << " got " << fit_val << ", expected " << expected[i].value
+                         << " (differs by " << fabs(fit_val - expected[i].value)
                          << ", allowed " << 0.01*scale << ")" );
   }//for( loop over parameters )
-}//BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+}//BOOST_AUTO_TEST_CASE( SelfAttenUNpFitGoldenValues )
 
 
 /** Sanity-checks ShieldingSourceChi2Fcn::computeEffectiveShielding on a volumetric
@@ -3954,8 +3943,7 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
 
   cout << "Jacobian check done" << endl;
 
-  // Now run both fit drivers and compare where they end up
-  for( const bool use_ceres : { false, true } )
+  // Now run the fit and report where it ends up
   {
     auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
     *inputPrams = fcn_pars.second;
@@ -3965,12 +3953,9 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
     auto progress_fcn = [](){};
     auto finished_fcn = [](){};
 
-    if( use_ceres )
-      ShieldingSourceFitCalc::fit_model_ceres( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
-    else
-      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+    ShieldingSourceFitCalc::fit_model( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
 
-    cout << (use_ceres ? "CERES" : "MINUIT") << " result: chi2=" << fit_results->chi2 << ", params={";
+    cout << "Fit result: chi2=" << fit_results->chi2 << ", params={";
     for( const double v : fit_results->paramValues )
       cout << std::setprecision(6) << v << ", ";
     cout << "}" << endl;
@@ -3979,7 +3964,7 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
     cout << "  DoEval at solution: " << recomputed_chi2 << endl;
     for( const string &msg : fit_results->errormsgs )
       cout << "  errormsg: " << msg << endl;
-  }//for( both drivers )
+  }
 }//BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian )
 
 
