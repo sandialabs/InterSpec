@@ -10,87 +10,87 @@
   <message id="mmr-method-full-mc">Full MC characterization</message>
   <message id="mmr-method-quick-mc">Quick MC (transfer)</message>
   <message id="mmr-method-curve-transfer">No MC support (instant, from measured curve)</message>
-  <message id="mmr-tt-method">&lt;p&gt;How the response that answers off-axis, near-field and
+  <message id="mmr-tt-method"><p>How the response that answers off-axis, near-field and
     other-distance queries is built.  All three use this detector&apos;s measured efficiency where it
-    has one - what differs is how much Monte Carlo backs the distance and angle dependence.&lt;/p&gt;
-    &lt;ul&gt;
-    &lt;li&gt;&lt;b&gt;Full MC characterization&lt;/b&gt; - Monte Carlo over the full
+    has one - what differs is how much Monte Carlo backs the distance and angle dependence.</p>
+    <ul>
+    <li><b>Full MC characterization</b> - Monte Carlo over the full
     energy&#215;angle(&#215;distance) grid of the selected profile, then corrected to the measured
     efficiency (see &quot;Measured eff.&quot; below).  Most accurate, especially near the detector
-    and off-axis; most run time.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Quick MC (transfer)&lt;/b&gt; - Monte Carlo only along the on-axis energy
+    and off-axis; most run time.</li>
+    <li><b>Quick MC (transfer)</b> - Monte Carlo only along the on-axis energy
     backbone (plus, optionally, a few source-angle anchors); the exact ray-traced
     geometry then carries the response to other distances and angles
     (EFFTRAN-style efficiency transfer).  Corrected to the measured efficiency the same way Full MC
     is.  Roughly a tenth of the Monte Carlo - typically around a minute.  On-axis accuracy is about
     1% beyond a few detector-widths; queries near contact or far off-axis are flagged and carry an
-    honestly inflated uncertainty.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;No MC support&lt;/b&gt; - no Monte Carlo at all: the measured efficiency points (or the
+    honestly inflated uncertainty.</li>
+    <li><b>No MC support</b> - no Monte Carlo at all: the measured efficiency points (or the
     fitted curve) are anchored at their measurement distance and transferred to other
     distances/angles through the ray-traced geometry - so here the measured efficiency IS the
     anchor, rather than a correction applied to a computed response.  Instant and deterministic, and
     it rebuilds automatically as you edit the geometry.  The classic lab efficiency-transfer
-    workflow, made 3-D and Rayleigh-aware.  Needs a measured efficiency to work from.&lt;/li&gt;
-    &lt;/ul&gt;
-    &lt;p&gt;With no method at all, a detector answers every distance with its on-axis efficiency scaled
-    by solid angle, and cannot answer off-axis at all.&lt;/p&gt;</message>
+    workflow, made 3-D and Rayleigh-aware.  Needs a measured efficiency to work from.</li>
+    </ul>
+    <p>With no method at all, a detector answers every distance with its on-axis efficiency scaled
+    by solid angle, and cannot answer off-axis at all.</p></message>
   <message id="mmr-upgrade-note">Currently a quick transfer response; a Full MC characterization
     is more accurate near-field and off-axis.</message>
   <message id="mmr-profile">Profile:</message>
   <message id="mmr-profile-general">General (default)</message>
   <message id="mmr-profile-farfield">Far-field only</message>
   <message id="mmr-profile-contact">Extra near detail</message>
-  <message id="mmr-tt-profile">&lt;p&gt;Controls how close to the detector the response
+  <message id="mmr-tt-profile"><p>Controls how close to the detector the response
     stays accurate - i.e. how much extra Monte Carlo is spent characterizing the
-    near-field. All three profiles cover the &lt;b&gt;full front hemisphere&lt;/b&gt;
+    near-field. All three profiles cover the <b>full front hemisphere</b>
     (source angle 0&#176; on-axis through 90&#176; grazing) and the detector&apos;s whole
     energy range; they differ only in the closest distance they model. (Sources
-    &lt;i&gt;behind&lt;/i&gt; the detector face - angles &gt; 90&#176;, e.g. Marinelli
-    beakers - are not modeled by any profile.)&lt;/p&gt;
-    &lt;ul&gt;
-    &lt;li&gt;&lt;b&gt;Far-field only&lt;/b&gt; - no near-field model at all. Accurate from
+    <i>behind</i> the detector face - angles &gt; 90&#176;, e.g. Marinelli
+    beakers - are not modeled by any profile.)</p>
+    <ul>
+    <li><b>Far-field only</b> - no near-field model at all. Accurate from
     roughly a few detector-widths outward; queries closer than that are flagged
     (not silently corrected). Cheapest. Use for fixed, large-standoff installations
-    or search detectors.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;General (default)&lt;/b&gt; - adds a near-field model down to about one
+    or search detectors.</li>
+    <li><b>General (default)</b> - adds a near-field model down to about one
     detector transverse size (a few cm). Covers typical lab bench and hand-held
-    measurements. Moderate extra cost.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Extra near detail&lt;/b&gt; - scans the near-field denser and all the way
+    measurements. Moderate extra cost.</li>
+    <li><b>Extra near detail</b> - scans the near-field denser and all the way
     down to contact (about half a detector size, ~0.5 cm), with fine angular
     coverage close-in. Use for contact, well, or swipe counting, or anything held
     right against the endcap. Most Monte Carlo, but the only profile accurate at
-    contact off-axis.&lt;/li&gt;
-    &lt;/ul&gt;</message>
+    contact off-axis.</li>
+    </ul></message>
   <message id="mmr-precision">MC precision:</message>
   <message id="mmr-precision-fast">Fast (1% per node)</message>
   <message id="mmr-precision-normal">Normal (0.3% per node)</message>
   <message id="mmr-precision-balanced">Balanced (relaxed high-E)</message>
   <message id="mmr-precision-thorough">Thorough (0.1% per node)</message>
   <message id="mmr-precision-custom">Custom...</message>
-  <message id="mmr-tt-precision">&lt;p&gt;The per-node Monte-Carlo statistical target: how
+  <message id="mmr-tt-precision"><p>The per-node Monte-Carlo statistical target: how
     tightly each point of the response is computed. Tighter means less statistical
     noise baked into the stored response, at more run time (cost scales roughly as
-    1 / precision&#178; - halving the target is about 4&#215; the work).&lt;/p&gt;
-    &lt;ul&gt;
-    &lt;li&gt;&lt;b&gt;Fast (1%)&lt;/b&gt; - a quick preview, or small/high-efficiency detectors.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Normal (0.3%)&lt;/b&gt; - a good balance for most detectors (default).&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Balanced (relaxed high-E)&lt;/b&gt; - keeps low-energy points tight but relaxes the
-    expensive high-energy points, for about a 2&#215; faster run at nearly the same accuracy.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Thorough (0.1%)&lt;/b&gt; - a high-quality reference; noticeably slower.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;Custom&lt;/b&gt; - enter your own per-node target (e.g. 0.2%).&lt;/li&gt;
-    &lt;/ul&gt;
-    &lt;p&gt;This is the &lt;i&gt;statistical&lt;/i&gt; precision only; the response&apos;s overall
+    1 / precision&#178; - halving the target is about 4&#215; the work).</p>
+    <ul>
+    <li><b>Fast (1%)</b> - a quick preview, or small/high-efficiency detectors.</li>
+    <li><b>Normal (0.3%)</b> - a good balance for most detectors (default).</li>
+    <li><b>Balanced (relaxed high-E)</b> - keeps low-energy points tight but relaxes the
+    expensive high-energy points, for about a 2&#215; faster run at nearly the same accuracy.</li>
+    <li><b>Thorough (0.1%)</b> - a high-quality reference; noticeably slower.</li>
+    <li><b>Custom</b> - enter your own per-node target (e.g. 0.2%).</li>
+    </ul>
+    <p>This is the <i>statistical</i> precision only; the response&apos;s overall
     accuracy also depends on how finely the energy/angle/distance grids are placed,
-    so tightening precision helps but has diminishing returns.&lt;/p&gt;</message>
+    so tightening precision helps but has diminishing returns.</p></message>
   <message id="mmr-grounding">Measured eff.:</message>
   <message id="mmr-grounding-cb">Correct to this detector&apos;s measured efficiency</message>
-  <message id="mmr-tt-grounding">&lt;p&gt;A Monte-Carlo response says what a detector of this
-    &lt;em&gt;shape&lt;/em&gt; would do; the measured efficiency says what &lt;em&gt;this&lt;/em&gt; detector actually
+  <message id="mmr-tt-grounding"><p>A Monte-Carlo response says what a detector of this
+    <em>shape</em> would do; the measured efficiency says what <em>this</em> detector actually
     does.  When checked, the generated response is corrected by an energy-dependent factor (and its
     covariance) so it reproduces the measured efficiency, while the Monte Carlo keeps supplying the
-    distance and angle dependence.&lt;/p&gt;
-    &lt;p&gt;Un-check to get the raw computed response, uncorrected - useful for judging how well the
-    geometry alone reproduces the measurement.&lt;/p&gt;</message>
+    distance and angle dependence.</p>
+    <p>Un-check to get the raw computed response, uncorrected - useful for judging how well the
+    geometry alone reproduces the measurement.</p></message>
   <message id="mmr-ground-points">Will be corrected to the {1} measured efficiency points this detector carries.</message>
   <message id="mmr-ground-curve">Will be corrected to this detector&apos;s efficiency curve, sampled at {1} energies (lower quality than raw measured points).</message>
   <message id="mmr-ground-none">This detector has no measured efficiency, so the response will be entirely Monte Carlo.</message>
@@ -98,24 +98,24 @@
   <message id="mmr-anchor-angles">Off-axis anchors:</message>
   <message id="mmr-anchor-angles-1">On-axis only (fastest)</message>
   <message id="mmr-anchor-angles-3">3 angles (recommended)</message>
-  <message id="mmr-tt-anchor-angles">&lt;p&gt;How many source angles the quick Monte Carlo
-    anchors the transfer at.&lt;/p&gt;
-    &lt;ul&gt;
-    &lt;li&gt;&lt;b&gt;On-axis only&lt;/b&gt; - the geometry kernel alone carries the angular
+  <message id="mmr-tt-anchor-angles"><p>How many source angles the quick Monte Carlo
+    anchors the transfer at.</p>
+    <ul>
+    <li><b>On-axis only</b> - the geometry kernel alone carries the angular
     dependence. Off-axis full-energy-peak efficiencies are good to roughly 3-4%,
-    and for HPGe the &lt;i&gt;total&lt;/i&gt; efficiency (used by cascade-summing
-    corrections) can drift off-axis. Fine for on-axis measurements.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;3 angles&lt;/b&gt; - a few extra MC anchors versus on-axis only; brings
+    and for HPGe the <i>total</i> efficiency (used by cascade-summing
+    corrections) can drift off-axis. Fine for on-axis measurements.</li>
+    <li><b>3 angles</b> - a few extra MC anchors versus on-axis only; brings
     off-axis full-energy-peak accuracy under about 1% and tabulates a real
-    angular total-efficiency shape (recommended, especially for HPGe).&lt;/li&gt;
-    &lt;/ul&gt;</message>
+    angular total-efficiency shape (recommended, especially for HPGe).</li>
+    </ul></message>
   <message id="mmr-ref-distance">Curve reference distance:</message>
-  <message id="mmr-tt-ref-distance">&lt;p&gt;The source-to-detector distance the efficiency
+  <message id="mmr-tt-ref-distance"><p>The source-to-detector distance the efficiency
     curve is valid at - the anchor the transfer holds fixed. Pre-filled from where
     the curve is pinned to data: its stated measurement distance when it has one,
     otherwise a comfortably far-field distance. When the DRF carries raw measured
-    points at a single distance, the points pin it and it cannot be edited.&lt;/p&gt;
-    &lt;p&gt;Distances are measured from the detector face (the front of the endcap).&lt;/p&gt;</message>
+    points at a single distance, the points pin it and it cannot be edited.</p>
+    <p>Distances are measured from the detector face (the front of the endcap).</p></message>
   <message id="mmr-anchor-src-points">Anchoring on the {1} measured efficiency points at {2}.</message>
   <message id="mmr-anchor-src-curve">Anchoring on the DRF efficiency curve, sampled at {1} energies, at {2}.</message>
   <message id="mmr-anchor-unusable">This DRF cannot anchor a transfer: {1}</message>
@@ -168,16 +168,16 @@
   <message id="mmr-chart-mode-absolute">Absolute efficiency</message>
   <message id="mmr-chart-mode-intrinsic">Intrinsic efficiency</message>
   <message id="mmr-chart-distance">at distance:</message>
-  <message id="mmr-tt-chart-distance">&lt;p&gt;Source-to-detector distance for the &lt;b&gt;absolute&lt;/b&gt;
+  <message id="mmr-tt-chart-distance"><p>Source-to-detector distance for the <b>absolute</b>
     efficiency curves (per emitted gamma).  Each curve is the full-energy-peak
     efficiency versus energy at a source angle of 0&#176;, 22.5&#176;, 45&#176; and
     the largest angle the response models (near grazing) from the detector axis.
-    In the &lt;b&gt;intrinsic&lt;/b&gt; view the dashed line is the angle-flat far-field
+    In the <b>intrinsic</b> view the dashed line is the angle-flat far-field
     (infinite-plane) reference.  The shaded band around each curve is its 1-sigma
     uncertainty, and a curve whose legend is annotated
     (e.g. &quot;near-field unmodeled&quot;) is outside the response&apos;s validated
     regime at this distance.  Intrinsic efficiency (per gamma striking the face)
-    is distance-independent in the far field.&lt;/p&gt;</message>
+    is distance-independent in the far field.</p></message>
 
   <message id="dgi-shape">Shape:</message>
   <message id="dgi-shape-cyl">Cylinder</message>
