@@ -4755,7 +4755,6 @@ void fit_model( const std::string wtsession,
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
     results->paramValues = fit_full;
     results->paramErrors = errors;
-    results->edm = -1.0;  //no estimated-distance-to-minimum from Ceres
     results->num_fcn_calls = static_cast<int>( num_evals );
     results->numDOF = ndof;
 
@@ -4777,7 +4776,6 @@ void fit_model( const std::string wtsession,
 
         if( gui_progress_info )
         {
-          results->edm = -1.0;
           results->num_fcn_calls = static_cast<int>( gui_progress_info->numFunctionCallsSoFar() );
           results->chi2 = gui_progress_info->bestChi2SoFar();
           results->paramValues = gui_progress_info->bestParametersSoFar();

@@ -307,7 +307,6 @@ it does not exist in the payload.
   "HasWarnings": false,
   "Warnings": [],
   "FitChi2": 12.34,
-  "EstimatedDistanceToMinimum": 0.0017,
   "NumberFcnCalls": 187,
   "NumDof": 7,
   "NumSources": 1,
@@ -367,7 +366,6 @@ it does not exist in the payload.
 | `HasWarnings`                  | bool    | `Warnings` is non-empty. Always emitted. |
 | `Warnings`                     | array[string] | Human-readable warning strings. Always emitted (may be empty). |
 | `FitChi2`                      | number  | Final χ² value reported by the fitter. |
-| `EstimatedDistanceToMinimum`   | number  | Estimated distance to minimum; small means well-converged.  Not produced by the Ceres fitter, which reports -1. |
 | `NumberFcnCalls`               | int     | Number of objective-function evaluations. |
 | `NumDof`                       | int     | Degrees of freedom (number of free parameters). |
 | `NumSources`                   | int     | Number of distinct nuclides being fit. |

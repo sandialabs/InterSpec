@@ -657,7 +657,6 @@ private:
      must read as a defined "nothing computed yet" rather than whatever was on the stack. */
     FitStatus successful = FitStatus::InvalidOther;
 
-    double edm = -1.0;  //estimated distance to minimum.
     double chi2 = -1.0;
     int num_fcn_calls = 0;
     unsigned int numDOF = 0;

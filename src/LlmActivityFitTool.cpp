@@ -2481,7 +2481,6 @@ nlohmann::json fit_results_to_comprehensive_json(
                                   ? (fit_results->chi2 / fit_results->numDOF)
                                   : 0.0;
   fit_quality["num_peaks_used"] = fit_results->foreground_peaks.size();
-  fit_quality["edm"] = fit_results->edm;
   fit_quality["num_fcn_calls"] = fit_results->num_fcn_calls;
 
   // 2. Fit configuration

@@ -78,7 +78,7 @@ Chi2 Contributions Of Peaks:
 
 {% if HasFitResults %}
 There were {{ NumDof }} parameters fit for
-It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
+It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }}
 ## if exists("Sources")
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }} {% if src.ActivityIsFit %}with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %}at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %}age {{ src.Age }}
