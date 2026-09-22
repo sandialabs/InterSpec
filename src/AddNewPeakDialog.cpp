@@ -297,6 +297,7 @@ m_chart( nullptr )
   WPushButton *closeButton = addCloseButtonToFooter(WString::tr("Cancel"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
   WPushButton *doAdd = footer()->addNew<WPushButton>( WString::tr("Add") );
+  WidgetUtils::applyButtonRole( doAdd, WidgetUtils::ButtonRole::Affirm );
   
   doAdd->clicked().connect( this, [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;

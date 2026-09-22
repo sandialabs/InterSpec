@@ -927,8 +927,8 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
       return;
     
     SimpleDialog *window = SimpleDialog::make( "Erase All Peaks?", "" );
-    WPushButton *yes_button = window->addButton( "Yes" );
-    WPushButton *no_button = window->addButton( "No" );
+    WPushButton *yes_button = window->addButton( "Yes", WidgetUtils::ButtonRole::Affirm );
+    WPushButton *no_button = window->addButton( "No", WidgetUtils::ButtonRole::Dismiss );
     
     yes_button->clicked().connect( display, [display](){ PeakInfoDisplay::removeAllPeaks( display ); } );
   };
@@ -938,8 +938,8 @@ void PeakInfoDisplay::confirmRemoveAllPeaks()
   
   
   SimpleDialog *window = SimpleDialog::make( WString::tr("pid-dialog-peak-erase"), "" );
-  WPushButton *yes_button = window->addButton( WString::tr("Yes") );
-  window->addButton( WString::tr("No") );
+  WPushButton *yes_button = window->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  window->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   
   yes_button->clicked().connect( this, [this](){ removeAllPeaks(); } );
 

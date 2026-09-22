@@ -23,6 +23,9 @@
 
 #include "InterSpec_config.h"
 
+#include <Wt/WText.h>
+#include <Wt/WTheme.h>
+#include <Wt/WAnchor.h>
 #include <Wt/WLength.h>
 #include <Wt/WDialog.h>
 #include <Wt/WServer.h>
@@ -74,8 +77,11 @@ namespace
 {
   /** Default height of everything in the dialog that is not the scrollable body - the title bar plus
    the footer.  See SimpleDialog::setBodyChromeHeight().
+
+   25px caption bar + a ~40px footer (8px padding each side of a 23px button, plus its rule), with a
+   few px of slack.  Was 90 when the caption was a padded x-large headline.
    */
-  const int sm_defaultBodyChromePx = 90;
+  const int sm_defaultBodyChromePx = 70;
 
   /** The most of the browser window a dialog may take; mirrors the `max-height` on `.simple-dialog`
    in InterSpec_resources/SimpleDialog.css, and must stay in sync with it.
@@ -121,6 +127,7 @@ SimpleDialog::SimpleDialog()
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true ),
+  m_closeIcon( nullptr ),
   m_bodyChromeHeight( sm_defaultBodyChromePx ),
   m_bodyPreferredHeight( -1.0 )
 {
@@ -133,6 +140,7 @@ SimpleDialog::SimpleDialog( const Wt::WString &title )
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true ),
+  m_closeIcon( nullptr ),
   m_bodyChromeHeight( sm_defaultBodyChromePx ),
   m_bodyPreferredHeight( -1.0 )
 {
@@ -145,6 +153,7 @@ SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content
   m_title( nullptr ),
   m_msgContents( nullptr ),
   m_multipleBringToFront( true ),
+  m_closeIcon( nullptr ),
   m_bodyChromeHeight( sm_defaultBodyChromePx ),
   m_bodyPreferredHeight( -1.0 )
 {
@@ -154,6 +163,36 @@ SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content
 
 void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  // A message dialog with a single button is the one place initial focus earns its keep: Enter or
+  //  Space then dismisses it.  Anything else opens with nothing focused (see init()).  Done here
+  //  rather than in addButton() because only now is the final button count known.  A download
+  //  anchor counts as a second action, and a caller that already focused something inside the
+  //  dialog keeps that focus.
+  if( flags.test( Wt::RenderFlag::Full ) )
+  {
+    int numActions = 0;
+    Wt::WPushButton *soleButton = nullptr;
+    for( Wt::WWidget * const child : footer()->children() )
+    {
+      if( child->isHidden() )
+        continue;
+
+      if( Wt::WPushButton * const button = dynamic_cast<Wt::WPushButton *>( child ) )
+      {
+        numActions += 1;
+        soleButton = button;
+      }else if( dynamic_cast<Wt::WAnchor *>( child ) )
+      {
+        numActions += 1;
+      }
+    }//for( loop over footer children )
+
+    const std::string focusId = WApplication::instance()->focus();
+    const bool focusIsInside = !focusId.empty() && findById( focusId );
+    if( (numActions == 1) && soleButton && soleButton->isEnabled() && !focusIsInside )
+      soleButton->setFocus();
+  }//if( flags.test( Wt::RenderFlag::Full ) )
+
   Wt::WDialog::render( flags );
   
   if( flags.test( Wt::RenderFlag::Full ) )
@@ -207,6 +246,10 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   
   setMovable( false );
   
+  // Wt would focus the first enabled form widget - often a "Don't ask again" check box, where Space
+  //  then toggles it.  render() focuses the button instead, when there is only one.
+  setAutoFocus( false );
+  
   if( title.empty() )
   {
     setTitleBarEnabled( false );
@@ -224,11 +267,15 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
         break;
       }
     }
-    titleBar()->removeStyleClass( "titlebar" );  //Avoid the Wt changing of text color and such
+    // Keep Wt's "titlebar" class: it is what the shared `.titlebar` rule in InterSpec.css hangs the
+    //  25px grey caption bar off of, so SimpleDialog and AuxWindow get the same chrome from the one
+    //  rule.  "title" stays as well, for the few per-dialog stylesheets that select on it.
     titleBar()->addStyleClass( "title" );
     m_title = titleBar()->addNew<WText>( title );
     m_title->setInline( false );
-    //m_title->addStyleClass( "title" );
+    // Same class AuxWindow puts on its title text, so the padding and vertical alignment match
+    //  without duplicating the declarations.
+    m_title->addStyleClass( "titleVertMiddle" );
   }
   
   if( !content.empty() )
@@ -238,6 +285,10 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
     m_msgContents->setInline( false );
   }
   
+  // Shared with AuxWindow's desktop footer; supplies the flex layout and the by-role button
+  //  ordering (see the `.DialogFooter` rules in InterSpec.css).
+  footer()->addStyleClass( "DialogFooter" );
+
   // We need to set the minimum size in C++; the dialogs maximum size is set in CSS, but the bodys
   //  has to come from here - see updateBodySizeForWindow().
   setMinimumSize( WLength(260,WLength::Unit::Pixel), WLength::Auto );
@@ -356,12 +407,30 @@ void SimpleDialog::rejectWhenEscapePressed( bool enable )
   {
     m_escapeConnection1.disconnect();
   }
+
+  // Enabling Escape is this dialogs statement that it is safe to abandon without picking a button,
+  //  so that is also when the caption bar gets a close "x" - and the "x" reuses the very same
+  //  reject() path, adding no behaviour Escape did not already have.  Dialogs with no title bar
+  //  have nowhere to put it.
+  if( enable && !m_closeIcon && isTitleBarEnabled() )
+  {
+    // Exactly what AuxWindow::setClosable does, so the two carry the identical glyph.  Note it gets
+    //  no "Wt-icon" class: that would add its padding/margin on top of the sprite's fixed 13x13 box.
+    m_closeIcon = titleBar()->addNew<WText>();
+    WApplication::instance()->theme()->apply( this, m_closeIcon, WidgetThemeRole::DialogCloseIcon );
+    m_closeIcon->clicked().connect( this, &SimpleDialog::reject );
+  }else if( !enable && m_closeIcon )
+  {
+    WidgetUtils::removeWidgetNow( m_closeIcon );
+    m_closeIcon = nullptr;
+  }
 }//void rejectWhenEscapePressed( bool enable )
 
-Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
+Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt, WidgetUtils::ButtonRole role )
 {
   Wt::WPushButton *b = footer()->addNew<WPushButton>( txt );
   b->setStyleClass( "simple-dialog-btn" );
+  WidgetUtils::applyButtonRole( b, role );
 
   // TODO: closing the dialog seems a little laggy; check if WDialog::hide is faster, or if we
   //       should stick to using the JS

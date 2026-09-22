@@ -808,7 +808,7 @@ void LlmBenchmarkRunner::promptResumeOrFresh( const string &xmlFilePath,
   for( const InProgressRun &r : runs )
     paths.push_back( r.path );
 
-  Wt::WPushButton *resumeBtn = dialog->addButton( "Resume" );
+  Wt::WPushButton *resumeBtn = dialog->addButton( "Resume", WidgetUtils::ButtonRole::Affirm );
   resumeBtn->clicked().connect( std::bind( [this,xmlFilePath,paths,combo](){
     size_t idx = 0;
     if( combo )
@@ -817,12 +817,12 @@ void LlmBenchmarkRunner::promptResumeOrFresh( const string &xmlFilePath,
       runResume( xmlFilePath, paths[idx] );
   } ) );
 
-  Wt::WPushButton *freshBtn = dialog->addButton( "Start Fresh" );
+  Wt::WPushButton *freshBtn = dialog->addButton( "Start Fresh", WidgetUtils::ButtonRole::Neutral );
   freshBtn->clicked().connect( std::bind( [this,xmlFilePath](){
     runFresh( xmlFilePath );
   } ) );
 
-  dialog->addButton( "Cancel" );
+  dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 }//promptResumeOrFresh
 
 
@@ -2239,6 +2239,7 @@ void LlmBenchmarkRunner::showResultsDialog()
   jsonContainer->setMargin( 8, Wt::Side::Top );
 
   Wt::WPushButton *copyBtn = dialog->footer()->addNew<Wt::WPushButton>( "Copy JSON" );
+  WidgetUtils::applyButtonRole( copyBtn, WidgetUtils::ButtonRole::Neutral );
   copyBtn->setStyleClass( "simple-dialog-btn" );
 
   // Use JavaScript to copy
@@ -2247,7 +2248,7 @@ void LlmBenchmarkRunner::showResultsDialog()
     "function(){ navigator.clipboard.writeText(" + escapedJson + ").then(function(){"
     "alert('Results JSON copied to clipboard');}); }" );
 
-  Wt::WPushButton *okBtn = dialog->addButton( "OK" );
+  Wt::WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
   okBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }
 

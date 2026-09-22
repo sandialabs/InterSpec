@@ -1495,12 +1495,14 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer )
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
   WPushButton *saveAs = footer()->addNew<WPushButton>( WString::tr("md-export-btn") );
+  WidgetUtils::applyButtonRole( saveAs, WidgetUtils::ButtonRole::Neutral );
   saveAs->clicked().connect( m_tool, &MakeDrf::startSaveAs );
   m_tool->farFieldIntrinsicEfficiencyIsValid().connect( saveAs, [saveAs]( bool a1 ){ saveAs->setEnabled( a1 ); } );
   saveAs->disable();
 
   // No characterization data: build an approximate response by hand in the Modify DRF tool
   WPushButton *noDataBtn = footer()->addNew<WPushButton>( WString::tr("md-make-without-data-btn") );
+  WidgetUtils::applyButtonRole( noDataBtn, WidgetUtils::ButtonRole::Neutral );
   noDataBtn->clicked().connect( std::bind( [viewer,this](){
     hide();
     viewer->showDrfModifyWindow( nullptr, true );
@@ -1868,6 +1870,7 @@ void MakeDrf::startSaveAs()
     WText *t = w->contents()->addNew<WText>( WString::tr("md-drf-not-valid"), Wt::TextFormat::XHTML );
     t->setInline( false );
     WPushButton *b = w->footer()->addNew<WPushButton>( WString::tr("Close") );
+    WidgetUtils::applyButtonRole( b, WidgetUtils::ButtonRole::Dismiss );
     b->clicked().connect( w, &AuxWindow::hide );
     w->finished().connect( w, [w](Wt::DialogCode){ AuxWindow::deleteAuxWindow( w ); } );
     w->rejectWhenEscapePressed();
@@ -2160,7 +2163,7 @@ void MakeDrf::startSaveAs()
     passMessage( WString::tr("md-saved-to-db").arg(drfname), 0 );
   };//auto doSave
   
-  WPushButton *save = w->addCloseButtonToFooter( WString::tr("Save") );
+  WPushButton *save = w->addCloseButtonToFooter( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
   save->clicked().connect( this, doSave );
   save->disable();
   

@@ -962,7 +962,7 @@ public:
       SimpleDialog *dialog = SimpleDialog::make(
                                               WString::tr("dlt-err-computing-info").arg(nuc_str).arg(m_input.energy),
                                               WString::tr("dlt-err-computing-currie-info").arg(e.what()) );
-      dialog->addButton( WString::tr("Close") );
+      dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
     }//try / catch
   }//void createMoreInfoWindow()
   
@@ -1931,7 +1931,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
   
   const string nuc_str = (nuclide ? (nuclide->symbol + " ") : "");
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("dlt-currie-info-dialog-title").arg(nuc_str).arg(energy_str) );
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   
   if( drf && !drf->isValid() )
     drf.reset();

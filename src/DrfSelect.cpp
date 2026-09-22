@@ -952,8 +952,8 @@ void RelEffFile::handleUserAskedRemove()
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-remove-drf-window-title"),
                                           WString::tr("ref-remove-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   
   string filepath = m_existingFilePath;
   // Only remove this entry on confirmation (Yes), not unconditionally below.  Connect to `this` so
@@ -1087,8 +1087,8 @@ void RelEffFile::handleFileUpload()
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-save-drf-window-title"),
                                 WString::tr("ref-save-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
 #endif
 }//void handleFileUpload()
@@ -3052,6 +3052,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( specViewer && !specViewer->isPhone() )
   {
     m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Accept") );
+    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
     m_acceptButton->setFloatSide( Wt::Side::Right );
 
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
@@ -3062,6 +3063,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   }else
   {
     m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("ds-use-det-btn") );
+    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
     m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
@@ -3105,8 +3107,8 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr(title_key) );
   dialog->addStyleClass( "DrfFileSelectDialog" );
   
-  WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
-  WPushButton *accept = dialog->addButton( WString::tr("Accept") );
+  WPushButton *cancel = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *accept = dialog->addButton( WString::tr("Accept"), WidgetUtils::ButtonRole::Affirm );
   
   //WGridLayout *layout = new WGridLayout( dialog->contents() );
   //layout->setContentsMargins( 0, 0, 0, 0 );
@@ -5714,14 +5716,14 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
 
     SimpleDialog * const why = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
                                   WString::tr("ds-angle-mode-unavailable").arg(obstruction) );
-    why->addButton( WString::tr("ds-angle-ok") );
+    why->addButton( WString::tr("ds-angle-ok"), WidgetUtils::ButtonRole::Affirm );
     return;
   }//if( !geometry || !seedDrf )
 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
                                              WString::tr("ds-angle-mode-txt") );
-  WPushButton *generic = dialog->addButton( WString::tr("ds-angle-mode-generic") );
-  dialog->addButton( WString::tr("ds-angle-mode-fixed") );
+  WPushButton *generic = dialog->addButton( WString::tr("ds-angle-mode-generic"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("ds-angle-mode-fixed"), WidgetUtils::ButtonRole::Neutral );
 
   // Mode A: seed the consolidated "Modify Detector Response" dialog with the
   //  far-field DRF built from the reference curve AND the physical geometry, so
@@ -5810,8 +5812,8 @@ void DrfSelect::offerGadrasImportModeChoice( const std::string &datFilename,
 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-gadras-mode-title"),
                                              WString::tr("ds-gadras-mode-txt") );
-  WPushButton *generic = dialog->addButton( WString::tr("ds-gadras-mode-generic") );
-  dialog->addButton( WString::tr("ds-gadras-mode-fixed") );
+  WPushButton *generic = dialog->addButton( WString::tr("ds-gadras-mode-generic"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("ds-gadras-mode-fixed"), WidgetUtils::ButtonRole::Neutral );
 
   generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf, warnings](){
     for( const string &warning : warnings )

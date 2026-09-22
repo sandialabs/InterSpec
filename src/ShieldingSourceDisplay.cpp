@@ -4699,7 +4699,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   }//try / catch
 
   
-  WPushButton *button = window->addCloseButtonToFooter("Okay");
+  WPushButton *button = window->addCloseButtonToFooter("Okay", WidgetUtils::ButtonRole::Affirm );
   button->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   window->centerWindow();
@@ -5582,12 +5582,14 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
   SimpleDialog *dialog = SimpleDialog::make( WString::tr( "ssd-missing-back-peaks-title" ),
                                            WString::tr( "ssd-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
 
+  // An option on the action, so it goes in its own block behind a hairline rather than floating
+  //  alongside the prose.
   WCheckBox *add_all_cb = dialog->contents()->addNew<WCheckBox>( WString::tr( "ssd-btn-add-all-detectable" ) );
-  add_all_cb->addStyleClass( "CbNoLineBreak" );
-  add_all_cb->setFloatSide( Wt::Side::Right );
+  add_all_cb->addStyleClass( "CbNoLineBreak DialogOptions" );
+  add_all_cb->setInline( false );
 
-  WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ) );
-  WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ) );
+  WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ), WidgetUtils::ButtonRole::Affirm );
   add_btn->setFocus();
 
   // Capture copies for lambdas
@@ -5704,7 +5706,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   if( candidates_to_fit.empty() )
   {
     SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
     if( triggeredFromFit )
       dialog->finished().connect( this, [dofit](){ dofit(); } );
 
@@ -5734,7 +5736,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   if( all_fit_peaks.empty() )
   {
     SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
 
     if( triggeredFromFit )
       dialog->finished().connect( this, [dofit](){ dofit(); } );
@@ -5815,8 +5817,8 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   for( const PeakDef &p : all_fit_peaks )
     peaks_to_add.push_back( make_shared<PeakDef>( p ) );
 
-  WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ) );
-  WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ) );
+  WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ), WidgetUtils::ButtonRole::Affirm );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ), WidgetUtils::ButtonRole::Dismiss );
 
   std::function<void()> add_peaks = [this, peaks_to_add, triggeredFromFit](){ addPeaksToBackgroundAndContinue( peaks_to_add, triggeredFromFit ); };
   accept_btn->clicked().connect( this, [add_peaks](){ add_peaks(); } );
@@ -5950,13 +5952,13 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
                               WString::tr("ssd-cascade-need-total-eff-title"),
                               WString::tr("ssd-cascade-need-total-eff-msg") );
-    WPushButton *edit_btn = dialog->addButton( WString::tr("ssd-cascade-open-drf-editor") );
+    WPushButton *edit_btn = dialog->addButton( WString::tr("ssd-cascade-open-drf-editor"), WidgetUtils::ButtonRole::Affirm );
     edit_btn->clicked().connect( std::bind( [](){
       InterSpec * const viewer = InterSpec::instance();
       if( viewer )
         viewer->showDrfModifyWindow( nullptr );
     } ) );
-    dialog->addButton( WString::tr("Cancel") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
     return;
   }//if( checked, but DRF doesnt have the info )
@@ -6184,7 +6186,7 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   progress_bar->setRange( 0.0, 1.0 );
 
   auto cancel_flag = make_shared<std::atomic<bool>>( false );
-  WPushButton *cancel_btn = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   cancel_btn->clicked().connect( std::bind( [cancel_flag](){
     cancel_flag->store( true );
   } ) );
@@ -8178,6 +8180,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
  
 
   WPushButton *button = m_modelDbSaveWindow->footer()->addNew<WPushButton>( WString::tr("Save") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Affirm );
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect( this, [this, nameEdit, descEdit](){ finishGuiSaveModelToDatabase( nameEdit, descEdit ); } );
@@ -9829,7 +9832,7 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     logBtn->clicked().connect( this, &ShieldingSourceDisplay::showCalcLog );
   }//if( m_lastFitResults )
 
-  dialog->addButton( WString::tr("ssd-phone-done") );
+  dialog->addButton( WString::tr("ssd-phone-done"), WidgetUtils::ButtonRole::Affirm );
 }//void showPhoneFitResults()
 
 

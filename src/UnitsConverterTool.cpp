@@ -606,8 +606,6 @@ UnitsConverterTool::UnitsConverterTool()
       if(  (w > 100) && (w > h) )
         titleBar()->hide();
     }//if( viewer->isPhone() )
-    
-    closeButton->setFocus();
   }//if( viewer->isMobile() )
   
 }//UnitsConverterTool constructor

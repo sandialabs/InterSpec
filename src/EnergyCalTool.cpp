@@ -2041,7 +2041,7 @@ std::shared_ptr<EnergyCalImp::CALpDownloadResource> EnergyCalTool::calpResources
 void EnergyCalTool::handleRequestToUploadCALp()
 {
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>();
-  WPushButton *closeButton = dialog->addButton( "Cancel" );
+  WPushButton *closeButton = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
   WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   dialog->contents()->setOverflow( Overflow::Visible );
@@ -2057,7 +2057,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
+    WPushButton *closeButton = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
     WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
     stretcher->setContentsMargins( 0, 0, 0, 0 );
     WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-upload-CALp-to-large")), 0, 0 );
@@ -2080,7 +2080,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
       dialog->contents()->clear();
       dialog->footer()->clear();
 
-      WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
+      WPushButton *closeButton = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
       WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
       WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-upload-CALp-to-large")), 0, 0 );
@@ -2101,7 +2101,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
       dialog->contents()->clear();
       dialog->footer()->clear();
       
-      WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
+      WPushButton *closeButton = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
       WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
       WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-invalid-CALp")), 0, 0 );

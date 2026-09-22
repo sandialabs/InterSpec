@@ -202,7 +202,7 @@ OneOverR2Calc::OneOverR2Calc()
   } );
 #endif //USE_QR_CODES
   
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( this, [this](){ hide(); } );
   
   rejectWhenEscapePressed();
@@ -248,11 +248,12 @@ OneOverR2Calc::OneOverR2Calc()
     centerWindowHeavyHanded();
   }//if( isPhone ) / else
   
-  //Keep the keyboard form popping up
   if( viewer && viewer->isMobile() )
   {
-    closeButton->setFocus();
-    closeButton->setFloatSide( Wt::Side::Left ); //The "DialogClose" style class defaults to floating to the right, same as the help icon
+    // Phone footers live in the title bar and are not flex, so the float still places this on the
+    //  left there.  On a tablet the footer IS flex and ignores it; the button's Dismiss role puts
+    //  it where it belongs anyway.
+    closeButton->setFloatSide( Wt::Side::Left );
   }
 }//OneOverR2Calc constructor
 

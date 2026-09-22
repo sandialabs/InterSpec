@@ -52,11 +52,12 @@
 #include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
 
-#if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
+// Only used by the PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE dialog, but included unconditionally:
+//  that flag is defined in InterSpec/InterSpecApp.h, which is included further down, so an `#if` on
+//  it here always read 0 and the dialog could not compile once enabled.
 #include <Wt/WLabel.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WPushButton.h>
-#endif
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
@@ -627,6 +628,10 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     domRoot()->addStyleClass( "IsTablet" );
   if( isMobile() )
     domRoot()->addStyleClass( "IsMobile" );
+
+  // Windows puts the affirming button first in a dialog footer; see the `.DialogFooter` rules.
+  if( isWindows() )
+    domRoot()->addStyleClass( "IsWindows" );
   
   if( !m_miscSignal )
   {
@@ -812,7 +817,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           } );
            
         
-          WPushButton *yesbutton = loadStateDialog->addCloseButtonToFooter("Yes");
+          WPushButton *yesbutton = loadStateDialog->addCloseButtonToFooter("Yes", WidgetUtils::ButtonRole::Affirm );
           
           yesbutton->clicked().connect( this, [this,cb,state,loadStateDialog,changeDoLoadPref](){
             if( cb->isChecked() )
@@ -822,10 +827,9 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
           } );
            
         
-          if( loadPrev )
-            yesbutton->setFocus();
-          else
-            nobutton->setFocus();
+          // "No" is the default whatever the preference says: an accidental Enter should leave the
+          //  user in a fresh session, not replace it with the previous one.
+          nobutton->setFocus();
           
           loadStateDialog->centerWindow();
           loadStateDialog->disableCollapse();
@@ -1881,6 +1885,26 @@ bool InterSpecApp::isAndroid() const
                       );
   return isDroid;
 }
+
+
+bool InterSpecApp::isWindows() const
+{
+#if( ANDROID || IOS || BUILD_AS_OSX_APP )
+  return false;
+#elif( defined(_WIN32) && (BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP) )
+  // A packaged Windows build only ever serves the machine it runs on.
+  return true;
+#else
+
+  // For browser, local-server and web-deployment clients the compiling host is not the client, so
+  //  sniff the user agent - the same approach GammaCountDialog uses to pick its modifier-key label.
+  const string &agent = environment().userAgent();
+
+  return ( SpecUtils::icontains( agent, "windows" )
+          || SpecUtils::icontains( agent, "win64" )
+          || SpecUtils::icontains( agent, "wow64" ) );
+#endif
+}//bool InterSpecApp::isWindows() const
 
 
 bool InterSpecApp::isPhone() const

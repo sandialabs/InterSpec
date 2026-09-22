@@ -1093,7 +1093,7 @@ void DecayBatchCalcWidget::handleFileDrop( const string &/*display_name*/, const
   }catch( std::exception &e )
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("dbc-csv-error-title"), WString::fromUTF8(e.what()) );
-    dialog->addButton( WString::tr("Close") );
+    dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   }
 
   if( m_uploadResource )

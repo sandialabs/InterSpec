@@ -2625,9 +2625,9 @@ void DecayActivityDiv::confirmClearAllNuclides()
 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("dad-remove-all"),
                                              WString::tr("dad-remove-all-confirm") );
-  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
   yes->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
-  dialog->addButton( WString::tr("No") )->setFocus();
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss )->setFocus();
 }//void DecayActivityDiv::confirmClearAllNuclides()
 
 

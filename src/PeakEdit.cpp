@@ -575,16 +575,19 @@ void PeakEdit::init()
   
   
   
-  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss, m_footer );
   m_refit  = m_footer->addNew<WSplitButton>( WString::tr("pe-btn-refit") );
   m_apply  = m_footer->addNew<WPushButton>( WString::tr("Apply") );
+  WidgetUtils::applyButtonRole( m_apply, WidgetUtils::ButtonRole::Neutral );
   m_accept = m_footer->addNew<WPushButton>( WString::tr("Accept") );
+  WidgetUtils::applyButtonRole( m_accept, WidgetUtils::ButtonRole::Affirm );
   //if( m_viewer && !m_viewer->isMobile() )
   //  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
 
   //Add class to give padding on left side (or modify current style class)
 
   WPushButton *deleteButton = m_footer->addNew<WPushButton>( WString::tr("Delete") );
+  WidgetUtils::applyButtonRole( deleteButton, WidgetUtils::ButtonRole::Destructive );
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );

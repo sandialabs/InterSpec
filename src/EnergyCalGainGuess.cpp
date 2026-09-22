@@ -1237,8 +1237,10 @@ EnergyCalGainGuess::EnergyCalGainGuess( std::shared_ptr<std::vector<MeasToApplyC
   WContainerWidget * const footer = parent->footer();
   AuxWindow::addHelpInFooter( footer, "energy-cal-guess-gain" );
   m_cancel = footer->addNew<WPushButton>( WString::tr("Cancel") );
+  WidgetUtils::applyButtonRole( m_cancel, WidgetUtils::ButtonRole::Dismiss );
   m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
   m_use = footer->addNew<WPushButton>( WString::tr("Use") );
+  WidgetUtils::applyButtonRole( m_use, WidgetUtils::ButtonRole::Affirm );
   m_use->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
   m_use->disable();
 

@@ -402,21 +402,108 @@ button.Wt-btn.LightButton, .btn-group.LightButton
   *zoom: 1;
 }
 
-.modal-footer button,.modal-footer button:hover{
-  margin-right:2px;
-  margin-left:2px;
+
+
+/* ---------------------------------------------------------------------------------------------
+   Shared dialog-footer chrome.
+
+   `DialogFooter` is set from C++ on both AuxWindow's desktop footer and every SimpleDialog footer,
+   so the two dialog families lay their decision buttons out identically.  It is a class of its own
+   rather than an addition to `.AuxWindow .modal-footer` because `.AuxWindow` is only applied when
+   AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE is set - i.e. never on Android - and because Wt sets
+   none of these properties, so no specificity fight with its own `.Wt-dialog .footer` rule.
+
+   Position comes from `order`, not from the sequence buttons were added in.  That is what lets the
+   platform swap below be a single rule instead of a re-ordering at all ~350 call sites, and it
+   keeps a three-button dialogs middle choice in the middle when the ends swap.
+   --------------------------------------------------------------------------------------------- */
+.DialogFooter
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A flex container's ::before is itself a flex item.  This one sits between the utility affordances
+   and the decision buttons and eats the free space, so utilities stay left and decisions stay right
+   however many of each a footer holds.  It replaces the `float:left` that AuxWindow::addHelpInFooter
+   used to set, which a flex container ignores.
+
+   One growing item rather than `margin-right:auto` on the help icon: that only pins the FIRST
+   utility, and drags every later one (QR, CSV, export) into the right-hand group with the buttons.
+
+   Utility affordances need no rule at all - `order` defaults to 0, which is ahead of the spacer. */
+.DialogFooter::before
+{
+  content: "";
+  order: 1;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* `gap` above is what separates footer items now, so `.Wt-icon`'s own right margin would double the
+   space after the help icon. */
+.DialogFooter > img.Wt-icon
+{
+  margin-right: 0;
+}
+
+.DialogFooter .DialogBtnDismiss { order: 2; }
+.DialogFooter .DialogBtnNeutral { order: 3; }
+.DialogFooter .DialogBtnAffirm,
+.DialogFooter .DialogBtnDestructive { order: 4; }
+
+/* Windows convention: the affirming action comes first.  Only the two ends swap. */
+.IsWindows .DialogFooter .DialogBtnAffirm,
+.IsWindows .DialogFooter .DialogBtnDestructive { order: 2; }
+.IsWindows .DialogFooter .DialogBtnDismiss     { order: 4; }
+
+/* Keep short labels ("Yes", "No") from collapsing to tiny pills. */
+.DialogBtnAffirm,
+.DialogBtnDismiss,
+.DialogBtnNeutral,
+.DialogBtnDestructive
+{
+  min-width: 72px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* Emphasis rings.  color-mix() keeps these tied to the theme tokens - including any colour the user
+   overrode on html:root - instead of hard-coding a blue.  The plain-colour declaration first is the
+   fallback for engines without color-mix(); Safari 16.4, the support floor, has it. */
+.DialogBtnAffirm
+{
+  border-color: var(--interspec-accent-color);
+  box-shadow: 0 0 0 2px var(--interspec-accent-color);
+  box-shadow: 0 0 0 2px color-mix( in srgb, var(--interspec-accent-color) 55%, transparent );
+}
+
+.DialogBtnDestructive,
+.DialogBtnDestructive:hover
+{
+  background-color: var(--interspec-error-color);
+  /* Ink on a solid status colour is the theme background: the error colour is dark in light themes
+     and light in dark ones, so the fixed white button ink would vanish in dark.  See the note in
+     themes/default/default.css. */
+  color: var(--interspec-background-color);
+  border-color: var(--interspec-error-color);
+  box-shadow: 0 0 0 2px var(--interspec-error-color);
+  box-shadow: 0 0 0 2px color-mix( in srgb, var(--interspec-error-color) 55%, transparent );
+}
+
+/* A disabled button must not keep advertising itself as the thing to press. */
+.DialogBtnAffirm[disabled],
+.DialogBtnDestructive[disabled]
+{
+  border-color: var(--interspec-border-color);
+  box-shadow: none;
 }
 
 
 .NeutDetCbItem
 {
   color: var(--interspec-link-color);
-}
-
-
-.DialogClose
-{
-  float: right;
 }
 
 

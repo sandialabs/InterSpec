@@ -92,13 +92,15 @@ public:
   void doNotUseMultpleBringstoFront();
   
   /** Add a button to the footer.
-   
-   Buttons are added left-to-right, and clicking on them will cause the dialog to hide and become deleted, so you dont need to worry
-   about cleaning up the dialog.
-   
+
+   Clicking a button hides and deletes the dialog, so you dont need to worry about cleaning it up.
    Hookup to the returned button to trigger actions after clicking.
+
+   `role` says what the button *means*; it decides the buttons emphasis and its position in the
+   footer, so the order buttons are added in no longer matters (see WidgetUtils::ButtonRole).  It is
+   required rather than defaulted so that every call site has to make the choice deliberately.
    */
-  Wt::WPushButton *addButton( const Wt::WString &txt );
+  Wt::WPushButton *addButton( const Wt::WString &txt, WidgetUtils::ButtonRole role );
   
   /** Enables Escape-to-reject behavior, with a fallback for dialogs whose focused
       child widgets otherwise swallow Escape.
@@ -208,6 +210,16 @@ protected:
   bool m_multipleBringToFront;
   
   Wt::Signals::connection m_escapeConnection1;
+
+  /** The caption bars close "x", or null when the dialog has none.
+
+   Only created once #rejectWhenEscapePressed has been enabled: that call is the dialogs own
+   statement that it is safe to abandon without picking a button, and the "x" then shares the very
+   same reject() path as Escape.  Showing one unconditionally would give ~200 dialogs a dismissal
+   route their callers never wired up, since footer buttons run the callers handler while reject()
+   does not.
+   */
+  Wt::WText *m_closeIcon;
 
 private:
   /** Height taken by the title bar, footer and margins; see #setBodyChromeHeight. */

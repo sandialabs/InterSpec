@@ -1349,7 +1349,7 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
   }
 
   // Cancel button - routes through InterSpec for undo/redo tracking
-  WPushButton *cancelBtn = addCloseButtonToFooter( WString::tr( "fsw-cancel-btn" ), true);
+  WPushButton *cancelBtn = addCloseButtonToFooter( WString::tr( "fsw-cancel-btn" ));
   cancelBtn->clicked().connect( viewer, &InterSpec::closeFitSkewParamsWindow);
 
   // Also route the finished() signal (escape key, close button) through InterSpec
@@ -1357,6 +1357,7 @@ FitSkewParamsWindow::FitSkewParamsWindow( InterSpec *viewer )
 
   // Accept button - routes through InterSpec for undo/redo tracking
   m_acceptBtn = footer()->addNew<WPushButton>( WString::tr( "fsw-accept-btn" ));
+  WidgetUtils::applyButtonRole( m_acceptBtn, WidgetUtils::ButtonRole::Affirm );
   m_acceptBtn->addStyleClass( "Wt-btn");
   m_acceptBtn->clicked().connect( viewer, &InterSpec::acceptFitSkewParamsWindow);
 

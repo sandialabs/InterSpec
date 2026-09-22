@@ -455,7 +455,7 @@ void LlmToolGui::handleConfigSaved()
   {
     SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
     errDialog->contents()->addNew<WText>( e.what() );
-    errDialog->addButton( "Okay" );
+    errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -500,7 +500,7 @@ void LlmToolGui::handleConfigSaved()
       {
         SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Updating LLM" );
         errDialog->contents()->addNew<WText>( e.what() );
-        errDialog->addButton( "Okay" );
+        errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
         return;
       }
       setInputEnabled( true );
@@ -1011,7 +1011,7 @@ void LlmToolGui::sendMessage(const std::string& message)
     // Show error in a dialog
     SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
     WText *errorText = errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
-    WPushButton *okBtn = errorDialog->addButton( "OK" );
+    WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
   }
 }
@@ -1241,7 +1241,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Conversation" );
     WText *msg = dialog->contents()->addNew<WText>( "There is no conversation history to export." );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1267,7 +1267,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Active Conversation" );
     WText *msg = dialog->contents()->addNew<WText>( "There is no active conversation to export." );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1281,7 +1281,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Export Failed" );
     WText *msg = dialog->contents()->addNew<WText>( string("Failed to build export JSON: ") + e.what() );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1310,7 +1310,7 @@ void LlmToolGui::exportConversationJson()
   download->setStyleClass( "LinkBtn DownloadLink" );
   download->setText( "Download conversation JSON" );
 
-  WPushButton *closeBtn = dialog->addButton( "Close" );
+  WPushButton *closeBtn = dialog->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
   closeBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }
 
@@ -1320,8 +1320,8 @@ void LlmToolGui::handleClearConversation()
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Clear Conversation" );
   WText *msg = dialog->contents()->addNew<WText>( "Are you sure you want to clear the entire conversation history? This cannot be undone." );
 
-  WPushButton *yesBtn = dialog->addButton( "Yes, Clear" );
-  WPushButton *noBtn = dialog->addButton( "Cancel" );
+  WPushButton *yesBtn = dialog->addButton( "Yes, Clear", WidgetUtils::ButtonRole::Destructive );
+  WPushButton *noBtn = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 
   yesBtn->clicked().connect( std::bind( [this, dialog]() {
     clearHistory();
@@ -1338,8 +1338,8 @@ void LlmToolGui::handleResetLlmConfig()
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Reset LLM Config" );
   dialog->contents()->addNew<WText>( "This will re-read the LLM configuration files and clear the current conversation. Continue?" );
 
-  WPushButton *yesBtn = dialog->addButton( "Yes, Reset" );
-  WPushButton *noBtn = dialog->addButton( "Cancel" );
+  WPushButton *yesBtn = dialog->addButton( "Yes, Reset", WidgetUtils::ButtonRole::Destructive );
+  WPushButton *noBtn = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 
   yesBtn->clicked().connect( std::bind( [this, dialog]() {
     dialog->accept();
@@ -1354,7 +1354,7 @@ void LlmToolGui::handleResetLlmConfig()
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( e.what() );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1362,7 +1362,7 @@ void LlmToolGui::handleResetLlmConfig()
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( "LLM API is not enabled in the configuration." );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1381,7 +1381,7 @@ void LlmToolGui::handleResetLlmConfig()
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Resetting LLM" );
       errDialog->contents()->addNew<WText>( e.what() );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1401,7 +1401,7 @@ void LlmToolGui::handleCompactConversation()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
     dialog->contents()->addNew<WText>( "Please wait for the current request to finish before compacting." );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -1413,7 +1413,7 @@ void LlmToolGui::handleCompactConversation()
     {
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
       dialog->contents()->addNew<WText>( "Not enough conversation history to compact." );
-      dialog->addButton( "OK" );
+      dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1439,7 +1439,7 @@ void LlmToolGui::handleCompactConversation()
 
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Compaction Error" );
     dialog->contents()->addNew<WText>( string("Failed to compact conversation: ") + e.what() );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
   }
 }
 
@@ -2006,7 +2006,7 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Benchmark Running" );
     dialog->contents()->addNew<WText>( "A benchmark is already running. Please wait for it to finish." );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 

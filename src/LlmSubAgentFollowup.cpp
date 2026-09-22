@@ -148,8 +148,8 @@ void LlmSubAgentFollowup::showDialog()
   questionArea->addStyleClass( "LlmFollowupInput" );
   questionArea->setWidth( WLength( 100, WLength::Unit::Percentage ) );
 
-  WPushButton *sendBtn = dialog->addButton( "Send" );
-  WPushButton *cancelBtn = dialog->addButton( "Cancel" );
+  WPushButton *sendBtn = dialog->addButton( "Send", WidgetUtils::ButtonRole::Affirm );
+  WPushButton *cancelBtn = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 
   cancelBtn->clicked().connect( std::bind( [this, dialog]() {
     assert( !m_requestPending );
@@ -227,8 +227,8 @@ void LlmSubAgentFollowup::showResponseDialog( const std::string &responseText )
   questionArea->addStyleClass( "LlmFollowupInput" );
   questionArea->setWidth( WLength( 100, WLength::Unit::Percentage ) );
 
-  WPushButton *sendBtn = dialog->addButton( "Send Followup" );
-  WPushButton *closeBtn = dialog->addButton( "Close" );
+  WPushButton *sendBtn = dialog->addButton( "Send Followup", WidgetUtils::ButtonRole::Affirm );
+  WPushButton *closeBtn = dialog->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
 
   closeBtn->clicked().connect( std::bind( [this, dialog](){
     assert( !m_requestPending );

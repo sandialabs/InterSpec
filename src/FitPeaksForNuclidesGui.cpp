@@ -384,7 +384,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
   dev_note->setInline( false );
   dev_note->addStyleClass( "fpn-wait-dev-note" );
 
-  wait_dlg->addButton( WString::tr("Close") );
+  wait_dlg->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
   // Disable button to prevent repeats while running.
   ref_disp->setFitSourcesButtonEnabled( false );
@@ -463,7 +463,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
       SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                             WString::tr("fpn-error-content").arg( e.what() ) );
-      err->addButton( WString::tr("Okay") );
+      err->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -516,7 +516,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
         {
           SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                                 WString::tr("fpn-error-content").arg( result->error_message ) );
-          err->addButton( WString::tr("Okay") );
+          err->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
           return;
         }
 
@@ -541,7 +541,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
             }
           }
           SimpleDialog *dlg = SimpleDialog::make( WString::tr("fpn-result-title"), msg );
-          dlg->addButton( WString::tr("Okay") );
+          dlg->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
           return;
         }
 
@@ -686,8 +686,8 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           FitPeaksForNuclidesGui::showAdvancedDialog();
         } ) );
 
-        Wt::WPushButton *accept_btn = result_dlg->addButton( WString::tr("Accept") );
-        result_dlg->addButton( WString::tr("Cancel") );
+        Wt::WPushButton *accept_btn = result_dlg->addButton( WString::tr("Accept"), WidgetUtils::ButtonRole::Affirm );
+        result_dlg->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
         accept_btn->setFocus();
 
         accept_btn->clicked().connect( accept_btn, [viewer_c, result](){
@@ -729,8 +729,8 @@ FitPeaksAdvancedDialog::FitPeaksAdvancedDialog( const Wt::WString &title )
     layout->addWidget( std::move(widgetOwned), 0, 0 );
   }
 
-  addButton( Wt::WString::tr("fpn-cancel") );
-  m_acceptBtn = addButton( Wt::WString::tr("fpn-accept") );
+  addButton( Wt::WString::tr("fpn-cancel"), WidgetUtils::ButtonRole::Dismiss );
+  m_acceptBtn = addButton( Wt::WString::tr("fpn-accept"), WidgetUtils::ButtonRole::Affirm );
   m_acceptBtn->setEnabled( m_widget->canAccept() );
 
   m_acceptBtn->clicked().connect( this, &FitPeaksAdvancedDialog::onAcceptClicked );
