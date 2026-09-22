@@ -953,7 +953,7 @@ SigmaTransferModel::Components SigmaTransferModel::components(
     if (d_over_a < near_gate_a) {
         const double t = clamp((near_gate_a - d_over_a) / (near_gate_a - 1.0),
                                0.0, 1.0);
-        c.near = near_contact * t;
+        c.near_field = near_contact * t;
     }
     return c;
 }
@@ -962,7 +962,7 @@ double SigmaTransferModel::eval(double d_over_a, double cos_theta,
                                 double energy_keV) const {
     const Components c = components(d_over_a, cos_theta, energy_keV);
     return std::sqrt(c.far_onaxis * c.far_onaxis + c.offaxis * c.offaxis +
-                     c.near * c.near);
+                     c.near_field * c.near_field);
 }
 
 double GroundingBlock::eval_ln_k(double energy_keV, bool& clamped) const {
@@ -1289,7 +1289,7 @@ DetectorResponse::EvalCommon DetectorResponse::common_eval(
             ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
         b.model[SigmaBudget::ModelFar] = c.far_onaxis;
         b.model[SigmaBudget::ModelOff] = c.offaxis;
-        b.model[SigmaBudget::ModelNear] = c.near;
+        b.model[SigmaBudget::ModelNear] = c.near_field;
     }
 
     // Collimator shadow gate (spec sec 4.5): s = transmitted/geometric.
@@ -1381,7 +1381,7 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
             ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
         b.model[SigmaBudget::GroundFar] = c.far_onaxis;
         b.model[SigmaBudget::GroundOff] = c.offaxis;
-        b.model[SigmaBudget::GroundNear] = c.near;
+        b.model[SigmaBudget::GroundNear] = c.near_field;
     }
 
     const double node_sig =

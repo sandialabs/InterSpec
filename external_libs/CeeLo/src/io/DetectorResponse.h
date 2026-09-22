@@ -783,7 +783,7 @@ struct SigmaTransferModel {
     /// each as its own fully-correlated common mode (rank-one block): their per-energy magnitudes
     /// differ (the off-axis term ramps up below mid_e_ref_keV), and one combined block would
     /// over-correlate energies whose magnitudes differ.
-    struct Components { double far_onaxis = 0.0, offaxis = 0.0, near = 0.0; };
+    struct Components { double far_onaxis = 0.0, offaxis = 0.0, near_field = 0.0; };
     Components components(double d_over_a, double cos_theta, double energy_keV) const;
 
     /// d in units of the transverse half-extent a.
