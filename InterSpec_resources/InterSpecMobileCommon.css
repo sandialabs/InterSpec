@@ -2,7 +2,7 @@
 .MobileMenuButton, .MobileMenuButton:hover
 {
   /* Boxed-hamburger SVG; its own rounded frame serves as the button outline, so no background fill
-     or border is needed.  Inverted to white for the dark theme (see themes/dark/dark.css). */
+     or border is needed.  Dark themes flip it to white through --interspec-icon-filter. */
   background: url(images/hamburger-menu.svg) center / contain no-repeat;
   margin:0;
   padding:0;
@@ -33,7 +33,7 @@
   white-space:nowrap;
   margin-top: 0;
   text-align: right;
-  background-color: #FAFAFA;
+  background-color: var(--interspec-panel-background);
 }
 
 
@@ -137,7 +137,7 @@
 .HeavyNavMenuPhone > li
 {
   vertical-align:middle;
-  color: #ffffff;
+  color: var(--interspec-button-text-color);
 }
 
 
@@ -146,7 +146,7 @@
 
 .HeavyNavMenuPhone > .itemselected
 {
-  background: #C6C6C6;
+  background: var(--interspec-selected-background);
 }
 
 
@@ -226,8 +226,8 @@ table.RecalibCoefTable
 
 .PopupDivMenuPhone
 {
-  border: solid 1px #e1e1e1;
-  background-color: #FAFAFA;
+  border: solid 1px var(--interspec-border-color);
+  background-color: var(--interspec-popup-background);
   height: 100%;
   width: 220px;
   overflow-y: auto;
@@ -272,7 +272,7 @@ ul.PopupDivMenuPhone.Wt-popupmenu > li:not(.PopupDivMenuWidget):not(:has(> label
 
 .PhoneMenuBack, .PhoneMenuClose
 {
-  background: #E6E6E6;
+  background: var(--interspec-panel-background);
 }
 
 

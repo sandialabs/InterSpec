@@ -237,15 +237,13 @@ public:
   //  be created in memorry.  Otherwise, the previously existing Material in
   //  memmorry will be returned - unmodified.  Call handleMaterialChange() and
   //  handleIsotopicChange(...) to deal with modifying materials.
-  // TODO: should the returned pointer be made const, or maybe unique?
+  //  The returned material may have a user-modified density, so it is not
+  //  necessarily identical to the MaterialDB entry of the same name.
   std::shared_ptr<const Material> material();
-  
+
   /** Returns the current m_currentMaterial.
-   
+
    Does not update material if description has been changed.
-   
-   Note that although the pointer returned is const, it points to the same object as m_currentMaterial,
-   which is non-const, so may be modified.
    */
   std::shared_ptr<const Material> currentMaterial() const;
 
@@ -599,6 +597,26 @@ protected:
   //  Emits either the materialChanged() or materialModified() signals depending
   //  on what has been done.
   void handleMaterialChange();
+
+  /** The part of #handleMaterialChange that reacts to #m_currentMaterial having (possibly) been
+   replaced: updates the summary, trace sources, and self-attenuating source checkboxes, then
+   emits materialChanged() if `previous` is the same material (e.g., only its density changed),
+   or materialModified() if it is a different one (which also rebuilds the source checkboxes).
+   */
+  void updateForNewMaterial( const std::shared_ptr<const Material> &previous );
+
+  /** Handles the user editing the density shown in the material summary.
+
+   A value of zero or less (i.e., a blank entry) restores the materials default density.
+   Replaces #m_currentMaterial with a density-modified copy, and updates everything as for a
+   material change.
+   */
+  void handleUserChangedDensity( const float density_g_cm3 );
+
+  /** Refreshes the material summary (density input, effective atomic number, invalid-material
+   text, and tooltip) from #m_currentMaterial.
+   */
+  void updateMaterialSummary();
   
   /** Handles when `m_materialEdit` emits the `changed()` or `enterPressed()` signals.
    
@@ -707,7 +725,18 @@ protected:
   
   Wt::WLineEdit *m_materialEdit;
   bool m_isGenericMaterial;
-  Wt::WText *m_materialSummary;
+
+  /** The "ρ=7.87 g/cm³" summary; see #updateMaterialSummary.  Holds #m_densityEdit,
+   #m_materialSummaryAn, and #m_materialSummaryErr.
+   */
+  Wt::WContainerWidget *m_materialSummary;
+  /** The density, styled as text, but editable by the user. */
+  NativeFloatSpinBox *m_densityEdit;
+  /** The effective atomic number; only when #m_forFitting, otherwise nullptr. */
+  Wt::WText *m_materialSummaryAn;
+  /** Shown instead of the density when the material text is invalid. */
+  Wt::WText *m_materialSummaryErr;
+
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
   Wt::WPushButton *m_addTraceSrcBtn;
@@ -761,9 +790,18 @@ protected:
   
   
   std::string m_currentMaterialDescrip;
-  
-  // TODO: should m_currentMaterial be made a const pointer?
+
+  /** The material currently represented; a private copy of the database material (or a parsed
+   chemical formula), so it may carry a user-modified density - see #handleUserChangedDensity.
+   */
   std::shared_ptr<const Material> m_currentMaterial;
+
+  /** The material #m_currentMaterialDescrip resolves to, before any user density edit - i.e.,
+   what #m_currentMaterial is a copy of.  Used to tell if the density has been overridden, and
+   to restore the default.  Same as #m_currentMaterial when the name isnt resolvable (e.g., a
+   material restored from a file that is no longer in the database).
+   */
+  std::shared_ptr<const Material> m_baseMaterial;
 
   Wt::Signal<ShieldingSelect *> m_removeSignal;
   Wt::Signal<ShieldingSelect *> m_addShieldingBefore;

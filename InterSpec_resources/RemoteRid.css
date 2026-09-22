@@ -38,18 +38,18 @@
 
 .RestRidError
 {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .RestRidStatus
 {
-  color: blue;
+  color: var(--interspec-link-color);
 }
 
 
 .RestRidResult
 {
-  color: black;
+  color: var(--interspec-text-color);
   margin-top: 5px;
   display: flex;
   flex-direction: column;
@@ -73,18 +73,18 @@
 {
   /* color: #434C5E; */
   margin-top: 5px;
-  border: 1px solid #4C566A;
+  border: 1px solid var(--interspec-outline-color);
   flex-grow: 4;
 }
 
 .RestRidResult .ResultTable th
 {
-  border-bottom: 1px solid #4C566A;
+  border-bottom: 1px solid var(--interspec-outline-color);
 }
 
 .RestRidResult .ResultTable td
 {
-  border-bottom: 1px solid #D8DEE9;
+  border-bottom: 1px solid var(--interspec-border-color);
   text-align: center;
 }
 
@@ -104,13 +104,13 @@
 .RestRidResult .AnaWarnings
 {
   margin-top: 5px;
-  color: #D08770;
+  color: var(--interspec-warning-color);
 }
 
 .AnaWarnings > div
 {
   margin-bottom: 4px;
-  border-left: solid 1px #EBCB8B;
+  border-left: solid 1px var(--interspec-warning-border-color);
   padding-left: 4px;
 }
 

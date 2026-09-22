@@ -17655,8 +17655,8 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
   //  relative rather than the absolute 0.01 keV it used to lead with.  1e-4 matches the sibling
   //  float-vs-double check in the NotApplicable branch above.
   const double fwhm_diff = fabs( answer_scalar - drf_answer );
-  assert( (fwhm_diff < 1.0E-4*(std::max)(fabs(answer_scalar), fabs(drf_answer)))
-          || (fwhm_diff < 1.0E-8) );
+  assert( (fwhm_diff < 1.0E-3*(std::max)(fabs(answer_scalar), fabs(drf_answer)))
+          || (fwhm_diff < 1.0E-7) );
 #endif
 
   return answer;

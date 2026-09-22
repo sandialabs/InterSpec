@@ -34,12 +34,16 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "rapidxml/rapidxml.hpp"
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
@@ -58,7 +62,12 @@ namespace
 }//anonymous namespace
 
 
+const int Material::sm_xmlSerializationVersion = 0;
+
+
 Material::Material()
+  : density( 0.0f ),
+    source( kUser )
 {
 }
 
@@ -288,6 +297,227 @@ void Material::writeGadrasStyleMaterialFile( ostream &file ) const
       file << nfp.first->symbol << ending << 100.0*nfp.second << ending;
 
 }//void writeGadrasStyleMaterialFile( std::ostream file )
+
+
+rapidxml::xml_node<char> *Material::toXml( rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+
+  assert( parent && parent->document() );
+  if( !parent || !parent->document() )
+    throw runtime_error( "Material::toXml: invalid parent node." );
+
+  xml_document<char> * const doc = parent->document();
+  xml_node<char> * const base_node = doc->allocate_node( node_element, "MaterialDefinition" );
+  parent->append_node( base_node );
+
+  XmlUtils::append_version_attrib( base_node, sm_xmlSerializationVersion );
+
+  const char *source_str = "User";
+  switch( source )
+  {
+    case kGadras: source_str = "Gadras"; break;
+    case kNist:   source_str = "Nist";   break;
+    case kUser:   source_str = "User";   break;
+  }//switch( source )
+  XmlUtils::append_attrib( base_node, "source", source_str );
+
+  XmlUtils::append_string_node( base_node, "Name", name );
+  if( !description.empty() )
+    XmlUtils::append_string_node( base_node, "Description", description );
+
+  // "%.9g" has enough digits to exactly round-trip a float
+  char buffer[64];
+  snprintf( buffer, sizeof(buffer), "%.9g", density * PhysicalUnits::cm3 / PhysicalUnits::g );
+  XmlUtils::append_string_node( base_node, "Density", buffer );
+
+  auto add_component = [doc,base_node,&buffer]( const char *node_name, const string &symbol,
+                                                 const float fraction ){
+    xml_node<char> * const node = doc->allocate_node( node_element, node_name );
+    base_node->append_node( node );
+    XmlUtils::append_attrib( node, "Symbol", symbol );
+    snprintf( buffer, sizeof(buffer), "%.9g", fraction );
+    XmlUtils::append_attrib( node, "MassFraction", buffer );
+  };//add_component
+
+  for( const ElementFractionPair &el : elements )
+  {
+    if( el.first )
+      add_component( "Element", el.first->symbol, el.second );
+  }
+
+  for( const NuclideFractionPair &nuc : nuclides )
+  {
+    if( nuc.first )
+      add_component( "Nuclide", nuc.first->symbol, nuc.second );
+  }
+
+  return base_node;
+}//rapidxml::xml_node<char> *toXml( rapidxml::xml_node<char> *parent ) const
+
+
+std::shared_ptr<const Material> Material::fromXml( const rapidxml::xml_node<char> *node,
+                                                   const SandiaDecay::SandiaDecayDataBase *db )
+{
+  using namespace rapidxml;
+
+  if( !node )
+    throw runtime_error( "Material::fromXml: null node." );
+
+  if( !XML_NAME_COMPARE( node, "MaterialDefinition" ) )
+    throw runtime_error( "Material::fromXml: node is not <MaterialDefinition>." );
+
+  if( !db )
+    throw runtime_error( "Material::fromXml: decay database not available." );
+
+  XmlUtils::check_xml_version( node, sm_xmlSerializationVersion );
+
+  // The default constructor is private, so cant use make_shared
+  unique_ptr<Material> answer( new Material() );
+
+  answer->name = XmlUtils::get_string_node_value( node, "Name" );
+  if( answer->name.empty() )
+    throw runtime_error( "Material::fromXml: empty material name." );
+
+  const xml_node<char> * const desc_node = XML_FIRST_NODE( node, "Description" );
+  answer->description = desc_node ? SpecUtils::xml_value_str( desc_node ) : string();
+
+  const double density_g_cm3 = XmlUtils::get_float_node_value( node, "Density" );
+  if( !std::isfinite(density_g_cm3) || (density_g_cm3 < 0.0) )
+    throw runtime_error( "Material::fromXml: invalid density for '" + answer->name + "'." );
+  answer->density = static_cast<float>( density_g_cm3 * PhysicalUnits::g / PhysicalUnits::cm3 );
+
+  answer->source = kUser;
+  const xml_attribute<char> * const source_attrib = XML_FIRST_ATTRIB( node, "source" );
+  if( source_attrib && XML_VALUE_ICOMPARE( source_attrib, "Gadras" ) )
+    answer->source = kGadras;
+  else if( source_attrib && XML_VALUE_ICOMPARE( source_attrib, "Nist" ) )
+    answer->source = kNist;
+
+  auto symbol_and_fraction = []( const xml_node<char> * const comp, string &symbol, float &fraction ){
+    const xml_attribute<char> * const symbol_attrib = XML_FIRST_ATTRIB( comp, "Symbol" );
+    const xml_attribute<char> * const frac_attrib = XML_FIRST_ATTRIB( comp, "MassFraction" );
+    if( !symbol_attrib || !frac_attrib )
+      throw runtime_error( "Material::fromXml: component missing Symbol or MassFraction attribute." );
+
+    symbol = SpecUtils::xml_value_str( symbol_attrib );
+    if( !SpecUtils::parse_float( frac_attrib->value(), frac_attrib->value_size(), fraction )
+       || !std::isfinite(fraction) || (fraction < 0.0f) )
+      throw runtime_error( "Material::fromXml: invalid mass fraction '"
+                           + SpecUtils::xml_value_str( frac_attrib ) + "' for " + symbol + "." );
+  };//symbol_and_fraction
+
+  for( const xml_node<char> *comp = XML_FIRST_NODE( node, "Element" ); comp; comp = XML_NEXT_TWIN( comp ) )
+  {
+    string symbol;
+    float fraction = 0.0f;
+    symbol_and_fraction( comp, symbol, fraction );
+
+    const SandiaDecay::Element * const el = db->element( symbol );
+    if( !el )
+      throw runtime_error( "Material::fromXml: unknown element '" + symbol + "'." );
+    answer->elements.emplace_back( el, fraction );
+  }//for( loop over <Element> nodes )
+
+  for( const xml_node<char> *comp = XML_FIRST_NODE( node, "Nuclide" ); comp; comp = XML_NEXT_TWIN( comp ) )
+  {
+    string symbol;
+    float fraction = 0.0f;
+    symbol_and_fraction( comp, symbol, fraction );
+
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( symbol );
+    if( !nuc )
+      throw runtime_error( "Material::fromXml: unknown nuclide '" + symbol + "'." );
+    answer->nuclides.emplace_back( nuc, fraction );
+  }//for( loop over <Nuclide> nodes )
+
+  if( answer->elements.empty() && answer->nuclides.empty() )
+    throw runtime_error( "Material::fromXml: material '" + answer->name + "' has no components." );
+
+  return std::shared_ptr<const Material>( answer.release() );
+}//shared_ptr<const Material> fromXml(...)
+
+
+bool Material::operator==( const Material &rhs ) const
+{
+  return (name == rhs.name)
+         && (description == rhs.description)
+         && (density == rhs.density)
+         && (elements == rhs.elements)
+         && (nuclides == rhs.nuclides);
+}//bool operator==( const Material &rhs ) const
+
+
+bool Material::operator!=( const Material &rhs ) const
+{
+  return !(*this == rhs);
+}
+
+
+bool Material::sameComposition( const Material &lhs, const Material &rhs )
+{
+  return (lhs.name == rhs.name)
+         && (lhs.elements == rhs.elements)
+         && (lhs.nuclides == rhs.nuclides);
+}//bool sameComposition( const Material &lhs, const Material &rhs )
+
+
+void Material::equalEnough( const Material &lhs, const Material &rhs )
+{
+  auto close_enough = []( const float a, const float b ) -> bool {
+    const float larger = std::max( fabs(a), fabs(b) );
+    return (larger < 1.0E-12f) || (fabs(a - b) <= 1.0E-6f*larger);
+  };
+
+  if( lhs.name != rhs.name )
+    throw runtime_error( "Material name mismatch: '" + lhs.name + "' vs '" + rhs.name + "'" );
+
+  if( lhs.description != rhs.description )
+    throw runtime_error( "Material '" + lhs.name + "' description mismatch: '"
+                         + lhs.description + "' vs '" + rhs.description + "'" );
+
+  if( !close_enough( lhs.density, rhs.density ) )
+  {
+    const double cm3_per_g = PhysicalUnits::cm3 / PhysicalUnits::g;
+    throw runtime_error( "Material '" + lhs.name + "' density mismatch: "
+                         + std::to_string(lhs.density * cm3_per_g) + " vs "
+                         + std::to_string(rhs.density * cm3_per_g) + " g/cm3" );
+  }
+
+  if( lhs.elements.size() != rhs.elements.size() )
+    throw runtime_error( "Material '" + lhs.name + "' has different number of elements ("
+                         + std::to_string(lhs.elements.size()) + " vs "
+                         + std::to_string(rhs.elements.size()) + ")" );
+
+  for( size_t i = 0; i < lhs.elements.size(); ++i )
+  {
+    if( lhs.elements[i].first != rhs.elements[i].first )
+      throw runtime_error( "Material '" + lhs.name + "' element " + std::to_string(i) + " differs" );
+
+    if( !close_enough( lhs.elements[i].second, rhs.elements[i].second ) )
+      throw runtime_error( "Material '" + lhs.name + "' mass fraction of "
+                           + lhs.elements[i].first->symbol + " differs: "
+                           + std::to_string(lhs.elements[i].second) + " vs "
+                           + std::to_string(rhs.elements[i].second) );
+  }//for( size_t i = 0; i < lhs.elements.size(); ++i )
+
+  if( lhs.nuclides.size() != rhs.nuclides.size() )
+    throw runtime_error( "Material '" + lhs.name + "' has different number of nuclides ("
+                         + std::to_string(lhs.nuclides.size()) + " vs "
+                         + std::to_string(rhs.nuclides.size()) + ")" );
+
+  for( size_t i = 0; i < lhs.nuclides.size(); ++i )
+  {
+    if( lhs.nuclides[i].first != rhs.nuclides[i].first )
+      throw runtime_error( "Material '" + lhs.name + "' nuclide " + std::to_string(i) + " differs" );
+
+    if( !close_enough( lhs.nuclides[i].second, rhs.nuclides[i].second ) )
+      throw runtime_error( "Material '" + lhs.name + "' mass fraction of "
+                           + lhs.nuclides[i].first->symbol + " differs: "
+                           + std::to_string(lhs.nuclides[i].second) + " vs "
+                           + std::to_string(rhs.nuclides[i].second) );
+  }//for( size_t i = 0; i < lhs.nuclides.size(); ++i )
+}//void equalEnough( const Material &lhs, const Material &rhs )
 
 
 double Material::massFractionOfElementInMaterial( const SandiaDecay::Element * const element ) const
@@ -921,6 +1151,73 @@ std::shared_ptr<const Material> MaterialDB::materialFromChemicalFormula(
 
   return std::shared_ptr<const Material>( answer );
 }//shared_ptr<const Material> materialFromChemicalFormula(...)
+
+
+std::shared_ptr<const Material> MaterialDB::materialFromNameOrFormula(
+  const std::string &text,
+  const SandiaDecay::SandiaDecayDataBase *db )
+{
+  if( text.empty() )
+    return nullptr;
+
+  try
+  {
+    const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+    const std::shared_ptr<const Material> answer = matdb ? matdb->material( text ) : nullptr;
+    if( answer )
+      return answer;
+  }catch( std::exception & )
+  {
+    // Not a material name - maybe the user specified a chemical formula, like "U0.99Np0.01"
+  }
+
+  try
+  {
+    return materialFromChemicalFormula( text, db );
+  }catch( std::exception & )
+  {
+    // Not a chemical formula either
+  }
+
+  return nullptr;
+}//shared_ptr<const Material> materialFromNameOrFormula(...)
+
+
+std::shared_ptr<const Material> MaterialDB::materialFromDefinitionOrName(
+  const rapidxml::xml_node<char> *definition_node,
+  const std::string &name,
+  const SandiaDecay::SandiaDecayDataBase *db )
+{
+  if( definition_node )
+  {
+    try
+    {
+      const std::shared_ptr<const Material> defined = Material::fromXml( definition_node, db );
+      assert( defined );
+
+      const std::shared_ptr<const Material> from_db = materialFromNameOrFormula( defined->name, db );
+      if( from_db )
+      {
+        try
+        {
+          Material::equalEnough( *defined, *from_db );
+          return from_db;
+        }catch( std::exception & )
+        {
+          // The definition differs from the database (e.g., a user-modified density) - use it
+        }
+      }//if( from_db )
+
+      return defined;
+    }catch( std::exception & )
+    {
+      // Couldnt parse the definition (e.g., a nuclide symbol this version doesnt know) - fall
+      //  back to the name
+    }
+  }//if( definition_node )
+
+  return materialFromNameOrFormula( name, db );
+}//shared_ptr<const Material> materialFromDefinitionOrName(...)
 
 
 

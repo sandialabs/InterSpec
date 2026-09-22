@@ -41,6 +41,6 @@
 
 .OneOverR2Message
 {
-  color: blue;
+  color: var(--interspec-link-color);
   margin-top: 10px;
 }

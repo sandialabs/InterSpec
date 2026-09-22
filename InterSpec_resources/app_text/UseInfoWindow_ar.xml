@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">تحميل</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">ملف كبير جدا.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">ملف كبير جدا.</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">ورقة غش (PDF)</message>

@@ -38,7 +38,7 @@
 
 .RoundMenuIcon.InvertInDark.Wt-btn.RefLinesOptMenu.non-default
 {
-  background-color: red;
+  background-color: var(--interspec-warning-color);
 }
 
 .RefLinesOptions.ToolTabSection.ToolTabTitledColumn {
@@ -152,7 +152,7 @@
 
 .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
   margin-top: 5px;
-  background: #EEEEEE;
+  background: var(--interspec-header-background);
   text-align: center;
 }
 

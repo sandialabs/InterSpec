@@ -3,8 +3,8 @@ button, button:hover,
 {
   font-weight:bold;
   vertical-align: middle;
-  border:1px solid rgb(0,122,255);
-  color: rgb(0,122,255) !important;
+  border:1px solid var(--interspec-accent-color);
+  color: var(--interspec-accent-color) !important;
   background: none;
   border-radius: 5px;
   height: 23px;
@@ -22,7 +22,7 @@ button:hover, .submit:hover {
 
 button[disabled]
 {
-  color: #aaaaaa;
+  color: var(--interspec-disabled-text-color);
   opacity: 0.8;
   cursor: not-allowed;
   -webkit-filter: grayscale(100%);
@@ -68,7 +68,7 @@ img.WhiteIcon[disabled]
 .PhoneAuxWindowFooter > button, .PhoneAuxWindowFooter > button:hover
 {
   background: none;
-  color: rgb(0,122,255) !important;
+  color: var(--interspec-accent-color) !important;
   text-decoration: underline;
   border: none;
 }
@@ -90,7 +90,7 @@ img.WhiteIcon[disabled]
   background-repeat: no-repeat !important;
   background-position: 2px 3.5px  !important;
   background-size: 10px 16px  !important;
-  color: rgb(0,122,255) !important;
+  color: var(--interspec-accent-color) !important;
   text-decoration: underline;
   
   padding-left: 15px;
@@ -101,23 +101,23 @@ img.WhiteIcon[disabled]
 
 .CenterBtnInMblAuxWindowHeader
 {
-  border: 1px solid rgb(0,122,255) !important;
+  border: 1px solid var(--interspec-accent-color) !important;
 }
 
 ul.HeavyNavMenu > li.item, ul.HeavyNavMenuPhone > li.item
 {
   background: none;
-  border: 1px solid rgb(0,122,255);
+  border: 1px solid var(--interspec-accent-color);
 }
 
 ul.HeavyNavMenu > li.item > a, ul.HeavyNavMenuPhone > li.item > a
 {
-  color: rgb(0,122,255) !important;
+  color: var(--interspec-accent-color) !important;
 }
 
 ul.HeavyNavMenu > li.itemselected, ul.HeavyNavMenuPhone > li.itemselected
 {
-  color: white !important;
-  background: rgb(0,122,255);
-  border: 1px solid white;
+  color: var(--interspec-background-color) !important;
+  background: var(--interspec-accent-color);
+  border: 1px solid var(--interspec-background-color);
 }

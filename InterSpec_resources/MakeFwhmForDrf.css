@@ -30,8 +30,8 @@
 
 .MakeFwhmForDrf .ErrTxt
 {
-  color: red;
-  border: 1px solid yellow;
+  color: var(--interspec-error-color);
+  border: 1px solid var(--interspec-warning-color);
   padding: 5px;
 }
 
@@ -43,7 +43,7 @@
 
 .MakeFwhmForDrf .PeakTable
 {
-  border: 2px solid #e1e1e1;
+  border: 2px solid var(--interspec-border-color);
 }
 /* "Fit FWHM" + "Original FWHM" - only present where the tool opens on the DRFs existing FWHM (the
    "Modify Detector Response" dialog), so fitting to the spectrum is an explicit request.  They sit

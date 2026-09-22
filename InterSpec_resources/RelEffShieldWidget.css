@@ -1,7 +1,7 @@
 .RelEffShieldWidget {
   font-size: smaller;
   
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   padding-block-start: 0px;
   padding-inline-start: 5px;
   padding-inline-end: 5px;
@@ -39,7 +39,7 @@
 .RelEffShieldWidget input[type="text"],
 .RelEffShieldWidget input[type="number"] {
   font-size: smaller;
-  border: 1px solid #ccc; /* Add a border for visual feedback */
+  border: 1px solid var(--interspec-border-color); /* Add a border for visual feedback */
   padding: 2px; /* Add some padding inside the input */
   width: 65px;
 }

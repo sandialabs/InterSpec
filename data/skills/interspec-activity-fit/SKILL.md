@@ -94,6 +94,7 @@ Shielding layers are ordered from innermost (closest to source) to outermost:
 
 - If `radial_thickness` is specified, it's fixed. If omitted, thickness is fit.
 - Use `fit_thickness: true` to explicitly fit even when a starting value is provided.
+- Add `density_g_per_cm3` when the real object's density differs from the material's default (compacted powder, an alloy variant); the composition is unchanged.
 - Material can be an element symbol (Fe, Pb) or a material name from `get_materials`.
 
 ### Trace Sources

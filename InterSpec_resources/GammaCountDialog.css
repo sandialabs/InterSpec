@@ -30,14 +30,14 @@
 
 .GammaCountDialog .line-below
 {
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--interspec-border-color);
     padding-bottom: 7px;
     margin-bottom: 5px;
 }
 
 .GammaCountDialog .line-above
 {
-    border-top: 1px solid #ddd;
+    border-top: 1px solid var(--interspec-border-color);
     padding-top: 7px;
     margin-top: 5px;
 }

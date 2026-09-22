@@ -187,6 +187,7 @@ namespace
               m_origColor = m_origPeak->lineColor();
           }catch(...){}
         }
+        addStyleClass( "PeakColorSwatch" );
         updateRender( index, flags );
       }//EditWidget constructor
       
@@ -209,9 +210,9 @@ namespace
         else
         {
           if( ss.empty() || ss=="none" )
-            setAttributeValue( "style", "margin: 5px; background-color: null; border: 1px #e1e1e1" );
+            setAttributeValue( "style", "" );
           else
-            setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: " + ss );
+            setAttributeValue( "style", "background-color: " + ss );
         }
       }//void setCssCollor( WString &s )
       
@@ -228,6 +229,7 @@ namespace
         {
           auto owned = m_color->removeFromParent();
           m_color = nullptr;
+          removeStyleClass( "HasPicker" );
         }
         updateRender(index,WFlags<ViewItemRenderFlag>());
       }
@@ -249,7 +251,8 @@ namespace
           if( !m_color )
           {
             m_color = addNew<ColorSelect>( ColorSelect::PrefferNative );
-            setAttributeValue( "style", "margin: 0px; background-color: null;" );
+            setAttributeValue( "style", "" );
+            addStyleClass( "HasPicker" );
             m_color->setAttributeValue("style", "height: 15px;" );
             m_color->cssColorChanged().connect( this, [this]( const std::string &color ){ colorSelected( color ); } );
           }
@@ -269,12 +272,12 @@ namespace
             
             const auto &p = model->peak( index );
             if( p->lineColor().empty() )
-              setAttributeValue( "style", "margin: 5px; background-color: null; border: 1px #e1e1e1" );
+              setAttributeValue( "style", "" );
             else
-              setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: " + p->lineColor() );
+              setAttributeValue( "style", "background-color: " + p->lineColor() );
           }catch(...)
           {
-            setAttributeValue( "style", "margin: 5px; border: 1px #e1e1e1; background-color: grey" );
+            setAttributeValue( "style", "background-color: var(--interspec-fainter-text-color)" );
           }
         }
       }//void updateRender(...)

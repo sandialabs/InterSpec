@@ -86,8 +86,11 @@ namespace ShieldingSourceFitCalc
    - 20230705: no version changed, but converted from being member of ShieldingSelect to ShieldingInfo
    - 20241209: Depreciated <FitMassFraction> element, and made this a per-nuclide quantity by adding a <Fit> element under
      the <Nuclide> node.  Also added a "FitOtherFraction" attribute
+   - 20260920, version 0.3: added <MaterialDefinition> (see Material::toXml) under <Material>, holding the full
+     material definition, so a user-modified density round-trips, and materials removed from the database
+     still load.  Older versions ignore it, and look <Name> up in the MaterialDB as before.
    */
-  const int ShieldingInfo::sm_xmlSerializationMinorVersion = 2;
+  const int ShieldingInfo::sm_xmlSerializationMinorVersion = 3;
 
   
   /** Change log:
@@ -784,7 +787,12 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       value = doc->allocate_string( mat.c_str(), mat.size() + 1 );
       node = doc->allocate_node( rapidxml::node_element, name, value );
       material_node->append_node( node );
-      
+
+      // The full definition lets the material be reconstructed even if the user changed its
+      //  density, or it is no longer in the MaterialDB (older versions just ignore this node).
+      if( m_material )
+        m_material->toXml( material_node );
+
       //Lambda to add in dimension elements
       auto addDimensionNode = [this,doc,material_node]( const char *name, double val, bool fit )
                                                        -> rapidxml::xml_node<char> * {
@@ -1124,34 +1132,17 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       
       const string material_name( name_node->value(), name_node->value() + name_node->value_size() );
       m_material.reset();
-      if( !material_name.empty() )
+
+      // Since version 0.3 the full material definition is included, which carries a user-modified
+      //  density, and lets materials no longer in the MaterialDB still load; before that we only
+      //  had the name (which may also be a chemical formula).
+      const rapidxml::xml_node<char> * const def_node = XML_FIRST_NODE( material_node, "MaterialDefinition" );
+      if( def_node || !material_name.empty() )
       {
-        const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-        std::shared_ptr<const Material> mat;
-
-        try
-        {
-          mat = matdb->material( material_name );
-        }catch( std::exception & )
-        {
-        }
-
-        if( !mat )
-        {
-          // Maybe the user specified a chemical formula, like "U0.99Np0.01"
-          try
-          {
-            const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-            mat = MaterialDB::materialFromChemicalFormula( material_name, db );
-          }catch( std::exception & )
-          {
-          }
-        }//if( !mat )
-
-        if( !mat )
+        m_material = MaterialDB::materialFromDefinitionOrName( def_node, material_name, db );
+        if( !m_material )
           throw runtime_error( "Invalid shielding material: '" + material_name + "'" );
-        m_material = mat;
-      }//if( !material_name.empty() )
+      }//if( def_node || !material_name.empty() )
       
       
       int required_dim = 0;
@@ -1367,12 +1358,13 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     // "D1": "D2": Thickness, depth, etc
     // "FD1": "FD2": fit the corresponding dimensions
     // "N": material name
+    // "ND": material density, in g/cm3 - only present if the user changed it from the materials default
     // "AN": atomic number
     // "FAN": fit atomic number - if not specified than false
     // "AD": areal density
     // "FAD": fit areal density - if not specified than false
     // ...
-    
+
     string answer = "V=1";
     
     if( m_forFitting )
@@ -1401,9 +1393,23 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           material.erase(open_pos, close_pos - open_pos + 1);
       }
       SpecUtils::trim( material );
-      
+
       answer += "&N=" + material;
-      
+
+      // Only write the density if the user changed it from the materials default, to keep URLs short
+      if( m_material )
+      {
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        const shared_ptr<const Material> base = MaterialDB::materialFromNameOrFormula( m_material->name, db );
+        const float base_density = base ? base->density : m_material->density;
+        const float larger = std::max( fabs(base_density), fabs(m_material->density) );
+        if( fabs(m_material->density - base_density) > 1.0E-6f*larger )
+        {
+          const double density_g_cm3 = m_material->density * PhysicalUnits::cm3 / PhysicalUnits::g;
+          answer += "&ND=" + SpecUtils::printCompact( density_g_cm3, 7 );
+        }
+      }//if( m_material )
+
       using PhysicalUnits::cm;
         
       switch( m_geometry )
@@ -1462,12 +1468,13 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     // "D1": "D2": Thickness, depth, etc
     // "FD1": "FD2": fit the cooresponding dimensions
     // "N": material name
+    // "ND": material density, in g/cm3 - only present if the user changed it from the materials default
     // "AN": atomic number
     // "FAN": fit atomic number - if not specified than false
     // "AD": areal density
     // "FAD": fit areal density - if not specified than false
     // ...
-    
+
     const map<string,string> values = AppUtils::query_str_key_values( query_str );
     
     auto iter = values.find( "V" );
@@ -1610,25 +1617,25 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         m_material = nullptr;
       }else
       {
-        const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-        if( !matdb )
-          throw runtime_error( "ShieldingInfo::handleAppUrl: MaterialDB not available" );
-
-        std::shared_ptr<const Material> mat = matdb->material( materialstr );
-
-        if( !mat )
-        {
-          try
-          {
-            const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-            mat = MaterialDB::materialFromChemicalFormula( materialstr, db );
-          }catch( std::exception & )
-          {
-          }
-        }//if( !mat )
-
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        std::shared_ptr<const Material> mat = MaterialDB::materialFromNameOrFormula( materialstr, db );
         if( !mat )
           throw runtime_error( "Invalid material name '" + materialstr + "'" );
+
+        // A user-modified density is carried separately from the material name
+        iter = values.find( "ND" );
+        if( iter != end(values) )
+        {
+          float density_g_cm3 = 0.0f;
+          if( !SpecUtils::parse_float( iter->second.c_str(), iter->second.size(), density_g_cm3 )
+             || (density_g_cm3 <= 0.0f) )
+            throw runtime_error( "ShieldingInfo invalid material density '" + iter->second + "' in URI" );
+
+          auto modified = make_shared<Material>( *mat );
+          modified->density = static_cast<float>( density_g_cm3 * PhysicalUnits::g / PhysicalUnits::cm3 );
+          mat = modified;
+        }//if( a density was specified )
+
         m_material = mat;
       }//if( !materialstr.empty() ) / else
       
@@ -1658,9 +1665,17 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
 
     if( (!lhs.m_material) != (!rhs.m_material) )
       throw runtime_error( "ShieldingInfo LHS material validity != RHS material validity" );
-    
-    if( lhs.m_material && (lhs.m_material->name != rhs.m_material->name) )
-      throw runtime_error( "ShieldingInfo LHS material name != RHS material name" );
+
+    if( lhs.m_material )
+    {
+      try
+      {
+        Material::equalEnough( *lhs.m_material, *rhs.m_material );
+      }catch( std::exception &e )
+      {
+        throw runtime_error( "ShieldingInfo LHS material != RHS material: " + string(e.what()) );
+      }
+    }//if( lhs.m_material )
     
     
     

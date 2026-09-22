@@ -84,6 +84,14 @@
     font-size: 12px;
     margin-left: 10px;
   }
+  
+  .qr-code-note{
+    font-weight: normal;
+    font-style: italic;
+    font-size: 11px;
+    margin-left: 10px;
+    margin-top: 4px;
+  }
 
     </style>
   </head>
@@ -108,6 +116,7 @@
     <div class="qr-code-title">${qr-code-title}</div>
     <div class="qr-code">${qr-code}</div>
     <div class="qr-code-summary">${qr-code-summary}</div>
+    <div class="qr-code-note">${qr-code-note}</div>
   </div>
 
   </body>

@@ -161,7 +161,8 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   {
     WText *t = contents()->addNew<WText>( "Changes will be applied to<br />" + applyToTxt, Wt::TextFormat::XHTML );
     t->setInline( false );
-    t->setAttributeValue( "style", "color: #737373; width: auto; text-align: center;" );
+    t->addStyleClass( "FainterTxt" );
+    t->setAttributeValue( "style", "width: auto; text-align: center;" );
   }
   
   

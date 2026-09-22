@@ -2,7 +2,7 @@
 {
   border: none;
   font-size: 16px;
-  background-color: #fff;
+  background-color: var(--interspec-background-color);
   border-radius: 10px;
   /* We have to set min width in the C++ */
   overflow: hidden;
@@ -168,15 +168,15 @@ dialog
   -webkit-appearance: none;
   border-radius: 0;
   background: none;
-  color: #157afb;
+  color: var(--interspec-accent-color);
   /* color: rgb(18,101,200); */
-  border-top: 1px solid #ccc;
+  border-top: 1px solid var(--interspec-border-color);
   margin: 0;
   padding: 12px;
   line-height: normal;
   height: auto;
   
-  border-right: 1px solid #ccc;
+  border-right: 1px solid var(--interspec-border-color);
 }
 
 /* Get rid of border on the right of the very last button */
@@ -189,5 +189,5 @@ dialog
 .simple-dialog .footer button:hover,
 .simple-dialog .footer a.simple-dialog-btn:hover
 {
-  color: rgb(99, 161, 236);
+  color: var(--interspec-link-color);
 }

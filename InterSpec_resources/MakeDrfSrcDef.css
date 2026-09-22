@@ -1,5 +1,5 @@
 .MakeDrfSrcDef {
-  border: 1px solid grey;
+  border: 1px solid var(--interspec-outline-color);
   padding: 3px;
   display: inline-block;
 }
@@ -20,5 +20,5 @@
 }
 
 .SrcInputError {
-  color: red;
+  color: var(--interspec-error-color);
 }

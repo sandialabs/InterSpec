@@ -1352,6 +1352,10 @@ Further investigation of top returned candidates is required to make sure they m
                 "type": "boolean",
                 "description": "Whether to fit thickness as a parameter. Default: true if radial_thickness not specified, false otherwise."
               },
+              "density_g_per_cm3": {
+                "type": "number",
+                "description": "Optional: density of the material in g/cm3, if the actual object differs from the material's default (e.g., compacted powder, or an alloy variant). The composition is unchanged."
+              },
               "radius": {
                 "type": "string",
                 "description": "For CylinderSideOn or CylinderEndOn geometry: cylinder radius with units (e.g., '2.5 cm')"
@@ -1546,6 +1550,10 @@ Further investigation of top returned candidates is required to make sure they m
       "fit_thickness": {
         "type": "boolean",
         "description": "For `add_shielding`: explicit control over whether to fit thickness."
+      },
+      "density_g_per_cm3": {
+        "type": "number",
+        "description": "For `add_shielding`: optional density of the material in g/cm3, if the actual object differs from the material's default. The composition is unchanged."
       },
       "radius": {
         "type": "string",

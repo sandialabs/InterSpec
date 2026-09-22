@@ -63,7 +63,7 @@ CSS variables InterSpec will define for colors:
 }
 
 .ShieldingSourceFitPlot .refline {
-  stroke: grey;
+  stroke: var(--interspec-fainter-text-color, #6e6e6e);
   stroke-width: 1;
   stroke-dasharray: 5,5;
   fill: none;
@@ -84,9 +84,9 @@ div.ShieldingSourceFitPlotTooltip {
   position: fixed;
   padding: 6px;
   font: 12px sans-serif;
-  background: #ffffcc;
+  background: var(--interspec-tooltip-background, #FFFFA3);
   border: 0px;
   border-radius: 8px;
   pointer-events: none;
-  color: #444422;
+  color: var(--interspec-tooltip-text-color, #555555);
 }

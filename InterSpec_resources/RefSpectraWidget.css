@@ -36,12 +36,12 @@
 
 .RefSpectraWidget .RefSpectraTreeView
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 .RefSpectraStack
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   border-left: none;
 }
 
@@ -58,7 +58,7 @@
   padding-left: 5px;
   height: 23px;
   font-size: 13px;
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
   border-top: none;
 }
 
@@ -167,7 +167,7 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
 
 .ErrorLoadingText
 {
-  color: red;
+  color: var(--interspec-error-color);
 }
 
 .RefSpectraShowAsGroup
@@ -180,6 +180,6 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
 
 .RefSpectraWidget .Wt-header.headerrh.cwidth
 {
-  background-color: #EEEEEE;
+  background-color: var(--interspec-header-background);
 }
 

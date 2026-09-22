@@ -4,8 +4,8 @@
 }
 
 .searchBox {
-  background: url(../InterSpec_resources/images/search-white.png) no-repeat 7px 2px #fcfcfc;
-  border: 1px solid #d1d1d1;
+  background: url(../InterSpec_resources/images/search-white.png) no-repeat 7px 2px var(--interspec-input-background);
+  border: 1px solid var(--interspec-border-color);
   width: 150px;
   padding: 0px 15px 0px 35px;
   -webkit-border-radius: 20px;
@@ -28,7 +28,7 @@
 }
 
 .BorderedHelpTable td, .BorderedHelpTable th {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
   
   padding-top: 3px;
   padding-bottom: 3px;

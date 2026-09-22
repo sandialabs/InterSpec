@@ -1206,23 +1206,23 @@ void RelEffFile::initDetectors()
     }
     
     if( m_responses.empty() )
-      credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
+      credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-drfs-in-file") ).toUTF8() );
     
     for( const auto &det : m_responses )
       m_detectorSelect->addItem( det->name() );
   }else
   {
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) )
-    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
+    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-no-rel-eff-drfs-in-file") ).toUTF8() );
 #else
-    credits.push_back( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
+    credits.push_back( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-couldnt-open-drf-file") ).toUTF8() );
 #endif
     m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("ref-no-drfs-available") ) );
     m_detectorSelect->hide();
   }//if( file_opened )
   
   if( file_opened && m_responses.empty() )
-    credits.push_back( WString::tr("<span style=\"color:red;\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
+    credits.push_back( WString::tr("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("ref-file-has-no-drfs") ).toUTF8() );
   
   string creditHtml;
   for( string credit : credits )
@@ -1975,7 +1975,7 @@ void GadrasDirectory::initDetectors()
   
   if( !SpecUtils::is_directory( basedir ) )
   {
-    m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
+    m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg( WString::tr("reds-err-not-valid-dir") ) );
     m_msg->show();
     m_detectorSelect->addItem( WString("<{1}>").arg( WString::tr("reds-invalid-dir") ) );
     m_detectorSelect->setCurrentIndex( 0 );
@@ -2033,7 +2033,7 @@ void GadrasDirectory::initDetectors()
     
     if( m_responses.empty() )
     {
-      m_msg->setText( WString("<span style=\"color:red;\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
+      m_msg->setText( WString("<span class=\"ErrorTxt\">{1}</span>").arg("reds-recursive-no-drfs-in-dir") );
       m_msg->show();
     }else
     {
@@ -2110,7 +2110,7 @@ DetectorDisplay::DetectorDisplay( InterSpec *specViewer,
   addNew<WLabel>( WString::tr("detector-label") );
   const bool isMobile = (m_interspec && m_interspec->isMobile());
 
-  WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+  WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
                 .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
 
   m_text = addNew<WText>( txt, Wt::TextFormat::XHTML );
@@ -2159,7 +2159,7 @@ void DetectorDisplay::setDetector( std::shared_ptr<DetectorPeakResponse> det )
   }else
   {
     const bool isMobile = (m_interspec && m_interspec->isMobile());
-    WString txt = WString("<font style=\"font-weight:100;color:#CFCFCF;\">&lt;{1}&gt;</font>")
+    WString txt = WString("<span class=\"FainterTxt\" style=\"font-weight:100;\">&lt;{1}&gt;</span>")
                   .arg( WString::tr(isMobile ? "app-det-select-txt-mobile" : "app-det-select-txt") );
     m_text->setText( txt );
   }
@@ -3003,9 +3003,19 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 
     try
     {
-      const string url = "interspec://drf/specify?" + Wt::Utils::urlEncode(m_detector->toAppUrl());
-      QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
+      const string url = m_detector->toAppUrlQr();
+      SimpleDialog *dialog = QrCode::displayTxtAsQrCode( url, WString::fromUTF8(m_detector->name()),
                                  WString::fromUTF8(m_detector->description()) );
+
+      // The URL carries the detector's shape, but a Monte-Carlo response is ~17 KB deflated - far
+      //  past any QR code - so say so rather than letting the recipient believe they received the
+      //  characterized detector.
+      if( dialog && m_detector->ceeloResponse() )
+      {
+        WText *note = dialog->contents()->addNew<WText>( WString::tr("ds-qr-no-mc-note") );
+        note->addStyleClass( "DrfQrNoMcNote" );
+        note->setInline( false );
+      }
     }catch( std::exception &e )
     {
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -3068,7 +3078,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
 void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> inputdrfs,
                                        WString mainMsgHtml,
                                        string creditsHtml,
-                                       std::function<void()> saveDrfsCallBack )
+                                       std::function<void()> saveDrfsCallBack,
+                                       DrfSelect::ChooseDrfHooks hooks )
 {
   wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
   
@@ -3214,6 +3225,10 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     credits->addStyleClass( "DrfFileSelectCredits" );
   }//if( !descrip_html.empty() )
 
+  // Caller-specific controls sit between what the DRF *is* and what to do with it.
+  if( hooks.addContent )
+    hooks.addContent( dialog->contents() );
+  
   const bool makeDrfsSaveCb = !!saveDrfsCallBack;
   const bool makeSerialNumCb = (meas && !meas->instrument_id().empty());
   const bool makeModelCb = (meas
@@ -3263,6 +3278,12 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
     if( !drf || !interspec )
       return;
       
+    // Before the DB write and before it is applied: a hook that modifies the DRF changes its hash,
+    //  which is the key the "Previous" row is stored under, so it has to run first or the stored
+    //  detector is not the one the user gets.
+    if( hooks.beforeAccept )
+      hooks.beforeAccept( drf );
+    
     auto sql = interspec->sql();
     const Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( drf, user.id(), sql );
@@ -3290,6 +3311,10 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
         DrfSelect::setUserPrefferedDetector( drf, sql, user, preftype, meas );
       } ) );
     }//if( m_defaultForDetectorModel and is checked )
+    
+    // Last, so any follow-up the caller offers is on top of a detector already in use and saved.
+    if( hooks.afterAccept )
+      hooks.afterAccept( drf );
   } );
   
   if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
@@ -3320,6 +3345,51 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
 }//createChooseDrfDialog(...)
 
 
+namespace
+{
+/** The detector-modeling choices offered when an app-URL brings in a DRF that knows its physical
+ shape.  A URL can never carry a Monte-Carlo response (~17 KB deflated, far past a QR code), so the
+ shape arrives inert - these are the ways to make it count.  Ordered cheapest first; the index is
+ the combo index.
+ */
+enum class UrlDrfModeling : int
+{
+  /** Leave the DRF as the classic far-field curve, accurate only at the reference location it was
+   characterized at.  The geometry is still stored with the detector.
+   */
+  FlatDisk = 0,
+  
+  /** EFFTRAN-style transfer through the geometry, anchored on the DRF's own curve.  Instant and
+   deterministic, and what every other geometry-bearing import does - see the
+   CeeLoUtils::attachCurveTransferResponse call sites.
+   */
+  GeometryTransfer = 1,
+  
+  /** Monte Carlo of only the on-axis energy backbone, with the ray-traced kernel carrying the
+   distance/angle transfer - roughly a tenth the work of a full characterization.
+   */
+  PartialMc = 2,
+  
+  /** A full characterization over the general profile. */
+  StandardMc = 3,
+  
+  /** A full characterization with the extra near-field detail of the contact profile. */
+  ExtendedMc = 4
+};//enum class UrlDrfModeling
+
+
+/** Whether a choice needs a Monte-Carlo run (and so the accuracy control, and the hand-off to the
+ tool that can show progress) rather than being instant.
+ */
+bool url_modeling_needs_mc( const UrlDrfModeling choice )
+{
+  return (choice == UrlDrfModeling::PartialMc)
+         || (choice == UrlDrfModeling::StandardMc)
+         || (choice == UrlDrfModeling::ExtendedMc);
+}//url_modeling_needs_mc(...)
+}//namespace
+
+
 void DrfSelect::handle_app_url_drf( const std::string &url_query )
 {
   try
@@ -3329,7 +3399,145 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
     
     assert( drf->isValid() );
     
-    DrfSelect::createChooseDrfDialog( {drf}, "DRF received from external program.", "" );
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
+      interspec->useMessageResourceBundle( "DrfSelect" );
+    
+    // A URL never carries a Monte-Carlo response, so a DRF that arrives knowing its shape has a
+    //  choice to make about what that shape is used for.  Ask it here, where the user already is,
+    //  rather than leaving the detector a flat disk and hoping they find the Modify dialog.
+    const bool geom_only = (drf->geometry() && !drf->ceeloResponse() && !drf->isFixedGeometry());
+    
+    const WString msg = WString::tr( geom_only ? "ds-url-drf-geom-only" : "ds-url-drf-received" );
+    
+    ChooseDrfHooks hooks;
+    
+    if( geom_only )
+    {
+      // Shared by the hooks below: the combos live in the dialog, so they are reached through
+      //  observing_ptrs that null themselves if the dialog goes first.
+      auto modeling = make_shared<Wt::Core::observing_ptr<WComboBox>>();
+      auto accuracy = make_shared<Wt::Core::observing_ptr<WComboBox>>();
+      
+      hooks.addContent = [modeling,accuracy]( WContainerWidget *parent ){
+        WContainerWidget *row = parent->addNew<WContainerWidget>();
+        row->addStyleClass( "DrfUrlModelingRow" );
+        
+        WLabel *label = row->addNew<WLabel>( WString::tr("ds-url-modeling-label") );
+        WComboBox *combo = row->addNew<WComboBox>();
+        label->setBuddy( combo );
+        
+        combo->addItem( WString::tr("ds-url-modeling-flat") );
+        combo->addItem( WString::tr("ds-url-modeling-transfer") );
+        combo->addItem( WString::tr("ds-url-modeling-partial-mc") );
+        combo->addItem( WString::tr("ds-url-modeling-standard-mc") );
+        combo->addItem( WString::tr("ds-url-modeling-extended-mc") );
+        combo->setCurrentIndex( static_cast<int>(UrlDrfModeling::GeometryTransfer) );
+        
+        // Its own row: it qualifies the choice above rather than sitting beside it, and only
+        //  appears once a Monte Carlo is actually going to run.
+        WContainerWidget *accRow = parent->addNew<WContainerWidget>();
+        accRow->addStyleClass( "DrfUrlModelingRow" );
+        
+        WLabel *accLabel = accRow->addNew<WLabel>( WString::tr("ds-url-accuracy-label") );
+        WComboBox *acc = accRow->addNew<WComboBox>();
+        accLabel->setBuddy( acc );
+        acc->addItem( WString::tr("ds-url-accuracy-fast") );
+        acc->addItem( WString::tr("ds-url-accuracy-normal") );
+        acc->addItem( WString::tr("ds-url-accuracy-thorough") );
+        acc->setCurrentIndex( 1 );  //Normal
+        accRow->hide();
+        
+        // Most people meeting this dialog will not know what any of the options mean, so say what
+        //  the selected one does, right here.
+        WText *desc = parent->addNew<WText>( WString::tr("ds-url-modeling-desc-transfer") );
+        desc->addStyleClass( "DrfUrlModelingDesc" );
+        desc->setInline( false );
+        
+        combo->changed().connect( combo, [combo,desc,accRow](){
+          const UrlDrfModeling choice = static_cast<UrlDrfModeling>( combo->currentIndex() );
+          
+          const char *key = "ds-url-modeling-desc-transfer";
+          switch( choice )
+          {
+            case UrlDrfModeling::FlatDisk:         key = "ds-url-modeling-desc-flat";        break;
+            case UrlDrfModeling::GeometryTransfer: key = "ds-url-modeling-desc-transfer";    break;
+            case UrlDrfModeling::PartialMc:        key = "ds-url-modeling-desc-partial-mc";  break;
+            case UrlDrfModeling::StandardMc:       key = "ds-url-modeling-desc-standard-mc"; break;
+            case UrlDrfModeling::ExtendedMc:       key = "ds-url-modeling-desc-extended-mc"; break;
+          }
+          desc->setText( WString::tr(key) );
+          
+          accRow->setHidden( !url_modeling_needs_mc(choice) );
+        } );
+        
+        *modeling = combo;
+        *accuracy = acc;
+      };//hooks.addContent
+      
+      // Runs before the DB write, so what gets stored is the detector the user chose - attaching a
+      //  response changes the hash the "Previous" row is keyed on.
+      hooks.beforeAccept = [modeling]( shared_ptr<DetectorPeakResponse> accepted ){
+        if( !accepted )
+          return;
+        
+        // Default to the transfer if the combo is somehow gone: it is what every other
+        //  geometry-bearing import gives, and costs nothing.
+        const UrlDrfModeling choice = (*modeling)
+                  ? static_cast<UrlDrfModeling>( (*modeling)->currentIndex() )
+                  : UrlDrfModeling::GeometryTransfer;
+        
+        // A Monte-Carlo run happens after the detector is in use (see afterAccept); it needs a seed
+        //  with no response attached, which is exactly what we have here.
+        if( choice == UrlDrfModeling::GeometryTransfer )
+          CeeLoUtils::attachCurveTransferResponse( *accepted );
+      };//hooks.beforeAccept
+      
+      hooks.afterAccept = [modeling,accuracy]( shared_ptr<DetectorPeakResponse> accepted ){
+        if( !accepted || !(*modeling) )
+          return;
+        
+        const UrlDrfModeling choice = static_cast<UrlDrfModeling>( (*modeling)->currentIndex() );
+        if( !url_modeling_needs_mc(choice) )
+          return;
+        
+        // QuickMc's generation forces the far-field profile, so the profile only distinguishes the
+        //  two full characterizations.
+        const MakeMcResponseForDrf::Method method = (choice == UrlDrfModeling::PartialMc)
+                        ? MakeMcResponseForDrf::Method::QuickMc
+                        : MakeMcResponseForDrf::Method::FullMc;
+        const ceelo::ResponseProfile profile = (choice == UrlDrfModeling::ExtendedMc)
+                        ? ceelo::ResponseProfile::Contact
+                        : ceelo::ResponseProfile::General;
+        
+        MakeMcResponseForDrf::Precision precision = MakeMcResponseForDrf::Precision::Normal;
+        if( *accuracy )
+        {
+          switch( (*accuracy)->currentIndex() )
+          {
+            case 0:  precision = MakeMcResponseForDrf::Precision::Fast;     break;
+            case 2:  precision = MakeMcResponseForDrf::Precision::Thorough; break;
+            default: precision = MakeMcResponseForDrf::Precision::Normal;   break;
+          }
+        }//if( *accuracy )
+        
+        // Minutes of work, so it goes to the tool that already has progress, ETA and cancel -
+        //  opened on the right tab with the run already started, so the user does not have to know
+        //  the tool exists, let alone how to drive it.
+        InterSpec *viewer = InterSpec::instance();
+        if( !viewer )
+          return;
+        
+        DrfModifyWindow *window = viewer->showDrfModifyWindow( accepted );
+        if( !window || !window->tool() )
+          return;
+        
+        if( !window->tool()->startMcCharacterization( method, profile, precision ) )
+          passMessage( WString::tr("ds-url-mc-not-started"), WarningWidget::WarningMsgHigh );
+      };//hooks.afterAccept
+    }//if( geom_only )
+    
+    DrfSelect::createChooseDrfDialog( {drf}, msg, "", nullptr, hooks );
   }catch( std::exception &e )
   {
     wApp->log( "error" ) << "App URL was invalid DRF: " << e.what();

@@ -1,178 +1,103 @@
-button[disabled] {
-  color: rgb(160,160,160); 
-  background-color: rgb(110,110,110);
-  opacity: 1.0;
-  -webkit-filter: grayscale(0%);
-  filter: grayscale(0%);
+/* InterSpec: an application to analyze spectral gamma radiation data.
+
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+/* =============================================================================
+   InterSpec colour theme: the DARK palette.
+
+   Loaded on top of themes/default/default.css when a colour theme selects the
+   "dark" CSS theme.  It re-declares every token from default.css (see there for
+   what each one is for); the values below are what changes.  Keep the two
+   lists identical - a unit test checks it.
+   ============================================================================= */
+:root {
+  /* ---- Surfaces ---- */
+  --interspec-background-color: rgb(44,45,48);
+  --interspec-input-background: rgb(59,60,63);
+  --interspec-panel-background: rgb(70,70,77);
+  --interspec-header-background: rgb(80,81,94);
+  --interspec-alt-row-background: rgba(140,200,200,0.08); /* the same cool cast, at dark-theme strength */
+  --interspec-popup-background: rgb(59,59,66);
+  --interspec-tooltip-background: rgb(70,70,72);
+  --interspec-tooltip-text-color: rgb(220,220,220);
+  --interspec-tooltip-border-color: rgb(100,100,102);
+  --interspec-dialog-cover-color: rgb(110,110,110);
+  --interspec-titlebar-background: rgb(96,95,100);        /* rgb(107,106,111) gave 4.3:1 for the title text */
+  --interspec-titlebar-hover-background: rgb(133,133,133);
+
+  /* ---- Text ---- */
+  --interspec-text-color: white;
+  --interspec-label-color: rgb(197,198,201);
+  --interspec-secondary-text-color: #b8b9bc;
+  --interspec-fainter-text-color: #9d9d9d;
+  --interspec-disabled-text-color: rgb(165,165,168);   /* muted, but still legible (3.5:1 on the disabled surface) */
+  --interspec-disabled-background: rgb(74,75,78);
+
+  /* ---- Lines ---- */
+  --interspec-border-color: rgb(136,136,136);
+  --interspec-outline-color: #a6a6a6;
+
+  /* ---- Interactive ---- */
+  --interspec-link-color: rgb(100,170,255);            /* rgb(18,101,200) only reached 2.4:1 on this background */
+  --interspec-accent-color: rgb(64,156,255);
+  --interspec-highlight-background: rgba(64,156,255,0.25);
+  --interspec-selected-background: rgb(18,101,200);
+  --interspec-selected-text-color: white;
+  --interspec-hover-background: rgba(255,255,255,0.12);
+  --interspec-button-background: rgb(86,88,90);
+  --interspec-button-hover-background: rgb(100,102,104); /* lighter than the button, and keeps its text at 4.6:1 */
+  --interspec-button-border-color: rgb(106,107,109);
+  --interspec-button-text-color: rgb(230,230,230);
+  --interspec-menubar-background: rgb(65,65,65);
+  --interspec-menubar-active-color: rgb(18,101,200);
+  --interspec-menubar-hover-color: rgba(18,101,200,0.25);
+
+  /* ---- Semantic: text colour / banner background / banner border ---- */
+  --interspec-warning-color: #e0a640;
+  --interspec-warning-background: rgba(224,166,64,0.15);
+  --interspec-warning-border-color: rgba(224,166,64,0.45);
+  --interspec-error-color: #ff8a82;
+  --interspec-error-background: rgba(255,138,130,0.15);
+  --interspec-error-border-color: rgba(255,138,130,0.45);
+  --interspec-success-color: #7fdca0;
+  --interspec-success-background: rgba(127,220,160,0.15);
+  --interspec-success-border-color: rgba(127,220,160,0.45);
+
+  /* ---- Mode ---- */
+  --interspec-icon-filter: invert(100%);
+  --interspec-color-scheme: dark;
 }
 
-/* The `:not(.pm-textarea)` below is so this styling wont apply to text annotaions on the Leaflet maps. */
-input[type="text"], input[type="number"], textarea :not(.pm-textarea) {
-  background-color: var(--interspec-input-background, rgb(59,60,63)) !important; 
-  border-top: solid 1px rgb(61,62,64) !important; 
-  border-left: none !important; 
-  border-right: none !important; 
-  border-bottom: solid 1px rgb(75,76,78) !important; 
-  color: var(--interspec-text-color, white);
-}
+/* -----------------------------------------------------------------------------
+   Structural rules that a token cannot express.  Anything colour-only belongs
+   in the token block above, not here.
+   ----------------------------------------------------------------------------- */
 
-/* The WDialog titlebar */
-.titlebar {
-  background: rgb(107,106,111) !important; 
-  color: white;
-}
-
-.titlebar:hover {
-  background: rgb(133,133,133) !important; 
-  color: white;
-}
-
-.InfoLink, .InfoLink:hover {
-  border: none;
-}
-
-.Wt-icon, .InvertInDark, .MobileMenuButton {
-  /* .MobileMenuButton: invert its black hamburger SVG (a CSS background) to white for the dark UI. */
-  filter: invert(100%);
-}
-
-/* Shielding material/generic segmented toggle: the track and active "thumb" backgrounds now come
-   from the theme CSS variables (--interspec-background-color / --interspec-input-background) used in
-   ShieldingSelect.css, so they adapt automatically.  Only the black shield/atom icons still need
-   handling here: invert them to white so they're visible on the dark toggle (images can't use the
-   color variables). */
-.ShieldingSelect .ShieldTypeToggle .TypeBtn img {
-  filter: invert(100%);
-}
-
-
-.Wt-popup.Wt-outset {
-  background-color: rgb(59,59,66) !important;
-}
-
-ul.Wt-popupmenu > li.Wt-disabled > a > span > span {
-  color: rgb(105,105,112) !important;
-}
-
-.Wt-separator {
-  border-top: 1px solid rgb(80,80,87) !important;
-  border-bottom: 1px solid rgb(100,100,107) !important;
-}
-
-.Wt-vsh2 {
-/* The chart resize indicator thing... */
-}
-
-
-ul.Wt-tv-root > li {
-  color: white;
-  background: rgb(41,42,44) !important; 
-}
-
-ul.Wt-tv-root > li:nth-child(odd) { 
-  background: rgb(30,32,34) !important; 
-}
-
-
-.Wt-item.Wt-selected{
-  background-color: blue;
-  color: white;
-}
-
-/* .Wt-label and secondary text colors now handled by --interspec-secondary-text-color CSS variable */
-
-.Wt-itemview .Wt-headerdiv, .Wt-itemview .Wt-headerdiv .Wt-tv-rowc, .Wt-itemview th, .DevPairTitle, .CalDisplay .CalType, .DetHdr, .ReferencePhotopeakDisplay .OtherNucs .OtherNucTypeHeader {
-  background-color: rgb( 80, 81, 94 );
-}
-
-/* Wt inline-styles the itemview's top-right header corner (above the vertical scrollbar) a light
-   grey; recolor it to match the dark header so it isn't a light patch. */
-.Wt-itemview > div[style*="top: 0px"][style*="right: 0px"] {
-  background-color: rgb( 80, 81, 94 ) !important;
-}
-
-
-.Wt-dialogcover {
-  background: rgba(110, 110, 110, 0.5) !important;
-}
-
-/* `li.item` background/text now come from --interspec-button-background /
-   --interspec-button-text-color, so they need no override here.  The selected-item background and
-   its hover color have no matching theme variable yet, so they still do. */
-ul.HeavyNavMenu > li.itemselected  {
-  background: rgb(175,175,175) !important;
-}
-
-ul.HeavyNavMenu > li.itemselected > a {
-  color: rgb(115, 115, 255) !important;
-}
-
-ul.HeavyNavMenu > li.item:hover  {
-  background: rgb(135,135,135) !important;
-}
-
-
-.DetectorDisplay{
-  background: rgb(70,70,77);
-  /* border-color now handled by --interspec-border-color CSS variable */
-}
-
-.LinkBtn {
-  color: black;
-  filter: invert(100%);
-}
-
-.DoseAnswerTxt, 
-.DoseCalcRuntimeCheckFailMsg,
-.SimpleActivityCalc .result {
-  color: black;
-}
-
-.MakeDrfEqnAnswer {
-  background: black !important;
-}
-
-.PhoneAuxWindowHeader {
-  background-color: var(--interspec-menubar-background, rgb(65,65,65)) !important;
-}
-
-.PhoneAuxWindowFooter {
-  padding-right: 2px;
-}
-
-.PhoneAuxWindowFooter > button {
-  margin-right: 5px;
-}
-
-.PhoneMenuBack, .PhoneMenuClose {
-  background-color: rgb(133,133,133) !important;
-}
-
-/* When using a HTML app menu-bar, fix up close button background color on hover */
-.app-titlebar .window-controls-container .window-icon-bg .window-icon.window-close:hover {
-  background-color: rgb(57,207,207) !important;
-}
-
-/* When using a HTML app menu-bar, fix up minimize and maximize buttons on hover */
-.app-titlebar .window-controls-container .window-icon-bg .window-icon:hover {
-  background-color: rgb(175,175,175) !important;
-}
-
-/* When the app is not the forground app, change title bar color a little to indicate this */
-.app-titlebar.inactive, .app-titlebar.inactive button {
-  background-color: rgb(50,50,51) !important;
-}
-
-/* Dark theme tooltip styling */
-.Wt-tooltip {
-  background-color: rgb(70, 70, 72);
-  border: 1px solid rgb(100, 100, 102);
-  color: rgb(220, 220, 220);
-  box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.4);
-}
-
-/* Soft warnings on the detection-limit tools; the light-theme colour is too dark to read here.
-   See `.MdaWarnMsg` in DetectionLimitTool.css and DetectionLimitSimple.css. */
-.MdaWarnMsg {
-  color: #e0a640;
+/* Text inputs lose the browser's inset border and get a flat top/bottom
+   hairline on the dark surface.  `:not(.pm-textarea)` keeps this away from the
+   text annotations on the Leaflet maps. */
+input[type="text"], input[type="number"], textarea:not(.pm-textarea) {
+  border-top: solid 1px rgb(61,62,64) !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: solid 1px rgb(75,76,78) !important;
 }

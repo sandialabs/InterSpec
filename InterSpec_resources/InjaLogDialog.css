@@ -47,7 +47,7 @@
 
 .simple-dialog.InjaLogDialog .body .InjaLogDialogIFrameHolder
 {
-  border: solid 1px #e1e1e1;
+  border: solid 1px var(--interspec-border-color);
   border-radius: 5px;
   display: block;
   flex-grow: 1;
@@ -58,5 +58,5 @@
 .simple-dialog.InjaLogDialog .body .InjaLogDialogInjaError,
 .simple-dialog.InjaLogDialog .body .InjaLogDialogMiscError
 {
-  color: red;
+  color: var(--interspec-error-color);
 }

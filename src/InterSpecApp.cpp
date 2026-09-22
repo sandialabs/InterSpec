@@ -255,6 +255,9 @@ void InterSpecApp::setupDomEnvironment()
   
   setCssTheme( "default" );  //"polished" is the other option
   
+  // The colour tokens every other stylesheet consumes; must come first so the cascade in
+  //  themes/default/default.css (base) -> themes/<name>/<name>.css -> user overrides holds.
+  useStyleSheet( "InterSpec_resources/themes/default/default.css" );
   useStyleSheet( "InterSpec_resources/InterSpec.css" );
   useStyleSheet( "InterSpec_resources/InterSpecToast.css" );
   require( "InterSpec_resources/InterSpecToast.js" );
@@ -605,7 +608,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 
     msg = "<br />Please contact wcjohns@sandia.gov and/or interspec@sandia.gov to fix this error.";
     errorText = root()->addNew<WText>( msg );
-    errorText->setAttributeValue( "style", "font-family:Courier New; color: blue;" );
+    errorText->addStyleClass( "InfoTxt" );
+    errorText->setAttributeValue( "style", "font-family:Courier New;" );
     WApplication::quit();
     return;
   }//try / catch to create InterSpec object

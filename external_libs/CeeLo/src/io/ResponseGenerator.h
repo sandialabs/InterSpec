@@ -192,13 +192,18 @@ struct GenerationOptions {
     /// Minimum MC events per node before precision-based termination.
     uint64_t min_events_per_node = 20000;
 
+    /// Log-spaced scan range; generate(), plan_nodes() and estimated_node_count() all throw
+    /// std::runtime_error unless 0 < e_min_keV < e_max_keV (a non-positive floor makes the
+    /// whole grid NaN). NOTE: unlike TransferResponseOptions::e_min_keV, 0 does NOT mean "auto".
     double e_min_keV = 35.0;
     double e_max_keV = 3000.0;
 
     int n_energy_nodes = 24;        ///< greedy node CAP (noise/tol-limited, see below)
     int n_cos_theta_nodes = 12;     ///< greedy node CAP (noise/tol-limited)
     int n_energy_scan = 40;         ///< dense backbone scan size
-    int n_cos_theta_scan = 14;      ///< dense angular scan size
+    int n_cos_theta_scan = 14;      ///< dense angular scan size; >= 2 whenever an angular
+                                    ///< scan runs (generate() throws otherwise - the last
+                                    ///< scan point is the on-axis shape reference)
     int n_shape_energies = 9;       ///< energies carrying the angular/near scans
                                     ///< (log-spaced; denser here resolves the
                                     ///< angular shape's fast low-E variation)
@@ -302,6 +307,12 @@ public:
 
     /// Rough node count for the given options (UI time estimates: each node
     /// is one precision-targeted MC run, typically 0.1-8 s).
+    ///
+    /// Equals plan_nodes().total() on the fixed-grid path. Under `closed_loop` the two
+    /// deliberately differ and this one is the figure to trust up front: refinement is
+    /// data-driven, so this adds an expected-refine and certificate allowance on top of the
+    /// initial grid, while plan_nodes() only ever describes a fixed grid. Neither is exact
+    /// for a closed-loop run - a host driving a progress bar must use NodeProgress::nodes_total.
     static int estimated_node_count(const GeometryDescriptor& descriptor,
                                     const GenerationOptions& options);
 

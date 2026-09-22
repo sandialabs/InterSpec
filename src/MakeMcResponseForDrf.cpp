@@ -638,7 +638,14 @@ void MakeMcResponseForDrf::setGenerateButtonHidden( bool hidden )
 {
   m_hideGenerateButton = hidden;
   if( m_generate && hidden )
+  {
     m_generate->hide();
+    // Its click handler calls startGeneration() directly rather than through the owner, so a run
+    //  started that way would leave the owner's footer button enabled over it.  No path shows this
+    //  button again while the flag is set, so this is defence in depth against a forged
+    //  client-side signal rather than a fix for anything reachable.
+    m_generate->setEnabled( false );
+  }
 }//setGenerateButtonHidden(...)
 
 
@@ -752,6 +759,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   m_progress->hide();
   m_cancelBtn->hide();
   m_generating = false;
+  setEditingEnabled( true );   //abandons a run without a finish handler, as handleMethodChanged does
   if( m_progressTimer )
     m_progressTimer->stop();
   ++m_calibrationId;   //a probe in flight belongs to the state being replaced
@@ -841,6 +849,7 @@ void MakeMcResponseForDrf::handleMethodChanged()
   m_progress->hide();
   m_cancelBtn->hide();
   m_generating = false;
+  setEditingEnabled( true );   //this path abandons a run without a finish handler
   if( m_progressTimer )
     m_progressTimer->stop();
   if( m_result )
@@ -904,6 +913,61 @@ void MakeMcResponseForDrf::setMethod( const Method method )
   m_method->setCurrentIndex( static_cast<int>(method) );
   handleMethodChanged();
 }//setMethod(...)
+
+
+void MakeMcResponseForDrf::setProfile( const ceelo::ResponseProfile profile )
+{
+  int index = 0;  //General
+  switch( profile )
+  {
+    case ceelo::ResponseProfile::FarField: index = 1; break;
+    case ceelo::ResponseProfile::Contact:  index = 2; break;
+    default:                               index = 0; break;
+  }
+  
+  m_profile->setCurrentIndex( index );
+  handleOptionChanged();
+}//setProfile(...)
+
+
+void MakeMcResponseForDrf::setPrecision( const Precision precision )
+{
+  m_precision->setCurrentIndex( static_cast<int>(precision) );
+  handlePrecisionChanged();
+}//setPrecision(...)
+
+
+void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
+{
+  // Individually, rather than disabling a parent: the run row must stay live so the user can still
+  //  cancel, and Wt's isEnabled() reports an ancestor's state as the child's.
+  if( m_geometry )
+    m_geometry->setDisabled( !enabled );
+  
+  if( m_method )
+    m_method->setEnabled( enabled );
+  if( m_profile )
+    m_profile->setEnabled( enabled );
+  if( m_precision )
+    m_precision->setEnabled( enabled );
+  if( m_customPrecision )
+    m_customPrecision->setEnabled( enabled );
+  if( m_anchorAngles )
+    m_anchorAngles->setEnabled( enabled );
+  
+  // Deliberately NOT the grounding checkbox: `groundToMeasured()` is defined as
+  //  "enabled and checked", so disabling it here would read back as unchecked - and
+  //  `currentState()` would record that, letting an undo/redo snapshot taken during a run
+  //  silently turn grounding off.  It is one checkbox, and the run has already captured its
+  //  grounding points by the time we get here.
+}//setEditingEnabled(...)
+
+
+void MakeMcResponseForDrf::setOffAxisAnchors( const bool use_off_axis )
+{
+  m_anchorAngles->setCurrentIndex( use_off_axis ? 1 : 0 );
+  handleOptionChanged();
+}//setOffAxisAnchors(...)
 
 
 void MakeMcResponseForDrf::setChartHidden( const bool hidden )
@@ -1139,8 +1203,26 @@ void MakeMcResponseForDrf::updateResponseChart()
 }//updateResponseChart()
 
 
+void MakeMcResponseForDrf::invalidateResultForOptionChange()
+{
+  // The profile, precision, anchor-angle count and grounding choice all change what a run would
+  //  produce, but none of them is part of the DRF content `DrfModifyCalc::seedFingerprint` hashes -
+  //  so an owner's staleness test cannot see them, and a held result would read as still current.
+  //  Drop it, the same way a method or geometry change does, so the owner's "Generate Response"
+  //  offers the re-run the user just asked for instead of staying greyed over the old answer.
+  if( !m_result )
+    return;
+
+  m_result.reset();
+  m_validationChanged.emit( false );
+  m_status->setText( WString::tr("mmr-status-stale") );
+  updateResponseChart();
+}//invalidateResultForOptionChange()
+
+
 void MakeMcResponseForDrf::handleOptionChanged()
 {
+  invalidateResultForOptionChange();
   updateEstimate();
 
   if( !m_restoringState )
@@ -1165,6 +1247,7 @@ void MakeMcResponseForDrf::handleChartOptionChanged()
 void MakeMcResponseForDrf::handlePrecisionChanged()
 {
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
+  invalidateResultForOptionChange();
   updateEstimate();
 
   if( !m_restoringState )
@@ -1390,6 +1473,7 @@ bool MakeMcResponseForDrf::startGeneration()
     m_status->setText( WString::tr("mmr-status-transfer-building") );
 
     m_generating = true;   //handleGenerationFinished clears it, as for the MC methods
+    setEditingEnabled( false );
     wApp->enableUpdates( true );
     WServer::instance()->ioService().boost::asio::io_service::post( worker );
     return true;
@@ -1419,7 +1503,20 @@ bool MakeMcResponseForDrf::startGeneration()
   // What the run will do, and what each node is predicted to cost: the prior the ETA refines from
   //  the measured rate as nodes land (see refreshProgressText).
   m_runGeometryKey = gd.to_xml_string();
-  const ceelo::ResponseGenerator::NodePlan plan = ceelo::ResponseGenerator::plan_nodes( gd, opts );
+  // plan_nodes() throws on a malformed scan range (e_min_keV <= 0, or e_max_keV not above it).
+  //  generationOptions() cannot currently produce one - both fields keep their defaults - but this
+  //  is an event handler, so an escaping throw would take the session with it.  Not const only
+  //  because the assignment has to happen inside the try.
+  ceelo::ResponseGenerator::NodePlan plan;
+  try
+  {
+    plan = ceelo::ResponseGenerator::plan_nodes( gd, opts );
+  }catch( std::exception &e )
+  {
+    m_status->setText( WString::fromUTF8( e.what() ) );
+    return false;
+  }
+
   const McTimeCalibration *calib
       = (m_calibration && (m_calibration->geometry_key == m_runGeometryKey)) ? m_calibration.get() : nullptr;
   m_nodesTotal = plan.total();
@@ -1508,6 +1605,7 @@ bool MakeMcResponseForDrf::startGeneration()
   m_progress->show();
   m_status->setText( WString::tr("mmr-progress-starting").arg( m_nodesTotal ) );
   m_generating = true;
+  setEditingEnabled( false );
   m_progressTimer->start();
 
   wApp->enableUpdates( true );
@@ -1787,6 +1885,7 @@ void MakeMcResponseForDrf::handleGenerationFinished(
     return;  //stale run - a newer run/state owns the UI
 
   m_generating = false;
+  setEditingEnabled( true );
   if( m_progressTimer )
     m_progressTimer->stop();
 

@@ -345,6 +345,13 @@ public:
   ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakModel,
                           InterSpec *specViewer );
   
+  /** The widest #createWindow will open the window at, in pixels.
+
+   Only the initial size is capped; the user can still resize the window wider.  On a wide monitor
+   the previous purely proportional size stranded the tool's content across the dialog.
+   */
+  static const double sm_maxInitialWindowWidth;
+
   /** Creates a AuxWindow with a ShieldingSourceDisplay in it.
    
    @returns the created ShieldingSourceDisplay and AuxWindow. If for some reason there was an issue

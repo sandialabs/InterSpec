@@ -18,7 +18,7 @@
 }
 
 .CompactFileManager div.DispType {
-  border-color: grey;
+  border-color: var(--interspec-outline-color);
   border-style: ridge;
   border-width: 1px;
   padding: 5px;
@@ -152,14 +152,14 @@ div.DispType .SummaryTable {
   margin-top: 5px;
   white-space: nowrap;
   border-collapse: collapse;
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color);
 }
 
 div.DispType .SummaryTable td {
   padding-top: 1px;
   padding-bottom: 1px;
   padding-left: 2px;
-  border-bottom: 1px solid #e1e1e1;
+  border-bottom: 1px solid var(--interspec-border-color);
 }
 
 div.DispType .SummaryTable td:nth-child(odd) {
@@ -169,7 +169,7 @@ div.DispType .SummaryTable td:nth-child(odd) {
 
 div.DispType .SummaryTable td:nth-child(even) {
   text-align: left;
-  border-right: 1px solid #e1e1e1;
+  border-right: 1px solid var(--interspec-border-color);
 
   max-width: 60px;
   text-overflow: ellipsis;

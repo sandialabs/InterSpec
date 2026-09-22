@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">Charger</message>
   
   <!-- File handling -->
-  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Fichier trop volumineux.</span>]]></message>
+  <message id="uiw-file-too-large"><![CDATA[<span class="ErrorTxt">Fichier trop volumineux.</span>]]></message>
   
   <!-- Cheat sheet -->
   <message id="uiw-cheat-sheet">Feuille de Triche (PDF)</message>

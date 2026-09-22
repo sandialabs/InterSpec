@@ -72,6 +72,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpecApp.h"
@@ -1697,6 +1698,7 @@ DecayActivityDiv::DecayActivityDiv( InterSpec *viewer )
   m_nuclidesAddedDiv( NULL ),
   m_createNewNuclideButton( NULL ),
   m_clearNuclidesButton( NULL ),
+  m_noNuclidesTxt( NULL ),
   m_nuclideSelectDialog( NULL ),
   m_nuclideSelect( NULL ),
   m_chartTabWidget( NULL ),
@@ -1778,8 +1780,8 @@ void DecayActivityDiv::init()
   m_yAxisType                      = new WComboBox();
   m_parentNuclidesDiv              = new WContainerWidget();
   m_nuclidesAddedDiv               = new WContainerWidget();
-  m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
-  m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
+  m_createNewNuclideButton         = new WPushButton();
+  m_clearNuclidesButton            = new WPushButton();
   m_nuclideSelectDialog            = AuxWindow::make( WString::tr("dad-sel-nuc-window-title"),
                                     (AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse
@@ -1796,11 +1798,15 @@ void DecayActivityDiv::init()
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
 
-  m_createNewNuclideButton->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
+  m_createNewNuclideButton->setIcon( "InterSpec_resources/images/plus_min_black.svg" );
   m_createNewNuclideButton->addStyleClass( "m_createNewNuclideButton" );
   
-  m_clearNuclidesButton->setIcon( "InterSpec_resources/images/remove_all.png" );
+  m_clearNuclidesButton->setIcon( "InterSpec_resources/images/remove_all_black.png" );
   m_clearNuclidesButton->addStyleClass( "m_clearNuclidesButton" );
+
+  // The buttons show only their icon now, so the label each one used to carry becomes its tooltip.
+  m_createNewNuclideButton->setToolTip( WString::tr("dad-add-nucs") );
+  m_clearNuclidesButton->setToolTip( WString::tr("dad-remove-all") );
     
   m_displayActivityUnitsCombo->addStyleClass( isPhone ? "DisplayActivityUnitsComboPhone" : "DisplayActivityUnitsCombo" );
   m_displayActivityUnitsLabel->addStyleClass( "DisplayActivityUnitsLabel" );
@@ -1820,13 +1826,21 @@ void DecayActivityDiv::init()
   //Time to get to work!
   initCharts();
 
-  //setup m_parentNuclidesDiv
+  //setup m_parentNuclidesDiv: the nuclides sit in their own outlined area, and the two actions
+  //  (add / remove-all) are grouped together at the right of it.
   m_parentNuclidesDiv->setInline( false );
-  m_parentNuclidesDiv->addWidget( unique_ptr<WPushButton>(m_createNewNuclideButton) );
   m_parentNuclidesDiv->addWidget( unique_ptr<WContainerWidget>(m_nuclidesAddedDiv) );
-  m_parentNuclidesDiv->addWidget( unique_ptr<WPushButton>(m_clearNuclidesButton) );
 
-  m_nuclidesAddedDiv->setInline( true );
+  WContainerWidget *nucActions = m_parentNuclidesDiv->addNew<WContainerWidget>();
+  nucActions->addStyleClass( "NucActions" );
+  nucActions->addWidget( unique_ptr<WPushButton>(m_createNewNuclideButton) );
+  nucActions->addWidget( unique_ptr<WPushButton>(m_clearNuclidesButton) );
+
+  m_nuclidesAddedDiv->setInline( false );
+
+  // Shown only while no nuclide has been added, so the empty area says what it is for.
+  m_noNuclidesTxt = m_nuclidesAddedDiv->addNew<WText>( WString::tr("dad-no-nuclides") );
+  m_noNuclidesTxt->addStyleClass( "NoNuclidesTxt" );
   m_nuclideSelectDialog->contents()->addWidget( unique_ptr<DecaySelectNuclide>(m_nuclideSelect) );
   if( m_viewer && (m_viewer->renderedHeight() > 100) )
     m_nuclideSelectDialog->setMaximumSize( WLength::Auto, 0.9*m_viewer->renderedHeight() );
@@ -1846,7 +1860,7 @@ void DecayActivityDiv::init()
   // the dialog is visible).
   
   m_nuclideSelect->selected().connect( this, [this]( const NuclideSelectedInfo &info ){ addTheNuclide( info ); } );
-  m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
+  m_clearNuclidesButton->clicked().connect( this, &DecayActivityDiv::confirmClearAllNuclides );
   m_decayChart->clicked().connect( this, &DecayActivityDiv::decayChartClicked );
 
   auto decayDivOwner = make_unique<WContainerWidget>();
@@ -2530,12 +2544,24 @@ void DecayActivityDiv::addNuclide( const int z, const int a, const int iso,
 //                                           MenuItemCloseRole );
   {
     WContainerWidget *disp = nuclide.display;
+
+    WPushButton *editIcon = nuclide.display->addNew<WPushButton>();
+    editIcon->addStyleClass( "NucEditIcon" );
+    editIcon->setIcon( "InterSpec_resources/images/edit_pencil.svg" );
+    editIcon->setToolTip( WString::tr("dad-tt-edit-nuclide") );
+    editIcon->clicked().preventPropagation();
+    editIcon->clicked().connect( this, [this, disp](){ sourceNuclideDoubleClicked( disp ); } );
+
     WPushButton *closeIcon = nuclide.display->addNew<WPushButton>();
     closeIcon->addStyleClass( "mycloseicon" );
+    closeIcon->setToolTip( WString::tr("dad-tt-remove-nuclide") );
+    closeIcon->clicked().preventPropagation();
     closeIcon->clicked().connect( this, [this, disp](){ removeNuclide( disp ); } );
   }
 
   m_nuclides.push_back( nuclide );
+
+  updateNuclideAreaState();
 
   setTimeLimitToDisplay();
 
@@ -2579,10 +2605,40 @@ void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
   { auto p = m_nuclidesAddedDiv->removeWidget( m_nuclides[to_be_removed].display ); }
   m_nuclides.erase( m_nuclides.begin() + to_be_removed );
 
+  updateNuclideAreaState();
+
   setTimeLimitToDisplay();
 
   refreshDecayDisplay( true );
 }//void DecayActivityDiv::removeNuclide( Wt::WContainerWidget *frame )
+
+
+void DecayActivityDiv::confirmClearAllNuclides()
+{
+  // Losing a single nuclide is cheap to redo; losing a whole set is not, and nothing in this tool
+  //  is undoable, so anything more than one gets a confirmation.
+  if( m_nuclides.size() < 2 )
+  {
+    clearAllNuclides();
+    return;
+  }
+
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("dad-remove-all"),
+                                             WString::tr("dad-remove-all-confirm") );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  yes->clicked().connect( this, &DecayActivityDiv::clearAllNuclides );
+  dialog->addButton( WString::tr("No") )->setFocus();
+}//void DecayActivityDiv::confirmClearAllNuclides()
+
+
+void DecayActivityDiv::updateNuclideAreaState()
+{
+  const bool haveNuclides = !m_nuclides.empty();
+  if( m_noNuclidesTxt )
+    m_noNuclidesTxt->setHidden( haveNuclides );
+  if( m_clearNuclidesButton )
+    m_clearNuclidesButton->setDisabled( !haveNuclides );
+}//void DecayActivityDiv::updateNuclideAreaState()
 
 
 void DecayActivityDiv::clearAllNuclides()
@@ -2590,6 +2646,8 @@ void DecayActivityDiv::clearAllNuclides()
   for( const Nuclide &nuclide : m_nuclides )
     { auto p = m_nuclidesAddedDiv->removeWidget( nuclide.display ); }
   m_nuclides.clear();
+
+  updateNuclideAreaState();
 
   setTimeLimitToDisplay();
   

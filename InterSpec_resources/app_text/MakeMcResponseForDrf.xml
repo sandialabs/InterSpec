@@ -207,7 +207,7 @@
   <message id="dgi-collimator-cb">Collimator (side shield)</message>
   <message id="dgi-collimator-thickness">Thickness</message>
   <message id="dgi-collimator-extension">Extends past face</message>
-  <message id="dgi-seeded-note">This detector has no geometry recorded, so only its diameter is known: the crystal length shown is a guess (taken equal to the diameter) and the crystal material is just the default. Please set both before generating a response.</message>
+  <message id="dgi-seeded-note">This detector has no geometry recorded - only its diameter is known. Enter the crystal length, and check the crystal material, before generating a response.</message>
   <message id="dgi-more-geometry">More geometry (dead layer, bore, fillet)...</message>
   <message id="dgi-fewer-geometry">Fewer geometry options</message>
   <message id="dgi-err-missing">Please enter the {1}.</message>

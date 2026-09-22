@@ -22,7 +22,7 @@
 
 .SnapshotTime
 {
-  border-top: solid 1px #e1e1e1; 
+  border-top: solid 1px var(--interspec-border-color); 
 }
 
 .SnapshotDesc
@@ -59,7 +59,7 @@
   padding-bottom: 4px;
   margin-bottom: 7px;
   width: 95%;
-  border:1px solid #e1e1e1;
+  border:1px solid var(--interspec-border-color);
   display: flex;
 }
 

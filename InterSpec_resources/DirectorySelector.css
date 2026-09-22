@@ -13,7 +13,7 @@
 
 
 .DirectorySelectorPathTxt {
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 3px;
   font-family: monospace;
   min-height: 20px;
@@ -22,13 +22,13 @@
 }
 
 .DirectorySelectorPathTxt.DirectorySelectorValidPath {
-  border-color: #28a745;
-  background-color: #f8fff8;
+  border-color: var(--interspec-success-color);
+  background-color: var(--interspec-success-background);
 }
 
 .DirectorySelectorPathTxt.DirectorySelectorInvalidPath {
-  border-color: #dc3545;
-  background-color: #fff8f8;
+  border-color: var(--interspec-error-color);
+  background-color: var(--interspec-error-background);
 }
 
 /* Text input styling */

@@ -19,7 +19,7 @@
   position: relative;
   width: 250px;
   margin: 0 0 5px 0;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color);
   border-radius: 5px;
   box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.15);
   overflow: hidden;
@@ -81,50 +81,52 @@
 
 /* Info (WarningMsgInfo) - light/white */
 .ispec-toast-info {
-  background-color: white;
-  border-color: #E2E2E2;
-  color: #454545;
+  background-color: var(--interspec-background-color);
+  border-color: var(--interspec-border-color);
+  color: var(--interspec-secondary-text-color);
 }
 .ispec-toast-info .ispec-toast-title {
-  background-color: #f1f1f1;
+  background-color: var(--interspec-panel-background);
 }
 
 /* Low/Medium notice (WarningMsgLow, WarningMsgMedium) - default/yellow */
 .ispec-toast-notice {
-  background-color: #FFFFA3;
-  border-color: #F1D031;
-  color: #555;
+  background-color: var(--interspec-tooltip-background);
+  border-color: var(--interspec-tooltip-border-color);
+  color: var(--interspec-secondary-text-color);
 }
 .ispec-toast-notice .ispec-toast-title {
-  background-color: #FFEF93;
+  background-color: var(--interspec-tooltip-border-color);
 }
 
 /* Error (WarningMsgHigh) - red */
+/* The semantic tints are translucent, so they sit on an opaque app-background layer to stay
+   readable over whatever the toast floats above. */
 .ispec-toast-error {
-  background-color: #F78B83;
-  border-color: #D95252;
-  color: #912323;
+  background: linear-gradient(var(--interspec-error-background), var(--interspec-error-background)), var(--interspec-background-color);
+  border-color: var(--interspec-error-border-color);
+  color: var(--interspec-error-color);
 }
 .ispec-toast-error .ispec-toast-title {
-  background-color: #F06D65;
+  background: linear-gradient(var(--interspec-error-border-color), var(--interspec-error-border-color)), var(--interspec-background-color);
 }
 
 /* Save (WarningMsgSave) - green */
 .ispec-toast-save {
-  background-color: #CAED9E;
-  border-color: #90D93F;
-  color: #3F6219;
+  background: linear-gradient(var(--interspec-success-background), var(--interspec-success-background)), var(--interspec-background-color);
+  border-color: var(--interspec-success-border-color);
+  color: var(--interspec-success-color);
 }
 .ispec-toast-save .ispec-toast-title {
-  background-color: #B0DE78;
+  background: linear-gradient(var(--interspec-success-border-color), var(--interspec-success-border-color)), var(--interspec-background-color);
 }
 
 /* RIID results (WarningMsgShowOnBoardRiid, WarningMsgExternalRiid) - blue */
 .ispec-toast-riid {
-  background-color: #E5F6FE;
-  border-color: #ADD9ED;
-  color: #5E99BD;
+  background: linear-gradient(var(--interspec-highlight-background), var(--interspec-highlight-background)), var(--interspec-background-color);
+  border-color: var(--interspec-accent-color);
+  color: var(--interspec-text-color);
 }
 .ispec-toast-riid .ispec-toast-title {
-  background-color: #D0E9F5;
+  background: linear-gradient(var(--interspec-highlight-background), var(--interspec-highlight-background)), var(--interspec-background-color);
 }

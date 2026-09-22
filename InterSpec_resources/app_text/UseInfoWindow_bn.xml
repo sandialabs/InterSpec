@@ -6,7 +6,7 @@
   <message id="uiw-load-btn">লোড</message>
   
   
-  <message id="uiw-file-too-large">&lt;span style="color: red;"&gt;Too Large of file.&lt;/span&gt;</message>
+  <message id="uiw-file-too-large">&lt;span class="ErrorTxt"&gt;Too Large of file.&lt;/span&gt;</message>
   
   
   <message id="uiw-cheat-sheet">Cheat Sheet (PDF)</message>

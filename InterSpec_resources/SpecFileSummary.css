@@ -4,7 +4,7 @@
 
 .SpecFileInfo, .MeasInfo, .SpecSummChoose, .SpecSummAllowEdit
 {
-  border: 1px solid black;
+  border: 1px solid var(--interspec-outline-color);
 }
 
 .SpecSummChoose, .SpecSummAllowEdit
