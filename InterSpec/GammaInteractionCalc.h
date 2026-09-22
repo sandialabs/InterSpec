@@ -1113,7 +1113,7 @@ public:
 
    May through CancelException (if user or time limit cancelled computation), or other std::exception (on other error type).
    */
-  virtual double DoEval( const std::vector<double> &x ) const;
+  double DoEval( const std::vector<double> &x ) const;
 
   /** The current cancel/timeout status - lets external optimizer drivers (e.g., the
    Ceres cost function) poll for cancellation, instead of relying on #DoEval throwing.

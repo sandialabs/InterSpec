@@ -14990,7 +14990,7 @@ struct RelActAutoCostFcn
   }//void eval( const std::vector<double> &x, double *residuals ) const
   
   
-  virtual double operator()( const std::vector<double> &x ) const
+  double operator()( const std::vector<double> &x ) const
   {
     vector<double> residuals( number_residuals(), 0.0 );
     try
@@ -15011,11 +15011,6 @@ struct RelActAutoCostFcn
   }//operator()
   
   
-  /** The chi2 increase corresponding to a one-sigma parameter uncertainty. */
-  virtual double Up() const
-  {
-    return 1.0;
-  }
 
   
   // The return value indicates whether the computation of the
