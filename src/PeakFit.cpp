@@ -1426,13 +1426,13 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   shared_continuum->setRange( x0, x1 );
   shared_continuum->setType( offsetType );
   
-  const bool is_refit = false;
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
   
   vector<shared_ptr<const PeakDef>> results;
   
-  PeakFitLM::fit_peaks_LM( results, inpeaks, dataH, stat_threshold, hypothesis_threshold, is_refit, det_type );
+  PeakFitLM::fit_peaks_LM( results, inpeaks, dataH, stat_threshold, hypothesis_threshold, lm_fit_options, det_type );
   
   answer.clear();
   if( static_cast<int>(results.size()) == nPeaks )
@@ -2010,13 +2010,14 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
                        const PeakFitUtils::CoarseResolutionType det_type,
                        std::vector<PeakDef> &resultPeaks )
 {
-  const bool is_refit = true;
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options
+                                  = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
 
   vector<shared_ptr<const PeakDef>> results;
   PeakFitLM::fit_peaks_LM( results, originalPeaks, dataH,
-                          stat_threshold, hypothesis_threshold, is_refit, det_type );
+                          stat_threshold, hypothesis_threshold, lm_fit_options, det_type );
   
   resultPeaks.clear();
   

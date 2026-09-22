@@ -673,7 +673,7 @@ BOOST_AUTO_TEST_CASE( peakfitlm_recovers_step_from_zero_seed )
     BOOST_REQUIRE( peak->continuum()->parameters().back() == 0.0 );
 
     vector<shared_ptr<const PeakDef>> results;
-    PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                              PeakFitUtils::CoarseResolutionType::High );
 
     const string ctx = PeakContinuum::offset_type_str( type );
@@ -726,7 +726,7 @@ BOOST_AUTO_TEST_CASE( pinned_continuum_coefficient_still_fits_amplitude )
     const string ctx = PeakContinuum::offset_type_str( type );
 
     vector<shared_ptr<const PeakDef>> results;
-    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                                                      PeakFitUtils::CoarseResolutionType::High ) );
 
     BOOST_REQUIRE_MESSAGE( results.size() == 1,
@@ -773,7 +773,7 @@ BOOST_AUTO_TEST_CASE( pinned_step_coefficient_keeps_lls_path )
     const string ctx = PeakContinuum::offset_type_str( type );
 
     vector<shared_ptr<const PeakDef>> results;
-    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, true,
+    BOOST_REQUIRE_NO_THROW( PeakFitLM::fit_peaks_LM( results, { peak }, roi.data, 0.0, 0.0, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly,
                                                      PeakFitUtils::CoarseResolutionType::High ) );
     BOOST_REQUIRE_MESSAGE( results.size() == 1, ctx << ": got " << results.size() << " peaks, not 1" );
 

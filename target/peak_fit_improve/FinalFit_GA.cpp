@@ -149,14 +149,14 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     // Do an initial fit
     const double initial_stat_threshold = 0.0;
     const double initial_hypothesis_threshold = 0.0;
-    const bool amplitudeOnly = false;
+    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
 
     vector<PeakDef> these_fit_peaks;
       vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
       for( const PeakDef &p : these_input_peaks )
         input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
       PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, det_type );
+                          initial_stat_threshold, initial_hypothesis_threshold,  lm_fit_options, det_type );
     for( const shared_ptr<const PeakDef> &p : results_tmp )
       these_fit_peaks.push_back( *p );
 

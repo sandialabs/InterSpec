@@ -140,7 +140,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
   auto fit_peaks_per_roi = [&fit_settings, &data, det_type, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
 
-    const bool amplitudeOnly = false;
+    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
 
     map<const PeakContinuum *,vector<PeakDef>> roi_to_peaks_map;
     for( const PeakDef &p : input_peaks )
@@ -169,7 +169,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                      data,
                                      fit_settings.initial_stat_threshold,
                                      fit_settings.initial_hypothesis_threshold,
-                                     amplitudeOnly,
+                                     lm_fit_options,
                                      det_type ) );
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
@@ -189,7 +189,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
         PeakFitLM::fit_peaks_LM( results, input_peaks_tmp, data,
                                 fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                                amplitudeOnly, det_type );
+                                lm_fit_options, det_type );
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
     }//if( multithread ) / else

@@ -3004,9 +3004,15 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
                   shared_ptr<const SpecUtils::Measurement> data,
                   const double stat_threshold,
                   const double hypothesis_threshold,
-                  const bool is_refit,
+                  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
                   const PeakFitUtils::CoarseResolutionType det_type ) throw()
 {
+  // Relax the significance test when the caller is refining an existing fit.  `test` is a
+  //  bitwise AND, and the Medium/Small composites cover both their amplitude and FWHM bits, so
+  //  these two tests catch all four refinement-only options.
+  const bool is_refit = fit_options.test( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly )
+                        || fit_options.test( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+
   try
   {
     // Check all input peaks share a ROI
@@ -3061,10 +3067,6 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
       findROIEnergyLimits( dummy, highx, *highgaus, data, isHPGe_for_roi );
     }
 
-
-    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( Wt::None );
-    if( is_refit )
-      fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
 
     results = fit_peaks_in_roi_LM( near_peaks, data, det_type, fit_options );
 
@@ -3180,7 +3182,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
                                       const double hypothesis_threshold,
                                       const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
                                       const std::shared_ptr<const SpecUtils::Measurement> data,
-                                      const bool isRefit,
+                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
                                       const PeakFitUtils::CoarseResolutionType det_type )
 {
   if( !data || (x1 < x0) )
@@ -3214,9 +3216,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
   for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   {
     threadpool.post( [&fit_peak_ranges, &seperated_peaks, data, stat_threshold,
-                      hypothesis_threshold, isRefit, det_type, peakn](){
+                      hypothesis_threshold, fit_options, det_type, peakn](){
       fit_peaks_LM( fit_peak_ranges[peakn], seperated_peaks[peakn],
-                    data, stat_threshold, hypothesis_threshold, isRefit, det_type );
+                    data, stat_threshold, hypothesis_threshold, fit_options, det_type );
     } );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   threadpool.join();
@@ -3255,7 +3257,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
 
     return fit_peaks_in_range_LM( x0, x1, ncausalitysigma,
                            stat_threshold, hypothesis_threshold,
-                                 results, data, isRefit, det_type );
+                                 results, data, fit_options, det_type );
   }//if( migration )
 
   //  cout << "Fit took: " << timer.format() << endl;
@@ -3307,10 +3309,11 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
         const double stat_threshold  = 0.0;
         const double hypothesis_threshold = 0.0;
 
-        const bool isRefit = true;
+        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options
+                                        = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
         const vector<shared_ptr<const PeakDef>> refit_peaks
                      = fit_peaks_in_range_LM( lx, ux, ncausalitysigma, stat_threshold, hypothesis_threshold,
-                                             inpeaks, data, isRefit, det_type );
+                                             inpeaks, data, refit_options, det_type );
 
 
         if( refit_peaks.size() == inpeaks.size() )

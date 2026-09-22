@@ -723,10 +723,10 @@ void AddNewPeakDialog::doFit()
   const vector<shared_ptr<const PeakDef>> input_peaks( 1, make_shared<PeakDef>(*m_candidatePeak) );
   vector<shared_ptr<const PeakDef>> results;
   const double stat_threshold = 0.0, hypothesis_threshold = 0.0;
-  const bool is_refit = false;
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
   
   PeakFitLM::fit_peaks_LM( results, input_peaks, meas, stat_threshold, hypothesis_threshold,
-                          is_refit, det_type );
+                          fit_options, det_type );
   
   if( results.empty() )
   {

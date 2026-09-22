@@ -3161,7 +3161,7 @@ int main( int argc, char **argv )
           }
 
           const PeakFitUtils::CoarseResolutionType det_type = info.det_type;
-          const bool amplitudeOnly = false;
+          const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
           vector<PeakDef> zeroth_fit_results, initial_fit_results;
           
           
@@ -3183,7 +3183,7 @@ int main( int argc, char **argv )
               vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
               for( const auto &p : candidate_peaks )
                 input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
-              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, amplitudeOnly, det_type );
+              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, lm_fit_options, det_type );
               for( const auto &p : results_tmp )
                 peaks.push_back( *p );
 

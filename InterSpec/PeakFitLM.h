@@ -148,7 +148,7 @@ enum PeakFitLMOptions
   /** Backward-compatible composite: restricts both amplitude/mean and FWHM moderately.
    Equivalent to `MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly`.
 
-   Note: since WFlags::testFlag uses bitwise AND, testFlag(MediumRefinementOnly) returns true
+   Note: since WFlags::test uses bitwise AND, test(MediumRefinementOnly) returns true
    if EITHER MediumAmplitudeRefinementOnly or MediumFwhmRefinementOnly is set.
    */
   MediumRefinementOnly = MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly, // 0x48
@@ -213,9 +213,11 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
 
  Upon error, results will be empty.
  
- Uses default `PeakFitLMOptions` options (e.g., none of them), unless you specify `is_refit = true`,
- then `PeakFitLMOptions::MediumRefinementOnly` option is specified.
- 
+ `fit_options` is passed through to the fit; pass `{}` for the defaults, or e.g.
+ `PeakFitLMOptions::MediumRefinementOnly` when refining an existing fit.  When any of the
+ refinement-only options is given, the peak-significance test is relaxed for peaks whose mean
+ and sigma are both fixed - the caller is refining a fit the user set up deliberately.
+
  May return fewer peaks than passed in if a peak doesnt pass the `stat_threshold` or `hypothesis_threshold`
  (if these are above 0.0), or if two peaks fit within 1 sigma of each other.
  */
@@ -224,7 +226,7 @@ void fit_peaks_LM( std::vector<std::shared_ptr<const PeakDef>> &results,
                   std::shared_ptr<const SpecUtils::Measurement> data,
                   const double stat_threshold,
                   const double hypothesis_threshold,
-                  const bool is_refit,
+                  const Wt::WFlags<PeakFitLMOptions> fit_options,
                   const PeakFitUtils::CoarseResolutionType det_type ) throw();
 
 
@@ -235,7 +237,7 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
                                       const double hypothesis_threshold,
                                       const std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                                       const std::shared_ptr<const SpecUtils::Measurement> data,
-                                      const bool isRefit,
+                                      const Wt::WFlags<PeakFitLMOptions> fit_options,
                                       const PeakFitUtils::CoarseResolutionType det_type );
 
 /** Fit peaks in a ROI using Ceres L-M optimizer.
