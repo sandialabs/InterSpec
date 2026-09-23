@@ -15,7 +15,8 @@
       <b>Entering nuclides.</b> Add a row for each initial nuclide with the <b>+</b> button, or drag
       and drop (or click to upload) a CSV onto the drop area to replace all rows at once.  A CSV in
       one of the formats below can also be dropped onto the main InterSpec window (or opened with
-      InterSpec) while this tool is closed, which opens the tool with the file loaded.  Each row
+      InterSpec) while this tool is closed, which opens the tool with the file loaded; a simple
+      nuclide/activity list is only recognized this way if at least one activity gives its unit.  Each row
       takes a nuclide, an optional initial age (enabled only for nuclides whose result depends on
       age), and an initial activity.  The <b>-</b> button removes a row.
     </div>
@@ -37,7 +38,9 @@
       becquerel; blank lines and lines beginning with <code>#</code> are ignored).  A header-keyed
       format with <code>Product</code>, <code>Value</code>, and <code>Unit</code> columns; any
       areal/volumetric suffix on the unit (for example <code>/m2</code>) is carried through to the
-      output labels.  Or the multi-location format described next.
+      output labels.  Or the multi-location format described next.  Columns may be separated by
+      commas or tabs, and a cell may be enclosed in double quotes (as spreadsheets write a cell that
+      contains a comma), but a cell cannot span more than one line.
     </div>
 
     <div style="padding-top: 10px">

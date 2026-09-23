@@ -239,7 +239,7 @@ namespace
       unit_token = txt.substr( num_end );
       SpecUtils::trim( unit_token );
 
-      return true;
+      return !IsInf( value );   // e.g. "1E308 TBq" overflows
     }catch( std::exception & )
     {
     }
@@ -252,7 +252,7 @@ namespace
       if( txt.find_first_not_of( " \t", end_pos ) != std::string::npos )
         return false;
       value = val * PhysicalUnits::becquerel;
-      return true;
+      return !IsNan( value ) && !IsInf( value );   // std::stod also reads "nan" and "inf"
     }catch( std::exception & )
     {
     }

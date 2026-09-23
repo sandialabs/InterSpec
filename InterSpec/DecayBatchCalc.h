@@ -207,10 +207,13 @@ namespace DecayBatchCalc
    An input's `age` is its age at the measurement, so looking back `|time_span|` its mixture is seeded
    `|time_span|` younger.  A (non-zero) age shorter than that is taken as freshly made at the past
    time, with a note in `warnings`; an age of zero (none given) means the same, without the note.
+   Rows of one nuclide decayed together are one quantity, so their past activity is solved for once
+   and shared among them in proportion to their measured activities.
 
-   Throws std::runtime_error on invalid options (e.g. no valid inputs, zero time span), and when a
-   measured nuclide is so many half-lives old that its past activity cannot be recovered at all (the
-   message names the nuclide and asks for a shorter time).
+   Throws std::runtime_error on invalid options (e.g. no valid inputs, zero time span), on an input
+   activity that is negative or not finite, or an age over 500 half-lives of its nuclide (which
+   cannot be computed), and when a measured nuclide is so many half-lives old that its past activity
+   cannot be recovered at all (the message names the nuclide and asks for a shorter time).
    Individual invalid/stable inputs are reported in `BatchDecayResult::warnings` rather than throwing.
    */
   BatchDecayResult decay( const std::vector<BatchNuclide> &inputs,
@@ -252,6 +255,11 @@ namespace DecayBatchCalc
      - Simple: each line is "nuclide, activity[units]" (comma or tab delimited).  Lines beginning
        with '#' and blank lines are ignored.  Units on the activity are optional (default becquerel).
 
+   An activity must be a non-negative number; in the column-keyed formats the Value cell holds just
+   the number, with any unit in the Unit column.  A cell may be double-quoted (so it can hold the
+   delimiter; the quotes are dropped), but may not span lines.  A column-keyed file is tab separated
+   if its header line holds a tab, and comma separated otherwise.
+
    A leading UTF-8 byte-order mark (as spreadsheet "CSV UTF-8" exports write) is ignored.
    Note `BatchNuclide::age` is not set by any of these formats.
 
@@ -260,7 +268,10 @@ namespace DecayBatchCalc
   std::vector<BatchNuclide> parse_csv( const std::string &file_contents );
 
 
-  /** Whether some text looks like a batch-decay input file, i.e. #parse_csv accepts it.
+  /** Whether some text looks like a batch-decay input file: #parse_csv accepts it, it holds at least
+   one unstable nuclide, and it says what it is - it is in one of the column-keyed formats, or gives
+   at least one activity with a unit (a bare "nuclide, number" list could as well be nuclides and
+   gamma energies).
 
    Used to recognize these files when dropped on the main window, where only the start of the file may
    be at hand: with `is_whole_file` false, a trailing partial line is ignored (and text with no line

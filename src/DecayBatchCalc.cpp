@@ -37,6 +37,8 @@
 #include <stdexcept>
 #include <functional>
 
+#include <boost/tokenizer.hpp>
+
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "SpecUtils/StringAlgo.h"
@@ -54,6 +56,15 @@ namespace
    NuclideMixture::addAgedNuclideByNumAtoms, i.e. an amplification of at most ~1.4E+14.
    */
   const double sm_min_back_decay_diagonal = 7.1E-15;
+
+  /** The longest initial age accepted, in half-lives of the nuclide.  An aged seed is scaled up by
+   2^(age/half-life) (see NuclideMixture::addAgedNuclideByActivity), which underflows - silently
+   giving zero - past ~1000 half-lives; nothing that old could be measured, so leave a wide margin.
+   */
+  const double sm_max_age_half_lives = 500.0;
+
+  /** Ends the error for an input activity that could not be read. */
+  const std::string sm_activity_requirement = "; activities must be non-negative numbers.";
 
   /** The time of a given step, in seconds.  With `num_steps == 1` returns `time_span`; otherwise
    returns `step*time_span/(num_steps-1)` so the points run 0..time_span inclusive.  Matches the
@@ -141,6 +152,15 @@ namespace
   };//struct BackDecayNotes
 
 
+  /** Thrown by #back_decay_activities when a measured nuclide's past activity cannot be determined, and
+   no parent solved together with it accounts for the measurement.
+   */
+  struct UnrecoverablePastError : public std::runtime_error
+  {
+    using std::runtime_error::runtime_error;
+  };
+
+
   /** Solves for the activities a set of nuclides must have had `age` ago to give the measured
    activities now.  `age` is a positive magnitude (how far back to look).
 
@@ -161,8 +181,10 @@ namespace
    column carries that nuclide's in-grown progeny exactly as the seeded mixture will; a fresh seed here
    would have the solve miss (and so double count) an aged parent's daughters.
 
-   Each row is its own unknown, even when two rows are the same nuclide: in a mixture they add, so
-   neither may be treated as "produced" by the other.
+   Rows of one nuclide share a single unknown: in a mixture they add, and nothing tells them apart.  So
+   each distinct nuclide is solved once, and its past amount is shared among its rows in proportion to
+   their measurements.  A nuclide's surviving fraction does not depend on a row's seed age, so this is
+   exact; each row still carries its own column (and so its own in-grown progeny) to the descendants.
 
    Two things can go wrong, and both are physical rather than numerical:
      - Over enough half-lives a nuclide's surviving fraction `exp(-lambda*age)` becomes too small to
@@ -175,7 +197,7 @@ namespace
        `warnings` says so rather than silently returning a set that does not decay back to the input.
 
    Returns past activities in the same (SandiaDecay) units as `activities`, indexed like `nuclides`.
-   Throws std::runtime_error when a measured nuclide's past activity is wholly unrecoverable.
+   Throws UnrecoverablePastError when a measured nuclide's past activity is wholly unrecoverable.
    */
   vector<double> back_decay_activities( const vector<const SandiaDecay::Nuclide *> &nuclides,
                                         const vector<double> &activities,
@@ -221,9 +243,10 @@ namespace
       return num_ancestors[a] < num_ancestors[b];
     } );
 
-    // Column j of the forward map: atoms of each nuclide at `age` from one atom of j, seeded as the
-    //  mixture will be.  (Also gives the diagonal, j's own surviving fraction - which an aged seed
-    //  does not change, since its atom count is the parent's.)
+    // Column j of the forward map: atoms of each nuclide at `age` from one atom of j, seeded the same
+    //  way #decay seeds its mixtures (addAgedNuclideByNumAtoms would also refuse ages past ~45
+    //  half-lives, which the mixtures take fine).  Also gives the diagonal, j's own surviving
+    //  fraction - which an aged seed does not change, since its atom count is the parent's.
     vector<vector<double>> forward( nnuc, vector<double>( nnuc, 0.0 ) );
     for( size_t j = 0; j < nnuc; ++j )
     {
@@ -232,8 +255,8 @@ namespace
         continue;
 
       SandiaDecay::NuclideMixture mix;
-      if( seed_ages[j] > 0.0 )
-        mix.addAgedNuclideByNumAtoms( src, 1.0, seed_ages[j] );
+      if( (seed_ages[j] > 0.0) && !src->isStable() )
+        mix.addAgedNuclideByActivity( src, src->decayConstant(), seed_ages[j] );  // one atom's activity
       else
         mix.addNuclideByAbundance( src, 1.0 );
 
@@ -242,7 +265,7 @@ namespace
       {
         for( size_t i = 0; i < nnuc; ++i )
         {
-          // Another row of the same nuclide is its own unknown, not something j produces.
+          // Another row of the same nuclide is not something j produces (see the substitution below).
           if( (nuclides[i] == nap.nuclide) && ((i == j) || (nuclides[i] != src)) )
             forward[i][j] = nap.numAtoms;
         }
@@ -269,21 +292,40 @@ namespace
     }
 #endif
 
-    // Forward substitution in ancestor-first order.
+    // Forward substitution in ancestor-first order, one distinct nuclide at a time (see above).
     vector<double> past_atoms( nnuc, 0.0 );
+    vector<bool> solved( nnuc, false );
 
     for( size_t pos = 0; pos < nnuc; ++pos )
     {
       const size_t i = order[pos];
+      if( solved[i] )
+        continue;
 
-      // Subtract what the already-solved ancestors grow into i by now - i.e. everything earlier in
-      //  `order`, which by construction is where any ancestor of i sits.
+      // All rows of this nuclide; they have the same row of the forward map, so `i` stands for them.
+      vector<size_t> rows;
+      double now_total = 0.0;
+      for( size_t k = pos; k < nnuc; ++k )
+      {
+        if( nuclides[order[k]] == nuclides[i] )
+        {
+          rows.push_back( order[k] );
+          now_total += now_atoms[order[k]];
+        }
+      }
+
+      // Subtract what the already-solved rows - which by construction include every ancestor of i -
+      //  grow into i by now.
       double from_ancestors = 0.0;
-      for( size_t prev = 0; prev < pos; ++prev )
-        from_ancestors += forward[i][order[prev]] * past_atoms[order[prev]];
+      for( size_t k = 0; k < nnuc; ++k )
+      {
+        if( solved[k] )
+          from_ancestors += forward[i][k] * past_atoms[k];
+      }
 
-      const double residual = now_atoms[i] - from_ancestors;
+      const double residual = now_total - from_ancestors;
       const double diagonal = forward[i][i];
+      double past_total = 0.0;
 
       // Past enough half-lives a nuclide's own past amount stops being recoverable from today's
       //  measurement: the diagonal underflows to exactly zero (Ba137m over 48 h), or gets so small
@@ -296,7 +338,7 @@ namespace
         // With an ancestor among the inputs, its in-growth accounts for the measurement and zero is
         //  the right answer for i itself - only a note is owed.  With none there is nothing to fall
         //  back on and no meaningful number to report, so have the user look back a shorter way.
-        if( (from_ancestors <= 0.0) && (now_atoms[i] > 0.0) )
+        if( (from_ancestors <= 0.0) && (now_total > 0.0) )
         {
           const double half_life = (nuclides[i] && (nuclides[i]->halfLife > 0.0))
                                      ? nuclides[i]->halfLife : 0.0;
@@ -309,25 +351,30 @@ namespace
                     (half_life > 0.0) ? (age / half_life) : 0.0,
                     (nuclides[i] ? nuclides[i]->symbol.c_str() : "?"),
                     1.0 / sm_min_back_decay_diagonal );
-          throw runtime_error( buffer );
+          throw UnrecoverablePastError( buffer );
         }
 
-        past_atoms[i] = 0.0;
-        if( now_atoms[i] > 0.0 )
+        if( now_total > 0.0 )
           notes.unrecoverable.insert( nuclides[i] );
-      }else
+      }else if( residual > 0.0 )
       {
         // A negative residual means the ancestors alone already over-produce i; no (non-negative) past
-        //  amount of i can fix that, so clamp at zero and report the disagreement below.
-        past_atoms[i] = (residual > 0.0) ? (residual / diagonal) : 0.0;
+        //  amount of i can fix that, so it stays at zero and the disagreement is reported below.
+        past_total = residual / diagonal;
+      }
+
+      for( const size_t r : rows )
+      {
+        past_atoms[r] = (now_total > 0.0) ? (past_total * now_atoms[r] / now_total) : 0.0;
+        solved[r] = true;
       }
 
       // Whenever i's own past amount could not absorb the difference - because it is unidentifiable, or
       //  because the ancestors already over-produce i - the past state cannot reproduce the input.
       const bool absorbed = (diagonal >= sm_min_back_decay_diagonal) && (residual > 0.0);
-      if( !absorbed && (now_atoms[i] > 0.0) && (from_ancestors > 0.0) )
+      if( !absorbed && (now_total > 0.0) && (from_ancestors > 0.0) )
       {
-        const double diff = fabs( from_ancestors - now_atoms[i] ) / now_atoms[i];
+        const double diff = fabs( from_ancestors - now_total ) / now_total;
         if( diff > 0.01 )
         {
           const double lambda = nuclides[i] ? nuclides[i]->decayConstant() : 0.0;
@@ -336,7 +383,7 @@ namespace
           std::pair<double,double> &worst = notes.inconsistent[nuclides[i]];
           const double prev = (worst.first > 0.0) ? fabs(worst.second - worst.first)/worst.first : -1.0;
           if( diff > prev )
-            worst = std::make_pair( now_atoms[i] * lambda, from_ancestors * lambda );
+            worst = std::make_pair( now_total * lambda, from_ancestors * lambda );
         }
       }//if( the measurement could not be matched )
     }//for( each nuclide, ancestors first )
@@ -784,7 +831,16 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
       result.warnings += "Skipped invalid nuclide '" + in.nuclide_str + "'.\n";
     else if( in.nuclide->isStable() )
       result.warnings += "Skipped stable nuclide '" + in.nuclide_str + "'.\n";
-    else
+    else if( IsNan(in.activity) || IsInf(in.activity) || (in.activity < 0.0) )
+      throw runtime_error( "The activity of " + in.nuclide->symbol + " is not valid" + sm_activity_requirement );
+    else if( !(in.age >= 0.0) || ((in.age / in.nuclide->halfLife) > sm_max_age_half_lives) )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "The initial age of %s, %.4G half-lives, cannot be used: ages"
+                " from zero up to %.0f half-lives are supported.", in.nuclide->symbol.c_str(),
+                in.age / in.nuclide->halfLife, sm_max_age_half_lives );
+      throw runtime_error( buffer );
+    }else
       valid_inputs.push_back( in );
   }//for( each input )
 
@@ -878,7 +934,7 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
       try
       {
         acts = past_activities( vector<BatchNuclide>{ in } );
-      }catch( std::exception &e )
+      }catch( UnrecoverablePastError &e )
       {
         // Solved on its own, a parent among the other inputs cannot account for it - but mixing would.
         const vector<const SandiaDecay::Nuclide *> forebearers = in.nuclide->forebearers();
@@ -1144,8 +1200,44 @@ string result_to_csv( const BatchDecayResult &result )
 }//result_to_csv(...)
 
 
-vector<BatchNuclide> parse_csv( const string &file_contents )
+/** Reads the activity of one input row: a number followed by an activity unit (e.g. "3.2 uCi"), or a
+ bare number, which is becquerel.  Returns false for anything else, including trailing text, and for a
+ value that is not a finite, non-negative activity - no measurement gives one, and the decay would
+ otherwise silently treat it as zero.  `has_unit` says whether a unit was given.
+ */
+static bool read_activity( const string &txt, double &activity, bool &has_unit )
 {
+  has_unit = false;
+  try
+  {
+    activity = PhysicalUnits::stringToActivity( txt );
+    has_unit = true;
+  }catch( std::exception & )
+  {
+    try
+    {
+      size_t end_pos = 0;
+      activity = std::stod( txt, &end_pos ) * PhysicalUnits::becquerel;
+      if( txt.find_first_not_of( " \t", end_pos ) != string::npos )
+        return false;
+    }catch( std::exception & )
+    {
+      return false;
+    }
+  }//try / catch
+
+  return !IsNan(activity) && !IsInf(activity) && (activity >= 0.0);
+}//read_activity(...)
+
+
+/** #parse_csv, also saying whether the text identifies itself as batch-decay input (see
+ #is_candidate_file): it is in one of the column-keyed formats, or gives at least one activity with a
+ unit.  A bare "nuclide, number" list could just as well be nuclides and energies.
+ */
+static vector<BatchNuclide> parse_csv_imp( const string &file_contents, bool &self_identifying )
+{
+  self_identifying = false;
+
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   if( !db )
     throw runtime_error( "Nuclear decay database is not available." );
@@ -1177,32 +1269,35 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
   if( lines.empty() )
     throw runtime_error( "No data rows found in the file." );
 
-  // Split a "nuclide, activity" line on comma or tab.
-  auto split_fields = []( const string &line ) -> vector<string> {
+  // Splits a line into trimmed cells, keeping empty ones.  A cell may be double-quoted, as spreadsheets
+  //  write one holding the delimiter; the quotes are dropped (a doubled "" too - a literal quote is
+  //  rare here).  There are no escape characters, since notes or file paths may hold a backslash.
+  auto split_line = []( const string &line, const char * const delims ) -> vector<string> {
+    const string no_escapes, quote = "\"";
+    const boost::escaped_list_separator<char> separator( no_escapes, delims, quote );
+    const boost::tokenizer<boost::escaped_list_separator<char>> tokens( line, separator );
+
     vector<string> fields;
-    SpecUtils::split( fields, line, ",\t" );
-    for( string &f : fields )
-      SpecUtils::trim( f );
+    for( string field : tokens )
+    {
+      SpecUtils::trim( field );
+      fields.push_back( std::move(field) );
+    }
     return fields;
   };
 
-  // Split a line of a column-keyed format on tab (if it has any) or else comma, keeping empty fields
-  //  so a blank cell can't silently shift the later columns.  (SpecUtils::split compresses runs of
-  //  delimiters, and would also split a tab-separated cell at any comma in it.)
-  auto split_fields_keep_empty = []( const string &line ) -> vector<string> {
-    vector<string> fields;
-    const char delim = (line.find('\t') != string::npos) ? '\t' : ',';
-    string::size_type start = 0;
-    for( string::size_type pos = line.find(delim); ; pos = line.find(delim, start) )
-    {
-      string field = (pos == string::npos) ? line.substr(start) : line.substr(start, pos - start);
-      SpecUtils::trim( field );
-      fields.push_back( field );
-      if( pos == string::npos )
-        break;
-      start = pos + 1;
-    }
+  // A "nuclide, activity" line splits on comma or tab, ignoring empty cells.
+  auto split_fields = [&split_line]( const string &line ) -> vector<string> {
+    vector<string> fields = split_line( line, ",\t" );
+    fields.erase( std::remove( begin(fields), end(fields), string() ), end(fields) );
     return fields;
+  };
+
+  // A column-keyed file splits on tab if its header line has one, else comma, keeping empty cells so
+  //  a blank one can't shift the later columns - nor a comma within a cell of a tab-separated file.
+  const char * const keyed_delim = (lines[0].find( '\t' ) != string::npos) ? "\t" : ",";
+  auto split_fields_keep_empty = [&split_line,keyed_delim]( const string &line ) -> vector<string> {
+    return split_line( line, keyed_delim );
   };
 
   // Detect the header-keyed ("Product"/"Value"/"Unit") format from the first line.
@@ -1281,15 +1376,14 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
       }
       bn.activity_unit = act_unit;
 
-      try
+      // The Value cell is just the number; its unit, if any, is the Unit column's.
+      bool has_unit = false;
+      if( !read_activity( act_unit.empty() ? value_str : (value_str + " " + act_unit), bn.activity, has_unit )
+         || (has_unit == act_unit.empty()) )
       {
-        bn.activity = act_unit.empty()
-                        ? (std::stod( value_str ) * PhysicalUnits::becquerel)
-                        : PhysicalUnits::stringToActivity( value_str + " " + act_unit );
-      }catch( std::exception & )
-      {
-        throw runtime_error( "Could not interpret activity '" + value_str + " " + unit_str
-                             + "' for '" + nuc_str + "'." );
+        throw runtime_error( "Could not interpret activity '" + value_str
+                             + (unit_str.empty() ? string() : (" " + unit_str)) + "' for '" + nuc_str
+                             + "'" + sm_activity_requirement );
       }
 
       answer.push_back( bn );
@@ -1297,6 +1391,8 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
 
     if( answer.empty() )
       throw runtime_error( "No nuclides were parsed from the file." );
+
+    self_identifying = true;
 
     // Rows of one location differ only by a row-index suffix on the name, so strip it - but only if
     //  doing so can't merge rows that cannot belong to one location (a repeated nuclide, or
@@ -1381,24 +1477,20 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
         bn.unit_label = unit_str.substr( slash ); // includes the leading '/'
       }
 
-      try
+      // As above: the Value cell is just the number, and with no unit it is becquerel.
+      bool has_unit = false;
+      if( !read_activity( act_unit.empty() ? value_str : (value_str + " " + act_unit), bn.activity, has_unit )
+         || (has_unit == act_unit.empty()) )
       {
-        if( act_unit.empty() )
-        {
-          // No activity unit supplied; interpret the bare value as becquerel.
-          bn.activity = std::stod( value_str ) * PhysicalUnits::becquerel;
-        }else
-        {
-          bn.activity = PhysicalUnits::stringToActivity( value_str + " " + act_unit );
-        }
-      }catch( std::exception & )
-      {
-        throw runtime_error( "Could not interpret activity '" + value_str + " " + unit_str
-                             + "' for '" + nuc_str + "'." );
+        throw runtime_error( "Could not interpret activity '" + value_str
+                             + (unit_str.empty() ? string() : (" " + unit_str)) + "' for '" + nuc_str
+                             + "'" + sm_activity_requirement );
       }
 
       answer.push_back( bn );
     }//for( each data line )
+
+    self_identifying = true;
   }else
   {
     // Simple "nuclide, activity[units]" format.
@@ -1416,25 +1508,11 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
 
       // Accept a value with explicit activity units, or (matching the legacy CLI) a bare number,
       //  which is interpreted as becquerel.
-      const string act_str = fields[1];
-      try
-      {
-        bn.activity = PhysicalUnits::stringToActivity( act_str );
-      }catch( std::exception & )
-      {
-        try
-        {
-          size_t end_pos = 0;
-          const double val = std::stod( act_str, &end_pos );
-          if( act_str.find_first_not_of( " \t", end_pos ) != string::npos )
-            throw runtime_error( "trailing characters" );
-          bn.activity = val * PhysicalUnits::becquerel;
-        }catch( std::exception & )
-        {
-          throw runtime_error( "Could not interpret activity '" + act_str
-                               + "' for '" + fields[0] + "'." );
-        }
-      }
+      bool has_unit = false;
+      if( !read_activity( fields[1], bn.activity, has_unit ) )
+        throw runtime_error( "Could not interpret activity '" + fields[1] + "' for '" + fields[0]
+                             + "'" + sm_activity_requirement );
+      self_identifying |= has_unit;
 
       answer.push_back( bn );
     }//for( each line )
@@ -1444,6 +1522,13 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
     throw runtime_error( "No nuclides were parsed from the file." );
 
   return answer;
+}//parse_csv_imp(...)
+
+
+vector<BatchNuclide> parse_csv( const string &file_contents )
+{
+  bool self_identifying = false;
+  return parse_csv_imp( file_contents, self_identifying );
 }//parse_csv(...)
 
 
@@ -1465,7 +1550,13 @@ bool is_candidate_file( const string &start_of_file, const bool is_whole_file )
 
   try
   {
-    return !parse_csv( text ).empty();
+    // It must also say what it is, and hold something to decay.
+    bool self_identifying = false;
+    const vector<BatchNuclide> inputs = parse_csv_imp( text, self_identifying );
+    return self_identifying
+           && std::any_of( begin(inputs), end(inputs), []( const BatchNuclide &in ){
+             return in.nuclide && !in.nuclide->isStable();
+           } );
   }catch( std::exception & )
   {
   }
