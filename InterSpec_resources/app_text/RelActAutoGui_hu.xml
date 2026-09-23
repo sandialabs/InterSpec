@@ -103,7 +103,7 @@
   <message id="raag-sort-energy-ranges-tt">Energiatartományok rendezése.</message>
   <message id="raag-remove-all-ranges-tt">Az összes energiatartomány eltávolítása.</message>
   <message id="raag-remove-free-peaks-tt">Az összes szabad csúcs eltávolítása és a szabad csúcsok beviteli mező elrejtése.</message>
-  <message id="raag-free-peaks-tt">A &quot;szabad csúcsok&quot; meghatározott energiájú csúcsok, amelyek nincsenek nuklidhoz rendelve, és amplitúdójukat az adatokhoz legjobban illeszkedő értékre illesztjük. A csúcsok opcionálisan felszabadíthatók a funkcionális FWHM korlátozás alól is.&lt;br /&gt;A szabad csúcsok hasznosak reakciókból származó vagy azonosítatlan nuklidok csúcsainak kezelésére.</message>
+  <message id="raag-free-peaks-tt">A &quot;szabad csúcsok&quot; meghatározott energiájú csúcsok, amelyek nincsenek nuklidhoz rendelve, és amplitúdójukat az adatokhoz legjobban illeszkedő értékre illesztjük. A csúcsok opcionálisan felszabadíthatók a funkcionális FWHM korlátozás alól is.<br />A szabad csúcsok hasznosak reakciókból származó vagy azonosítatlan nuklidok csúcsainak kezelésére.</message>
 
   <!-- Peak uncertainty dialog -->
   <message id="raag-peaks-uncert-based-on-fit">A csúcsok bizonytalanságai a teljes relatív hatásfok illesztésen alapulnak (azaz a csúcsok segítik egymást a bizonytalanság csökkentésében), kivéve ha újraillesztést választ, amely esetben nem korlátozza őket a Rel. hat. görbe vagy a FWHM funkcionális forma.</message>

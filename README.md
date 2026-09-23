@@ -67,7 +67,7 @@ You can go from source activity to dose, or from measured dose to source activit
 | `InterSpec_resources/` | Web assets served at runtime: CSS, runtime JS (D3, chart code, theme scripts), HTML templates, images, and `app_text/` for i18n |
 | `data/` | Nuclear data, detector response definitions, material libraries, reference spectra, Wt config files |
 | `cmake/` | CMake toolchain files, dependency-fetching logic, JS/CSS deployment helpers |
-| `external_libs/` | Third-party libraries — `SpecUtils`, `SandiaDecay`, `QR-Code-generator` are git submodules; the rest (`Cuba-3.0`, `Minuit2`, `muparserx-4.0.7`, `pugixml-1.9`, `VoigtDistribution`) are vendored copies |
+| `external_libs/` | Third-party libraries — `SpecUtils`, `SandiaDecay`, `QR-Code-generator` are git submodules; the rest (`Cuba-3.0`, `muparserx-4.0.7`, `pugixml-1.9`, `VoigtDistribution`) are vendored copies |
 | `target/macos/` | macOS native (Cocoa) desktop app, including the `quicklook/` Spotlight/Finder preview extension |
 | `target/wxwidgets/` | wxWidgets-based desktop app for Windows / Linux / macOS |
 | `target/electron/` | Electron-based desktop app (Node.js native addon) |
@@ -104,7 +104,7 @@ Then to build, you can choose one of two methods to build the code:
 Included in this repository are some additional C++ libraries that will be built as part of building InterSpecs code.  
 These libraries include
 [Cuba](http://www.feynarts.de/cuba), 
-[Minuit2](https://github.com/root-project/root/tree/master/math/minuit2), 
+
 [muparserx](https://github.com/beltoforion/muparserx), [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library), [pugixml](https://pugixml.org)
 and [rapidxml](http://rapidxml.sourceforge.net/), which are in the
 [external_libs](https://github.com/sandialabs/interspec/tree/master/external_libs) directory, while 

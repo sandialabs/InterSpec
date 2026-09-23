@@ -157,7 +157,6 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-option(USE_CERES_FOR_ACTIVITY_FIT "Use Ceres (auto-differentiated) instead of Minuit2 for the Activity/Shielding fit" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
 # LLM API calls are normally made by the browser via fetch(), which gets us the system trust
@@ -370,7 +369,6 @@ set(sources
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
     src/WidgetUtils.cpp
-    src/PeakFitChi2Fcn.cpp
     src/PeakModel.cpp
     src/PeakInfoDisplay.cpp
     src/WarningWidget.cpp
@@ -522,7 +520,6 @@ set(headers
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/WidgetUtils.h
-    InterSpec/PeakFitChi2Fcn.h
     InterSpec/PeakModel.h
     InterSpec/PeakInfoDisplay.h
     InterSpec/WarningWidget.h
@@ -907,7 +904,6 @@ set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
-add_subdirectory(external_libs/Minuit2)
 add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
@@ -1000,7 +996,6 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    Minuit2::Minuit2
     Cuba-3.0
     muparserx
     Boost::thread

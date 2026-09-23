@@ -10,8 +10,8 @@
   <message id="raagfp-not-in-roi">No en una ROI.</message>
   
   <!-- Tooltips -->
-  <message id="raagfp-constrain-fwhm-tt">Cuando está marcado, este pico será restringido a la forma funcional FWHM a la que normalmente están restringidos los picos gamma y de rayos X.&lt;br /&gt;Cuando no está marcado, el FWHM para este pico se ajustará de los datos, independiente de todos los otros anchos de pico.&lt;br /&gt;Desmarcar esta opción es útil para fotopicos de aniquilación y reacción.</message>
-  <message id="raagfp-true-energy-tt">Marque esta opción si el pico es para un gamma de energía conocida.&lt;br /&gt;Desmarque esta opción si este pico es un pico observado en el espectro con energía verdadera desconocida.</message>
+  <message id="raagfp-constrain-fwhm-tt">Cuando está marcado, este pico será restringido a la forma funcional FWHM a la que normalmente están restringidos los picos gamma y de rayos X.<br />Cuando no está marcado, el FWHM para este pico se ajustará de los datos, independiente de todos los otros anchos de pico.<br />Desmarcar esta opción es útil para fotopicos de aniquilación y reacción.</message>
+  <message id="raagfp-true-energy-tt">Marque esta opción si el pico es para un gamma de energía conocida.<br />Desmarque esta opción si este pico es un pico observado en el espectro con energía verdadera desconocida.</message>
   
 </messages>
 

@@ -498,7 +498,8 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     data["curve_separation_verdict_html"] = sol.curve_separation_verdict( true );
 
     // Which evidence tier established the curves as distinct (see
-    //  RelActAutoSolution::curves_distinct_basis()): "none", "z", "z_plus_merged", or "merged_only".
+    //  RelActAutoSolution::curves_distinct_basis()): "none", "tied_enrichment", "z",
+    //  "z_plus_merged", or "merged_only".
     const char *basis_str = "none";
     switch( sol.curves_distinct_basis() )
     {
@@ -506,8 +507,12 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZScore:                basis_str = "z";            break;
       case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZCorroboratedByMerged: basis_str = "z_plus_merged"; break;
       case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::MergedOnly:            basis_str = "merged_only";  break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::TiedEnrichment:        basis_str = "tied_enrichment"; break;
     }
     data["curves_distinct_basis"] = string(basis_str);
+
+    // Why no tier fired (empty when the curves were detected as distinct).
+    data["distinct_basis_none_reason"] = sol.distinct_basis_none_reason();
 
     const auto corr_to_json = []( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr ) -> json {
       json entry;
@@ -617,13 +622,49 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       data["enrichment_diff_z"].push_back( entry );
     }
 
+    // The tied-enrichment likelihood ratio - the direct "are the compositions different?" test;
+    //  see RelActAutoSolution::TiedEnrichmentComparison for why it, not the merged comparison, is
+    //  the primary detection statistic when the curves share a determined element.
+    data["tied_enrichment_comparison"] = nullptr;
+    if( sol.m_tied_enrichment_comparison.has_value() )
+    {
+      const RelActCalcAuto::RelActAutoSolution::TiedEnrichmentComparison &tied
+                                                        = *sol.m_tied_enrichment_comparison;
+      json entry;
+      entry["valid"] = tied.valid;
+      entry["message"] = tied.message;
+      entry["free_chi2"] = tied.free_chi2_data;
+      entry["free_dof"] = static_cast<int64_t>(tied.free_dof_data);
+      entry["tied_chi2"] = tied.tied_chi2_data;
+      entry["tied_dof"] = static_cast<int64_t>(tied.tied_dof_data);
+      entry["delta_chi2"] = tied.delta_chi2;
+      entry["extra_dof_of_free"] = static_cast<int64_t>(tied.extra_dof_of_free);
+      entry["common_enrichment_adequate"] = tied.common_enrichment_adequate;
+      entry["inconsistent_with_merged"] = tied.inconsistent_with_merged;
+      // Negative: the restricted model beat the model containing it, i.e. the free fit is not at
+      //  its own optimum - a defect report, not a statistic.
+      entry["tied_fits_better"] = (tied.delta_chi2 < 0.0);
+      // Both are unset when no element qualified (`to_name` throws on a default SrcVariant).
+      entry["controlling_source"] = tied.tied_sources.empty()
+                        ? string() : RelActCalcAuto::to_name( tied.controlling_source );
+      entry["tied_sources"] = json::array();
+      for( const RelActCalcAuto::SrcVariant &src : tied.tied_sources )
+        entry["tied_sources"].push_back( RelActCalcAuto::to_name(src) );
+      char buf[64] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.4G", tied.delta_chi2 );
+      entry["delta_chi2_str"] = string(buf);
+      data["tied_enrichment_comparison"] = entry;
+    }
+
     data["merged_curve_comparison"] = nullptr;
     if( sol.m_merged_single_curve_comparison.has_value() )
     {
       const RelActCalcAuto::RelActAutoSolution::MergedCurveComparison &merged = *sol.m_merged_single_curve_comparison;
       json entry;
       entry["valid"] = merged.valid;
-      entry["message"] = merged.message;
+      // Trimmed: templates test this for truthiness, and a whitespace-only string is truthy, which
+      //  would print a dangling "Note:" with nothing after it.
+      entry["message"] = SpecUtils::trim_copy( merged.message );
       entry["multi_chi2"] = merged.multi_chi2_data;
       entry["multi_dof"] = static_cast<int64_t>(merged.multi_dof_data);
       entry["merged_chi2"] = merged.merged_chi2_data;
@@ -734,6 +775,11 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     {
       curve["equation_error"] = e.what();
     }
+
+    // Per-curve flag: a self-atten AD railed near the physical ceiling (see
+    //  RelActAutoSolution::self_atten_ad_railed) - an unphysical shield soaking up composition DOF,
+    //  which suppresses the multi-curve distinctness verdict.
+    curve["self_atten_ad_railed"] = sol.self_atten_ad_railed( i );
 
     data["rel_eff_curves"].push_back( curve );
   }

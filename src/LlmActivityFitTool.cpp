@@ -32,7 +32,6 @@
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
 
-#include "Minuit2/MnUserParameters.h"
 
 #include <Wt/WDialog.h>
 #include <Wt/WServer.h>
@@ -2482,7 +2481,6 @@ nlohmann::json fit_results_to_comprehensive_json(
                                   ? (fit_results->chi2 / fit_results->numDOF)
                                   : 0.0;
   fit_quality["num_peaks_used"] = fit_results->foreground_peaks.size();
-  fit_quality["edm"] = fit_results->edm;
   fit_quality["num_fcn_calls"] = fit_results->num_fcn_calls;
 
   // 2. Fit configuration
@@ -3456,7 +3454,7 @@ nlohmann::json executeActivityFitOneOff(
   ShieldingSourceFitCalc::fit_model(
     "",  // Empty wtsession = synchronous
     chi2Fcn,
-    std::make_shared<ROOT::Minuit2::MnUserParameters>(inputParams),
+    std::make_shared<ShieldingSourceFitCalc::FitParameters>(inputParams),
     progress,
     [](){},  // No progress callback
     fit_results,

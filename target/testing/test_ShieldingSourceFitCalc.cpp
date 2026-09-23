@@ -49,9 +49,6 @@
 #include "rapidxml/rapidxml_utils.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 
-//Roots Minuit2 includes
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
 
 
 #include "ceres/jet.h"
@@ -674,11 +671,11 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   chi_input.foreground_peaks = foreground_peaks;
   chi_input.background_peaks = nullptr;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
                 GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
  
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
   
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -831,11 +828,11 @@ BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
   chi_input.foreground_peaks = foreground_peaks;
   chi_input.background_peaks = nullptr;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
                 GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1003,10 +1000,10 @@ std::shared_ptr<PeakDef> make_test_peak( const SandiaDecay::Nuclide * const pare
 deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
                 const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input )
 {
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
 
-  const vector<double> truth_pars = fcn_pars.second.Params();
+  const vector<double> truth_pars = fcn_pars.second.values();
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mix_cache;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> peak_infos
@@ -1047,7 +1044,8 @@ deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
 }//namespace
 
 
-/** Minuit2 baseline: fit generic-shielding atomic number + areal density + source
+/** Baseline (values originally established with the Minuit2 fitter): fit generic-shielding
+ atomic number + areal density + source
  activity on synthetic peak areas generated from the forward model, so the true
  minimum is at known parameter values.
 
@@ -1139,11 +1137,11 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
   chi_input.config.sources = { ba133_src };
   chi_input.foreground_peaks = expected_peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1282,11 +1280,11 @@ BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
   chi_input.config.sources = { ba133_src };
   chi_input.foreground_peaks = expected_peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1320,7 +1318,8 @@ BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
 }//BOOST_AUTO_TEST_CASE( FitNonSourceShieldThicknessFromZero )
 
 
-/** Minuit2 baseline: fit source age (plus activity) for a Ra226 point source,
+/** Baseline (values originally established with the Minuit2 fitter): fit source age
+ (plus activity) for a Ra226 point source,
  where the in-growth of Rn222 progeny (Pb214/Bi214 lines vs Ra226s own 186 keV
  line) determines the age.  Synthetic peak areas are generated from the forward
  model, so the chi2 minimum is at known truth values.
@@ -1392,11 +1391,11 @@ BOOST_AUTO_TEST_CASE( FitPointSourceAgeBaseline )
   chi_input.config.sources = { ra226_src };
   chi_input.foreground_peaks = expected_peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -1513,14 +1512,14 @@ BOOST_AUTO_TEST_CASE( FitOffAxisSourceBaseline )
   chi_input.config.sources = { ba133_src };
   chi_input.foreground_peaks = expected_peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
   BOOST_CHECK_CLOSE( fcn_pars.first->trueSourceToDetectorDistance(),
                      sqrt( 100.0*100.0 + 40.0*40.0 + 25.0*25.0 )*PhysicalUnits::cm, 1.0E-9 );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -2234,11 +2233,11 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
   chi_input.background_peaks = nullptr;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
                 GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
  
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
   
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -2347,10 +2346,10 @@ void check_expected_counts_parity( const GammaInteractionCalc::ShieldingSourceCh
                                    const double tolerance,
                                    const string &label )
 {
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  const vector<double> params = fcn_pars.second.Params();
+  const vector<double> params = fcn_pars.second.values();
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_legacy, cache_imp;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> legacy
@@ -2814,9 +2813,9 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
       trace_input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
     }
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> point_fcn
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> point_fcn
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( point_input );
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> trace_fcn
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> trace_fcn
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( trace_input );
     BOOST_REQUIRE( point_fcn.first && trace_fcn.first );
 
@@ -2831,9 +2830,9 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_a, cache_b;
     const vector<double> point_counts
-          = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.Params(), cache_a );
+          = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.values(), cache_a );
     const vector<double> trace_counts
-          = trace_fcn.first->expected_peak_counts_imp<double>( trace_fcn.second.Params(), cache_b );
+          = trace_fcn.first->expected_peak_counts_imp<double>( trace_fcn.second.values(), cache_b );
     BOOST_REQUIRE_EQUAL( point_counts.size(), trace_counts.size() );
     BOOST_REQUIRE_EQUAL( point_counts.size(), point_input.foreground_peaks.size() );
 
@@ -2853,7 +2852,7 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
     {
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_log;
       vector<GammaInteractionCalc::PeakDetail> details;
-      trace_fcn.first->energy_chi_contributions( trace_fcn.second.Params(), {}, cache_log, &details );
+      trace_fcn.first->energy_chi_contributions( trace_fcn.second.values(), {}, cache_log, &details );
       BOOST_REQUIRE_EQUAL( details.size(), trace_counts.size() );
       for( const GammaInteractionCalc::PeakDetail &d : details )
       {
@@ -2873,7 +2872,7 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
       for( int i = 0; i < n; ++i )
       {
         GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_t;
-        const vector<double> c = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.Params(), cache_t );
+        const vector<double> c = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.values(), cache_t );
         sink += c.front();
       }
       const double per_eval = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count() / n;
@@ -2982,7 +2981,7 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
           if( volumetric )
             add_ba133_trace_shell( input, water, 3.0*PhysicalUnits::cm );
 
-          pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+          pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
                                     = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
           BOOST_REQUIRE( fcn.first );
 
@@ -2997,7 +2996,7 @@ BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
             BOOST_REQUIRE( resolved == VolumetricEffMethod::FlatDisk );
 
           GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-          counts[k] = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+          counts[k] = fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
           BOOST_REQUIRE_EQUAL( counts[k].size(), input.foreground_peaks.size() );
           if( k == 0 )
             for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
@@ -3202,7 +3201,7 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
     input.config.shieldings = { shell };
     input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
     BOOST_REQUIRE( fcn.first );
     BOOST_REQUIRE_MESSAGE( fcn.first->resolvedVolumetricEffMethod()
@@ -3213,12 +3212,12 @@ BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
     {
       const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Element );
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-      elem = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+      elem = fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
     }
     {
       const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Line );
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-      line = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+      line = fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
     }
     BOOST_REQUIRE_EQUAL( elem.size(), line.size() );
 
@@ -3312,12 +3311,12 @@ BOOST_AUTO_TEST_CASE( GenericInnermostShellIndexing )
           = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
     input.config.shieldings = layers;
     input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
     BOOST_REQUIRE( fcn.first );
     const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( path );
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-    return fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+    return fcn.first->expected_peak_counts_imp<double>( fcn.second.values(), cache );
   };
 
   // The thickness of the source layer is the same in both stacks (the generic layer takes no room:
@@ -3401,7 +3400,7 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
   input.config.shieldings = { shell };
   input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
   BOOST_REQUIRE( fcn.first );
 
@@ -3410,7 +3409,7 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
     vector<string> warnings;
     const vector<GammaInteractionCalc::EffectiveShieldingInfo> rows
-          = fcn.first->computeEffectiveShielding( fcn.second.Params(), cache, &warnings );
+          = fcn.first->computeEffectiveShielding( fcn.second.values(), cache, &warnings );
     BOOST_CHECK( !rows.empty() );
     BOOST_CHECK_MESSAGE( warnings.empty(), "unexpected warning: " << (warnings.empty() ? "" : warnings[0]) );
   }
@@ -3418,7 +3417,7 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
   // The shell grown past the detector (parameter layout: 2 per nuclide, then 3 per shielding):
   //  build_volumetric_calculators throws, and the skip must be reported.
   {
-    vector<double> params = fcn.second.Params();
+    vector<double> params = fcn.second.values();
     const size_t dim_index = 2*1 + 3*0;
     BOOST_REQUIRE_LT( dim_index, params.size() );
     params[dim_index] = 10.0*PhysicalUnits::cm;
@@ -3459,12 +3458,12 @@ BOOST_AUTO_TEST_CASE( ReportNamesDetectorEffModel )
     const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
           = make_ba133_point_input( det, 5.0*PhysicalUnits::cm, 0.0, v.method );
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
     BOOST_REQUIRE( fcn_pars.first );
     BOOST_CHECK( fcn_pars.first->pointSourceEffModel() == v.model );
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>( fcn_pars.second );
+    auto inputPrams = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
     bool finished_called = false;
@@ -3537,7 +3536,7 @@ BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
 
     const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
           = make_ba133_point_input( det, 5.0*PhysicalUnits::cm, 0.0, requested );
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
     const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
     BOOST_REQUIRE( fcn );
@@ -3560,12 +3559,12 @@ BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
     }
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
-    (by_name ? by_name_counts : auto_counts) = fcn->expected_peak_counts_imp<double>( fcn_pars.second.Params(), cache );
+    (by_name ? by_name_counts : auto_counts) = fcn->expected_peak_counts_imp<double>( fcn_pars.second.values(), cache );
 
     if( by_name )
     {
       // And the error reaches the fit results, alongside the model actually used.
-      auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>( fcn_pars.second );
+      auto inputPrams = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
       auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
       auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
       bool finished_called = false;
@@ -3657,10 +3656,10 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
   chi_input.foreground = foreground;
   chi_input.foreground_peaks = peaks;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
   const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
-  const vector<double> params = fcn_pars.second.Params();
+  const vector<double> params = fcn_pars.second.values();
 
   // Params: [0]=activity (MBq-scaled), [1]=age (seconds), [2]=AN, [3]=AD, [4]=unused
   BOOST_REQUIRE_EQUAL( params.size(), size_t(5) );
@@ -3722,11 +3721,16 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsJetDerivatives )
 
 
-/** Runs both fit drivers on a self-attenuating U+Np analyst problem (mass fractions
- in two elements plus a fit thickness - historically the hardest configuration), and
- requires they agree with each other.
+/** Pins the activity/shielding fit on a self-attenuating U+Np analyst problem (mass
+ fractions in two elements plus a fit thickness - historically the hardest configuration).
+
+ This was `CeresVsMinuitDrivers`, which ran the Ceres and Minuit2 drivers against each
+ other and required they agree.  Minuit2 has been removed from the project, so the values
+ both drivers agreed on (to better than 1%) are recorded here instead, and the surviving
+ driver is required to reproduce them.  The point is unchanged: catch a regression in this
+ configuration.  Captured 2026-09-21; Minuit2 chi2 was 161.097 against Ceres' 161.194.
  */
-BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+BOOST_AUTO_TEST_CASE( SelfAttenUNpFitGoldenValues )
 {
   set_data_dir();
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -3737,83 +3741,67 @@ BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
 
-  vector<double> chi2s;
-  vector<vector<double>> param_sets;
-  ROOT::Minuit2::MnUserParameters initial_pars;
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
-  for( const bool use_ceres : { false, true } )
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  auto finished_fcn = [](){};
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                     progress_fcn, fit_results, finished_fcn );
+
+  BOOST_REQUIRE( fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+
+  // The expected values, in the order `create()` lays the parameters out.
+  struct ExpectedPar { const char *name; double value; double step; };
+  const ExpectedPar expected[] = {
+    { "Np237Strength",               0.001730691181,    0.0  },
+    { "Np237Age",                    631139040.0,       0.0  },
+    { "U235Strength",                13.789089745,      0.0  },
+    { "U235Age",                     631139040.0,       0.0  },
+    { "U238Strength",                8.7871713947,      0.0  },
+    { "U238Age",                    -2.0,               0.0  },
+    { "U18.0Np0.10_thickness",       22.6340151781,    10.0  },
+    { "U18.0Np0.10_dummyshielding1",  0.0,              0.0  },
+    { "U18.0Np0.10_dummyshielding2",  0.0,              0.0  },
+    { "U18.0Np0.1_U235_0",            0.196203499255,   0.05 },
+    { "U18.0Np0.1_Np237_0",           8.39058037494e-08, 0.05 },
+  };
+  const size_t num_expected = sizeof(expected) / sizeof(expected[0]);
+
+  BOOST_CHECK_CLOSE( fit_results->chi2, 161.194097258, 1.0 );
+
+  BOOST_REQUIRE_EQUAL( fit_results->paramValues.size(), num_expected );
+  BOOST_REQUIRE_EQUAL( fcn_pars.second.parameters().size(), num_expected );
+
+  for( size_t i = 0; i < num_expected; ++i )
   {
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
-                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+    // The parameter layout is part of what is being pinned - a silent reordering would make
+    //  every value below meaningless.
+    BOOST_CHECK_EQUAL( fcn_pars.second.parameters()[i].name, string(expected[i].name) );
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    // Compare each parameter on its own scale.  A purely *relative* tolerance is meaningless for
+    //  a parameter driven to (numerically) zero: a mass fraction of 7.6E-8 vs 8.4E-8 is the same
+    //  answer - "this nuclide is not present" - yet differs by 10% relative.  So floor the scale
+    //  with the initial step `create()` chose for that parameter, which is the size of a change
+    //  that matters for the quantity (0.05 for a mass fraction, 10mm for a thickness, 10% of an
+    //  activity).  Constant parameters carry a zero step, so they stay on the tight path.
+    const double fit_val = fit_results->paramValues[i];
+    const double scale = std::max( {fabs(expected[i].value), fabs(fit_val),
+                                    1.0E-3*fabs(expected[i].step), 1.0E-9} );
 
-    // Both drivers are handed the same parameter definitions; keep a copy so the comparison
-    //  below can name each parameter and know the scale `create()` chose for it.
-    if( !use_ceres )
-      initial_pars = fcn_pars.second;
-
-    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-    auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
-    auto progress_fcn = [](){};
-    auto finished_fcn = [](){};
-
-    const auto start_time = std::chrono::steady_clock::now();
-
-    if( use_ceres )
-      ShieldingSourceFitCalc::fit_model_ceres( "", fcn_pars.first, inputPrams, progress,
-                                               progress_fcn, fit_results, finished_fcn );
-    else
-      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn_pars.first, inputPrams, progress,
-                                                 progress_fcn, fit_results, finished_fcn );
-
-    const auto finish_time = std::chrono::steady_clock::now();
-    const double seconds = 1.0E-3 * std::chrono::duration_cast<std::chrono::milliseconds>(finish_time - start_time).count();
-    cout << (use_ceres ? "Ceres" : "Minuit") << " driver took " << seconds << " s, "
-         << fit_results->num_fcn_calls << " evals" << endl;
-
-    BOOST_REQUIRE( fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
-
-    chi2s.push_back( fit_results->chi2 );
-    param_sets.push_back( fit_results->paramValues );
-  }//for( both drivers )
-
-  BOOST_REQUIRE_EQUAL( chi2s.size(), size_t(2) );
-  BOOST_REQUIRE_EQUAL( param_sets[0].size(), param_sets[1].size() );
-
-  cout << "CeresVsMinuitDrivers: Minuit chi2=" << chi2s[0] << ", Ceres chi2=" << chi2s[1] << endl;
-
-  // Both drivers should find (essentially) the same minimum
-  BOOST_CHECK_MESSAGE( fabs(chi2s[0] - chi2s[1]) <= 0.01*std::max(chi2s[0], chi2s[1]),
-                       "Driver chi2s differ: Minuit=" << chi2s[0] << " vs Ceres=" << chi2s[1] );
-
-  BOOST_REQUIRE_EQUAL( initial_pars.Parameters().size(), param_sets[0].size() );
-
-  for( size_t i = 0; i < param_sets[0].size(); ++i )
-  {
-    const unsigned int par_num = static_cast<unsigned int>( i );
-    const double minuit_val = param_sets[0][i];
-    const double ceres_val = param_sets[1][i];
-
-    // Compare each parameter on its own scale.  A purely *relative* tolerance is meaningless for a
-    //  parameter both drivers drove to (numerically) zero: a mass fraction that comes out 7.6E-8
-    //  from one and 8.4E-8 from the other is the same answer - "this nuclide is not present" - yet
-    //  differs by 10% relative.  So floor the scale with the initial step `create()` chose for that
-    //  parameter, which is the size of a change that matters for the quantity (0.05 for a mass
-    //  fraction, 10mm for a thickness, 2.5 for an atomic number, 10% of an activity).  One part in
-    //  a thousand of that step is negligible for every parameter type here, and constant parameters
-    //  carry a zero step, so they stay on the exact-equality path they were already on.
-    const double par_step = fabs( initial_pars.Error( par_num ) );
-    const double scale = std::max( {fabs(minuit_val), fabs(ceres_val), 1.0E-3*par_step, 1.0E-9} );
-
-    BOOST_CHECK_MESSAGE( fabs(minuit_val - ceres_val) <= 0.01*scale,
-                         "Parameter " << i << " (" << initial_pars.Name(par_num) << ") differs:"
-                         << " Minuit=" << minuit_val << " vs Ceres=" << ceres_val
-                         << " (differ by " << fabs(minuit_val - ceres_val)
+    BOOST_CHECK_MESSAGE( fabs(fit_val - expected[i].value) <= 0.01*scale,
+                         "Parameter " << i << " (" << expected[i].name << ") drifted:"
+                         << " got " << fit_val << ", expected " << expected[i].value
+                         << " (differs by " << fabs(fit_val - expected[i].value)
                          << ", allowed " << 0.01*scale << ")" );
   }//for( loop over parameters )
-}//BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
+}//BOOST_AUTO_TEST_CASE( SelfAttenUNpFitGoldenValues )
 
 
 /** Sanity-checks ShieldingSourceChi2Fcn::computeEffectiveShielding on a volumetric
@@ -3835,13 +3823,13 @@ BOOST_AUTO_TEST_CASE( ComputeEffectiveShielding )
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
     BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                               = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
     vector<GammaInteractionCalc::EffectiveShieldingInfo> eff_shieldings;
     BOOST_REQUIRE_NO_THROW( eff_shieldings = fcn_pars.first->computeEffectiveShielding(
-                                                          fcn_pars.second.Params(), cache ) );
+                                                          fcn_pars.second.values(), cache ) );
 
     BOOST_REQUIRE_MESSAGE( !eff_shieldings.empty(), filename << ": no effective shielding entries" );
 
@@ -3895,19 +3883,19 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   BOOST_REQUIRE( load_simple_analyst_n42( n42, chi_input ) );
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
   const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
-  const vector<double> params = fcn_pars.second.Params();
+  const vector<double> params = fcn_pars.second.values();
 
   cout << "Parameters:" << endl;
   for( size_t i = 0; i < params.size(); ++i )
   {
-    const auto &p = fcn_pars.second.Parameters()[i];
-    cout << "  [" << i << "] " << p.GetName() << " = " << params[i]
-         << (p.IsConst() ? " (const)" : "") << (p.IsFixed() ? " (fixed)" : "")
-         << (p.HasLowerLimit() ? (" lo=" + std::to_string(p.LowerLimit())) : string())
-         << (p.HasUpperLimit() ? (" up=" + std::to_string(p.UpperLimit())) : string()) << endl;
+    const auto &p = fcn_pars.second.parameters()[i];
+    cout << "  [" << i << "] " << p.name << " = " << params[i]
+         << (p.is_const ? " (const)" : "")
+         << (p.has_lower ? (" lo=" + std::to_string(p.lower)) : string())
+         << (p.has_upper ? (" up=" + std::to_string(p.upper)) : string()) << endl;
   }
 
   using JetN = ceres::Jet<double,16>;
@@ -3928,8 +3916,8 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
 
   for( size_t par = 0; par < params.size(); ++par )
   {
-    const auto &p = fcn_pars.second.Parameters()[par];
-    if( p.IsConst() || p.IsFixed() || (string(p.GetName()).find("_FIXED") != string::npos) )
+    const auto &p = fcn_pars.second.parameters()[par];
+    if( p.is_const || (p.name.find("_FIXED") != string::npos) )
       continue;
 
     const double step = 1.0E-4 * std::max( fabs(params[par]), 1.0E-6 );
@@ -3947,30 +3935,26 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
       const double jet_d = jets[i].v[par];
       const double denom = std::max( {fabs(numeric), fabs(jet_d), 1.0E-9} );
       if( fabs(jet_d - numeric) > 0.02*denom )
-        cout << "  MISMATCH par[" << par << "]=" << p.GetName() << " peak " << i
+        cout << "  MISMATCH par[" << par << "]=" << p.name << " peak " << i
              << ": jet=" << jet_d << " numeric=" << numeric << endl;
     }
   }//for( loop over params )
 
   cout << "Jacobian check done" << endl;
 
-  // Now run both fit drivers and compare where they end up
-  for( const bool use_ceres : { false, true } )
+  // Now run the fit and report where it ends up
   {
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
 
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
     auto progress_fcn = [](){};
     auto finished_fcn = [](){};
 
-    if( use_ceres )
-      ShieldingSourceFitCalc::fit_model_ceres( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
-    else
-      ShieldingSourceFitCalc::fit_model_minuit2( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+    ShieldingSourceFitCalc::fit_model( "", fcn, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
 
-    cout << (use_ceres ? "CERES" : "MINUIT") << " result: chi2=" << fit_results->chi2 << ", params={";
+    cout << "Fit result: chi2=" << fit_results->chi2 << ", params={";
     for( const double v : fit_results->paramValues )
       cout << std::setprecision(6) << v << ", ";
     cout << "}" << endl;
@@ -3979,7 +3963,7 @@ BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian, * boost::unit_test::disabled() )
     cout << "  DoEval at solution: " << recomputed_chi2 << endl;
     for( const string &msg : fit_results->errormsgs )
       cout << "  errormsg: " << msg << endl;
-  }//for( both drivers )
+  }
 }//BOOST_AUTO_TEST_CASE( DebugAnalystFileJacobian )
 
 
@@ -4064,10 +4048,10 @@ BOOST_AUTO_TEST_CASE( SelfAttenUraniumFarStartStuck )
   ci.foreground_peaks.assign( peaks->begin(), peaks->end() );
   ci.background_peaks = nullptr;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( ci );
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
   auto pf = [](){};
@@ -4437,11 +4421,11 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     chi_input.background = background;
     chi_input.foreground_peaks.assign( foreground_peaks->begin(), foreground_peaks->end() );
     chi_input.background_peaks = background_peaks;
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars =
     GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -4788,11 +4772,11 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyInActivityFit )
     for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
       out.sum_counts += p->peakArea();
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
           fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
     auto progress_fcn = [](){};
@@ -4962,11 +4946,11 @@ BOOST_AUTO_TEST_CASE( DrfUncertaintyDoesNotBiasActivity )
     for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
       out.sum_counts += p->peakArea();
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
           fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
 
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
     auto progress_fcn = [](){};
@@ -5134,10 +5118,10 @@ namespace
     for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
       out.sum_counts += p->peakArea();
 
-    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
           fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
-    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-    *inputPrams = fcn_pars.second;
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
     auto progress_fcn = [](){};
@@ -5732,7 +5716,7 @@ HollowFitOutcome fit_hollow_sphere( GammaInteractionCalc::ShieldingSourceChi2Fcn
   input.config.shieldings[1].m_traceSources[0].m_activity = start_activity;
   input.config.shieldings[1].m_traceSources[0].m_fitActivity = fit_activity;
 
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
   BOOST_REQUIRE( fcn_pars.first );
   BOOST_REQUIRE_MESSAGE( fcn_pars.first->resolvedVolumetricEffMethod()
@@ -5740,8 +5724,8 @@ HollowFitOutcome fit_hollow_sphere( GammaInteractionCalc::ShieldingSourceChi2Fcn
                          "resolved to flat-disk, so there is no line set" );
   fcn_pars.first->setVolumetricLineSample( sample );
 
-  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
+  const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                  = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
   auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
   auto progress_fcn = [](){};

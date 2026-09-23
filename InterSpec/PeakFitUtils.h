@@ -167,6 +167,26 @@ CoarseResolutionType effective_det_type(
   const std::shared_ptr<const PeakFitDetPrefs> &prefs,
   const std::shared_ptr<const SpecUtils::Measurement> &meas,
   const std::shared_ptr<const SpecMeas> &spec );
+
+
+/** Finds the channel range over which the spectrum holds actual spectroscopic data.
+
+ Below the lower extent is electronic-noise / low-energy junk; above the upper extent the
+ spectrum has run out of counts.  The lower extent uses a resolution-aware, statistically
+ thresholded second-derivative estimator (see the implementation comment); the upper extent
+ walks down from the top until the counts per channel stay above a floor.
+
+ Requires a valid energy calibration and at least 7 channels.
+
+ @param meas          The spectrum to examine.
+ @param lower_channel Set to the first channel of real spectroscopic data.
+ @param upper_channel Set to the last channel of real spectroscopic data.
+ @returns Whether an extent could be determined; `lower_channel`/`upper_channel` are only
+          meaningful when this returns true.
+ */
+bool find_spectroscopic_extent( std::shared_ptr<const SpecUtils::Measurement> meas,
+                               size_t &lower_channel,
+                               size_t &upper_channel );
 }//namespace PeakFitUtils
 
 #endif //PeakFitUtils_h

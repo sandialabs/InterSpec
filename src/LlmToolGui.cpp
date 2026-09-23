@@ -8,6 +8,7 @@
 #include <sstream>
 #include <chrono>
 #include <iomanip>
+#include <algorithm>
 
 #include <boost/bind/bind.hpp>
 
@@ -601,12 +602,46 @@ void LlmToolGui::initializeUI()
 
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
   {
-    const string dataDir = InterSpec::staticDataDirectory();
-    // Go up from data/ to the repo root, then into test_datasets/
-    const string repoRoot = SpecUtils::parent_path( dataDir );
-    const string testDir = SpecUtils::append_path( repoRoot, "test_datasets" );
+    // Collect candidate test_datasets directories.  We take the union of benchmarks
+    //  found across all of them (a benchmark may legitimately appear in more than one).
+    vector<string> testDirs;
 
-    const vector<pair<string,string>> benchmarkFiles = LlmBenchmarkRunner::findBenchmarkFiles( testDir );
+    // Shipped location: one up from the static data dir, then into test_datasets/
+    testDirs.push_back(
+      SpecUtils::append_path( SpecUtils::parent_path( InterSpec::staticDataDirectory() ),
+                              "test_datasets" ) );
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+    // User-writable location: test_datasets/ under the writable data dir.  The getter
+    //  throws when the writable dir hasnt been set, which is a normal condition to skip.
+    try
+    {
+      testDirs.push_back(
+        SpecUtils::append_path( InterSpec::writableDataDirectory(), "test_datasets" ) );
+    }catch( std::exception & )
+    {
+      // writableDataDirectory not set - nothing to add
+    }
+#endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
+
+    vector<pair<string,string>> benchmarkFiles;
+    for( string testDir : testDirs )
+    {
+      // Make absolute so the paths handed to handleStartBenchmark(...) are valid
+      //  regardless of the process working directory.
+      SpecUtils::make_canonical_path( testDir );
+      if( !SpecUtils::is_directory( testDir ) )
+        continue;
+
+      const vector<pair<string,string>> found = LlmBenchmarkRunner::findBenchmarkFiles( testDir );
+      benchmarkFiles.insert( benchmarkFiles.end(), found.begin(), found.end() );
+    }
+
+    // Sort the merged list by display name
+    std::sort( benchmarkFiles.begin(), benchmarkFiles.end(),
+      []( const pair<string,string> &a, const pair<string,string> &b ){
+        return a.first < b.first;
+      } );
 
     if( !benchmarkFiles.empty() )
     {

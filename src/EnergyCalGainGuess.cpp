@@ -828,7 +828,7 @@ guess_energy_cal( const std::shared_ptr<const SpecUtils::Measurement> &meas,
       identity_cal->set_default_polynomial( nchan, {0.0f, 1.0f}, {} );
       auto chanmeas = make_shared<Measurement>( *meas );
       chanmeas->set_energy_calibration( identity_cal );
-      if( !ExperimentalPeakSearch::find_spectroscopic_extent( chanmeas, extent_lower, extent_upper )
+      if( !PeakFitUtils::find_spectroscopic_extent( chanmeas, extent_lower, extent_upper )
           || (extent_upper <= extent_lower) )
       {
         extent_lower = 0;

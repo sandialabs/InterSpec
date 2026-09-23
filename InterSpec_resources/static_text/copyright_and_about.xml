@@ -101,13 +101,6 @@ IT &quot;AS IS.&quot;
     </li>
 
 
-    <li><b><a href="https://github.com/root-project/root/tree/master/math/minuit2" target="_blank">Minuit2</a>:</b> Minimization Package.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>Minuit2</b> is part <a href="https://root.cern/" target="_blank">Cern&apos;s ROOT</a> package, and is used to perform numerical optizations for peak, energy calibration, and shielding/source-activity fitting.
-        <b>Minuit2</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
-      </div>
-    </li>
-
     <li><b><a href="http://www.feynarts.de/cuba/" target="_blank">Cuba</a> 3.0:</b> a library for multidimensional numerical integration
       <div style="margin-left: 1em; font-size: small;">
         <b>Cuba</b> is used to perform the numericall integration for self-attenuation sources in the shielding/source tool.
@@ -136,22 +129,6 @@ IT &quot;AS IS.&quot;
       <div style="margin-left: 1em; font-size: small;">
         <b>SQLite</b> is used to save user preferences and application state.
         <b>SQLite</b> is <a href="https://en.wikipedia.org/wiki/Public_domain" target="_blank">Public Domain</a> software.
-      </div>
-    </li>
-
-    <li><b><a href="https://root.cern.ch/" target="_blank">ROOT</a>:</b> A modular scientific software framework.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>InterSpec</b> uses code derived from the <b>ROOT</b> <em>TSpectrum</em> class to estimate the continuum for a spectrum (a depreciated feature);
-        code used is marked and attributed within the <b>InterSpec</b> source code.
-        <b>ROOT</b> is licensed under the <a href="https://www.gnu.org/licenses/lgpl-2.1.txt" target="_blank">LGPL v2.1 License</a>.
-      </div>
-    </li>
-
-    <!-- jQuery is no longer used by InterSpec -->
-    <li><b><a href="http://qtip2.com/" target="_blank">qTip2</a> 2.2.0:</b> javascript library that provides tooltip and notification tools.
-      <div style="margin-left: 1em; font-size: small;">
-        <b>qTip2</b> is used to help make the content-rich tooltips, as well as the notifications within <b>InterSpec</b>.
-        <b>qTip2</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
       </div>
     </li>
 
@@ -227,6 +204,17 @@ IT &quot;AS IS.&quot;
       <div style="margin-left: 1em; font-size: small;">
       <b>Abseil</b> is used as a dependency of the <b>Ceres Solver</b> library.
       <b>Abseil</b> is <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License 2.0</a> library.
+      </div>
+    </li>
+
+    <li><b><a href="http://ab-initio.mit.edu/faddeeva/" target="_blank">Faddeeva Package</a>:</b> computation of the Faddeeva function w(z) and related complex error functions.
+      <div style="margin-left: 1em; font-size: small;">
+        Code by Steven G. Johnson (MIT), adapted within <b>InterSpec</b> into a templated form so it can be
+        evaluated with <b>Ceres Solver</b>'s automatic-differentiation types; it is used for the Voigt and
+        Bortel peak shapes.
+        The <b>Faddeeva Package</b> is licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a>.
+        The following copyright statement applies to this library: <br />
+        “Copyright (c) 2012 Massachusetts Institute of Technology.  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the &quot;Software&quot;), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.”
       </div>
     </li>
     <li><b><a href="https://www.wxwidgets.org" target="_blank">wxWidgets</a></b> (version 3.2.1): wxWidgets is a C++ library that lets developers create applications for Windows, macOS, Linux and other platforms with a single code base.

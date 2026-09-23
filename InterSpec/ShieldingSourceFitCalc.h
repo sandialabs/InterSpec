@@ -60,14 +60,6 @@ namespace rapidxml
   template<class Ch> class xml_document;
 }//namespace rapidxml
 
-namespace ROOT
-{
-  namespace Minuit2
-  {
-    class MnUserParameters;
-  }//namespace Minuit2
-}//namespace ROOT
-
 namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
@@ -93,6 +85,71 @@ namespace ShieldSourcePullTrend
  */
 namespace ShieldingSourceFitCalc
 {
+
+/** Description of one activity/shielding fit parameter.
+
+ Parameter names carry meaning - the fit code and `ShieldingSourceDisplay` both read results
+ back by name, and suffixes such as "_FIXED", "_AN", "_thickness" and "_dx"/"_dy"/"_dz" select
+ behaviour - so do not rename parameters without updating those readers.
+ */
+struct FitParameter
+{
+  std::string name;
+  double value = 0.0;
+
+  /** Initial step size: how large a change in this parameter is meaningful.  Zero for
+   constant parameters.  This is NOT a fit uncertainty.
+   */
+  double step = 0.0;
+
+  /** True when the parameter is held constant rather than fitted. */
+  bool is_const = true;
+
+  bool has_lower = false, has_upper = false;
+  double lower = 0.0, upper = 0.0;
+};//struct FitParameter
+
+
+/** The set of parameters describing an activity/shielding fit.
+
+ Built by `GammaInteractionCalc::ShieldingSourceChi2Fcn::create()` and handed to `fit_model()`.
+ Parameter order is meaningful: it matches the order the chi2 function expects its argument
+ vector in, and `ModelFitResults::paramValues` comes back in the same order.
+
+ This replaces ROOT::Minuit2::MnUserParameters, which was the interface type while Minuit2
+ was the fitter.
+ */
+class FitParameters
+{
+public:
+  /** Adds a constant (not fitted) parameter. */
+  void add( const std::string &name, const double value );
+
+  /** Adds a fitted parameter with an initial step size, and no limits. */
+  void add( const std::string &name, const double value, const double step );
+
+  /** Adds a fitted parameter with an initial step size and two-sided limits. */
+  void add( const std::string &name, const double value, const double step,
+            const double lower, const double upper );
+
+  /** Puts a lower limit on an already-added parameter; throws if the name is not present. */
+  void setLowerLimit( const std::string &name, const double lower );
+
+  const std::vector<FitParameter> &parameters() const;
+
+  /** The parameter values, in order. */
+  std::vector<double> values() const;
+
+  /** The initial step sizes, in order.  These are not fit uncertainties. */
+  std::vector<double> stepSizes() const;
+
+  /** The number of parameters that are fitted (i.e. not constant). */
+  size_t numVariable() const;
+
+private:
+  std::vector<FitParameter> m_pars;
+};//class FitParameters
+
   /** Enum that classifies the type of source. */
   enum class ModelSourceType : int
   {
@@ -373,8 +430,7 @@ namespace ShieldingSourceFitCalc
      Pertinent Puzzle.  A common-mode efficiency error then maps ~1:1 onto activity (it is
      NOT averaged down by sqrt(Npeaks)).  The central value MAY legitimately move when peaks
      are mutually inconsistent under the band, and the marginal chart pulls sit coherently
-     off-zero; the chart annotates the coherent shift.  (The legacy Minuit2 path uses a
-     diagonal, uncorrelated inflation only.) */
+     off-zero; the chart annotates the coherent shift. */
     Likelihood = 2
   };//enum class DrfUncertaintyMethod
 
@@ -601,7 +657,6 @@ namespace ShieldingSourceFitCalc
      must read as a defined "nothing computed yet" rather than whatever was on the stack. */
     FitStatus successful = FitStatus::InvalidOther;
 
-    double edm = -1.0;  //estimated distance to minimum.
     double chi2 = -1.0;
     int num_fcn_calls = 0;
     unsigned int numDOF = 0;
@@ -710,34 +765,7 @@ namespace ShieldingSourceFitCalc
    */
   void fit_model( const std::string wtsession,
                   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                  std::shared_ptr<ModelFitProgress> progress,
-                  std::function<void()> progress_fcn,
-                  std::shared_ptr<ModelFitResults> results,
-                  std::function<void()> finished_fcn );
-
-  /** The Minuit2-based implementation of #fit_model (numeric gradients).
-
-   #fit_model dispatches to this or #fit_model_ceres according to the
-   USE_CERES_FOR_ACTIVITY_FIT compile option; both are always compiled, so they can
-   be compared against each other in tests.
-   */
-  void fit_model_minuit2( const std::string wtsession,
-                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
-                  std::shared_ptr<ModelFitProgress> progress,
-                  std::function<void()> progress_fcn,
-                  std::shared_ptr<ModelFitResults> results,
-                  std::function<void()> finished_fcn );
-
-  /** The Ceres-based implementation of #fit_model: automatic differentiation through
-   the whole expected-counts computation (including volumetric-source integration),
-   which is generally more reliable at finding the true minimum than Minuit2s
-   numeric gradients.  See #fit_model_minuit2.
-   */
-  void fit_model_ceres( const std::string wtsession,
-                  std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                  std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                  std::shared_ptr<FitParameters> inputPrams,
                   std::shared_ptr<ModelFitProgress> progress,
                   std::function<void()> progress_fcn,
                   std::shared_ptr<ModelFitResults> results,

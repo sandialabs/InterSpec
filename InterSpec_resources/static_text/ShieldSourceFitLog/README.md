@@ -307,7 +307,6 @@ it does not exist in the payload.
   "HasWarnings": false,
   "Warnings": [],
   "FitChi2": 12.34,
-  "EstimatedDistanceToMinimum": 0.0017,
   "NumberFcnCalls": 187,
   "NumDof": 7,
   "NumSources": 1,
@@ -366,8 +365,7 @@ it does not exist in the payload.
 | `ErrorMessages`                | array[string] | Per-error array emitted by `shield_src_fit_results_to_json` itself. Only present if non-empty; the singular `ErrorMessage` above (from the wrapping caller) is the more reliable field for templates. |
 | `HasWarnings`                  | bool    | `Warnings` is non-empty. Always emitted. |
 | `Warnings`                     | array[string] | Human-readable warning strings. Always emitted (may be empty). |
-| `FitChi2`                      | number  | Final χ² value reported by Minuit2. |
-| `EstimatedDistanceToMinimum`   | number  | EDM from Minuit2; small means well-converged. |
+| `FitChi2`                      | number  | Final χ² value reported by the fitter. |
 | `NumberFcnCalls`               | int     | Number of objective-function evaluations. |
 | `NumDof`                       | int     | Degrees of freedom (number of free parameters). |
 | `NumSources`                   | int     | Number of distinct nuclides being fit. |
@@ -377,7 +375,7 @@ it does not exist in the payload.
 | `AnySourceAgeFit`              | bool    | At least one source's age was fitted. |
 | `AnyShieldingFit`              | bool    | At least one shielding dimension or property was fitted. |
 | `FixedGeometryDetector`        | bool    | The DRF has a fixed-geometry efficiency (no `Distance`/`Geometry`). |
-| `RawFitParameter.Values`       | array[number] | Raw parameter vector from Minuit2 (implementation-defined ordering — for diagnostics). |
+| `RawFitParameter.Values`       | array[number] | Raw parameter vector from the fitter (implementation-defined ordering — for diagnostics). |
 | `RawFitParameter.Errors`       | array[number] | Raw parameter uncertainties (paired with `.Values`). |
 
 ### 5.2 `Detector`

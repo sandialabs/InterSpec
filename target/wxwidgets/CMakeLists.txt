@@ -322,7 +322,7 @@ install(
 
 # Remove developer artifacts that end up in the install prefix but are of no use to someone
 #  running InterSpec - roughly 21 MB of them in a Windows package.
-#  - include/ and lib/ come from the vendored Minuit2 and VoigtDistribution, which declare their
+#  - include/ and lib/ come from the vendored VoigtDistribution and friends, which declare their
 #    own install() rules for headers, static libraries and CMake package files.  Those rules run
 #    because the projects are pulled in by the add_subdirectory() near the top of this file, and
 #    they inherit this project's install prefix.

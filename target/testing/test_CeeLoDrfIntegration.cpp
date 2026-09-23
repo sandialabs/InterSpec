@@ -68,7 +68,6 @@
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
 
-#include "Minuit2/MnUserParameters.h"
 
 // CeeLo (external_libs/CeeLo/src)
 #include "io/SolidAngle.h"
@@ -1659,7 +1658,7 @@ BOOST_AUTO_TEST_CASE( transfer_fit_flags_surface )
   chi_input.background_peaks = nullptr;
 
   const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
-             ROOT::Minuit2::MnUserParameters> fcn_pars
+             ShieldingSourceFitCalc::FitParameters> fcn_pars
                 = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
   BOOST_REQUIRE( fcn_pars.first );
 

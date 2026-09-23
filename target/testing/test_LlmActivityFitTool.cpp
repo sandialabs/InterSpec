@@ -1044,7 +1044,6 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
     BOOST_CHECK( fit_quality.contains("dof") );
     BOOST_CHECK( fit_quality.contains("chi2_per_dof") );
     BOOST_CHECK( fit_quality.contains("num_peaks_used") );
-    BOOST_CHECK( fit_quality.contains("edm") );
     BOOST_CHECK( fit_quality.contains("num_fcn_calls") );
 
     // Verify backward compatibility - top-level should match fit_quality

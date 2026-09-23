@@ -20,10 +20,10 @@
   <message id="mffd-eqn-none">None</message>
   <message id="mffd-fit-cb">Fit FWHM from peaks</message>
   <message id="mffd-original-btn">Original FWHM</message>
-  <message id="mffd-tt-fit-cb">&lt;p&gt;When checked, the equation above is fit to the checked peaks in the
-    table, and re-fit whenever you change the equation form or which peaks are used.&lt;/p&gt;
-    &lt;p&gt;When un-checked, the coefficients are left alone - showing what the detector already had,
-    or whatever you type in - and &quot;Original FWHM&quot; puts the detector&apos;s own values back.&lt;/p&gt;</message>
+  <message id="mffd-tt-fit-cb"><p>When checked, the equation above is fit to the checked peaks in the
+    table, and re-fit whenever you change the equation form or which peaks are used.</p>
+    <p>When un-checked, the coefficients are left alone - showing what the detector already had,
+    or whatever you type in - and &quot;Original FWHM&quot; puts the detector&apos;s own values back.</p></message>
   <message id="mffd-tt-fit-needs-foreground">Fitting the FWHM needs a foreground spectrum to find peaks in.</message>
   <message id="mffd-num-terms-label">Number Terms:</message>
   <message id="mffd-par-vals-label">Parameter Values:</message>
