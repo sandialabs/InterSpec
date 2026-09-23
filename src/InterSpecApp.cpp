@@ -696,6 +696,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
   if( !loadedSpecFile
      && (SpecUtils::istarts_with(internal_path, "/G0/")
          || SpecUtils::istarts_with(internal_path, "/decay/")
+         || SpecUtils::istarts_with(internal_path, "/decaybatch/")
          || SpecUtils::istarts_with(internal_path, "/dose/")
          || SpecUtils::istarts_with(internal_path, "/gammaxs/")
          || SpecUtils::istarts_with(internal_path, "/1overr2/")

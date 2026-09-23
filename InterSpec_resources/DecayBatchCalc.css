@@ -20,7 +20,9 @@
   flex-direction: column;
 }
 
-/* Fixed height (~5 rows); rows scroll internally once there are more. */
+/* Scrolls internally once the groups/rows don't fit.  A minimum rather than a fixed height, so a
+   multi-location file's group titles aren't crammed into five rows' worth of space, and `max-height`
+   keeps the results area visible no matter how many locations are loaded. */
 .DecayBatchCalcWidget .DbcNuclideRows
 {
   display: flex;
@@ -28,7 +30,50 @@
   padding: 4px;
   overflow-y: auto;
   box-sizing: border-box;
-  height: 165px;  /* ~5 rows */
+  min-height: 165px;  /* ~5 rows */
+  max-height: 40vh;
+}
+
+/* --- Location groups (DecayBatchCalcLocation) ---
+   A <fieldset>/<legend> per physical location.  These only appear for a CSV that names locations;
+   the ordinary case is one `DbcUntitled` group, which is styled to leave no trace (below). */
+.DecayBatchCalcWidget .DbcLocation
+{
+  border: 1px solid var(--interspec-border-color);
+  border-radius: 4px;
+  margin: 0 0 6px 0;
+  padding: 0 6px 4px 6px;
+  min-width: 0;  /* let a fieldset shrink inside the flex column, instead of forcing the row width */
+  flex: 0 0 auto;
+}
+
+.DecayBatchCalcWidget .DbcLocation > legend
+{
+  padding: 0 4px;
+  font-size: 0.9em;
+  font-weight: bold;
+  color: var(--interspec-label-color);
+}
+
+.DecayBatchCalcWidget .DbcLocationRows
+{
+  display: flex;
+  flex-direction: column;
+}
+
+/* The single, untitled group of the hand-entry case: no border, legend or spacing, so the rows sit
+   exactly where they did before locations existed.  (GroupBox always has a legend - there is no way
+   to un-set it - so it is hidden rather than omitted.) */
+.DecayBatchCalcWidget .DbcLocation.DbcUntitled
+{
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.DecayBatchCalcWidget .DbcLocation.DbcUntitled > legend
+{
+  display: none;
 }
 
 .DecayBatchCalcWidget .DecayBatchCalcNuclide

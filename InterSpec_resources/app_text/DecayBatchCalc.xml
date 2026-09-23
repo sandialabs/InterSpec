@@ -10,15 +10,20 @@
   <message id="dbc-add-nuc-tt">Add another initial nuclide.</message>
 
   <message id="dbc-decay-time">Decay time:</message>
-  <message id="dbc-decay-time-tt">The time to decay to.  Units of s, m, h, d, y, or half-lives (e.g. "2 HL") are accepted.</message>
+  <message id="dbc-decay-time-tt">The time to decay to.  Units of s, m, h, d, y, or half-lives (e.g. "2 HL") are accepted.  A negative time (e.g. "-48h") looks backwards instead, solving for the activities the inputs must have had that long ago.</message>
   <message id="dbc-num-steps">Steps:</message>
   <message id="dbc-num-steps-tt">Number of time points to evaluate, from time zero to the decay time.  A value of 1 evaluates only at the decay time.</message>
   <message id="dbc-activity-units">Activity units:</message>
   <message id="dbc-curie">Curie</message>
   <message id="dbc-becquerel">Becquerel</message>
 
+  <message id="dbc-min-activity">Minimum activity:</message>
+  <message id="dbc-min-activity-placeholder">none</message>
+  <message id="dbc-min-activity-tt">Optional lower cut on the results: any activity below this is left out of the output.  Given as a plain number with no units, compared against the value as shown in the result table (so it is in whatever activity units the results are in).  Gamma, x-ray, alpha and beta lines are counts per second rather than activities, so the cut does not apply to them.  Leave blank for no cut.</message>
+
   <message id="dbc-mix-input">Mix inputs</message>
   <message id="dbc-mix-input-tt">Sum all input nuclides into a single mixture and co-decay them (implies showing progeny).  This lets the decay progeny of different ultimate parents mix together and be reported as a single line per nuclide.  If not selected, each input is decayed on its own, so a progeny reached from more than one input is reported separately for each parent.</message>
+  <message id="dbc-mix-input-grouped-tt">Fixed while a multi-location file is loaded: the nuclides of each location are always co-decayed as one mixture, and values from different locations are never combined.</message>
   <message id="dbc-show-progeny">Show progeny</message>
   <message id="dbc-show-progeny-tt">Also output the activity of every decay-progeny nuclide.</message>
 
@@ -39,6 +44,7 @@
   <message id="dbc-no-inputs">Enter one or more nuclides to see decay results.</message>
   <message id="dbc-invalid-time">Enter a valid decay time to see results.</message>
   <message id="dbc-invalid-nuclide">One or more nuclide entries are not valid; fix them to enable export.</message>
+  <message id="dbc-invalid-min-activity">The minimum activity must be a number with no units (e.g. "1e-20"), or blank for no cut.</message>
   <message id="dbc-calc-error">Could not compute decay: {1}</message>
   <message id="dbc-too-large">Results are too large to preview; use Export CSV or Copy to clipboard instead.</message>
 

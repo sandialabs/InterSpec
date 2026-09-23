@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 #include <memory>
@@ -47,6 +48,7 @@
 #include <Wt/Http/Response.h>
 #include <Wt/WRegExpValidator.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/WDoubleValidator.h>
 #include <Wt/WSuggestionPopup.h>
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -55,10 +57,12 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -82,8 +86,10 @@ using namespace std;
 
 namespace
 {
-  // Safety cap: number of numeric data cells beyond which we skip building the HTML preview table.
-  const size_t sm_max_preview_cells = 20000;
+  // Safety cap: number of table cells beyond which we skip building the HTML preview (export still
+  //  works).  Sized to comfortably clear the motivating grouped file - 35 locations x 103 nuclides x
+  //  6 columns = 21630 cells - while still catching a runaway.
+  const size_t sm_max_preview_cells = 40000;
 
   // See CopyFluxDataTextToClipboard in FluxTool.cpp / CopyUrlToClipboard in QrCode.cpp.
   WT_DECLARE_WT_MEMBER
@@ -162,6 +168,43 @@ namespace
         response.out() << m_widget->currentResultCsv();
     }
   };//class DecayBatchCalcCsvResource
+
+
+  /** Formats an activity for a row's edit box, in the given unit token (e.g. "uCi"), keeping enough
+   digits that reading the text back gives the same value.
+
+   `PhysicalUnits::printToBestActivityUnits` is not usable here: its digit count is *decimal places*,
+   not significant figures, so a measured 9.53E-15 uCi comes back as "0.0000 fCi" - and since the row
+   text is what `gatherInputs` re-parses, that silently turns a real measurement into zero (152 of the
+   1400 rows of the motivating file).  Values here span ~30 decades, so use %.<n>G, which keeps
+   significant figures wherever the exponent lands.
+   */
+  std::string activity_text_in_unit( const double activity, const std::string &unit_token )
+  {
+    // 9 significant figures: more than any input file supplies (the motivating one gives 7), and well
+    //  inside a double's ~15-17, so the text round-trips to the same value the file held.
+    double scale = 1.0;
+    try
+    {
+      if( !unit_token.empty() )
+        scale = PhysicalUnits::stringToActivity( "1" + unit_token );
+    }catch( std::exception & )
+    {
+      scale = 0.0;
+    }
+
+    if( scale <= 0.0 )
+      scale = PhysicalUnits::becquerel;   // unparseable unit; fall back to the SandiaDecay unit
+
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.9G", activity / scale );
+
+    std::string answer = buffer;
+    if( !unit_token.empty() )
+      answer += " " + unit_token;
+
+    return answer;
+  }//activity_text_in_unit(...)
 
 
   /** Parses an activity string that may carry units ("5 uCi") or be a bare scalar ("5", interpreted
@@ -344,7 +387,23 @@ bool DecayBatchCalcNuclide::isValid() const
   const SandiaDecay::Nuclide * const nuc = nuclide();
   if( !nuc || nuc->isStable() )
     return false;
-  return (activity() > 0.0);
+
+  // A zero activity is a legitimate input - a measurement of "none detected" - so only unparseable or
+  //  negative text is invalid.  (Grouped input relies on this: dropping a location's zero rows would
+  //  leave its mixture missing nuclides the other locations have, and a location measured as all
+  //  zeroes would disappear from the output entirely.)
+  string txt = m_activityEdit->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( txt.empty() )
+    return false;
+
+  double value = 0.0;
+  bool has_unit = false;
+  string unit_token;
+  if( !parse_activity_text( txt, value, has_unit, unit_token ) )
+    return false;
+
+  return (value >= 0.0);
 }//isValid()
 
 
@@ -510,6 +569,104 @@ void DecayBatchCalcNuclide::updateAgeEnabledState()
 
 
 
+DecayBatchCalcLocation::DecayBatchCalcLocation( const string &location )
+  : GroupBox(),
+    m_location(),
+    m_productSuffix(),
+    m_extraColumns(),
+    m_activityUnit(),
+    m_rows( nullptr )
+{
+  addStyleClass( "DbcLocation" );
+
+  // GroupBox has no way to un-set its legend, so an untitled group is styled away instead (see
+  //  #DecayBatchCalcLocation).  setTitle() creates the legend as child 0; keep the rows below it in
+  //  their own container so row indices are independent of it.
+  setTitle( WString() );
+  m_rows = addNew<WContainerWidget>();
+  m_rows->addStyleClass( "DbcLocationRows" );
+
+  setLocation( location );
+}//DecayBatchCalcLocation constructor
+
+
+const string &DecayBatchCalcLocation::location() const
+{
+  return m_location;
+}
+
+
+void DecayBatchCalcLocation::setLocation( const string &location )
+{
+  // Trimmed so a whitespace-only name (a stray space in a spreadsheet export) counts as untitled
+  //  rather than drawing a border with an empty legend and locking "Mix inputs" on.  This also makes
+  //  the CSV path agree with handleAppUrl(), which trims its values before they get here.
+  m_location = location;
+  SpecUtils::trim( m_location );
+  setTitle( WString::fromUTF8(m_location) );
+  toggleStyleClass( "DbcUntitled", m_location.empty() );
+}//setLocation(...)
+
+
+void DecayBatchCalcLocation::setPassthrough( const string &product_suffix,
+                                             const vector<pair<string,string>> &extra_columns,
+                                             const string &activity_unit )
+{
+  m_productSuffix = product_suffix;
+  m_extraColumns = extra_columns;
+  m_activityUnit = activity_unit;
+}//setPassthrough(...)
+
+
+const string &DecayBatchCalcLocation::productSuffix() const
+{
+  return m_productSuffix;
+}
+
+
+const vector<pair<string,string>> &DecayBatchCalcLocation::extraColumns() const
+{
+  return m_extraColumns;
+}
+
+
+const string &DecayBatchCalcLocation::activityUnit() const
+{
+  return m_activityUnit;
+}
+
+
+int DecayBatchCalcLocation::numRows() const
+{
+  return m_rows->count();
+}
+
+
+DecayBatchCalcNuclide *DecayBatchCalcLocation::row( const int index ) const
+{
+  if( (index < 0) || (index >= m_rows->count()) )
+    return nullptr;
+  return dynamic_cast<DecayBatchCalcNuclide *>( m_rows->widget(index) );
+}//row(...)
+
+
+DecayBatchCalcNuclide *DecayBatchCalcLocation::addRow( WSuggestionPopup *nuclideSuggest )
+{
+  return m_rows->addNew<DecayBatchCalcNuclide>( nuclideSuggest );
+}
+
+
+int DecayBatchCalcLocation::removeRow( DecayBatchCalcNuclide *row )
+{
+  // Rows ask to be removed from their own remove-button signal, so the destruction has to wait for
+  //  that emit to unwind (see WidgetUtils::removeWidgetLater).
+  WidgetUtils::removeWidgetLater( m_rows, row );
+  return m_rows->count();
+}//removeRow(...)
+
+
+
+
 DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   : WContainerWidget(),
     m_interspec( viewer ),
@@ -518,6 +675,7 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
     m_nuclideSuggest( nullptr ),
     m_timeEdit( nullptr ),
     m_stepsSpin( nullptr ),
+    m_minActEdit( nullptr ),
     m_actUnitsCombo( nullptr ),
     m_mixInput( nullptr ),
     m_showProgeny( nullptr ),
@@ -610,7 +768,8 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   m_timeEdit = timeRow->addNew<WLineEdit>( "1 y" );
   m_timeEdit->setWidth( WLength(45.0, WLength::Unit::Pixel) );
   label->setBuddy( m_timeEdit );
-  auto timeValidator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex() );
+  // A negative time is allowed: it looks *backwards*, solving for what the activities were then.
+  auto timeValidator = make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalPosOrNegRegex() );
   timeValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   m_timeEdit->setValidator( timeValidator );
   m_timeEdit->setAutoComplete( false );
@@ -637,6 +796,23 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   m_actUnitsCombo->setCurrentIndex( useBq ? 1 : 0 );
   label->setBuddy( m_actUnitsCombo );
   m_actUnitsCombo->changed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
+
+  WContainerWidget *cutRow = optsArea->addNew<WContainerWidget>();
+  cutRow->addStyleClass( "DbcOptRow" );
+  label = cutRow->addNew<WLabel>( WString::tr("dbc-min-activity") );
+  m_minActEdit = cutRow->addNew<WLineEdit>();
+  m_minActEdit->setWidth( WLength(70.0, WLength::Unit::Pixel) );
+  m_minActEdit->setPlaceholderText( WString::tr("dbc-min-activity-placeholder") );
+  label->setBuddy( m_minActEdit );
+  // Unit-less on purpose: it is compared against the number shown in the result table (see
+  //  `BatchDecayOptions::min_activity`), whatever unit that happens to be in.
+  auto cutValidator = make_shared<WDoubleValidator>();
+  cutValidator->setBottom( 0.0 );
+  m_minActEdit->setValidator( cutValidator );
+  m_minActEdit->setAutoComplete( false );
+  m_minActEdit->changed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
+  m_minActEdit->enterPressed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
+  HelpSystem::attachToolTipOn( m_minActEdit, WString::tr("dbc-min-activity-tt"), showToolTips );
 
   WContainerWidget *cbRow = optsArea->addNew<WContainerWidget>();
   cbRow->addStyleClass( "DbcOptRow" );
@@ -716,23 +892,122 @@ DecayBatchCalcWidget::~DecayBatchCalcWidget()
 }//~DecayBatchCalcWidget()
 
 
-void DecayBatchCalcWidget::addEmptyNuclideRow()
+vector<DecayBatchCalcLocation *> DecayBatchCalcWidget::locationGroups() const
 {
-  const string def = defaultNewActivityText();
-  DecayBatchCalcNuclide *row = m_nuclideRows->addNew<DecayBatchCalcNuclide>( m_nuclideSuggest );
-  row->setActivityText( def );
+  vector<DecayBatchCalcLocation *> groups;
+  for( int i = 0; i < m_nuclideRows->count(); ++i )
+  {
+    DecayBatchCalcLocation *group = dynamic_cast<DecayBatchCalcLocation *>( m_nuclideRows->widget(i) );
+    if( group )
+      groups.push_back( group );
+  }
+  return groups;
+}//locationGroups()
+
+
+vector<DecayBatchCalcNuclide *> DecayBatchCalcWidget::allRows() const
+{
+  vector<DecayBatchCalcNuclide *> rows;
+  for( DecayBatchCalcLocation * const group : locationGroups() )
+  {
+    for( int i = 0; i < group->numRows(); ++i )
+    {
+      DecayBatchCalcNuclide *row = group->row( i );
+      if( row )
+        rows.push_back( row );
+    }
+  }
+  return rows;
+}//allRows()
+
+
+DecayBatchCalcLocation *DecayBatchCalcWidget::groupOf( DecayBatchCalcNuclide *row ) const
+{
+  for( DecayBatchCalcLocation * const group : locationGroups() )
+  {
+    for( int i = 0; i < group->numRows(); ++i )
+    {
+      if( group->row(i) == row )
+        return group;
+    }
+  }
+  return nullptr;
+}//groupOf(...)
+
+
+DecayBatchCalcLocation *DecayBatchCalcWidget::addLocationGroup( const string &location )
+{
+  return m_nuclideRows->addNew<DecayBatchCalcLocation>( location );
+}
+
+
+void DecayBatchCalcWidget::connectRow( DecayBatchCalcNuclide *row )
+{
   row->changed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
   row->removeRequested().connect( this, &DecayBatchCalcWidget::handleRemoveRow );
+}//connectRow(...)
+
+
+bool DecayBatchCalcWidget::hasLocationGroups() const
+{
+  for( DecayBatchCalcLocation * const group : locationGroups() )
+  {
+    if( !group->location().empty() )
+      return true;
+  }
+  return false;
+}//hasLocationGroups()
+
+
+void DecayBatchCalcWidget::updateMixInputState()
+{
+  const bool grouped = hasLocationGroups();
+
+  // Grouped input co-decays each location as its own mixture, so mixing is implied within a location
+  //  and impossible across them.  Show that as a checked-but-disabled box rather than quietly
+  //  ignoring whatever the user had set.
+  if( grouped )
+    m_mixInput->setChecked( true );
+  m_mixInput->setEnabled( !grouped );
+
+  // Only the text changes; whether the tooltip shows at all was decided by the constructor's
+  //  HelpSystem::attachToolTipOn (which respects the user's "ShowTooltips" preference).
+  m_mixInput->setToolTip( WString::tr( grouped ? "dbc-mix-input-grouped-tt" : "dbc-mix-input-tt" ),
+                         Wt::TextFormat::XHTML );
+}//updateMixInputState()
+
+
+DecayBatchCalcLocation *DecayBatchCalcWidget::resetToSingleGroup()
+{
+  m_nuclideRows->clear();
+  return addLocationGroup( string() );
+}//resetToSingleGroup()
+
+
+DecayBatchCalcNuclide *DecayBatchCalcWidget::addRowToGroup( DecayBatchCalcLocation *group )
+{
+  assert( group );
+  DecayBatchCalcNuclide * const row = group->addRow( m_nuclideSuggest );
+  row->setActivityText( defaultNewActivityText() );
+  connectRow( row );
+  return row;
+}//addRowToGroup(...)
+
+
+void DecayBatchCalcWidget::addEmptyNuclideRow()
+{
+  // New rows join the last group, which for the ordinary (ungrouped) case is the only one.
+  const vector<DecayBatchCalcLocation *> groups = locationGroups();
+  addRowToGroup( groups.empty() ? addLocationGroup( string() ) : groups.back() );
 }//addEmptyNuclideRow()
 
 
 string DecayBatchCalcWidget::defaultNewActivityText() const
 {
   // If any existing row carries an activity unit, the new row joins that units style with "1 <unit>".
-  for( int i = 0; i < m_nuclideRows->count(); ++i )
+  for( DecayBatchCalcNuclide * const row : allRows() )
   {
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(i) );
-    if( row && row->activityHasUnit() )
+    if( row->activityHasUnit() )
     {
       const string unit = row->activityUnitStr();
       if( !unit.empty() )
@@ -746,24 +1021,27 @@ string DecayBatchCalcWidget::defaultNewActivityText() const
 
 void DecayBatchCalcWidget::harmonizeActivityUnits()
 {
-  const int n = m_nuclideRows->count();
+  const vector<DecayBatchCalcNuclide *> rows = allRows();
 
   // Split valid rows into unit-bearing and bare-scalar, tracking their positions.
   vector<int> unitIdx, scalarIdx;
   vector<string> unitTok;
-  for( int i = 0; i < n; ++i )
+  for( size_t i = 0; i < rows.size(); ++i )
   {
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(i) );
-    if( !row || !row->nuclide() || (row->activity() <= 0.0) )
+    DecayBatchCalcNuclide * const row = rows[i];
+
+    // A zero activity is a valid input (see isValid()), and its unit still labels the output - the
+    //  core takes a location's unit from its first row - so it must be harmonized like any other.
+    if( !row->nuclide() || !row->isValid() )
       continue;
 
     if( row->activityHasUnit() )
     {
-      unitIdx.push_back( i );
+      unitIdx.push_back( static_cast<int>(i) );
       unitTok.push_back( row->activityUnitStr() );
     }else
     {
-      scalarIdx.push_back( i );
+      scalarIdx.push_back( static_cast<int>(i) );
     }
   }//for( each row )
 
@@ -782,9 +1060,9 @@ void DecayBatchCalcWidget::harmonizeActivityUnits()
         best = static_cast<int>( k );
     }
 
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(s) );
-    if( (best >= 0) && row )
+    if( best >= 0 )
     {
+      DecayBatchCalcNuclide * const row = rows[s];
       string txt = row->activityText();
       SpecUtils::trim( txt );
       row->setActivityText( txt + " " + unitTok[best] );
@@ -795,18 +1073,36 @@ void DecayBatchCalcWidget::harmonizeActivityUnits()
 
 void DecayBatchCalcWidget::handleRemoveRow( DecayBatchCalcNuclide *row )
 {
-  if( !row )
+  DecayBatchCalcLocation * const group = row ? groupOf( row ) : nullptr;
+  if( !group )
     return;
 
-  // Always keep at least one row present.
-  if( m_nuclideRows->count() <= 1 )
+  const vector<DecayBatchCalcLocation *> groups = locationGroups();
+
+  // Always keep at least one row present: with nothing else left, blank the row instead of removing
+  //  it (and drop the group's title, so the tool is back to its untitled default look).
+  if( (groups.size() == 1) && (group->numRows() <= 1) )
   {
     row->setNuclide( nullptr, 0.0, false, 0.0, string() );
+    group->setLocation( string() );
+    updateMixInputState();
     scheduleResultUpdate();
     return;
   }
 
-  m_nuclideRows->removeWidget( row );
+  // Emptying a group removes it - unless it is the last one, handled above.
+  if( group->removeRow( row ) == 0 )
+  {
+    WidgetUtils::removeWidgetLater( m_nuclideRows, group );
+
+    // That may have left a single group behind, which should look like the untitled default rather
+    //  than keep a location title (`removeWidgetLater` has already detached it, so it is not counted).
+    const vector<DecayBatchCalcLocation *> remaining = locationGroups();
+    if( remaining.size() == 1 )
+      remaining.front()->setLocation( string() );
+  }
+
+  updateMixInputState();
   scheduleResultUpdate();
 }//handleRemoveRow(...)
 
@@ -820,20 +1116,19 @@ void DecayBatchCalcWidget::addNuclide( const int z, const int a, const int iso,
   if( !nuc )
     return;
 
-  // Re-use a leading empty row if present, otherwise append.
-  DecayBatchCalcNuclide *row = nullptr;
-  if( m_nuclideRows->count() == 1 )
-  {
-    DecayBatchCalcNuclide *first = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(0) );
-    if( first && !first->nuclide() )
-      row = first;
-  }
+  const vector<DecayBatchCalcNuclide *> rows = allRows();
 
-  if( !row )
+  // Re-use a lone empty row if present, otherwise append to the last group.
+  DecayBatchCalcNuclide *row = nullptr;
+  if( (rows.size() == 1) && !rows.front()->nuclide() )
   {
-    row = m_nuclideRows->addNew<DecayBatchCalcNuclide>( m_nuclideSuggest );
-    row->changed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
-    row->removeRequested().connect( this, &DecayBatchCalcWidget::handleRemoveRow );
+    row = rows.front();
+  }else
+  {
+    const vector<DecayBatchCalcLocation *> groups = locationGroups();
+    DecayBatchCalcLocation *group = groups.empty() ? addLocationGroup( string() ) : groups.back();
+    row = group->addRow( m_nuclideSuggest );
+    connectRow( row );
   }
 
   row->setNuclide( nuc, activity, useCurie, age, activityStr );
@@ -843,8 +1138,14 @@ void DecayBatchCalcWidget::addNuclide( const int z, const int a, const int iso,
 
 void DecayBatchCalcWidget::clearNuclides()
 {
-  m_nuclideRows->clear();
+  resetToSingleGroup();
   addEmptyNuclideRow();
+
+  // The cut is a plain number compared against whatever units the results are in, so keeping it
+  //  across a change of inputs would silently filter a table it was never meant for.
+  m_minActEdit->setText( WString() );
+
+  updateMixInputState();
   scheduleResultUpdate();
 }//clearNuclides()
 
@@ -860,36 +1161,82 @@ void DecayBatchCalcWidget::scheduleResultUpdate()
 vector<DecayBatchCalc::BatchNuclide> DecayBatchCalcWidget::gatherInputs() const
 {
   vector<DecayBatchCalc::BatchNuclide> inputs;
-  for( int i = 0; i < m_nuclideRows->count(); ++i )
+  for( DecayBatchCalcLocation * const group : locationGroups() )
   {
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(i) );
-    if( !row || !row->isValid() )
-      continue;
+    for( int i = 0; i < group->numRows(); ++i )
+    {
+      DecayBatchCalcNuclide * const row = group->row( i );
+      if( !row || !row->isValid() )
+        continue;
 
-    DecayBatchCalc::BatchNuclide bn;
-    bn.nuclide = row->nuclide();
-    bn.nuclide_str = bn.nuclide ? bn.nuclide->symbol : string();
-    bn.age = row->age();
-    bn.activity = row->activity();
-    bn.unit_label = row->unitLabel();
-    inputs.push_back( bn );
-  }//for( each row )
+      DecayBatchCalc::BatchNuclide bn;
+      bn.nuclide = row->nuclide();
+      bn.nuclide_str = bn.nuclide ? bn.nuclide->symbol : string();
+      bn.age = row->age();
+      bn.activity = row->activity();
+      bn.unit_label = row->unitLabel();
+      // A non-empty location puts the core into grouped/long output; the untitled default group
+      //  leaves it empty, so the ordinary case is byte-for-byte what it always was.  The passthrough
+      //  cells belong to the location, not the row (the core reads one set per group).
+      bn.location = group->location();
+      bn.product_suffix = group->productSuffix();
+      bn.extra_columns = group->extraColumns();
+      bn.activity_unit = group->activityUnit();
+      inputs.push_back( bn );
+    }//for( each row of the group )
+  }//for( each group )
 
   return inputs;
 }//gatherInputs()
+
+
+bool DecayBatchCalcWidget::minActivityCut( double &cut ) const
+{
+  cut = 0.0;
+
+  string cut_str = m_minActEdit->text().toUTF8();
+  SpecUtils::trim( cut_str );
+  if( cut_str.empty() )
+    return true;   // blank means "no cut", which is a valid state
+
+  // stod() alone would stop at the first junk character and silently turn "1e-3 Bq" into a cut of
+  //  0.001, so require the whole (trimmed) text to be consumed.
+  try
+  {
+    size_t used = 0;
+    const double value = std::stod( cut_str, &used );
+    if( (used != cut_str.size()) || IsNan(value) || IsInf(value) || (value < 0.0) )
+      return false;
+    cut = value;
+  }catch( std::exception & )
+  {
+    return false;
+  }
+
+  return true;
+}//minActivityCut(...)
 
 
 DecayBatchCalc::BatchDecayOptions DecayBatchCalcWidget::gatherOptions() const
 {
   DecayBatchCalc::BatchDecayOptions opts;
 
+  const string time_str = m_timeEdit->text().toUTF8();
   try
   {
-    opts.time_span = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( m_timeEdit->text().toUTF8(), 0.0 );
+    opts.time_span = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( time_str, 0.0 );
   }catch( std::exception & )
   {
     opts.time_span = 0.0;
   }
+
+  // Grouped output labels use the time exactly as typed (e.g. "48h"), so they match the source tool's.
+  opts.time_span_str = time_str;
+  SpecUtils::trim( opts.time_span_str );
+  SpecUtils::erase_any_character( opts.time_span_str, " \t" );
+
+  double cut = 0.0;
+  opts.min_activity = minActivityCut( cut ) ? cut : 0.0;
 
   opts.num_steps = static_cast<size_t>( std::max( 1, m_stepsSpin->value() ) );
   opts.use_curie = (m_actUnitsCombo->currentIndex() == 0);
@@ -925,14 +1272,15 @@ void DecayBatchCalcWidget::updateResult()
   // A row whose nuclide text is non-empty but doesn't resolve to a decayable nuclide is an error; a
   //  blank row is just ignored.  Don't let a partial export slip out while such a row is present.
   bool hasInvalidRow = false;
-  for( int i = 0; !hasInvalidRow && (i < m_nuclideRows->count()); ++i )
+  for( DecayBatchCalcNuclide * const row : allRows() )
   {
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(i) );
-    if( !row )
-      continue;
     string nucTxt = row->nuclideText();
     SpecUtils::trim( nucTxt );
-    hasInvalidRow = (!nucTxt.empty() && !row->isValid());
+    if( !nucTxt.empty() && !row->isValid() )
+    {
+      hasInvalidRow = true;
+      break;
+    }
   }//for( each row )
 
   const bool disableExport = inputs.empty() || hasInvalidRow;
@@ -945,9 +1293,21 @@ void DecayBatchCalcWidget::updateResult()
     return;
   }
 
-  if( opts.time_span <= 0.0 )
+  // Zero (or unparseable) is rejected; a negative time is meaningful - it looks backwards.
+  if( opts.time_span == 0.0 )
   {
     m_resultContainer->addNew<WText>( WString::tr("dbc-invalid-time") );
+    m_csvDownload->hide();
+    m_copyBtn->hide();
+    return;
+  }
+
+  // Say so rather than computing with no cut: results that quietly ignore what the user typed look
+  //  just like results that honoured it.
+  double cut = 0.0;
+  if( !minActivityCut( cut ) )
+  {
+    m_resultContainer->addNew<WText>( WString::tr("dbc-invalid-min-activity") );
     m_csvDownload->hide();
     m_copyBtn->hide();
     return;
@@ -1111,21 +1471,57 @@ void DecayBatchCalcWidget::loadCsvContents( const string &contents )
   // Coalesce the per-row additions into a single recompute.
   m_suppressUpdate = true;
   m_nuclideRows->clear();
+
+  // A cut from the previous inputs is meaningless against a new file's values (see clearNuclides()).
+  m_minActEdit->setText( WString() );
+
+  // One group per location, in first-seen order.  The source file is typically nuclide-major (all
+  //  locations for one nuclide, then the next nuclide), so the rows of a location are gathered rather
+  //  than assumed contiguous.  A file with no locations gives a single untitled group, which looks
+  //  exactly like the hand-entry case.
+  vector<DecayBatchCalcLocation *> groups;
   for( const DecayBatchCalc::BatchNuclide &bn : parsed )
   {
     if( !bn.nuclide )
       continue;
-    DecayBatchCalcNuclide *row = m_nuclideRows->addNew<DecayBatchCalcNuclide>( m_nuclideSuggest );
-    row->changed().connect( this, &DecayBatchCalcWidget::scheduleResultUpdate );
-    row->removeRequested().connect( this, &DecayBatchCalcWidget::handleRemoveRow );
-    const string actStr = PhysicalUnits::printToBestActivityUnits( bn.activity, 4, useCurie );
+
+    DecayBatchCalcLocation *group = nullptr;
+    for( DecayBatchCalcLocation * const g : groups )
+    {
+      if( g->location() == bn.location )
+      {
+        group = g;
+        break;
+      }
+    }
+
+    if( !group )
+    {
+      group = addLocationGroup( bn.location );
+      group->setPassthrough( bn.product_suffix, bn.extra_columns, bn.activity_unit );
+      groups.push_back( group );
+    }
+
+    DecayBatchCalcNuclide *row = group->addRow( m_nuclideSuggest );
+    connectRow( row );
+
+    // Show the value in the file's own unit ("uCi"), to enough digits to round-trip: the row text is
+    //  what gatherInputs() re-parses, so a lossy rendering here would change the measurement (see
+    //  #activity_text_in_unit).  A file giving no unit keeps the user's Ci/Bq preference.
+    const string actStr = bn.activity_unit.empty()
+      ? activity_text_in_unit( bn.activity, useCurie ? "Ci" : "Bq" )
+      : activity_text_in_unit( bn.activity, bn.activity_unit );
     row->setNuclide( bn.nuclide, bn.activity, useCurie, bn.age, actStr );
     row->setUnitLabel( bn.unit_label );  // after setNuclide, which clears it
   }//for( each parsed nuclide )
 
-  if( m_nuclideRows->count() == 0 )
+  if( groups.empty() )
+  {
+    resetToSingleGroup();
     addEmptyNuclideRow();
+  }
 
+  updateMixInputState();
   m_suppressUpdate = false;
   updateResult();
 }//loadCsvContents(...)
@@ -1139,6 +1535,13 @@ std::string DecayBatchCalcWidget::encodeStateToUrl() const
   query += "&mix=" + string( m_mixInput->isChecked() ? "1" : "0" );
   query += "&progeny=" + string( m_showProgeny->isChecked() ? "1" : "0" );
 
+  // Always emitted (even when blank), so restoring a state fully defines the field.  Url-encoded so a
+  //  '+' in an exponent ("1E+20") survives - it would otherwise come back from urlDecode as a space -
+  //  and so nothing typed into the field can break the query split.
+  string cut = m_minActEdit->text().toUTF8();
+  SpecUtils::trim( cut );
+  query += "&mincut=" + Wt::Utils::urlEncode( cut );
+
   string inc;
   auto add_inc = [&inc]( const char *name ){ inc += (inc.empty() ? "" : ",") + string(name); };
   if( m_incActivity->isChecked() ) add_inc( "act" );
@@ -1148,27 +1551,62 @@ std::string DecayBatchCalcWidget::encodeStateToUrl() const
   if( m_incBetas->isChecked() )    add_inc( "beta" );
   query += "&inc=" + inc;
 
+  const vector<DecayBatchCalcLocation *> groups = locationGroups();
+
   // Encode the total row count (including blank/unresolved rows) so that adding or removing a row is
   // itself a state change for undo/redo, even before the row is filled out.  handleAppUrl pads with
   // blank rows to match.
-  query += "&rows=" + std::to_string( m_nuclideRows->count() );
+  int num_rows = 0;
+  for( DecayBatchCalcLocation * const group : groups )
+    num_rows += group->numRows();
+  query += "&rows=" + std::to_string( num_rows );
 
-  for( int i = 0; i < m_nuclideRows->count(); ++i )
+  for( DecayBatchCalcLocation * const group : groups )
   {
-    DecayBatchCalcNuclide *row = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget(i) );
-    const SandiaDecay::Nuclide *nuc = row ? row->nuclide() : nullptr;
-    if( !nuc )
-      continue;
-    query += "&nuc=" + nuc->symbol;
-    query += "&act=" + row->activityText();
-    const double age = row->age();
-    if( age > 0.0 )
-      query += "&initialage=" + PhysicalUnits::printToBestTimeUnits( age, 6 );
-    // Carry any opaque areal/volumetric suffix (e.g. "/m2") so state round-trips losslessly.
-    const string label = row->unitLabel();
-    if( !label.empty() )
-      query += "&label=" + label;
-  }//for( each row )
+    // The ordinary hand-entry case is a single untitled group with nothing to say about itself, and
+    //  encodes exactly as it did before groups existed - so URIs stay short, and old ones still read.
+    const bool needs_header = (groups.size() > 1)
+                              || !group->location().empty()
+                              || !group->productSuffix().empty()
+                              || !group->extraColumns().empty()
+                              || !group->activityUnit().empty();
+
+    if( needs_header )
+    {
+      // Group-level values are url-encoded individually: they come from a CSV, so they can hold
+      //  spaces, '&', '=' or ',' (e.g. "Deposition at 28 hrs").  handleAppUrl decodes each one.
+      query += "&loc=" + Wt::Utils::urlEncode( group->location() );
+      query += "&grows=" + std::to_string( group->numRows() );
+      if( !group->productSuffix().empty() )
+        query += "&psuf=" + Wt::Utils::urlEncode( group->productSuffix() );
+      if( !group->activityUnit().empty() )
+        query += "&aunit=" + Wt::Utils::urlEncode( group->activityUnit() );
+      for( const pair<string,string> &xc : group->extraColumns() )
+      {
+        query += "&xcol=" + Wt::Utils::urlEncode( xc.first );
+        query += "&xval=" + Wt::Utils::urlEncode( xc.second );
+      }
+    }//if( needs_header )
+
+    for( int i = 0; i < group->numRows(); ++i )
+    {
+      DecayBatchCalcNuclide * const row = group->row( i );
+      const SandiaDecay::Nuclide * const nuc = row ? row->nuclide() : nullptr;
+      if( !nuc )
+        continue;
+      query += "&nuc=" + nuc->symbol;
+      // Encoded for the same reason the group values are: the activity text holds a space before its
+      //  unit, and `label` comes straight from a CSV's Unit column.
+      query += "&act=" + Wt::Utils::urlEncode( row->activityText() );
+      const double age = row->age();
+      if( age > 0.0 )
+        query += "&initialage=" + PhysicalUnits::printToBestTimeUnits( age, 6 );
+      // Carry any opaque areal/volumetric suffix (e.g. "/m2") so state round-trips losslessly.
+      const string label = row->unitLabel();
+      if( !label.empty() )
+        query += "&label=" + Wt::Utils::urlEncode( label );
+    }//for( each row of the group )
+  }//for( each group )
 
   return "calc?" + query;
 }//encodeStateToUrl()
@@ -1214,6 +1652,9 @@ void DecayBatchCalcWidget::handleAppUrl( std::string /*path*/, std::string query
     if( key == "rows" )
     {
       try{ desiredRows = std::max(0, std::stoi(value)); }catch(...){}
+    }else if( key == "mincut" )
+    {
+      m_minActEdit->setText( WString::fromUTF8( Wt::Utils::urlDecode(value) ) );
     }else if( key == "time" || key == "timespan" )
     {
       m_timeEdit->setText( value );
@@ -1247,56 +1688,124 @@ void DecayBatchCalcWidget::handleAppUrl( std::string /*path*/, std::string query
     }
   }//for( first pass )
 
-  // Second pass: nuclides (act/age apply to the preceding nuc).  Coalesce into one recompute.
+  // Second pass: location groups and their nuclides (act/age/label apply to the preceding nuc).  A
+  //  "loc" key starts a group and is followed by that group's own passthrough cells; rows join the
+  //  group most recently started, or an implicit untitled one - which is both the ordinary hand-entry
+  //  case and what URLs written before groups existed look like.  Coalesce into one recompute.
   m_suppressUpdate = true;
   m_nuclideRows->clear();
+
+  DecayBatchCalcLocation *group = nullptr;
+  vector<int> groupRowCounts;  // Per group, in creation order; 0 == unspecified (see "grows").
+  bool any_group_counts = false;  // Whether the URL gave per-group counts at all.
+
+  // Puts a group in place for a row that arrived without the URL naming one.
+  auto current_group = [this,&group,&groupRowCounts]() -> DecayBatchCalcLocation * {
+    if( !group )
+    {
+      group = addLocationGroup( string() );
+      groupRowCounts.push_back( 0 );
+    }
+    return group;
+  };
+
+  // Accumulated passthrough cells of the current group; reset by each "loc".
+  string productSuffix, activityUnit;
+  vector<pair<string,string>> extraColumns;
+
   for( size_t i = 0; i < fields.size(); ++i )
   {
-    if( !isNucKey(fields[i].first) )
+    const string &key = fields[i].first;
+    const string &value = fields[i].second;
+
+    // Group-level values were url-encoded individually (they come from a CSV, so may hold spaces,
+    //  '&', '=' or ','), so each needs decoding here.
+    if( key == "loc" )
+    {
+      group = addLocationGroup( Wt::Utils::urlDecode(value) );
+      groupRowCounts.push_back( 0 );
+      productSuffix.clear();
+      activityUnit.clear();
+      extraColumns.clear();
+      continue;
+    }//if( key == "loc" )
+
+    if( key == "grows" )
+    {
+      current_group();
+      try
+      {
+        groupRowCounts.back() = std::max( 0, std::stoi(value) );
+        any_group_counts = true;
+      }catch( ... ){}
+      continue;
+    }//if( key == "grows" )
+
+    if( (key == "psuf") || (key == "aunit") || (key == "xcol") || (key == "xval") )
+    {
+      if( key == "psuf" )
+        productSuffix = Wt::Utils::urlDecode( value );
+      else if( key == "aunit" )
+        activityUnit = Wt::Utils::urlDecode( value );
+      else if( key == "xcol" )
+        extraColumns.push_back( { Wt::Utils::urlDecode(value), string() } );
+      else if( !extraColumns.empty() )  //"xval" - always written right after its "xcol"
+        extraColumns.back().second = Wt::Utils::urlDecode( value );
+
+      current_group()->setPassthrough( productSuffix, extraColumns, activityUnit );
+      continue;
+    }//if( a group passthrough key )
+
+    if( !isNucKey(key) )
       continue;
 
-    const SandiaDecay::Nuclide *nuc = db ? db->nuclide( fields[i].second ) : nullptr;
+    const SandiaDecay::Nuclide * const nuc = db ? db->nuclide( value ) : nullptr;
     if( !nuc || nuc->isStable() )
       continue;
 
     string act_str, age_str, label_str;
     for( size_t j = i + 1; j < fields.size(); ++j )
     {
-      if( isNucKey(fields[j].first) )
+      if( isNucKey(fields[j].first) || (fields[j].first == "loc") )
         break;
+      // `act` and `label` are url-encoded by encodeStateToUrl (an activity has a space before its
+      //  unit, and a label comes from a CSV), so they decode like the group values.
       if( (fields[j].first == "act") || (fields[j].first == "activity") )
-        act_str = fields[j].second;
+        act_str = Wt::Utils::urlDecode( fields[j].second );
       else if( (fields[j].first == "age") || (fields[j].first == "initialage") )
         age_str = fields[j].second;
       else if( fields[j].first == "label" )
-        label_str = fields[j].second;
+        label_str = Wt::Utils::urlDecode( fields[j].second );
     }//for( trailing act/age/label )
 
     double act = 0.0, age = 0.0;
     try{ act = PhysicalUnits::stringToActivity( act_str ); }catch(...){}
     try{ age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( age_str, nuc->halfLife ); }catch(...){}
 
-    addNuclide( nuc->atomicNumber, nuc->massNumber, nuc->isomerNumber, act, useCurie, age, act_str );
-
-    // Restore the areal/volumetric label onto the row just added (setNuclide, called inside
-    // addNuclide, clears it, so this must come after).
-    if( !label_str.empty() && (m_nuclideRows->count() > 0) )
-    {
-      DecayBatchCalcNuclide *row
-              = dynamic_cast<DecayBatchCalcNuclide *>( m_nuclideRows->widget( m_nuclideRows->count() - 1 ) );
-      if( row )
-        row->setUnitLabel( label_str );
-    }
+    DecayBatchCalcNuclide * const row = current_group()->addRow( m_nuclideSuggest );
+    connectRow( row );
+    row->setNuclide( nuc, act, useCurie, age, act_str );
+    row->setUnitLabel( label_str );  // after setNuclide, which clears it
   }//for( second pass )
 
-  if( m_nuclideRows->count() == 0 )
+  // Pad blank rows so each group's row count - and the total - match the encoded state (see
+  // encodeStateToUrl); keeps undo/redo of "add a blank row" solid.
+  const vector<DecayBatchCalcLocation *> groups = locationGroups();
+  for( size_t i = 0; (i < groups.size()) && (i < groupRowCounts.size()); ++i )
+  {
+    while( groups[i]->numRows() < groupRowCounts[i] )
+      addRowToGroup( groups[i] );
+  }
+
+  // Older URLs (and the plain hand-entry case) carry only the overall "rows" count, so honour it when
+  //  no per-group counts were given.  With them, they are authoritative: topping up to a "rows" total
+  //  that disagrees would append the difference to the last group, silently moving rows between
+  //  locations if the URI was truncated or hand-edited.
+  const int minRows = any_group_counts ? 1 : std::max( 1, desiredRows );
+  while( static_cast<int>(allRows().size()) < minRows )
     addEmptyNuclideRow();
 
-  // Pad blank rows so the total row count matches the encoded state (see encodeStateToUrl); keeps
-  // undo/redo of "add a blank row" solid.
-  while( m_nuclideRows->count() < desiredRows )
-    addEmptyNuclideRow();
-
+  updateMixInputState();
   m_suppressUpdate = false;
   updateResult();
 }//handleAppUrl(...)

@@ -24,12 +24,16 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <set>
 #include <tuple>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cassert>
 #include <sstream>
+#include <algorithm>
 #include <stdexcept>
 #include <functional>
 
@@ -45,9 +49,15 @@ using namespace std;
 
 namespace
 {
+  /** Smallest surviving fraction a nuclide may have and still have its past activity solved for; see
+   the use in #back_decay_activities.  2^-47 matches the ~47 half-lives SandiaDecay allows in
+   NuclideMixture::addAgedNuclideByNumAtoms, i.e. an amplification of at most ~1.4E+14.
+   */
+  const double sm_min_back_decay_diagonal = 7.1E-15;
+
   /** The time of a given step, in seconds.  With `num_steps == 1` returns `time_span`; otherwise
    returns `step*time_span/(num_steps-1)` so the points run 0..time_span inclusive.  Matches the
-   legacy batch_decay.cpp behavior.
+   legacy batch_decay.cpp behavior.  A negative `time_span` walks backwards from 0 to it.
    */
   double time_for_step( const size_t step, const size_t num_steps, const double time_span )
   {
@@ -62,18 +72,620 @@ namespace
   {
     return string(use_curie ? "Ci" : "Bq") + extra_label;
   }
+
+
+  /** Formats a value the way the legacy multi-location output did: "%.6E", so zero prints as
+   "0.000000E+00".  (SpecUtils::printCompact would give "0", and drops trailing zeros.)
+   */
+  string print_scientific( const double value )
+  {
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.6E", value );
+    return string( buffer );
+  }
+
+
+  /** A compact rendering of a time span for the grouped-output "+<time>" label suffix, e.g. "48h".
+   `printToBestTimeUnits` gives a fixed-precision value and a space ("48.000000 h"); the legacy
+   output has neither, so drop redundant trailing zeros and the space.
+   */
+  string compact_time_str( const double time_span )
+  {
+    const string txt = PhysicalUnits::printToBestTimeUnits( time_span, 6 );
+
+    const string::size_type sp = txt.find( ' ' );
+    string value = (sp == string::npos) ? txt : txt.substr( 0, sp );
+    const string unit = (sp == string::npos) ? string() : txt.substr( sp + 1 );
+
+    if( value.find( '.' ) != string::npos )
+    {
+      value.erase( value.find_last_not_of( '0' ) + 1 );
+      if( !value.empty() && (value.back() == '.') )
+        value.pop_back();
+    }
+
+    return value + unit;
+  }
+
+
+  /** What #back_decay_activities could not do, accumulated across however many mixtures were solved
+   (one per location, so potentially dozens), and formatted once by #back_decay_warnings.  Collecting
+   rather than appending text keeps a file of 35 locations from repeating the same warning 35 times.
+   */
+  struct BackDecayNotes
+  {
+    /** Nuclides whose own past activity is unidentifiable, but which have an ancestor in the set whose
+     in-growth accounts for the measurement; reported as zero.  (With no such ancestor there is nothing
+     to report at all, and #back_decay_activities throws instead of noting it here.)
+     */
+    std::set<const SandiaDecay::Nuclide *> unrecoverable;
+
+    /** Nuclides whose measurement the recovered past state cannot reproduce, with the worst-case
+     measured and ancestor-implied present activities seen for each.
+     */
+    std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> inconsistent;
+
+    /** How far back the solve looked, for the message text. */
+    double age = 0.0;
+
+    /** The units the messages quote activities in - the divisor from SandiaDecay units, and the text
+     to print - so a message never says "Bq" about a table of "uCi/m2".  Set by #decay.
+     */
+    double act_unit = PhysicalUnits::becquerel;
+    std::string unit_str = "Bq";
+  };//struct BackDecayNotes
+
+
+  /** Solves for the activities a set of nuclides must have had `age` ago to give the measured
+   activities now.  `age` is a positive magnitude (how far back to look).
+
+   Why this is not just `A_now / exp(-lambda*age)` per nuclide: if any input is a descendant of
+   another (Cs137 -> Ba137m, Zr95 -> Nb95, ...) then part of its present activity grew in from that
+   ancestor, so the nuclides are coupled and must be solved together.
+
+   The forward map from past amounts to present amounts is linear, and lower-triangular when the
+   nuclides are ordered ancestor-before-descendant, so the past amounts follow by forward
+   substitution.  Each column of that matrix is obtained from SandiaDecay itself - seed a mixture with
+   one unit of nuclide j, evaluate at `age`, and read off what it produced in every i - which avoids
+   relying on the "barely tested" branchRatioFromForebear()/branchRatioToDecendant().
+
+   Everything is done in numbers of atoms, which keeps the matrix well conditioned (activity would
+   scale rows by wildly different decay constants) and lets stable nuclides participate.
+
+   Two things can go wrong, and both are physical rather than numerical:
+     - Over enough half-lives a nuclide's surviving fraction `exp(-lambda*age)` becomes too small to
+       divide by, or underflows to exactly zero (Ba137m is ~1129 half-lives in 48 h), so its past
+       amount has no recoverable effect on anything measurable today.  If an ancestor is among the
+       inputs then its in-growth accounts for the measurement, and the nuclide itself is reported as
+       zero; if not, there is nothing to report and this throws so the user can look back less far.
+     - The measurements may not be mutually consistent with any past state (e.g. a measured
+       Ba137m/Cs137 ratio that secular equilibrium forbids).  The solve then cannot reproduce them;
+       `warnings` says so rather than silently returning a set that does not decay back to the input.
+
+   Returns past activities in the same (SandiaDecay) units as `activities`, indexed like `nuclides`.
+   Throws std::runtime_error when a measured nuclide's past activity is wholly unrecoverable.
+   */
+  vector<double> back_decay_activities( const vector<const SandiaDecay::Nuclide *> &nuclides,
+                                        const vector<double> &activities,
+                                        const double age,
+                                        BackDecayNotes &notes )
+  {
+    const size_t nnuc = nuclides.size();
+    assert( activities.size() == nnuc );
+    assert( age > 0.0 );
+
+    notes.age = age;
+
+    // Order ancestor-before-descendant, so the forward map is lower-triangular.  Counting, for each
+    //  nuclide, how many of the other input nuclides are its ancestors gives such an order directly:
+    //  if j is an ancestor of i then every ancestor of j is also one of i, plus j itself, so j's count
+    //  is strictly smaller than i's.  Sorting by that count ascending therefore always places an
+    //  ancestor before its descendants.
+    vector<size_t> num_ancestors( nnuc, 0 );
+    for( size_t i = 0; i < nnuc; ++i )
+    {
+      if( !nuclides[i] )
+        continue;
+
+      // forebearers() includes the nuclide itself, so skip any input that is the same nuclide.
+      const vector<const SandiaDecay::Nuclide *> forebearers = nuclides[i]->forebearers();
+      for( size_t j = 0; j < nnuc; ++j )
+      {
+        if( (j != i) && nuclides[j] && (nuclides[j] != nuclides[i])
+           && (std::find( begin(forebearers), end(forebearers), nuclides[j] ) != end(forebearers)) )
+        {
+          num_ancestors[i] += 1;
+        }
+      }
+    }//for( each nuclide )
+
+    vector<size_t> order( nnuc );
+    for( size_t i = 0; i < nnuc; ++i )
+      order[i] = i;
+
+    std::stable_sort( begin(order), end(order), [&num_ancestors]( const size_t a, const size_t b ){
+      return num_ancestors[a] < num_ancestors[b];
+    } );
+
+    // Column j of the forward map: atoms of each nuclide produced at `age` by one atom of j.
+    //  (Also gives the diagonal, j's own surviving fraction.)
+    vector<vector<double>> forward( nnuc, vector<double>( nnuc, 0.0 ) );
+    for( size_t j = 0; j < nnuc; ++j )
+    {
+      const SandiaDecay::Nuclide * const src = nuclides[j];
+      if( !src )
+        continue;
+
+      SandiaDecay::NuclideMixture mix;
+      mix.addNuclideByAbundance( src, 1.0 );
+
+      const vector<SandiaDecay::NuclideNumAtomsPair> atoms = mix.numAtoms( age );
+      for( const SandiaDecay::NuclideNumAtomsPair &nap : atoms )
+      {
+        for( size_t i = 0; i < nnuc; ++i )
+        {
+          if( nuclides[i] == nap.nuclide )
+            forward[i][j] = nap.numAtoms;
+        }
+      }
+    }//for( each column )
+
+    // Present-day atoms from the measured activities (a stable nuclide has no decay constant, so it
+    //  cannot be expressed as an activity at all - it contributes nothing to solve for).
+    vector<double> now_atoms( nnuc, 0.0 );
+    for( size_t i = 0; i < nnuc; ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = nuclides[i];
+      if( nuc && !nuc->isStable() && (nuc->decayConstant() > 0.0) )
+        now_atoms[i] = activities[i] / nuc->decayConstant();
+    }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // The whole method rests on `order` making the forward map lower-triangular: a nuclide must not
+    //  receive atoms from one solved after it.  Cheap to check, and silently wrong if it ever fails.
+    for( size_t a = 0; a < nnuc; ++a )
+    {
+      for( size_t b = a + 1; b < nnuc; ++b )
+      {
+        const size_t earlier = order[a], later = order[b];
+        assert( (forward[earlier][later] <= 0.0)
+               || (nuclides[earlier] == nuclides[later]) );
+      }
+    }
+#endif
+
+    // Forward substitution in ancestor-first order.
+    vector<double> past_atoms( nnuc, 0.0 );
+
+    for( size_t pos = 0; pos < nnuc; ++pos )
+    {
+      const size_t i = order[pos];
+
+      // Subtract what the already-solved ancestors grow into i by now - i.e. everything earlier in
+      //  `order`, which by construction is where any ancestor of i sits.
+      double from_ancestors = 0.0;
+      for( size_t prev = 0; prev < pos; ++prev )
+        from_ancestors += forward[i][order[prev]] * past_atoms[order[prev]];
+
+      const double residual = now_atoms[i] - from_ancestors;
+      const double diagonal = forward[i][i];
+
+      // Past enough half-lives a nuclide's own past amount stops being recoverable from today's
+      //  measurement: the diagonal underflows to exactly zero (Ba137m over 48 h), or gets so small
+      //  that dividing by it amplifies the measurement - and its noise - without bound (at 48 h Pr144
+      //  has a diagonal of 7E-51, which would turn a real 1.4E-03 uCi/m2 into 2E+47 uCi/m2).  Both
+      //  are the same situation, so treat them the same; SandiaDecay draws this same line at ~47
+      //  half-lives in NuclideMixture::addAgedNuclideByNumAtoms.
+      if( diagonal < sm_min_back_decay_diagonal )
+      {
+        // With an ancestor among the inputs, its in-growth accounts for the measurement and zero is
+        //  the right answer for i itself - only a note is owed.  With none there is nothing to fall
+        //  back on and no meaningful number to report, so have the user look back a shorter way.
+        if( (from_ancestors <= 0.0) && (now_atoms[i] > 0.0) )
+        {
+          const double half_life = (nuclides[i] && (nuclides[i]->halfLife > 0.0))
+                                     ? nuclides[i]->halfLife : 0.0;
+          char buffer[512] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "Cannot look back %s: that is %.0f half-lives of %s, and"
+                    " none of its parents are among the inputs, so its past activity cannot be"
+                    " determined - recovering it would mean scaling the measurement up by more than"
+                    " %.0G.  Please use a shorter time.",
+                    compact_time_str( age ).c_str(),
+                    (half_life > 0.0) ? (age / half_life) : 0.0,
+                    (nuclides[i] ? nuclides[i]->symbol.c_str() : "?"),
+                    1.0 / sm_min_back_decay_diagonal );
+          throw runtime_error( buffer );
+        }
+
+        past_atoms[i] = 0.0;
+        if( now_atoms[i] > 0.0 )
+          notes.unrecoverable.insert( nuclides[i] );
+      }else
+      {
+        // A negative residual means the ancestors alone already over-produce i; no (non-negative) past
+        //  amount of i can fix that, so clamp at zero and report the disagreement below.
+        past_atoms[i] = (residual > 0.0) ? (residual / diagonal) : 0.0;
+      }
+
+      // Whenever i's own past amount could not absorb the difference - because it is unidentifiable, or
+      //  because the ancestors already over-produce i - the past state cannot reproduce the input.
+      const bool absorbed = (diagonal >= sm_min_back_decay_diagonal) && (residual > 0.0);
+      if( !absorbed && (now_atoms[i] > 0.0) && (from_ancestors > 0.0) )
+      {
+        const double diff = fabs( from_ancestors - now_atoms[i] ) / now_atoms[i];
+        if( diff > 0.01 )
+        {
+          const double lambda = nuclides[i] ? nuclides[i]->decayConstant() : 0.0;
+
+          // Keep the worst disagreement seen for this nuclide across all the mixtures solved.
+          std::pair<double,double> &worst = notes.inconsistent[nuclides[i]];
+          const double prev = (worst.first > 0.0) ? fabs(worst.second - worst.first)/worst.first : -1.0;
+          if( diff > prev )
+            worst = std::make_pair( now_atoms[i] * lambda, from_ancestors * lambda );
+        }
+      }//if( the measurement could not be matched )
+    }//for( each nuclide, ancestors first )
+
+    // Back to activities.
+    vector<double> past_activities( nnuc, 0.0 );
+    for( size_t i = 0; i < nnuc; ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = nuclides[i];
+      if( nuc && !nuc->isStable() )
+        past_activities[i] = past_atoms[i] * nuc->decayConstant();
+    }
+
+    return past_activities;
+  }//back_decay_activities(...)
+
+
+  /** How far apart two activities are, as text: a percentage while that stays readable, and a plain
+   multiple once it does not (a nearly-stable nuclide's ancestors can imply many orders of magnitude
+   more than was measured, and "+2.5E+50%" tells the reader nothing).
+   */
+  string difference_str( const double measured, const double implied )
+  {
+    char buffer[64] = { '\0' };
+
+    if( (measured > 0.0) && (implied > (2.0 * measured)) )
+      snprintf( buffer, sizeof(buffer), "%.3G times more", implied / measured );
+    else if( measured > 0.0 )
+      snprintf( buffer, sizeof(buffer), "%+.1f%%", 100.0 * (implied - measured) / measured );
+    else
+      snprintf( buffer, sizeof(buffer), "measured as zero" );
+
+    return string( buffer );
+  }//difference_str(...)
+
+
+  /** Renders the notes accumulated over every back-decay solve into user-facing warning text; one
+   message per affected nuclide no matter how many locations hit it, and only the worst few spelled
+   out - a whole fission-product mix can be inconsistent in dozens of nuclides at once.
+   */
+  string back_decay_warnings( const BackDecayNotes &notes )
+  {
+    const size_t max_detailed = 5;
+    string warnings;
+
+    // Nothing to report unless a solve ran, and a solve always sets `age` - so a note without one
+    //  would render as "over 0s it decays away entirely".
+    assert( (notes.age > 0.0)
+           || (notes.unrecoverable.empty() && notes.inconsistent.empty()) );
+
+    if( !notes.unrecoverable.empty() )
+    {
+      string names;
+      for( const SandiaDecay::Nuclide * const nuc : notes.unrecoverable )
+        names += (names.empty() ? "" : ", ") + (nuc ? nuc->symbol : string("?"));
+
+      warnings += "Past activity of " + names + " cannot be determined: over "
+                  + compact_time_str( notes.age ) + " it decays away entirely, so today's measurement"
+                    " reflects only in-growth from its parent.  Reported as zero.\n";
+    }
+
+    if( notes.inconsistent.empty() )
+      return warnings;
+
+    // Worst disagreement first, so the detailed lines are the ones worth reading.
+    vector<const SandiaDecay::Nuclide *> worst;
+    for( const std::pair<const SandiaDecay::Nuclide * const,std::pair<double,double>> &nv
+        : notes.inconsistent )
+    {
+      worst.push_back( nv.first );
+    }
+
+    std::sort( begin(worst), end(worst), [&notes]( const SandiaDecay::Nuclide *l,
+                                                  const SandiaDecay::Nuclide *r ){
+      const std::pair<double,double> &a = notes.inconsistent.at( l );
+      const std::pair<double,double> &b = notes.inconsistent.at( r );
+      const double la = (a.first > 0.0) ? fabs(a.second - a.first)/a.first : 0.0;
+      const double lb = (b.first > 0.0) ? fabs(b.second - b.first)/b.first : 0.0;
+      return la > lb;
+    } );
+
+    warnings += "Input activities are not self-consistent with having decayed from a state "
+                + compact_time_str( notes.age ) + " ago, for " + std::to_string( worst.size() )
+                + (worst.size() == 1 ? string(" nuclide") : string(" nuclides"))
+                + ".  The reported past activities will not decay forward to exactly the input"
+                  " values.\n";
+
+    for( size_t i = 0; (i < worst.size()) && (i < max_detailed); ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = worst[i];
+      const std::pair<double,double> &mi = notes.inconsistent.at( nuc );
+
+      char buffer[512] = { '\0' };
+      snprintf( buffer, sizeof(buffer), "  %s is measured at %.6G %s, but its parents imply"
+                " %.6G %s (%s).\n",
+                (nuc ? nuc->symbol.c_str() : "?"),
+                mi.first / notes.act_unit, notes.unit_str.c_str(),
+                mi.second / notes.act_unit, notes.unit_str.c_str(),
+                difference_str( mi.first, mi.second ).c_str() );
+      warnings += buffer;
+    }//for( the worst few )
+
+    if( worst.size() > max_detailed )
+    {
+      warnings += "  ...and " + std::to_string( worst.size() - max_detailed )
+                  + " others.\n";
+    }
+
+    return warnings;
+  }//back_decay_warnings(...)
 }//anonymous namespace
 
 
 namespace DecayBatchCalc
 {
 
+/** The grouped/long-format half of #decay, for input that carries locations.
+
+ Each location is co-decayed as its own mixture and gets its own block of output rows; nothing is ever
+ summed across locations.  The row set is the union of every location's nuclides and progeny, so all
+ locations list the same nuclides in the same order (even those that are zero there) - which matches
+ the legacy output this format reproduces, and makes the blocks directly comparable.
+
+ Unlike the wide format, values are written in the input's own units and in "%.6E", and stable
+ nuclides are listed too (as an activity, hence always zero).
+
+ `eval_time` maps a step index to the mixture time to evaluate, and `past_activities` back-decays one
+ location's inputs when looking backwards; both come from #decay.
+ */
+static void decay_grouped( const vector<BatchNuclide> &inputs,
+                           const BatchDecayOptions &opts,
+                           const std::function<double(size_t)> &eval_time,
+                           const std::function<vector<double>(const vector<BatchNuclide> &)> &past_activities,
+                           BatchDecayResult &result )
+{
+  // Group inputs by location, keeping first-seen order (so output follows the input file's order).
+  vector<string> locations;
+  std::map<string,vector<BatchNuclide>> by_location;
+  for( const BatchNuclide &in : inputs )
+  {
+    if( by_location.find(in.location) == end(by_location) )
+      locations.push_back( in.location );
+    by_location[in.location].push_back( in );
+  }
+
+  // Header: mirror the source columns.  Rows take their extra cells from their own location's first
+  //  input, so the header must name the columns of whichever input has the most of them - a row that
+  //  was short a trailing cell would otherwise shift every later column under the wrong header.
+  const BatchNuclide *header_src = &inputs.front();
+  for( const BatchNuclide &in : inputs )
+  {
+    if( in.extra_columns.size() > header_src->extra_columns.size() )
+      header_src = &in;
+  }
+
+  // Prefer the source file's own names (see BatchNuclide::fixed_column_names); the literals are the
+  //  legacy names, used only for input that did not carry a header.
+  const vector<string> &src_names = header_src->fixed_column_names;
+  auto fixed_name = [&src_names]( const size_t i, const char * const fallback ) -> string {
+    return ((i < src_names.size()) && !src_names[i].empty()) ? src_names[i] : string( fallback );
+  };
+
+  result.column_headers.push_back( fixed_name( 0, "Probe name" ) );
+  result.column_headers.push_back( fixed_name( 1, "Product" ) );
+  for( const std::pair<string,string> &nv : header_src->extra_columns )
+    result.column_headers.push_back( nv.first );
+  result.column_headers.push_back( fixed_name( 2, "Value" ) );
+  result.column_headers.push_back( fixed_name( 3, "Unit" ) );
+
+  const size_t num_extra_cols = header_src->extra_columns.size();
+
+  // The nuclide list, unioned over all locations so every block lists the same rows.  A mixture's
+  //  decayedToNuclidesEvolutions() is already sorted by (mass number, atomic number, isomer), and a
+  //  union of such lists needs that same ordering - which is what Nuclide::lessThanForOrdering gives.
+  vector<const SandiaDecay::Nuclide *> all_nuclides;
+  for( const BatchNuclide &in : inputs )
+  {
+    for( const SandiaDecay::Nuclide * const nuc : in.nuclide->descendants() )
+    {
+      if( std::find( begin(all_nuclides), end(all_nuclides), nuc ) == end(all_nuclides) )
+        all_nuclides.push_back( nuc );
+    }
+  }
+
+  std::sort( begin(all_nuclides), end(all_nuclides),
+            []( const SandiaDecay::Nuclide *l, const SandiaDecay::Nuclide *r ){
+    return SandiaDecay::Nuclide::lessThanForOrdering( l, r );
+  } );
+
+  // Each step's "+48h" label for the Product column; the same for every location, so built once.
+  vector<string> time_suffixes( opts.num_steps );
+  for( size_t step = 0; step < opts.num_steps; ++step )
+  {
+    // A single-step run echoes the user's own notation (giving the legacy "+48h" for a typed "48h");
+    //  multiple steps each need their own time, so they are formatted compactly.
+    string suffix = ((opts.num_steps == 1) && !opts.time_span_str.empty())
+                      ? opts.time_span_str
+                      : compact_time_str( time_for_step( step, opts.num_steps, opts.time_span ) );
+    SpecUtils::trim( suffix );
+
+    // An all-whitespace user string trims to nothing, which would leave a bare "+".
+    if( suffix.empty() )
+      suffix = compact_time_str( time_for_step( step, opts.num_steps, opts.time_span ) );
+
+    // The suffix reads as an offset ("Cs137 ... +48h"), so supply the sign unless the text already
+    //  carries one - a user may type either "48h" or "+48h", and a negative time signs itself.
+    if( (suffix.front() != '-') && (suffix.front() != '+') )
+      suffix = "+" + suffix;
+
+    time_suffixes[step] = suffix;
+  }//for( each step )
+
+  vector<string> locations_mixed_units;
+
+  for( const string &location : locations )
+  {
+    const vector<BatchNuclide> &group = by_location[location];
+
+    // One mixture per location; when looking backwards the location's nuclides are solved together,
+    //  since an ancestor among them feeds its descendants.
+    const vector<double> acts = past_activities( group );
+
+    SandiaDecay::NuclideMixture mix;
+    for( size_t i = 0; i < group.size(); ++i )
+    {
+      // A zero (or negative) activity must not be seeded: addAgedNuclideByActivity() forms
+      //  `activity/aged_activity`, which is 0/0 = NaN for a zero input, and NuclideMixture then
+      //  *sums* the seeded atoms of a repeated nuclide - so a zero row that is an ancestor of a
+      //  non-zero row would turn that sibling's real activity into NaN, which
+      //  NuclideTimeEvolution::numAtoms() silently clamps to zero via max(0.0,NaN).  Leaving the
+      //  nuclide out of the mixture instead reports it as zero (see the `in_mix` test below),
+      //  which is the right answer and keeps every location listing the same rows.
+      if( acts[i] > 0.0 )
+        mix.addAgedNuclideByActivity( group[i].nuclide, acts[i], group[i].age );
+    }
+
+    // What this mixture can actually be asked about (see the `in_mix` check below).
+    vector<const SandiaDecay::Nuclide *> mix_nuclides;
+    for( int i = 0; i < mix.numSolutionNuclides(); ++i )
+      mix_nuclides.push_back( mix.solutionNuclide(i) );
+
+    // Progeny rows have no input row of their own, so they inherit the location's passthrough cells.
+    const BatchNuclide &first = group.front();
+
+    // A row is written in its *own* input row's units; a progeny row has no input of its own, so it
+    //  takes the location's first.  Using `first`'s unit for everything would silently scale a row
+    //  whose input used a different one (e.g. mCi/m2 among uCi/m2 rows) while labelling it correctly.
+    std::map<const SandiaDecay::Nuclide *,const BatchNuclide *> input_of;
+    bool mixed_units = false;
+    for( const BatchNuclide &in : group )
+    {
+      input_of[in.nuclide] = &in;
+      mixed_units |= ((in.activity_unit != first.activity_unit)
+                      || (in.unit_label != first.unit_label));
+    }
+
+    if( mixed_units )
+      locations_mixed_units.push_back( location );
+
+    // Each step is its own block of rows, labeled with the time it is at.
+    for( size_t step = 0; step < opts.num_steps; ++step )
+    {
+      const string &time_suffix = time_suffixes[step];
+      const double t = eval_time( step );
+
+      for( const SandiaDecay::Nuclide * const nuc : all_nuclides )
+      {
+        const std::map<const SandiaDecay::Nuclide *,const BatchNuclide *>::const_iterator pos
+                                                                              = input_of.find( nuc );
+        const BatchNuclide &src = (pos == end(input_of)) ? first : *(pos->second);
+        const double act_unit = src.activity_unit.empty()
+                                 ? PhysicalUnits::becquerel
+                                 : PhysicalUnits::stringToActivity( "1" + src.activity_unit );
+
+        // The row set is the union over *every* location, so a nuclide may be absent from this
+        //  location's mixture (it has none of it, and no ancestor of it) - which NuclideMixture
+        //  reports by throwing rather than returning zero.  Zero is exactly the right answer, and
+        //  keeps every block listing the same rows.
+        const bool in_mix = (std::find( begin(mix_nuclides), end(mix_nuclides), nuc ) != end(mix_nuclides));
+        const double act = in_mix ? (mix.activity( t, nuc ) / act_unit) : 0.0;
+        assert( !IsNan(act) );
+        if( (opts.min_activity > 0.0) && (!(act >= opts.min_activity)) )
+          continue;
+
+        vector<string> row;
+        row.push_back( location );
+        row.push_back( nuc->symbol + first.product_suffix + time_suffix );
+
+        // Pad (or truncate) to the header's width, so a source row that was missing a trailing cell
+        //  cannot shift Value/Unit under the wrong heading.
+        for( size_t c = 0; c < num_extra_cols; ++c )
+          row.push_back( (c < first.extra_columns.size()) ? first.extra_columns[c].second : string() );
+
+        row.push_back( print_scientific( act ) );
+        row.push_back( src.activity_unit + src.unit_label );
+        assert( row.size() == result.column_headers.size() );
+
+        result.rows.push_back( std::move(row) );
+      }//for( each nuclide )
+    }//for( each step )
+  }//for( each location )
+
+  if( !locations_mixed_units.empty() )
+  {
+    // Each row is still correct in its own stated unit, but the progeny rows had to pick one, so say so.
+    string names;
+    for( size_t i = 0; (i < locations_mixed_units.size()) && (i < 5); ++i )
+      names += (names.empty() ? "" : ", ") + locations_mixed_units[i];
+    if( locations_mixed_units.size() > 5 )
+      names += ", ...";
+
+    result.warnings += "Activity units differ between rows of " + names + "; each row is written in"
+                       " its own unit, and progeny rows use the first unit of their location.\n";
+  }
+
+  // Long format has one value per row, so the GUI preview renders rows*columns cells.
+  result.num_data_cells = result.rows.size() * result.column_headers.size();
+}//decay_grouped(...)
+
+
+string location_key( const string &probe_name )
+{
+  const string::size_type us = probe_name.rfind( '_' );
+  if( (us == string::npos) || (us == 0) || ((us + 1) == probe_name.size()) )
+    return probe_name;
+
+  const string head = probe_name.substr( 0, us );
+  const string tail = probe_name.substr( us + 1 );
+
+  // A purely numeric suffix is a row index (e.g. "TeamA-01_39", "Grid_7").
+  if( tail.find_first_not_of( "0123456789" ) == string::npos )
+    return head;
+
+  // Otherwise only strip when the name looks like a structured ID *and* the suffix looks like an index
+  //  rather than a place name: the ID test alone would merge "Site-A_North" with "Site-A_South", and a
+  //  location that a name distinguishes must never be merged with another.  So require the suffix to
+  //  contain a digit (e.g. "TeamA-01_run3", "TeamA-01_r3") - a purely alphabetic suffix like "North"
+  //  is taken to name the location.
+  if( tail.find_first_of( "0123456789" ) == string::npos )
+    return probe_name;
+
+  // The '-' must be in the last segment of `head`, so the ID is what the suffix indexes (this keeps
+  //  "Site-A_North2"-style names from being stripped on the strength of an unrelated earlier hyphen).
+  const string::size_type seg = head.find_last_of( '_' );
+  const string::size_type from = (seg == string::npos) ? 0 : (seg + 1);
+  for( string::size_type i = from + 1; (i + 1) < head.size(); ++i )
+  {
+    if( (head[i] == '-') && isalnum( static_cast<unsigned char>(head[i-1]) )
+       && isalnum( static_cast<unsigned char>(head[i+1]) ) )
+    {
+      return head;
+    }
+  }
+
+  return probe_name;
+}//location_key(...)
+
+
 BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOptions &opts )
 {
   BatchDecayResult result;
 
-  if( opts.time_span <= 0.0 )
-    throw runtime_error( "A positive decay time must be given." );
+  if( opts.time_span == 0.0 )
+    throw runtime_error( "A non-zero decay time must be given." );
 
   if( opts.num_steps < 1 )
     throw runtime_error( "At least one time step is required." );
@@ -83,6 +695,85 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
 
   const bool show_progeny = (opts.show_progeny || opts.mix_input);
   const double act_unit = opts.use_curie ? PhysicalUnits::curie : PhysicalUnits::becquerel;
+
+  // A negative time span means "what were the activities |time_span| ago".  We solve for that past
+  //  state once (per mixture - see back_decay_activities), seed the mixtures with it, and then decay
+  //  *forwards* from there, so every step is a real point on one trajectory: the last step is the past
+  //  state itself, and step 0 lands back on (approximately) the measured input.
+  const bool back_decay = (opts.time_span < 0.0);
+  const double back_age = -opts.time_span;
+
+  // The forward time at which to evaluate a mixture for a given step.
+  auto eval_time = [&opts,back_decay,back_age]( const size_t step ) -> double {
+    const double t = time_for_step( step, opts.num_steps, opts.time_span );
+    return back_decay ? (back_age + t) : t;
+  };//eval_time
+
+  // Replaces each input's activity with the activity it must have had `back_age` ago, for one set of
+  //  nuclides that share a mixture (so ancestor/descendant coupling is accounted for).  A no-op when
+  //  not back-decaying.  Whatever could not be recovered accumulates into `notes`, which is turned into
+  //  warning text once every mixture has been solved (there is one per location).
+  BackDecayNotes notes;
+  notes.act_unit = act_unit;
+  notes.unit_str = activity_unit_suffix( opts.use_curie, string() );
+  if( back_decay )
+    notes.age = back_age;   // also set by the solve, but the warning text must not depend on that
+  auto past_activities = [back_decay,back_age,&notes]( const vector<BatchNuclide> &group ) -> vector<double> {
+    vector<double> acts( group.size(), 0.0 );
+    for( size_t i = 0; i < group.size(); ++i )
+      acts[i] = group[i].activity;
+
+    if( !back_decay )
+      return acts;
+
+    vector<const SandiaDecay::Nuclide *> nucs( group.size(), nullptr );
+    for( size_t i = 0; i < group.size(); ++i )
+      nucs[i] = group[i].nuclide;
+
+    return back_decay_activities( nucs, acts, back_age, notes );
+  };//past_activities
+
+  // The inputs we can actually decay.
+  vector<BatchNuclide> valid_inputs;
+  for( const BatchNuclide &in : inputs )
+  {
+    if( !in.nuclide )
+      result.warnings += "Skipped invalid nuclide '" + in.nuclide_str + "'.\n";
+    else if( in.nuclide->isStable() )
+      result.warnings += "Skipped stable nuclide '" + in.nuclide_str + "'.\n";
+    else
+      valid_inputs.push_back( in );
+  }//for( each input )
+
+  if( valid_inputs.empty() )
+    throw runtime_error( "No valid, unstable nuclides to decay." );
+
+  // Grouped (multiple physical locations) input gets its own, quite different, output shape.
+  bool any_location = false;
+  for( const BatchNuclide &in : valid_inputs )
+    any_location |= !in.location.empty();
+
+  if( any_location )
+  {
+    // Grouped output stays in the input's own unit (`use_curie` does not apply), so the warnings must
+    //  quote that unit too.
+    const BatchNuclide &first_in = valid_inputs.front();
+    if( !first_in.activity_unit.empty() )
+    {
+      notes.act_unit = PhysicalUnits::stringToActivity( "1" + first_in.activity_unit );
+      notes.unit_str = first_in.activity_unit + first_in.unit_label;
+    }else
+    {
+      // Grouped values are written as-given (parse_csv leaves `activity_unit` empty for a bare number,
+      //  or for a unit cell of just "/m2"), so quoting "Bq"/"Ci" from `use_curie` would be wrong.
+      notes.act_unit = PhysicalUnits::becquerel;
+      notes.unit_str = first_in.unit_label;
+    }
+
+    decay_grouped( valid_inputs, opts, eval_time, past_activities, result );
+    result.warnings += back_decay_warnings( notes );  // after every location has been solved
+    return result;
+  }
 
   // Build the header row.
   result.column_headers.push_back( "Nuclide" );
@@ -106,33 +797,26 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
 
   if( opts.mix_input )
   {
-    // Sum all valid inputs into a single mixture and co-decay.
+    // Sum all valid inputs into a single mixture and co-decay.  When looking backwards the whole set
+    //  is solved together, since they share one mixture and so may feed each other.
+    const vector<double> acts = past_activities( valid_inputs );
+
     Source src;
     src.mix.reset( new SandiaDecay::NuclideMixture() );
-    bool any_added = false;
     bool consistent_unit = true;
-    for( const BatchNuclide &in : inputs )
+    for( size_t i = 0; i < valid_inputs.size(); ++i )
     {
-      if( !in.nuclide )
-      {
-        result.warnings += "Skipped invalid nuclide '" + in.nuclide_str + "'.\n";
-        continue;
-      }
-      if( in.nuclide->isStable() )
-      {
-        result.warnings += "Skipped stable nuclide '" + in.nuclide_str + "'.\n";
-        continue;
-      }
-      src.mix->addAgedNuclideByActivity( in.nuclide, in.activity, in.age );
-      if( !any_added )
+      const BatchNuclide &in = valid_inputs[i];
+      if( acts[i] > 0.0 )                    // see the note in decay_grouped(): 0 activity -> NaN
+        src.mix->addAgedNuclideByActivity( in.nuclide, acts[i], in.age );
+      if( i == 0 )
         src.unit_label = in.unit_label;      // capture the first added input's label
       else if( in.unit_label != src.unit_label )
         consistent_unit = false;             // subsequent labels must match
-      any_added = true;
     }//for( each input )
 
-    if( !any_added )
-      throw runtime_error( "No valid, unstable nuclides to decay." );
+    if( !src.mix->numInitialNuclides() )
+      throw runtime_error( "All input activities are zero; there is nothing to decay." );
 
     if( !consistent_unit )
     {
@@ -143,17 +827,17 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
     sources.push_back( std::move(src) );
   }else
   {
-    // Each input is decayed independently.
-    for( const BatchNuclide &in : inputs )
+    // Each input is decayed independently, so looking backwards each is solved on its own - which
+    //  reduces to A_past = A_now/exp(-lambda*|t|), matching DecayActivityDiv.
+    for( const BatchNuclide &in : valid_inputs )
     {
-      if( !in.nuclide )
+      const vector<double> acts = past_activities( vector<BatchNuclide>{ in } );
+
+      // A zero activity would seed NaN (see decay_grouped()), and on its own it has no progeny to
+      //  report either, so the input simply contributes no rows.
+      if( acts[0] <= 0.0 )
       {
-        result.warnings += "Skipped invalid nuclide '" + in.nuclide_str + "'.\n";
-        continue;
-      }
-      if( in.nuclide->isStable() )
-      {
-        result.warnings += "Skipped stable nuclide '" + in.nuclide_str + "'.\n";
+        result.warnings += "Skipped '" + in.nuclide->symbol + "': activity is zero.\n";
         continue;
       }
 
@@ -161,7 +845,7 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
       src.mix.reset( new SandiaDecay::NuclideMixture() );
       src.parent = in.nuclide;
       src.unit_label = in.unit_label;
-      src.mix->addAgedNuclideByActivity( in.nuclide, in.activity, in.age );
+      src.mix->addAgedNuclideByActivity( in.nuclide, acts[0], in.age );
       sources.push_back( std::move(src) );
     }//for( each input )
   }//if( mix_input ) / else
@@ -206,12 +890,20 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
 
         vector<string> row;
         row.push_back( std::move(label) );
+        bool any_above_cut = false;
         for( size_t step = 0; step < opts.num_steps; ++step )
         {
-          const double t = time_for_step( step, opts.num_steps, opts.time_span );
-          const double act = src.mix->activity( t, nuc );
-          row.push_back( SpecUtils::printCompact( act / act_unit, 6 ) );
+          const double act = src.mix->activity( eval_time(step), nuc ) / act_unit;
+          assert( !IsNan(act) );
+          any_above_cut |= (act >= opts.min_activity);
+          row.push_back( SpecUtils::printCompact( act, 6 ) );
         }
+
+        // A row spans several time steps, so only drop it when no step makes the cut (which keeps the
+        //  table rectangular).
+        if( (opts.min_activity > 0.0) && !any_above_cut )
+          continue;
+
         result.rows.push_back( std::move(row) );
       }//for( each solution nuclide )
     }//for( each source )
@@ -301,7 +993,7 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
 
       for( size_t step = 0; step < opts.num_steps; ++step )
       {
-        const double t = time_for_step( step, opts.num_steps, opts.time_span );
+        const double t = eval_time( step );
         for( const AttribLine &ln : enumerate_lines( *src.mix, t, want ) )
           accumulate( step, ln.energy, ln.parent, ln.child, ln.rate );
 
@@ -346,7 +1038,10 @@ BatchDecayResult decay( const vector<BatchNuclide> &inputs, const BatchDecayOpti
   if( opts.include_betas )
     add_particle_section( "beta",  SandiaDecay::BetaParticle,  false );
 
-  result.num_data_cells = result.rows.size() * opts.num_steps;
+  // Cells the GUI would render - the label column included, so this means the same thing here as in
+  //  the grouped path (which has several label columns).
+  result.num_data_cells = result.rows.size() * result.column_headers.size();
+  result.warnings += back_decay_warnings( notes );  // after every source has been solved
 
   return result;
 }//decay(...)
@@ -423,6 +1118,24 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
     return fields;
   };
 
+  // As above, but keeps empty fields, so a positional format can't have its columns silently shifted
+  //  by a blank cell.  (SpecUtils::split compresses runs of delimiters.)
+  auto split_fields_keep_empty = []( const string &line ) -> vector<string> {
+    vector<string> fields;
+    const char delim = (line.find('\t') != string::npos) ? '\t' : ',';
+    string::size_type start = 0;
+    for( string::size_type pos = line.find(delim); ; pos = line.find(delim, start) )
+    {
+      string field = (pos == string::npos) ? line.substr(start) : line.substr(start, pos - start);
+      SpecUtils::trim( field );
+      fields.push_back( field );
+      if( pos == string::npos )
+        break;
+      start = pos + 1;
+    }
+    return fields;
+  };
+
   // Detect the header-keyed ("Product"/"Value"/"Unit") format from the first line.
   const vector<string> header = split_fields( lines[0] );
   int product_col = -1, value_col = -1, unit_col = -1;
@@ -434,6 +1147,138 @@ vector<BatchNuclide> parse_csv( const string &file_contents )
   }
 
   vector<BatchNuclide> answer;
+
+  // A leading column before "Product" names a physical location, so each location's rows are one
+  //  sample set; see the multi-location notes in DecayBatchCalc.h.
+  const bool multi_location = (product_col > 0) && (value_col >= 0);
+
+  if( multi_location )
+  {
+    const vector<string> full_header = split_fields_keep_empty( lines[0] );
+
+    // Columns other than the location, product, value and unit ride along to the output verbatim.
+    vector<int> extra_cols;
+    for( size_t i = 0; i < full_header.size(); ++i )
+    {
+      const int col = static_cast<int>( i );
+      if( (col != 0) && (col != product_col) && (col != value_col) && (col != unit_col) )
+        extra_cols.push_back( col );
+    }
+
+    for( size_t li = 1; li < lines.size(); ++li )
+    {
+      const vector<string> fields = split_fields_keep_empty( lines[li] );
+      if( static_cast<int>(fields.size()) <= std::max(product_col, value_col) )
+        throw runtime_error( "Row '" + lines[li] + "' has too few columns." );
+
+      // Nuclide is the leading token of "Product"; the rest is a description carried to the output.
+      const string &product = fields[product_col];
+      const string::size_type sp = product.find_first_of( " \t" );
+      const string nuc_str = (sp == string::npos) ? product : product.substr( 0, sp );
+
+      BatchNuclide bn;
+      bn.nuclide_str = nuc_str;
+      bn.nuclide = db->nuclide( nuc_str );
+      if( !bn.nuclide )
+        throw runtime_error( "'" + nuc_str + "' (from '" + product + "') is not a valid nuclide." );
+
+      bn.location = fields[0];
+      bn.product_suffix = (sp == string::npos) ? string() : product.substr( sp );
+
+      // Echo the source file's own column names, so the output header matches the input (and is in
+      //  whatever language the input used) rather than being hard-coded English.
+      bn.fixed_column_names.push_back( full_header.empty() ? string() : full_header[0] );
+      bn.fixed_column_names.push_back( full_header[product_col] );
+      bn.fixed_column_names.push_back( full_header[value_col] );
+      bn.fixed_column_names.push_back( (unit_col >= 0 && unit_col < static_cast<int>(full_header.size()))
+                                        ? full_header[unit_col] : string() );
+
+      for( const int col : extra_cols )
+      {
+        if( col < static_cast<int>(fields.size()) )
+          bn.extra_columns.emplace_back( full_header[col], fields[col] );
+      }
+
+      const string &value_str = fields[value_col];
+      const string unit_str = (unit_col >= 0 && unit_col < static_cast<int>(fields.size()))
+                                ? fields[unit_col] : string();
+
+      // Separate any areal/volumetric suffix (e.g. "uCi/m2") from the activity unit.
+      string act_unit = unit_str;
+      const string::size_type slash = unit_str.find( '/' );
+      if( slash != string::npos )
+      {
+        act_unit = unit_str.substr( 0, slash );
+        bn.unit_label = unit_str.substr( slash ); // includes the leading '/'
+      }
+      bn.activity_unit = act_unit;
+
+      try
+      {
+        bn.activity = act_unit.empty()
+                        ? (std::stod( value_str ) * PhysicalUnits::becquerel)
+                        : PhysicalUnits::stringToActivity( value_str + " " + act_unit );
+      }catch( std::exception & )
+      {
+        throw runtime_error( "Could not interpret activity '" + value_str + " " + unit_str
+                             + "' for '" + nuc_str + "'." );
+      }
+
+      answer.push_back( bn );
+    }//for( each data line )
+
+    if( answer.empty() )
+      throw runtime_error( "No nuclides were parsed from the file." );
+
+    // Rows of one location differ only by a row-index suffix on the name, so strip it - but only if
+    //  doing so can't merge rows that cannot belong to one location (a repeated nuclide, or
+    //  disagreeing carried-through cells).  Otherwise keep the names as given.
+    std::map<string,vector<size_t>> grouped;
+    for( size_t i = 0; i < answer.size(); ++i )
+      grouped[ location_key( answer[i].location ) ].push_back( i );
+
+    bool key_is_valid = true;
+    for( std::map<string,vector<size_t>>::const_iterator it = begin(grouped);
+        key_is_valid && (it != end(grouped)); ++it )
+    {
+      const vector<size_t> &indices = it->second;
+      const BatchNuclide &first = answer[indices.front()];
+      std::set<const SandiaDecay::Nuclide *> seen;
+
+      for( size_t i = 0; key_is_valid && (i < indices.size()); ++i )
+      {
+        const BatchNuclide &cur = answer[indices[i]];
+        key_is_valid = seen.insert( cur.nuclide ).second      // no nuclide twice in one location
+                       && (cur.extra_columns == first.extra_columns); // and one lat/lon etc per location
+      }
+    }//for( each candidate group )
+
+    if( key_is_valid )
+    {
+      for( BatchNuclide &bn : answer )
+        bn.location = location_key( bn.location );
+    }
+
+    // If no location holds more than one nuclide there is no grouping information in the file, so
+    //  treat it as ungrouped (rather than showing one group per row).
+    std::map<string,size_t> counts;
+    size_t biggest = 0;
+    for( const BatchNuclide &bn : answer )
+      biggest = std::max( biggest, ++counts[bn.location] );
+
+    if( biggest < 2 )
+    {
+      for( BatchNuclide &bn : answer )
+      {
+        bn.location.clear();
+        bn.product_suffix.clear();
+        bn.extra_columns.clear();
+        bn.activity_unit.clear();
+      }
+    }
+
+    return answer;
+  }//if( multi_location )
 
   if( (product_col >= 0) && (value_col >= 0) )
   {

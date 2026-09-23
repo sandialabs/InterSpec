@@ -30,19 +30,79 @@
     </div>
 
     <div style="padding-top: 10px">
-      <b>CSV input.</b> Two formats are accepted.  A simple format with one
+      <b>CSV input.</b> Three formats are accepted.  A simple format with one
       <code>nuclide,activity</code> pair per line (a bare activity number is interpreted as
-      becquerel; blank lines and lines beginning with <code>#</code> are ignored).  Or a header-keyed
+      becquerel; blank lines and lines beginning with <code>#</code> are ignored).  A header-keyed
       format with <code>Product</code>, <code>Value</code>, and <code>Unit</code> columns; any
       areal/volumetric suffix on the unit (for example <code>/m2</code>) is carried through to the
-      output labels.
+      output labels.  Or the multi-location format described next.
     </div>
 
     <div style="padding-top: 10px">
-      <b>Options.</b> Choose the decay time and number of steps, the activity units (Becquerel or
-      Curie), whether to sum all inputs into a single co-decaying mixture (<b>Mix inputs</b>),
-      whether to also report every decay progeny (<b>Show progeny</b>), and which quantities to
-      include (activity, x-rays, gammas, alphas, betas).
+      <b>Multiple locations.</b> If the CSV's first column names a physical location (for example a
+      probe or sample name), each location is treated as its own independent set of inputs.  Its
+      nuclides appear together in the input area under the location's name, the nuclides of a location
+      are co-decayed as a single mixture, and the output carries one block of rows per location, with
+      any extra columns (such as latitude and longitude) echoed through.  Activities from different
+      locations are <em>never</em> mixed or summed.
+    </div>
+
+    <div style="padding-top: 10px">
+      Location names that differ only by a trailing index &#8212; <code>Probe-01_1</code>,
+      <code>Probe-01_2</code>, &#8230; &#8212; are read as the one location <code>Probe-01</code>,
+      since tools that write these files often number each nuclide's row separately.  A name is only
+      shortened this way when the result stays unambiguous; if it would merge two locations that hold
+      the same nuclide, or that disagree on their other columns, the full names are kept instead.  A
+      file whose locations hold a single nuclide each carries no grouping information, and is read as
+      one ungrouped set.
+    </div>
+
+    <div style="padding-top: 10px">
+      Removing every nuclide from a location removes that group.  There is no way to create a group by
+      hand: grouping only ever comes from a file that names locations.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Options.</b> Choose the decay time and number of steps, an optional minimum activity, the
+      activity units (Becquerel or Curie), whether to sum all inputs into a single co-decaying mixture
+      (<b>Mix inputs</b>), whether to also report every decay progeny (<b>Show progeny</b>), and which
+      quantities to include (activity, x-rays, gammas, alphas, betas).  While a multi-location file is
+      loaded, <b>Mix inputs</b> is fixed on and disabled, since each location is always co-decayed and
+      locations are never combined.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Minimum activity.</b> An optional lower cut on the results: any activity below it is left out.
+      It is a plain number with no units, compared against the value as shown in the result table, so
+      it is in whatever activity units the results are in.  A location whose every row falls below the
+      cut drops out of the output entirely.  When several time steps are shown, a row is dropped only
+      if it is below the cut at <em>every</em> step, so the table stays rectangular.  The gamma, x-ray,
+      alpha and beta line rows are counts per second rather than activities, so the cut does not apply
+      to them.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Decaying backwards.</b> A negative decay time (for example <code>-48h</code>) solves for the
+      activities the inputs must have had that long ago, given what they are now.  This is not simply
+      a division per nuclide: inputs that share an ancestor are coupled, so for example the past Cs137
+      partly accounts for the Ba137m measured today.  Two consequences are worth knowing:
+    </div>
+
+    <div style="padding-top: 6px; padding-left: 20px">
+      A short-lived nuclide's own past activity may be <em>unrecoverable</em>.  If essentially none of
+      what was there then survives to now &#8212; 48 hours is over a thousand Ba137m half-lives
+      &#8212; then nothing measurable today constrains it.  When one of its parents is among the
+      inputs, it is reported as zero and its present activity is attributed to ingrowth from them.
+      When no parent is, there is nothing to attribute it to and no meaningful number to report, so the
+      calculation stops with a message naming the nuclide; shorten the time until it is within reach.
+      Either way this is a genuine limit of the measurement, not an approximation.
+    </div>
+
+    <div style="padding-top: 6px; padding-left: 20px">
+      The inputs may be mutually inconsistent.  A parent and progeny measured today imply a past
+      state; if no past state can reproduce both, the tool reports the discrepancy as a warning naming
+      the nuclide, the value measured, the value its ancestors imply, and the percent difference,
+      rather than silently returning a set that does not decay back to the input.
     </div>
 
     <div style="padding-top: 10px">

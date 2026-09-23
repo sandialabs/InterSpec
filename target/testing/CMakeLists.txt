@@ -144,6 +144,14 @@ add_test( NAME TDoseCalc
 )
 
 
+add_executable( test_DecayBatchCalc test_DecayBatchCalc.cpp )
+target_link_libraries( test_DecayBatchCalc PRIVATE InterSpecLib )
+add_test( NAME TDecayBatchCalc
+  COMMAND $<TARGET_FILE:test_DecayBatchCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RelEffManual test_RelEffManual.cpp )
 target_link_libraries( test_RelEffManual PRIVATE InterSpecLib )
 add_test( NAME TestRelEffManual
