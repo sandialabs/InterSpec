@@ -487,6 +487,12 @@ string DecayBatchCalcNuclide::unitLabel() const
 }
 
 
+void DecayBatchCalcNuclide::focusNuclideEdit()
+{
+  m_nuclideEdit->setFocus( true );
+}
+
+
 Wt::Signal<> &DecayBatchCalcNuclide::changed()
 {
   return m_changed;
@@ -541,7 +547,8 @@ void DecayBatchCalcNuclide::handleActivityChange()
   string unit_token;
   const string txt = m_activityEdit->text().toUTF8();
 
-  if( parse_activity_text( txt, value, has_unit, unit_token ) && (value > 0.0) )
+  // Zero is accepted: it is a valid "none detected" measurement (see isValid()).
+  if( parse_activity_text( txt, value, has_unit, unit_token ) && (value >= 0.0) )
   {
     m_prevActivityText = txt;
     m_changed.emit();
@@ -742,7 +749,7 @@ DecayBatchCalcWidget::DecayBatchCalcWidget( InterSpec *viewer )
   m_addRowBtn = addBar->addNew<WPushButton>();
   m_addRowBtn->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   m_addRowBtn->setIcon( "InterSpec_resources/images/plus_min_black.svg" );
-  m_addRowBtn->clicked().connect( this, &DecayBatchCalcWidget::addEmptyNuclideRow );
+  m_addRowBtn->clicked().connect( [this](){ addEmptyNuclideRow()->focusNuclideEdit(); } );
   HelpSystem::attachToolTipOn( m_addRowBtn, WString::tr("dbc-add-nuc-tt"), showToolTips );
 
   // Disable the main app's spectrum-file drag/drop while this tool is open.
@@ -994,11 +1001,11 @@ DecayBatchCalcNuclide *DecayBatchCalcWidget::addRowToGroup( DecayBatchCalcLocati
 }//addRowToGroup(...)
 
 
-void DecayBatchCalcWidget::addEmptyNuclideRow()
+DecayBatchCalcNuclide *DecayBatchCalcWidget::addEmptyNuclideRow()
 {
   // New rows join the last group, which for the ordinary (ungrouped) case is the only one.
   const vector<DecayBatchCalcLocation *> groups = locationGroups();
-  addRowToGroup( groups.empty() ? addLocationGroup( string() ) : groups.back() );
+  return addRowToGroup( groups.empty() ? addLocationGroup( string() ) : groups.back() );
 }//addEmptyNuclideRow()
 
 
@@ -1859,7 +1866,9 @@ DecayBatchCalcWindow::DecayBatchCalcWindow( InterSpec *viewer )
   {
     const int w = std::min( 550, viewer->renderedWidth() - 20 );
     const int h = std::min( 600, viewer->renderedHeight() );
-    m_calc->setMinimumSize( std::min(480, w), std::min(480, h - 20) );
+    // A modest minimum height: below the natural size the inputs and results share the space (see
+    //  DecayBatchCalc.css), and a larger floor would just have the dialog clip the tool's bottom.
+    m_calc->setMinimumSize( std::min(480, w), std::min(320, h - 20) );
     resizeWindow( w, h );
     resizeToFitOnScreen();
     centerWindow();
@@ -1868,10 +1877,11 @@ DecayBatchCalcWindow::DecayBatchCalcWindow( InterSpec *viewer )
     // We get here when opened before the layout is known (e.g. restoring app state / a deep link on
     //  application start), where renderedWidth()/Height() aren't available yet.  Without an explicit
     //  minimum size the window collapses to its footer; give it a sensible floor (mirrors DecayWindow).
+    //  The screen size is unknown here, so keep the floor low enough to fit a short display.
     if( viewer && !viewer->isPhone()
        && ((viewer->renderedWidth() <= 100) || (viewer->renderedHeight() <= 100)) )
     {
-      m_calc->setMinimumSize( 480, 500 );
+      m_calc->setMinimumSize( 480, 420 );
     }
 
     const bool wasPhone = m_isPhone;
@@ -1923,4 +1933,11 @@ void DecayBatchCalcWindow::handleAppUrl( const string &path, const string &query
 std::string DecayBatchCalcWindow::encodeStateToUrl() const
 {
   return m_calc ? m_calc->encodeStateToUrl() : string();
+}
+
+
+void DecayBatchCalcWindow::loadCsvContents( const std::string &contents )
+{
+  if( m_calc )
+    m_calc->loadCsvContents( contents );
 }

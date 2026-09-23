@@ -7,31 +7,38 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+  overflow-y: auto;  /* only when shorter than the areas' minimums: scroll, rather than clip the bottom */
 }
 
-/* --- Nuclide input area --- */
+/* --- Nuclide input area ---
+   The input rows and the results table split whatever height the options leave, evenly: both grow
+   from a zero basis (with an `auto` basis a long results table would take all of the shrinking), and
+   the inputs never grow past their own rows, handing any spare to the results.  The minimum keeps
+   the old steady ~5-row input area when there is room, and a percentage of the tool (not of the
+   browser window, which the dialog can be much shorter than) when there is not. */
 .DecayBatchCalcWidget .DbcNuclideArea
 {
   border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   margin-bottom: 6px;
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-height: min(200px, 30%);
+  max-height: max-content;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-/* Scrolls internally once the groups/rows don't fit.  A minimum rather than a fixed height, so a
-   multi-location file's group titles aren't crammed into five rows' worth of space, and `max-height`
-   keeps the results area visible no matter how many locations are loaded. */
+/* Scrolls internally once the groups/rows don't fit. */
 .DecayBatchCalcWidget .DbcNuclideRows
 {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 4px;
   overflow-y: auto;
   box-sizing: border-box;
-  min-height: 165px;  /* ~5 rows */
-  max-height: 40vh;
 }
 
 /* --- Location groups (DecayBatchCalcLocation) ---
@@ -114,6 +121,7 @@
 /* Footer bar; its top border draws the horizontal line above the "+" row. */
 .DecayBatchCalcWidget .DbcAddBar
 {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -190,8 +198,8 @@
 /* --- Results area --- */
 .DecayBatchCalcWidget .DbcResultArea
 {
-  flex: 1 1 auto;
-  min-height: 120px;
+  flex: 1 1 0;
+  min-height: 100px;
   border: 1px solid var(--interspec-border-color);
   border-radius: 4px;
   padding: 4px;

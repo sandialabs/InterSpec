@@ -577,7 +577,8 @@ private:
     EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
     GadrasDetectorDat,   ///< GADRAS Detector.dat (crystal geometry, FWHM, peak shape)
     ShieldingSourceXml,
-    SourceLib
+    SourceLib,
+    BatchDecayCsv        ///< nuclide/activity list for the Batch Decay tool (see DecayBatchCalc::parse_csv)
 #if( USE_LLM_INTERFACE )
     , LlmConfigXml       ///< `llm_config.xml` provider/MCP config for the LLM assistant
 #endif
@@ -687,6 +688,11 @@ private:
   bool tryLoadSingleDrf( NonSpecFileKind kind,
                          const std::string &fileLocation,
                          std::ifstream &infile );
+
+  /** Opens the Batch Decay tool populated from a nuclide/activity CSV.  Returns false, having done
+   nothing, if the whole file does not parse as batch-decay input (so the next candidate is tried).
+   */
+  bool tryOpenBatchDecayCsv( std::ifstream &infile, size_t fileSize );
 
   /** Registers an undo/redo step on the currently active `m_nonSpecFileDialog` such that
    undo closes the dialog and redo re-opens it.  For files ≤10 MB, file data is cached in

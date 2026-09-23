@@ -13,7 +13,9 @@
 
     <div style="padding-top: 10px">
       <b>Entering nuclides.</b> Add a row for each initial nuclide with the <b>+</b> button, or drag
-      and drop (or click to upload) a CSV onto the drop area to replace all rows at once.  Each row
+      and drop (or click to upload) a CSV onto the drop area to replace all rows at once.  A CSV in
+      one of the formats below can also be dropped onto the main InterSpec window (or opened with
+      InterSpec) while this tool is closed, which opens the tool with the file loaded.  Each row
       takes a nuclide, an optional initial age (enabled only for nuclides whose result depends on
       age), and an initial activity.  The <b>-</b> button removes a row.
     </div>
@@ -83,9 +85,11 @@
 
     <div style="padding-top: 10px">
       <b>Decaying backwards.</b> A negative decay time (for example <code>-48h</code>) solves for the
-      activities the inputs must have had that long ago, given what they are now.  This is not simply
-      a division per nuclide: inputs that share an ancestor are coupled, so for example the past Cs137
-      partly accounts for the Ba137m measured today.  Two consequences are worth knowing:
+      activities the inputs must have had that long ago, given what they are now.  Inputs that are
+      decayed together &#8212; with <b>Mix inputs</b> on, or the nuclides of one location in a
+      multi-location file &#8212; and that share an ancestor are coupled, so this is not simply a
+      division per nuclide: for example the past Cs137 partly accounts for the Ba137m measured today.
+      With <b>Mix inputs</b> off each input is solved on its own.  Two consequences are worth knowing:
     </div>
 
     <div style="padding-top: 6px; padding-left: 20px">
@@ -103,6 +107,12 @@
       state; if no past state can reproduce both, the tool reports the discrepancy as a warning naming
       the nuclide, the value measured, the value its ancestors imply, and the percent difference,
       rather than silently returning a set that does not decay back to the input.
+    </div>
+
+    <div style="padding-top: 6px; padding-left: 20px">
+      An initial age is the age of the sample when it was measured, i.e. at time zero of the results.
+      Looking back, the sample was correspondingly younger; if the age is shorter than how far back
+      you look, the sample is taken as freshly made at that past time, and a note says so.
     </div>
 
     <div style="padding-top: 10px">

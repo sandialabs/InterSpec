@@ -40,6 +40,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -204,6 +205,22 @@ namespace
     BOOST_FAIL( "No row for nuclide " + symbol );
     return 0.0;
   }//value_for(...)
+
+
+  /** The value of the first result row whose label starts with `symbol + " "`, at `step`. */
+  double wide_value( const BatchDecayResult &result, const string &symbol, const size_t step )
+  {
+    for( const vector<string> &row : result.rows )
+    {
+      if( SpecUtils::starts_with( row.front(), (symbol + " ").c_str() ) )
+      {
+        BOOST_REQUIRE( (step + 1) < row.size() );
+        return std::stod( row[step + 1] );
+      }
+    }
+    BOOST_FAIL( "No row for " + symbol );
+    return 0.0;
+  }//wide_value(...)
 
 
   /** A synthetic multi-location CSV, for the key-rule fallbacks. */
@@ -867,6 +884,441 @@ BOOST_AUTO_TEST_CASE( negative_time_grouped )
   BOOST_CHECK_MESSAGE( num_unrecoverable_msgs <= 1u,
                       "The unrecoverable-nuclide warning should be collapsed to one message, saw "
                       + std::to_string(num_unrecoverable_msgs) );
+}
+
+
+BOOST_AUTO_TEST_CASE( negative_time_duplicate_nuclides )
+{
+  init_data_dirs();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+  BOOST_REQUIRE( cs137 );
+
+  // Two rows of one nuclide add, in a mixture; neither may be treated as having produced the other.
+  //  Both orders, since the smaller-second case used to produce a spurious inconsistency warning.
+  const double survive = exp( -cs137->decayConstant() * PhysicalUnits::year );
+  for( const pair<double,double> &acts : vector<pair<double,double>>{ {1.0, 2.0}, {2.0, 1.0} } )
+  {
+    vector<BatchNuclide> inputs( 2 );
+    for( size_t i = 0; i < 2; ++i )
+    {
+      inputs[i].nuclide = cs137;
+      inputs[i].nuclide_str = "Cs137";
+    }
+    inputs[0].activity = acts.first * PhysicalUnits::curie;
+    inputs[1].activity = acts.second * PhysicalUnits::curie;
+
+    BatchDecayOptions opts = options_for( "-1y" );
+    opts.mix_input = true;
+    opts.num_steps = 2;
+
+    const BatchDecayResult result = DecayBatchCalc::decay( inputs, opts );
+
+    BOOST_CHECK_CLOSE( wide_value( result, "Cs137", 0 ), 3.0, 0.01 );            // now
+    BOOST_CHECK_CLOSE( wide_value( result, "Cs137", 1 ), 3.0 / survive, 0.01 );  // a year ago
+    BOOST_CHECK_MESSAGE( result.warnings.find("not self-consistent") == string::npos,
+                        "Repeated rows of one nuclide are consistent; got: " + result.warnings );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( negative_time_aged_inputs )
+{
+  init_data_dirs();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const pu241 = db->nuclide( "Pu241" );
+  const SandiaDecay::Nuclide * const am241 = db->nuclide( "Am241" );
+  BOOST_REQUIRE( pu241 && am241 );
+
+  const double ci = PhysicalUnits::curie;
+  const double year = PhysicalUnits::year;
+
+  // A 10-year-old Pu241 sample measured along with its Am241, which is what 10 years of in-growth
+  //  gives plus a little of its own.  Looking back 2 years the Pu241 was 8 years old; the solve must
+  //  account for the Am241 that aged sample already held, rather than count it twice.
+  SandiaDecay::NuclideMixture aged10;
+  aged10.addAgedNuclideByActivity( pu241, 1.0 * ci, 10.0 * year );
+  const double am_ingrown = aged10.activity( 0.0, am241 ) / ci;
+  const double am_measured = am_ingrown + 0.01;
+
+  vector<BatchNuclide> inputs( 2 );
+  inputs[0].nuclide = pu241;
+  inputs[0].nuclide_str = "Pu241";
+  inputs[0].activity = 1.0 * ci;
+  inputs[0].age = 10.0 * year;
+  inputs[1].nuclide = am241;
+  inputs[1].nuclide_str = "Am241";
+  inputs[1].activity = am_measured * ci;
+
+  BatchDecayOptions opts = options_for( "-2y" );
+  opts.mix_input = true;
+  opts.num_steps = 2;
+
+  const BatchDecayResult result = DecayBatchCalc::decay( inputs, opts );
+
+  // Step 0 is the measurement, which the recovered past state must decay forward to.
+  BOOST_CHECK_CLOSE( wide_value( result, "Pu241", 0 ), 1.0, 0.01 );
+  BOOST_CHECK_CLOSE( wide_value( result, "Am241", 0 ), am_measured, 0.01 );
+  BOOST_CHECK_MESSAGE( result.warnings.empty(), "Expected no warnings; got: " + result.warnings );
+
+  // The past state, built independently: an 8-year-old Pu241 sample plus whatever Am241 of its own
+  //  decays to the part of the measurement the Pu241 does not account for.
+  const double pu_past = 1.0 / exp( -pu241->decayConstant() * 2.0 * year );
+  SandiaDecay::NuclideMixture aged8;
+  aged8.addAgedNuclideByActivity( pu241, pu_past * ci, 8.0 * year );
+  const double am_from_pu = aged8.activity( 2.0 * year, am241 ) / ci;
+  const double am_own_past = (am_measured - am_from_pu) / exp( -am241->decayConstant() * 2.0 * year );
+  const double am_past = aged8.activity( 0.0, am241 ) / ci + am_own_past;
+
+  BOOST_CHECK_CLOSE( wide_value( result, "Pu241", 1 ), pu_past, 0.01 );
+  BOOST_CHECK_CLOSE( wide_value( result, "Am241", 1 ), am_past, 0.01 );
+
+  // A stated age shorter than the look-back: the sample did not exist then, so it is taken as fresh
+  //  at the past time (no Am241 yet), and a note says so.
+  vector<BatchNuclide> young( 1, inputs[0] );
+  young[0].age = 1.0 * year;
+  BatchDecayOptions young_opts = options_for( "-2y" );
+  young_opts.show_progeny = true;
+  young_opts.num_steps = 2;
+
+  const BatchDecayResult young_result = DecayBatchCalc::decay( young, young_opts );
+  BOOST_CHECK_MESSAGE( young_result.warnings.find( "initial age of Pu241" ) != string::npos,
+                      "Expected a note about Pu241's short age; got: " + young_result.warnings );
+  BOOST_CHECK_EQUAL( wide_value( young_result, "Am241", 1 ), 0.0 );
+  BOOST_CHECK( wide_value( young_result, "Am241", 0 ) > 0.0 );
+}
+
+
+namespace
+{
+  /** Every nuclide's value in one step of a wide result, keyed by the label's leading symbol. */
+  map<string,double> wide_step( const BatchDecayResult &result, const size_t step )
+  {
+    map<string,double> answer;
+    for( const vector<string> &row : result.rows )
+    {
+      BOOST_REQUIRE( (step + 1) < row.size() );
+      const string &label = row.front();
+      answer[label.substr( 0, label.find(' ') )] += std::stod( row[step + 1] );
+    }
+    return answer;
+  }//wide_step(...)
+
+
+  /** Seeds a fresh mixture with every nuclide of a reported past state (activities in any one unit),
+   decays it forward by `dt`, and returns the activity of each of `symbols` then, in that same unit.
+   The past state holds every descendant, so no ages are needed to reproduce the present. */
+  map<string,double> decay_forward( const map<string,double> &past, const double dt,
+                                    const vector<string> &symbols )
+  {
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    BOOST_REQUIRE( db );
+
+    SandiaDecay::NuclideMixture mix;
+    for( const pair<const string,double> &nv : past )
+    {
+      const SandiaDecay::Nuclide * const nuc = db->nuclide( nv.first );
+      BOOST_REQUIRE_MESSAGE( nuc, "Unknown nuclide '" + nv.first + "' in the result" );
+      if( (nv.second > 0.0) && !nuc->isStable() )
+        mix.addNuclideByActivity( nuc, nv.second );
+    }
+
+    map<string,double> answer;
+    for( const string &sym : symbols )
+      answer[sym] = mix.activity( dt, db->nuclide( sym ) );
+    return answer;
+  }//decay_forward(...)
+}//namespace
+
+
+// The reported past state must decay forward to the measurement, when an input is part progeny of
+//  another input and part its own (so the parent alone does not explain it).  Checked independently
+//  of the tool: its whole past column seeds a fresh NuclideMixture, which is decayed to T=0.
+BOOST_AUTO_TEST_CASE( negative_time_round_trip )
+{
+  init_data_dirs();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const double ci = PhysicalUnits::curie;
+  const double year = PhysicalUnits::year;
+
+  struct Input { string symbol; double activity_ci; double age; };
+  struct Case { string name; vector<Input> inputs; string time; };
+
+  // Measured progeny above what the parent's in-growth gives, so each has a past amount of its own.
+  //  Aged Ra226 already holds ~0.8 Ci of Pb210 and Po210, which the look-back must not count twice.
+  SandiaDecay::NuclideMixture ra_aged;
+  ra_aged.addAgedNuclideByActivity( db->nuclide("Ra226"), 1.0 * ci, 50.0 * year );
+  const double pb_in_aged = ra_aged.activity( 0.0, db->nuclide("Pb210") ) / ci;
+  const double po_in_aged = ra_aged.activity( 0.0, db->nuclide("Po210") ) / ci;
+
+  const vector<Case> cases = {
+    { "Ra226 chain, fresh", { {"Ra226", 1.0, 0.0}, {"Pb210", 0.3, 0.0}, {"Po210", 0.5, 0.0} }, "-1y" },
+    { "Ra226 chain, aged 50 y", { {"Ra226", 1.0, 50.0 * year}, {"Pb210", pb_in_aged + 0.2, 0.0},
+                                  {"Po210", po_in_aged + 0.3, 0.0} }, "-1y" },
+    { "Pu241 aged 10 y + Am241", { {"Pu241", 1.0, 10.0 * year}, {"Am241", 0.05, 0.0} }, "-5y" },
+    { "Sr90 + excess Y90", { {"Sr90", 1.0, 0.0}, {"Y90", 1.5, 0.0} }, "-2d" },
+    { "U238 + U234 + Th230, aged", { {"U238", 1.0, 1000.0 * year}, {"U234", 1.2, 0.0},
+                                     {"Th230", 0.1, 0.0} }, "-100y" }
+  };
+
+  for( const Case &c : cases )
+  {
+    BOOST_TEST_MESSAGE( "Round trip: " << c.name );
+
+    vector<BatchNuclide> inputs;
+    vector<string> symbols;
+    for( const Input &in : c.inputs )
+    {
+      BatchNuclide bn;
+      bn.nuclide = db->nuclide( in.symbol );
+      BOOST_REQUIRE( bn.nuclide );
+      bn.nuclide_str = in.symbol;
+      bn.activity = in.activity_ci * ci;
+      bn.age = in.age;
+      inputs.push_back( bn );
+      symbols.push_back( in.symbol );
+    }
+
+    BatchDecayOptions opts = options_for( c.time );
+    opts.mix_input = true;
+    opts.num_steps = 2;
+
+    const BatchDecayResult result = DecayBatchCalc::decay( inputs, opts );
+    BOOST_CHECK_MESSAGE( result.warnings.empty(), c.name + ": expected no warnings; got: " + result.warnings );
+
+    const map<string,double> now = decay_forward( wide_step( result, 1 ), -opts.time_span, symbols );
+    for( const Input &in : c.inputs )
+    {
+      BOOST_CHECK_MESSAGE( fabs( now.at(in.symbol) - in.activity_ci ) <= 1.0E-5 * in.activity_ci,
+                          c.name + ": " + in.symbol + " decays forward to "
+                          + std::to_string( now.at(in.symbol) ) + " Ci, but was measured at "
+                          + std::to_string( in.activity_ci ) + " Ci" );
+    }
+  }//for( each case )
+
+  // Progeny *under* what its parent explains: no non-negative past amount of it fits, so its own share
+  //  is zero and a warning says the inputs are inconsistent.  The parent must still round-trip, and
+  //  the progeny comes back at the parent's in-growth - above the measurement, never below.
+  {
+    vector<BatchNuclide> inputs( 2 );
+    inputs[0].nuclide = db->nuclide( "Ra226" );
+    inputs[0].nuclide_str = "Ra226";
+    inputs[0].activity = 1.0 * ci;
+    inputs[0].age = 50.0 * year;
+    inputs[1].nuclide = db->nuclide( "Pb210" );
+    inputs[1].nuclide_str = "Pb210";
+    inputs[1].activity = 0.5 * pb_in_aged * ci;
+
+    BatchDecayOptions opts = options_for( "-1y" );
+    opts.mix_input = true;
+    opts.num_steps = 2;
+
+    const BatchDecayResult result = DecayBatchCalc::decay( inputs, opts );
+    BOOST_CHECK_MESSAGE( (result.warnings.find("not self-consistent") != string::npos)
+                         && (result.warnings.find("Pb210") != string::npos),
+                        "Expected an inconsistency warning naming Pb210; got: " + result.warnings );
+
+    const map<string,double> now = decay_forward( wide_step( result, 1 ), 1.0 * year, {"Ra226", "Pb210"} );
+    BOOST_CHECK_CLOSE( now.at("Ra226"), 1.0, 1.0E-3 );
+    BOOST_CHECK_CLOSE( now.at("Pb210"), pb_in_aged, 0.1 );
+  }
+
+  // Grouped (multi-location) input goes through the same solve, one location at a time.
+  {
+    const vector<BatchNuclide> inputs = parse_csv(
+      "Probe name,Product,Value,Unit\n"
+      "SiteA_1,Ra226 soil,1,uCi\n"
+      "SiteA_2,Pb210 soil,0.3,uCi\n"
+      "SiteA_3,Po210 soil,0.5,uCi\n"
+      "SiteB_1,Sr90 soil,1,uCi\n"
+      "SiteB_2,Y90 soil,1.5,uCi\n" );
+    BOOST_REQUIRE_EQUAL( inputs.size(), 5u );
+
+    BatchDecayOptions opts = options_for( "-1d" );
+    const BatchDecayResult result = DecayBatchCalc::decay( inputs, opts );
+    BOOST_CHECK_MESSAGE( result.warnings.empty(), "Grouped: expected no warnings; got: " + result.warnings );
+
+    for( const BatchNuclide &in : inputs )
+    {
+      map<string,double> past;
+      for( const pair<string,double> &nv : location_rows( result, in.location ) )
+        past[nv.first] += nv.second;
+
+      const string sym = in.nuclide->symbol;
+      const double now = decay_forward( past, 1.0 * PhysicalUnits::day, {sym} ).at( sym );
+      BOOST_CHECK_CLOSE( now, in.activity / (1.0E-6 * ci), 1.0E-3 );
+    }
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( negative_time_unmixed_hint )
+{
+  init_data_dirs();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  vector<BatchNuclide> inputs( 2 );
+  inputs[0].nuclide = db->nuclide( "Cs137" );
+  inputs[0].nuclide_str = "Cs137";
+  inputs[0].activity = 1.0 * PhysicalUnits::curie;
+  inputs[1].nuclide = db->nuclide( "Ba137m" );
+  inputs[1].nuclide_str = "Ba137m";
+  inputs[1].activity = 0.9470 * PhysicalUnits::curie;
+  BOOST_REQUIRE( inputs[0].nuclide && inputs[1].nuclide );
+
+  // Unmixed, the Ba137m is solved on its own, so its parent being an input cannot help - but the
+  //  message must say that mixing would, rather than claim there is no parent among the inputs.
+  try
+  {
+    DecayBatchCalc::decay( inputs, options_for("-48h") );
+    BOOST_FAIL( "Looking back 48 h at unmixed Ba137m should have been refused" );
+  }catch( std::exception &e )
+  {
+    const string msg = e.what();
+    BOOST_CHECK_MESSAGE( (msg.find("Mix inputs") != string::npos) && (msg.find("Cs137") != string::npos),
+                        "The error should point at Mix inputs and the parent; got: " + msg );
+  }
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// A byte-order mark (spreadsheet "CSV UTF-8" exports) must not break either format.
+// ---------------------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE( parse_csv_byte_order_mark )
+{
+  init_data_dirs();
+  const string bom = "\xEF\xBB\xBF";
+
+  const vector<BatchNuclide> simple = parse_csv( bom + "I131, 5.9 uCi\r\nCs137, 1 mCi\r\n" );
+  BOOST_REQUIRE_EQUAL( simple.size(), 2u );
+  BOOST_REQUIRE( simple[0].nuclide );
+  BOOST_CHECK_EQUAL( simple[0].nuclide->symbol, string("I131") );
+
+  const vector<BatchNuclide> keyed = parse_csv( bom + "Product,Value,Unit\r\nCs137 stuff,5,uCi\r\n" );
+  BOOST_REQUIRE_EQUAL( keyed.size(), 1u );
+  BOOST_REQUIRE( keyed[0].nuclide );
+  BOOST_CHECK_EQUAL( keyed[0].nuclide->symbol, string("Cs137") );
+  BOOST_CHECK_CLOSE( keyed[0].activity, 5.0E-6 * PhysicalUnits::curie, 1.0E-6 );
+}
+
+
+// Tab-separated input (e.g. pasted from a spreadsheet) must parse the same as its CSV equivalent.
+BOOST_AUTO_TEST_CASE( parse_tab_separated )
+{
+  init_data_dirs();
+
+  const auto same = []( const vector<BatchNuclide> &a, const vector<BatchNuclide> &b ){
+    BOOST_REQUIRE_EQUAL( a.size(), b.size() );
+    for( size_t i = 0; i < a.size(); ++i )
+    {
+      BOOST_CHECK( a[i].nuclide == b[i].nuclide );
+      BOOST_CHECK_EQUAL( a[i].activity, b[i].activity );
+      BOOST_CHECK_EQUAL( a[i].unit_label, b[i].unit_label );
+      BOOST_CHECK_EQUAL( a[i].location, b[i].location );
+      BOOST_CHECK_EQUAL( a[i].product_suffix, b[i].product_suffix );
+      BOOST_CHECK_EQUAL( a[i].activity_unit, b[i].activity_unit );
+      BOOST_CHECK( a[i].extra_columns == b[i].extra_columns );
+      BOOST_CHECK( a[i].fixed_column_names == b[i].fixed_column_names );
+    }
+  };
+
+  for( const char *name : { "batch_decay_simple.csv", "batch_decay_product_value_unit.csv", "probeResults.csv" } )
+  {
+    const string csv = read_file( SpecUtils::append_path( batch_decay_dir(), name ) );
+    string tsv = csv;
+    std::replace( begin(tsv), end(tsv), ',', '\t' );
+
+    BOOST_TEST_MESSAGE( "Comparing CSV and TSV parse of " << name );
+    same( parse_csv( csv ), parse_csv( tsv ) );
+    BOOST_CHECK( is_candidate_file( tsv, true ) );
+  }
+
+  // An empty cell must not shift the later columns, in either format.
+  for( const string delim : { string(","), string("\t") } )
+  {
+    const string text = "Product" + delim + "Value" + delim + "Unit" + delim + "Notes\n"
+                        "Cs137" + delim + "5" + delim + delim + "no unit, so Bq\n";
+    const vector<BatchNuclide> keyed = parse_csv( text );
+    BOOST_REQUIRE_EQUAL( keyed.size(), 1u );
+    BOOST_CHECK_CLOSE( keyed[0].activity, 5.0 * PhysicalUnits::becquerel, 1.0E-9 );
+  }
+
+  // A comma inside a tab-separated cell is just text.
+  const vector<BatchNuclide> commas =
+    parse_csv( "Site\tProduct\tValue\tUnit\tNotes\n"
+               "TeamA-01_1\tCs137 fallout, 2 days\t2\tuCi\tnorth, near road\n"
+               "TeamA-01_2\tI131 fallout, 2 days\t3\tuCi\tnorth, near road\n" );
+  BOOST_REQUIRE_EQUAL( commas.size(), 2u );
+  BOOST_CHECK_EQUAL( commas[0].location, commas[1].location );
+  BOOST_CHECK_EQUAL( commas[0].product_suffix, string(" fallout, 2 days") );
+  BOOST_CHECK_CLOSE( commas[1].activity, 3.0E-6 * PhysicalUnits::curie, 1.0E-9 );
+  BOOST_REQUIRE_EQUAL( commas[0].extra_columns.size(), 1u );
+  BOOST_CHECK_EQUAL( commas[0].extra_columns[0].second, string("north, near road") );
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Recognizing batch-decay input dropped on the main window (see SpecMeasManager's classifier).
+// ---------------------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE( candidate_file_detection )
+{
+  init_data_dirs();
+
+  for( const char * const name : { "batch_decay_simple.csv", "batch_decay_product_value_unit.csv",
+                                   "probeResults.csv" } )
+  {
+    const string path = SpecUtils::append_path( batch_decay_dir(), name );
+    const string contents = read_file( path );
+
+    // The whole file, and the 1024-byte start the drop classifier sees.
+    BOOST_CHECK_MESSAGE( is_candidate_file( contents, true ), string(name) + " not recognized" );
+    BOOST_CHECK_MESSAGE( is_candidate_file( contents.substr( 0, 1024 ), (contents.size() <= 1024) ),
+                        string(name) + " not recognized from its first 1024 bytes" );
+
+    // A drop only reaches the batch-decay check after the spectrum parse fails, so SpecUtils must not
+    //  take these for spectra.
+    SpecUtils::SpecFile spec;
+    BOOST_CHECK_MESSAGE( !spec.load_file( path, SpecUtils::ParserType::Auto, "csv" ),
+                        string(name) + " was parsed as a spectrum file" );
+  }//for( each fixture )
+
+  // A hand-written list can be a single line - but only a complete one.
+  BOOST_CHECK( is_candidate_file( "Cs137, 1 uCi", true ) );
+  BOOST_CHECK( !is_candidate_file( "Cs137, 1 uCi", false ) );
+  BOOST_CHECK( is_candidate_file( "Cs137, 1 uCi\nCo60, 2", false ) );
+
+  // Other text must not be claimed.
+  BOOST_CHECK( !is_candidate_file( "Channel,Counts\n0,5\n1,7\n2,9\n", true ) );
+  BOOST_CHECK( !is_candidate_file( "Energy (keV), Counts\n10.1, 5\n", true ) );
+  BOOST_CHECK( !is_candidate_file( "Some notes about Cs137, which is 1 uCi\n", true ) );
+  BOOST_CHECK( !is_candidate_file( string( "Cs137, 1 uCi\n\0\n", 15 ), true ) );
+  BOOST_CHECK( !is_candidate_file( "", true ) );
+
+  vector<string> others;
+  for( const char * const dir : { "det_eff", "gadras_detectors", "ceelo_drf", "cascade_truth" } )
+  {
+    for( const string &path : SpecUtils::recursive_ls( SpecUtils::append_path( g_test_data_dir, dir ), ".csv" ) )
+      others.push_back( path );
+  }
+  others.push_back( SpecUtils::append_path( g_test_data_dir, "AnalystTests/beta_check_cases.csv" ) );
+  others.push_back( SpecUtils::append_path( g_test_data_dir, "manual_rel_eff/source.txt" ) );
+  BOOST_CHECK( others.size() > 20u );
+
+  for( const string &path : others )
+  {
+    const string contents = read_file( path );
+    BOOST_CHECK_MESSAGE( !is_candidate_file( contents, true ), "Claimed " + path );
+    BOOST_CHECK_MESSAGE( !is_candidate_file( contents.substr( 0, 1024 ), (contents.size() <= 1024) ),
+                        "Claimed the start of " + path );
+  }
 }
 
 
