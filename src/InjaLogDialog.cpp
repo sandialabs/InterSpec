@@ -228,7 +228,7 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
   resize( Wt::WLength( 95.0, Wt::WLength::Unit::Percentage ), Wt::WLength( 95.0, Wt::WLength::Unit::Percentage ) );
 
   // Add standard close button
-  addButton( Wt::WString::tr( "Close" ) );
+  addButton( Wt::WString::tr( "Close" ), WidgetUtils::ButtonRole::Dismiss );
 
   // Render initial content
   updateDisplay();

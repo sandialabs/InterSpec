@@ -448,6 +448,11 @@ DetectorGeometryDiagram::Model DetectorGeometryDiagram::buildModel( const ceelo:
     const double active_len = std::max( 0.0, z_a1 - z_a0 );
     // Only the part of the bore that falls inside the active slab comes out of the active volume;
     //  whatever is left of it is inside the dead layer, which is the remainder below.
+    //
+    //  CeeLo describes this same solid twice more, and all three have to stay in step:
+    //  Geometry::trace_cylinder_geometry (external_libs/CeeLo/src/geometry/RayTrace.cpp) builds the
+    //  dead layer as outer - active - bore, and Geant4Export writes it as one polycone whose rmin is
+    //  the bore over the whole profile.  If one of the three moves, move all three.
     v_active = kPi*R_a*R_a*active_len - fillet_volume( R_a, r_ba )
                - bore_volume_between( R_bore, z_apex, L, rounded, z_a0, z_a1 );
     v_active = std::max( 0.0, v_active );

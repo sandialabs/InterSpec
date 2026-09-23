@@ -10,7 +10,7 @@
   <message id="raagfp-not-in-roi">Not in a ROI.</message>
   
   <!-- Tooltips -->
-  <message id="raagfp-constrain-fwhm-tt">When checked, this peak will be constrained to the FWHM functional form gamma and x-ray peaks are normally constrained to.&lt;br /&gt;When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.&lt;br /&gt;Un-checking this option is useful for annihilation and reaction photopeaks.</message>
-  <message id="raagfp-true-energy-tt">Check this option if the peak is for a gamma of known energy.&lt;br /&gt;Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.</message>
+  <message id="raagfp-constrain-fwhm-tt">When checked, this peak will be constrained to the FWHM functional form gamma and x-ray peaks are normally constrained to.<br />When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.<br />Un-checking this option is useful for annihilation and reaction photopeaks.</message>
+  <message id="raagfp-true-energy-tt">Check this option if the peak is for a gamma of known energy.<br />Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.</message>
   
 </messages>

@@ -297,6 +297,7 @@ m_chart( nullptr )
   WPushButton *closeButton = addCloseButtonToFooter(WString::tr("Cancel"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
   WPushButton *doAdd = footer()->addNew<WPushButton>( WString::tr("Add") );
+  WidgetUtils::applyButtonRole( doAdd, WidgetUtils::ButtonRole::Affirm );
   
   doAdd->clicked().connect( this, [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
@@ -708,20 +709,32 @@ void AddNewPeakDialog::doFit()
   m_candidatePeak->setFitFor( PeakDef::CoefficientType::Sigma, m_fitFWHM->isChecked() );
   m_candidatePeak->setFitFor( PeakDef::CoefficientType::GaussAmplitude, m_fitAmplitude->isChecked() );
   
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer ); //Or we could use the current peaks FWHM to estimate this...
+  // Determine the detector resolution the same way the other GUI peak-fit entry points do
+  //  (see `findPeaksInUserRange`), so a file carrying no detector metadata doesnt fall back
+  //  to generic low-resolution defaults.
+  const shared_ptr<const SpecMeas> foreground
+                     = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
+  if( !fitPrefs && foreground && foreground->detector() )
+    fitPrefs = foreground->detector()->peakFitDetPrefs();
   
-  vector<PeakDef> input_peaks( 1, *m_candidatePeak ), results;
-  const double stat_threshold  = 0.0, hypothesis_threshold = 0.0;
+  const PeakFitUtils::CoarseResolutionType det_type
+                     = PeakFitUtils::effective_det_type( fitPrefs, meas, foreground );
   
-  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
-  fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, fit_options, isHPGe );
+  const vector<shared_ptr<const PeakDef>> input_peaks( 1, make_shared<PeakDef>(*m_candidatePeak) );
+  vector<shared_ptr<const PeakDef>> results;
+  const double stat_threshold = 0.0, hypothesis_threshold = 0.0;
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+  
+  PeakFitLM::fit_peaks_LM( results, input_peaks, meas, stat_threshold, hypothesis_threshold,
+                          fit_options, det_type );
   
   if( results.empty() )
   {
     passMessage( WString::tr("anpd-err-fit-failed"), WarningWidget::WarningMsgLow );
   }else
   {
-    *m_candidatePeak = results[0];
+    *m_candidatePeak = *results[0];
     m_energySB->setValue( m_candidatePeak->mean() );
     m_fwhmSB->setValue( m_candidatePeak->fwhm() );
     m_areaSB->setValue( m_candidatePeak->amplitude() );

@@ -195,6 +195,16 @@ div.RelEffFile select
   padding-right: 20px;
 }
 
+/* In a `.DialogFooter` the float is inert and `gap` already separates these, so the 20px of manual
+   right padding is pure overhead - enough of it, with five other items in this footer, to push
+   "Accept" past the edge of a narrower dialog.  The narrow/phone layout puts these in a plain
+   container instead, where the float above still does the work. */
+.DialogFooter .DrfXmlDownload, .DialogFooter .DrfXmlDownload:hover
+{
+  float: none;
+  padding-right: 6px;
+}
+
 .Wt-popup.DrfFileSelectDialog
 {
   /* width: min(800px, 50vw); */

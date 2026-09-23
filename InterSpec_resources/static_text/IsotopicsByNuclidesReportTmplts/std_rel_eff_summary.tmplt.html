@@ -176,8 +176,9 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
   Single-curve comparison: merging all sources onto one curve <b>lowers</b> &chi;<sup>2</sup> by {{ merged_curve_comparison.delta_chi2_abs_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters (merging only removes freedom, so the multi-curve fit is not at its own optimum).
 {% else %}
   Single-curve comparison: merging all sources onto one curve raises &chi;<sup>2</sup> by {{ merged_curve_comparison.delta_chi2_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters ({% if merged_curve_comparison.single_curve_adequate %}&Delta;&chi;&sup2; is comparable to &Delta;dof: a single curve describes this data about as well{% else %}&Delta;&chi;&sup2; &Gt; &Delta;dof: one merged curve cannot describe this data - this says more than one curve is needed, not that the per-curve split is well determined{% endif %}).
+{% if not merged_curve_comparison.single_curve_adequate %}{% if length(distinct_basis_none_reason) > 0 %} Note: this did not on its own establish two curves - {{ distinct_basis_none_reason }}.{% endif %}{% endif %}
 {% endif %}
-{% if merged_curve_comparison.message %} Note: {{ merged_curve_comparison.message }}.{% endif %}
+{% if length(merged_curve_comparison.message) > 0 %} Note: {{ merged_curve_comparison.message }}.{% endif %}
   </div>
 {% else %}
   <div>Single-curve comparison: not available ({{ merged_curve_comparison.message }}).</div>

@@ -41,7 +41,6 @@
 
 #include <Wt/WColor.h>
 
-#include "Minuit2/FCNBase.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -790,7 +789,6 @@ struct ShieldSourceConfig
 
   
 class ShieldingSourceChi2Fcn
-    : public ROOT::Minuit2::FCNBase
 {
 //This class evaluated the chi2 of a given hypothesis, where it is assumed the
 //  radioactive source is a point source located at the center of concentric
@@ -910,7 +908,7 @@ public:
     std::shared_ptr<const CascadeSummingCalc> reuse_cascade_calc;
   };//struct ShieldSourceInput
 
-  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
+  static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> create(
                                      const ShieldSourceInput &input );
   
 protected:
@@ -1009,7 +1007,7 @@ public:
    */
   size_t setInitialSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     ROOT::Minuit2::MnUserParameters &inputPrams );
+                                     ShieldingSourceFitCalc::FitParameters &inputPrams );
   
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
   
@@ -1115,7 +1113,7 @@ public:
 
    May through CancelException (if user or time limit cancelled computation), or other std::exception (on other error type).
    */
-  virtual double DoEval( const std::vector<double> &x ) const;
+  double DoEval( const std::vector<double> &x ) const;
 
   /** The current cancel/timeout status - lets external optimizer drivers (e.g., the
    Ceres cost function) poll for cancellation, instead of relying on #DoEval throwing.
@@ -1129,8 +1127,6 @@ public:
   void reportCompletedEval( const double chi2, const std::vector<double> &params ) const;
 
   
-  /** For interface compatibility; calls directly to #DoEval */
-  virtual double operator()( const std::vector<double> &x ) const;
   
   
   /** Gives the chi2 contributions for each peak
@@ -1275,7 +1271,12 @@ public:
   ShieldingSourceChi2Fcn( const ShieldingSourceChi2Fcn & ) = delete;
   ShieldingSourceChi2Fcn &operator=( const ShieldingSourceChi2Fcn & ) = delete;
 
-  virtual double Up() const;
+  /** The increase in chi2 that corresponds to a one-sigma parameter uncertainty.
+
+   Always 1.0 for a chi2 (rather than log-likelihood) objective.  Used when walking a
+   chi2 profile out to estimate an uncertainty.
+   */
+  double oneSigmaChi2Increase() const;
 
   size_t numExpectedFitParameters() const;
 

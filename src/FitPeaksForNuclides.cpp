@@ -6285,11 +6285,11 @@ std::pair<double,double> find_valid_energy_range( const std::shared_ptr<const Sp
   sgcoeffs.smooth_with_variance( channel_counts, smoothed_2nd, smoothed_2nd_variance );
 
   // Lower extent: delegate to the unified resolution-aware estimator ("C1") now living in
-  //  ExperimentalPeakSearch::find_spectroscopic_extent(); see its definition for the method.
+  //  PeakFitUtils::find_spectroscopic_extent(); see its definition for the method.
   //  This function keeps its own upper-extent logic (below), which callers rely on.
   {
     size_t lo_ch = 0, hi_ch_ignored = 0;
-    if( ExperimentalPeakSearch::find_spectroscopic_extent( meas, lo_ch, hi_ch_ignored ) )
+    if( PeakFitUtils::find_spectroscopic_extent( meas, lo_ch, hi_ch_ignored ) )
       lower_channel = lo_ch;
     else
       lower_channel = nbin;  // force the simple fallback below (lower_channel > nbin/3)

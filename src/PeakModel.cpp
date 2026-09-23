@@ -64,7 +64,6 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"  //Only for ALLOW_PEAK_COLOR_DELEGATE
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"

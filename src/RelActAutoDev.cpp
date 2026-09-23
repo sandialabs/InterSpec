@@ -28,6 +28,7 @@
 #include <regex>
 #include <memory>
 #include <vector>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -2128,8 +2129,385 @@ void unat_hpge_fe_example()
 
 
 
+//==============================================================================
+// Multi-enrichment-U study: bundler.
+//
+// Turns the raw study data (Aegis .CNF, Mobius .N42, y12 .pcf) plus a stand-alone
+// DRF XML into "bundled" N42-2012 files, each holding exactly one foreground
+// (Sample1), its background (Sample2), and the embedded detector-efficiency.
+// A bundled file is self-contained: passed as both --exemplar and --input-file
+// to `InterSpec --batch-iso-from-nucs`, it supplies the foreground, background,
+// and DRF (see harness_readme.md).  Invoked from `dev_code()`.
+//==============================================================================
+namespace
+{
+  // Parse a stand-alone `<DetectorPeakResponse>` XML file into a DRF object.
+  //  Mirrors `try_parse_drf_xml_file` in BatchGuiAnaWidget.cpp / `utile_ana` above.
+  shared_ptr<DetectorPeakResponse> me_load_drf_xml( const string &path )
+  {
+    if( !SpecUtils::is_file(path) )
+      throw runtime_error( "DRF XML not found: '" + path + "'" );
+
+    vector<char> data;
+    SpecUtils::load_file_data( path.c_str(), data );
+    if( data.empty() )
+      throw runtime_error( "DRF XML empty: '" + path + "'" );
+
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( &data[0] );
+    const rapidxml::xml_node<char> *root = doc.first_node( "DetectorPeakResponse" );
+    if( !root )
+      throw runtime_error( "Not a <DetectorPeakResponse> XML: '" + path + "'" );
+
+    auto drf = make_shared<DetectorPeakResponse>();
+    drf->fromXml( root );
+    if( !drf->isValid() )
+      throw runtime_error( "DRF parsed but is not valid: '" + path + "'" );
+    return drf;
+  }//me_load_drf_xml(...)
+
+
+  // Validate a measurement that is to become a foreground or background record.
+  void me_check_meas( const shared_ptr<const SpecUtils::Measurement> &m, const string &what )
+  {
+    if( !m )
+      throw runtime_error( "Missing " + what + " measurement." );
+    if( !m->energy_calibration() || !m->energy_calibration()->valid() )
+      throw runtime_error( what + " has no valid energy calibration." );
+    if( m->num_gamma_channels() <= 3 )
+      throw runtime_error( what + " has too few gamma channels." );
+    if( m->live_time() <= 0.0f )
+      throw runtime_error( what + " has non-positive live time." );
+  }//me_check_meas(...)
+
+
+  // Build and write a bundled N42: fore -> Sample1/Foreground, back -> Sample2/Background,
+  //  DRF embedded.  Returns true on success.  `back`'s source type is forced to Background
+  //  (Aegis/Mobius backgrounds are tagged Foreground on disk).
+  bool me_write_bundled_n42( const shared_ptr<const SpecUtils::Measurement> &fore,
+                             const shared_ptr<const SpecUtils::Measurement> &back,
+                             const shared_ptr<DetectorPeakResponse> &drf,
+                             const string &out_path )
+  {
+    me_check_meas( fore, "foreground" );
+    me_check_meas( back, "background" );
+    if( !drf || !drf->isValid() )
+      throw runtime_error( "Refusing to write bundle without a valid DRF: '" + out_path + "'" );
+
+    if( fore->num_gamma_channels() != back->num_gamma_channels() )
+      cerr << "  WARNING: fore/back channel-count mismatch (" << fore->num_gamma_channels()
+           << " vs " << back->num_gamma_channels() << ") for '"
+           << SpecUtils::filename(out_path) << "' - subtraction will resample." << endl;
+
+    auto result = make_shared<SpecMeas>();
+
+    auto fore_copy = make_shared<SpecUtils::Measurement>( *fore );
+    fore_copy->set_sample_number( 1 );
+    fore_copy->set_source_type( SpecUtils::SourceType::Foreground );
+    result->add_measurement( fore_copy, false );
+
+    auto back_copy = make_shared<SpecUtils::Measurement>( *back );
+    back_copy->set_sample_number( 2 );
+    back_copy->set_source_type( SpecUtils::SourceType::Background );
+    result->add_measurement( back_copy, false );
+
+    result->cleanup_after_load( SpecUtils::SpecFile::CleanupAfterLoadFlags::DontChangeOrReorderSamples );
+
+    result->setDetector( drf );
+
+    const bool ok = result->save2012N42File( out_path );
+    if( !ok )
+      cerr << "  ERROR: failed to write '" << out_path << "'" << endl;
+    return ok;
+  }//me_write_bundled_n42(...)
+
+
+  // Load a single-measurement raw file (Aegis .CNF, Mobius .N42/.Spc background) and
+  //  return its first measurement.
+  shared_ptr<const SpecUtils::Measurement> me_load_single( const string &path )
+  {
+    auto sf = make_shared<SpecUtils::SpecFile>();
+    if( !sf->load_file( path, SpecUtils::ParserType::Auto ) )
+      throw runtime_error( "Could not load '" + path + "'" );
+    if( sf->num_measurements() < 1 )
+      throw runtime_error( "No measurements in '" + path + "'" );
+    if( sf->num_measurements() > 1 )
+      cerr << "  WARNING: '" << SpecUtils::filename(path) << "' has "
+           << sf->num_measurements() << " measurements; using the first." << endl;
+    return sf->measurement_at_index( 0 );
+  }//me_load_single(...)
+
+
+  // Ensure a directory exists (create_directory returns -1 if it already existed).
+  void me_ensure_dir( const string &dir )
+  {
+    if( SpecUtils::is_directory(dir) )
+      return;
+    const int rc = SpecUtils::create_directory( dir );
+    if( rc == 0 )
+      throw runtime_error( "Could not create directory '" + dir + "'" );
+  }//me_ensure_dir(...)
+
+
+  // Aegis: 28 foreground .CNF + one shared aegis_3-day-background.CNF.
+  void me_bundle_aegis( const string &aegis_dir, const string &drf_xml, const string &out_dir )
+  {
+    cout << "Bundling Aegis from '" << aegis_dir << "'" << endl;
+    me_ensure_dir( out_dir );
+    const shared_ptr<DetectorPeakResponse> drf = me_load_drf_xml( drf_xml );
+
+    const string back_path = SpecUtils::append_path( aegis_dir, "aegis_3-day-background.CNF" );
+    const shared_ptr<const SpecUtils::Measurement> back = me_load_single( back_path );
+
+    size_t made = 0, failed = 0;
+    const vector<string> files = SpecUtils::ls_files_in_directory( aegis_dir, ".CNF" );
+    for( const string &f : files )
+    {
+      if( SpecUtils::icontains( SpecUtils::filename(f), "background" ) )
+        continue;
+      try
+      {
+        const shared_ptr<const SpecUtils::Measurement> fore = me_load_single( f );
+        string out_name = SpecUtils::filename( f );
+        out_name = out_name.substr( 0, out_name.size() - 4 ) + ".n42";  // strip ".CNF"
+        const string out_path = SpecUtils::append_path( out_dir, out_name );
+        if( me_write_bundled_n42( fore, back, drf, out_path ) )
+          made += 1;
+        else
+          failed += 1;
+      }catch( std::exception &e )
+      {
+        cerr << "  ERROR bundling '" << f << "': " << e.what() << endl;
+        failed += 1;
+      }
+    }//for( files )
+    cout << "  Aegis: wrote " << made << " bundles, " << failed << " failed." << endl;
+  }//me_bundle_aegis(...)
+
+
+  // Mobius: ~30 foreground .N42 + shared 3-day .Spc background (user-chosen for high stats).
+  void me_bundle_mobius( const string &mobius_dir, const string &drf_xml, const string &out_dir )
+  {
+    cout << "Bundling Mobius from '" << mobius_dir << "'" << endl;
+    me_ensure_dir( out_dir );
+    const shared_ptr<DetectorPeakResponse> drf = me_load_drf_xml( drf_xml );
+
+    const string back_path = SpecUtils::append_path( mobius_dir, "mobius_3-day_background.Spc" );
+    const shared_ptr<const SpecUtils::Measurement> back = me_load_single( back_path );
+
+    size_t made = 0, failed = 0;
+    const vector<string> files = SpecUtils::ls_files_in_directory( mobius_dir, ".N42" );
+    for( const string &f : files )
+    {
+      if( SpecUtils::icontains( SpecUtils::filename(f), "background" ) )
+        continue;
+      try
+      {
+        const shared_ptr<const SpecUtils::Measurement> fore = me_load_single( f );
+        string out_name = SpecUtils::filename( f );
+        out_name = out_name.substr( 0, out_name.size() - 4 ) + ".n42";  // strip ".N42"
+        const string out_path = SpecUtils::append_path( out_dir, out_name );
+        if( me_write_bundled_n42( fore, back, drf, out_path ) )
+          made += 1;
+        else
+          failed += 1;
+      }catch( std::exception &e )
+      {
+        cerr << "  ERROR bundling '" << f << "': " << e.what() << endl;
+        failed += 1;
+      }
+    }//for( files )
+    cout << "  Mobius: wrote " << made << " bundles, " << failed << " failed." << endl;
+  }//me_bundle_mobius(...)
+
+
+  // PCF (multi-record): partition by source type; use the single Background record with the
+  //  longest real time (tie -> first); emit one bundle per Foreground record.
+  void me_bundle_pcf( const string &pcf_path, const string &drf_xml, const string &out_dir )
+  {
+    cout << "Bundling PCF '" << pcf_path << "'" << endl;
+    me_ensure_dir( out_dir );
+    const shared_ptr<DetectorPeakResponse> drf = me_load_drf_xml( drf_xml );
+
+    auto sf = make_shared<SpecUtils::SpecFile>();
+    if( !sf->load_file( pcf_path, SpecUtils::ParserType::Auto ) )
+      throw runtime_error( "Could not load PCF '" + pcf_path + "'" );
+
+    // Pick the background with the longest real time.
+    shared_ptr<const SpecUtils::Measurement> back;
+    vector<shared_ptr<const SpecUtils::Measurement>> foregrounds;
+    for( const shared_ptr<const SpecUtils::Measurement> &m : sf->measurements() )
+    {
+      if( m->source_type() == SpecUtils::SourceType::Background )
+      {
+        if( !back || (m->real_time() > back->real_time()) )
+          back = m;
+      }else if( m->source_type() == SpecUtils::SourceType::Foreground )
+      {
+        foregrounds.push_back( m );
+      }
+    }//for( measurements )
+
+    if( !back )
+      throw runtime_error( "No Background record in '" + pcf_path + "'" );
+    cout << "  " << foregrounds.size() << " foregrounds; chosen background real_time="
+         << back->real_time() << " s" << endl;
+
+    // "y12_disks_18cm_240min.pcf" -> "y12_18cm_240min"
+    string stem = SpecUtils::filename( pcf_path );
+    const size_t dot = stem.rfind( '.' );
+    if( dot != string::npos )
+      stem = stem.substr( 0, dot );
+    SpecUtils::ireplace_all( stem, "y12_disks_", "y12_" );
+
+    size_t made = 0, failed = 0;
+    for( const shared_ptr<const SpecUtils::Measurement> &fore : foregrounds )
+    {
+      try
+      {
+        // Title like "Y12_0.2_3.3_2Disks-3D,1C @ 18 cm H=85 cm" -> tokens "0.2-3.3"
+        string tokens = "rec" + std::to_string( made + failed + 1 );
+        const string title = fore->title();
+        std::smatch mres;
+        const std::regex re( R"(Y12_([^_]+)_([^_]+)_)" );
+        if( std::regex_search( title, mres, re ) )
+          tokens = mres[1].str() + "-" + mres[2].str();
+
+        const string out_name = stem + "_" + tokens + ".n42";
+        const string out_path = SpecUtils::append_path( out_dir, out_name );
+        if( me_write_bundled_n42( fore, back, drf, out_path ) )
+          made += 1;
+        else
+          failed += 1;
+      }catch( std::exception &e )
+      {
+        cerr << "  ERROR bundling a PCF record: " << e.what() << endl;
+        failed += 1;
+      }
+    }//for( foregrounds )
+    cout << "  " << SpecUtils::filename(pcf_path) << ": wrote " << made
+         << " bundles, " << failed << " failed." << endl;
+  }//me_bundle_pcf(...)
+
+
+  // Single-disk measurements (FY26_Y12_homo-U_data): the unambiguous "one object" negative
+  //  control for the multi-curve detector - a two-curve fit of these must not report distinct
+  //  curves.  Same detector, DRF and shared background as the corresponding two-disk bundles, so
+  //  the only difference from those is the physics.
+  void me_bundle_single_disks( const string &fore_dir, const string &background_path,
+                               const string &drf_xml, const string &out_dir )
+  {
+    cout << "Bundling single disks from '" << fore_dir << "'" << endl;
+    me_ensure_dir( out_dir );
+    const shared_ptr<DetectorPeakResponse> drf = me_load_drf_xml( drf_xml );
+    const shared_ptr<const SpecUtils::Measurement> back = me_load_single( background_path );
+
+    size_t made = 0, failed = 0;
+    for( const char * const ext : { ".N42", ".CNF", ".Spc" } )
+    {
+      for( const string &f : SpecUtils::ls_files_in_directory( fore_dir, ext ) )
+      {
+        const string name = SpecUtils::filename( f );
+        // Backgrounds are the pairing spectrum, not a source; "BAD" is the data owner's own
+        //  marking on a known-bad acquisition.
+        if( SpecUtils::icontains( name, "background" ) || SpecUtils::icontains( name, "BAD" ) )
+          continue;
+
+        try
+        {
+          const shared_ptr<const SpecUtils::Measurement> fore = me_load_single( f );
+          const string out_name = name.substr( 0, name.size() - string(ext).size() ) + ".n42";
+          if( me_write_bundled_n42( fore, back, drf,
+                                    SpecUtils::append_path(out_dir, out_name) ) )
+            made += 1;
+          else
+            failed += 1;
+        }catch( std::exception &e )
+        {
+          cerr << "  ERROR bundling '" << f << "': " << e.what() << endl;
+          failed += 1;
+        }
+      }//for( each foreground of this extension )
+    }//for( each foreground extension )
+
+    cout << "  single disks: wrote " << made << " bundles, " << failed << " failed." << endl;
+  }//me_bundle_single_disks(...)
+
+
+  // Top-level: bundle every study source into scratch/multi_enrich_u/bundled/<source>/.
+  void me_bundle_multi_enrich_inputs()
+  {
+    // Base dir defaults to the study tree; override with env var for flexibility.
+    const char * const env_base = std::getenv( "MULTI_ENRICH_U_DIR" );
+    const string base = env_base ? string(env_base) : string("scratch/multi_enrich_u");
+    cout << "=== Bundling multi-enrichment-U inputs under '" << base << "' ===" << endl;
+
+    if( !SpecUtils::is_directory(base) )
+      throw runtime_error( "Study base dir not found: '" + base + "' (run from /workspace,"
+                           " or set MULTI_ENRICH_U_DIR)." );
+
+    const string bundled = SpecUtils::append_path( base, "bundled" );
+    me_ensure_dir( bundled );
+
+    const string aegis_drf  = SpecUtils::append_path( base,
+                    "20260804_work/Aegis_multi_enrich/Y12 Aegis Approx v2.drf.xml" );
+    const string mobius_drf = SpecUtils::append_path( base, "Y-12 Ortec Det (MC Only).drf.xml" );
+    const string y12_drf    = SpecUtils::append_path( base,
+                    "y12_disks_HPGe60%/HPGe60_InterSpec_det_eff.drf.xml" );
+
+    try {
+      me_bundle_aegis( SpecUtils::append_path(base, "Aegis"), aegis_drf,
+                       SpecUtils::append_path(bundled, "aegis") );
+    } catch( std::exception &e ) { cerr << "Aegis bundling failed: " << e.what() << endl; }
+
+    try {
+      me_bundle_mobius( SpecUtils::append_path(base, "Mobius"), mobius_drf,
+                        SpecUtils::append_path(bundled, "mobius") );
+    } catch( std::exception &e ) { cerr << "Mobius bundling failed: " << e.what() << endl; }
+
+    const string pcf_dir = SpecUtils::append_path( base, "y12_disks_HPGe60%" );
+    const vector<string> pcfs{ "y12_disks_18cm_240min.pcf",
+                               "y12_disks_18cm_30min.pcf",
+                               "y12_disks_10cm_30min.pcf" };  // skip *-has-pileup-dont-use*
+    for( const string &p : pcfs )
+    {
+      const string pcf_path = SpecUtils::append_path( pcf_dir, p );
+      string sub = p;
+      const size_t dot = sub.rfind( '.' );
+      if( dot != string::npos ) sub = sub.substr( 0, dot );
+      SpecUtils::ireplace_all( sub, "y12_disks_", "y12_" );
+      try {
+        me_bundle_pcf( pcf_path, y12_drf, SpecUtils::append_path(bundled, sub) );
+      } catch( std::exception &e ) { cerr << p << " bundling failed: " << e.what() << endl; }
+    }//for( pcfs )
+
+    const string homo_dir = SpecUtils::append_path( base, "FY26_Y12_homo-U_data" );
+    try {
+      me_bundle_single_disks( SpecUtils::append_path(homo_dir, "Aegis_28cm"),
+                    SpecUtils::append_path(base, "Aegis/aegis_3-day-background.CNF"),
+                    aegis_drf, SpecUtils::append_path(bundled, "single_disk_aegis") );
+    } catch( std::exception &e ) { cerr << "Aegis single-disk bundling failed: " << e.what() << endl; }
+
+    try {
+      me_bundle_single_disks( SpecUtils::append_path(homo_dir, "Mobius_18cm"),
+                    SpecUtils::append_path(base, "Mobius/mobius_3-day_background.Spc"),
+                    mobius_drf, SpecUtils::append_path(bundled, "single_disk_mobius") );
+    } catch( std::exception &e ) { cerr << "Mobius single-disk bundling failed: " << e.what() << endl; }
+
+    cout << "=== Bundling complete ===" << endl;
+  }//me_bundle_multi_enrich_inputs()
+
+}//anonymous namespace (multi-enrichment-U bundler)
+
+
 int dev_code()
 {
+  // Multi-enrichment-U bundler: create the bundled N42 study inputs, then stop.
+  {
+    me_bundle_multi_enrich_inputs();
+    return 0;
+  }
+
   // IDB enrichment comparison
   {
     const std::string docroot = SpecUtils::append_path( InterSpec::staticDataDirectory(), ".." );

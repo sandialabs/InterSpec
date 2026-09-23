@@ -5101,10 +5101,10 @@ void InterSpec::startClearSession()
   SimpleDialog *window = SimpleDialog::make( WString::tr("clear-session"),
                                            WString::tr("clear-session-msg") );
   
-  WPushButton *button = window->addButton( WString::tr("Yes") );
+  WPushButton *button = window->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
   button->clicked().connect( app, &InterSpecApp::clearSession );
   
-  button = window->addButton( WString::tr("No") );
+  button = window->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   button->setFocus();
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -5369,7 +5369,7 @@ void InterSpec::showFileQueryDialog()
   stretcher->setVerticalSpacing( 0 );
   stretcher->setHorizontalSpacing( 0 );
   
-  WPushButton *closeButton = m_specFileQueryDialog->addCloseButtonToFooter( WString::tr("Close"), true );
+  WPushButton *closeButton = m_specFileQueryDialog->addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( this, [this](){ m_specFileQueryDialog->hide(); } );
   
   m_specFileQueryDialog->finished().connect( this, &InterSpec::deleteFileQueryDialog );
@@ -5475,6 +5475,7 @@ void InterSpec::showWarningsWindow()
         
       
     WPushButton *clearButton = m_warningsWindow->footer()->addNew<WPushButton>( WString::tr("notification-log-clear") );
+    WidgetUtils::applyButtonRole( clearButton, WidgetUtils::ButtonRole::Destructive );
     clearButton->clicked().connect( this, [this](){ m_warnings->clearMessages(); } );
     clearButton->addStyleClass( "BinIcon" );
     if( isMobile() )
@@ -5537,14 +5538,16 @@ void InterSpec::showPeakInfoWindow()
     //  be hidden, so we need to explicitly show it.
     m_peakInfoDisplay->show();
     WContainerWidget *footer = m_peakInfoWindow->footer();
-    WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
+    WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"));
     closeButton->clicked().connect( this, [this](){ m_peakInfoWindow->hide(); } );
     
     WPushButton *b = footer->addNew<WPushButton>( WString::tr(CalibrationTabTitleKey) );
+    WidgetUtils::applyButtonRole( b, WidgetUtils::ButtonRole::Neutral );
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
     b->setFloatSide(Wt::Side::Right);
 
     b = footer->addNew<WPushButton>( WString::tr(GammaLinesTabTitleKey) );
+    WidgetUtils::applyButtonRole( b, WidgetUtils::ButtonRole::Neutral );
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Side::Right);
       
@@ -6101,10 +6104,11 @@ void InterSpec::startStoreTestState()
   layout->setRowStretch( 1, 1 );
   
   
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"));
   closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("Create") );
+  WidgetUtils::applyButtonRole( save, WidgetUtils::ButtonRole::Affirm );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
   save->clicked().connect( this, [this, edit, summary, window](){
@@ -6211,10 +6215,11 @@ void InterSpec::stateSaveAs()
   label->setTextAlignment( Wt::AlignmentFlag::Center );
   layout->addWidget( std::unique_ptr<WWidget>(label), 4, 1 );
   
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"));
   closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("Save") );
+  WidgetUtils::applyButtonRole( save, WidgetUtils::ButtonRole::Affirm );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
 
   save->clicked().connect( this, [this, edit, summary, window](){ stateSaveAsFinish( edit, summary, window ); } );
@@ -6263,10 +6268,11 @@ void InterSpec::stateSaveTag()
   layout->setColumnStretch( 1, 1 );
   layout->setRowStretch( 2, 1 );
 
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false );
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"));
   closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   WPushButton *save = window->footer()->addNew<WPushButton>( WString::tr("db-Tag") );
+  WidgetUtils::applyButtonRole( save, WidgetUtils::ButtonRole::Affirm );
   //save->setIcon( "InterSpec_resources/images/disk2.png" );
 
   save->clicked().connect( this, [this, edit, window](){ stateSaveTagFinish( edit, window ); } );
@@ -8042,7 +8048,7 @@ void InterSpec::showEnergyCalWindow()
   m_energyCalWindow->centerWindow();
   
   AuxWindow::addHelpInFooter( m_energyCalWindow->footer(), "energy-calibration" );
-  Wt::WPushButton *closeButton = m_energyCalWindow->addCloseButtonToFooter("Close",true);
+  Wt::WPushButton *closeButton = m_energyCalWindow->addCloseButtonToFooter("Close");
   closeButton->clicked().connect( this, [this](){ handEnergyCalWindowClose(); } );
   
   
@@ -8139,9 +8145,10 @@ void InterSpec::startHardBackgroundSub()
   auto truncate_neg = make_shared<bool>(false);
   auto round_counts = make_shared<bool>(false);
   
+  // "DialogOptions" separates the option check boxes from the prose with a hairline; it supplies
+  //  the spacing, so no ad-hoc padding is needed here.
   WContainerWidget *optionsDiv = dialog->contents()->addNew<WContainerWidget>();
-  optionsDiv->setPadding( 40, Wt::Side::Left );
-  optionsDiv->setPadding( 20, Wt::Side::Bottom );
+  optionsDiv->addStyleClass( "DialogOptions" );
 
   WCheckBox *cb = optionsDiv->addNew<WCheckBox>( WString::tr("window-hard-back-sub-truncate") );
   cb->setInline( false );
@@ -8154,10 +8161,10 @@ void InterSpec::startHardBackgroundSub()
   cb->unChecked().connect( this, [=](){ *round_counts = false; } );
   
   
-  WPushButton *button = dialog->addButton( WString::tr("Yes") );
+  WPushButton *button = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
   button->setFocus();
   button->clicked().connect( this, [this, truncate_neg, round_counts](){ finishHardBackgroundSub( truncate_neg, round_counts ); } );
-  dialog->addButton( WString::tr("No") );  //dont need to hook this to anything
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );  //dont need to hook this to anything
 }//void startHardBackgroundSub()
 
 
@@ -10275,7 +10282,7 @@ void InterSpec::create3DSearchModeChart()
   SearchMode3DChart *chart = new SearchMode3DChart( this );
   layout->addWidget( std::unique_ptr<WWidget>(chart), 0, 0 );
   
-  Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter( WString::tr("Close"),true);
+  Wt::WPushButton *closeButton = m_3dViewWindow->addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( m_3dViewWindow.get(), &AuxWindow::hide );
   
   m_3dViewWindow->show();
@@ -11385,7 +11392,7 @@ void InterSpec::showNuclideSearchWindow()
 //  m_nuclideSearchWindow->footer()->resize( WLength::Auto, WLength(50.0) );
   
  
-  Wt::WPushButton *closeButton = m_nuclideSearchWindow->addCloseButtonToFooter( WString::tr("Close"),true);
+  Wt::WPushButton *closeButton = m_nuclideSearchWindow->addCloseButtonToFooter( WString::tr("Close"));
   
   closeButton->clicked().connect( this, [this](){ closeNuclideSearchWindow(); } );
   
@@ -11573,7 +11580,7 @@ void InterSpec::showGammaLinesWindow()
   layout->setContentsMargins(5,5,5,5);
   layout->addWidget( std::move(refLines), 0, 0 );
 
-  Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter( WString::tr("Close"),true);
+  Wt::WPushButton *closeButton = m_referencePhotopeakLinesWindow->addCloseButtonToFooter( WString::tr("Close"));
   
   if( isPhone() )
   {
@@ -13119,14 +13126,14 @@ void InterSpec::promptUserHowToOpenFile( std::shared_ptr<SpecMeas> meas,
   }
   
   SimpleDialog *dialog = SimpleDialog::make( WString::fromUTF8(filename), WString::tr("prompt-how-open") );
-  WPushButton *button = dialog->addButton( WString::tr("Foreground") );
+  WPushButton *button = dialog->addButton( WString::tr("Foreground"), WidgetUtils::ButtonRole::Affirm );
   button->clicked().connect( this, [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::Foreground ); } );
   button->setFocus( true );
 
-  button = dialog->addButton( WString::tr("Background") );
+  button = dialog->addButton( WString::tr("Background"), WidgetUtils::ButtonRole::Neutral );
   button->clicked().connect( this, [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::Background ); } );
 
-  button = dialog->addButton( WString::tr("Secondary") );
+  button = dialog->addButton( WString::tr("Secondary"), WidgetUtils::ButtonRole::Neutral );
   button->clicked().connect( this, [this, meas, header](){ finishLoadUserFilesystemOpenedFile( meas, header, SpecUtils::SpectrumType::SecondForeground ); } );
 }//void promptUserHowToOpenFile(...)
 

@@ -136,11 +136,11 @@ std::optional<RayHit> intersect_cylinder(
 }
 
 
-namespace {
-
-/// Subtract the bore interval from the outer-crystal interval, yielding the
-/// 0-2 active segments.  Factored out of intersect_bored_cylinder() so the
-/// bulletized and rounded-tip variants reuse the exact same arithmetic.
+/// Subtract the bore interval from a material interval, yielding the 0-2
+/// surviving pieces.  Shared by the bored-cylinder helpers below and by the
+/// dead-layer subtraction in Geometry::trace_cylinder_geometry, so every place
+/// that removes the bore removes exactly the same thing.  See Cylinder.h for
+/// the t_enter clamping convention.
 int subtract_bore_interval(const RayHit& outer_hit,
                            const std::optional<RayHit>& bore_hit,
                            RayHit segments_out[2])
@@ -190,8 +190,6 @@ int subtract_bore_interval(const RayHit& outer_hit,
     return count;
 }
 
-} // anonymous namespace
-
 int intersect_bored_cylinder(
     const Eigen::Vector3d& origin,
     const Eigen::Vector3d& direction,
@@ -209,8 +207,9 @@ int intersect_bored_cylinder(
         return 0; // Ray misses the outer crystal entirely
     }
 
-    // Step 2: Intersect ray with the bore cylinder (which goes from bore_z_start to bore_z_end)
-    auto bore_hit = intersect_cylinder(origin, direction, bore_radius, bore_z_start, bore_z_end);
+    // Step 2: Intersect ray with the bore cylinder (flat bottom at bore_z_start)
+    auto bore_hit = intersect_bore(origin, direction, bore_radius,
+                                   bore_z_start, bore_z_end, /*rounded_tip=*/false);
 
     // Step 3: Subtract the bore from the outer crystal.
     return subtract_bore_interval(*outer_hit, bore_hit, segments_out);
@@ -487,8 +486,27 @@ namespace {
 
 /// Ray interval through a bore with a hemispherical ("round-tipped drill")
 /// closed end: the straight part from z_tip upward, unioned with the ball
-/// tangent to it.  The union is convex, and the ball's upper half lies inside
-/// the straight part, so the interval is simply the hull of the two pieces.
+/// tangent to it, the whole thing confined to the bore's own z range.
+///
+/// Within [bore_z_start, bore_z_end] the radius profile rises over the cap and
+/// then sits flat at bore_radius -- concave -- so the solid of revolution is
+/// convex and the ray interval is simply the hull of the two pieces.
+///
+/// The confinement is not decoration.  For a BLUNT tip
+/// (bore_z_end - bore_z_start < 2*bore_radius, which set_bore_hole permits,
+/// asserting only bore_radius <= depth) the ball's top reaches past
+/// bore_z_end.  There the union is NOT convex: the profile steps DOWN from
+/// bore_radius to the ball's radius at bore_z_end, and the hull of the two
+/// intervals then spans a gap of non-bore space -- measured at up to 0.98 cm
+/// for r=0.5, depth=0.6.  Clipping the ball to z <= bore_z_end removes exactly
+/// that step (the clipped-off upper cap lies inside the straight part's z range
+/// anyway), restoring both convexity and the hull's exactness.
+///
+/// Callers do clamp the bore to the solid they are cutting, which hides the
+/// overhang whenever that solid ends at bore_z_end -- true for every in-tree
+/// geometry with a non-negative back dead layer.  It is NOT true for a negative
+/// one, where the active cylinder extends past the crystal's back face and the
+/// gap fell inside it, dropping real active material.
 std::optional<RayHit> rounded_bore_interval(const Eigen::Vector3d& origin,
                                             const Eigen::Vector3d& direction,
                                             double bore_radius,
@@ -516,6 +534,20 @@ std::optional<RayHit> rounded_bore_interval(const Eigen::Vector3d& origin,
         ball = RayHit{-b - sqrt_disc, -b + sqrt_disc};
     }
 
+    // Blunt tip: confine the ball to the bore's z range (see above).  A no-op
+    // when z_tip + bore_radius <= bore_z_end, i.e. for every ordinary bore.
+    if (ball && (z_tip + bore_radius > bore_z_end)) {
+        const double dz = direction.z();
+        if (std::fabs(dz) > 0.0) {
+            const double t_plane = (bore_z_end - origin.z()) / dz;
+            if (dz > 0.0) ball->t_exit  = std::min(ball->t_exit,  t_plane);
+            else          ball->t_enter = std::max(ball->t_enter, t_plane);
+            if (ball->t_enter >= ball->t_exit) ball.reset();
+        } else if (origin.z() > bore_z_end) {
+            ball.reset();   // ray runs parallel to the faces, above the mouth
+        }
+    }
+
     if (!straight) return ball;
     if (!ball)     return straight;
 
@@ -524,6 +556,22 @@ std::optional<RayHit> rounded_bore_interval(const Eigen::Vector3d& origin,
 }
 
 } // anonymous namespace
+
+
+std::optional<RayHit> intersect_bore(
+    const Eigen::Vector3d& origin,
+    const Eigen::Vector3d& direction,
+    double bore_radius,
+    double bore_z_start,
+    double bore_z_end,
+    bool rounded_tip)
+{
+    return rounded_tip
+        ? rounded_bore_interval(origin, direction, bore_radius,
+                                bore_z_start, bore_z_end)
+        : intersect_cylinder(origin, direction, bore_radius,
+                             bore_z_start, bore_z_end);
+}
 
 
 int intersect_shaped_bored_cylinder(
@@ -551,11 +599,8 @@ int intersect_shaped_bored_cylinder(
         }
     }
 
-    auto bore_hit = rounded_bore_tip
-        ? rounded_bore_interval(origin, direction, bore_radius,
-                                bore_z_start, bore_z_end)
-        : intersect_cylinder(origin, direction, bore_radius,
-                             bore_z_start, bore_z_end);
+    auto bore_hit = intersect_bore(origin, direction, bore_radius,
+                                   bore_z_start, bore_z_end, rounded_bore_tip);
 
     return subtract_bore_interval(*outer_hit, bore_hit, segments_out);
 }

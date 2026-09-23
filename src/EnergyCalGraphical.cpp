@@ -143,7 +143,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     snprintf(msg, sizeof(msg), "Preserve %.1f keV Cal.", m_lastEnergy );
     m_preserveLastCal = contents()->addNew<WCheckBox>( msg );
     m_preserveLastCal->setInline( false );
-    m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
+    m_preserveLastCal->setStyleClass( "PreserveLastCalCb DialogOptions" );
     
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
 
@@ -206,9 +206,11 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   
   
   WPushButton *button = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Dismiss );
   button->clicked().connect( this, &AuxWindow::hide );
 
   button = footer()->addNew<WPushButton>( WString::tr("Accept") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Affirm );
   button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &EnergyCalGraphicalConfirm::apply );
   

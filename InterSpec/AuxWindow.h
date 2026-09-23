@@ -283,17 +283,30 @@ public:
 
   virtual void setClosable( bool closable );
 
-  //addCloseButtonToFooter(): adds a style appropriate (phone/desktop)
-  //  close button to the footer.  Desktop will display the text "Close", while
-  //  mobile is a "Back" button.
-  //  The button contains either the styleclass "PhoneDialogClose" or
-  //  "DialogClose"
-  //The button is not connected to any slots (e.g. it does not actually close
-  //  this dialog).
+  /** Adds a style appropriate (phone/desktop) close button to the footer.  Desktop displays the
+   text "Close", while mobile is a "Back" button.
+
+   The button is not connected to any slots (e.g. it does not actually close this dialog).
+
+   `role` defaults to Dismiss, which is what a close button is; unlike SimpleDialog::addButton a
+   default is harmless here because it cannot be wrong for the common case.  The call sites that
+   repurpose this to add a "Save"/"Yes"/"Add" button do need to say ButtonRole::Affirm.
+
+   Note this used to take a `float_right` flag, which placed the button with `float: right`.  The
+   footer is now a flex container that ignores floats, and the role decides the position, so the
+   flag is gone.
+   */
   Wt::WPushButton *addCloseButtonToFooter( Wt::WString override_txt = "Close",
-                                           const bool float_right = false,
+                                           WidgetUtils::ButtonRole role = WidgetUtils::ButtonRole::Dismiss,
                                            Wt::WContainerWidget *footerOverride = nullptr );
-  
+
+  /** Adds a plain footer button with the given role.
+
+   Just `footer()->addNew<WPushButton>(txt)` plus WidgetUtils::applyButtonRole - it exists so footer
+   buttons pick up their ordering and emphasis without every call site remembering the class name.
+   */
+  Wt::WPushButton *addFooterButton( const Wt::WString &txt, WidgetUtils::ButtonRole role );
+
   //Help button add to footer
   static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );
   /** Queues the deferred `finished( DialogCode::Rejected )` emission.

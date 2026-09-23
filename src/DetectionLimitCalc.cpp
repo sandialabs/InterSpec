@@ -56,7 +56,6 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakFit_imp.hpp"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"

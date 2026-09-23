@@ -1986,8 +1986,8 @@ void DrfModifyWidget::requestApply()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-detach-title"),
                                                              WString::tr("dmw-detach-body") );
-    WPushButton *ok = dialog->addButton( WString::tr("dmw-detach-accept") );
-    dialog->addButton( WString::tr("Cancel") );
+    WPushButton *ok = dialog->addButton( WString::tr("dmw-detach-accept"), WidgetUtils::ButtonRole::Affirm );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
     ok->clicked().connect( this, &DrfModifyWidget::apply );
     return;
   }//if( detaching a geometry-modeled response )
@@ -2005,9 +2005,9 @@ void DrfModifyWidget::requestApply()
     {
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-nogen-title"),
                                                                WString::tr("dmw-nogen-body") );
-      WPushButton *gen = dialog->addButton( WString::tr("dmw-nogen-generate") );
-      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-nogen-use-anyway") );
-      dialog->addButton( WString::tr("Cancel") );
+      WPushButton *gen = dialog->addButton( WString::tr("dmw-nogen-generate"), WidgetUtils::ButtonRole::Affirm );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-nogen-use-anyway"), WidgetUtils::ButtonRole::Neutral );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
       gen->clicked().connect( this, [this](){
         //handleResponseGenerated applies once THIS run lands; a run that never starts, or that
         //  fails part way, must not leave a later unrelated generation armed.
@@ -2030,8 +2030,8 @@ void DrfModifyWidget::requestApply()
       const string problem = Wt::Utils::htmlEncode( m_mcTool->geometryProblem() );
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-geom-incomplete-title"),
                              WString::tr("dmw-geom-incomplete-body").arg( WString::fromUTF8(problem) ) );
-      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-geom-incomplete-use-anyway") );
-      dialog->addButton( WString::tr("Cancel") );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-geom-incomplete-use-anyway"), WidgetUtils::ButtonRole::Affirm );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
       useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
     }//if( canGen ) / else
 
@@ -2062,7 +2062,7 @@ void DrfModifyWidget::requestApply()
                    WString::tr( canGen ? "dmw-regen-required-body" : "dmw-regen-impossible-body" ) );
     if( canGen )
     {
-      WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept") );
+      WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept"), WidgetUtils::ButtonRole::Affirm );
       regen->clicked().connect( this, [this](){
         const bool started = handleGenerateResponse();
         m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
@@ -2070,9 +2070,9 @@ void DrfModifyWidget::requestApply()
           passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
       } );
     }
-    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach") );
+    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach"), WidgetUtils::ButtonRole::Neutral );
     detach->clicked().connect( this, &DrfModifyWidget::detachResponseAndApply );
-    dialog->addButton( WString::tr("Cancel") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
     return;
   }//if( the attached response no longer describes the edits )
 
@@ -2810,6 +2810,7 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   cancel->clicked().connect( this, &AuxWindow::hide );
 
   WPushButton *use = footer()->addNew<WPushButton>( WString::tr("dmw-use-btn") );
+  WidgetUtils::applyButtonRole( use, WidgetUtils::ButtonRole::Affirm );
   use->clicked().connect( m_tool, &DrfModifyWidget::requestApply );
 
   // "Use" has two independent reasons to be closed, so they are combined in one place rather than

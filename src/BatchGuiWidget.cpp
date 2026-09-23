@@ -78,12 +78,13 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource,
                                                                  allow_adding_open_files ), 0, 0 );
 
   m_processBtn = footer()->addNew<WPushButton>( WString::tr( "bgw-analyze-button" ) );
+  WidgetUtils::applyButtonRole( m_processBtn, WidgetUtils::ButtonRole::Affirm );
   m_processBtn->setStyleClass( "simple-dialog-btn" );
   m_processBtn->clicked().connect( m_widget, &BatchGuiWidget::performAnalysis );
   m_processBtn->disable();
   m_widget->canDoAnalysis().connect( this, [this]( bool enabled ){ m_processBtn->setEnabled( enabled ); } );
 
-  addButton( WString::tr( "Close" ) );
+  addButton( WString::tr( "Close" ), WidgetUtils::ButtonRole::Dismiss );
 
   // Set dialog size based on screen size
   InterSpec *interspec = InterSpec::instance();
@@ -540,14 +541,14 @@ void BatchGuiWidget::handleLoadOpenFileRequest()
   {
     dialog->contents()->removeWidget( selection );
     dialog->contents()->addNew<WText>( WString::tr( "bgw-pick-open-file-none" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
     return;
   }//if( headers->empty() )
 
   dialog->contents()->addNew<WText>( WString::tr( "bgw-pick-open-file-msg" ) );
 
-  dialog->addButton( WString::tr( "Cancel" ) );
-  WPushButton *add_btn = dialog->addButton( WString::tr( "bgw-pick-open-file-add" ) );
+  dialog->addButton( WString::tr( "Cancel" ), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "bgw-pick-open-file-add" ), WidgetUtils::ButtonRole::Affirm );
   add_btn->clicked().connect( this, [this,selection,headers](){
     handleAddOpenFiles( selection, headers );
   } );

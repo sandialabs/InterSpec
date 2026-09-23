@@ -270,6 +270,73 @@ namespace
   }//set<string> disallowed_entities_in( const string &text )
 
 
+  /** The HTML tags the bundles use for markup.
+
+   Only these are treated as markup by the check below; `&lt; 0.3`, `&lt;Chi2/dof&gt;` and
+   `&lt;DHS:InterSpec&gt;` are text the user is meant to read, and have to stay escaped.
+   */
+  bool is_markup_tag( const string &name )
+  {
+    static const set<string> s_tags = {
+      "a", "b", "br", "center", "code", "div", "em", "h1", "h2", "h3", "h4", "h5", "h6", "hr",
+      "i", "img", "li", "ol", "p", "pre", "span", "strong", "sub", "sup", "table", "td", "th",
+      "tr", "u", "ul"
+    };
+
+    return s_tags.count( name ) > 0;
+  }//bool is_markup_tag( const string &name )
+
+
+  /** Escaped HTML tags in \p text - markup the user will be shown instead of it taking effect.
+
+   Message text is rendered as XHTML (`WText`, tooltips, `SimpleDialog` bodies), so it is natural
+   to assume `&lt;b&gt;` is just a careful way of writing `<b>`.  It is not: the bundle loader
+   re-escapes character data on the way back out (`WMessageResources::readElementContent` prints
+   each node, and rapidxml's printer turns `<` into `&lt;` again), so an escaped tag survives all
+   the way to the browser and the user reads the tag itself.  Markup has to be written as real
+   XML - as elements, or inside a CDATA section as `UseInfoWindow.xml` does.
+   */
+  set<string> escaped_markup_in( const string &text )
+  {
+    const string alnum = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+    set<string> answer;
+    for( size_t open = text.find( "&lt;" ); open != string::npos;
+        open = text.find( "&lt;", open + 4 ) )
+    {
+      size_t name_begin = open + 4;
+      if( (name_begin < text.size()) && (text[name_begin] == '/') )
+        name_begin += 1;
+
+      size_t name_end = text.find_first_not_of( alnum, name_begin );
+      if( name_end == string::npos )
+        name_end = text.size();
+
+      const string name
+          = SpecUtils::to_lower_ascii_copy( text.substr( name_begin, name_end - name_begin ) );
+      if( name.empty() || !is_markup_tag( name ) )
+        continue;
+
+      const size_t close = text.find( "&gt;", name_end );
+      if( close == string::npos )
+        continue;
+
+      // Whatever sits between the name and the '>' has to look like attributes, and a second '<'
+      //  before the '>' means these two were never a tag to begin with.
+      const string between = text.substr( name_end, close - name_end );
+      if( !between.empty() && (between != "/") && (between[0] != ' ') )
+        continue;
+
+      if( text.find( "&lt;", name_end ) < close )
+        continue;
+
+      answer.insert( text.substr( open, close + 4 - open ) );
+    }//for( loop over "&lt;" in text )
+
+    return answer;
+  }//set<string> escaped_markup_in( const string &text )
+
+
   /** Concatenated text of a node and everything under it, entities left as written. */
   string node_text( const rapidxml::xml_node<char> * const node )
   {
@@ -360,6 +427,14 @@ namespace
       {
         BOOST_ERROR( "'" << path << "' message '" << id << "' uses entity '&" << entity
                     << ";', which Wt cannot parse - use the UTF-8 character instead" );
+      }
+
+      const set<string> escaped = escaped_markup_in( text );
+      for( const string &tag : escaped )
+      {
+        BOOST_ERROR( "'" << path << "' message '" << id << "' writes the markup '" << tag
+                    << "' escaped, so the user is shown the tag instead of it taking effect"
+                    " - write it as XML, or put the message in a CDATA section" );
       }
 
       answer[id] = placeholders_in( text );

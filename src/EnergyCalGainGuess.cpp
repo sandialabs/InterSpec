@@ -828,7 +828,7 @@ guess_energy_cal( const std::shared_ptr<const SpecUtils::Measurement> &meas,
       identity_cal->set_default_polynomial( nchan, {0.0f, 1.0f}, {} );
       auto chanmeas = make_shared<Measurement>( *meas );
       chanmeas->set_energy_calibration( identity_cal );
-      if( !ExperimentalPeakSearch::find_spectroscopic_extent( chanmeas, extent_lower, extent_upper )
+      if( !PeakFitUtils::find_spectroscopic_extent( chanmeas, extent_lower, extent_upper )
           || (extent_upper <= extent_lower) )
       {
         extent_lower = 0;
@@ -1237,8 +1237,10 @@ EnergyCalGainGuess::EnergyCalGainGuess( std::shared_ptr<std::vector<MeasToApplyC
   WContainerWidget * const footer = parent->footer();
   AuxWindow::addHelpInFooter( footer, "energy-cal-guess-gain" );
   m_cancel = footer->addNew<WPushButton>( WString::tr("Cancel") );
+  WidgetUtils::applyButtonRole( m_cancel, WidgetUtils::ButtonRole::Dismiss );
   m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
   m_use = footer->addNew<WPushButton>( WString::tr("Use") );
+  WidgetUtils::applyButtonRole( m_use, WidgetUtils::ButtonRole::Affirm );
   m_use->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
   m_use->disable();
 

@@ -313,6 +313,7 @@ void DecaySelectNuclide::init()
   
   
   m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Add") );
+  WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
   m_acceptButton->setFloatSide( Wt::Side::Right );
   m_acceptButton->clicked().connect( this, &DecaySelectNuclide::emitAccepted );
   WPushButton *cancelButton = m_auxWindow->addCloseButtonToFooter( WString::tr("Close") );

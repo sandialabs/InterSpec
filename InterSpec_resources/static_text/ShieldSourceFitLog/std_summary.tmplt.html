@@ -478,8 +478,8 @@ Exemplar peaks that could not be fit{% if existsIn(file.NotFitPeaks,"HasMdas") a
 {% if existsIn(file, "NumDof") %}
   <li>There were {{ file.NumDof }} parameters fit for</li>
 {% endif %}
-{% if existsIn(file, "NumberFcnCalls") and existsIn(file, "FitChi2") and existsIn(file,"EstimatedDistanceToMinimum") %}
-  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }} with an estimated distance to minimum of {{ printCompact(file.EstimatedDistanceToMinimum,5) }}</li>
+{% if existsIn(file, "NumberFcnCalls") and existsIn(file, "FitChi2") %}
+  <li>It took {{ file.NumberFcnCalls }} solution trials to reach chi2={{ printCompact(file.FitChi2,5) }}</li>
 {% endif %}
 </ul>
 </div>

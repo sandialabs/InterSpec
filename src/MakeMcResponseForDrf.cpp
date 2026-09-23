@@ -2107,6 +2107,7 @@ MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
   WPushButton *useBtn = footer()->addNew<WPushButton>( WString::tr("mmr-use-response-btn") );
+  WidgetUtils::applyButtonRole( useBtn, WidgetUtils::ButtonRole::Affirm );
   useBtn->clicked().connect( m_tool, &MakeMcResponseForDrf::acceptResponse );
   m_tool->validationChanged().connect( useBtn, [useBtn]( bool valid ){
     useBtn->setEnabled( valid );

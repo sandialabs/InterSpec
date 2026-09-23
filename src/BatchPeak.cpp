@@ -2083,21 +2083,6 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                   stat_threshold, hypothesis_threshold,
                                                   candidate_peaks, spec, {}, det_type );
 
-#if( !USE_LM_PEAK_FIT )
-      // will re-fit the peaks again to make sure have the best solution.
-      //  Note: the Ceres/LM-based fitting does not need this - it seems to always fit the best solution on first try
-      for( size_t i = 0; i < 3; ++i )
-      {
-        const vector<PeakDef> prev_peaks = fit_peaks;
-        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
-        fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
-                                    stat_threshold, hypothesis_threshold,
-                                    fit_peaks, spec, refit_options, det_type );
-
-        if( fit_peaks.size() != prev_peaks.size() )
-          fit_peaks = prev_peaks;
-      }
-#endif // !USE_LM_PEAK_FIT
 
       //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
       //<< starting_peaks.size() <<  ") from the raw spectrum:"

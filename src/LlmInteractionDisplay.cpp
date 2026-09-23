@@ -495,7 +495,7 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
   // Add buttons
   LOAD_JAVASCRIPT(wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmCopyTextToClipboard );
 
-  WPushButton *copyBtn = dialog->addButton( "Copy to Clipboard" );
+  WPushButton *copyBtn = dialog->addButton( "Copy to Clipboard", WidgetUtils::ButtonRole::Neutral );
   const string js = "function(s,e){ Wt.WT.LlmCopyTextToClipboard(s,e,'" + jsonArea->id() + "'); }";
   copyBtn->clicked().connect( js );
 
@@ -532,7 +532,7 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
 #endif
   }
 
-  WPushButton *closeBtn = dialog->addButton( "Close" );
+  WPushButton *closeBtn = dialog->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
   closeBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }//showJsonDialog(...)
 
@@ -2340,6 +2340,7 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
 
   // Add close button
   WPushButton *closeBtn = dialog->footer()->addNew<WPushButton>( "Close" );
+  WidgetUtils::applyButtonRole( closeBtn, WidgetUtils::ButtonRole::Dismiss );
   closeBtn->clicked().connect( dialog, &WDialog::accept );
 
   dialog->show();

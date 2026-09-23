@@ -802,7 +802,7 @@ void setup_physical_model_shield_par_manual( vector<int> &constant_parameters,
 /** Functor for minimizing the relative activities; relative efficiency is fit for each set of
  activities via the #fit_rel_eff_eqn_lls function.
  */
-struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
+struct ManualGenericRelActFunctor
 {
   /** The form of relative efficiency equation to use. */
   //const RelActCalc::RelEffEqnForm m_eqn_form;
@@ -2169,33 +2169,6 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   }
   
 
-  /*
-  virtual double operator()( const std::vector<double> &x ) const
-  {
-    vector<double> residuals( number_residuals(), 0.0 );
-    try
-    {
-      eval( x, residuals.data() );
-    }catch( std::exception &e )
-    {
-      cerr << "ManualGenericRelActFunctor::operator() caught: " << e.what() << endl;
-      return std::numeric_limits<double>::max();
-    }
-    
-    double chi2 = 0.0;
-    for( size_t i = 0; i < m_input.peaks.size(); ++i )
-      chi2 += residuals[i]*residuals[i];
-    
-    return chi2;
-  }//operator() - for minuit
-  
-  
-  // For Minuit2
-  virtual double Up() const
-  {
-    return 1.0;
-  }
-   */
 
   size_t num_isotopes() const
   {

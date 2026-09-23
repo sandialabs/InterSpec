@@ -122,12 +122,12 @@ RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
   m_widget = widgetOwner.get();
   layout->addWidget( std::move(widgetOwner), 0, 0 );
 
-  m_loadBtn = addButton( WString::tr("Load") );
+  m_loadBtn = addButton( WString::tr("Load"), WidgetUtils::ButtonRole::Affirm );
   m_loadBtn->clicked().connect( m_widget, &RefSpectraWidget::loadSelectedSpectrum );
   m_loadBtn->setDisabled( true );
   m_widget->fileSelectionChangedSignal().connect( this, [this]( RefSpectraWidgetSelectionType type ){ handleSelectionChanged( type ); } );
 
-  addButton( WString::tr("Cancel") );
+  addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   
   // Set dialog size based on screen size
   InterSpec *interspec = InterSpec::instance();
@@ -545,8 +545,8 @@ void RefSpectraWidget::setupUI()
 void RefSpectraWidget::startAddDirectory()
 {
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("rs-add-dir-dialog-title") );
-  WPushButton *okBtn = dialog->addButton( WString::tr("Save") );
-  WPushButton *cancelBtn = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *okBtn = dialog->addButton( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
+  WPushButton *cancelBtn = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
   dialog->addStyleClass( "RefSpectraAddDirDialog" );
 

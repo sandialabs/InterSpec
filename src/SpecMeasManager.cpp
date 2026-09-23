@@ -500,6 +500,7 @@ namespace
       }
 
       WPushButton *cancel = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+      WidgetUtils::applyButtonRole( cancel, WidgetUtils::ButtonRole::Dismiss );
       
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
@@ -594,7 +595,7 @@ void displayQrDialog( const vector<QRSpectrum::QrCodeEncodedSpec> urls, const si
   
   if( (index + 1) < urls.size() )
   {
-    WPushButton *btn = dialog->addButton( WString::tr("smm-next-qr") );
+    WPushButton *btn = dialog->addButton( WString::tr("smm-next-qr"), WidgetUtils::ButtonRole::Neutral );
     btn->clicked().connect( btn, [=](){
       displayQrDialog( urls, index + 1, type );
     } );
@@ -625,9 +626,9 @@ protected:
     assert( viewer );
 
 #if( IOS || ANDROID )
-    WPushButton *btn = addButton( WString::tr("Cancel") );
+    WPushButton *btn = addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 #else
-    addButton( WString::tr("Cancel") );
+    addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 #endif
     
     finished().connect( m_manager, &SpecMeasManager::multiSpectrumDialogDone );
@@ -1188,7 +1189,7 @@ protected:
       }//if( (num_qr == 0) && b64_value.empty() )
       
       SimpleDialog *dialog = SimpleDialog::make( title, content );
-      dialog->addButton( WString::tr("Okay") );
+      dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
 
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
       // observing_ptr auto-nulls if the user already dismissed `dialog`.
@@ -1242,7 +1243,7 @@ protected:
       }
       
       SimpleDialog *dialog = SimpleDialog::make( WString::tr("uid-invalid-uri"), content );
-      dialog->addButton( WString::tr("Okay") );
+      dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
 
       // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
       // observing_ptr auto-nulls if the user already dismissed `dialog`.
@@ -1278,11 +1279,11 @@ protected:
     }//if( cleaned_up_uris.size() > 1 )
     
     SimpleDialog *dialog = SimpleDialog::make( title, content );
-    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
     btn->clicked().connect( this, [this, cleaned_up_uris](){ apply_uris( cleaned_up_uris ); } );
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
-    btn = dialog->addButton( WString::tr("No") );
+    btn = dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
 
     // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling.
     // observing_ptr auto-nulls if the user already dismissed `dialog`.
@@ -2151,11 +2152,12 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }//if( !m_viewer->isPhone() )
     
     window->rejectWhenEscapePressed();
-    Wt::WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"),true);
+    Wt::WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"));
     closeButton->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
     window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
     WPushButton *openButton = window->footer()->addNew<WPushButton>( WString::tr("smm-zip-display-btn") );
+    WidgetUtils::applyButtonRole( openButton, WidgetUtils::ButtonRole::Affirm );
     openButton->disable();
     //selection->activated().connect( openButton, &WPushButton::enable );
     table->clicked().connect( openButton, &WPushButton::enable );
@@ -2679,7 +2681,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           SimpleDialog *errdialog = SimpleDialog::make<SimpleDialog>(
                                               WString::tr("smm-llm-config-invalid-title") );
           errdialog->contents()->addNew<WText>( WString::tr("smm-llm-config-invalid-msg") );
-          errdialog->addButton( WString::tr("Close") );
+          errdialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
         }//try / catch
         handled = true;
         break;
@@ -2880,7 +2882,7 @@ SimpleDialog *SpecMeasManager::showNonSpecInfoDialog( const Wt::WString &bodyTex
 {
   SimpleDialog *dialog = createBareNonSpecDialog();
 
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
@@ -2905,7 +2907,7 @@ SimpleDialog *SpecMeasManager::showImageDialog( const std::string &displayName,
 {
   SimpleDialog *dialog = createBareNonSpecDialog();
 
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
@@ -3025,7 +3027,7 @@ bool SpecMeasManager::tryFitPeaksFromCsv( const NonSpecFileKind kind,
     // error text styled in red, and register the undo/redo step so the user can redo to
     // re-see the error.
     SimpleDialog *dialog = createBareNonSpecDialog();
-    dialog->addButton( WString::tr("Close") );
+    dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
     WContainerWidget *contents = dialog->contents();
     contents->addStyleClass( "NonSpecDialogBody" );
@@ -3326,7 +3328,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
     dialog->contents()->clear();
     dialog->footer()->clear();
 
-    closeButton = dialog->addButton( WString::tr("Close") );
+    closeButton = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
     auto stretcherOwned = std::make_unique<WGridLayout>();
     stretcher = stretcherOwned.get();
 
@@ -3654,7 +3656,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   dialog->contents()->addStyleClass( "CALp" );
   // TODO: ask if they want to update deviation pairs - maybe?
 
-  dialog->addButton( WString::tr("No") ); //no further action necessary if user clicks no; dialog will close
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss ); //no further action necessary if user clicks no; dialog will close
   closeButton->setText( WString::tr("Yes") );
   closeButton->clicked().connect( this, [applyCalibration, cbs](){ applyCalibration( cbs ); } );
 
@@ -3716,7 +3718,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 
 
   // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
-  WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
+  WPushButton *closeButton = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   auto stretcherOwned2 = std::make_unique<WGridLayout>();
   WGridLayout *stretcher = stretcherOwned2.get();
 
@@ -4016,8 +4018,8 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     }//if( makeModelCb )
   }//if( makeSerialNumCb || makeModelCb )
 
-  dialog->addButton( WString::tr("Cancel") );
-  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf"), WidgetUtils::ButtonRole::Affirm );
   
   
   auto try_create_farfield = [=]() -> shared_ptr<DetectorPeakResponse> {
@@ -4282,7 +4284,7 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
   {
     dialog->setWindowTitle( WString::tr("smm-gadras-dat-title") );
     dialog->contents()->addNew<WText>( WString::tr("smm-gadras-dat-no-geom").arg(e.what()) );
-    dialog->addButton( WString::tr("Okay") );
+    dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
     return true;
   }
 
@@ -4328,15 +4330,15 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
   effStatus->setInline( false );
   effStatus->addStyleClass( "GadrasImportNote" );
 
-  WPushButton *characterize = dialog->addButton( WString::tr("smm-gadras-dat-characterize") );
+  WPushButton *characterize = dialog->addButton( WString::tr("smm-gadras-dat-characterize"), WidgetUtils::ButtonRole::Affirm );
 
   // Accept AND go straight to the editor.  Only shown once there is a finished detector to accept -
   //  without an efficiency, "Characterize..." already opens the editor, so this would be a second
   //  button doing the same thing.
-  WPushButton *further = dialog->addButton( WString::tr("smm-further-options") );
+  WPushButton *further = dialog->addButton( WString::tr("smm-further-options"), WidgetUtils::ButtonRole::Neutral );
   further->hide();
 
-  dialog->addButton( WString::tr("Cancel") );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
   InterSpec * const viewer = m_viewer;
 
@@ -4725,13 +4727,13 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
     }
   }//if( makeSerialNumCb || makeModelCb )
 
-  dialog->addButton( WString::tr("Cancel") );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
   // Accept AND go straight to the editor - for reviewing an imported geometry, upgrading the
   //  response with Monte Carlo, or setting a FWHM, without hunting for the tool afterwards.
-  WPushButton *further = dialog->addButton( WString::tr("smm-further-options") );
+  WPushButton *further = dialog->addButton( WString::tr("smm-further-options"), WidgetUtils::ButtonRole::Neutral );
 
-  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
+  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf"), WidgetUtils::ButtonRole::Affirm );
 
 
   // Everything an uploaded Detector.dat defined - FWHM, GADRAS peak shape, valid
@@ -4959,8 +4961,8 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     content->addStyleClass( "content" );
     content->setInline( false );
 
-    dialog->addButton( WString::tr("Cancel") );
-    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
     btn->clicked().connect( this, [this,data,test_state](){
       InterSpec *viewer = InterSpec::instance();
       if( !viewer || !data )
@@ -5024,13 +5026,13 @@ bool SpecMeasManager::handleSourceLibFile( std::istream &input, SimpleDialog *di
         tool->tool()->useSourceLibrary( src_ptrs, autopopulate );
     };
     
-    WPushButton *btn = dialog->addButton( WString::tr("Yes") );
+    WPushButton *btn = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
     btn->clicked().connect( this, [setter](){ setter(true); } );
 
-    btn = dialog->addButton( WString::tr("No") );
+    btn = dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Neutral );
     btn->clicked().connect( this, [setter](){ setter(false); } );
     
-    dialog->addButton( WString::tr("Cancel") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   }catch( std::exception &e )
   {
     input.seekg( start_pos );
@@ -5461,7 +5463,7 @@ void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
   {
     auto dialog = SimpleDialog::make( WString::tr("Error"), 
                                    WString::tr("smm-qr-err-decode").arg(e.what()) );
-    dialog->addButton( WString::tr("Close") );
+    dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   }//try /catch
 }//void handleSpectrumUrl( const std::string &url );
 
@@ -5560,7 +5562,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
     if( urls.empty() )
     {
       auto dialog = SimpleDialog::make( WString::tr("Error"), WString::tr("smm-qr-couldnt-encode") );
-      dialog->addButton( WString::tr("Close") );
+      dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
       return;
     }//if( urls.empty() )
     
@@ -5569,7 +5571,7 @@ void SpecMeasManager::displaySpectrumQrCode( const SpecUtils::SpectrumType type 
   {
     auto dialog = SimpleDialog::make( WString::tr("Error"),
                                    WString::tr("smm-qr-encode-fail").arg(e.what()) );
-    dialog->addButton( WString::tr("Close") );
+    dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   }//try catch
 }//void displaySpectrumQrCode( const SpecUtils::SpectrumType type )
 
@@ -5599,7 +5601,7 @@ void SpecMeasManager::displayInvalidFileMsg( std::string filename, std::string e
   WString msg = WString::tr("smm-err-parse-spec").arg(lastpart).arg(errormsg);
   
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-err-parse-spec-title"), msg );
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   wApp->triggerUpdate();
 }//void displayInvalidFileMsg( std::string filename, std::string errormsg )
 
@@ -6063,7 +6065,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
         }
         btn_txt = Wt::Utils::htmlEncode( btn_txt );
           
-        WPushButton *button = dialog->addButton( btn_txt );
+        WPushButton *button = dialog->addButton( btn_txt, WidgetUtils::ButtonRole::Neutral );
         button->clicked().connect( this, [this, dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
           selectVirtualDetectorChoice( dets, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
         } );
@@ -6099,18 +6101,18 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("smm-derived-window-title"),
                                             WString::tr("smm-derived-window-txt") );
-    WPushButton *button = dialog->addButton( WString::tr("smm-derived-all") );
+    WPushButton *button = dialog->addButton( WString::tr("smm-derived-all"), WidgetUtils::ButtonRole::Affirm );
     
     button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::All, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
-    button = dialog->addButton( WString::tr("smm-derived-raw") );
+    button = dialog->addButton( WString::tr("smm-derived-raw"), WidgetUtils::ButtonRole::Neutral );
     button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::RawOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
 
-    button = dialog->addButton( WString::tr("smm-derived-derived") );
+    button = dialog->addButton( WString::tr("smm-derived-derived"), WidgetUtils::ButtonRole::Neutral );
     button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectDerivedDataChoice( DerivedDataToKeep::DerivedOnly, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
@@ -6179,7 +6181,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
     WText *msg = dialog->contents()->addNew<WText>( WString::tr(msgtxt_key), TextFormat::XHTML );
     msg->addStyleClass( "content" );
 
-    WPushButton *button = dialog->addButton( WString::tr("smm-multiple-binnings-keep-all-btn") );
+    WPushButton *button = dialog->addButton( WString::tr("smm-multiple-binnings-keep-all-btn"), WidgetUtils::ButtonRole::Affirm );
     button->clicked().connect( this, [this, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
       selectEnergyBinning( string("Keep All"), header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );
     } );
@@ -6190,7 +6192,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       string label = *iter;
       SpecUtils::utf8_limit_str_size( label, 15 );
 
-      button = dialog->addButton( label );
+      button = dialog->addButton( label, WidgetUtils::ButtonRole::Neutral );
       const string cal_name = *iter;
       button->clicked().connect( this, [this, cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck](){
         selectEnergyBinning( cal_name, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck );

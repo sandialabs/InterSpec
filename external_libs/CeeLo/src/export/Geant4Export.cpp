@@ -594,6 +594,10 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         profile.push_back({z_back, 0.0, R});
 
         // --- rmin: the bore, cut into the profile from the back ---
+        //  Cut over the WHOLE profile, including any dead-layer slabs, which is
+        //  what Geometry::trace_cylinder_geometry does too: it removes the bore
+        //  from the active volume AND from the dead layer, so the GDML and the
+        //  MC describe the same germanium.
         if (has_bore) {
             const double z_bore_start = z_back - D_bore;   // apex of the bore
             std::vector<ZPlane> bore;

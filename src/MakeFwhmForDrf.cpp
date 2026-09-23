@@ -440,6 +440,7 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
   WPushButton *saveAs = window->footer()->addNew<WPushButton>( WString::tr("mffdw-use-fwhm-btn") );
+  WidgetUtils::applyButtonRole( saveAs, WidgetUtils::ButtonRole::Affirm );
   saveAs->clicked().connect( m_tool, &MakeFwhmForDrf::setToDrf );
   m_tool->validationChanged().connect( saveAs, [saveAs]( bool valid ){ saveAs->setEnabled( valid ); } );
   // Maybe
@@ -727,7 +728,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const InitialFit initial_fit,
 
     // ...except GADRAS: it is the one form `MakeDrfFit::performResolutionFit` has no linear
     //  least-squares solution for (see `fit_using_lls` there), so it is a bound-constrained
-    //  Minuit-only fit that throws when Minuit doesnt converge.  Not worth defaulting users into -
+    //  iterative fit that throws when it doesnt converge.  Not worth defaulting users into -
     //  unless we are only *displaying* the DRFs FWHM, where showing something other than what the
     //  detector actually has would be a lie.
     if( (show_existing || (form != DetectorPeakResponse::kGadrasResolutionFcn))

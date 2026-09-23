@@ -823,7 +823,7 @@ Shieldings:
 <ul style="list-style-type: none; padding: 0; margin: 0;">
   {% if HasFitResults %}
   <li>There were {{ NumDof }} parameters fit for</li>
-  <li>It took {{ NumberFcnCalls }} solution trials to reach chi2={{ printCompact(FitChi2,5) }} with an estimated distance to minumum of {{ printCompact(EstimatedDistanceToMinimum,5) }}</li>
+  <li>It took {{ NumberFcnCalls }} solution trials to reach chi2={{ printCompact(FitChi2,5) }}</li>
   {% endif %}
   {% if exists("ExemplarFile") %}<li>Exemplar File: {{ ExemplarFile }}{% if exists("ExemplarSampleNumbers") %}, exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}</li>{% endif %}
   <li>Analysis Performed at: {{ AnalysisTime }}, 

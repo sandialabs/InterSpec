@@ -1787,9 +1787,13 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         std::cerr << "profile-rebaseline-fidelity hop=" << (baseline_restart_count + 1)
                   << " final=" << solution.m_chi2 << " seed=" << seed_objective << std::endl;
     }
+    std::shared_ptr<const RelActAutoSolution> merged_sol;
     add_merged_single_curve_comparison( solution,restart_options,foreground,background,
                                         solution.m_drf,solution.m_spectrum_peaks,
-                                        det_type,cancel_calc );
+                                        det_type,cancel_calc,0,&merged_sol );
+    add_tied_enrichment_comparison( solution,restart_options,foreground,background,
+                                    solution.m_drf,solution.m_spectrum_peaks,
+                                    det_type,cancel_calc,0,merged_sol );
     add_mass_fraction_profiles( solution,foreground,background,solution.m_drf,
                                 solution.m_spectrum_peaks,
                                 det_type,cancel_calc,baseline_restart_count+1,
@@ -1885,9 +1889,13 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
             " objective from " + std::to_string(old_objective) + " to "
           + std::to_string(solution.m_chi2)
           + ", so covariance and all profiles were restarted against the polished baseline." );
+      std::shared_ptr<const RelActAutoSolution> merged_sol;
       add_merged_single_curve_comparison( solution,polish_options,foreground,background,
                                           solution.m_drf,solution.m_spectrum_peaks,
-                                          det_type,cancel_calc );
+                                          det_type,cancel_calc,0,&merged_sol );
+      add_tied_enrichment_comparison( solution,polish_options,foreground,background,
+                                      solution.m_drf,solution.m_spectrum_peaks,
+                                      det_type,cancel_calc,0,merged_sol );
       add_mass_fraction_profiles( solution,foreground,background,solution.m_drf,
                                   solution.m_spectrum_peaks,
                                   det_type,cancel_calc,baseline_restart_count+1,

@@ -477,7 +477,7 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   // Cap the dialog at 95% of the viewport; setMaximumSize keeps the scrollable body in sync.
   setMaximumSize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
 
-  addButton( WString::tr("Close") );
+  addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 }
 
 

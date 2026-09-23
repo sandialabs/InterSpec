@@ -999,7 +999,11 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     // Now put in results
     data["FitChi2"] = results.chi2;
-    data["EstimatedDistanceToMinimum"] = results.edm;
+    // Minuit2 reported an estimated-distance-to-minimum; the Ceres fitter that replaced it
+    //  does not produce one.  The key is still emitted, as a constant -1, so user templates
+    //  written against it keep rendering.  It is deliberately undocumented, and the templates
+    //  InterSpec ships no longer print it.
+    data["EstimatedDistanceToMinimum"] = -1.0;
     data["NumberFcnCalls"] = results.num_fcn_calls;
     data["NumDof"] = results.numDOF;
     
