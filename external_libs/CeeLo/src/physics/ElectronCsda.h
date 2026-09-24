@@ -46,6 +46,7 @@
 /// References: EGS4 (Nelson 1985), Geant4 EM Physics (Ivanchenko 2010),
 ///             Highland (1975) Nucl.Instrum.Meth. 129 497.
 
+#include "cross_sections/CrossSectionData.h"
 #include "geometry/Geometry.h"
 #include "materials/Material.h"
 
@@ -123,7 +124,9 @@ static_assert(kMoliereBremsThreshold_keV >= kSB_min_energy_keV,
     "To lower the Moliere/brems threshold, regenerate element_data.cpp with "
     "SB data extending to lower energies.");
 
-/// Singleton that provides pre-computed CSDA range tables for Z = 1..92.
+/// Singleton that provides pre-computed CSDA range tables for Z = 1..92. Heavier
+/// elements (up to kMaxZ) are treated as uranium throughout the electron physics
+/// (see electron_table_z() in CrossSectionData.h for the size of that approximation).
 ///
 /// Stopping power: NIST ESTAR collision stopping power read directly from the
 /// generated fixtures (`estar_stopping_data.h`), with the positron obtained
@@ -240,21 +243,28 @@ public:
                                 double KE_keV,
                                 std::mt19937_64& rng) const;
 
-    /// ICRU Report 49 mean excitation energy I(Z) in eV, Z = 1..92.
+    // The per-element statics below accept Z = 1..kMaxZ and throw std::out_of_range
+    // outside it. Z > kMaxElectronTableZ (92) returns uranium's value: the
+    // electron side treats Np..Cf as uranium (electron_table_z()).
+
+    /// ICRU Report 49 mean excitation energy I(Z) in eV.
     static double mean_excitation_eV(int Z);
 
-    /// NIST ESTAR electron collision stopping power in MeV cm²/g for Z=1..92
-    /// at kinetic energy KE_keV. With is_positron=true, applies the Bhabha/Møller
+    /// NIST ESTAR electron collision stopping power in MeV cm²/g at kinetic
+    /// energy KE_keV. With is_positron=true, applies the Bhabha/Møller
     /// collision-term ratio to the ESTAR electron value.
     static double stopping_power_MeV_cm2_g(int Z, double A_g_mol, double KE_keV,
                                            bool is_positron = false);
 
-    /// Standard atomic weight A (g/mol) for Z = 1..92.
+    /// Electron-side atomic weight A (g/mol): IUPAC for Z = 1..92, and uranium's
+    /// 238.029 as the proxy that goes with uranium's tables above that. Use
+    /// CrossSectionData::atomic_weight() for an element's own mass.
     static double atomic_weight(int Z);
 
     /// Tsai radiation length (g/cm²) for a single element.
     /// Formula: X₀ = 716.4 × A / (Z × (Z+1) × ln(287 / √Z))
-    /// Accuracy: ~1–2% vs PDG tabulated values.
+    /// Accuracy: ~1–2% vs PDG tabulated values. Z is taken on the electron side
+    /// (Z > 92 -> uranium), so pass atomic_weight(Z) for A.
     static double radiation_length_gcm2_element(int Z, double A_g_mol);
 
     /// Compound radiation length via Bragg additivity (g/cm²).
@@ -296,11 +306,12 @@ private:
     static constexpr double kEMin_keV = 1.0;      // Minimum electron KE
     static constexpr double kEMax_keV = 20000.0;  // Maximum electron KE (20 MeV)
 
-    // range_table_[Z-1][i] = CSDA range (g/cm²) at energy_grid_[i], for Z = 1..92.
+    // range_table_[Z-1][i] = CSDA range (g/cm²) at energy_grid_[i], for Z = 1..92
+    // (the electron-table domain; index with electron_table_z(Z)).
     // range_table_pos_ is the positron counterpart (Berger-Seltzer F⁺ stopping);
     // ~1–3% longer range at MeV energies.  Built once in the constructor.
-    std::array<std::array<double, kNGrid>, 92> range_table_;
-    std::array<std::array<double, kNGrid>, 92> range_table_pos_;
+    std::array<std::array<double, kNGrid>, kMaxElectronTableZ> range_table_;
+    std::array<std::array<double, kNGrid>, kMaxElectronTableZ> range_table_pos_;
     std::array<double, kNGrid> energy_grid_keV_;   // Kinetic energy grid (keV)
     std::array<double, kNGrid> log_energy_grid_;   // ln(energy_grid_keV_)
 
@@ -313,8 +324,8 @@ private:
     // integral is the same linear combination of these per-element integrals.  This
     // lets brems_pemit_corr() replace the per-substep 64-point integral (which
     // dominated runtime via sb_chi) with a small weighted sum of table lookups.
-    std::array<std::array<double, kNGrid>, 92> sb_Jchi_;
-    std::array<std::array<double, kNGrid>, 92> sb_Jchiok_;
+    std::array<std::array<double, kNGrid>, kMaxElectronTableZ> sb_Jchi_;
+    std::array<std::array<double, kNGrid>, kMaxElectronTableZ> sb_Jchiok_;
 
     double interpolate_range(int Z, double KE_keV) const;
 

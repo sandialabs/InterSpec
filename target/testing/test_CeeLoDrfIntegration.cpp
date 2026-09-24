@@ -4758,8 +4758,8 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
         det.name.c_str(), det.family.c_str(), det.fidelity.c_str(), a_cm, aspect,
         r.E, r.is_edge, r.theta, ct, r.d_face, r.d_face/a_cm, d_origin/a_cm,
         r.mc, r.mc_sig, t.value, t.value/r.mc - 1.0,
-        c.far_onaxis, c.offaxis, c.near,
-        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near),
+        c.far_onaxis, c.offaxis, c.near_field,
+        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near_field*c.near_field),
         ceelo::to_string(t.flag) );
       out << line << "\n";
       ++n_rows;

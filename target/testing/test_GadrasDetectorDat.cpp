@@ -52,6 +52,8 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
 
+#include "cross_sections/CrossSectionData.h"
+
 using namespace std;
 
 // Data directory globals (set from command line).
@@ -458,6 +460,79 @@ BOOST_AUTO_TEST_CASE( test_generic_attenuator_material )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_actinide_materials )
+{
+  // CeeLo's photon data reaches californium (ceelo::kMaxZ), so plutonium and
+  //  americium shields and sources convert instead of throwing.
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const ceelo::CrossSectionData &xs = ceelo::CrossSectionData::instance();
+
+  // A formula keeps its stoichiometry: above uranium its atom counts become mass
+  //  fractions through CeeLo's own atomic weight, which CeeLo then uses to turn
+  //  them back into atom densities.  SandiaDecay's Pu mass (244) would give
+  //  PuO(1.96); what is left is the 4e-5 by which SandiaDecay's natural oxygen
+  //  (15.9994) differs from CeeLo's (16.00).
+  const ceelo::MaterialSpec puo2 = CeeLoUtils::materialFromGadrasFormula( "PuO2", 11.46, "PuO2" );
+  BOOST_REQUIRE_EQUAL( puo2.composition.size(), 2u );
+  double w_pu = 0.0, w_o = 0.0;
+  for( const ceelo::MaterialComponent &c : puo2.composition )
+  {
+    if( c.Z == 94 )
+      w_pu += c.mass_fraction;
+    else
+      w_o += c.mass_fraction;
+  }
+  const double o_per_pu = (w_o / xs.atomic_weight(8)) / (w_pu / xs.atomic_weight(94));
+  BOOST_CHECK_MESSAGE( close_enough( o_per_pu, 2.0, 2.0e-4 ),
+                      "PuO2 converts to O/Pu = " + std::to_string(o_per_pu) );
+
+  // MaterialDB's plutonium materials, given by element and by nuclide, convert.
+  const std::shared_ptr<const MaterialDB> db = MaterialDB::instance();
+  for( const char *name : { "Plutonium dioxide", "PuO2 - 4.5% Pu240 Plutonium dioxide" } )
+  {
+    const std::shared_ptr<const Material> m = db->material( name );
+    BOOST_REQUIRE_MESSAGE( m, string("No '") + name + "' in MaterialDB" );
+    ceelo::MaterialSpec spec;
+    BOOST_REQUIRE_NO_THROW( spec = CeeLoUtils::to_ceelo_material( *m ) );
+    bool has_pu = false;
+    for( const ceelo::MaterialComponent &c : spec.composition )
+      has_pu = has_pu || (c.Z == 94);
+    BOOST_CHECK_MESSAGE( has_pu, string(name) + " lost its plutonium" );
+  }
+
+  // Generic attenuators span the actinides; above californium still throws.
+  const ceelo::MaterialSpec pu_am = CeeLoUtils::genericAttenuatorMaterial( 94.5, 10.0, 0.5 );
+  BOOST_REQUIRE_EQUAL( pu_am.composition.size(), 2u );
+  for( const ceelo::MaterialComponent &c : pu_am.composition )
+    BOOST_CHECK( close_enough( c.mass_fraction, 0.5, 1.0e-6 ) );
+  BOOST_CHECK_NO_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.0, 10.0, 0.5 ) );
+  BOOST_CHECK_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.5, 10.0, 0.5 ), std::exception );
+
+  // InterSpec's own attenuation data uses CeeLo's masses above uranium (Pu 239.1,
+  //  Bk 249), so the two agree per gram and not just per atom; with the former
+  //  244 and 247 they differed by 2.0% and 0.8%.  Coherent scattering is left
+  //  out because MassAttenuation does not include it, and every energy is clear
+  //  of the absorption edges, which MassAttenuation smooths.
+  const double avogadro = 6.02214076e23, barn_cm2 = 1.0e-24;
+  for( const int Z : { 92, 93, 94, 95, 96, 97, 98 } )
+  {
+    for( const double energy : { 60.0, 200.0, 662.0, 1332.0, 3000.0 } )
+    {
+      const auto p = xs.all_cross_sections( Z, 1.0e-3 * energy );
+      const double ceelo_mu = (p.sigma_pe + p.sigma_cs + p.sigma_pp)
+                              * barn_cm2 * avogadro / xs.atomic_weight( Z );
+      const double interspec_mu = MassAttenuation::massAttenuationCoefficientElement(
+                                                        Z, static_cast<float>(energy) )
+                                  / (PhysicalUnits::cm2 / PhysicalUnits::g);
+      BOOST_CHECK_MESSAGE( std::fabs( interspec_mu / ceelo_mu - 1.0 ) < 0.005,
+                          "Z=" + std::to_string(Z) + " at " + std::to_string(energy)
+                          + " keV: InterSpec mu/rho=" + std::to_string(interspec_mu)
+                          + " vs CeeLo " + std::to_string(ceelo_mu) + " cm2/g" );
+    }
+  }
+}//test_actinide_materials
+
+
 BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
 {
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -707,7 +782,17 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
 
-  // name -> hash, re-recorded 2026-09-06 (--record-gadras-hashes), for the FEP-window narrowing in
+  // name -> hash, re-recorded 2026-09-23 (--record-gadras-hashes), for the CeeLo re-vendor that
+  //  regenerated its photon tables (CeeLo a032bc5: Z <= 98, 10 keV - 20 MeV).  The response each of
+  //  these DRFs carries stores CeeLo's photon mu tables, and regenerating them moved every tabulated
+  //  mu by at most 0.094% (max |d ln| = 9.4e-4 over MuPE/MuCS/MuRS/MuPP); through the kernel, LnEta
+  //  moved by at most 4.3e-4 and LnB by at most 9.6e-4.  Nothing else in the serialized response
+  //  changed - energies, cos-theta nodes, FracSigma, geometry and provenance are identical - verified
+  //  by replaying each DRF's make_transfer_response() inputs against the previously vendored CeeLo
+  //  (69bc080) and the new one and diffing the XML; the new replay reproduces the attached response
+  //  byte for byte.
+  //
+  //  Previously re-recorded 2026-09-06, for the FEP-window narrowing in
   //  "Work bringing CeeLo det response into Act/Shield fit": the MC/kernel full-energy-peak window
   //  went from a hard-coded 1.5 keV to `kDefaultFepWindowKeV` = 0.75 keV.  A narrower window credits
   //  less in-window Compton, so the curve-transfer response each of these DRFs carries has slightly
@@ -730,19 +815,19 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   //  (parameter 10), so no geometry can be built for it, it carries no CeeLo response, and it keeps
   //  the flat-disk treatment.  If that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 7372553335873334779ull },
-    { "HPGe 20%", 16196536323127818931ull },
+    { "HPGe 10%", 11105849555574549990ull },
+    { "HPGe 20%", 12699365125597787390ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 234978438008986273ull },
-    { "LaBr 5%", 17974260579841392545ull },
-    { "NaI 10%", 10907454414227762381ull },
-    { "NaI 12%", 15349155559717898211ull },
-    { "NaI 1x1", 12632028037909424196ull },
-    { "NaI 25%", 234010201361425340ull },
-    { "NaI 2x2", 6561580901340824291ull },
-    { "NaI 30%", 11940533889697376263ull },
-    { "NaI 3x3", 18345639359501764784ull },
-    { "NaI 5%", 14935417445942686416ull }
+    { "LaBr 10%", 10603061785403644759ull },
+    { "LaBr 5%", 14639350877560941553ull },
+    { "NaI 10%", 1936410060157356732ull },
+    { "NaI 12%", 9885823345380394963ull },
+    { "NaI 1x1", 9525623812407942701ull },
+    { "NaI 25%", 16754079468361279556ull },
+    { "NaI 2x2", 2545616606137210441ull },
+    { "NaI 30%", 16341185075972576269ull },
+    { "NaI 3x3", 5750198296142389519ull },
+    { "NaI 5%", 10923877891009050372ull }
   };
 
   bool record = false;

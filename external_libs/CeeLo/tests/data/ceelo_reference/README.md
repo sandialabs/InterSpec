@@ -27,6 +27,8 @@ discrepancies and z-scores against the G4 references.
 | `our_12_multi.csv` | 12 — 3"×3" NaI, SS304 box + cellulose | `nai_3x3_ss304box_cellulose_15cm_multi.csv` |
 | `our_25_multi.csv` | 25 — GEM35-70 HPGe coax, sharp front edge, 5 cm | `hpge_gem35_coax_sharp_5cm_multi.csv` |
 | `our_26_multi.csv` | 26 — GEM35-70 HPGe coax, bulletized edge + round-tipped bore, 5 cm | `hpge_gem35_coax_bullet_5cm_multi.csv` |
+| `our_27_multi.csv` | 27 — GEM35-70 HPGe, bulletized, 2 cm + 0.5 cm Fe shell (0.75 keV window) | `hpge_gem35_bullet_fe05cm_2cm_multi.csv` |
+| `our_28_multi.csv` | 28 — GEM35-70 HPGe, bulletized, 10 cm + 0.5 cm Fe shell (0.75 keV window) | `hpge_gem35_bullet_fe05cm_10cm_multi.csv` |
 | `our_cascade_multi.csv` | cascade summing (6 nuclides, "alcyl" geom) | `cascade_summing_multi.csv` |
 
 Configs 25 and 26 are a matched pair — the same crystal with a sharp and a
@@ -53,11 +55,21 @@ Built with `-DCMAKE_BUILD_TYPE=RelWithDebInfo` (or Release), auto-enabled biasin
 target ~0.3%. From `build/examples/`:
 
 ```bash
-for c in 1 2 3 5 6 7 8 11 12 25 26 27 28; do
+for c in 1 2 3 5 6 7 8 11 12 25 26; do
     ./benchmark_mc_configs --config $c --precision 0.003     # writes our_${c}_multi.csv (cwd)
+done
+for c in 27 28; do                                           # scored at their G4 refs' window
+    ./benchmark_mc_configs --config $c --precision 0.003 --fep-window 0.75
 done
 cp our_*_multi.csv ../../tests/data/ceelo_reference/         # commit the refreshed snapshot
 ```
+
+Configs 27 and 28 **must** get `--fep-window 0.75`: their GEANT4 references were scored at
+a 0.75 keV half-window, every other config at the pinned 1.5 keV. Getting it wrong is silent:
+on config 27 the 1.5 keV window reads ~3% more FEP at 60 keV and ~2% at 88 keV
+(+2.6 / +3.5 ± 0.4% and +1.5 / +2.2 ± 0.4%, measured Sep 22 2026 at 0.3% precision on
+the FullSpecApprox and main engines), and 60/88 keV are SKIPs, so the gate would not
+notice.
 
 `--precision p` targets p on **both** FEP and total, and the run continues until **both** are
 met. That was not always true: the two targets used to stop the run independently, so a run

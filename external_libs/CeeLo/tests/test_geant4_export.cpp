@@ -46,6 +46,7 @@
 #include "geometry/Geometry.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
+#include "cross_sections/CrossSectionData.h"
 
 #include <Eigen/Core>
 #include <cmath>
@@ -623,6 +624,47 @@ BOOST_AUTO_TEST_CASE(source_without_material_is_vacuum_not_shield_material) {
     BOOST_CHECK_EQUAL(vols[1].daughter_lv, "SrcMaterialLV");
 
     std::remove(path.c_str());
+}
+
+BOOST_AUTO_TEST_CASE(every_material_element_is_exported) {
+    // Material accepts Z = 1..kMaxZ, so each of those must reach the GDML: the
+    // exporter used to skip an unknown element silently (Pm was missing, and a
+    // PuO2 crystal would have exported as pure oxygen). Export-only material;
+    // it is never transported.
+    std::vector<MaterialComponent> all;
+    for (int Z = 1; Z <= kMaxZ; ++Z)
+        all.push_back({static_cast<uint8_t>(Z), 1.0 / kMaxZ});
+    Material everything("AllElements", 5.0, all);
+
+    EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
+    calc.set_detector(&everything, CylinderDims{R, L});
+    const std::string path = tmp_gdml("all_elements");
+    calc.export_geant4_gdml(path, /*vacuum_world=*/true);
+    std::ifstream f(path);
+    const std::string txt((std::istreambuf_iterator<char>(f)),
+                          std::istreambuf_iterator<char>());
+    std::remove(path.c_str());
+
+    const auto& xs = CrossSectionData::instance();
+    for (int Z = 1; Z <= kMaxZ; ++Z) {
+        BOOST_TEST_CONTEXT("Z=" << Z) {
+            const std::string tag = "Z=\"" + std::to_string(Z) + "\">";
+            const size_t at = txt.find(tag);
+            BOOST_REQUIRE(at != std::string::npos);
+            // Z 93-98 must carry the same (conventional) mass as the MC material.
+            if (Z > 92) {
+                const size_t v = txt.find("value=\"", at);
+                BOOST_REQUIRE(v != std::string::npos);
+                BOOST_CHECK_CLOSE(std::atof(txt.c_str() + v + 7), xs.atomic_weight(Z), 1e-6);
+            }
+        }
+    }
+    size_t fractions = 0;
+    for (size_t pos = txt.find("<fraction"); pos != std::string::npos;
+         pos = txt.find("<fraction", pos + 1))
+        ++fractions;
+    BOOST_CHECK_GE(fractions, static_cast<size_t>(kMaxZ));  // + air etc.
 }
 
 BOOST_AUTO_TEST_SUITE_END()

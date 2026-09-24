@@ -34,6 +34,10 @@
 
 namespace ceelo {
 
+// Photoelectric absorption looks up K/L relaxation for every photon-domain Z.
+static_assert(kRelaxationMaxZ >= kMaxZ,
+              "relaxation data must cover every element with photon tables");
+
 namespace {
 // 10^x via exp2.  std::pow(10.0, x) routes through the general (slower) libm pow
 // path; exp2(x*log2(10)) hits a dedicated fast routine.  NOT bit-identical to
@@ -353,7 +357,9 @@ const LFluorescenceData* CrossSectionData::l_fluorescence(int Z) const {
 
 double CrossSectionData::sb_chi(int Z, double T_keV, double kappa) const {
     assert(Z >= 1 && Z <= kMaxZ);
-    const auto& e = g_element_data[Z - 1];
+    const int Ze = electron_table_z(Z);  // Z 93-98 reuse uranium's table
+    assert(Ze >= 1 && Ze <= kMaxElectronTableZ);
+    const auto& e = g_element_data[Ze - 1];
     if (!e.sb_chi_quantized) return 1.0;  // fallback: flat chi => 1/k spectrum
 
     // Clamp kappa to table range
@@ -387,7 +393,7 @@ double CrossSectionData::sb_chi(int Z, double T_keV, double kappa) const {
 
     // Bilinear interpolation
     int stride = kSB_n_kappa;
-    const double scale = kSB_chi_scale[Z - 1];
+    const double scale = kSB_chi_scale[Ze - 1];
     double c00 = e.sb_chi_quantized[iE * stride + iK] * scale;
     double c01 = e.sb_chi_quantized[iE * stride + iK + 1] * scale;
     double c10 = e.sb_chi_quantized[(iE + 1) * stride + iK] * scale;
@@ -437,11 +443,13 @@ CrossSectionData::sb_chi_kappa_bracket(double kappa) const {
 double CrossSectionData::sb_chi_bracketed(int Z, const SBChiEBracket& eb,
                                           const SBChiKBracket& kb) const {
     assert(Z >= 1 && Z <= kMaxZ);
-    const auto& e = g_element_data[Z - 1];
+    const int Ze = electron_table_z(Z);  // Z 93-98 reuse uranium's table
+    assert(Ze >= 1 && Ze <= kMaxElectronTableZ);
+    const auto& e = g_element_data[Ze - 1];
     if (!e.sb_chi_quantized) return 1.0;  // fallback: flat chi => 1/k spectrum (matches sb_chi)
 
     const int stride = kSB_n_kappa;
-    const double scale = kSB_chi_scale[Z - 1];
+    const double scale = kSB_chi_scale[Ze - 1];
     double c00 = e.sb_chi_quantized[eb.iE * stride + kb.iK] * scale;
     double c01 = e.sb_chi_quantized[eb.iE * stride + kb.iK + 1] * scale;
     double c10 = e.sb_chi_quantized[(eb.iE + 1) * stride + kb.iK] * scale;

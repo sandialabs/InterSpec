@@ -27,7 +27,7 @@ from typing import Callable, Iterable
 
 from epics_endf import EndfFile, Tab1
 from fetch_sources import load_lock, sha256_file
-from generation_utils import ELEMENT_SYMBOLS, as_float32, format_float32, format_rows
+from generation_utils import PHOTON_Z_MAX, as_float32, format_float32, format_rows
 
 
 HERE = Path(__file__).resolve().parent
@@ -37,7 +37,7 @@ DEFAULT_OUTPUT = ROOT / "src" / "cross_sections" / "photon_epics_data.cpp"
 DEFAULT_REPORT_DIR = HERE / "reports"
 
 ENERGY_MIN_EV = 10_000.0
-ENERGY_MAX_EV = 10_000_000.0
+ENERGY_MAX_EV = 20_000_000.0
 ANGULAR_MIN = 1.0e-2
 ANGULAR_REFERENCE_MIN = 1.0e-7
 ANGULAR_MAX = 1.0e9
@@ -51,6 +51,11 @@ MAX_ANGULAR_MEAN_COS_ERROR = 2.0e-3
 MAX_RAYLEIGH_CDF_QUANTIZATION_ERROR = 8.0e-6
 MAX_RAYLEIGH_CDF_DISCRETIZATION_ERROR = 2.5e-3
 RAYLEIGH_CDF_N = 256
+# Shared log10(x / inverse angstrom) grid of the offline Rayleigh sampling CDF. x_max
+# at the 20 MeV upper energy is about 1.6e3, inside the grid.
+RAYLEIGH_CDF_LOG_X_MIN = -3.0
+RAYLEIGH_CDF_LOG_X_MAX = 4.0
+RAYLEIGH_CDF_SPAN = RAYLEIGH_CDF_LOG_X_MAX - RAYLEIGH_CDF_LOG_X_MIN
 RAYLEIGH_XS_GROUP_SIZE = 4
 LOG_FLOOR = -30.0
 HC_KEV_ANGSTROM = 12.398
@@ -108,6 +113,15 @@ def percentile(values: list[float], fraction: float) -> float:
     if low == high:
         return ordered[low]
     return ordered[low] + (position - low) * (ordered[high] - ordered[low])
+
+
+def window_text(dash: str) -> str:
+    """The generated energy window, e.g. '10 keV--20 MeV'."""
+    return f"{ENERGY_MIN_EV / 1.0e3:g} keV{dash}{ENERGY_MAX_EV / 1.0e6:g} MeV"
+
+
+def rayleigh_groups() -> int:
+    return (PHOTON_Z_MAX + RAYLEIGH_XS_GROUP_SIZE - 1) // RAYLEIGH_XS_GROUP_SIZE
 
 
 def safe_log10(value: float) -> float:
@@ -626,7 +640,7 @@ def rayleigh_runtime_cdf(
     """Build the packed runtime inverse CDF and measure its representation error."""
     count = RAYLEIGH_CDF_N
     arguments = [
-        as_float32(10.0 ** (-3.0 + index * 7.0 / (count - 1)))
+        as_float32(10.0 ** (RAYLEIGH_CDF_LOG_X_MIN + index * RAYLEIGH_CDF_SPAN / (count - 1)))
         for index in range(count)
     ]
     x0 = arguments[0]
@@ -659,7 +673,7 @@ def rayleigh_runtime_cdf(
     # log-x interpolation determines G(x_max) for a truncated distribution.
     dense_count = 8193
     dense_arguments = [
-        10.0 ** (-3.0 + index * 7.0 / (dense_count - 1))
+        10.0 ** (RAYLEIGH_CDF_LOG_X_MIN + index * RAYLEIGH_CDF_SPAN / (dense_count - 1))
         for index in range(dense_count)
     ]
     dense_x0 = dense_arguments[0]
@@ -678,7 +692,7 @@ def rayleigh_runtime_cdf(
     dense_total = dense_cumulative[-1]
     discretization_error = 0.0
     for argument, reference in zip(dense_arguments, dense_cumulative):
-        position = (math.log10(argument) + 3.0) * (count - 1) / 7.0
+        position = (math.log10(argument) - RAYLEIGH_CDF_LOG_X_MIN) * (count - 1) / RAYLEIGH_CDF_SPAN
         low = min(count - 2, max(0, int(math.floor(position))))
         log_fraction = position - low
         linear_fraction = (
@@ -725,8 +739,8 @@ def compact_storage(
     rayleigh_value: list[int] = []
     rayleigh_grid_offset = [0]
     rayleigh_value_offset = [0]
-    for first_z in range(1, 93, RAYLEIGH_XS_GROUP_SIZE):
-        last_z = min(first_z + RAYLEIGH_XS_GROUP_SIZE, 93)
+    for first_z in range(1, PHOTON_Z_MAX + 1, RAYLEIGH_XS_GROUP_SIZE):
+        last_z = min(first_z + RAYLEIGH_XS_GROUP_SIZE, PHOTON_Z_MAX + 1)
         group = [processes[z]["rayleigh"] for z in range(first_z, last_z)]
         arguments = group[0].argument
         if any(curve.argument != arguments for curve in group[1:]):
@@ -746,7 +760,7 @@ def compact_storage(
     for name, _, _, _ in PROCESS_SPECS:
         if name == "rayleigh":
             continue
-        for z in range(1, 93):
+        for z in range(1, PHOTON_Z_MAX + 1):
             for argument in processes[z][name].argument:
                 value = as_float32(argument - 6.0)
                 key = struct.pack("<f", value)
@@ -760,7 +774,7 @@ def compact_storage(
     for name, _, _, _ in PROCESS_SPECS:
         if name == "rayleigh":
             continue
-        for z in range(1, 93):
+        for z in range(1, PHOTON_Z_MAX + 1):
             curve = processes[z][name]
             process_offset[z, name] = len(process_value)
             for argument in curve.argument:
@@ -772,7 +786,7 @@ def compact_storage(
     angular_value: list[int] = []
     angular_offset: dict[tuple[int, str], int] = {}
     for name, _, _, _ in RUNTIME_ANGULAR_SPECS:
-        for z in range(1, 93):
+        for z in range(1, PHOTON_Z_MAX + 1):
             curve = angular[z][name]
             angular_offset[z, name] = len(angular_value)
             angular_log_x.extend(curve.argument)
@@ -793,7 +807,7 @@ def compact_storage(
         raise ValueError("angular grid/value streams are not parallel")
     if len(rayleigh_sampling_x) != RAYLEIGH_CDF_N:
         raise ValueError("Rayleigh sampling grid has the wrong size")
-    if len(rayleigh_cdf_q) != 92 or any(
+    if len(rayleigh_cdf_q) != PHOTON_Z_MAX or any(
         len(row) != RAYLEIGH_CDF_N for row in rayleigh_cdf_q
     ):
         raise ValueError("Rayleigh sampling CDF has the wrong shape")
@@ -820,7 +834,7 @@ def emit_cpp(
     storage: CompactStorage,
 ) -> None:
     with output.open("w", encoding="utf-8") as out:
-        out.write("""/* CeeLo: a Monte Carlo photon-transport library for computing gamma-ray
+        out.write(f"""/* CeeLo: a Monte Carlo photon-transport library for computing gamma-ray
  and X-ray detector efficiency - developed as part of InterSpec.
 
  Copyright 2026 National Technology & Engineering Solutions of Sandia, LLC.
@@ -829,8 +843,8 @@ def emit_cpp(
  */
 
 /// AUTO-GENERATED by tools/prepare_cross_sections/generate_epics_photon.py.
-/// Direct source: EPICS2023 EPDL, verified by sources.lock.json.
-/// Native nodes from 10 keV--10 MeV are accuracy probes; adaptive reduction
+/// Direct source: EPICS2023 EPDL, verified by sources.lock.json; Z=1..{PHOTON_Z_MAX}.
+/// Native nodes from {window_text('--')} are accuracy probes; adaptive reduction
 /// retains endpoints, thresholds, edge flanks, and only the additional points
 /// needed by the committed gates. Values use per-curve uint16 packing; the
 /// Rayleigh total cross sections share one adaptive energy grid per four
@@ -841,7 +855,20 @@ def emit_cpp(
 
 #include "cross_sections/photon_epics_data.h"
 
-namespace ceelo {
+namespace ceelo {{
+
+// photon_epics_data.h is hand-maintained; these tie its constants to the data
+// generated below, so a stale header fails to compile instead of misreading.
+static_assert(kMaxZ == {PHOTON_Z_MAX}, "regenerate: element count changed");
+static_assert(kRayleighXsElementsPerGroup == {RAYLEIGH_XS_GROUP_SIZE}, "regenerate: Rayleigh group size changed");
+static_assert(kRayleighXsGroups == {rayleigh_groups()}, "regenerate: Rayleigh group count changed");
+static_assert(kRayleighSamplingNodes == {RAYLEIGH_CDF_N}, "regenerate: Rayleigh CDF node count changed");
+static_assert(kRayleighSamplingLogXMin == {format_float32(RAYLEIGH_CDF_LOG_X_MIN)}
+              && kRayleighSamplingLogXMax == {format_float32(RAYLEIGH_CDF_LOG_X_MAX)},
+              "regenerate: Rayleigh CDF x grid changed");
+static_assert(kPhotonDataMinEnergy_keV == {ENERGY_MIN_EV / 1.0e3!r}
+              && kPhotonDataMaxEnergy_keV == {ENERGY_MAX_EV / 1.0e3!r},
+              "regenerate: photon energy window changed");
 
 """)
         emit_external_array(
@@ -888,8 +915,8 @@ namespace ceelo {
             out, "g_rayleigh_sampling_cdf_q", storage.rayleigh_cdf_q, 16,
         )
 
-        out.write("extern const PhotonEpicsElementData g_photon_epics_data[92] = {\n")
-        for z in range(1, 93):
+        out.write(f"extern const PhotonEpicsElementData g_photon_epics_data[{PHOTON_Z_MAX}] = {{\n")
+        for z in range(1, PHOTON_Z_MAX + 1):
             rayleigh = processes[z]["rayleigh"]
             refs = [
                 f"{{{format_float32(rayleigh.value_offset)}, "
@@ -913,7 +940,7 @@ namespace ceelo {
                     f"{format_float32(curve.value_offset)}, "
                     f"{format_float32(curve.value_scale)}}}"
                 )
-            comma = "," if z < 92 else ""
+            comma = "," if z < PHOTON_Z_MAX else ""
             out.write(f"    {{{', '.join(refs)}}}{comma} // Z={z}\n")
         out.write("};\n\n} // namespace ceelo\n")
 
@@ -925,7 +952,7 @@ def report_rows(
 ) -> list[dict]:
     rows: list[dict] = []
     for name, _, _, _ in PROCESS_SPECS:
-        curves = [processes[z][name] for z in range(1, 93)]
+        curves = [processes[z][name] for z in range(1, PHOTON_Z_MAX + 1)]
         counts = [len(curve.argument) for curve in curves]
         native = [curve.native_count for curve in curves]
         if name == "rayleigh":
@@ -936,14 +963,14 @@ def report_rows(
             )
             grid_bytes = len(storage.rayleigh_log_energy) * 4
             metadata_bytes = (
-                92 * 8
+                PHOTON_Z_MAX * 8
                 + len(storage.rayleigh_grid_offset) * 2
                 + len(storage.rayleigh_value_offset) * 2
             )
         else:
             encoding = "shared float32 log10(argument) pool with uint16 indices, per-curve affine uint16 log10(value)"
             grid_bytes = sum(counts) * 2
-            metadata_bytes = 92 * 12
+            metadata_bytes = PHOTON_Z_MAX * 12
         rows.append({
             "process": name,
             "runtime_emitted": True,
@@ -963,7 +990,7 @@ def report_rows(
             "maximum_integrated_error_percent": max(c.integrated_error for c in curves) * 100.0,
         })
     for name, _, _, mode in ANGULAR_SPECS:
-        curves = [angular[z][name] for z in range(1, 93)]
+        curves = [angular[z][name] for z in range(1, PHOTON_Z_MAX + 1)]
         counts = [len(curve.argument) for curve in curves]
         runtime_emitted = name != "form_factor"
         runtime_counts = counts if runtime_emitted else [0] * len(counts)
@@ -981,7 +1008,7 @@ def report_rows(
             "retained_coefficients": sum(runtime_counts),
             "coefficient_bytes": sum(runtime_counts) * 2,
             "grid_bytes": sum(runtime_counts) * 4,
-            "metadata_bytes": 92 * 12 if runtime_emitted else 0,
+            "metadata_bytes": PHOTON_Z_MAX * 12 if runtime_emitted else 0,
             "legacy_compatibility_bytes": 0,
             "nodes_min": min(runtime_counts),
             "nodes_median": percentile(runtime_counts, 0.5),
@@ -1041,9 +1068,9 @@ def write_reports(
         },
         "rayleigh_sampling_cdf": {
             "nodes_per_element": RAYLEIGH_CDF_N,
-            "elements": 92,
+            "elements": PHOTON_Z_MAX,
             "encoding": "normalized uint16",
-            "coefficient_bytes": 92 * RAYLEIGH_CDF_N * 2,
+            "coefficient_bytes": PHOTON_Z_MAX * RAYLEIGH_CDF_N * 2,
             "shared_grid_bytes": RAYLEIGH_CDF_N * 4,
             "generated_offline": True,
         },
@@ -1056,7 +1083,7 @@ def write_reports(
         writer.writerows(rows)
     lines = [
         "# EPICS2023 process-specific photon table report\n",
-        "Every native source node in 10 keV–10 MeV is validated, but only endpoints, "
+        f"Every native source node in {window_text('–')} is validated, but only endpoints, "
         "thresholds, duplicated-edge flank/edge pairs, and adaptively required nodes are retained. "
         "The reported errors include uint16 value decoding and 16 logarithmic probes per interval.\n",
         "The form-factor curve is generator-only: its error columns validate the curve used to build "
@@ -1115,7 +1142,7 @@ def main() -> int:
     rayleigh_sampling_x: list[float] = []
     rayleigh_cdf_q: list[list[int]] = []
 
-    for z in range(1, 93):
+    for z in range(1, PHOTON_Z_MAX + 1):
         processes[z] = {}
         for name, mf, mt, mode in PROCESS_SPECS:
             table = epdl.tab1(z, mf, mt)
@@ -1155,17 +1182,17 @@ def main() -> int:
         rayleigh_cdf_discretization_error = max(
             rayleigh_cdf_discretization_error, discretization_error
         )
-        print(f"\r  generated direct EPDL Z={z:3d}/92", end="", file=sys.stderr)
+        print(f"\r  generated direct EPDL Z={z:3d}/{PHOTON_Z_MAX}", end="", file=sys.stderr)
     print(file=sys.stderr)
-    for first_z in range(1, 93, RAYLEIGH_XS_GROUP_SIZE):
-        last_z = min(first_z + RAYLEIGH_XS_GROUP_SIZE, 93)
+    for first_z in range(1, PHOTON_Z_MAX + 1, RAYLEIGH_XS_GROUP_SIZE):
+        last_z = min(first_z + RAYLEIGH_XS_GROUP_SIZE, PHOTON_Z_MAX + 1)
         curves = build_shared_rayleigh_group([
             epdl.tab1(z, 23, 502) for z in range(first_z, last_z)
         ])
         for z, curve in zip(range(first_z, last_z), curves):
             processes[z]["rayleigh"] = curve
         print(
-            f"\r  generated shared Rayleigh groups through Z={last_z - 1:3d}/92",
+            f"\r  generated shared Rayleigh groups through Z={last_z - 1:3d}/{PHOTON_Z_MAX}",
             end="", file=sys.stderr,
         )
     print(file=sys.stderr)

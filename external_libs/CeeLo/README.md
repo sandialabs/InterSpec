@@ -248,8 +248,8 @@ point-source table above understates.
 |---|---|---|
 | Library | `libCeeLo.a` — **1.8 MB** (`Release`) | `lib/` — **48 MB** |
 | Runtime data files | **none** | `G4EMLOW` — **726 MB** (EM only; full data set 2.1 GB) |
-| Physics data, compiled in | **~575 KiB** of constant data | n/a — loaded from disk |
-| Self-contained example binary | **~970 KB** stripped | — |
+| Physics data, compiled in | **~610 KiB** of constant data | n/a — loaded from disk |
+| Self-contained example binary | **~1.0 MB** stripped | — |
 
 Library size is quoted for a `Release` build. The default build type is
 `RelWithDebInfo`, where the static archive carries debug symbols and is ~27 MB;
@@ -268,11 +268,11 @@ regeneration instructions are in
 
 | Data | Source |
 |---|---|
-| Photon cross-sections (photoelectric, K-shell photoelectric, Compton, Rayleigh, pair) | Direct **EPICS2023 EPDL** records, with process-specific grids retaining thresholds and absorption-edge sides |
-| Incoherent scattering functions S(x,Z), coherent Rayleigh sampling CDFs | Direct **EPICS2023 EPDL**; form factors are used during offline CDF generation but are not embedded as runtime lookup tables; Compton-profile support via BSD-licensed [xraylib](https://github.com/tschoonj/xraylib) 4.2.1 |
-| Bremsstrahlung spectra (Seltzer–Berger) | Public-domain **NIST EPQ** at pinned commit `ce1e589`, with one fixed low-κ interpolation rule |
+| Photon cross-sections (photoelectric, K-shell photoelectric, Compton, Rayleigh, pair), Z=1–98 (H–Cf), 10 keV–20 MeV | Direct **EPICS2023 EPDL** records, with process-specific grids retaining thresholds and absorption-edge sides |
+| Incoherent scattering functions S(x,Z), coherent Rayleigh sampling CDFs | Direct **EPICS2023 EPDL**; form factors are used during offline CDF generation but are not embedded as runtime lookup tables; Compton-profile support and atomic weights via BSD-licensed [xraylib](https://github.com/tschoonj/xraylib) 4.2.1 |
+| Bremsstrahlung spectra (Seltzer–Berger), Z=1–92 | Public-domain **NIST EPQ** at pinned commit `ce1e589`, with one fixed low-κ interpolation rule; Np–Cf reuse the uranium table |
 | Atomic relaxation: K and L fluorescence yields, lines, Coster–Kronig (Z=1–99 for decay daughters) | Direct **EPICS2023 EADL** MF=28/MT=533 |
-| Electron stopping powers | Direct **NIST ESTAR** collision and radiative values for every Z=1–92 at all 53 nodes from 10 keV–20 MeV |
+| Electron stopping powers | Direct **NIST ESTAR** collision and radiative values for every Z=1–92 at all 53 nodes from 10 keV–20 MeV; Np–Cf reuse the uranium values |
 | Material compositions | **ICRU Report 37** (air), **IAEA-TECDOC-1011**, CRC Handbook |
 | Nuclear decay data (cascade summing, optional) | **ENSDF** via [SandiaDecay](https://github.com/sandialabs/SandiaDecay) |
 
@@ -288,8 +288,11 @@ Geant4 spectra/rates remain committed as validation observables.
 ## Shortcomings
 
 **Scope**
-- Photon transport only, roughly 30 keV – 3 MeV. No photonuclear reactions, no
-  neutrons, no optical photon transport, no hadronic physics.
+- Photon transport only, validated roughly 30 keV – 3 MeV. The photon data
+  cover H–Cf (Z = 1–98) from 10 keV to 20 MeV, but above uranium the electron
+  tables are uranium's (a few-percent approximation for electron energy loss,
+  up to 9% for Cf bremsstrahlung). No photonuclear reactions, no neutrons, no
+  optical photon transport, no hadronic physics.
 - Only the geometries in the validated-configuration table have been checked
   against GEANT4. Everything else is extrapolation.
 - Air between the source and the detector is **not transported**. A deterministic

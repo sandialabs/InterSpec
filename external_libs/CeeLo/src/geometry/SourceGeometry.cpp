@@ -247,7 +247,15 @@ Eigen::Vector3d SourceGeometry::layer_delta(const SourceLayer& l) const {
 Eigen::Vector3d SourceGeometry::shape_inner_dims() const {
     switch (shape_) {
     case Shape::Sphere:      return Eigen::Vector3d(sphere_inner_r_, 0.0, 0.0);
-    case Shape::Cylindrical: return Eigen::Vector3d(cyl_inner_r_, cyl_inner_half_length_, 0.0);
+    case Shape::Cylindrical:
+        // cyl_inner_half_length_ is set to the full half-length for a SOLID
+        //  cylinder (that is what "through-bore" degenerates to), so testing the
+        //  triple's maxCoeff would call a solid cylinder hollow: it would gain a
+        //  phantom void layer, accept add_core(), and lose the closed-form and
+        //  electron-containment fast paths for good.  The cavity exists only
+        //  when there is a bore.
+        if (cyl_inner_r_ <= 1e-10) return Eigen::Vector3d::Zero();
+        return Eigen::Vector3d(cyl_inner_r_, cyl_inner_half_length_, 0.0);
     case Shape::Rectangular: return rect_inner_half_dims_;
     default:                 return Eigen::Vector3d::Zero();  //Point, Marinelli
     }
@@ -310,6 +318,14 @@ void SourceGeometry::rebuild_layer_dims() {
         sh.dims = o;
         layers_.push_back(sh);
     }
+
+    // Derive the gate from what the stack actually holds.  It is READ once per
+    //  Moliere substep so it must stay a cached bool, but deriving it here means
+    //  it cannot drift out of step with the layers the way a write-once flag did.
+    has_attenuating_interior_ = false;
+    for (std::size_t i = 0; i < source_layer_index_; ++i) {
+        if (layers_[i].material) { has_attenuating_interior_ = true; break; }
+    }
 }
 
 void SourceGeometry::init_layer_stack() {
@@ -318,10 +334,23 @@ void SourceGeometry::init_layer_stack() {
     if (layers_.empty()) {
         n_core_layers_ = 0;
         has_center_void_ = false;
-        has_attenuating_interior_ = false;
         source_layer_index_ = 0;
         layers_.push_back({source_material_, 0.0, 0.0, 0.0,
                            Eigen::Vector3d::Zero()});
+    }
+
+    // Point and Marinelli have no hollow interior, so they cannot carry cores.
+    //  Reconfiguring INTO one of those shapes after add_core() would otherwise
+    //  leave core layers behind and the gate set, routing every trace into a
+    //  walker that only handles the concentric shapes - an assert in a debug
+    //  build, and in release a silent "no segments", which dropped the shields.
+    if ((shape_ == Shape::Point || shape_ == Shape::Marinelli)
+        && (n_core_layers_ > 0 || has_center_void_)) {
+        const std::size_t first = has_center_void_ ? 1u : 0u;
+        layers_.erase(layers_.begin(), layers_.begin() + first + n_core_layers_);
+        n_core_layers_ = 0;
+        has_center_void_ = false;
+        source_layer_index_ = 0;
     }
     rebuild_layer_dims();
 }
@@ -393,8 +422,7 @@ void SourceGeometry::push_core_layer(SourceLayer layer) {
     const std::size_t first_core = has_center_void_ ? 1u : 0u;
     layers_.insert(layers_.begin() + first_core, layer);
     ++n_core_layers_;
-    has_attenuating_interior_ = true;
-    rebuild_layer_dims();
+    rebuild_layer_dims();   // re-derives has_attenuating_interior_
 }
 
 void SourceGeometry::configure_point(const Eigen::Vector3d& position) {
@@ -1430,6 +1458,13 @@ void SourceGeometry::trace_cored_segments(
     std::vector<SourcePathSegment>& segments,
     std::size_t max_segments) const
 {
+    // Clear, like trace_source_segments() does.  compute_transmission_fep_only()
+    //  reuses ONE buffer across its retrace iterations, so appending here made
+    //  every Rayleigh turn re-process the segments already walked: the
+    //  attenuation was applied twice and `pos` ran away past the source (a 2 cm
+    //  source reported exit positions over 100 cm out, feeding a bogus air gap).
+    segments.clear();
+
     // Cores only make sense for an extended source with a hollow interior.
     assert(shape_ == Shape::Sphere || shape_ == Shape::Cylindrical
            || shape_ == Shape::Rectangular);

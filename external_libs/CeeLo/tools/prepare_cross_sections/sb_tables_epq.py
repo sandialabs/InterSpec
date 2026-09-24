@@ -34,7 +34,7 @@ from generation_utils import (
     ELEMENT_SYMBOLS,
     OUT_KAPPA,
     OUT_T_keV,
-    Z_MAX,
+    ELECTRON_Z_MAX,
     as_float32,
     replace_section,
     write_section,
@@ -186,7 +186,7 @@ def summarize_percent(values: list[float]) -> dict[str, float]:
 
 def table_payload_sha256(tables: dict[int, list[list[float]]]) -> str:
     digest = hashlib.sha256()
-    for z in range(1, Z_MAX + 1):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         for row in tables[z]:
             for value in row:
                 digest.update(struct.pack("<f", as_float32(value)))
@@ -198,7 +198,7 @@ def quantize_tables(
 ) -> tuple[dict[int, list[list[float]]], str]:
     decoded: dict[int, list[list[float]]] = {}
     digest = hashlib.sha256()
-    for z in range(1, Z_MAX + 1):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         maximum = max(value for row in tables[z] for value in row)
         scale = as_float32(maximum / 65535.0) if maximum > 0.0 else 0.0
         digest.update(struct.pack("<f", scale))
@@ -244,7 +244,7 @@ def row_observables(row: list[float], energy_keV: float) -> tuple[float, float] 
 def quantization_validation(tables: dict[int, list[list[float]]]) -> tuple[dict[str, Any], str]:
     decoded, payload_hash = quantize_tables(tables)
     row_rms, rate_error, mean_error = [], [], []
-    for z in range(1, Z_MAX + 1):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         for energy, reference, represented in zip(OUT_T_keV, tables[z], decoded[z]):
             row_rms.append(math.sqrt(sum(
                 (candidate / source - 1.0) ** 2
@@ -287,7 +287,7 @@ def epq_provenance(source: dict[str, Any]) -> str:
             "// SOURCE AND TERMS\n",
             "//   NIST EPQ BergerSeltzerBrem tables, public domain in the United States.\n",
             f"//   Pinned EPQ commit: {source['version'].removeprefix('git-')}\n",
-            f"//   Verified 92-table SHA-256: {source['table_set_sha256']}\n",
+            f"//   Verified {ELECTRON_Z_MAX}-table SHA-256: {source['table_set_sha256']}\n",
             "//   Retain the upstream NIST notice; neither NIST nor the authors endorse\n",
             "//   derived products. See tools/prepare_cross_sections/sources.lock.json.\n",
             "//   Underlying reference: S.M. Seltzer and M.J. Berger, Atomic Data and\n",
@@ -321,7 +321,7 @@ def build_tables(
     output_phi_errors: list[float] = []
     target_eV = [energy * 1000.0 for energy in OUT_T_keV]
 
-    for z in range(1, Z_MAX + 1):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         parsed = parse_epq_table(directory / f"pdebr{z:02d}.tab", z)
         energy_index = {energy: index for index, energy in enumerate(parsed.energies_eV)}
         missing = [energy for energy in target_eV if energy not in energy_index]
@@ -342,7 +342,7 @@ def build_tables(
             )
             output_rows.append(output_row)
         tables[z] = output_rows
-        print(f"\r  transformed Z={z:3d}/{Z_MAX}", end="", file=sys.stderr)
+        print(f"\r  transformed Z={z:3d}/{ELECTRON_Z_MAX}", end="", file=sys.stderr)
     print(file=sys.stderr)
     return tables, source_phi_errors, output_phi_errors
 
@@ -354,7 +354,7 @@ def make_report(
     source_phi_errors: list[float],
     output_phi_errors: list[float],
 ) -> dict[str, Any]:
-    output_count = Z_MAX * len(OUT_T_keV) * len(OUT_KAPPA)
+    output_count = ELECTRON_Z_MAX * len(OUT_T_keV) * len(OUT_KAPPA)
     packing_validation, packed_hash = quantization_validation(tables)
     return {
         "schema_version": 1,
@@ -368,7 +368,7 @@ def make_report(
             "table_set_sha256": source["table_set_sha256"],
         },
         "grid": {
-            "elements": Z_MAX,
+            "elements": ELECTRON_Z_MAX,
             "source_incident_energy_nodes_all": EPQ_NATIVE_ENERGIES,
             "native_incident_energy_nodes_in_runtime_range": len(OUT_T_keV),
             "retained_incident_energy_nodes": len(OUT_T_keV),
@@ -379,15 +379,15 @@ def make_report(
         },
         "storage": {
             "scalar_encoding": "uint16 with one float32 scale per element",
-            "source_coefficients_all_energies": Z_MAX * EPQ_NATIVE_ENERGIES * len(EPQ_KAPPA),
+            "source_coefficients_all_energies": ELECTRON_Z_MAX * EPQ_NATIVE_ENERGIES * len(EPQ_KAPPA),
             "native_coefficients_in_runtime_range": output_count,
             "retained_coefficients": output_count,
             "coefficient_bytes": output_count * 2,
             "kappa_grid_bytes": len(OUT_KAPPA) * 4,
             "energy_grid_bytes": len(OUT_T_keV) * 4,
-            "metadata_bytes": 4 + Z_MAX * 4,
+            "metadata_bytes": 4 + ELECTRON_Z_MAX * 4,
             "logical_total_bytes": output_count * 2 + len(OUT_KAPPA) * 4
-                + len(OUT_T_keV) * 4 + 4 + Z_MAX * 4,
+                + len(OUT_T_keV) * 4 + 4 + ELECTRON_Z_MAX * 4,
         },
         "source_derived_payload_sha256_float32_little_endian": table_payload_sha256(tables),
         "packed_payload_sha256_scale_float32_then_uint16_little_endian": packed_hash,
@@ -479,7 +479,7 @@ def main() -> int:
     provenance = epq_provenance(source)
     if args.output:
         replace_section(args.output, tables, "uint16", provenance)
-        print(f"Updated {args.output} with {Z_MAX * len(OUT_T_keV) * len(OUT_KAPPA):,} uint16 coefficients", file=sys.stderr)
+        print(f"Updated {args.output} with {ELECTRON_Z_MAX * len(OUT_T_keV) * len(OUT_KAPPA):,} uint16 coefficients", file=sys.stderr)
     else:
         write_section(sys.stdout, tables, "uint16", provenance)
 

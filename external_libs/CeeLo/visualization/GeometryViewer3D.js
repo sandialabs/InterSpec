@@ -1326,7 +1326,18 @@ GeometryViewer3D.prototype._buildScene = function() {
     var solid = parsed.solids[solidName];
     if (!solid) return;
 
+    // A nested layer is a FULL solid whose daughters displace its material, so
+    //  the material actually present is the solid MINUS whatever it carries.
+    //  Reporting the raw solid over-stated a 0.5 cm Pb shell around a 3 cm
+    //  source by 2.7x, and a (0.3, 0.1) cm shield on a cylinder by 5x.
     var volume = computeSolidVolume(parsed.solids, solidName);
+    if (vol.physvols) {
+      for (var di = 0; di < vol.physvols.length; ++di) {
+        var dv = parsed.volumes[vol.physvols[di].volumeRef];
+        if (dv) volume -= computeSolidVolume(parsed.solids, dv.solid);
+      }
+      if (volume < 0) volume = 0;
+    }
     var density = parsed.materials[matName] ? parsed.materials[matName].density : 0;
     var mass = volume * density;
     var dimStr = describeSolid(parsed.solids, solidName);
@@ -1509,8 +1520,6 @@ GeometryViewer3D.prototype._getSourceSurfaceClosestZ = function() {
   // Find the z-coordinate of the source material surface closest to crystal (on-axis)
   if (!this.parsedGDML) return null;
   var parsed = this.parsedGDML;
-  var worldVol = parsed.volumes[parsed.worldRef];
-  if (!worldVol) return null;
 
   // SrcMaterialLV is nested inside its shields for a concentric source, so this
   //  has to walk the tree rather than scan the world's own daughters.

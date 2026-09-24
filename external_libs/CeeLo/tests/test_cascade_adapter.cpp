@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "cascade/SandiaDecayCascade.h"
+#include "cross_sections/CrossSectionData.h"
 #include "SandiaDecay.h"
 
 #include <algorithm>
@@ -213,6 +214,78 @@ BOOST_AUTO_TEST_CASE(uranium_chain_direct_electron_source_terms) {
         for (const auto& line : emissions->conversion_electrons) {
             BOOST_CHECK_GT(line.energy_keV, 0.0);
             BOOST_CHECK_GT(line.yield_per_decay, 0.0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(transuranic_daughters_get_their_shell_binding_energies) {
+    // Am-241 -> Np-237 (Z=93) and Cm-244 -> Pu-240 (Z=94). The direct emission
+    // set used to gate the daughter's K/L data on the photon-table limit (then
+    // Z=92), so these conversion electrons carried the full transition energy.
+    // K lines must sit at E_gamma - B_K and L1/L2/L3 lines at E_gamma - B_L3 (the
+    // model applies the L3 edge to every L subshell); the shell-unresolved Outer
+    // share keeps E_gamma. The set lists gamma lines only, so a daughter x-ray
+    // that SandiaDecay also lists can never be double-counted.
+    const auto& xs = ceelo::CrossSectionData::instance();
+    const std::pair<const char*, int> cases[] = {{"Am241", 93}, {"Cm244", 94}};
+    for (const auto& [label, daughter_Z] : cases) {
+        BOOST_TEST_CONTEXT(label) {
+            const auto* k = xs.fluorescence(daughter_Z);
+            const auto* l = xs.l_fluorescence(daughter_Z);
+            BOOST_REQUIRE(k != nullptr);
+            BOOST_REQUIRE(l != nullptr);
+            const SandiaDecay::Nuclide* nuc = db().nuclide(label);
+            BOOST_REQUIRE(nuc != nullptr);
+            std::vector<double> transitions;   // every gamma transition energy
+            bool reaches_daughter = false;
+            for (const SandiaDecay::Transition* tr : nuc->decaysToChildren) {
+                if (!tr || !tr->child)
+                    continue;   // spontaneous-fission branches have no daughter nuclide
+                BOOST_CHECK_EQUAL(static_cast<int>(tr->child->atomicNumber), daughter_Z);
+                reaches_daughter = true;
+                for (const SandiaDecay::RadParticle& p : tr->products)
+                    if (p.type == SandiaDecay::ProductType::GammaParticle)
+                        transitions.push_back(static_cast<double>(p.energy));
+            }
+            const auto from_transition = [&](double energy, double binding) {
+                for (double t : transitions)
+                    if (std::abs(t - binding - energy) < 1e-6) return true;
+                return false;
+            };
+            BOOST_REQUIRE(reaches_daughter);
+            const RadioactiveEmissionSet e = build_radioactive_emissions(nuc);
+            int n_l = 0;
+            for (const ConversionElectronLine& c : e.conversion_electrons) {
+                BOOST_TEST_CONTEXT("CE " << c.energy_keV << " keV") {
+                    switch (c.shell) {
+                    case ConversionShell::K:
+                        BOOST_CHECK(from_transition(c.energy_keV, k->k_edge_keV));
+                        break;
+                    case ConversionShell::L1:
+                    case ConversionShell::L2:
+                    case ConversionShell::L3:
+                        BOOST_CHECK(from_transition(c.energy_keV, l->l3_edge_keV));
+                        ++n_l;
+                        break;
+                    case ConversionShell::Outer:
+                        BOOST_CHECK(from_transition(c.energy_keV, 0.0));
+                        break;
+                    }
+                }
+            }
+            BOOST_CHECK_GT(n_l, 0);
+            for (const RadioactivePhotonLine& p : e.photons)
+                BOOST_CHECK(from_transition(p.energy_keV, 0.0));   // gammas only
+            if (daughter_Z == 93) {
+                // The 59.54 keV line converts in L at 59.54 - 17.61 keV (it is
+                // below the 118.7 keV Np K edge, so it has no K line).
+                bool saw_l_59 = false;
+                for (const ConversionElectronLine& c : e.conversion_electrons)
+                    if (c.shell == ConversionShell::L3
+                        && std::abs(c.energy_keV + l->l3_edge_keV - 59.5409) < 0.01) saw_l_59 = true;
+                BOOST_CHECK(saw_l_59);
+                BOOST_CHECK_CLOSE(static_cast<double>(l->l3_edge_keV), 17.61, 0.5);
+            }
         }
     }
 }

@@ -13,11 +13,20 @@ production transformation. The retained notices are in [`source_notices/`](sourc
 
 | Runtime data | Locked source | Generator |
 |---|---|---|
-| Bremsstrahlung spectra | NIST EPQ commit `ce1e5895892b17854d857e596250e4ae70d6b274` | `sb_tables_epq.py`, `generate_element_support.py` |
-| Photon cross-sections and angular factors | direct EPICS2023 EPDL | `generate_epics_photon.py` |
+| Bremsstrahlung spectra | NIST EPQ commit `ce1e5895892b17854d857e596250e4ae70d6b274`, Z=1–92 | `sb_tables_epq.py`, `generate_element_support.py` |
+| Photon cross-sections and angular factors | direct EPICS2023 EPDL, Z=1–98, 10 keV–20 MeV | `generate_epics_photon.py` |
 | K/L atomic relaxation | direct EPICS2023 EADL, Z=1–99 for decay daughters | `generate_eadl_relaxation.py` |
 | Collision and radiative stopping | NIST ESTAR, all Z=1–92 | `generate_estar_stopping.py` |
-| Compton-profile support and atomic weights | xraylib 4.2.1 (BSD-3-Clause) | `generate_element_support.py` |
+| Compton-profile support and atomic weights | xraylib 4.2.1 (BSD-3-Clause), Z=1–98 | `generate_element_support.py` |
+
+The two element domains are single constants in `generation_utils.py`:
+`PHOTON_Z_MAX = 98` for photon data and per-element support, and
+`ELECTRON_Z_MAX = 92` for the electron tables, where the EPQ set ends. The
+runtime reuses the uranium electron tables for Np–Cf (`electron_table_z()` in
+`src/cross_sections/CrossSectionData.h`, which records the measured size of that
+approximation). The C++ headers are sized by the matching `kMaxZ` and
+`kMaxElectronTableZ`, and the generated sources `static_assert` against them, so
+a changed domain fails to compile until every table is regenerated.
 
 No production generator reads Geant4 or G4EMLOW. Geant4 is used only by the
 separate observable-validation tooling under `tools/geant4_validation/`.
@@ -38,9 +47,11 @@ with `--offline` proves that a prepared cache is complete:
 python3 tools/prepare_cross_sections/fetch_sources.py --offline
 ```
 
-The xraylib generator must run with xraylib 4.2.1 importable. The source archive
-itself is also locked and verified so the BSD notice and exact source version are
-recorded independently of the local Python installation.
+The xraylib generator must run with xraylib 4.2.1 importable (it checks the
+module version against the lock), so run the generators with an interpreter that
+has it, for example `python3.13 -m pip install xraylib==4.2.1`. The source
+archive itself is also locked and verified so the BSD notice and exact source
+version are recorded independently of the local Python installation.
 
 ## Regenerate
 
@@ -94,8 +105,9 @@ fit of G4EMLOW coefficients.
 
 ## Accuracy and size gates
 
-Photon curves have process-specific descriptors over the historical 10 keV–10
-MeV range. Endpoints, thresholds, and both sides of discontinuities are always
+Photon curves have process-specific descriptors over 10 keV–20 MeV for Z=1–98;
+the migration validator still compares only the historical Z≤92, 10 keV–10 MeV
+domain its baseline covers. Endpoints, thresholds, and both sides of discontinuities are always
 retained. Every other native EPDL node remains a validation probe, but is stored
 only when adaptive refinement needs it; 16 logarithmic interior probes are also
 tested in every interval. Values use per-curve uint16 packing. Rayleigh total

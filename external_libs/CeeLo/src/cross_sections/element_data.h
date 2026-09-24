@@ -30,29 +30,26 @@
 /// BSD-licensed xraylib Compton-profile support. Photon interactions and atomic
 /// relaxation are generated separately from EPICS2023 EPDL/EADL.
 ///
-/// IMPORTANT: This header is included by CrossSectionData.h — do NOT include
-/// any project headers here to avoid circular dependencies. The struct
-/// the ElementData definition comes from CrossSectionData.h.
+/// Included by CrossSectionData.cpp and by the generated element_data.cpp, so
+/// the compiler checks the generated array sizes against these declarations.
+/// ElementData and the Z-domain constants come from CrossSectionData.h.
+
+#include "cross_sections/CrossSectionData.h"
 
 #include <cstdint>
 
 namespace ceelo {
 
-// Forward declarations — the full definitions are in CrossSectionData.h,
-// which includes this header. We rely on the include order:
-//   CrossSectionData.h  ->  defines ElementData
-//   CrossSectionData.cpp ->  #include "element_data.h"
-// So by the time element_data.h is processed, the structs are already defined.
-
-/// Cross-section data for all 92 elements (Z=1..92).
-/// Indexed by Z-1 (i.e., g_element_data[0] is hydrogen, g_element_data[91] is uranium).
+/// Per-element support data for Z=1..kMaxZ, indexed by Z-1
+/// (g_element_data[0] is hydrogen, g_element_data[kMaxZ-1] is californium).
 /// Photon processes use their own compact tables and are queried through
-/// CrossSectionData rather than exposed as raw pointers here.
-extern const ElementData g_element_data[92];
+/// CrossSectionData rather than exposed as raw pointers here. The
+/// bremsstrahlung pointer of Z > kMaxElectronTableZ is uranium's table.
+extern const ElementData g_element_data[kMaxZ];
 
-/// Standard atomic weights for all 92 elements (g/mol).
-/// Indexed by Z-1.
-extern const double g_atomic_weights[92];
+/// Atomic weights (g/mol) for Z=1..kMaxZ, indexed by Z-1. Above Z=92 these are
+/// xraylib's conventional long-lived-isotope masses.
+extern const double g_atomic_weights[kMaxZ];
 
 /// Seltzer-Berger bremsstrahlung spectral shape data (shared grids).
 /// Defined in element_data.cpp (auto-generated).
@@ -60,6 +57,6 @@ extern const uint16_t kSB_n_kappa;       ///< Number of k/T fraction grid points
 extern const uint16_t kSB_n_energy;      ///< Number of electron energy grid points (27)
 extern const float kSB_kappa[];          ///< k/T fraction values, ascending [kSB_n_kappa]
 extern const float kSB_log_E_keV[];      ///< log10(electron KE / keV), ascending [kSB_n_energy]
-extern const float kSB_chi_scale[kMaxZ]; ///< Per-element uint16 decode scales
+extern const float kSB_chi_scale[kMaxElectronTableZ]; ///< Per-element uint16 decode scales
 
 } // namespace ceelo

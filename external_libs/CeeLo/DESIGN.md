@@ -120,21 +120,33 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
 - **Cone importance sampling**: For point sources with no shielding, photons are emitted within a cone subtending the detector (not isotropic 4pi). Each event carries a weight = cone solid angle fraction. This gives ~100x speedup for typical geometries. The standard IS estimator is `(1/N) * sum(w_i * I_i)` -- the denominator is N (number of events), NOT sum of weights.
 
 - **Cross-section data**: Photon magnitudes and angular factors are generated
-  directly from locked **EPICS2023 EPDL** records. Each process has its own
-  per-element grid with source nodes, thresholds, and both sides of absorption
+  directly from locked **EPICS2023 EPDL** records for **Z = 1–98 (H–Cf) from
+  10 keV to 20 MeV** (`kMaxZ`, `kPhotonDataMinEnergy_keV`/`kPhotonDataMaxEnergy_keV`
+  in `CrossSectionData.h`; outside that window the accessors return the endpoint
+  value, so a caller that must not clamp should refuse the query). Each process has
+  its own per-element grid with source nodes, thresholds, and both sides of absorption
   discontinuities retained. Adaptive interval probes gate maximum material
   representation error at 0.1% and integrated error at 0.05%; angular tables
   additionally gate CDF and mean-cosine errors. Generated tables must not be
   hand-edited; regenerate and audit them through `tools/prepare_cross_sections/`.
+  Against NIST XCOM (an independent evaluation), photoelectric + Compton + pair
+  agreed to ≤ 0.3% for Z 92–98 at 15 keV–10 MeV and to ≤ 0.5% for every element
+  compared at 12–20 MeV (Sep 2026). The two differ in the coherent (Rayleigh) term:
+  for Z 92–98 EPDL's is 1–34% below XCOM's, most just below K edges — the pattern of
+  the anomalous-scattering correction EPDL applies and XCOM omits — which moves the
+  total *including* coherent by up to −2.6% for U and −4.8% for Am (122 keV, just
+  under its K edge). Electron-side tables stop at uranium; see Known Limitations →
+  "Electron tables above uranium".
 
 - **K-shell fluorescence**: After photoelectric absorption, K-shell vs
   outer-shell is sampled using direct EPICS2023 EPDL MT=534/MT=522 fractions.
   K-shell vacancies produce fluorescence X-rays or Auger electrons using direct
   EPICS2023 EADL MF=28/MT=533 relaxation data through Z=99, covering
-  radioactive-decay daughters beyond the Z=92 transport-table limit.
+  radioactive-decay daughters one beyond the Z=98 photon tables.
 
-- **Bremsstrahlung**: Seltzer–Berger scaled differential cross-sections (92
-  elements, **27 native electron energies from 10 keV–20 MeV × 32 κ**).
+- **Bremsstrahlung**: Seltzer–Berger scaled differential cross-sections (Z = 1–92,
+  the complete NIST EPQ set; Np–Cf reuse uranium's table, **27 native electron
+  energies from 10 keV–20 MeV × 32 κ**).
   Rejection sampling uses a 1/k envelope and transports brems photons
   recursively. The `float32` production table comes from pinned public-domain
   NIST EPQ. A fixed transformation constructs κ=0.025 quadratically through
@@ -503,8 +515,8 @@ The simulation distinguishes two separate geometry systems:
 `Point`, `Cylindrical`, `Rectangular`, `Spherical`, `Marinelli`. All extended shapes self-attenuate (`set_source_material`), take concentric shape-matched shields, and support uniform or exponential-depth activity. Shape-dispatch is centralized: `sample_source_position`, `source_material_path`, `trace_source_segments`, `compute_transmission[_fep_only]`, `min_distance_to_boundary`, GDML export. **Both `compute` and `compute_cascade` pick up every shape for free** (cascade routes through `sample_source_position` + `transport_source_photon`).
 
 - **Spherical** (`set_spherical_source(center, radius, rotation=I, inner_radius=0)`): solid ball or, with `inner_radius > 0`, a hollow **shell** (non-attenuating void center — round flasks, spherical phantoms, void-center shells). Uniform-in-shell sampler `r = cbrt(r_in³+(r_out³−r_in³)U)`; spherical shields reuse the point-source shell tracer (`spherical_shell_path`). Rotation is stored but physically irrelevant (rotation-invariant).
-- **Hollow / annular cylinder** (`set_cylindrical_source(..., inner_radius>0)`): tube/pipe/ring with a non-attenuating central bore. Annular sampler `r = √(r_in²+(r_out²−r_in²)U)`; `source_material_path` charges only the annulus (subtracts the bore). `inner_radius = 0` reduces bit-identically to the solid cylinder.
-- **Hollow rectangular box shell** (`set_rectangular_source(..., inner_half_dims)`): crate/container walls — outer box minus a centered inner void box (same rotation, non-attenuating). Rejection sampler over the outer-box proposal (acceptance `1 − Vi/Vo`); `source_material_path` subtracts the void chord (`box_shell_path`); GDML fill exports as a box subtraction solid. All-zero `inner_half_dims` reduces bit-identically to the solid box. See `tests/test_hollow_box_source.cpp`; pipe-modeling conventions (contents vs wall, side-on shield composition) in `tests/test_pipe_source.cpp`.
+- **Hollow / annular cylinder** (`set_cylindrical_source(..., inner_radius>0, inner_half_length=-1)`): tube/pipe/ring with a central cavity. A negative/defaulted `inner_half_length` is a **through-bore** (a pipe) and keeps the closed-form annular sampler `r = √(r_in²+(r_out²−r_in²)U)`; a value SHORTER than the source half-length is a **closed cavity** — what a nested stack needs, since InterSpec nests cylinders in radius *and* length — and switches the sampler to rejection over the outer-cylinder proposal. `source_material_path` charges only the material (subtracting the cavity chord, not merely the bore). `inner_radius = 0` reduces bit-identically to the solid cylinder.
+- **Hollow rectangular box shell** (`set_rectangular_source(..., inner_half_dims)`): crate/container walls — outer box minus a centered inner void box (same rotation, non-attenuating). Rejection sampler over the outer-box proposal (acceptance `1 − Vi/Vo`); `source_material_path` subtracts the void chord (`box_shell_path`); GDML fill exports as a nested `SrcVoidSolid` inside `SrcMaterialSolid`, not a subtraction. All-zero `inner_half_dims` reduces bit-identically to the solid box. See `tests/test_hollow_box_source.cpp`; pipe-modeling conventions (contents vs wall, side-on shield composition) in `tests/test_pipe_source.cpp`.
 - **CylinderEndOn vs CylinderSideOn** (InterSpec orientations) are set by the `set_cylindrical_source` rotation: **EndOn** = identity (cylinder axis ∥ detector axis, the default); **SideOn** = 90° about y, `R = [[0,0,1],[0,1,0],[-1,0,0]]` (local-z ← detector-x, detector views the curved side).
 - **Source cores** (`add_source_core`, `EfficiencyCalculator::add_source_core`): attenuating
   layers filling **inward** from a hollow source's inner surface, the mirror of
@@ -582,8 +594,10 @@ python3 ../../profiling/compare_validation.py
 **The exported source region is NESTED**, GEANT4's native idiom: each source volume is a
 *full* solid (ball / tube / box) at its own outer boundary, carrying the next one in as a
 daughter at its own origin, with only the outermost placed in the world. A daughter displaces
-its mother's material exactly, so there are **no hollow solids, no boolean subtractions and
-no coincident-surface epsilon** anywhere in the source region — a point on a mother/daughter
+its mother's material exactly, so there are **no hollow solids and no boolean subtractions** in the concentric source
+region, and no epsilon between its layers (two exceptions survive on purpose: the
+innermost sphere keeps `rmin = 1e-4` as the documented GPS-at-the-centre
+workaround, and the Marinelli well-bottom annulus keeps its 0.001 cm gap) — a point on a mother/daughter
 face is unambiguous to the navigator, where a point on the shared face of two *siblings* is
 not. It is also what keeps `/gps/pos/confine SrcMaterialPV` sampling the emitting shell
 alone even when the shell is cored: `G4SPSPosDistribution::IsSourceConfined()` locates the
@@ -596,7 +610,8 @@ z-planes is not a concentric stack, so it keeps its four-tubes-per-layer decompo
 `3.1415927` *exceeds* π by 4.6e-8 rad, which makes a `G4Sphere` wrap past the pole and
 self-overlap: GEANT4 then reports "Likely geometry overlap" and pushes the track to get
 unstuck — 33 pushes per 20k events, versus 0 with exact values. Measured at 6M events per
-arm the pushes did not bias the result (FEP −0.42%, z = −0.95; total −0.04%, z = −0.16), so
+arm the pushes showed no measurable bias (FEP −0.42%, z = −0.95; total −0.04%, z = −0.16;
+the FEP arm bounds this at ±0.89% at 2σ rather than proving it zero), so
 references generated before the fix remain valid, but do not generate new ones on a geometry
 that needs rescuing.
 
@@ -664,8 +679,8 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 | 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.4% (≥ 200 keV); −3.2% @ 59 |
 | 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 0.5% | ≤ 0.4% |
 | 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.4%† |
-| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | +0.9% @122; SKIP @60/88‡ | +0.1% @122‡ |
-| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +1.0% @122; SKIP @60/88‡ | −0.1% @122‡ |
+| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | +0.3% @122; −9.1% @60‡ | +0.1% @122‡ |
+| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +0.5% @122; −9.1% @60‡ | +0.2% @122‡ |
 
 **Measured Sep 7 2026** against the committed GEANT4 references, from
 `tests/data/ceelo_reference/` regenerated on the EPICS2023 photon data, after the
@@ -673,7 +688,7 @@ Aug 2026 crystal-electron-walk fixes (path-consistent Highland + Bohr straggling
 step-budget guard; `studies/high_e_fep/FINDINGS.md`).
 
 **These rows are tighter than the Aug 2026 set because the precision target now
-means what it says.** `TerminationConfig`'s FEP and total targets used to stop the
+means what it says.** `TerminationCriteria`'s FEP and total targets used to stop the
 run independently, so asking for 0.3% on both stopped at whichever converged first
 — always `total`, the larger efficiency — and left FEP short. Across the previous
 reference set FEP relative precision was a **median 1.44x worse than total**, and
@@ -691,7 +706,10 @@ TODO.md only because that item was measured in a dedicated 0.16%-precision study
 not at the 0.3% these reference rows carry — the deltas agree, so the item stands.
 
 A per-energy comparison of every configuration, with both sides' 1-sigma
-uncertainties and z-scores, is in `scratch/20260907_CeeLo_G4_comp.md`.
+uncertainties and z-scores, was written to `scratch/20260907_CeeLo_G4_comp.md`.
+Note `scratch/` is gitignored and is NOT part of the vendored payload, so that
+file is local to the machine it was generated on; regenerate it from the
+committed reference pair if you need it.
 
 **Configs 25/26 are a matched pair** (added Aug 2026 with bulletization support):
 the same GEM35-70 HPGe coax with a sharp and a bulletized front edge, 4M
@@ -700,15 +718,22 @@ CeeLo at ~0.03% precision below 122 keV, ~0.1–0.35% above, over 45–1332 keV.
 quantity the pair exists to measure is the **bulletization effect itself**,
 Δ = 1 − ε(26)/ε(25), computed independently in each code:
 
-| E (keV) | Δ FEP CeeLo | Δ FEP G4 | difference | z | Δ total CeeLo | Δ total G4 | difference | z |
-|---------|-------------|----------|------------|---|---------------|------------|------------|---|
-| 45 | 16.43% | 16.39% | +0.04 pp | 1.09 | 16.16% | 16.17% | −0.01 pp | −0.19 |
-| 59.5 | 15.27% | 15.19% | +0.08 pp | 1.84 | 15.11% | 15.06% | +0.04 pp | 1.03 |
-| 88 | 12.25% | 12.25% | −0.00 pp | −0.01 | 12.26% | 12.28% | −0.02 pp | −0.41 |
-| 122 | 9.03% | 9.09% | −0.05 pp | −0.90 | 9.39% | 9.42% | −0.04 pp | −0.70 |
-| 344 | 4.16% | 4.09% | +0.07 pp | 0.26 | 5.26% | 5.25% | +0.01 pp | 0.07 |
-| 662 | 2.94% | 3.15% | −0.21 pp | −0.50 | 4.24% | 4.42% | −0.18 pp | −1.19 |
-| 1332 | 2.03% | 2.47% | −0.44 pp | −0.81 | 3.86% | 3.84% | +0.02 pp | 0.14 |
+| E (keV) | Δ FEP CeeLo | Δ FEP G4 | difference | z |
+|---------|-------------|----------|------------|---|
+| 45 | 16.34% | 16.39% | −0.05 pp | −0.32 |
+| 59.5 | 15.50% | 15.19% | +0.32 pp | 2.06 |
+| 88 | 12.22% | 12.25% | −0.03 pp | −0.16 |
+| 122 | 9.27% | 9.09% | +0.19 pp | 0.88 |
+| 344 | 4.51% | 4.09% | +0.42 pp | 1.20 |
+| 662 | 3.01% | 3.15% | −0.14 pp | −0.36 |
+| 1332 | 1.82% | 2.47% | −0.65 pp | −1.49 |
+
+**These are the values `profiling/compare_validation.py` prints from the committed
+references**, refreshed Sep 7 2026. The table previously carried numbers from an
+uncommitted ~0.03%-precision run while claiming to be the committed rows; against the
+current 0.3% references two entries changed sign (45 and 122 keV), which is scatter at
+this precision, not a change in the effect. Every point still agrees within |z| ≤ 2.1 on
+an effect running from 16% down to 2%, and the pair still gates.
 
 † **The apparent config-26 low-energy residual was statistics plus a shared
 offset — not bulletization.** The first pass showed config 26 running +0.16 to
@@ -723,6 +748,12 @@ seeds, 45–122 keV; the committed rows are those runs combined) resolved it:
   but it is **identical in both configs** — cfg 25 +0.135%, cfg 26 +0.136%, a
   difference of +0.000 pp. It has nothing to do with the fillet. 122 keV
   carries a similar shared offset of about −0.1%.
+
+  (Those per-energy figures are from the Aug 2026 ~0.03%-precision study. Against
+  the Sep 2026 committed references, which carry 0.3%, the same rows read cfg 25
+  −0.01% and cfg 26 +0.02% at 88 keV — consistent, but far too coarse to resolve a
+  0.135% offset. The conclusion that the offset is shared and fillet-independent
+  rests on the dedicated study, not on the committed rows.)
 
 So what remains is a ~0.1% CeeLo-vs-GEANT4 offset on germanium with energy
 structure across 60–122 keV, common to sharp and bulletized crystals alike and
@@ -780,6 +811,9 @@ at 88 keV 18.1% vs 17.8% and 17.5% vs 18.0%; at 122 keV 10.5% vs 10.5% and 10.2%
 So the forward-Rayleigh / small-angle-Compton placement agrees with GEANT4 to ~2% of that stream
 in a Rayleigh-dominated case, and the cfg-8 "eps_s ~15% low" residual does not generalise to iron.
 60/88 keV are `SKIP`ped in `compare_validation.py` with that reason; 122 keV gates at 1%.
+Main's Sep 7 2026 CeeLo rows for 27/28 were scored at 1.5 keV by mistake (~3% more FEP at
+60 keV, hidden by those SKIPs; see the README beside the CSVs). They were regenerated at
+0.75 keV on Sep 22 2026, which is where the table's 27/28 entries come from.
 
 \* **Config 8 reference was regenerated at 32M on the CURRENT geometry (June 26 2026).** The previous
 March `g4_cfg8_*_v2` reference was **stale**: it predated the June source-effect/biasing/cascade
@@ -842,12 +876,20 @@ scoring `kDefaultFepWindowKeV`, vacuum world, source-electron transport enabled.
 | G-G cored box | −0.74 to +0.03% (\|z\| ≤ 2.7) | −0.36 to +0.26% (\|z\| ≤ 1.8) |
 
 Largest deviation over all 16 (case, energy) rows and both metrics: **0.74%**. The cored
-geometries are as accurate as the uncored control at every energy. The z-scores exceed 2 on a
-few rows only because the precision is now high; every delta is sub-1%.
+geometries hold the same *band* as the uncored control (cored max 0.736%, control max 0.738%),
+though not row for row — G-G's FEP at 911.2 keV is −0.74% (z −2.70) against the control's
++0.08%, so individual rows do differ.
+
+FEP is statistically clean across the 16 rows (χ²/n = 1.1). **TOTAL is not**: χ²/n ≈ 3.2, with
+5 rows at |z| > 2 against ~0.7 expected and a positive mean. Cored and uncored geometries show
+the same sign and size, so this is a property of the extended-source path rather than of cores
+— it is tracked in TODO.md — but it is a coherent family, not just high precision sharpening
+individual rows.
 
 **The effect being measured is large**, which is what makes a missing or mis-sized core
-obvious rather than subtle: the iron core removes 18.4 / 15.3 / 13.9 / 10.6% of the peak at
-238.6 / 583.2 / 911.2 / 2614.5 keV (G-D vs G-C, CeeLo).
+obvious rather than subtle: the iron core removes 17.6 / 15.2 / 14.0 / 10.3% of the peak at
+238.6 / 583.2 / 911.2 / 2614.5 keV (G-D vs G-C, CeeLo, from the same
+electron-transport-enabled runs as the table).
 
 **Two export controls, both passing.** They exist because the GEANT4 geometry is generated by
 CeeLo, so a bad export would look like a transport bug:
@@ -857,13 +899,31 @@ CeeLo, so a bad export would look like a transport bug:
   the G4 ratio **16.3σ from 1.0000**, the value GPS confinement leaking into the core would
   give. (The naive form of this test — expecting the two *geometries* to agree — cannot work,
   because their emission regions differ.)
-- **G-Eadd, additivity.** One 2 cm core vs four 0.5 cm cores of the same material: the same
-  scene through a different layer stack, so this ratio IS 1, and is, in both codes.
 
-**The nested export is physics-neutral.** Running the pre-nesting and nested GDML for G-C
-through the same macro at 2614.5 keV (16M events each) agrees to FEP z = −1.21, total
-z = −0.30 — so replacing hollow shells and boolean subtractions with nested full solids, and
-dropping the coincident-surface epsilon, changes nothing GEANT4 can measure.
+  Two limits worth stating. **G-E's core is the same material as the shell, so it is optically
+  invisible**: the control proves emission is confined to the shell and the outer radius is
+  right, but it cannot detect a mis-sized core, a wrong core radius, or a wrong core material.
+  Those rest on G-D/G-F/G-G and on the GDML-vs-tracer tests in `tests/test_geant4_export.cpp`.
+  And the **G-E CeeLo arms were run with source-electron transport OFF** (unlike the tables
+  above). The channel moves 583.2 keV FEP by only −0.07 / +0.13% per arm against a ±0.28%
+  ratio error, so the FEP conclusion is unaffected; the TOTAL rows are weaker, because the
+  channel moves each arm's total by ~0.45–0.49% and the two arms differ in `single_material`
+  (G-E is cored so it takes the full Molière walk; G-Esolid takes the containment fast path),
+  so that cancellation is assumed rather than measured.
+- **G-Eadd, additivity.** One 2 cm core vs four 0.5 cm cores of the same material: the same
+  scene through a different layer stack, so this ratio is 1, and is (CeeLo 1.0045 ± 0.0028,
+  i.e. +1.6σ from 1; χ² = 3.2/4 over the four energies). Note the **GEANT4 arm carries no
+  information here** — every layer is the same soil, so G4 returns 1 whatever the daughters
+  do. The informative arm is CeeLo's, which is where a layer-stack ordering bug would show.
+
+**The nested export shows no measurable physics change.** Running the pre-nesting and nested
+GDML for G-C through the same macro at 2614.5 keV (16M events each) agrees to FEP z = −1.21,
+total z = −0.30. Read that as a bound, not a proof of zero: the FEP arm resolves only ±0.86%
+at 2σ, the same scale as the 0.74% headline agreement, so it excludes a *gross* geometry
+error rather than a sub-percent one (the TOTAL arm is tighter, ±0.32%). The two arms also
+share a RNG seed while being treated as independent, which if anything makes the quoted z
+*understate* a real difference. Sub-percent assurance comes instead from the GDML-vs-tracer
+tests, which compare the exported solids against `trace_source_segments` exactly.
 
 The far (~50 cm) MC efficiencies converge well via the auto two-stream/cone direct stream; a matching G4 cross-check at 50 cm needs much higher isotropic stats (cone bias is invalid with source scatter) and is left for a dedicated high-stats run. The cascade path on a sphere is exercised by `tests/test_spherical_source.cpp` (`co60_summing_out_on_sphere`); `compute_cascade` is geometry-agnostic (routes through `sample_source_position` + `transport_source_photon`).
 
@@ -934,8 +994,12 @@ Standing notes that are easy to trip over:
   <2 MeV pooled shift +0.013% (z +0.4, 103 rows). Null A/Bs recorded for the pair-lepton
   n_steps=20 floor and the forward-only brems angle. Remaining structure: LaBr3 (cfg 3)
   +0.5–0.6% ≥1 MeV, and the cfg 7 Pb-attenuator total +0.25% (z≈3) — see TODO.md. CZT (cfg 5),
-  formerly −2.28/−4.12/−5.34% at 800/1000/1500 keV, is largely fixed by the same changes:
-  +0.66/−0.31/−1.31% (|z| < 0.7) — thin-crystal escape was straggling-starved.
+  formerly −2.28/−4.12/−5.34% at 800/1000/1500 keV, is largely fixed by the same changes —
+  thin-crystal escape was straggling-starved. On the Sep 2026 references (FEP genuinely at
+  0.3%, where the Aug numbers were 0.77–1.18%) those rows read **+0.28/−1.54/−2.47%, |z| up
+  to 1.7**, rather than the +0.66/−0.31/−1.31% (|z| < 0.7) measured before. The comparison
+  there is limited by the GEANT4 reference, not by CeeLo, which is why config 5 carries a
+  7% FEP tolerance; the deltas are ~1σ of scatter apart, not a regression.
 - **Config 12 at 59 keV is a data difference, not a transport defect** (attributed Aug 2026;
   probe in the dev-only `studies/xs_probe/`). cfg 12 @59 keV moved from −0.05% to −3.76% FEP
   (−3.72% ± 0.42%, z = 8.9) across the EPICS2023 migration. Measuring μ at 59 keV on both data
@@ -1032,6 +1096,32 @@ Standing notes that are easy to trip over:
     High-Z is **not** a single gate knob: Sn/W over-predict while Pb under-predicts at the *same* capped
     albedo, and lowering the cap 0.92→0.85 worsened Sn (+0.32→+0.84) and W without helping Pb (whose
     electron channel is tiny — Pb stops electrons — so its −1.46% is mostly photon transport).
+- **Electron tables above uranium are uranium's.** NIST ESTAR stopping powers, ICRU-49 mean excitation
+  energies and the NIST EPQ Seltzer–Berger tables stop at Z = 92, so every element Np–Cf is treated as
+  uranium throughout the electron physics (`electron_table_z()`): the tables themselves and the atomic
+  weight, Z/A, Z(Z+1)/A weights, radiation length and effective Z used with them, which keeps each
+  material's electron view self-consistent. The photon side uses each element's own data and mass
+  (Pu 239.1). Measured against ESTAR for Z 93–98 at all 53 nodes (per unit mass):
+
+  | Z | I (eV; U 890) | collision | radiative | CSDA range |
+  |---|---:|---:|---:|---:|
+  | 93 Np | 902 | −1.2 .. −1.0% | −2.9 .. −1.9% | +0.3 .. +1.6% |
+  | 94 Pu | 921 | −1.3 .. −0.4% | −4.5 .. −2.6% | −1.3 .. +2.1% |
+  | 95 Am | 934 | −1.8 .. +0.8% | −5.2 .. −2.4% | −3.3 .. +2.1% |
+  | 96 Cm | 939 | −1.1 .. +1.6% | −6.0 .. −2.2% | −4.3 .. +1.7% |
+  | 97 Bk | 952 | −1.9 .. +1.1% | −8.2 .. −3.6% | −4.7 .. +2.9% |
+  | 98 Cf | 966 | −2.1 .. +2.3% | −8.9 .. −3.4% | −6.8 .. +2.8% |
+
+  (Negative = reusing U underestimates; the largest range errors are at the 10–20 keV nodes, where the
+  range is about a micron.) Electron transport is a secondary channel for photon efficiency (electron
+  escape, bremsstrahlung, source-electron channels); the resulting efficiency error has not been measured.
+  The reuse itself is pinned in `test_csda` (`ActinideElectronReuse`). Tracked in `TODO.md`.
+- **Above 10 MeV, transport is not validated against GEANT4.** The photon tables reach 20 MeV so that
+  attenuation is available for high-energy reaction lines; the MC runs there (a narrow-beam PuO₂/Pb test
+  at 15 MeV agrees with exp(−μL) to 0.09%, |z| ≤ 1.4) but nothing above ~3 MeV is in the GEANT4 gate.
+  Pair production splits the kinetic energy evenly between the two leptons. Photonuclear absorption is
+  not modelled: EPDL and XCOM omit it too, but at the giant resonance (12–15 MeV for heavy nuclei) it adds
+  a few percent to the attenuation of Pb/U (≈0.64 b for Pb-208 at 13.4 MeV against 18.8 b atomic).
 - **Source-material fluorescence is not emitted**: photoelectric absorption in the source material/shields
   drops the photon without a characteristic K X-ray, so **total** efficiency for **high-Z
   self-attenuating** sources is low where PE dominates (validated June 2026: a Thorium sphere is −22% /
@@ -1041,6 +1131,12 @@ Standing notes that are easy to trip over:
 
 ## Common Pitfalls
 
+- **Two Z domains**: `kMaxZ` (98) is the photon and material domain; electron tables stop at
+  `kMaxElectronTableZ` (92). Index an electron table only through `electron_table_z()` — the
+  `ElectronCsda` per-Z accessors map and throw outside 1..`kMaxZ`, and the generated ESTAR accessor and
+  the row helpers assert. The hand-maintained `photon_epics_data.h` and `element_data.h` are sized by these
+  constants and the generated sources `static_assert` against them, so a changed domain fails to compile
+  until the tables are regenerated.
 - **Physics tables are auto-generated**: Do not edit `element_data.cpp`,
   `photon_epics_data.cpp`, `relaxation_epics_data.cpp`, or
   `estar_stopping_data.cpp` by hand. Use the locked generators and update the
@@ -1049,4 +1145,4 @@ Standing notes that are easy to trip over:
 - **Eigen `.cross()`**: Requires `#include <Eigen/Geometry>`, not just `<Eigen/Core>`.
 - **Batch size in `compute()`**: Must be much smaller than `num_events` so threads check termination frequently. Currently `max(10000, num_events/10)`.
 - **Importance sampling denominator**: The IS estimator is `(1/N) * sum(w_i * I_i)`. Using `sum(w_i)` in the denominator gives intrinsic efficiency (cancels the cone weight), not absolute efficiency.
-- **Source-shield GDML coincident surfaces**: For an extended source (cylinder/box) wrapped by a shield, the shell's subtracted inner solid must be inflated by a tiny epsilon (`Geant4Export.cpp`, `kZeroDimEps = 1e-4 cm`) so its inner face does not coincide with the source-material outer face (or the previous shell). Coincident G4 boolean surfaces stall navigation ("track stuck", ~20k warnings/run) and — critically — **spuriously inflate the crystal electron-entry `--entry-diag` rate ~1.75×** while leaving totals (geometry-robust) unchanged, so they silently corrupt channel-level comparisons. Fixed June 2026; `benchmark_mc_configs` also now exports source-effect box configs (12/20/21/22) with `vacuum_world=true` to match `generate_all_spectra`. A residual ~1.5k warnings/run at `active_crystal_PV` is a separate benign detector artifact present in the validated point-source configs too.
+- **Source-shield GDML coincident surfaces** (historical): for an extended source (cylinder/box) wrapped by a shield, each shell used to be a subtraction solid whose inner solid was inflated by a `kZeroDimEps = 1e-4 cm` epsilon, so its inner face did not coincide with the source-material outer face (or the previous shell). The source region is nested now (Sep 2026), so neither the subtraction nor the epsilon exists. Coincident G4 boolean surfaces stall navigation ("track stuck", ~20k warnings/run) and — critically — **spuriously inflate the crystal electron-entry `--entry-diag` rate ~1.75×** while leaving totals (geometry-robust) unchanged, so they silently corrupt channel-level comparisons. Fixed June 2026; `benchmark_mc_configs` also now exports source-effect box configs (12/20/21/22) with `vacuum_world=true` to match `generate_all_spectra`. A residual ~1.5k warnings/run at `active_crystal_PV` is a separate benign detector artifact present in the validated point-source configs too.

@@ -20,92 +20,92 @@
   "contribution_weighted_total_attenuation": {
     "away_from_edges": {
       "count": 49,
-      "median_percent": 0.09468036587236828,
-      "p95_percent": 0.7172765237063164,
+      "median_percent": 0.10225655594160443,
+      "p95_percent": 0.712338536828721,
       "worst_case": {
         "Z": 26,
-        "difference_percent": 1.6446843157233326,
+        "difference_percent": 1.6581667949777668,
         "energy_keV": 50.0
       },
-      "worst_percent": 1.6446843157233326
+      "worst_percent": 1.6581667949777668
     },
     "away_from_edges_by_material": {
       "Al": {
         "count": 7,
-        "median_percent": 0.09754557050949408,
-        "p95_percent": 0.7687292362033413,
+        "median_percent": 0.10507389781182486,
+        "p95_percent": 0.7681135156149219,
         "worst_case": {
           "Z": 13,
-          "difference_percent": 0.8894205894429019,
+          "difference_percent": 0.8850302101987007,
           "energy_keV": 50.0
         },
-        "worst_percent": 0.8894205894429019
+        "worst_percent": 0.8850302101987007
       },
       "CZT": {
         "count": 7,
-        "median_percent": 0.10198932855767229,
-        "p95_percent": 0.42181453692320825,
+        "median_percent": 0.09851410394812188,
+        "p95_percent": 0.4234068907320052,
         "worst_case": {
           "Z": 48,
-          "difference_percent": 0.5217529045853375,
+          "difference_percent": 0.5241827713033054,
           "energy_keV": 100.0
         },
-        "worst_percent": 0.5217529045853375
+        "worst_percent": 0.5241827713033054
       },
       "CsI": {
         "count": 7,
-        "median_percent": 0.08116532205562077,
-        "p95_percent": 0.38807710163129655,
+        "median_percent": 0.08336824034851364,
+        "p95_percent": 0.3893804003856703,
         "worst_case": {
           "Z": 55,
-          "difference_percent": 0.4593506838378447,
+          "difference_percent": 0.461722649140639,
           "energy_keV": 100.0
         },
-        "worst_percent": 0.4593506838378447
+        "worst_percent": 0.461722649140639
       },
       "Ge": {
         "count": 7,
-        "median_percent": 0.15598141992783088,
-        "p95_percent": 0.7216425447994321,
+        "median_percent": 0.1670110699273364,
+        "p95_percent": 0.7191163923568487,
         "worst_case": {
           "Z": 32,
-          "difference_percent": 0.8476256031203055,
+          "difference_percent": 0.8377757138456676,
           "energy_keV": 20.0
         },
-        "worst_percent": 0.8476256031203055
+        "worst_percent": 0.8377757138456676
       },
       "NaI": {
         "count": 7,
-        "median_percent": 0.08494519455350957,
-        "p95_percent": 0.3998488896042749,
+        "median_percent": 0.08955642621109039,
+        "p95_percent": 0.40472785958685065,
         "worst_case": {
           "Z": 11,
-          "difference_percent": 0.4838398473056227,
+          "difference_percent": 0.49351870059251013,
           "energy_keV": 100.0
         },
-        "worst_percent": 0.4838398473056227
+        "worst_percent": 0.49351870059251013
       },
       "Pb": {
         "count": 7,
-        "median_percent": 0.054849865576356294,
-        "p95_percent": 0.23060771744153324,
+        "median_percent": 0.059609125434967325,
+        "p95_percent": 0.22784482524451194,
         "worst_case": {
           "Z": 82,
-          "difference_percent": 0.25259076611310327,
+          "difference_percent": 0.24519616340281658,
           "energy_keV": 100.0
         },
-        "worst_percent": 0.25259076611310327
+        "worst_percent": 0.24519616340281658
       },
       "SS304": {
         "count": 7,
-        "median_percent": 0.10272828005819523,
-        "p95_percent": 1.283573681015723,
+        "median_percent": 0.14100732906854319,
+        "p95_percent": 1.2922579674015169,
         "worst_case": {
           "Z": 26,
-          "difference_percent": 1.6446843157233326,
+          "difference_percent": 1.6581667949777668,
           "energy_keV": 50.0
         },
-        "worst_percent": 1.6446843157233326
+        "worst_percent": 1.6581667949777668
       }
     },
     "edge_neighborhoods_reported_separately": {
@@ -123,6 +123,10 @@
   },
   "edge_definition": "Both nodes of historical adjacent flank pairs separated by at most 0.05% in energy, plus every historical interpolation interval that contains a greater-than-10% photoelectric rise in either the historical or direct EPICS curve; the full smeared discontinuity interval is reported separately.",
   "historical_baseline_ref": "ab03e48",
+  "historical_comparison_elements": [
+    1,
+    92
+  ],
   "historical_comparison_range_keV": [
     10.0,
     10000.0
@@ -133,25 +137,25 @@
     "compton": {
       "away_from_edges": {
         "count": 4240,
-        "median_percent": 0.035604480533973915,
-        "p95_percent": 0.109545156428662,
+        "median_percent": 0.036462872353248965,
+        "p95_percent": 0.10971263480275548,
         "worst_case": {
-          "Z": 92,
-          "difference_percent": 0.15878503517195997,
-          "energy_keV": 13.39774968
+          "Z": 35,
+          "difference_percent": 0.17246936937580504,
+          "energy_keV": 37.29437784
         },
-        "worst_percent": 0.15878503517195997
+        "worst_percent": 0.17246936937580504
       },
       "edge_neighborhoods_reported_separately": {
         "count": 338,
-        "median_percent": 0.08635905533467825,
-        "p95_percent": 0.16054003180218102,
+        "median_percent": 0.08106818940691873,
+        "p95_percent": 0.1589708719313654,
         "worst_case": {
           "Z": 79,
-          "difference_percent": 0.19294688383315606,
+          "difference_percent": 0.19169430702917767,
           "energy_keV": 11.9169122
         },
-        "worst_percent": 0.19294688383315606
+        "worst_percent": 0.19169430702917767
       },
       "gate_percent": {
         "p95": 0.25,
@@ -162,14 +166,14 @@
     "pair_production": {
       "away_from_edges": {
         "count": 1288,
-        "median_percent": 0.016093087578067378,
-        "p95_percent": 0.041256577066627324,
+        "median_percent": 0.014222654470025242,
+        "p95_percent": 0.040080836812569874,
         "worst_case": {
-          "Z": 1,
-          "difference_percent": 0.06378074453630145,
+          "Z": 3,
+          "difference_percent": 0.056825649489333774,
           "energy_keV": 2591.822914
         },
-        "worst_percent": 0.06378074453630145
+        "worst_percent": 0.056825649489333774
       },
       "edge_neighborhoods_reported_separately": {
         "count": 0,
@@ -187,25 +191,25 @@
     "photoelectric": {
       "away_from_edges": {
         "count": 4240,
-        "median_percent": 0.1680009817856043,
-        "p95_percent": 1.1064525446406361,
+        "median_percent": 0.166773111115881,
+        "p95_percent": 1.1060991441065402,
         "worst_case": {
           "Z": 3,
-          "difference_percent": 3.583050258285636,
+          "difference_percent": 3.575560981892789,
           "energy_keV": 1671.312019
         },
-        "worst_percent": 3.583050258285636
+        "worst_percent": 3.575560981892789
       },
       "edge_neighborhoods_reported_separately": {
         "count": 338,
-        "median_percent": 0.0057600564701831836,
-        "p95_percent": 0.10635099884506685,
+        "median_percent": 0.0064597992123660575,
+        "p95_percent": 0.10482120163432379,
         "worst_case": {
-          "Z": 33,
-          "difference_percent": 1.0709199447798468,
-          "energy_keV": 13.39774968
+          "Z": 31,
+          "difference_percent": 1.1031874067742864,
+          "energy_keV": 11.57486487
         },
-        "worst_percent": 1.0709199447798468
+        "worst_percent": 1.1031874067742864
       },
       "gate_percent": {
         "p95": 1.25,
@@ -216,25 +220,25 @@
     "rayleigh": {
       "away_from_edges": {
         "count": 4240,
-        "median_percent": 0.2504165993548191,
-        "p95_percent": 0.6348807841685807,
+        "median_percent": 0.2456337524028407,
+        "p95_percent": 0.6357297573897488,
         "worst_case": {
           "Z": 92,
-          "difference_percent": 6.036476149182457,
+          "difference_percent": 6.035470540072807,
           "energy_keV": 600.40739
         },
-        "worst_percent": 6.036476149182457
+        "worst_percent": 6.035470540072807
       },
       "edge_neighborhoods_reported_separately": {
         "count": 338,
-        "median_percent": 0.03739450371466613,
-        "p95_percent": 0.16585798736958338,
+        "median_percent": 0.036286958842068895,
+        "p95_percent": 0.16197983175452382,
         "worst_case": {
           "Z": 39,
-          "difference_percent": 0.52264849296908,
+          "difference_percent": 0.5339155501319803,
           "energy_keV": 17.94996964
         },
-        "worst_percent": 0.52264849296908
+        "worst_percent": 0.5339155501319803
       },
       "gate_percent": {
         "p95": 0.75,
@@ -243,10 +247,14 @@
       "passed": true
     }
   },
+  "runtime_photon_elements": [
+    1,
+    98
+  ],
   "runtime_photon_range_keV": [
     10.0,
-    10000.0
+    20000.0
   ],
   "schema_version": 1,
-  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad"
+  "source_lock_sha256": "3efabdacdc1e88e33a82ce69e4e6734cbaa482287db8a586760f2d04fdc7ce9a"
 }

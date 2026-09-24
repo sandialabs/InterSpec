@@ -425,11 +425,11 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_components_sum_to_eval) {
             for (const double E : {45.0, 100.0, 662.0}) {
                 const SigmaTransferModel::Components c = m.components(d_over_a, ct, E);
                 const double sum = std::sqrt(c.far_onaxis * c.far_onaxis + c.offaxis * c.offaxis +
-                                             c.near * c.near);
+                                             c.near_field * c.near_field);
                 BOOST_CHECK_CLOSE(m.eval(d_over_a, ct, E), sum, 1e-12);
                 BOOST_CHECK_EQUAL(c.far_onaxis, m.far_onaxis);
                 if (ct == 1.0) BOOST_CHECK_EQUAL(c.offaxis, 0.0);
-                if (d_over_a >= m.near_gate_a) BOOST_CHECK_EQUAL(c.near, 0.0);
+                if (d_over_a >= m.near_gate_a) BOOST_CHECK_EQUAL(c.near_field, 0.0);
             }
         }
     }
@@ -655,7 +655,7 @@ BOOST_AUTO_TEST_CASE(frac_covariance_common_modes_are_rank_one) {
         const double floor = r->floors.fep_far;
         const double expected = floor * floor + model_sigma::behind_plane * model_sigma::behind_plane +
                                 c0.far_onaxis * c1.far_onaxis + c0.offaxis * c1.offaxis +
-                                c0.near * c1.near;
+                                c0.near_field * c1.near_field;
         BOOST_CHECK_CLOSE(C[1], expected, 1e-9);
         BOOST_CHECK_LT(C[1], std::sqrt(C[0] * C[3]));   // not one combined block
     }

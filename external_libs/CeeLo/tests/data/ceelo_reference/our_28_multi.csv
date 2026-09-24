@@ -1,5 +1,9 @@
 # CeeLo simulation results
+# Regenerated 2026-09-22 on main @69bc080, --precision 0.003 (binds FEP and total).
+# FEP window: 0.75 keV half-width (--fep-window 0.75), matching the paired GEANT4
+#   reference; every OTHER config here is scored at the pinned 1.5 keV.  The rows
+#   these replace (21d883e) had been scored at 1.5 keV by mistake.
 energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
-60.0000,2.177362e-04,6.530366e-07,2.426575e-04,6.987041e-07,190710000
-88.0000,3.118596e-03,9.313330e-06,3.954358e-03,1.149877e-05,8370000
-122.0000,6.291087e-03,1.753193e-05,9.021213e-03,2.659359e-05,3050000
+60.0000,2.105617e-04,6.315858e-07,2.419392e-04,6.861231e-07,195700000
+88.0000,3.052226e-03,9.110615e-06,3.936821e-03,1.128227e-05,8440000
+122.0000,6.259816e-03,1.762820e-05,9.042469e-03,2.668741e-05,3060000

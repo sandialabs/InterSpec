@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "cross_sections/CrossSectionData.h"
+
 #include <cstdint>
 
 namespace ceelo {
@@ -63,9 +65,15 @@ struct PhotonEpicsElementData {
 static_assert(sizeof(PhotonEpicsElementData) == 68,
               "Per-element photon descriptors must remain compact");
 
-extern const PhotonEpicsElementData g_photon_epics_data[92];
+/// Hand-maintained declarations of the generated tables. The generated
+/// photon_epics_data.cpp static_asserts every constant below against what it
+/// emitted, so a stale header fails to compile rather than misreading data.
+extern const PhotonEpicsElementData g_photon_epics_data[kMaxZ];
 inline constexpr uint16_t kRayleighXsElementsPerGroup = 4;
-inline constexpr uint16_t kRayleighXsGroups = 23;
+/// ceil(kMaxZ / 4); the last group is short when kMaxZ is not a multiple of 4
+/// (Z 97-98 at kMaxZ = 98). Runtime group/lane indexing handles a short group.
+inline constexpr uint16_t kRayleighXsGroups = static_cast<uint16_t>(
+    (kMaxZ + kRayleighXsElementsPerGroup - 1) / kRayleighXsElementsPerGroup);
 extern const float g_rayleigh_log_energy[];
 extern const uint16_t g_rayleigh_log_value_q[];
 extern const uint16_t g_rayleigh_group_grid_offset[kRayleighXsGroups + 1];
@@ -84,6 +92,6 @@ inline constexpr float kRayleighSamplingLogXMin = -3.0f;
 inline constexpr float kRayleighSamplingLogXMax = 4.0f;
 extern const float g_rayleigh_sampling_x[kRayleighSamplingNodes];
 extern const uint16_t
-    g_rayleigh_sampling_cdf_q[92][kRayleighSamplingNodes];
+    g_rayleigh_sampling_cdf_q[kMaxZ][kRayleighSamplingNodes];
 
 } // namespace ceelo
