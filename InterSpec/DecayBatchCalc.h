@@ -66,7 +66,10 @@ namespace DecayBatchCalc
     /** The nuclide string as entered/resolved (e.g. "U238"). */
     std::string nuclide_str;
 
-    /** Initial age of the nuclide, in SandiaDecay time units (seconds). */
+    /** Age of the nuclide at the measurement - time zero of the output - in SandiaDecay time units
+     (seconds); i.e. how long its progeny have been growing in.  See #decay for how it is used when
+     decaying backwards.
+     */
     double age = 0.0;
 
     /** Initial activity, in SandiaDecay activity units (becquerel). */
@@ -115,8 +118,8 @@ namespace DecayBatchCalc
 
      A *negative* value decays backwards in time: the inputs are taken as present-day measurements
      and the activities they must have had `|time_span|` ago are solved for.  See #decay for the
-     caveats this brings (inputs that share an ancestor are coupled, and some past activities are
-     not recoverable at all).
+     caveats this brings (inputs decayed together that share an ancestor are coupled, and some past
+     activities are not recoverable at all).
      */
     double time_span = 0.0;
 
@@ -193,17 +196,24 @@ namespace DecayBatchCalc
    from different locations are never combined.
 
    A negative `opts.time_span` decays backwards in time, solving for the activities the inputs must
-   have had `|time_span|` ago.  Because inputs that share an ancestor are coupled (e.g. Cs137 and its
-   Ba137m progeny), this is a coupled inverse problem rather than a per-nuclide division, and two
-   things follow: a short-lived nuclide's own past activity may be *unrecoverable* (nothing observable
-   today depends on it), in which case it is reported as zero if an ancestor among the inputs accounts
-   for the measurement and throws if none does; and if the inputs are not mutually consistent with
-   having decayed from a common past state, the recovered state cannot reproduce them exactly - which
-   is noted in `warnings`.
+   have had `|time_span|` ago.  Because inputs decayed together (mixed, or of one location) that share
+   an ancestor are coupled (e.g. Cs137 and its Ba137m progeny), this is a coupled inverse problem
+   rather than a per-nuclide division, and two things follow: a short-lived nuclide's own past
+   activity may be *unrecoverable* (nothing observable today depends on it), in which case it is
+   reported as zero if an ancestor decayed with it accounts for the measurement and throws if none
+   does; and if the inputs are not mutually consistent with having decayed from a common past state,
+   the recovered state cannot reproduce them exactly - which is noted in `warnings`.
 
-   Throws std::runtime_error on invalid options (e.g. no valid inputs, zero time span), and when a
-   measured nuclide is so many half-lives old that its past activity cannot be recovered at all (the
-   message names the nuclide and asks for a shorter time).
+   An input's `age` is its age at the measurement, so looking back `|time_span|` its mixture is seeded
+   `|time_span|` younger.  A (non-zero) age shorter than that is taken as freshly made at the past
+   time, with a note in `warnings`; an age of zero (none given) means the same, without the note.
+   Rows of one nuclide decayed together are one quantity, so their past activity is solved for once
+   and shared among them in proportion to their measured activities.
+
+   Throws std::runtime_error on invalid options (e.g. no valid inputs, zero time span), on an input
+   activity that is negative or not finite, or an age over 500 half-lives of its nuclide (which
+   cannot be computed), and when a measured nuclide is so many half-lives old that its past activity
+   cannot be recovered at all (the message names the nuclide and asks for a shorter time).
    Individual invalid/stable inputs are reported in `BatchDecayResult::warnings` rather than throwing.
    */
   BatchDecayResult decay( const std::vector<BatchNuclide> &inputs,
@@ -245,11 +255,29 @@ namespace DecayBatchCalc
      - Simple: each line is "nuclide, activity[units]" (comma or tab delimited).  Lines beginning
        with '#' and blank lines are ignored.  Units on the activity are optional (default becquerel).
 
+   An activity must be a non-negative number; in the column-keyed formats the Value cell holds just
+   the number, with any unit in the Unit column.  A cell may be double-quoted (so it can hold the
+   delimiter; the quotes are dropped), but may not span lines.  A column-keyed file is tab separated
+   if its header line holds a tab, and comma separated otherwise.
+
+   A leading UTF-8 byte-order mark (as spreadsheet "CSV UTF-8" exports write) is ignored.
    Note `BatchNuclide::age` is not set by any of these formats.
 
    Throws std::runtime_error with a human-readable message on malformed input.
    */
   std::vector<BatchNuclide> parse_csv( const std::string &file_contents );
+
+
+  /** Whether some text looks like a batch-decay input file: #parse_csv accepts it, it holds at least
+   one unstable nuclide, and it says what it is - it is in one of the column-keyed formats, or gives
+   at least one activity with a unit (a bare "nuclide, number" list could as well be nuclides and
+   gamma energies).
+
+   Used to recognize these files when dropped on the main window, where only the start of the file may
+   be at hand: with `is_whole_file` false, a trailing partial line is ignored (and text with no line
+   end at all is rejected).  Text containing a NUL byte is rejected.
+   */
+  bool is_candidate_file( const std::string &start_of_file, const bool is_whole_file );
 
 }//namespace DecayBatchCalc
 

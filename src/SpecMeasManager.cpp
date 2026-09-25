@@ -129,6 +129,7 @@
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/DecayBatchCalc.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/WarningWidget.h"
@@ -147,6 +148,7 @@
 #include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/DecayBatchCalcWidget.h"
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include "InterSpec/DbFileBrowser.h"
@@ -204,6 +206,12 @@ SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
 namespace
 {
+  /** Largest file recognized as Batch Decay input when dropped on the app.  Every input becomes a row
+   of widgets, so this bounds the work; it is ~10x the largest real file seen (1400 rows, 110 kB).
+   */
+  const size_t sm_max_batch_decay_file_size = 1024 * 1024;
+
+
   /** Makes `target` a drag-n-drop (and click-to-pick) area for the ONE file a companion-file
    dialog is asking for - the Efficiency.csv a Detector.dat came without, or vice-versa.
 
@@ -2510,6 +2518,16 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
       result.candidates.push_back( NonSpecFileKind::SourceLib );
   }
 
+  // --- Batch Decay nuclide/activity list.  Last, as the loosest pattern - a lone "Cs137, 1 uCi" line
+  //  qualifies - but every complete line of the header must parse, and the handler then requires the
+  //  same of the whole file.
+  if( (fileSize <= sm_max_batch_decay_file_size)
+     && DecayBatchCalc::is_candidate_file( string( (const char *)header, headerLen ),
+                                           (headerLen >= fileSize) ) )
+  {
+    result.candidates.push_back( NonSpecFileKind::BatchDecayCsv );
+  }
+
   return result;
 }
 
@@ -2534,6 +2552,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 
   if( filesize <= 128 )
   {
+    // Too short for anything else, but a hand-written batch-decay list can be ("Cs137, 1 uCi").
+    if( tryOpenBatchDecayCsv( infile, filesize ) )
+      return true;
+
     passMessage( WString::tr("smm-empty-file"), 2 );
     return true;
   }
@@ -2665,6 +2687,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/false,
             [this, &infile]( SimpleDialog *d ){ return handleSourceLibFile( infile, d ); } );
         }
+        break;
+
+      case NonSpecFileKind::BatchDecayCsv:
+        handled = tryOpenBatchDecayCsv( infile, filesize );
         break;
 
 #if( USE_LLM_INTERFACE )
@@ -3150,6 +3176,37 @@ bool SpecMeasManager::tryLoadSingleDrf( const NonSpecFileKind kind,
 
   return true;
 }//tryLoadSingleDrf(...)
+
+
+bool SpecMeasManager::tryOpenBatchDecayCsv( std::ifstream &infile, const size_t fileSize )
+{
+  if( (fileSize == 0) || (fileSize > sm_max_batch_decay_file_size) )
+    return false;
+
+  string contents( fileSize, '\0' );
+  if( !infile.read( &(contents[0]), static_cast<std::streamsize>(fileSize) ) )
+    return false;
+
+  // The classifier only saw the start of the file; all of it has to parse.
+  if( !DecayBatchCalc::is_candidate_file( contents, true ) )
+    return false;
+
+  DecayBatchCalcWindow * const window = m_viewer->createDecayBatchCalcWindow();
+  if( !window )
+    return false;
+
+  try
+  {
+    window->loadCsvContents( contents );
+  }catch( std::exception &e )
+  {
+    // Not expected, since `contents` just parsed - but nothing may throw out of the drop handler.
+    assert( 0 );
+    passMessage( WString::fromUTF8( e.what() ), WarningWidget::WarningMsgHigh );
+  }
+
+  return true;
+}//tryOpenBatchDecayCsv(...)
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,

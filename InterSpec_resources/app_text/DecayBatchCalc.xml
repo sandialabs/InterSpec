@@ -10,7 +10,7 @@
   <message id="dbc-add-nuc-tt">Add another initial nuclide.</message>
 
   <message id="dbc-decay-time">Decay time:</message>
-  <message id="dbc-decay-time-tt">The time to decay to.  Units of s, m, h, d, y, or half-lives (e.g. "2 HL") are accepted.  A negative time (e.g. "-48h") looks backwards instead, solving for the activities the inputs must have had that long ago.</message>
+  <message id="dbc-decay-time-tt">The time to decay to.  Units of s, m, h, d, or y are accepted.  A negative time (e.g. "-48h") looks backwards instead, solving for the activities the inputs must have had that long ago.</message>
   <message id="dbc-num-steps">Steps:</message>
   <message id="dbc-num-steps-tt">Number of time points to evaluate, from time zero to the decay time.  A value of 1 evaluates only at the decay time.</message>
   <message id="dbc-activity-units">Activity units:</message>

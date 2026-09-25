@@ -110,6 +110,9 @@ public:
   void setUnitLabel( const std::string &label );
   std::string unitLabel() const;
 
+  /** Puts the keyboard cursor in the nuclide edit. */
+  void focusNuclideEdit();
+
   /** Emitted when any of the row inputs change. */
   Wt::Signal<> &changed();
 
@@ -228,8 +231,12 @@ public:
   /** CSV text of the most recently computed result (used by the download resource). */
   std::string currentResultCsv() const;
 
+  /** Replaces all rows with the contents of a batch-decay CSV (see `DecayBatchCalc::parse_csv`).
+   Throws std::runtime_error, leaving the rows untouched, if the text is not valid input. */
+  void loadCsvContents( const std::string &contents );
+
 protected:
-  void addEmptyNuclideRow();
+  DecayBatchCalcNuclide *addEmptyNuclideRow();
   void handleRemoveRow( DecayBatchCalcNuclide *row );
   void scheduleResultUpdate();
   void updateResult();
@@ -286,7 +293,6 @@ protected:
   DecayBatchCalc::BatchDecayOptions gatherOptions() const;
 
   void handleFileDrop( const std::string &display_name, const std::string &spool_name );
-  void loadCsvContents( const std::string &contents );
 
   void tableCopiedToClipboardCallback( const int copied );
   void updateCopyToClipboardText();
@@ -360,6 +366,9 @@ public:
   void handleAppUrl( const std::string &url );
   void handleAppUrl( const std::string &path, const std::string &query_str );
   std::string encodeStateToUrl() const;
+
+  /** See `DecayBatchCalcWidget::loadCsvContents`; throws on invalid input. */
+  void loadCsvContents( const std::string &contents );
 
 protected:
   DecayBatchCalcWindow( InterSpec *viewer );
