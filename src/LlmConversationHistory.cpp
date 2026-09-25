@@ -448,6 +448,16 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteractio
 
           for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
           {
+            // Only benchmark questions set a caption, so pasted/uploaded images produce the
+            //  exact same payload as before.
+            if( !img.caption.empty() )
+            {
+              json captionBlock;
+              captionBlock["type"] = "text";
+              captionBlock["text"] = img.caption;
+              contentArray.push_back( captionBlock );
+            }
+
             json imageBlock;
             imageBlock["type"] = "image_url";
             imageBlock["image_url"] = {

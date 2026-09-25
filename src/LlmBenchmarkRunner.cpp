@@ -36,6 +36,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <algorithm>
 #include <functional>
 
+#include <Wt/Utils.h>
 #include <Wt/WText.h>
 #include <Wt/WTable.h>
 #include <Wt/WLabel.h>
@@ -84,6 +85,47 @@ namespace
 
     return iso;
   }//startTimeString
+
+
+  /** Guess an image's MIME type from its leading bytes, falling back to its file extension.
+
+   Deliberately does not recognize SVG: no LLM vision endpoint accepts it, so a benchmark that
+   references one should fail loudly rather than have the request rejected by the provider.
+   @returns The MIME type, or an empty string if not recognized.
+   */
+  string image_mime_type( const vector<char> &data, const string &path )
+  {
+    const size_t n = data.size();
+    const unsigned char * const d = reinterpret_cast<const unsigned char *>( data.data() );
+
+    if( (n >= 8) && (d[0]==0x89) && (d[1]=='P') && (d[2]=='N') && (d[3]=='G')
+        && (d[4]==0x0D) && (d[5]==0x0A) && (d[6]==0x1A) && (d[7]==0x0A) )
+      return "image/png";
+
+    if( (n >= 3) && (d[0]==0xFF) && (d[1]==0xD8) && (d[2]==0xFF) )
+      return "image/jpeg";
+
+    if( (n >= 6) && (d[0]=='G') && (d[1]=='I') && (d[2]=='F') && (d[3]=='8') )
+      return "image/gif";
+
+    if( (n >= 2) && (d[0]=='B') && (d[1]=='M') )
+      return "image/bmp";
+
+    // "RIFF" ... "WEBP"
+    if( (n >= 12) && (d[0]=='R') && (d[1]=='I') && (d[2]=='F') && (d[3]=='F')
+        && (d[8]=='W') && (d[9]=='E') && (d[10]=='B') && (d[11]=='P') )
+      return "image/webp";
+
+    const string ext = SpecUtils::file_extension( path );  // includes the leading '.'
+    if( SpecUtils::iequals_ascii( ext, ".png" ) )  return "image/png";
+    if( SpecUtils::iequals_ascii( ext, ".jpg" )
+        || SpecUtils::iequals_ascii( ext, ".jpeg" ) ) return "image/jpeg";
+    if( SpecUtils::iequals_ascii( ext, ".gif" ) )  return "image/gif";
+    if( SpecUtils::iequals_ascii( ext, ".bmp" ) )  return "image/bmp";
+    if( SpecUtils::iequals_ascii( ext, ".webp" ) ) return "image/webp";
+
+    return string();
+  }//image_mime_type
 }//namespace
 
 
@@ -210,9 +252,12 @@ const BenchmarkQuestion *LlmBenchmarkRunner::currentQuestion() const
 
 // ---- XML Parsing ----
 
-vector<BenchmarkProblem> LlmBenchmarkRunner::parseXml( const string &xmlPath )
+vector<BenchmarkProblem> LlmBenchmarkRunner::parseXml( const string &xmlPath, bool *grade )
 {
   vector<BenchmarkProblem> problems;
+
+  if( grade )
+    *grade = true;  // Benchmarks are graded unless they say otherwise
 
   const string xmlDir = SpecUtils::parent_path( xmlPath );
 
@@ -228,6 +273,14 @@ vector<BenchmarkProblem> LlmBenchmarkRunner::parseXml( const string &xmlPath )
   const rapidxml::xml_node<char> *root = XML_FIRST_NODE( &doc, "LlmBenchmark" );
   if( !root )
     throw runtime_error( "LlmBenchmarkRunner::parseXml: Missing <LlmBenchmark> root element in " + xmlPath );
+
+  // Optional grade="false" for problem sets with no answer key - see LlmBenchmarkRunner::m_grade
+  const rapidxml::xml_attribute<char> *gradeAttr = XML_FIRST_ATTRIB( root, "grade" );
+  if( grade && gradeAttr )
+  {
+    const string gradeStr = SpecUtils::xml_value_str( gradeAttr );
+    *grade = !(SpecUtils::iequals_ascii( gradeStr, "false" ) || (gradeStr == "0"));
+  }
 
   for( const rapidxml::xml_node<char> *problemNode = XML_FIRST_NODE( root, "Problem" );
        problemNode;
@@ -354,9 +407,67 @@ vector<BenchmarkProblem> LlmBenchmarkRunner::parseXml( const string &xmlPath )
       if( promptNode )
         question.prompt = SpecUtils::xml_value_str( promptNode );
 
-      const rapidxml::xml_node<char> *imageNode = XML_FIRST_NODE( qNode, "Image" );
-      if( imageNode )
-        question.imagePath = SpecUtils::xml_value_str( imageNode );
+      // Parse any <Image> elements to send along with the prompt.  The data is either inline
+      //  base64 (encoding="base64", or a data: URL - keeps a benchmark self-contained), or a
+      //  file path, from a `src` attribute or the element text.
+      for( const rapidxml::xml_node<char> *imageNode = XML_FIRST_NODE( qNode, "Image" );
+           imageNode;
+           imageNode = XML_NEXT_TWIN( imageNode ) )
+      {
+        BenchmarkImage image;
+
+        const rapidxml::xml_attribute<char> *capAttr = XML_FIRST_ATTRIB( imageNode, "caption" );
+        if( capAttr )
+          image.caption = SpecUtils::xml_value_str( capAttr );
+
+        const rapidxml::xml_attribute<char> *mimeAttr = XML_FIRST_ATTRIB( imageNode, "mimeType" );
+        if( mimeAttr )
+          image.mimeType = SpecUtils::xml_value_str( mimeAttr );
+
+        const rapidxml::xml_attribute<char> *srcAttr = XML_FIRST_ATTRIB( imageNode, "src" );
+        if( srcAttr )
+        {
+          image.filePath = SpecUtils::xml_value_str( srcAttr );
+          SpecUtils::trim( image.filePath );
+        }else
+        {
+          string value = SpecUtils::xml_value_str( imageNode );
+
+          const rapidxml::xml_attribute<char> *encAttr = XML_FIRST_ATTRIB( imageNode, "encoding" );
+          const string encoding = encAttr ? SpecUtils::xml_value_str( encAttr ) : string();
+          bool isBase64 = SpecUtils::iequals_ascii( encoding, "base64" );
+
+          // Tolerate a pasted data-URL prefix, and take the MIME type from it if we dont have one
+          if( SpecUtils::istarts_with( value, "data:" ) )
+          {
+            const size_t comma = value.find( ',' );
+            if( comma != string::npos )
+            {
+              const string header = value.substr( 5, comma - 5 );  // e.g. "image/png;base64"
+              const size_t semi = header.find( ';' );
+              if( image.mimeType.empty() )
+                image.mimeType = header.substr( 0, semi );  // npos -> whole header
+              value = value.substr( comma + 1 );
+              isBase64 = true;
+            }
+          }//if( a data: URL )
+
+          if( isBase64 )
+          {
+            // rapidxml only trims the ends of a text node, so a pretty-printed blob still has its
+            //  newlines and indentation - and the data goes onto the wire verbatim.
+            image.base64Data = std::move( value );
+            SpecUtils::erase_any_character( image.base64Data, " \t\r\n" );
+          }else
+          {
+            image.filePath = std::move( value );
+            SpecUtils::trim( image.filePath );
+          }
+        }//if( src attribute ) / else
+
+        if( !image.base64Data.empty() || !image.filePath.empty() )
+          question.images.push_back( std::move( image ) );
+      }//for each Image
 
       const rapidxml::xml_node<char> *judgNode = XML_FIRST_NODE( qNode, "Judgement" );
       if( judgNode )
@@ -553,6 +664,12 @@ void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
     return;
   }
 
+  // Reset per-run state, so a second benchmark in this session cannot inherit the first's
+  //  grading mode (both runFresh() and runResume() set m_grade from the XML, but they bail out
+  //  early if it fails to parse).
+  m_grade = true;
+  m_warnedNoImageSupport = false;
+
   // Look for interrupted runs of this same benchmark (matched by base name and
   //  a hash of the XML contents) and offer to resume before starting fresh.
   const string base = benchmarkBaseName( xmlFilePath );
@@ -578,7 +695,7 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
 
   try
   {
-    m_problems = parseXml( xmlFilePath );
+    m_problems = parseXml( xmlFilePath, &m_grade );
   }catch( const exception &e )
   {
     logError( "Failed to parse benchmark XML: " + string( e.what() ) );
@@ -586,11 +703,14 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
   }
 
   log( "Parsed " + to_string( m_problems.size() ) + " problems" );
+  if( !m_grade )
+    log( "Benchmark specifies grade=\"false\" - answers will be recorded, but not judged" );
 
   // Initialize results
   m_results = BenchmarkResults();
   m_results.benchmarkFilePath = xmlFilePath;
   m_results.startTime = chrono::system_clock::now();
+  m_results.graded = m_grade;
 
   // Get benchmark name from XML (look for Name element)
   // We already parsed it, but the name isn't in BenchmarkProblem - parse again quickly
@@ -647,8 +767,9 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
       this, &LlmBenchmarkRunner::handleResponseError );
   }
 
-  // Create judge interface
-  createJudgeInterface();
+  // Create judge interface (nothing to judge when the benchmark asked not to be graded)
+  if( m_grade )
+    createJudgeInterface();
 
   // Set up the in-progress checkpoint file so partial results survive an
   //  interruption and can be resumed.  The filename embeds the start time and a
@@ -685,12 +806,15 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
 
   try
   {
-    m_problems = parseXml( xmlFilePath );
+    m_problems = parseXml( xmlFilePath, &m_grade );
   }catch( const exception &e )
   {
     logError( "Failed to parse benchmark XML: " + string( e.what() ) );
     return;
   }
+
+  if( !m_grade )
+    log( "Benchmark specifies grade=\"false\" - answers will be recorded, but not judged" );
 
   // Load the saved results and the problem index to resume at.
   size_t resumeProblemIndex = 0;
@@ -702,6 +826,9 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
   }
 
   m_results.benchmarkFilePath = xmlFilePath;
+
+  // The XML is authoritative for the grading mode, not whatever the checkpoint recorded.
+  m_results.graded = m_grade;
 
   // Refresh the model name from the current config (the run may resume against a
   //  different model than it started with).
@@ -759,7 +886,8 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
       this, &LlmBenchmarkRunner::handleResponseError );
   }
 
-  createJudgeInterface();
+  if( m_grade )
+    createJudgeInterface();
 
   // Keep writing to the same checkpoint file so we don't create a duplicate.
   m_inProgressPath = inProgressPath;
@@ -989,7 +1117,9 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
         result.prompt = q.prompt;
         result.hadError = true;
         result.errorMessage = "Failed to load spectrum file: " + sf.filePath;
-        if( q.judgement.has_value() )
+        for( const BenchmarkImage &image : q.images )
+          result.imageCaptions.push_back( image.caption );
+        if( m_grade && q.judgement.has_value() )
         {
           result.graded = true;
           result.expectedAnswer = q.judgement->expectedAnswer;
@@ -1176,6 +1306,73 @@ bool LlmBenchmarkRunner::retryCurrentQuestionOnError( const string &why )
 }//retryCurrentQuestionOnError()
 
 
+bool LlmBenchmarkRunner::stageQuestionImages( const BenchmarkQuestion &question )
+{
+  if( !m_toolGui )
+    return question.images.empty();
+
+  // Never inherit images from a previous attempt: sendMessage() only drains the staging area
+  //  after its "request already pending" early-return, so an errored-out attempt can leave them.
+  m_toolGui->clearStagedImages();
+
+  if( question.images.empty() )
+    return true;
+
+  if( !m_toolGui->canAcceptImages() )
+  {
+    if( !m_warnedNoImageSupport )
+    {
+      logError( "Active model does not accept image input (needs supportsImages=\"true\" on the"
+                " <Model> in llm_config.xml) - image questions will be recorded as skipped." );
+      m_warnedNoImageSupport = true;
+    }
+    return false;
+  }//if( model cannot take images )
+
+  for( const BenchmarkImage &image : question.images )
+  {
+    string base64 = image.base64Data;
+    string mime = image.mimeType;
+
+    if( base64.empty() )
+    {
+      const string fullPath = resolvePath( image.filePath );
+
+      vector<char> data;
+      try
+      {
+        SpecUtils::load_file_data( fullPath.c_str(), data );
+      }catch( const std::exception &e )
+      {
+        logError( "Failed to read question image '" + fullPath + "': " + string( e.what() ) );
+        return false;
+      }
+
+      if( mime.empty() )
+        mime = image_mime_type( data, fullPath );
+
+      // base64Encode() inserts a CRLF every 76 characters unless told not to, but the data goes
+      //  into the request body verbatim, so we need one unbroken string.
+      base64 = Wt::Utils::base64Encode( string( data.begin(), data.end() ), false );
+    }//if( no inline data )
+
+    if( base64.empty() || mime.empty() )
+    {
+      logError( "Question image has no usable data or MIME type (caption='" + image.caption
+                + "', path='" + image.filePath + "')" );
+      return false;
+    }
+
+    // widthPx/heightPx only size the GUI thumbnail and are never sent, so 0 is fine.  The
+    //  displayName labels the thumbnail; the caption is what the LLM sees.
+    const string label = image.caption.empty() ? string( "Benchmark image" ) : image.caption;
+    m_toolGui->stageImage( base64, mime, label, 0, 0, image.caption );
+  }//for( const BenchmarkImage &image : question.images )
+
+  return true;
+}//stageQuestionImages( const BenchmarkQuestion & )
+
+
 void LlmBenchmarkRunner::sendCurrentQuestion()
 {
   const BenchmarkQuestion *question = currentQuestion();
@@ -1223,7 +1420,22 @@ void LlmBenchmarkRunner::sendCurrentQuestion()
   log( "Sending question part " + to_string( question->part ) + ": "
        + (prompt.size() > 100 ? prompt.substr( 0, 100 ) + "..." : prompt) );
 
-  // TODO: handle question->imagePath for image questions (sendUserMessageWithImage)
+  // Stage images per attempt rather than per problem: retryCurrentQuestionOnError() re-enters
+  //  this function, and submitting a message consumes the staged images, so re-staging here is
+  //  what makes a retry send them again - exactly once each.
+  if( !stageQuestionImages( *question ) )
+  {
+    BenchmarkQuestionResult result;
+    result.problemId = problem->id;
+    result.questionPart = question->part;
+    result.prompt = question->prompt;
+    result.llmAnswer = "[SKIPPED] Question requires image input, which is unavailable";
+    result.graded = false;
+    result.duration = chrono::milliseconds( 0 );
+    recordResult( std::move( result ) );
+    return;
+  }//if( could not stage this questions images )
+
   m_toolGui->submitMessageAsUser( prompt );
 }
 
@@ -1308,7 +1520,7 @@ void LlmBenchmarkRunner::handleResponseError()
                           + " retries)";
     const auto now = chrono::system_clock::now();
     result.duration = chrono::duration_cast<chrono::milliseconds>( now - m_questionStartTime );
-    if( question->judgement.has_value() )
+    if( m_grade && question->judgement.has_value() )
     {
       result.graded = true;
       result.expectedAnswer = question->judgement->expectedAnswer;
@@ -1399,7 +1611,7 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
     result.errorMessage = "Empty answer from model (after " + to_string( m_currentQuestionRetries )
                           + " retries)";
     result.duration = duration;
-    if( question->judgement.has_value() )
+    if( m_grade && question->judgement.has_value() )
     {
       result.graded = true;
       result.expectedAnswer = question->judgement->expectedAnswer;
@@ -1408,9 +1620,10 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
     return;
   }//if( empty answer )
 
-  if( !question->judgement.has_value() )
+  // Either this question has nothing to grade against, or the whole benchmark asked not to be
+  //  graded (grade="false"); either way just record the answer.
+  if( !m_grade || !question->judgement.has_value() )
   {
-    // Ungraded question - just record the answer
     BenchmarkQuestionResult result;
     result.problemId = problem->id;
     result.questionPart = question->part;
@@ -1694,6 +1907,19 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   result.errorRetries = m_currentQuestionRetries;
   m_currentQuestionRetries = 0;
 
+  // Note which images the question was given, so the results JSON reads as a transcript.  We are
+  //  still on the question being recorded here: the advance to the next one is at the end of this
+  //  function.  Only the captions - not the image data - so checkpoints stay small.
+  if( result.imageCaptions.empty() )
+  {
+    const BenchmarkQuestion * const question = currentQuestion();
+    if( question )
+    {
+      for( const BenchmarkImage &image : question->images )
+        result.imageCaptions.push_back( image.caption );
+    }
+  }//if( captions not already set )
+
   // Apply token usage captured for this question (in extractAnswerAndJudge), then
   //  clear it so the next question doesn't inherit stale counts.  Skipped or
   //  spectrum-load-error results never set these, so they stay nullopt.
@@ -1928,6 +2154,9 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
   j["benchmarkName"] = results.benchmarkName;
   j["modelName"] = results.modelName;
   j["benchmarkFile"] = results.benchmarkFilePath;
+  // Carried explicitly: a reader cannot tell an intentionally ungraded run from one where every
+  //  question errored, since both give gradedQuestions == 0.
+  j["graded"] = results.graded;
   j["resumeProblemIndex"] = resumeProblemIndex;
   j["totalExpectedQuestions"] = totalExpected;
 
@@ -1964,6 +2193,9 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     qj["problemId"] = r.problemId;
     qj["questionPart"] = r.questionPart;
     qj["prompt"] = r.prompt;
+    // Captions of any images sent with the prompt - never the image data itself
+    qj["imageCaptions"] = r.imageCaptions;
+    qj["numImages"] = r.imageCaptions.size();
     qj["llmAnswer"] = r.llmAnswer;
     qj["expectedAnswer"] = r.expectedAnswer;
     qj["graded"] = r.graded;
@@ -2044,6 +2276,7 @@ bool LlmBenchmarkRunner::resultsFromJson( const string &path,
     out.benchmarkName = j.value( "benchmarkName", string() );
     out.modelName = j.value( "modelName", string() );
     out.benchmarkFilePath = j.value( "benchmarkFile", string() );
+    out.graded = j.value( "graded", true );  // Checkpoints from before this field was added
     resumeProblemIndex = j.value( "resumeProblemIndex", size_t( 0 ) );
     totalExpected = j.value( "totalExpectedQuestions", size_t( 0 ) );
 
@@ -2073,6 +2306,8 @@ bool LlmBenchmarkRunner::resultsFromJson( const string &path,
         r.problemId = qj.value( "problemId", string() );
         r.questionPart = qj.value( "questionPart", 0 );
         r.prompt = qj.value( "prompt", string() );
+        if( qj.contains( "imageCaptions" ) && qj["imageCaptions"].is_array() )
+          r.imageCaptions = qj["imageCaptions"].get<vector<string>>();
         r.llmAnswer = qj.value( "llmAnswer", string() );
         r.expectedAnswer = qj.value( "expectedAnswer", string() );
         r.graded = qj.value( "graded", false );
@@ -2183,11 +2418,21 @@ void LlmBenchmarkRunner::showResultsDialog()
   if( m_results.errorCount > 0 )
     summaryHtml += "Errors: " + to_string( m_results.errorCount ) + "<br/>";
 
+  // With nothing graded, a Score column of all "-" tells the reader nothing; show the start of
+  //  each answer instead, so the table is a usable index into the JSON.
+  const bool showAnswers = !m_grade;
+
+  if( showAnswers )
+    summaryHtml += "Not graded - answers recorded for review (use \"Copy JSON\" for the"
+                   " full text).<br/>";
+
   summaryHtml += "<br/><table style='border-collapse: collapse; width: 100%;'>";
   summaryHtml += "<tr><th style='text-align:left; padding:2px 6px;'>Status</th>"
                  "<th style='text-align:left; padding:2px 6px;'>Problem</th>"
                  "<th style='text-align:left; padding:2px 6px;'>Q</th>"
-                 "<th style='text-align:left; padding:2px 6px;'>Score</th>"
+                 + string( showAnswers
+                           ? "<th style='text-align:left; padding:2px 6px;'>Answer</th>"
+                           : "<th style='text-align:left; padding:2px 6px;'>Score</th>" ) +
                  "<th style='text-align:left; padding:2px 6px;'>Time</th></tr>";
 
   for( const BenchmarkQuestionResult &r : m_results.questionResults )
@@ -2221,11 +2466,29 @@ void LlmBenchmarkRunner::showResultsDialog()
       statusColor = "#ff6b6b";
     }
 
+    string fourthCol;
+    if( showAnswers )
+    {
+      string snippet = r.llmAnswer;
+      SpecUtils::ireplace_all( snippet, "\n", " " );
+      SpecUtils::ireplace_all( snippet, "\r", " " );
+      SpecUtils::trim( snippet );
+      if( snippet.size() > 60 )
+      {
+        SpecUtils::utf8_limit_str_size( snippet, 60 );  // wont split a multi-byte character
+        snippet += "...";
+      }
+      fourthCol = Wt::Utils::htmlEncode( snippet );
+    }else
+    {
+      fourthCol = r.graded ? (to_string( r.score ) + "/" + to_string( r.maxScore )) : "-";
+    }
+
     summaryHtml += "<tr>"
       "<td style='padding:2px 6px; color:" + statusColor + ";'>" + status + "</td>"
       "<td style='padding:2px 6px;'>" + r.problemId + "</td>"
       "<td style='padding:2px 6px;'>" + to_string( r.questionPart ) + "</td>"
-      "<td style='padding:2px 6px;'>" + (r.graded ? (to_string( r.score ) + "/" + to_string( r.maxScore )) : "-") + "</td>"
+      "<td style='padding:2px 6px;'>" + fourthCol + "</td>"
       "<td style='padding:2px 6px;'>" + to_string( r.duration.count() / 1000 ) + "s</td>"
       "</tr>";
   }

@@ -170,14 +170,31 @@
      If this field is non-empty, then the DeepResearch sub-agent will additionally have access to the
      `query_deep_research_endpoint` tool-call, which will make a shell command to have `curl` make a call like:
      ```
-       curl -X 'POST' 'http://localhost:8000/query' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"messages": [{"content": "what is the primary use of Ba133?"}], "corpora": ["my_gamma_spec_dataset"]}'
+       curl -X 'POST' 'http://localhost:8000/query' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"query": "what is the primary use of Ba133?", "model": "openai/gpt-oss-120b", "corpora": ["my_gamma_spec_dataset"]}'
      ```
+     The endpoint requires all three of `query`, `model`, and `corpora`, and validates `corpora` against
+     a fixed list of names - it answers with a HTTP 422 if any of that does not match.  The answer is
+     read out of the `response` field of the returned JSON.
 
      If you leave this field blank, the DeepResearch sub-agent still remains available, but this remote
      endpoint query tool-call will not be available.
      It is very recomended you do not put a value in this field.
     -->
     <DeepResearchUrl></DeepResearchUrl>
+
+    <!-- The model the deep-research service should use to answer, sent as the `model` field of the
+         request.  This is a model name that the *remote service* knows about - it has nothing to do with
+         the provider/model InterSpec itself uses, above.
+         If empty or not present, "openai/gpt-oss-120b" is sent.  Only used if `DeepResearchUrl` is set.
+    -->
+    <!-- <DeepResearchModel>openai/gpt-oss-120b</DeepResearchModel> -->
+
+    <!-- Comma-separated list of corpora for the deep-research service to search, sent as the `corpora`
+         field of the request.  The service only accepts corpus names it knows, and has renamed its
+         corpus before, so this is settable here to avoid needing a new InterSpec build if it changes.
+         If empty or not present, "ldrd_llm_gamma_spec_labeled" is sent.  Only used if `DeepResearchUrl` is set.
+    -->
+    <!-- <DeepResearchCorpora>ldrd_llm_gamma_spec_labeled</DeepResearchCorpora> -->
 
     <!-- Optional debug logging configuration. If empty or not present, no debug logging will be done.
          Valid values:
