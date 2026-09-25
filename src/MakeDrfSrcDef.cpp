@@ -586,7 +586,7 @@ void MakeDrfSrcDef::create()
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
 
   cell = m_table->elementAt(sm_activity_uncert_row,0);
-  WLabel *label = cell->addNew<WLabel>( WString::tr("msd-act-uncert") );  //The nbsp in the text is to make this the longest label so when activity or shielding is shown, the width doesnt get changed
+  WLabel *label = cell->addNew<WLabel>( WString::tr("msd-act-uncert") );
   cell = m_table->elementAt(sm_activity_uncert_row,1);
   m_activityUncertainty = cell->addNew<WDoubleSpinBox>();
   m_activityUncertainty->setValue( 0.0 );

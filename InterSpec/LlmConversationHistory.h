@@ -78,6 +78,14 @@ struct LlmToolCall
   {
     std::string base64Data;   // Base64-encoded image data (no data-URL prefix)
     std::string mimeType;     // e.g., "image/png", "image/jpeg", "image/svg+xml"
+
+    /** Optional label sent to the LLM as a text block immediately before the image, so a prompt
+     can refer to several images unambiguously (e.g. "Item A", "Item B").  Left empty for images
+     the user pastes or uploads, and for tool-result images, in which case no extra text block is
+     emitted and the wire format is unchanged.
+     */
+    std::string caption;
+
     int widthPx = 0;
     int heightPx = 0;
   };//struct ImageContent

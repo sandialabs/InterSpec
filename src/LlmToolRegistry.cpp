@@ -2823,6 +2823,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
   bool loaded_deep_research_skills = false;
   LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
+                                              config.llmApi.deep_research_model,
+                                              config.llmApi.deep_research_corpora,
                                               [this]( const SharedTool &tool ){ registerTool(tool); },
                                               loaded_deep_research_skills );
 

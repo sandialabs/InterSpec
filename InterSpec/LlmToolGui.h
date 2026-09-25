@@ -159,12 +159,23 @@ public:
   /** Stage an image to be sent with the next user message.
    Called from UploadedImgDisplay when user clicks "Send to AI assistant".
    Shows a thumbnail preview near the input area.
+
+   `displayName` labels the thumbnail in the GUI only.  `caption`, if non-empty, is additionally
+   sent to the LLM as a text block immediately before the image, so a prompt can refer to
+   several images unambiguously - used by LlmBenchmarkRunner for image questions.
    */
   void stageImage( const std::string &base64Data, const std::string &mimeType,
-                   const std::string &displayName, int widthPx, int heightPx );
+                   const std::string &displayName, int widthPx, int heightPx,
+                   const std::string &caption = {} );
 
   /** Returns true if the LLM model supports images and the GUI is available. */
   bool canAcceptImages() const;
+
+  /** Remove all staged images and hide the preview strip.
+   Public so LlmBenchmarkRunner can guarantee a question's message carries exactly its own
+   images, even if a previous attempt errored out before sendMessage() drained them.
+   */
+  void clearStagedImages();
 
   /** Returns true if a benchmark is currently running. */
   bool isBenchmarkRunning() const;
@@ -255,7 +266,8 @@ private:
   {
     std::string base64Data;
     std::string mimeType;
-    std::string displayName;
+    std::string displayName;  ///< GUI thumbnail label only; never sent to the LLM
+    std::string caption;      ///< Sent to the LLM before the image, when non-empty
     int widthPx = 0;
     int heightPx = 0;
   };//struct StagedImage
@@ -271,9 +283,6 @@ private:
 
   /** Remove a staged image by index and update the preview strip. */
   void removeStagedImage( size_t index );
-
-  /** Remove all staged images and hide the preview strip. */
-  void clearStagedImages();
 
   /** Stage an image pasted from the clipboard (connected to m_pasteImageSignal). */
   void handlePastedImage( const std::string &base64Data, const std::string &mimeType,

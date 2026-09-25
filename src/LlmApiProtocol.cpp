@@ -536,6 +536,16 @@ class AnthropicProtocol : public LlmApiProtocol
             arr.push_back( textBlock );
             for( const LlmToolCall::ImageContent &img : req->imageContent() )
             {
+              // Only benchmark questions set a caption, so pasted/uploaded images produce the
+              //  exact same payload as before.
+              if( !img.caption.empty() )
+              {
+                json capBlock;
+                capBlock["type"] = "text";
+                capBlock["text"] = img.caption;
+                arr.push_back( capBlock );
+              }
+
               json imgBlock;
               imgBlock["type"] = "image";
               imgBlock["source"] = { {"type","base64"}, {"media_type", img.mimeType}, {"data", img.base64Data} };
@@ -1000,6 +1010,16 @@ class OpenAiResponsesProtocol : public LlmApiProtocol
             arr.push_back( textBlock );
             for( const LlmToolCall::ImageContent &img : req->imageContent() )
             {
+              // Only benchmark questions set a caption, so pasted/uploaded images produce the
+              //  exact same payload as before.
+              if( !img.caption.empty() )
+              {
+                json capBlock;
+                capBlock["type"] = "input_text";
+                capBlock["text"] = img.caption;
+                arr.push_back( capBlock );
+              }
+
               json imgBlock;
               imgBlock["type"] = "input_image";
               imgBlock["image_url"] = "data:" + img.mimeType + ";base64," + img.base64Data;

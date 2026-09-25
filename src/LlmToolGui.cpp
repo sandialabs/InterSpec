@@ -830,12 +830,14 @@ bool LlmToolGui::canAcceptImages() const
 
 
 void LlmToolGui::stageImage( const string &base64Data, const string &mimeType,
-                              const string &displayName, int widthPx, int heightPx )
+                              const string &displayName, int widthPx, int heightPx,
+                              const string &caption )
 {
   StagedImage staged;
   staged.base64Data = base64Data;
   staged.mimeType = mimeType;
   staged.displayName = displayName;
+  staged.caption = caption;
   staged.widthPx = widthPx;
   staged.heightPx = heightPx;
   m_stagedImages.push_back( std::move( staged ) );
@@ -993,6 +995,7 @@ void LlmToolGui::sendMessage(const std::string& message)
       LlmToolCall::ImageContent img;
       img.base64Data = std::move( staged.base64Data );
       img.mimeType = std::move( staged.mimeType );
+      img.caption = std::move( staged.caption );
       img.widthPx = staged.widthPx;
       img.heightPx = staged.heightPx;
       images.push_back( std::move( img ) );

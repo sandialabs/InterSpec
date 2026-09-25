@@ -115,7 +115,7 @@
   <message id="msd-act-per-cm2">Act./cm2</message>
   <message id="msd-act-per-m2">Act./m2</message>
   <message id="msd-act-per-gram">Act./gram</message>
-  <message id="msd-act-uncert">Act. Uncert.&amp;nbsp;</message>
+  <message id="msd-act-uncert">Act. Uncert.</message>
   <message id="msd-assay-date">Assay Date</message>
   <message id="msd-spec-date">Spec. Date</message>
   <message id="msd-age-at-assay">Age@Assay</message>
