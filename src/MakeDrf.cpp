@@ -123,7 +123,17 @@ namespace
 {
   //const float ns_NaI3x3IntrinsicEff_661 = 0.422605; //linear interpolation based on Efficiency.csv for generic 3x3. So could be improved...
   const float ns_NaI3x3IntrinsicEff_1332 = 0.24291f;
-  
+
+  /** Sets a flag for the life of the scope; used to block a re-fit while the source widgets are
+   only part-way through a bulk update.
+   */
+  struct BlockSourceUpdates
+  {
+    bool &m_flag;
+    BlockSourceUpdates( bool &flag ) : m_flag( flag ){ m_flag = true; }
+    ~BlockSourceUpdates(){ m_flag = false; }
+  };//struct BlockSourceUpdates
+
   
   bool source_info_from_lib_file( string srcname, const string &filename,
                                   double &activity, boost::posix_time::ptime &activityDate, string &comments )
@@ -169,8 +179,43 @@ namespace
     
     return false;
   }//source_info_from_lib_file(...)
-  
-  
+
+
+  /** Returns the distance given after an '@' in a spectrum title, or -1.0 if the title doesnt
+   have one.
+
+   The spacing around the '@', and between the value and its units, is arbitrary, and any text
+   trailing the distance is ignored, so for example all of "U-232 @ 100 cm, H=100 cm",
+   "60Co,58.599uCi @ 100cm H=83.5cm", and "Cs137@1m 50cm" give their distance.
+   */
+  double distance_from_spectrum_title( const std::string &title )
+  {
+    // PhysicalUnits::sm_distanceRegex is anchored to match an entire string; strip the anchors so
+    //  we can search for the distance embedded in the title.
+    string dist_regex = PhysicalUnits::sm_distanceRegex;
+    SpecUtils::ireplace_all( dist_regex, "^", "" );
+    SpecUtils::ireplace_all( dist_regex, "$", "" );
+
+    try
+    {
+      const std::regex expr( "@\\s*(" + dist_regex + ")", std::regex::icase );
+
+      std::smatch mtch;
+      if( !std::regex_search( title, mtch, expr ) )
+        return -1.0;
+
+      const double distance = PhysicalUnits::stringToDistance( mtch[1].str() );
+      if( (distance > 0.0) && !IsNan(distance) && !IsInf(distance) )
+        return distance;
+    }catch( std::exception & )
+    {
+      //stringToDistance(...) can throw, though shouldnt, given the regex matched
+    }
+
+    return -1.0;
+  }//distance_from_spectrum_title(...)
+
+
   //ToDo: this function is also implemented in SpecFileQueryWidget.cpp - should
   //      put in the same place
   void output_csv_field( std::ostream &out, std::string s)
@@ -961,27 +1006,12 @@ namespace
             
             string spectitle = m->title();
             
+            //Look for a distance after an '@' in the title. Examples:
+            //  "U-232 @ 100 cm, H=100 cm"
+            //  "60Co,58.599uCi @ 100cm H=83.5cm"   (the H=... measurement height is not used)
+            //  "Background, H=100 cm"              (no distance)
             if( title_distance <= 0.0 )
-            {
-              size_t pos = spectitle.find( "@" );
-              if( pos != string::npos )
-              {
-                //Look for distance and source info in title. Examples:
-                //  "U-232 @ 100 cm, H=100 cm"
-                //  "Background, H=100 cm"
-                string dist = spectitle.substr( pos+1 );
-                try
-                {
-                  SpecUtils::trim( dist );
-                  pos = dist.find_first_of( ",@" ); //ToDo: make finding the end of the distance more robust - like with a regex
-                  if( pos != string::npos )
-                    dist = dist.substr(0, pos);
-                  title_distance = PhysicalUnits::stringToDistance( dist );
-                }catch(...)
-                {
-                }
-              }//if( pos != string::npos )
-            }//if( title_distance <= 0.0 )
+              title_distance = distance_from_spectrum_title( spectitle );
             
             //ToDo: make this more robust for finding end of the nuclide, like requiring both numbers and letters.
             
@@ -1534,9 +1564,12 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   m_files( nullptr ),
   m_geomPanel( nullptr ),
   m_geomMode( nullptr ),
+  m_geomGuidance( nullptr ),
   m_diameterDiv( nullptr ),
   m_mcTool( nullptr ),
   m_geomSeeded( false ),
+  m_mainLayout( nullptr ),
+  m_blockSourceUpdates( false ),
   m_detDiamGroup( nullptr ),
   m_detDiameter( nullptr ),
   m_detSetback( nullptr ),
@@ -1596,9 +1629,11 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   HelpSystem::attachToolTipOn( modeRow, WString::tr("md-tt-geom-mode"), showToolTips,
                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
-  WText *guidance = m_geomPanel->addNew<WText>( WString::tr("md-geom-guidance") );
-  guidance->addStyleClass( "MakeDrfGeomGuidance" );
-  guidance->setInline( false );
+  // Tells the user what the "Detector geometry" mode buys them, so only shown in diameter mode -
+  //  where there is also room for it.
+  m_geomGuidance = m_geomPanel->addNew<WText>( WString::tr("md-geom-guidance") );
+  m_geomGuidance->addStyleClass( "MakeDrfGeomGuidance" );
+  m_geomGuidance->setInline( false );
 
   m_diameterDiv = m_geomPanel->addNew<WContainerWidget>();
   m_diameterDiv->addStyleClass( "MakeDrfDiameterDiv" );
@@ -1795,7 +1830,10 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   {
     layout->addLayout( std::move(upperLayoutOwned), 0, 0 );
     layout->addWidget( std::move(fileHolderOwned), 1, 0 );
-    layout->setRowResizable( 0, true, 400 );  //geometry panel + chart, options row, message and equation
+    //geometry panel + chart, options row, message and equation; handleGeometryModeChanged() gives
+    //  this row more height when the full geometry form is showing.
+    layout->setRowResizable( 0, true, sm_diam_mode_height );
+    m_mainLayout = layout;
   }//if( is phone ) / else
   
   SpecMeasManager *manager = viewer->fileManager();
@@ -2211,6 +2249,12 @@ void MakeDrf::setGeneratedMcResponse( std::shared_ptr<ceelo::DetectorResponse> r
 
 void MakeDrf::handleSourcesUpdates()
 {
+  // While the source widgets are being updated in bulk, they are not all in a consistent state
+  //  (e.g. some still have their distance input hidden, while m_geometry already says far-field),
+  //  so dont look at them until whoever is changing them is done and calls us itself.
+  if( m_blockSourceUpdates )
+    return;
+
   size_t numchan = 0;
   vector< std::shared_ptr<const PeakDef> > peaks;
 
@@ -2833,15 +2877,21 @@ void MakeDrf::handleFixedGeometryChanged()
     default: assert( 0 ); break;
   }//switch( m_geometry->currentIndex() )
   
-  // Go through all the sources and set distances visible/hidden
-  //Hide all other previews showing.
-  for( auto w : m_files->children() )
+  // Go through all the sources and set distances visible/hidden.
+  //  Each source emits "updated" as we change it, which would re-enter handleSourcesUpdates()
+  //  while the sources we havent gotten to yet still show the previous geometrys inputs - so
+  //  block those updates, and do the single re-fit ourselves below.
   {
-    DrfSpecFile *fileWidget = dynamic_cast<DrfSpecFile *>( w );
-    if( fileWidget )
-      fileWidget->setIsEffGeometryType( geom_type );
-  }//for( auto w : m_files->children() )
-  
+    const BlockSourceUpdates block( m_blockSourceUpdates );
+
+    for( auto w : m_files->children() )
+    {
+      DrfSpecFile *fileWidget = dynamic_cast<DrfSpecFile *>( w );
+      if( fileWidget )
+        fileWidget->setIsEffGeometryType( geom_type );
+    }//for( auto w : m_files->children() )
+  }
+
   handleSourcesUpdates();
 }//void handleFixedGeometryChanged()
 
@@ -2867,6 +2917,24 @@ void MakeDrf::handleGeometryModeChanged()
 
   m_diameterDiv->setHidden( full );
   m_mcTool->setHidden( !full );
+  m_geomGuidance->setHidden( full );
+
+  // The geometry form is much bigger than the diameter inputs: it needs a wider panel (see the CSS
+  //  for MakeDrfGeomPanelFull), and more of the dialogs height, or the user is left entering the
+  //  geometry through a form several times the height of its panel.
+  m_geomPanel->toggleStyleClass( "MakeDrfGeomPanelFull", full );
+  if( m_mainLayout )
+  {
+    const int rendered_height = (m_interspec ? m_interspec->renderedHeight() : 0);
+    double height = sm_diam_mode_height;
+    if( full )
+      height = ((rendered_height > 100)
+                ? std::min( 1.0*sm_geom_mode_height, 0.65*rendered_height )
+                : 1.0*sm_geom_mode_height);
+    height = std::max( height, 1.0*sm_diam_mode_height );
+
+    m_mainLayout->setRowResizable( 0, true, WLength(height, WLength::Unit::Pixel) );
+  }//if( m_mainLayout )
 
   handleSourcesUpdates();
 }//handleGeometryModeChanged()
