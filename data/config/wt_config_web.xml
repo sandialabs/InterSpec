@@ -87,11 +87,17 @@
 
         <strict-event-serialization>false</strict-event-serialization>
 
-        <!-- Added in Wt 4.13; both shown at their Wt defaults (applied when absent).
-             cache-form-data caches each form object server-side so the client only
-             resends changed objects; form-data-resend-ratio-limit caps the fraction
-             of objects the server may request be resubmitted before asking for all. -->
-        <cache-form-data>true</cache-form-data>
+        <!-- Added in Wt 4.13.  cache-form-data caches each form object server-side so the client
+             only resends changed objects; form-data-resend-ratio-limit caps the fraction of objects
+             the server may request be resubmitted before asking for all (only matters when the
+             cache is on).
+             The cache is OFF (on by default until 4.13.4) to dodge a Wt 4.13.2 race: a focus event queued
+             while a request is in flight carries the field's old value, the server handles the
+             batch's change events first, and with the cache on it then re-applies that stale value
+             on every later event - silently discarding the user's edit.  Off, every request resends
+             all form values (~3x larger), so a stale value cannot persist.  InterSpecApp.cpp warns
+             when built against a newer Wt, as a reminder to re-check this. -->
+        <cache-form-data>false</cache-form-data>
         <form-data-resend-ratio-limit>0.5</form-data-resend-ratio-limit>
 
         <!-- Long-polling everywhere. The latency difference vs. WebSockets is

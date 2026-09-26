@@ -99,6 +99,17 @@ using namespace Wt;
 static_assert( !PERFORM_DEVELOPER_CHECKS, "PERFORM_DEVELOPER_CHECKS should not be on for iOS or Android builds" );
 #endif//IOS || ANDROID
 
+// data/config/wt_config_*.xml turn <cache-form-data> off to work around a Wt 4.13.2 bug that silently
+//  drops edits (see the comment there).  Newer Wt reworked this (4.13.3: #14513, 4.13.4: #14630), so
+//  re-check on upgrade.
+#if( WT_VERSION > 0x040D0200 )
+#ifdef _MSC_VER
+#pragma message( "Wt is newer than 4.13.2: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp" )
+#else
+#warning "Wt is newer than 4.13.2: check whether its form-data race is fixed (see <cache-form-data> in data/config/wt_config_*.xml); if so, set <cache-form-data> back to true there and update this check in InterSpecApp.cpp"
+#endif
+#endif
+
 #if( BUILD_AS_ELECTRON_APP )
 WT_DECLARE_WT_MEMBER
 (IsElectronInstance, Wt::JavaScriptFunction, "IsElectronInstance",

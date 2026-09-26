@@ -80,8 +80,14 @@
 
         <strict-event-serialization>false</strict-event-serialization>
 
-        <!-- Added in Wt 4.13; both shown at their Wt defaults (applied when absent). -->
-        <cache-form-data>true</cache-form-data>
+        <!-- Added in Wt 4.13.  cache-form-data is OFF (on by default until 4.13.4) to dodge a Wt 4.13.2 race:
+             a focus event queued while a request is in flight carries the field's old value, the
+             server handles the batch's change events first, and with the cache on it then re-applies
+             that stale value on every later event - silently discarding the user's edit.  Off, every
+             request resends all form values (~3x larger), so a stale value cannot persist.
+             form-data-resend-ratio-limit only matters when the cache is on.  InterSpecApp.cpp warns
+             when built against a newer Wt, as a reminder to re-check this. -->
+        <cache-form-data>false</cache-form-data>
         <form-data-resend-ratio-limit>0.5</form-data-resend-ratio-limit>
 
         <!-- See wt_config_web.xml for the rationale on disabling WebSockets. -->
