@@ -23,9 +23,12 @@
 
 #include "InterSpec_config.h"
 
+#include <cctype>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cstring>
+#include <algorithm>
 
 #include <Wt/WLength.h>
 #include <Wt/WString.h>
@@ -56,13 +59,36 @@ namespace
   }
 
 
-  /** True if `filter` is empty, OR `name` contains `filter` (case-insensitive). */
-  bool name_matches( const std::string &name, const std::string &filter )
+  /** How well `text` matches the typed `filter` (both lower-case), lower being better, or -1 if
+   `text` does not contain it: 0 the whole text, 1 a whole word of it, 2 the start of it, 3 the start
+   of a word, 4 anywhere.  Words are separated by whitespace, brackets, commas and the like, but not
+   hyphens: "al" is a whole word of "al (aluminum)" - no material is named just "Al", yet typing it
+   should rank aluminum first - while "u" is not a whole word of the alloy "u-al".
+   */
+  int match_rank( const std::string &text, const std::string &filter )
   {
-    if( filter.empty() )
-      return true;
-    return SpecUtils::ifind_substr_ascii( name, filter.c_str() ) != std::string::npos;
-  }
+    if( filter.empty() || (text == filter) )
+      return 0;
+
+    const auto is_separator = []( const char c ) -> bool {
+      return std::isspace( static_cast<unsigned char>(c) )
+             || ((c != '\0') && (std::strchr( "()[]{},;/&", c ) != nullptr));
+    };
+
+    int best = -1;
+    for( size_t pos = text.find( filter ); pos != std::string::npos; pos = text.find( filter, pos + 1 ) )
+    {
+      const size_t end = pos + filter.size();
+      const bool word_start = (pos == 0) || is_separator( text[pos - 1] );
+      const bool word_end = (end == text.size()) || is_separator( text[end] );
+
+      const int rank = (word_start && word_end) ? 1 : ((pos == 0) ? 2 : (word_start ? 3 : 4));
+      if( (best < 0) || (rank < best) )
+        best = rank;
+    }//for( each occurrence of filter in text )
+
+    return best;
+  }//match_rank(...)
 }//namespace
 
 
@@ -120,7 +146,29 @@ void ShieldMaterialSuggestion::handleFilter( const Wt::WString &filter )
 {
   clearSuggestions();
 
-  const std::string filterStr = filter.toUTF8();
+  const std::string filterStr = SpecUtils::to_lower_ascii_copy( filter.toUTF8() );
+
+  // The popup lists rows in the order added and pre-selects the first one shown (what Enter/Tab
+  //  takes), so the closest matches go first: typing "Al" should give "Al (aluminum)", not whichever
+  //  "Al..." material the database happens to list first.
+  struct Candidate
+  {
+    int rank;
+    std::string text, lower;
+  };
+  std::vector<Candidate> candidates;
+
+  const auto consider = [&candidates, &filterStr]( const std::string &text ){
+    // Never add a blank row (the built-in "void" material has no description): WSuggestionPopup's
+    //  matcher treats it as matching any input, shows it as "undefined", and picking it wipes the edit.
+    if( SpecUtils::trim_copy( text ).empty() )
+      return;
+
+    std::string lower = SpecUtils::to_lower_ascii_copy( text );
+    const int rank = match_rank( lower, filterStr );
+    if( rank >= 0 )
+      candidates.push_back( Candidate{ rank, text, std::move(lower) } );
+  };
 
   if( MaterialDB::initialized() )
   {
@@ -142,30 +190,35 @@ void ShieldMaterialSuggestion::handleFilter( const Wt::WString &filter )
       if( desc.find( "% Pu" ) != std::string::npos )
         continue;
 
-      const bool nameHit = name_matches( name, filterStr );
-      const bool descHit = name_matches( desc, filterStr );
-      if( !nameHit && !descHit )
-        continue;
-
-      // Never add a blank row (the built-in "void" material has no description): WSuggestionPopup's
-      //  matcher treats it as matching any input, shows it as "undefined", and picking it wipes the edit.
-      if( !SpecUtils::trim_copy( name ).empty() )
-        addSuggestion( name, name );
+      consider( name );
 
       if( SpecUtils::iequals_ascii( name, desc ) )
         continue;
 
       // Only add the description as a separate suggestion if it isn't
       //  already represented by the name string.
-      const size_t sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
-      if( (sub_pos == std::string::npos) && !SpecUtils::trim_copy( desc ).empty() )
-        addSuggestion( desc, desc );
+      if( SpecUtils::ifind_substr_ascii( name, desc.c_str() ) == std::string::npos )
+        consider( desc );
     }//for( const std::shared_ptr<const Material> &mat : mats )
   }//if( MaterialDB::initialized() )
 
   for( const std::string &name : m_formulaMaterials )
+    consider( name );
+
+  // Best rank first; within a rank the shortest (fewest extra characters, so the closest
+  //  completion), then alphabetical.  With nothing typed (the dropdown icon) keep the database order.
+  if( !filterStr.empty() )
   {
-    if( name_matches( name, filterStr ) )
-      addSuggestion( name, name );
-  }
+    std::stable_sort( begin(candidates), end(candidates),
+      []( const Candidate &lhs, const Candidate &rhs ) -> bool {
+        if( lhs.rank != rhs.rank )
+          return lhs.rank < rhs.rank;
+        if( lhs.lower.size() != rhs.lower.size() )
+          return lhs.lower.size() < rhs.lower.size();
+        return lhs.lower < rhs.lower;
+    } );
+  }//if( !filterStr.empty() )
+
+  for( const Candidate &candidate : candidates )
+    addSuggestion( candidate.text, candidate.text );
 }//void handleFilter( const Wt::WString &filter )
