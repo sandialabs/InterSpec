@@ -134,6 +134,7 @@
 #include <mutex>
 #include <tuple>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <random>
 #include <vector>
@@ -2577,6 +2578,24 @@ inline void unit_gauss_legendre( const int n, const double *&x, const double *&w
 }//unit_gauss_legendre(...)
 
 
+/** Depth of `p` below the emitting face of an in-situ exponential source whose outer dims are `Do`
+ (the face the depth is measured from, per GammaInteractionCalc::TraceActivityType). */
+template<typename T>
+T in_situ_depth( const GeometryType geometry, const std::array<T,3> &Do, const T p[3] )
+{
+  using std::sqrt;
+  switch( geometry )
+  {
+    case GeometryType::CylinderEndOn:  return Do[1] - p[2];
+    case GeometryType::Rectangular:    return Do[2] - p[2];
+    case GeometryType::CylinderSideOn: return Do[0] - sqrt( p[0]*p[0] + p[1]*p[1] );
+    case GeometryType::Spherical:      return Do[0] - sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] );
+    case GeometryType::NumGeometryType: break;
+  }
+  return T(0.0);
+}//in_situ_depth(...)
+
+
 /** Integrates a GROUP of calculators that share geometry (same source shell, dims, detector, line
  cache, normalization and in-situ settings) and differ only in energy-dependent coefficients:
  the per-line chord bookkeeping is done once, the energies innermost.  Fills `integral`,
@@ -2589,11 +2608,16 @@ inline void unit_gauss_legendre( const int n, const double *&x, const double *&w
  AN-weighted areal density, hydrogen areal density and the mu-weighted counterparts of ITS OWN path
  to the detector (source near piece, core when the far piece looks through it, outer shells; no
  air) - the per-line analogue of what `integrate_effective_shielding` accumulates on the element
- path from each element's centre ray.  `c[0]` equals `integral`. */
+ path from each element's centre ray.  `c[0]` equals `integral`.
+
+ `line_out` (T = double only, for display): when given, receives each calculator's per-line terms,
+ `(*line_out)[calc][line]`, which sum to its `integral` - zero for a line that misses the source or
+ the crystal. */
 template<typename T>
 void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &group,
                                   const bool multithread,
-                                  std::vector<EffShieldComponents> *eff_out = nullptr )
+                                  std::vector<EffShieldComponents> *eff_out = nullptr,
+                                  std::vector<std::vector<double>> *line_out = nullptr )
 {
   using namespace std;
   using namespace ceres;
@@ -2604,8 +2628,9 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
   const bool accumulate_eff = (eff_out != nullptr);
   if constexpr( !std::is_same_v<T,double> )
   {
-    if( accumulate_eff )
-      throw logic_error( "line_source_integration_imp: effective-shielding components are double-only" );
+    if( accumulate_eff || line_out )
+      throw logic_error( "line_source_integration_imp: effective-shielding components and per-line"
+                         " terms are double-only" );
   }
 
   DistributedSrcCalcT<T> &lead = *group.front();
@@ -2634,6 +2659,8 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
 
   const size_t num_calc = group.size();
   const size_t num_lines = cache->cand.size();
+  if( line_out )
+    line_out->assign( num_calc, std::vector<double>( num_lines, 0.0 ) );   //each line written by one chunk
   const size_t m = lead.m_materialIndex;
   const size_t num_shells = lead.m_shells.size();
   const GeometryType geometry = lead.m_geometry;
@@ -2776,18 +2803,9 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
   const double *gl_x = nullptr, *gl_w = nullptr;
   unit_gauss_legendre( n_gl, gl_x, gl_w );
 
-  // Depth (T) of a point below the emitting face, per geometry (in-situ only).
+  // Depth (T) of a point below the emitting face (in-situ only).
   const auto depth_at = [&]( const T p[3] ) -> T {
-    const std::array<T,3> &Do = shells[m].dims;
-    switch( geometry )
-    {
-      case GeometryType::CylinderEndOn:  return Do[1] - p[2];
-      case GeometryType::Rectangular:    return Do[2] - p[2];
-      case GeometryType::CylinderSideOn: return Do[0] - sqrt( p[0]*p[0] + p[1]*p[1] );
-      case GeometryType::Spherical:      return Do[0] - sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] );
-      case GeometryType::NumGeometryType: break;
-    }
-    return T(0.0);
+    return in_situ_depth<T>( geometry, shells[m].dims, p );
   };
 
   // The lines are split into a FIXED number of contiguous index blocks, whatever the thread count:
@@ -3229,6 +3247,11 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
         assert( all_finite_lanes(line_sum) );
 #endif
         acc[c] += w_line * k_T * line_sum;
+        if constexpr( std::is_same_v<T,double> )
+        {
+          if( line_out )
+            (*line_out)[c][j] = w_line * k * line_sum;
+        }
       }//for( calculators )
     }//for( lines in chunk )
   };//do_chunk
@@ -3316,6 +3339,293 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
         (*eff_out)[c] += partial_eff[chunk][c];
   }
 }//line_source_integration_imp(...)
+
+
+/** How far into a stretch of optical thickness `tau` (from its entry) 90% of what it absorbs comes
+ from, as a fraction of its length: 0.9 for a transparent stretch, falling as it gets opaque. */
+inline double depth_fraction_for_90pct( const double tau )
+{
+  if( !(tau > 1.0e-9) )
+    return 0.9;
+  return -std::log1p( -0.9*(-std::expm1( -tau )) ) / tau;
+}
+
+
+/** A stretch of a line through an emitting source (#highest_emission_stretches): from `s0` to `s1`
+ along the line, what it emits toward the detector per unit length is exp(-e), the exponent running
+ linearly from `e0` to `e1`. */
+struct EmissionCell
+{
+  double s0, s1, e0, e1;
+};
+
+
+/** Where along a line most of what a source sends toward the detector comes from: the parts of
+ `cells` (in order along the line, not overlapping) above the level that leaves 1 - `fraction` of the
+ total below it.  Returned as (start, end) runs, touching cells merged.  A vanishing tilt breaks ties
+ toward the start, so a transparent source is cut at 90% of its length, as a nearly transparent one
+ would be. */
+inline std::vector<std::pair<double,double>> highest_emission_stretches( const std::vector<EmissionCell> &cells,
+                                                                           const double fraction )
+{
+  std::vector<std::pair<double,double>> runs;
+  if( cells.empty() || !(cells.back().s1 > cells.front().s0) )
+    return runs;
+
+  const double s_first = cells.front().s0, span = cells.back().s1 - s_first;
+  std::vector<EmissionCell> tilted( cells );
+  double e_lo = std::numeric_limits<double>::infinity(), e_hi = -e_lo;
+  for( EmissionCell &c : tilted )
+  {
+    c.e0 += 1.0e-9*(c.s0 - s_first)/span;
+    c.e1 += 1.0e-9*(c.s1 - s_first)/span;
+    e_lo = std::min( e_lo, std::min( c.e0, c.e1 ) );
+    e_hi = std::max( e_hi, std::max( c.e0, c.e1 ) );
+  }
+  if( !std::isfinite( e_lo ) || !std::isfinite( e_hi ) )
+    return runs;
+
+  // The part of a cell at or below `level` - from its low end to where the (linear) exponent reaches
+  //  `level` - and the weight on it, relative to the densest point's.
+  const auto part = [e_lo]( const EmissionCell &c, const double level, double &a, double &b ) -> double {
+    const double lo = std::min( c.e0, c.e1 ), hi = std::max( c.e0, c.e1 );
+    a = b = c.s0;
+    if( !(level >= lo) || !(c.s1 > c.s0) )
+      return 0.0;
+    const double top = std::min( level, hi );
+    const double len = (top >= hi) ? (c.s1 - c.s0) : ((c.s1 - c.s0)*(top - lo)/(hi - lo));
+    if( top >= hi )
+    {
+      a = c.s0;
+      b = c.s1;
+    }else if( c.e0 <= c.e1 )
+    {
+      b = c.s0 + len;
+    }else
+    {
+      a = c.s1 - len;
+      b = c.s1;
+    }
+    return len * std::exp( -(lo - e_lo) ) * one_minus_exp_neg_over_x( top - lo );
+  };
+
+  double a = 0.0, b = 0.0, total = 0.0;
+  for( const EmissionCell &c : tilted )
+    total += part( c, e_hi, a, b );
+  if( !(total > 0.0) )
+    return runs;
+
+  // Bisect for the level holding `fraction` of the total.
+  double level_lo = e_lo, level_hi = e_hi;
+  for( int i = 0; i < 64; ++i )
+  {
+    const double level = 0.5*(level_lo + level_hi);
+    double weight = 0.0;
+    for( const EmissionCell &c : tilted )
+      weight += part( c, level, a, b );
+    if( weight < fraction*total )
+      level_lo = level;
+    else
+      level_hi = level;
+  }
+
+  for( const EmissionCell &c : tilted )
+  {
+    part( c, level_hi, a, b );
+    if( !(b > a) )
+      continue;
+    if( !runs.empty() && (a <= runs.back().second) )
+      runs.back().second = std::max( runs.back().second, b );
+    else
+      runs.emplace_back( a, b );
+  }
+
+  return runs;
+}//highest_emission_stretches(...)
+
+
+/** Where line `j` of `calc`'s set runs, for display (#VolumetricLineSample::Line): the direction and
+ shell crossings #line_source_integration_imp uses at the calculator's (scalar) dimensions, and its
+ crystal chord re-traced for the end points (the set keeps only segment lengths).  The source and
+ crystal stretches are where 90% of the counts come from, at the calculator's energy: of the source
+ crossing, where the most of the emission reaching the detector comes from (the near part, plus for
+ a hollow or in-situ source possibly some of the far side), and of the crystal chord, its entry part
+ (where the photons interact).  False when the line is dropped at these dimensions or misses the
+ source. */
+inline bool line_display_geometry( const DistributedSrcCalcT<double> &calc, const size_t j,
+                                   VolumetricLineSample::Line &out )
+{
+  using namespace std;
+  const double cm = PhysicalUnits::cm;
+  const std::shared_ptr<const VolumetricLineCache> &cache = calc.m_lineCache;
+  assert( cache && (j < cache->cand.size()) );
+
+  const size_t m = calc.m_materialIndex;
+  const std::vector<DistributedSrcCalcT<double>::ShellInfo> &shells = calc.m_shells;
+  const size_t num_shells = shells.size();
+  const double det_pos[3] = { calc.m_detector.position[0], calc.m_detector.position[1],
+                              calc.m_detector.position[2] };
+
+  // The source dims floored exactly as line_source_integration_imp floors them.
+  const double ext_floor = sm_line_path_extent_ratio_floor
+                  * std::sqrt( det_pos[0]*det_pos[0] + det_pos[1]*det_pos[1] + det_pos[2]*det_pos[2] );
+  std::array<double,3> dims_o;
+  for( int i = 0; i < 3; ++i )
+  {
+    double v = std::fabs( shells[m].dims[i] );
+    if( v < ext_floor )
+      v += (ext_floor - v);
+    dims_o[i] = v;
+  }
+
+  double w[3], cos_n, w_c[3], s_endcap;
+  if( !line_direction_imp<double>( *cache, j, dims_o, det_pos, w, cos_n, w_c, s_endcap ) )
+    return false;
+
+  const VolumetricLineCache::Candidate &cand = cache->cand[j];
+  const double o[3] = { det_pos[0] + cand.x_rel[0], det_pos[1] + cand.x_rel[1], det_pos[2] + cand.x_rel[2] };
+  const double d[3] = { -w[0], -w[1], -w[2] };
+
+  std::vector<double> a, b;
+  std::vector<char> crossed;
+  line_shell_intervals_imp<double,double>( calc.m_geometry, shells, o, d, a, b, crossed );
+  if( !crossed[m] )
+    return false;
+
+  // Points along the line are `s` back from the hull point, toward the source.
+  const auto segment = [&o,&d]( const double s0, const double s1 ) -> std::array<double,6> {
+    return { o[0] - s0*d[0], o[1] - s0*d[1], o[2] - s0*d[2], o[0] - s1*d[0], o[1] - s1*d[1], o[2] - s1*d[2] };
+  };
+
+  // The source crossing's emission toward the detector, weighted as the integration weights it (bar
+  //  its smooth prefactor): exp(-e), with e the optical depth out of the source toward the detector -
+  //  for the far piece of a hollow source, through the core and the near piece as well - plus, for an
+  //  in-situ source, the depth below the emitting face over the relaxation length.  That is linear
+  //  along a piece, except for the depth of an in-situ sphere or side-on cylinder, sampled on cells.
+  const auto fep_mu = [&shells]( const size_t l ) -> double {   //as finalize_shell_coefficients resolves it
+    return (shells[l].fep_trans_len_coef >= 0.0) ? shells[l].fep_trans_len_coef : shells[l].trans_len_coef;
+  };
+  const double mu_src = fep_mu( m );
+  const bool in_situ = calc.m_isInSituExponential;
+  const bool radial = in_situ && ((calc.m_geometry == GeometryType::Spherical)
+                                  || (calc.m_geometry == GeometryType::CylinderSideOn));
+  std::vector<EmissionCell> cells;
+  const auto add_piece = [&]( const double s0, const double s1, const double tau_before ) {
+    const auto exponent = [&]( const double s ) -> double {
+      double e = tau_before + mu_src*(s - s0);
+      if( in_situ )
+      {
+        const double p[3] = { o[0] - s*d[0], o[1] - s*d[1], o[2] - s*d[2] };
+        e += in_situ_depth<double>( calc.m_geometry, shells[m].dims, p ) / calc.m_inSituRelaxationLength;
+      }
+      return e;
+    };
+    const int n = radial ? 64 : 1;
+    const double len = s1 - s0;
+    for( int i = 0; (i < n) && (len > 0.0); ++i )
+    {
+      const double c0 = s0 + len*i/n;
+      const double c1 = (i + 1 < n) ? (s0 + len*(i + 1)/n) : s1;
+      cells.push_back( { c0, c1, exponent( c0 ), exponent( c1 ) } );
+    }
+  };
+
+  if( (m > 0) && crossed[m-1] )
+  {
+    // Split around the core as the integration splits it; the core is every inner shell's full chord.
+    double tau_core = 0.0;
+    for( size_t l = 0; l < m; ++l )
+    {
+      if( !crossed[l] )
+        continue;
+      if( shells[l].type == ShellType::Generic )
+      {
+        tau_core += fep_mu( l );
+        continue;
+      }
+      const bool inner_crossed = (l > 0) && crossed[l-1];
+      tau_core += fep_mu( l ) * (inner_crossed ? ((a[l-1] - a[l]) + (b[l] - b[l-1])) : (b[l] - a[l]));
+    }
+    add_piece( a[m], a[m-1], 0.0 );
+    add_piece( b[m-1], b[m], mu_src*(a[m-1] - a[m]) + tau_core );
+  }else
+  {
+    add_piece( a[m], b[m], 0.0 );
+  }
+
+  out.source_segments.clear();
+  for( const std::pair<double,double> &run : highest_emission_stretches( cells, 0.9 ) )
+    out.source_segments.push_back( segment( run.first, run.second ) );
+
+  // Everything outside the source contains it, so the outermost crossing is the far end.
+  double s_far = b[m];
+  for( size_t l = m + 1; l < num_shells; ++l )
+  {
+    if( crossed[l] )
+      s_far = std::max( s_far, b[l] );
+  }
+
+  // The crystal chord: the same trace trace_detector_line makes, keeping the segment end points,
+  //  mapped back to the assembly frame as the hull points were (det_pos + M (p_c - ref_c)).
+  const ceelo::Geometry &geom = cache->response->geometry();
+  const Eigen::Vector3d x( cand.point_c[0], cand.point_c[1], cand.point_c[2] );
+  const Eigen::Vector3d wc( w_c[0], w_c[1], w_c[2] );
+  const std::pair<double,double> zext = geom.outer_z_extent();
+  const double back = 2.0*(geom.outer_bounding_radius() + std::max( std::fabs(zext.first), std::fabs(zext.second) ))
+                      + x.norm() + 1.0;
+  const Eigen::Vector3d origin = x + wc*back;
+  std::vector<ceelo::PathSegment> path;
+  geom.trace_ray( origin, -wc, path );
+
+  const auto to_assembly = [&]( const double t, double p[3] ) {
+    const Eigen::Vector3d p_c = origin - t*wc;
+    const double rel[3] = { (p_c.x() - cache->ref_c[0])*cm, (p_c.y() - cache->ref_c[1])*cm,
+                            (p_c.z() - cache->ref_c[2])*cm };
+    for( int i = 0; i < 3; ++i )
+      p[i] = det_pos[i] + cache->M[i][0]*rel[0] + cache->M[i][1]*rel[1] + cache->M[i][2]*rel[2];
+  };
+
+  // The active-crystal stretches in the order the photon meets them, with their optical thickness
+  //  (total attenuation: where the photon first interacts).
+  std::sort( begin(path), end(path), []( const ceelo::PathSegment &lhs, const ceelo::PathSegment &rhs ){
+    return lhs.t_start < rhs.t_start;
+  } );
+  const double energy_MeV = 1.0E-3*calc.m_energy;
+  double tau_crystal = 0.0;
+  for( const ceelo::PathSegment &seg : path )
+  {
+    if( seg.is_scoring && seg.material && (seg.length() > 1.0e-12) )
+      tau_crystal += seg.material->mu_total( energy_MeV ) * seg.length();
+  }
+
+  // Cut where 90% of the interactions have happened.
+  const double tau_90 = tau_crystal*depth_fraction_for_90pct( tau_crystal );
+  out.crystal_segments.clear();
+  double far_end[3] = { o[0], o[1], o[2] };   //where the drawn line stops inside the detector
+  double tau = 0.0;
+  for( const ceelo::PathSegment &seg : path )
+  {
+    if( !seg.is_scoring || !seg.material || !(seg.length() > 1.0e-12) || (tau >= tau_90) )
+      continue;
+    const double mu = seg.material->mu_total( energy_MeV );
+    const double t_end = (mu > 0.0) ? std::min( seg.t_end, seg.t_start + (tau_90 - tau)/mu ) : seg.t_end;
+    tau += mu*(t_end - seg.t_start);
+    double p0[3], p1[3];
+    to_assembly( seg.t_start, p0 );
+    to_assembly( t_end, p1 );
+    out.crystal_segments.push_back( { p0[0], p0[1], p0[2], p1[0], p1[1], p1[2] } );
+  }//for( segments along the ray )
+
+  // The drawn line runs on to where it leaves the active crystal.
+  for( const ceelo::PathSegment &seg : path )
+  {
+    if( seg.is_scoring && (seg.length() > 1.0e-12) )
+      to_assembly( seg.t_end, far_end );
+  }
+
+  out.extent = { o[0] - s_far*d[0], o[1] - s_far*d[1], o[2] - s_far*d[2], far_end[0], far_end[1], far_end[2] };
+  return true;
+}//line_display_geometry(...)
 
 
 /** Smallest scalar extent of a calculator's source shell (its thickness for a hollow shell). */

@@ -22,11 +22,15 @@
  */
 #include "InterSpec_config.h"
 
+#include <cmath>
+#include <cstdio>
 #include <sstream>
 #include <iomanip>
 
+#include <Wt/WText.h>
 #include <Wt/WString.h>
 #include <Wt/WLogger.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLayoutItem.h>
 #include <Wt/WVBoxLayout.h>
@@ -391,7 +395,7 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
   setStyleClass("Shielding3DView");
 
   Wt::WApplication *app = Wt::WApplication::instance();
-  app->require("InterSpec_resources/Shielding3DView.js?v=6");
+  app->require("InterSpec_resources/Shielding3DView.js?v=7");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
 
   defineJavaScript();
@@ -488,6 +492,13 @@ void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
   }
 }//void Shielding3DView::updateData(...)
 
+
+void Shielding3DView::setVolumetricLines( const std::string &json )
+{
+  doJavaScript( "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setLines === 'function'){"
+                "c.chart.setLines(" + json + ");}" );
+}//setVolumetricLines(...)
+
 namespace
 {
   /** Sizes a diagram view to exactly the dialog's view cell. */
@@ -516,6 +527,10 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
     m_select( nullptr ),
     m_layout( nullptr ),
     m_viewHolder( nullptr ),
+    m_linesControls( nullptr ),
+    m_showLines( nullptr ),
+    m_lineEnergy( nullptr ),
+    m_linesMsg( nullptr ),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
@@ -552,6 +567,21 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   m_select->addItem( "3D View" );
   m_select->setCurrentIndex( 0 );
   m_select->activated().connect( this, &ShieldingDiagramDialog::handleViewTypeToggle );
+
+  // The 3D view's integration lines: off until asked for, since they cost a fit-function build.
+  m_linesControls = type_row->addNew<WContainerWidget>();
+  m_linesControls->addStyleClass( "ShieldingDiagramLines" );
+  m_showLines = m_linesControls->addNew<WCheckBox>( WString::tr("ssd-diag-show-lines") );
+  m_showLines->setToolTip( WString::tr("ssd-diag-tt-show-lines") );
+  m_showLines->changed().connect( this, &ShieldingDiagramDialog::handleShowLinesToggled );
+  m_lineEnergy = m_linesControls->addNew<WComboBox>();
+  m_lineEnergy->setToolTip( WString::tr("ssd-diag-tt-line-energy") );
+  m_lineEnergy->activated().connect( this, &ShieldingDiagramDialog::handleLineEnergyChanged );
+  m_lineEnergy->hide();
+  m_linesMsg = m_linesControls->addNew<WText>();
+  m_linesMsg->setTextFormat( Wt::TextFormat::Plain );   //may carry an exception's text
+  m_linesMsg->addStyleClass( "ShieldingDiagramLinesMsg" );
+  m_linesControls->hide();
 
   // Cap the dialog at 95% of the viewport; setMaximumSize keeps the scrollable body in sync.
   setMaximumSize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
@@ -597,7 +627,24 @@ void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCal
 
   if( m_3DView )
     m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1, drf );
+
+  // Lines drawn for the old model would be wrong now (the 3D view has already dropped them); new ones
+  //  are computed now if the 3D view is showing, else when it next is.
+  m_linesJson.clear();
+  m_linesControls->setHidden( !m_3DView || !linesPossible() );
+  if( m_3DView && m_showLines->isChecked() && linesPossible() )
+    requestLines();
 }//void ShieldingDiagramDialog::updateData(...)
+
+
+bool ShieldingDiagramDialog::linesPossible() const
+{
+  // Lines need a volumetric source, and a detector geometry for the fit to integrate them through.
+  bool any_volumetric = false;
+  for( const ShieldingSourceFitCalc::SourceFitDef &src : m_sources )
+    any_volumetric = (any_volumetric || (src.sourceType != ShieldingSourceFitCalc::ModelSourceType::Point));
+  return any_volumetric && m_drf && m_drf->geometry();
+}//linesPossible()
 
 
 void ShieldingDiagramDialog::switchView( bool show3D )
@@ -613,7 +660,13 @@ void ShieldingDiagramDialog::switchView( bool show3D )
 
     m_3DView = m_viewHolder->addNew<Shielding3DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1], m_drf );
     fill_view_holder( m_3DView );
+    if( m_showLines->isChecked() && !m_linesJson.empty() )
+      m_3DView->setVolumetricLines( m_linesJson );
+    else if( m_showLines->isChecked() && linesPossible() )
+      requestLines();   //the model changed while the 2D view was showing
   }//if( show3D && !m_3DView )
+
+  m_linesControls->setHidden( !show3D || !linesPossible() );
 
   if( !show3D && !m_2DView )
   {
@@ -627,6 +680,143 @@ void ShieldingDiagramDialog::switchView( bool show3D )
     fill_view_holder( m_2DView );
   }//if( !show3D && !m_2DView )
 }
+
+Wt::Signal<double> &ShieldingDiagramDialog::volumetricLinesRequested()
+{
+  return m_linesRequested;
+}
+
+
+void ShieldingDiagramDialog::requestLines()
+{
+  const int index = m_lineEnergy->currentIndex();
+  const double energy = ((index >= 0) && (static_cast<size_t>(index) < m_lineEnergies.size()))
+                          ? m_lineEnergies[static_cast<size_t>(index)] : -1.0;
+  m_linesMsg->setText( "" );
+  m_linesRequested.emit( energy );
+}//requestLines()
+
+
+void ShieldingDiagramDialog::handleShowLinesToggled()
+{
+  if( m_showLines->isChecked() )
+  {
+    requestLines();
+    return;
+  }
+
+  m_linesJson.clear();
+  m_lineEnergy->hide();
+  m_linesMsg->setText( "" );
+  if( m_3DView )
+    m_3DView->setVolumetricLines( "null" );
+}//handleShowLinesToggled()
+
+
+void ShieldingDiagramDialog::handleLineEnergyChanged()
+{
+  if( m_showLines->isChecked() )
+    requestLines();
+}//handleLineEnergyChanged()
+
+
+void ShieldingDiagramDialog::setVolumetricLinesError( const Wt::WString &message )
+{
+  m_showLines->setChecked( false );
+  m_linesJson.clear();
+  m_lineEnergies.clear();
+  m_lineEnergy->clear();
+  m_lineEnergy->hide();
+  m_linesMsg->setText( message );
+  if( m_3DView )
+    m_3DView->setVolumetricLines( "null" );
+}//setVolumetricLinesError(...)
+
+
+void ShieldingDiagramDialog::setVolumetricLines( const GammaInteractionCalc::VolumetricLineSample &sample )
+{
+  using GammaInteractionCalc::VolumetricLineSample;
+
+  if( sample.energies.empty() )
+  {
+    setVolumetricLinesError( WString::tr("ssd-diag-lines-none") );
+    return;
+  }
+
+  const auto energy_str = []( const double energy ) -> string {
+    char buffer[32];
+    snprintf( buffer, sizeof(buffer), "%.2f", energy );
+    return buffer;
+  };
+
+  // The energies to pick from: every gamma integrated along lines, the drawn one selected.
+  m_lineEnergies = sample.energies;
+  m_lineEnergy->clear();
+  for( size_t i = 0; i < m_lineEnergies.size(); ++i )
+  {
+    m_lineEnergy->addItem( WString::tr("ssd-diag-line-energy").arg( energy_str(m_lineEnergies[i]) ) );
+    if( m_lineEnergies[i] == sample.energy )
+      m_lineEnergy->setCurrentIndex( static_cast<int>( i ) );
+  }
+  m_lineEnergy->setHidden( m_lineEnergies.size() < 2 );
+
+  if( sample.lines.empty() )
+  {
+    // Nothing reaches the crystal at this energy; the option stays on, so another can be picked.
+    m_linesJson.clear();
+    m_linesMsg->setText( WString::tr("ssd-diag-lines-none-at").arg( energy_str(sample.energy) ) );
+    if( m_3DView )
+      m_3DView->setVolumetricLines( "null" );
+    return;
+  }
+
+  // Assembly frame (PhysicalUnits) -> the 3D view's scene (mm, detector along +z at +offsets): a
+  //  half turn about z, or for a side-on cylinder the rotation taking the detector's x axis to +z
+  //  (the same maps the detector drawing implies; see detector_geom_from_config).
+  const bool side_on = (m_geometry == GammaInteractionCalc::GeometryType::CylinderSideOn);
+  const auto add_point = [side_on]( const double *p, nlohmann::json &out ) {
+    const double x = p[0]/PhysicalUnits::mm, y = p[1]/PhysicalUnits::mm, z = p[2]/PhysicalUnits::mm;
+    const double scene[3] = { side_on ? -y : -x, side_on ? -z : -y, side_on ? x : z };
+    for( const double v : scene )
+      out.push_back( std::round( 100.0*v ) / 100.0 );   //0.01 mm is plenty for a drawing
+  };
+  const auto segment_json = [&add_point]( const std::array<double,6> &seg ) -> nlohmann::json {
+    nlohmann::json arr = nlohmann::json::array();
+    add_point( &seg[0], arr );
+    add_point( &seg[3], arr );
+    return arr;
+  };
+
+  nlohmann::json lines = nlohmann::json::array();
+  for( const VolumetricLineSample::Line &line : sample.lines )
+  {
+    nlohmann::json src = nlohmann::json::array(), cry = nlohmann::json::array();
+    for( const std::array<double,6> &seg : line.source_segments )
+      src.push_back( segment_json( seg ) );
+    for( const std::array<double,6> &seg : line.crystal_segments )
+      cry.push_back( segment_json( seg ) );
+
+    nlohmann::json l;
+    l["e"] = segment_json( line.extent );
+    l["s"] = src;
+    l["c"] = cry;
+    lines.push_back( l );
+  }//for( lines )
+
+  nlohmann::json j;
+  j["lines"] = lines;
+  j["caption"] = WString::tr("ssd-diag-lines-caption").arg( static_cast<int>(sample.lines.size()) )
+                    .arg( static_cast<int>(sample.num_lines_in_set) ).arg( energy_str(sample.energy) ).toUTF8();
+  j["labels"]["src"] = WString::tr("ssd-diag-lines-src").toUTF8();
+  j["labels"]["crystal"] = WString::tr("ssd-diag-lines-crystal").toUTF8();
+  j["labels"]["path"] = WString::tr("ssd-diag-lines-path").toUTF8();
+  m_linesJson = j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
+  m_linesMsg->setText( "" );
+
+  if( m_3DView )
+    m_3DView->setVolumetricLines( m_linesJson );
+}//setVolumetricLines(...)
+
 
 // Static factory method
 ShieldingDiagramDialog *ShieldingDiagramDialog::createShieldingDiagram(

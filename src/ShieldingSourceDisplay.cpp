@@ -10869,7 +10869,8 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   //}, std::placeholders::_1 ) );
   
   m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
-  
+  m_diagramDialog->volumetricLinesRequested().connect( this, &ShieldingSourceDisplay::handleDiagramLinesRequested );
+
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
@@ -10888,6 +10889,28 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
     undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
   }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleDiagramLinesRequested( const double energy )
+{
+  if( !m_diagramDialog )
+    return;
+
+  // The lines follow the model as the GUI currently has it, so they come from a fit function built
+  //  for it now - the same construction a fit starts from.
+  const size_t max_lines = 300;
+  try
+  {
+    const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
+                                                                      fcn_pars = shieldingFitnessFcn();
+    const GammaInteractionCalc::VolumetricLineSample sample
+                  = fcn_pars.first->sampleVolumetricLines( fcn_pars.second.values(), energy, max_lines );
+    m_diagramDialog->setVolumetricLines( sample );
+  }catch( std::exception &e )
+  {
+    m_diagramDialog->setVolumetricLinesError( WString::tr("ssd-diag-lines-err").arg( e.what() ) );
+  }
+}//handleDiagramLinesRequested(...)
 
 
 void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()

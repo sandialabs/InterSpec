@@ -3867,6 +3867,146 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
 }//volumetricLineCache(...)
 
 
+VolumetricLineSample ShieldingSourceChi2Fcn::sampleVolumetricLines( const std::vector<double> &params,
+                                                                   const double energy,
+                                                                   const size_t max_lines ) const
+{
+  NucMixtureCache mixturecache;
+  const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
+  const std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
+                              = build_volumetric_calculators<double>( params, mixturecache, energie_widths );
+  const VolumetricPartitionT<double> part = partition_volumetric_calculators( calculators );
+  const bool multithread = m_options.multithread_self_atten;
+
+  VolumetricLineSample answer;
+  for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+  {
+    for( const DistributedSrcCalcT<double> *calc : group )
+      answer.energies.push_back( calc->m_energy );
+  }
+  std::sort( begin(answer.energies), end(answer.energies) );
+  answer.energies.erase( std::unique( begin(answer.energies), end(answer.energies) ), end(answer.energies) );
+  if( answer.energies.empty() )
+    return answer;
+
+  // The gamma to draw: the one nearest the energy asked for, or by default the one giving the most
+  //  counts, over all the sources emitting it.
+  answer.energy = answer.energies.front();
+  if( energy > 0.0 )
+  {
+    for( const double e : answer.energies )
+    {
+      if( std::fabs( e - energy ) < std::fabs( answer.energy - energy ) )
+        answer.energy = e;
+    }
+  }else
+  {
+    std::map<double,double> counts;
+    for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+    {
+      line_source_integration_imp( group, multithread );
+      for( const DistributedSrcCalcT<double> *calc : group )
+        counts[calc->m_energy] += calc->integral * calc->m_srcVolumetricActivity;
+    }
+
+    double most = -1.0;
+    for( const std::pair<const double,double> &energy_counts : counts )
+    {
+      if( energy_counts.second > most )
+      {
+        most = energy_counts.second;
+        answer.energy = energy_counts.first;
+      }
+    }
+  }//if( energy asked for ) / else
+
+  // The counts each line contributes at that energy, summed over the sources emitting it.  Sources in
+  //  one shell share its line set, so they are summed line by line, and the lines are drawn with the
+  //  source stretches of the one giving the most counts.
+  struct SetCounts
+  {
+    const DistributedSrcCalcT<double> *calc;   //whose stretches are drawn
+    double calc_counts;
+    std::vector<double> weights;               //per line of the set
+  };
+  std::vector<SetCounts> line_counts;
+  for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+  {
+    for( DistributedSrcCalcT<double> *calc : group )
+    {
+      if( calc->m_energy != answer.energy )
+        continue;
+
+      std::vector<std::vector<double>> terms;
+      line_source_integration_imp( std::vector<DistributedSrcCalcT<double>*>{ calc }, multithread,
+                                   nullptr, &terms );
+      std::vector<double> &weights = terms.front();
+      double calc_counts = 0.0;
+      for( double &w : weights )
+      {
+        w = std::max( 0.0, w * calc->m_srcVolumetricActivity );   //NaN -> 0
+        calc_counts += w;
+      }
+
+      SetCounts *set = nullptr;
+      for( SetCounts &s : line_counts )
+        set = (s.calc->m_lineCache == calc->m_lineCache) ? &s : set;
+      if( !set )
+      {
+        line_counts.push_back( SetCounts{ calc, calc_counts, std::move(weights) } );
+        continue;
+      }
+
+      assert( set->weights.size() == weights.size() );
+      for( size_t j = 0; (j < weights.size()) && (j < set->weights.size()); ++j )
+        set->weights[j] += weights[j];
+      if( calc_counts > set->calc_counts )
+      {
+        set->calc = calc;
+        set->calc_counts = calc_counts;
+      }
+    }//for( calculators of the group )
+  }//for( line groups )
+
+  double total = 0.0;
+  for( const SetCounts &set : line_counts )
+  {
+    answer.num_lines_in_set += set.weights.size();
+    for( const double w : set.weights )
+    {
+      total += w;
+      answer.num_contributing += (w > 0.0);
+    }
+  }
+
+  // Systematic resampling in the sets' own (low-discrepancy) order: `max_lines` equally spaced draws
+  //  through the cumulative counts, so the drawn density follows the contribution.  A total so small
+  //  its step underflows to zero draws nothing (and cannot stall the loop).
+  const double step = (max_lines > 0) ? (total / static_cast<double>( max_lines )) : 0.0;
+  if( !(step > 0.0) || !std::isfinite( step ) )
+    return answer;
+
+  double next = 0.5*step, cumulative = 0.0;
+  for( const SetCounts &set : line_counts )
+  {
+    for( size_t j = 0; j < set.weights.size(); ++j )
+    {
+      cumulative += set.weights[j];
+      if( next >= cumulative )
+        continue;
+      while( next < cumulative )
+        next += step;
+
+      VolumetricLineSample::Line line;
+      if( line_display_geometry( *set.calc, j, line ) )
+        answer.lines.push_back( std::move(line) );
+    }//for( lines of the set )
+  }//for( line sets emitting at the energy )
+
+  return answer;
+}//sampleVolumetricLines(...)
+
+
 void ShieldingSourceChi2Fcn::setVolumetricLineCount( const int num_lines, const std::vector<double> *params )
 {
   if( num_lines <= 0 )

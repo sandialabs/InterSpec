@@ -290,6 +290,8 @@ Shielding3DView = function(id, data, detector) {
   this.currentViewProj = null;
   this.fitRadius = 100;       // bounding radius of the model about camTarget (set in setData)
   this.lastFitAspect = 0;     // canvas aspect the camera was last framed for (see frameToFit)
+  this.lines = null;          // integration lines to draw (see setLines), or null
+  this.linesLegend = null;
 
   // --- 2D Overlay Canvas for distance annotations ---
   this.overlayCanvas = document.createElement('canvas');
@@ -555,6 +557,9 @@ Shielding3DView = function(id, data, detector) {
       }
       ctx.clearRect(0, 0, self.overlayCanvas.width, self.overlayCanvas.height);
 
+      if (self.lines)
+        self.drawLines(ctx, viewProj, canvas.width, canvas.height);
+
       if (self.hoverTarget && self.keyPoints) {
         var kp = self.keyPoints;
         var cw = canvas.width, ch = canvas.height;
@@ -664,11 +669,12 @@ Shielding3DView.prototype.setData = function(data, detector) {
   
   this.meshes = [];
   
-  // Remove old overlay if it exists
-  var oldOverlay = this.container.querySelector('div[style*="position: absolute"]');
-  if (oldOverlay && oldOverlay !== this.canvas) {
+  // Remove the previous sources box, and any integration lines drawn for the previous model
+  var oldOverlay = this.container.querySelector('.S3dSources');
+  if (oldOverlay) {
     oldOverlay.remove();
   }
+  this.setLines(null);
   
   if (!data) return;
   
@@ -1085,6 +1091,7 @@ Shielding3DView.prototype.setData = function(data, detector) {
   // --- Source Overlay ---
   if (data.fitSources && data.fitSources.length > 0) {
       var overlay = document.createElement('div');
+      overlay.className = 'S3dSources';
       overlay.style.position = 'absolute';
       overlay.style.top = '10px';
       overlay.style.left = '10px';
@@ -1136,6 +1143,85 @@ Shielding3DView.prototype.setData = function(data, detector) {
   //  re-frames if the aspect later changes, so the model stays fully visible at any width.
   var aspect = (this.canvas && this.canvas.height > 0) ? (this.canvas.width / this.canvas.height) : 1;
   this.frameToFit(aspect);
+};
+
+// Colors of the integration lines' parts: in the emitting source, in the crystal, and the rest.
+Shielding3DView.LineColors = { src: 'rgba(217,72,15,0.85)', crystal: 'rgba(24,100,171,0.9)',
+                               path: 'rgba(82,96,109,0.35)' };
+
+// Shows the fit's integration lines (see ShieldingDiagramDialog::setVolumetricLines), or none for
+//  null: {lines: [{e: [x0,y0,z0,x1,y1,z1], s: [[...],...], c: [[...],...]}], caption,
+//  labels: {src, crystal, path}}, scene coordinates in mm.
+Shielding3DView.prototype.setLines = function(lines) {
+  this.lines = (lines && lines.lines && lines.lines.length) ? lines : null;
+  if (this.linesLegend) {
+    this.linesLegend.remove();
+    this.linesLegend = null;
+  }
+  if (!this.lines)
+    return;
+
+  var legend = document.createElement('div');
+  legend.className = 'S3dLinesLegend';
+  var labels = this.lines.labels || {};
+  [['src', labels.src], ['crystal', labels.crystal], ['path', labels.path]].forEach(function(entry) {
+    var row = document.createElement('div');
+    var swatch = document.createElement('span');
+    swatch.className = 'S3dLinesSwatch';
+    swatch.style.backgroundColor = Shielding3DView.LineColors[entry[0]];
+    row.appendChild(swatch);
+    row.appendChild(document.createTextNode(entry[1] || ''));
+    legend.appendChild(row);
+  });
+  var caption = document.createElement('div');
+  caption.className = 'S3dLinesCaption';
+  caption.textContent = this.lines.caption || '';
+  legend.appendChild(caption);
+  this.container.appendChild(legend);
+  this.linesLegend = legend;
+};
+
+// Strokes the integration lines onto the 2D overlay (so they can be wider than WebGL's 1 px lines),
+//  clipping each segment to the part in front of the camera.
+Shielding3DView.prototype.drawLines = function(ctx, viewProj, cw, ch) {
+  var nearW = 1.0e-3;
+  function clip(p, k) {
+    var x = p[k], y = p[k+1], z = p[k+2];
+    return [viewProj[0]*x + viewProj[4]*y + viewProj[8]*z + viewProj[12],
+            viewProj[1]*x + viewProj[5]*y + viewProj[9]*z + viewProj[13],
+            viewProj[3]*x + viewProj[7]*y + viewProj[11]*z + viewProj[15]];
+  }
+  function segment(seg) {
+    var a = clip(seg, 0), b = clip(seg, 3);
+    if ((a[2] < nearW) && (b[2] < nearW))
+      return;
+    if ((a[2] < nearW) || (b[2] < nearW)) {
+      var t = (nearW - a[2]) / (b[2] - a[2]);
+      var m = [a[0] + t*(b[0] - a[0]), a[1] + t*(b[1] - a[1]), nearW];
+      if (a[2] < nearW) a = m; else b = m;
+    }
+    ctx.moveTo((a[0]/a[2]*0.5 + 0.5)*cw, (0.5 - a[1]/a[2]*0.5)*ch);
+    ctx.lineTo((b[0]/b[2]*0.5 + 0.5)*cw, (0.5 - b[1]/b[2]*0.5)*ch);
+  }
+
+  var lines = this.lines.lines;
+  var passes = [['e', 'path', 1.0], ['s', 'src', 2.0], ['c', 'crystal', 2.0]];
+  for (var p = 0; p < passes.length; p++) {
+    var key = passes[p][0];
+    ctx.beginPath();
+    ctx.strokeStyle = Shielding3DView.LineColors[passes[p][1]];
+    ctx.lineWidth = passes[p][2];
+    for (var j = 0; j < lines.length; j++) {
+      if (key === 'e') {
+        segment(lines[j].e);
+      } else {
+        var segs = lines[j][key] || [];
+        for (var k = 0; k < segs.length; k++)
+          segment(segs[k]);
+      }
+    }
+    ctx.stroke();
+  }
 };
 
 // Set camRadius so a sphere of this.fitRadius (centered on camTarget) fits within the

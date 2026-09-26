@@ -14,3 +14,40 @@
   top: 0;
   left: 0;
 }
+
+/* Integration lines: the legend over the view, and the dialog's toggle/energy controls. */
+.S3dLinesLegend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background-color: var(--interspec-background-color);
+  opacity: 0.9;
+  font-family: sans-serif;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.S3dLinesSwatch {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.S3dLinesCaption {
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+.ShieldingDiagramLines {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ShieldingDiagramLinesMsg {
+  font-size: 12px;
+}

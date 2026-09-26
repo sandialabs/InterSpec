@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include <Wt/WSignal.h>
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/GammaInteractionCalc.h"
@@ -37,6 +38,8 @@
 
 namespace Wt
 {
+  class WText;
+  class WCheckBox;
   class WComboBox;
   class WVBoxLayout;
 }
@@ -79,6 +82,17 @@ public:
                    double sourceOffset1 = 0.0,
                    std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
+  /** Emitted with a gamma energy (keV; <= 0 for the default) when the 3D view wants the fit's
+   integration lines - the owner answers with #setVolumetricLines or #setVolumetricLinesError. */
+  Wt::Signal<double> &volumetricLinesRequested();
+
+  /** Shows these lines (see GammaInteractionCalc::ShieldingSourceChi2Fcn::sampleVolumetricLines). */
+  void setVolumetricLines( const GammaInteractionCalc::VolumetricLineSample &sample );
+
+  /** The lines could not be computed: says why, and turns the option off (back to the default
+   energy, should that energy be the problem). */
+  void setVolumetricLinesError( const Wt::WString &message );
+
 protected:
   // Constructor is protected; use SimpleDialog::make<ShieldingDiagramDialog>() to create.
   ShieldingDiagramDialog(
@@ -94,12 +108,25 @@ protected:
 
 private:
   void handleViewTypeToggle();
+  void handleShowLinesToggled();
+  void handleLineEnergyChanged();
+  void requestLines();
+  bool linesPossible() const;
 
   Shielding2DView *m_2DView;
   Shielding3DView *m_3DView;
   Wt::WComboBox *m_select;
   Wt::WVBoxLayout *m_layout;
   Wt::WContainerWidget *m_viewHolder;   //the stretching cell the current view fills
+
+  // The 3D view's integration-line controls
+  Wt::WContainerWidget *m_linesControls;
+  Wt::WCheckBox *m_showLines;
+  Wt::WComboBox *m_lineEnergy;
+  Wt::WText *m_linesMsg;
+  std::vector<double> m_lineEnergies;   //keV, the entries of m_lineEnergy
+  std::string m_linesJson;              //what the 3D view was last given; resent when it is rebuilt
+  Wt::Signal<double> m_linesRequested;
 
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
   std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
@@ -182,6 +209,9 @@ public:
    detector face the source distance is measured to.
    */
   static std::string createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf );
+
+  /** Shows integration lines (JSON from the dialog), or none for "null". */
+  void setVolumetricLines( const std::string &json );
 
 private:
   void defineJavaScript();

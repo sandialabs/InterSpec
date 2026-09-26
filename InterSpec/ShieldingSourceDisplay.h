@@ -574,6 +574,10 @@ public:
   void showShieldSourceDiagram();
   void closeShieldSourceDiagram();
   void handleShieldSourceDiagramClosed();
+
+  /** Answers the diagram's request for integration lines at `energy` (keV; <= 0 for the default),
+   from a fit function built for the current model. */
+  void handleDiagramLinesRequested( const double energy );
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    

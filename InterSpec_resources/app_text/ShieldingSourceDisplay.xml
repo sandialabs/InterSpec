@@ -290,6 +290,23 @@
   <message id="ssd-error-create-tool">Error creating Activity/Shielding fit display: {1}</message>
   <message id="ssd-shield-source-diagram">Shielding/Source Diagram</message>
   <message id="ssd-show-model-diagram">Show Model Diagram</message>
+  <message id="ssd-diag-show-lines">Integration lines</message>
+  <message id="ssd-diag-tt-show-lines">
+    Draws some of the lines through the detector that the fit integrates a self-attenuating
+    or trace source along, picked in proportion to how much each contributes at the selected
+    gamma energy - so where the lines bunch is where the counts come from.  Orange marks where
+    90% of a line's counts are emitted (deeper in the source they are absorbed on the way out),
+    blue where 90% of its photons interact in the crystal.
+  </message>
+  <message id="ssd-diag-tt-line-energy">Gamma energy the lines are picked by contribution at.</message>
+  <message id="ssd-diag-line-energy">{1} keV</message>
+  <message id="ssd-diag-lines-none">The fit integrates no source along lines: that needs a self-attenuating or trace source, a detector response with a geometry, and a detector efficiency model other than flat-disk.</message>
+  <message id="ssd-diag-lines-none-at">No line contributes at {1} keV.</message>
+  <message id="ssd-diag-lines-err">Could not compute the integration lines: {1}</message>
+  <message id="ssd-diag-lines-src">source: where 90% of the counts are emitted</message>
+  <message id="ssd-diag-lines-crystal">crystal: where 90% of the photons interact</message>
+  <message id="ssd-diag-lines-path">rest of the line</message>
+  <message id="ssd-diag-lines-caption">{1} of {2} integration lines, by contribution at {3} keV</message>
 
   <!-- SourceFitModel quantities -->
   <message id="sfm-tt-header-isotope">Nuclides are added or removed according to the photopeaks used for this fit, thus may not be edited in this table</message>

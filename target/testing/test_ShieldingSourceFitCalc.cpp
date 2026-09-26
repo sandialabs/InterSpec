@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <ctime>
 #include <chrono>
 #include <random>
 #include <string>
@@ -5892,3 +5893,349 @@ BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )
                        "the core radius moves across line sets by " << 100.0*radius_spread*mean_radius/mean_uncert
                        << "% of its own uncertainty" );
 }//BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )
+
+
+/** The lines the Activity/Shielding 3D diagram draws (`ShieldingSourceChi2Fcn::sampleVolumetricLines`)
+ are the fit's own.  The integration's per-line terms sum to its integral; every drawn stretch lies
+ where it says it does - the source stretch inside the source from its detector side, the crystal
+ stretch inside the crystal from where the line enters, all on one straight line from the far side of
+ the outermost layer; and the gamma drawn is the one contributing the most counts, or the one asked for.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricLineSampleForDisplay )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> iron = matdb->material( "Fe" );
+  const shared_ptr<const Material> aluminum = matdb->material( "Al" );
+  BOOST_REQUIRE( iron && aluminum );
+
+  using GammaInteractionCalc::DistributedSrcCalcT;
+  using GammaInteractionCalc::VolumetricLineSample;
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  const double cm = PhysicalUnits::cm;
+  const double distance = 15.0*cm, src_radius = 2.0*cm, al_thickness = 0.5*cm;
+
+  // A Ba-133 trace source in an iron sphere, inside an aluminium shell, 15 cm from a 3"x3" NaI.
+  ShieldingSourceChi2Fcn::ShieldSourceInput input
+        = make_ba133_point_input( make_synthetic_nai_drf( true ), distance, 0.0,
+                                  ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+  add_ba133_trace_shell( input, iron, src_radius );
+  {
+    ShieldingSourceFitCalc::ShieldingInfo al;
+    al.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    al.m_isGenericMaterial = false;
+    al.m_forFitting = false;
+    al.m_material = aluminum;
+    al.m_dimensions[0] = al_thickness;
+    al.m_dimensions[1] = al.m_dimensions[2] = 0.0;
+    al.m_fitDimensions[0] = al.m_fitDimensions[1] = al.m_fitDimensions[2] = false;
+    input.config.shieldings.push_back( al );
+  }
+
+  const std::clock_t create_start = std::clock();
+  const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                    = ShieldingSourceChi2Fcn::create( input );
+  const double create_cpu = static_cast<double>( std::clock() - create_start ) / CLOCKS_PER_SEC;
+  const shared_ptr<ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+  BOOST_REQUIRE( fcn && fcn->hasVolumetricLineSets() );
+  const vector<double> params = fcn_pars.second.values();
+
+  // The per-line terms sum to the integral, for every gamma; and which gamma gives the most counts.
+  double mu_iron_81 = 0.0;   //the source's FEP removal coefficient at 81 keV, 1/PhysicalUnits
+  double most_counts = -1.0, most_counts_energy = 0.0;
+  {
+    vector<PeakDef> peaks;
+    for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
+      peaks.push_back( *p );
+    ShieldingSourceChi2Fcn::NucMixtureCache mix;
+    const vector<unique_ptr<DistributedSrcCalcT<double>>> calcs
+          = fcn->build_volumetric_calculators<double>( params, mix,
+                                                       ShieldingSourceChi2Fcn::observedPeakEnergyWidths( peaks ) );
+    BOOST_REQUIRE_EQUAL( calcs.size(), size_t(5) );
+    for( const unique_ptr<DistributedSrcCalcT<double>> &calc : calcs )
+    {
+      vector<vector<double>> terms;
+      GammaInteractionCalc::line_source_integration_imp( vector<DistributedSrcCalcT<double>*>{ calc.get() },
+                                                         false, nullptr, &terms );
+      BOOST_REQUIRE_EQUAL( terms.size(), size_t(1) );
+      double sum = 0.0;
+      for( const double t : terms[0] )
+        sum += t;
+      BOOST_CHECK( calc->integral > 0.0 );
+      BOOST_CHECK_MESSAGE( fabs(sum - calc->integral) <= 1.0E-12*fabs(calc->integral),
+                           "per-line terms at " << calc->m_energy << " keV sum to " << sum
+                           << ", not the integral " << calc->integral );
+      if( fabs(calc->m_energy - 80.9979) < 0.1 )
+        mu_iron_81 = calc->m_shells.front().fep_trans_len_coef;
+
+      const double counts = calc->integral * calc->m_srcVolumetricActivity;
+      if( counts > most_counts )
+      {
+        most_counts = counts;
+        most_counts_energy = calc->m_energy;
+      }
+    }//for( calculators )
+  }
+  BOOST_REQUIRE( mu_iron_81 > 0.0 );
+
+  // By default the gamma contributing the most counts, otherwise the one nearest the energy asked for.
+  const std::clock_t sample_start = std::clock();
+  const VolumetricLineSample sample = fcn->sampleVolumetricLines( params, -1.0, 250 );
+  const double sample_cpu = static_cast<double>( std::clock() - sample_start ) / CLOCKS_PER_SEC;
+  BOOST_TEST_MESSAGE( "  " << sample.lines.size() << " distinct lines drawn from " << sample.num_contributing
+                      << " contributing of " << sample.num_lines_in_set << ", at " << sample.energy << " keV;"
+                      << " CPU: fit function " << create_cpu << " s, sampling (5 gammas) " << sample_cpu << " s" );
+  BOOST_CHECK_MESSAGE( sample.energy == most_counts_energy, "default gamma is " << sample.energy
+                       << " keV, not the " << most_counts_energy << " keV giving the most counts" );
+  BOOST_CHECK_EQUAL( sample.energies.size(), size_t(5) );
+  BOOST_CHECK_EQUAL( sample.num_lines_in_set, static_cast<size_t>( fcn->volumetricLineCount() ) );
+  BOOST_CHECK( (sample.num_contributing > 0) && (sample.num_contributing < sample.num_lines_in_set) );
+  BOOST_CHECK( !sample.lines.empty() && (sample.lines.size() <= 250) );
+
+  const VolumetricLineSample near_303 = fcn->sampleVolumetricLines( params, 300.0, 50 );
+  BOOST_CHECK_MESSAGE( fabs(near_303.energy - 302.8508) < 0.1, "asked for 300 keV, drew " << near_303.energy );
+
+  // Where each stretch lies.  The NaI's face is the can's 0.5 mm behind the detector face, which is
+  //  `distance` along +z; the crystal is 3.81 cm in radius and 7.62 cm long.
+  const double tol = 1.0E-6*cm;
+  const double crystal_z0 = distance + 0.05*cm, crystal_z1 = crystal_z0 + 7.62*cm;
+  const auto norm3 = []( const double x, const double y, const double z ) -> double {
+    return std::sqrt( x*x + y*y + z*z );
+  };
+  for( const VolumetricLineSample::Line &line : sample.lines )
+  {
+    const array<double,6> &e = line.extent;
+    BOOST_CHECK_MESSAGE( fabs( norm3( e[0], e[1], e[2] ) - (src_radius + al_thickness) ) < tol,
+                         "a line does not start on the far side of the aluminium" );
+
+    // `u` runs along the line toward the detector.
+    const double len = norm3( e[3] - e[0], e[4] - e[1], e[5] - e[2] );
+    BOOST_REQUIRE( len > 0.0 );
+    const double u[3] = { (e[3] - e[0])/len, (e[4] - e[1])/len, (e[5] - e[2])/len };
+    const auto off_line = [&]( const double *p ) -> double {
+      const double v[3] = { p[0] - e[0], p[1] - e[1], p[2] - e[2] };
+      const double t = v[0]*u[0] + v[1]*u[1] + v[2]*u[2];
+      return norm3( v[0] - t*u[0], v[1] - t*u[1], v[2] - t*u[2] );
+    };
+    const auto along = [&]( const array<double,6> &seg ) -> double {
+      return (seg[3] - seg[0])*u[0] + (seg[4] - seg[1])*u[1] + (seg[5] - seg[2])*u[2];
+    };
+
+    // A solid source: one stretch, from where the line leaves the sphere toward the detector, inward.
+    BOOST_CHECK_EQUAL( line.source_segments.size(), size_t(1) );
+    for( const array<double,6> &seg : line.source_segments )
+    {
+      for( const size_t k : { size_t(0), size_t(3) } )
+      {
+        BOOST_CHECK( norm3( seg[k], seg[k+1], seg[k+2] ) <= src_radius + tol );
+        BOOST_CHECK( off_line( &seg[k] ) < tol );
+      }
+      BOOST_CHECK( fabs( norm3( seg[0], seg[1], seg[2] ) - src_radius ) < tol );
+      BOOST_CHECK( along( seg ) < 0.0 );
+    }
+
+    // The crystal stretch starts where the line enters the crystal, through its face or side.
+    BOOST_REQUIRE( !line.crystal_segments.empty() );
+    for( const array<double,6> &seg : line.crystal_segments )
+    {
+      for( const size_t k : { size_t(0), size_t(3) } )
+      {
+        BOOST_CHECK( std::hypot( seg[k], seg[k+1] ) <= 3.81*cm + tol );
+        BOOST_CHECK( (seg[k+2] >= crystal_z0 - tol) && (seg[k+2] <= crystal_z1 + tol) );
+        BOOST_CHECK( off_line( &seg[k] ) < tol );
+      }
+      BOOST_CHECK( along( seg ) > 0.0 );
+    }
+    const array<double,6> &entry = line.crystal_segments.front();
+    BOOST_CHECK( (fabs( entry[2] - crystal_z0 ) < tol) || (fabs( std::hypot( entry[0], entry[1] ) - 3.81*cm ) < tol) );
+  }//for( drawn lines )
+
+  // The source and crystal stretches mark where 90% of the counts come from: at 81 keV the iron lets
+  //  emission out of no more than ln(10)/mu of it, and the NaI stops the photons within ln(10)/mu of
+  //  its surface; at 384 keV the emitting skin is deeper than that.
+  const auto longest = []( const VolumetricLineSample &s, const bool crystal ) -> double {
+    double longest_len = 0.0;
+    for( const VolumetricLineSample::Line &line : s.lines )
+    {
+      for( const array<double,6> &seg : (crystal ? line.crystal_segments : line.source_segments) )
+        longest_len = std::max( longest_len, std::sqrt( (seg[3]-seg[0])*(seg[3]-seg[0])
+                                            + (seg[4]-seg[1])*(seg[4]-seg[1]) + (seg[5]-seg[2])*(seg[5]-seg[2]) ) );
+    }
+    return longest_len;
+  };
+  const VolumetricLineSample at_81 = fcn->sampleVolumetricLines( params, 81.0, 200 );
+  const VolumetricLineSample at_384 = fcn->sampleVolumetricLines( params, 384.0, 200 );
+  const double skin_81 = std::log( 10.0 ) / mu_iron_81;
+  const double nai_81 = std::log( 10.0 ) / ceelo::make_NaI().mu_total( 80.9979E-3 ) * cm;
+  BOOST_CHECK_MESSAGE( longest( at_81, false ) <= skin_81*(1.0 + 1.0E-9),
+                       "an 81 keV source stretch of " << longest( at_81, false )/cm
+                       << " cm is deeper than the 90% depth of " << skin_81/cm << " cm" );
+  BOOST_CHECK_MESSAGE( longest( at_81, true ) <= nai_81*(1.0 + 1.0E-6),
+                       "an 81 keV crystal stretch of " << longest( at_81, true )/cm
+                       << " cm is deeper than the 90% depth of " << nai_81/cm << " cm" );
+  BOOST_CHECK_MESSAGE( longest( at_384, false ) > skin_81,
+                       "384 keV source stretches reach no deeper than 81 keV's" );
+}//BOOST_AUTO_TEST_CASE( VolumetricLineSampleForDisplay )
+
+
+/** The source stretches the 3D diagram draws are where the most of the emission reaching the detector
+ comes from, holding 90% of it (`highest_emission_stretches`): exact on analytic profiles; for a
+ hollow source, the far wall only once the near wall holds less than 90%; for an in-situ source, the
+ skins at both surfaces rather than a stretch through the middle.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
+{
+  using GammaInteractionCalc::EmissionCell;
+  using GammaInteractionCalc::highest_emission_stretches;
+  using GammaInteractionCalc::depth_fraction_for_90pct;
+  typedef vector<pair<double,double>> Runs;
+
+  // An exponential profile: the classic 90% depth; a flat one: 90% of the length, from the start.
+  {
+    const Runs runs = highest_emission_stretches( { {0.0, 10.0, 0.0, 3.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( runs.size(), size_t(1) );
+    BOOST_CHECK_SMALL( runs[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( runs[0].second, 10.0*depth_fraction_for_90pct( 3.0 ), 1.0E-7 );
+
+    const Runs flat = highest_emission_stretches( { {0.0, 10.0, 0.0, 0.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( flat.size(), size_t(1) );
+    BOOST_CHECK_SMALL( flat[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( flat[0].second, 9.0, 1.0E-5 );
+  }
+
+  // Two pieces of a hollow source: behind an opaque core the far one holds nothing; behind a
+  //  transparent one, a thin near wall is taken whole and the far wall from its near side.
+  {
+    const Runs opaque = highest_emission_stretches( { {0.0, 1.0, 0.0, 5.0}, {2.0, 3.0, 55.0, 60.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( opaque.size(), size_t(1) );
+    BOOST_CHECK_CLOSE( opaque[0].second, depth_fraction_for_90pct( 5.0 ), 1.0E-7 );
+
+    const Runs clear = highest_emission_stretches( { {0.0, 1.0, 0.0, 0.5}, {2.0, 3.0, 0.5, 1.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( clear.size(), size_t(2) );
+    BOOST_CHECK_SMALL( clear[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( clear[0].second, 1.0, 1.0E-9 );
+    BOOST_CHECK_CLOSE( clear[1].first, 2.0, 1.0E-9 );
+    // The pair is one exponential profile over a total optical thickness of 1, with a gap in it.
+    BOOST_CHECK_CLOSE( 1.0 + (clear[1].second - 2.0), 2.0*depth_fraction_for_90pct( 1.0 ), 1.0E-7 );
+  }
+
+  // Emission densest at both ends (an in-situ source crossed through): a stretch at each end,
+  //  holding 45% each, and nothing in the middle.
+  {
+    const Runs both = highest_emission_stretches( { {0.0, 5.0, 0.0, 10.0}, {5.0, 10.0, 10.0, 0.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( both.size(), size_t(2) );
+    const double x = -std::log( 1.0 - 0.9*(1.0 - std::exp( -10.0 )) ) / 2.0;
+    BOOST_CHECK_SMALL( both[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( both[0].second, x, 1.0E-5 );
+    BOOST_CHECK_CLOSE( both[1].first, 10.0 - x, 1.0E-5 );
+    BOOST_CHECK_CLOSE( both[1].second, 10.0, 1.0E-12 );
+  }
+
+  // The same, through the fit.
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> iron = matdb->material( "Fe" );
+  const shared_ptr<const Material> aluminum = matdb->material( "Al" );
+  const shared_ptr<const Material> voidmat = matdb->material( "void" );
+  BOOST_REQUIRE( iron && aluminum && voidmat );
+
+  using GammaInteractionCalc::VolumetricLineSample;
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  const double cm = PhysicalUnits::cm, tol = 1.0E-6*cm;
+  const auto radius = []( const array<double,6> &seg, const size_t k ) -> double {
+    return std::sqrt( seg[k]*seg[k] + seg[k+1]*seg[k+1] + seg[k+2]*seg[k+2] );
+  };
+
+  // A Ba-133 trace source in a 1 cm iron wall around a 1 cm radius void, 15 cm from the NaI.  At 81 keV
+  //  the near wall holds 99% of the emission along any line through the core, so the far wall is never
+  //  drawn; at 356 keV it holds ~70%, so lines through the core get both walls.
+  {
+    ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( make_synthetic_nai_drf( true ), 15.0*cm, 0.0,
+                                    ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    add_ba133_trace_shell( input, iron, 1.0*cm );
+    ShieldingSourceFitCalc::ShieldingInfo core = input.config.shieldings.front();
+    core.m_material = voidmat;
+    core.m_forFitting = false;
+    core.m_traceSources.clear();
+    input.config.shieldings.insert( begin(input.config.shieldings), core );
+
+    const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                      = ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn_pars.first && fcn_pars.first->hasVolumetricLineSets() );
+    const vector<double> params = fcn_pars.second.values();
+
+    const VolumetricLineSample at_81 = fcn_pars.first->sampleVolumetricLines( params, 81.0, 200 );
+    BOOST_REQUIRE( !at_81.lines.empty() );
+    for( const VolumetricLineSample::Line &line : at_81.lines )
+    {
+      BOOST_REQUIRE_EQUAL( line.source_segments.size(), size_t(1) );
+      BOOST_CHECK( fabs( radius( line.source_segments[0], 0 ) - 2.0*cm ) < tol );
+      BOOST_CHECK( radius( line.source_segments[0], 3 ) >= 1.0*cm - tol );
+    }
+
+    const VolumetricLineSample at_356 = fcn_pars.first->sampleVolumetricLines( params, 356.0, 200 );
+    size_t num_both_walls = 0;
+    for( const VolumetricLineSample::Line &line : at_356.lines )
+    {
+      BOOST_REQUIRE( !line.source_segments.empty() && (line.source_segments.size() <= 2) );
+      if( line.source_segments.size() < 2 )
+        continue;
+      num_both_walls += 1;
+      const array<double,6> &near_wall = line.source_segments[0], &far_wall = line.source_segments[1];
+      BOOST_CHECK( fabs( radius( near_wall, 0 ) - 2.0*cm ) < tol );
+      BOOST_CHECK( fabs( radius( near_wall, 3 ) - 1.0*cm ) < tol );
+      BOOST_CHECK( fabs( radius( far_wall, 0 ) - 1.0*cm ) < tol );
+      BOOST_CHECK( radius( far_wall, 3 ) <= 2.0*cm + tol );
+    }
+    BOOST_TEST_MESSAGE( "  hollow iron: " << num_both_walls << " of " << at_356.lines.size()
+                        << " lines drawn at 356 keV show both walls" );
+    BOOST_CHECK( num_both_walls > 0 );
+  }
+
+  // Ba-133 exponentially distributed below the surface of a 3 cm aluminium sphere (relaxation length
+  //  2 mm).  At 356 keV the far skin sends out a fifth as much as the near one along a line through the
+  //  middle, so such lines get a stretch at each skin, and none reaches the middle.
+  {
+    ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( make_synthetic_nai_drf( true ), 15.0*cm, 0.0,
+                                    ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    add_ba133_trace_shell( input, aluminum, 3.0*cm );
+    ShieldingSourceFitCalc::TraceSourceInfo &trace = input.config.shieldings.front().m_traceSources.front();
+    trace.m_type = GammaInteractionCalc::TraceActivityType::ExponentialDistribution;
+    trace.m_relaxationDistance = static_cast<float>( 0.2*cm );
+
+    const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                      = ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn_pars.first && fcn_pars.first->hasVolumetricLineSets() );
+    const vector<double> params = fcn_pars.second.values();
+
+    const VolumetricLineSample at_356 = fcn_pars.first->sampleVolumetricLines( params, 356.0, 200 );
+    BOOST_REQUIRE( !at_356.lines.empty() );
+    size_t num_both_skins = 0;
+    for( const VolumetricLineSample::Line &line : at_356.lines )
+    {
+      BOOST_REQUIRE( !line.source_segments.empty() && (line.source_segments.size() <= 2) );
+      BOOST_CHECK( fabs( radius( line.source_segments.front(), 0 ) - 3.0*cm ) < tol );
+      for( const array<double,6> &seg : line.source_segments )
+      {
+        BOOST_CHECK_MESSAGE( (radius( seg, 0 ) > 2.0*cm) && (radius( seg, 3 ) > 2.0*cm),
+                             "an in-situ source stretch reaches " << (3.0*cm - std::min( radius( seg, 0 ), radius( seg, 3 ) ))/cm
+                             << " cm below the surface" );
+      }
+      if( line.source_segments.size() == 2 )
+      {
+        num_both_skins += 1;
+        BOOST_CHECK( fabs( radius( line.source_segments[1], 3 ) - 3.0*cm ) < tol );
+      }
+    }//for( drawn lines )
+    BOOST_TEST_MESSAGE( "  in-situ aluminium: " << num_both_skins << " of " << at_356.lines.size()
+                        << " lines drawn at 356 keV show both skins" );
+    BOOST_CHECK( num_both_skins > 0 );
+  }
+}//BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
