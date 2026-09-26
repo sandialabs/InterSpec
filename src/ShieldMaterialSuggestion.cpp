@@ -147,7 +147,10 @@ void ShieldMaterialSuggestion::handleFilter( const Wt::WString &filter )
       if( !nameHit && !descHit )
         continue;
 
-      addSuggestion( name, name );
+      // Never add a blank row (the built-in "void" material has no description): WSuggestionPopup's
+      //  matcher treats it as matching any input, shows it as "undefined", and picking it wipes the edit.
+      if( !SpecUtils::trim_copy( name ).empty() )
+        addSuggestion( name, name );
 
       if( SpecUtils::iequals_ascii( name, desc ) )
         continue;
@@ -155,7 +158,7 @@ void ShieldMaterialSuggestion::handleFilter( const Wt::WString &filter )
       // Only add the description as a separate suggestion if it isn't
       //  already represented by the name string.
       const size_t sub_pos = SpecUtils::ifind_substr_ascii( name, desc.c_str() );
-      if( sub_pos == std::string::npos )
+      if( (sub_pos == std::string::npos) && !SpecUtils::trim_copy( desc ).empty() )
         addSuggestion( desc, desc );
     }//for( const std::shared_ptr<const Material> &mat : mats )
   }//if( MaterialDB::initialized() )
