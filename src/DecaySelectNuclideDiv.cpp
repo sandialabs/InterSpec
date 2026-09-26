@@ -102,7 +102,6 @@ DecaySelectNuclide::DecaySelectNuclide( const bool phone, AuxWindow *auxWindow )
 
 DecaySelectNuclide::~DecaySelectNuclide()
 {
-  // m_isotopeSuggestions is owned by wApp->domRoot() and should not be deleted here
 }
 
 //Wt::Signal<int,int,int,double,std::string,double> &DecaySelectNuclide::selected()
@@ -249,7 +248,7 @@ void DecaySelectNuclide::init()
   string matcherJS, replaceJS;
   SimpleIsotopeNameFilterModel::nuclideNameMatcherJs( matcherJS );
   SimpleIsotopeNameFilterModel::replacerJs( replaceJS );
-  m_isotopeSuggestions = wApp->root()->addNew<WSuggestionPopup>( matcherJS, replaceJS );
+  m_isotopeSuggestions = addChild( make_unique<WSuggestionPopup>( matcherJS, replaceJS ) );
   m_isotopeSuggestions->setMaximumSize( WLength::Auto,
                                         WLength(15, WLength::Unit::FontEm) );
 
