@@ -40,6 +40,7 @@
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 
@@ -68,7 +69,6 @@ namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 #endif
 
 // Forward declarations
-class DetectorPeakResponse;
 struct Material;
 class MaterialDB;
 
@@ -432,6 +432,25 @@ enum class FwhmForm : int
   /** Berstein polynomial with 6 coefficients (order 5) */
   Berstein_6,
 
+  /** An electronic-noise floor added in quadrature to a power law whose log-log slope may vary
+   across the fitted range:
+
+     `FWHM(E)^2 = w0^2 + (w1 * (E/661 keV)^s(E))^2`,
+
+   where the slope `s` of `ln(w1 * (E/661)^s)` against `ln(E)` varies linearly in `ln(E)` from
+   `s_lo` at the lower end of the fitted energy range to `s_hi` at its upper end, and is held at
+   those end values beyond it.  Parameters: `{w0, w1, s_lo, s_hi, lower_energy, upper_energy}`
+   (keV), the last two constant.
+
+   With `w0 >= 0` and both slopes `>= 0` the curve is positive and never decreases with energy,
+   by construction, so its bounds are physical statements rather than envelopes on coefficients:
+   the noise floor, the width at 661 keV within the detector class's range, and slopes in
+   [0, 1.5].  Fit to the resolution curves of 35 GADRAS detector models (HPGe, NaI, LaBr3, CZT) it
+   was within 1.6 % (median worst case; 0.5 % median RMS), against 3.9 % for Berstein_4, which came
+   out non-monotone on 8 of them.
+   */
+  NoisePlusCurvedPower,
+
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
    #Options::fwhm_estimation_method must be set to FwhmEstimationMethod::FixedToDetectorEfficiency,
@@ -543,6 +562,20 @@ EnergyCalFitType energy_cal_fit_type_from_str( const char *str );
 
 
 size_t num_parameters( const FwhmForm eqn_form );
+
+/** The FWHM (keV) at `energy` (keV) for the given form and parameters.  Not valid for
+ `FwhmForm::NotApplicable`, which needs a detector response.
+ */
+double eval_fwhm( const double energy, const FwhmForm form, const std::vector<double> &pars );
+
+/** Least-squares fit (in log space) of the #FwhmForm::NoisePlusCurvedPower parameters to FWHM
+ values (keV) at the given energies (keV), for the energy range [lower_energy, upper_energy].
+ Returns the six parameters.  Throws when fewer than four usable points are given.
+ */
+std::vector<double> fit_noise_plus_curved_power( const std::vector<double> &energies,
+                                                 const std::vector<double> &fwhms,
+                                                 const double lower_energy,
+                                                 const double upper_energy );
 
 
 struct RelEffCurveInput
@@ -797,6 +830,16 @@ struct Options
   /** How the FWHM of peaks should be determined. */
   FwhmEstimationMethod fwhm_estimation_method;
 
+  /** Optional starting resolution curve, as `DetectorPeakResponse::peakResolutionFWHM` evaluates
+   it.  Used with #FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum when the detector
+   response carries no resolution information: the solve then starts from (and refines) this curve
+   instead of fitting one to the peaks in the spectrum itself, so a caller that already estimated
+   the widths (e.g. FitPeaksForNuclides) and the solve agree about them.  Leave the coefficients
+   empty (the default) to keep the fit-from-peaks behaviour.
+   */
+  DetectorPeakResponse::ResolutionFnctForm starting_fwhm_form;
+  std::vector<float> starting_fwhm_coefficients;
+
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
 
@@ -858,6 +901,26 @@ struct Options
    */
   bool lorentzian_xrays;
 
+  /** Model the iodine K x-ray escape peaks of a NaI or CsI detector.
+
+   Each source line above the iodine K edge gets two companion peaks,
+   `PeakFitUtils::sm_iodine_kalpha_escape_kev` and `sm_iodine_kbeta_escape_kev` below it, whose areas
+   are fixed fractions of the line's own (`PeakFitUtils::nai_iodine_escape_fractions`), so no fit
+   parameters are added.  The companions are returned with no source assigned, and a user label
+   starting with #sm_iodine_escape_label_prefix that names their parent line.
+   */
+  bool iodine_escape_peaks;
+  static constexpr const char *sm_iodine_escape_label_prefix = "I-escape of ";
+
+  /** Whether a source line outside the energy span the ROIs cover (below the lowest ROI's lower
+   edge or above the highest's upper edge) is modelled for the tail it puts into an edge ROI.  Such a
+   line's efficiency is an extrapolation no data constrains, and with the curve still unsettled at the
+   start of a solve it can predict orders of magnitude too much: Hg L x-rays at 14 keV, below an ROI
+   starting at 23 keV, began a Tl201 solve at a chi2 of 8e13, and the optimizer escaped it only by
+   zeroing every activity.  Default true (model them).
+   */
+  bool model_lines_outside_roi_span;
+
   /** An additional uncertainty applied to each roughly independent peak.
    * 
    * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
@@ -868,6 +931,30 @@ struct Options
    * Its not perfect, but its something.
    */
   double additional_br_uncert;
+
+  /** The smallest multiple of its nominal yield an `additional_br_uncert` peak range may be fit to.
+   At the default of 0 a range can be switched off entirely, which costs only (1/additional_br_uncert)^2
+   in chi2 - nothing against the model-shape residuals of a high-statistics scintillator ROI, where
+   solves zeroed lines the data show at z of 50-170 (SAM Eagle Co57_Sh's 136 keV, Eu154_Unsh's
+   1002 keV).  Must be in [0, 1). */
+  double additional_br_min_yield_fraction;
+
+  /** With the #FwhmForm::NoisePlusCurvedPower form fit from a starting curve (see
+   #starting_fwhm_form): when above 1, the fit's width stays under this multiple of the starting
+   curve everywhere in the fitted range, through box bounds on the form's own parameters (its
+   width at 661 keV and both slopes near the start's, the noise floor at most this times the
+   start's).  The detector-class bounds alone let low-energy x-ray blobs and scatter humps pull a
+   scintillator's widths to 1.6-3x its resolution (IdentiFINDER NaI: 25 of 104 R500 and 41 of 103
+   NGH solves above 1.6x at 55-100 keV, where the caller's starting curve matched the true widths).
+   0 (the default) for no limit. */
+  double fwhm_max_ratio_to_start;
+
+  /** With #FwhmForm::NoisePlusCurvedPower, the noise floor of the width - the narrowest width the fit
+   may give any peak - is at least this many times the widest channel in the ROIs.  At the default
+   1.25, on a coarsely binned detector (SAM-Eagle's 12.5 keV channels) every line below ~150 keV is
+   held to ~16 keV wide where its true width is ~8 keV and most of it falls in one channel: Am241's
+   59.5 keV peak was fit to a third of its channel's counts.  1.25 by default. */
+  double fwhm_channel_floor_factor;
 
   /** Automatically compute bounded profile-likelihood intervals for mass fractions whose local
    Gaussian covariance is missing or demonstrably unreliable.  Explicit per-nuclide requests are
@@ -1609,6 +1696,13 @@ struct RelActAutoSolution
   RelActAutoSolution::Status m_status;
   std::string m_error_message;
   std::vector<std::string> m_warnings;
+  
+  /** True when Ceres reported convergence but rejected every trial step, so this solution is the
+   seed it started from rather than a minimum (see the `FunctionToleranceReached` discussion in
+   `solve_ceres`).  Callers that re-solve from an incumbent must not accept such a result over the
+   incumbent - a warm start that lands on a flat spot would otherwise silently replace a good fit
+   with its own starting point. */
+  bool m_optimizer_returned_seed = false;
   
   Options m_options;
   

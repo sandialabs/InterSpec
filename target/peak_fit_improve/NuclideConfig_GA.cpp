@@ -395,6 +395,10 @@ std::vector<RelActCalcAuto::SrcVariant> resolve_sources( const std::string &src_
 
   vector<RelActCalcAuto::SrcVariant> sources;
 
+  // Uranium and plutonium items are isotope MIXTURES, and the metal fluoresces its own K x-rays, so
+  // the element goes in beside the isotopes.  Ages need no special handling: PeakDef::defaultDecayTime
+  // already gives every U/Pu isotope with a half-life over two years the 20 years these assume.
+  // Lines are labelled by the ultimate parent throughout, so U238 carries Pa234m's 1001 keV.
   if( name == "Tl201woTl202" || name == "Tl201wTl202" || name == "Tl201" )
   {
     sources.push_back( db->nuclide( "Tl201" ) );
@@ -410,30 +414,32 @@ std::vector<RelActCalcAuto::SrcVariant> resolve_sources( const std::string &src_
     sources.push_back( db->element( "U" ) );
     sources.push_back( db->nuclide( "U232" ) );
     sources.push_back( db->nuclide( "U233" ) );
+    sources.push_back( db->nuclide( "U234" ) );
+    sources.push_back( db->nuclide( "U235" ) );
+    sources.push_back( db->nuclide( "U238" ) );
   }
-  else if( name == "Pu238" )
+  else if( (name == "Pu238") || (name == "Pu239") )
   {
     sources.push_back( db->element( "Pu" ) );
     sources.push_back( db->nuclide( "Pu238" ) );
     sources.push_back( db->nuclide( "Pu239" ) );
-    sources.push_back( db->nuclide( "Pu241" ) );
-  }
-  else if( name == "Pu239" )
-  {
-    sources.push_back( db->element( "Pu" ) );
-    sources.push_back( db->nuclide( "Pu239" ) );
+    sources.push_back( db->nuclide( "Pu240" ) );
     sources.push_back( db->nuclide( "Pu241" ) );
   }
   else if( name == "Uore" )
   {
     sources.push_back( db->element( "U" ) );
+    sources.push_back( db->nuclide( "U232" ) );
+    sources.push_back( db->nuclide( "U234" ) );
     sources.push_back( db->nuclide( "U235" ) );
     sources.push_back( db->nuclide( "U238" ) );
     sources.push_back( db->nuclide( "Ra226" ) );
   }
-  else if( name == "U235" )
+  else if( (name == "U235") || (name == "U238") )
   {
     sources.push_back( db->element( "U" ) );
+    sources.push_back( db->nuclide( "U232" ) );
+    sources.push_back( db->nuclide( "U234" ) );
     sources.push_back( db->nuclide( "U235" ) );
     sources.push_back( db->nuclide( "U238" ) );
   }
@@ -462,6 +468,12 @@ std::vector<RelActCalcAuto::SrcVariant> resolve_sources( const std::string &src_
     }
     sources.push_back( nuc );
   }
+
+  // The shielded configurations are lead, and it fluoresces: the Pb K series (72.8/75.0/84.9/87.4
+  // keV) shows up in these spectra at up to z=39 and no requested nuclide can produce it.  Requested
+  // as an ELEMENT, so only its characteristic x-rays are modelled.
+  if( !sources.empty() && (src_name.find("_Sh") != string::npos) )
+    sources.push_back( db->element( "Pb" ) );
 
   return sources;
 }//resolve_sources
@@ -2514,7 +2526,6 @@ ConfigEvaluation evaluate_for_report(
         PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
           pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
           pd.background, pd.drf, options, config, pd.peak_fit_prefs );
-        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
         const bool success
           = RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status);
         record.has_fit_result = true;
@@ -2537,12 +2548,10 @@ ConfigEvaluation evaluate_for_report(
         if( success )
           record.background_penalty = compute_background_fit_penalty(
             pd, config, bg_mode, &record.background_detail );
-        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
         costs[index] = {record.accuracy.cost, record.background_penalty};
         record.fit_result = std::move( result );
       }catch( const std::exception &e )
       {
-        FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
         record.exception = true;
         record.mechanical_failure = true;
         record.status = "EXCEPTION";

@@ -73,6 +73,33 @@ float czt_fwhm_fcn( const float energy )
 }//float czt_fwhm_fcn( const float energy )
 
 
+void nai_iodine_escape_fractions( const double energy, double &kalpha_fraction, double &kbeta_fraction )
+{
+  kalpha_fraction = kbeta_fraction = 0.0;
+
+  // K-alpha escape area / full-energy area, interpolated log-log; tabulated from the GADRAS NaI
+  //  escape components of the peak-fit inject corpus (identical for a 1.4" and a 3x3 crystal).
+  static const double table[][2] = {
+    { 33.17, 0.220 }, { 40.0, 0.178 }, { 45.0, 0.152 }, { 50.0, 0.126 }, { 55.0, 0.105 },
+    { 60.0, 0.090 }, { 70.0, 0.065 }, { 80.0, 0.0465 }, { 95.0, 0.030 }, { 110.0, 0.0203 },
+    { 122.0, 0.0160 }, { 140.0, 0.0105 }, { 155.0, 0.0082 }, { 170.0, 0.0063 }, { 205.0, 0.0040 },
+    { 240.0, 0.0026 }, { 250.0, 0.0024 }
+  };
+  const size_t num_points = sizeof(table) / sizeof(table[0]);
+
+  if( !(energy >= table[0][0]) || (energy > table[num_points-1][0]) )
+    return;
+
+  size_t upper = 1;
+  while( (upper < (num_points - 1)) && (table[upper][0] < energy) )
+    ++upper;
+  const double frac = std::log( energy / table[upper-1][0] ) / std::log( table[upper][0] / table[upper-1][0] );
+  kalpha_fraction = std::exp( std::log( table[upper-1][1] )
+                              + frac * (std::log( table[upper][1] ) - std::log( table[upper-1][1] )) );
+  kbeta_fraction = 0.30 * kalpha_fraction;
+}//nai_iodine_escape_fractions(...)
+
+
 float hpge_fwhm_fcn( const float energy )
 {
   static const vector<float> hpge_fwhm_coefs{ 1.55f, 0.25f, 0.35f };//"HPGe 40%"

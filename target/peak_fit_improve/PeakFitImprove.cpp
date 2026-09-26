@@ -1036,22 +1036,6 @@ static double score_config_over_precomputed(
     else
       tsv.reset();
   }
-  std::shared_ptr<std::ofstream> shadow_tsv;
-  if( const char * const shadow_path = std::getenv( "PEAKFIT_ROI_SHADOW_TSV" ) )
-  {
-    shadow_tsv = std::make_shared<std::ofstream>( shadow_path );
-    if( shadow_tsv->good() )
-      (*shadow_tsv) << "spectrum_id\tfit_role\tstage\tpass\tvalid\tfallback\tinterval\tlegacy_lower"
-        "\tlegacy_upper\tproposed_lower\tproposed_upper\twidth_fwhm\tchannels"
-        "\tcontinuum\tnormalized_mismatch\tinterval_score\tlegacy_continuum"
-        "\tlegacy_normalized_mismatch\tlegacy_interval_score\tlegacy_total_score"
-        "\tproposed_total_score\ttotal_score_delta\tfirst_group\tlast_group"
-        "\tgroup_gamma_energies\treason\tunmodeled_conflicts"
-        "\tprofile_energies\tprofile_foreground\tprofile_snip\tprofile_continuum"
-        "\tunmodeled_peak_energies\n";
-    else
-      shadow_tsv.reset();
-  }
 
   // Map the solution status enum to a name so failures self-classify in the TSV
   // (FailedToSetupProblem vs FailToSolveProblem vs a Success that found 0 observable peaks) - the
@@ -1097,76 +1081,6 @@ static double score_config_over_precomputed(
     }
   };
 
-  const auto record_shadow = [&]( const NuclideConfig_GA::PrecomputedNuclideData &pd,
-      const std::vector<FitPeaksForNuclides::detail::RoiBoundaryShadowResult> &diagnostics,
-      const char * const fit_role )
-  {
-    if( !shadow_tsv )
-      return;
-    const std::string spectrum_id = pd.src_info->src_info.file_base_path + "/"
-        + pd.src_info->detector_name + "/"
-        + pd.src_info->location_name + "/" + pd.src_info->live_time_name + "/"
-        + pd.src_info->src_info.src_name;
-    std::lock_guard<std::mutex> lock( tsv_mutex );
-    for( size_t pass = 0; pass < diagnostics.size(); ++pass )
-    {
-      const FitPeaksForNuclides::detail::RoiBoundaryShadowResult &diagnostic
-        = diagnostics[pass];
-      if( !diagnostic.valid )
-      {
-        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
-          << '\t' << pass << "\t0\t" << diagnostic.fallback_reason
-          << "\t-1\t0\t0\t0\t0\t0\t0\tUnknown\t0\t0\tUnknown\t0\t0\t"
-          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score
-          << "\t0\t0\t0\t\tlegacy fallback\t0\t\t\t\t\t\n";
-        continue;
-      }
-      for( size_t interval_index = 0;
-           interval_index < diagnostic.intervals.size(); ++interval_index )
-      {
-        const FitPeaksForNuclides::detail::RoiBoundaryShadowInterval &interval
-          = diagnostic.intervals[interval_index];
-        std::ostringstream gamma_energies;
-        for( size_t gamma_index = 0;
-             gamma_index < interval.group_gamma_energies.size(); ++gamma_index )
-        {
-          if( gamma_index )
-            gamma_energies << ',';
-          gamma_energies << interval.group_gamma_energies[gamma_index];
-        }
-        const auto serialize_values = []( const std::vector<double> &values ) {
-          std::ostringstream stream;
-          for( size_t index = 0; index < values.size(); ++index )
-          {
-            if( index )
-              stream << ',';
-            stream << values[index];
-          }
-          return stream.str();
-        };
-        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
-          << '\t' << pass << "\t1\t\t" << interval_index
-          << '\t' << interval.legacy_lower << '\t' << interval.legacy_upper
-          << '\t' << interval.lower << '\t' << interval.upper << '\t'
-          << interval.width_fwhm << '\t' << interval.num_channels << '\t'
-          << PeakContinuum::offset_type_str(interval.continuum_type) << '\t'
-          << interval.normalized_continuum_mismatch << '\t' << interval.interval_score << '\t'
-          << PeakContinuum::offset_type_str(interval.legacy_continuum_type) << '\t'
-          << interval.legacy_normalized_continuum_mismatch << '\t' << interval.legacy_score << '\t'
-          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score << '\t'
-          << (diagnostic.proposed_total_score - diagnostic.legacy_total_score) << '\t'
-          << interval.first_group << '\t' << interval.last_group << '\t'
-          << gamma_energies.str() << '\t' << interval.reason << '\t'
-          << interval.unmodeled_peak_conflicts << '\t'
-          << serialize_values(interval.profile_energies) << '\t'
-          << serialize_values(interval.profile_foreground) << '\t'
-          << serialize_values(interval.profile_snip) << '\t'
-          << serialize_values(interval.profile_continuum) << '\t'
-          << serialize_values(interval.unmodeled_peak_energies) << '\n';
-      }
-    }
-    shadow_tsv->flush();
-  };
 
   // Reliability is reported separately from fit-quality cost: any non-Success is a mechanical
   // failure, while a legitimate empty is a successful fit with no observable or definitely-wanted
@@ -1180,7 +1094,7 @@ static double score_config_over_precomputed(
 
   // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
   // Called from both the serial and parallel paths below; safe to invoke concurrently.
-  const auto score_one_spectrum = [&config, &record_spectrum, &record_shadow, &status_name,
+  const auto score_one_spectrum = [&config, &record_spectrum, &status_name,
                                    &num_mechanical_failures, &num_legit_empty,
                                    &accuracy_partials,
                                    &precomputed, report_evaluation](
@@ -1208,8 +1122,6 @@ static double score_config_over_precomputed(
       FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
         pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
-      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
-                     "foreground" );
 
       const bool ok = RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status);
 
@@ -1237,8 +1149,6 @@ static double score_config_over_precomputed(
       const double bg_raw = ok ? NuclideConfig_GA::compute_background_fit_penalty(
           pd, config, NuclideConfig_GA::sm_background_mode,
           report ? &bg_detail : nullptr ) : 0.0;
-      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
-                     "background trial" );
 
       record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), breakdown.miss_fraction,
                        result.observable_peaks.size(), result.fit_peaks.size(),
@@ -1259,7 +1169,6 @@ static double score_config_over_precomputed(
     }
     catch( const std::exception &e )
     {
-      FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
       // An exception is a mechanical failure with no result at all; score the truth as a total-miss.
       num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
       const std::vector<PeakDef> no_peaks;
