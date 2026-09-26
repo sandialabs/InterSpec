@@ -179,6 +179,12 @@ protected:
                     const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
   void removeLayerRow();
 
+  /** Removes the last layer row, first detaching its material edit from #m_materialSuggestion: the
+   popup keeps a raw pointer to every edit it serves, so a suggestion picked later would otherwise
+   dereference the deleted edit (WSuggestionPopup::doActivate).  The only way a layer row is removed.
+   */
+  void popLayerRow();
+
   /** One concentric endcap/housing layer input row. */
   struct LayerRow
   {
