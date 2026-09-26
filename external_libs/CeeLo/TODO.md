@@ -110,8 +110,8 @@ photons have blank/ambiguous ENSDF M/CC assignments despite code 1 and must rema
 
 ### Na-22 511 keV drifted from GEANT4 after the beta+ model change `[medium — accuracy]`
 
-**Effect.** `tests/data/ceelo_reference/our_cascade_multi.csv` was last written at `8ca66d8`
-(2026-07-07). Re-running its producer (`examples/cascade_observables`) at the same 8M/4M statistics on
+**Effect.** The cascade-summing snapshot `our_cascade_multi.csv` (now regenerated, not
+committed) was last written at `8ca66d8` (2026-07-07). Re-running its producer (`examples/cascade_observables`) at the same 8M/4M statistics on
 the current main tree gives **Na-22 P511 +3.24% (z = +23.8)** and sum1785 +3.81% (z = +6.0);
 everything else is within |z| <= 3.2. Engine/G4 agreement for Na-22 P511 moved 1.0012 -> 1.0340.
 Bisects to **d3e0ee3** (2026-07-28), which replaced `emit_annihilation` with a full beta+ spectrum +
@@ -511,8 +511,7 @@ Worth adding the cascade block to ctest.
 several hundred numeric expectations in the C++ suite. Anything compared against them therefore pins
 1.5 keV instead of the default: `kTestFepWindowKeV` (`tests/test_fep_window.h`, used by the suite and
 `cascade_ref_common.h`) and `kReferenceFepWindowKeV` (`examples/benchmark_mc_configs.cpp`, the
-`profiling/compare_validation.py` gate input, which also regenerates the committed
-`tests/data/ceelo_reference/our_*_multi.csv`). Until the pins go, the gate and the tests are not
+writer of the `our_*_multi.csv` input to the `profiling/compare_validation.py` gate). Until the pins go, the gate and the tests are not
 measuring the library's own default. Two producers deliberately follow the new default instead and
 so are NOT comparable to the committed references: the harness itself
 (`EventAction`, defaulted, no CLI override) and `tools/geant4_validation/generate_all_spectra.cpp`. The gap is real where near-peak forward scatter is: config 8 at

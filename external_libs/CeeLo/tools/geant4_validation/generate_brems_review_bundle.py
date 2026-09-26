@@ -335,7 +335,7 @@ svg{width:100%;height:260px}.axis{stroke:#555;fill:none}.after{stroke:#087e8b}.b
 table{border-collapse:collapse;margin-top:16px}td,th{padding:5px 9px;border:1px solid #ccd;text-align:right}th:first-child,td:first-child{text-align:left}
 .gate{background:#fff3cd;padding:10px;border-left:4px solid #d49b00}</style>
 <h1>Bremsstrahlung migration manual review</h1>
-<p class="gate">Merge gate: inspect low-κ shape, endpoint behavior, and material-dependent rate changes. Record approval in <code>manual_review.json</code>.</p>
+<p class="gate">Merge gate: inspect low-κ shape, endpoint behavior, and material-dependent rate changes. Record approval in <code>tools/prepare_cross_sections/bremsstrahlung_manual_review.json</code>.</p>
 <label>Case <select id="case"></select></label><label>Energy <select id="energy"></select></label>
 <div class="grid"><div class="plot"><b>Normalized shape dN/dlnκ</b><svg id="shape"></svg></div>
 <div class="plot"><b>Cumulative distribution</b><svg id="cdf"></svg></div>
@@ -388,8 +388,12 @@ reference passes its numerical gates:
 cross-section columns. `worst_20.csv` contains the worst exhaustive cases.
 `metadata.json` records versions and fixture provenance.
 
-After inspection, edit `manual_review.json`: set the three resolution fields to
-`true`, record reviewer/time/notes, and set `status` to `approved`. The gate is:
+After inspection, record the decision in
+`tools/prepare_cross_sections/bremsstrahlung_manual_review.json` (this bundle's
+`manual_review.json` is a blank template): set the three resolution fields to
+`true`, record reviewer/time/notes, set `status` to `approved`, then refresh the
+hashes with `tools/prepare_cross_sections/update_generated_manifest.py`. This
+bundle itself is generated output and is not committed. The gate is:
 
 ```bash
 python3 tools/prepare_cross_sections/check_provenance.py --require-manual-approval
