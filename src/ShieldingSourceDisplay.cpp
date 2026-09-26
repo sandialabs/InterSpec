@@ -10854,12 +10854,12 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   if( m_diagramDialog )
   {
     // Dialog already exists, update its data and show it
-    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1, det );
     m_diagramDialog->show();
     return;
   }
 
-  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1, det );
   
   //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
   //  InterSpec *viewer = InterSpec::instance();

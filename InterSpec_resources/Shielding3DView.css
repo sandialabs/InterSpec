@@ -5,3 +5,12 @@
   overflow: hidden;
   background-color: var(--interspec-panel-background);
 }
+
+/* Out of flow, so the canvases fill the view without ever sizing it: the render loop sets the
+   drawing buffer from the view's laid-out size, so an in-flow canvas would hold the view at its
+   last size (and in an auto-height parent, grow it frame after frame). */
+.Shielding3DView > canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}

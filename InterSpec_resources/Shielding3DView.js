@@ -1,6 +1,8 @@
 /* Shielding3DView.js - WebGL version */
 
-Shielding3DView = function(id, data) {
+// `detector` is the DRF's geometry (see Shielding3DView::createDetectorJson), or null to draw a
+//  placeholder detector.
+Shielding3DView = function(id, data, detector) {
   var container = document.getElementById(id);
   if (!container) return null;
   
@@ -272,140 +274,6 @@ Shielding3DView = function(id, data) {
     }
   };
 
-  // --- Geometry Generators ---
-  function createBufferInfo(gl, arrays) {
-    var bufferInfo = {
-      numElements: arrays.indices.length,
-      indices: gl.createBuffer(),
-      position: gl.createBuffer(),
-      normal: gl.createBuffer()
-    };
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufferInfo.indices);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(arrays.indices), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufferInfo.position);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrays.position), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bufferInfo.normal);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arrays.normal), gl.STATIC_DRAW);
-    return bufferInfo;
-  }
-
-  function createSphere(radius, latBands, longBands) {
-    var positions = [];
-    var normals = [];
-    var indices = [];
-    for (var lat = 0; lat <= latBands; lat++) {
-      var theta = lat * Math.PI / latBands;
-      var sinTheta = Math.sin(theta);
-      var cosTheta = Math.cos(theta);
-      for (var lon = 0; lon <= longBands; lon++) {
-        var phi = lon * 2 * Math.PI / longBands;
-        var sinPhi = Math.sin(phi);
-        var cosPhi = Math.cos(phi);
-        var x = cosPhi * sinTheta;
-        var y = cosTheta;
-        var z = sinPhi * sinTheta;
-        normals.push(x, y, z);
-        positions.push(radius * x, radius * y, radius * z);
-      }
-    }
-    for (var lat = 0; lat < latBands; lat++) {
-      for (var lon = 0; lon < longBands; lon++) {
-        var first = (lat * (longBands + 1)) + lon;
-        var second = first + longBands + 1;
-        indices.push(first, second, first + 1);
-        indices.push(second, second + 1, first + 1);
-      }
-    }
-    return { position: positions, normal: normals, indices: indices };
-  }
-
-  function createCylinder(radius, length, radialSegments) {
-    var positions = [];
-    var normals = [];
-    var indices = [];
-    // Side
-    for (var i = 0; i <= radialSegments; i++) {
-      var theta = i * 2 * Math.PI / radialSegments;
-      var x = Math.sin(theta);
-      var y = Math.cos(theta);
-      // Top edge
-      normals.push(x, y, 0); positions.push(radius * x, radius * y, length / 2);
-      // Bottom edge
-      normals.push(x, y, 0); positions.push(radius * x, radius * y, -length / 2);
-    }
-    for (var i = 0; i < radialSegments; i++) {
-        var idx = i * 2;
-        indices.push(idx, idx + 2, idx + 1);
-        indices.push(idx + 1, idx + 2, idx + 3);
-    }
-    // Caps (simple triangle fan approximation with center point)
-    var topCenterIdx = positions.length / 3;
-    positions.push(0, 0, length / 2); normals.push(0, 0, 1);
-    var bottomCenterIdx = topCenterIdx + 1;
-    positions.push(0, 0, -length / 2); normals.push(0, 0, -1);
-
-    // Add cap vertices with correct normals
-    var capStartIdx = bottomCenterIdx + 1;
-    for (var i = 0; i <= radialSegments; i++) {
-        var theta = i * 2 * Math.PI / radialSegments;
-        var x = Math.sin(theta) * radius;
-        var y = Math.cos(theta) * radius;
-        positions.push(x, y, length/2); normals.push(0, 0, 1);
-        positions.push(x, y, -length/2); normals.push(0, 0, -1);
-    }
-    for (var i = 0; i < radialSegments; i++) {
-        var top1 = capStartIdx + i * 2;
-        var top2 = top1 + 2;
-        indices.push(topCenterIdx, top2, top1); // Top cap
-        var bot1 = top1 + 1;
-        var bot2 = top2 + 1;
-        indices.push(bottomCenterIdx, bot1, bot2); // Bottom cap
-    }
-    return { position: positions, normal: normals, indices: indices };
-  }
-
-  function createBox(width, height, depth) {
-    // 8 vertices, but normals differ per face, so 24 vertices
-    var w = width/2, h = height/2, d = depth/2;
-    var positions = [
-      // Front
-      -w, -h,  d,   w, -h,  d,   w,  h,  d,  -w,  h,  d,
-      // Back
-      -w, -h, -d,  -w,  h, -d,   w,  h, -d,   w, -h, -d,
-      // Top
-      -w,  h, -d,  -w,  h,  d,   w,  h,  d,   w,  h, -d,
-      // Bottom
-      -w, -h, -d,   w, -h, -d,   w, -h,  d,  -w, -h,  d,
-      // Right
-       w, -h, -d,   w,  h, -d,   w,  h,  d,   w, -h,  d,
-      // Left
-      -w, -h, -d,  -w, -h,  d,  -w,  h,  d,  -w,  h, -d
-    ];
-    var normals = [
-      // Front
-      0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
-      // Back
-      0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
-      // Top
-      0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,
-      // Bottom
-      0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
-      // Right
-      1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,
-      // Left
-      -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
-    ];
-    var indices = [
-      0, 1, 2,      0, 2, 3,    // Front
-      4, 5, 6,      4, 6, 7,    // Back
-      8, 9, 10,     8, 10, 11,  // Top
-      12, 13, 14,   12, 14, 15, // Bottom
-      16, 17, 18,   16, 18, 19, // Right
-      20, 21, 22,   20, 22, 23  // Left
-    ];
-    return { position: positions, normal: normals, indices: indices };
-  }
-
   // --- Scene Objects Construction ---
   this.meshes = [];
   this.camRadius = 0;
@@ -438,7 +306,7 @@ Shielding3DView = function(id, data) {
 
   // Initialize with data if provided
   if (data) {
-    this.setData(data);
+    this.setData(data, detector);
   }
 
   // --- Mouse Interaction ---
@@ -551,7 +419,22 @@ Shielding3DView = function(id, data) {
   });
 
   // --- Render Loop ---
+  var wasOnPage = false;
   function render() {
+    // Once the view has left the page (the dialog closed, or switched to 2D), stop, and release the
+    //  GL context, rather than keep drawing into a detached canvas.
+    if (!container.isConnected) {
+      if (wasOnPage) {
+        resizeObserver.disconnect();
+        var loseContext = gl.getExtension('WEBGL_lose_context');
+        if (loseContext)
+          loseContext.loseContext();
+        return;
+      }
+    } else {
+      wasOnPage = true;
+    }
+
     // Keep the drawing buffer matched to the canvas's live CSS box (the canvas is
     //  width/height:100% of the container, so clientWidth/Height track the dialog as it
     //  resizes).  Use CSS pixels for the buffer so the canvas's intrinsic size stays tied
@@ -578,6 +461,7 @@ Shielding3DView = function(id, data) {
     gl.enable(gl.CULL_FACE);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.enable(gl.BLEND);
+    gl.depthMask(true);   // the last frame ended on see-through meshes, and a masked clear skips depth
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(program);
@@ -606,14 +490,15 @@ Shielding3DView = function(id, data) {
     var opaque = self.meshes.filter(function(m) { return !m.transparent; });
     var trans = self.meshes.filter(function(m) { return m.transparent; });
 
-    // Sort transparent back-to-front?
-    // Distance from camera to object center.
+    // Sort transparent back-to-front, by distance from the camera to each mesh's center (a mesh
+    //  built directly in scene coordinates carries its own `center`; otherwise use its translation).
+    function meshCenter(m) {
+      return m.center ? m.center : [m.matrix[12], m.matrix[13], m.matrix[14]];
+    }
     trans.sort(function(a, b) {
-       // Get position from matrix (col 3)
-       var ax = a.matrix[12], ay = a.matrix[13], az = a.matrix[14];
-       var bx = b.matrix[12], by = b.matrix[13], bz = b.matrix[14];
-       var adist = (ax-eyeX)*(ax-eyeX) + (ay-eyeY)*(ay-eyeY) + (az-eyeZ)*(az-eyeZ);
-       var bdist = (bx-eyeX)*(bx-eyeX) + (by-eyeY)*(by-eyeY) + (bz-eyeZ)*(bz-eyeZ);
+       var ac = meshCenter(a), bc = meshCenter(b);
+       var adist = (ac[0]-eyeX)*(ac[0]-eyeX) + (ac[1]-eyeY)*(ac[1]-eyeY) + (ac[2]-eyeZ)*(ac[2]-eyeZ);
+       var bdist = (bc[0]-eyeX)*(bc[0]-eyeX) + (bc[1]-eyeY)*(bc[1]-eyeY) + (bc[2]-eyeZ)*(bc[2]-eyeZ);
        return bdist - adist; // Descending
     });
 
@@ -643,12 +528,19 @@ Shielding3DView = function(id, data) {
       gl.vertexAttribPointer(locs.aNormal, 3, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(locs.aNormal);
 
-      if (mesh.transparent) {
-          gl.depthMask(false);
+      gl.depthMask(!mesh.transparent);
+      if (mesh.transparent || mesh.twoSided) {
           gl.disable(gl.CULL_FACE);
       } else {
-          gl.depthMask(true);
           gl.enable(gl.CULL_FACE);
+      }
+      // A see-through layer often lies on (or within a depth-buffer step of) the surface it wraps -
+      //  a 10 um endcap on a crystal face - so pull it toward the camera to win the depth test cleanly.
+      if (mesh.transparent) {
+          gl.enable(gl.POLYGON_OFFSET_FILL);
+          gl.polygonOffset(-1.0, -4.0);
+      } else {
+          gl.disable(gl.POLYGON_OFFSET_FILL);
       }
 
       gl.drawElements(gl.TRIANGLES, mesh.buffer.numElements, gl.UNSIGNED_SHORT, 0);
@@ -754,9 +646,10 @@ Shielding3DView = function(id, data) {
 };
 
 // Set data and rebuild meshes
-Shielding3DView.prototype.setData = function(data) {
+Shielding3DView.prototype.setData = function(data, detector) {
   this.data = data;
-  
+  this.detector = detector || null;
+
   // Clear existing meshes (but keep WebGL context)
   if (this.meshes) {
     // Clean up old buffers
@@ -916,6 +809,80 @@ Shielding3DView.prototype.setData = function(data) {
     return { position: positions, normal: normals, indices: indices };
   }
 
+  // One detector region: a polycone profile [[z, rmin, rmax], ...] (cm, crystal frame, ascending z)
+  //  swept around the detector axis - around a circle for a cylindrical detector, or around a
+  //  rectangle whose y half-extent is the profile radius plus `boxDy` for a box one.  Positions are
+  //  scene mm, with the crystal face at z = faceZ and the axis at (cx, cy); a box's faces are
+  //  flat-shaded, a circle's shade smoothly around the axis.
+  //  `outerOnly` leaves out the rmin surfaces: for a see-through layer they coincide with the region
+  //  it wraps, and drawing both makes the two fight in the depth buffer.
+  function createSweptProfile(profile, isBox, boxDy, faceZ, cx, cy, outerOnly) {
+    var MM_PER_CM = 10.0;
+
+    // The region's outline in the (r, z) half-plane, as a closed loop: out along rmax, back along rmin
+    var n = profile.length;
+    var loop = [];
+    for (var i = 0; i < n; i++) loop.push([profile[i][2], profile[i][0]]);
+    for (var i = n - 1; i >= 0; i--) loop.push([profile[i][1], profile[i][0]]);
+
+    var edges = [];
+    for (var i = 0; i < loop.length; i++) {
+      var a = loop[i], b = loop[(i + 1) % loop.length];
+      if ((a[0] === b[0]) && (a[1] === b[1])) continue;   // repeated point (a step's two planes)
+      if ((a[0] <= 0) && (b[0] <= 0)) continue;           // runs along the axis
+      if (outerOnly && (i >= n) && (i + 1 < loop.length)) continue;  // along rmin (the end caps stay)
+      edges.push([a, b]);
+    }
+
+    // Directions around the axis; the circle's segment count keeps a mesh under 2^16 vertices.
+    var ring = [];
+    if (isBox) {
+      ring = [[1, 1], [-1, 1], [-1, -1], [1, -1], [1, 1]];
+    } else {
+      var nseg = Math.max(12, Math.min(64, Math.floor(65000 / (4 * Math.max(1, edges.length)))));
+      for (var j = 0; j <= nseg; j++)
+        ring.push([Math.cos(2 * Math.PI * j / nseg), Math.sin(2 * Math.PI * j / nseg)]);
+    }
+
+    function point(r, z, u) {
+      var ry = isBox ? ((r > 0) ? (r + boxDy) : 0) : r;
+      return [cx + MM_PER_CM * r * u[0], cy + MM_PER_CM * ry * u[1], faceZ + MM_PER_CM * z];
+    }
+
+    var positions = [], normals = [], indices = [];
+    for (var k = 0; k < edges.length; k++) {
+      var e = edges[k];
+      // The edge's normal in the (r, z) half-plane; swept around a circle it shades smoothly
+      var er = e[1][1] - e[0][1], ez = -(e[1][0] - e[0][0]);
+      var elen = Math.sqrt(er*er + ez*ez) || 1;
+      er /= elen; ez /= elen;
+      for (var j = 0; j + 1 < ring.length; j++) {
+        var quad = [point(e[0][0], e[0][1], ring[j]), point(e[1][0], e[1][1], ring[j]),
+                    point(e[1][0], e[1][1], ring[j+1]), point(e[0][0], e[0][1], ring[j+1])];
+        var quadNormals;
+        if (isBox) {
+          // A flat face: the normal from the quad's diagonals (defined even if a side collapses)
+          var d1 = [quad[2][0]-quad[0][0], quad[2][1]-quad[0][1], quad[2][2]-quad[0][2]];
+          var d2 = [quad[3][0]-quad[1][0], quad[3][1]-quad[1][1], quad[3][2]-quad[1][2]];
+          var fn = [d1[1]*d2[2] - d1[2]*d2[1], d1[2]*d2[0] - d1[0]*d2[2], d1[0]*d2[1] - d1[1]*d2[0]];
+          var flen = Math.sqrt(fn[0]*fn[0] + fn[1]*fn[1] + fn[2]*fn[2]) || 1;
+          fn = [fn[0]/flen, fn[1]/flen, fn[2]/flen];
+          quadNormals = [fn, fn, fn, fn];
+        } else {
+          var na = [er * ring[j][0], er * ring[j][1], ez], nb = [er * ring[j+1][0], er * ring[j+1][1], ez];
+          quadNormals = [na, na, nb, nb];
+        }
+        var base = positions.length / 3;
+        for (var q = 0; q < 4; q++) {
+          positions.push(quad[q][0], quad[q][1], quad[q][2]);
+          normals.push(quadNormals[q][0], quadNormals[q][1], quadNormals[q][2]);
+        }
+        indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
+    return { position: positions, normal: normals, indices: indices };
+  }
+
   // Now create meshes (same logic as constructor)
   var meshes = this.meshes;
 
@@ -925,20 +892,8 @@ Shielding3DView.prototype.setData = function(data) {
   var CM = 10.0 * MM;
   var INCH = 25.4 * MM;
 
+  // The distance is from the source center to the detector FACE (the endcap front).
   var detDistance = data.distance * MM;
-  
-  // Detector: Cylinder
-  // Radius = diameter / 2
-  var detDiam = (data.detectorDiameter !== undefined) ? (data.detectorDiameter * MM) : (3.0 * INCH);
-  var detRad = detDiam / 2.0;
-  
-  // Length defaults to 3 inches or maybe should scale?
-  // Let's keep length as 3 inches for now or equal to diameter if we want a 1:1 aspect ratio like typical NaI?
-  // Actually typical detectors are often 1:1.
-  var detLen = (data.detectorDiameter !== undefined) ? (data.detectorDiameter * MM) : (3.0 * INCH);
-  
-  // Position: Face at Z = detDistance. Cylinder center at Z = detDistance + detLen/2.
-  var detZ = detDistance + detLen/2;
 
   // User-set off-axis offsets displace the whole detector assembly in the X-Y plane
   //  (line of sight is +Z).  source_offsets[0] -> X, source_offsets[1] -> Y.  For
@@ -947,85 +902,123 @@ Shielding3DView.prototype.setData = function(data) {
   var offX = (data.sourceOffset0 !== undefined) ? (data.sourceOffset0 * MM) : 0;
   var offY = (data.sourceOffset1 !== undefined) ? (data.sourceOffset1 * MM) : 0;
 
-  // Add Cylinder mesh (Unit cylinder scaled)
-  // We use generated buffers for specific sizes to avoid complex scaling normals issues if non-uniform
-  meshes.push({
-    buffer: createBufferInfo(gl, createCylinder(detRad, detLen, 32)),
-    color: [0.7, 0.7, 0.7, 1.0], // Grey
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, detZ]),
-    transparent: false
-  });
+  // What the hover hit-test and the camera framing need to know about the detector assembly
+  var detHoverCenter, detHoverRadius, detFarZ, detTransverse;
 
-  // 2. Detector Body (Box 6")
-  var boxDim = 6.0 * INCH;
-  // Position: Attached to back of cylinder?
-  // Back of cylinder is at Z = detDistance + detLen.
-  // Box center at Z = detDistance + detLen + boxDim/2.
-  // Box centered in X/Y?
-  var boxZ = detDistance + detLen + boxDim/2;
-  meshes.push({
-    buffer: createBufferInfo(gl, createBox(boxDim, boxDim, boxDim)),
-    color: [0.2, 0.2, 0.8, 1.0], // Blueish
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, boxZ]),
-    transparent: false
-  });
+  var det = this.detector;
+  if (det && det.regions && det.regions.length) {
+    // The DRF's own geometry, to scale: the crystal face sits `endcapOffset` behind the detector face.
+    var faceZ = detDistance + det.endcapOffset * CM;
+    var boxDy = det.box ? (det.boxDy || 0) : 0;
+    var zMin = 0, zMax = 0, rMax = 0;
+    det.regions.forEach(function(region) {
+      region.profile.forEach(function(p) {
+        zMin = Math.min(zMin, p[0]);
+        zMax = Math.max(zMax, p[0]);
+        rMax = Math.max(rMax, p[2]);
+      });
+    });
+    var detFrontZ = faceZ + zMin * CM, detBackZ = faceZ + zMax * CM;
+    var rMaxY = det.box ? (rMax + boxDy) : rMax;
+    detTransverse = CM * Math.sqrt(rMax*rMax + (det.box ? rMaxY*rMaxY : 0));
+    detHoverCenter = [offX, offY, 0.5*(detFrontZ + detBackZ)];
+    detHoverRadius = 1.05 * Math.sqrt(0.25*(detBackZ - detFrontZ)*(detBackZ - detFrontZ) + detTransverse*detTransverse);
+    detFarZ = detBackZ;
 
-  // 3. Handle (U shape on top)
-  // Simple box handle
-  var handW = 4 * INCH, handH = 1 * INCH, handD = 1 * INCH;
-  var handZ = boxZ;
-  var handY = boxDim/2 + handH/2;
-  meshes.push({
-    buffer: createBufferInfo(gl, createBox(handW, handH, handD)),
-    color: [0.1, 0.1, 0.1, 1.0], // Dark
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, handY + offY, handZ]),
-    transparent: false
-  });
+    var kindColor = {
+      crystal:    [0.45, 0.66, 0.90, 1.0],
+      dead:       [0.30, 0.42, 0.60, 0.55],
+      layer:      [0.70, 0.72, 0.76, 0.30],
+      collimator: [0.30, 0.31, 0.34, 0.55]
+    };
+    for (var ri = 0; ri < det.regions.length; ri++) {
+      var region = det.regions[ri];
+      var regionColor = kindColor[region.kind] || [0.6, 0.6, 0.6, 0.4];
+      var seeThrough = (regionColor[3] < 1.0);
+      meshes.push({
+        buffer: createBufferInfo(gl, createSweptProfile(region.profile, det.box, boxDy, faceZ, offX, offY, seeThrough)),
+        color: regionColor,
+        matrix: this.Mat4.create(),
+        center: detHoverCenter,
+        transparent: seeThrough,
+        twoSided: true
+      });
+    }
+  } else {
+    // No geometry recorded: a placeholder cylinder of the DRF's diameter (as long as it is wide),
+    //  with a cartoon instrument body behind it.
+    var detDiam = (data.detectorDiameter !== undefined) ? (data.detectorDiameter * MM) : (3.0 * INCH);
+    var detRad = detDiam / 2.0;
+    var detLen = detDiam;
+    var detZ = detDistance + detLen/2;
 
-  // 4. Shielding
-  // Iterate data.shieldings.
-  // Accumulate dimensions.
+    meshes.push({
+      buffer: createBufferInfo(gl, createCylinder(detRad, detLen, 32)),
+      color: [0.7, 0.7, 0.7, 1.0], // Grey
+      matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, detZ]),
+      transparent: false
+    });
+
+    // Detector body (6" box) behind the crystal
+    var boxDim = 6.0 * INCH;
+    var boxZ = detDistance + detLen + boxDim/2;
+    meshes.push({
+      buffer: createBufferInfo(gl, createBox(boxDim, boxDim, boxDim)),
+      color: [0.2, 0.2, 0.8, 1.0], // Blueish
+      matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, boxZ]),
+      transparent: false
+    });
+
+    // Handle on top
+    var handW = 4 * INCH, handH = 1 * INCH, handD = 1 * INCH;
+    var handY = boxDim/2 + handH/2;
+    meshes.push({
+      buffer: createBufferInfo(gl, createBox(handW, handH, handD)),
+      color: [0.1, 0.1, 0.1, 1.0], // Dark
+      matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, handY + offY, boxZ]),
+      transparent: false
+    });
+
+    detHoverCenter = [offX, offY, detZ];
+    detHoverRadius = Math.max(detRad, detLen / 2) * 1.2;
+    detFarZ = detDistance + detLen + boxDim;
+    detTransverse = Math.max(boxDim/2, handY + handH/2, detRad);
+  }
+
+  // 4. Shielding, drawn inner to outer.  Dimensions are thickness increments: a sphere's radius,
+  //  a cylinder's radius and HALF-length, a box's HALF-width, -height and -depth.
   var currentRad = 0;
-  var currentW = 0, currentH = 0, currentD = 0;
-  // For cylinders
-  var currentCylRad = 0;
-  var currentCylLen = 0;
+  var currentHalfW = 0, currentHalfH = 0, currentHalfD = 0;
+  var currentCylRad = 0, currentCylHalfLen = 0;
 
-  // Shielding is at 0,0,0.
-  // Need to draw Inner to Outer.
-  // data.shieldings is ordered inner to outer? Usually.
-  
   for (var i = 0; i < data.shieldings.length; i++) {
     var s = data.shieldings[i];
+    if (s.arealDensity !== undefined)   // generic (AN, AD) shielding: no physical extent
+      continue;
+
     var dims = s.dimensions; // [d0, d1, d2]
-    var geo = data.geometry; 
-    
+    var geo = data.geometry;
+
     var meshData = null;
     var color = [Math.random()*0.5+0.5, Math.random()*0.5+0.5, Math.random()*0.5+0.5, 0.4]; // Random transparent color
     if(s.material.indexOf("Lead") >= 0) color = [0.3, 0.3, 0.3, 0.5];
     if(s.material.indexOf("Iron") >= 0) color = [0.6, 0.3, 0.2, 0.5];
     if(s.material.indexOf("Copper") >= 0) color = [0.8, 0.5, 0.3, 0.5];
     if(s.material.indexOf("Aluminum") >= 0) color = [0.8, 0.8, 0.9, 0.5];
-    
+
     if (geo === "Spherical") {
       currentRad += dims[0];
       meshData = createSphere(currentRad, 32, 32);
     } else if (geo === "CylinderEndOn" || geo === "CylinderSideOn") {
-      // dims[0] = Radius Thickness, dims[1] = Length Thickness?
-      // Assuming they are additive thicknesses based on typical code patterns
+      // Built along Z (EndOn: its axis points at the detector); SideOn is rotated below.
       currentCylRad += dims[0];
-      currentCylLen += dims[1]; 
-      meshData = createCylinder(currentCylRad, currentCylLen, 32);
-      // Orientation: Cylinder along Z.
-      // EndOn vs SideOn usually implies orientation relative to detector.
-      // If EndOn, cylinder axis points to detector. Detector is at +Z. So Cylinder along Z is correct.
-      // If SideOn, cylinder axis perpendicular to detector line. So Cylinder along Y or X.
-      // Let's rotate 90 deg X if SideOn.
+      currentCylHalfLen += dims[1];
+      meshData = createCylinder(currentCylRad, 2 * currentCylHalfLen, 32);
     } else if (geo === "Rectangular") {
-      currentW += dims[0];
-      currentH += dims[1];
-      currentD += dims[2];
-      meshData = createBox(currentW, currentH, currentD);
+      currentHalfW += dims[0];
+      currentHalfH += dims[1];
+      currentHalfD += dims[2];
+      meshData = createBox(2 * currentHalfW, 2 * currentHalfH, 2 * currentHalfD);
     }
 
     if (meshData) {
@@ -1048,12 +1041,12 @@ Shielding3DView.prototype.setData = function(data) {
   if (data.geometry === "Spherical") {
     outerShellZ = currentRad;
   } else if (data.geometry === "CylinderEndOn") {
-    outerShellZ = currentCylLen / 2;
+    outerShellZ = currentCylHalfLen;
   } else if (data.geometry === "CylinderSideOn") {
     // SideOn cylinder is rotated 90 deg about X, so the "end" is along Y; Z extent is the radius
     outerShellZ = currentCylRad;
   } else if (data.geometry === "Rectangular") {
-    outerShellZ = currentD / 2;
+    outerShellZ = currentHalfD;
   }
 
   this.keyPoints = {
@@ -1062,8 +1055,8 @@ Shielding3DView.prototype.setData = function(data) {
     outerShellPoint: [0, 0, outerShellZ],
     outerShellZ: outerShellZ,
     detDistance: detDistance,
-    detCenter: [offX, offY, detZ],
-    detBoundRadius: Math.max(detRad, detLen / 2) * 1.2,
+    detCenter: detHoverCenter,
+    detBoundRadius: detHoverRadius,
     geometry: data.geometry
   };
 
@@ -1118,25 +1111,24 @@ Shielding3DView.prototype.setData = function(data) {
   
   // Aim the camera at the center of the whole model's bounding box so it is framed
   //  symmetrically.  The model is a long thin run of objects along Z: the source/shield
-  //  at the origin (front face at z=-outerShellZ) through the detector cylinder + body
-  //  box + handle out past the detector face (far face at z=farZ).  Targeting the Z
-  //  midpoint (rather than the source<->detector-face midpoint) keeps the bulky detector
-  //  assembly from sitting off in a corner.  lookAt projects this target to screen center,
-  //  so the scene always stays horizontally and vertically centered.
+  //  at the origin (front face at z=-outerShellZ) out to the back of the detector
+  //  assembly (z=farZ).  Targeting the Z midpoint (rather than the source<->detector-face
+  //  midpoint) keeps a bulky detector assembly from sitting off in a corner.  lookAt
+  //  projects this target to screen center, so the scene always stays centered.
   var offMag = Math.sqrt(offX*offX + offY*offY);
-  var farZ   = detDistance + detLen + boxDim;        // far face of the detector body box
+  var farZ   = detFarZ;                               // back of the detector assembly
   var nearZ  = -outerShellZ;                          // front of the (origin-centered) shield
   var centerZ = (farZ + nearZ) / 2;
   this.camTarget = [offX/2, offY/2, centerZ];
 
   // Bounding radius of the model about camTarget.  Half the Z span usually dominates;
-  //  include the transverse (box/handle/offset) extent so a corner is never clipped.
+  //  include the transverse (detector/offset) extent so a corner is never clipped.
   //  frameToFit() turns this radius into a camera distance that fits the model in *both*
   //  screen dimensions -- essential on a narrow/portrait phone canvas, where the horizontal
   //  field of view is much smaller than the vertical one and the old fixed 1.5x-distance
   //  heuristic clipped the model sideways.
   var halfZ = (farZ - nearZ) / 2;
-  var transverse = offMag/2 + Math.max(boxDim/2, handY + handH/2, detRad);
+  var transverse = offMag/2 + detTransverse;
   this.fitRadius = Math.sqrt(halfZ*halfZ + transverse*transverse);
   if (this.fitRadius < 10*MM) this.fitRadius = 10*MM;
 

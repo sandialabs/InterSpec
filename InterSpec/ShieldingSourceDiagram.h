@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,12 +38,13 @@
 namespace Wt
 {
   class WComboBox;
-  class WGridLayout;
+  class WVBoxLayout;
 }
 
 // Forward declarations
 class Shielding2DView;
 class Shielding3DView;
+class DetectorPeakResponse;
 
 // Dialog class for displaying shielding diagrams with 2D/3D view switching
 class ShieldingDiagramDialog : public SimpleDialog
@@ -52,6 +54,7 @@ public:
   // Static factory method to create a dialog with 2D/3D view switcher.
   // sourceOffset0/sourceOffset1 are the user-set off-axis offsets
   // (GammaInteractionCalc::ShieldSourceConfig::source_offsets[0] and [1]).
+  // `drf` lets the 3D view draw the detector's actual geometry, when the DRF records one.
   static ShieldingDiagramDialog *createShieldingDiagram(
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                      const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
@@ -59,7 +62,8 @@ public:
                                      double detectorDistance,
                                      double detectorDiameter,
                                      double sourceOffset0 = 0.0,
-                                     double sourceOffset1 = 0.0
+                                     double sourceOffset1 = 0.0,
+                                     std::shared_ptr<const DetectorPeakResponse> drf = nullptr
                                      );
 
   // Switch between 2D and 3D views
@@ -72,7 +76,8 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
 protected:
   // Constructor is protected; use SimpleDialog::make<ShieldingDiagramDialog>() to create.
@@ -83,7 +88,8 @@ protected:
                          double detectorDistance,
                          double detectorDiameter,
                          double sourceOffset0,
-                         double sourceOffset1
+                         double sourceOffset1,
+                         std::shared_ptr<const DetectorPeakResponse> drf
                          );
 
 private:
@@ -92,7 +98,8 @@ private:
   Shielding2DView *m_2DView;
   Shielding3DView *m_3DView;
   Wt::WComboBox *m_select;
-  Wt::WGridLayout *m_layout;
+  Wt::WVBoxLayout *m_layout;
+  Wt::WContainerWidget *m_viewHolder;   //the stretching cell the current view fills
 
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
   std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
@@ -100,6 +107,7 @@ private:
   double m_detectorDistance;
   double m_detectorDiameter;
   double m_sourceOffsets[2];
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
 };
 
 // Create JSON representation of shielding data
@@ -155,7 +163,8 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
@@ -164,7 +173,15 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
+
+  /** The detector's geometry for the 3D view: `null` when the DRF records none (the JS then draws
+   a placeholder), else each region of `DetectorGeometryDiagram::buildModel` as a polycone profile
+   in the crystal frame (cm), plus the endcap-front offset that places the crystal face behind the
+   detector face the source distance is measured to.
+   */
+  static std::string createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf );
 
 private:
   void defineJavaScript();
@@ -176,6 +193,7 @@ private:
   double m_detectorDistance;
   double m_detectorDiameter;
   double m_sourceOffsets[2];
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
 };
 
 #endif // Shielding2DView_h
