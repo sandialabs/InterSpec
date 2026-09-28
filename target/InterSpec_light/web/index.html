@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<!-- InterSpec Light: gamma-ray spectrum analysis that runs entirely in your browser, and makes no
+     network requests (except to fetch a spectrum named in the page URL).  The base64 data blocks
+     near the end of this file are the app's own WebAssembly module (InterSpec and SpecUtils C++
+     compiled with Emscripten) and its reference-line library. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InterSpec Light</title>
+  <link rel="icon" type="image/png" href="%%INTERSPEC_LOGO%%">
+  <!-- CHART_CSS -->
+  <!-- TIME_CSS -->
+  <!-- APP_CSS -->
+</head>
+<body>
+  <header class="topbar">
+    <img class="app-logo" src="%%INTERSPEC_LOGO%%" alt="">
+    <span class="brand">InterSpec&nbsp;Light</span>
+    <span id="fg-summary" class="summary"></span>
+    <span class="spacer"></span>
+    <button id="panel-toggle" class="logo-btn" title="Show/hide the side panel">
+      <img src="%%SANDIA_LOGO%%" alt="Sandia National Laboratories">
+    </button>
+    <input type="file" id="file-input" hidden>
+  </header>
+
+  <div class="main">
+    <div class="charts">
+      <div id="spectrum-chart" class="spectrum-chart" oncontextmenu="return false;">
+        <div id="empty-msg" class="empty-msg">
+          <p><b>Drop a spectrum file here</b>, or</p>
+          <p><button id="empty-open" class="btn primary">Open a file&hellip;</button></p>
+          <p class="hint">Everything runs locally in your browser; nothing is uploaded.</p>
+        </div>
+      </div>
+      <div id="time-chart" class="time-chart" hidden></div>
+    </div>
+
+    <aside id="panel" class="panel">
+      <details open>
+        <summary>Spectra</summary>
+        <div id="slots"></div>
+        <div class="row">
+          <label class="compact">Y axis
+            <select id="yscale">
+              <option value="lin">Linear</option>
+              <option value="log" selected>Log</option>
+              <option value="sqrt">Sqrt</option>
+            </select>
+          </label>
+          <label class="compact"><input type="checkbox" id="show-slider"> Energy strip chart</label>
+        </div>
+      </details>
+
+      <details id="detectors-section" hidden>
+        <summary>Detectors</summary>
+        <div id="detectors" class="checklist"></div>
+        <div class="row">
+          <button class="btn-sm" id="dets-all">All</button>
+          <button class="btn-sm" id="dets-none">None</button>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Reference lines</summary>
+        <input type="search" id="ref-filter" placeholder="Add source, e.g. Cs137, Pb, H(n,g), Background" autocomplete="off">
+        <div id="ref-suggestions" class="suggestions" hidden></div>
+        <div id="ref-chips" class="chips"></div>
+      </details>
+
+      <details id="search-section">
+        <summary>Energy search</summary>
+        <div class="row">
+          <label>Energy <input type="number" id="search-e1" step="any" min="0" placeholder="keV"></label>
+          <label>and <input type="number" id="search-e2" step="any" min="0" placeholder="(optional)"></label>
+        </div>
+        <div class="row">
+          <label>&plusmn;<input type="number" id="search-window" step="any" min="0" placeholder="auto"> keV</label>
+          <label>Sort <select id="search-sort">
+            <option value="weighted">Intensity weighted</option>
+            <option value="closest">Closest</option>
+          </select></label>
+        </div>
+        <div id="search-results"></div>
+      </details>
+
+      <details open>
+        <summary>Peaks <span id="peak-count" class="count"></span></summary>
+        <div id="peak-table"></div>
+        <div class="row">
+          <button class="btn-sm" id="peaks-search" title="Automatically search for, and fit, all peaks (existing peaks are kept)">Search for peaks</button>
+          <button class="btn-sm" id="peaks-csv" title="Download the peaks as a CSV file InterSpec can read">Export CSV</button>
+          <button class="btn-sm" id="peaks-clear">Delete all</button>
+        </div>
+      </details>
+
+      <details id="ecal-section">
+        <summary>Energy calibration</summary>
+        <div id="ecal"></div>
+      </details>
+
+      <details>
+        <summary>Export</summary>
+        <div class="row">
+          <select id="export-format">
+            <option value="N42-2012" selected>N42-2012 (whole file)</option>
+            <option value="N42-2006">N42-2006 (whole file)</option>
+            <option value="PCF">PCF (whole file)</option>
+            <option value="CHN">CHN (displayed)</option>
+            <option value="SPE">IAEA SPE (displayed)</option>
+            <option value="CNF">CNF (displayed)</option>
+            <option value="SPC">SPC (displayed)</option>
+            <option value="TKA">TKA (displayed)</option>
+            <option value="CSV">CSV (displayed)</option>
+            <option value="TXT">TXT (displayed)</option>
+          </select>
+          <button class="btn" id="export-btn">Download</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="export-peaks-btn" title="Download the peaks as a CSV file InterSpec can read">Download peak CSV</button>
+        </div>
+        <p class="hint">Exports the foreground file with any energy calibration changes.  "Displayed"
+          formats hold the sum of the displayed samples and detectors.
+          <span class="no-peak-files">Spectrum files do not include peaks; save them with the peak CSV.</span>
+          <span class="peak-files" hidden>N42-2012 and SPE files include the peaks (which InterSpec reads
+          too); for other formats, save the peaks with the peak CSV.</span></p>
+      </details>
+
+      <details>
+        <summary>Help</summary>
+        <ul class="help">
+          <li><b>Double-click</b> spectrum: fit a peak; <b>Search for peaks</b> (Peaks section) fits them all</li>
+          <li><b>Right-click</b> a peak: delete, refit, change continuum or skew, or assign a source from the
+            shown reference lines</li>
+          <li>Click a peak's source in the <b>Peaks</b> table to type one, e.g. <code>Cs137</code>,
+            <code>Pb 75</code>, or <code>Th232 S.E.</code></li>
+          <li><b>Drag ROI edge</b>: change the fit region</li>
+          <li><b>Ctrl-drag</b>: fit peaks in a region</li>
+          <li><b>Shift-drag</b>: erase peaks in a region</li>
+          <li><b>Drag</b>: zoom in; <b>Cmd/Meta-drag</b>: zoom Y</li>
+          <li>Click the <b>y-axis</b> title to toggle log/linear; click the <b>x-axis</b> title to toggle the
+            energy strip chart</li>
+          <li>Time chart: <b>drag</b> for foreground, hold <b>b</b> for background, <b>s</b> for
+            secondary; add <b>Shift</b> to add, <b>Ctrl</b> to remove; right-drag zooms</li>
+          <li class="peak-files" hidden>Peaks saved in N42 or SPE files, by InterSpec or this page, load
+            with the file</li>
+          <li>URL: <code>?url=&lt;spectrum&gt;&amp;background=&lt;spectrum&gt;</code></li>
+        </ul>
+        <p class="hint about">This page is self-contained: everything it needs is inside this one HTML
+          file.  It makes no network requests (unless you use the <code>?url=</code> argument to fetch a
+          spectrum), and nothing you load or analyze is ever sent from your computer.</p>
+        <p class="hint about">Developed as part of
+          <a href="https://sandialabs.github.io/InterSpec/" target="_blank" rel="noopener noreferrer">InterSpec</a>
+          by Sandia National Laboratories.
+          Licensed under the LGPL v2.1.  Contact
+          <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>.</p>
+      </details>
+    </aside>
+  </div>
+
+  <div id="drop-overlay" class="drop-overlay" hidden>
+    <div class="drop-zone" data-type="FOREGROUND">Foreground</div>
+    <div class="drop-zone" data-type="BACKGROUND">Background</div>
+    <div class="drop-zone" data-type="SECONDARY">Secondary</div>
+  </div>
+
+  <div id="ctx-menu" class="ctx-menu" hidden></div>
+  <datalist id="source-suggestions"></datalist>
+  <div id="toast" class="toast" hidden></div>
+  <div id="busy" class="busy" hidden>Working&hellip;</div>
+
+  <!-- ASSETS -->
+  <!-- SCRIPTS -->
+</body>
+</html>

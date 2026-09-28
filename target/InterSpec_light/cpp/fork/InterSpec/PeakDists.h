@@ -1,0 +1,1110 @@
+#ifndef PeakDists_h
+#define PeakDists_h
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <memory>
+#include <vector>
+#include <utility>
+
+#include "InterSpec/PeakDef.h" //for PeakDef::SkewType
+
+namespace SpecUtils
+{
+  class Measurement;
+}
+
+/** The functions in this .h/.cpp are for computing skewed and Gaussian photopeak distributions.
+ 
+ */
+namespace PeakDists
+{
+  /** `erfc` implementation based on boost, but sped up to be more efficient.
+   
+   Surprisingly, the erf() function is the major bottleneck for peak fitting.
+   
+   20191230: wcjohns extracted the boost::math::erf() function implementation
+   from boost 1.65.1 for double precision (53 bit mantissa) into this function,
+   boost_erf_imp(). Removing some of the supporting code structure, and
+   explicitly writing out the polynomial equation evaluation, and removing some
+   very minor corrections, seems to speed things up by about a factor of ~3 over
+   calling boost::math::erf() (and agrees with boosts implementation to within
+   1E-10%, across the entire range).
+   
+   In the implementation file, there is a commented out erf_approx() function looks to be about 25% faster than
+   this boost version, but I havent carefully checked out the precision implications
+   so not switching to it yet.
+   */
+  double boost_erf_imp( double z );
+  
+  /** Returns `1-boost_erf_imp(z)`, however, due to rounding, is a separate implementation than erf.
+   */
+  double boost_erfc_imp( double z );
+
+  /** Function to semi-efficiently integrate the gaussian plus optionally skew distribution over an energy range.
+   
+   @param mean The peak mean, in keV
+   @param sigma The peak sigma, in keV
+   @param amplitude The peak amplitude; e.g., use 1.0 for unit-area peak.
+   @param skew_type The type of skew of the peak
+   @param skew_parameters The values of the skew parameters; must have at least `num_skew_parameters(SkewType)` entries.
+          or can be nullptr if no skew.
+   @param nchannel The number of channels to sum
+   @param lower_energies The lower energies of the channels.  Must have at least `nchannel + 1` entries
+   @param[out] peak_count_channels Where the channel sums of the distribution are added to.
+          Note that the distribution sum for each channel is _added_ to this array, so you should zero-initialize it.
+          Must have at least `nchannel` entries.
+   */
+template<typename T>
+void photopeak_function_integral( const T mean,
+                                  const T sigma,
+                                  const T amp,
+                                  const PeakDef::SkewType skew_type,
+                                  const T * const skew_parameters,
+                                  const size_t nchannel,
+                                  const float * const energies,
+                                 T *channels );
+
+extern template void photopeak_function_integral<double>( const double, const double,const double,
+                         const PeakDef::SkewType, const double * const, const size_t, const float * const, double * );
+
+
+/** Returns an antiderivative of the unit-area peak distribution with the given mean, sigma, and
+   skew type, evaluated at energy `x`.
+
+   For most skew types this is the CDF proper - the integral from -infinity to x - running from 0
+   far below the peak to 1 far above.  The Exp*Gauss family is offset by a constant, however, since
+   those branches return `bortel_indefinite_integral` rather than a normalised CDF:
+
+     - Bortel and DoubleBortel run over [-0.5, +0.5], i.e. offset by -1/2.
+     - GaussPlusBortel, being `(1-R)*Gauss + R*Bortel`, runs over [-R/2, 1 - R/2].
+
+   (NoSkew, GaussExp, ExpGaussExp and the GADRAS shapes are exactly [0,1]; CrystalBall,
+   DoubleSidedCrystalBall and VoigtPlusBortel are [0,1] to within their tail-truncation error, of
+   order 1e-4.)
+
+   The offset is constant in `x`, so a **difference** `peak_cdf(b) - peak_cdf(a)` is always the
+   fraction of peak area between a and b, for every skew type - which is how nearly every caller
+   uses this (see `anchored_peak_cdf` and `bortel_integral`).  Only code that uses a single
+   returned value as an absolute probability has to care, and it must not assume a [0,1] range:
+     - `PeakContinuum::offset_integral_cdf_step`'s un-anchored fallback substitutes the literal
+       bounds 0 and 1 for `f0`/`f1`, which is only right for the un-offset types.
+     - The pre-version-3 BiLinearStepCDF conversion (`legacy_roi_peak_sums`,
+       `PeakContinuum::convert_legacy_bilinear_step_cdf`) deliberately keeps the offset, because
+       the version-2 continuum model blended with this same un-normalised quantity.
+
+   @param x Energy at which to evaluate
+   @param mean Peak mean energy
+   @param sigma Peak Gaussian width (standard deviation)
+   @param skew_type The skew type of the peak
+   @param skew_pars Pointer to skew parameters (may be nullptr for NoSkew)
+   @returns The antiderivative at `x`; in [0,1] except for the Exp*Gauss family noted above.
+ */
+double peak_cdf( const double x, const double mean, const double sigma,
+                 const PeakDef::SkewType skew_type, const double *skew_pars );
+
+
+  /** Calculates the area of a Gaussian with specified mean, sigma, and amplitude, between x0 and x1.
+   
+    Results have approximately 9 decimal digits of accuracy.
+   */
+  double gaussian_integral( const double peak_mean, const double peak_sigma,
+                            const double x0, const double x1 );
+  
+  /** Slightly CPU optimized method of computing the Gaussian integral over a number of channels.
+   
+   Cuts the number of calls to the `erf` function (which is what takes the longest in the
+   function) in half.
+   Also, only calculates values between +-8 sigma of the mean (which is 1 - 1E-15 the total counts).
+   
+   @param peak_mean
+   @param peak_sigma
+   @param peak_amplitude
+   @param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   @param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   @param nchannel The number of channels to do the integration over.
+   */
+  template<typename T>
+  void gaussian_integral( const T peak_mean,
+                                const T peak_sigma,
+                                const T peak_amplitude,
+                                const float * const energies,
+                                T *channels,
+                         const size_t nchannel );
+  
+  extern template void gaussian_integral<double>(const double, const double, const double,
+                                  const float * const, double *, const size_t);
+  
+  //void gaussian_integral( const double peak_mean,
+  //                            const double peak_sigma,
+  //                            const double peak_amplitude,
+  //                            const float * const energies,
+  //                            double *channels,
+  //                            const size_t nchannel );
+  
+  
+  
+  /** Returns the integral of a unit-area Bortel function, between `x1` and `x2`. */
+  double bortel_integral( const double mean, const double sigma, const double skew,
+                         const double x1, const double x2 );
+  
+  /** Slightly CPU optimized method of computing the peak area, for Bortel skew over a number of channels.
+   
+   Cuts the number of calls to the `erf`, `erfc`, and exp functionsn half.
+   Also, only calculates values between -12 to +8 sigma of the mean/
+   
+   @param peak_mean
+   @param peak_sigma
+   @param peak_amplitude
+   @param skew The Bortel skew of the peak (between 0 and 10)
+   @param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   @param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   @param nchannel The number of channels to do the integration over.
+   */
+  template<typename T>
+  void bortel_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const T skew,
+                              const float * const energies,
+                              T *channels,
+                              const size_t nchannel );
+  extern template void bortel_integral<double>( const double, const double, const double, const double,
+                                       const float * const, double *, const size_t );
+  
+  /** Returns the PDF for a unit-area Bortel function.
+   */
+  double bortel_pdf( const double mean, const double sigma, const double skew_low, const double x );
+
+  /** Returns the indefinite integral (e.g., from negative infinity up to `x`) of a unit-area Bortel function
+   */
+  template<typename T>
+  T bortel_indefinite_integral( const double x, const T mean, const T sigma, const T skew );
+  
+  extern template double bortel_indefinite_integral<double>( const double, const double,
+                                                            const double, const double );
+
+  /** Returns an approximate area between `x1` and `x2` for a unit-area Bortel function.
+   
+   Just multiplies the x-range by the Bortel PDF value in the middle of the range.
+   */
+  double bortel_integral_fast( const double mean, const double sigma, const double skew,
+                              const double x1, const double x2 );
+  
+  /** Return the limits so that `1-p` of the Bortel distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew The Bortel skew of the peak (between 0 and 10)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11 and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is accurate to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> bortel_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p );
+  
+  
+  
+  double gauss_exp_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double skew,
+                                      const double x0, const double x1 );
+  
+  
+  
+  template<typename T>
+  void gaussian_integral( const T peak_mean,
+                                const T peak_sigma,
+                                const T peak_amplitude,
+                                const float * const energies,
+                                T *channels,
+                         const size_t nchannel );
+  
+  extern template void gaussian_integral<double>(const double, const double, const double,
+                                  const float * const, double *, const size_t);
+  
+  template<typename T>
+  void gauss_exp_integral( const T peak_mean,
+                          const T peak_sigma,
+                          const T peak_amplitude,
+                          const T skew,
+                          const float * const energies,
+                          T *channels,
+                          const size_t nchannel );
+  
+  extern template void gauss_exp_integral<double>( const double, const double, const double,
+                                      const double, const float * const, double *, const size_t );
+  
+  
+  /** Returns the normalization so the GaussExp distribution has unit area. */
+  template<typename T>
+  T gauss_exp_norm( const T sigma, const T skew );
+  
+  extern template double gauss_exp_norm<double>( const double, const double );
+  
+  
+  double gauss_exp_pdf(const double mean,
+                       const double sigma,
+                       const double skew,
+                       const double x );
+  
+  double gauss_exp_tail_indefinite(const double mean,
+                                  const double sigma,
+                                  const double skew,
+                                   const double x );
+  
+  double gauss_exp_indefinite(const double mean,
+                             const double sigma,
+                             const double skew,
+                              const double x );
+  
+  /** Return the limits so that `1-p` of the GaussExp distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew The GaussExp skew of the peak (between 0.15 and 3.25)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> gauss_exp_coverage_limits( const double mean, const double sigma,
+                                         const double skew, const double p );
+  
+  
+  
+  
+  
+  
+  
+  double exp_gauss_exp_integral( const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x0,
+                                const double x1 );
+  
+  template<typename T>
+  void exp_gauss_exp_integral( const T peak_mean,
+                               const T peak_sigma,
+                               const T peak_amplitude,
+                               const T skew_left,
+                               const T skew_right,
+                               const float * const energies,
+                              T *channels,
+                               const size_t nchannel );
+  
+  extern template void exp_gauss_exp_integral<double>( const double, const double, const double,
+                                                  const double, const double, const float * const,
+                                                  double *, const size_t );
+  
+  template<typename T>
+  T exp_gauss_exp_norm( const T sigma, const T skew_left, const T skew_right );
+  
+  extern template double exp_gauss_exp_norm<double>( const double, const double, const double );
+  
+  double exp_gauss_exp_pdf( const double mean,
+                           const double sigma,
+                           const double skew_left,
+                           const double skew_right,
+                           const double x );
+  
+  double exp_gauss_exp_left_tail_indefinite( const double mean,
+                                          const double sigma,
+                                          const double skew_left,
+                                          const double skew_right,
+                                            const double x );
+
+  double exp_gauss_exp_right_tail_indefinite( const double mean,
+                                           const double sigma,
+                                           const double skew_left,
+                                           const double skew_right,
+                                             const double x );
+
+  double exp_gauss_exp_gauss_indefinite( const double mean,
+                                      const double sigma,
+                                      const double skew_left,
+                                      const double skew_right,
+                                        const double x );
+  
+  double exp_gauss_exp_indefinite( const double mean,
+                                const double sigma,
+                                const double skew_left,
+                                const double skew_right,
+                                  const double x );
+  
+  /** Return the limits so that `1-p` of the ExpGaussExp distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param skew_left The left-sided ExpGaussExp skew of the peak (between 0.15 and 3.25)
+   @param skew_right The right-sided ExpGaussExp skew of the peak (between 0.15 and 3.25)
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
+   
+   Throws error on invalid input.
+   */
+  std::pair<double,double> exp_gauss_exp_coverage_limits( const double mean, const double sigma,
+                                const double left_skew, const double right_skew, const double p );
+  
+  
+  
+  
+  
+  
+  
+  double crystal_ball_integral( const double peak_mean,
+                                      const double peak_sigma,
+                                      const double alpha,
+                                      const double power_law,
+                                      const double x0, const double x1 );
+  
+  template<typename T>
+  void crystal_ball_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const T alpha,
+                              const T power_law,
+                              const float * const energies,
+                              T *channels,
+                              const size_t nchannel );
+  
+  extern template void crystal_ball_integral<double>( const double, const double, const double,
+                        const double, const double, const float * const, double *, const size_t );
+  
+  
+  double crystal_ball_norm( const double sigma,
+                           const double alpha,
+                           const double n );
+  
+  double crystal_ball_pdf(const double mean,
+                          const double sigma,
+                          const double alpha,
+                          const double n,
+                          const double x );
+
+  /** Returns indefinite integral (negative infinite to `x0` for the power-law component for the unit-area Crystal Ball function.
+   */
+  double crystal_ball_tail_indefinite_t( const double sigma, const double alpha,
+                                        const double n, const double t );
+  
+  /** Reference distance from the peak mean, in units of `sigma`, at which a power-law tail's
+   remaining area is quoted (see `crystal_ball_tail_frac_beyond` / `dscb_tail_frac_beyond`).
+   
+   20 sigma matches the `max_nsigma` clamp `RelActCalcAuto` already applies to peak coverage limits
+   (`PeakDefImp::peak_coverage_limits`), so "area beyond this" is literally "area the fit cannot
+   see".
+   */
+  const double sk_tail_frac_nsigma = 20.0;
+  
+  /** The furthest from the peak mean, in units of `max(sigma,0.1)`, that a coverage limit may be
+   before it is reported as unreachable.
+   
+   A CrystalBall power-law tail with exponent `n` falls off as |t|^(1-n), so as `n` approaches its
+   1.05 fit bound (`PeakDef::skew_parameter_range`) the x-value holding a given tail probability runs
+   away extremely fast: the p=0.001 limit of a DSCB with alpha=2.5, n=1.05 sits 4E47 sigma below the
+   mean.  Such an answer is finite and arithmetically correct, but meaningless for a spectrum and
+   useless to every caller (they all substitute a 15-20 sigma window, or the ROI).  1000 sigma is
+   ~50x the widest window any caller actually uses, so anything past it is "no usable limit".
+   */
+  const double sk_max_coverage_limit_nsigma = 1000.0;
+  
+  
+  /** MEASURED FINDING, not an enforced limit - nothing currently reads this.
+   
+   Over 1003 CZT photopeaks with KNOWN TRUTH AREAS (Kromek GR1 corpus, chi2/dof < 2, physical sigma),
+   the fitted peak area tracks the truth area to within ~5% while the tail fraction beyond
+   `sk_tail_frac_nsigma` stays under 0.05, then degrades monotonically: 1.13x at m = 0.05-0.08,
+   1.20x at 0.08-0.2, 1.51x at 0.2-0.35 and 4.6x above 0.5.  Whatever cut is applied in [0.01, 0.2],
+   the fits it excludes have a median fitted/truth area of 2.2-2.9 - beyond this knee the Crystal
+   Ball tail is absorbing the continuum rather than describing the detector.  Critically those fits
+   have unremarkable chi2/dof, so chi2 CANNOT separate them; only a truth comparison can.
+   
+   For scale, a measured H3D M400 CZT Cs137 661.7 keV peak (target/testing/test_CrystalBall_CZT_fit.cpp)
+   sits at m = 4.3E-3, an order of magnitude inside this.
+   
+   ---------------------------------------------------------------------------------------------
+   WHAT WAS TRIED, AND WHY IT IS NOT WIRED UP (2026-08, see the notes below before retrying)
+   
+   Constraining this quantity during the fit DOES work on the corpus it was calibrated on: median
+   CZT peak-area bias fell from 15.8% to ~5% with no loss of fit quality (median chi2/dof 0.992 ->
+   0.989), which says the tail/continuum degeneracy is real and worth breaking.  Two implementations
+   were trialled and both were reverted:
+   
+     1. Fitting `log10(m)` directly, so the limit would be an axis of the parameter box.  The
+        feasible region of `n` is CURVED and alpha-dependent in that coordinate, so a fixed
+        rectangle over it left 32% of fits clamped with identically-zero derivatives and 21% at `n`
+        below the 1.05 pole guard that `PeakDef::skew_parameter_range` documents.
+     2. Fitting `w = log(n-1)` (an honest rectangle, exactly the documented `n` range) with this
+        limit as a one-sided penalty residual.  That fixed the geometry completely - 0% out of range
+        - and matched the accuracy of (1).
+   
+   (2) was reverted only because its calibration is not yet trustworthy off the Kromek corpus:
+     - `sk_tail_frac_nsigma` measures the tail in units of SIGMA, but a CZT charge-collection tail
+       has a fixed extent in keV.  At 662 keV that same 20 sigma is a 134 keV window on a Kromek GR1
+       but only 44 keV on an H3D M400, so a limit tuned on one CZT cuts real tail off a
+       better-resolution one.  On the M400 corpus the fitted area came out ~0.5 of truth for EVERY
+       skew model including NoSkew, and only ~40% of that gap is explained by the clipped tail; the
+       remainder is still unexplained.
+     - The penalty hinge behaved as a soft wall at the same value for HPGe and NaI, whose physical
+       tail masses are 1E-11..1E-7 - five to nine decades below it - so a single global constant
+       cannot serve detectors that differ that much.
+   
+   TO REVISIT: make the reference distance physical (keV, or a fraction of peak energy) rather than
+   a multiple of sigma; re-derive the knee per detector class against truth areas; and resolve the
+   M400 factor-of-two first, since it is not a peak-shape effect (it is identical across all seven
+   skew models and survives a correct sigma and chi2/dof ~ 1).
+   */
+  const double sk_tail_frac_max = 0.05;
+  
+
+  
+  /** The smallest tail fraction represented in the fit coordinate; below this a Crystal Ball is a
+   pure Gaussian for any practical purpose (the cleanest real HPGe in the survey sits at 2E-11).
+   */
+  const double sk_tail_frac_min = 1.0E-12;
+  
+  /** Bracket the `*_n_from_tail_frac(...)` inverses solve within.  Exposed so the Jet path can tell
+   a genuine interior root from a clamp at either end (a clamped root has no local sensitivity, so
+   the Newton step that carries the derivatives must be skipped there).
+   */
+  const double sk_cb_n_solve_min = 1.0 + 1.0E-9;
+  const double sk_cb_n_solve_max = 1.0E4;
+  
+  
+  /** Derivative of `crystal_ball_tail_frac_beyond(...)` with respect to `n`.
+   
+   Always negative (the tail fraction is strictly decreasing in `n`), which is what makes
+   `crystal_ball_n_from_tail_frac(...)` single-valued.  Written out analytically rather than
+   auto-differentiated so the Jet path can use it as a scalar Newton denominator:
+     dB/dn = B * [ -D/(n(n-1)(C+D)) - ln(t_1) + (n-1)*alpha*(K-alpha)/(n^2 * t_1) ]
+   with C, D as in `crystal_ball_norm(...)` and t_1 = 1 + alpha*(K-alpha)/n.  Verified against
+   central differences to ~1E-10 over alpha in [0.5,5], n in [1.05,100].
+   
+   Requires `nsigma >= alpha`; throws otherwise.
+   */
+  double crystal_ball_tail_frac_beyond_dn( const double alpha, const double n, const double nsigma );
+  
+  
+
+  
+
+  
+  
+  /** Fraction of a Crystal Ball distribution's total area lying further than `nsigma` below the
+   mean (i.e. out along the power-law tail).
+   
+   Strictly monotonically decreasing in `n`, for every `alpha`, which is what makes
+   `crystal_ball_n_from_tail_frac(...)` well-defined.
+   
+   @param alpha The Crystal Ball skew (must be > 0)
+   @param n The Crystal Ball power-law (must be > 1; the tail area diverges at n <= 1)
+   @param nsigma How many sigma below the mean to measure from (must be >= 0)
+   
+   Throws error on invalid input.
+   */
+  double crystal_ball_tail_frac_beyond( const double alpha, const double n, const double nsigma );
+  
+  /** Inverse of `crystal_ball_tail_frac_beyond(...)` in `n`: the unique power-law giving `frac`.
+   
+   Solved by bisection on the (monotonic) forward function; the answer is clamped into
+   `n` in [1+1E-9, 1E4] when `frac` is outside the range attainable for this `alpha`.
+   */
+  double crystal_ball_n_from_tail_frac( const double alpha, const double frac, const double nsigma );
+  
+  /** Fraction of a double-sided Crystal Ball's total area lying further than `nsigma` from the mean,
+   out along the `(alpha, n)` tail.
+   
+   The opposite side's parameters are needed only because they contribute to the normalization; pass
+   the two sides swapped to measure the other tail (the DSCB normalization is symmetric under that
+   swap).
+   
+   @param alpha The skew of the tail being measured (must be > 0)
+   @param n The power-law of the tail being measured (must be > 1)
+   @param other_alpha The skew of the opposite side (must be > 0)
+   @param other_n The power-law of the opposite side (must be > 1)
+   @param nsigma How many sigma from the mean to measure from (must be >= 0)
+   
+   Throws error on invalid input.
+   */
+  double dscb_tail_frac_beyond( const double alpha, const double n,
+                                const double other_alpha, const double other_n,
+                                const double nsigma );
+  
+  /** Inverse of `dscb_tail_frac_beyond(...)` in `n`; see `crystal_ball_n_from_tail_frac(...)`. */
+  double dscb_n_from_tail_frac( const double alpha, const double frac,
+                                const double other_alpha, const double other_n,
+                                const double nsigma );
+  
+  
+  /** Return the limits so that `1-p` of the Crustal Ball distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param alpha The Crystal Ball skew of the peak
+   @param n The Crystal Ball power-law of the peak
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
+   decently accurate up to numeric precision (which hasn't been checked/optimized).
+   
+   Throws error on invalid input, or if the limit is unreachable.  "Unreachable" means the inverse
+   succeeded but landed further than `sk_max_coverage_limit_nsigma` from the mean, which is what
+   happens once `n` gets near 1 - see that constant.  Callers are expected to catch and substitute a
+   window of their own; every caller in the tree already does.
+   */
+  std::pair<double,double> crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                        const double alpha,
+                                                        const double n,
+                                                        const double p );
+  
+  
+  
+  
+  
+  
+  double double_sided_crystal_ball_integral( const double peak_mean,
+                                                   const double peak_sigma,
+                                                   const double lower_alpha,
+                                                   const double lower_power_law,
+                                                   const double upper_alpha,
+                                                   const double upper_power_law,
+                                                   const double x0, const double x1 );
+  
+  template<typename T>
+  void double_sided_crystal_ball_integral( const T peak_mean,
+                                          const T peak_sigma,
+                                          const T peak_amplitude,
+                                          const T lower_alpha,
+                                          const T lower_power_law,
+                                          const T upper_alpha,
+                                          const T upper_power_law,
+                                          const float * const energies,
+                                          T *channels,
+                                          const size_t nchannel );
+  
+  extern template void double_sided_crystal_ball_integral<double>( const double, const double,
+                                                 const double, const double, const double,
+                                                 const double, const double, const float * const,
+                                                 double *, const size_t );
+    
+  /** Return the limits so that `1-p` of the double-sided Crystal Ball distribution is covered.
+   
+   @param mean The peak mean
+   @param sigma The peak width
+   @param alpha_left The left-sided Crystal Ball skew of the peak
+   @param n_left The left-sided Crystal Ball power-law of the peak
+   @param alpha_right The right-sided Crystal Ball skew of the peak
+   @param n_right The right-sided Crystal Ball power-law of the peak
+   @param The fraction of the distribution you want to be outside of the returned range; must
+          be between 1.0E-11and 0.999.
+   
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+   
+   The area below the retuned limit should be quite accurate, while above may only be good to within 0.02 of requested area (i.e. `0.02*p`).
+   
+   Throws error on invalid input, or if the limit is unreachable - which is common for really large
+   skews, and in particular whenever a power-law `n` sits near its 1.05 fit bound.  "Unreachable"
+   means the answer is further than `sk_max_coverage_limit_nsigma` from the mean; see that constant
+   for why such an answer is rejected rather than searched harder for.  Callers are expected to catch
+   and substitute a window of their own; every caller in the tree already does.
+   */
+  std::pair<double,double> double_sided_crystal_ball_coverage_limits( const double mean, const double sigma,
+                                                                     const double left_skew,
+                                                                     const double left_n,
+                                                                     const double right_skew,
+                                                                     const double right_n,
+                                                                     const double p );
+
+
+
+  // ========== Voigt Plus Bortel Distribution Functions ==========
+
+  /** Control whether to use pseudo-Voigt or true-Voigt for VoigtPlusBortel peaks.
+   
+   The true-Voigt distribution (using Faddeeva function) does not have a CDF function
+   implemented due to accuracy issues with erf(z) for complex z. Therefore:
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=0: Uses true-Voigt PDF with Gauss-Legendre
+     quadrature for channel integrals (slower but more accurate for Voigt component)
+   - When USE_PSEUDO_VOIGT_DISTRIBUTION=1: Uses pseudo-Voigt (Thompson-Cox-Hastings
+     approximation) with analytic CDF for fast channel integrals (faster, slightly
+     less accurate for Voigt component)
+   
+   Note: voigt_exp_coverage_limits() always uses pseudo-Voigt due to CDF requirement.
+   */
+  #ifndef USE_PSEUDO_VOIGT_DISTRIBUTION
+  #define USE_PSEUDO_VOIGT_DISTRIBUTION 1
+  #endif
+
+  /** Returns the integral of a Voigt with exponential tail distribution between x0 and x1.
+
+   Note: for `USE_PSEUDO_VOIGT_DISTRIBUTION == 0`, this function uses true-Voigt with adaptive 
+     Gauss-Kronrod quadrature (slower but more accurate for Voigt component) to get the integral
+     (this is because of the aformentioned accuracy issues with the true-Voigt CDF)
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double voigt_exp_integral( const double peak_mean, const double sigma_gauss,
+                             const double gamma_lor, const double tail_ratio,
+                             const double tail_slope, const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the Voigt with exponential tail integral.
+
+   Uses indefinite integral caching to cut the number of Voigt function evaluations in half.
+
+   @param peak_mean The peak mean in keV
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
+                           const T peak_amplitude, const T gamma_lor,
+                           const T tail_ratio, const T tail_slope,
+                           const float * const energies, T *channels,
+                           const size_t nchannel );
+
+  extern template void voigt_exp_integral<double>( const double, const double, const double,
+                                                    const double, const double, const double,
+                                                    const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the VoigtExpTail distribution is covered.
+
+   @param mean The peak mean
+   @param sigma_gauss Gaussian width (from detector resolution), in keV
+   @param gamma_lor Lorentzian HWHM (from natural line width), in keV
+   @param tail_ratio Fraction of counts in the exponential tail
+   @param tail_slope Exponential tail slope parameter tau
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   @note This function always uses the pseudo-Voigt approximation (regardless of the
+   USE_PSEUDO_VOIGT_DISTRIBUTION setting) because it requires CDF evaluation, and the
+   true-Voigt CDF is not reliably implemented. This may introduce small accuracy differences
+   compared to the actual peak shape when USE_PSEUDO_VOIGT_DISTRIBUTION=0.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> voigt_exp_coverage_limits( const double mean, const double sigma_gauss,
+                                                       const double gamma_lor, const double tail_ratio,
+                                                       const double tail_slope, const double p );
+
+
+  // ========== Gauss Plus Bortel Distribution Functions ==========
+
+  /** Returns the integral of a Gauss+Bortel distribution between x0 and x1.
+
+   This is a weighted mixture of Gaussian and Bortel distributions:
+   PDF(x) = (1-R) * Gaussian(x) + R * Bortel(x)
+
+   When R=0, this equals a pure Gaussian.
+   When R=1, this equals a pure Bortel.
+   This distribution should match VoigtPlusBortel when gamma_lor=0.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter (exponential tail decay constant, in units of sigma)
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double gauss_plus_bortel_integral( const double peak_mean, const double sigma,
+                                     const double R, const double tau,
+                                     const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the Gauss+Bortel integral.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
+                                   const T peak_amplitude, const T R, const T tau,
+                                   const float * const energies, T *channels,
+                                   const size_t nchannel );
+
+  extern template void gauss_plus_bortel_integral<double>( const double, const double, const double,
+                                                           const double, const double,
+                                                           const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the Gauss+Bortel distribution is covered.
+
+   @param mean The peak mean
+   @param sigma Gaussian width (detector resolution), in keV
+   @param R Mixing ratio (0=pure Gaussian, 1=pure Bortel)
+   @param tau Bortel skew parameter
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> gauss_plus_bortel_coverage_limits( const double mean, const double sigma,
+                                                               const double R, const double tau,
+                                                               const double p );
+
+
+  // ========== Double Bortel Distribution Functions ==========
+
+  /** Returns the integral of a DoubleBortel distribution between x0 and x1.
+
+   From Bortels & Collaers 1987 (Eq. 11), this is a weighted sum of two Bortel distributions:
+   PDF(x) = (1-eta) * Bortel(mean, sigma, tau1, x) + eta * Bortel(mean, sigma, tau2, x)
+
+   Where tau2 = tau1 + tau2_delta, ensuring tau2 >= tau1.
+
+   When tau2_delta=0, this reduces to a single Bortel distribution (regardless of eta).
+   When eta=0, this equals Bortel with tau1.
+   When eta=1, this equals Bortel with tau2.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param tau1 First exponential decay constant (in units of sigma)
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param x0 Lower integration limit
+   @param x1 Upper integration limit
+
+   @returns Integral of the unit-area distribution from x0 to x1
+   */
+  double double_bortel_integral( const double peak_mean, const double sigma,
+                                 const double tau1, const double tau2_delta,
+                                 const double eta,
+                                 const double x0, const double x1 );
+
+
+  /** Optimized array-filling version of the DoubleBortel integral.
+
+   @param peak_mean The peak mean in keV
+   @param sigma Gaussian width (detector resolution), in keV
+   @param peak_amplitude The peak amplitude (use 1.0 for unit-area peak)
+   @param tau1 First exponential decay constant
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param energies Array of channel lower energies (must have nchannel+1 entries)
+   @param channels Array where distribution values will be added (must have nchannel entries)
+   @param nchannel Number of channels to integrate over
+   */
+  template<typename T>
+  void double_bortel_integral( const T peak_mean, const T sigma,
+                               const T peak_amplitude,
+                               const T tau1, const T tau2_delta, const T eta,
+                               const float * const energies, T *channels,
+                               const size_t nchannel );
+
+  extern template void double_bortel_integral<double>( const double, const double, const double,
+                                                       const double, const double, const double,
+                                                       const float * const, double *, const size_t );
+
+
+  /** Return the limits so that `1-p` of the DoubleBortel distribution is covered.
+
+   @param mean The peak mean
+   @param sigma Gaussian width (detector resolution), in keV
+   @param tau1 First exponential decay constant
+   @param tau2_delta Non-negative delta so tau2 = tau1 + tau2_delta
+   @param eta Weight of second exponential (0 to 1)
+   @param p The fraction of the distribution you want to be outside of the returned range
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element, so the fraction of the distribution between the
+   returned limits is `1 - p`.
+
+   Throws error on invalid input.
+   */
+  std::pair<double,double> double_bortel_coverage_limits( const double mean, const double sigma,
+                                                           const double tau1, const double tau2_delta,
+                                                           const double eta, const double p );
+
+
+  // ========== GADRAS Peak Shape Distribution Functions ==========
+  //
+  // A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces
+  // the Fortran shape).  See the well-marked GADRAS section in PeakDists_imp.hpp for the math (this
+  // section is expected to receive a math upgrade to an analytic form).
+  //
+  // The six skew parameters (SkewPar0..SkewPar5) are:
+  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fittable
+  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fittable
+  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - fixed detector characteristic
+  //   [3] high_skew_power  (high-tail energy-dependence exponent) - fixed detector characteristic
+  //   [4] low_skew_extent  (low-tail slope shaping)               - fixed detector characteristic
+  //   [5] high_skew_extent (high-tail slope shaping)              - fixed detector characteristic
+
+  /** Detector material categories that change the GADRAS tail construction. */
+  enum class GadrasMaterial
+  {
+    Generic,   // NaI, HPGe, CsI, LaBr3, ...
+    CZT_CdTe   // CZT or CdTe
+  };
+
+  /** Returns the integral of a GADRAS peak-shape distribution between x0 and x1 (unit area).
+
+   @param mean  Peak mean in keV (also the energy at which the shape is resolved).
+   @param sigma Gaussian width, in keV.
+   @param skew  Pointer to the 6 skew parameters (see above).
+   @param material  Generic vs CZT/CdTe.
+   @param x0    Lower integration limit.
+   @param x1    Upper integration limit.
+   */
+  double gadras_integral( const double mean, const double sigma,
+                          const double * const skew, const GadrasMaterial material,
+                          const double x0, const double x1 );
+
+  /** Optimized array-filling version of the GADRAS integral (accumulates into `channels`).
+
+   @param peak_mean       Peak mean in keV.
+   @param sigma           Gaussian width, in keV.
+   @param peak_amplitude  Peak amplitude (use 1.0 for unit-area peak).
+   @param skew            Pointer to the 6 skew parameters.
+   @param material        Generic vs CZT/CdTe.
+   @param energies        Channel lower energies (nchannel+1 entries).
+   @param channels        Output array (nchannel entries); values are added to.
+   @param nchannel        Number of channels.
+   */
+  template<typename T>
+  void gadras_integral( const T peak_mean, const T sigma, const T peak_amplitude,
+                        const T * const skew, const GadrasMaterial material,
+                        const float * const energies, T *channels, const size_t nchannel );
+
+  extern template void gadras_integral<double>( const double, const double, const double,
+                                                const double * const, const GadrasMaterial,
+                                                const float * const, double *, const size_t );
+
+  /** Return the limits so that `1-p` of the GADRAS distribution is covered.
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element.  Throws error on invalid input.
+   */
+  std::pair<double,double> gadras_coverage_limits( const double mean, const double sigma,
+                                                   const double * const skew,
+                                                   const GadrasMaterial material, const double p );
+
+
+  /** Returns [lower, upper] energy limits such that fraction `p` of the peak's area lies outside
+   the range (i.e., `p/2` below lower, `p/2` above upper), dispatching to the appropriate
+   distribution's coverage-limits function based on skew type.
+
+   For NoSkew, uses the standard Gaussian quantile.
+
+   @param p           Fraction of total area outside returned range; must be in (0, 1).
+   @param skew_type   The peak skew type.
+   @param mean        Peak mean in keV.
+   @param sigma       Peak Gaussian sigma in keV.
+   @param skew_pars   Pointer to skew parameter array (SkewPar0, SkewPar1, ...); may be nullptr
+                      for NoSkew.
+   @returns  Pair [lower_energy, upper_energy].
+   Throws on invalid parameters or if limits cannot be found.
+   */
+  std::pair<double,double> coverage_limits( const double p,
+                                            const PeakDef::SkewType skew_type,
+                                            const double mean,
+                                            const double sigma,
+                                            const double *skew_pars );
+
+
+    /** 20231109: Currently `DSCB_pdf_non_norm` yields a that can be almost 20% too low, over the entire effective range
+     I'm totally not sure why - it could be an error in my integration for normalization, a bug in the indefinite integral functions,
+     or likely a mis-understanding on my part, or a bug in `DSCB_pdf_non_norm` that I have just become blind to seeing.
+     So for the moment, we wont use the equivalent of `DSCB_pdf_non_norm` in the JS, which is faster and more compact,
+     see test\_PeakDists.cpp for some commented out tests that show this issue.  I'm a bit miffed at this inconsistency.
+     
+     Returns the non-normalized, double sided Crystal Ball PDF value for `x`
+     */
+    //double DSCB_pdf_non_norm( const double mean, const double sigma,
+    //                          const double alpha_low, const double n_low,
+    //                          const double alpha_high, const double n_high,
+    //                          const double x );
+  
+
+  template<typename T>
+  T DSCB_norm( const T alpha_low, const T n_low, const T alpha_high, const T n_high );
+  
+  extern template double DSCB_norm<double>( const double, const double, const double, const double );
+    
+  double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low, const double n_low,
+                                                 const double t );
+    
+  double DSCB_right_tail_indefinite_non_norm_t( const double alpha_high,
+                                                             const double n_high,
+                                                             const double t);
+    
+  double DSCB_gauss_indefinite_non_norm_t( const double t );
+
+#if( __cplusplus >= 202002L )
+  template <typename ContType, typename ScalarType>
+  concept ContinuumTypeConcept = requires(ContType cont, ScalarType scalar, std::size_t index) {
+    // Check `cont.parameters()` returns something like an array, or vector, or something
+    { scalar = cont.parameters()[index] };
+    { cont.referenceEnergy() } -> std::same_as<ScalarType>;
+    { cont.lowerEnergy() } -> std::same_as<ScalarType>;
+    { cont.upperEnergy() } -> std::same_as<ScalarType>;
+    { cont.type() } -> std::same_as<PeakContinuum::OffsetType>;
+    { cont.externalContinuum() } -> std::same_as<std::shared_ptr<const SpecUtils::Measurement>>;
+  };
+
+
+  // This function is just templated version of `PeakContinuum::offset_integral(...)` - need to refactor
+  //  both to use the same code
+  template<typename ContType, typename ScalarType>
+  void offset_integral( const ContType &cont,
+                  const float *energies,
+                  ScalarType *channels,
+                  const size_t nchannel,
+                  const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,ScalarType>;
+#else
+
+// Helper traits to check if a type satisfies certain conditions
+template <typename ContType, typename ScalarType>
+struct ContinuumTypeConcept {
+private:
+    template <typename T>
+    static auto check_parameters(T* cont, std::size_t index) -> decltype((*cont).parameters()[index], std::true_type{});
+
+    template <typename T>
+    static auto check_referenceEnergy(T* cont) -> decltype((*cont).referenceEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_lowerEnergy(T* cont) -> decltype((*cont).lowerEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_upperEnergy(T* cont) -> decltype((*cont).upperEnergy(), std::true_type{});
+
+    template <typename T>
+    static auto check_type(T* cont) -> decltype((*cont).type(), std::true_type{});
+
+    template <typename T>
+    static auto check_externalContinuum(T* cont) -> decltype((*cont).externalContinuum(), std::true_type{});
+
+public:
+    static constexpr bool value =
+        std::is_same<decltype(check_parameters(static_cast<ContType*>(nullptr), std::size_t{})), std::true_type>::value &&
+        std::is_same<decltype(check_referenceEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_lowerEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_upperEnergy(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_type(static_cast<ContType*>(nullptr))), std::true_type>::value &&
+        std::is_same<decltype(check_externalContinuum(static_cast<ContType*>(nullptr))), std::true_type>::value;
+};
+
+
+// Enable the function only if the ContinuumTypeConcept is satisfied
+template <typename ContType, typename ScalarType>
+typename std::enable_if<ContinuumTypeConcept<ContType, ScalarType>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                ScalarType* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data);
+#endif //__cplusplus >= 202002L
+
+  /** Peak-aware form of `offset_integral(...)`, needed by the peak-CDF step continua.
+
+   The CDF step types define their step in terms of the ROI's peaks, so they cannot be evaluated by
+   the overload above - which throws for them.  This one builds the amplitude-weighted, ROI-anchored
+   peak CDF from `photopeak_function_integral` + `unit_pdf_to_cdf` (both templated, so Ceres Jet
+   derivatives are preserved), and hands every other continuum type straight to that overload.
+
+   `PeakType` is duck-typed the same way `PeakFit::fit_continuum(...)` does it: it must provide
+   `mean()`, `sigma()`, `amplitude()`, `skewType()`, and either `skew_parameters()` or - for
+   `PeakDef` itself - `coefficients()`.
+
+   \param energies Lower channel energies; must be the continuum's *own* ROI channel range, since
+          the CDF is anchored at `energies[0]`.  Must have at least `nchannel + 1` entries.
+   \param channels Channel integrals of the continuum; _added_ to, not zeroed.
+   \param roi_peaks All peaks sharing this ROI's continuum; null entries are skipped.
+   */
+  template<typename ContType, typename PeakType, typename ScalarType>
+  void offset_integral( const ContType &cont,
+                        const float *energies,
+                        ScalarType *channels,
+                        const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const PeakType * const *roi_peaks,
+                        const size_t num_peaks );
+}//namespace PeakDists
+
+#endif  //PeakDists_h
