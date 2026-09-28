@@ -1,0 +1,364 @@
+#ifndef PeakFitLM_h
+#define PeakFitLM_h
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <vector>
+#include <atomic>
+#include <memory>
+#include <utility>
+#include <optional>
+#include <functional>
+
+#include "InterSpec/LightWtShim.h"
+
+#include "InterSpec/PeakDef.h"
+
+// Forward declarations
+//class PeakDef;
+class DetectorPeakResponse;
+namespace SpecUtils
+{
+  class Measurement;
+}//namespace SpecUtils
+
+struct PeakFitDetPrefs;
+
+namespace PeakFitUtils
+{
+  enum class CoarseResolutionType : int;
+}
+
+#define PRINT_VERBOSE_PEAK_FIT_LM_INFO 0
+
+/** Compile-time switch for the "punish statistically-insignificant peaks" fit option,
+ `PeakFitLMOptions::PunishForPeakBeingStatInsig`.
+
+ Disabled (0) by default, because:
+   - No production code path enables the option; nothing sets the flag.
+   - The punishment is a heuristic that has never been validated: its magnitude/direction are ad-hoc
+     (it can widen a peak's sigma, arguably the wrong way), and the residual's Jacobian is
+     discontinuous at the significance threshold (amp == 2*sqrt(data in mean +- 1.75 sigma)), which
+     the Ceres L-M trust region does not love.  (It does NOT bias statistically-significant peaks:
+     the residual is gated off, and identically zero, once a peak is above ~2 sigma.)
+
+ Set to 1 to compile the option back in (the enum value, the residual-count branches, the punishment
+ block in `parametersToPeaks`, and its `statInsigPunishmentLifted` test).  The punishment math should
+ be re-derived/validated before relying on it.
+ */
+#define ENABLE_PUNISH_STAT_INSIG_PEAKS 0
+
+namespace PeakFitLM
+{
+
+/** By default:
+ - peak means are only constrained to be in the ROI
+ - peak widths are only constrained to be within a reasonable range, for the spectrum
+ - If peak means are closer than 1.75 sigma together, there is a punishment (smoothly tapering to zero at 1.75 sigma)
+ - If there are multiple peaks, their FWHM is a linear function of thier mean; the FWHM can vary by +-15% over the ROI
+
+ However, these choices can be overridden
+
+ Note: this must be an enum, and not a `enum class` because it doesnt look like Wt 3.x WFlags doent play nicely with enum classes.
+ */
+enum PeakFitLMOptions
+{
+  /** By default, if peaks are closer than 1.75 sigma to each other, they get punished, with the
+   punishment growing smoothly (and continuously) as they get closer - see `peaks_too_close_punishment`.
+   Specifying this option turns this punishment off.
+   */
+  DoNotPunishForBeingToClose  = 0x01,
+
+#if( ENABLE_PUNISH_STAT_INSIG_PEAKS )
+  /** Punishes peaks for their areas being less than sqrt(data between mean +- 1.75*sigma).
+   Heuristic and untested -- see `ENABLE_PUNISH_STAT_INSIG_PEAKS`; the 0x02 bit is reserved while
+   this is disabled.
+   */
+  PunishForPeakBeingStatInsig = 0x02,
+#endif
+
+  /** Normally when fitting multiple peaks, the peak FWHM is allowed to vary +-15% throughout the
+   ROI, with the FWHM of each peak being a linear function of the fraction of energy through the ROI.
+   This option allows the FWHM of each peak to independently vary, within the reasonable range
+   for the detector type/spectrum.
+   */
+  AllPeakFwhmIndependent      = 0x04,
+
+  // TODO: add option to just have FWHM vary with sqrt(energy)
+
+  /** Restricts mean, amplitude, continuum, and skew parameters to change only moderately from
+   starting values.  Mean moves within 0.5 sigma.
+
+   This is somewhat the analigous option to `PeakFitChi2Fcn::kRefitPeakParameters`.
+   */
+  MediumAmplitudeRefinementOnly = 0x08,
+
+  /** Restricts mean, amplitude, continuum, and skew parameters to change only slightly.
+   Mean moves within 0.15 sigma.
+   */
+  SmallAmplitudeRefinementOnly  = 0x10,
+
+  /** If specified, each ROI will independently fit its own skew parameters (provided the skew
+   type is not NoSkew).  A per-ROI skew parameter is free to vary if ANY peak in the ROI has
+   fitFor set for it; it is held constant only when all peaks in the ROI agree it should be fixed.
+   The skew type and initial coefficient values are still taken from the peaks, but no cross-ROI
+   parameter sharing or energy-dependent interpolation is performed; every ROI's skew converges
+   to its own optimal values.
+
+   If not specified (the default), all ROIs share a single set of non-energy-dependent skew
+   values, and any energy-dependent parameters are fit as a linear function of energy across
+   the full span of all ROIs (when multiple ROIs span more than 100 keV).
+   */
+  IndependentSkewValues       = 0x20,
+
+  /** Restricts sigma (FWHM) to change within 50% of starting value. */
+  MediumFwhmRefinementOnly    = 0x40,
+
+  /** Restricts sigma (FWHM) to change within 15% of starting value. */
+  SmallFwhmRefinementOnly     = 0x80,
+
+  /** Backward-compatible composite: restricts both amplitude/mean and FWHM moderately.
+   Equivalent to `MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly`.
+
+   Note: since WFlags::test uses bitwise AND, test(MediumRefinementOnly) returns true
+   if EITHER MediumAmplitudeRefinementOnly or MediumFwhmRefinementOnly is set.
+   */
+  MediumRefinementOnly = MediumAmplitudeRefinementOnly | MediumFwhmRefinementOnly, // 0x48
+
+  /** Backward-compatible composite: restricts both amplitude/mean and FWHM tightly.
+   Equivalent to `SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly`.
+   */
+  SmallRefinementOnly = SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly, // 0x90
+
+};//enum PeakFitLMOptions
+
+
+/** Residual that punishes two peaks for being too close together, to break the amplitude
+ degeneracy (and the local minima it causes) as two Gaussians approach the same mean.
+
+ `reldist = |mean_1 - mean_2| / sigma`, with `sigma` the average of the two peaks' sigmas.
+ Returns `punishment_factor * (1 - (reldist/1.75)^2)^2 / reldist` for `reldist < 1.75`, and 0 beyond.
+
+ 2 sigma is the Sparrow limit - the separation below which two equal-amplitude Gaussians no longer
+ show a dip between them - but we often *can* resolve peaks a little closer than this, so the
+ punishment is cut off at 1.75 sigma to give the fit a chance to resolve them without penalty.
+ The squared `(1 - (reldist/1.75)^2)` factor makes the residual (and its Jacobian) continuous (C1)
+ at the 1.75 cutoff: a hard cutoff would make the Ceres L-M trust-region model mispredict whenever
+ a step crosses the threshold.  The `1/reldist` keeps a strong barrier as the peaks coincide; the
+ caller is expected to floor `reldist` (e.g. at 0.01) beforehand.
+ */
+template<typename T>
+T peaks_too_close_punishment( const T &reldist, const double punishment_factor )
+{
+  const double cutoff = 1.75;  // sigma; just inside the 2-sigma Sparrow limit, to leave resolvable peaks alone
+  if( reldist >= cutoff )
+    return T( 0.0 );
+
+  const T frac = reldist / cutoff;
+  const T deficit = 1.0 - frac*frac;
+  return (punishment_factor * deficit * deficit) / reldist;
+}//peaks_too_close_punishment(...)
+
+
+/** Fits a peak following a user click (or the automated peak search using the same
+ entry point).
+
+ If `cancel_flag` is non-null and `*cancel_flag == true`, the Ceres minimizer aborts
+ at its next iteration callback (returning empty results).  Used so the automated
+ peak search can be interrupted promptly during application shutdown.
+ */
+void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &results,
+                                const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                const std::vector< std::shared_ptr<const PeakDef> > &coFitPeaks,
+                                const double mean0, const double sigma0,
+                                const double area0,
+                                const float roiLowerEnergy,
+                                const float roiUpperEnergy,
+                                const std::shared_ptr<const PeakFitDetPrefs> &fitPrefs,
+                                const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
+
+/** Analog of `void fitPeaks(...)`, but using the Ceres based L-M fit method.
+
+ Note different order of funciton arguments, as compared to `fitPeaks(...)`.
+ All input peaks must be in the same ROI (e.g., share the same PeakContinuum).
+
+ Upon error, results will be empty.
+ 
+ `fit_options` is passed through to the fit; pass `{}` for the defaults, or e.g.
+ `PeakFitLMOptions::MediumRefinementOnly` when refining an existing fit.  When any of the
+ refinement-only options is given, the peak-significance test is relaxed for peaks whose mean
+ and sigma are both fixed - the caller is refining a fit the user set up deliberately.
+
+ May return fewer peaks than passed in if a peak doesnt pass the `stat_threshold` or `hypothesis_threshold`
+ (if these are above 0.0), or if two peaks fit within 1 sigma of each other.
+ */
+void fit_peaks_LM( std::vector<std::shared_ptr<const PeakDef>> &results,
+                  const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
+                  std::shared_ptr<const SpecUtils::Measurement> data,
+                  const double stat_threshold,
+                  const double hypothesis_threshold,
+                  const Wt::WFlags<PeakFitLMOptions> fit_options,
+                  const PeakFitUtils::CoarseResolutionType det_type ) throw();
+
+
+
+std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const double x1,
+                                      const double ncausalitysigma,
+                                      const double stat_threshold,
+                                      const double hypothesis_threshold,
+                                      const std::vector<std::shared_ptr<const PeakDef>> all_peaks,
+                                      const std::shared_ptr<const SpecUtils::Measurement> data,
+                                      const Wt::WFlags<PeakFitLMOptions> fit_options,
+                                      const PeakFitUtils::CoarseResolutionType det_type );
+
+/** Fit peaks in a ROI using Ceres L-M optimizer.
+ All input peaks must share the same PeakContinuum.  Peak `fitFor` flags are respected:
+ parameters marked as not-fit-for will be held constant.
+
+ Uses the LLS-hybrid approach: means/sigmas/skew/step_coeff optimized by Ceres,
+ amplitudes and polynomial coefficients solved by linear least-squares each iteration.
+
+ @param coFitPeaks All peaks in the ROI (must share a continuum)
+ @param dataH The spectrum data
+ @param det_type The coarse detector resolution type.
+ @param fit_options Fitting options (e.g., SmallRefinementOnly)
+ @returns Fitted peaks with updated amplitudes, continuum, and uncertainties.
+          Throws on failure.
+ */
+std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_roi_LM(
+                                   const std::vector<std::shared_ptr<const PeakDef>> coFitPeaks,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = {},
+                                   std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
+
+/** Refit peaks that share an ROI.
+ * @param data The data to fit
+ * @param detector Currently unused
+ * @param inpeaks The peaks to refit - the widths and means of these peaks will serve as initial guesses; they
+ *        also dictate which quantities are fit for each peak, the skew and continuum types used, etc.
+ * @param fit_options The options to use for the fit.
+ * @return The refitted peaks, if fitting was sucessful.
+ *
+ * On failure, returns an empty vector.
+ */
+std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
+                                   const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                   const std::shared_ptr<const DetectorPeakResponse> &detector,
+                                   const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
+                                   const PeakFitUtils::CoarseResolutionType det_type,
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = {} );
+
+
+  
+/** Results of `fit_peaks_in_spectrum_LM(...)`.
+ */
+struct FitPeaksResults
+{
+  enum class FitPeaksResultsStatus : int
+  {
+    Success,
+    Failure
+  };
+  
+  FitPeaksResultsStatus status;
+  /** Only non-empty if `status == FitPeaksResultsStatus::Failure` */
+  std::string error_message;
+  
+  /** The fit peaks */
+  std::vector<std::shared_ptr<const PeakDef>> fit_peaks;
+  
+  /** Input peaks that did not make it to `fit_peaks` because they became insignificant. */
+  std::vector<std::shared_ptr<const PeakDef>> lost_peaks;
+  
+  /** A struct to convey the fit skew */
+  struct SkewRelation
+  {
+    PeakDef::SkewType skew_type;
+    
+    /** The lower and upper energy anchor points used to fit the energy-dependent skew paramaters.
+     Will be left empty if skew type is `PeakDef::SkewType::NoSkew` , or the `PeakFitLMOptions::IndependentSkewValues`
+     option was specified.
+     */
+    std::optional<std::pair<double,double>> energy_range;
+    
+    /** The maximum number of skew paramaters any of the skew types might have. */
+    static constexpr size_t sm_max_num_skew_pars = 1 + PeakDef::CoefficientType::SkewPar5 - PeakDef::CoefficientType::SkewPar0;
+    static_assert( sm_max_num_skew_pars == 6 );
+    
+    /** The values of energy-dependent skew paramaters at the lower and upper energies.
+     See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
+     */
+    std::optional<std::pair<double,double>> energy_dependent_skew_pars[sm_max_num_skew_pars];
+    
+    /** The skew values for the non-energy-dependent skew terms.
+     See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
+     */
+    std::optional<std::pair<double,double>> non_energy_dependent_skew_pars[sm_max_num_skew_pars];
+  };//struct SkewRelation
+  
+  /** If skew was fit for more than one ROI, and `PeakFitLMOptions::IndependentSkewValues` was not specified, then the final fit skew energy relation
+   is provided by this variable.
+   */
+  std::optional<SkewRelation> skew_relation;
+};//struct FitPeaksResults
+  
+
+/** Fit the specified peaks to the spectrum; may be one or multiple ROIs (e.g., peaks share one or more PeakContinuum), and can allow the skew to be
+ fit across all fit peaks, or independent.
+ 
+ @param input_peaks The peaks to be fit.  The current values will be used as the starting points for values being fit.  The `PeakDef::fitFor(CoefficientType)`values
+        will be used to decide if a parameter should be fit for.
+ @param data The spectrum to fit the peaks to.
+ @param stat_threshold TODO: fill this definition in from somewhere else
+ @param hypothesis_threshold TODO: fill this definition in from somewhere else
+ @param resolution_type The optional pre-determined coarse detector resolution type to be used.  If not specified, will be guessed.
+ @param skew_type The skew type to make ALL peaks being fit for.  Note that unless `PeakFitLMOptions::IndependentSkewValues` is specified, the
+        skew of all peaks will be related, according to `PeakDef::is_energy_dependent` (i.e., some skew paramaters may be shared exactly across all peaks,
+        and some will be energy-dependent) - this option overides the skew types specified in `input_peaks`, with the special exceptions of if
+        `PeakDef::SkewType::Bortel` or `PeakDef::SkewType::GaussPlusBortel` is specified, and an individual peak specifies `PeakDef::SkewType::VoigtPlusBortel`,
+        then that peak will be left its input type, and things worked out (see `PeakFitDiffCostFunction` for details).  If an input peak is the same skew type as is
+        specified by this paramater, and one or more of its skew paramaters is specified as fixed (i.e. `!PeakDef::fitFor(CoefficientType)`), then that parameter will
+        stay fixed and not fit for that peak.  If `std::nullopt` is given for this argument, then the original peaks will be left to what they are, and refit (if they arent fixed)
+        and treated as independent from ROI to ROI.
+ @param fit_options Options for the fit.  E.g., if you are re-fiiting, then you may want to specify `PeakFitLMOptions::MediumRefinementOnly`, etc
+ @param may_remove_close_pair Optional predicate consulted before the final one-sigma duplicate
+        cull.  Empty preserves the legacy behavior; returning false keeps both fitted peaks.
+ */
+FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
+                               std::shared_ptr<const SpecUtils::Measurement> data,
+                               const double stat_threshold,
+                               const double hypothesis_threshold,
+                               const std::optional<PeakFitUtils::CoarseResolutionType> resolution_type,
+                               const std::optional<PeakDef::SkewType> skew_type = std::nullopt,
+                               const Wt::WFlags<PeakFitLMOptions> fit_options = {},
+                               const std::function<bool(const PeakDef &,const PeakDef &)>
+                                 &may_remove_close_pair = {} ) throw();
+  
+}//namespace PeakFitLM
+
+
+#endif //PeakFitLM_h

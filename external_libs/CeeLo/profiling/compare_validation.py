@@ -30,9 +30,10 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# CeeLo's own results, committed alongside the G4 references, are the default record.
-# Pass `--mc-dir build/examples` to compare a fresh dev run instead.
-DEFAULT_MC_DIR = os.path.join(HERE, '..', 'tests', 'data', 'ceelo_reference')
+# CeeLo's own results (our_<cfg>_multi.csv, our_cascade_multi.csv) are regenerated,
+# not committed: `benchmark_mc_configs` and `cascade_observables` write them into their
+# working directory, normally build/examples.  Override with --mc-dir.
+DEFAULT_MC_DIR = os.path.join(HERE, '..', 'build', 'examples')
 REF_DIR = os.path.join(HERE, '..', 'tests', 'data', 'geant4_reference')
 
 # (config, energy_keV) -> reason; documented in DESIGN.md Known Limitations
@@ -104,9 +105,9 @@ def read_multi(path):
 # --- Cascade true-coincidence summing gate ---------------------------------------
 # Surfaces the same engine-vs-GEANT4 cascade-summing observables as the C++ ctest
 # gate (tests/test_cascade_summing.cpp) into this dashboard. The G4 reference (bands +
-# per-decay areas) and the engine areas are two committed CSVs produced from ONE source
-# region ("alcyl"): the reference is tests/data/geant4_reference/cascade_summing_multi.csv;
-# the engine areas are our_cascade_multi.csv, written by `cascade_observables` (read from
+# per-decay areas) and the engine areas come from ONE source region ("alcyl"): the
+# committed reference is tests/data/geant4_reference/cascade_summing_multi.csv; the
+# engine areas are our_cascade_multi.csv, written by `cascade_observables` (read from
 # the same --mc-dir as the efficiency configs). Unlike the +/-%-tolerance efficiency
 # configs, these are wide low-stats RATIO bands, so the gate is band-based.
 CASCADE_REF = 'cascade_summing_multi.csv'
