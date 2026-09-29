@@ -2241,8 +2241,8 @@ BOOST_AUTO_TEST_CASE( test_roi_plan_swamped_group )
   // and the found peak is merely an obstacle.
   const auto shared = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
       { {300.0, planner_sigma, 600.0}, {302.0, planner_sigma, 80.0} } );
-  auto small = std::make_shared<PeakDef>( 302.0, planner_sigma, 80.0 );
-  rois = plan_rois_for_lines( { {300.0, 600.0} }, shared, planner_fwhm, 20.0, 690.0, s, { small } );
+  auto comparable = std::make_shared<PeakDef>( 302.0, planner_sigma, 80.0 );
+  rois = plan_rois_for_lines( { {300.0, 600.0} }, shared, planner_fwhm, 20.0, 690.0, s, { comparable } );
   BOOST_REQUIRE_EQUAL( rois.size(), 1u );
   BOOST_CHECK_CLOSE( rois[0].line_energies.at(0), 300.0, 1.0e-9 );
 }

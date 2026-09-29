@@ -9307,8 +9307,9 @@ void InterSpec::deleteFwhmFromForegroundWindow()
 MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
                           std::shared_ptr<const DetectorPeakResponse> seed_drf )
 {
+  // Stored: characterizing a Flat Disk detector starts from the shape it switched off.
   const std::shared_ptr<const ceelo::GeometryDescriptor> geometry
-                                            = seed_drf ? seed_drf->geometry() : nullptr;
+                                            = seed_drf ? seed_drf->storedGeometry() : nullptr;
 
   if( m_mcResponseTool )
   {
@@ -9438,8 +9439,9 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ programmaticallyCloseDrfModifyWindow(); };
+    // `blank_if_null` true: a null seed means this window was blank, not the foreground DRF.
     auto redo = [this,seed_drf](){
-      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf) );
+      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf), true );
     };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show modify-DRF tool" );
   }//if( undo )
@@ -9461,8 +9463,9 @@ void InterSpec::deleteDrfModifyWindow()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
+    // `blank_if_null` true: a null seed means this window was blank, not the foreground DRF.
     auto undo = [this,seed_drf](){
-      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf) );
+      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf), true );
     };
     auto redo = [this](){ programmaticallyCloseDrfModifyWindow(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close modify-DRF tool" );

@@ -53,6 +53,9 @@
 #include <memory>
 #include <iostream>
 
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
+
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -67,6 +70,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
 
@@ -1306,6 +1311,123 @@ BOOST_AUTO_TEST_CASE( geometry_survives_a_response_being_detached )
                            "a DRF loaded from the DB blob lost its geometry when detached" );
   }
 }//BOOST_AUTO_TEST_CASE( geometry_survives_a_response_being_detached )
+
+
+BOOST_AUTO_TEST_CASE( disabled_geometry_is_kept_but_not_used )
+{
+  set_data_dir();
+
+  const MeasuredDrfPoints points = make_measured_points();
+  const shared_ptr<DetectorPeakResponse> orig = make_created_drf( points );
+  BOOST_REQUIRE( orig->ceeloResponse() );
+
+  // Flat Disk ("Remove & use"): the response is detached, and the geometry switched off.
+  shared_ptr<DetectorPeakResponse> detached = make_shared<DetectorPeakResponse>( *orig );
+  detached->setCeeloResponse( nullptr );
+  BOOST_REQUIRE( detached->geometry() );
+
+  shared_ptr<DetectorPeakResponse> flat = make_shared<DetectorPeakResponse>( *detached );
+  flat->setGeometryDisabled( true );
+
+  // Hidden from everything that would use it - which is also what re-opens the Modify dialog on
+  //  Flat Disk (it keys on `ceeloResponse() || geometry()`) - but kept, to edit or switch back on.
+  BOOST_CHECK( !flat->geometry() );
+  BOOST_REQUIRE( flat->storedGeometry() );
+  BOOST_CHECK_EQUAL( flat->storedGeometry()->to_xml_string(), detached->geometry()->to_xml_string() );
+
+  // Identity: a different detector (or it would collapse onto the enabled one's row in the
+  //  database), and switching back restores the old identity exactly.  Without a geometry the flag
+  //  has no effect, so there it leaves the identity alone - as it does every existing DRF.
+  const uint64_t enabled_hash = detached->hashValue();
+  BOOST_CHECK( flat->hashValue() != enabled_hash );
+  BOOST_CHECK( !(*flat == *detached) );
+  {
+    DetectorPeakResponse back( *flat );
+    back.setGeometryDisabled( false );
+    BOOST_CHECK_EQUAL( back.hashValue(), enabled_hash );
+    BOOST_CHECK( back.geometry() );
+
+    DetectorPeakResponse no_geom( *detached );
+    no_geom.setGeometry( nullptr );
+    const uint64_t hash = no_geom.hashValue();
+    no_geom.setGeometryDisabled( true );
+    BOOST_CHECK( !no_geom.geometryDisabled() );
+    BOOST_CHECK_EQUAL( no_geom.hashValue(), hash );
+    BOOST_CHECK( no_geom.drfExtraToXmlString().find( "GeometryDisabled" ) == string::npos );
+  }
+
+  // The DB extras blob: written only when set, so an unset DRF writes exactly what it always did;
+  //  read back as set; and a blob from before the flag existed reads as enabled.
+  {
+    const string enabled_blob = detached->drfExtraToXmlString();
+    BOOST_CHECK( enabled_blob.find( "GeometryDisabled" ) == string::npos );
+
+    const string blob = flat->drfExtraToXmlString();
+    BOOST_CHECK( blob.find( "GeometryDisabled" ) != string::npos );
+
+    DetectorPeakResponse restored( *detached );
+    restored.setDrfExtraFromXmlString( blob );
+    BOOST_CHECK( restored.geometryDisabled() && !restored.geometry() && restored.storedGeometry() );
+
+    DetectorPeakResponse legacy( *flat );
+    legacy.setDrfExtraFromXmlString( enabled_blob );
+    BOOST_CHECK( !legacy.geometryDisabled() && legacy.geometry() );
+  }
+
+  // The full XML (a .drf.xml download, an N42), through text and back as a file is.
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    flat->toXml( root, &doc );
+
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    const rapidxml::xml_node<char> *drf_node = doc2.first_node( "root" )->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+
+    DetectorPeakResponse restored;
+    restored.fromXml( drf_node );
+    BOOST_CHECK( restored.geometryDisabled() && !restored.geometry() && restored.storedGeometry() );
+    BOOST_CHECK_EQUAL( restored.hashValue(), flat->hashValue() );
+  }
+
+  // No consumer needs to know about the flag: no transfer is attached through it, a re-fit divides
+  //  out the flat disk (the model the detector is then evaluated with), and the Activity/Shielding
+  //  fit stays on the flat disk.
+  {
+    DetectorPeakResponse copy( *flat );
+    BOOST_CHECK( !CeeLoUtils::attachCurveTransferResponse( copy ) );
+    BOOST_CHECK( !copy.ceeloResponse() );
+
+    BOOST_CHECK( MakeDrfCalc::geometryChoiceForDrf( *detached ).geometry );
+    BOOST_CHECK( !MakeDrfCalc::geometryChoiceForDrf( *flat ).geometry );
+
+    using ShieldingSourceFitCalc::VolumetricEffMethod;
+    using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+    BOOST_CHECK( ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( detached, VolumetricEffMethod::Auto )
+                 == VolumetricEffMethod::EffTran );
+    BOOST_CHECK( ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( flat, VolumetricEffMethod::Auto )
+                 == VolumetricEffMethod::FlatDisk );
+  }
+
+  // Shared as the flat disk it is: an app URL does not carry a switched-off shape.
+  BOOST_CHECK( detached->toAppUrl().find( "DETGEOM" ) != string::npos );
+  BOOST_CHECK( flat->toAppUrl().find( "DETGEOM" ) == string::npos );
+
+  // A response IS the geometry being modeled, so while one is attached the flag has no effect.
+  {
+    DetectorPeakResponse reattached( *flat );
+    reattached.setCeeloResponse( orig->ceeloResponse() );
+    BOOST_CHECK( !reattached.geometryDisabled() );
+    BOOST_CHECK( reattached.geometry() );
+  }
+}//BOOST_AUTO_TEST_CASE( disabled_geometry_is_kept_but_not_used )
 
 
 BOOST_AUTO_TEST_CASE( inconsistent_drf_is_detected )

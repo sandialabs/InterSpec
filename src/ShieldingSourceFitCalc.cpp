@@ -2296,22 +2296,36 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
     }//for( each flag kind present )
   }
 
-  // Legacy far-field DRF used close-in: with only an efficiency curve and a diameter, the model
-  //  is intrinsic-efficiency times point-source solid angle, which loses percent-level accuracy
-  //  once the source is within a few detector diameters.  (1/r-squared handles LARGE distances
-  //  correctly, so only closeness is flagged.)  A DRF with detector geometry attached evaluates
-  //  distance-correctly and is covered by the flag warnings above instead.
+  // Flat-disk model used close-in: intrinsic efficiency times point-source solid angle loses
+  //  percent-level accuracy once the source is within a few detector diameters.  (1/r-squared
+  //  handles LARGE distances correctly, so only closeness is flagged.)  Keyed on the model the fit
+  //  actually used, not on what the DRF carries: "Auto" transfers a geometry-only DRF through its
+  //  geometry, while choosing Flat-disk by name uses the flat disk even for a DRF with a response.
+  //  A response-based model is covered by the flag warnings above instead.
   {
     const shared_ptr<const DetectorPeakResponse> &drf = chi2Fcn.detector();
-    if( drf && drf->isValid() && !drf->isFixedGeometry() && !drf->ceeloResponse()
+    if( drf && drf->isValid() && !drf->isFixedGeometry()
+        && (chi2Fcn.resolvedVolumetricEffMethod() == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
         && (drf->detectorDiameter() > 0.0)
         && (chi2Fcn.distance() < 3.0*drf->detectorDiameter()) )
     {
+      // How to get a distance-aware model - not needed when Flat-disk was chosen by name, nor when
+      //  the detector has one that failed to build (the detector-efficiency-model note says why).
+      string advice;
+      if( chi2Fcn.options().volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk )
+      {
+        if( drf->geometryDisabled() )
+          advice = "  The detector's geometry is switched off (Flat Disk): switch the detector to"
+                   " \"Geometry Modeled\" to use it (Detector Response tool, \"Modify...\", \"Geom & MC\""
+                   " tab; \"No MC support\" gives an instant transfer).";
+        else if( !drf->geometry() )
+          advice = "  Consider entering the detector's dimensions for a distance-aware efficiency"
+                   " (Detector Response tool, \"Modify...\", \"Geom & MC\" tab, \"Geometry Modeled\").";
+      }//if( not flat-disk by name )
+
       results.warnings.push_back( "The source is close to the detector relative to the detector"
-        " size, but the detector efficiency curve assumes a far-field point response, so results"
-        " may be biased.  Consider enabling distance-aware efficiency transfer by entering the"
-        " detector dimensions (Detector Response tool, \"Modify...\", Geometry and MC tab,"
-        " \"From measured curve\" method)." );
+        " size, but the flat-disk detector-efficiency model assumes a far-field point response, so"
+        " results may be biased." + advice );
     }
   }
 

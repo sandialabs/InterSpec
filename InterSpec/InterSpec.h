@@ -925,7 +925,7 @@ public:
    just returns the existing window.
    @param seed_drf The DRF to seed the geometry from and attach the response
           to; pass nullptr to use the current foreground detector.  Its
-          `DetectorPeakResponse::geometry()` pre-populates the geometry form
+          `DetectorPeakResponse::storedGeometry()` pre-populates the geometry form
           when it has one, overriding the cylinder guess; if the tool window is
           already open, its form is re-seeded from it.
    */

@@ -2634,6 +2634,32 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
             = make_ba133_point_input( det, near_dist, offset, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
       check_expected_counts_parity( chi_input, 1.0E-9, "NaI-geometry-only-Auto" + where );
     }
+
+    {// Case H: that geometry switched off (Flat Disk in Modify Detector Response) - kept, but hidden,
+     //  so even EFFTRAN asked for by name has nothing to transfer through
+      using ShieldingSourceFitCalc::VolumetricEffMethod;
+      using ShieldingSourceFitCalc::PointEffModel;
+
+      const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( false );
+      det->setGeometryDisabled( true );
+      BOOST_REQUIRE( !det->geometry() && det->storedGeometry() );
+
+      for( const VolumetricEffMethod method : { VolumetricEffMethod::Auto, VolumetricEffMethod::EffTran } )
+      {
+        const string label = string( (method == VolumetricEffMethod::Auto) ? "NaI-geometry-off-Auto"
+                                                                           : "NaI-geometry-off-EffTran" ) + where;
+
+        const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+              = make_ba133_point_input( det, near_dist, offset, method );
+        const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> fcn
+              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input ).first;
+        BOOST_REQUIRE( fcn );
+        BOOST_CHECK_MESSAGE( fcn->pointSourceEffModel() == PointEffModel::FlatDisk,
+                             label << ": unexpected efficiency model" );
+
+        check_expected_counts_parity( chi_input, 1.0E-9, label );
+      }
+    }
   }//for( on-axis, off-axis )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 

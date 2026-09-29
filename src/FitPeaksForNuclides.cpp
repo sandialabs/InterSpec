@@ -10886,27 +10886,27 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> plan_rois_i
     // The association for the swamp test is the group's core window (the part of the ROI the fit
     // always covers), not just the confirmation distance: a foreign peak 1-2 FWHM from the line
     // still ends up inside its ROI and the source line absorbs it.
-    int near = best;
-    if( near < 0 )
+    int near_group = best;
+    if( near_group < 0 )
     {
       for( size_t gi = 0; gi < groups.size(); ++gi )
       {
         const double f = settings.roi_core_num_fwhm * fwhm_or_zero( groups[gi].dominant_energy );
         if( (f > 0.0) && (p->mean() >= groups[gi].e_lo - f) && (p->mean() <= groups[gi].e_hi + f) )
         {
-          near = static_cast<int>( gi );
+          near_group = static_cast<int>( gi );
           break;
         }
       }
     }
-    if( near >= 0 )
+    if( near_group >= 0 )
     {
       char note[256];
       bool swamped = false;
       bool on_source_line = false;   // the found peak sits on a line of the group's source
       const RelActCalcAuto::SrcVariant *dom_src = nullptr;
-      for( const PredictedGamma &line : groups[near].lines )
-        if( line.energy == groups[near].dominant_energy )
+      for( const PredictedGamma &line : groups[near_group].lines )
+        if( line.energy == groups[near_group].dominant_energy )
           dom_src = &line.source;
       if( dom_src && source_lines && (settings.sibling_absence_max_ratio > 0.0) )
       {
@@ -10915,7 +10915,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> plan_rois_i
         // dominant line's source alone (U238 at an age where Bi214 has barely grown in) demanded
         // 166000 counts in U238's 1001 keV line and condemned the strongest peak of the chain.
         std::set<std::string> group_sources;
-        for( const PredictedGamma &line : groups[near].lines )
+        for( const PredictedGamma &line : groups[near_group].lines )
           group_sources.insert( RelActCalcAuto::to_name( line.source ) );
         detail::SiblingAbsenceResult chk = source_lines->check( RelActCalcAuto::to_name( *dom_src ),
             p->mean(), p->amplitude(), p->fwhm(), fwhm_at, foreground, lowest_energy, highest_energy, settings );
@@ -10947,7 +10947,7 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> plan_rois_i
       {
         // No physics lookup: treat a peak within the core as "on a line" if a group line lies within
         // the confirmation-style window, so a calibration-displaced own peak never swamps its group.
-        for( const PredictedGamma &line : groups[near].lines )
+        for( const PredictedGamma &line : groups[near_group].lines )
           if( std::fabs( line.energy - p->mean() ) <= 1.5 * p->sigma() + 0.5 )
             on_source_line = true;
       }
@@ -10957,20 +10957,20 @@ std::vector<std::pair<RelActCalcAuto::RoiRange, ClusteredGammaInfo>> plan_rois_i
       // never treated this way - a poor initial activity estimate or a calibration offset would
       // otherwise let a group be swamped by its own peak.
       if( !swamped && (best < 0) && !on_source_line
-          && (p->amplitude() > sm_swamp_amplitude_factor * groups[near].total_counts) )
+          && (p->amplitude() > sm_swamp_amplitude_factor * groups[near_group].total_counts) )
       {
         swamped = true;
         snprintf( note, sizeof(note), "swamped by an unexplained %.0f-count peak at %.1f keV inside its core"
-                  " (the group predicts %.0f counts)", p->amplitude(), p->mean(), groups[near].total_counts );
+                  " (the group predicts %.0f counts)", p->amplitude(), p->mean(), groups[near_group].total_counts );
       }
       if( swamped )
       {
-        groups[near].swamped = true;
-        groups[near].swamp_note = note;
+        groups[near_group].swamped = true;
+        groups[near_group].swamp_note = note;
         obstacles.push_back( p );
         continue;
       }
-    }//if( near >= 0 )
+    }//if( near_group >= 0 )
 
     // A found peak confirms a group only when the requested source could plausibly produce a
     // meaningful part of it; otherwise the coincidence is an unmodeled feature (e.g. an Eu152

@@ -784,9 +784,17 @@ void DetectorPeakResponse::computeHash()
     m_measuredPoints->appendToHash( seed );
 
   if( m_ceeloResponse )
+  {
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
-  else if( m_geometry )
+  }else if( m_geometry )
+  {
     boost::hash_combine( seed, m_geometry->to_xml_string() );
+
+    // Only when set, so every DRF from before the flag existed keeps its hash - but it has to be in
+    //  it, or switching to Flat Disk would collapse onto the geometry-enabled row in the database.
+    if( m_geometryDisabled )
+      boost::hash_combine( seed, std::string("GeometryDisabled") );
+  }
 
   // Embedded fixed-geometry source setup: only hashed when present, so legacy
   //  DRFs keep their hashes.
@@ -846,6 +854,7 @@ void DetectorPeakResponse::reset()
   m_totalEfficiency.reset();
   m_ceeloResponse.reset();
   m_geometry.reset();
+  m_geometryDisabled = false;
   m_measuredPoints.reset();
 }//void reset()
 
@@ -880,13 +889,14 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
-          // `geometry()`, not `m_geometry`: a response carries its own descriptor, which is what
-          //  `geometry()` prefers, and a DRF assembled in memory need not have it copied into
+          // `storedGeometry()`, not `m_geometry`: a response carries its own descriptor, which is
+          //  what it prefers, and a DRF assembled in memory need not have it copied into
           //  `m_geometry` as well.  Comparing the raw member reports every round-tripped MC-backed
-          //  detector as changed.
-          && ((!geometry() && !rhs.geometry())
-              || (geometry() && rhs.geometry()
-                  && (geometry()->to_xml_string() == rhs.geometry()->to_xml_string())))
+          //  detector as changed.  (Not `geometry()`, which hides a disabled one.)
+          && ((!storedGeometry() && !rhs.storedGeometry())
+              || (storedGeometry() && rhs.storedGeometry()
+                  && (storedGeometry()->to_xml_string() == rhs.storedGeometry()->to_xml_string())))
+          && (geometryDisabled() == rhs.geometryDisabled())
           );
 }//operator==
 
@@ -1095,13 +1105,19 @@ void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorRes
 
 shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::geometry() const
 {
+  return geometryDisabled() ? nullptr : storedGeometry();
+}//geometry()
+
+
+shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::storedGeometry() const
+{
   // A generated response was ray-traced for a specific geometry; that one wins.  Aliasing
   //  shared_ptr, so the returned descriptor lives as long as the response holding it.
   if( m_ceeloResponse )
     return shared_ptr<const ceelo::GeometryDescriptor>( m_ceeloResponse,
                                                         &m_ceeloResponse->descriptor );
   return m_geometry;
-}//geometry()
+}//storedGeometry()
 
 
 void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescriptor> geometry )
@@ -1109,6 +1125,20 @@ void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescript
   m_geometry = std::move( geometry );
   computeHash();
 }//setGeometry(...)
+
+
+bool DetectorPeakResponse::geometryDisabled() const
+{
+  // Only a stated geometry can be switched off, and an attached response IS the geometry modeled.
+  return (m_geometryDisabled && m_geometry && !m_ceeloResponse);
+}//geometryDisabled()
+
+
+void DetectorPeakResponse::setGeometryDisabled( const bool disabled )
+{
+  m_geometryDisabled = disabled;
+  computeHash();
+}//setGeometryDisabled(...)
 
 
 shared_ptr<const MeasuredDrfPoints> DetectorPeakResponse::measuredPoints() const
@@ -1408,6 +1438,11 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   if( m_geometry )
     append_ceelo_geometry_node( base_node, &doc, *m_geometry );
 
+  // Only while in effect, so every other blob is byte-for-byte what it always was; older readers
+  //  look nodes up by name, and skip it.
+  if( geometryDisabled() )
+    base_node->append_node( doc.allocate_node( rapidxml::node_element, "GeometryDisabled", "1" ) );
+
   if( !m_fixedGeomSetupXml.empty() )
   {
     const char *val = doc.allocate_string( m_fixedGeomSetupXml.c_str(),
@@ -1439,6 +1474,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_measuredPoints.reset();
   m_ceeloResponse.reset();
   m_geometry.reset();
+  m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
 
   // Cleared above, before this early-out: an extras column that no longer carries a geometry (or
@@ -1505,6 +1541,8 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( geom_node )
       m_geometry = parse_ceelo_geometry_node( geom_node );
 
+    m_geometryDisabled = !!base_node->first_node( "GeometryDisabled" );
+
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
     if( setup_node )
       m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
@@ -1514,6 +1552,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_measuredPoints.reset();
     m_ceeloResponse.reset();
     m_geometry.reset();
+    m_geometryDisabled = false;
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -2062,6 +2101,7 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
   //  shipped GADRAS detectors included - so the Modify editor shows the real crystal instead of
   //  guessing a cylinder, and so an efficiency curve can be transferred through it.  Best-effort:
   //  a .dat whose geometry the ray-tracer cannot use still gives everything else.
+  m_geometryDisabled = false;   //a shape the file states is one to use, whatever was here before
   try
   {
     std::vector<std::string> geom_warnings;
@@ -2895,13 +2935,13 @@ std::string DetectorPeakResponse::toAppUrl() const
     }
   }//if( geom )
   
-  if( m_ceeloResponse )
+  if( m_ceeloResponse || geometryDisabled() )
   {
     // `computeHash` folds in the response's content_hash when one is attached, and the geometry's
-    //  XML otherwise - so the hash this DRF carries describes something the receiver, who gets no
-    //  response, can never reproduce.  Since that hash is the sole de-duplication key for the
-    //  "Previous" detector rows, send the identity of what is actually being sent, and record the
-    //  real one as the parent so the lineage survives.
+    //  XML otherwise (a switched-off one included, which is not sent) - so the hash this DRF carries
+    //  describes something the receiver can never reproduce.  Since that hash is the sole
+    //  de-duplication key for the "Previous" detector rows, send the identity of what is actually
+    //  being sent, and record the real one as the parent so the lineage survives.
     DetectorPeakResponse reduced( *this );
     reduced.setCeeloResponse( nullptr );
     // Deep copy: geometry() hands back a pointer that shares ownership with the response, which
@@ -3581,8 +3621,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
 
   // The detector's physical shape, if the sender had one.  Absent for every URL made before this
   //  existed, and by an older build that dropped it in its shortening cascade - so a missing key
-  //  is simply a DRF that does not know its shape, never an error.
+  //  is simply a DRF that does not know its shape, never an error.  (A switched-off one is not sent.)
   m_geometry.reset();
+  m_geometryDisabled = false;
   if( parts.count("DETGEOM") )
   {
     try
@@ -5082,6 +5123,9 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   if( m_geometry )
     append_ceelo_geometry_node( base_node, doc, *m_geometry );
 
+  if( geometryDisabled() )  //see drfExtraToXmlString()
+    base_node->append_node( doc->allocate_node( node_element, "GeometryDisabled", "1" ) );
+
   if( !m_fixedGeomSetupXml.empty() )
   {
     const char *val = doc->allocate_string( m_fixedGeomSetupXml.c_str(),
@@ -5544,6 +5588,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
     m_geometry = parse_ceelo_geometry_node( node );  //throws on invalid content
 
+  m_geometryDisabled = !!parent->first_node( "GeometryDisabled", 16 );
+
   m_fixedGeomSetupXml.clear();
   node = parent->first_node( "FixedGeomSourceSetup", 20 );
   if( node )
@@ -5745,8 +5791,8 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   // The physical geometry a DRF carries without a response (an ANGLE / Detector.dat import) is
   //  serialized too, so a round trip that drops or corrupts it must be caught here - `m_hash` can
   //  not catch it, since fromXml restores the hash the file declared rather than recomputing it.
-  const shared_ptr<const ceelo::GeometryDescriptor> lhs_geom = lhs.geometry();
-  const shared_ptr<const ceelo::GeometryDescriptor> rhs_geom = rhs.geometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> lhs_geom = lhs.storedGeometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> rhs_geom = rhs.storedGeometry();
   if( (!lhs_geom) != (!rhs_geom) )
     throw runtime_error( "DetectorPeakResponse: availability of detector"
                          " geometry doesnt match" );
@@ -5754,6 +5800,9 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   if( lhs_geom && rhs_geom
       && (lhs_geom->to_xml_string() != rhs_geom->to_xml_string()) )
     throw runtime_error( "DetectorPeakResponse: detector geometry doesnt match" );
+
+  if( lhs.geometryDisabled() != rhs.geometryDisabled() )
+    throw runtime_error( "DetectorPeakResponse: whether the detector geometry is disabled doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

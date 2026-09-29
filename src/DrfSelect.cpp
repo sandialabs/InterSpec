@@ -3493,6 +3493,10 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         //  with no response attached, which is exactly what we have here.
         if( choice == UrlDrfModeling::GeometryTransfer )
           CeeLoUtils::attachCurveTransferResponse( *accepted );
+
+        // "Saved with the detector, but not used" (ds-url-modeling-desc-flat).
+        if( choice == UrlDrfModeling::FlatDisk )
+          accepted->setGeometryDisabled( true );
       };//hooks.beforeAccept
       
       hooks.afterAccept = [modeling,accuracy]( shared_ptr<DetectorPeakResponse> accepted ){

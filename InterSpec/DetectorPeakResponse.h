@@ -869,7 +869,7 @@ public:
    |---|---|---|
    | efficiency value | an attached #ceeloResponse, else #efficiencyCurve | #measuredPoints are re-fit input and provenance, never a value source |
    | efficiency uncertainty | an attached #ceeloResponse, else - for a `kExpOfLogPowerSeries` curve - the coefficient covariance, else the node covariance (`DetectorEfficiencyCurve::fracCovariance` applies exactly this order) | the node covariance kept beside an equation is provenance / the fallback for the other representations |
-   | geometry | an attached #ceeloResponse's descriptor, else #setGeometry's | - |
+   | geometry | an attached #ceeloResponse's descriptor, else #setGeometry's - none while #geometryDisabled | - |
 
    So **ask #efficiencyFracCovariance or the #EffEval queries for an uncertainty**; they honor the
    order above.  Reading this object directly gives you the node covariance only, which for an
@@ -1048,6 +1048,7 @@ public:
 
    Clearing one adopts its descriptor as #geometry when no geometry was stated separately, so
    putting a detector back on the flat-disk model does not make it forget what it physically is.
+   Neither clearing nor attaching one changes #geometryDisabled.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
 
@@ -1064,8 +1065,33 @@ public:
    When a #ceeloResponse is attached, ITS descriptor is authoritative and is
    what this returns: a generated response cannot be re-pointed at a different
    geometry than the one it was ray-traced for.
+
+   nullptr while switched off (#geometryDisabled), so nothing models the efficiency through a
+   geometry the user turned off - without having to know the flag exists.  #storedGeometry has it
+   regardless.
    */
   std::shared_ptr<const ceelo::GeometryDescriptor> geometry() const;
+
+  /** The geometry whether or not it is switched off - what #geometry returns when it is not.  Only
+   for code that shows or edits the shape itself (the Modify editor's geometry form); anything that
+   uses it for an efficiency asks #geometry.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> storedGeometry() const;
+
+  /** Whether the stated geometry is switched off - what choosing "Flat Disk" in "Modify Detector
+   Response" records.  The geometry is kept (and serialized), so the detector can be switched back
+   without re-entering it, but #geometry returns nullptr: the detector is a flat disk everywhere.
+   Only in effect while a geometry is stored and no #ceeloResponse is attached (a response IS the
+   geometry being modeled).
+   */
+  bool geometryDisabled() const;
+
+  /** Switches the stated geometry off (true) or back on; see #geometryDisabled.
+
+   Serialized and hashed only while it is in effect, so every existing DRF keeps both its bytes and
+   its hash.  Recomputes hash value.
+   */
+  void setGeometryDisabled( const bool disabled );
 
   /** Sets (or clears, with nullptr) the physical geometry.  Always stored (and serialized), but
    shadowed by an attached #ceeloResponse's own descriptor for as long as one is attached - so this
@@ -1656,6 +1682,9 @@ protected:
 
   /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
   std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
+
+  /** See #setGeometryDisabled. */
+  bool m_geometryDisabled = false;
 
   /** Opaque source/shielding-setup XML for fixed-geometry DRFs computed for a
    specific scene; see #fixedGeometrySetupXml.  Serialized as the optional
