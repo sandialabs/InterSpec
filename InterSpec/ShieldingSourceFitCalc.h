@@ -805,11 +805,11 @@ private:
       Initialized to 120 seconds (e.g., 120*1000)
    */
 #ifdef NDEBUG
-  // Give up after two minutes for release builds
-  const size_t sm_max_model_fit_time_ms = 120*1000;
+  // Give up after five minutes for release builds
+  const size_t sm_max_model_fit_time_ms = 300*1000;
 #else
   // For debug builds we'll let it go 7 times longer, which is about the debug slow down
-  const size_t sm_max_model_fit_time_ms = 7*120*1000;
+  const size_t sm_max_model_fit_time_ms = 7*300*1000;
 #endif
 
   
