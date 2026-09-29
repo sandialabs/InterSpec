@@ -326,7 +326,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   // Fixed-geometry DRFs have no geometry to model, so no Geom & MC tab and no mode toggle.  A
   //  far-field DRF starts Geometry Modeled iff it already carries a Monte-Carlo response, knows its
   //  physical shape (an ANGLE / Detector.dat import, or a geometry saved with it), or is a
-  //  geometry-only import that has no efficiency yet, and so needs one.
+  //  geometry-only import that has no efficiency yet, and so needs one.  A shape that Flat Disk
+  //  switched off is kept, but `geometry()` does not return it (see buildWorkingDrf).
   const bool fixed_geom = (m_orig && m_orig->isFixedGeometry());
   const bool has_geom_tab = !fixed_geom;
   m_geometryModeled = has_geom_tab
@@ -1532,7 +1533,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
   // --- Geometry: flat disk / fixed / physical shape ----------------------------------------------
   {
     WString txt;
-    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->geometry() : nullptr;
+    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->storedGeometry() : nullptr;
 
     if( drf && drf->isFixedGeometry() )
     {
@@ -1561,6 +1562,11 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
         txt = WString::tr("dmw-info-geom-known");
 
       txt = WString::tr("dmw-info-geom-layers").arg( txt ).arg( static_cast<int>( gd->layers.size() ) );
+
+      // Flat Disk keeps the shape but switches it off - say so, or this row reads as the geometry
+      //  the detector is modeled with.
+      if( drf->geometryDisabled() )
+        txt = WString::tr("dmw-info-geom-disabled").arg( txt );
     }else
     {
       const double diam_cm = drf ? (drf->detectorDiameter() / PhysicalUnits::cm) : 0.0;
@@ -1793,6 +1799,13 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   if( m_orig )
     working->setParentHashValue( m_orig->hashValue() );
 
+  // Flat Disk switches the geometry off rather than discarding it: kept, but hidden from `geometry()`,
+  //  so nothing models through it.  Set before the Anchor tab applies, so its distance corrections
+  //  use the flat disk the detector is evaluated with.  Geometry Modeled - and a regeneration seed,
+  //  characterized through that geometry - switch it back on.  No Geom & MC tab, no mode to record.
+  if( m_mcTool )
+    working->setGeometryDisabled( includeMcResponse && !m_geometryModeled );
+
   // Name / description.
   const string name = m_name->text().toUTF8();
   if( !name.empty() )
@@ -1858,14 +1871,15 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   const shared_ptr<const ceelo::DetectorResponse> resp
       = (includeMcResponse && m_geometryModeled && m_mcTool) ? m_mcTool->generatedResponse() : nullptr;
 
-  // What shape this detector knows, taken BEFORE any detach below.  `geometry()` prefers an attached
-  //  response's own descriptor, and the serializers write only one of the two - so for a DRF that
-  //  has been through a file or the database the shape lives *only* in the response, and detaching
-  //  it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps the
-  //  geometry, as this function has always claimed to.
-  //  Copied rather than aliased: `geometry()` hands back a pointer that shares ownership with the
-  //  response, which would keep the whole (~100 KB) response alive behind a detached DRF.
-  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->geometry();
+  // What shape this detector knows, taken BEFORE any detach below.  `storedGeometry()` prefers an
+  //  attached response's own descriptor, and the serializers write only one of the two - so for a
+  //  DRF that has been through a file or the database the shape lives *only* in the response, and
+  //  detaching it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps
+  //  the geometry, as this function has always claimed to.  (Stored, not `geometry()`, which hides
+  //  the shape Flat Disk has just switched off.)
+  //  Copied rather than aliased: it hands back a pointer that shares ownership with the response,
+  //  which would keep the whole (~100 KB) response alive behind a detached DRF.
+  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->storedGeometry();
   const shared_ptr<const ceelo::GeometryDescriptor> known_geom
       = from_drf ? make_shared<const ceelo::GeometryDescriptor>( *from_drf ) : nullptr;
   if( includeMcResponse && m_geometryModeled && resp )

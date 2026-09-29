@@ -2010,6 +2010,13 @@ struct PeakFitDiffCostFunction
 
     double minsigma = binwidth, max_input_sigma = binwidth, min_input_sigma = binwidth;
     double maxsigma = 0.5*range;
+    // The input widths themselves - the two above are floored at a channel width, which made the
+    //  Small/Medium FWHM refinement's lower bound (relative to the narrowest input) a fraction of a
+    //  channel for any peak wider than one, so a width could shrink without limit (a NaI line at
+    //  2 MeV refit to a third of the resolution).  HPGe keeps the historical bounds until the change
+    //  is measured and accepted there (on Detective-X it moved 52 of 192 fits, one moderate line lost).
+    const bool width_bounds_from_input = (m_det_type != PeakFitUtils::CoarseResolutionType::High);
+    double narrowest_input_sigma = std::numeric_limits<double>::infinity(), widest_input_sigma = 0.0;
 
     // Mean parameters and compute minsigma/maxsigma
     for( size_t i = 0; i < roi.peaks.size(); ++i )
@@ -2058,6 +2065,8 @@ struct PeakFitDiffCostFunction
 
       min_input_sigma = std::min( min_input_sigma, sigma );
       max_input_sigma = std::max( max_input_sigma, sigma );
+      narrowest_input_sigma = std::min( narrowest_input_sigma, sigma );
+      widest_input_sigma = std::max( widest_input_sigma, sigma );
 
       if( !peak->fitFor( PeakDef::Sigma ) )
       {
@@ -2154,17 +2163,23 @@ struct PeakFitDiffCostFunction
       assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
       assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
 
+      const double refine_min_sigma = width_bounds_from_input ? narrowest_input_sigma : min_input_sigma;
+      const double refine_max_sigma = width_bounds_from_input ? widest_input_sigma : max_input_sigma;
       if( m_options.test( PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly ) )
       {
-        lower_bounds[fit_sigma_idx] = (0.5*min_input_sigma) / roi.max_initial_sigma;
-        upper_bounds[fit_sigma_idx] = (1.5*max_input_sigma) / roi.max_initial_sigma;
+        lower_bounds[fit_sigma_idx] = (0.5*refine_min_sigma) / roi.max_initial_sigma;
+        upper_bounds[fit_sigma_idx] = (1.5*refine_max_sigma) / roi.max_initial_sigma;
+        if( width_bounds_from_input )
+          pars[fit_sigma_idx] = std::min( pars[fit_sigma_idx], *upper_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
       }
       if( m_options.test( PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly ) )
       {
-        lower_bounds[fit_sigma_idx] = (0.85*min_input_sigma) / roi.max_initial_sigma;
-        upper_bounds[fit_sigma_idx] = (1.15*max_input_sigma) / roi.max_initial_sigma;
+        lower_bounds[fit_sigma_idx] = (0.85*refine_min_sigma) / roi.max_initial_sigma;
+        upper_bounds[fit_sigma_idx] = (1.15*refine_max_sigma) / roi.max_initial_sigma;
+        if( width_bounds_from_input )
+          pars[fit_sigma_idx] = std::min( pars[fit_sigma_idx], *upper_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
       }

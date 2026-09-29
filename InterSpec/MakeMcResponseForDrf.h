@@ -107,8 +107,9 @@ public:
     CurveTransfer = 2
   };//enum class Method
 
-  /** The geometry form is seeded from `seed_drf->geometry()` when the DRF knows its shape, and
-   otherwise guessed from its diameter - see DetectorGeometryInput::seedFromDrf. */
+  /** The geometry form is seeded from `seed_drf->storedGeometry()` when the DRF knows its shape (even
+   one Flat Disk switched off), and otherwise guessed from its diameter - see
+   DetectorGeometryInput::seedFromDrf. */
   MakeMcResponseForDrf( InterSpec *viewer,
                         std::shared_ptr<const DetectorPeakResponse> seed_drf );
 

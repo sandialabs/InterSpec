@@ -74,10 +74,10 @@ deliberately approximated — not the open-items list.
 
 The tracked file set is the reusable library: `git archive HEAD` produces exactly the
 payload that gets vendored into a host application (library + tests + examples + the
-GEANT4 harness + the GEANT4/CeeLo reference results). CeeLo's own efficiency results
-live in `tests/data/ceelo_reference/`, paired 1:1 with the GEANT4 references in
-`tests/data/geant4_reference/`; `profiling/compare_validation.py` gates them against
-each other.
+GEANT4 harness + the GEANT4 reference results). CeeLo's own efficiency results are
+regenerated rather than committed (`tests/data/ceelo_reference/README.md`), paired 1:1
+with the GEANT4 references in `tests/data/geant4_reference/`;
+`profiling/compare_validation.py` gates them against each other.
 
 One-off studies, parameter sweeps, external-code benchmarks, and design notes live in a
 `studies/` tree that is **not** part of the distributed source. The root `CMakeLists.txt`
@@ -683,7 +683,7 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 | 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | +0.5% @122; −9.1% @60‡ | +0.2% @122‡ |
 
 **Measured Sep 7 2026** against the committed GEANT4 references, from
-`tests/data/ceelo_reference/` regenerated on the EPICS2023 photon data, after the
+CeeLo results (`our_*_multi.csv`) regenerated on the EPICS2023 photon data, after the
 Aug 2026 crystal-electron-walk fixes (path-consistent Highland + Bohr straggling +
 step-budget guard; `studies/high_e_fep/FINDINGS.md`).
 

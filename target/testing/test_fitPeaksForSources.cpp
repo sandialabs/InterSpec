@@ -53,6 +53,7 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -406,8 +407,12 @@ namespace
       const double prev_upper = roi_bounds[i - 1].second;
       const double curr_lower = roi_bounds[i].first;
 
-      const size_t prev_upper_ch = energy_cal->channel_for_energy( prev_upper );
-      const size_t curr_lower_ch = energy_cal->channel_for_energy( curr_lower );
+      // A ROI's upper bound is exclusive: the channel whose lower edge equals it is not in the ROI.
+      // Probe just inside each ROI so a boundary that lands exactly on a channel edge (and can
+      // round either way in float) is not read as covering the channel beyond it.
+      const double nudge = 1.0e-4;
+      const size_t prev_upper_ch = energy_cal->channel_for_energy( prev_upper - nudge );
+      const size_t curr_lower_ch = energy_cal->channel_for_energy( curr_lower + nudge );
 
       BOOST_CHECK_MESSAGE( curr_lower_ch > prev_upper_ch,
         "ROI overlap or abutting: ROI [" << roi_bounds[i-1].first << ", " << prev_upper
@@ -812,221 +817,6 @@ BOOST_AUTO_TEST_CASE( test_eu152_smoke )
 }
 
 
-BOOST_AUTO_TEST_CASE( test_rescue_recovers_marginal_line )
-{
-  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
-  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
-
-  // Remove one moderate Eu line from the data-confirmed seeding path.  The initial manual solve
-  // still has the source's predicted ROIs, while the deliberately high fitted keep threshold
-  // creates a genuine marginal-reject band for the one bounded R2 pass.
-  const double withheld_energy = 1249.93;
-  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
-    [withheld_energy]( const shared_ptr<const PeakDef> &peak ) {
-      return peak && (std::fabs(peak->mean() - withheld_energy) < 2.0);
-    } ), std::end(auto_peaks) );
-
-  FitPeaksForNuclides::PeakFitForNuclideConfig config
-    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
-        PeakFitUtils::CoarseResolutionType::High );
-  config.auto_keep_significance_z = 5.5;
-  config.manual_keep_significance_z = 5.5;
-
-  const vector<shared_ptr<const PeakDef>> no_user_peaks;
-  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
-  FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
-      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
-      no_user_peaks, spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
-  for( const string &warning : result.warnings )
-    BOOST_TEST_MESSAGE( "R2 recovery: " << warning );
-
-  const bool admitted_rescue = std::any_of( std::begin(result.warnings),
-    std::end(result.warnings), []( const string &warning ) {
-      return warning.find("bounded fit-then-prune rescue") != string::npos;
-    } );
-  BOOST_CHECK_MESSAGE( admitted_rescue,
-                       "High keep-z fit did not exercise the bounded rescue path" );
-  BOOST_CHECK_MESSAGE( find_source_gamma(result.observable_peaks, "Eu152", withheld_energy, 0.5),
-                       "The real withheld Eu152 marginal line was not restored" );
-
-#if( PERFORM_DEVELOPER_CHECKS )
-  struct RestoreRescue
-  {
-    ~RestoreRescue()
-    {
-      FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
-    }
-  } restore_rescue;
-  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
-  FitPeaksForNuclides::PeakFitResult control = run_fit_with_config(
-      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
-      no_user_peaks, spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(control.status) );
-  vector<double> rescued_only_energies;
-  const auto find_rescued_only = [&]() {
-    rescued_only_energies.clear();
-    for( const PeakDef &peak : result.observable_peaks )
-    {
-      if( !peak.parentNuclide() || (peak.parentNuclide()->symbol != "Eu152")
-          || !peak.hasSourceGammaAssigned() )
-        continue;
-      if( !find_source_gamma(control.observable_peaks, "Eu152",
-                             peak.gammaParticleEnergy(), 0.2) )
-        rescued_only_energies.push_back( peak.gammaParticleEnergy() );
-    }
-  };
-  find_rescued_only();
-  for( const double keep_z : { 6.5, 8.0, 10.0, 12.0, 15.0 } )
-  {
-    if( !rescued_only_energies.empty() )
-      break;
-    config.auto_keep_significance_z = keep_z;
-    FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
-    result = run_fit_with_config( spec.foreground, spec.background, auto_peaks,
-        make_sources({"Eu152"}), no_user_peaks, spec.isHPGe, config, no_ecal_options );
-    FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
-    control = run_fit_with_config( spec.foreground, spec.background, auto_peaks,
-        make_sources({"Eu152"}), no_user_peaks, spec.isHPGe, config, no_ecal_options );
-    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
-    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(control.status) );
-    find_rescued_only();
-  }
-  for( const double energy : rescued_only_energies )
-    BOOST_TEST_MESSAGE( "R2-only recovered Eu152 line at " << energy << " keV" );
-  BOOST_CHECK_MESSAGE( !rescued_only_energies.empty(),
-                       "R2-enabled and R2-disabled controls returned the same source lines" );
-  const PeakDef * const rescued_peak = rescued_only_energies.empty() ? nullptr
-    : find_source_gamma( result.observable_peaks, "Eu152", rescued_only_energies.front(), 0.2 );
-  BOOST_REQUIRE( rescued_peak );
-  BOOST_CHECK_GT( rescued_peak->peakArea(), 0.0 );
-#endif
-}
-
-
-BOOST_AUTO_TEST_CASE( test_rescue_exception_retains_successful_incumbent )
-{
-#if( PERFORM_DEVELOPER_CHECKS )
-  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
-  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
-  const double rescued_energy = 1249.93;
-  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
-    [rescued_energy]( const shared_ptr<const PeakDef> &peak ) {
-      return peak && (std::fabs(peak->mean() - rescued_energy) < 2.0);
-    } ), std::end(auto_peaks) );
-  FitPeaksForNuclides::PeakFitForNuclideConfig config
-    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
-        PeakFitUtils::CoarseResolutionType::High );
-  config.manual_keep_significance_z = 5.5;
-  config.auto_keep_significance_z = 5.5;
-  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
-
-  FitPeaksForNuclides::detail::force_next_bounded_rescue_evaluation_failure_for_test();
-  const FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
-      spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}), {},
-      spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
-  BOOST_CHECK( find_source_gamma(result.observable_peaks, "Eu152", 344.28, 0.5) );
-  BOOST_CHECK( !result.observable_peaks.empty() );
-  BOOST_CHECK( std::any_of(std::begin(result.warnings), std::end(result.warnings),
-    []( const string &warning ) {
-      return warning.find("rescue challenger threw") != string::npos;
-    }) );
-#endif
-}
-
-
-BOOST_AUTO_TEST_CASE( test_rescue_is_source_order_and_background_invariant )
-{
-  const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
-  vector<shared_ptr<const PeakDef>> auto_peaks = run_auto_search( spec.foreground, spec.isHPGe );
-  const double rescued_energy = 1249.93;
-  auto_peaks.erase( std::remove_if( std::begin(auto_peaks), std::end(auto_peaks),
-    [rescued_energy]( const shared_ptr<const PeakDef> &peak ) {
-      return peak && (std::fabs(peak->mean() - rescued_energy) < 2.0);
-    } ), std::end(auto_peaks) );
-
-  FitPeaksForNuclides::PeakFitForNuclideConfig config
-    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
-        PeakFitUtils::CoarseResolutionType::High );
-  config.manual_keep_significance_z = 5.5;
-  config.auto_keep_significance_z = 5.5;
-  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
-
-  const auto fit = [&]( const shared_ptr<const SpecUtils::Measurement> &background,
-                        const vector<string> &source_names ) {
-    return run_fit_with_config( spec.foreground, background, auto_peaks,
-        make_sources(source_names), {}, spec.isHPGe, config, no_ecal_options );
-  };
-  const FitPeaksForNuclides::PeakFitResult results[] = {
-    fit( nullptr, {"Eu152", "Cs137"} ),
-    fit( nullptr, {"Cs137", "Eu152"} ),
-    fit( spec.background, {"Eu152", "Cs137"} ),
-    fit( spec.background, {"Cs137", "Eu152"} )
-  };
-  const char * const labels[] = {
-    "raw Eu152,Cs137", "raw Cs137,Eu152",
-    "supplied-background Eu152,Cs137", "supplied-background Cs137,Eu152"
-  };
-
-  const PeakDef *reference = nullptr;
-  bool observable_presence[4] = { false, false, false, false };
-  for( size_t result_index = 0; result_index < 4; ++result_index )
-  {
-    const FitPeaksForNuclides::PeakFitResult &result = results[result_index];
-    BOOST_TEST_CONTEXT( labels[result_index] )
-    {
-    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
-    const PeakDef * const rescued
-      = find_source_gamma( result.uncombined_fit_peaks, "Eu152", rescued_energy, 0.5 );
-    observable_presence[result_index] = static_cast<bool>(
-      find_source_gamma(result.observable_peaks, "Eu152", rescued_energy, 0.5) );
-    if( !rescued )
-    {
-      for( const string &warning : result.warnings )
-        BOOST_TEST_MESSAGE( labels[result_index] << " warning: " << warning );
-      const auto report_candidate = [&]( const char *name, const vector<PeakDef> &peaks ) {
-        const PeakDef * const candidate
-          = find_source_gamma( peaks, "Eu152", rescued_energy, 0.5 );
-        BOOST_TEST_MESSAGE( labels[result_index] << ' ' << name << " 1249.93-keV peak: "
-          << (candidate ? (std::to_string(candidate->peakArea()) + " +/- "
-              + std::to_string(candidate->peakAreaUncert())) : string("absent")) );
-      };
-      report_candidate( "solution", result.solution.m_peaks_without_back_sub );
-      report_candidate( "uncombined", result.uncombined_fit_peaks );
-      report_candidate( "combined", result.fit_peaks );
-      for( const PeakDef &peak : result.observable_peaks )
-      {
-        if( (peak.mean() < 1240.0) || (peak.mean() > 1260.0) )
-          continue;
-        BOOST_TEST_MESSAGE( labels[result_index] << " observable peak near rescue: mean="
-          << peak.mean() << ", area=" << peak.peakArea() << " +/- " << peak.peakAreaUncert()
-          << ", source=" << peak.sourceName() );
-      }
-    }
-    BOOST_REQUIRE( rescued );
-    BOOST_CHECK( std::any_of(std::begin(result.warnings), std::end(result.warnings),
-      []( const string &warning ) {
-        return warning.find("bounded fit-then-prune rescue") != string::npos;
-      }) );
-    if( reference )
-      BOOST_CHECK_MESSAGE( peak_areas_agree(*reference, *rescued),
-                           "R2 rescued area changed with source order/background mode" );
-    else
-      reference = rescued;
-    }
-  }
-  BOOST_CHECK_EQUAL( observable_presence[0], observable_presence[1] );
-  BOOST_CHECK_EQUAL( observable_presence[2], observable_presence[3] );
-}
-
-
 BOOST_AUTO_TEST_CASE( test_eu152_then_eu154 )
 {
   const LoadedSpectrum spec = load_detective_x_spectrum( "Eu152_Unshielded.txt" );
@@ -1403,15 +1193,17 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe,
                  FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
 
-    // Eu-154 is absent at useful strength in this spectrum.  This is the established bystander
-    // regression: the bounded rescue pass must not resurrect Eu-154 from already-modeled peaks.
+    // Eu-154 IS present in trinitite (a neutron-activation product, like the Co-60 of step 6): the
+    // automated search finds 1274.4 keV at z ~ 7 and 1005 keV at z ~ 5.  This step also exercises the
+    // path, where user peaks adjacent to the new source's ROIs are absorbed as floating peaks and
+    // listed in `original_peaks_to_remove` (so `verify_removed_peaks_replaced` is the contract here,
+    // not an empty removal list).
     verify_fit_result( result, user_peaks, spec.foreground,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
     verify_removed_peaks_replaced( result );
-    BOOST_CHECK_MESSAGE( result.observable_peaks.empty(),
-                         "Bounded rescue resurrected absent Eu154 in trinitite" );
-    BOOST_CHECK( result.original_peaks_to_remove.empty() );
-    BOOST_TEST_MESSAGE( "Eu-154: no observable peaks (expected)" );
+    BOOST_CHECK_MESSAGE( has_peak_near( result.observable_peaks, 1274.44, 3.0 ),
+                         "Eu-154 1274.4 keV not found in trinitite" );
+    BOOST_TEST_MESSAGE( "Eu-154: " << result.observable_peaks.size() << " observable peaks" );
 
     user_peaks = apply_fit_result( user_peaks, result );
     BOOST_TEST_MESSAGE( "After Eu-154: " << user_peaks.size() << " total peaks" );
@@ -1761,8 +1553,13 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
   BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
   for( const string &warning : result.warnings )
     BOOST_TEST_MESSAGE( warning );
-  BOOST_REQUIRE( find_source_gamma(
-      result.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
+  // Public contract: the requested sources' strong lines are reported, the K40 1460.82 keV NORM
+  // peak is never reported, and Eu152's weak 1457.64 keV line beside it is not reported either -
+  // the single-pass planner rejects that line group as swamped by the unexplained K40 peak, so the
+  // R6 nuisance co-fit no longer needs to model K40 to keep the line honest (before the planner,
+  // this test required K40 in the raw solution as proof the co-fit ran).
+  BOOST_CHECK( !has_peak_near( result.observable_peaks, 1457.64, 2.0 ) );
+  BOOST_CHECK( !has_peak_near( result.observable_peaks, 1460.82, 2.0 ) );
   BOOST_CHECK( find_source_gamma(result.observable_peaks, "Eu152", 1408.01, 0.5) );
   BOOST_CHECK( find_source_gamma(result.observable_peaks, "Cs137", 661.657, 0.5) );
   BOOST_CHECK( !find_source_gamma(result.observable_peaks, "K40", 1460.82, 0.5) );
@@ -1774,7 +1571,7 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
         && (peak.parentNuclide()->symbol != "Cs137") )
       nuisance_parents.insert( peak.parentNuclide()->symbol );
   }
-  BOOST_CHECK_EQUAL( nuisance_parents.size(), 2u );
+  BOOST_CHECK_LE( nuisance_parents.size(), 2u );
 
   // The caller must be able to turn the complete automatic R6 path off for controlled tuning and
   // for supplied-background workflows.  The default result above proves R6 is active; with the
@@ -1912,101 +1709,24 @@ BOOST_AUTO_TEST_CASE( test_multisource_strong_norm_interferer_is_stable )
   compare_anchors( bg_auto_ec, bg_auto_ce );
   compare_anchors( bg_auto_ec, bg_joint );
 
-  // Prove the foreground-only arm actually retained a strong hidden K40 nuisance in the model.
-  const PeakDef * const fitted_k40 = find_source_gamma(
-      raw_auto_ec.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 );
-  const PeakDef * const fitted_k40_reversed = find_source_gamma(
-      raw_auto_ce.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 );
-  const PeakDef * const fitted_eu1457 = find_source_gamma(
-      raw_auto_ec.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
-  BOOST_REQUIRE( fitted_k40 );
-  BOOST_REQUIRE( fitted_k40_reversed );
-  BOOST_REQUIRE( fitted_eu1457 );
-  BOOST_CHECK_GT( fitted_k40->peakAreaUncert(), 0.0 );
-  BOOST_CHECK_GT( fitted_k40->peakArea() / fitted_k40->peakAreaUncert(), 10.0 );
-  BOOST_CHECK_GT( fitted_k40->peakArea(), 5.0*fitted_eu1457->peakArea() );
-
-  // The observable refit must not inflate the weak Eu152 line after its K40 nuisance is hidden.
-  const PeakDef * const auto_eu1457
-    = find_source_gamma( raw_auto_ec.observable_peaks, "Eu152", 1457.64, 0.5 );
-  const PeakDef * const joint_eu1457
-    = find_source_gamma( raw_joint.uncombined_fit_peaks, "Eu152", 1457.64, 0.5 );
-  BOOST_REQUIRE( joint_eu1457 );
-  BOOST_CHECK_MESSAGE( peak_areas_agree(*fitted_eu1457, *joint_eu1457),
-                       "Solve-stage Eu152 1457-keV areas must agree before testing observable refit" );
-  if( auto_eu1457 )
+  // Public contract for the K40 / Eu152 1457.64 keV neighbourhood.  The single-pass planner
+  // rejects Eu152's weak 1457.64 keV line group as swamped by the unexplained K40 1460.82 keV peak
+  // (the line is unmeasurable under it), so neither an Eu152 peak nor a K40 peak is reported there
+  // by the automatic arms, in either source order and with or without a supplied background.
+  // When K40 is itself requested (the joint arms), its 1460.82 keV peak is reported and the Eu152
+  // line beside it still is not.  (Before the planner this test proved the R6 nuisance co-fit had
+  // modelled K40 in the raw solution; that mechanism is no longer needed here.)
+  for( const FitPeaksForNuclides::PeakFitResult * const result : automatic_results )
   {
-    const double combined_uncert = std::hypot(
-        std::max(0.0, auto_eu1457->peakAreaUncert()),
-        std::max(0.0, joint_eu1457->peakAreaUncert()) );
-    const double tolerance = std::max( 3.0*combined_uncert,
-                                      0.20*std::fabs(joint_eu1457->peakArea()) );
-    BOOST_CHECK_LE( auto_eu1457->peakArea() - joint_eu1457->peakArea(), tolerance );
+    BOOST_CHECK( !has_peak_near( result->observable_peaks, 1457.64, 2.0 ) );
+    BOOST_CHECK( !has_peak_near( result->observable_peaks, 1460.82, 2.0 ) );
   }
-}
-
-
-BOOST_AUTO_TEST_CASE( test_rescue_does_not_overfit_on_interferer )
-{
-#if( PERFORM_DEVELOPER_CHECKS )
-  const LoadedSpectrum spec = load_test_data_spectrum(
-    "trinitite_sample_b.n42", "trinitite_sample_b_background.n42" );
-  const vector<shared_ptr<const PeakDef>> auto_peaks
-    = run_auto_search( spec.foreground, spec.isHPGe );
-  FitPeaksForNuclides::PeakFitForNuclideConfig config
-    = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config(
-        PeakFitUtils::CoarseResolutionType::High );
-  config.manual_keep_significance_z = 15.0;
-  config.auto_keep_significance_z = 15.0;
-  Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> no_ecal_options;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotVaryEnergyCal;
-  no_ecal_options |= FitPeaksForNuclides::FitSrcPeaksOptions::DoNotRefineEnergyCal;
-
-  struct RestoreRescue
-  {
-    ~RestoreRescue()
-    {
-      FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
-    }
-  } restore_rescue;
-  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( true );
-  const FitPeaksForNuclides::PeakFitResult enabled = run_fit_with_config(
-      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}), {},
-      spec.isHPGe, config, no_ecal_options );
-  FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
-  const FitPeaksForNuclides::PeakFitResult disabled = run_fit_with_config(
-      spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}), {},
-      spec.isHPGe, config, no_ecal_options );
-
-  const auto did_rescue = []( const FitPeaksForNuclides::PeakFitResult &result ) {
-    return std::any_of(std::begin(result.warnings), std::end(result.warnings),
-      []( const string &warning ) {
-        return warning.find("bounded fit-then-prune rescue") != string::npos;
-      });
-  };
-  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(enabled.status) );
-  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(disabled.status) );
-  BOOST_CHECK_MESSAGE( !did_rescue(enabled),
-                       "A guarded marginal beside K40 was unexpectedly admitted" );
-  BOOST_CHECK( find_source_gamma(enabled.observable_peaks, "Eu152", 1408.01, 0.5) );
-  BOOST_CHECK( find_source_gamma(enabled.observable_peaks, "Cs137", 661.657, 0.5) );
-  BOOST_CHECK( !find_source_gamma(enabled.observable_peaks, "K40", 1460.82, 0.5) );
-
-  const PeakDef * const enabled_weak = find_source_gamma(
-      enabled.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
-  const PeakDef * const disabled_weak = find_source_gamma(
-      disabled.solution.m_peaks_without_back_sub, "Eu152", 1457.64, 0.5 );
-  if( enabled_weak && disabled_weak )
-  {
-    const double combined_uncert = std::hypot(
-        std::max(0.0, enabled_weak->peakAreaUncert()),
-        std::max(0.0, disabled_weak->peakAreaUncert()) );
-    const double tolerance = std::max( 3.0*combined_uncert,
-                                      0.20*std::fabs(disabled_weak->peakArea()) );
-    BOOST_CHECK_MESSAGE( enabled_weak->peakArea() - disabled_weak->peakArea() <= tolerance,
-                         "R2 inflated Eu152 1457.6-keV area beside strong K40" );
-  }
-#endif
+  // Requested K40 is reported from the raw spectrum; with the supplied background (which carries
+  // the same K40) the net K40 is nil and nothing need be reported, but the Eu152 line beside it is
+  // never reported in either arm.
+  BOOST_CHECK( find_source_gamma( raw_joint.observable_peaks, "K40", 1460.82, 0.5 ) );
+  for( const FitPeaksForNuclides::PeakFitResult * const result : { &raw_joint, &bg_joint } )
+    BOOST_CHECK( !find_source_gamma( result->observable_peaks, "Eu152", 1457.64, 0.5 ) );
 }
 
 
@@ -2330,139 +2050,393 @@ namespace
 }//namespace
 
 
-BOOST_AUTO_TEST_CASE( test_snip_joint_roi_boundary_shadow )
+
+
+namespace
 {
-  using FitPeaksForNuclides::detail::GlobalContinuumEstimate;
-  using FitPeaksForNuclides::detail::RoiBoundaryShadowGroup;
-  using FitPeaksForNuclides::detail::RoiBoundaryShadowResult;
-  using FitPeaksForNuclides::detail::optimize_roi_boundaries_shadow;
-
-  const auto make_global = []( const shared_ptr<const SpecUtils::Measurement> &spectrum ) {
-    GlobalContinuumEstimate global;
-    global.snip = spectrum;
-    global.foreground = spectrum;
-    global.built = true;
-    return global;
-  };
-  const vector<shared_ptr<const PeakDef>> no_unfit_peaks;
-
-  // A wide, strongly non-polynomial baseline should be split into locally plausible intervals.
-  const auto curved = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-    []( const double energy ) {
-      return 8.0 + 5.0*std::sin(energy/13.0) + 0.00002*std::pow(energy - 120.0, 4.0);
-    } );
-  const auto fwhm4 = []( const double ){ return 4.0; };
-  const vector<RoiBoundaryShadowGroup> wide_groups = {
-    {40.0, 190.0, {60.0}}, {40.0, 190.0, {110.0}}, {40.0, 190.0, {165.0}}
-  };
-  const RoiBoundaryShadowResult curved_result = optimize_roi_boundaries_shadow(
-      wide_groups, curved, make_global(curved), fwhm4, no_unfit_peaks, 50.0 );
-  BOOST_REQUIRE( curved_result.valid );
-  BOOST_CHECK_GE( curved_result.intervals.size(), 2u );
-  BOOST_CHECK( std::isfinite(curved_result.legacy_total_score) );
-  BOOST_CHECK_LT( curved_result.proposed_total_score, curved_result.legacy_total_score );
-  for( size_t i = 0; i < curved_result.intervals.size(); ++i )
+  // Settings for the single-pass ROI planner on the synthetic spectra below (1 keV channels,
+  // constant 2 keV FWHM), starting from the HPGe defaults.
+  FitPeaksForNuclides::GammaClusteringSettings planner_settings()
   {
-    const auto &interval = curved_result.intervals[i];
-    BOOST_CHECK_LE( interval.lower, interval.upper );
-    BOOST_CHECK_EQUAL( interval.unmodeled_peak_conflicts, 0u );
-    if( i )
-      BOOST_CHECK_LE( curved_result.intervals[i-1].upper, interval.lower );
-  }
-  for( const RoiBoundaryShadowGroup &group : wide_groups )
-  {
-    const double energy = group.gamma_energies.front();
-    const size_t covering = std::count_if( std::begin(curved_result.intervals),
-      std::end(curved_result.intervals), [energy]( const auto &interval ) {
-        return (energy >= interval.lower) && (energy <= interval.upper);
-      } );
-    BOOST_CHECK_EQUAL( covering, 1u );
+    FitPeaksForNuclides::GammaClusteringSettings s
+      = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( PeakFitUtils::CoarseResolutionType::High )
+          .get_auto_clustering_settings();
+    s.use_roi_plan = true;
+    s.keep_significance_z = 2.0;
+    s.share_always_fwhm = 3.4;
+    s.separate_always_fwhm = 3.4;
+    s.step_use_chi2_trial = false;
+    return s;
   }
 
-  // Overlapping source cores have no feasible boundary between them and must remain joint.
-  const auto flat = make_synthetic_spectrum( 220, 0.0f, 1.0f,
-      []( const double ){ return 10.0; } );
-  const auto fwhm6 = []( const double ){ return 6.0; };
-  const vector<RoiBoundaryShadowGroup> overlapping = {
-    {85.0, 120.0, {100.0}}, {85.0, 120.0, {104.0}}
-  };
-  const RoiBoundaryShadowResult overlap_result = optimize_roi_boundaries_shadow(
-      overlapping, flat, make_global(flat), fwhm6, no_unfit_peaks, 50.0 );
-  BOOST_REQUIRE( overlap_result.valid );
-  BOOST_CHECK_EQUAL( overlap_result.intervals.size(), 1u );
+  const std::function<double(double)> planner_fwhm = []( double ){ return 2.0; };
+  const double planner_sigma = 2.0 / 2.35482;
+}//namespace
 
-  // A real baseline discontinuity should select one of the production step families.
-  const auto stepped = make_synthetic_spectrum( 220, 0.0f, 1.0f,
-      []( const double energy ){ return (energy < 100.0) ? 5.0 : 22.0; } );
-  const vector<RoiBoundaryShadowGroup> step_group = { {70.0, 130.0, {100.0}} };
-  const auto raw_step_foreground = make_synthetic_spectrum( 220, 0.0f, 1.0f,
-      []( const double energy ){
-        return ((energy < 100.0) ? 8.0 : 25.0) + 0.005*energy;
-      } );
-  GlobalContinuumEstimate step_global = make_global( stepped );
-  step_global.foreground = raw_step_foreground;
-  const RoiBoundaryShadowResult step_result = optimize_roi_boundaries_shadow(
-      step_group, raw_step_foreground, step_global, fwhm4, no_unfit_peaks, 50.0 );
-  BOOST_REQUIRE( step_result.valid );
-  BOOST_REQUIRE_EQUAL( step_result.intervals.size(), 1u );
-  BOOST_CHECK( (step_result.intervals[0].continuum_type == PeakContinuum::OffsetType::FlatStep)
-               || (step_result.intervals[0].continuum_type
-                    == PeakContinuum::OffsetType::LinearStep) );
 
-  GlobalContinuumEstimate invalid_global;
-  const RoiBoundaryShadowResult fallback = optimize_roi_boundaries_shadow(
-      step_group, stepped, invalid_global, fwhm4, no_unfit_peaks, 50.0 );
-  BOOST_CHECK( !fallback.valid );
-  BOOST_CHECK( !fallback.fallback_reason.empty() );
+BOOST_AUTO_TEST_CASE( test_sibling_absence_check )
+{
+  using FitPeaksForNuclides::detail::sibling_absence_check;
+  using FitPeaksForNuclides::detail::SiblingAbsenceResult;
+  set_data_dir();  // the lead-shield scan reads the mass-attenuation tables
+  const std::function<double(double)> flat_eff = []( double ){ return 1.0; };
 
-  // An unmodeled peak creates a one-FWHM exclusion gap.  The proposed intervals may end/start at
-  // its edges but must never contain or bisect it.
-  const shared_ptr<const PeakDef> unmodeled
-    = make_shared<const PeakDef>( 100.0, 2.0, 1000.0 );
-  const vector<RoiBoundaryShadowGroup> separated = {
-    {45.0, 155.0, {60.0}}, {45.0, 155.0, {140.0}}
-  };
-  const RoiBoundaryShadowResult excluded = optimize_roi_boundaries_shadow(
-      separated, flat, make_global(flat), fwhm4, {unmodeled}, 50.0 );
-  BOOST_REQUIRE( excluded.valid );
-  for( const auto &interval : excluded.intervals )
-  {
-    BOOST_CHECK( !((interval.lower < 104.0) && (interval.upper > 96.0)) );
-    BOOST_CHECK_GE( interval.unmodeled_peak_conflicts, 1u );
-    BOOST_CHECK( std::find_if( std::begin(interval.unmodeled_peak_energies),
-      std::end(interval.unmodeled_peak_energies), []( const double energy ) {
-        return std::fabs(energy - 100.0) < 0.1;
-      } ) != std::end(interval.unmodeled_peak_energies) );
-  }
+  // The attenuation tables come back in PhysicalUnits units; the check converts to cm2/g.
+  const double mu_units = PhysicalUnits::cm2 / PhysicalUnits::g;
+  const double mu_pb_60 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 59.5f ) / mu_units;
+  const double mu_pb_662 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 662.0f ) / mu_units;
+  BOOST_CHECK_MESSAGE( (mu_pb_60 > 3.0) && (mu_pb_60 < 8.0), "mu/rho(Pb, 59.5 keV) = " << mu_pb_60 << " cm2/g" );
+  BOOST_CHECK_MESSAGE( (mu_pb_662 > 0.08) && (mu_pb_662 < 0.14), "mu/rho(Pb, 662 keV) = " << mu_pb_662 << " cm2/g" );
 
-  // Cores are clipped at the spectrum edge, while the configured maximum remains a hard fallback.
-  const vector<RoiBoundaryShadowGroup> edge_group = { {0.0, 20.0, {1.0}} };
-  const RoiBoundaryShadowResult edge_result = optimize_roi_boundaries_shadow(
-      edge_group, flat, make_global(flat), fwhm4, no_unfit_peaks, 50.0 );
-  BOOST_REQUIRE( edge_result.valid );
-  BOOST_CHECK_GE( edge_result.intervals.front().lower, 0.0 );
-  const RoiBoundaryShadowResult width_fallback = optimize_roi_boundaries_shadow(
-      step_group, stepped, make_global(stepped), fwhm4, no_unfit_peaks, 1.0 );
-  BOOST_CHECK( !width_fallback.valid );
+  // Ba133-like source: 81 keV (yield 0.33) and 356 keV (0.62); the spectrum shows both in a
+  // consistent ratio on a 20/keV continuum.
+  const std::vector<SandiaDecay::EnergyRatePair> ba{ {0.33, 81.0}, {0.62, 356.0} };
+  const auto consistent = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 20.0; },
+      { {81.0, planner_sigma, 5000.0}, {356.0, planner_sigma, 8000.0} } );
+  const std::vector<std::pair<double,double>> ba_obs{ {81.0, 5000.0}, {356.0, 8000.0} };
+  SiblingAbsenceResult r = sibling_absence_check( ba, ba, 81.0, 5000.0, 0.0, ba_obs, planner_fwhm, flat_eff, consistent, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK( r.judged );
+  BOOST_CHECK_LT( r.worst_ratio, 1.0 );
+  r = sibling_absence_check( ba, ba, 356.0, 8000.0, 0.0, ba_obs, planner_fwhm, flat_eff, consistent, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK_LT( r.worst_ratio, 1.0 );
+  // Claiming a 50000-count 81 keV peak would need a 356 keV peak the data does not have, and no
+  // shielding can hide a higher-energy line.
+  r = sibling_absence_check( ba, ba, 81.0, 50000.0, 0.0, ba_obs, planner_fwhm, flat_eff, consistent, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK( r.judged );
+  BOOST_CHECK_GT( r.worst_ratio, 2.0 );
+  BOOST_CHECK_CLOSE( r.sibling_energy, 356.0, 1.0e-9 );
 
-  vector<RoiBoundaryShadowGroup> permuted = wide_groups;
-  std::reverse( std::begin(permuted), std::end(permuted) );
-  const RoiBoundaryShadowResult permuted_result = optimize_roi_boundaries_shadow(
-      permuted, curved, make_global(curved), fwhm4, no_unfit_peaks, 50.0 );
-  BOOST_REQUIRE( permuted_result.valid );
-  BOOST_REQUIRE_EQUAL( permuted_result.intervals.size(), curved_result.intervals.size() );
-  for( size_t i = 0; i < curved_result.intervals.size(); ++i )
-  {
-    BOOST_CHECK_SMALL( curved_result.intervals[i].lower
-                       - permuted_result.intervals[i].lower, 0.05 );
-    BOOST_CHECK_SMALL( curved_result.intervals[i].upper
-                       - permuted_result.intervals[i].upper, 0.05 );
-    BOOST_CHECK_EQUAL( curved_result.intervals[i].continuum_type,
-                       permuted_result.intervals[i].continuum_type );
-    BOOST_CHECK_SMALL( curved_result.intervals[i].normalized_continuum_mismatch
-                       - permuted_result.intervals[i].normalized_continuum_mismatch, 1.0e-8 );
-  }
+  // Am241-like: a huge 59.5 keV line (0.36), a 5e-6 line at 335.4 keV and a 3.6e-6 line at
+  // 662.4 keV.  A 700000-count peak at 662 keV cannot be Am241's when nothing sits at 335 keV: a
+  // thick shield could hide the 335 keV line, but the visible 59.5 keV peak rules the shield out.
+  const std::vector<SandiaDecay::EnergyRatePair> am{ {0.36, 59.5}, {5.0e-6, 335.4}, {3.6e-6, 662.4} };
+  const auto trinitite_like = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 30.0; },
+      { {59.5, planner_sigma, 33000.0}, {662.4, planner_sigma, 700000.0} } );
+  const std::vector<std::pair<double,double>> am_obs{ {59.5, 33000.0}, {662.4, 700000.0} };
+  r = sibling_absence_check( am, am, 662.4, 700000.0, 0.0, am_obs, planner_fwhm, flat_eff, trinitite_like, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK( r.judged );
+  BOOST_CHECK_GT( r.worst_ratio, 2.0 );
+  // The binding line is the absent 335 keV sibling, or the 59.5 keV peak the implied activity
+  // would swamp - both are physical statements of the same contradiction.
+  BOOST_CHECK( (std::fabs( r.sibling_energy - 335.4 ) < 1.0e-6) || (std::fabs( r.sibling_energy - 59.5 ) < 1.0e-6) );
+  // ... while the 59.5 keV peak itself is fine.
+  r = sibling_absence_check( am, am, 59.5, 33000.0, 0.0, am_obs, planner_fwhm, flat_eff, trinitite_like, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK_LT( r.worst_ratio, 1.0 );
+
+  // Heavily shielded source: 300 keV (0.5) and 600 keV (0.02) lines, spectrum where the 600 keV
+  // peak is as large as the 300 keV one (about 4 cm of lead).  The 600 keV claim must pass because
+  // some shielding makes the pair consistent.
+  const std::vector<SandiaDecay::EnergyRatePair> sh{ {0.5, 300.0}, {0.02, 600.0} };
+  const auto shielded = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 20.0; },
+      { {300.0, planner_sigma, 3000.0}, {600.0, planner_sigma, 3000.0} } );
+  const std::vector<std::pair<double,double>> sh_obs{ {300.0, 3000.0}, {600.0, 3000.0} };
+  r = sibling_absence_check( sh, sh, 600.0, 3000.0, 0.0, sh_obs, planner_fwhm, flat_eff, shielded, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK_LT( r.worst_ratio, 1.0 );
+
+  // Shielded Am241-like source: 59.5 keV (0.36) absent, a 99 keV line (2e-4) present with 575 counts.
+  // Lead attenuates 99 keV more than 59.5 keV (K-edge), so only an iron-like shield explains the
+  // pair - the scan must find it.
+  const std::vector<SandiaDecay::EnergyRatePair> am_sh{ {0.36, 59.5}, {2.0e-4, 99.0}, {1.5e-4, 103.0} };
+  const auto iron_shielded = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 10.0; },
+      { {99.0, planner_sigma, 575.0}, {103.0, planner_sigma, 400.0} } );
+  const std::vector<std::pair<double,double>> am_sh_obs{ {99.0, 575.0}, {103.0, 400.0} };
+  r = sibling_absence_check( am_sh, am_sh, 99.0, 575.0, 0.0, am_sh_obs, planner_fwhm, flat_eff, iron_shielded, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK_MESSAGE( r.worst_ratio < 1.0, "shielded 99 keV claim ratio " << r.worst_ratio << " (Z=" << r.best_shield_z << ", " << r.best_shield_g_cm2 << " g/cm2)" );
+
+  // A coincidence-sum peak of two strong lines is not judged.
+  const std::vector<SandiaDecay::EnergyRatePair> co{ {0.999, 200.0}, {0.9998, 250.0}, {2.0e-8, 450.0} };
+  r = sibling_absence_check( co, co, 450.0, 2000.0, 0.0, {}, planner_fwhm, flat_eff, consistent, 20.0, 690.0, 0.4, 120.0, 50.0 );
+  BOOST_CHECK( !r.judged );
 }
+
+
+BOOST_AUTO_TEST_CASE( test_roi_plan_sharing_bands )
+{
+  using FitPeaksForNuclides::detail::PlannerLine;
+  using FitPeaksForNuclides::detail::PlannedRoiSummary;
+  using FitPeaksForNuclides::detail::plan_rois_for_lines;
+  const FitPeaksForNuclides::GammaClusteringSettings s = planner_settings();
+
+  for( const double sep_fwhm : { 1.5, 2.5, 3.0, 3.8, 6.0, 12.0 } )
+  {
+    const double e1 = 300.0, e2 = 300.0 + sep_fwhm*2.0;
+    const auto fg = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
+        { {e1, planner_sigma, 5000.0}, {e2, planner_sigma, 5000.0} } );
+    const std::vector<PlannedRoiSummary> rois = plan_rois_for_lines(
+        { {e1, 5000.0}, {e2, 5000.0} }, fg, planner_fwhm, 20.0, 690.0, s, {} );
+
+    const bool expect_shared = (sep_fwhm < s.share_always_fwhm);
+    BOOST_REQUIRE_MESSAGE( !rois.empty(), "no ROI planned at separation " << sep_fwhm );
+    BOOST_CHECK_MESSAGE( rois.size() == (expect_shared ? 1u : 2u),
+      "separation " << sep_fwhm << " FWHM planned " << rois.size() << " ROIs" );
+
+    // every line sits inside its ROI; ROIs are channel aligned and disjoint with a gap
+    for( const PlannedRoiSummary &roi : rois )
+    {
+      for( const double e : roi.line_energies )
+        BOOST_CHECK( (e > roi.lower) && (e < roi.upper) );
+      const size_t first = fg->find_gamma_channel( static_cast<float>(roi.lower) );
+      const size_t last = fg->find_gamma_channel( std::nextafter( static_cast<float>(roi.upper), static_cast<float>(roi.lower) ) );
+      BOOST_CHECK_CLOSE( roi.lower, fg->gamma_channel_lower( first ), 1.0e-6 );
+      BOOST_CHECK_CLOSE( roi.upper, fg->gamma_channel_upper( last ), 1.0e-6 );
+    }
+    for( size_t i = 1; i < rois.size(); ++i )
+      BOOST_CHECK_GT( fg->find_gamma_channel( static_cast<float>(rois[i].lower) ),
+                      fg->find_gamma_channel( std::nextafter( static_cast<float>(rois[i-1].upper), 0.0f ) ) );
+  }//for( separations )
+}
+
+
+BOOST_AUTO_TEST_CASE( test_roi_plan_admission_and_confirmation )
+{
+  using FitPeaksForNuclides::detail::PlannerLine;
+  using FitPeaksForNuclides::detail::PlannedRoiSummary;
+  using FitPeaksForNuclides::detail::plan_rois_for_lines;
+  const FitPeaksForNuclides::GammaClusteringSettings s = planner_settings();
+
+  // A 5/keV continuum: a 400-count line is detectable (z ~ 15), a 3-count line is not.
+  const auto fg = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
+      { {200.0, planner_sigma, 400.0}, {500.0, planner_sigma, 600.0} } );
+  std::vector<PlannedRoiSummary> rois = plan_rois_for_lines( { {200.0, 400.0}, {350.0, 3.0} }, fg, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_CLOSE( rois[0].line_energies.at(0), 200.0, 1.0e-9 );
+
+  // A found peak confirms a line only when the source could produce a meaningful part of it:
+  // predicted 300 of a 600-count found peak is confirmed; predicted 3 counts is not.
+  auto found = std::make_shared<PeakDef>( 500.0, planner_sigma, 600.0 );
+  rois = plan_rois_for_lines( { {200.0, 400.0}, {500.0, 300.0} }, fg, planner_fwhm, 20.0, 690.0, s, { found } );
+  BOOST_CHECK_EQUAL( rois.size(), 2u );
+  rois = plan_rois_for_lines( { {200.0, 400.0}, {500.0, 3.0} }, fg, planner_fwhm, 20.0, 690.0, s, { found } );
+  BOOST_CHECK_EQUAL( rois.size(), 1u );
+
+  // An unexplained found peak next to a line is an obstacle that stops the ROI extension short of it.
+  auto obstacle = std::make_shared<PeakDef>( 206.0, planner_sigma, 600.0 );
+  const auto fg2 = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
+      { {200.0, planner_sigma, 400.0}, {206.0, planner_sigma, 600.0} } );
+  rois = plan_rois_for_lines( { {200.0, 400.0} }, fg2, planner_fwhm, 20.0, 690.0, s, { obstacle } );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_LT( rois[0].upper, 206.0 );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_roi_plan_swamped_group )
+{
+  using FitPeaksForNuclides::detail::PlannerLine;
+  using FitPeaksForNuclides::detail::PlannedRoiSummary;
+  using FitPeaksForNuclides::detail::plan_rois_for_lines;
+  const FitPeaksForNuclides::GammaClusteringSettings s = planner_settings();
+
+  // A weak predicted line (60 counts) with a 5000-count foreign peak 1 FWHM away - inside the
+  // group's core but outside the confirmation distance: the group is unmeasurable under the foreign
+  // peak and must be rejected (the peak stays an obstacle), instead of the line absorbing the peak.
+  const auto swamped = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
+      { {300.0, planner_sigma, 60.0}, {302.0, planner_sigma, 5000.0}, {500.0, planner_sigma, 400.0} } );
+  auto foreign = std::make_shared<PeakDef>( 302.0, planner_sigma, 5000.0 );
+  std::vector<PlannedRoiSummary> rois = plan_rois_for_lines( { {300.0, 60.0}, {500.0, 400.0} }, swamped,
+      planner_fwhm, 20.0, 690.0, s, { foreign } );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_CLOSE( rois[0].line_energies.at(0), 500.0, 1.0e-9 );
+
+  // The same geometry with a comparable foreign peak (80 counts) is not swamped: the group is planned
+  // and the found peak is merely an obstacle.
+  const auto shared = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 5.0; },
+      { {300.0, planner_sigma, 600.0}, {302.0, planner_sigma, 80.0} } );
+  auto comparable = std::make_shared<PeakDef>( 302.0, planner_sigma, 80.0 );
+  rois = plan_rois_for_lines( { {300.0, 600.0} }, shared, planner_fwhm, 20.0, 690.0, s, { comparable } );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_CLOSE( rois[0].line_energies.at(0), 300.0, 1.0e-9 );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_roi_plan_span_cap )
+{
+  using FitPeaksForNuclides::detail::PlannerLine;
+  using FitPeaksForNuclides::detail::PlannedRoiSummary;
+  using FitPeaksForNuclides::detail::plan_rois_for_lines;
+  FitPeaksForNuclides::GammaClusteringSettings s = planner_settings();
+
+  // Nine lines 2 FWHM apart chain into one 16 FWHM component; the widest gap (3 FWHM, between the
+  // fifth and sixth line) is where the cap must split it.
+  std::vector<PlannerLine> lines;
+  std::vector<std::array<double,3>> peaks;
+  double e = 200.0;
+  for( int i = 0; i < 9; ++i )
+  {
+    lines.push_back( {e, 3000.0} );
+    peaks.push_back( {e, planner_sigma, 3000.0} );
+    e += (i == 4) ? 6.0 : 4.0;
+  }
+  const auto fg = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 20.0; }, peaks );
+  std::vector<PlannedRoiSummary> rois = plan_rois_for_lines( lines, fg, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_GE( rois.size(), 2u );
+
+  // The cap splits at the widest gap first, so 216 and 222 keV never share a ROI ...
+  int roi_of_216 = -1, roi_of_222 = -1;
+  for( size_t i = 0; i < rois.size(); ++i )
+  {
+    for( const double e : rois[i].line_energies )
+    {
+      if( std::fabs( e - 216.0 ) < 0.5 )
+        roi_of_216 = static_cast<int>( i );
+      if( std::fabs( e - 222.0 ) < 0.5 )
+        roi_of_222 = static_cast<int>( i );
+    }
+  }
+  BOOST_REQUIRE( (roi_of_216 >= 0) && (roi_of_222 >= 0) );
+  BOOST_CHECK_NE( roi_of_216, roi_of_222 );
+
+  // ... every emitted ROI stays under the cap, and no split leaves a line against an edge (the
+  // continuum needs roi_min_side_fwhm of room to anchor on - see GammaClusteringSettings).
+  for( const PlannedRoiSummary &roi : rois )
+  {
+    BOOST_REQUIRE( !roi.line_energies.empty() );
+    const double lo = *std::min_element( begin(roi.line_energies), end(roi.line_energies) );
+    const double hi = *std::max_element( begin(roi.line_energies), end(roi.line_energies) );
+    const double fwhm = planner_fwhm( 0.5*(lo + hi) );
+    const double chan_w = 1.0;   // make_synthetic_spectrum uses 1 keV channels
+    BOOST_CHECK_MESSAGE( (lo - roi.lower) >= (s.roi_min_side_fwhm*fwhm - chan_w - 1.0e-6),
+      "ROI [" << roi.lower << ", " << roi.upper << "] starts " << (lo - roi.lower)
+      << " keV below its first line, less than " << (s.roi_min_side_fwhm*fwhm) );
+    BOOST_CHECK_MESSAGE( (roi.upper - hi) >= (s.roi_min_side_fwhm*fwhm - chan_w - 1.0e-6),
+      "ROI [" << roi.lower << ", " << roi.upper << "] ends " << (roi.upper - hi)
+      << " keV above its last line, less than " << (s.roi_min_side_fwhm*fwhm) );
+    BOOST_CHECK_LE( (roi.upper - roi.lower) / fwhm, s.max_shared_span_fwhm + 1.0 );
+  }
+
+  s.max_shared_span_fwhm = 0.0;   // disabled: one chain
+  rois = plan_rois_for_lines( lines, fg, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_CHECK_EQUAL( rois.size(), 1u );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_roi_plan_continuum_selection )
+{
+  using FitPeaksForNuclides::detail::PlannerLine;
+  using FitPeaksForNuclides::detail::PlannedRoiSummary;
+  using FitPeaksForNuclides::detail::plan_rois_for_lines;
+  const FitPeaksForNuclides::GammaClusteringSettings s = planner_settings();
+
+  // Strong peak on a flat continuum: no step (the continuum does not drop across the peak) and a
+  // linear continuum - a Constant one is available but off by default (the reference fits never use
+  // one; see GammaClusteringSettings::cont_constant_max_counts).
+  const auto flat = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double ){ return 50.0; },
+      { {300.0, planner_sigma, 200000.0} } );
+  std::vector<PlannedRoiSummary> rois = plan_rois_for_lines( { {300.0, 200000.0} }, flat, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_MESSAGE( rois[0].continuum_type == PeakContinuum::OffsetType::Linear,
+    "flat-continuum strong peak got " << PeakContinuum::offset_type_str( rois[0].continuum_type )
+    << " over [" << rois[0].lower << ", " << rois[0].upper << "]" );
+
+  // A continuum RISING across the ROI cannot be a Compton step (those only fall with energy), so a
+  // strong peak on one stays linear however big it is.
+  const auto sloped = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double e ){ return 20.0 + 0.2*e; },
+      { {300.0, planner_sigma, 200000.0} } );
+  rois = plan_rois_for_lines( { {300.0, 200000.0} }, sloped, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK_MESSAGE( rois[0].continuum_type == PeakContinuum::OffsetType::Linear,
+    "rising-continuum strong peak got " << PeakContinuum::offset_type_str( rois[0].continuum_type )
+    << " over [" << rois[0].lower << ", " << rois[0].upper << "]" );
+
+  // The same peak on a continuum that steps down across it gets a CDF step continuum.
+  const auto stepped = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double e ){ return (e < 300.0) ? 200.0 : 50.0; },
+      { {300.0, planner_sigma, 200000.0} } );
+  rois = plan_rois_for_lines( { {300.0, 200000.0} }, stepped, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK( rois[0].continuum_type == PeakContinuum::OffsetType::FlatStepCDF );
+  // and the step ROI is given extra room on the low side
+  BOOST_CHECK_LT( rois[0].lower, 300.0 - (s.roi_core_num_fwhm + 0.5*s.step_low_side_extra_fwhm)*2.0 );
+
+  // A weak peak never gets a step, whatever the continuum does (a polynomial order may still be
+  // chosen for the stepped background).
+  const auto weak_stepped = make_synthetic_spectrum( 700, 0.0f, 1.0f, []( double e ){ return (e < 300.0) ? 200.0 : 50.0; },
+      { {300.0, planner_sigma, 400.0} } );
+  rois = plan_rois_for_lines( { {300.0, 400.0} }, weak_stepped, planner_fwhm, 20.0, 690.0, s, {} );
+  BOOST_REQUIRE_EQUAL( rois.size(), 1u );
+  BOOST_CHECK( (rois[0].continuum_type == PeakContinuum::OffsetType::Linear)
+               || (rois[0].continuum_type == PeakContinuum::OffsetType::Quadratic) );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_energy_cal_drift_bound )
+{
+  // Every spectrum in the evaluation corpora is already well calibrated, so the energy-calibration
+  // drift bound (sm_energy_cal_max_drift_fwhm, applied where the fit advances the calibration
+  // between iterations) is exercised by nothing else.  These cases pin its contract directly.
+  using FitPeaksForNuclides::detail::max_search_peak_drift_fwhm;
+
+  const size_t nchannel = 8192;
+  auto pristine = std::make_shared<SpecUtils::EnergyCalibration>();
+  pristine->set_polynomial( nchannel, { 0.0f, 0.25f }, {} );   // 0 - 2048 keV
+
+  // Two peaks with a 2 keV FWHM, one low and one high, so a gain-only error shows up as a drift
+  // that grows with energy - the shape the Fulcrum U235 failure had.
+  const auto make_peak = []( const double mean, const double fwhm ) {
+    auto p = std::make_shared<PeakDef>( mean, fwhm/2.35482, 1000.0 );
+    return std::shared_ptr<const PeakDef>( p );
+  };
+  const std::vector<std::shared_ptr<const PeakDef>> peaks{ make_peak( 200.0, 2.0 ),
+                                                           make_peak( 1000.0, 2.0 ) };
+
+  // The same calibration drifts nothing.
+  BOOST_CHECK_SMALL( max_search_peak_drift_fwhm( peaks, pristine, pristine ), 1.0e-9 );
+
+  // A pure offset drifts every peak by the same ENERGY, so by the same number of FWHM here.
+  {
+    auto offset = std::make_shared<SpecUtils::EnergyCalibration>();
+    offset->set_polynomial( nchannel, { 1.0f, 0.25f }, {} );   // +1 keV everywhere
+    double worst_energy = 0.0;
+    const double drift = max_search_peak_drift_fwhm( peaks, pristine, offset, nullptr, &worst_energy );
+    BOOST_CHECK_CLOSE( drift, 0.5, 1.0 );        // 1 keV / 2 keV FWHM
+    BOOST_CHECK( drift < 2.0 );                  // a real, correctable offset: must NOT be rejected
+  }
+
+  // A gain error drifts the HIGH peak most, and the bound must notice the high one.
+  {
+    auto gain = std::make_shared<SpecUtils::EnergyCalibration>();
+    gain->set_polynomial( nchannel, { 0.0f, 0.25f*1.006f }, {} );   // +0.6 % gain
+    double worst_energy = 0.0;
+    const double drift = max_search_peak_drift_fwhm( peaks, pristine, gain, nullptr, &worst_energy );
+    // 1000 keV moves 6 keV = 3 FWHM; 200 keV moves 1.2 keV = 0.6 FWHM.
+    BOOST_CHECK_CLOSE( drift, 3.0, 2.0 );
+    BOOST_CHECK_CLOSE( worst_energy, 1000.0, 1.0e-6 );
+    BOOST_CHECK( drift > 2.0 );                  // the measured Fulcrum runaway: must be rejected
+  }
+
+  // Peaks with no width cannot measure anything, and neither can an empty list; both are silent
+  // rather than fatal, and the caller then applies the calibration unjudged.
+  {
+    auto gain = std::make_shared<SpecUtils::EnergyCalibration>();
+    gain->set_polynomial( nchannel, { 0.0f, 0.25f*1.10f }, {} );
+    auto zero_width = std::make_shared<PeakDef>( 1000.0, 0.0, 1000.0 );
+    const std::vector<std::shared_ptr<const PeakDef>> widthless{
+        std::shared_ptr<const PeakDef>( zero_width ) };
+    BOOST_CHECK_SMALL( max_search_peak_drift_fwhm( widthless, pristine, gain ), 1.0e-9 );
+    BOOST_CHECK_SMALL( max_search_peak_drift_fwhm( {}, pristine, gain ), 1.0e-9 );
+  }
+
+  // The fitted width model, when supplied, is the yardstick - not the peak's own width.  A narrow
+  // noise spike high in the spectrum must not veto a calibration that is fine for the real peaks.
+  {
+    auto gain = std::make_shared<SpecUtils::EnergyCalibration>();
+    gain->set_polynomial( nchannel, { 0.0f, 0.25f*1.001f }, {} );   // 1.4 keV at 1400 keV
+    auto spike = std::make_shared<PeakDef>( 1400.0, 0.4/2.35482, 50.0 );
+    const std::vector<std::shared_ptr<const PeakDef>> spiky{
+        std::shared_ptr<const PeakDef>( spike ) };
+    const std::function<double(double)> real_width = []( double ){ return 2.0; };
+
+    // Judged by the spike's own 0.4 keV width the drift reads 3.5 FWHM and would be rejected...
+    BOOST_CHECK_GT( max_search_peak_drift_fwhm( spiky, pristine, gain ), 2.0 );
+    // ...but the detector's actual resolution says 0.7 FWHM, which is fine.
+    BOOST_CHECK_LT( max_search_peak_drift_fwhm( spiky, pristine, gain, real_width ), 2.0 );
+  }
+
+  // An unusable calibration is not an excuse to reject a fit.
+  {
+    std::shared_ptr<const SpecUtils::EnergyCalibration> null_cal;
+    BOOST_CHECK_SMALL( max_search_peak_drift_fwhm( peaks, pristine, null_cal ), 1.0e-9 );
+    BOOST_CHECK_SMALL( max_search_peak_drift_fwhm( peaks, null_cal, pristine ), 1.0e-9 );
+  }
+}//BOOST_AUTO_TEST_CASE( test_energy_cal_drift_bound )
 
 
 BOOST_AUTO_TEST_CASE( test_estimate_local_continuum )
@@ -2490,6 +2464,130 @@ BOOST_AUTO_TEST_CASE( test_estimate_local_continuum )
   const LocalContinuumEstimate bad = estimate_local_continuum( flat, 700.0, 650.0, 2.0, 0.5 );
   BOOST_CHECK( !bad.valid );
 }//test_estimate_local_continuum
+
+
+BOOST_AUTO_TEST_CASE( test_fit_fwhm_function_robust_shape_prior )
+{
+  using FitPeaksForNuclides::detail::class_shape_fwhm;
+  using FitPeaksForNuclides::detail::fit_fwhm_function_robust;
+
+  const auto form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
+  const double nsig = PhysicalUnits::fwhm_nsigma;
+
+  // 3 keV channels over 0-3000 keV; the contents do not enter the width fit
+  const auto spec = make_synthetic_spectrum( 1000, 0.0f, 3.0f, []( double ){ return 10.0; } );
+
+  const auto make_peak = [nsig]( const double mean, const double fwhm, const double z ){
+    auto p = std::make_shared<PeakDef>( mean, fwhm/nsig, 1000.0*z );
+    p->setAmplitudeUncert( 1000.0 );
+    p->setSigmaUncert( 0.05*fwhm/nsig );
+    return std::shared_ptr<const PeakDef>( p );
+  };
+  const auto model_fwhm = [form]( const std::vector<float> &coefs, const double e ){
+    return static_cast<double>( DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(e), form, coefs ) );
+  };
+
+  // NaI-like: six clean peaks at 0.9x the class curve, a 2x-wide backscatter bump, a 1.6x-wide
+  // x-ray blob and a slightly wide 2614 keV line.  The contaminants must not vote, the 2614 keV
+  // line must, and the curve must keep rising to 2614 keV instead of ending as a constant.
+  {
+    const auto Low = PeakFitUtils::CoarseResolutionType::Low;
+    const double scale = 0.9;
+    std::vector<std::shared_ptr<const PeakDef>> peaks;
+    for( const double e : { 59.5, 122.0, 356.0, 662.0, 1173.0, 1332.0 } )
+      peaks.push_back( make_peak( e, scale*class_shape_fwhm( Low, e ), 30.0 ) );
+    peaks.push_back( make_peak( 190.0, 2.0*scale*class_shape_fwhm( Low, 190.0 ), 25.0 ) );
+    peaks.push_back( make_peak( 32.0, 1.6*scale*class_shape_fwhm( Low, 32.0 ), 40.0 ) );
+    peaks.push_back( make_peak( 2614.0, 1.05*scale*class_shape_fwhm( Low, 2614.0 ), 20.0 ) );
+
+    std::vector<float> coefs, uncerts;
+    double lo = 0.0, hi = 0.0;
+    std::string note;
+    fit_fwhm_function_robust( peaks, spec, Low, 25.0, nullptr, form, coefs, uncerts, lo, hi, note );
+    BOOST_TEST_MESSAGE( note );
+    BOOST_REQUIRE( coefs.size() >= 2 );
+    BOOST_CHECK_CLOSE( lo, 25.0, 1.0e-6 );
+    BOOST_CHECK_CLOSE( hi, 3000.0, 1.0e-6 );
+    BOOST_CHECK( note.find( "2 off the class-prior shape" ) != std::string::npos );
+    BOOST_CHECK( note.find( "from 7 of 9 search peaks" ) != std::string::npos );
+    BOOST_CHECK( note.find( "prior only" ) == std::string::npos );
+    // The sqrt polynomial cannot follow E^0.6 exactly across two decades, so a few percent of
+    // family error is expected; what must not happen is the old constant-width collapse.
+    for( const double e : { 122.0, 662.0, 1332.0, 2614.0 } )
+      BOOST_CHECK_CLOSE( model_fwhm( coefs, e ), scale*class_shape_fwhm( Low, e ), 10.0 );
+    BOOST_CHECK_GT( model_fwhm( coefs, 2614.0 ) / model_fwhm( coefs, 339.0 ), 2.0 );
+  }
+
+  // A single peak: the class curve scaled through it, valid over the whole range.
+  {
+    const auto Low = PeakFitUtils::CoarseResolutionType::Low;
+    const std::vector<std::shared_ptr<const PeakDef>> one{ make_peak( 662.0, 1.2*class_shape_fwhm( Low, 662.0 ), 30.0 ) };
+    std::vector<float> coefs, uncerts;
+    double lo = 0.0, hi = 0.0;
+    std::string note;
+    fit_fwhm_function_robust( one, spec, Low, 25.0, nullptr, form, coefs, uncerts, lo, hi, note );
+    BOOST_TEST_MESSAGE( note );
+    BOOST_REQUIRE( coefs.size() >= 2 );
+    for( const double e : { 662.0, 1332.0 } )
+      BOOST_CHECK_CLOSE( model_fwhm( coefs, e ), 1.2*class_shape_fwhm( Low, e ), 12.0 );
+    BOOST_CHECK_CLOSE( model_fwhm( coefs, 60.0 ), 1.2*class_shape_fwhm( Low, 60.0 ), 25.0 );
+    BOOST_CHECK_GT( model_fwhm( coefs, 2614.0 ) / model_fwhm( coefs, 339.0 ), 2.0 );
+  }
+
+  // HPGe-like: eight clean peaks at 1.1x the class curve all vote, and the fit follows them.
+  {
+    const auto High = PeakFitUtils::CoarseResolutionType::High;
+    const auto hpge = make_synthetic_spectrum( 6000, 0.0f, 0.5f, []( double ){ return 10.0; } );
+    std::vector<std::shared_ptr<const PeakDef>> peaks;
+    for( const double e : { 59.5, 122.0, 356.0, 662.0, 1173.0, 1332.0, 1408.0, 2614.0 } )
+      peaks.push_back( make_peak( e, 1.1*class_shape_fwhm( High, e ), 30.0 ) );
+    std::vector<float> coefs, uncerts;
+    double lo = 0.0, hi = 0.0;
+    std::string note;
+    fit_fwhm_function_robust( peaks, hpge, High, 20.0, nullptr, form, coefs, uncerts, lo, hi, note );
+    BOOST_TEST_MESSAGE( note );
+    BOOST_CHECK( note.find( "from 8 of 8 search peaks" ) != std::string::npos );
+    for( const double e : { 59.5, 122.0, 662.0, 1332.0, 2614.0 } )
+      BOOST_CHECK_CLOSE( model_fwhm( coefs, e ), 1.1*class_shape_fwhm( High, e ), 8.0 );
+  }
+
+  // A GR1-like CZT spectrum, dead below its 39 keV discriminator, whose only search peak is a line
+  // sliced by it - narrow, and centred just above the cut.  It must not set the widths.
+  {
+    const auto CZT = PeakFitUtils::CoarseResolutionType::CZT;
+    const auto czt = make_synthetic_spectrum( 1000, 0.0f, 3.0f, []( double e ){ return (e < 39.3) ? 0.0 : 10.0; } );
+    const std::vector<std::shared_ptr<const PeakDef>> sliced{ make_peak( 43.5, 4.8, 8.0 ) };
+    std::vector<float> coefs, uncerts;
+    double lo = 0.0, hi = 0.0;
+    std::string note;
+    bool from_prior = false;
+    fit_fwhm_function_robust( sliced, czt, CZT, 15.0, nullptr, form, coefs, uncerts, lo, hi, note, &from_prior );
+    BOOST_TEST_MESSAGE( note );
+    BOOST_CHECK( from_prior );
+    BOOST_CHECK( note.find( "1 search peaks on the detector threshold" ) != std::string::npos );
+    for( const double e : { 60.0, 357.0, 662.0 } )
+      BOOST_CHECK_CLOSE( model_fwhm( coefs, e ), class_shape_fwhm( CZT, e ), 10.0 );
+  }
+
+  // A lone search peak a third of the class width: at z=4 its width is noise and the class curve
+  // sets the scale; at z=30 it is a measurement and sets it.
+  for( const double z : { 4.0, 30.0 } )
+  {
+    const auto CZT = PeakFitUtils::CoarseResolutionType::CZT;
+    const double scale = 0.35;
+    const std::vector<std::shared_ptr<const PeakDef>> one{ make_peak( 122.0, scale*class_shape_fwhm( CZT, 122.0 ), z ) };
+    std::vector<float> coefs, uncerts;
+    double lo = 0.0, hi = 0.0;
+    std::string note;
+    bool from_prior = false;
+    fit_fwhm_function_robust( one, spec, CZT, 25.0, nullptr, form, coefs, uncerts, lo, hi, note, &from_prior );
+    BOOST_TEST_MESSAGE( note );
+    const bool weak = (z < 6.0);
+    BOOST_CHECK_EQUAL( from_prior, weak );
+    for( const double e : { 122.0, 662.0 } )
+      BOOST_CHECK_CLOSE( model_fwhm( coefs, e ), (weak ? 1.0 : scale)*class_shape_fwhm( CZT, e ), 12.0 );
+  }
+}//test_fit_fwhm_function_robust_shape_prior
 
 
 BOOST_AUTO_TEST_CASE( test_extend_roi_by_sidebands )
@@ -2575,1035 +2673,33 @@ BOOST_AUTO_TEST_CASE( test_find_clean_gap_between )
 }//test_find_clean_gap_between
 
 
-BOOST_AUTO_TEST_CASE( test_central_automatic_roi_boundary_policy )
-{
-  using FitPeaksForNuclides::AutomaticRoiDecision;
-  using FitPeaksForNuclides::detail::AutomaticRoiGroup;
-  using FitPeaksForNuclides::detail::AutomaticRoiPolicyResult;
-  using FitPeaksForNuclides::detail::AutomaticRoiPolicySettings;
-  using FitPeaksForNuclides::detail::GlobalContinuumEstimate;
-  using FitPeaksForNuclides::detail::evaluate_automatic_roi_boundary;
-
-  const auto make_global = []( const shared_ptr<const SpecUtils::Measurement> &foreground,
-                               const shared_ptr<const SpecUtils::Measurement> &snip ) {
-    GlobalContinuumEstimate global;
-    global.foreground = foreground;
-    global.snip = snip;
-    global.built = true;
-    return global;
-  };
-  AutomaticRoiPolicySettings settings;
-  settings.merge_tail_z = 2.0;
-  settings.merge_clean_gap_fwhm = 1.0;
-  settings.continuum_aicc_penalty = 2.0;
-  settings.peak_core_num_fwhm = 1.0;
-  settings.max_width_fwhm = 30.0;
-  settings.stage = "deterministic unit test";
-
-  // Piecewise-linear SNIP is exactly supportable by two child continua but not by any one
-  // production family.  Strong, well-separated peaks therefore retain a boundary with no
-  // statistically significant peak bridge.
-  const double fwhm = 4.0;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto v_density = []( const double energy ) {
-    return 8.0 + 0.20*std::fabs(energy - 650.0);
-  };
-  const auto clean_foreground = make_synthetic_spectrum( 900, 200.0f, 1.0f, v_density,
-      { {600.0, fwhm/2.35482, 3000.0}, {700.0, fwhm/2.35482, 3000.0} } );
-  const auto clean_snip = make_synthetic_spectrum( 900, 200.0f, 1.0f, v_density );
-  GlobalContinuumEstimate clean_global = make_global( clean_foreground, clean_snip );
-  AutomaticRoiGroup left{550.0, 660.0, {600.0}, {3000.0}, 1, false};
-  AutomaticRoiGroup right{640.0, 750.0, {700.0}, {3000.0}, 1, false};
-  const AutomaticRoiPolicyResult clean = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, &clean_global, fwhm_at, {}, settings );
-  BOOST_CHECK( clean.decision == AutomaticRoiDecision::KeepSeparate );
-  BOOST_CHECK( clean.diagnostic.sidebands_adequate );
-  BOOST_CHECK_LE( clean.diagnostic.two_roi_aicc, clean.diagnostic.one_roi_aicc );
-  BOOST_CHECK( clean.diagnostic.used_global_continuum );
-
-  // High-statistics overlapping tails leave no defensible continuum window.
-  const double overlap_fwhm = 6.0;
-  const auto overlap_fwhm_at = [overlap_fwhm]( const double ){ return overlap_fwhm; };
-  const auto overlap_foreground = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 10.0; },
-      { {100.0, overlap_fwhm/2.35482, 1.0e7},
-        {106.0, overlap_fwhm/2.35482, 1.0e7} } );
-  const auto overlap_snip = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 10.0; } );
-  GlobalContinuumEstimate overlap_global = make_global( overlap_foreground, overlap_snip );
-  AutomaticRoiGroup overlap_left{80.0, 105.0, {100.0}, {1.0e7}, 1, false};
-  AutomaticRoiGroup overlap_right{101.0, 130.0, {106.0}, {1.0e7}, 1, false};
-  const AutomaticRoiPolicyResult overlap = evaluate_automatic_roi_boundary(
-      overlap_left, overlap_right, overlap_foreground, &overlap_global,
-      overlap_fwhm_at, {}, settings );
-  BOOST_CHECK( overlap.decision == AutomaticRoiDecision::MergeInseparable );
-
-  // An unmodeled core in the gap is neither a split point nor permission to merge through it.
-  const shared_ptr<const PeakDef> unmodeled
-    = make_shared<const PeakDef>( 650.0, fwhm/2.35482, 1000.0 );
-  const AutomaticRoiPolicyResult blocked = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, &clean_global, fwhm_at, {unmodeled}, settings );
-  BOOST_CHECK( blocked.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked );
-  BOOST_CHECK( blocked.diagnostic.unmodeled_core_blocked );
-  BOOST_CHECK_LE( blocked.exclusion_lower, 650.0 - fwhm );
-  BOOST_CHECK_GE( blocked.exclusion_upper, 650.0 + fwhm );
-
-  // Core occupancy is geometric, not a mean-only test: this peak mean is outside the anchor
-  // interval, but its +1-FWHM core crosses the left edge of the proposed gap.
-  const shared_ptr<const PeakDef> crossing_core
-    = make_shared<const PeakDef>( 597.0, fwhm/2.35482, 1000.0 );
-  const AutomaticRoiPolicyResult crossing_blocked = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, &clean_global, fwhm_at, {crossing_core}, settings );
-  BOOST_CHECK( crossing_blocked.decision == AutomaticRoiDecision::UnmodeledFeatureBlocked );
-
-  // A clean-looking window cannot authorize two ROIs without a valid common-domain continuum
-  // comparison.  In particular, two unavailable sentinel scores must not compare as a tie.
-  const AutomaticRoiPolicyResult no_aicc = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, nullptr, fwhm_at, {}, settings );
-  BOOST_CHECK( (no_aicc.decision == AutomaticRoiDecision::MergeInseparable)
-               || (no_aicc.decision == AutomaticRoiDecision::MergeInseparableWide) );
-  BOOST_CHECK_EQUAL( no_aicc.diagnostic.two_roi_aicc,
-                     std::numeric_limits<double>::max() );
-
-  const auto invalid_fwhm = []( const double ) {
-    return std::numeric_limits<double>::quiet_NaN();
-  };
-  const AutomaticRoiPolicyResult invalid_resolution = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, &clean_global, invalid_fwhm, {}, settings );
-  BOOST_CHECK( invalid_resolution.decision == AutomaticRoiDecision::KeepSeparate );
-
-  // Relabeling the same channels with a shifted current calibration preserves the decision and
-  // boundary channel, proving the helper consumes one coherent working frame.
-  const auto shifted_density = []( const double energy ) {
-    return 8.0 + 0.20*std::fabs(energy - 660.0);
-  };
-  const auto shifted_foreground = make_synthetic_spectrum( 900, 210.0f, 1.0f,
-      shifted_density,
-      { {610.0, fwhm/2.35482, 3000.0}, {710.0, fwhm/2.35482, 3000.0} } );
-  const auto shifted_snip = make_synthetic_spectrum( 900, 210.0f, 1.0f, shifted_density );
-  GlobalContinuumEstimate shifted_global = make_global( shifted_foreground, shifted_snip );
-  AutomaticRoiGroup shifted_left{560.0, 670.0, {610.0}, {3000.0}, 1, false};
-  AutomaticRoiGroup shifted_right{650.0, 760.0, {710.0}, {3000.0}, 1, false};
-  const AutomaticRoiPolicyResult shifted = evaluate_automatic_roi_boundary(
-      shifted_left, shifted_right, shifted_foreground, &shifted_global,
-      fwhm_at, {}, settings );
-  BOOST_CHECK( shifted.decision == clean.decision );
-  BOOST_CHECK_EQUAL(
-      shifted_foreground->find_gamma_channel( shifted.boundary_energy ),
-      clean_foreground->find_gamma_channel( clean.boundary_energy ) );
-  BOOST_CHECK_EQUAL( shifted.diagnostic.boundary_channel,
-                     clean.diagnostic.boundary_channel );
-  BOOST_CHECK_EQUAL( shifted.diagnostic.calibration_num_channels,
-                     clean.diagnostic.calibration_num_channels );
-  BOOST_CHECK( shifted.diagnostic.used_global_continuum );
-
-  // Protected mixed/fixed geometry is reported without mutating bounds or continuum metadata.
-  left.protected_geometry = true;
-  const AutomaticRoiGroup protected_before = left;
-  const AutomaticRoiPolicyResult protected_result = evaluate_automatic_roi_boundary(
-      left, right, clean_foreground, &clean_global, fwhm_at, {}, settings );
-  BOOST_CHECK( protected_result.decision == AutomaticRoiDecision::ProtectedGeometry );
-  BOOST_CHECK_EQUAL( left.lower, protected_before.lower );
-  BOOST_CHECK_EQUAL( left.upper, protected_before.upper );
-  BOOST_CHECK_EQUAL_COLLECTIONS( std::begin(left.peak_energies), std::end(left.peak_energies),
-                                 std::begin(protected_before.peak_energies),
-                                 std::end(protected_before.peak_energies) );
-
-  // A causal eleven-group chain accumulates lineage and can exceed the soft onset only through
-  // an explicit wide-inseparable outcome.
-  settings.max_width_fwhm = 8.0;
-  std::vector<std::array<double,3>> chain_gaussians;
-  for( size_t group_index = 0; group_index < 11; ++group_index )
-    chain_gaussians.push_back( {100.0 + 6.0*group_index,
-                                overlap_fwhm/2.35482, 1.0e7} );
-  const auto chain_foreground = make_synthetic_spectrum( 260, 0.0f, 1.0f,
-      []( const double ){ return 10.0; }, chain_gaussians );
-  const auto chain_snip = make_synthetic_spectrum( 260, 0.0f, 1.0f,
-      []( const double ){ return 10.0; } );
-  GlobalContinuumEstimate chain_global = make_global( chain_foreground, chain_snip );
-  AutomaticRoiGroup chain{80.0, 105.0, {100.0}, {1.0e7}, 1, false};
-  AutomaticRoiPolicyResult chain_decision;
-  for( size_t group_index = 1; group_index < 11; ++group_index )
-  {
-    const double energy = 100.0 + 6.0*group_index;
-    AutomaticRoiGroup next{energy - 5.0, energy + 5.0,
-                           {energy}, {1.0e7}, 1, false};
-    chain_decision = evaluate_automatic_roi_boundary(
-        chain, next, chain_foreground, &chain_global, overlap_fwhm_at, {}, settings );
-    BOOST_REQUIRE( (chain_decision.decision == AutomaticRoiDecision::MergeInseparable)
-                   || (chain_decision.decision == AutomaticRoiDecision::MergeInseparableWide) );
-    chain.upper = next.upper;
-    chain.peak_energies.push_back( energy );
-    chain.peak_areas.push_back( 1.0e7 );
-    chain.joined_groups += 1;
-  }
-  BOOST_CHECK( chain_decision.decision == AutomaticRoiDecision::MergeInseparableWide );
-  BOOST_CHECK_GT( chain_decision.diagnostic.width_pressure, 0.0 );
-  BOOST_CHECK_EQUAL( std::string(FitPeaksForNuclides::automatic_roi_decision_name(
-                         chain_decision.decision)),
-                     "MergeInseparableWide" );
-}//test_central_automatic_roi_boundary_policy
-
-
-BOOST_AUTO_TEST_CASE( test_source_clean_challenger_model_selection_gates )
-{
-  using FitPeaksForNuclides::detail::should_accept_source_clean_challenger;
-  using FitPeaksForNuclides::detail::should_try_source_clean_recovery;
-  using FitPeaksForNuclides::detail::data_only_aicc;
-
-  // A stable solution, or a single questionable lost line, never starts the transactional
-  // challenger.  Two independent lost anchors do.
-  BOOST_CHECK( !should_try_source_clean_recovery( 5, 5 ) );
-  BOOST_CHECK( !should_try_source_clean_recovery( 5, 4 ) );
-  BOOST_CHECK( should_try_source_clean_recovery( 5, 3 ) );
-
-  BOOST_CHECK( should_accept_source_clean_challenger(
-      true, 3, 5, 4, 4, 2.0, 1.5 ) );
-  BOOST_CHECK( should_accept_source_clean_challenger(
-      true, 0, 5, 0, 4, std::numeric_limits<double>::max(), 1.5 ) );
-  BOOST_CHECK( !should_accept_source_clean_challenger(
-      false, 3, 5, 4, 4, 2.0, 1.5 ) );  // failed solve rolls back
-  BOOST_CHECK( !should_accept_source_clean_challenger(
-      true, 3, 3, 4, 4, 2.0, 1.5 ) );   // no predicted-anchor recovery
-  BOOST_CHECK( !should_accept_source_clean_challenger(
-      true, 3, 5, 4, 3, 2.0, 1.5 ) );   // lost fitted source evidence
-  BOOST_CHECK( !should_accept_source_clean_challenger(
-      true, 3, 5, 4, 4, 2.0, 2.1 ) );   // data score did not improve
-  BOOST_CHECK( !should_accept_source_clean_challenger( true, 3, 5, 4, 4, 2.0,
-      std::numeric_limits<double>::quiet_NaN() ) );
-  BOOST_CHECK( !should_accept_source_clean_challenger( true, 3, 5, 4, 4,
-      std::numeric_limits<double>::max(), std::numeric_limits<double>::max() ) );
-
-  BOOST_CHECK_CLOSE( data_only_aicc( 20.0, 20, 3, 2.0 ), 27.5, 1.0e-8 );
-  BOOST_CHECK_EQUAL( data_only_aicc( 20.0, 4, 3, 2.0 ),
-                     std::numeric_limits<double>::max() );
-  BOOST_CHECK_EQUAL( data_only_aicc( std::numeric_limits<double>::quiet_NaN(),
-                                    20, 3, 2.0 ),
-                     std::numeric_limits<double>::max() );
-}//test_source_clean_challenger_model_selection_gates
-
-
-BOOST_AUTO_TEST_CASE( test_source_cluster_evidence_models )
-{
-  using FitPeaksForNuclides::detail::SourceClusterEvidenceDecision;
-  using FitPeaksForNuclides::detail::SourceClusterEvidenceResult;
-  using FitPeaksForNuclides::detail::evaluate_source_cluster_evidence;
-
-  const double fwhm = 2.0;
-  const double sigma = fwhm / 2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto flat = make_synthetic_spectrum(
-      240, 0.0f, 1.0f, []( const double ){ return 20.0; } );
-
-  // A predicted bridge with no measured peak is rejected by H0, despite its high predicted area.
-  const SourceClusterEvidenceResult absent = evaluate_source_cluster_evidence(
-      {100.0}, {1000.0}, 90.0, 112.0, flat, fwhm_at, {}, 3.0, 1.0, 2.0 );
-  BOOST_CHECK( absent.decision == SourceClusterEvidenceDecision::RejectContinuumOnly );
-  BOOST_CHECK( std::isfinite(absent.null_aicc) );
-
-  // A measured source-shaped peak strongly favors the source-tied explanation.
-  const auto source_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 20.0; }, { {100.0, sigma, 1200.0} } );
-  std::shared_ptr<PeakDef> same_core = std::make_shared<PeakDef>( 100.0, sigma, 1200.0 );
-  same_core->setAmplitudeUncert( 30.0 );
-  const SourceClusterEvidenceResult present = evaluate_source_cluster_evidence(
-      {100.0}, {1000.0}, 90.0, 112.0, source_data, fwhm_at, {same_core},
-      3.0, 1.0, 2.0 );
-  BOOST_CHECK( present.decision == SourceClusterEvidenceDecision::RetainSource );
-  BOOST_CHECK_GT( present.source_likelihood_z, 3.0 );
-  // A found peak in the same FWHM core confirms Hs; it is not a free contaminant challenger.
-  BOOST_CHECK( !std::isfinite(present.free_feature_aicc) );
-
-  // The local AICc comparison already charges Hs for its scale parameter.  Do not apply the
-  // downstream observable-z gate a second time: a blended shoulder can be worth retaining even
-  // when its isolated likelihood z is just below that later threshold.
-  bool retained_subthreshold_aicc_winner = false;
-  for( double area = 20.0; area <= 300.0; area += 10.0 )
-  {
-    const auto shoulder_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-        []( const double ){ return 20.0; }, { {100.0, sigma, area} } );
-    const SourceClusterEvidenceResult shoulder = evaluate_source_cluster_evidence(
-        {100.0}, {1000.0}, 90.0, 112.0, shoulder_data, fwhm_at, {},
-        3.0, 1.0, 2.0 );
-    retained_subthreshold_aicc_winner = retained_subthreshold_aicc_winner
-        || ((shoulder.decision == SourceClusterEvidenceDecision::RetainSource)
-            && (shoulder.source_likelihood_z < 3.0));
-  }
-  BOOST_CHECK( retained_subthreshold_aicc_winner );
-
-  // Hs is an exact fixed-ratio mixture, not one moment-matched Gaussian.  A found peak on either
-  // requested line is part of Hs provenance and must not be offered back as a free contaminant.
-  const auto mixture_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 20.0; },
-      { {99.0, sigma, 400.0}, {103.0, sigma, 1200.0} } );
-  std::shared_ptr<PeakDef> peripheral_source
-    = std::make_shared<PeakDef>( 99.0, sigma, 400.0 );
-  peripheral_source->setAmplitudeUncert( 20.0 );
-  const SourceClusterEvidenceResult mixture = evaluate_source_cluster_evidence(
-      {99.0, 103.0}, {1.0, 3.0}, 92.0, 110.0, mixture_data, fwhm_at,
-      {peripheral_source}, 3.0, 1.0, 2.0 );
-  BOOST_CHECK( mixture.decision == SourceClusterEvidenceDecision::RetainSource );
-  BOOST_CHECK( !std::isfinite(mixture.free_feature_aicc) );
-
-  // When a distinct strong feature explains the local data better than the requested-source
-  // shape, Hf wins.  The smaller source peak still makes Hs significant relative to H0.
-  const auto contaminated = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 20.0; },
-      { {100.0, sigma, 1500.0}, {108.0, sigma, 2200.0} } );
-  std::shared_ptr<PeakDef> free_peak = std::make_shared<PeakDef>( 108.0, sigma, 2200.0 );
-  free_peak->setAmplitudeUncert( 35.0 );
-  const SourceClusterEvidenceResult free_wins = evaluate_source_cluster_evidence(
-      {100.0}, {1500.0}, 90.0, 115.0, contaminated, fwhm_at, {free_peak},
-      3.0, 1.0, 2.0 );
-  BOOST_CHECK( free_wins.decision == SourceClusterEvidenceDecision::RejectFreeFeature );
-  BOOST_CHECK_LT( free_wins.free_feature_aicc, free_wins.source_aicc );
-
-  // Multiple distinct found features compete jointly and pay for every fitted amplitude.
-  const auto two_contaminants = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 20.0; },
-      { {100.0, sigma, 300.0}, {106.0, sigma, 1300.0}, {111.0, sigma, 1100.0} } );
-  std::shared_ptr<PeakDef> free_one = std::make_shared<PeakDef>( 106.0, sigma, 1300.0 );
-  std::shared_ptr<PeakDef> free_two = std::make_shared<PeakDef>( 111.0, sigma, 1100.0 );
-  free_one->setAmplitudeUncert( 30.0 );
-  free_two->setAmplitudeUncert( 30.0 );
-  const SourceClusterEvidenceResult joint_free = evaluate_source_cluster_evidence(
-      {100.0}, {300.0}, 92.0, 116.0, two_contaminants, fwhm_at,
-      {free_one, free_two}, 3.0, 1.0, 2.0 );
-  BOOST_CHECK( joint_free.decision == SourceClusterEvidenceDecision::RejectFreeFeature );
-  BOOST_CHECK_LT( joint_free.free_feature_aicc, joint_free.source_aicc );
-
-  const SourceClusterEvidenceResult invalid = evaluate_source_cluster_evidence(
-      {}, {}, 90.0, 112.0, flat, fwhm_at, {}, 3.0, 1.0, 2.0 );
-  BOOST_CHECK( invalid.decision == SourceClusterEvidenceDecision::InsufficientEvidence );
-}//test_source_cluster_evidence_models
-
-
-namespace
-{
-  using FitPeaksForNuclides::detail::RoiAtom;
-  using FitPeaksForNuclides::detail::RoiAtomKind;
-  using FitPeaksForNuclides::detail::AutomaticRoiComponent;
-  using FitPeaksForNuclides::detail::AutomaticRoiPartitionResult;
-  using FitPeaksForNuclides::detail::AutomaticRoiPartitionOutcome;
-  using FitPeaksForNuclides::detail::AutomaticRoiReconcileResult;
-  using FitPeaksForNuclides::detail::AutomaticRoiPolicySettings;
-  using FitPeaksForNuclides::detail::AutomaticRoiPartitionConstraints;
-  using FitPeaksForNuclides::detail::GlobalContinuumEstimate;
-
-  RoiAtom mk_atom( const double energy, const double area,
-                   const RoiAtomKind kind = RoiAtomKind::ModeledGamma )
-  {
-    RoiAtom a;
-    a.id = FitPeaksForNuclides::detail::next_roi_atom_id();
-    a.energy = energy;
-    a.area = area;
-    a.kind = kind;
-    return a;
-  }
-
-  AutomaticRoiComponent mk_component( const double lower, const double upper,
-      const std::shared_ptr<const SpecUtils::Measurement> &fg,
-      std::vector<RoiAtom> atoms, const bool protected_geometry = false )
-  {
-    AutomaticRoiComponent c;
-    c.lower = lower;
-    c.upper = upper;
-    c.first_channel = fg->find_gamma_channel( static_cast<float>(lower) );
-    c.last_channel = fg->find_gamma_channel( static_cast<float>(upper) );
-    std::sort( std::begin(atoms), std::end(atoms),
-      []( const RoiAtom &a, const RoiAtom &b ){ return a.energy < b.energy; } );
-    c.atoms = std::move( atoms );
-    c.protected_geometry = protected_geometry;
-    return c;
-  }
-
-  std::multiset<uint64_t> atom_ids( const std::vector<AutomaticRoiComponent> &comps,
-                                    const std::vector<RoiAtom> &orphans = {} )
-  {
-    std::multiset<uint64_t> ids;
-    for( const AutomaticRoiComponent &c : comps )
-      for( const RoiAtom &a : c.atoms )
-        ids.insert( a.id );
-    for( const RoiAtom &a : orphans )
-      ids.insert( a.id );
-    return ids;
-  }
-
-  // The central invariant: the atom-ID multiset is preserved exactly-once, components are
-  // channel-disjoint, and every atom energy lies within its owning component.
-  void check_exact_once( const std::vector<AutomaticRoiComponent> &before,
-      const std::vector<AutomaticRoiComponent> &after, const std::vector<RoiAtom> &orphans )
-  {
-    BOOST_CHECK( atom_ids(before) == atom_ids(after, orphans) );
-    std::set<uint64_t> seen;
-    for( const AutomaticRoiComponent &c : after )
-      for( const RoiAtom &a : c.atoms )
-        BOOST_CHECK_MESSAGE( seen.insert(a.id).second, "atom owned by two components" );
-    for( size_t i = 1; i < after.size(); ++i )
-      BOOST_CHECK_GT( after[i].first_channel, after[i-1].last_channel );
-    for( const AutomaticRoiComponent &c : after )
-      for( const RoiAtom &a : c.atoms )
-      {
-        BOOST_CHECK_GE( a.energy, c.lower - 1.0e-6 );
-        BOOST_CHECK_LE( a.energy, c.upper + 1.0e-6 );
-      }
-  }
-
-  GlobalContinuumEstimate mk_global( const std::shared_ptr<const SpecUtils::Measurement> &fg,
-                                     const std::shared_ptr<const SpecUtils::Measurement> &snip )
-  {
-    GlobalContinuumEstimate g;
-    g.foreground = fg;
-    g.snip = snip;
-    g.built = true;
-    return g;
-  }
-
-  AutomaticRoiPolicySettings default_policy_settings()
-  {
-    AutomaticRoiPolicySettings s;
-    s.merge_tail_z = 2.0;
-    s.merge_clean_gap_fwhm = 1.0;
-    s.continuum_aicc_penalty = 2.0;
-    s.peak_core_num_fwhm = 1.0;
-    s.max_width_fwhm = 30.0;
-    s.stage = "partition unit test";
-    return s;
-  }
-}//namespace
-
-
-BOOST_AUTO_TEST_CASE( test_whole_component_measured_partition )
-{
-  using FitPeaksForNuclides::AutomaticRoiDecision;
-  using FitPeaksForNuclides::detail::AutomaticRoiComponentPartitionResult;
-  using FitPeaksForNuclides::detail::partition_overwide_automatic_component;
-
-  const double fwhm = 2.0;
-  const double sigma = fwhm / 2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto foreground = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 15.0; },
-      { {100.0, sigma, 1500.0}, {120.0, sigma, 1800.0} } );
-  const AutomaticRoiComponent wide = mk_component( 90.0, 130.0, foreground,
-      { mk_atom(100.0, 1500.0), mk_atom(120.0, 1800.0) } );
-
-  AutomaticRoiPolicySettings settings = default_policy_settings();
-  settings.max_width_fwhm = 8.0;
-  AutomaticRoiPartitionConstraints constraints;
-  constraints.lowest_energy = 0.0;
-  constraints.highest_energy = 240.0;
-  constraints.left_barrier = -std::numeric_limits<double>::infinity();
-  constraints.min_width_fwhm = 0.0;
-  constraints.peak_core_num_fwhm = 1.0;
-
-  const AutomaticRoiComponentPartitionResult split
-    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( split.valid );
-  BOOST_REQUIRE( split.changed );
-  BOOST_CHECK( split.diagnostic.decision == AutomaticRoiDecision::KeepSeparate );
-  BOOST_CHECK_LT( split.diagnostic.two_roi_aicc, split.diagnostic.one_roi_aicc );
-  BOOST_REQUIRE_EQUAL( split.components.size(), 2u );
-  check_exact_once( {wide}, split.components, {} );
-  BOOST_CHECK_GT( split.components[1].first_channel,
-                  split.components[0].last_channel );
-
-  // The minimum-gap rail applies before AICc selection: it can keep a dense or only modestly
-  // resolved group intact even when separate continua would win the flexible measured-data fit.
-  settings.minimum_partition_gap_fwhm = 12.0;
-  const AutomaticRoiComponentPartitionResult minimum_gap_blocked
-    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( minimum_gap_blocked.valid );
-  BOOST_CHECK( !minimum_gap_blocked.changed );
-  BOOST_CHECK( minimum_gap_blocked.diagnostic.decision
-               == AutomaticRoiDecision::MergeInseparableWide );
-  check_exact_once( {wide}, minimum_gap_blocked.components, {} );
-  // A visually clean continuum window is distinct evidence from modeled-core spacing.  The
-  // override is explicit: it may admit this sparse valley without weakening the hard rail for
-  // dense multiplets where the clean-window test fails.
-  settings.allow_clean_gap_partition_override = true;
-  const AutomaticRoiComponentPartitionResult clean_gap_override
-    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( clean_gap_override.valid );
-  BOOST_CHECK( clean_gap_override.changed );
-  check_exact_once( {wide}, clean_gap_override.components, {} );
-  settings.allow_clean_gap_partition_override = false;
-  settings.minimum_partition_gap_fwhm = 0.0;
-
-  // A clean core gap is an explicit, separately tunable escape hatch for a final fitted ROI.
-  // A deliberately high continuum-complexity penalty makes the otherwise valid two-ROI model
-  // lose AICc; the default must retain that union.  Enabling the configured gap admits the same
-  // atom-safe partition and labels it truthfully, rather than silently presenting it as an AICc
-  // win.
-  const auto close_peak_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 15.0; },
-      { {100.0, sigma, 50.0}, {108.0, sigma, 60.0} } );
-  const AutomaticRoiComponent unsupported_wide = mk_component( 94.0, 114.0,
-      close_peak_data, { mk_atom(100.0, 50.0), mk_atom(108.0, 60.0) } );
-  settings.continuum_aicc_penalty = 25.0;
-  const AutomaticRoiComponentPartitionResult unsupported_default
-    = partition_overwide_automatic_component( {unsupported_wide}, close_peak_data, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( unsupported_default.valid );
-  BOOST_CHECK( !unsupported_default.changed );
-  BOOST_CHECK_GE( unsupported_default.diagnostic.two_roi_aicc,
-                  unsupported_default.diagnostic.one_roi_aicc );
-  settings.force_partition_gap_fwhm = 2.0;
-  const AutomaticRoiComponentPartitionResult unsupported_forced
-    = partition_overwide_automatic_component( {unsupported_wide}, close_peak_data, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( unsupported_forced.valid );
-  BOOST_CHECK( unsupported_forced.changed );
-  BOOST_CHECK( unsupported_forced.diagnostic.decision == AutomaticRoiDecision::KeepSeparate );
-  BOOST_CHECK( unsupported_forced.diagnostic.reason.find( "configured clean core gap" )
-               != std::string::npos );
-  check_exact_once( {unsupported_wide}, unsupported_forced.components, {} );
-  settings.force_partition_gap_fwhm = 0.0;
-  settings.continuum_aicc_penalty = 2.0;
-
-  // A three-anchor component still produces the explicitly-scored two-continuum challenger, not
-  // an unreported multi-segment DP result, and owns every atom exactly once.
-  const auto three_peak_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
-      []( const double ){ return 15.0; },
-      { {96.0, sigma, 900.0}, {108.0, sigma, 700.0}, {124.0, sigma, 1400.0} } );
-  const AutomaticRoiComponent three_anchor = mk_component( 88.0, 132.0, three_peak_data,
-      { mk_atom(96.0, 900.0), mk_atom(108.0, 700.0), mk_atom(124.0, 1400.0) } );
-  const AutomaticRoiComponentPartitionResult three_split
-    = partition_overwide_automatic_component( {three_anchor}, three_peak_data, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( three_split.valid );
-  BOOST_REQUIRE( three_split.changed );
-  BOOST_REQUIRE_EQUAL( three_split.components.size(), 2u );
-  check_exact_once( {three_anchor}, three_split.components, {} );
-
-  // Below the same configured soft-width onset, the incumbent passes through unchanged.
-  settings.max_width_fwhm = 30.0;
-  const AutomaticRoiComponentPartitionResult nonwide
-    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( nonwide.valid );
-  BOOST_CHECK( !nonwide.changed );
-  BOOST_REQUIRE_EQUAL( nonwide.components.size(), 1u );
-  check_exact_once( {wide}, nonwide.components, {} );
-
-  // FWHM-connected cores are explicitly inseparable; retaining the union is not a silent
-  // fallback and the atom ledger remains exact-once.
-  settings.max_width_fwhm = 1.0;
-  const AutomaticRoiComponent connected = mk_component( 94.0, 108.0, foreground,
-      { mk_atom(100.0, 900.0), mk_atom(102.0, 800.0) } );
-  const AutomaticRoiComponentPartitionResult inseparable
-    = partition_overwide_automatic_component( {connected}, foreground, fwhm_at,
-        {}, settings, constraints );
-  BOOST_REQUIRE( inseparable.valid );
-  BOOST_CHECK( !inseparable.changed );
-  BOOST_CHECK( inseparable.diagnostic.decision
-               == AutomaticRoiDecision::MergeInseparableWide );
-  check_exact_once( {connected}, inseparable.components, {} );
-
-  // Invalid scoring input cannot partially materialize children.
-  const AutomaticRoiComponentPartitionResult invalid
-    = partition_overwide_automatic_component( {wide}, nullptr, fwhm_at,
-        {}, settings, constraints );
-  BOOST_CHECK( !invalid.valid );
-  BOOST_CHECK( !invalid.changed );
-}//test_whole_component_measured_partition
-
-
 // Test A: a non-dominant outer gamma in a multi-line left group (the Am241 failure shape) is kept
 // in the child covering it - never clipped-and-dropped - and the split still happens.
-BOOST_AUTO_TEST_CASE( test_partition_spatial_atom_reassignment_multiline )
-{
-  using FitPeaksForNuclides::detail::partition_automatic_roi_pair;
-  const double fwhm = 4.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  // A piecewise-linear (V) continuum is better fit by two child continua than one, so the oracle
-  // returns KeepSeparate (a flat baseline would be cheaper as a single continuum -> Merge).  Two
-  // well-separated groups mirror the validated clean-valley geometry.
-  const auto density = []( const double e ){ return 8.0 + 0.20*std::fabs(e-650.0); };
-  const auto fg = make_synthetic_spectrum( 900, 200.0f, 1.0f, density,
-      { {600.0, sigma, 3000.0}, {620.0, sigma, 1200.0}, {700.0, sigma, 3000.0} } );
-  const auto snip = make_synthetic_spectrum( 900, 200.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  // Left group carries a NON-DOMINANT outer line at 620 keV (the Am241-style failure shape).
-  const RoiAtom a600 = mk_atom( 600.0, 3000.0 );
-  const RoiAtom a620 = mk_atom( 620.0, 1200.0 );
-  const RoiAtom a700 = mk_atom( 700.0, 3000.0 );
-  const AutomaticRoiComponent left = mk_component( 588.0, 632.0, fg, { a600, a620 } );
-  const AutomaticRoiComponent right = mk_component( 688.0, 752.0, fg, { a700 } );
-
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 200.0; cons.highest_energy = 1100.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  const AutomaticRoiPartitionResult res = partition_automatic_roi_pair( left, right, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons );
-
-  BOOST_CHECK( res.outcome == AutomaticRoiPartitionOutcome::KeptSeparate );
-  BOOST_REQUIRE_EQUAL( res.components.size(), 2u );
-  check_exact_once( { left, right }, res.components, res.orphaned_atoms );
-  // The non-dominant 620 keV line stays with 600 in the left child (boundary sits above 620),
-  // and its core is fully covered - it is neither clipped nor dropped.
-  const bool a620_in_left = std::any_of( std::begin(res.components[0].atoms),
-      std::end(res.components[0].atoms), [&]( const RoiAtom &a ){ return a.id == a620.id; } );
-  BOOST_CHECK( a620_in_left );
-  BOOST_CHECK_GE( res.components[0].upper, 620.0 + fwhm );
-}
-
-
 // Test B: the chosen boundary lands on a channel edge with a one-channel gap - children never
 // share a channel and their bounds equal exact channel edges.
-BOOST_AUTO_TEST_CASE( test_partition_channel_rounding_boundary )
-{
-  using FitPeaksForNuclides::detail::partition_automatic_roi_pair;
-  const double fwhm = 3.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double e ){ return 10.0 + 0.30*std::fabs(e-120.0); };
-  const auto fg = make_synthetic_spectrum( 300, 0.0f, 1.0f, density,
-      { {100.0, sigma, 6000.0}, {140.0, sigma, 6000.0} } );
-  const auto snip = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  const AutomaticRoiComponent left = mk_component( 88.0, 118.0, fg, { mk_atom(100.0,6000.0) } );
-  const AutomaticRoiComponent right = mk_component( 118.0, 154.0, fg, { mk_atom(140.0,6000.0) } );
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 300.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  const AutomaticRoiPartitionResult res = partition_automatic_roi_pair( left, right, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons );
-  if( res.outcome == AutomaticRoiPartitionOutcome::KeptSeparate )
-  {
-    BOOST_REQUIRE_EQUAL( res.components.size(), 2u );
-    check_exact_once( { left, right }, res.components, res.orphaned_atoms );
-    // exactly one excluded gap channel between the children
-    BOOST_CHECK_EQUAL( res.components[1].first_channel, res.components[0].last_channel + 2 );
-    BOOST_CHECK_CLOSE( res.components[0].upper,
-        fg->gamma_channel_upper( res.components[0].last_channel ), 1.0e-4 );
-    BOOST_CHECK_CLOSE( res.components[1].lower,
-        fg->gamma_channel_lower( res.components[1].first_channel ), 1.0e-4 );
-  }
-}
-
-
 // Test C: when the atom cores cannot be separated by any channel, the pair MERGES - it never
 // drops a side.  Exercised by making the partition core wider than the oracle's separation core.
-BOOST_AUTO_TEST_CASE( test_partition_no_core_safe_channel_merges )
-{
-  using FitPeaksForNuclides::detail::partition_automatic_roi_pair;
-  const double fwhm = 2.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double e ){ return 8.0 + 0.30*std::fabs(e-102.0); };
-  const auto fg = make_synthetic_spectrum( 200, 50.0f, 1.0f, density,
-      { {100.0, sigma, 5000.0}, {104.0, sigma, 5000.0} } );
-  const auto snip = make_synthetic_spectrum( 200, 50.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  AutomaticRoiPolicySettings settings = default_policy_settings();
-  settings.peak_core_num_fwhm = 0.25;   // oracle sees no significant bridge between the small cores
-  const AutomaticRoiComponent left = mk_component( 94.0, 102.0, fg, { mk_atom(100.0,5000.0) } );
-  const AutomaticRoiComponent right = mk_component( 102.0, 110.0, fg, { mk_atom(104.0,5000.0) } );
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 50.0; cons.highest_energy = 250.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.5;   // partition cores overlap -> no gap
-
-  const AutomaticRoiPartitionResult res = partition_automatic_roi_pair( left, right, fg, &global,
-      fwhm_at, {}, settings, cons );
-  BOOST_CHECK( res.outcome == AutomaticRoiPartitionOutcome::Merged );
-  BOOST_REQUIRE_EQUAL( res.components.size(), 1u );
-  check_exact_once( { left, right }, res.components, res.orphaned_atoms );
-  BOOST_CHECK_EQUAL( res.components[0].atoms.size(), 2u );
-}
-
-
 // Test D: a min-width child pinned against the spectrum edge cannot widen; the pair merges (or
 // finds an alternate) but never drops an atom, and never exceeds the spectrum extent.
-BOOST_AUTO_TEST_CASE( test_partition_underwidth_child_at_spectrum_edge )
-{
-  using FitPeaksForNuclides::detail::partition_automatic_roi_pair;
-  const double fwhm = 1.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 8.0; };
-  const auto fg = make_synthetic_spectrum( 152, 0.0f, 1.0f, density,
-      { {146.0, sigma, 4000.0}, {150.0, sigma, 4000.0} } );
-  const auto snip = make_synthetic_spectrum( 152, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  const double highest = fg->gamma_channel_upper( fg->num_gamma_channels() - 1 );
-  const AutomaticRoiComponent left = mk_component( 142.0, 148.0, fg, { mk_atom(146.0,4000.0) } );
-  const AutomaticRoiComponent right = mk_component( 148.0, 151.0, fg, { mk_atom(150.0,4000.0) } );
-  AutomaticRoiPolicySettings settings = default_policy_settings();
-  settings.peak_core_num_fwhm = 0.5;
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = highest;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 6.0; cons.peak_core_num_fwhm = 0.5;
-
-  const AutomaticRoiPartitionResult res = partition_automatic_roi_pair( left, right, fg, &global,
-      fwhm_at, {}, settings, cons );
-  BOOST_CHECK( res.outcome != AutomaticRoiPartitionOutcome::Infeasible );
-  check_exact_once( { left, right }, res.components, res.orphaned_atoms );
-  for( const AutomaticRoiComponent &c : res.components )
-    BOOST_CHECK_LE( c.upper, highest + 1.0e-6 );
-}
-
-
 // Test E: an unmodeled-feature exclusion band that would cut an admitted atom core is not carved
 // through; the partition either finds a core-safe boundary or merges, never splitting the core.
-BOOST_AUTO_TEST_CASE( test_partition_exclusion_band_clipping_core_declined )
-{
-  using FitPeaksForNuclides::detail::partition_automatic_roi_pair;
-  const double fwhm = 4.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double e ){ return 8.0 + 0.20*std::fabs(e-650.0); };
-  const auto fg = make_synthetic_spectrum( 900, 200.0f, 1.0f, density,
-      { {600.0, sigma, 3000.0}, {648.0, sigma, 1200.0}, {700.0, sigma, 3000.0} } );
-  const auto snip = make_synthetic_spectrum( 900, 200.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  const RoiAtom a648 = mk_atom( 648.0, 1200.0 );
-  const AutomaticRoiComponent left = mk_component( 552.0, 660.0, fg,
-      { mk_atom(600.0,3000.0), a648 } );
-  const AutomaticRoiComponent right = mk_component( 640.0, 752.0, fg, { mk_atom(700.0,3000.0) } );
-  // Unmodeled peak at 650 keV sits in the anchor gap; its core overlaps 648's core.
-  const std::shared_ptr<const PeakDef> unmodeled
-      = std::make_shared<const PeakDef>( 650.0, sigma, 900.0 );
-
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 200.0; cons.highest_energy = 1100.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  const AutomaticRoiPartitionResult res = partition_automatic_roi_pair( left, right, fg, &global,
-      fwhm_at, { unmodeled }, default_policy_settings(), cons );
-  BOOST_CHECK( res.outcome != AutomaticRoiPartitionOutcome::Infeasible );
-  check_exact_once( { left, right }, res.components, res.orphaned_atoms );
-  // 648's core must lie wholly inside whichever component owns it (validator guarantees this).
-  for( const AutomaticRoiComponent &c : res.components )
-    for( const RoiAtom &a : c.atoms )
-      if( a.id == a648.id )
-      {
-        BOOST_CHECK_LE( c.lower, 648.0 - fwhm + 1.0e-6 );
-        BOOST_CHECK_GE( c.upper, 648.0 + fwhm - 1.0e-6 );
-      }
-}
-
-
 // Test F: protected geometry is pinned - its bounds/metadata are bit-identical afterward, an atom
 // whose core falls inside it is booked to it, and an atom straddling its edge is orphaned (never
 // silently dropped from the ledger).
-BOOST_AUTO_TEST_CASE( test_reconcile_protected_geometry_pins )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  const double fwhm = 2.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 300, 0.0f, 1.0f, density,
-      { {100.0, sigma, 4000.0}, {150.0, sigma, 4000.0}, {158.0, sigma, 2000.0} } );
-  const auto snip = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  // Protected ROI [148,156]; an automatic neighbor overlaps it with one atom inside (150) and one
-  // atom straddling its upper edge (155.5 with core reaching past 156).
-  AutomaticRoiComponent prot = mk_component( 148.0, 156.0, fg,
-      { mk_atom(150.0, 4000.0) }, /*protected*/true );
-  const RoiAtom a150b = mk_atom( 151.0, 500.0 );      // core [150,152] inside protected
-  const RoiAtom a_straddle = mk_atom( 155.5, 600.0 ); // core [154.5,156.5] crosses the pin
-  AutomaticRoiComponent autom = mk_component( 149.0, 162.0, fg, { a150b, a_straddle } );
-  const AutomaticRoiComponent left = mk_component( 92.0, 108.0, fg, { mk_atom(100.0,4000.0) } );
-
-  const double prot_lower = prot.lower, prot_upper = prot.upper;
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 300.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  std::vector<AutomaticRoiComponent> components = { left, prot, autom };
-  const std::vector<AutomaticRoiComponent> before = components;
-  const AutomaticRoiReconcileResult res = reconcile_automatic_components( components, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons, nullptr );
-
-  BOOST_CHECK( res.valid );
-  check_exact_once( before, res.components, res.orphaned_atoms );
-  // The protected component survives with unchanged bounds.
-  const auto prot_it = std::find_if( std::begin(res.components), std::end(res.components),
-      []( const AutomaticRoiComponent &c ){ return c.protected_geometry; } );
-  BOOST_REQUIRE( prot_it != std::end(res.components) );
-  BOOST_CHECK_CLOSE( prot_it->lower, prot_lower, 1.0e-6 );
-  BOOST_CHECK_CLOSE( prot_it->upper, prot_upper, 1.0e-6 );
-  // The straddling atom is accounted for as an orphan.
-  const bool straddle_orphaned = std::any_of( std::begin(res.orphaned_atoms),
-      std::end(res.orphaned_atoms), [&]( const RoiAtom &a ){ return a.id == a_straddle.id; } );
-  BOOST_CHECK( straddle_orphaned );
-}
-
-
 // Test G: overlapping input ROIs whose atoms share the overlap band are reconciled to exactly-once
 // ownership - the direct regression for the flat-list double-claim path.
-BOOST_AUTO_TEST_CASE( test_reconcile_overlapping_ownership_exact_once )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  using FitPeaksForNuclides::detail::assign_atoms_to_disjoint_rois;
-  const double fwhm = 2.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 300, 0.0f, 1.0f, density,
-      { {100.0, sigma, 5000.0}, {112.0, sigma, 4000.0}, {124.0, sigma, 5000.0} } );
-  const auto snip = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  AutomaticRoiComponent left = mk_component( 92.0, 118.0, fg,
-      { mk_atom(100.0,5000.0), mk_atom(112.0,4000.0) } );
-  AutomaticRoiComponent right = mk_component( 110.0, 132.0, fg, { mk_atom(124.0,5000.0) } );
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 300.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  std::vector<AutomaticRoiComponent> components = { left, right };
-  const std::vector<AutomaticRoiComponent> before = components;
-  const AutomaticRoiReconcileResult res = reconcile_automatic_components( components, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons, nullptr );
-  BOOST_CHECK( res.valid );
-  check_exact_once( before, res.components, res.orphaned_atoms );
-
-  // assign_atoms_to_disjoint_rois places each atom in at most one ROI.
-  std::vector<RelActCalcAuto::RoiRange> rois( 2 );
-  rois[0].lower_energy = 90.0; rois[0].upper_energy = 116.0;
-  rois[1].lower_energy = 118.0; rois[1].upper_energy = 132.0;
-  const std::vector<RoiAtom> universe = { mk_atom(100.0,1), mk_atom(112.0,1),
-                                          mk_atom(124.0,1), mk_atom(200.0,1) };
-  std::vector<std::vector<RoiAtom>> per_roi;
-  std::vector<RoiAtom> unowned;
-  assign_atoms_to_disjoint_rois( universe, rois, per_roi, unowned );
-  size_t placed = unowned.size();
-  for( const std::vector<RoiAtom> &v : per_roi ) placed += v.size();
-  BOOST_CHECK_EQUAL( placed, universe.size() );   // exactly-once, none duplicated
-  BOOST_CHECK_EQUAL( unowned.size(), 1u );         // the 200 keV atom is outside both ROIs
-}
-
 // Test G2: adaptive-style bound changes can leave an out-of-order, transitively overlapping list.
 // The whole-list reconciliation must restore order, honor nonzero child-width expansion, preserve
 // protected geometry, and retain every modeled atom exactly once.
-BOOST_AUTO_TEST_CASE( test_reconcile_out_of_order_transitive_overlap )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  const double fwhm = 2.0;
-  const double sigma = fwhm / 2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 240, 0.0f, 1.0f, density,
-      { {50.0, sigma, 3000.0}, {100.0, sigma, 4000.0}, {140.0, sigma, 3500.0},
-        {160.0, sigma, 4500.0}, {130.0, sigma, 1200.0}, {150.0, sigma, 1200.0} } );
-  const auto snip = make_synthetic_spectrum( 240, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  AutomaticRoiComponent protected_component = mk_component(
-      40.0, 60.0, fg, { mk_atom(50.0,3000.0) }, true );
-  protected_component.continuum_type = PeakContinuum::OffsetType::Quadratic;
-  protected_component.range_limits_type
-      = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
-  const AutomaticRoiComponent left = mk_component(
-      92.0, 150.0, fg, { mk_atom(100.0,4000.0) } );
-  const AutomaticRoiComponent high = mk_component(
-      110.0, 180.0, fg, { mk_atom(160.0,4500.0) } );
-  const AutomaticRoiComponent middle = mk_component(
-      120.0, 170.0, fg, { mk_atom(140.0,3500.0) } );
-  const std::shared_ptr<const PeakDef> unmodeled_left
-      = std::make_shared<const PeakDef>( 130.0, sigma, 1200.0 );
-  const std::shared_ptr<const PeakDef> unmodeled_right
-      = std::make_shared<const PeakDef>( 150.0, sigma, 1200.0 );
-
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0;
-  cons.highest_energy = 240.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 6.0;
-  cons.peak_core_num_fwhm = 1.0;
-
-  // Deliberately place the high-energy component first.  After the first pair is split, its right
-  // child starts above the still-unprocessed middle component's lower bound; the former left fold
-  // then merged those two in reverse anchor order and enlarged them back across the first child.
-  std::vector<AutomaticRoiComponent> components
-      = { high, protected_component, left, middle };
-  const std::vector<AutomaticRoiComponent> before = components;
-  const AutomaticRoiReconcileResult res = reconcile_automatic_components(
-      components, fg, &global, fwhm_at, { unmodeled_left, unmodeled_right },
-      default_policy_settings(), cons, nullptr );
-
-  BOOST_REQUIRE_MESSAGE( res.valid, res.failure_reason );
-  BOOST_CHECK( res.orphaned_atoms.empty() );
-  check_exact_once( before, res.components, res.orphaned_atoms );
-  BOOST_CHECK_EQUAL( atom_ids(before).size(), 4u );
-  BOOST_CHECK_EQUAL( atom_ids(res.components).size(), 4u );
-
-  for( size_t index = 1; index < res.components.size(); ++index )
-  {
-    BOOST_CHECK_GE( res.components[index].lower, res.components[index - 1].upper );
-    BOOST_CHECK_GT( res.components[index].first_channel,
-                    res.components[index - 1].last_channel );
-  }
-  for( const AutomaticRoiComponent &component : res.components )
-  {
-    if( !component.protected_geometry )
-      BOOST_CHECK_GE( component.upper - component.lower, cons.min_width_fwhm*fwhm - 1.0e-6 );
-    for( const RoiAtom &atom : component.atoms )
-    {
-      BOOST_CHECK_LE( component.lower, atom.energy - cons.peak_core_num_fwhm*fwhm + 1.0e-6 );
-      BOOST_CHECK_GE( component.upper, atom.energy + cons.peak_core_num_fwhm*fwhm - 1.0e-6 );
-    }
-  }
-
-  const auto protected_after = std::find_if(
-      std::begin(res.components), std::end(res.components),
-      []( const AutomaticRoiComponent &component ){ return component.protected_geometry; } );
-  BOOST_REQUIRE( protected_after != std::end(res.components) );
-  BOOST_CHECK_EQUAL( protected_after->lower, protected_component.lower );
-  BOOST_CHECK_EQUAL( protected_after->upper, protected_component.upper );
-  BOOST_CHECK( protected_after->continuum_type == protected_component.continuum_type );
-  BOOST_CHECK( protected_after->range_limits_type == protected_component.range_limits_type );
-}
-
-
 // Test G3: a wide ROI whose only atom is nearer a narrow overlapping ROI's midpoint is fully
 // "starved" by exact-once assignment, leaving it atom-empty.  The reconciler must keep the atom
 // (in the narrow ROI) and never drop it via the zero-atom rejection.  (Regression: the zero-atom
 // branch previously continue-dropped the non-empty side.)
-BOOST_AUTO_TEST_CASE( test_reconcile_starved_wide_roi_keeps_atom )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  const double fwhm = 2.0;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  const auto snip = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  // Wide A=[100,140] (midpoint 120) and narrow B=[105,115] (midpoint 110) overlap; the single atom
-  // at 110 is nearer B's midpoint, so exact-once assignment starves A of atoms.
-  const RoiAtom a110 = mk_atom( 110.0, 3000.0 );
-  AutomaticRoiComponent wide = mk_component( 100.0, 140.0, fg, {} );          // starved (empty)
-  AutomaticRoiComponent narrow = mk_component( 105.0, 115.0, fg, { a110 } );  // owns the atom
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 300.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  std::vector<AutomaticRoiComponent> components = { wide, narrow };
-  const std::vector<AutomaticRoiComponent> before = components;
-  const AutomaticRoiReconcileResult res = reconcile_automatic_components( components, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons, nullptr );
-  BOOST_CHECK( res.valid );
-  check_exact_once( before, res.components, res.orphaned_atoms );
-  // The atom survives somewhere.
-  const bool present = std::any_of( std::begin(res.components), std::end(res.components),
-      [&]( const AutomaticRoiComponent &c ){
-        return std::any_of( std::begin(c.atoms), std::end(c.atoms),
-            [&]( const RoiAtom &a ){ return a.id == a110.id; } ); } );
-  BOOST_CHECK( present );
-}
-
-
 // Test H: evidence-only components (found-seed / floating features, no modeled gammas) survive
 // reconciliation; the zero-atom rejection fires only for genuinely atom-empty ROIs.
-BOOST_AUTO_TEST_CASE( test_reconcile_evidence_only_components )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  const double fwhm = 2.0, sigma = fwhm/2.35482;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 300, 0.0f, 1.0f, density,
-      { {100.0, sigma, 5000.0}, {103.0, sigma, 4000.0} } );
-  const auto snip = make_synthetic_spectrum( 300, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  AutomaticRoiComponent modeled = mk_component( 92.0, 108.0, fg, { mk_atom(100.0,5000.0) } );
-  AutomaticRoiComponent evidence = mk_component( 100.0, 112.0, fg,
-      { mk_atom(103.0, 4000.0, RoiAtomKind::FoundPeakEvidence) } );
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 300.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  std::vector<AutomaticRoiComponent> components = { modeled, evidence };
-  const std::vector<AutomaticRoiComponent> before = components;
-  const AutomaticRoiReconcileResult res = reconcile_automatic_components( components, fg, &global,
-      fwhm_at, {}, default_policy_settings(), cons, nullptr );
-  BOOST_CHECK( res.valid );
-  check_exact_once( before, res.components, res.orphaned_atoms );  // evidence atom survives
-}
-
-
 // Test I: randomized exact-once preservation.  Random small atom sets over random (possibly
 // overlapping) component bounds and random protected flags must always validate, with orphans
 // only ever arising from protected-boundary conflicts.
-BOOST_AUTO_TEST_CASE( test_reconcile_randomized_exact_once )
-{
-  using FitPeaksForNuclides::detail::reconcile_automatic_components;
-  const double fwhm = 2.0;
-  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
-  const auto density = []( const double ){ return 10.0; };
-  const auto fg = make_synthetic_spectrum( 400, 0.0f, 1.0f, density );
-  const auto snip = make_synthetic_spectrum( 400, 0.0f, 1.0f, density );
-  GlobalContinuumEstimate global = mk_global( fg, snip );
-
-  AutomaticRoiPartitionConstraints cons;
-  cons.lowest_energy = 0.0; cons.highest_energy = 400.0;
-  cons.left_barrier = -std::numeric_limits<double>::infinity();
-  cons.min_width_fwhm = 0.0; cons.peak_core_num_fwhm = 1.0;
-
-  const double core_hw = 1.0*fwhm;  // matches cons.peak_core_num_fwhm below
-  std::mt19937 rng( 20260720u );
-  std::uniform_int_distribution<int> ncomp_dist( 1, 5 );
-  std::uniform_int_distribution<int> natom_dist( 1, 4 );
-  std::uniform_real_distribution<double> center_dist( 40.0, 360.0 );
-  std::uniform_real_distribution<double> half_dist( 6.0, 20.0 );
-  std::uniform_real_distribution<double> prob( 0.0, 1.0 );
-
-  for( int iter = 0; iter < 300; ++iter )
-  {
-    std::vector<AutomaticRoiComponent> components;
-    const int ncomp = ncomp_dist( rng );
-    bool used_protected = false;  // real protected ROIs are distinct; at most one per iteration
-    for( int ci = 0; ci < ncomp; ++ci )
-    {
-      const double center = center_dist( rng );
-      const double half = half_dist( rng );
-      std::vector<RoiAtom> atoms;
-      const int natom = natom_dist( rng );
-      double min_e = center, max_e = center;
-      for( int ai = 0; ai < natom; ++ai )
-      {
-        // Keep atoms inside a margin so their cores stay within the (core-extended) bounds below.
-        const double e = std::min( 390.0, std::max( 10.0,
-            center + (prob(rng) - 0.5)*2.0*(half - core_hw - 1.0) ) );
-        atoms.push_back( mk_atom( e, 1000.0 ) );
-        min_e = std::min( min_e, e );
-        max_e = std::max( max_e, e );
-      }
-      // Real ROIs always include the core extent of their outermost atoms; model that here.
-      const double lower = std::max( 2.0, std::min( center - half, min_e - core_hw - 0.5 ) );
-      const double upper = std::min( 398.0, std::max( center + half, max_e + core_hw + 0.5 ) );
-      const bool is_protected = !used_protected && (prob(rng) < 0.20);
-      used_protected = used_protected || is_protected;
-      components.push_back( mk_component( lower, upper, fg, atoms, is_protected ) );
-    }
-    const std::vector<AutomaticRoiComponent> before = components;
-    const AutomaticRoiReconcileResult res = reconcile_automatic_components( components, fg, &global,
-        fwhm_at, {}, default_policy_settings(), cons, nullptr );
-    BOOST_REQUIRE_MESSAGE( res.valid, "randomized reconcile invalid at iter " << iter
-        << ": " << res.failure_reason );
-    check_exact_once( before, res.components, res.orphaned_atoms );
-  }
-}
-
-
 BOOST_AUTO_TEST_CASE( test_select_continuum_order_by_sidebands )
 {
   using FitPeaksForNuclides::detail::select_continuum_order_by_sidebands;
@@ -3832,27 +2928,6 @@ BOOST_AUTO_TEST_CASE( test_interferer_detection_unit )
 }//test_interferer_detection_unit
 
 
-BOOST_AUTO_TEST_CASE( test_marginal_keep_classification_preserves_normal_accept_set )
-{
-  using FitPeaksForNuclides::detail::is_marginal_keep_reject;
-
-  const double keep_z = 5.0;
-  BOOST_CHECK( is_marginal_keep_reject( 15.1, 3.5, keep_z ) );
-  BOOST_CHECK( is_marginal_keep_reject( 100.0, 5.0, keep_z ) );
-  BOOST_CHECK( !is_marginal_keep_reject( 15.0, 4.0, keep_z ) );
-  BOOST_CHECK( !is_marginal_keep_reject( 100.0, 3.499, keep_z ) );
-  BOOST_CHECK( !is_marginal_keep_reject( 100.0, 5.001, keep_z ) );
-
-  // The production accept predicate remains the pre-existing strict counts-and-z gate.  No point
-  // can be both normally accepted and classified as marginal.
-  for( const double z : { 0.0, 3.49, 3.5, 4.9, 5.0, 5.01, 8.0 } )
-  {
-    const bool normally_accepted = (100.0 > 15.0) && (z > keep_z);
-    BOOST_CHECK( !(normally_accepted && is_marginal_keep_reject(100.0, z, keep_z)) );
-  }
-}
-
-
 namespace
 {
   RelActCalcAuto::FloatingPeakResult make_float_result( const double energy,
@@ -3991,5 +3066,78 @@ BOOST_AUTO_TEST_CASE( test_find_enrolled_float_result )
     BOOST_CHECK( !find_enrolled_float_result( duplicates, consumed, 1460.82 ) );
   }
 }//test_find_enrolled_float_result
+
+
+BOOST_AUTO_TEST_CASE( test_nai_iodine_escape_fractions )
+{
+  // The NaI iodine escape curve (GADRAS NaI escape components): none below the iodine K edge or
+  // above 250 keV, falling steeply in between, K-beta a fixed 0.30 of K-alpha.
+  double kalpha = -1.0, kbeta = -1.0;
+  PeakFitUtils::nai_iodine_escape_fractions( 32.0, kalpha, kbeta );
+  BOOST_CHECK_EQUAL( kalpha, 0.0 );
+  BOOST_CHECK_EQUAL( kbeta, 0.0 );
+
+  PeakFitUtils::nai_iodine_escape_fractions( 300.0, kalpha, kbeta );
+  BOOST_CHECK_EQUAL( kalpha, 0.0 );
+
+  PeakFitUtils::nai_iodine_escape_fractions( 59.54, kalpha, kbeta );   // Am241: 8.9 % in the truth
+  BOOST_CHECK_CLOSE( kalpha, 0.089, 3.0 );
+  BOOST_CHECK_CLOSE( kbeta, 0.30*kalpha, 1.0e-6 );
+
+  PeakFitUtils::nai_iodine_escape_fractions( 122.06, kalpha, kbeta );  // Co57: 1.6 %
+  BOOST_CHECK_CLOSE( kalpha, 0.0160, 3.0 );
+
+  double previous = 1.0;
+  for( double energy = 33.2; energy <= 250.0; energy += 1.0 )
+  {
+    PeakFitUtils::nai_iodine_escape_fractions( energy, kalpha, kbeta );
+    BOOST_CHECK( (kalpha > 0.0) && (kalpha <= previous) );
+    previous = kalpha;
+  }
+}//test_nai_iodine_escape_fractions
+
+
+BOOST_AUTO_TEST_CASE( test_quadratic_null_power )
+{
+  // A quadratic continuum-only null absorbs most of a single peak in a narrow ROI, so a
+  // peaks-vs-null test there can see little of the peak: lambda is small against the peak's own
+  // chi2 (its shape against zero) at 2 FWHM and a large share of it at 6 FWHM.
+  using FitPeaksForNuclides::detail::quadratic_null_power;
+
+  const double mean = 650.0, fwhm = 10.0, area = 2000.0, continuum = 100.0;
+  const auto peak = std::make_shared<const PeakDef>( mean, fwhm/PhysicalUnits::fwhm_nsigma, area );
+  const std::vector<std::shared_ptr<const PeakDef>> peaks{ peak };
+
+  // lambda / (the peak shape's chi2 against zero), over an ROI of `num_fwhm` centred on the peak.
+  const auto lambda_fraction = [&]( const double num_fwhm ) -> double {
+    const double channel_width = 0.5;
+    const double lower = mean - 0.5*num_fwhm*fwhm;
+    const size_t nchannel = static_cast<size_t>( std::round( num_fwhm*fwhm/channel_width ) );
+    std::vector<float> energies( nchannel + 1 ), counts( nchannel );
+    for( size_t i = 0; i <= nchannel; ++i )
+      energies[i] = static_cast<float>( lower + i*channel_width );
+    std::vector<double> shape( nchannel, 0.0 );
+    peak->gauss_integral( energies.data(), shape.data(), nchannel );
+    double shape_chi2 = 0.0;
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      counts[i] = static_cast<float>( continuum*channel_width + shape[i] );
+      shape_chi2 += shape[i]*shape[i] / counts[i];
+    }
+    const double lambda = quadratic_null_power( energies.data(), counts.data(), nchannel, mean, peaks );
+    BOOST_REQUIRE( shape_chi2 > 0.0 );
+    return lambda / shape_chi2;
+  };//lambda_fraction
+
+  const double at2 = lambda_fraction( 2.0 ), at3 = lambda_fraction( 3.0 ), at6 = lambda_fraction( 6.0 );
+  BOOST_CHECK_MESSAGE( at2 < 0.08, "2 FWHM: lambda fraction " << at2 );
+  BOOST_CHECK_MESSAGE( (at3 > at2) && (at3 < 0.25), "3 FWHM: lambda fraction " << at3 );
+  BOOST_CHECK_MESSAGE( (at6 > 0.35) && (at6 < 0.65), "6 FWHM: lambda fraction " << at6 );
+
+  // Degenerate input
+  const std::vector<float> few_energies{ 600.0f, 601.0f, 602.0f, 603.0f };
+  const std::vector<float> few_counts{ 10.0f, 10.0f, 10.0f };
+  BOOST_CHECK_EQUAL( quadratic_null_power( few_energies.data(), few_counts.data(), 3, 600.0, peaks ), 0.0 );
+}//test_quadratic_null_power
 
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers

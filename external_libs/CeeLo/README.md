@@ -141,9 +141,10 @@ source macro that GEANT4 runs are exported by CeeLo itself**, so geometry and
 source are identical by construction rather than by careful transcription.
 
 The GEANT4 results are committed in
-[`tests/data/geant4_reference/`](tests/data/geant4_reference/) alongside CeeLo's
-own in [`tests/data/ceelo_reference/`](tests/data/ceelo_reference/), so anyone
-can re-run the comparison without installing GEANT4:
+[`tests/data/geant4_reference/`](tests/data/geant4_reference/), so anyone can
+re-run the comparison without installing GEANT4: regenerate CeeLo's side as
+described in [`tests/data/ceelo_reference/README.md`](tests/data/ceelo_reference/README.md),
+then run
 
 ```bash
 python3 profiling/compare_validation.py

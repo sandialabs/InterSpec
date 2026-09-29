@@ -208,6 +208,11 @@ add_test( NAME TRelActCalcAuto_ProfileScan
 add_executable( rel_act_corpus_sweep rel_act_corpus_sweep.cpp )
 target_link_libraries( rel_act_corpus_sweep PRIVATE InterSpecLib )
 
+# The fit-peaks-for-nuclides corpus evaluation (fit_peaks_corpus_eval) and its scorer's unit test
+# (TFitPeaksCorpusScore) live with the rest of the peak-fit improvement tools.
+add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../peak_fit_improve_ai"
+                  "${CMAKE_CURRENT_BINARY_DIR}/peak_fit_improve_ai" )
+
 # The JRC known-truth plutonium grid always builds, so its sources are compile-checked with every
 # other test, but it is not registered as a ctest by default: each of the three cases runs a free-age
 # solve plus bounded profile-likelihood scans over every Pu isotope, which makes the whole target a
@@ -352,6 +357,13 @@ add_executable( test_RelActCalcAuto_MassFracConstraint test_RelActCalcAuto_MassF
 target_link_libraries( test_RelActCalcAuto_MassFracConstraint PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_MassFracConstraint
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_MassFracConstraint> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_FwhmForm test_RelActCalcAuto_FwhmForm.cpp )
+target_link_libraries( test_RelActCalcAuto_FwhmForm PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_FwhmForm
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_FwhmForm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

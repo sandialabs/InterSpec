@@ -238,7 +238,7 @@ def main() -> int:
             elif sha256(path) != expected:
                 errors.append(f"stale generated output/report: {relative}")
 
-    review = ROOT / "validation/bremsstrahlung_migration_review/manual_review.json"
+    review = ROOT / "tools/prepare_cross_sections/bremsstrahlung_manual_review.json"
     if args.require_manual_approval:
         status = json.loads(review.read_text(encoding="utf-8")).get("status") if review.is_file() else None
         if status != "approved":

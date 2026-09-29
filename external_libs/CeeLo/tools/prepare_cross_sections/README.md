@@ -161,7 +161,10 @@ python3 tools/geant4_validation/generate_brems_review_bundle.py \
 
 Open `validation/bremsstrahlung_migration_review/review.html`, inspect the
 specified element/material/energy cases, then record the decision in
-`manual_review.json`. To enforce that gate locally or in a branch migration:
+`tools/prepare_cross_sections/bremsstrahlung_manual_review.json` and re-run
+`update_generated_manifest.py`. The bundle under `validation/` is generated
+output and is git-ignored; only the approval record is committed. To enforce
+that gate locally or in a branch migration:
 
 ```bash
 python3 tools/prepare_cross_sections/check_provenance.py --require-manual-approval

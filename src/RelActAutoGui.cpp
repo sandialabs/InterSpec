@@ -814,6 +814,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
       case RelActCalcAuto::FwhmForm::Berstein_4:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3) - stable"); break;
       case RelActCalcAuto::FwhmForm::Berstein_5:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4) - stable"); break;
       case RelActCalcAuto::FwhmForm::Berstein_6:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5) - stable"); break;
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower: name = WString::fromUTF8("sqrt(noise² + (A*E^s(E))²) - monotone"); break;
       case RelActCalcAuto::FwhmForm::NotApplicable: name = WString::tr("raag-use-det-eff"); break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     

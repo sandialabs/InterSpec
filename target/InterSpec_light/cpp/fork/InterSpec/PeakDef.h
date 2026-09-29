@@ -1,0 +1,1527 @@
+#ifndef PeakDef_h
+#define PeakDef_h
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <map>
+#include <cmath>
+#include <memory>
+#include <vector>
+#include <utility>
+#include <assert.h>
+#include <algorithm>
+#include <stdexcept>
+
+#include "InterSpec/LightWtShim.h"
+
+//Forward declaration
+class PeakDef;
+namespace SpecUtils{ class Measurement; }
+
+#if( LIGHT_PEAK_FILE_IO )
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
+#endif
+
+
+
+
+/**
+ 
+ TODO: When PeakDefs are copied, their continuum still points to the same PeakContinuum object,
+       meaning if the copies modify their continuum, the originals continuum also gets modified.
+       This is currently necessary since multiple PeakDefs can share a PeakContinuum.  To fix this
+       a ROI (e.g., continuum) should own the peaks, not the other way around
+ */
+
+
+/** When set to 1, the data-based step continuums (FlatStep, LinearStep, BiLinearStep) subtract
+ the minimum channel count in the ROI before forming the CDF, concentrating the step shape
+ around the peak rather than the flat continuum.  When 0, the old, pre 20260227 behavior of using raw data
+ counts for the CDF is used.
+ 
+ The visual or area difference on a range of example peaks seems pretty minimal.
+ */
+#define PEAK_CONTINUUM_DATA_STEP_SUBTRACT 1
+
+struct PeakContinuum
+{
+  enum OffsetType : int
+  {
+    /** The gaussian will sit on top of y=0.
+     No parameters.
+     */
+    NoOffset,
+    
+    /** The gaussian sits on top of a flat, constant y-offset.
+     One parameter - the number of counts in the continuum per keV.  E.g., to get counts in a channel, multiply the continuum parameter
+     value by the channel width, in keV.
+     
+     Note: This, and the other polynomial enums, have a value equal to the expected number of parameters to describe them
+     */
+    Constant = 1,
+    
+    /** The gaussian sits on top of a straight, but sloped line.
+     Two parameters.
+     The density of continuum counts (e.g., counts/keV) is given by dy = par[0] + (energy - ref_energy)*par[1], where 'ref_energy' is
+     usually the mean of the first peak in the ROI.  A 'ref_energy' is used, instead of absolute energy, for numerical stability.
+     To get the counts in a channel you must integrate the density, e.g.,
+       y_chan = par[0]*(E_1 - E_0) + par[1]*(E_1^2 - E_0^2 + 2*ref_energy*(E_0 - E_1))
+               where E_0 and E_1 is the lower and upper energies of the channel respectively.
+     */
+    Linear,
+    
+    /** Similar to #OffsetType::Linear, but a polynomial with three parameters. */
+    Quadratic,
+    
+    /** Similar to #OffsetType::Linear, but a polynomial with four parameters. */
+    Cubic,
+    
+    /** Two parameters; first gives offset as #OffsetType::Constant, with the second parameter giving change in dy (density of counts
+     per keV) between the left and right side of the ROI - the change in count density varies across the ROI as the fraction of data in the
+     ROI up to that point (if that makes any sense).
+
+     This distribution comes from section 5.3.4 ("Subtraction of Smoothed-Step Compton Continuum") of
+     Passive nondestructive assay of nuclear materials (NUREG/CR-5550; LA-UR-90-732), https://doi.org/10.2172/5428834,
+     which cites its origin as: R. Gunnink, “Computer Techniques for Analysis of Gamma-Ray Spectra" LLNL UCRL-80297 (1978).
+     */
+    FlatStep,
+    
+    LinearStep,
+    
+    BiLinearStep,
+
+    /** Like FlatStep, but uses the CDF of the peaks in the ROI to define the step shape,
+     rather than the cumulative data histogram.  This avoids circular dependence on the data
+     being fit, producing cleaner step shapes especially for low-statistics spectra.
+     Two parameters: the polynomial continuum term, and a step coefficient.
+     The step coefficient is fit by the non-linear optimizer and not by LLS.
+     */
+    FlatStepCDF,
+
+    /** Like LinearStep, but uses peak CDF for the step shape.
+     Three parameters: two polynomial continuum terms, and a step coefficient.
+     The step coefficient is fit by the non-linear optimizer and not by LLS.
+     */
+    LinearStepCDF,
+
+    /** Like BiLinearStep, but uses the CDF of the peaks in the ROI to blend from a left to a right
+     line, rather than the cumulative data histogram.  This avoids circular dependence on the data
+     being fit.
+
+     Parameterised as a linear continuum plus a *linearly varying* step coefficient:
+       density(E) = p0 + p1*E' + (s0 + s1*E')*SUM_j( amp_j * CDFbar_j(E) )
+     where E' is relative to the reference energy and CDFbar_j is peak j's ROI-anchored CDF.
+     This is algebraically the same family as blending two lines with the amplitude-weighted CDF
+     fraction, but it is *linear* in the peak amplitudes, so the amplitudes stay solvable by LLS
+     and the blend is amplitude-weighted without needing to know the amplitudes up front.
+
+     Four parameters: two polynomial terms solved by LLS, and two step coefficients fit by the
+     non-linear optimizer.
+     */
+    BiLinearStepCDF,
+
+    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
+
+     It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
+     It works by iteratively comparing each data point with the average of its neighboring points and replacing it with
+     the smaller value. This process is repeated with increasing window sizes, effectively smoothing out peaks and
+     revealing the underlying background. 
+     */
+    External
+  };//enum OffsetType
+  
+  /** The `WString::tr` key to use to render text appropriate for use as a label for the continuum type in the gui. */
+  static const char *offset_type_label_tr( const OffsetType type );
+  
+  /** Returns string to be used for XML or JSON identification of continuum type. */
+  static const char *offset_type_str( const OffsetType type );
+  
+  /** Returns the total number of parameters for a specified offset type.
+   For the CDF step types this includes the step coefficients that are optimized by non-linear
+   solvers: FlatStepCDF returns 2 (1 polynomial + 1 step), LinearStepCDF 3 (2 + 1), and
+   BiLinearStepCDF 4 (2 polynomial + 2 step).
+
+   @sa num_linear_fit_pars
+   */
+  static size_t num_parameters( const OffsetType type );
+
+  /** Returns the number of continuum parameters solved by the linear least-squares (LLS) system.
+   For non-CDF types, this is the same as num_parameters().
+   For the CDF step types this excludes the step coefficients, which are optimized by the
+   non-linear solver (Ceres/L-M) rather than the LLS: FlatStepCDF returns 1, LinearStepCDF
+   returns 2, and BiLinearStepCDF returns 2.
+
+   This is the value to pass to fit_amp_and_offset_imp() and fit_continuum() as the polynomial term count.
+
+   @sa num_parameters
+   @sa num_cdf_step_pars
+   */
+  static size_t num_linear_fit_pars( const OffsetType type );
+
+  /** Returns the number of peak-CDF step coefficients of the continuum type; i.e., the trailing
+   parameters that are bilinear with the peak amplitudes and so are fit by the non-linear solver
+   rather than the LLS.
+
+   Returns 0 for every non-CDF type, 1 for FlatStepCDF and LinearStepCDF, and 2 for
+   BiLinearStepCDF.  Always equals `num_parameters(type) - num_linear_fit_pars(type)`.
+
+   @sa num_parameters
+   @sa num_linear_fit_pars
+   */
+  static size_t num_cdf_step_pars( const OffsetType type );
+
+  /** Returns true if continuum type is FlatStep, LinearStep, BiLinearStep, FlatStepCDF, LinearStepCDF, or BiLinearStepCDF. */
+  static bool is_step_continuum( const OffsetType type );
+
+  /** Returns true if continuum type uses the CDF of the peaks in the ROI to define the step,
+   i.e., FlatStepCDF, LinearStepCDF, or BiLinearStepCDF.
+   */
+  static bool is_peak_cdf_step_continuum( const OffsetType type );
+  
+  /** Throws exception if string does not match a string returned by #offset_type_str.
+   @param str String to be tested.  Must not be a null pointer, but string does not need to be null terminated.
+   @param len The length of the string to be tested.
+   
+   Throws exception if an invalid string.
+   */
+  static OffsetType str_to_offset_type_str( const char * const str, const size_t len );
+  
+  PeakContinuum();
+  
+  //setType: makes sure things are in a consistent state.  E.g. proper number
+  //  of polynomial coefficients, or that the external continuum is kept around
+  //  when not needed.
+  void setType( OffsetType type );
+  OffsetType type() const { return m_type; }
+  
+  //setParameters: throws if NoOffset, External, or wrong number of parameters.
+  //  If uncertainties is empty, will reset uncertainties to zero
+  // - should consider renaming setPolynomialParameters(...)
+  void setParameters( double referenceEnergy,
+                     const std::vector<double> &parameters,
+                     const std::vector<double> &uncertainties );
+
+  //setParameters: a convenience function which actually calls other form of
+  //  this member function.  This function assumes both passed in arrays are
+  //  of a length equal to OffsetType; uncertainties may be a null pointer.
+  void setParameters( double referenceEnergy,
+                      const double *parameters,
+                      const double *uncertainties );
+
+  //setPolynomialCoefFitFor: sets whether the polynomial coefficient should be
+  //  fit for.  Returns if the coefficient was set; returns false if you call it
+  //  with an invalid index
+  bool setPolynomialCoefFitFor( size_t polyCoefNum, bool fit );
+
+  //setPolynomialCoef: sets the polynomial coefficient value. Returns if the
+  //  coefficient was set; returns false if you call it with an invalid index
+  bool setPolynomialCoef( size_t polyCoef, double val );
+  
+  //setPolynomialUncert: analagous to setPolynomialCoef(...), but for uncert.
+  bool setPolynomialUncert( size_t polyCoef, double val );
+  
+  double referenceEnergy() const { return m_referenceEnergy; }
+  const std::vector<double> &parameters() const { return m_values; }
+  const std::vector<double> &uncertainties() const { return m_uncertainties; }
+  std::vector<bool> fitForParameter() const { return m_fitForValue; }
+  std::shared_ptr<const SpecUtils::Measurement> externalContinuum() const { return m_externalContinuum; }
+  
+  //setGlobalContinuum: throws if not a External OffsetType.
+  void setExternalContinuum( const std::shared_ptr<const SpecUtils::Measurement> &data );
+ 
+  //setRange: sets the energy range this continuum is applicable for
+  void setRange( const double lowerenergy, const double upperenergy );
+  
+
+  /** Sets this to be a Linear OffsetType continuum, and the range to be from x0 to x1, with the resulting linear polynomial
+     relative to m_referenceEnergy == x0.
+   
+   \param data The spectrum to use
+   \param reference_energy The reference energy the equation will be based on.  Must be equal to, or between \p roi_lower
+                           and \p roi_upper.
+   \param roi_lower The lower energy of the ROI
+   \param roi_upper The upper energy of the ROI.  Must be greater than \p roi_lower.
+   \param num_lower_channels The number of channels below the ROI to use for calculating the equation; must be 1 or larger
+   \param num_upper_channels The number of channels above the ROI to use for calculating the equation; must be 1 or larger
+   
+   Note that if \p roi_lower and/or \p roi_upper dont correspond to a bin edge, then the bordering bin will be skipped if the
+   ROI extends more than 10% of the way into that bin.
+   
+   Will throw exception on input error, such as
+   */
+  void calc_linear_continuum_eqn( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const double reference_energy,
+                                 const double roi_lower, const double roi_upper,
+                                 const size_t num_lower_channels,
+                                 const size_t num_upper_channels );
+  
+  /** Returns the area of the continuum from x0 to x1.
+
+   For non-CDF types (polynomial, data-step, external), roi_peaks is ignored but must still be
+   explicitly specified.
+   For CDF step types (FlatStepCDF, LinearStepCDF, BiLinearStepCDF), roi_peaks must point to all peaks sharing
+   this ROI's continuum.
+
+   @param data Spectrum data (needed for step types; may be nullptr for polynomial/external).
+   @param roi_peaks Array of pointers to all peaks in this ROI (nullptr only for non-CDF types).
+   @param num_peaks Number of entries in roi_peaks.
+
+   If possible, use the batch overload for all channels in a ROI, as it is much more efficient
+   for stepped continua.
+   */
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data,
+                          const PeakDef * const *roi_peaks,
+                          const size_t num_peaks ) const;
+
+  /** Computes channel-by-channel continuum integrals for the entire ROI at once.
+
+   Adds each channels continuum component to the `channels` array.
+   Same semantics as the single-channel version regarding roi_peaks.
+
+   For stepped continua, using this overload rather than calling per-channel
+   makes fitting peaks a factor of 5 faster.
+
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`.  For data-based stepped continua, this must point into the energy
+          calibration energies array of `data`.
+   \param channels Channel count array integrals of continuum; will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries.
+   \param nchannel The number of channels to do the integration over.
+   \param data Spectrum data (needed for step types; may be nullptr for polynomial/external).
+   \param roi_peaks Array of pointers to all peaks in this ROI (nullptr only for non-CDF types).
+   \param num_peaks Number of entries in roi_peaks.
+   */
+  void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const PeakDef * const *roi_peaks,
+                        const size_t num_peaks ) const;
+
+  /** Convenience: single-channel with shared_ptr peak vector.
+   Extracts raw pointers and forwards to the primary overload.
+   */
+  double offset_integral( const double x0, const double x1,
+                          const std::shared_ptr<const SpecUtils::Measurement> &data,
+                          const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const;
+
+  /** Convenience: multi-channel with shared_ptr peak vector. */
+  void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data,
+                        const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks ) const;
+
+
+  /** Returns true if a _valid_ polynomial, step, or external continuum type.
+   Where valid polynomial and step continuums means any of the coefficients are non zero, not that they actually make sense.
+   */
+  bool parametersProbablySet() const;
+
+  //energyRangeDefined: returns if an energy range has explicitely been set
+  bool energyRangeDefined() const;
+
+  /** Returns true if the continuum type has polynomial parameters, including step types. */
+  bool isPolynomial() const;
+  
+  double lowerEnergy() const { return m_lowerEnergy; }
+  double upperEnergy() const { return m_upperEnergy; }
+  
+  //eqn_from_offsets: uses bin heights at lowbin and highbin to calculate the
+  //  linear continuum density coefficients, relative to referenceEnergy.
+  //  nbinEachSide: the number of bin on each side of lowbin/highbin to use
+  //                toward the continuum hight as well (0 means use just
+  //                lowbin/highbin, 1 means use 3 bins centered around
+  //                lowbin/highbin, etc)
+  static void eqn_from_offsets( size_t lowchannel,
+                                size_t highchannel,
+                                const double referenceEnergy,
+                                const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                const size_t num_lower_channels,
+                                const size_t num_upper_channels,
+                                double &m, double &b );
+  
+  //offset_eqn_integral: integrates the continuum density, specified by coefs,
+  //  to return the continuum area.
+  static double offset_eqn_integral( const double *coefs,
+                                     OffsetType type,
+                                     double x0, double x1,
+                                     const double reference_energy );
+  
+  //translate_offset_polynomial: if you want the exact same polynomial
+  //  line, but would like it with reference to a different energy,
+  //  use this function.
+  //  TODO: Does NOT support Quadratic, Cubic, or External continuum types 
+  //  TODO: Currently untested
+  static void translate_offset_polynomial( double *new_coefs,
+                                           const double *old_coefs,
+                                           OffsetType type,
+                                           const double new_reference_energy,
+                                           const double old_reference_energy );
+  bool operator==( const PeakContinuum &rhs ) const;
+ 
+  /** The serialization version of the peak/continuum format this InterSpec writes.
+
+   Version 1 adds "FlatStep", "LinearStep", and "BiLinearStep" continuum types.
+   Version 2 adds "FlatStepCDF", "LinearStepCDF", and "BiLinearStepCDF" continuum types.
+   Version 3 changes the "BiLinearStepCDF" definition to a form that covers the same shapes, but is
+   constructed to be better optimized.
+
+   The peak CSV has no version field of its own, so it tags affected `Continuum_Type` cells with
+   this number - see `PeakModel::csv_to_candidate_fit_peaks`.
+   */
+  static constexpr int sm_xmlSerializationVersion = 3;
+
+#if( LIGHT_PEAK_FILE_IO )
+  /** Writes a `<PeakContinuum>` element (InterSpec's N42 peak format) under `parent`. */
+  void toXml( rapidxml::xml_node<char> *parent, const int contId ) const;
+
+  /** Reads a `<PeakContinuum>` element, converting pre-version-3 BiLinearStepCDF coefficients
+   (which needs the `<Peak>` siblings); throws on error. */
+  void fromXml( const rapidxml::xml_node<char> *node, int &contId );
+
+  /** Converts BiLinearStepCDF coefficients from the version-2 convention (left and right lines) to
+   the version-3 one (line plus step), given the ROI's summed peak amplitude, and
+   SUM( amp_i * CDF_i(ROI lower energy) ).
+   */
+  static void convert_legacy_bilinear_step_cdf( std::vector<double> &values,
+                                                std::vector<double> &uncertainties,
+                                                const double total_amp,
+                                                const double amp_cdf0 );
+#endif
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  //equalEnough(...): tests whether the passed in PeakDef objects are
+  //  equal, for most intents and purposes.  Allows some small numerical
+  //  rounding to occur.
+  //Throws an std::exception with a brief explanaition when an issue is found.
+  static void equalEnough( const PeakContinuum &lhs, const PeakContinuum &rhs );
+#endif
+
+  
+private:
+  /** Non-CDF single-channel implementation (polynomial, data-step, external). */
+  double offset_integral_non_cdf( const double x0, const double x1,
+                                  const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
+  /** Non-CDF multi-channel batch implementation. */
+  void offset_integral_non_cdf( const float *energies, double *channels, const size_t nchannel,
+                                const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+
+  /** Energies the peak-CDF step continua anchor their CDFs to.
+
+   Returns false when no ROI energy range is set, in which case callers should use the un-anchored
+   CDF (i.e. F0=0, F1=1).  Otherwise sets `lower`/`upper` to the channel edges containing the ROI
+   bounds when `data` is usable, and to the raw ROI bounds when it is not - `data` is optional
+   here, and must remain so.
+
+   The fitters cumulative-sum unit-area channel integrals across the ROI, giving
+   `CDF(center) - CDF(roi_lower)` saturating at the ROI's upper edge.  Anchoring the analytic CDF
+   the same way is what keeps the drawn continuum equal to the fitted one.
+   */
+  bool cdf_step_anchor_energies( const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 double &lower, double &upper ) const;
+
+  /** CDF step single-channel implementation. */
+  double offset_integral_cdf_step( const double x0, const double x1,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                   const PeakDef * const *roi_peaks, const size_t num_peaks ) const;
+
+  /** CDF step multi-channel batch implementation. */
+  void offset_integral_cdf_step( const float *energies, double *channels, const size_t nchannel,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const PeakDef * const *roi_peaks, const size_t num_peaks ) const;
+
+protected:
+  OffsetType m_type;
+  
+  //m_lowerEnergy, m_upperEnergy: will be 0.0 if undefined.  Also if
+  //  m_lowerEnergy==m_upperEnergy, then will be considered undefined as well.
+  double m_lowerEnergy, m_upperEnergy;
+  
+  //m_referenceEnergy: the energy polynomials are evaluated relative to. Ex.
+  //  continuum_density = m_values[0] + (energy - m_referenceEnergy)*m_values[1];
+  double m_referenceEnergy;
+  
+  //m_values, m_uncertainties: the polynomial coefficients and their
+  //  uncertainties.  The polynomial is actually a density per keV of the
+  //  continuum, so needs to be integrated over the width of the bin.  Also,
+  //  the energy is relative to m_referenceEnergy. E.g. at the m_referenceEnergy
+  //  the continuum will have a density of m_values[0]
+  std::vector<double> m_values, m_uncertainties;
+  std::vector<bool> m_fitForValue;
+  
+  //m_externalContinuum: since the global continuum may be changed after fitting
+  //  for a peak (thus possibly resulting in a poorly fit peak), we'll keep a
+  //  refernce to the original.  This is slightly inefficient, but shouldnt be
+  //  to bad.
+  //  \TODO: need to verify when writing a SpecMeas object to a native file, if
+  //         multiple peaks share a global continuum, it is only written once in
+  //         the file.
+  //  \TODO: use #Measurement::set_energy_calibration when translating a peaks mean for energy
+  //         calibrations.
+  std::shared_ptr<const SpecUtils::Measurement> m_externalContinuum;
+  
+  friend std::ostream &operator<<( std::ostream &, const PeakContinuum & );
+};//struct PeakContinuum
+
+
+
+/** TODO: Define and implement this function
+ 
+ @param fwhm The real or estimated FWHM of the peak
+ @param energy The mean of the peak
+ @param nchannel The number of channels in the spectrum.  If specified as zero, will not be used.
+ @returns Whether this peak is likely to be from a HPGe detector or not.
+ */
+//bool is_high_resolution_peak( const float fwhm, const float energy, const size_t nchannel );
+//
+// OR
+/** Returns true if the energy per channel is more inline with a high resolution system.
+ */
+//bool is_high_resolution( const std::shared_ptr<const SpecUtils::Measurement> &data );
+//
+
+
+//findROILimit(...): returns the channel number that should be the extent of the
+//  region of interest, for the peak with the given mean and sigma.  If
+//  upper_side==true, then the bin higher in energy than the mean will be returned,
+//  otherwise it will be the bin on the lower energy side of the mean.
+//  The basic idea is to include a maximum of 11.75 sigma away from the mean
+//  of the peak, but then start at ~1.5 sigma from mean, and try to detect if
+//  a new feature is occuring, and if so, stop the region of interest there.
+//  A feature is "detected" if the value of the bin contents exceeds 2.5 sigma
+//  from the "expected" value, where the expected value starts off being the
+//  smallest bin value so far (well, this bin averaged with the bins on either
+//  side of it), and then each preceeding bin is added to this background
+//  value.
+//  This is kinda similar in principle to how PCGAP does it, but with further
+//  modifications, and I'm sure some differences; see,
+//  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
+size_t findROILimit( const PeakDef &peak, 
+                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                    const bool upper_side,
+                    const bool isHPGe );
+
+
+//findROIEnergyLimits(...): a convience function that calls findROILimit(...)
+//  inorder to set 'lowerEnengy' and 'upperEnergy'.  IF data is an invalid
+//  pointer, then PeakDef::lowerX() and PeakDef::upperX() are used.
+void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
+                         const PeakDef &peak, 
+                         const std::shared_ptr<const SpecUtils::Measurement> &data,
+                         const bool isHPGe );
+
+//Returns if area from start2 to end2 is greater than or equal to the
+//  area of (start1 to end1 minus nsigma).
+//Answers the question: is region 2 similar or greater in area as region 1
+bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
+                                    const size_t start2, const size_t end2,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                    const double nsigma );
+
+//If a polynomial continuum and the peakdoesnt specify the range, then it
+//  will look at the data histogram for when data starts increasing, and set
+//  this as the limit.
+//  `isHPGe` is only used if the peak does not have the energy range already defined.
+//Does nothing if the histogram is null.
+void estimatePeakFitRange( const PeakDef &peak, 
+                          const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                          const bool isHPGe,
+                          size_t &lower_channel, size_t &upper_channel );
+
+
+class PeakDef
+{
+  // If I was to re-write this class from scratch I would define peak mean by channel, and FWHM
+  //  by the fraction of the peak mean, and similarly for the other quantities so that it is
+  //  invariant to the energy calibration - although this isnt without issues.
+  // I would also make the PeakContinuum the primary ROI with a list of peaks belonging to it,
+  //  instead of the other way around.
+  
+public:
+  /** The skew type applied with Gaussian defined peaks.
+   
+   The skew types are listed roughly in order of what should be preferred, if it can describe the data.
+   */
+  enum SkewType
+  {
+    /** No skew - i.e., a purely Gaussian distribution. */
+    // IMPORTANT: enum numeric values are part of peak XML/backward-compat expectations.
+    // New skew types must be appended (see PeakDef.cpp version notes).
+    NoSkew,
+
+    // ========== Single-sided distributions (left tail only) ==========
+
+    /** Exp*Gauss: Convolution of Gaussian with left-sided exponential.
+
+     Also known as Exponentially Modified Gaussian (EMG). This distribution models incomplete
+     charge collection in detectors, creating a low-energy exponential tail on an otherwise
+     Gaussian peak.
+
+     See: Analytical function for fitting peaks in alpha-particle spectra from Si detectors
+     G. Bortels, P. Collaers
+     International Journal of Radiation Applications and Instrumentation. Part A. Applied Radiation and Isotopes
+     Volume 38, Issue 10, 1987, Pages 831-837
+     https://doi.org/10.1016/0883-2889(87)90180-8
+
+     Uses one skew parameter (τ): the exponential decay constant (range: 0.01-15 σ).
+     */
+    Bortel,
+
+    /** An exponential tail stitched to a Gaussian core.
+
+     See: A simple alternative to the Crystal Ball function.
+     Souvik Das, arXiv:1603.08591
+     https://arxiv.org/abs/1603.08591
+
+     Uses one skew parameter (range: 0.01-15).
+     */
+    GaussExp,
+
+    /** A Gaussian core portion and a power-law low-end tail, below a threshold.
+
+     See https://en.wikipedia.org/wiki/Crystal_Ball_function
+
+     Uses two skew parameters:
+     - SkewPar0: `alpha` - Threshold (how many sigma away from mean, range: 0.1-10)
+     - SkewPar1: `n` - Power-law exponent (range: 0.1-50)
+     */
+    CrystalBall,
+
+    // ========== Double-sided distributions (both tails) ==========
+
+    /** The GaussExp extended to exponential tails on each side of the Gaussian.
+
+     See same reference as for GaussExp.
+
+     Uses two skew parameters:
+     - SkewPar0: Lower tail skew (range: 0.01-15)
+     - SkewPar1: Upper tail skew (range: 0.01-15)
+     */
+    ExpGaussExp,
+
+    /** A "double-sided" version of the Crystal Ball distribution to account for high-energy skew.
+
+     See: Search for resonances in diphoton events at $$ \sqrt{s}=13 $$ TeV with the ATLAS detector
+     Aaboud, M., G. Aad, B. Abbott, J. Abdallah, O. Abdinov, B. Abeloos, R. Aben, et al. 2016
+     http://nrs.harvard.edu/urn-3:HUL.InstRepos:29362185
+     Chapter 6
+
+     Note also that CERNs ROOT package implements this function, with likely with some consideration
+     for power laws between 1 and 1.00001, that we dont currently do.  However, this implementation
+     is independent of the ROOT implementation, and treats the distribution as having unit area
+     when integrated over all `x`, which it doesnt appear the ROOT implementation does (but I didnt
+     check)
+     https://root.cern.ch/doc/master/RooCrystalBall_8cxx_source.html
+
+     Uses four skew parameters:
+     - SkewPar0: `alpha_low` - Lower threshold (range: 0.1-10)
+     - SkewPar1: `n_low` - Lower power-law exponent (range: 0.1-50)
+     - SkewPar2: `alpha_high` - Upper threshold (range: 0.1-10)
+     - SkewPar3: `n_high` - Upper power-law exponent (range: 0.1-50)
+     */
+    DoubleSidedCrystalBall,
+
+    // ========== Mixed distributions (special cases) ==========
+
+    /** Voigt+Exp*Gauss: Voigt profile mixed with Exp*Gauss distribution.
+
+     This distribution is intended for fitting x-ray peaks measured with HPGe detectors, where the
+     natural atomic line width (Lorentzian) convolves with the detector resolution (Gaussian),
+     and incomplete charge collection creates a low-energy exponential tail (modeled by Exp*Gauss).
+
+     The Voigt profile is computed using the Faddeeva function adapted from the MIT Faddeeva package.
+
+     Uses 3 skew parameters:
+     - SkewPar0: `gamma_lor` - Lorentzian HWHM (atomic broadening) in keV (range: 0.001-0.5 keV).
+                 The peak creator (e.g., RelActAuto) should look up this value using
+                 `get_xray_lorentzian_width()` for known elements, and mark the parameter as fixed.
+                 For unknown elements or when lookup fails, this can be left as a fittable parameter.
+     - SkewPar1: `R` - Mixing ratio (range: 0.0-1.0). When R=0, the distribution is pure Voigt and `tau`
+                 has no effect. When R=1, the distribution is pure Exp*Gauss and `gamma_lor` has no effect.
+     - SkewPar2: `tau` - Exp*Gauss exponential decay constant (same as Bortel skew type, range: 0.01-15 σ).
+                 Controls the exponential tail slope from incomplete charge collection.
+     */
+    VoigtPlusBortel,
+
+    /** Gauss+Exp*Gauss: Weighted mixture of Gaussian and Exp*Gauss.
+
+     A simple weighted mixture of Gaussian and Exp*Gauss distributions. Useful when the exponential
+     tail is less prominent than pure Exp*Gauss would predict.
+
+     When R=0: pure Gaussian (equivalent to NoSkew)
+     When R=1: pure Exp*Gauss (equivalent to Bortel skew type)
+
+     Uses 2 skew parameters:
+     - SkewPar0: `R` - Mixing ratio (range: 0.0-1.0, where 0=pure Gaussian, 1=pure Exp*Gauss)
+     - SkewPar1: `tau` - Exp*Gauss exponential decay constant (same as Bortel skew type, range: 0.01-15 σ)
+     */
+    GaussPlusBortel,
+
+    /** Double Exp*Gauss: Weighted sum of two Exp*Gauss distributions.
+
+     Convolution of Gaussian with a weighted sum of two left-sided exponentials. This is the
+     original formulation from the 1987 paper for alpha-particle spectroscopy, but can also be
+     useful for gamma spectroscopy when a single exponential tail is insufficient.
+
+     See: Analytical function for fitting peaks in alpha-particle spectra from Si detectors
+     G. Bortels, P. Collaers (1987)
+     https://doi.org/10.1016/0883-2889(87)90180-8
+
+     Uses 3 skew parameters:
+     - SkewPar0: `tau1` - First exponential decay constant (typically close to sigma, range: 0.01-15 σ)
+     - SkewPar1: `tau2_delta` - Non-negative delta where tau2 = tau1 + tau2_delta (range: 0.0-10 σ).
+                 When tau2_delta=0, reduces to single Exp*Gauss.
+     - SkewPar2: `eta` - Weight of second exponential (range: 0.0-1.0). eta=0 gives pure Exp*Gauss with tau1,
+                 eta=1 gives pure Exp*Gauss with tau2.
+     */
+    DoubleBortel,
+
+    // ========== GADRAS peak-shape distributions ==========
+
+    /** GADRAS peak shape for "generic" detector materials (NaI, HPGe, CsI, LaBr3, ...).
+
+     A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces the
+     Fortran shape).  The tails are described by low/high skew magnitudes whose energy dependence is
+     intrinsic to the distribution (via the skew "power" terms), so this type does NOT use InterSpec's
+     generic energy-dependent-skew machinery.
+
+     Uses 6 skew parameters:
+     - SkewPar0: `low_skew`         - low-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
+     - SkewPar1: `high_skew`        - high-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
+     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent.  Fixed detector characteristic.
+     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent.  Fixed detector characteristic.
+     - SkewPar4: `low_skew_extent`  - low-tail slope shaping.  Fixed detector characteristic.
+     - SkewPar5: `high_skew_extent` - high-tail slope shaping.  Fixed detector characteristic.
+     */
+    GadrasGeneric,
+
+    /** GADRAS peak shape for CZT / CdTe detector materials.
+
+     Same parameterization as `GadrasGeneric`, but uses the CZT/CdTe tail construction internally.
+
+     Uses 6 skew parameters, identical meaning to `GadrasGeneric` (see above).
+     */
+    GadrasCZT,
+
+    /** Sentinel value for bounds checking and iteration. Not a valid skew type. */
+    NumSkewType
+  };//enum SkewType
+  
+  enum DefintionType
+  {
+    GaussianDefined,
+    DataDefined
+  };//enum DefintionType
+  
+  /** Returns "GaussianDefined" or "DataDefined". */
+  static const char *to_str( const DefintionType type );
+  
+  /** Returns the `DefintionType`; if does not contain with "GaussianDefined" or "DataDefined", throws exception. */
+  static DefintionType peak_type_from_str( const char * const str );
+  
+  enum CoefficientType
+  {
+    Mean,
+    Sigma,
+    GaussAmplitude,
+    SkewPar0,
+    SkewPar1,
+    SkewPar2,
+    SkewPar3,
+    SkewPar4,
+    SkewPar5,
+    Chi2DOF,           //for peaks that share a ROI/Continuum, this values is for entire ROI/Continuum
+    NumCoefficientTypes
+  };//enum CoefficientType
+
+  enum SourceGammaType
+  {
+    NormalGamma,
+    AnnihilationGamma,
+    SingleEscapeGamma,
+    DoubleEscapeGamma,
+    XrayGamma
+  };//enum SourceGammaType
+  
+  //gammaTypeFromUserInput: guesses SourceGammaType from txt string.
+  //  After calling txt will not contain the dingle/double escape peak text.
+  //  strings recognized as something other than DecayGamma, are:
+  //  'se ', 's.e.', 'de', 'de ', 'single escape', 'double escape'
+  static void gammaTypeFromUserInput( std::string &txt, SourceGammaType &type );
+  
+  /** Function to extract energy from a peaks source string, such as "U238 185.7 keV".
+   On success, returns energy extracted, as well as modifies the input string to remove the portion of the string that specified the energy.
+   On failure, returns -1.0 and does not modify input string.
+   Input is case insensitive.
+   
+   Examples input strings that will be successful:
+    "fe xray 98.2 kev"         -> {98.2, "fe xray"},
+    "5.34e+2 keV"              -> {534, ""},
+    "hf178m 5.34e-3 Mev" -> {5.34, "hf178m"},
+    "8.0E+02 kev hf178m" -> {800, "hf178m"},
+    "hf178m2 574."            -> {574, "hf178m2"},
+    "u232 98"                     -> {98, "u232"},
+    "3.3mev be(a,n)"          -> {3300, "be(a,n)"},
+    "co60 1173.23"            -> {1173.23, "co60"},
+    "co60 1173.23 kev"     -> {1173.23, "co60"},
+    "Pb 98.2"                     -> {98.2,"Pb"}
+   Examples input strings that will NOT be successful:
+    "98 u232", "u-232", "321 u-232", "1173.0 CO60", "Pb 98"
+   */
+  static double extract_energy_from_peak_source_string( std::string &str );
+  
+  
+  static const char *to_string( const CoefficientType type );
+  static const char *to_string( const SkewType type );
+  static const char *to_label( const SkewType type );
+  static SkewType skew_from_string( const std::string &skew_str );
+  
+  /** Gives reasonable range for skew parameter values, as well as a reasonable starting value.
+   
+   Returns true if limits if the #CoefficientType is applicable to #SkewType, or else returns false and
+   sets values to all zero
+   */
+  static bool skew_parameter_range( const SkewType skew_type, const CoefficientType coefficient,
+                                   double &lower_value, double &upper_value,
+                                   double &starting_value, double &step_size );
+  
+  /** Returns the number of parameters required to describe the skew type.
+   Will return 0, 1, 2, 3, 4, or 6 (the GADRAS types use 6).
+   */
+  static size_t num_skew_parameters( const SkewType skew_type );
+
+  /** Returns if a skew parameter has an energy dependence across the spectrum, or if the parameter should have
+   the same value, no matter the energy of the peak.
+
+   This is currently experimental - I dont actually know!!!
+   */
+  static bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient );
+
+  /** Returns the value to fix a skew coefficient at in order to remove skew (i.e. make the peak a
+   pure Gaussian, or as close as the model allows).
+
+   The "no skew" limit is at a different end of the parameter range for different skew models: some
+   reach a pure Gaussian at an exact finite value (e.g. Bortel skew=0, GaussPlusBortel R=0), while
+   GaussExp/ExpGaussExp/CrystalBall approach a Gaussian only asymptotically, so their no-skew value
+   is taken as the (negligible-tail) upper bound from #skew_parameter_range.  Coefficients that no
+   longer affect the shape once skew is turned off (e.g. CrystalBall `n`, a Bortel decay constant
+   paired with a zeroed mixing fraction) are set to a neutral starting value.
+
+   Returns true and sets `no_skew_value` when `skew_type` has a reachable no-skew configuration and
+   `coefficient` applies to it; otherwise returns false (e.g. DoubleBortel, which has no pure-Gaussian
+   limit, or a coefficient not used by `skew_type`).  Used by RelActAuto auto-simplify to drop a skew
+   degree of freedom the data does not want (see #skew_parameter_range for the bounds rationale).
+   */
+  static bool skew_no_skew_value( const SkewType skew_type, const CoefficientType coefficient,
+                                  double &no_skew_value );
+
+  /** Returns whether a given skew parameter should be fit (varied) by default, versus held fixed.
+
+   Most skew types fit all their parameters by default, so this returns true for any parameter within
+   `num_skew_parameters(skew_type)`.  The GADRAS types are an exception: only the two amplitude parameters
+   (SkewPar0=low_skew, SkewPar1=high_skew) are fit by default; the energy-dependence powers and tail extents
+   (SkewPar2..SkewPar5) are fixed detector characteristics.
+   */
+  static bool skew_parameter_fit_by_default( const SkewType skew_type, const CoefficientType coefficient );
+
+public:
+  PeakDef();
+
+  //The following constructor constructs a gaussian peak with no skew or
+  //  self defined background/continuum.
+  PeakDef( double m, double s, double a );
+
+  //The following constructor make a peak were m_type==PeakDef::DefintionType::DataDefined and
+  //  instead the peak will be drawn as the difference between data and
+  //  background.  If a background histogram is not provided than a
+  //  strait line spanning lowerx and upperx will be used.
+  //This usage of PeakDef has not been well tested
+  PeakDef( double lowerx, double upperx, double mean,
+            std::shared_ptr<const SpecUtils::Measurement> data, std::shared_ptr<const SpecUtils::Measurement> background );
+
+//  PeakDef( const PeakDef &rhs );
+//  const PeakDef &operator=( const PeakDef &rhs );
+
+  //continuum(): access the continuum
+  const std::shared_ptr<PeakContinuum> &continuum();
+  std::shared_ptr<const PeakContinuum> continuum() const;
+  
+  //getContinuum(): garunteed to be a valid pointer
+  std::shared_ptr<PeakContinuum> getContinuum();
+  
+  //setContinuum(...): input must be a valid pointer or exception will be thrown
+  void setContinuum( std::shared_ptr<PeakContinuum> continuum );
+  
+  //makeUniqueNewContinuum(): clones the current continuum, and sets it to be
+  //  the one used; this is handy for instances when you want to be sure no
+  //  other peaks share the continuum
+  void makeUniqueNewContinuum();
+  
+  void reset();
+
+  inline double mean() const;
+  inline double sigma() const;  //throw exception if not a gausPeak
+  inline double fwhm() const;
+  inline double amplitude() const;
+  inline bool gausPeak() const;
+  
+  //The below should in principle take care of gaussian area and the skew area
+  double peakArea() const;
+  double peakAreaUncert() const;
+  
+  //setPeakArea(): sets the area of the Gaussian + Skew (not just the gaussian
+  //  component)
+  void setPeakArea( const double a );
+  void setPeakAreaUncert( const double a );
+  
+  /** Returns the area between the continuum and data, everywhere data is above
+     continuum in the ROI.
+
+   KNOWN LIMITATION: evaluates the continuum with `this` as the ROI's only peak.  The peak-CDF step
+   continua (FlatStepCDF/LinearStepCDF/BiLinearStepCDF) build their step from
+   `SUM_j(amp_j*CDFbar_j)` over every peak sharing the ROI, so for one of those shared by several
+   peaks the continuum comes back too small and the returned area correspondingly too large.
+   `PeakDef` has no back-pointer to its ROI siblings, so fixing this means an overload taking them;
+   until then, prefer computing the area at a call site that has the ROI's peaks in hand.  Most
+   callers only reach this for data-defined (`!gausPeak()`) peaks, which are not given a CDF step
+   continuum in practice - but `BatchInfoLog` calls it for every peak, and writes the result to the
+   batch report's `AreaBetweenContinuumAndData` field.
+   */
+  double areaFromData( std::shared_ptr<const SpecUtils::Measurement> data ) const;
+  
+  
+  inline double meanUncert() const;
+  inline double sigmaUncert() const;
+  inline double amplitudeUncert() const;
+
+
+  inline void setMean( const double m );
+  inline void setSigma( const double s );
+  inline void setAmplitude( const double a );
+
+  inline void setMeanUncert( const double m );
+  inline void setSigmaUncert( const double s );
+  inline void setAmplitudeUncert( const double a );
+
+
+  inline bool useForEnergyCalibration() const;
+  inline void useForEnergyCalibration( const bool use );
+  /** Returns the raw user preference for energy calibration, without checking source assignment */
+  inline bool useForEnergyCalibrationUserPreference() const { return m_useForEnergyCal; }
+
+  inline bool useForShieldingSourceFit() const;
+  inline void useForShieldingSourceFit( const bool use );
+  /** Returns the raw user preference for shielding/source fit, without checking source assignment */
+  inline bool useForShieldingSourceFitUserPreference() const { return m_useForShieldingSourceFit; }
+
+  inline bool useForManualRelEff() const;
+  inline void useForManualRelEff( const bool use );
+  /** Returns the raw user preference for manual relative efficiency, without checking source assignment */
+  inline bool useForManualRelEffUserPreference() const { return m_useForManualRelEff; }
+  
+  /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
+   been defined.
+   */
+  inline bool useForDrfIntrinsicEffFit() const;
+  inline void setUseForDrfIntrinsicEffFit( const bool use );
+  inline bool useForDrfFwhmFit() const;
+  inline void setUseForDrfFwhmFit( const bool use );
+  inline bool useForDrfDepthOfInteractionFit() const;
+  inline void setUseForDrfDepthOfInteractionFit( const bool use );
+  
+  
+  inline double chi2dof() const;
+  inline bool chi2Defined() const;
+
+  inline const std::string &userLabel() const;
+  inline void setUserLabel( const std::string &utf8Label );
+  
+  /** Where a peak's photons come from; the light version's stand-in for InterSpec's
+   SandiaDecay/ReactionGamma pointers.
+   */
+  struct Source
+  {
+    enum class Kind : int { None, Nuclide, Xray, Reaction };
+
+    Kind kind = Kind::None;
+    /** Nuclide symbol (e.g. "Cs137"), element symbol (e.g. "Pb"), or reaction (e.g. "H(n,g)"). */
+    std::string name;
+    /** Nuclide that actually emitted the photon (e.g. "Ba137m"); may be empty. */
+    std::string decay_parent;
+    /** Daughter of the decay that emitted the photon (e.g. "Ba137"); may be empty.  With
+     `decay_parent`, it lets InterSpec find the nuclear transition when reading peaks from a file. */
+    std::string decay_child;
+    /** Photon energy, before any single/double escape subtraction. */
+    float particle_energy = 0.0f;
+    SourceGammaType gamma_type = NormalGamma;
+
+    bool operator==( const Source &rhs ) const;
+  };//struct Source
+
+  /** Remove any Nuclide, Reaction, or Xray associated with the peak. */
+  void clearSources();
+
+  /** Check if nuclide, xray, or reaction has been set. */
+  bool hasSourceGammaAssigned() const;
+
+  /** Returns the source name if defined, else an empty string. */
+  std::string sourceName() const;
+
+  const Source &source() const;
+  void setSource( const Source &src );
+
+  SourceGammaType sourceGammaType() const;
+
+  //gammaParticleEnergy(): returns the energy of the gamma/xray responsible for
+  //  this peak.  For single and double escape peaks, the 511 or 1022 keV is
+  //  subtracted off.
+  //Throws an exception if there is no gamma associated with this peak.
+  float gammaParticleEnergy() const;
+
+
+  /** Sets values of quantities/items that are not fit from the data.
+   So, whether to use for energy calibration, peak color, wether a quantity should be fit for, etc.
+   
+   @param parent The peak whose values should be copied
+   @param inheritNonFitForValues If true, then quantities that currently are selected to not be fit from data, but in principle could
+          be, will also be copied.  So for example, if the peak-mean is selected to not be fit for, and this parameter is true, then the
+          mean from \p parent will also be copied to *this.
+   
+   This function does not modify continuum extent, reference energy, or polynomial type, but does copy if polynomial coefficients should
+   be fit for, only (or if different polynomial order continuums, copies up to the lesser order of the two continuums).
+   
+   TODO: consider if more continuum information should be copied, like polynomial values not being
+         fit for, or continuum type.
+   */
+  void inheritUserSelectedOptions( const PeakDef &parent,
+                                  const bool inheritNonFitForValues );
+
+  double lowerX() const;
+  double upperX() const;
+  inline double roiWidth() const;
+  
+  /** Returns the the area of the Gaussian and Skew (if applicable) components of the peak,
+   between x0 and x1.
+   */
+  double gauss_integral( const double x0, const double x1 ) const;
+  
+  /** Adds each channels contribution from the Gaussian and Skew (if applicable) into a channel
+   array.
+   
+   The computation of the Gaussian integral calls the `erf` function twice (once for lower energy,
+   and once for upper energy of each channel), which even when using an optimized function, takes
+   up much of the CPU time of fitting peaks.  This call to get the peak area contributions to each
+   channel effectively cuts the number of calls to the `erf` function in half.
+   
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`
+   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   \param nchannel The number of channels to do the integration over.
+   */
+  void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
+  
+  
+
+
+  inline bool fitFor( CoefficientType type ) const;
+  inline void setFitFor( CoefficientType type, bool fit );
+  inline const bool *fitFors() const;
+  
+  inline double coefficient( CoefficientType type ) const;
+  inline double uncertainty( CoefficientType type ) const;
+  
+  inline const double *coefficients() const;
+  inline const double *uncertainties() const;
+  
+  inline void set_coefficient( double val, CoefficientType type );
+  inline void set_uncertainty( double val, CoefficientType type );
+
+  inline DefintionType type() const;
+  
+  inline SkewType skewType() const;
+  inline void setSkewType( SkewType );
+  
+  /** Returns currently assigned color of the peak. Wt::WColor::isDefault()==true
+      indicates no color set.
+   */
+  const Wt::WColor &lineColor() const;
+  
+  /** Sets the CSS style color of peak.
+   */
+  void setLineColor( const Wt::WColor &color );
+
+  static bool lessThanByMean( const PeakDef &lhs, const PeakDef &rhs );
+  static bool lessThanByMeanShrdPtr( const std::shared_ptr<const PeakDef> &lhs,
+                                     const std::shared_ptr<const PeakDef> &rhs );
+  
+  bool operator==( const PeakDef &rhs ) const;
+
+  
+  static bool causilyConnected( const PeakDef &lower_peak,
+                                const PeakDef &upper_peak,
+                                const double ncausality,
+                                const bool useRoiAsWell );
+  
+  //causilyDisconnected: checks if peaks plus/minus ncausality sigma overlaps.
+  //  If peak is not gaussian peak, then uses ROI extent and ignores ncausality
+  //  If 'useRoiAsWell' is specified, then this function will use the greater
+  //  of ncausality*sigma, or continuum()->lowerX()/upperX().
+  static bool causilyDisconnected( const PeakDef &lower_peak,
+                                     const PeakDef &upper_peak,
+                                     const double ncausality,
+                                     const bool useRoiAsWell );
+  
+  
+
+#if( SpecUtils_ENABLE_D3_CHART )
+  static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
+                                        const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                                        const Wt::WColor &defaultPeakColor,
+                                        int override_alpha );
+  /** Converts the given peaks to JSON suitable for sending to D3SpectrumDisplayDiv/SpectrumChartD3.js
+   @param inpeaks Peaks to convert to JSON
+   @param spectrum The spectrum the peaks are for - used for calculating stepped continua
+   @param defaultPeakColor The default color to use if the peak doesnt already have a color assigned.
+   @param override_alpha If a value in range [0,254] (inclusive range), the the alpha-value of the peak colors will be overridden by this value. A value
+          of `0` is completely clear, and a value of 254 is almost entirely solid.  A value of 255 (or -1, or 256, etc) will default to what the color has defined,
+          which is almost certainly 255.
+   */
+  static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
+                                const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                               const Wt::WColor &defaultPeakColor,
+                               int override_alpha );
+#endif
+
+#if( LIGHT_PEAK_FILE_IO )
+  /** Writes a `<Peak>` element under `parent`, in InterSpec's N42 format, and its continuum under
+   `continuum_parent` (if not already in `continuums`, which maps continua to their IDs).
+   */
+  rapidxml::xml_node<char> *toXml( rapidxml::xml_node<char> *parent,
+                                   rapidxml::xml_node<char> *continuum_parent,
+                                   std::map<std::shared_ptr<PeakContinuum>,int> &continuums ) const;
+
+  /** Reads a `<Peak>` element.  Throws if the peak is invalid; if only its source cant be read, the
+   peak is kept without one, and a message is added to `warnings` (if non-null).
+   */
+  void fromXml( const rapidxml::xml_node<char> *peak_node,
+                const std::map<int,std::shared_ptr<PeakContinuum>> &continuums,
+                std::vector<std::string> *warnings );
+
+  /** For reading data-defined peaks from a peak CSV. */
+  void setPeakType( const DefintionType type ) { m_type = type; }
+#endif
+  
+
+  friend std::ostream &operator<<( std::ostream &stream, const PeakDef &peak );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  //equalEnough(...): tests whether the passed in PeakDef objects are
+  //  equal, for most intents and purposes.  Allows some small numerical
+  //  rounding to occur.
+  //Throws an std::exception with a brief explanaition when an issue is found.
+  static void equalEnough( const PeakDef &lhs, const PeakDef &rhs );
+#endif
+  
+public:
+  std::string m_userLabel;  //Encoded as UTF8
+  
+  DefintionType m_type;
+  SkewType m_skewType;
+  double m_coefficients[NumCoefficientTypes];
+  double m_uncertainties[NumCoefficientTypes];
+  bool m_fitFor[NumCoefficientTypes];
+  
+  std::shared_ptr<PeakContinuum> m_continuum;
+  
+  Source m_source;
+  
+  bool m_useForEnergyCal;
+  bool m_useForShieldingSourceFit;
+  bool m_useForManualRelEff;
+  
+  
+  /** Fif this peak should be used in the detector response function model fit for intrinsic efficiency */
+  bool m_useForDrfIntrinsicEffFit;
+  bool m_useForDrfFwhmFit;
+  bool m_useForDrfDepthOfInteractionFit;
+  
+  static const bool sm_defaultUseForDrfIntrinsicEffFit;
+  static const bool sm_defaultUseForDrfFwhmFit;
+  static const bool sm_defaultUseForDrfDepthOfInteractionFit;
+  
+  /** Line color of the peak.  Will also (currently) be used to set the fill of
+      the peak, just with the alpha channel lowered.
+      Alpha not currently allowed, partially because of Wt bug parsing strings
+      with alpha specified.
+   */
+  Wt::WColor m_lineColor;
+};//struct PeakDef
+
+
+std::ostream &operator<<( std::ostream &stream, const PeakDef &peak );
+
+
+double PeakDef::mean() const
+{
+//  assert( m_type==PeakDef::GaussianDefined );
+  return m_coefficients[PeakDef::Mean];
+}
+
+double PeakDef::sigma() const
+{
+  if( m_type != PeakDef::GaussianDefined )
+    throw std::runtime_error( "PeakDef::sigma(): not gaus peak" );
+  return m_coefficients[PeakDef::Sigma];
+}
+
+double PeakDef::fwhm() const
+{
+  if( m_type != PeakDef::GaussianDefined )
+    throw std::runtime_error( "PeakDef::fwhm(): not gaus peak" );
+  return 2.35482*m_coefficients[PeakDef::Sigma];
+}
+
+double PeakDef::amplitude() const
+{
+  if( m_type != PeakDef::GaussianDefined )
+    throw std::runtime_error( "PeakDef::amplitude(): not gaus peak" );
+  return m_coefficients[PeakDef::GaussAmplitude];
+}
+
+double PeakDef::chi2dof() const
+{
+  return m_coefficients[PeakDef::Chi2DOF];
+}
+
+const std::string &PeakDef::userLabel() const
+{
+  return m_userLabel;
+}
+
+void PeakDef::setUserLabel( const std::string &utf8Label )
+{
+  m_userLabel = utf8Label;
+}
+
+bool PeakDef::chi2Defined() const
+{
+  return (m_coefficients[PeakDef::Chi2DOF] > 0.0);
+}
+
+
+bool PeakDef::gausPeak() const
+{
+  return (m_type==PeakDef::GaussianDefined);
+}
+
+double PeakDef::roiWidth() const
+{
+  return (upperX() - lowerX());
+}
+
+double PeakDef::coefficient( CoefficientType type ) const
+{
+  return m_coefficients[type];
+}
+
+bool PeakDef::fitFor( CoefficientType type ) const
+{
+  return m_fitFor[type];
+}
+
+void PeakDef::setFitFor( CoefficientType type, bool fit )
+{
+  m_fitFor[type] = fit;
+}
+
+const bool *PeakDef::fitFors() const
+{
+  return m_fitFor;
+}
+
+const double *PeakDef::coefficients() const
+{
+  return m_coefficients;
+}
+
+const double *PeakDef::uncertainties() const
+{
+  return m_uncertainties;
+}
+
+void PeakDef::set_coefficient( double val, CoefficientType type )
+{
+  m_coefficients[type] = val;
+}
+
+double PeakDef::uncertainty( CoefficientType type ) const
+{
+  return m_uncertainties[type];
+}
+
+void PeakDef::set_uncertainty( double val, CoefficientType type )
+{
+  m_uncertainties[type] = val;
+}
+
+PeakDef::DefintionType PeakDef::type() const
+{
+  return m_type;
+}
+
+PeakDef::SkewType PeakDef::skewType() const
+{
+  return m_skewType;
+}
+
+void PeakDef::setSkewType( PeakDef::SkewType t )
+{
+  m_skewType = t;
+}
+
+double PeakDef::meanUncert() const
+{
+  return m_uncertainties[PeakDef::Mean];
+}
+
+double PeakDef::sigmaUncert() const
+{
+  return m_uncertainties[PeakDef::Sigma];
+}
+
+double PeakDef::amplitudeUncert() const
+{
+  return m_uncertainties[PeakDef::GaussAmplitude];
+}
+
+
+void PeakDef::setMean( const double m )
+{
+  assert( !IsInf(m) && !IsNan(m) );
+  m_coefficients[PeakDef::Mean] = m;
+}
+
+void PeakDef::setSigma( const double s )
+{
+  assert( !IsInf(s) && !IsNan(s) );
+  
+  if( m_type != PeakDef::GaussianDefined )
+    throw std::runtime_error( "PeakDef::setSigma(): not gaus peak" );
+  m_coefficients[PeakDef::Sigma] = s;
+}
+
+void PeakDef::setAmplitude( const double a )
+{
+  assert( !IsInf(a) && !IsNan(a) );
+  
+  if( m_type != PeakDef::GaussianDefined )
+    throw std::runtime_error( "PeakDef::setAmplitude(): not gaus peak" );
+  m_coefficients[PeakDef::GaussAmplitude] = a;
+}
+
+void PeakDef::setMeanUncert( const double m )
+{
+  m_uncertainties[PeakDef::Mean] = m;
+}
+
+void PeakDef::setSigmaUncert( const double s )
+{
+  m_uncertainties[PeakDef::Sigma] = s;
+}
+
+void PeakDef::setAmplitudeUncert( const double a )
+{
+  m_uncertainties[PeakDef::GaussAmplitude] = a;
+}
+
+
+bool PeakDef::useForEnergyCalibration() const
+{
+  // We wont use this peak for fitting for energy calibration if the mean
+  //  has been fixed
+  return ( m_useForEnergyCal && m_fitFor[PeakDef::Mean]
+          && (m_source.kind != Source::Kind::None) && (m_source.particle_energy > 0.0f) );
+}//void useForEnergyCalibration() const
+
+
+void PeakDef::useForEnergyCalibration( const bool use )
+{
+  m_useForEnergyCal = use;
+}//void useForEnergyCalibration( const bool use )
+
+
+bool PeakDef::useForShieldingSourceFit() const
+{
+  if( !m_useForShieldingSourceFit || (m_source.kind != Source::Kind::Nuclide) )
+    return false;
+
+  switch( m_source.gamma_type )
+  {
+    case PeakDef::NormalGamma:
+    case PeakDef::XrayGamma:
+    case PeakDef::AnnihilationGamma:
+      return true;
+    case PeakDef::SingleEscapeGamma:
+    case PeakDef::DoubleEscapeGamma:
+      break;
+  }//switch( srcType )
+
+  return false;
+}//bool useForShieldingSourceFit() const
+
+
+void PeakDef::useForShieldingSourceFit( const bool use )
+{
+  m_useForShieldingSourceFit = use;
+}//void useForShieldingSourceFit( const bool use )
+
+
+bool PeakDef::useForManualRelEff() const
+{
+  if( !m_useForManualRelEff
+     || ((m_source.kind != Source::Kind::Nuclide) && (m_source.kind != Source::Kind::Reaction)) )
+    return false;
+
+  switch( m_source.gamma_type )
+  {
+    case PeakDef::XrayGamma:
+      return (m_source.kind == Source::Kind::Nuclide);
+
+    case PeakDef::NormalGamma:
+    case PeakDef::AnnihilationGamma:
+      return true;
+
+    case PeakDef::SingleEscapeGamma:
+    case PeakDef::DoubleEscapeGamma:
+      break;
+  }//switch( srcType )
+
+  return false;
+}//bool useForManualRelEff() const
+
+
+void PeakDef::useForManualRelEff( const bool use )
+{
+  m_useForManualRelEff = use;
+}//void useForManualRelEff( const bool use )
+
+
+bool PeakDef::useForDrfIntrinsicEffFit() const
+{
+  //if( !m_parentNuclide || !m_transition || (m_sourceGammaType != SourceGammaType::NormalGamma) )
+  //  return false;
+  
+  return m_useForDrfIntrinsicEffFit;
+}
+
+
+void PeakDef::setUseForDrfIntrinsicEffFit( const bool use )
+{
+  m_useForDrfIntrinsicEffFit = use;
+}
+
+
+bool PeakDef::useForDrfFwhmFit() const
+{
+  return m_useForDrfFwhmFit;
+}
+
+
+void PeakDef::setUseForDrfFwhmFit( const bool use )
+{
+  m_useForDrfFwhmFit = use;
+}
+
+
+bool PeakDef::useForDrfDepthOfInteractionFit() const
+{
+  return m_useForDrfDepthOfInteractionFit;
+}
+
+
+void PeakDef::setUseForDrfDepthOfInteractionFit( const bool use )
+{
+  m_useForDrfDepthOfInteractionFit = use;
+}
+
+
+/** Helper to extract the raw PeakContinuum pointer from any peak-like type.
+
+ Supports PeakDef (by value/reference), PeakDef*, shared_ptr<PeakDef>,
+ and shared_ptr<const PeakDef>.
+ */
+inline const PeakContinuum *peak_continuum_ptr( const PeakDef &p ) { return p.continuum().get(); }
+inline const PeakContinuum *peak_continuum_ptr( const PeakDef *p ) { return p ? p->continuum().get() : nullptr; }
+
+template<typename T>
+const PeakContinuum *peak_continuum_ptr( const std::shared_ptr<T> &p ) { return p ? p->continuum().get() : nullptr; }
+
+
+/** Group peak-like items by their shared PeakContinuum, returning groups sorted
+ by continuum lower energy for deterministic iteration order.
+
+ This avoids the non-determinism caused by `std::map<std::shared_ptr<PeakContinuum>, ...>`
+ whose iteration order depends on pointer values (randomized by ASLR).
+
+ @tparam PeakT Any type for which `peak_continuum_ptr()` is defined:
+         PeakDef, PeakDef*, shared_ptr<PeakDef>, shared_ptr<const PeakDef>.
+ @param peaks The peaks to group.
+ @return Vector of (raw-continuum-pointer, peaks-in-that-roi) pairs, sorted by lowerEnergy().
+         The raw pointer is for identification only; lifetime is guaranteed by the peaks themselves.
+ */
+template<typename PeakT>
+std::vector<std::pair<const PeakContinuum *, std::vector<PeakT>>>
+group_peaks_by_roi( const std::vector<PeakT> &peaks )
+{
+  std::map<const PeakContinuum *, std::vector<PeakT>> groups;
+  for( const PeakT &p : peaks )
+  {
+    const PeakContinuum * const cont = peak_continuum_ptr( p );
+    if( cont )
+      groups[cont].push_back( p );
+  }
+
+  std::vector<std::pair<const PeakContinuum *, std::vector<PeakT>>> result;
+  result.reserve( groups.size() );
+  for( auto &entry : groups )
+    result.emplace_back( entry.first, std::move( entry.second ) );
+
+  std::sort( result.begin(), result.end(),
+    []( const std::pair<const PeakContinuum *, std::vector<PeakT>> &a,
+        const std::pair<const PeakContinuum *, std::vector<PeakT>> &b ) -> bool {
+      if( a.first->lowerEnergy() != b.first->lowerEnergy() )
+        return a.first->lowerEnergy() < b.first->lowerEnergy();
+      return a.first->upperEnergy() < b.first->upperEnergy();
+    } );
+
+  return result;
+}
+
+
+#endif

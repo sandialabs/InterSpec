@@ -28,7 +28,8 @@
     dependence and its own finer uncertainty.</li>
     </ul>
     <p>Switching a geometry-modeled detector back to Flat Disk detaches its response on
-    &quot;Use&quot; (you will be asked to confirm).</p></message>
+    &quot;Use&quot; (you will be asked to confirm).  The geometry is kept, so you can switch back
+    later, but nothing uses it while the detector is Flat Disk.</p></message>
 
   <!-- Anchor tab: help text, then one of three editors, chosen by how the efficiency is
        represented (energy/efficiency points, an exp-of-log power series, or a formula).  The
@@ -236,6 +237,7 @@
   <message id="dmw-info-geom-box">{1} box, {2} × {3} × {4} (width × height × length)</message>
   <message id="dmw-info-geom-known">Physical geometry recorded</message>
   <message id="dmw-info-geom-layers">{1}; {2} endcap/housing layer(s)</message>
+  <message id="dmw-info-geom-disabled">{1} - kept, but not used (Flat Disk)</message>
   <message id="dmw-info-support">Location support</message>
   <message id="dmw-info-support-none">None - flat-disk model (on-axis efficiency scaled by solid angle; off-axis queries are flagged)</message>
   <message id="dmw-info-support-full">Full Monte-Carlo characterization ({1} profile; valid {2})</message>

@@ -1,0 +1,13 @@
+# Only sources, scripts, and test data are tracked: not build outputs, downloaded or built
+#  dependencies, or local files (see README.md).
+/build_native/
+/build_wasm/
+/dist/
+/deps/src/
+/deps/build/
+/deps/prefix/
+/deps/*.log
+/backups/
+/compile_commands.json
+/.cache/
+.DS_Store

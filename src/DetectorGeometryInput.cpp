@@ -1242,8 +1242,9 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
     return;
 
   // The DRFs own geometry, when it has one - from a generated response, or set by an importer
-  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.
-  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->geometry() )
+  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.  Stored, so a Flat
+  //  Disk detector's switched-off shape is still here to edit, or to switch back on.
+  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->storedGeometry() )
   {
     setFromDescriptor( *gd );
     return;
