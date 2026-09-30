@@ -19,10 +19,11 @@
 >   peaks, continua, optional energy-cal refit, and peak-source assignments.
 >
 > The two families share infrastructure (`foreground` / `background`, `EnergyCal`, chart
-> assets, application metadata, the Inja env, the three custom callbacks `printFixed` /
-> `printCompact` / `printExp`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
+> assets, application metadata, the Inja env, the custom callbacks `printFixed` /
+> `printCompact` / `printExp` / `nuclideUpper` / `removeExtension`); see §5.4 / §5.5 / §5.14 /
+> §5.15 / §7 / §8 / §9.
 >
-> **Last updated:** 2026-09-12
+> **Last updated:** 2026-09-29
 
 ## 1. What this is
 
@@ -266,7 +267,7 @@ inja::Environment env = BatchInfoLog::get_default_inja_env( include_dir );
 env.write( "my_template.tmplt.html", data, out_stream );
 ```
 
-`get_default_inja_env(include_dir)` enables `set_trim_blocks(true)`, registers the two
+`get_default_inja_env(include_dir)` enables `set_trim_blocks(true)`, registers the
 custom callbacks (§9), and pre-registers the eight bundled templates as named includes:
 
 - `default-act-fit-html-results`     (= `act_fit.tmplt.html`)
@@ -1870,7 +1871,7 @@ into a syntax error by adding text starting with `##`.
 
 ## 9. Custom callbacks
 
-`BatchInfoLog::get_default_inja_env()` registers three callbacks for this tool. (The
+`BatchInfoLog::get_default_inja_env()` registers five callbacks for this tool. (The
 Isotopics-by-Nuclides tool has additional callbacks like `pct`, `safe_html`,
 `scientific`, etc. — those are **not** registered for ShieldSourceFitLog and must not
 be used.)
@@ -1880,6 +1881,8 @@ be used.)
 | `printFixed(value, decimals)`     | (number, int) | string | Format `value` with fixed-point notation and exactly `decimals` digits after the decimal point. E.g. `printFixed(3.14159, 2)` → `"3.14"`. |
 | `printCompact(value, sig_figs)`   | (number, int) | string | Format `value` with `sig_figs` significant figures, using whichever of fixed or scientific notation is more compact. Backed by `SpecUtils::printCompact`. E.g. `printCompact(1.23456e5, 4)` → `"1.234E5"`; `printCompact(0.0042, 3)` → `"0.00420"`. |
 | `printExp(value, decimals)`       | (number, int) | string | Format `value` in scientific notation with exactly `decimals` digits after the decimal point, always as `d.dddE±NN` (FRMAC/Genie convention). E.g. `printExp(18910.0, 3)` → `"1.891E+04"`. Unlike `printCompact` this never falls back to fixed-point, so a column stays aligned. The exponent carries at least two digits on every platform — MSVC natively pads to three, and the extra zero is trimmed back (a genuine three-digit exponent such as `1.000E-100` is kept). A `null` value — which is what a NaN or infinity becomes in JSON — prints as `"--"`. |
+| `nuclideUpper(name)`              | (string)      | string | Upper-case, dashed form of a nuclide, or the upper-case symbol of an element. Accepts any nuclide spelling InterSpec does (`"Co60"`, `"Tc-99m"`, `"tc99m"`, `"238U"` …) and any element symbol or name (`"Pb"`, `"u"`, `"uranium"`), including the `"lead x-ray"` form used for x-ray peak sources' `SourceName`. E.g. `nuclideUpper("Tc-99m")` → `"TC-99M"`; `nuclideUpper("Co60")` → `"CO-60"`; `nuclideUpper("lead x-ray")` → `"PB"`. Anything else (reactions, unknown names) is returned unchanged. |
+| `removeExtension(name)`           | (string)      | string | Removes the last file extension, keeping any directory part. E.g. `removeExtension("some_file.n42")` → `"some_file"`; `removeExtension(Filepath)` → `"/data/spectra/cs137_pb_shielded"`; `removeExtension("a.b.n42")` → `"a.b"`. A name without an extension, or a dot-file like `".profile"`, is returned unchanged. |
 
 Prefer these callbacks over Inja expression arithmetic for any formatting that
 involves a decimal point or scientific notation.

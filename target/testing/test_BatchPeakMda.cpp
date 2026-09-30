@@ -1560,3 +1560,45 @@ BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )
                                                     fixture.detector, false );
   BOOST_CHECK( !empty_data.contains("SupplementalPeakInfo") );
 }//BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )
+
+
+BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
+{
+  set_data_dir();
+
+  inja::Environment env = BatchInfoLog::get_default_inja_env( "" );
+
+  const auto render = [&env]( const string &fcn, const string &arg ) -> string {
+    return env.render( "{{ " + fcn + "(\"" + arg + "\") }}", nlohmann::json::object() );
+  };
+
+  const vector<pair<string,string>> nuc_cases{
+    {"Co60", "CO-60"}, {"Tc99m", "TC-99M"}, {"tc-99m", "TC-99M"}, {"U235", "U-235"},
+    {"238U", "U-238"}, {"Pa234m", "PA-234M"},
+    {"Pb", "PB"}, {"u", "U"}, {"uranium", "U"}, {"lead x-ray", "PB"}, {"Pb-xray", "PB"},
+    {"Co-600", "Co-600"}, {"H(n,g)", "H(n,g)"}, {"Al27(a,a)", "Al27(a,a)"}, {"", ""}
+  };
+
+  for( const pair<string,string> &c : nuc_cases )
+    BOOST_CHECK_MESSAGE( render( "nuclideUpper", c.first ) == c.second,
+                         "nuclideUpper(\"" << c.first << "\") gave '"
+                         << render( "nuclideUpper", c.first ) << "', expected '" << c.second << "'" );
+
+  const vector<pair<string,string>> file_cases{
+    {"some_file.n42", "some_file"}, {"/a/b.c/some_file.n42", "/a/b.c/some_file"},
+    {"some.file.n42", "some.file"}, {"no_ext", "no_ext"}, {".profile", ".profile"},
+    {"dir.d/", "dir.d/"}, {"", ""}
+  };
+
+  for( const pair<string,string> &c : file_cases )
+    BOOST_CHECK_MESSAGE( render( "removeExtension", c.first ) == c.second,
+                         "removeExtension(\"" << c.first << "\") gave '"
+                         << render( "removeExtension", c.first ) << "', expected '" << c.second << "'" );
+
+  // Works on JSON values, as templates will actually use it
+  nlohmann::json data;
+  data["Filename"] = "input.n42";
+  data["Nuclide"] = "Cs137";
+  BOOST_CHECK_EQUAL( env.render( "{{ removeExtension(Filename) }}_{{ nuclideUpper(Nuclide) }}", data ),
+                     string("input_CS-137") );
+}//BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
