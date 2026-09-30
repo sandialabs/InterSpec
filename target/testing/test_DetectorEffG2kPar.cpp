@@ -232,7 +232,7 @@ namespace
 
     // Reference runs: recurse for .ecc, pair with a like-named .gis in the same
     //  directory.  Matching is case-insensitive on the stem, because the sample
-    //  corpus has case-mismatched pairs (e.g. Lab06_*.ecc vs lab06_*.gis) that a
+    //  corpus has case-mismatched pairs (e.g. Det06_*.ecc vs det06_*.gis) that a
     //  literal path build would miss on a case-sensitive filesystem.
     auto stem_lower = []( const string &path ) -> string
     {
@@ -415,6 +415,25 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
     BOOST_TEST_MESSAGE( "Detector case: " + c.dir + "  (" + std::to_string(c.runs.size())
                         + " reference runs)" );
 
+    // The cheap checks that decide whether a dropped file is tried as one of these must accept
+    //  every real one - they only see the start of the file.
+    for( const string &path : { c.parPath, c.detectorTxtPath } )
+    {
+      ifstream strm( path.c_str(), ios::in | ios::binary );
+      BOOST_REQUIRE( strm.is_open() );
+      strm.seekg( 0, ios::end );
+      const size_t file_size = static_cast<size_t>( strm.tellg() );
+      strm.seekg( 0, ios::beg );
+      string header( (std::min)( file_size, size_t(1024) ), '\0' );
+      strm.read( &header[0], header.size() );
+      const bool is_par = (path == c.parPath);
+      BOOST_CHECK_MESSAGE( is_par == DetEffG2kPar::isCandidateParFile(
+                                reinterpret_cast<const uint8_t *>( header.data() ), header.size(), file_size ),
+                           "isCandidateParFile wrong for " << path );
+      BOOST_CHECK_MESSAGE( !is_par == DetEffG2kPar::isCandidateDetectorTxt( header ),
+                           "isCandidateDetectorTxt wrong for " << path );
+    }//for( both files )
+
     // Parse both files and assemble a DRF.
     shared_ptr<DetectorPeakResponse> drf;
     BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrfFromFiles( c.parPath, c.detectorTxtPath ) );
@@ -592,7 +611,7 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
   // A germanium detector with a dead layer, so the Ge K-edge at 11.107 keV is in
   //  play, and a grid whose range STRADDLES it: crystal_k_edges keeps an edge only
   //  when it is inside the range by its 1.02/0.98 margins, which 11.107 is for a
-  //  10 keV first node.  This is the geometry LAB06 does not have (its grid starts
+  //  10 keV first node.  This is the geometry DET06 does not have (its grid starts
   //  at 45 keV, so no edge is retained and it never showed the bug).
   const string detector_txt =
     "# 99999 - SYNTHETIC-KEDGE - S/N-TEST-2\n"
@@ -998,9 +1017,9 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
   //
   // Why the two lowest bands are gated absolutely.  A relative bound is only
   //  meaningful next to the efficiency it sits on, and below 22 keV this crystal's
-  //  stored efficiency is 1e-11 to 1e-9 - seven to ten decades below its ~3e-1
-  //  peak.  The worst 10-16 keV locus is a 49% error on eps = 2.2e-09, i.e. an
-  //  absolute error of 6e-10, which cannot move any spectrum.  That residual is
+  //  stored efficiency is seven to ten decades below its peak.  The worst
+  //  10-16 keV locus is a 49% error on an efficiency ~8 decades down, an absolute
+  //  error that cannot move any spectrum.  That residual is
   //  also not reachable by node density: it is the crystal-frame lattice reading a
   //  face-frame grid, whose origins differ by `endcap_front_offset_cm`, so the
   //  angular skew grows from +0.08 deg at 300 cm to +3 deg at 8 cm against the
@@ -1257,7 +1276,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
       for( size_t b = 0; b < nbands; ++b )
       {
         if( !n_a[rg][b] && !n_b[rg][b] )
-          continue;   // LAB06 starts at 45 keV: its four low bands are legitimately empty
+          continue;   // DET06 starts at 45 keV: its four low bands are legitimately empty
         const double rms_a = n_a[rg][b]
             ? std::sqrt( sum2_a[rg][b]/static_cast<double>(n_a[rg][b]) ) : 0.0;
         char line[320];
@@ -1468,7 +1487,7 @@ BOOST_AUTO_TEST_CASE( EccMatch )
       //  The off-axis runs say so themselves (~Geometry=SPHERE); see the
       //  DetectorEffG2kPar.h header for the full evidence.  With this reading
       //  every off-axis reference run reproduces to <0.08% at node energies
-      //  (worst over the corpus: 0.0785%, LAB06 at sd1=200/sd4=350 mm); the
+      //  (worst over the corpus: 0.0785%, DET06 at sd1=200/sd4=350 mm); the
       //  axial reading misses by tens of percent to 84x.
       const double sd1 = gis.sd1_mm;
       const double sd4 = std::isnan( gis.sd4_mm ) ? 0.0 : gis.sd4_mm;

@@ -150,47 +150,52 @@ def getFWHM( energy ):
                </div>
             </li>
             <li style="padding-top:10px;">
-               <b>Upload:</b>
+               <b>Import:</b>
                <div style="padding-top:10px;">
-                  You can upload a a CSV file that lists the intrinsic efficiency at multiple
-energies in order to create a detector response function in
-                  <i>InterSpec</i>
-                  .
-The first column of the CSV file should be the energy in keV, and the second
-column should be the percent efficiency (a decimal number between 0 and 100) for
-a gamma at that energy striking the detector face to be detected within the
-photopeak centered at that energy.  Subsequent columns on each line are ignored.
-Lines in the file characterized by first non-whitespace character other
-than a digit are skipped.  The file may also be delimited by commas, spaces or
-tabs; multiple contiguous delimiters are treated as a single delimiter.
-                  <div style="padding-top:10px;">An acceptable input file may look like:</div>
-                  <div style="color: green; border: 1px solid black; padding: 2px; width:14em; margin-bottom:10px;margin-left:10px;">
-                     <div>Energy (keV), Efficiency (%)</div>
-                     <div>10, 0.0</div>
-                     <div>20,10.3</div>
-                     <div>25 28.3</div>
-                     <div>30,43.6</div>
-                     <div>35  54.0</div>
-                     <div>...</div>
-                  </div>
-                  <div>
-                     The
-                     <b>Efficiency.csv</b>
-                     file produced by &#34;GADRAS&#34; inside a detector files
-folder is an acceptable input.
-                  </div>
+                  Drop a detector efficiency file onto the area on this tab, or click it to browse
+                  for the file.  While this tab is showing, a file dropped anywhere in
+                  <i>InterSpec</i> goes to this tab, rather than being opened as a spectrum.
+                  The type of file is recognized automatically, and the options that apply to it are shown.
+                  Accepted files are:
+                  <ul>
+                     <li><i>InterSpec</i> detector responses, as XML or CSV (for example, as exported
+                        from this dialog, or from the <em>Make Detector Response</em> tool).</li>
+                     <li>A &#34;GADRAS&#34; <b>Efficiency.csv</b>, optionally with its <b>Detector.dat</b>.
+                        The <b>Detector.dat</b> adds the detector diameter, peak width response, peak shape,
+                        and crystal geometry; with the geometry, efficiencies are also available for
+                        sources off to the side of, or close to, the detector.</li>
+                     <li>A &#34;GADRAS&#34; <b>Detector.dat</b> by itself.  This describes the detector,
+                        but not its efficiency, so either add its <b>Efficiency.csv</b>, or click
+                        <em>Characterize...</em> to compute the efficiency with a Monte-Carlo simulation.</li>
+                     <li>A <b>.par</b> full-energy-peak efficiency grid, together with its
+                        <b>DETECTOR.txt</b> geometry file; both are required.  If the <b>DETECTOR.txt</b>
+                        describes several detectors, the one naming the <b>.par</b> file is used, or
+                        you will be asked to choose.</li>
+                     <li>An ISOCS <b>.ecc</b> file, or an ANGLE file.  If an ANGLE file describes the
+                        detector as well as a measured reference efficiency, it can be used as a
+                        &#34;generic detector&#34;, so efficiencies are available for any source position.</li>
+                     <li>A relative-efficiency or GammaQuant list of detectors; choose the one to use.</li>
+                     <li>A CSV file of energies and efficiencies.  The first column is the energy in keV,
+                        and the second is the efficiency; a header line saying whether the efficiency is a
+                        percentage or a fraction is recommended, for example:
+                        <div style="color: green; border: 1px solid black; padding: 2px; width:14em; margin-bottom:10px;margin-left:10px;">
+                           <div>Energy (keV), Efficiency (%)</div>
+                           <div>10, 0.0</div>
+                           <div>20,10.3</div>
+                           <div>25,28.3</div>
+                           <div>...</div>
+                        </div>
+                     </li>
+                  </ul>
+                  For a detector described by two files, drop (or select) both at once, or drop the
+                  second file on the area that asks for it.  Both files can also be dropped onto
+                  <i>InterSpec</i> together, from anywhere in the app.
                   <div style="padding-top:10px;">
-                     After uploading the efficiency file, you will be prompted to either enter the
-detector diameter, or upload a
-                     <em>Detector.dat</em>
-                     file from &#34;GADRAS&#34; so that
-the geometrical efficiency can be calculated.  If a
-                     <em>Detector.dat</em>
-                     is uploaded, the detectors peak width response will also be known to
-                     <i>InterSpec</i>
-                     as well.
-                     <ul> <div style="padding-top:10px;">The detectors' name will automatically be assigned to be the same as the 
-efficiency CSV file (minus the extension) used to create the detector.</div> </ul>
+                     For a file that lists efficiencies, choose how they are to be interpreted: as
+                     intrinsic efficiencies (for gammas striking the detector face, which needs the
+                     detector diameter), as absolute efficiencies at a given distance, or for a fixed
+                     source geometry.  The detector name defaults to the file name, and can be edited.
+                     The <em>Modify...</em> button lets you further edit the imported detector before using it.
                   </div>
                </div>
                <div style="padding-top:10px;">

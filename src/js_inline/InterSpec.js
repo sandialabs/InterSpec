@@ -17,6 +17,29 @@ function()
       return 'SecondUpUrl';
     return null;
   };
+
+  // The two halves of a detector definition, dropped together (the server checks their contents).
+  var isDrfPair = function(files){
+    if( !files || (files.length !== 2) )
+      return false;
+    const a = files[0].name.toLowerCase(), b = files[1].name.toLowerCase();
+    const pair = function(x,y){
+      return (x.endsWith('.par') && y.endsWith('.txt'))
+             || (x.endsWith('.dat') && x.includes('detector') && y.endsWith('.csv') && y.includes('eff'));
+    };
+    return pair(a,b) || pair(b,a);
+  };
+
+  // A tool with its own file drop area (registered by setupOnDragEnterDom) takes drops while it
+  //  is showing, so the app's own drop handling stays out of the way.
+  var dropAreaShowing = function(){
+    let ids = [];
+    try{ ids = JSON.parse( target.dataset.batchUploadIds || '[]' ); }catch(e){}
+    return ids.some( function(id){
+      const el = document.getElementById(id);
+      return el && (el.getClientRects().length > 0);
+    } );
+  };
   
   var uploadFcn = function(evt,urlid){
     try
@@ -33,9 +56,11 @@ function()
       
       if( window._IS.BatchUploadOnly )
         urlid = 'BatchUpUrl';
+      else if( window._IS.DrfUpUrl && isDrfPair(files) )
+        urlid = 'DrfUpUrl';  //checked before spectrum-name routing, as e.g. "BACKUP.PAR" contains "back"
 
       let files_to_upload = [];
-      if( (files.length === 1) || (urlid === 'BatchUpUrl') )
+      if( (files.length === 1) || (urlid === 'BatchUpUrl') || (urlid === 'DrfUpUrl') )
       {
         for (let file of files)
           files_to_upload.push( {url: urlid, file: file} );
@@ -312,7 +337,7 @@ function()
   target.addEventListener("dragenter", function(event){
 
       // If the "batch analysis" GUI is showing, then any file we drop will be uploaded to the batch upload URL.
-    if( window._IS.BlockFileDrops ){
+    if( window._IS.BlockFileDrops || dropAreaShowing() ){
       event.preventDefault();
       event.stopPropagation();
       return;

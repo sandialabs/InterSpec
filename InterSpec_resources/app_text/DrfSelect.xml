@@ -35,21 +35,9 @@
   <message id="reds-invalid-dir">invalid directory</message>
   <message id="reds-no-drf-in-dir">no responses in directory</message>
   <message id="reds-recursive-no-drfs-in-dir">No valid DRFs in directory, or its subdirectories.</message>
-  <message id="ds-csv-upload-desc">
-    <div style="white-space:nowrap;">
-      Efficiency File Upload:
-    </div>
-    <div>
-      For efficiency CSV, the first column is energy in keV; second is % efficient (0 through 100).
-    </div>
-    <div>
-      Intrinsic is efficiency for gammas hitting surface of detector, while Absolute is at a given distance.
-    </div>
-  </message>
   <message id="ds-det-diam">Det. Diameter:</message>
   <message id="ds-det-setback">Det. Setback:</message>
   <message id="ds-fixed-geom">Fixed Geometry</message>
-  <message id="ds-gad-det-file-label">Or Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">Example: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     Or equivalently: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Detector efficiency defined by a mathematical formula, given the energy x;
@@ -145,9 +133,9 @@
   <message id="ds-chip-tt-fwhm">Detector energy-resolution (FWHM) information.</message>
   <message id="ds-chip-uncert">Uncertainties</message>
   <message id="ds-chip-tt-uncert">Efficiency uncertainties (used to propagate detector uncertainty into fit results).  This detector reports none, so an activity fit with it will report counting statistics only.</message>
-  <message id="ds-chip-tt-uncert-data">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV, all of it supported by this detector&apos;s own data.</message>
+  <message id="ds-chip-tt-uncert-data">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV, all of it supported by this detector's own data.</message>
   <message id="ds-chip-tt-uncert-assumed">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV - but none of it is a measurement of this detector.  {3}% is the default assumed for a detector that states no uncertainty of its own (a GADRAS Detector.dat, for example), and {4}% is the model envelope.  &quot;Modify...&quot; lets you enter what you actually know.</message>
-  <message id="ds-chip-tt-uncert-split">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV - {3}% from this detector&apos;s own data, and {4}% model envelope: an allowance for asking the model about a position nobody measured.  The envelope does not shrink with more counting, and it moves every peak together.</message>
+  <message id="ds-chip-tt-uncert-split">Efficiency uncertainty, as an activity fit propagates it: {2}% at {1} keV - {3}% from this detector's own data, and {4}% model envelope: an allowance for asking the model about a position nobody measured.  The envelope does not shrink with more counting, and it moves every peak together.</message>
   <message id="ds-chip-total-eff">Total eff.</message>
   <message id="ds-chip-tt-total-eff">Total efficiency (probability of depositing any energy) - the input needed for cascade-summing corrections. This detector has none, so cascade-summing corrections are unavailable.</message>
   <message id="ds-chip-tt-total-eff-curve">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
@@ -174,26 +162,46 @@
   <message id="ds-err-det-dist-pos">Distance must be positive for absolute efficiencies</message>
   <message id="ds-warn-min-max-energy-swapped">Detector min. energy was greater than max. energy; ignoring energy range.</message>
   <message id="ds-need-det-diam">Need the detectors diameter</message>
-  <message id="ds-err-invalid-csv-format">File CSV not recognized. Please upload a valid efficiency CSV file (MakeDrf format or simple format with energy and efficiency columns).</message>
-  <message id="ds-err-parsing-gadras">Error parsing GADRAS detector: {1}</message>
-  <message id="ds-eff-type-intrinsic">Intrinsic Efficiency</message>
-  <message id="ds-eff-type-farfield">Far-Field Efficiency</message>
-  <message id="ds-eff-type-gadras">GADRAS</message>
 
-  <!-- Mode choice dialog when an ANGLE file carries a full detector model + reference curve -->
-  <message id="ds-angle-mode-title">ANGLE detector model</message>
-  <message id="ds-angle-mode-txt">This ANGLE file also contains the detector's physical model and a measured reference efficiency curve. You can use it as a generic detector (recommended, so you can compute efficiencies for arbitrary geometries), or keep this measurement's fixed-geometry curve.</message>
-  <message id="ds-angle-mode-generic">Generic detector</message>
-  <message id="ds-angle-mode-fixed">This measurement's fixed geometry</message>
-  <message id="ds-angle-mode-unavailable">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1} This measurement&apos;s fixed-geometry efficiency curve has been imported instead.</message>
-  <message id="ds-angle-no-refcurve">The file has no measured reference efficiency curve for the response to be anchored on.</message>
-  <message id="ds-angle-note">ANGLE file: {1}</message>
-  <message id="ds-angle-ok">Ok</message>
 
-  <message id="ds-gadras-mode-title">GADRAS detector model</message>
-  <message id="ds-gadras-mode-txt">This detector&apos;s <code>Detector.dat</code> also describes the crystal itself - its shape, material, dead layer and window. You can use that as a generic detector, with the measured efficiency curve anchoring it, so efficiencies can be computed for other geometries; or keep just the fixed efficiency curve.</message>
-  <message id="ds-gadras-mode-generic">Generic detector</message>
-  <message id="ds-gadras-mode-fixed">Fixed efficiency curve</message>
   <message id="ds-gadras-no-geometry">Could not build a detector geometry from this Detector.dat: {1}</message>
   <message id="reds-gadras-geometry-only">(geometry only)</message>
+
+  <!-- DrfImportWidget: the "Import" tab, and the dialog for a detector efficiency file dropped on the app -->
+  <message id="dsi-drop-txt">Drop a detector efficiency file here, or click to browse.  For a detector described by two files, drop or select both.</message>
+  <message id="dsi-drop-txt-mobile">Tap to choose a detector efficiency file.</message>
+  <message id="dsi-supported-tt">Accepted files: InterSpec detector responses (.xml or .csv), GADRAS Efficiency.csv and Detector.dat,
+    ISOCS .ecc, ANGLE files, .par efficiency grids with their DETECTOR.txt, relative-efficiency and GammaQuant
+    detector lists, and energy/efficiency CSV files.</message>
+  <message id="dsi-file-line"><b>{1}</b> - {2}</message>
+  <message id="dsi-kind-drf-xml">InterSpec detector response (XML)</message>
+  <message id="dsi-kind-makedrf-csv">InterSpec detector response (CSV)</message>
+  <message id="dsi-kind-multi-csv">Relative-efficiency detector list</message>
+  <message id="dsi-kind-gq-csv">GammaQuant efficiency file</message>
+  <message id="dsi-kind-ecc">ISOCS efficiency (.ecc)</message>
+  <message id="dsi-kind-angle">ANGLE file</message>
+  <message id="dsi-kind-eff-csv">Energy/efficiency CSV</message>
+  <message id="dsi-kind-gadras-eff">GADRAS Efficiency.csv</message>
+  <message id="dsi-kind-gadras-dat">GADRAS Detector.dat</message>
+  <message id="dsi-kind-par">Efficiency grid (.par)</message>
+  <message id="dsi-kind-detector-txt">Detector geometry (DETECTOR.txt)</message>
+  <message id="dsi-companion-dat">To also use its Detector.dat, which adds the FWHM, peak shape and crystal geometry, drop it here or click to browse.</message>
+  <message id="dsi-companion-eff">To use its Efficiency.csv, drop it here or click to browse.  Without it, the efficiency comes from a Monte-Carlo characterization.</message>
+  <message id="dsi-companion-txt">Drop the DETECTOR.txt for this efficiency grid here, or click to browse - it is required.</message>
+  <message id="dsi-companion-par">Drop the .par efficiency grid for this detector here, or click to browse - it is required.</message>
+  <message id="dsi-companion-wrong">'{1}' is a {2}, which is not the file needed here.</message>
+  <message id="dsi-record-label">Detector:</message>
+  <message id="dsi-interp-label">Efficiencies are:</message>
+  <message id="dsi-interp-as-is">As in file</message>
+  <message id="dsi-interp-generic">Generic detector (geometry modeled)</message>
+  <message id="dsi-characterize">Characterize...</message>
+  <message id="dsi-building">Building the detector response...</message>
+  <message id="dsi-need-diameter">Enter the detector diameter.</message>
+  <message id="dsi-need-distance">Enter the source-to-detector distance the efficiencies are for.</message>
+  <message id="dsi-geometry-only">This file describes the detector, but not its efficiency; characterize it with Monte Carlo to use it.</message>
+  <message id="dsi-parse-error">Could not use '{1}' as a detector efficiency file: {2}</message>
+  <message id="dsi-build-error">Could not create the detector response: {1}</message>
+  <message id="dsi-dialog-title">Detector Efficiency File</message>
+  <message id="dsi-use-drf">Use DRF</message>
+  <message id="dsi-further-options">Further options...</message>
 </messages>
