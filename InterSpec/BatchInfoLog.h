@@ -182,7 +182,25 @@ namespace BatchInfoLog
    Matches the FRMAC/Genie report format `d.dddE+NN`.
    */
   std::string printExp( std::vector<const nlohmann::json *> &args );
-  
+
+  /** Callback from inja templating to print a nuclide, or x-ray element, in upper case.
+   Takes one argument: any nuclide string SandiaDecay accepts ("Co60", "Tc-99m", ...) gives "CO-60",
+   "TC-99M", etc; an element ("Pb", "u", "uranium", "lead x-ray") gives its symbol ("PB", "U").
+   Input that is neither (e.g., a reaction) is returned unchanged.
+   */
+  std::string nuclideUpper( std::vector<const nlohmann::json *> &args );
+
+  /** Callback from inja templating to remove the last extension from a filename; e.g.,
+   "some_file.n42" -> "some_file", "dir/a.b.n42" -> "dir/a.b".  Names without an extension, or
+   dot-files like ".profile", are returned unchanged.
+   */
+  std::string removeExtension( std::vector<const nlohmann::json *> &args );
+
+  /** Registers the callbacks above (printFixed, printCompact, printExp, nuclideUpper,
+   removeExtension) to `env`.
+   */
+  void add_inja_callbacks( inja::Environment &env );
+
   void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                             const std::shared_ptr<const DetectorPeakResponse> &drf,
                             const bool useBq,

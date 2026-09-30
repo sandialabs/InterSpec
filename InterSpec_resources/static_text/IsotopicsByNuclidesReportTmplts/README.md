@@ -27,7 +27,7 @@
 > Pass a custom-template filename or absolute path on either flag/uploader and InterSpec will
 > resolve it the same way it resolves the built-in shorthands (see §2).
 >
-> **Last updated:** 2026-04-27
+> **Last updated:** 2026-09-29
 
 ## 1. What this is
 
@@ -843,6 +843,9 @@ InterSpec-specific.
 | `at(array, index)` | `array, int` | element | `at(Files, loop.index).Filename` (variable indexing — see §5.1) |
 | `printFixed(value, decimals)` | `number, int` | string | `printFixed(p.energy, 2)` -> `"846.75"` |
 | `printCompact(value, sigfigs)` | `number, int` | string | `printCompact(amp, 6)` -> `"26178.9"` |
+| `printExp(value, decimals)` | `number, int` | string | `printExp(18910.0, 3)` -> `"1.891E+04"` |
+| `nuclideUpper(name)` | `string` | string | `nuclideUpper(nuc.name)` -> `"U-235"`; `nuclideUpper("Tc-99m")` -> `"TC-99M"`; `nuclideUpper("Pb")` -> `"PB"` |
+| `removeExtension(name)` | `string` | string | `removeExtension("some_file.n42")` -> `"some_file"` |
 | `pct(value)` or `pct(value, sigfigs)` | `number [, int]` | string | `pct(nuc.enrichment, 4)` -> `"99.33"` |
 | `safe_html(str)` | `string` | string | `safe_html(warnings.0)` |
 | `scientific(value, prec)` | `number, int` | string | `scientific(rel_act, 6)` -> `"1.43692e+01"` |
@@ -867,6 +870,19 @@ InterSpec-specific.
   notation automatically. The general-purpose numeric formatter. `printCompact(26178.91, 6)`
   → `"26178.9"`; `printCompact(6.67e-10, 4)` → `"6.67E-10"`. For null / NaN / infinite returns
   `"--"`. **Almost always the right choice when displaying a fitted value.**
+
+- **`printExp(x, n)`** — scientific notation with exactly `n` decimals, always `d.dddE±NN`
+  (never falls back to fixed-point, so columns stay aligned). `printExp(18910.0, 3)` →
+  `"1.891E+04"`. For null / NaN / infinite returns `"--"`.
+
+- **`nuclideUpper(s)`** — upper-case, dashed nuclide name, or upper-case element symbol. Accepts
+  any nuclide spelling InterSpec does (`"U235"`, `"Tc-99m"`, `"tc99m"`, `"238U"`) and any element
+  symbol or name (`"Pb"`, `"u"`, `"uranium"`, `"lead x-ray"`). `nuclideUpper("Pu239")` →
+  `"PU-239"`; `nuclideUpper("uranium")` → `"U"`. Anything else is returned unchanged.
+
+- **`removeExtension(s)`** — removes the last file extension, keeping any directory part.
+  `removeExtension("some_file.n42")` → `"some_file"`; `removeExtension("a.b.n42")` → `"a.b"`.
+  A name without an extension, or a dot-file like `".profile"`, is returned unchanged.
 
 - **`pct(x)` / `pct(x, n)`** — multiplies by 100 and formats with `printCompact` at `n`
   significant figures (default 4). Used because expression-side multiplication (`x * 100`)
@@ -901,7 +917,7 @@ InterSpec-specific.
   (`{% if length(warnings) > 0 %}`); inja's truthiness rules around empty arrays are
   unreliable, so this explicit form is recommended.
 
-For null / NaN / infinite inputs, all numeric formatters (`printFixed`, `printCompact`, `pct`)
+For null / NaN / infinite inputs, all numeric formatters (`printFixed`, `printCompact`, `printExp`, `pct`)
 return the string `"--"` rather than throwing — this lets templates assume the call always
 produces a printable string.
 
@@ -1088,7 +1104,8 @@ When using this README to generate a new template, an LLM should be told:
 > *You are writing a single Inja template (Inja 3.x) that consumes the JSON described in the
 > README of `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/`. Use only the
 > features listed in §4. Do not use any feature listed in §5 ("does not work"). Prefer the
-> custom callbacks (`printFixed`, `printCompact`, `pct`, `safe_html`, `existsIn`, `length`) over
+> custom callbacks (`printFixed`, `printCompact`, `printExp`, `pct`, `safe_html`, `nuclideUpper`,
+> `removeExtension`, `existsIn`, `length`) over
 > Inja's expression arithmetic. Output only the template body — no explanatory prose.*
 
 Then provide:
@@ -1103,7 +1120,7 @@ Then provide:
 | [`InterSpec/RelActAutoReport.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/RelActAutoReport.h) | Public API |
 | [`src/RelActAutoReport.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/RelActAutoReport.cpp) | `solution_to_json` + Inja env + render dispatch |
 | [`InterSpec/BatchRelActAuto.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchRelActAuto.h) / [`src/BatchRelActAuto.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchRelActAuto.cpp) | Batch driver — builds the multi-file `summary_json` consumed by §11 |
-| [`src/BatchInfoLog.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchInfoLog.cpp) | Sibling module for shielding/source and peak-fit reports; `printFixed`/`printCompact` live here |
+| [`src/BatchInfoLog.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchInfoLog.cpp) | Sibling module for shielding/source and peak-fit reports; the shared callbacks (`printFixed`, `printCompact`, `printExp`, `nuclideUpper`, `removeExtension`) live here |
 
 To regenerate the JSON example for any solution, pass `tmplt = "json"` to `render_template`
 (or call `solution_to_json(sol).dump(2)` directly). The dump always contains the heavy JS/CSS
