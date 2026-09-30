@@ -335,8 +335,7 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
 #endif
 
   // BatchInfoLog callbacks (delegated to its tested implementations).
-  env.add_callback( "printFixed",   2, &BatchInfoLog::printFixed );
-  env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+  BatchInfoLog::add_inja_callbacks( env );
 
   // RelActAutoReport-specific callbacks.
   env.add_callback( "pct",       1, &pct_callback );
@@ -370,8 +369,7 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
   try
   {
     inja::Environment sub_env;
-    sub_env.add_callback( "printFixed",   2, &BatchInfoLog::printFixed );
-    sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+    BatchInfoLog::add_inja_callbacks( sub_env );
     sub_env.add_callback( "pct",          1, &pct_callback );
     sub_env.add_callback( "pct",          2, &pct_callback );
     sub_env.add_callback( "safe_html",    1, &safe_html_callback );

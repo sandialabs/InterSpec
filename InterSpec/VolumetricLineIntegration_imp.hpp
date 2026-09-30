@@ -2254,8 +2254,8 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   for( int i = 0; i < ndims; ++i )
     pdims[i] *= pad;
 
-  // Mixture: the surface share split between the outer and inner surfaces by area, each surface
-  //  sampled per face BY AREA.
+  // Mixture: the surface share goes entirely to the OUTER surface (no inner component - see
+  //  VolumetricLineCache::frac_outer), sampled per face BY AREA.
   //
   //  Not by the area a face presents to the detector, which is what the hull-point allocation uses
   //  and what an eye on the VALUE would suggest.  MEASURED (LineProposalSurfaceFractionSweep, a
