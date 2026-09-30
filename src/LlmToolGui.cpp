@@ -87,6 +87,10 @@ WT_DECLARE_WT_MEMBER
     return;
 
   function grow(){
+    // Hidden (e.g., tab not yet shown): scrollHeight would be 0 and pin the height to 0px, so keep
+    //  the current height; the ResizeObserver below re-runs this once it becomes visible.
+    if( !ta.offsetWidth )
+      return;
     ta.style.height = 'auto';
     var max = Math.max( 60, Math.round( (wrapper ? wrapper.clientHeight : 300) * 0.4 ) );
     var h = Math.min( ta.scrollHeight, max );
@@ -149,6 +153,17 @@ WT_DECLARE_WT_MEMBER
         }
       }
     } );
+  }
+
+  // Re-size when the tool is shown or resized (wrapper), or when the stylesheet finishes loading or
+  //  the image strip toggles (inputArea); the setup call below can run before either has settled.
+  //  grow() is idempotent, so the height change it makes does not cause further notifications.
+  if( window.ResizeObserver ){
+    var ro = new ResizeObserver( function(){ grow(); } );
+    if( wrapper )
+      ro.observe( wrapper );
+    if( inputArea )
+      ro.observe( inputArea );
   }
 
   // Initialize sizing and button state.
