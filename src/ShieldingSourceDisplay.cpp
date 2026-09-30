@@ -3296,6 +3296,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_sourceModel->rowsInserted().connect( this, &ShieldingSourceDisplay::addSourceIsotopesToShieldings );
   m_sourceModel->rowsAboutToBeRemoved().connect( this, &ShieldingSourceDisplay::removeSourceIsotopesFromShieldings );
 
+  // Which nuclides are fit (and so whether point sources sit alongside a volumetric one) gates the
+  //  "Create MC Eff" link.
+  m_sourceModel->rowsInserted().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+  m_sourceModel->rowsRemoved().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+  m_sourceModel->modelReset().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+
   m_sourceModel->layoutChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
   
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
@@ -3491,14 +3497,17 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_fixedGeomLockedNote = new WText( WString::tr("ssd-fixed-geom-locked-note") );
   m_fixedGeomLockedNote->addStyleClass( "FixedGeomLockedNote" );
+  m_fixedGeomLockedNote->setInline( false );  //holds block content (the embedded-scene summary)
   m_fixedGeomLockedNote->hide();
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomLockedNote),  5, 0, 1, 3, AlignmentFlag::Center );
 
+  // A small link to the right of the "Shielding" caption (placed there below); only shown when
+  //  it can be used - see updateFixedGeomMcAvailability().
   m_fixedGeomMcBtn = new WPushButton( WString::tr("ssd-fixed-geom-mc-btn") );
-  m_fixedGeomMcBtn->addStyleClass( "FixedGeomMcBtn LightButton" );
+  m_fixedGeomMcBtn->addStyleClass( "SsdLink FixedGeomMcLink" );
   HelpSystem::attachToolTipOn( m_fixedGeomMcBtn, WString::tr("ssd-tt-fixed-geom-mc"), showToolTips );
   m_fixedGeomMcBtn->clicked().connect( this, &ShieldingSourceDisplay::computeFixedGeomDrfRequested );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomMcBtn),       6, 0, 1, 3, AlignmentFlag::Center );
+  m_fixedGeomMcBtn->hide();
 
   smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
@@ -3564,9 +3573,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   shieldSectionLayout->setVerticalSpacing( 3 );
   shieldSectionLayout->setHorizontalSpacing( 0 );
 
-  WText *shieldCap = new WText( WString::tr("ssd-cap-shielding") );
-  shieldCap->addStyleClass( "SsdCap" );
-  shieldCap->setInline( false );
+  // Caption row: "Shielding" on the left, the "Create MC Eff" link on the right.
+  WContainerWidget *shieldCap = new WContainerWidget();
+  shieldCap->addStyleClass( "ShieldCapRow" );
+  WText *shieldCapTxt = shieldCap->addNew<WText>( WString::tr("ssd-cap-shielding") );
+  shieldCapTxt->addStyleClass( "SsdCap" );
+  shieldCap->addWidget( std::unique_ptr<WWidget>(m_fixedGeomMcBtn) );
 
   // Bordered box holding the scrollable shielding cards plus a bottom footer bar with a
   //  round "+" add-button (left) and the "Show Diagram" link (right) - styled after the
@@ -5946,6 +5958,15 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
   {
     m_correctForCascade->setChecked( false );
 
+    // The detector editor can't add total efficiency to a fixed-geometry DRF.
+    if( det && det->isFixedGeometry() )
+    {
+      SimpleDialog::make<SimpleDialog>( WString::tr("ssd-cascade-need-total-eff-title"),
+                                        WString::tr("ssd-cascade-fixed-geom-no-info-msg") );
+      updateFixedGeomMcAvailability();
+      return;
+    }
+
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
                               WString::tr("ssd-cascade-need-total-eff-title"),
                               WString::tr("ssd-cascade-need-total-eff-msg") );
@@ -5957,6 +5978,7 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
     } ) );
     dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
+    updateFixedGeomMcAvailability();
     return;
   }//if( checked, but DRF doesnt have the info )
 
@@ -5975,6 +5997,7 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Cascade summing correction changed." );
   }//if( undoRedo )
 
+  updateFixedGeomMcAvailability();  //summing + a volumetric source blocks the button
   updateChi2Chart();
 }//void correctForCascadeChanged()
 
@@ -6017,39 +6040,72 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
 }//void updateCascadeAvailability()
 
 
-void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
+std::string ShieldingSourceDisplay::fixedGeomMcBlockReason() const
 {
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
 
   // Needs a CeeLo detector model, and must not already be a fixed-geometry DRF.
-  bool enable = ( det && det->isValid() && det->ceeloResponse()
-                  && !det->isFixedGeometry() );
+  if( !det || !det->isValid() || !det->ceeloResponse() || det->isFixedGeometry() )
+    return "ssd-fixed-geom-mc-needs-model";
 
-  // Nothing geometric may be getting fit (activity-only fits).
-  if( enable )
+  // The scene has no off-axis placement (and a fixed-geometry DRF allows none).
+  double offset_x = 0.0, offset_y = 0.0;
+  sourceOffsets( offset_x, offset_y );
+  if( (offset_x != 0.0) || (offset_y != 0.0) )
+    return "ssd-fixed-geom-mc-blocked-offset";
+
+  size_t num_volumetric_layers = 0;
+  for( WWidget *widget : m_shieldingSelects->children() )
   {
-    for( WWidget *widget : m_shieldingSelects->children() )
+    const ShieldingSelect * const select = dynamic_cast<const ShieldingSelect *>( widget );
+    if( !select )
+      continue;
+
+    // Nothing geometric may be getting fit (activity-only fits), and generic shieldings have no
+    //  physical extent to transport through.
+    if( select->isGenericMaterial() )
+      return "ssd-fixed-geom-mc-blocked-fitting";
+
+    const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+    if( info.m_fitDimensions[0] || info.m_fitDimensions[1] || info.m_fitDimensions[2] )
+      return "ssd-fixed-geom-mc-blocked-fitting";
+
+    if( !info.m_traceSources.empty() || !info.m_nuclideFractions_.empty() )
+      num_volumetric_layers += 1;
+  }//for( shieldings )
+
+  // The response describes ONE emission distribution: a point at the centre, or a single source
+  //  layer.  A second source layer, or point sources alongside a volumetric one, would all be fit
+  //  with that one distribution's efficiency.
+  if( num_volumetric_layers > 1 )
+    return "ssd-fixed-geom-mc-blocked-multi-src-layer";
+
+  if( num_volumetric_layers == 1 )
+  {
+    for( int nuc = 0; nuc < m_sourceModel->numNuclides(); ++nuc )
     {
-      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-      if( !select )
-        continue;
+      if( m_sourceModel->sourceType( nuc ) == ShieldingSourceFitCalc::ModelSourceType::Point )
+        return "ssd-fixed-geom-mc-blocked-mixed-src";
+    }
+  }//if( a volumetric source )
 
-      if( select->isGenericMaterial() )
-      {
-        enable = false;
-        break;
-      }
+  // A fixed-geometry response only carries volume-AVERAGED efficiencies, so summing for an extended
+  //  source would be corrected with c_net(<eps_fep>,<eps_tot>) rather than per position, which
+  //  under-corrects near the detector.  Point sources are exact, so they keep the button.
+  if( (num_volumetric_layers > 0) && m_correctForCascade && m_correctForCascade->isChecked() )
+    return "ssd-fixed-geom-mc-blocked-cascade-vol";
 
-      const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
-      for( int i = 0; i < 3; ++i )
-        enable = (enable && !info.m_fitDimensions[i]);
-      if( !enable )
-        break;
-    }//for( shieldings )
-  }//if( enable )
+  return "";
+}//std::string fixedGeomMcBlockReason() const
 
-  m_fixedGeomMcBtn->setHidden( det && det->isFixedGeometry() );
-  m_fixedGeomMcBtn->setDisabled( !enable );
+
+void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
+{
+  if( !m_fixedGeomMcBtn )  //source-model signals can fire before the widgets exist
+    return;
+
+  // Only offered when it can be used (fixedGeomMcBlockReason() is also re-checked on click).
+  m_fixedGeomMcBtn->setHidden( !fixedGeomMcBlockReason().empty() );
 
   updateVolEffMethodAvailability();
 }//void updateFixedGeomMcAvailability()
@@ -6132,9 +6188,13 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   using GammaInteractionCalc::GeometryType;
 
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  if( !det || !det->isValid() || !det->ceeloResponse() || det->isFixedGeometry() )
+
+  // The button's enabled state can lag the model, so apply the rule again here.
+  const string block_reason = fixedGeomMcBlockReason();
+  if( !block_reason.empty() )
   {
-    passMessage( WString::tr("ssd-fixed-geom-mc-needs-model"), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr(block_reason), WarningWidget::WarningMsgHigh );
+    updateFixedGeomMcAvailability();
     return;
   }
 
@@ -6152,8 +6212,13 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   for( WWidget *widget : m_shieldingSelects->children() )
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-    if( select )
-      setup.shieldings.push_back( select->toShieldingInfo() );
+    if( !select )
+      continue;
+
+    // Nothing is fit against an embedded scene; don't let stale fit flags ride along in the blob.
+    ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+    info.m_fitDimensions[0] = info.m_fitDimensions[1] = info.m_fitDimensions[2] = false;
+    setup.shieldings.push_back( info );
   }
 
   string why;
@@ -6175,6 +6240,15 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
     }
   }
 
+  // The fit's nuclides, so the MC's total curve spans their cascade-summing partners (enumerated
+  //  on the worker - it can take a moment for a decay chain).
+  vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
+  for( int nuc = 0; nuc < m_sourceModel->numNuclides(); ++nuc )
+  {
+    if( m_sourceModel->nuclide( nuc ) )
+      nuc_ages.emplace_back( m_sourceModel->nuclide( nuc ), m_sourceModel->age( nuc ) );
+  }
+
   // Progress dialog with cancel; worker thread does the MC.
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
                               WString::tr("ssd-fixed-geom-mc-running-title"),
@@ -6193,7 +6267,7 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   const string dialog_id = dialog->id();
   const shared_ptr<const DetectorPeakResponse> base_drf = det;
 
-  auto worker = [setup, extra_energies, base_drf, cancel_flag, session_id, bar_id, dialog_id](){
+  auto worker = [setup, extra_energies, nuc_ages, base_drf, cancel_flag, session_id, bar_id, dialog_id](){
     shared_ptr<DetectorPeakResponse> new_drf;
     string errmsg;
     try
@@ -6211,8 +6285,17 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
         } );
       };
 
-      new_drf = MakeFixedGeomResponse::computeFixedGeomDrf( base_drf, setup,
-                                  extra_energies, 0.005, progress_fcn, cancel_flag );
+      vector<double> partner_energies;
+      try
+      {
+        partner_energies = GammaInteractionCalc::CascadeSummingCalc::partnerEnergies( nuc_ages );
+      }catch( std::exception & )
+      {
+        // Only widens the energy grid; without it the grid is the DRF's own range.
+      }
+
+      new_drf = MakeFixedGeomResponse::computeFixedGeomDrf( base_drf, setup, extra_energies,
+                                  partner_energies, 0.005, progress_fcn, cancel_flag );
     }catch( std::exception &e )
     {
       errmsg = e.what();
@@ -6310,6 +6393,7 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
     m_distanceEdit->setText( m_prevDistStr );
   }
   
+  updateCascadeAvailability();  //the summing-magnitude gate depends on distance
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
 
@@ -6392,6 +6476,7 @@ void ShieldingSourceDisplay::handleUserOffsetChange()
     }//if( undoRedo )
   }//if( either offset changed )
 
+  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserOffsetChange()
 
@@ -6479,6 +6564,7 @@ void ShieldingSourceDisplay::handleOffsetCheckChange()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle source off-axis offset." );
   }//if( undoRedo )
 
+  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void handleOffsetCheckChange()
 
@@ -6796,10 +6882,95 @@ void ShieldingSourceDisplay::handleShieldingChange()
 
   // "Show Diagram" is only meaningful with at least one shielding layer.
   if( m_showDiagramBtn )
-    m_showDiagramBtn->setHidden( numberShieldings() == 0 );
+    m_showDiagramBtn->setHidden( m_embeddedSetupXml.empty() && (numberShieldings() == 0) );
 
+  updateFixedGeomMcAvailability();
   updateChi2Chart();
 }//void handleShieldingChange()
+
+
+namespace
+{
+  /** Read-only XHTML summary of the scene a fixed-geometry DRF was computed for (see
+   MakeFixedGeomResponse): geometry, distance, then each layer innermost first, with its sources.
+   */
+  WString embeddedSceneSummary( const MakeFixedGeomResponse::Setup &setup )
+  {
+    using GammaInteractionCalc::GeometryType;
+
+    const auto len = []( const double val ) -> string {
+      return PhysicalUnits::printToBestLengthUnitsCompact( val, 4 );
+    };
+
+    string layers;
+    for( size_t i = 0; i < setup.shieldings.size(); ++i )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &info = setup.shieldings[i];
+      string item = Wt::Utils::htmlEncode( info.m_material ? info.m_material->name : string("?") );
+
+      // The innermost layer's dimensions are its radius / half-lengths; outer layers' are thicknesses.
+      const bool inner = (i == 0);
+      switch( setup.geometry )
+      {
+        case GeometryType::Spherical:
+          item += WString::tr( inner ? "ssd-emb-dims-sphere-inner" : "ssd-emb-dims-sphere" )
+                                .arg( len(info.m_dimensions[0]) ).toUTF8();
+          break;
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          item += WString::tr( inner ? "ssd-emb-dims-cyl-inner" : "ssd-emb-dims-cyl" )
+                                .arg( len(info.m_dimensions[0]) )
+                                .arg( len(info.m_dimensions[1]) ).toUTF8();
+          break;
+        case GeometryType::Rectangular:
+          item += WString::tr( inner ? "ssd-emb-dims-rect-inner" : "ssd-emb-dims-rect" )
+                                .arg( len(info.m_dimensions[0]) )
+                                .arg( len(info.m_dimensions[1]) )
+                                .arg( len(info.m_dimensions[2]) ).toUTF8();
+          break;
+        case GeometryType::NumGeometryType:
+          break;
+      }//switch( setup.geometry )
+
+      string srcs;
+      for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
+      {
+        if( trace.m_nuclide )
+          srcs += (srcs.empty() ? "" : ", ") + trace.m_nuclide->symbol;
+      }
+      typedef std::tuple<const SandiaDecay::Nuclide *,double,bool> NucFrac;
+      for( const pair<const SandiaDecay::Element * const,vector<NucFrac>> &el_nucs : info.m_nuclideFractions_ )
+      {
+        for( const NucFrac &nuc : el_nucs.second )
+        {
+          if( std::get<0>(nuc) )
+            srcs += (srcs.empty() ? "" : ", ") + std::get<0>(nuc)->symbol;
+        }
+      }
+      if( !srcs.empty() )
+        item += WString::tr("ssd-emb-layer-srcs").arg( srcs ).toUTF8();
+
+      layers += "<li>" + item + "</li>";
+    }//for( layers )
+
+    if( layers.empty() )
+      layers = "<li>" + WString::tr("ssd-emb-no-layers").toUTF8() + "</li>";
+
+    const char *geom_key = "ssd-geom-point";  //same labels as the Geometry combo
+    switch( setup.geometry )
+    {
+      case GeometryType::Spherical:       geom_key = "ssd-geom-point";    break;
+      case GeometryType::CylinderEndOn:   geom_key = "ssd-geom-cyl-end";  break;
+      case GeometryType::CylinderSideOn:  geom_key = "ssd-geom-cyl-side"; break;
+      case GeometryType::Rectangular:     geom_key = "ssd-rectangular";   break;
+      case GeometryType::NumGeometryType: break;
+    }
+
+    return WString::tr("ssd-emb-scene").arg( WString::tr(geom_key) )
+                                       .arg( len(setup.distance) )
+                                       .arg( "<ul>" + layers + "</ul>" );
+  }//embeddedSceneSummary(...)
+}//namespace
 
 
 void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
@@ -6934,24 +7105,49 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     {
       ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
       if( thisSelect )
-      {
         thisSelect->setFixedGeometry( false );
-        thisSelect->setDisabled( false );
-        thisSelect->removeStyleClass( "FixedGeomLocked", true );
-      }
     }//for( WWidget *widget : m_shieldingSelects->children() )
+
+    // Coming off a DRF that embedded its scene: put that scene back, sources included, so the
+    //  user is left with the model the fixed-geometry response was computed for.
+    if( !m_embeddedSetupXml.empty() && (numberShieldings() == 0) )
+    {
+      try
+      {
+        // Part of the DRF change the user made (its undo re-runs this), not steps of its own.
+        UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+        MakeFixedGeomResponse::Setup setup;
+        setup.fromXmlString( m_embeddedSetupXml );
+
+        m_geometrySelect->setCurrentIndex( static_cast<int>(setup.geometry) );
+        m_prevGeometry = setup.geometry;  //else handleGeometryTypeChange() makes its own undo step
+        handleGeometryTypeChange();
+
+        m_prevDistStr = PhysicalUnits::printToBestLengthUnitsCompact( setup.distance, 6 );
+        m_distanceEdit->setValueText( WString::fromUTF8(m_prevDistStr) );
+
+        deSerializeShieldings( setup.shieldings );
+      }catch( std::exception &e )
+      {
+        cerr << "handleDetectorChanged: could not restore embedded scene: " << e.what() << endl;
+      }
+    }//if( coming off a DRF with an embedded scene )
   }//if( DRF is non-fixed geometry, but layout is for fixed geometry )
   
-  // A fixed-geometry DRF computed for a specific scene embeds it; replace the
-  //  displayed shieldings with that scene, read-only (change the DRF to
-  //  change the layers).
-  bool locked_setup = false;
+  // A fixed-geometry DRF computed for a specific scene (MakeFixedGeomResponse) embeds it: its
+  //  source, shielding, and air are already in the response's curves, so no shielding layer may
+  //  be applied on top - it would be applied twice.  The scene is shown as a read-only summary
+  //  instead, and remembered so switching back to a non-fixed DRF can restore it.
+  m_embeddedSetupXml.clear();
+  WString embedded_summary;
   if( fixed_geom && det && !det->fixedGeometrySetupXml().empty() )
   {
     try
     {
       MakeFixedGeomResponse::Setup setup;
       setup.fromXmlString( det->fixedGeometrySetupXml() );
+      embedded_summary = embeddedSceneSummary( setup );
 
       const vector<WWidget *> old_shields = m_shieldingSelects->children();
       for( WWidget *child : old_shields )
@@ -6960,20 +7156,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
           m_shieldingSelects->removeWidget( child );
       }
 
-      deSerializeShieldings( setup.shieldings );
-
-      for( WWidget *widget : m_shieldingSelects->children() )
-      {
-        ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-        if( select )
-        {
-          select->setFixedGeometry( true );
-          select->setDisabled( true );
-          select->addStyleClass( "FixedGeomLocked" );
-        }
-      }//for( new ShieldingSelects )
-
-      locked_setup = true;
+      m_embeddedSetupXml = det->fixedGeometrySetupXml();
     }catch( std::exception &e )
     {
       cerr << "handleDetectorChanged: invalid FixedGeomSourceSetup blob: "
@@ -6981,8 +7164,13 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     }
   }//if( fixed-geometry DRF with an embedded scene )
 
+  const bool locked_setup = !m_embeddedSetupXml.empty();
+  if( locked_setup )
+    m_fixedGeomLockedNote->setText( WString::tr("ssd-fixed-geom-locked-note").arg( embedded_summary ) );
   m_fixedGeomLockedNote->setHidden( !locked_setup );
   m_addShieldingBtn->setHidden( locked_setup );
+  if( m_showDiagramBtn )
+    m_showDiagramBtn->setHidden( !locked_setup && (numberShieldings() == 0) );
 
   updateDrfUncertMethodAvailability();
   updateChi2Chart();
@@ -8550,6 +8738,8 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
       m_shieldingSelects->removeWidget( child );
   }//for( WWebWidget *child : shieldings )
   
+  m_embeddedSetupXml.clear();
+
   if( set_use_peaks_false )
     m_peakModel->setAllPeaksUseForShieldingSourceFit( false );
   
@@ -8669,6 +8859,11 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   deSerializeShieldings( state.config->shieldings );
   
   m_modifiedThisForeground = true;
+
+  // The restored state is authoritative: don't let a previously displayed embedded scene be
+  //  "restored" over it.  (If the DRF embeds a scene, handleDetectorChanged() drops the restored
+  //  layers - states saved before 2026-09-29 serialized the scene's layers - and shows the scene.)
+  m_embeddedSetupXml.clear();
 
   // Make sure if DRF is fixed/not-fixed, that the GUI state will be consistent with this
   //  (it may not have been the same when serialized)
@@ -8960,6 +9155,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
                               shared_ptr<const string> prev,
                               shared_ptr<const string> curr ){
     handleShieldingUndoRedoPoint( sel, prev, curr );
+    updateFixedGeomMcAvailability();  //e.g., a "Fit" checkbox was toggled
     // Any user change to a shielding (including toggling a "Fit" checkbox for thickness / AN / AD,
     //  which doesn't fire materialModified()) should refresh the chart and, in live mode, kick off
     //  a re-fit.  updateChi2Chart() -> markModelChanged() does both; it's debounced so the extra
@@ -9262,8 +9458,8 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
 
-  //A volumetric source now exists: refresh the volumetric-efficiency method availability/indicator.
-  updateVolEffMethodAvailability();
+  //A volumetric source now exists: refresh the volumetric-efficiency method + MC-button availability/indicator.
+  updateFixedGeomMcAvailability();  //also refreshes the volumetric-efficiency method
 
   //Update the Chi2
   updateChi2Chart();
@@ -9289,8 +9485,8 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
       select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
 
-  //A volumetric source may no longer exist: refresh the volumetric-efficiency method availability.
-  updateVolEffMethodAvailability();
+  //A volumetric source may no longer exist: refresh the volumetric-efficiency method + MC-button availability.
+  updateFixedGeomMcAvailability();  //also refreshes the volumetric-efficiency method
 
   //Update the Chi2
   updateChi2Chart();
@@ -10838,6 +11034,23 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   } catch(...) {
      // Ignore, use default or what was parsed.
   }
+
+  GeometryType geom_type = geometry();
+
+  // A DRF that embeds its scene: draw that scene (it has no layers in m_shieldingSelects).
+  if( !m_embeddedSetupXml.empty() )
+  {
+    try
+    {
+      MakeFixedGeomResponse::Setup setup;
+      setup.fromXmlString( m_embeddedSetupXml );
+      shieldings = setup.shieldings;
+      distance = setup.distance;
+      geom_type = setup.geometry;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !m_embeddedSetupXml.empty() )
   
   std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
@@ -10845,7 +11058,6 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
     detDiameter = det->detectorDiameter();
 
   std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
-  const GeometryType geom_type = geometry();
 
   // User-set off-axis offsets (zero when the offset checkbox is unchecked).
   double offset0 = 0.0, offset1 = 0.0;

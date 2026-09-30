@@ -150,6 +150,10 @@
   <message id="ssd-cascade-need-total-eff-msg">The current detector response has no total-efficiency
     information, which cascade-summing corrections require.  Open the detector editor and attach a
     Monte-Carlo characterization (or a total-efficiency curve), then re-enable this option.</message>
+  <message id="ssd-cascade-fixed-geom-no-info-msg">This fixed-geometry detector response has no
+    total-efficiency information for its geometry, which cascade-summing corrections require.  A
+    fixed-geometry response that supports them can be made with the "Create MC Eff" link next to "Shielding",
+    starting from a detector response with a Monte-Carlo detector model.</message>
   <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
   <message id="ssd-lbl-vol-eff">Detector eff. model</message>
   <message id="ssd-tt-vol-eff">The detector-efficiency model used for every source in the fit -
@@ -171,15 +175,32 @@
   <message id="ssd-vol-eff-name-efftran">EFFTRAN transfer</message>
   <message id="ssd-vol-eff-name-flatdisk">flat-disk</message>
   <message id="ssd-vol-eff-resolved">&#8594; {1}</message>
-  <message id="ssd-fixed-geom-mc-btn">Compute DRF for this geometry (MC)</message>
+  <message id="ssd-fixed-geom-mc-btn">Create MC Eff</message>
   <message id="ssd-tt-fixed-geom-mc">Runs a CeeLo Monte-Carlo over the exact source/shielding scene
     (including scatter, near-field response, and total efficiency), producing a fixed-geometry
-    detector response that embeds this setup and switching to it.  Only available when no shielding
-    dimension is being fit, and the detector response has a Monte-Carlo detector model attached
-    (add one via the detector editor).  Takes a few minutes.</message>
-  <message id="ssd-fixed-geom-locked-note">These source/shielding layers are embedded in the
-    fixed-geometry detector response and cannot be edited here.  Select a different detector
-    response to change them.</message>
+    detector response that embeds this setup and switching to it; the scene's shieldings are then
+    part of the response.  Cascade-summing corrections stay available: exact for a point source,
+    volume-averaged for a trace or self-attenuating source.  Only shown when no shielding dimension
+    is being fit, there is a single source distribution, cascade summing is not being corrected for
+    a trace or self-attenuating source, and the detector response has a Monte-Carlo detector model
+    attached (add one via the detector editor).  Takes a few minutes.</message>
+  <message id="ssd-fixed-geom-locked-note">This fixed-geometry detector response was computed for the
+    scene below; its source, shielding, and air are already part of the response, so no shieldings
+    are applied on top.  Select a different detector response to change the scene.{1}</message>
+  <message id="ssd-emb-scene"><div>{1}, {2} from the detector face to its center:</div>{3}</message>
+  <message id="ssd-emb-dims-sphere">, {1} thick</message>
+  <message id="ssd-emb-dims-sphere-inner">, radius {1}</message>
+  <message id="ssd-emb-dims-cyl">, {1} radial, {2} at each end</message>
+  <message id="ssd-emb-dims-cyl-inner">, radius {1}, half-length {2}</message>
+  <message id="ssd-emb-dims-rect">, {1} / {2} / {3} thick (width / height / depth)</message>
+  <message id="ssd-emb-dims-rect-inner">, half-width {1}, half-height {2}, half-depth {3}</message>
+  <message id="ssd-emb-layer-srcs"> (source: {1})</message>
+  <message id="ssd-emb-no-layers">Bare point source</message>
+  <message id="ssd-fixed-geom-mc-blocked-fitting">Unavailable while a shielding dimension is being fit, or a generic shielding is present.</message>
+  <message id="ssd-fixed-geom-mc-blocked-offset">Unavailable while the source is offset off-axis: the fixed-geometry response is computed on-axis.</message>
+  <message id="ssd-fixed-geom-mc-blocked-multi-src-layer">Unavailable while more than one shielding carries a trace or self-attenuating source: a fixed-geometry response describes a single source distribution.</message>
+  <message id="ssd-fixed-geom-mc-blocked-mixed-src">Unavailable while point sources are fit alongside a trace or self-attenuating source: a fixed-geometry response describes a single source distribution, so the point sources would be fit with the volumetric source's efficiency.</message>
+  <message id="ssd-fixed-geom-mc-blocked-cascade-vol">Unavailable while "Cascade summing corr." is checked and a trace or self-attenuating source is defined: a fixed-geometry response can only apply summing corrections with its volume-averaged efficiencies, which under-corrects summing for extended sources near the detector.  Uncheck the summing correction to compute one anyway.</message>
   <message id="ssd-fixed-geom-mc-running-title">Computing fixed-geometry response</message>
   <message id="ssd-fixed-geom-mc-running-msg">Running the Monte-Carlo over the current scene; this
     typically takes a few minutes.</message>

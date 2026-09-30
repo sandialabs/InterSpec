@@ -4650,6 +4650,39 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   answer->m_efficiency = std::make_shared<DetectorEfficiencyCurve>(
                                   answer->m_efficiency->scaledByConstant( correction ) );
 
+  // An embedded MC scene (MakeFixedGeomResponse) records how its FEP curve relates to per-decay
+  //  efficiency ("FepScale"); keep that in step with the curve, or cascade summing would use a
+  //  per-mass/area curve as if it were per decay.  Without the element the scale stays unknown.
+  if( !answer->m_fixedGeomSetupXml.empty() )
+  {
+    try
+    {
+      vector<char> xml_buf( begin(answer->m_fixedGeomSetupXml), end(answer->m_fixedGeomSetupXml) );
+      xml_buf.push_back( '\0' );
+      rapidxml::xml_document<char> doc;
+      doc.parse<0>( xml_buf.data() );
+      rapidxml::xml_node<char> *base_node = doc.first_node( "ActShieldSetup" );
+      rapidxml::xml_node<char> *scale_node = base_node ? base_node->first_node( "FepScale" ) : nullptr;
+      double scale = 0.0;
+      if( scale_node && (stringstream( SpecUtils::xml_value_str(scale_node) ) >> scale) && (scale > 0.0) )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "%.9g", scale * correction );
+        const char * const new_val = doc.allocate_string( buffer );
+        scale_node->value( new_val );
+        //rapidxml prints an element's data child, not its value(), so update that too
+        rapidxml::xml_node<char> * const data_node = scale_node->first_node();
+        if( data_node && (data_node->type() == rapidxml::node_data) )
+          data_node->value( new_val );
+        string xml;
+        rapidxml::print( std::back_inserter(xml), doc, rapidxml::print_no_indenting );
+        answer->m_fixedGeomSetupXml = xml;
+      }
+    }catch( std::exception & )
+    {
+    }
+  }//if( an embedded scene )
+
   answer->computeHash();
 
   return answer;
@@ -4736,6 +4769,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
   answer->m_absoluteEfficiencyDistance = -1.0;
   answer->m_absEffCorrectForAirAtten = true;
   answer->m_detectorDiameter = -1.0f;
+
+  // A far-field total curve (e.g. GADRAS "PTOT", per photon striking the face) or MC response
+  //  describes the bare detector, not this fixed geometry - but a fixed-geometry DRF's total curve
+  //  is read as the absolute per-decay total (cascade summing), so it can't be carried over.
+  answer->m_totalEfficiency.reset();
+  answer->m_ceeloResponse.reset();
   
   answer->computeHash();
   

@@ -1736,6 +1736,12 @@ protected:
    */
   std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
 
+  /** What the DRF's FEP curve must be divided by for the per-decay efficiency the cascade engine
+   needs: 1, except for a per-gram / per-area fixed-geometry DRF (see
+   MakeFixedGeomResponse::perDecayFepScale).  Set in #create when #m_cascadeCalc is.
+   */
+  double m_cascadeFepScale = 1.0;
+
   /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
   struct CascadeCorrEntry
   {

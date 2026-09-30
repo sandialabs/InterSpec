@@ -5661,6 +5661,224 @@ BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
 }//BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
 
 
+/** Fixed-geometry DRFs and the shielding layers passed to the fit:
+ - a DRF that embeds its scene (MakeFixedGeomResponse) already has that scene's shielding in its
+   curves, so create() refuses any layer - the GUI used to pass the scene's layers back in and the
+   point source was attenuated through them twice;
+ - for any other fixed-geometry DRF a layer is an additive absorber, and the cascade-summing
+   partners must be attenuated by it just as the primary line is (they were not);
+ - with no meaningful distance, a fixed-geometry layer's chord is its full thickness.
+ */
+BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
+{
+  set_data_dir();
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  typedef DetectorPeakResponse::EffGeometryType EffGeometryType;
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> fe = MaterialDB::instance()->material( "Fe" );
+  BOOST_REQUIRE( fe );
+
+  // A per-decay fixed geometry with summing-relevant efficiencies: FEP ~5%, total 15%.
+  const auto make_fixed = []() -> shared_ptr<DetectorPeakResponse> {
+    auto far = make_shared<DetectorPeakResponse>();
+    far->fromExpOfLogPowerSeries( {-3.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm, 5*PhysicalUnits::cm,
+                                  PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                  EffGeometryType::FarFieldAbsolute );
+    shared_ptr<DetectorPeakResponse> fixed = far->reinterpretAsFixedGeom( EffGeometryType::FixedGeomTotalAct );
+    auto tot = make_shared<DetectorEfficiencyCurve>();
+    tot->setFromPairs( { {10.0f, 0.15f}, {3000.0f, 0.15f} }, static_cast<float>(PhysicalUnits::keV) );
+    fixed->setTotalEfficiencyCurve( tot );
+    return fixed;
+  };
+
+  ShieldingSourceFitCalc::ShieldingInfo fe_layer;
+  fe_layer.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  fe_layer.m_isGenericMaterial = false;
+  fe_layer.m_forFitting = true;
+  fe_layer.m_material = fe;
+  fe_layer.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+  fe_layer.m_dimensions[1] = fe_layer.m_dimensions[2] = 0.0;
+  fe_layer.m_fitDimensions[0] = fe_layer.m_fitDimensions[1] = fe_layer.m_fitDimensions[2] = false;
+
+  // The fit's expected counts per peak.  (Not compared to energy_chi_contributions: for a material
+  //  shield the display path still uses plain mu, not the fit's FEP-window/Rayleigh coefficient.)
+  const auto counts = []( const ShieldingSourceChi2Fcn::ShieldSourceInput &input ) -> vector<double> {
+    const auto fcn_pars = ShieldingSourceChi2Fcn::create( input );
+    ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    return fcn_pars.first->expected_peak_counts_imp<double>( fcn_pars.second.values(), cache );
+  };
+
+  {// 1) A DRF that embeds its scene refuses layers; bare, it evaluates.
+    const shared_ptr<DetectorPeakResponse> embedded = make_fixed();
+    MakeFixedGeomResponse::Setup setup;
+    setup.distance = 10.0*PhysicalUnits::cm;
+    setup.shieldings.push_back( fe_layer );
+    embedded->setFixedGeometrySetupXml( setup.toXmlString() );
+
+    ShieldingSourceChi2Fcn::ShieldSourceInput input = make_ba133_point_input( embedded,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    BOOST_CHECK_NO_THROW( ShieldingSourceChi2Fcn::create( input ) );
+    input.config.shieldings = { fe_layer };
+    BOOST_CHECK_THROW( ShieldingSourceChi2Fcn::create( input ), std::exception );
+  }
+
+  {// 2) Additive absorber on a plain fixed-geometry DRF.
+    const shared_ptr<DetectorPeakResponse> fixed = make_fixed();
+
+    // The hidden distance field is meaningless for fixed geometry; a value smaller than the layer
+    //  must not cap its chord.
+    ShieldingSourceChi2Fcn::ShieldSourceInput bare = make_ba133_point_input( fixed,
+                        0.5*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput shielded = bare;
+    shielded.config.shieldings = { fe_layer };
+
+    const vector<double> bare_counts = counts( bare );
+    const vector<double> shielded_counts = counts( shielded );
+    BOOST_REQUIRE_EQUAL( bare_counts.size(), 5u );
+    BOOST_REQUIRE_EQUAL( shielded_counts.size(), 5u );
+
+    // 356 keV through 1 cm of Fe: FEP transmission ~0.45 (well under the ~0.84 a 0.5 cm cap gives).
+    const double t356 = shielded_counts[3] / bare_counts[3];
+    BOOST_TEST_MESSAGE( "Fixed geometry, 1 cm Fe, 356 keV transmission " << t356 );
+    BOOST_CHECK( (t356 > 0.3) && (t356 < 0.6) );
+
+    // With summing on, the correction behind the shield must be smaller than bare: the 81 keV and
+    //  x-ray partners are mostly absorbed.  (Before, the partner legs ignored the absorber.)
+    ShieldingSourceChi2Fcn::ShieldSourceInput bare_casc = bare, shielded_casc = shielded;
+    bare_casc.config.options.correct_for_cascade_summing = true;
+    shielded_casc.config.options.correct_for_cascade_summing = true;
+
+    const vector<double> bare_casc_counts = counts( bare_casc );
+    const vector<double> shielded_casc_counts = counts( shielded_casc );
+    const double c_bare = bare_casc_counts[3] / bare_counts[3];
+    const double c_shielded = shielded_casc_counts[3] / shielded_counts[3];
+    BOOST_TEST_MESSAGE( "Ba133 356 keV summing factor: bare " << c_bare << ", behind 1 cm Fe " << c_shielded );
+    BOOST_CHECK_LT( c_bare, 0.99 );
+    BOOST_CHECK_LT( std::fabs(1.0 - c_shielded), 0.7*std::fabs(1.0 - c_bare) );
+  }
+
+  {// 3) Summing needs a per-decay FEP: a per-gram curve of unknown scale can't be used, one whose
+   //  scale the embedded scene records can, and gives the per-decay result.
+    const shared_ptr<DetectorPeakResponse> total_act = make_fixed();
+    BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( total_act ) );
+
+    const double mass_g = 250.0;
+    shared_ptr<DetectorPeakResponse> per_gram
+                      = total_act->convertFixedGeometryType( mass_g*PhysicalUnits::gram,
+                                                            EffGeometryType::FixedGeomActPerGram );
+    BOOST_REQUIRE( per_gram );
+    BOOST_CHECK( per_gram->hasTotalEfficiency() );
+    BOOST_CHECK_EQUAL( MakeFixedGeomResponse::perDecayFepScale( *per_gram ), 0.0 );
+    BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( per_gram ) );
+
+    const double scale = per_gram->farFieldIntrinsicEfficiency( 356.0f )
+                         / total_act->farFieldIntrinsicEfficiency( 356.0f );
+    MakeFixedGeomResponse::Setup setup;
+    setup.distance = 10.0*PhysicalUnits::cm;
+    setup.fep_scale = scale;
+    per_gram->setFixedGeometrySetupXml( setup.toXmlString() );
+    BOOST_CHECK_CLOSE( MakeFixedGeomResponse::perDecayFepScale( *per_gram ), scale, 1.0e-6 );
+    BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( per_gram ) );
+
+    MakeFixedGeomResponse::Setup back;
+    back.fromXmlString( setup.toXmlString() );
+    BOOST_CHECK_CLOSE( back.fep_scale, scale, 1.0e-6 );
+
+    // Converting a DRF that embeds its scene keeps the recorded scale in step with the curve.
+    {
+      const shared_ptr<DetectorPeakResponse> embedded = make_fixed();
+      MakeFixedGeomResponse::Setup total_setup;
+      total_setup.distance = 10.0*PhysicalUnits::cm;
+      embedded->setFixedGeometrySetupXml( total_setup.toXmlString() );
+      const shared_ptr<DetectorPeakResponse> converted
+                    = embedded->convertFixedGeometryType( mass_g*PhysicalUnits::gram,
+                                                          EffGeometryType::FixedGeomActPerGram );
+      BOOST_CHECK_CLOSE( MakeFixedGeomResponse::perDecayFepScale( *converted ), scale, 1.0e-4 );
+      BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( converted ) );
+    }
+
+    // Same summing factor per decay or per gram.
+    ShieldingSourceChi2Fcn::ShieldSourceInput a = make_ba133_point_input( total_act,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput b = make_ba133_point_input( per_gram,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput a_casc = a, b_casc = b;
+    a_casc.config.options.correct_for_cascade_summing = true;
+    b_casc.config.options.correct_for_cascade_summing = true;
+    const vector<double> na = counts( a ), nb = counts( b ), na_c = counts( a_casc ), nb_c = counts( b_casc );
+    for( size_t i = 0; i < na.size(); ++i )
+      BOOST_CHECK_CLOSE( na_c[i]/na[i], nb_c[i]/nb[i], 1.0e-6 );
+  }
+
+  {// 4) Reinterpreting a far-field DRF as fixed geometry drops its far-field total curve (a
+   //  GADRAS PTOT is per photon on the face, not per decay).
+    auto far = make_shared<DetectorPeakResponse>();
+    far->fromExpOfLogPowerSeries( {-3.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm, 5*PhysicalUnits::cm,
+                                  PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                  EffGeometryType::FarFieldAbsolute );
+    auto tot = make_shared<DetectorEfficiencyCurve>();
+    tot->setFromPairs( { {10.0f, 0.6f}, {3000.0f, 0.6f} }, static_cast<float>(PhysicalUnits::keV) );
+    far->setTotalEfficiencyCurve( tot );
+    const shared_ptr<DetectorPeakResponse> fixed
+                        = far->reinterpretAsFixedGeom( EffGeometryType::FixedGeomTotalAct );
+    BOOST_CHECK( !fixed->hasTotalEfficiency() );
+    BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( fixed ) );
+  }
+}//BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
+
+
+/** sceneRepresentable: one source layer, and one activity convention within it. */
+BOOST_AUTO_TEST_CASE( FixedGeomSceneSourceConventions )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> soil = MaterialDB::instance()->material( "soil" );
+  BOOST_REQUIRE( soil );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+
+  const auto trace = [db]( const char *nuc, const GammaInteractionCalc::TraceActivityType type ){
+    ShieldingSourceFitCalc::TraceSourceInfo t;
+    t.m_type = type;
+    t.m_fitActivity = true;
+    t.m_nuclide = db->nuclide( nuc );
+    t.m_activity = 1.0*PhysicalUnits::becquerel;
+    t.m_relaxationDistance = 0.0f;
+    return t;
+  };
+
+  MakeFixedGeomResponse::Setup setup;
+  setup.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+  setup.distance = 5.0*PhysicalUnits::cm;
+  ShieldingSourceFitCalc::ShieldingInfo host;
+  host.m_geometry = setup.geometry;
+  host.m_isGenericMaterial = false;
+  host.m_forFitting = true;
+  host.m_material = soil;
+  host.m_dimensions[0] = 3.0*PhysicalUnits::cm;
+  host.m_dimensions[1] = 2.0*PhysicalUnits::cm;
+  host.m_dimensions[2] = 0.0;
+  host.m_fitDimensions[0] = host.m_fitDimensions[1] = host.m_fitDimensions[2] = false;
+
+  using GammaInteractionCalc::TraceActivityType;
+  host.m_traceSources = { trace("Cs137", TraceActivityType::TotalActivity),
+                          trace("Co60", TraceActivityType::ActivityPerCm3) };
+  setup.shieldings = { host };
+  BOOST_CHECK( MakeFixedGeomResponse::sceneRepresentable( setup, nullptr ) );  //both per decay
+
+  host.m_traceSources = { trace("Cs137", TraceActivityType::TotalActivity),
+                          trace("Co60", TraceActivityType::ActivityPerGram) };
+  setup.shieldings = { host };
+  string why;
+  BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable( setup, &why ) );
+  BOOST_CHECK( !why.empty() );
+
+  host.m_traceSources = { trace("Cs137", TraceActivityType::ActivityPerGram) };
+  setup.shieldings = { host, host };
+  BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable( setup, nullptr ) );  //two source layers
+}//BOOST_AUTO_TEST_CASE( FixedGeomSceneSourceConventions )
+
+
 namespace
 {
 /** A hollow volumetric source for the fit-level cases: a steel core of `core_radius` inside a

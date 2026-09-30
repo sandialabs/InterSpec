@@ -265,6 +265,24 @@
   opacity: 1.0;
 }
 
+/* "Shielding" caption with the small "Create MC Eff" link to its right.  The link is absolutely
+   positioned so the caption alone sets the row height - showing/hiding it doesn't shift the
+   shielding box below. */
+.ShieldingSourceDisplay .ShieldCapRow
+{
+  position: relative;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink
+{
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  line-height: 1;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
 /* Link-styled push buttons (Show Diagram, calc. log) */
 .ShieldingSourceDisplay .SsdLink,
 .ShieldingSourceDisplay .SsdLink:hover,
@@ -283,6 +301,38 @@
 .ShieldingSourceDisplay .SsdLink:hover
 {
   text-decoration: underline;
+}
+
+/* "Create MC Eff" and "Show Diagram": normal weight, dimmed until moused over. */
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShowDiagramLink,
+.ShieldingSourceDisplay .ShowDiagramLink:hover,
+.ShieldingSourceDisplay .ShowDiagramLink:active,
+.ShieldingSourceDisplay .ShowDiagramLink:focus
+{
+  font-weight: 400;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShowDiagramLink
+{
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:hover,
+.ShieldingSourceDisplay .ShowDiagramLink:hover
+{
+  opacity: 1.0;
+}
+
+/* The small caption link keeps one size/weight in every state (no hover jitter). */
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:hover,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:active,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:focus
+{
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 /* Mult./Chi switch toolbar, placed under the chart */
