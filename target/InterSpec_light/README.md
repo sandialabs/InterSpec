@@ -22,6 +22,7 @@ It can:
 - assign sources to peaks: from the shown reference lines when fit, from the right-click menu's "Assign as"
   items, or by typing one into the peak table (e.g., "Cs137", "Pb 75", "Th232 S.E.")
 - edit or fit (from peaks) the energy calibration, and apply it to the shown detectors
+- export the energy calibration as a CALp file, or apply one (drop it on the page), as InterSpec does
 - export N42/PCF/CHN/SPE/CNF/... files, and the peaks as an InterSpec-compatible peak CSV
 - read and write peaks in N42-2012 and IAEA SPE files, the way InterSpec does (optional; see below)
 
@@ -55,8 +56,10 @@ cd target/InterSpec_light
 ```
 This writes `dist/InterSpecLight.html` and `dist/InterSpecLight_uncompressed.html`.  The first build
 also downloads and builds the dependencies, which takes a few minutes (~2 minutes on a recent Mac with
-a fast connection); the page itself then builds in about a minute.  All builds use 4 cores.  The
-built pages are not tracked in git.
+a fast connection); the page itself then builds in about a minute.  All builds use 4 cores.
+`dist/InterSpecLight.html` is tracked in git, so the page can be used without building it; a build
+overwrites it, so commit it along with source changes.  The uncompressed variant is not tracked, to
+avoid bloating the repository.
 
 `./build.sh --without-peak-files` (CMake option `LIGHT_PEAK_FILE_IO=OFF`) leaves out reading and writing
 peaks in N42 and SPE files, which saves ~27 kB of the compressed page (~70 kB uncompressed): the XML/CSV
@@ -154,7 +157,14 @@ same peaks in N42 and SPE files this page wrote as in the ones InterSpec wrote.
   peaks in place of a detector response.  New peaks get sources from the shown reference lines,
   largest first.
 - Energy-cal changes apply to all samples of the foreground file's shown detectors.  Other files
-  are unchanged, and lower-channel-energy calibrations are read-only.  Deviation pairs are kept as-is.
+  are unchanged, and lower-channel-energy calibrations are read-only (though a CALp file can set or
+  replace them).  Deviation pairs are kept as-is.
+- A dropped CALp file is applied the same way (all samples, shown detectors), but with its own
+  deviation pairs, which only reach the detectors that have the displayed calibration (others get the
+  change propagated, as for an edit).  A calibration named for one detector is refused if the shown
+  detectors have different calibrations, and a CALp file with per-detector calibrations needs one for
+  each shown detector.  If a background or secondary from another file, with as many channels, is
+  loaded, a dialog asks which spectra to apply it to.  "Revert" restores every loaded file's calibration.
 - Peak sources come only from the reference-line library: typed sources are read as InterSpec's peak
   table reads them, but matched to the library's lines, so a nuclide not in the library can not be
   assigned.

@@ -1,7 +1,7 @@
 // Replays a JSONL request script (same format as light_cli) through the WASM module in Node.
 //  Usage: node tests/node_run.mjs <build_wasm/light_wasm.js> <script.jsonl> [ref_lines.json]
-//  Input files named by "loadFile" requests are copied into the in-memory filesystem first (unless
-//  already there, e.g., written by an earlier "exportFile").
+//  Input files named by "loadFile" and "importCALp" requests are copied into the in-memory filesystem
+//  first (unless already there, e.g., written by an earlier "exportFile").
 //  If a ref_lines.json is given, it is sent as the reference-line library before the script.
 
 import fs from 'node:fs';
@@ -42,7 +42,7 @@ for( const line of fs.readFileSync( scriptPath, 'utf8' ).split( '\n' ) )
 
   const req = JSON.parse( line );
   // Files an earlier request exported are already in the in-memory filesystem
-  if( req.method === 'loadFile' && req.params && req.params.path && !Module.FS.analyzePath( req.params.path ).exists )
+  if( ((req.method === 'loadFile') || (req.method === 'importCALp')) && req.params && req.params.path && !Module.FS.analyzePath( req.params.path ).exists )
   {
     const memPath = '/in/' + path.basename( req.params.path );
     Module.FS.writeFile( memPath, fs.readFileSync( req.params.path ) );

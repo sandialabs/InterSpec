@@ -113,6 +113,22 @@ const fitted = await page.evaluate( () => ({ coefs: App.ecal.cal.coefs, means: A
 check( Math.abs( fitted.coefs[1] - cal0[1] ) / cal0[1] < 2e-4, `gain fit back: ${fitted.coefs[1]} vs ${cal0[1]}` );
 check( Math.abs( fitted.means[fitted.means.length - 1] - 661.66 ) < 0.3, `661 peak after fit: ${fitted.means.map( (m) => m.toFixed(3) ).join( ', ' )}` );
 
+// "Export CALp" link downloads the calibration; loading that CALp file (foreground only, so no
+//  dialog) puts it back after a change
+await page.evaluate( () => { document.getElementById( 'ecal-section' ).open = true; } );
+await page.screenshot( { path: path.join( outDir, 'light_3b_ecal.png' ) } );
+const [ calpDownload ] = await Promise.all( [ page.waitForEvent( 'download' ), page.click( '.calp-link' ) ] );
+const calpPath = path.join( outDir, 'light_export.CALp' );
+await calpDownload.saveAs( calpPath );
+check( (calpDownload.suggestedFilename() === 'Ba133_Cs137_RandomSummingOnly.CALp')
+       && fs.readFileSync( calpPath, 'utf8' ).startsWith( '#PeakEasy CALp File' ),
+       'Export CALp link: ' + calpDownload.suggestedFilename() );
+await page.evaluate( (c) => App.run( 'setEnergyCal', { type: 'Polynomial', coefs: [ c[0], 1.02*c[1] ] } ), fitted.coefs );
+await page.setInputFiles( '#file-input', calpPath );
+await page.waitForFunction( (g) => Math.abs( App.ecal.cal.coefs[1] - g ) < 1e-5*g, fitted.coefs[1], { timeout: 10000 } );
+check( await page.evaluate( () => App.files.slots.FOREGROUND.name ) === 'Ba133_Cs137_RandomSummingOnly.n42',
+       'CALp file applied (not loaded as a spectrum)' );
+
 // Export N42 and check the new gain is in it
 const exported = await page.evaluate( () => {
   const r = App.call( 'exportFile', { format: 'N42-2012', path: '/tmp/x.n42' } );
@@ -149,7 +165,7 @@ await page.screenshot( { path: path.join( outDir, 'light_4b_search_peaks.png' ) 
 if( peakFiles )
 {
   // (like InterSpec, peak values are read back as float, so compare to 0.01 keV)
-  const peakSummary = () => page.evaluate( () => App.peaks.list.map( (p) => p.mean.toFixed( 2 ) + ' ' + p.source ).join( '; ' ) );
+  const peakSummary = () => page.evaluate( () => App.peaks.list.map( (p) => ({ mean: p.mean, source: p.source }) ) );
   const before = await peakSummary();
   const n42 = await page.evaluate( () => {
     const r = App.call( 'exportFile', { format: 'N42-2012', path: '/tmp/roundtrip.n42' } );
@@ -159,7 +175,9 @@ if( peakFiles )
   await page.setInputFiles( '#file-input', path.join( outDir, 'light_roundtrip.n42' ) );
   await page.waitForFunction( () => App.files.slots.FOREGROUND && (App.files.slots.FOREGROUND.name === 'light_roundtrip.n42'), null, { timeout: 30000 } );
   const after = await peakSummary();
-  check( after === before, `N42 export with ${before.split( ';' ).length} peaks loads back with them` );
+  check( (after.length === before.length)
+         && after.every( (p, i) => (Math.abs( p.mean - before[i].mean ) < 0.01) && (p.source === before[i].source) ),
+         `N42 export with ${before.length} peaks loads back with them` );
 }
 
 // Passthrough file: time chart, then select background with the "b" key held while dragging

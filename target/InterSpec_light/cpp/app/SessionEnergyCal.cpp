@@ -23,10 +23,14 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
+#include <iterator>
 #include <algorithm>
 #include <stdexcept>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakDef.h"
@@ -87,27 +91,34 @@ namespace
       cal->set_polynomial( nchannel, coefs, dev_pairs );
     return cal;
   }//make_cal(...)
+
+
+  /** "foreground", "background", or "secondary", for messages. */
+  string type_label( const Session::SpecType type )
+  {
+    return SpecUtils::to_lower_ascii_copy( Session::typeName( type ) );
+  }
 }//namespace
 
 
-CalPtr Session::displayedEnergyCal() const
+CalPtr Session::displayedEnergyCal( const SpecType type ) const
 {
-  const Slot &fore = m_slots[Foreground];
-  if( !fore.file || fore.samples.empty() )
+  const Slot &slot = m_slots[type];
+  if( !slot.file || slot.samples.empty() )
     return nullptr;
 
-  const vector<string> dets = displayedDetectors( Foreground );
+  const vector<string> dets = displayedDetectors( type );
   if( dets.empty() )
     return nullptr;
 
   try
   {
-    return fore.file->spec->suggested_sum_energy_calibration( fore.samples, dets );
+    return slot.file->spec->suggested_sum_energy_calibration( slot.samples, dets );
   }catch( std::exception & )
   {
   }
   return nullptr;
-}//displayedEnergyCal()
+}//displayedEnergyCal(...)
 
 
 json Session::energyCalJson() const
@@ -125,12 +136,17 @@ json Session::energyCalJson() const
   answer["lowerEnergy"] = cal->lower_energy();
   answer["upperEnergy"] = cal->upper_energy();
 
+  // Revert applies to every loaded file (a CALp file may have changed the background or secondary)
   bool changed = false;
-  const Slot &fore = m_slots[Foreground];
-  for( const auto &m : fore.file->spec->measurements() )
+  for( const Slot &slot : m_slots )
   {
-    const auto pos = fore.file->orig_cals.find( m.get() );
-    changed = changed || ((pos != end(fore.file->orig_cals)) && (pos->second != m->energy_calibration()));
+    if( !slot.file || changed )
+      continue;
+    for( const auto &m : slot.file->spec->measurements() )
+    {
+      const auto pos = slot.file->orig_cals.find( m.get() );
+      changed = changed || ((pos != end(slot.file->orig_cals)) && (pos->second != m->energy_calibration()));
+    }
   }
   answer["changed"] = changed;
 
@@ -138,15 +154,14 @@ json Session::energyCalJson() const
 }//json energyCalJson() const
 
 
-void Session::applyCalChange( const CalPtr &disp_prev, const CalPtr &disp_new )
+Session::CalChanges Session::calChangesFor( const SpecType type, const CalPtr &disp_prev, const CalPtr &disp_new ) const
 {
-  // Port of EnergyCalTool::applyCalChange, applied to the foreground file only.
-  if( !disp_prev || !disp_new || !disp_new->valid() )
+  // Port of EnergyCalTool::applyCalChange, applied to the one file.
+  if( !m_slots[type].file || !disp_prev || !disp_new || !disp_new->valid() )
     throw runtime_error( "Invalid energy calibration." );
 
-  const Slot &fore = m_slots[Foreground];
-  SpecUtils::SpecFile &spec = *fore.file->spec;
-  const vector<string> dets = displayedDetectors( Foreground );
+  const SpecUtils::SpecFile &spec = *m_slots[type].file->spec;
+  const vector<string> dets = displayedDetectors( type );
 
   const vector<float> &prev_coefs = disp_prev->coefficients();
   const vector<float> &new_coefs = disp_new->coefficients();
@@ -159,7 +174,7 @@ void Session::applyCalChange( const CalPtr &disp_prev, const CalPtr &disp_new )
   // Compute every new calibration (sharing a new one for each distinct old one) before changing
   //  anything, so an invalid result leaves the file untouched.
   map<CalPtr,CalPtr> old_to_new;
-  vector<pair<shared_ptr<const SpecUtils::Measurement>,CalPtr>> to_set;
+  CalChanges changes;
 
   for( const int sample : spec.sample_numbers() )
   {
@@ -190,13 +205,36 @@ void Session::applyCalChange( const CalPtr &disp_prev, const CalPtr &disp_new )
         }
       }//if( havent computed new cal yet )
 
-      to_set.push_back( { m, new_cal } );
+      if( new_cal->num_channels() != m->num_gamma_channels() )
+        throw runtime_error( "The new energy calibration is for " + std::to_string( new_cal->num_channels() )
+                             + " channels, but detector '" + det + "' of the " + type_label( type ) + " has "
+                             + std::to_string( m->num_gamma_channels() ) + "." );
+
+      changes.push_back( { m, new_cal } );
     }//for( loop over detectors )
   }//for( loop over samples )
 
+  return changes;
+}//CalChanges calChangesFor(...)
+
+
+void Session::setCals( const SpecType type, const CalChanges &changes )
+{
+  const Slot &slot = m_slots[type];
+  SpecUtils::SpecFile &spec = *slot.file->spec;
+  const vector<string> dets = displayedDetectors( type );
+
+  // Where each displayed calibration goes; if detectors sharing one get different ones, the first wins
+  map<CalPtr,CalPtr> old_to_new;
+  for( const auto &mc : changes )
+  {
+    if( std::find( begin(dets), end(dets), mc.first->detector_name() ) != end(dets) )
+      old_to_new.emplace( mc.first->energy_calibration(), mc.second );
+  }
+
   // Move peaks of every sample-set of this file whose display calibration is being changed
   map<set<int>,PeakDeque> new_peaks;
-  for( const auto &sp : fore.file->peaks )
+  for( const auto &sp : slot.file->peaks )
   {
     if( sp.second.empty() )
       continue;
@@ -211,15 +249,15 @@ void Session::applyCalChange( const CalPtr &disp_prev, const CalPtr &disp_new )
     new_peaks[sp.first] = std::move( moved );
   }//for( loop over peak sets )
 
-  for( const auto &mc : to_set )
+  for( const auto &mc : changes )
     spec.set_energy_calibration( mc.second, mc.first );
 
   for( auto &sp : new_peaks )
-    fore.file->peaks[sp.first] = std::move( sp.second );
+    slot.file->peaks[sp.first] = std::move( sp.second );
 
   updateAllSummed();
   resetDragCaches();
-}//void applyCalChange(...)
+}//void setCals(...)
 
 
 json Session::setEnergyCal( const json &p )
@@ -245,7 +283,7 @@ json Session::setEnergyCal( const json &p )
     throw runtime_error( string("Invalid energy calibration: ") + e.what() );
   }
 
-  applyCalChange( prev, newcal );
+  setCals( Foreground, calChangesFor( Foreground, prev, newcal ) );
   return state( PartSpectra | PartPeaks | PartEnergyCal );
 }//json setEnergyCal( const json &p )
 
@@ -355,7 +393,7 @@ json Session::fitEnergyCal( const json &p )
     post_dev += fabs( answer->energy_for_channel( info.peakMeanBinNumber ) - info.photopeakEnergy );
   }
 
-  applyCalChange( orig_cal, answer );
+  setCals( Foreground, calChangesFor( Foreground, orig_cal, answer ) );
 
   char msg[256];
   snprintf( msg, sizeof(msg), "Fit %i coefficient(s) using %i peaks; mean |peak - expected| went from %.3g to %.3g keV.",
@@ -370,46 +408,275 @@ json Session::fitEnergyCal( const json &p )
 
 json Session::revertEnergyCal( const json & )
 {
+  if( !m_slots[Foreground].file )
+    throw runtime_error( "No foreground loaded." );
+
+  // Every loaded file goes back to its calibrations as loaded (a CALp file may have changed the
+  //  background or secondary too); a file shown in several slots is done once.
+  set<const LoadedFile *> done;
+  for( int i = 0; i < NumSpecType; ++i )
+  {
+    const Slot &slot = m_slots[i];
+    if( !slot.file || !done.insert( slot.file.get() ).second )
+      continue;
+
+    CalChanges changes;
+    for( const auto &m : slot.file->spec->measurements() )
+    {
+      const auto pos = slot.file->orig_cals.find( m.get() );
+      if( (pos != end(slot.file->orig_cals)) && pos->second && (pos->second != m->energy_calibration()) )
+        changes.push_back( { m, pos->second } );
+    }
+
+    if( !changes.empty() )
+      setCals( SpecType(i), changes );
+  }//for( loop over slots )
+
+  return state( PartSpectra | PartPeaks | PartEnergyCal );
+}//json revertEnergyCal( const json & )
+
+
+json Session::exportCALp( const json &p )
+{
+  // Port of EnergyCalTool's CALpDownloadResource: the calibration of each gamma detector of the
+  //  foreground file, preferring the displayed samples and detectors.  Unlike InterSpec, hidden
+  //  detectors are written too, since a per-detector CALp needs every detector it is applied to.
   const Slot &fore = m_slots[Foreground];
   if( !fore.file )
     throw runtime_error( "No foreground loaded." );
 
-  SpecUtils::SpecFile &spec = *fore.file->spec;
-  const vector<string> all_dets = spec.detector_names();
+  const SpecUtils::SpecFile &spec = *fore.file->spec;
+  const string path = p.value( "path", string("/tmp/interspec_light.CALp") );
+  std::ofstream output( path.c_str(), ios::out | ios::binary | ios::trunc );
+  if( !output )
+    throw runtime_error( "Could not open CALp file." );
 
-  // Map each current calibration back to the original; peaks move with the display calibration.
-  map<CalPtr,CalPtr> cur_to_orig;
-  vector<pair<shared_ptr<const SpecUtils::Measurement>,CalPtr>> to_set;
-  for( const auto &m : spec.measurements() )
-  {
-    const auto pos = fore.file->orig_cals.find( m.get() );
-    if( (pos == end(fore.file->orig_cals)) || !pos->second || (pos->second == m->energy_calibration()) )
-      continue;
-    cur_to_orig[m->energy_calibration()] = pos->second;
-    to_set.push_back( { m, pos->second } );
-  }
+  // Detector names are only written when needed to tell the calibrations apart
+  const bool write_names = (spec.gamma_detector_names().size() > 1);
+  set<string> written;
+  const auto write_cal = [&]( const int sample, const string &det ){
+    if( written.count( det ) )
+      return;
+    const shared_ptr<const SpecUtils::Measurement> m = spec.measurement( sample, det );
+    const CalPtr cal = m ? m->energy_calibration() : nullptr;
+    if( cal && cal->valid() && (cal->num_channels() >= 3)
+        && SpecUtils::write_CALp_file( output, cal, write_names ? det : string() ) )
+      written.insert( det );
+  };
 
   const vector<string> dets = displayedDetectors( Foreground );
-  map<set<int>,PeakDeque> new_peaks;
-  for( const auto &sp : fore.file->peaks )
+  for( const int sample : fore.samples )
   {
-    if( sp.second.empty() )
-      continue;
-    const CalPtr cur = spec.suggested_sum_energy_calibration( sp.first, dets );
-    const auto pos = cur_to_orig.find( cur );
-    if( pos == end(cur_to_orig) )
-      continue;
-    PeakDeque moved = EnergyCal::translatePeaksForCalibrationChange( sp.second, cur, pos->second );
-    std::sort( begin(moved), end(moved), &PeakDef::lessThanByMeanShrdPtr );
-    new_peaks[sp.first] = std::move( moved );
+    for( const string &det : dets )
+      write_cal( sample, det );
+  }
+  for( const int sample : spec.sample_numbers() )
+  {
+    for( const string &det : spec.gamma_detector_names() )
+      write_cal( sample, det );
   }
 
-  for( const auto &mc : to_set )
-    spec.set_energy_calibration( mc.second, mc.first );
-  for( auto &sp : new_peaks )
-    fore.file->peaks[sp.first] = std::move( sp.second );
+  if( written.empty() )
+    throw runtime_error( "There is no energy calibration to export." );
+  if( !output )
+    throw runtime_error( "Failed writing CALp file." );
+  output.close();
 
-  updateAllSummed();
-  resetDragCaches();
-  return state( PartSpectra | PartPeaks | PartEnergyCal );
-}//json revertEnergyCal( const json & )
+  return { {"path", path}, {"filename", foregroundBaseName() + ".CALp"} };
+}//json exportCALp( const json &p )
+
+
+Session::CalChanges Session::calpChangesFor( const SpecType type, const string &calp, string &warning ) const
+{
+  // Port of SpecMeasManager::handleCALpFile and EnergyCalTool::applyCALpEnergyCal
+  const CalPtr disp_cal = displayedEnergyCal( type );
+  if( !disp_cal || !disp_cal->valid() )
+    throw runtime_error( "The " + type_label( type ) + " has no energy calibration to change." );
+
+  const Slot &slot = m_slots[type];
+  const SpecUtils::SpecFile &spec = *slot.file->spec;
+  const vector<string> &det_names = spec.detector_names();
+  const size_t nchannel = disp_cal->num_channels();
+
+  // A CALp file holds one calibration, or one for each detector (named)
+  map<string,CalPtr> det_to_cal;
+  istringstream input( calp );
+  while( input.good() )
+  {
+    const std::streamoff entry_start = input.tellg();
+    string name;
+    CalPtr cal;
+    try
+    {
+      cal = SpecUtils::energy_cal_from_CALp_file( input, nchannel, name );
+    }catch( std::exception &e )
+    {
+      // Junk after the last calibration is ignored, but not a calibration that can not be read
+      const size_t pos = static_cast<size_t>( std::max( entry_start, std::streamoff(0) ) );
+      if( det_to_cal.empty() || SpecUtils::icontains( calp.substr( std::min( pos, calp.size() ) ), "CALp File" ) )
+        throw runtime_error( "Not a valid CALp file (calibration " + std::to_string( det_to_cal.size() + 1 )
+                             + "): " + e.what() );
+      break;
+    }
+
+    if( !cal )
+      break;
+
+    // A named detector may have a different number of channels than the displayed spectrum
+    if( is_poly_or_frf( cal ) && (std::find( begin(det_names), end(det_names), name ) != end(det_names)) )
+    {
+      for( const int sample : slot.samples )
+      {
+        const shared_ptr<const SpecUtils::Measurement> m = spec.measurement( sample, name );
+        const size_t n = m ? m->num_gamma_channels() : size_t(0);
+        if( n <= 3 )
+          continue;
+
+        try
+        {
+          if( n != nchannel )
+            cal = make_cal( cal->type(), n, cal->coefficients(), cal->deviation_pairs() );
+        }catch( std::exception & )
+        {
+          // The channel-count checks below report this
+        }
+        break;
+      }//for( loop over samples )
+    }//if( a named detector )
+
+    det_to_cal[name] = cal;
+  }//while( input.good() )
+
+  if( det_to_cal.empty() )
+    throw runtime_error( "Not a valid CALp file." );
+
+  if( det_to_cal.size() == 1 )
+  {
+    // Like InterSpec, one calibration goes to all shown detectors: directly where they have the
+    //  displayed calibration, and propagated as a change where they have another.
+    const string &det = begin(det_to_cal)->first;
+    const CalPtr &cal = begin(det_to_cal)->second;
+    const bool det_in_file = (std::find( begin(det_names), end(det_names), det ) != end(det_names));
+    const string show_one = det_in_file ? ("; show only detector '" + det + "' to apply it.")
+                                        : string("; show one detector at a time to apply it.");
+    if( cal->num_channels() != nchannel )
+      throw runtime_error( "The CALp calibration for detector '" + det + "' is for "
+                           + std::to_string( cal->num_channels() ) + " channels, but the displayed "
+                           + type_label( type ) + " has " + std::to_string( nchannel ) + show_one );
+
+    const CalChanges changes = calChangesFor( type, disp_cal, cal );
+    set<string> dets;
+    bool propagated = false;
+    for( const auto &mc : changes )
+    {
+      dets.insert( mc.first->detector_name() );
+      propagated = propagated || (mc.second != cal);
+    }
+
+    // A named calibration is only meant for its own detector
+    if( propagated && !det.empty() && (dets.size() > 1) )
+      throw runtime_error( "The CALp file only has a calibration for detector '" + det + "', but the shown"
+                           " detectors of the " + type_label( type ) + " have different calibrations" + show_one );
+
+    if( propagated && !cal->deviation_pairs().empty() )
+      warning = "The shown detectors of the " + type_label( type ) + " have different calibrations, so only"
+                " those with the displayed one got the CALp file's deviation pairs; to apply them to the"
+                " others, show one detector at a time.";
+
+    return changes;
+  }//if( one calibration )
+
+  // Per-detector calibrations: each displayed gamma detector must have one
+  CalChanges changes;
+  string missing;
+  for( const string &det : displayedDetectors( type ) )
+  {
+    const auto pos = det_to_cal.find( det );
+    for( const int sample : spec.sample_numbers() )
+    {
+      const shared_ptr<const SpecUtils::Measurement> m = spec.measurement( sample, det );
+      if( !m || (m->num_gamma_channels() <= 4) )
+        continue;
+
+      if( (pos == end(det_to_cal)) && det.empty() )
+        throw runtime_error( "The calibrations in the CALp file are for named detectors, but the detector of the "
+                             + type_label( type ) + " has no name." );
+
+      if( pos == end(det_to_cal) )
+      {
+        missing += (missing.empty() ? "'" : ", '") + det + "'";
+        break;
+      }
+
+      if( pos->second->num_channels() != m->num_gamma_channels() )
+        throw runtime_error( "The CALp calibration for detector '" + det + "' is for "
+                             + std::to_string( pos->second->num_channels() ) + " channels, but the "
+                             + type_label( type ) + " has " + std::to_string( m->num_gamma_channels() ) + "." );
+
+      changes.push_back( { m, pos->second } );
+    }//for( loop over samples )
+  }//for( loop over displayed detectors )
+
+  if( !missing.empty() )
+    throw runtime_error( "The CALp file has no calibration for detector(s) " + missing + " of the "
+                         + type_label( type ) + "." );
+
+  return changes;
+}//CalChanges calpChangesFor(...)
+
+
+json Session::importCALp( const json &p )
+{
+  const string path = p.at( "path" ).get<string>();
+  const string name = p.value( "name", string("the CALp file") );
+  if( !m_slots[Foreground].file )
+    throw runtime_error( "Load a foreground spectrum before applying a CALp file." );
+
+  std::ifstream input( path.c_str(), ios::in | ios::binary );
+  if( !input )
+    throw runtime_error( "Could not open '" + name + "'." );
+  const string calp( (std::istreambuf_iterator<char>( input )), std::istreambuf_iterator<char>() );
+
+  set<SpecType> wanted;
+  for( const json &t : p.value( "types", json::array( { "FOREGROUND" } ) ) )
+    wanted.insert( typeFromName( t.get<string>() ) );
+
+  // Check every file before changing any; a file shown in several slots is changed once.  Like
+  //  InterSpec, they must all have the same number of channels, which a CALp file's coefficients assume.
+  vector<pair<SpecType,CalChanges>> todo;
+  string warnings;
+  set<const LoadedFile *> files;
+  for( int i = 0; i < NumSpecType; ++i )
+  {
+    const SpecType type = SpecType(i);
+    const Slot &slot = m_slots[i];
+    if( !wanted.count( type ) || !slot.file || !files.insert( slot.file.get() ).second )
+      continue;
+
+    const CalPtr disp_cal = displayedEnergyCal( type );
+    const CalPtr first_cal = todo.empty() ? nullptr : displayedEnergyCal( todo.front().first );
+    if( disp_cal && first_cal && (disp_cal->num_channels() != first_cal->num_channels()) )
+      throw runtime_error( "The " + type_label( type ) + " has " + std::to_string( disp_cal->num_channels() )
+                           + " channels, but the " + type_label( todo.front().first ) + " has "
+                           + std::to_string( first_cal->num_channels() ) + "; a CALp file can only be applied"
+                           " to spectra with the same number of channels." );
+
+    string warning;
+    todo.push_back( { type, calpChangesFor( type, calp, warning ) } );
+    warnings += (warning.empty() ? "" : " ") + warning;
+  }//for( loop over spectrum types )
+
+  if( todo.empty() )
+    throw runtime_error( "There is no spectrum to apply the CALp file to." );
+
+  string applied;
+  for( size_t i = 0; i < todo.size(); ++i )
+  {
+    setCals( todo[i].first, todo[i].second );
+    applied += string( !i ? "" : ((i + 1) == todo.size()) ? " and " : ", " ) + type_label( todo[i].first );
+  }
+
+  json answer = state( PartSpectra | PartPeaks | PartEnergyCal );
+  answer["message"] = "Applied the energy calibration from " + name + " to the " + applied + "." + warnings;
+  return answer;
+}//json importCALp( const json &p )

@@ -1,5 +1,6 @@
 # Only sources, scripts, and test data are tracked: not build outputs, downloaded or built
-#  dependencies, or local files (see README.md).
+#  dependencies, or local files (see README.md).  The exception is dist/InterSpecLight.html, which
+#  was added with `git add -f`, so the page is available without building it.
 /build_native/
 /build_wasm/
 /dist/
