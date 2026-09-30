@@ -453,6 +453,16 @@ the bottom, footer included. AuxWindows re-centre themselves for exactly this re
 (`AuxWindowOnDomResize`); SimpleDialogs have no equivalent. Sizing is now right in that situation;
 position is not.
 
+#### Related, fixed 2026-09-29: absolutely positioned content lost its dialog-body anchor
+
+Wt3's JS layout set `position:absolute` on every layout item (`StdGridLayoutImpl2.js:432-433`), so the
+dialog body was the containing block for anything absolutely positioned inside it. Flex leaves the
+body static, so such content now anchors to the whole `.Wt-dialog`. Symptom: the Peak Editor's
+prev/next-peak arrows (`bottom:0`) sat on the footer's help/Delete buttons. Fixed with
+`position:relative` on `.PeakEdit`. A live scan (every Tools/View/Help item, and every docked tool
+opened as a window with tool tabs hidden, desktop and phone) found no other element whose
+`offsetParent` is the dialog itself.
+
 ### Issue 30 — Three more tools with a layout-on-self hosted in a layout-less `contents()`
 
 Same shape as the Multi-File Calibration dialog fixed on 2026-08-14: the widget puts a `WGridLayout`
@@ -551,6 +561,10 @@ damage. None are fixed. Found by driving the merged app (desktop + phone) and by
 (offscreen windows, non-scrolling overflow, children escaping clipping parents).
 
 ### Phone mode tears down the session on load — `?isphone=1` is unusable
+
+**No longer reproduces (checked 2026-09-29):** `?isphone=1` sessions (iPhone 14, iPhone SE, Galaxy S8 and
+iPhone 14 landscape via Playwright) load, open the hamburger menu, load a sample, fit peaks and open
+tools without the session being torn down. Kept below for the history of the mechanism.
 
 Reproducible on every load (2/2 on the merged build; the same hang reproduces on a pre-merge binary,
 so this is not from the merge). Desktop is unaffected and keeps working after the phone session dies.

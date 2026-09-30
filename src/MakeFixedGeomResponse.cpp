@@ -86,6 +86,11 @@ std::string MakeFixedGeomResponse::Setup::toXmlString() const
   const char *dist_val = doc.allocate_string( buffer );
   base_node->append_node( doc.allocate_node( rapidxml::node_element, "DistanceCm", dist_val ) );
 
+  // Always written, so a per-mass/area DRF whose blob lacks it (older, or unknown) is detectable.
+  snprintf( buffer, sizeof(buffer), "%.9g", fep_scale );
+  const char *scale_val = doc.allocate_string( buffer );
+  base_node->append_node( doc.allocate_node( rapidxml::node_element, "FepScale", scale_val ) );
+
   rapidxml::xml_node<char> *shields_node
         = doc.allocate_node( rapidxml::node_element, "Shieldings" );
   base_node->append_node( shields_node );
@@ -102,6 +107,7 @@ void MakeFixedGeomResponse::Setup::fromXmlString( const std::string &xml )
 {
   geometry = GammaInteractionCalc::GeometryType::Spherical;
   distance = 0.0;
+  fep_scale = 1.0;
   shieldings.clear();
 
   vector<char> xml_buf( xml.begin(), xml.end() );
@@ -137,6 +143,14 @@ void MakeFixedGeomResponse::Setup::fromXmlString( const std::string &xml )
   if( !(stringstream(dist_str) >> distance) )
     throw runtime_error( "Setup::fromXmlString: invalid DistanceCm" );
   distance *= PhysicalUnits::cm;
+
+  const rapidxml::xml_node<char> *scale_node = base_node->first_node( "FepScale" );
+  if( scale_node )
+  {
+    const string scale_str = SpecUtils::xml_value_str( scale_node );
+    if( !(stringstream(scale_str) >> fep_scale) || !(fep_scale > 0.0) || std::isinf(fep_scale) )
+      throw runtime_error( "Setup::fromXmlString: invalid FepScale" );
+  }//if( scale_node )
 
   const rapidxml::xml_node<char> *shields_node = base_node->first_node( "Shieldings" );
   if( shields_node )
@@ -184,6 +198,31 @@ bool MakeFixedGeomResponse::sceneRepresentable( const Setup &setup, std::string 
       return fail( "The source must be the innermost layer for the Monte-Carlo"
                    " scene (inner non-source layers are not supported yet)." );
 
+    // One DRF has one activity convention (total / per gram / per m^2) and CeeLo one emission
+    //  distribution, so every source in the layer must share them.
+    const auto convention = []( const GammaInteractionCalc::TraceActivityType type ) -> int {
+      switch( type )
+      {
+        case GammaInteractionCalc::TraceActivityType::ActivityPerGram:         return 1;
+        case GammaInteractionCalc::TraceActivityType::ExponentialDistribution: return 2;
+        default:                                                               return 0;  //total, per cm3
+      }
+    };
+
+    for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
+    {
+      const ShieldingSourceFitCalc::TraceSourceInfo &first = info.m_traceSources.front();  //loop implies non-empty
+      if( convention(trace.m_type) != convention(first.m_type) )
+        return fail( "All trace sources in the source layer must use the same activity"
+                     " convention (total, per gram, or per m^2) for a fixed-geometry response." );
+      if( (convention(trace.m_type) == 2) && (trace.m_relaxationDistance != first.m_relaxationDistance) )
+        return fail( "All exponentially-distributed trace sources must share one relaxation length"
+                     " for a fixed-geometry response." );
+      if( !info.m_nuclideFractions_.empty() && (convention(trace.m_type) != 0) )
+        return fail( "A self-attenuating source can't share its layer with a per-gram or per-m^2"
+                     " trace source for a fixed-geometry response." );
+    }//for( trace sources )
+
     for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
     {
       // CeeLo's exponential depth profile runs along the source's own axis (local z), which is the
@@ -210,6 +249,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
                   const std::shared_ptr<const DetectorPeakResponse> &base_drf,
                   const Setup &setup,
                   const std::vector<double> &extra_energies_keV,
+                  const std::vector<double> &partner_energies_keV,
                   const double fep_precision,
                   const std::function<void(double)> &progress,
                   const std::shared_ptr<std::atomic<bool>> &cancel )
@@ -253,10 +293,35 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
   const int src_layer = source_layer_index( setup );
   DetectorPeakResponse::EffGeometryType eff_geom_type
                 = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+  double fep_scale = 1.0;  //see Setup::fep_scale
+
+  // Side-on cylinder: its axis is the detector x axis.
+  Eigen::Matrix3d side_on_rot;
+  side_on_rot << 0, 0, 1,   0, 1, 0,   -1, 0, 0;  //local z <- detector x
 
   if( src_layer < 0 )
   {
-    calc.set_point_source( center );
+    // A point source's shields take the geometry's shape.  CeeLo only builds per-axis shells
+    //  around an extended source, so use a vanishingly small, non-attenuating one of that shape;
+    //  a bare CeeLo point would get spherical shells of dims[0] instead.
+    const double tiny_cm = 1.0E-4;
+    switch( setup.geometry )
+    {
+      case GeometryType::Spherical:
+        calc.set_point_source( center );
+        break;
+      case GeometryType::CylinderEndOn:
+        calc.set_cylindrical_source( center, tiny_cm, tiny_cm );
+        break;
+      case GeometryType::CylinderSideOn:
+        calc.set_cylindrical_source( center, tiny_cm, tiny_cm, side_on_rot );
+        break;
+      case GeometryType::Rectangular:
+        calc.set_rectangular_source( center, Eigen::Vector3d( tiny_cm, tiny_cm, tiny_cm ) );
+        break;
+      case GeometryType::NumGeometryType:
+        throw runtime_error( "Invalid geometry type" );
+    }//switch( setup.geometry )
   }else
   {
     const ShieldingSourceFitCalc::ShieldingInfo &src_info = setup.shieldings[src_layer];
@@ -275,12 +340,8 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
         break;
 
       case GeometryType::CylinderSideOn:
-      {
-        Eigen::Matrix3d rot;
-        rot << 0, 0, 1,   0, 1, 0,   -1, 0, 0;  //local z <- detector x
-        calc.set_cylindrical_source( center, dim0_cm, dim1_cm, rot );
+        calc.set_cylindrical_source( center, dim0_cm, dim1_cm, side_on_rot );
         break;
-      }
 
       case GeometryType::Rectangular:
         calc.set_rectangular_source( center,
@@ -311,6 +372,33 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
           throw runtime_error( "Invalid trace activity type" );
       }//switch( trace.m_type )
     }//for( trace sources )
+
+    // Per-gram / per-m^2 activities: the FEP curve carries the source mass / emitting area, as
+    //  DetectorPeakResponse::convertFixedGeometryType does (the MC itself is per decay).  The
+    //  emitting area matches ShieldingSourceChi2Fcn::inSituEmittingArea for the shapes
+    //  sceneRepresentable allows an exponential distribution in.
+    const double pi = PhysicalUnits::pi;
+    const double r = src_info.m_dimensions[0], d1 = src_info.m_dimensions[1], d2 = src_info.m_dimensions[2];
+    if( eff_geom_type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram )
+    {
+      double volume = 0.0;
+      switch( setup.geometry )
+      {
+        case GeometryType::Spherical:      volume = (4.0/3.0)*pi*r*r*r;   break;
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn: volume = pi*r*r*(2.0*d1);      break;  //d1 = half-length
+        case GeometryType::Rectangular:    volume = 8.0*r*d1*d2;          break;  //half-dims
+        case GeometryType::NumGeometryType: break;
+      }
+      fep_scale = volume * static_cast<double>(src_info.m_material->density) / PhysicalUnits::gram;
+    }else if( eff_geom_type == DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2 )
+    {
+      const double area = (setup.geometry == GeometryType::Rectangular) ? (2.0*r)*(2.0*d1) : (pi*r*r);
+      fep_scale = area / PhysicalUnits::m2;
+    }
+
+    if( !(fep_scale > 0.0) || std::isinf(fep_scale) )
+      throw runtime_error( "The source has no mass or emitting area." );
   }//if( point source ) / else
 
   // Shield layers, innermost first, skipping the source layer itself.
@@ -333,20 +421,14 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
 
       case GeometryType::CylinderEndOn:
       case GeometryType::CylinderSideOn:
-        if( src_layer >= 0 )
-          calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm,
-                                  info.m_dimensions[1] / PhysicalUnits::cm );
-        else
-          calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm );
+        calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm,
+                                info.m_dimensions[1] / PhysicalUnits::cm );
         break;
 
       case GeometryType::Rectangular:
-        if( src_layer >= 0 )
-          calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm,
-                                  info.m_dimensions[1] / PhysicalUnits::cm,
-                                  info.m_dimensions[2] / PhysicalUnits::cm );
-        else
-          calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm );
+        calc.add_source_shield( mat, info.m_dimensions[0] / PhysicalUnits::cm,
+                                info.m_dimensions[1] / PhysicalUnits::cm,
+                                info.m_dimensions[2] / PhysicalUnits::cm );
         break;
 
       case GeometryType::NumGeometryType:
@@ -360,6 +442,17 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
   {
     e_lo = 45.0;
     e_hi = 3000.0;
+  }
+
+  // Cascade-summing partners (x-rays especially) can sit outside the DRF's range; the total curve
+  //  clamps outside its nodes, so extend the grid to cover them rather than add a node each
+  //  (every node is up to ~20 s of MC).
+  for( const double energy : partner_energies_keV )
+  {
+    if( energy >= 15.0 )
+      e_lo = std::min( e_lo, energy );
+    if( energy <= 3500.0 )
+      e_hi = std::max( e_hi, energy );
   }
 
   set<double> energy_set;
@@ -392,9 +485,21 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
     cfg.seed = 7000 + i;  //deterministic
     const ceelo::EfficiencyResult res = calc.compute( cfg );
 
+    // The detector model alone is not the detector: the response the DRF carries is grounded to
+    //  the measured efficiency by k(E), so this scene's MC must be too, or the fixed-geometry DRF
+    //  disagrees with the DRF it was made from by k.  The total is scaled by the same k - a
+    //  detector that is more (or less) efficient than its model is so for any deposit too - which
+    //  matches the response's eta-table total tier; its other tiers model the total differently.
+    double k_ground = 1.0;
+    if( !mc_resp->grounding.empty() )
+    {
+      bool clamped = false;
+      k_ground = std::exp( mc_resp->grounding.eval_ln_k( energies[i], clamped ) );
+    }
+
     DetectorPeakResponse::EnergyEffPoint fep;
     fep.energy = static_cast<float>( energies[i] );
-    fep.efficiency = static_cast<float>( std::max( 0.0, res.full_energy_peak_efficiency ) );
+    fep.efficiency = static_cast<float>( fep_scale * k_ground * std::max( 0.0, res.full_energy_peak_efficiency ) );
     if( res.full_energy_peak_efficiency > 0.0 )
       fep.efficiencyUncert = static_cast<float>( res.fep_uncertainty
                                                  / res.full_energy_peak_efficiency );
@@ -402,7 +507,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
 
     DetectorPeakResponse::EnergyEfficiencyPair tot;
     tot.energy = static_cast<float>( energies[i] );
-    tot.efficiency = static_cast<float>( std::max( 0.0, res.total_efficiency ) );
+    tot.efficiency = static_cast<float>( k_ground * std::max( 0.0, res.total_efficiency ) );  //per decay, never fep_scale'd
     tot_pairs.push_back( tot );
 
     if( progress )
@@ -446,8 +551,43 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
   // The far-field MC characterization does not describe this scene - the new
   //  curves do; ditto the raw calibration points.
   drf->setCeeloResponse( nullptr );
-  drf->setFixedGeometrySetupXml( setup.toXmlString() );
+  Setup embedded = setup;
+  embedded.fep_scale = fep_scale;
+  drf->setFixedGeometrySetupXml( embedded.toXmlString() );
   drf->setName( base_drf->name() + " (fixed-geom MC)" );
 
   return drf;
 }//computeFixedGeomDrf(...)
+
+
+double MakeFixedGeomResponse::perDecayFepScale( const DetectorPeakResponse &drf )
+{
+  if( !drf.isFixedGeometry()
+      || (drf.geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct) )
+    return 1.0;
+
+  // Only the scale is needed, so read just that element (this runs per energy in some callers, and
+  //  a full Setup parse would also look up every material).
+  const string &xml = drf.fixedGeometrySetupXml();
+  if( xml.empty() )
+    return 0.0;
+
+  try
+  {
+    vector<char> xml_buf( xml.begin(), xml.end() );
+    xml_buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
+
+    const rapidxml::xml_node<char> *base_node = doc.first_node( "ActShieldSetup" );
+    const rapidxml::xml_node<char> *scale_node = base_node ? base_node->first_node( "FepScale" ) : nullptr;
+    double scale = 0.0;
+    if( scale_node && (stringstream( SpecUtils::xml_value_str(scale_node) ) >> scale)
+        && (scale > 0.0) && !std::isinf(scale) )
+      return scale;
+  }catch( std::exception & )
+  {
+  }
+
+  return 0.0;
+}//perDecayFepScale(...)

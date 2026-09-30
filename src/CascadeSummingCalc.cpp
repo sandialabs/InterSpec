@@ -67,6 +67,7 @@
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 
 using namespace std;
 
@@ -185,6 +186,66 @@ namespace
 }//namespace
 
 
+namespace
+{
+  /** Every emission energy (keV, sorted) a cascade evaluation of these cascades can query the
+   efficiencies at: cascade members, the daughters' K/L x-ray lines, and 511.
+   */
+  vector<double> partner_energies_of( const vector<shared_ptr<const vector<ceelo::DecayCascade>>> &all )
+  {
+    set<double> energies;
+    set<int> daughter_zs;
+    for( const shared_ptr<const vector<ceelo::DecayCascade>> &casc : all )
+    {
+      for( const ceelo::DecayCascade &dc : *casc )
+      {
+        for( const ceelo::CascadeMember &m : dc.members )
+        {
+          if( m.energy_keV >= 5.0 )
+            energies.insert( m.energy_keV );
+        }
+        const int z = dc.daughter_Z ? dc.daughter_Z : dc.level_scheme.daughter_Z;
+        if( z > 0 )
+          daughter_zs.insert( z );
+      }//for( branches )
+    }//for( nuclides )
+
+    for( const int z : daughter_zs )
+    {
+      for( const ceelo::detail::XrayLine &ln : ceelo::detail::k_lines(z) )
+        if( ln.energy >= 5.0 )
+          energies.insert( ln.energy );
+      for( int s = 0; s < 3; ++s )
+        for( const ceelo::detail::XrayLine &ln : ceelo::detail::l_lines(z, s) )
+          if( ln.energy >= 5.0 )
+            energies.insert( ln.energy );
+    }//for( daughter Zs )
+
+    energies.insert( 510.998950 );  //annihilation
+
+    return vector<double>( begin(energies), end(energies) );
+  }//partner_energies_of(...)
+}//namespace
+
+
+std::vector<double> CascadeSummingCalc::partnerEnergies(
+              const std::vector<std::pair<const SandiaDecay::Nuclide *,double>> &nuclide_ages )
+{
+  vector<shared_ptr<const vector<ceelo::DecayCascade>>> all;
+  for( const pair<const SandiaDecay::Nuclide *,double> &na : nuclide_ages )
+  {
+    if( !na.first )
+      continue;
+    ceelo::cascade_adapter::CascadeOptions opts;
+    opts.age_seconds = na.second / PhysicalUnits::second;
+    all.push_back( make_shared<const vector<ceelo::DecayCascade>>(
+                                 ceelo::cascade_adapter::build_cascades( na.first, opts ) ) );
+  }
+
+  return partner_energies_of( all );
+}//partnerEnergies(...)
+
+
 int CascadeSummingCalc::ageCacheBucket( const double age )
 {
   return age_bucket( age );
@@ -218,45 +279,22 @@ CascadeSummingCalc::CascadeSummingCalc(
 
   // Pre-enumerate cascades at the starting ages, and collect every emission
   //  energy an evaluation can query (gammas, vacancy K/L x-ray lines, 511).
-  set<double> energies;
-  set<int> daughter_zs;
+  vector<shared_ptr<const vector<ceelo::DecayCascade>>> all_cascades;
   for( const pair<const SandiaDecay::Nuclide *,double> &na : nuclide_initial_ages )
-  {
-    const shared_ptr<const vector<ceelo::DecayCascade>> casc
-                                            = cascades( na.first, na.second );
-    for( const ceelo::DecayCascade &dc : *casc )
-    {
-      for( const ceelo::CascadeMember &m : dc.members )
-      {
-        if( m.energy_keV >= 5.0 )
-          energies.insert( m.energy_keV );
-      }
-      const int z = dc.daughter_Z ? dc.daughter_Z : dc.level_scheme.daughter_Z;
-      if( z > 0 )
-        daughter_zs.insert( z );
-    }//for( branches )
-  }//for( nuclides )
+    all_cascades.push_back( cascades( na.first, na.second ) );
 
-  for( const int z : daughter_zs )
-  {
-    for( const ceelo::detail::XrayLine &ln : ceelo::detail::k_lines(z) )
-      if( ln.energy >= 5.0 )
-        energies.insert( ln.energy );
-    for( int s = 0; s < 3; ++s )
-      for( const ceelo::detail::XrayLine &ln : ceelo::detail::l_lines(z, s) )
-        if( ln.energy >= 5.0 )
-          energies.insert( ln.energy );
-  }//for( daughter Zs )
-
-  energies.insert( 510.998950 );  //annihilation
-
-  m_partner_energies.assign( begin(energies), end(energies) );
+  m_partner_energies = partner_energies_of( all_cascades );
 
   if( shields_present )
   {
     const std::function<double(double)> eps_totint = [drf]( double energy ) -> double {
       try
       {
+        // Only the energy SHAPE matters (the table uses ratios); a fixed-geometry DRF has no
+        //  diameter or distance to divide out, so use its curve as is.
+        if( drf->isFixedGeometry() )
+          return drf->totalIntrinsicEfficiency( static_cast<float>(energy) );
+
         return drf->totalEfficiencyEval( static_cast<float>(energy), 0.0, 0.0,
                                          1.0E6*PhysicalUnits::cm ).value
                / DetectorPeakResponse::fractionalSolidAngle(
@@ -308,7 +346,17 @@ CascadeSummingCalc::CascadeSummingCalc( const CascadeSummingCalc &other,
 
 bool CascadeSummingCalc::drfHasNeededInfo( const std::shared_ptr<const DetectorPeakResponse> &drf )
 {
-  return drf && drf->isValid() && drf->hasAnyTotalEfficiencyInfo();
+  if( !drf || !drf->isValid() )
+    return false;
+
+  // A fixed-geometry DRF's efficiencies are the curves themselves: it needs a total curve (a total
+  //  only inside a CeeLo response is read as 0 on that path), and a FEP curve whose per-decay
+  //  normalization is known - a per-gram / per-area curve of unknown scale would mis-scale the
+  //  sum-in term.
+  if( drf->isFixedGeometry() )
+    return drf->hasTotalEfficiency() && (MakeFixedGeomResponse::perDecayFepScale( *drf ) > 0.0);
+
+  return drf->hasAnyTotalEfficiencyInfo();
 }
 
 
@@ -353,7 +401,11 @@ double CascadeSummingCalc::detectorFepEffAbs( const std::shared_ptr<const Detect
   try
   {
     if( drf->isFixedGeometry() )
-      return drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
+    {
+      // The curve per unit mass/area (FixedGeomActPerGram etc.) - summing wants it per decay.
+      const double scale = MakeFixedGeomResponse::perDecayFepScale( *drf );
+      return (scale > 0.0) ? (drf->farFieldIntrinsicEfficiency( static_cast<float>(energy) ) / scale) : 0.0;
+    }
 
     const DetectorPeakResponse::EffEval eval
           = drf->fepEfficiencyEval( static_cast<float>(energy), theta, phi, distance );

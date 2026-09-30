@@ -104,6 +104,9 @@ PeakEditWindow::PeakEditWindow( const double energy,
   {
     setMaximumSize( WLength::Auto, viewer->renderedHeight()-25 );
     contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    // On narrow phones the footer buttons wrap to a second row (see PeakEdit.css); let the
+    //  footer size to its content instead of AuxWindow's fixed 45px, which would clip that row.
+    footer()->setHeight( WLength::Auto );
   }else
   {
     resizeToFitOnScreen();
