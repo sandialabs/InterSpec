@@ -300,6 +300,26 @@ Further detail about each peak, including these statistics, is available in the 
   response, and in this analysis, things should cancel out anyway - but also if you made
   the response function in <b>InterSpec</b>, see the &quot;Fixed Geometry&quot; option).
   </li>
+  <li><b>Cascade summing corr.</b>: When checked, expected peak counts are corrected for
+  true-coincidence (cascade) summing - gammas and x-rays emitted together in a decay that deposit
+  energy in the detector at the same time, which removes counts from full-energy peaks (and can add
+  them to others) for sources close to the detector.  The detector response needs total-efficiency
+  information, e.g., from a Monte-Carlo characterization.  Trace and self-attenuating sources are
+  corrected throughout their volume.
+  </li>
+  <li><b>Create MC Eff</b> (the link to the right of the &quot;Shielding&quot; caption): Runs a Monte-Carlo of the current source and
+  shielding with the detector response's Monte-Carlo detector model, and switches to a
+  fixed-geometry detector response for exactly that setup.  The setup's source, shielding, and air
+  are then part of the detector response: they are shown read-only and no shieldings are applied on
+  top of them; select a different detector response to change the setup (which puts the setup back
+  for editing).  Per-gram and per-m&#178; trace-source activities keep their units.  The link is only
+  shown when the detector response has a Monte-Carlo detector model, and not while a shielding dimension is being fit, when more than one shielding carries a
+  source, when point sources are fit alongside a trace or self-attenuating source, and, when
+  &quot;Cascade summing corr.&quot; is checked, for trace or self-attenuating sources - a
+  fixed-geometry response only has efficiencies averaged over the source volume, which
+  under-corrects summing for thick samples right at the detector (by roughly 1-3% for Co-60).
+  Cascade-summing corrections for a point source remain exact.
+  </li>
   <li><b>Subtract Background Peaks</b>: If your source peaks correspond to peaks
     that may also be found in the background, then this option will effectively
     subtract the background peak amplitudes from the foreground peak amplitudes.

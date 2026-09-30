@@ -410,6 +410,24 @@ DetectorDef selectDetectorDef( const std::vector<DetectorDef> &defs,
 }//selectDetectorDef(...)
 
 
+bool isCandidateDetectorTxt( const std::string &headerText )
+{
+  // Guards against feeding the line parser a binary file.
+  if( headerText.find( '\0' ) != std::string::npos )
+    return false;
+
+  std::istringstream strm( headerText );
+  const std::vector<DetectorDef> defs = parseDetectorTxt( strm );
+  for( const DetectorDef &def : defs )
+  {
+    if( (def.d1_crystal_diam_mm > 0.0) && (def.d2_crystal_len_mm > 0.0) )
+      return true;  //NaN compares false, so both were present and positive
+  }
+
+  return false;
+}//isCandidateDetectorTxt(...)
+
+
 //=============================================================================
 //  .PAR  (binary spatial-efficiency grid)   - a port of par_decode.py
 //=============================================================================
@@ -512,7 +530,12 @@ ParFile parseParFile( const std::string &path )
 {
   // Read the exact bytes (SpecUtils::load_file_data appends a trailing NUL,
   //  which would break the strict file-size identity check).
+#ifdef _WIN32
+  const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16( path );
+  std::ifstream input( wpath.c_str(), std::ios::binary | std::ios::ate );
+#else
   std::ifstream input( path.c_str(), std::ios::binary | std::ios::ate );
+#endif
   if( !input.is_open() )
     throw std::runtime_error( "parseParFile: could not open '" + path + "'." );
 
@@ -527,6 +550,36 @@ ParFile parseParFile( const std::string &path )
 
   return parseParFile( bytes );
 }//parseParFile( path )
+
+
+bool isCandidateParFile( const uint8_t *header, const size_t headerLen, const size_t fileSize )
+{
+  if( !header || (headerLen < 0x12) || (fileSize < 32) )
+    return false;
+
+  // The limits are loose on purpose; they only need to reject text and other binary formats.  The
+  //  lower energy bound matters for text: ASCII digits read as a double give a tiny positive value.
+  const double emin = read_f64le( header + 0x00 );
+  const double emax = read_f64le( header + 0x08 );
+  if( !std::isfinite(emin) || !std::isfinite(emax)
+      || (emin < 0.1) || (emax <= emin) || (emax > 1.0E5) )
+    return false;
+
+  const uint16_t n = read_u16le( header + 0x10 );
+  if( (n < 1) || (n > 1000) || ((0x12 + 8*static_cast<size_t>(n)) >= fileSize) )
+    return false;
+
+  double prev = 0.0;
+  for( size_t e = 0; (e < n) && ((0x12 + 8*(e + 1)) <= headerLen); ++e )
+  {
+    const double energy = read_f64le( header + 0x12 + 8*e );
+    if( !std::isfinite(energy) || (energy <= prev) || (energy > 1.0E5) )
+      return false;
+    prev = energy;
+  }
+
+  return true;
+}//isCandidateParFile(...)
 
 
 //=============================================================================
@@ -1527,7 +1580,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  sentinel instead of a number.  Converting the zone's boundary from the
   //  grid's (radial, theta) into cylindrical coords recovers the can: lateral
   //  extent 42.5 mm vs the 43.8 mm endcap radius, depth 81.0 mm vs the 83.8 mm
-  //  endcap length (LAB06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
+  //  endcap length (DET06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
   //  therefore only exists behind the face plane - zero such cells at
   //  theta <= 90 deg, onset at 92.5 deg.
   //
@@ -1628,11 +1681,11 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //
   // Also note d_min_cm is a floor on the ON-AXIS reach only, not a validity
   //  radius: it is measured along the axis from the endcap FACE, whereas the
-  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on 18211381).
+  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on DET1381).
   //  A point further than d_min_cm from the face centre can therefore still be
   //  inside the housing once it is past 90 deg - validity off-axis is bounded by
   //  the can's envelope, not by a sphere of radius d_min_cm.  Measured first
-  //  valid radial range versus face-frame polar angle (18211381): 1 mm at
+  //  valid radial range versus face-frame polar angle (DET1381): 1 mm at
   //  0-90 deg, then 42 mm at 95-100 deg, 50 mm at 120 deg, 84 mm at 150 deg.
   resp->provenance.min_distance_cm = d_min_cm;
 

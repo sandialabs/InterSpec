@@ -35,21 +35,9 @@
   <message id="reds-invalid-dir">direktori tidak valid</message>
   <message id="reds-no-drf-in-dir">tidak ada respons dalam direktori</message>
   <message id="reds-recursive-no-drfs-in-dir">Tidak ada DRF valid dalam direktori, atau subdirektorinya.</message>
-  <message id="ds-csv-upload-desc">
-    <div style="white-space:nowrap;">
-      Unggah File Efisiensi:
-    </div>
-    <div>
-      Untuk CSV efisiensi, kolom pertama adalah energi dalam keV; kedua adalah % efisiensi (0 hingga 100).
-    </div>
-    <div>
-      Intrinsik adalah efisiensi untuk gamma yang mengenai permukaan detektor, sedangkan Absolut adalah pada jarak tertentu.
-    </div>
-  </message>
   <message id="ds-det-diam">Diameter Detektor:</message>
   <message id="ds-det-setback">Setback Det.:</message>
   <message id="ds-fixed-geom">Geometri Tetap</message>
-  <message id="ds-gad-det-file-label">File Detector.Dat GADRAS:</message>
   <message id="ds-manual-det-empty-fcn">Contoh: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     Atau setara: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Efisiensi detektor didefinisikan oleh formula matematika, diberikan energi x;
@@ -127,10 +115,5 @@
   <message id="ds-err-det-dist-pos">Jarak harus positif untuk efisiensi absolut</message>
   <message id="ds-warn-min-max-energy-swapped">Energi min. detektor lebih besar dari energi maks.; mengabaikan rentang energi.</message>
   <message id="ds-need-det-diam">Memerlukan diameter detektor</message>
-  <message id="ds-err-invalid-csv-format">File CSV tidak dikenali. Silakan unggah file CSV efisiensi yang valid (format MakeDrf atau format sederhana dengan kolom energi dan efisiensi).</message>
-  <message id="ds-err-parsing-gadras">Kesalahan menguraikan detektor GADRAS: {1}</message>
-  <message id="ds-eff-type-intrinsic">Efisiensi Intrinsik</message>
-  <message id="ds-eff-type-farfield">Efisiensi Medan Jauh</message>
-  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>
 

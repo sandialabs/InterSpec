@@ -1,0 +1,16 @@
+#PeakEasy CALp File Ver:  4.00
+Offset (keV)           :  0.00000e+00
+Gain (keV / Chan)      :  3.00000e+00
+2nd Order Coef         :  0.00000e+00
+3rd Order Coef         :  0.00000e+00
+4th Order Coef         :  0.00000e+00
+Detector Name          :  Xx1
+#END
+#PeakEasy CALp File Ver:  4.00
+Offset (keV)           :  1.00000e+00
+Gain (keV / Chan)      :  3.00000e+00
+2nd Order Coef         :  0.00000e+00
+3rd Order Coef         :  0.00000e+00
+4th Order Coef         :  0.00000e+00
+Detector Name          :  Aa1
+#END

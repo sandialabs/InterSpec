@@ -1,0 +1,15 @@
+#PeakEasy CALp File Ver:  4.00
+Offset (keV)           :  1.50000e+00
+Gain (keV / Chan)      :  3.00000e+00
+2nd Order Coef         :  0.00000e+00
+3rd Order Coef         :  0.00000e+00
+4th Order Coef         :  0.00000e+00
+Deviation Pairs        :  5
+7.70000e+01 -1.00000e+00
+1.22000e+02 -5.00000e+00
+2.39000e+02 -5.00000e+00
+6.61000e+02 -2.90000e+01
+2.61400e+03  0.00000e+00
+#END
+Calibrated 2026-09-30 with Ba133, Cs137
+Notes: none

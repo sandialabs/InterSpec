@@ -4977,6 +4977,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
                                             m_sourceOffsets[0], m_sourceOffsets[1] );
 
   const double true_dist = trueSourceToDetectorDistance();
+  const bool fixed_geom_det = (m_detector && m_detector->isFixedGeometry());
 
   std::array<T,3> cumulative_dims = { T(0.0), T(0.0), T(0.0) };
   T prev_exit_dist(0.0);
@@ -5041,8 +5042,9 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       // A shielding layer can't attenuate past where the detector sits.  If a (degenerate)
       //  over-thick layer would exit beyond the detector, cap the path at the detector so
       //  the chord stays physical, the air gap below doesn't go negative, and the exit
-      //  helpers aren't relied on for a detector that sits inside the volume.
-      if( scalar_of(exit_dist) > true_dist )
+      //  helpers aren't relied on for a detector that sits inside the volume.  A fixed-geometry
+      //  DRF has no source distance (the hidden distance field means nothing), so no cap there.
+      if( !fixed_geom_det && (scalar_of(exit_dist) > true_dist) )
         exit_dist = T(true_dist);
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
@@ -5271,7 +5273,7 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
         }//switch( m_geometry )
 
         double exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
-        if( exit_dist > true_dist )  // cap a degenerate over-thick layer at the detector
+        if( !(m_detector && m_detector->isFixedGeometry()) && (exit_dist > true_dist) )  // cap a degenerate over-thick layer at the detector (no distance for fixed geometry)
           exit_dist = true_dist;
         layer_chords[materialN] = exit_dist - prev_exit;
         prev_exit = exit_dist;
@@ -5375,8 +5377,11 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
   //  scatter-augmentation table interpolates on.
   PointSrcAttenContext<T> ctx;
 
-  if( m_detector && m_detector->isFixedGeometry() )
-    return ctx;  //shields/air are baked into a fixed-geometry response
+  // For a fixed-geometry DRF the layers here are additive absorbers on top of the response (a DRF
+  //  that embeds its own scene is never given any - see ShieldingSourceChi2Fcn::create), so the
+  //  cascade partners are attenuated by them exactly as the primary line is in
+  //  expected_peak_counts_imp.  Only air is baked in (and attenuate_for_air is off).
+  const bool fixed_geom_det = (m_detector && m_detector->isFixedGeometry());
 
   const size_t nMaterials = m_initial_shieldings.size();
 
@@ -5454,7 +5459,7 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       }//switch( m_geometry )
 
       T exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
-      if( scalar_of(exit_dist) > true_dist )
+      if( !fixed_geom_det && (scalar_of(exit_dist) > true_dist) )
         exit_dist = T(true_dist);
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
@@ -5527,7 +5532,7 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
       result *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
     // The partner legs see the SAME response, model and geometry as the primary (pointSourceFepEff)
     //  - and the same memoised ray fan, so this is a lookup, not a ray trace.
-    return result * std::max( 0.0, pointSourceFepEff( energy ).value );
+    return result * std::max( 0.0, pointSourceFepEff( energy ).value ) / m_cascadeFepScale;
   };
 
   // Absolute total (any-deposit) efficiency: the shield-scatter continuum

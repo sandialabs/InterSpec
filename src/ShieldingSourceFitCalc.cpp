@@ -59,6 +59,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
@@ -2229,6 +2230,34 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
       break;
     }
   }//for( size_t i = 0; i < nmaterials; ++i )
+
+  // Cascade summing with a fixed-geometry DRF computed for a volumetric scene: the DRF only has the
+  //  volume-AVERAGED FEP and total efficiencies, so the correction is c_net(<eps_fep>,<eps_tot>)
+  //  instead of the per-position average the non-fixed path computes, which under-corrects summing
+  //  for extended sources near the detector (by roughly the squared coefficient of variation of the
+  //  efficiency over the source).
+  {
+    const shared_ptr<const DetectorPeakResponse> &drf = chi2Fcn.detector();
+    if( chi2Fcn.cascadeCalc() && drf && drf->isFixedGeometry()
+        && !drf->fixedGeometrySetupXml().empty() )
+    {
+      bool volumetric = false;
+      try
+      {
+        MakeFixedGeomResponse::Setup setup;
+        setup.fromXmlString( drf->fixedGeometrySetupXml() );
+        for( const ShieldingSourceFitCalc::ShieldingInfo &info : setup.shieldings )
+          volumetric = (volumetric || !info.m_traceSources.empty() || !info.m_nuclideFractions_.empty());
+      }catch( std::exception & )
+      {
+      }
+
+      if( volumetric )
+        results.warnings.push_back( "The fixed-geometry detector response was computed for a"
+          " volumetric source, so cascade-summing corrections used its volume-averaged efficiencies;"
+          " for an extended source close to the detector this under-corrects summing." );
+    }
+  }
 
   // Stale detector-efficiency-uncertainty selection: the user asked to propagate or fit with the
   //  efficiency uncertainty, but the DRF/peaks provided no efficiency covariance, so the fit ran

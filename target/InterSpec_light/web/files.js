@@ -46,15 +46,27 @@ App.files.parseSamples = function( str ) {
 };
 
 
-/** Loads raw file bytes into the given display slot. */
+/** Loads raw file bytes into the given display slot; or, for a CALp file, applies its energy
+ calibration to the spectra the user picks (whatever slot it was dropped on). */
 App.files.loadBytes = async function( bytes, name, type ) {
   if( !App.hasForeground )
     type = 'FOREGROUND';
+
+  const isCalp = App.ecal.isCALp( bytes );
+  const calpTypes = isCalp ? await App.ecal.chooseCALpTargets( name ) : null;
+  if( isCalp && !calpTypes )
+    return;  //cancelled
 
   const path = '/in/' + (App.files.loadCounter++) + '_' + name.replace( /[^\w.\-]/g, '_' );
   App.module.FS.writeFile( path, bytes );
   try
   {
+    if( calpTypes )
+    {
+      await App.run( 'importCALp', { path: path, name: name, types: calpTypes }, { busy: true } );
+      return;
+    }
+
     const result = await App.run( 'loadFile', { path: path, name: name, type: type }, { busy: true } );
     if( result && (type === 'FOREGROUND') )
       App.search.onForegroundChanged();

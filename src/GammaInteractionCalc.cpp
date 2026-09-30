@@ -63,6 +63,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -1072,6 +1073,15 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
     throw runtime_error( "Off-axis source offsets are not allowed for fixed-geometry"
                          " detector response functions." );
 
+  // A fixed-geometry DRF computed for a specific scene (MakeFixedGeomResponse) already contains
+  //  that scene's source, shielding and air in its curves, so any layer passed here would be
+  //  applied a second time.  The GUI shows such a scene read-only and passes no layers.
+  if( detector && detector->isFixedGeometry() && !detector->fixedGeometrySetupXml().empty()
+      && !shieldings.empty() )
+    throw runtime_error( "The detector response was computed for a specific source/shielding"
+                         " setup, which it already includes; shieldings can not be added on top"
+                         " of it." );
+
   if( options.correct_for_cascade_summing )
   {
     // The API contract: requesting the correction without the needed DRF info
@@ -1185,6 +1195,10 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
                     detector, shield_frac_h, shields_present,
                     InterSpec::staticDataDirectory() );
     }//if( input.reuse_cascade_calc ) / else
+
+    // drfHasNeededInfo() guarantees this is known (> 0) for a fixed-geometry DRF.
+    answer->m_cascadeFepScale = detector ? MakeFixedGeomResponse::perDecayFepScale( *detector ) : 1.0;
+    assert( answer->m_cascadeFepScale > 0.0 );
   }//if( options.correct_for_cascade_summing )
 
   // Hold onto the input verbatim, so the per-peak supplemental information can be computed after
@@ -5185,7 +5199,7 @@ vector<PeakResultPlotInfo>
 
       // A shielding layer can't attenuate past where the detector sits; cap a degenerate
       //  over-thick layer at the detector (keeps the chord and the air gap physical).
-      if( exit_dist > trueDist )
+      if( !(m_detector && m_detector->isFixedGeometry()) && (exit_dist > trueDist) )  //no distance for fixed geometry
         exit_dist = trueDist;
       const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
       shield_outer_rad = exit_dist;

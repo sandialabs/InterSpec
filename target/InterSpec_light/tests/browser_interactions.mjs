@@ -65,6 +65,55 @@ await page.waitForFunction( () => !!App.files.slots.BACKGROUND, null, { timeout:
 check( await page.evaluate( () => App.files.slots.BACKGROUND.name ) === 'background_20100317.n42', 'dropped background' );
 check( await page.evaluate( () => document.querySelectorAll( '#spectrum-chart path.speclinepath' ).length ) >= 2, 'foreground and background drawn' );
 
+// Drop CALp files.  The background has 16384 channels (the foreground 1024), so it is not offered,
+//  and the calibration goes straight to the foreground.
+const calpFile = path.join( here, 'data', 'peakeasy_dev_pairs.CALp' );
+const specCal = ( type ) => page.evaluate( (type) => {
+  const s = App.call( 'getState' ).spectra.find( (s) => s.type === type );
+  return JSON.stringify( s.xeqn || s.x.slice( 0, 3 ) );
+}, type );
+const backBefore = await specCal( 'BACKGROUND' );
+await dropFile( calpFile, 'BACKGROUND' );
+await page.waitForFunction( () => App.ecal.cal && (App.ecal.cal.numDevPairs === 5), null, { timeout: 10000 } );
+check( !(await page.evaluate( () => document.querySelector( 'dialog' ) )) && ((await specCal( 'BACKGROUND' )) === backBefore),
+       'CALp applied to the foreground only, without asking, as the background has more channels' );
+await page.evaluate( () => App.run( 'revertEnergyCal' ) );
+
+// A secondary with as many channels (the same file, loaded again) is offered in a dialog
+await dropFile( path.join( repo, 'target/testing/test_data/PeakFitLM/Ba133_Unshielded.n42' ), 'SECONDARY' );
+await page.waitForFunction( () => !!App.files.slots.SECONDARY, null, { timeout: 30000 } );
+const secondBefore = await specCal( 'SECONDARY' );
+await dropFile( calpFile, 'FOREGROUND' );
+await page.waitForSelector( 'dialog.dlg[open]' );
+check( await page.evaluate( () => Array.from( document.querySelectorAll( 'dialog.dlg label' ) ).map( (l) => l.textContent.trim().split( ' ' )[0] + ':' + l.querySelector( 'input' ).checked ).join() )
+       === 'Foreground:true,Secondary:true', 'CALp dialog offers the foreground and secondary, not the background' );
+await page.screenshot( { path: path.join( outDir, 'inter_0_calp_dialog.png' ) } );
+await page.locator( 'dialog.dlg label', { hasText: 'Foreground' } ).locator( 'input' ).uncheck();
+await page.locator( 'dialog.dlg label', { hasText: 'Secondary' } ).locator( 'input' ).uncheck();
+check( await page.evaluate( () => document.querySelector( 'dialog.dlg button.primary' ).disabled ), 'Apply is disabled with nothing checked' );
+await page.locator( 'dialog.dlg label', { hasText: 'Foreground' } ).locator( 'input' ).check();
+await page.click( 'dialog.dlg button.primary' );
+await page.waitForFunction( () => App.ecal.cal && (App.ecal.cal.numDevPairs === 5), null, { timeout: 10000 } );
+check( (await specCal( 'SECONDARY' )) === secondBefore, 'CALp applied to the foreground only, as chosen' );
+await page.evaluate( () => App.run( 'revertEnergyCal' ) );
+await dropFile( calpFile, 'FOREGROUND' );
+await page.waitForSelector( 'dialog.dlg[open]' );
+await page.keyboard.press( 'Escape' );
+await page.waitForSelector( 'dialog.dlg', { state: 'detached' } );
+await page.waitForTimeout( 200 );
+check( await page.evaluate( () => !App.ecal.cal.changed ), 'cancelling the CALp dialog changes nothing' );
+await page.evaluate( () => App.run( 'unload', { type: 'SECONDARY' } ) );
+
+// A lower-channel-energy calibration can not be edited, but can be reverted
+await dropFile( path.join( here, 'data', 'exact_energies_1024.CALp' ), 'FOREGROUND' );
+await page.waitForFunction( () => App.ecal.cal && (App.ecal.cal.type === 'LowerChannelEdge'), null, { timeout: 10000 } );
+await page.evaluate( () => { document.getElementById( 'ecal-section' ).open = true; } );
+await page.locator( '#ecal button', { hasText: 'Revert' } ).click();
+check( await page.waitForFunction( () => App.ecal.cal && (App.ecal.cal.type === 'Polynomial') && !App.ecal.cal.changed,
+                                   null, { timeout: 10000 } ).then( () => true, () => false ),
+       'Revert restores a calibration replaced by an "Exact Energies" CALp' );
+await page.evaluate( () => { document.getElementById( 'ecal-section' ).open = false; } );
+
 // Double-click the NaI 356 keV peak
 await page.evaluate( () => App.ref.add( 'Ba133' ) );
 await zoom( 150, 500 );

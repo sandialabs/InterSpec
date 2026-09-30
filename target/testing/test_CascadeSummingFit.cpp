@@ -1323,6 +1323,172 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
 }//BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
 
 
+/** How much a fixed-geometry DRF under-corrects summing for a volumetric source.
+
+ A fixed-geometry DRF (MakeFixedGeomResponse) carries only the volume-AVERAGED FEP and total
+ efficiencies, so the fit corrects with c_net(<eps_fep>, <eps_tot>); the right answer is the
+ FEP-weighted average of the per-position correction, sum_k w_k eps_fep,k c_net,k / sum_k w_k eps_fep,k
+ (the analytic engine is linear in each point's rates).  Both are evaluated here from the SAME
+ per-point efficiencies - the grounded CeeLo response at each point, times axial self-attenuation
+ through the source - so the difference is purely the averaging.  Expected size: the summing-out
+ term is under-estimated by roughly the squared coefficient of variation of the efficiency over the
+ source, i.e. negligible for thin or distant sources and largest for thick samples at contact.
+
+ Report-only (no MC); the one assertion is the direction for pure summing-out lines.  Measured
+ 2026-09-29 (fitted activity bias from averaging, Co-60 / Ba-133 356 keV):
+   corpus disks 5 cm x 1 mm at 0.5 / 2 cm:   -0.2% / -0.05%,  -0.05% / -0.03%
+   corpus cylinder 5x5 cm at 5 cm:           -0.3% / -0.14%
+   7 cm dia cylinder at 0.2 cm, 1 / 3 / 5 cm long (water): -1.2 / -2.1 / -3.0%,  -0.4 / -0.7 / -1.0%
+   7x5 cm soil at 0.2 cm:                    -3.2% / -1.0%
+ So it only matters for thick samples at contact; see the Act/Shield fit warning in
+ ShieldingSourceFitCalc.cpp check_for_fit_warnings.
+ */
+BOOST_AUTO_TEST_CASE( FixedGeomVolumeAveragedSummingGap )
+{
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+
+  const shared_ptr<const ceelo::DetectorResponse> resp = grounded_response();
+  const double face_z_cm = -resp->descriptor.endcap_front_offset_cm();  //endcap front, crystal-face frame
+
+  // End-on cylinders: diameter, length, gap from the endcap to the near face, host material.
+  struct Scene { const char *id; double dia_cm; double len_cm; double gap_cm; const char *mat; };
+  const Scene scenes[] = {
+    { "disk 5x0.1 @0.5 (corpus)",  5.0, 0.1, 0.5, "water" },
+    { "disk 5x0.1 @2 (corpus)",    5.0, 0.1, 2.0, "water" },
+    { "cyl 5x5 @5 (corpus)",       5.0, 5.0, 5.0, "water" },
+    { "cyl 7x1 @0.2",              7.0, 1.0, 0.2, "water" },
+    { "cyl 7x3 @0.2",              7.0, 3.0, 0.2, "water" },
+    { "cyl 7x5 @0.2",              7.0, 5.0, 0.2, "water" },
+    { "cyl 7x5 @0.2 soil",         7.0, 5.0, 0.2, "soil" },
+  };
+
+  struct Nuc { const char *nuc; double age; vector<double> peaks; bool pure_sum_out; };
+  const Nuc nucs[] = {
+    { "Co60",  1.0*PhysicalUnits::year, { 1173.228, 1332.492 }, true },
+    { "Ba133", 2.0*PhysicalUnits::year, { 356.017, 302.853 }, false },
+  };
+
+  // A per-point efficiency provider, memoised per energy (the engine asks thousands of times at
+  //  ~100 distinct energies, and each response query traces an aperture).
+  struct PointProv final : public ceelo::EfficiencyProviderT<double>
+  {
+    const ceelo::DetectorResponse *resp = nullptr;
+    ceelo::ApertureQuadrature quad;
+    Eigen::Vector3d pos;
+    const Material *mat = nullptr;
+    double path_cm = 0.0;
+    mutable std::map<double,std::pair<double,double>> memo;
+
+    const std::pair<double,double> &eval( const double e ) const
+    {
+      auto it = memo.find( e );
+      if( it != memo.end() )
+        return it->second;
+      const double t = std::exp( -GammaInteractionCalc::transmition_coefficient_material( mat,
+                                     static_cast<float>(e), static_cast<float>(path_cm*PhysicalUnits::cm) ) );
+      const double f = std::max( 0.0, resp->eps_fep_at( e, pos, quad ).value ) * t;
+      const double tot = std::max( 0.0, resp->eps_total_at( e, pos, quad ).value ) * t;
+      return memo.emplace( e, std::make_pair( f, tot ) ).first->second;
+    }
+    double fep( double e ) const override { return eval(e).first; }
+    double total( double e ) const override { return eval(e).second; }
+    bool has( double ) const override { return true; }
+  };//struct PointProv
+
+  struct AvgProv final : public ceelo::EfficiencyProviderT<double>
+  {
+    const vector<PointProv> *pts = nullptr;
+    double fep( double e ) const override
+    {
+      double s = 0.0;
+      for( const PointProv &p : *pts ) s += p.fep( e );
+      return s / pts->size();
+    }
+    double total( double e ) const override
+    {
+      double s = 0.0;
+      for( const PointProv &p : *pts ) s += p.total( e );
+      return s / pts->size();
+    }
+    bool has( double ) const override { return true; }
+  };//struct AvgProv
+
+  BOOST_TEST_MESSAGE( "--- Volume-averaged vs per-position summing factor (Detective-X model) ---" );
+  for( const Scene &sc : scenes )
+  {
+    const shared_ptr<const Material> mat = material_or_fail( *matdb, sc.mat );
+
+    // Equal-volume cells: n_z depth slabs x n_r equal-area rings (axisymmetric, so phi = 0).
+    const int n_z = (sc.len_cm > 0.5) ? 8 : 1, n_r = 8;
+    vector<PointProv> pts;
+    for( int iz = 0; iz < n_z; ++iz )
+    {
+      const double depth = sc.len_cm * (iz + 0.5) / n_z;  //from the source's near face
+      for( int ir = 0; ir < n_r; ++ir )
+      {
+        PointProv p;
+        p.resp = resp.get();
+        p.mat = mat.get();
+        p.path_cm = depth;  //axial self-attenuation toward the detector
+        p.pos = Eigen::Vector3d( 0.5*sc.dia_cm*std::sqrt( (ir + 0.5)/n_r ), 0.0,
+                                 face_z_cm - sc.gap_cm - depth );
+        p.quad = resp->make_quadrature( p.pos );
+        pts.push_back( std::move(p) );
+      }
+    }//for( depth slabs )
+
+    AvgProv avg;
+    avg.pts = &pts;
+
+    for( const Nuc &n : nucs )
+    {
+      ceelo::cascade_adapter::CascadeOptions copt;
+      copt.age_seconds = n.age / PhysicalUnits::second;
+      const vector<ceelo::DecayCascade> casc
+                          = ceelo::cascade_adapter::build_cascades( db->nuclide( n.nuc ), copt );
+
+      vector<ceelo::PeakWindow> windows;
+      for( const double e : n.peaks )
+        windows.push_back( { e, 1.5 } );
+
+      const vector<ceelo::AnalyticPeakResult> avg_res = ceelo::compute_cascade_analytic( casc, windows, avg );
+
+      vector<double> num( n.peaks.size(), 0.0 ), den( n.peaks.size(), 0.0 );
+      for( const PointProv &p : pts )
+      {
+        const vector<ceelo::AnalyticPeakResult> r = ceelo::compute_cascade_analytic( casc, windows, p );
+        for( size_t i = 0; i < n.peaks.size(); ++i )
+        {
+          const double w = p.fep( n.peaks[i] );
+          num[i] += w * ((i < r.size() && r[i].found) ? r[i].c_net : 1.0);
+          den[i] += w;
+        }
+      }
+
+      for( size_t i = 0; i < n.peaks.size(); ++i )
+      {
+        const double c_pos = (den[i] > 0.0) ? (num[i] / den[i]) : 1.0;
+        const double c_avg = (i < avg_res.size() && avg_res[i].found) ? avg_res[i].c_net : 1.0;
+        char line[256];
+        snprintf( line, sizeof(line), "%-26s %-5s %8.1f keV: per-position %.4f  averaged %.4f"
+                  "  -> activity bias %+.2f%%", sc.id, n.nuc, n.peaks[i], c_pos, c_avg,
+                  100.0*(c_pos/c_avg - 1.0) );  //predicted counts scale with c, activity with 1/c
+        BOOST_TEST_MESSAGE( line );
+
+        // Averaging can only under-state a pure summing-out loss (Cauchy-Schwarz on the positively
+        //  correlated FEP and total efficiencies).
+        if( n.pure_sum_out )
+          BOOST_CHECK_GE( c_avg, c_pos - 1.0e-4 );
+      }
+    }//for( nuclides )
+  }//for( scenes )
+}//BOOST_AUTO_TEST_CASE( FixedGeomVolumeAveragedSummingGap )
+
+
 /** The cascade-summing correction on the LINE path against the element path.
 
  The element path evaluates `cascade_correction_factor` once per element from a centre-ray walk;

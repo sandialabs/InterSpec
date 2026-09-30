@@ -116,29 +116,10 @@
   <message id="smm-err-load-iso-by-nuc">加载<em>按核素分析同位素</em>XML配置文件时出错：{1}</message>
   <message id="smm-err-load-xml-iso-by-nuc">解析配置XML时出错：{1}{2}</message>
   <message id="smm-err-iso-by-nuc-window-title">无效的<em>按核素分析同位素</em>XML配置文件。</message>
-  <message id="smm-ecc-curve">ISOCS效率校准曲线DRF</message>
-  <message id="smm-ecc-how-to-interpret">如何解释</message>
-  <message id="smm-ecc-far-field">远场DRF</message>
-  <message id="smm-ecc-fix-geom-total-act">固定几何 - 总活度</message>
-  <message id="smm-ecc-fix-geom-act-cm2">固定几何 - 每平方厘米活度</message>
-  <message id="smm-ecc-fix-geom-act-m2">固定几何 - 每平方米活度</message>
-  <message id="smm-ecc-fix-geom-act-gram">固定几何 - 每克活度</message>
-  <message id="smm-ecc-det-diam">探测器直径</message>
-  <message id="smm-ecc-det-setback">探测器后移</message>
-  <message id="smm-ecc-dist">距离</message>
-  <message id="smm-ecc-use-drf">使用DRF</message>
-  <message id="smm-ecc-error">从ECC创建DRF时出错：{1}</message>
 
   <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
-  <message id="smm-outx-curve">ANGLE效率校准曲线DRF</message>
-  <message id="smm-outx-error">从ANGLE .outx创建DRF时出错：{1}</message>
 
   <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
-  <message id="smm-eff-csv-curve">效率CSV曲线DRF</message>
-  <message id="smm-eff-csv-error">从效率CSV创建DRF时出错：{1}</message>
-  <message id="smm-eff-csv-det-dat-label">Detector.dat（可选）</message>
-  <message id="smm-eff-csv-intrinsic">固有效率</message>
-  <message id="smm-eff-csv-abs-eff">绝对效率</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">活度/屏蔽XML</message>

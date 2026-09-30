@@ -30,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <ctime>
+#include <regex>
 #include <memory>
 #include <cctype>
 #include <string>
@@ -2733,6 +2734,203 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
 }//void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv(...)
 
 
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEffCsv( std::istream &csvfile )
+{
+  // The "GeometryType" column MakeDrf writes; older exports had a yes/no "Fixed Geometry"
+  //  column, which predates the per-area/per-mass kinds, so means total activity.
+  const auto geometry_from_field = []( string value ) -> EffGeometryType {
+    SpecUtils::trim( value );
+    SpecUtils::to_lower_ascii( value );
+    if( value == "farfieldabsolute" )
+      return EffGeometryType::FarFieldAbsolute;
+    if( value == "fixedpercm2" )
+      return EffGeometryType::FixedGeomActPerCm2;
+    if( value == "fixedperm2" )
+      return EffGeometryType::FixedGeomActPerM2;
+    if( value == "fixedpergram" )
+      return EffGeometryType::FixedGeomActPerGram;
+    if( (value == "fixedtotalact") || (value == "1") || (value == "true")
+        || SpecUtils::istarts_with( value, "y" ) )
+      return EffGeometryType::FixedGeomTotalAct;
+    return EffGeometryType::FarFieldIntrinsic;
+  };//geometry_from_field
+
+  string line;
+  int nlineschecked = 0;
+
+  string drfname, drfdescrip;
+  bool foundMeV = false, foundKeV = false;
+
+  //ToDo: Need to implement getting lines safely where a quoted field may span
+  //      several lines.
+  while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
+  {
+    foundKeV |= SpecUtils::icontains( line, "kev" );
+    foundMeV |= SpecUtils::icontains( line, "mev" );
+
+    vector<string> fields;
+    split_escaped_csv( fields, line );
+
+    if( fields.size() == 2 )
+    {
+      if( fields[0] == "# Name" )
+        drfname = fields[1];
+      if( fields[0] == "# Description" )
+        drfdescrip = fields[1];
+    }
+
+    if( fields.size() < 16 )
+      continue;
+
+    if( !SpecUtils::iequals_ascii( fields[3], "c0")
+       || !SpecUtils::iequals_ascii( fields[4], "c1")
+       || !SpecUtils::iequals_ascii( fields[5], "c2")
+       || !SpecUtils::iequals_ascii( fields[6], "c3")
+       || !SpecUtils::icontains( fields[15], "radius") )
+      continue;
+
+    int geom_col = -1;
+    for( size_t i = 16; (geom_col < 0) && (i < fields.size()); ++i )
+    {
+      if( SpecUtils::icontains( fields[i], "Geom" ) )
+        geom_col = static_cast<int>( i );
+    }
+
+    //Okay, next line should be the coefficients
+    if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
+      return nullptr;
+
+    split_escaped_csv( fields, line );
+
+    try
+    {
+      vector<float> coefs( 8, 0.0f ), coef_uncerts;
+      for( int i = 0; i < 8; ++i )
+      {
+        const string &field = fields.at(3+i);
+        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
+      }
+
+      while( !coefs.empty() && (coefs.back() == 0.0f) )
+        coefs.pop_back();
+
+      if( coefs.empty() )
+        continue;
+
+      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
+      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
+
+      EffGeometryType geom_type = EffGeometryType::FarFieldIntrinsic;
+      if( (geom_col >= 0) && (static_cast<int>(fields.size()) > geom_col) )
+        geom_type = geometry_from_field( fields[geom_col] );
+
+      const string name = (fields[0].empty() ? drfname : fields[0]);
+      const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
+
+      // The uncertainties line normally comes next; any other line is left for the loop below.
+      string pending_line;
+      if( SpecUtils::safe_get_line(csvfile, line, 2048) )
+      {
+        vector<string> uncert_strs;
+        split_escaped_csv( uncert_strs, line );
+        if( !uncert_strs.empty()
+           && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
+           && (uncert_strs.size() >= (3 + coefs.size())) )
+        {
+          try
+          {
+            coef_uncerts.resize( coefs.size(), 0.0f );
+            for( size_t i = 0; i < coefs.size(); ++i )
+            {
+              const string &field = uncert_strs.at(3+i);
+              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
+            }
+          }catch( std::exception &e )
+          {
+            cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
+            coef_uncerts.clear();
+          }
+        }else
+        {
+          pending_line = line;
+        }
+      }//if( we got another line we'll check if its the uncertainties )
+
+      auto det = std::make_shared<DetectorPeakResponse>( name, drfdescrip );
+      det->fromExpOfLogPowerSeries( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
+                                    0.0f, 0.0f, geom_type );
+
+      //Look for the line that gives the appropriate energy range.
+#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
+      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+#undef POS_DECIMAL_REGEX
+      const std::regex range_expression( rng_exprsn_txt );
+
+      bool have_line = !pending_line.empty();
+      if( have_line )
+        line = pending_line;
+
+      while( (have_line || SpecUtils::safe_get_line(csvfile, line, 2048)) && (++nlineschecked < 100) )
+      {
+        have_line = false;
+
+        if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
+        {
+          const bool isConstPlusSqrt = SpecUtils::icontains( line, "A0 + A1*sqrt" );
+          const bool isSqrt = !isConstPlusSqrt && SpecUtils::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
+          ResolutionFnctForm form = ResolutionFnctForm::kGadrasResolutionFcn;
+          if( isConstPlusSqrt )
+            form = ResolutionFnctForm::kConstantPlusSqrtEnergy;
+          else if( isSqrt )
+            form = ResolutionFnctForm::kSqrtPolynomial;
+
+          int nlinecheck = 0;
+          while( SpecUtils::safe_get_line(csvfile, line, 2048)
+                && !SpecUtils::icontains(line, "Values")
+                && (++nlinecheck < 15) )
+          {
+          }
+
+          vector<string> fwhm_fields;
+          split_escaped_csv( fwhm_fields, line );
+
+          if( fwhm_fields.size() > 1 && SpecUtils::icontains(fwhm_fields[0], "Values") )
+          {
+            try
+            {
+              vector<float> fwhm_coefs;
+              for( size_t i = 1; i < fwhm_fields.size(); ++i )
+                fwhm_coefs.push_back( stof(fwhm_fields[i]) );
+              if( !fwhm_coefs.empty() )
+                det->setFwhmCoefficients( fwhm_coefs, form );
+            }catch(...)
+            {
+            }
+            break;
+          }
+        }//if( start of FWHM section of CSV file )
+
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
+        {
+          const float lowerEnergy = std::stof( range_matches[1] );
+          const float upperEnergy = std::stof( range_matches[6] );
+          det->setEnergyRange( lowerEnergy, upperEnergy );
+          break;
+        }
+      }//while( getline )
+
+      return det;
+    }catch(...)
+    {
+      continue;
+    }
+  }//while( more lines )
+
+  return nullptr;
+}//parseInterSpecRelEffCsv(...)
+
+
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
 {
   // Unlike the in-app path (`InterSpec::handleAppUrl` -> `AppUtils::split_uri` ->
@@ -4650,6 +4848,39 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   answer->m_efficiency = std::make_shared<DetectorEfficiencyCurve>(
                                   answer->m_efficiency->scaledByConstant( correction ) );
 
+  // An embedded MC scene (MakeFixedGeomResponse) records how its FEP curve relates to per-decay
+  //  efficiency ("FepScale"); keep that in step with the curve, or cascade summing would use a
+  //  per-mass/area curve as if it were per decay.  Without the element the scale stays unknown.
+  if( !answer->m_fixedGeomSetupXml.empty() )
+  {
+    try
+    {
+      vector<char> xml_buf( begin(answer->m_fixedGeomSetupXml), end(answer->m_fixedGeomSetupXml) );
+      xml_buf.push_back( '\0' );
+      rapidxml::xml_document<char> doc;
+      doc.parse<0>( xml_buf.data() );
+      rapidxml::xml_node<char> *base_node = doc.first_node( "ActShieldSetup" );
+      rapidxml::xml_node<char> *scale_node = base_node ? base_node->first_node( "FepScale" ) : nullptr;
+      double scale = 0.0;
+      if( scale_node && (stringstream( SpecUtils::xml_value_str(scale_node) ) >> scale) && (scale > 0.0) )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "%.9g", scale * correction );
+        const char * const new_val = doc.allocate_string( buffer );
+        scale_node->value( new_val );
+        //rapidxml prints an element's data child, not its value(), so update that too
+        rapidxml::xml_node<char> * const data_node = scale_node->first_node();
+        if( data_node && (data_node->type() == rapidxml::node_data) )
+          data_node->value( new_val );
+        string xml;
+        rapidxml::print( std::back_inserter(xml), doc, rapidxml::print_no_indenting );
+        answer->m_fixedGeomSetupXml = xml;
+      }
+    }catch( std::exception & )
+    {
+    }
+  }//if( an embedded scene )
+
   answer->computeHash();
 
   return answer;
@@ -4736,6 +4967,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
   answer->m_absoluteEfficiencyDistance = -1.0;
   answer->m_absEffCorrectForAirAtten = true;
   answer->m_detectorDiameter = -1.0f;
+
+  // A far-field total curve (e.g. GADRAS "PTOT", per photon striking the face) or MC response
+  //  describes the bare detector, not this fixed geometry - but a fixed-geometry DRF's total curve
+  //  is read as the absolute per-decay total (cascade summing), so it can't be carried over.
+  answer->m_totalEfficiency.reset();
+  answer->m_ceeloResponse.reset();
   
   answer->computeHash();
   

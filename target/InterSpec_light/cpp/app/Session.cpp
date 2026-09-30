@@ -49,26 +49,9 @@ using json = nlohmann::json;
 
 namespace
 {
-  const char *type_str( const Session::SpecType type )
-  {
-    switch( type )
-    {
-      case Session::Foreground: return "FOREGROUND";
-      case Session::Background: return "BACKGROUND";
-      case Session::Secondary:  return "SECONDARY";
-      case Session::NumSpecType: break;
-    }
-    return "";
-  }
-
   Session::SpecType type_from_json( const json &p )
   {
-    const string t = p.value( "type", string("FOREGROUND") );
-    if( SpecUtils::iequals_ascii( t, "BACKGROUND" ) )
-      return Session::Background;
-    if( SpecUtils::iequals_ascii( t, "SECONDARY" ) )
-      return Session::Secondary;
-    return Session::Foreground;
+    return Session::typeFromName( p.value( "type", string("FOREGROUND") ) );
   }
 
   SpecUtils::SpectrumType to_specutils( const Session::SpecType type )
@@ -110,6 +93,30 @@ namespace
     return runs;
   }
 }//namespace
+
+
+const char *Session::typeName( const SpecType type )
+{
+  switch( type )
+  {
+    case Foreground: return "FOREGROUND";
+    case Background: return "BACKGROUND";
+    case Secondary:  return "SECONDARY";
+    case NumSpecType: break;
+  }
+  return "";
+}//typeName(...)
+
+
+Session::SpecType Session::typeFromName( const string &name )
+{
+  for( int i = 0; i < NumSpecType; ++i )
+  {
+    if( SpecUtils::iequals_ascii( name, typeName( SpecType(i) ) ) )
+      return SpecType(i);
+  }
+  throw runtime_error( "Invalid spectrum type '" + name + "'" );
+}//typeFromName(...)
 
 
 Session::Session()
@@ -157,6 +164,8 @@ json Session::call( const string &method, const json &params )
   if( method == "fitEnergyCal" )      return fitEnergyCal( params );
   if( method == "revertEnergyCal" )   return revertEnergyCal( params );
   if( method == "convertCalCoefs" )   return convertCalCoefs( params );
+  if( method == "exportCALp" )        return exportCALp( params );
+  if( method == "importCALp" )        return importCALp( params );
 
   throw runtime_error( "Unknown method '" + method + "'" );
 }//json call(...)
@@ -554,7 +563,7 @@ void Session::updateSummed( const SpecType type )
     slot.summed = slot.file->spec->sum_measurements( slot.samples, dets, nullptr );
   }catch( std::exception &e )
   {
-    cerr << "Failed to sum " << type_str(type) << ": " << e.what() << endl;
+    cerr << "Failed to sum " << typeName(type) << ": " << e.what() << endl;
   }
 }//void updateSummed( const SpecType type )
 
@@ -713,7 +722,7 @@ json Session::filesJson() const
     const Slot &slot = m_slots[i];
     if( !slot.file )
     {
-      slots[type_str(SpecType(i))] = nullptr;
+      slots[typeName(SpecType(i))] = nullptr;
       continue;
     }
 
@@ -734,7 +743,7 @@ json Session::filesJson() const
       s["numChannels"] = slot.summed->num_gamma_channels();
     }
     s["instrument"] = SpecUtils::trim_copy( spec.manufacturer() + " " + spec.instrument_model() );
-    slots[type_str(SpecType(i))] = s;
+    slots[typeName(SpecType(i))] = s;
   }//for( loop over slots )
 
   return slots;
@@ -969,7 +978,7 @@ json Session::timeHighlightsJson() const
 
     for( const auto &run : sample_runs( fore.file->spec->sample_numbers(), slot.samples ) )
       answer.push_back( { {"startSample", run.first}, {"endSample", run.second},
-                          {"fillColor", colors[i]}, {"type", type_str(SpecType(i))} } );
+                          {"fillColor", colors[i]}, {"type", typeName(SpecType(i))} } );
   }//for( loop over slots )
 
   return answer;
@@ -1040,13 +1049,19 @@ json Session::exportFile( const json &p )
     throw runtime_error( "Failed writing export file." );
   output.close();
 
-  string base = fore.file->name;
+  json answer;
+  answer["path"] = path;
+  answer["filename"] = foregroundBaseName() + "." + SpecUtils::suggestedNameEnding( fmt->type );
+  return answer;
+}//json exportFile( const json &p )
+
+
+string Session::foregroundBaseName() const
+{
+  const Slot &fore = m_slots[Foreground];
+  string base = fore.file ? fore.file->name : string();
   const size_t dot = base.find_last_of( '.' );
   if( (dot != string::npos) && (dot > 0) )
     base = base.substr( 0, dot );
-
-  json answer;
-  answer["path"] = path;
-  answer["filename"] = base + "." + SpecUtils::suggestedNameEnding( fmt->type );
-  return answer;
-}//json exportFile( const json &p )
+  return base;
+}//string foregroundBaseName() const

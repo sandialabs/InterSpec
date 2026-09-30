@@ -808,13 +808,17 @@ public:
    (see #m_drfUncertMethodDefaultApplied).  Called on detector / geometry changes. */
   void updateDrfUncertMethodAvailability();
 
-  /** "Compute DRF for this geometry (MC)": runs CeeLo over the current scene
+  /** "Create MC Eff" (link beside the "Shielding" caption): runs CeeLo over the current scene
    (worker thread) and switches to the resulting fixed-geometry DRF, which
    embeds the scene (displayed read-only afterwards).  Only available when no
    shielding dimension is being fit and the DRF has a CeeLo detector model.
    */
   void computeFixedGeomDrfRequested();
   void updateFixedGeomMcAvailability();
+
+  /** Why "Create MC Eff" can't run right now (the link is then hidden), as an i18n key; empty if it can.
+   The single rule both #updateFixedGeomMcAvailability and #computeFixedGeomDrfRequested use. */
+  std::string fixedGeomMcBlockReason() const;
 
   /** Enables/disables the cascade-summing checkbox: enabled when the DRF has
    usable total-efficiency info AND the predicted maximum summing magnitude
@@ -962,7 +966,7 @@ protected:
   Wt::WCheckBox  *m_backgroundPeakSub;
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
-  Wt::WCheckBox  *m_correctForCascade;
+  Wt::WCheckBox  *m_correctForCascade = nullptr;
 
   /** How the detector-efficiency uncertainty is used by the fit: None / ErrorPropagation (default) /
    Likelihood; index maps 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  Kept in its own row
@@ -993,8 +997,15 @@ protected:
   /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
   int m_lastVolEffMethodIndex = 0;
 
-  Wt::WPushButton *m_fixedGeomMcBtn;
+  Wt::WPushButton *m_fixedGeomMcBtn = nullptr;
   Wt::WText *m_fixedGeomLockedNote;
+
+  /** The scene (MakeFixedGeomResponse::Setup XML) embedded in the current fixed-geometry DRF, or
+   empty.  While set, no shielding layers are in #m_shieldingSelects (the scene is already in the
+   DRF's curves; it is only summarized in #m_fixedGeomLockedNote), and switching to a non-fixed DRF
+   restores the scene from it.
+   */
+  std::string m_embeddedSetupXml;
   SwitchCheckbox *m_showChiOnChart;
   GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */

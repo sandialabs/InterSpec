@@ -77,6 +77,7 @@ class InterSpec;
 class SimpleDialog;
 class BatchGuiDialog;
 class SpecMeasManager;
+class DrfImportWidget;
 class SpectraFileModel;
 class PopupDivMenuItem;
 class SpectraFileHeader;
@@ -245,20 +246,18 @@ public:
   /** Handles Source.lib files dropped onto the app. */
   bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
   
-  /** Handles the user dropping a .ECC file from ISOCS, or a .outx file from ANGLE. */
-  bool handleEccFile( std::istream &input, SimpleDialog *dialog );
-
-  /** Handles the user dropping an efficiency CSV file (GADRAS Efficiency.csv,
-   gamEff CSV, or Run_effoutput CSV).
+  /** Fills `dialog` with a `DrfImportWidget` for a dropped detector-efficiency file that has
+   options to choose (an ISOCS .ecc, ANGLE file, efficiency CSV, GADRAS Detector.dat, or a .par
+   grid or its DETECTOR.txt).  Returns false, leaving `dialog` empty, if it is not such a file.
    */
-  bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog );
+  bool openDrfImportDialog( SimpleDialog *dialog, const std::string &displayName,
+                            std::shared_ptr<const std::string> data );
 
-  /** A dropped GADRAS `Detector.dat`: the crystal geometry, FWHM and peak shape,
-   but no efficiency - which a Monte-Carlo characterization of that geometry
-   supplies.  Offers to open the Modify dialog seeded with the parsed geometry.
+  /** A file from #drfDragNDrop: added to the DRF import dialog if one is open (so both halves of
+   a dropped pair end up in it), else opens one; anything that is not a DRF file is handled as a
+   normal foreground drop.
    */
-  bool handleGadrasDetectorDatFile( std::istream &input, SimpleDialog *dialog,
-                                    const std::string &displayName );
+  void handleDrfFileDrop( const std::string &displayName, const std::string &spoolName );
 
   /** Some input files contain duplicate data - we will ask the user how they want to handle
    this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
@@ -417,11 +416,11 @@ public:
   FileDragUploadResource *batchDragNDrop();
 #endif
 
-  /** The upload target for the "companion file" drop areas - the Efficiency.csv a Detector.dat is
-   missing, and vice-versa.  While such a dialog is showing, the app's normal spectrum-file drop
-   handling is blocked, so a file dropped anywhere lands in the dialog.
+  /** The upload target when the two halves of a detector definition (Detector.dat and
+   Efficiency.csv, or a .par and its DETECTOR.txt) are dropped onto the app together; see
+   `isDrfPair` in src/js_inline/InterSpec.js.
    */
-  FileDragUploadResource *pairFileDragNDrop();
+  FileDragUploadResource *drfDragNDrop();
 
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
@@ -573,9 +572,7 @@ private:
     DrfGammaQuantCsv,
     CalpFile,
     RelActAutoXml,
-    EccOrOutxFile,       ///< ISOCS .ECC or ANGLE .outx
-    EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
-    GadrasDetectorDat,   ///< GADRAS Detector.dat (crystal geometry, FWHM, peak shape)
+    DrfImportFile,       ///< DRF file with options: .ecc, ANGLE, eff. CSV, Detector.dat, .par, DETECTOR.txt
     ShieldingSourceXml,
     SourceLib,
     BatchDecayCsv        ///< nuclide/activity list for the Batch Decay tool (see DecayBatchCalc::parse_csv)
@@ -738,8 +735,11 @@ protected:
   std::unique_ptr<FileDragUploadResource> m_batchDragNDrop;
 #endif
 
-  /** See #pairFileDragNDrop. */
-  std::unique_ptr<FileDragUploadResource> m_pairFileDragNDrop;
+  /** See #drfDragNDrop. */
+  std::unique_ptr<FileDragUploadResource> m_drfDragNDrop;
+
+  /** The widget of the open dialog from #openDrfImportDialog, if any. */
+  Wt::Core::observing_ptr<DrfImportWidget> m_drfImportWidget;
   
   Wt::Core::observing_ptr<SimpleDialog> m_multiUrlSpectrumDialog;
   

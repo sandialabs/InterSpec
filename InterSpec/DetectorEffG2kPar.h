@@ -96,8 +96,8 @@
           worst-case, while the axial reading is off by up to 119x / 62x, with the
           discrepancy growing as 1/cos^2(theta).
        3. The reference outputs themselves: a run at sd1=250 mm, sd4=2500 mm reads
-          2.925e-03 at 100 keV, essentially the on-axis 25 cm value (3.154e-03).
-          A source truly 251 cm away would read ~94x smaller.
+          within ~7% of the on-axis 25 cm value at 100 keV.  A source truly
+          251 cm away would read ~94x smaller.
 
    * The grid is the intrinsic-crystal FEP efficiency (dead layers already
      folded in); it is interpolated bilinearly in the log-efficiency (raw-V)
@@ -204,7 +204,7 @@
  `EtaTable` interpolates in ln E segmented at the crystal K-edges, and its
  contract is that both flanks of every edge are nodes.  `makeDrf` asked for the
  edges and stored them but never added the flanks - the one producer in the tree
- that skipped it.  On 18211381 the Ge K-edge at 11.107 keV falls between the
+ that skipped it.  On DET1381 the Ge K-edge at 11.107 keV falls between the
  file's 10 and 12 keV nodes, leaving 10 keV ALONE in its segment, which
  `EtaTable::finalize` served as a constant stub: ln eta froze at the 10 keV value
  below the crossover and at the 12 keV value above it, 4.55 apart in ln.  The
@@ -215,7 +215,7 @@
  cannot stand in for its segment - see the comment there for why a lone FLANK
  legitimately keeps its stub.  The test measures the step across the edge:
  response 0.999508x against the grid's 1.000000x, where pre-fix it was ~3.8e8x.
- LAB06 never had this: its grid starts at 45 keV, so no edge is retained.
+ DET06 never had this: its grid starts at 45 keV, so no edge is retained.
 
  DEFECT 2, under-resolution, on THREE axes rather than the one first suspected.
  Each was found the same way - hold the other axes node-exact and the error goes
@@ -224,11 +224,11 @@
      falls ~5 decades across a handful of them while the kernel's analytic cutoff
      falls on a DIFFERENT curve, leaving the whole mismatch in the ratio.  Fixed
      by density, not by changing the interpolator: 20 file energies -> 363 eta
-     nodes and 63 near-field energies (LAB06: 15 -> 141 and 31).  The near-field
+     nodes and 63 near-field energies (DET06: 15 -> 141 and 31).  The near-field
      axis in particular must contain the FILE's own nodes, not just a resampling.
    * DISTANCE.  The grid stores 440 radial rows at 3.03% each and truth is
      bilinear in raw V, so there is a kink on EVERY row; the original 18-rung
-     ladder spanned ~10 of them per rung.  Now 60 rungs (58 on LAB06), uniform
+     ladder spanned ~10 of them per rung.  Now 60 rungs (58 on DET06), uniform
      with the [5, 30] cm window subdivided - `distance_ladder` in
      "src/DetectorEffG2kPar.cpp" documents why the rungs are ADDED rather than
      moved, and why the window ends at 30 cm.
@@ -237,7 +237,7 @@
      IT IS NOT, and that claim is struck.  The response's angular nodes are
      CRYSTAL-frame cosines while the grid is indexed in the ENDCAP-FACE frame,
      and the two origins differ by `endcap_front_offset_cm`.  Measured AT 45 deg
-     on 18211381 (offset 0.5700 cm), the skew against 2.5 deg columns is +0.077
+     on DET1381 (offset 0.5700 cm), the skew against 2.5 deg columns is +0.077
      deg at 300 cm, +0.280 at 83 cm and +3.04 at 8 cm - it grows as the offset
      becomes a bigger fraction of the standoff, and by 1 cm (+34 deg at 45 deg,
      and larger at steeper angles) the frame correspondence is gone rather than
@@ -248,30 +248,31 @@
      0.01033 at 289 nodes; that is one locus, NOT the band maximum in the table
      below), because the axis is not what is misaligned.
 
- ACHIEVED ON-LATTICE WORST |error|, and the efficiency it sits on.  MAIN is
- d >= 5 cm and theta <= 75 deg; CORNER is everything else and is gated loosely
- (see below).  18211381 (grid starts at 10 keV), then LAB06 (starts at 45 keV):
+ ACHIEVED ON-LATTICE WORST relative |error|.  MAIN is d >= 5 cm and
+ theta <= 75 deg; CORNER is everything else and is gated loosely (see below).
+ DET1381 (grid starts at 10 keV), then DET06 (starts at 45 keV):
 
-     band        MAIN      eps there   band peak  | CORNER
-     10- 16 keV  0.49031   2.18e-09    2.18e-09   | 0.94210   <- abs 1.1e-09
-     16- 22 keV  0.04210   1.45e-10    5.71e-08   | 0.60479   <- abs 2.7e-10
-     22- 32 keV  0.02710   7.93e-07    1.77e-04   | 0.25616
-     32- 45 keV  0.01734   3.42e-04    7.08e-03   | 0.11716
-     45- 60 keV  0.00469   4.52e-03    2.38e-02   | 0.06269
-     60-200 keV  0.00254   2.80e-02    4.67e-02   | 0.04767
-     200-1k keV  0.00325   1.27e-03    3.03e-02   | 0.02642
-     1k -7k keV  0.00434   4.16e-03    1.08e-02   | 0.02723
+     band        MAIN      | CORNER
+     10- 16 keV  0.49031   | 0.94210   <- gated on absolute error
+     16- 22 keV  0.04210   | 0.60479   <- gated on absolute error
+     22- 32 keV  0.02710   | 0.25616
+     32- 45 keV  0.01734   | 0.11716
+     45- 60 keV  0.00469   | 0.06269
+     60-200 keV  0.00254   | 0.04767
+     200-1k keV  0.00325   | 0.02642
+     1k -7k keV  0.00434   | 0.02723
 
-     LAB06:      MAIN                             | CORNER
-     45- 60 keV  0.00344   4.33e-02    4.50e-02   | 0.08930
-     60-200 keV  0.00365   2.47e-02    5.01e-02   | 0.06240
-     200-1k keV  0.00594   1.37e-02    2.67e-02   | 0.03301
-     1k -7k keV  0.00955   4.20e-04    9.23e-03   | 0.07592
+     DET06:      MAIN      | CORNER
+     45- 60 keV  0.00344   | 0.08930
+     60-200 keV  0.00365   | 0.06240
+     200-1k keV  0.00594   | 0.03301
+     1k -7k keV  0.00955   | 0.07592
 
- Read the 10-16 keV row with its magnitude: the band's PEAK efficiency is
- 2.18e-09, just over eight decades below the crystal's ~3e-1, and the worst ABSOLUTE error
- is 1.07e-09.  A 49% relative error on a quantity that small cannot affect a
- spectrum, which is why that band and 16-22 keV are gated absolutely.
+ Read the 10-16 keV row with its magnitude: the band's PEAK efficiency is just
+ over eight decades below the crystal's peak, and the worst ABSOLUTE error is
+ about half of that band peak.  A 49% relative error on a quantity that small
+ cannot affect a spectrum, which is why that band and 16-22 keV are gated
+ absolutely.
 
  WHAT STILL LIMITS EACH REGIME.  Three different things, and they are not
  interchangeable:
@@ -320,7 +321,7 @@
  on-axis is column 0 exactly, but 25 cm is NOT a grid row (the rows are log-spaced
  at 3.034%, and ln(250 mm)/r_step = 184.72), so the truth side still goes through
  the reader's own interpolation in d.  By the taxonomy above this table is
- therefore metric 3, not metric 1 (18211381, then LAB06):
+ therefore metric 3, not metric 1 (DET1381, then DET06):
 
   Only the RATIOS are recorded - the absolute stored efficiencies they were formed
   from are the vendor's characterization output, and this repository does not carry
@@ -333,8 +334,8 @@
       32.0    | -0.0175%    +1.03%
       45.0    | -0.0091%    -1.30%
      122.0    | +0.0171%    -1.36%
-     LAB06  45.0  | +0.0088%   -18.17%
-     LAB06 122.0  | +0.0323%    -6.56%
+     DET06  45.0  | +0.0088%   -18.17%
+     DET06 122.0  | +0.0323%    -6.56%
 
  Two separate readings, and conflating them is the trap:
    * `resp/grid` is our error against the reader at a point that is node-exact in
@@ -350,13 +351,14 @@
      transport, and this column compares the vendor's characterization against
      first-principles physics through the descriptor the files describe.  A few
      percent at 22-122 keV is consistent with the 200 keV datum above and shows
-     no gross error at the knee.  LAB06's -18% at 45 keV is a real
+     no gross error at the knee.  DET06's -18% at 45 keV is a real
      descriptor-versus-vendor discrepancy, on the detector whose files pin the
      geometry least well; it is an absolute-grounding question, NOT something
      node density affects, and it is out of scope here.
    * 16 keV is genuinely unmeasurable this way, and it is the run that hit the cap
-     rather than the 1% request: at eps ~6e-9 the whole 4e6-event budget yields a
-     handful of FEP counts, 57.7% statistical, so no comparison is reportable.
+     rather than the 1% request: at an efficiency ~8 decades below the crystal's
+     peak the whole 4e6-event budget yields a handful of FEP counts, 57.7%
+     statistical, so no comparison is reportable.
      The other rows did reach ~1%, which is why they are quoted and this one is
      not.  Adjudicating that band against truth needs position-biased MC, not more
      nodes.
@@ -367,8 +369,8 @@
  THE FLOOR, AND WHY IT IS NOT WHAT LIMITS US.  The file stores
  eff = 10^(-V/1000) as a uint16, so one raw-V step is 0.002305 in ln (0.2305%)
  and +-1 LSB is 0.001152 (0.1152%).  That is the tightest claim definable against
- the file's content, and every MAIN band above sits ABOVE it - 2.2x (18211381
- 60-200 keV) to 8.3x (LAB06 1k-7k) over the bands >= 45 keV, and 15x and 23x for
+ the file's content, and every MAIN band above sits ABOVE it - 2.2x (DET1381
+ 60-200 keV) to 8.3x (DET06 1k-7k) over the bands >= 45 keV, and 15x and 23x for
  32-45 and 22-32 keV where the sheared angular feature dominates.  So no MAIN
  band is storage-limited; each is limited by the method named for its regime
  above.
@@ -383,8 +385,9 @@
  that recovers to 1.0002 as soon as `K` clears the transition.  It was measured on
  the synthetic `KEdgeSegmentsHaveBothFlanks` fixture, so take the SHAPE from there
  and the MAGNITUDE from the band table above: on a real detector that window sits
- inside 10-16 keV, whose peak efficiency is 2.18e-09, so the residue is ~2e-10
- absolute at worst - which is why that band is gated absolutely.  Adding nodes
+ inside 10-16 keV, whose peak efficiency is ~8 decades below the crystal's, so the
+ residue is negligible in absolute terms - which is why that band is gated
+ absolutely.  Adding nodes
  does not remove it (both sides refine, the bases still differ); only putting eta
  on the kernel's basis would, which means changing the interpolator for that.
  Outside those windows the
@@ -395,7 +398,7 @@
  ANOTHER RESULT WORTH RECORDING, because it is counter-intuitive and will
  otherwise be re-discovered: the achieved worst error is NOT monotone in ladder
  density.
- LAB06's 1k-7k MAIN band measures 0.03111 / 0.00955 / 0.02110 at 2 / 3 / 4
+ DET06's 1k-7k MAIN band measures 0.03111 / 0.00955 / 0.02110 at 2 / 3 / 4
  subdivisions, at three different loci.  Rung PHASE against the file's fixed
  3.03%/row grid matters as much as rung spacing, and row alignment is
  unachievable for the same reason the angular axis is skewed: a crystal-frame
@@ -403,7 +406,7 @@
  therefore carry phase headroom instead of being set tight against one run.
 
  COSTS.  The serialized response grows from 398,932 bytes to 3,554,015 for
- 18211381 (8.91x) and 1,739,328 for LAB06 (4.36x) - far more than the ~2.5x first
+ DET1381 (8.91x) and 1,739,328 for DET06 (4.36x) - far more than the ~2.5x first
  predicted, because `ln_n` is the dominant block and scales with the ladder.
  `makeDrf` fill cost is ne*nc*nd, and the gated corpus test runs ~7 min against
  its 7200 s timeout.
@@ -415,7 +418,7 @@
  second user-visible path.
 
  Two candidate causes were checked and RULED OUT; do not re-test them:
-   * 18211381's two lowest nodes (10 and 12 keV) are BIT-IDENTICAL across all
+   * DET1381's two lowest nodes (10 and 12 keV) are BIT-IDENTICAL across all
      32120 grid cells - the file duplicates its first node.  Dropping the
      duplicate changes the errors by exactly nothing.
    * It was never a near-field or grazing-angle effect at the original diagnosis
@@ -507,6 +510,11 @@ namespace DetEffG2kPar
   DetectorDef selectDetectorDef( const std::vector<DetectorDef> &defs,
                                  const std::string &parFileName );
 
+  /** Cheap test of whether text (e.g., the first ~1 kB of a file) looks like a DETECTOR.txt: it
+   must hold a definition line naming a `.par` file, with positive crystal diameter and length.
+   */
+  bool isCandidateDetectorTxt( const std::string &headerText );
+
 
   //===========================================================================
   //  .PAR  (binary spatial-efficiency grid)
@@ -547,6 +555,12 @@ namespace DetEffG2kPar
 
   /** Reads and decodes a .par file from disk. */
   ParFile parseParFile( const std::string &path );
+
+  /** Cheap test of whether the start of a file looks like a .par grid, without reading the whole
+   file: a plausible energy range, energy count, and ascending energy list in the header.
+   `parseParFile` remains the authority; this only gates trying it.
+   */
+  bool isCandidateParFile( const uint8_t *header, size_t headerLen, size_t fileSize );
 
 
   //===========================================================================
