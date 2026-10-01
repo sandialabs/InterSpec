@@ -110,6 +110,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DecayBatchCalcWidget.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -500,6 +501,7 @@ InterSpec::InterSpec()
   m_remoteRidMenuItem( nullptr ),
   m_remoteRid( nullptr ),
   m_remoteRidWindow( nullptr ),
+  m_remoteRidWarning( nullptr ),
 #endif
 #if( USE_DETECTION_LIMIT_TOOL )
   m_simpleMdaWindow( nullptr ),
@@ -1431,6 +1433,7 @@ InterSpec::~InterSpec() noexcept(true)
 
 #if( USE_REMOTE_RID )
   SimpleDialog::deleteSimpleDialog( m_autoRemoteRidResultDialog.get() );
+  SimpleDialog::deleteSimpleDialog( m_remoteRidWarning.get() );
   AuxWindow::deleteAuxWindow( m_remoteRidWindow.get() );
 #endif
 
@@ -2587,10 +2590,14 @@ void InterSpec::handleRightClick( double energy, double counts,
             Wt::WIOService &io = server->ioService();
             std::shared_ptr< vector<string> > candidates
                                        = std::make_shared<vector<string> >();
-            // In Wt4, WApplication::bind() was removed; pass lambda directly since
-            // populateCandidateNuclides calls WServer::post(session_id, updater) internally.
-            std::function<void(void)> updater = [this, peak, candidates](){
-              updateRightClickNuclidesMenu( peak, candidates );
+            // populateCandidateNuclides runs on a worker, then posts `updater` to this session.
+            //  "Clear Session..." may have destroyed this InterSpec by then, so name it by widget id
+            //  (an inert string, safe to copy on the worker) rather than capturing `this`.
+            const WidgetUtils::WidgetHandle viewerHandle( this );
+            std::function<void(void)> updater = [viewerHandle, peak, candidates](){
+              InterSpec * const viewer = viewerHandle.resolve_as<InterSpec>();
+              if( viewer )
+                viewer->updateRightClickNuclidesMenu( peak, candidates );
             };
             
             std::shared_ptr<const SpecUtils::Measurement> hist = displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -10556,10 +10563,20 @@ void InterSpec::createRemoteRidWindow()
   } );
   
   
+  m_remoteRidWarning = warning;
+
   if( warning && m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // In Wt4, WApplication::bind() was removed; lambda passed directly
-    auto undo = std::function<void()>{ [warning](){ warning->accept(); } };
+    // Undo dismisses the warning the way "Cancel" does.  The warning is looked up through the
+    //  member rather than captured: it deletes itself once answered, and a redo shows a new one.
+    auto undo = [this](){
+      SimpleDialog * const dialog = m_remoteRidWarning.get();
+      if( !dialog || dialog->isHidden() )
+        return;  //Already answered - if the tool was opened, that has its own undo step
+
+      m_remoteRidMenuItem->enable();
+      dialog->reject();
+    };
     m_undo->addUndoRedoStep( std::move(undo), openTool, "Show remote RID tool" );
   }//if( undo warning )
 }//void createRemoteRidWindow()
@@ -12177,6 +12194,10 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
                                               const std::string manufacturer,
                                               const std::string model,
                                               const bool tryDefaultDrf,
+                                              std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                              const long long db_user_id,
+                                              const std::string gadras_search_paths,
+                                              const WidgetUtils::WidgetHandle &viewerHandle,
                                               const std::string sessionId )
 {
   if( !meas )
@@ -12186,7 +12207,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
 
   //First see if the user has opted for a detector for this serial number of
   //  detector model
-  det = DrfSelect::getUserPreferredDetector( m_sql, m_user, serial_number, type, model );
+  det = DrfSelect::getUserPreferredDetector( sql, db_user_id, serial_number, type, model );
   
   if( !det && (type == SpecUtils::DetectorType::Unknown) )
     return;
@@ -12210,7 +12231,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
   {
     try
     {
-      det = DrfSelect::initAGadrasDetector( type, this );
+      det = DrfSelect::initAGadrasDetector( type, gadras_search_paths );
     }catch( std::exception & )
     {
     }
@@ -12220,12 +12241,16 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
   if( !det )
     return;
   
-  WServer::instance()->post( sessionId, std::bind( [this, meas, det, usingUserDefaultDet](){
+  WServer::instance()->post( sessionId, [viewerHandle, meas, det, usingUserDefaultDet](){
     //ToDo: could add button to remove association with DRF in database,
     //      similar to the "Start Fresh Session" button.  Skeleton code to do this
     //      can be found by searching for "WarningMsgShowOnBoardRiid"
-    
-    if( meas != m_dataMeasurement )
+
+    InterSpec * const viewer = viewerHandle.resolve_as<InterSpec>();
+    if( !viewer )
+      return;  //"Clear Session..." (or similar) replaced the InterSpec that asked for this DRF
+
+    if( meas != viewer->m_dataMeasurement )
     {
       cerr << "Foreground changed by the time DRF was loaded." << endl;
       return;
@@ -12244,7 +12269,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
       auto prefs = std::make_shared<PeakFitDetPrefs>( *det->peakFitDetPrefs() );
       prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
       meas->setPeakFitDetPrefs( prefs );
-      m_peakFitDetPrefsChanged.emit();
+      viewer->m_peakFitDetPrefsChanged.emit();
     }
 
     if( !wasModified )
@@ -12253,7 +12278,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     if( !wasModifiedSinceDecode )
       meas->reset_modified_since_decode();
 
-    m_detectorChanged.emit( det );
+    viewer->m_detectorChanged.emit( det );
 
     const char *msg_key = (usingUserDefaultDet ? "info-user-default-drf" : "info-app-default-drf");
     passMessage( WString::tr(msg_key), WarningWidget::WarningMsgInfo );
@@ -12261,7 +12286,7 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     WApplication *app = WApplication::instance();
     if( app )
       app->triggerUpdate();
-  }) );
+  } );
   
 }//void InterSpec::loadDetectorResponseFunction( WApplication *app )
 
@@ -12447,10 +12472,16 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
             type = SpecMeas::guessDetectorTypeFromFileName( meas->filename() );
           
           {
+            // The worker runs on a thread pool, so resolve everything it needs from this InterSpec
+            //  here on the session thread; it must not touch `this`.
             const string sessionId = wApp->sessionId();
-            // In Wt4, WApplication::bind() was removed; lambda passed directly
-            std::function<void()> worker = [this, meas, type, serial_num, manufacturer, model, doLoadDefault, sessionId](){
-              loadDetectorResponseFunction( meas, type, serial_num, manufacturer, model, doLoadDefault, sessionId );
+            const long long db_user_id = m_user.id();
+            const string gadras_paths = DrfSelect::gadrasDrfSearchPaths( this );
+            const WidgetUtils::WidgetHandle viewerHandle( this );
+            std::function<void()> worker = [meas, type, serial_num, manufacturer, model, doLoadDefault,
+                                            sql = m_sql, db_user_id, gadras_paths, viewerHandle, sessionId](){
+              loadDetectorResponseFunction( meas, type, serial_num, manufacturer, model, doLoadDefault,
+                                            sql, db_user_id, gadras_paths, viewerHandle, sessionId );
             };
             furtherworkers.push_back( worker );
           }
@@ -12800,9 +12831,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   //Lets see if there are any parse warnings that we should give to the user.
   if( meas && !sameSpecFile && !(options & InterSpec::SetSpectrumOptions::SkipParseWarnings) )
   {
-    Wt::WApplication *app = wApp;
-    
-    auto checkForWarnings = [sample_numbers,app,this,meas](){
+    // Runs on a worker thread; it touches no InterSpec state, and hands the messages back through
+    //  WServer::post, which is a no-op if the session has since ended.
+    const string sessionId = wApp->sessionId();
+
+    auto checkForWarnings = [sample_numbers,sessionId,meas](){
       set<string> givenwarnings;
       for( const auto &msg : meas->parse_warnings() )
         givenwarnings.insert( msg );
@@ -12819,13 +12852,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       if( !givenwarnings.empty() )
       {
-        WApplication::UpdateLock lock(app);
-        if( lock )
-        {
+        WServer::instance()->post( sessionId, [givenwarnings](){
           for( const auto &msg : givenwarnings )
             passMessage( msg, WarningWidget::WarningMsgMedium );
-          app->triggerUpdate();
-        }//
+          wApp->triggerUpdate();
+        } );
       }//if( !givenwarnings.empty() )
     };//checkForWarnings lamda
     
@@ -12891,23 +12922,22 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( pref != ExternalRidAuotCallPref::DoNotCall )
     {
-      Wt::WApplication *app = wApp;
-      auto callExternalRid = [app,this,sameSpecFile,pref](){
-        WApplication::UpdateLock lock(app);
-        if( lock )
-        {
-          Wt::WFlags<RemoteRid::AnaFileOptions> flags;
-          
-          // When a search or portal file is loaded as foreground we could be a little smarter
-          //  in deciding if we should submit the whole file, or just the displayed sample
-          if( sameSpecFile )
-            flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
-          
-          RemoteRid::startAutomatedOnLoadAnalysis( this, flags );
-        }else
-        {
-          cerr << "Failed to get WApplication::UpdateLock to call external RID." << endl;
-        }
+      // Posted to the session from a worker (below), by which time "Clear Session..." may have
+      //  replaced this InterSpec - so name it by widget id rather than capturing `this`.
+      const WidgetUtils::WidgetHandle viewerHandle( this );
+      auto callExternalRid = [viewerHandle,sameSpecFile](){
+        InterSpec * const viewer = viewerHandle.resolve_as<InterSpec>();
+        if( !viewer )
+          return;
+
+        Wt::WFlags<RemoteRid::AnaFileOptions> flags;
+
+        // When a search or portal file is loaded as foreground we could be a little smarter
+        //  in deciding if we should submit the whole file, or just the displayed sample
+        if( sameSpecFile )
+          flags |= RemoteRid::AnaFileOptions::OnlyDisplayedSearchSamples;
+
+        RemoteRid::startAutomatedOnLoadAnalysis( viewer, flags );
       };//callExternalRid lamda
       
       const string appid = wApp->sessionId();
@@ -12923,7 +12953,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   
   if( meas && furtherworkers.size() )
   {
-    std::function<void(void)> worker = [this, meas, furtherworkers](){
+    std::function<void(void)> worker = [meas, furtherworkers](){
       doFinishupSetSpectrumWork( meas, furtherworkers );
     };
     WServer::instance()->ioService().boost::asio::io_service::post( worker );
@@ -13798,19 +13828,24 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   // Wait for the search on a DEDICATED thread (not the Wt ioService pool - blocking a pool thread on
   //  .get() for the whole search would risk starving the pool under many concurrent searches), then
   //  deliver the result back to this session's event loop.  server->post is a no-op if the session
-  //  has gone away, so setHintPeaks only runs while this InterSpec is alive.
+  //  has gone away, but "Clear Session..." replaces the InterSpec while keeping the session, so the
+  //  viewer is named by widget id rather than captured as `this`.
   // The calibration the search is about to run against; compared in setHintPeaks(...) so a
   //  calibration change made while the search was in flight does not cache peaks at stale energies.
   const std::shared_ptr<const SpecUtils::EnergyCalibration> search_cal
                                                       = spectrum_meas->energy_calibration();
 
-  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks, updateDetTypeGuess, search_cal](){
+  const WidgetUtils::WidgetHandle viewerHandle( this );
+
+  std::thread( [viewerHandle, fut, sessionId, weak_spectrum, samples, origPeaks, updateDetTypeGuess, search_cal](){
     const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found = fut.get();
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
-      server->post( sessionId, [this, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal](){
-        setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal );
+      server->post( sessionId, [viewerHandle, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal](){
+        InterSpec * const viewer = viewerHandle.resolve_as<InterSpec>();
+        if( viewer )
+          viewer->setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal );
       } );
   } ).detach();
 }//void searchForHintPeaks(...)
@@ -14120,8 +14155,11 @@ void InterSpec::startBackgroundPeakRecoveryIfReady()
   // Recovery blocks (it fits peaks), so run it on a DEDICATED thread (not the ioService pool); then
   //  refresh consumers of the background peaks (dynamic reference lines, shielding-source fit) on the
   //  session event loop.
+  //  The viewer is named by widget id, not captured as `this`: "Clear Session..." can replace it
+  //  while the recovery runs.
+  const WidgetUtils::WidgetHandle viewerHandle( this );
   std::thread(
-    [this, fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, fitPrefs, sessionId]()
+    [viewerHandle, fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, fitPrefs, sessionId]()
   {
     const bool changed = PeakSearchGuiUtils::ensure_background_peaks_recovered(
         fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, fitPrefs );
@@ -14131,7 +14169,11 @@ void InterSpec::startBackgroundPeakRecoveryIfReady()
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
-      server->post( sessionId, [this](){ m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background); } );
+      server->post( sessionId, [viewerHandle](){
+        InterSpec * const viewer = viewerHandle.resolve_as<InterSpec>();
+        if( viewer )
+          viewer->m_hintPeaksSet.emit( SpecUtils::SpectrumType::Background );
+      } );
   } ).detach();
 }//void startBackgroundPeakRecoveryIfReady()
 

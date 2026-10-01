@@ -5963,13 +5963,13 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
 
 std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                Wt::Dbo::ptr<InterSpecUser> user,
+                                const long long db_user_id,
                                 const std::string &serial_number,
                                 SpecUtils::DetectorType detType,
                                 const std::string &detector_model )
 {
   std::shared_ptr<DetectorPeakResponse> answer;
-  if( !sql || !user )
+  if( !sql || (db_user_id < 0) )
     return answer;
   
   
@@ -5983,7 +5983,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     {
       auto results = sql->session()->find<UseDrfPref>()
                      .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                     .bind( user.id() )
+                     .bind( db_user_id )
                      .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
                      .bind( serial_number )
                      .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
@@ -6003,7 +6003,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
       {
         auto results = sql->session()->find<UseDrfPref>()
                        .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                       .bind( user.id() )
+                       .bind( db_user_id )
                        .bind( UseDrfPref::UseDrfType::UseDetectorModelName )
                        .bind( model )
                        .orderBy("id desc")  //shouldnt have an effect because we should only get at most one result
@@ -6031,7 +6031,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     
     auto drflist = sql->session()->find<DetectorPeakResponse>()
     .where("InterSpecUser_id = ? AND id = ?")
-    .bind( user.id() )
+    .bind( db_user_id )
     .bind( pref->m_drfIndex )
     .resultList();
     
@@ -6558,8 +6558,20 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
 }//initARelEffDetector( int type )
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
-                                                            const SpecUtils::DetectorType type, InterSpec *interspec )
+std::string DrfSelect::gadrasDrfSearchPaths( InterSpec *interspec )
+{
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  const string datadir = InterSpec::staticDataDirectory();
+  return SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
+         + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
+#else
+  return UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+#endif
+}//std::string gadrasDrfSearchPaths( InterSpec *interspec )
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const SpecUtils::DetectorType type,
+                                                                      const std::string &searchPaths )
 
 {
   using SpecUtils::DetectorType;
@@ -6644,7 +6656,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( name, interspec );
+    det = initAGadrasDetector( name, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -6684,7 +6696,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( secondname, interspec );
+    det = initAGadrasDetector( secondname, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -6696,22 +6708,13 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
 }//initAGadrasDetector
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName,
+                                                                      const std::string &searchPaths )
 {
-  //Grab "GadrasDRFPath" and split it by semicolon and newlines, then go through
-  //  and look for sub-folders with the given name that contain Detector.data
-  //  and Efficiency.csv.
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
-#else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
-#endif
-  
-  
+  //Split searchPaths by semicolon and newlines, then go through and look for sub-folders with the
+  //  given name that contain Detector.data and Efficiency.csv.
   vector<string> paths;
-  SpecUtils::split( paths, drfpaths, "\r\n;" );
+  SpecUtils::split( paths, searchPaths, "\r\n;" );
   for( string basepath : paths )
   {
     SpecUtils::trim( basepath );

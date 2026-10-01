@@ -7123,7 +7123,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
         shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
         if( sql )
         {
-          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user(),
+          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user().id(),
                                                            serial, detType, model );
         }
       }catch( std::exception & )
@@ -7146,7 +7146,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
       {
         try
         {
-          suggested = DrfSelect::initAGadrasDetector( detType, interspec );
+          suggested = DrfSelect::initAGadrasDetector( detType, DrfSelect::gadrasDrfSearchPaths( interspec ) );
         }catch( std::exception & )
         {
         }

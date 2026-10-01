@@ -182,10 +182,13 @@ public:
   /** Checks the database to see if the measurement serial number or measurement
       model cooresponds to a user preference in the database for  a DRF to use.
       If found, returns the DRF, if not, returns null.
+
+      Takes the user's database id rather than a `Wt::Dbo::ptr`, so it can be called from a worker
+      thread (a `Dbo::ptr` copy touches a non-atomic reference count).
    */
   static std::shared_ptr<DetectorPeakResponse> getUserPreferredDetector(
                                             std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                            Wt::Dbo::ptr<InterSpecUser> user,
+                                            long long db_user_id,
                                             const std::string &serial_number,
                                             SpecUtils::DetectorType detType,
                                             const std::string &detector_model );
@@ -208,16 +211,27 @@ public:
   //  reasonable display name.
   static std::vector< std::pair<std::string,std::string> > avaliableGadrasDetectors( InterSpec *viewer );
 
+  /** The directories #initAGadrasDetector searches, separated by semicolons or newlines: the user
+   preference "GadrasDRFPath", or the fixed data-directory locations on web deployments.
+
+   Reads a user preference, so call it on the session thread and pass the result to any worker.
+   */
+  static std::string gadrasDrfSearchPaths( InterSpec *interspec );
+
   //Will init detector in the data/detector_responses folder, and return result.
   //  throws exception if there is an error.
   //Type should be a DetectorType enum (just not including that header to save
   //   on deplandcies)
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
-  
-  /** Looks to path in user prefernce "GadrasDRFPath" for a detector matching specified name.
+  //  `searchPaths` is from #gadrasDrfSearchPaths; taking it as a value lets this run off the
+  //  session thread.
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const SpecUtils::DetectorType type,
+                                                                     const std::string &searchPaths );
+
+  /** Looks in `searchPaths` (see #gadrasDrfSearchPaths) for a detector matching specified name.
    Throws exception in error; returned detector should always be valid.
    */
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name,
+                                                                     const std::string &searchPaths );
   
   /** Inits adetector from a directory that has a Detector.dat and Efficiency.csv file in it
       Throws exception in error; returned detector should always be valid.
