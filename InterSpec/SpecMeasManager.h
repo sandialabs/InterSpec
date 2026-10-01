@@ -246,12 +246,12 @@ public:
   /** Handles Source.lib files dropped onto the app. */
   bool handleSourceLibFile( std::istream &input, SimpleDialog *dialog );
   
-  /** Fills `dialog` with a `DrfImportWidget` for a dropped detector-efficiency file that has
-   options to choose (an ISOCS .ecc, ANGLE file, efficiency CSV, GADRAS Detector.dat, or a .par
-   grid or its DETECTOR.txt).  Returns false, leaving `dialog` empty, if it is not such a file.
+  /** Shows the `DrfImportWidget` dialog for a dropped detector-efficiency file that has options to
+   choose (an ISOCS .ecc, ANGLE file, efficiency CSV, GADRAS Detector.dat, or a .par grid or its
+   DETECTOR.txt).  Returns false, without closing any open dialog, if it is not such a file.
    */
-  bool openDrfImportDialog( SimpleDialog *dialog, const std::string &displayName,
-                            std::shared_ptr<const std::string> data );
+  bool openDrfImportDialog( const std::string &displayName, std::shared_ptr<const std::string> data,
+                            std::ifstream &infile, SpecUtils::SpectrumType type );
 
   /** A file from #drfDragNDrop: added to the DRF import dialog if one is open (so both halves of
    a dropped pair end up in it), else opens one; anything that is not a DRF file is handled as a

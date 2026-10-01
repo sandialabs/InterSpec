@@ -1904,6 +1904,7 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
     case VolumetricEffMethod::MCTransfer: value = "mc";       break;
     case VolumetricEffMethod::EffTran:    value = "efftran";  break;
     case VolumetricEffMethod::FlatDisk:   value = "flatdisk"; break;
+    case VolumetricEffMethod::ImportedGrid: value = "grid";   break;
   }//switch( volumetric_eff_method )
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
@@ -2000,6 +2001,8 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
       volumetric_eff_method = VolumetricEffMethod::EffTran;
     else if( SpecUtils::iequals_ascii(val, "flatdisk") )
       volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+    else if( SpecUtils::iequals_ascii(val, "grid") )
+      volumetric_eff_method = VolumetricEffMethod::ImportedGrid;
     else
       throw runtime_error( "ShieldingSourceFitOptions invalid VolumetricEffMethod: '" + val + "'" );
   }//if( node )  //absent in older XML -> keeps the default (Auto)
@@ -2297,9 +2300,10 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
           break;
 
         case EffFlag::OutOfRangeClamped:
+          // CeeLo raises this flag for an energy OR an angle outside its nodes.
           results.warnings.push_back( "The peaks at " + flag_list.second + " keV are outside the"
-            " detector response's validated energy range; their efficiencies were clamped to the"
-            " range edge and may be inaccurate." );
+            " detector response's validated energy or angle range; their efficiencies were clamped"
+            " to the range edge and may be inaccurate." );
           break;
 
         case EffFlag::NearFieldUnmodeled:

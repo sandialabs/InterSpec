@@ -375,7 +375,13 @@ private:
 
     /** Legacy behavior: flat-disk fractional solid angle times the intrinsic
      efficiency; bit-for-bit unchanged from before this option existed. */
-    FlatDisk
+    FlatDisk,
+
+    /** Evaluate the full-energy-peak efficiency grid imported from a Genie/ISOCS .par file
+     (see `DetEffG2kPar::isGridResponse`) as-is.  Full-energy peak only - the grid carries no
+     total efficiency.  What `Auto` picks for such a DRF; for any other DRF falls back to what
+     `Auto` would pick, with an error. */
+    ImportedGrid
   };//enum class VolumetricEffMethod
 
   /** The detector-efficiency model the POINT sources of a fit were evaluated with.  The same

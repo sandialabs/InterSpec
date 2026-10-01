@@ -153,8 +153,8 @@ def getFWHM( energy ):
                <b>Import:</b>
                <div style="padding-top:10px;">
                   Drop a detector efficiency file onto the area on this tab, or click it to browse
-                  for the file.  While this tab is showing, a file dropped anywhere in
-                  <i>InterSpec</i> goes to this tab, rather than being opened as a spectrum.
+                  for the file.  While this tab is showing, files dropped elsewhere in
+                  <i>InterSpec</i> are ignored, rather than being opened as spectra.
                   The type of file is recognized automatically, and the options that apply to it are shown.
                   Accepted files are:
                   <ul>
@@ -188,8 +188,8 @@ def getFWHM( energy ):
                      </li>
                   </ul>
                   For a detector described by two files, drop (or select) both at once, or drop the
-                  second file on the area that asks for it.  Both files can also be dropped onto
-                  <i>InterSpec</i> together, from anywhere in the app.
+                  second file on the area that asks for it.  When this dialog is not open, both
+                  files can also be dropped onto <i>InterSpec</i> together.
                   <div style="padding-top:10px;">
                      For a file that lists efficiencies, choose how they are to be interpreted: as
                      intrinsic efficiencies (for gammas striking the detector face, which needs the

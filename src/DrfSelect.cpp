@@ -54,7 +54,6 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WTableCell.h>
-#include <Wt/WTabWidget.h>
 #include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
@@ -2779,6 +2778,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
   m_importMenuItem = item;
 
+  // Other tabs change the detector, so coming back to "Import" makes its detector current again.
+  m_drfTypeMenu->itemSelected().connect( this, [this]( WMenuItem *selected ){
+    if( selected == m_importMenuItem )
+      handleImportChanged();
+  } );
+
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
@@ -3533,12 +3538,16 @@ void DrfSelect::openModifyWindow()
     return;
   }
 
-  // A geometry-only import (e.g., a lone Detector.dat) has no detector yet; Modify is where it gets
-  //  characterized.
-  const bool on_import_tab = (m_drfTypeMenu->currentItem() == m_importMenuItem);
-  const shared_ptr<DetectorPeakResponse> seed = (!m_detector && on_import_tab)
-                                                ? m_importWidget->characterizationSeed()
-                                                : m_detector;
+  // On the "Import" tab, Modify is for the file being imported - including a geometry-only one
+  //  (e.g., a lone Detector.dat), which is characterized there.
+  shared_ptr<DetectorPeakResponse> seed = m_detector;
+  if( m_drfTypeMenu->currentItem() == m_importMenuItem )
+  {
+    if( m_importWidget->candidate() )
+      seed = m_importWidget->candidate();
+    else if( m_importWidget->characterizationSeed() )
+      seed = m_importWidget->characterizationSeed();
+  }
 
   m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, seed );
 
@@ -3589,20 +3598,29 @@ void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf 
 
 void DrfSelect::handleImportChanged()
 {
-  // A slow import (a .par grid) can finish after the user has moved to another tab.
+  // A slow import (a .par grid) can finish after the user has moved to another tab; it is picked
+  //  up when they come back.
   if( m_drfTypeMenu->currentItem() != m_importMenuItem )
     return;
 
-  // An incomplete import (e.g., waiting on its companion file) leaves the detector in use alone,
-  //  but cant be accepted.
-  m_detector = m_importWidget->candidate();
-  m_gui_select_matches_det = true;
-  setAcceptButtonEnabled( !!m_detector );
-  updateDrfContentSummary();
-  updateChart();
-
-  if( m_detector )
+  const shared_ptr<DetectorPeakResponse> candidate = m_importWidget->candidate();
+  if( candidate )
+  {
+    m_detector = candidate;
+    m_gui_select_matches_det = true;
+    setAcceptButtonEnabled( true );
+    updateDrfContentSummary();
+    updateChart();
     emitChangedSignal();
+  }else if( m_importWidget->hasFile() )
+  {
+    // An incomplete import (e.g., waiting on its companion file) can't be accepted, and leaves
+    //  the detector in use - m_detector - alone, so closing the dialog doesn't change it.
+    setAcceptButtonEnabled( false );
+    if( m_drfContentChips )
+      m_drfContentChips->clear();
+    m_chart->updateChart( nullptr );
+  }
 }//void handleImportChanged()
 
 

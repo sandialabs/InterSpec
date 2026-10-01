@@ -76,6 +76,7 @@
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 
 #include "io/DetectorResponse.h"
 #include "io/EfficiencyTransfer.h"
@@ -531,7 +532,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.correct_for_cascade_summing = (rand() % 2);
     // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
     //  rather than silently reverting a user's choice on reload.
-    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 4 );
+    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 5 );
 
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
@@ -6483,3 +6484,129 @@ BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
     BOOST_CHECK( num_both_skins > 0 );
   }
 }//BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
+
+
+/** A DRF imported from a .par efficiency grid, used in an activity fit: peaks inside the grid's
+ energies must evaluate without an out-of-range flag - both as built, and as read back from the
+ database or a saved session.  The grid starts at 10 keV so its response is segmented at the Ge
+ K-edge, as a real grid starting there is.  Also pins how each detector-efficiency model request
+ resolves for such a DRF.
+ */
+BOOST_AUTO_TEST_CASE( ParGridDrfInActShieldFit )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string detector_txt =
+    "SynthDet,70.0,60.0,0,80.0,150.0,4.0,4.0,26,synth.par,4, #\n"
+    "ge,0.23,5.35, #\n"
+    "be,0.5,1.848, #\n"
+    "al,1.5,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "al,1.0,2.70, #\n"
+    "al,2.0,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "cu,3.0,8.96, #\n"
+    "al,5.0,2.70\n";
+  istringstream txt( detector_txt );
+  const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+  BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+
+  DetEffG2kPar::ParFile par;
+  par.energies_keV = { 10.0, 12.0, 16.0, 22.0, 45.0, 100.0, 1332.0 };
+  par.emin_keV = par.energies_keV.front();
+  par.emax_keV = par.energies_keV.back();
+  for( size_t e = 0; e < par.energies_keV.size(); ++e )
+  {
+    DetEffG2kPar::ParGrid g;
+    g.ncols = 19;
+    g.nrows = 40;
+    g.theta_step_rad = 10.0 * 3.14159265358979323846 / 180.0;
+    g.r_step = 0.2;
+    for( int r = 0; r < g.nrows; ++r )
+      for( int c = 0; c < g.ncols; ++c )
+        g.V.push_back( static_cast<uint16_t>( 2000 + 300*e + 40*r + 15*c ) );
+    par.grids.push_back( g );
+  }
+
+  shared_ptr<DetectorPeakResponse> built;
+  BOOST_REQUIRE_NO_THROW( built = DetEffG2kPar::makeDrf( par, defs.front() ) );
+  BOOST_REQUIRE( built && built->ceeloResponse() );
+
+  shared_ptr<DetectorPeakResponse> reread;
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    built->toXml( root, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    reread = make_shared<DetectorPeakResponse>();
+    BOOST_REQUIRE_NO_THROW( reread->fromXml( doc2.first_node("root")->first_node("DetectorPeakResponse") ) );
+    BOOST_REQUIRE( reread->ceeloResponse() );
+  }
+
+  const vector<ShieldingSourceFitCalc::VolumetricEffMethod> methods{
+    ShieldingSourceFitCalc::VolumetricEffMethod::Auto,
+    ShieldingSourceFitCalc::VolumetricEffMethod::ImportedGrid,
+    ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk
+  };
+
+  for( const shared_ptr<DetectorPeakResponse> &det : { built, reread } )
+  {
+    for( const ShieldingSourceFitCalc::VolumetricEffMethod method : methods )
+    {
+      const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+            = make_ba133_point_input( det, 25.0*PhysicalUnits::cm, 0.0, method );
+      pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+      BOOST_REQUIRE( fcn_pars.first );
+
+      for( const pair<double,DetectorPeakResponse::EffFlag> &flag : fcn_pars.first->peakDrfEffFlags() )
+      {
+        BOOST_CHECK_MESSAGE( flag.second == DetectorPeakResponse::EffFlag::Ok,
+                             flag.first << " keV (" << ((det == reread) ? "re-read" : "as built")
+                             << ", method " << static_cast<int>(method) << ") was flagged "
+                             << DetectorPeakResponse::effFlagName( flag.second ) );
+      }
+    }//for( methods )
+  }//for( as built, and re-read )
+
+  // How each request resolves: Auto and "MC" use the grid (MC with an error, as there is no MC),
+  //  EFFTRAN builds a real transfer rather than reusing the grid, and a grid request on a DRF
+  //  without one falls back to what Auto picks, with an error.
+  typedef ShieldingSourceFitCalc::VolumetricEffMethod VolEff;
+  const auto resolve = []( const shared_ptr<DetectorPeakResponse> &det, const VolEff method )
+    -> shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>
+  {
+    return GammaInteractionCalc::ShieldingSourceChi2Fcn::create(
+                      make_ba133_point_input( det, 25.0*PhysicalUnits::cm, 0.0, method ) ).first;
+  };
+
+  for( const VolEff method : { VolEff::Auto, VolEff::ImportedGrid, VolEff::MCTransfer } )
+  {
+    const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> fcn = resolve( reread, method );
+    BOOST_REQUIRE( fcn );
+    BOOST_CHECK( fcn->resolvedVolumetricEffMethod() == VolEff::ImportedGrid );
+    BOOST_CHECK( GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( reread, method )
+                 == VolEff::ImportedGrid );
+    BOOST_CHECK_EQUAL( fcn->volumetricEffResolveError().empty(), (method != VolEff::MCTransfer) );
+  }
+
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> efftran = resolve( reread, VolEff::EffTran );
+  BOOST_REQUIRE( efftran );
+  BOOST_CHECK( efftran->resolvedVolumetricEffMethod() == VolEff::EffTran );
+  BOOST_CHECK( efftran->volumetricEffResolveError().empty() );
+  BOOST_CHECK( efftran->pointSourceFepEff( 356.0 ).value > 0.0 );
+
+  const shared_ptr<DetectorPeakResponse> nai = make_synthetic_nai_drf( true );
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> no_grid = resolve( nai, VolEff::ImportedGrid );
+  BOOST_REQUIRE( no_grid );
+  BOOST_CHECK( no_grid->resolvedVolumetricEffMethod()
+               == GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( nai, VolEff::Auto ) );
+  BOOST_CHECK( !no_grid->volumetricEffResolveError().empty() );
+}//BOOST_AUTO_TEST_CASE( ParGridDrfInActShieldFit )

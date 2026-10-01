@@ -79,13 +79,13 @@ public:
   explicit DrfImportWidget( const Host host );
   virtual ~DrfImportWidget();
 
-  /** Adds a file.  One half of the current pair (e.g., its Detector.dat) replaces that half; any
-   other file replaces the current import.
-
-   Returns false (and shows why) if it is not a DRF file; the current import is then unchanged.
+  /** Adds a file: the missing half of the current pair (e.g., the Detector.dat for a lone
+   Efficiency.csv) completes it; any other file starts a new import.
    */
-  bool addFile( const std::string &displayName, std::shared_ptr<const std::string> data );
   void addFile( std::shared_ptr<const DrfImport::ParsedFile> file );
+
+  /** Whether a file has been added (the import may still be incomplete). */
+  bool hasFile() const;
 
   /** The imported DRF, or null if the import is not complete.  A new object after every change. */
   std::shared_ptr<DetectorPeakResponse> candidate() const;
@@ -127,6 +127,7 @@ protected:
   std::unique_ptr<FileDragUploadResource> m_companionUpload;
 
   Wt::WContainerWidget *m_mainDrop;                          ///< null for Host::DropDialog
+  Wt::WText *m_mainDropTxt;                                  ///< null for Host::DropDialog
   Wt::WContainerWidget *m_fileList;
 
   Wt::WContainerWidget *m_companionDrop;
@@ -151,6 +152,9 @@ protected:
 
   Wt::WContainerWidget *m_nameDiv;
   Wt::WLineEdit *m_nameEdit;
+
+  /** The user typed a name, so a new companion file or record choice keeps it. */
+  bool m_userNamed;
 
   Wt::WText *m_status;
   Wt::WContainerWidget *m_notes;

@@ -63,6 +63,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -833,21 +834,28 @@ ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolum
   //  been Monte-Carlo characterized (GADRAS Detector.dat, ANGLE model).  MC transfer needs an actual
   //  response to evaluate.
   const bool has_geometry = !!drf->geometry();
-  const bool attached_is_transfer = ceeloResp
+  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
+  const bool attached_is_transfer = ceeloResp && !has_grid
                     && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer);
 
   switch( requested )
   {
     case VolumetricEffMethod::MCTransfer:
+      // A .par grid is the only characterization such a DRF has, so it is what "MC" would evaluate.
+      if( has_grid )
+        return VolumetricEffMethod::ImportedGrid;
       return ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::EffTran:
       return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::Auto:
+    case VolumetricEffMethod::ImportedGrid:  //without a grid, falls back to what Auto picks
       // One model per fit, at any distance: whatever response the DRF carries (an attached curve
       //  transfer IS an EFFTRAN transfer, and is labelled as one), else a transfer through its
       //  geometry, else flat-disk.  See the header for why there is no far-field step-down.
+      if( has_grid )
+        return VolumetricEffMethod::ImportedGrid;
       if( ceeloResp )
         return attached_is_transfer ? VolumetricEffMethod::EffTran : VolumetricEffMethod::MCTransfer;
       return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
@@ -879,7 +887,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   //  silently downgraded: a quietly less-accurate answer is worse than a visible complaint.  Only
   //  `Auto` is allowed to fall back, since it is by definition best-effort.
   const bool explicitly_requested = ((requested == VolumetricEffMethod::MCTransfer)
-                                     || (requested == VolumetricEffMethod::EffTran));
+                                     || (requested == VolumetricEffMethod::EffTran)
+                                     || (requested == VolumetricEffMethod::ImportedGrid));
 
   if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
   {
@@ -905,6 +914,7 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
 
   const bool has_near_model = ceeloResp
                     && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
 
   // Builds an EFFTRAN transfer response from the DRF (measured points / fitted curve), anchored at
   //  the DRF's pinned reference distance.  Returns null (recording why) on failure.
@@ -951,9 +961,10 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       // A curve-transfer response may already be attached to the DRF - InterSpec builds one at load
       //  for any geometry-bearing DRF (CeeLoUtils::attachCurveTransferResponse).  Rebuilding an
       //  equivalent one here would repeat that work on every create(), i.e. on every interactive
-      //  chart update.  Reuse it.
+      //  chart update.  Reuse it - unless it is an imported .par grid, which is not a transfer of
+      //  the DRF's curve (asking for EFFTRAN on such a DRF means wanting a real one).
       const std::shared_ptr<const ceelo::DetectorResponse> transfer
-            = (ceeloResp
+            = (ceeloResp && !has_grid
                && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer))
                   ? ceeloResp : build_efftran();
       if( transfer )
@@ -969,7 +980,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
         // A response the DRF already carries still beats flat-disk, so it is the fallback for BOTH
         //  request kinds: a method asked for by name and refused must never leave the fit on a
         //  WORSE model than `Auto` would have picked for the same DRF.  Only the reporting differs.
-        m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+        m_resolvedVolEffMethod = has_grid ? VolumetricEffMethod::ImportedGrid
+                                          : VolumetricEffMethod::MCTransfer;
         m_volEffResponse = ceeloResp;
         if( requested == VolumetricEffMethod::Auto )
         {
@@ -995,6 +1007,17 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       break;
     }//case EffTran
 
+    case VolumetricEffMethod::ImportedGrid:
+      m_resolvedVolEffMethod = VolumetricEffMethod::ImportedGrid;
+      m_volEffResponse = ceeloResp;
+      if( requested == VolumetricEffMethod::Auto )
+        m_volEffResolveNote = "Auto -> imported efficiency grid (full-energy peak only)";
+      else if( requested == VolumetricEffMethod::MCTransfer )
+        m_volEffResolveError = "A Monte-Carlo detector efficiency was requested, but this detector"
+                               " response has no Monte-Carlo characterization; its imported"
+                               " efficiency grid was used instead.";
+      break;
+
     case VolumetricEffMethod::FlatDisk:
       if( explicitly_requested )
         m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but this"
@@ -1007,6 +1030,15 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       assert( 0 );  //resolveVolumetricEffMethodForDrf never returns Auto
       break;
   }//switch( resolved )
+
+  if( (requested == VolumetricEffMethod::ImportedGrid)
+      && (m_resolvedVolEffMethod != VolumetricEffMethod::ImportedGrid) )
+  {
+    m_volEffResolveError = "An imported efficiency grid was requested, but this detector response was"
+                           " not imported from a .par efficiency grid; the model \"Auto\" picks was"
+                           " used instead.";
+    m_volEffResolveNote.clear();
+  }
 
   // The integration branches on #m_volEffResponse alone (see DistributedSrcCalcT::eff_response_factor),
   //  so the two must never disagree - a non-FlatDisk

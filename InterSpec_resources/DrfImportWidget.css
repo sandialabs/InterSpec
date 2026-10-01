@@ -12,6 +12,7 @@
    DomIsDrugOver / DragedOver / Uploading classes. */
 .DrfImportDrop
 {
+  flex-shrink: 0;   /* the column can be height-limited (DRF Select tab); never squash the text */
   padding: 10px;
   min-height: 34px;
   display: flex;
@@ -31,6 +32,14 @@
   font-size: inherit;
 }
 
+/* A file is loaded: the main area only offers to replace it. */
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded
+{
+  min-height: 0;
+  padding: 6px 10px;
+  font-size: smaller;
+}
+
 .DrfImportDrop.DomIsDrugOver
 {
   border: 3px dashed var(--interspec-outline-color);
@@ -47,18 +56,19 @@
 .DrfImportDrop.Uploading
 {
   border: 3px dashed var(--interspec-success-color);
-  animation: blink 1s infinite;
+  animation: DrfImportBlink 1s infinite;
+}
+
+@keyframes DrfImportBlink
+{
+  0%   { opacity: 1; }
+  50%  { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 
 .DrfImportFiles:empty
 {
   display: none;
-}
-
-.DrfImportDrop.DrfImportCompanion
-{
-  min-height: 0;
-  padding: 6px 10px;
 }
 
 .DrfImportRow

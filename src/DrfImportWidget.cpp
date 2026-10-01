@@ -57,7 +57,6 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
-#include "InterSpec/WarningWidget.h"
 #include "InterSpec/DrfImportWidget.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
@@ -114,15 +113,15 @@ namespace
   }//interpretation_key(...)
 
 
-  // The key describing the companion file `kind` wants; nullptr if it has none.
-  const char *companion_key( const FileKind kind )
+  // The key asking for the companion file `kind` wants; nullptr if it has none.
+  const char *companion_key( const FileKind kind, const bool mobile )
   {
     switch( kind )
     {
-      case FileKind::GadrasEfficiencyCsv: return "dsi-companion-dat";
-      case FileKind::GadrasDetectorDat:   return "dsi-companion-eff";
-      case FileKind::ParGrid:             return "dsi-companion-txt";
-      case FileKind::ParDetectorTxt:      return "dsi-companion-par";
+      case FileKind::GadrasEfficiencyCsv: return mobile ? "dsi-companion-dat-mobile" : "dsi-companion-dat";
+      case FileKind::GadrasDetectorDat:   return mobile ? "dsi-companion-eff-mobile" : "dsi-companion-eff";
+      case FileKind::ParGrid:             return mobile ? "dsi-companion-txt-mobile" : "dsi-companion-txt";
+      case FileKind::ParDetectorTxt:      return mobile ? "dsi-companion-par-mobile" : "dsi-companion-par";
       default:                            break;
     }//switch( kind )
 
@@ -173,6 +172,7 @@ DrfImportWidget::DrfImportWidget( const Host host )
     m_mainUpload( nullptr ),
     m_companionUpload( nullptr ),
     m_mainDrop( nullptr ),
+    m_mainDropTxt( nullptr ),
     m_fileList( nullptr ),
     m_companionDrop( nullptr ),
     m_companionTxt( nullptr ),
@@ -191,6 +191,7 @@ DrfImportWidget::DrfImportWidget( const Host host )
     m_eccUncert( nullptr ),
     m_nameDiv( nullptr ),
     m_nameEdit( nullptr ),
+    m_userNamed( false ),
     m_status( nullptr ),
     m_notes( nullptr ),
     m_characterizeBtn( nullptr ),
@@ -227,7 +228,7 @@ DrfImportWidget::DrfImportWidget( const Host host )
 
     m_mainDrop = addNew<WContainerWidget>();
     m_mainDrop->addStyleClass( "DrfImportDrop DrfImportMainDrop" );
-    m_mainDrop->addNew<WText>( WString::tr( isMobile ? "dsi-drop-txt-mobile" : "dsi-drop-txt" ) );
+    m_mainDropTxt = m_mainDrop->addNew<WText>( WString::tr( isMobile ? "dsi-drop-txt-mobile" : "dsi-drop-txt" ) );
     m_mainDrop->doJavaScript( "BatchInputDropUploadSetup(" + m_mainDrop->jsRef() + ", '"
                               + m_mainUpload->url() + "', true);" );
     HelpSystem::attachToolTipOn( m_mainDrop, WString::tr("dsi-supported-tt"), showToolTips );
@@ -295,6 +296,8 @@ DrfImportWidget::DrfImportWidget( const Host host )
   m_nameEdit->setTextSize( 30 );
   m_nameDiv->hide();
 
+  m_nameEdit->textInput().connect( this, [this](){ m_userNamed = true; } );
+
   for( WLineEdit *edit : { m_diameterEdit, m_setbackEdit, m_distanceEdit, m_nameEdit } )
   {
     edit->changed().connect( this, &DrfImportWidget::updateCandidate );
@@ -319,8 +322,10 @@ DrfImportWidget::DrfImportWidget( const Host host )
 
 DrfImportWidget::~DrfImportWidget()
 {
+  // The drop areas are only registered (setupOnDragEnterDom) once rendered - a lazily loaded tab
+  //  may never have been.
   WApplication * const app = WApplication::instance();
-  if( !app || !m_companionDrop )
+  if( !app || !m_companionDrop || !isRendered() )
     return;
 
   string drop_ids = "'" + m_companionDrop->id() + "'";
@@ -404,44 +409,32 @@ void DrfImportWidget::handleUpload( const std::string &displayName,
 }//handleUpload(...)
 
 
-bool DrfImportWidget::addFile( const std::string &displayName, std::shared_ptr<const std::string> data )
-{
-  try
-  {
-    addFile( DrfImport::parseFile( SpecUtils::filename( displayName ), data, true ) );
-    return true;
-  }catch( std::exception &e )
-  {
-    setStatus( WString::tr("dsi-parse-error")
-                 .arg( Wt::Utils::htmlEncode( SpecUtils::filename(displayName) ) )
-                 .arg( Wt::Utils::htmlEncode( string( e.what() ) ) ), true );
-  }
-
-  return false;
-}//bool addFile(...)
-
-
 void DrfImportWidget::addFile( std::shared_ptr<const DrfImport::ParsedFile> file )
 {
   if( !file )
     return;
 
-  // A file is one half of the current pair, replacing whichever half it is (the two files of a
-  //  pair arrive one at a time, in either order); anything else starts a new import.
-  if( m_primary && DrfImport::areCompanions( m_primary->kind, file->kind ) )
+  // Only the missing half of a pair completes it (the two files arrive one at a time, in either
+  //  order).  GADRAS files are always named Detector.dat / Efficiency.csv, so letting a file
+  //  replace one half of a complete pair would silently mix two detectors.
+  if( m_primary && !m_companion && DrfImport::areCompanions( m_primary->kind, file->kind ) )
   {
     m_companion = file;
-  }else if( m_primary && m_companion && (m_primary->kind == file->kind) )
-  {
-    m_primary = file;
   }else
   {
     m_primary = file;
     m_companion.reset();
+    m_userNamed = false;
   }
 
   startSource( 0 );
 }//void addFile( std::shared_ptr<const DrfImport::ParsedFile> file )
+
+
+bool DrfImportWidget::hasFile() const
+{
+  return !!m_primary;
+}
 
 
 void DrfImportWidget::updateFileList()
@@ -458,6 +451,19 @@ void DrfImportWidget::updateFileList()
                                              .arg( WString::tr( kind_key( file->kind ) ) ) );
     txt->setInline( false );
   }//for( both files )
+
+  // Once a file is loaded, the main area is only for replacing it, so it gives up its space.
+  if( m_mainDrop )
+  {
+    const InterSpec * const viewer = InterSpec::instance();
+    const bool mobile = viewer && viewer->isMobile();
+    const bool loaded = !!m_primary;
+    m_mainDrop->toggleStyleClass( "DrfImportLoaded", loaded );
+    if( loaded )
+      m_mainDropTxt->setText( WString::tr( mobile ? "dsi-drop-txt-replace-mobile" : "dsi-drop-txt-replace" ) );
+    else
+      m_mainDropTxt->setText( WString::tr( mobile ? "dsi-drop-txt-mobile" : "dsi-drop-txt" ) );
+  }//if( m_mainDrop )
 }//void updateFileList()
 
 
@@ -524,7 +530,10 @@ void DrfImportWidget::setSource( std::shared_ptr<const DrfImport::Source> src )
     return;
 
   // Companion file: what it adds, and whether it is required
-  const char * const companion = (m_primary && !m_companion) ? companion_key( m_primary->kind ) : nullptr;
+  InterSpec * const viewer = InterSpec::instance();
+  const bool mobile = viewer && viewer->isMobile();
+  const char * const companion = (m_primary && !m_companion) ? companion_key( m_primary->kind, mobile )
+                                                             : nullptr;
   m_companionDrop->setHidden( !companion );
   if( companion )
     m_companionTxt->setText( WString::tr( companion ) );
@@ -565,16 +574,19 @@ void DrfImportWidget::setSource( std::shared_ptr<const DrfImport::Source> src )
   m_eccUncertHolder->setHidden( !m_eccUncert );
 
   // Common file names (Efficiency.csv, Detector.dat) say little, so date-stamp short ones
-  string name = src->name;
-  if( src->nameIsFileStem && (name.size() < 15) )
+  if( !m_userNamed )
   {
-    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    WApplication * const app = WApplication::instance();
-    if( app )
-      now += app->environment().timeZoneOffset();
-    name += " " + SpecUtils::to_vax_string( now );
-  }
-  m_nameEdit->setText( WString::fromUTF8( name ) );
+    string name = src->name;
+    if( src->nameIsFileStem && (name.size() < 15) )
+    {
+      auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      WApplication * const app = WApplication::instance();
+      if( app )
+        now += app->environment().timeZoneOffset();
+      name += " " + SpecUtils::to_vax_string( now );
+    }
+    m_nameEdit->setText( WString::fromUTF8( name ) );
+  }//if( !m_userNamed )
   m_nameDiv->setHidden( (src->status != Status::Ready)
                         && (src->status != Status::NeedsCharacterization) );
 
@@ -703,15 +715,20 @@ DrfImportWidget *DrfImportWidget::setupDropDialog( SimpleDialog *dialog,
   title->addStyleClass( "title" );
   title->setInline( false );
 
-  DrfChart *chart = contents->addNew<DrfChart>();
-  chart->addStyleClass( "DrfImportChart" );
-  chart->setMinimumSize( 300, 175 );
+  // The dialog is at most 85% of the window wide, so on a narrow phone so is the chart.
+  const int window_width = viewer->renderedWidth();
   int chartw = 350, charth = 200;
-  if( viewer->renderedWidth() > 500 )
-    chartw = std::min( ((3 * viewer->renderedWidth() / 4) - 50), 500 );
+  if( window_width > 500 )
+    chartw = std::min( ((3 * window_width / 4) - 50), 500 );
+  else if( window_width > 0 )
+    chartw = std::max( (85 * window_width / 100) - 40, 200 );
   if( viewer->renderedHeight() > 400 )
     charth = std::min( viewer->renderedHeight() / 4, (4 * chartw) / 7 );
-  chart->resize( std::max( chartw, 300 ), std::max( charth, 175 ) );
+
+  DrfChart *chart = contents->addNew<DrfChart>();
+  chart->addStyleClass( "DrfImportChart" );
+  chart->setMinimumSize( std::min( chartw, 300 ), 175 );
+  chart->resize( chartw, std::max( charth, 175 ) );
 
   DrfImportWidget *widget = contents->addNew<DrfImportWidget>( DrfImportWidget::Host::DropDialog );
 
@@ -722,7 +739,7 @@ DrfImportWidget *DrfImportWidget::setupDropDialog( SimpleDialog *dialog,
   if( fore && !fore->instrument_id().empty() )
   {
     defaultForSerialNumber = contents->addNew<WCheckBox>(
-                              WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() ) );
+               WString::tr("ds-use-for-serialnum-cb").arg( Wt::Utils::htmlEncode( fore->instrument_id() ) ) );
     defaultForSerialNumber->addStyleClass( "CbNoLineBreak DrfImportDefaultCb" );
     defaultForSerialNumber->setInline( false );
   }
@@ -734,7 +751,7 @@ DrfImportWidget *DrfImportWidget::setupDropDialog( SimpleDialog *dialog,
                            ? detectorTypeToString( fore->detector_type() )
                            : fore->instrument_model();
     defaultForDetectorModel = contents->addNew<WCheckBox>(
-                                            WString::tr("ds-use-for-model-cb").arg( model ) );
+                             WString::tr("ds-use-for-model-cb").arg( Wt::Utils::htmlEncode( model ) ) );
     defaultForDetectorModel->addStyleClass( "CbNoLineBreak DrfImportDefaultCb" );
     defaultForDetectorModel->setInline( false );
   }
