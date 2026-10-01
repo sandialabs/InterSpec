@@ -104,7 +104,12 @@ public:
     /** EFFTRAN-style transfer anchored on the DRF's measured efficiency
      points/curve - deterministic, no MC, rebuilt automatically on geometry
      edits. */
-    CurveTransfer = 2
+    CurveTransfer = 2,
+
+    /** The response the DRF was imported with from a .par efficiency grid (see
+     DetEffG2kPar::isGridResponse), kept as it is.  Only offered for such a DRF; it has no CeeLo
+     ProductionMethod of its own (CeeLo labels it CurveTransfer). */
+    ImportedGrid = 3
   };//enum class Method
 
   /** The geometry form is seeded from `seed_drf->storedGeometry()` when the DRF knows its shape (even
@@ -173,6 +178,9 @@ public:
 
   /** The currently selected build method. */
   Method selectedMethod() const;
+
+  /** Row visibility, geometry editability and notes for the selected method. */
+  void updateMethodRows();
 
   /** Selects the build method (as if the user picked it in the combo). */
   void setMethod( const Method method );
@@ -414,7 +422,13 @@ protected:
 
   DetectorGeometryInput *m_geometry;
 
-  Wt::WComboBox *m_method;      //Full MC | Quick MC (transfer) | From measured curve
+  Wt::WComboBox *m_method;      //Full MC | Quick MC (transfer) | From measured curve [| Imported grid]
+
+  /** The seed DRF's imported-grid response, when it has one; see Method::ImportedGrid. */
+  std::shared_ptr<const ceelo::DetectorResponse> m_gridResponse;
+
+  /** Says the imported grid will be replaced, while another method is selected. */
+  Wt::WText *m_gridNote;
   Wt::WComboBox *m_profile;     //Far-field | General | Contact
   Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;

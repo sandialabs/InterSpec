@@ -2552,10 +2552,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
           break;
         }
 
-        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-          [this, &displayName, data]( SimpleDialog *d ){
-            return openDrfImportDialog( d, displayName, data );
-          } );
+        handled = openDrfImportDialog( displayName, data, infile, type );
         break;
       }//case NonSpecFileKind::DrfImportFile:
 
@@ -3681,10 +3678,12 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 #endif
 
 
-bool SpecMeasManager::openDrfImportDialog( SimpleDialog *dialog,
-                                           const std::string &displayName,
-                                           std::shared_ptr<const std::string> data )
+bool SpecMeasManager::openDrfImportDialog( const std::string &displayName,
+                                           std::shared_ptr<const std::string> data,
+                                           std::ifstream &infile,
+                                           const SpecUtils::SpectrumType type )
 {
+  // Parsed before the dialog is made, as making it closes any other one.
   shared_ptr<const DrfImport::ParsedFile> parsed;
   try
   {
@@ -3694,9 +3693,12 @@ bool SpecMeasManager::openDrfImportDialog( SimpleDialog *dialog,
     return false;
   }
 
-  m_drfImportWidget = DrfImportWidget::setupDropDialog( dialog, parsed );
-
-  return !!m_drfImportWidget;
+  // `infile` is only read for the undo/redo step, which re-opens the dialog from these bytes.
+  return runWithNonSpecDialog( displayName, parsed->data->size(), infile, type, /*undoRedo=*/true,
+    [this, parsed]( SimpleDialog *d ){
+      m_drfImportWidget = DrfImportWidget::setupDropDialog( d, parsed );
+      return !!m_drfImportWidget;
+    } );
 }//bool openDrfImportDialog(...)
 
 
@@ -3728,9 +3730,8 @@ void SpecMeasManager::handleDrfFileDrop( const std::string &displayName, const s
     std::ifstream infile( spoolName.c_str(), ios::in | ios::binary );
 #endif
 
-    // `infile` is only read for the undo/redo step, which re-opens the dialog from these bytes.
     runWithNonSpecDialog( displayName, parsed->data->size(), infile,
-                          SpecUtils::SpectrumType::Foreground, true,
+                          SpecUtils::SpectrumType::Foreground, /*undoRedo=*/true,
       [this, parsed]( SimpleDialog *d ){
         m_drfImportWidget = DrfImportWidget::setupDropDialog( d, parsed );
         return !!m_drfImportWidget;

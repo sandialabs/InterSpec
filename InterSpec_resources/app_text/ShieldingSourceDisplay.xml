@@ -163,7 +163,10 @@
     geometry, else flat-disk.  "Monte Carlo" evaluates the DRF's attached MC model (near-field and
     off-axis correct); "EFFTRAN" transfers the DRF's measured efficiency to this geometry
     (deterministic, near-field correct); "Flat-disk" is the legacy far-field solid-angle
-    approximation, applied to point and volumetric sources alike.  The status to the right shows
+    approximation, applied to point and volumetric sources alike.  "Imported efficiency grid" is
+    only listed for a detector response imported from a Genie/ISOCS .par file, and is what "Auto"
+    picks for one: it uses that file&apos;s efficiency grid as-is, and is full-energy peak only, so
+    cascade-summing corrections are not available with it.  The status to the right shows
     which model the fit will actually use with the current detector response; the calculation log
     names it for both source kinds.  All distances are measured from the front face of the
     detector.</message>
@@ -171,9 +174,11 @@
   <message id="ssd-vol-eff-mc">Monte Carlo</message>
   <message id="ssd-vol-eff-efftran">EFFTRAN</message>
   <message id="ssd-vol-eff-flatdisk">Flat-disk</message>
+  <message id="ssd-vol-eff-grid">Imported efficiency grid</message>
   <message id="ssd-vol-eff-name-mc">MC transfer</message>
   <message id="ssd-vol-eff-name-efftran">EFFTRAN transfer</message>
   <message id="ssd-vol-eff-name-flatdisk">flat-disk</message>
+  <message id="ssd-vol-eff-name-grid">imported efficiency grid</message>
   <message id="ssd-vol-eff-resolved">&#8594; {1}</message>
   <message id="ssd-fixed-geom-mc-btn">Create MC Eff</message>
   <message id="ssd-tt-fixed-geom-mc">Runs a CeeLo Monte-Carlo over the exact source/shielding scene

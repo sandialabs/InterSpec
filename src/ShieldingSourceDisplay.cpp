@@ -100,6 +100,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SwitchCheckbox.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -3466,7 +3467,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-vol-eff"), showToolTips );
   m_volEffMethodCombo = lineDiv->addNew<WComboBox>();
   volEffLabel->setBuddy( m_volEffMethodCombo );
-  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk).
+  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk); the
+  //  ImportedGrid item is appended only when it applies (see updateVolEffMethodAvailability).
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-auto") );
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-mc") );
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-efftran") );
@@ -3874,7 +3876,8 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>(
                                 std::max( 0, m_drfUncertMethodCombo->currentIndex() ) );
 
-  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
+  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk,
+  //  ImportedGrid).
   //  Read unconditionally: fitOptions() also feeds serialization, so gating on the widget's enabled
   //  state would silently rewrite a saved "Flat-disk" to "Auto" whenever the model happens to have
   //  no volumetric source (and WWidget::isEnabled() is ancestor-sensitive besides).
@@ -6124,7 +6127,7 @@ void ShieldingSourceDisplay::volEffMethodChanged()
       ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
       if( display )
       {
-        display->m_volEffMethodCombo->setCurrentIndex( index );
+        display->setVolEffMethodIndex( index );
         display->volEffMethodChanged();
       }
     };
@@ -6137,6 +6140,14 @@ void ShieldingSourceDisplay::volEffMethodChanged()
 }//void volEffMethodChanged()
 
 
+void ShieldingSourceDisplay::setVolEffMethodIndex( const int index )
+{
+  if( index >= m_volEffMethodCombo->count() )  //the on-demand "Imported efficiency grid" item
+    m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );
+  m_volEffMethodCombo->setCurrentIndex( index );
+}//void setVolEffMethodIndex( const int index )
+
+
 void ShieldingSourceDisplay::updateVolEffMethodAvailability()
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
@@ -6147,6 +6158,15 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   //  the flat-disk fallback is theta-blind.
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool enable = ( det && det->isValid() && !det->isFixedGeometry() );
+
+  // "Imported efficiency grid" is only listed for a DRF imported from a .par grid, or while selected.
+  const int grid_index = static_cast<int>( VolumetricEffMethod::ImportedGrid );
+  const bool list_grid = (det && DetEffG2kPar::isGridResponse( det->ceeloResponse() ))
+                         || (m_volEffMethodCombo->currentIndex() == grid_index);
+  if( list_grid && (m_volEffMethodCombo->count() <= grid_index) )
+    m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );
+  else if( !list_grid && (m_volEffMethodCombo->count() > grid_index) )
+    m_volEffMethodCombo->removeItem( grid_index );
 
   if( enable != m_volEffMethodCombo->isEnabled() )
     m_volEffMethodCombo->setDisabled( !enable );
@@ -6171,6 +6191,7 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   {
     case VolumetricEffMethod::MCTransfer: resolvedKey = "ssd-vol-eff-name-mc";       break;
     case VolumetricEffMethod::EffTran:    resolvedKey = "ssd-vol-eff-name-efftran";  break;
+    case VolumetricEffMethod::ImportedGrid: resolvedKey = "ssd-vol-eff-name-grid";   break;
     case VolumetricEffMethod::FlatDisk:
     case VolumetricEffMethod::Auto:       resolvedKey = "ssd-vol-eff-name-flatdisk"; break;
   }//switch( resolved )
@@ -8827,7 +8848,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>( options.drf_uncert_method ) );
   m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateDrfUncertMethodAvailability();
-  m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
+  setVolEffMethodIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );

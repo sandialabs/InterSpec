@@ -2416,6 +2416,46 @@ public:
 };//struct PeakFitDiffCostFunction
 
 
+/** Results of solving a PeakFitDiffCostFunction: the fitted peaks, and the raw fit
+ parameter/uncertainty/covariance data.
+ */
+struct CeresFitResult
+{
+  vector<PeakDef> final_peaks;
+  vector<double> parameters;
+  vector<double> uncertainties;
+  vector<double> row_major_covariance;
+  size_t num_fit_pars;
+};
+
+
+/** Evaluates the model at the starting parameters, for a problem where every Ceres parameter is held
+ constant - e.g., a Peak Editor refit with centroid and FWHM fixed, where only the amplitudes and
+ continuum vary, and the linear least-squares in `parametersToPeaks(...)` solves those directly.
+ Ceres would have nothing to minimize, and rejects the zero initial trust-region radius such a
+ problem gives it.  Zero uncertainties/covariance are what Ceres reports for constant parameters, and
+ they make `parametersToPeaks(...)` keep the input peaks' mean/FWHM uncertainties.
+ */
+static CeresFitResult evaluate_without_free_parameters( const PeakFitDiffCostFunction &cost_functor,
+                                         const PeakFitDiffCostFunction::ProblemSetup &prob_setup )
+{
+  const size_t num_fit_pars = prob_setup.m_parameters.size();
+  assert( prob_setup.m_constant_parameters.size() == num_fit_pars );
+
+  CeresFitResult result;
+  result.num_fit_pars = num_fit_pars;
+  result.parameters = prob_setup.m_parameters;
+  result.uncertainties.resize( num_fit_pars, 0.0 );
+  result.row_major_covariance.resize( num_fit_pars * num_fit_pars, 0.0 );
+
+  vector<double> residuals( cost_functor.number_residuals(), 0.0 );
+  result.final_peaks = cost_functor.parametersToPeaks<PeakDef,double>( result.parameters.data(),
+                         result.uncertainties.data(), residuals.data(),
+                         result.row_major_covariance.data(), num_fit_pars );
+
+  return result;
+}//evaluate_without_free_parameters(...)
+
 
 /** All peaks passed in must share a PeakContinuum.
  */
@@ -2500,20 +2540,29 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
                                                     reference_energy, skew_type, det_type, fit_options );
 
-    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
-    //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-
     const size_t num_fit_pars = cost_functor->number_parameters();
-
-    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-
     const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor->get_problem_setup();
 
     assert( prob_setup.m_parameters.size() == num_fit_pars );
     assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
     assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+    if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
+    {
+      CeresFitResult fixed_result = evaluate_without_free_parameters( *cost_functor, prob_setup );
+
+      vector<shared_ptr<const PeakDef>> results;
+      for( PeakDef &peak : fixed_result.final_peaks )
+        results.push_back( make_shared<PeakDef>( std::move(peak) ) );
+      return results;
+    }//if( no free parameters )
+
+    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
+    //  without introducing a ton of extra overhead.
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+
+    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
 
     vector<double> parameters = prob_setup.m_parameters;
     double * const pars = &parameters[0];
@@ -3385,30 +3434,23 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
  Returns the fitted peaks, and the raw fit parameter/uncertainty/covariance data.
  Throws on failure.
  */
-struct CeresFitResult
-{
-  vector<PeakDef> final_peaks;
-  vector<double> parameters;
-  vector<double> uncertainties;
-  vector<double> row_major_covariance;
-  size_t num_fit_pars;
-};
-
 static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks )
 {
   const size_t num_fit_pars = cost_functor.number_parameters();
+  const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
+
+  assert( prob_setup.m_parameters.size() == num_fit_pars );
+  assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
+  assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+  if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
+    return evaluate_without_free_parameters( cost_functor, prob_setup );
 
   auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>(
     &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
 
   cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
   cost_function->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
-
-  const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
-
-  assert( prob_setup.m_parameters.size() == num_fit_pars );
-  assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
-  assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
 
   vector<double> parameters = prob_setup.m_parameters;
   double * const pars = parameters.data();

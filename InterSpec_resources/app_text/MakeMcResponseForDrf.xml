@@ -10,8 +10,9 @@
   <message id="mmr-method-full-mc">Full MC characterization</message>
   <message id="mmr-method-quick-mc">Quick MC (transfer)</message>
   <message id="mmr-method-curve-transfer">No MC support (instant, from measured curve)</message>
+  <message id="mmr-method-imported-grid">Imported efficiency grid</message>
   <message id="mmr-tt-method"><p>How the response that answers off-axis, near-field and
-    other-distance queries is built.  All three use this detector&apos;s measured efficiency where it
+    other-distance queries is built.  Each uses this detector&apos;s measured efficiency where it
     has one - what differs is how much Monte Carlo backs the distance and angle dependence.</p>
     <ul>
     <li><b>Full MC characterization</b> - Monte Carlo over the full
@@ -31,6 +32,11 @@
     anchor, rather than a correction applied to a computed response.  Instant and deterministic, and
     it rebuilds automatically as you edit the geometry.  The classic lab efficiency-transfer
     workflow, made 3-D and Rayleigh-aware.  Needs a measured efficiency to work from.</li>
+    <li><b>Imported efficiency grid</b> - only listed for a detector imported from a Genie/ISOCS
+    .par file: the file&apos;s efficiency grid (energy &#215; distance &#215; angle) is used as-is,
+    interpolated between its nodes through the ray-traced geometry.  <b>Full-energy peak only</b> -
+    the grid has no total efficiency, so cascade-summing corrections are not available.  The
+    geometry cannot be edited while it is selected, since the grid is tied to it.</li>
     </ul>
     <p>With no method at all, a detector answers every distance with its on-axis efficiency scaled
     by solid angle, and cannot answer off-axis at all.</p></message>
@@ -160,6 +166,9 @@
     distances beyond {1}; closer or well off-axis queries are flagged and carry an
     honestly inflated uncertainty.</message>
   <message id="mmr-status-stale">Geometry changed - generate again to update the response.</message>
+  <message id="mmr-status-grid">Using the efficiency grid imported from the .par file (full-energy peak only).</message>
+  <message id="mmr-grid-replaced-note">Building or generating another response replaces the
+    efficiency grid imported from the .par file; select &quot;Imported efficiency grid&quot; to keep it.</message>
   <message id="mmr-status-existing">Showing the response already attached to this detector.</message>
   <message id="mmr-status-geom-incomplete">Enter the crystal dimensions and material (the imported length is only a guess) before generating a response.</message>
 

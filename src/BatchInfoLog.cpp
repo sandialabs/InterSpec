@@ -1155,6 +1155,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           volumetric_str = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
           volumetric_str = "EFFTRAN transfer (near-field & off-axis correct)";      break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::ImportedGrid:
+          volumetric_str = "Imported efficiency grid (full-energy peak only)";       break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
         case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
           break;

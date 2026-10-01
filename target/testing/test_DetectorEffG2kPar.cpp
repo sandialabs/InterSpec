@@ -753,8 +753,8 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
     //  `K`'s attenuation is exp(-tau) off the mu table's own log-log grid.  The
     //  measured residue is a ~10% bump over ~0.09 keV that recovers to 1.0002 the
     //  moment `K` clears the transition.  On a REAL detector that window is deep
-    //  in the sub-16 keV region whose peak efficiency is ~2e-09 (see the band
-    //  table in "DetectorEffG2kPar.h"), which is why that band is gated on
+    //  in the sub-16 keV region whose peak efficiency is ~8 decades below the
+    //  crystal's (see the band table in "DetectorEffG2kPar.h"), which is why that band is gated on
     //  ABSOLUTE error and passes; on this synthetic fixture the efficiency there
     //  is much larger (~8e-04) because the fixture's grid is not a real detector's,
     //  so do not read a magnitude off this case.  Fixing the residue means putting
@@ -1011,7 +1011,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
   //  is an ABSOLUTE bound in efficiency units.  Below 22 keV the absolute bound is
   //  the one that carries the argument, but BOTH are applied there: an absolute
   //  gate alone leaves the relative error completely unpoliced, so a regression
-  //  that multiplied it while staying under a floor of ~1e-9 would pass silently.
+  //  that multiplied it while staying under the absolute floor would pass silently.
   //  The sub-22 relative gates are therefore set loosely (~1.5x measured), to
   //  catch a change in kind rather than to assert a tolerance.
   //
@@ -1301,7 +1301,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
               "%s keV, %s: worst ON-LATTICE ABSOLUTE error %.3e over %zu probes"
               " exceeds %.3e.  This band is gated absolutely because its stored"
               " efficiency (peak %.2e here) is many decades below the crystal's"
-              " ~3e-1 peak, where a relative bound polices nothing; the worst"
+              " peak, where a relative bound polices nothing; the worst"
               " relative error was %.5f on eps %.2e.  The limit is the crystal-frame"
               " lattice reading a face-frame grid, not node density",
               bands[b].name, (rg == kMain) ? "MAIN" : "CORNER", absw_a[rg][b],
@@ -1632,19 +1632,19 @@ BOOST_AUTO_TEST_CASE( EccMatch )
                       static_cast<float>(E_node), theta, 0.0, (dist_mm/10.0)*PhysicalUnits::cm );
 
           // Relative OR absolute, whichever is looser.  A purely relative bound
-          //  is not meaningful where the file's own efficiency is ~1e-9 (10 keV at
+          //  is not meaningful where the file's own efficiency is tiny (10 keV at
           //  a grazing angle is eight decades below this crystal's peak), and that
           //  is exactly the regime `GridReproductionByBand` shows is limited by
           //  the crystal/face frame skew rather than by anything this check can
           //  police.  The absolute floor is still far below the defects this check
           //  exists to catch: the pre-fix slant-sampling bug was 92% at 45 deg and
           //  8427% at 84 deg, and the fabricated K-edge discontinuity - the reason
-          //  a LOW probe is here at all - was ~95x, i.e. ~1e-7 absolute at this
-          //  locus.
+          //  a LOW probe is here at all - was ~95x, roughly a thousand times this
+          //  floor at this locus.
           //
           //  The floor is 1e-10 rather than a rounder 1e-8 because of how little
           //  the low probe is worth otherwise: at 10 keV and a grazing angle
-          //  `eff_eval` is itself ~1e-9, so a 1e-8 floor would tolerate an absolute
+          //  `eff_eval` is so small that a 1e-8 floor would tolerate an absolute
           //  error TEN TIMES the entire efficiency at that point, and a recurrence
           //  of the K-edge defect merely 5x smaller than the original would pass.
           //  1e-10 keeps the floor below the value being checked while staying far

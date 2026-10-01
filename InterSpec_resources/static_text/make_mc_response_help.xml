@@ -12,7 +12,8 @@ source at any distance and angle, not only on the detector axis in the far field
 model assumes.
 </p>
 <p>
-Three methods are offered under <em>Location Support</em>:
+Three methods are offered under <em>Location Support</em>, plus a fourth for a detector imported
+from a Genie/ISOCS .par file:
 </p>
 <ul>
   <li><b>No MC support (instant, from measured curve)</b>: no Monte Carlo is run.  The detector's
@@ -24,6 +25,11 @@ Three methods are offered under <em>Location Support</em>:
       elsewhere as above.  A fraction of the cost of a full characterization.</li>
   <li><b>Full MC</b>: Monte Carlo over energy, angle and distance.  Takes minutes, and is the choice
       when sources will be measured well off-axis or in contact with the detector.</li>
+  <li><b>Imported efficiency grid</b>: only offered for a detector imported from a .par file, and
+      selected by default for one.  The file&apos;s efficiency grid (energy, distance and angle) is
+      used as-is, so the geometry cannot be edited while it is selected.  It is full-energy peak
+      only: there is no total efficiency, so cascade-summing corrections are not available.
+      Building or generating another response replaces the grid.</li>
 </ul>
 <p>
 When the detector has measured efficiency points, a generated response is corrected to them

@@ -54,7 +54,6 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WTableCell.h>
-#include <Wt/WTabWidget.h>
 #include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
@@ -2779,6 +2778,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
   m_importMenuItem = item;
 
+  // Other tabs change the detector, so coming back to "Import" makes its detector current again.
+  m_drfTypeMenu->itemSelected().connect( this, [this]( WMenuItem *selected ){
+    if( selected == m_importMenuItem )
+      handleImportChanged();
+  } );
+
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
@@ -3533,12 +3538,16 @@ void DrfSelect::openModifyWindow()
     return;
   }
 
-  // A geometry-only import (e.g., a lone Detector.dat) has no detector yet; Modify is where it gets
-  //  characterized.
-  const bool on_import_tab = (m_drfTypeMenu->currentItem() == m_importMenuItem);
-  const shared_ptr<DetectorPeakResponse> seed = (!m_detector && on_import_tab)
-                                                ? m_importWidget->characterizationSeed()
-                                                : m_detector;
+  // On the "Import" tab, Modify is for the file being imported - including a geometry-only one
+  //  (e.g., a lone Detector.dat), which is characterized there.
+  shared_ptr<DetectorPeakResponse> seed = m_detector;
+  if( m_drfTypeMenu->currentItem() == m_importMenuItem )
+  {
+    if( m_importWidget->candidate() )
+      seed = m_importWidget->candidate();
+    else if( m_importWidget->characterizationSeed() )
+      seed = m_importWidget->characterizationSeed();
+  }
 
   m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, seed );
 
@@ -3589,20 +3598,29 @@ void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf 
 
 void DrfSelect::handleImportChanged()
 {
-  // A slow import (a .par grid) can finish after the user has moved to another tab.
+  // A slow import (a .par grid) can finish after the user has moved to another tab; it is picked
+  //  up when they come back.
   if( m_drfTypeMenu->currentItem() != m_importMenuItem )
     return;
 
-  // An incomplete import (e.g., waiting on its companion file) leaves the detector in use alone,
-  //  but cant be accepted.
-  m_detector = m_importWidget->candidate();
-  m_gui_select_matches_det = true;
-  setAcceptButtonEnabled( !!m_detector );
-  updateDrfContentSummary();
-  updateChart();
-
-  if( m_detector )
+  const shared_ptr<DetectorPeakResponse> candidate = m_importWidget->candidate();
+  if( candidate )
+  {
+    m_detector = candidate;
+    m_gui_select_matches_det = true;
+    setAcceptButtonEnabled( true );
+    updateDrfContentSummary();
+    updateChart();
     emitChangedSignal();
+  }else if( m_importWidget->hasFile() )
+  {
+    // An incomplete import (e.g., waiting on its companion file) can't be accepted, and leaves
+    //  the detector in use - m_detector - alone, so closing the dialog doesn't change it.
+    setAcceptButtonEnabled( false );
+    if( m_drfContentChips )
+      m_drfContentChips->clear();
+    m_chart->updateChart( nullptr );
+  }
 }//void handleImportChanged()
 
 
@@ -4605,13 +4623,13 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
 
 std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                Wt::Dbo::ptr<InterSpecUser> user,
+                                const long long db_user_id,
                                 const std::string &serial_number,
                                 SpecUtils::DetectorType detType,
                                 const std::string &detector_model )
 {
   std::shared_ptr<DetectorPeakResponse> answer;
-  if( !sql || !user )
+  if( !sql || (db_user_id < 0) )
     return answer;
   
   
@@ -4625,7 +4643,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     {
       auto results = sql->session()->find<UseDrfPref>()
                      .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                     .bind( user.id() )
+                     .bind( db_user_id )
                      .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
                      .bind( serial_number )
                      .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
@@ -4645,7 +4663,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
       {
         auto results = sql->session()->find<UseDrfPref>()
                        .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                       .bind( user.id() )
+                       .bind( db_user_id )
                        .bind( UseDrfPref::UseDrfType::UseDetectorModelName )
                        .bind( model )
                        .orderBy("id desc")  //shouldnt have an effect because we should only get at most one result
@@ -4673,7 +4691,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     
     auto drflist = sql->session()->find<DetectorPeakResponse>()
     .where("InterSpecUser_id = ? AND id = ?")
-    .bind( user.id() )
+    .bind( db_user_id )
     .bind( pref->m_drfIndex )
     .resultList();
     
@@ -5200,8 +5218,20 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
 }//initARelEffDetector( int type )
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
-                                                            const SpecUtils::DetectorType type, InterSpec *interspec )
+std::string DrfSelect::gadrasDrfSearchPaths( InterSpec *interspec )
+{
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  const string datadir = InterSpec::staticDataDirectory();
+  return SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
+         + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
+#else
+  return UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+#endif
+}//std::string gadrasDrfSearchPaths( InterSpec *interspec )
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const SpecUtils::DetectorType type,
+                                                                      const std::string &searchPaths )
 
 {
   using SpecUtils::DetectorType;
@@ -5286,7 +5316,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( name, interspec );
+    det = initAGadrasDetector( name, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -5326,7 +5356,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( secondname, interspec );
+    det = initAGadrasDetector( secondname, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -5338,22 +5368,13 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
 }//initAGadrasDetector
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName,
+                                                                      const std::string &searchPaths )
 {
-  //Grab "GadrasDRFPath" and split it by semicolon and newlines, then go through
-  //  and look for sub-folders with the given name that contain Detector.data
-  //  and Efficiency.csv.
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
-#else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
-#endif
-  
-  
+  //Split searchPaths by semicolon and newlines, then go through and look for sub-folders with the
+  //  given name that contain Detector.data and Efficiency.csv.
   vector<string> paths;
-  SpecUtils::split( paths, drfpaths, "\r\n;" );
+  SpecUtils::split( paths, searchPaths, "\r\n;" );
   for( string basepath : paths )
   {
     SpecUtils::trim( basepath );

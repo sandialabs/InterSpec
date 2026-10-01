@@ -71,6 +71,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/DetectorGeometryInput.h"
@@ -335,6 +336,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
     m_hideGenerateButton( false ),
+    m_gridResponse{},
+    m_gridNote( nullptr ),
     m_cancelBtn( nullptr ),
     m_progress( nullptr ),
     m_status( nullptr ),
@@ -408,17 +411,28 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     WTableCell *cell = add_row( WString::tr("mmr-method") );
     m_method = cell->addNew<WComboBox>();
   }
+  const shared_ptr<const ceelo::DetectorResponse> seed_resp
+                             = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
+  if( DetEffG2kPar::isGridResponse( seed_resp ) )
+    m_gridResponse = seed_resp;
+
   m_method->addItem( WString::tr("mmr-method-full-mc") );        //Method::FullMc
   m_method->addItem( WString::tr("mmr-method-quick-mc") );       //Method::QuickMc
   m_method->addItem( WString::tr("mmr-method-curve-transfer") ); //Method::CurveTransfer
+  if( m_gridResponse )
+    m_method->addItem( WString::tr("mmr-method-imported-grid") ); //Method::ImportedGrid
   m_method->setCurrentIndex( 0 );
   m_method->activated().connect( this, &MakeMcResponseForDrf::handleMethodChanged );
   HelpSystem::attachToolTipOn( m_method, WString::tr("mmr-tt-method"), true );
 
+  if( m_gridResponse )
+  {
+    m_gridNote = add_wide_row()->addNew<WText>( WString::tr("mmr-grid-replaced-note") );
+    m_gridNote->addStyleClass( "McUpgradeNote" );
+    m_gridNote->setInline( false );
+  }
   // When the DRF already carries a quick/transfer response, nudge toward the
   //  full characterization as the accuracy upgrade.
-  const shared_ptr<const ceelo::DetectorResponse> seed_resp
-                             = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
   if( seed_resp && seed_resp->model_transfer.has_value() )
   {
     WText *upgradeNote = add_wide_row()->addNew<WText>( WString::tr("mmr-upgrade-note") );
@@ -557,7 +571,9 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   //
   // Deliberately NOT for a DRF whose geometry is only the cylinder guessed from its diameter: a
   //  transfer built on a guessed shape would be attached, silently, by the next "Use".
-  if( seed_resp )
+  if( m_gridResponse )
+    m_method->setCurrentIndex( static_cast<int>(Method::ImportedGrid) );
+  else if( seed_resp )
     m_method->setCurrentIndex( static_cast<int>(seed_resp->provenance.method) );
   else if( m_seedDrf && m_seedDrf->isValid() && m_seedDrf->geometry() )
     m_method->setCurrentIndex( static_cast<int>(Method::CurveTransfer) );
@@ -570,7 +586,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   {
     // The response the DRF already carries; showing it is the point of opening on its method.
     m_result = seed_resp;
-    m_status->setText( WString::tr("mmr-status-existing") );
+    m_status->setText( WString::tr( m_gridResponse ? "mmr-status-grid" : "mmr-status-existing" ) );
     m_validationChanged.emit( true );
     updateResponseChart();
   }else
@@ -784,13 +800,7 @@ void MakeMcResponseForDrf::setState( const State &state )
 
   // Re-sync the per-method row visibility and the estimate/anchor text without going through
   //  `handleMethodChanged`, which exists to *invalidate* a result on a user edit.
-  const Method method = selectedMethod();
-  m_profileRow->setHidden( method != Method::FullMc );
-  m_precRow->setHidden( method == Method::CurveTransfer );
-  m_anchorAnglesRow->setHidden( method != Method::QuickMc );
-  m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
-  m_anchorRow->setHidden( method != Method::CurveTransfer );
-  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
+  updateMethodRows();
   m_generate->setEnabled( m_geometry->generationReady() );
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
 
@@ -819,17 +829,19 @@ MakeMcResponseForDrf::Method MakeMcResponseForDrf::selectedMethod() const
   {
     case 1: return Method::QuickMc;
     case 2: return Method::CurveTransfer;
+    case 3: return m_gridResponse ? Method::ImportedGrid : Method::FullMc;
     default: return Method::FullMc;
   }
 }//selectedMethod()
 
 
-void MakeMcResponseForDrf::handleMethodChanged()
+void MakeMcResponseForDrf::updateMethodRows()
 {
   const Method method = selectedMethod();
+  const bool no_mc = (method == Method::CurveTransfer) || (method == Method::ImportedGrid);
 
   m_profileRow->setHidden( method != Method::FullMc );
-  m_precRow->setHidden( method == Method::CurveTransfer );
+  m_precRow->setHidden( no_mc );
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
   m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
@@ -837,8 +849,22 @@ void MakeMcResponseForDrf::handleMethodChanged()
   // The measured-curve transfer is instant and rebuilds automatically - no
   //  explicit "Generate" step (this is what guarantees that entering geometry
   //  and accepting the dialog always yields an attached, distance-aware
-  //  response).
-  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
+  //  response); an imported grid is not built here at all.
+  m_generate->setHidden( m_hideGenerateButton || no_mc );
+
+  // The imported grid was tabulated against the geometry it came with, which the form shows; an
+  //  edit would describe some other detector than the one the grid is for.
+  m_geometry->setDisabled( method == Method::ImportedGrid );
+  if( m_gridNote )
+    m_gridNote->setHidden( method == Method::ImportedGrid );
+}//updateMethodRows()
+
+
+void MakeMcResponseForDrf::handleMethodChanged()
+{
+  const Method method = selectedMethod();
+
+  updateMethodRows();
 
   // A result from a different method is not what the user is configuring;
   //  abandon any in-flight generation too (its finish handler is stale-guarded
@@ -861,6 +887,14 @@ void MakeMcResponseForDrf::handleMethodChanged()
 
   handleGeometryChanged();
 
+  if( method == Method::ImportedGrid )
+  {
+    m_result = m_gridResponse;
+    m_status->setText( WString::tr("mmr-status-grid") );
+    m_validationChanged.emit( true );
+    updateResponseChart();
+  }
+
   if( !m_restoringState )
     m_userChanged.emit();
 }//handleMethodChanged()
@@ -868,8 +902,9 @@ void MakeMcResponseForDrf::handleMethodChanged()
 
 void MakeMcResponseForDrf::handleGeometryChanged()
 {
-  //Any geometry change invalidates a previously generated response.
-  if( m_result )
+  //Any geometry change invalidates a previously generated response - except the imported grid,
+  //  which the form (disabled while it is selected) does not describe the making of.
+  if( m_result && (selectedMethod() != Method::ImportedGrid) )
   {
     m_result.reset();
     m_validationChanged.emit( false );
@@ -910,6 +945,8 @@ CeeLoUtils::TransferAnchor MakeMcResponseForDrf::transferAnchor( const ceelo::Ge
 
 void MakeMcResponseForDrf::setMethod( const Method method )
 {
+  if( (method == Method::ImportedGrid) && !m_gridResponse )
+    return;
   m_method->setCurrentIndex( static_cast<int>(method) );
   handleMethodChanged();
 }//setMethod(...)
@@ -941,8 +978,8 @@ void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
 {
   // Individually, rather than disabling a parent: the run row must stay live so the user can still
   //  cancel, and Wt's isEnabled() reports an ancestor's state as the child's.
-  if( m_geometry )
-    m_geometry->setDisabled( !enabled );
+  if( m_geometry )  //the imported grid's geometry is never editable; see updateMethodRows()
+    m_geometry->setDisabled( !enabled || (m_method && (selectedMethod() == Method::ImportedGrid)) );
   
   if( m_method )
     m_method->setEnabled( enabled );
@@ -1062,7 +1099,7 @@ void MakeMcResponseForDrf::updateGroundingInfo()
 
   // The measured-curve transfer IS anchored on the measured efficiency by construction, so a
   //  separate grounding choice would be meaningless there - it has its own anchor row.
-  const bool applies = (selectedMethod() != Method::CurveTransfer);
+  const bool applies = (selectedMethod() == Method::FullMc) || (selectedMethod() == Method::QuickMc);
   m_groundRow->setHidden( !applies );
   m_groundInfoRow->setHidden( !applies );
   if( !applies )
@@ -1305,6 +1342,12 @@ void MakeMcResponseForDrf::updateEstimate()
     return;
   }
 
+  if( method == Method::ImportedGrid )
+  {
+    m_estimate->setText( "" );
+    return;
+  }
+
   if( !m_geometry->isValid() )
   {
     m_estimate->setText( "" );
@@ -1388,7 +1431,7 @@ bool MakeMcResponseForDrf::startGeneration()
   //  while a run is in flight, since `m_result` is null then) started a second full-core Monte
   //  Carlo, and the line below would replace the cancel flag the first run is watching - leaving it
   //  burning every core to completion, uncancellable, even after the window is closed.
-  if( m_generating )
+  if( m_generating || (selectedMethod() == Method::ImportedGrid) )
     return false;
 
   // Whatever the owner's edits currently say - see #setSeedProvider.
@@ -1758,7 +1801,8 @@ void MakeMcResponseForDrf::scheduleTimeCalibration()
   // m_calibrating: a probe already running is a full-core Monte Carlo on the shared server thread
   //  pool; queueing more of them behind a burst of edits would just take cores from the session.
   if( !m_calibTimer || !m_shown || m_generating || m_calibrating || !isEnabled()
-      || (selectedMethod() == Method::CurveTransfer) || !m_geometry->isValid() )
+      || (selectedMethod() == Method::CurveTransfer) || (selectedMethod() == Method::ImportedGrid)
+      || !m_geometry->isValid() )
   {
     return;
   }
@@ -1783,7 +1827,8 @@ void MakeMcResponseForDrf::scheduleTimeCalibration()
 
 void MakeMcResponseForDrf::startTimeCalibration()
 {
-  if( m_generating || !isEnabled() || (selectedMethod() == Method::CurveTransfer) )
+  if( m_generating || !isEnabled() || (selectedMethod() == Method::CurveTransfer)
+      || (selectedMethod() == Method::ImportedGrid) )
     return;
 
   ceelo::GeometryDescriptor gd;
@@ -1929,7 +1974,8 @@ void MakeMcResponseForDrf::handleGenerationFinished(
     }//if( n_var >= 3 )
   }//if( have run statistics )
 
-  m_generate->setHidden( m_hideGenerateButton || (selectedMethod() == Method::CurveTransfer) );
+  m_generate->setHidden( m_hideGenerateButton || (selectedMethod() == Method::CurveTransfer)
+                        || (selectedMethod() == Method::ImportedGrid) );
   m_generate->setEnabled( m_geometry->generationReady() );
   m_cancelBtn->hide();
   m_progress->hide();

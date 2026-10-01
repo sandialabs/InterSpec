@@ -802,6 +802,10 @@ public:
    the status text to the resolved active method.  Called on detector / geometry / source changes. */
   void updateVolEffMethodAvailability();
 
+  /** Sets #m_volEffMethodCombo to a VolumetricEffMethod index, listing the on-demand
+   "Imported efficiency grid" item first if needed (undo/redo and state restore). */
+  void setVolEffMethodIndex( const int index );
+
   /** Shows the detector-efficiency-uncertainty method row only when the current DRF carries
    efficiency-uncertainty information (an attached CeeLo MC response or a #DetectorEfficiencyUncert).
    On the first invocation, if the DRF has no such information, defaults the selection to `None`
@@ -986,7 +990,7 @@ protected:
   bool m_drfUncertMethodDefaultApplied = false;
 
   /** Volumetric-source detector-efficiency method override (Auto / Monte Carlo / EFFTRAN /
-   Flat-disk); items are enabled per-DRF by #updateVolEffMethodAvailability.  Maps to
+   Flat-disk / Imported efficiency grid); the last is listed per-DRF by #updateVolEffMethodAvailability.  Maps to
    ShieldingSourceFitOptions::volumetric_eff_method. */
   Wt::WComboBox *m_volEffMethodCombo = nullptr;
 

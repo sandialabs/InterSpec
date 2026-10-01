@@ -1554,7 +1554,7 @@ public:
    */
   const std::string &volumetricEffResolveNote() const;
 
-  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran) could not be
+  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran / ImportedGrid) could not be
    honored and the fit fell back to the best model the DRF still offers (its attached response, else
    flat-disk).  Distinct from #volumetricEffResolveNote: a note is informational (including every
    `Auto` resolution), whereas this says the user asked for something specific and did not get it,
@@ -1577,7 +1577,8 @@ public:
    through the DRF's geometry, else flat-disk.  There is no far-field step-down to flat-disk: the
    line quadrature makes the response cheap at any distance, and a far-field transfer reproduces the
    measured curve to within its anchor, so stepping down would only buy a second model in the same
-   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.
+   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.  A DRF
+   carrying an imported .par efficiency grid resolves to #VolumetricEffMethod::ImportedGrid.
    */
   static ShieldingSourceFitCalc::VolumetricEffMethod resolveVolumetricEffMethodForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,

@@ -432,6 +432,7 @@
 */
 
 class DetectorPeakResponse;
+namespace ceelo { class DetectorResponse; }
 
 /** Reader for a detector-characterization efficiency parameter file (binary
  spatial FEP-efficiency grid) plus its ASCII geometry record.  See the file
@@ -659,6 +660,14 @@ namespace DetEffG2kPar
    */
   std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par,
                                                  const DetectorDef &def );
+
+  /** Whether `resp` is a response #makeDrf built from a grid - an "imported efficiency grid".
+
+   CeeLo has no category for one, so it is labelled a curve transfer (no Monte Carlo); unlike a
+   genuine curve transfer it carries its own near-field table, and no transfer sigma model.  It is
+   full-energy-peak only, and tied to the geometry it was built with.
+   */
+  bool isGridResponse( const std::shared_ptr<const ceelo::DetectorResponse> &resp );
 
   /** Convenience: parse both files from disk, select the matching geometry
    record, and build the DRF.  Throws std::runtime_error on failure.

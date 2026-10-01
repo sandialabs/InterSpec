@@ -27,7 +27,6 @@
 #include <vector>
 #include <memory>
 #include <cstdio>
-#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -42,8 +41,8 @@
 #include "InterSpec/DrfImport.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/AngleOutxImport.h"
-#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorEffG2kPar.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -76,8 +75,11 @@ namespace
         continue;
 
       bool has_term1 = false, has_term2 = false;
-      for( const string &field : fields )
+      for( string field : fields )
       {
+        SpecUtils::trim( field );
+        if( (field.size() > 1) && (field.front() == '"') )
+          field = field.substr( 1 );
         has_term1 |= SpecUtils::istarts_with( field, term1 );
         has_term2 |= SpecUtils::istarts_with( field, term2 );
       }
@@ -149,7 +151,8 @@ namespace
   // Parsers' placeholder names, which say less than the file name does.
   bool is_placeholder_name( const string &name )
   {
-    return name.empty() || (name == "DetectorPeakResponse") || (name == "Efficiency CSV");
+    return name.empty() || (name == "DetectorPeakResponse") || (name == "Efficiency CSV")
+           || (name == "ANGLE detector");
   }
 
 
@@ -340,7 +343,9 @@ vector<FileKind> candidateKinds( const uint8_t *header, const size_t headerLen, 
   if( DetEffG2kPar::isCandidateParFile( header, headerLen, fileSize ) )
     answer.push_back( FileKind::ParGrid );
 
-  const string text( reinterpret_cast<const char *>(header), headerLen );
+  string text( reinterpret_cast<const char *>(header), headerLen );
+  if( SpecUtils::istarts_with( text, "\xEF\xBB\xBF" ) )  //UTF-8 BOM
+    text = text.substr( 3 );
 
   if( header_contains( text, "<DetectorPeakResponse" ) )
     answer.push_back( FileKind::DrfXml );
@@ -405,6 +410,7 @@ bool areCompanions( const FileKind a, const FileKind b )
   };
 
   return is_pair( FileKind::GadrasEfficiencyCsv, FileKind::GadrasDetectorDat )
+         || is_pair( FileKind::EfficiencyCsv, FileKind::GadrasDetectorDat )
          || is_pair( FileKind::ParGrid, FileKind::ParDetectorTxt );
 }//areCompanions(...)
 
@@ -448,6 +454,11 @@ shared_ptr<const ParsedFile> parseFile( const string &displayName,
   if( data->size() > sm_maxFileBytes )
     throw runtime_error( "File is too large to be a detector efficiency file." );
 
+  // The parsers don't expect a UTF-8 BOM (a binary .par could start with these bytes, but then
+  //  its header would not be plausible anyway)
+  if( SpecUtils::istarts_with( *data, "\xEF\xBB\xBF" ) )
+    data = make_shared<const string>( data->substr( 3 ) );
+
   const size_t headerLen = std::min( data->size(), size_t(1024) );
   vector<FileKind> kinds = candidateKinds( reinterpret_cast<const uint8_t *>( data->data() ),
                                            headerLen, data->size() );
@@ -455,7 +466,7 @@ shared_ptr<const ParsedFile> parseFile( const string &displayName,
   // The header only nominates; a CSV's column headings can be further in than it looks.
   if( anyTextAsCsv && (std::find( begin(kinds), end(kinds), FileKind::ParGrid ) == end(kinds)) )
   {
-    for( const FileKind kind : { FileKind::EfficiencyCsv, FileKind::MultiDrfCsv } )
+    for( const FileKind kind : { FileKind::MakeDrfCsv, FileKind::EfficiencyCsv, FileKind::MultiDrfCsv } )
     {
       if( std::find( begin(kinds), end(kinds), kind ) == end(kinds) )
         kinds.push_back( kind );
@@ -564,7 +575,8 @@ Source makeSource( shared_ptr<const ParsedFile> a, shared_ptr<const ParsedFile> 
 
       case FileKind::Angle:
       {
-        assert( a->angle );
+        if( !a->angle )
+          throw runtime_error( "ANGLE file was not parsed." );
         const AngleOutxContents &contents = *a->angle;
 
         // A file describing the whole detector is best used as one - geometry-modeled, answering
@@ -586,6 +598,10 @@ Source makeSource( shared_ptr<const ParsedFile> a, shared_ptr<const ParsedFile> 
         {
           src.notes.push_back( contents.modeAObstruction );
         }
+
+        if( geometry && !contents.hasReference )
+          src.notes.push_back( "The file has no measured reference efficiency curve for a detector"
+                               " model to be anchored on, so it cannot be used as a generic detector." );
 
         if( geometry && contents.hasReference )
         {
@@ -634,35 +650,41 @@ Source makeSource( shared_ptr<const ParsedFile> a, shared_ptr<const ParsedFile> 
       }//case FileKind::Angle:
 
       case FileKind::EfficiencyCsv:
-      {
-        src.base = a->drfs.at( 0 );
-        src.interpretations = curve_interps;
-        src.defaultInterpretation = Interpretation::FixedTotal;
-        src.status = Status::Ready;
-        break;
-      }//case FileKind::EfficiencyCsv:
-
       case FileKind::GadrasEfficiencyCsv:
       {
         if( b )
         {
-          // The canonical GADRAS pair: FWHM, peak shape, crystal geometry and a curve-transfer
-          //  response all come along (see DetectorPeakResponse::applyGadrasDat).
+          // With its Detector.dat: FWHM, peak shape, crystal geometry and a curve-transfer
+          //  response all come along (see DetectorPeakResponse::applyGadrasDat), and - as GADRAS
+          //  does - the efficiencies are taken as intrinsic.
           istringstream csv( *a->data ), dat( *b->data );
           auto drf = make_shared<DetectorPeakResponse>();
           drf->fromGadrasDefinition( csv, dat );
           drf->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
           src.base = drf;
+          if( a->kind == FileKind::EfficiencyCsv )
+            src.notes.push_back( "The efficiencies are taken to be intrinsic, as they are for a"
+                                 " GADRAS Efficiency.csv." );
         }else
         {
-          // GADRAS efficiencies are intrinsic, but the diameter is in the Detector.dat
           src.base = a->drfs.at( 0 );
           src.interpretations = curve_interps;
-          src.defaultInterpretation = Interpretation::FarFieldIntrinsic;
-        }
+          if( a->kind == FileKind::GadrasEfficiencyCsv )
+          {
+            // GADRAS efficiencies are intrinsic, but the diameter is in the Detector.dat
+            src.defaultInterpretation = Interpretation::FarFieldIntrinsic;
+          }else
+          {
+            // The file's efficiencies may already be per unit area or mass of source
+            src.interpretations.push_back( Interpretation::FixedPerCm2 );
+            src.interpretations.push_back( Interpretation::FixedPerM2 );
+            src.interpretations.push_back( Interpretation::FixedPerGram );
+            src.defaultInterpretation = Interpretation::FixedTotal;
+          }
+        }//if( b ) / else
         src.status = Status::Ready;
         break;
-      }//case FileKind::GadrasEfficiencyCsv:
+      }//case FileKind::EfficiencyCsv / GadrasEfficiencyCsv:
 
       case FileKind::GadrasDetectorDat:
       {
@@ -683,7 +705,8 @@ Source makeSource( shared_ptr<const ParsedFile> a, shared_ptr<const ParsedFile> 
           break;
         }
 
-        assert( (a->kind == FileKind::ParGrid) && a->par && (b->kind == FileKind::ParDetectorTxt) );
+        if( (a->kind != FileKind::ParGrid) || !a->par || (b->kind != FileKind::ParDetectorTxt) )
+          throw runtime_error( "The .par grid or its DETECTOR.txt was not parsed." );
         const vector<DetEffG2kPar::DetectorDef> &defs = b->detectorDefs;
 
         DetEffG2kPar::DetectorDef def;
@@ -781,26 +804,28 @@ Result build( const Source &src, const Options &options )
         break;
 
       case Interpretation::FixedTotal:
-        if( base->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct )
-          drf = make_shared<DetectorPeakResponse>( *base );
-        else
-          drf = base->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+        drf = base->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
         break;
 
       case Interpretation::FixedPerCm2:
-        drf = base->convertFixedGeometryType( src.sourceArea,
-                                    DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2 );
-        break;
-
       case Interpretation::FixedPerM2:
-        drf = base->convertFixedGeometryType( src.sourceArea,
-                                    DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2 );
-        break;
-
       case Interpretation::FixedPerGram:
-        drf = base->convertFixedGeometryType( src.sourceMass,
-                                    DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram );
+      {
+        const DetectorPeakResponse::EffGeometryType type
+          = (interp == Interpretation::FixedPerCm2) ? DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2
+          : (interp == Interpretation::FixedPerM2)  ? DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2
+                                                    : DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
+        const double quantity = (interp == Interpretation::FixedPerGram) ? src.sourceMass : src.sourceArea;
+
+        // A file stating its source's area/mass (an ISOCS .ecc) is for the total activity, so is
+        //  converted; otherwise the efficiencies are taken to already be per unit area/mass.
+        if( quantity > 0.0 )
+          drf = base->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct )
+                    ->convertFixedGeometryType( quantity, type );
+        else
+          drf = base->reinterpretAsFixedGeom( type );
         break;
+      }//case per unit area or mass
     }//switch( interp )
 
     if( !drf )
@@ -816,8 +841,7 @@ Result build( const Source &src, const Options &options )
     if( options.setUncert )
       drf->setEfficiencyUncert( options.uncert );
 
-    if( !options.name.empty() )
-      drf->setName( options.name );
+    drf->setName( options.name.empty() ? src.name : options.name );
 
     result.drf = drf;
     result.status = Status::Ready;

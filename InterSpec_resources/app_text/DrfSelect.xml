@@ -170,6 +170,8 @@
   <!-- DrfImportWidget: the "Import" tab, and the dialog for a detector efficiency file dropped on the app -->
   <message id="dsi-drop-txt">Drop a detector efficiency file here, or click to browse.  For a detector described by two files, drop or select both.</message>
   <message id="dsi-drop-txt-mobile">Tap to choose a detector efficiency file.</message>
+  <message id="dsi-drop-txt-replace">You can drop a different detector file here, or click to browse.</message>
+  <message id="dsi-drop-txt-replace-mobile">Tap to choose a different detector file.</message>
   <message id="dsi-supported-tt">Accepted files: InterSpec detector responses (.xml or .csv), GADRAS Efficiency.csv and Detector.dat,
     ISOCS .ecc, ANGLE files, .par efficiency grids with their DETECTOR.txt, relative-efficiency and GammaQuant
     detector lists, and energy/efficiency CSV files.</message>
@@ -189,6 +191,10 @@
   <message id="dsi-companion-eff">To use its Efficiency.csv, drop it here or click to browse.  Without it, the efficiency comes from a Monte-Carlo characterization.</message>
   <message id="dsi-companion-txt">Drop the DETECTOR.txt for this efficiency grid here, or click to browse - it is required.</message>
   <message id="dsi-companion-par">Drop the .par efficiency grid for this detector here, or click to browse - it is required.</message>
+  <message id="dsi-companion-dat-mobile">To also use its Detector.dat, which adds the FWHM, peak shape and crystal geometry, tap here to choose it.</message>
+  <message id="dsi-companion-eff-mobile">To use its Efficiency.csv, tap here to choose it.  Without it, the efficiency comes from a Monte-Carlo characterization.</message>
+  <message id="dsi-companion-txt-mobile">Tap here to choose the DETECTOR.txt for this efficiency grid - it is required.</message>
+  <message id="dsi-companion-par-mobile">Tap here to choose the .par efficiency grid for this detector - it is required.</message>
   <message id="dsi-companion-wrong">'{1}' is a {2}, which is not the file needed here.</message>
   <message id="dsi-record-label">Detector:</message>
   <message id="dsi-interp-label">Efficiencies are:</message>
