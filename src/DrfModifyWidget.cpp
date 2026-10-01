@@ -72,6 +72,7 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -1596,7 +1597,8 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
           break;
 
         case ceelo::ProductionMethod::CurveTransfer:
-          txt = WString::tr("dmw-info-support-curve").arg( range );
+          txt = WString::tr( DetEffG2kPar::isGridResponse( mc ) ? "dmw-info-support-grid"
+                                                                : "dmw-info-support-curve" ).arg( range );
           break;
       }//switch( method )
 
@@ -2571,9 +2573,14 @@ bool DrfModifyWidget::responseStale()
   if( !resp )
     return false;
 
+  // An imported efficiency grid is kept as it is: none of the edits here are what it was made from.
+  const bool grid_selected = (m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::ImportedGrid);
+  if( grid_selected || DetEffG2kPar::isGridResponse( resp ) )
+    return (grid_selected != DetEffG2kPar::isGridResponse( resp ));
+
   // A method change makes the attached response the wrong KIND of response, whatever it was built
-  //  from.  (The two enumerations mirror each other; see MakeMcResponseForDrf's use of the same
-  //  mapping when it opens on an existing response.)
+  //  from.  (The two enumerations mirror each other - apart from ImportedGrid, above; see
+  //  MakeMcResponseForDrf's use of the same mapping when it opens on an existing response.)
   if( static_cast<int>(m_mcTool->selectedMethod()) != static_cast<int>(resp->provenance.method) )
     return true;
 

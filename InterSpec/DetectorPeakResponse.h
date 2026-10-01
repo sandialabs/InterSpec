@@ -545,7 +545,15 @@ public:
                                           std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
                                           std::vector<std::string> &credits,
                                           std::vector<std::string> &warnings );
-  
+
+  /** Parses the CSV the "Make Detector Response" tool exports: the "c0,c1,...,Radius (cm)"
+   coefficient line, its "# 1 sigma Uncertainties" line, the geometry type, FWHM, and valid
+   energy range.
+
+   Returns nullptr if the stream is not in this format.
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseInterSpecRelEffCsv( std::istream &input );
+
   
   /** Creates a DetectorPeakResponse from "App URL" data.
    Takes in just the "query" portion of the URL (i.e., the data after the '?' character), that

@@ -11,6 +11,10 @@ the app ignores):
   "expectCandidates": [...] a peakInfoAt response suggests these sources, in order
   "expectSamples": [...]    the foreground shows these samples
   "expectMessage": "text"   a message contains this text
+  "expectCal": {...}        the foreground energy calibration has these fields; "coefs" to a relative
+                            1e-5 (a CALp file prints 6 significant digits)
+  "expectSameEnergies": [a, b]       spectra a and b (e.g., "FOREGROUND", "BACKGROUND") have the same
+  "expectDifferentEnergies": [a, b]  (or different) channel energies
   "expectError": "text"     the request fails, with an error containing this text (the runners
                             do not count it as a failure)
 Usage: check_expectations.py <script.jsonl> <responses> [first response index]"""
@@ -50,12 +54,47 @@ def main():
     msgs = resp.get('messages', []) + ([resp['message']] if 'message' in resp else [])
     if 'expectMessage' in req and not any(req['expectMessage'] in m for m in msgs):
       errors.append(f'{where}: no message containing {req["expectMessage"]!r} in {msgs}')
+    if 'expectCal' in req:
+      errors += compare_cal(req['expectCal'], resp.get('energyCal') or {}, where)
+    for key, want in (('expectSameEnergies', True), ('expectDifferentEnergies', False)):
+      same = same_energies(resp, *req[key]) if key in req else want
+      if same is None:
+        errors.append(f'{where}: the response does not have spectra {req[key]}')
+      elif same != want:
+        errors.append(f'{where}: {req[key]} channel energies are {"not " if want else ""}the same')
     if 'expectPeaks' in req:
       errors += compare(saved[req['expectPeaks']], peaks or [], req.get('match', 'exact'), where)
 
   for e in errors:
     print('  ' + e)
   sys.exit(1 if errors else 0)
+
+
+def compare_cal(expected, actual, where):
+  errors = []
+  for key, value in expected.items():
+    got = actual.get(key)
+    if key == 'coefs':
+      ok = (got is not None) and (len(got) == len(value)) \
+           and all(abs(a - b) <= 1e-5 * max(abs(a), abs(b), 1e-6) for a, b in zip(value, got))
+    else:
+      ok = (got == value)
+    if not ok:
+      errors.append(f'{where}: energyCal {key} {got}, expected {value}')
+  return errors
+
+
+def same_energies(resp, type_a, type_b):
+  """Compares the channel energies of two spectra of a response's "spectra" (None if one is missing)."""
+  def energies(spectrum):
+    if 'x' in spectrum:
+      return spectrum['x']
+    return [sum(c * ch**i for i, c in enumerate(spectrum['xeqn'])) for ch in range(len(spectrum['y']) + 1)]
+  by_type = {s['type']: s for s in resp.get('spectra') or []}
+  if type_a not in by_type or type_b not in by_type:
+    return None
+  a, b = energies(by_type[type_a]), energies(by_type[type_b])
+  return (len(a) == len(b)) and all(abs(x - y) <= 1e-4 * max(1.0, abs(x)) for x, y in zip(a, b))
 
 
 def compare(expected, actual, match, where):

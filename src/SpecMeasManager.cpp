@@ -89,7 +89,6 @@
 #include <Wt/WMemoryResource.h>
 #include <Wt/WStringListModel.h>
 #include <Wt/WContainerWidget.h>
-#include <Wt/WRegExpValidator.h>
 #if( HAS_WTDBOMYSQL )
 #include <Wt/Dbo/backend/MySQL.h>
 #endif
@@ -112,18 +111,15 @@
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/AppUtils.h"
-#include "InterSpec/DrfChart.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfSelect.h"
-#include "InterSpec/DrfModifyWidget.h"
-#include "InterSpec/AngleOutxImport.h"
-#include "InterSpec/MakeMcResponseForDrf.h"
+#include "InterSpec/DrfImport.h"
+#include "InterSpec/DrfImportWidget.h"
 #include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -135,7 +131,6 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/ExportSpecFile.h"
-#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
@@ -145,8 +140,6 @@
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/FileDragUploadResource.h"
 #include "InterSpec/GroupBox.h"
-#include "InterSpec/EccUncertOptions.h"
-#include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/DecayBatchCalcWidget.h"
 
@@ -210,60 +203,6 @@ namespace
    of widgets, so this bounds the work; it is ~10x the largest real file seen (1400 rows, 110 kB).
    */
   const size_t sm_max_batch_decay_file_size = 1024 * 1024;
-
-
-  /** Makes `target` a drag-n-drop (and click-to-pick) area for the ONE file a companion-file
-   dialog is asking for - the Efficiency.csv a Detector.dat came without, or vice-versa.
-
-   Re-uses the batch tool's upload plumbing wholesale: `BatchInputDropUploadSetup` turns the element
-   into a drop target with a hidden file input behind a click, `setupOnDragEnterDom` highlights it
-   the moment a drag starts anywhere in the window, and `window._IS.BlockFileDrops` takes the app's
-   normal spectrum-file handling out of the way so a file dropped anywhere in the window lands here
-   rather than being opened as a spectrum.
-
-   `on_file` is called on the session thread with (display name, spool path); the spool file is
-   valid only for that call.  Everything is torn down when `dialog` finishes.
-   */
-  void setup_pair_file_drop( SimpleDialog *dialog,
-                             Wt::WContainerWidget *target,
-                             FileDragUploadResource *resource,
-                             std::function<void(const std::string &, const std::string &)> on_file )
-  {
-    assert( dialog && target && resource );
-    if( !dialog || !target || !resource )
-      return;
-
-    WApplication * const app = WApplication::instance();
-    app->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
-    app->require( "InterSpec_resources/BatchGuiWidget.js" );
-
-    target->addStyleClass( "PairFileDrop" );
-
-    resource->clearSpooledFiles();  //anything left from a previous dialog is not ours
-
-    app->doJavaScript( "window._IS=window._IS||{};window._IS.BlockFileDrops=true;" );
-    target->doJavaScript( "BatchInputDropUploadSetup(" + target->jsRef() + ", '"
-                          + resource->url() + "');" );
-    app->doJavaScript( "setupOnDragEnterDom(['" + target->id() + "']);" );
-
-    // Tracked to `target`, so the connection dies with the dialog - the resource outlives both.
-    resource->fileDrop().connect( target,
-      [resource, on_file]( std::string display_name, std::string spool_name ){
-        on_file( display_name, spool_name );
-        resource->clearSpooledFiles();
-      } );
-
-    const std::string target_id = target->id();
-    dialog->finished().connect( std::function<void(Wt::DialogCode)>(
-      [resource, target_id]( Wt::DialogCode ){
-        WApplication * const app = WApplication::instance();
-        if( !app )
-          return;
-        app->doJavaScript( "if(window._IS)window._IS.BlockFileDrops=null;" );
-        app->doJavaScript( "removeOnDragEnterDom(['" + target_id + "']);" );
-        resource->clearSpooledFiles();
-      } ) );
-  }//setup_pair_file_drop(...)
 
 
   struct ZipSecurityLimits
@@ -1717,9 +1656,8 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
 
-  // No handler here: each companion-file dialog connects (and, being tracked to one of its own
-  //  widgets, disconnects) for as long as it is showing.
-  m_pairFileDragNDrop = std::make_unique<FileDragUploadResource>();
+  m_drfDragNDrop = std::make_unique<FileDragUploadResource>();
+  m_drfDragNDrop->fileDrop().connect( this, &SpecMeasManager::handleDrfFileDrop );
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -1886,9 +1824,9 @@ FileDragUploadResource *SpecMeasManager::batchDragNDrop()
 #endif
 
 
-FileDragUploadResource *SpecMeasManager::pairFileDragNDrop()
+FileDragUploadResource *SpecMeasManager::drfDragNDrop()
 {
-  return m_pairFileDragNDrop.get();
+  return m_drfDragNDrop.get();
 }
 
 
@@ -2433,74 +2371,18 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
     result.candidates.push_back( NonSpecFileKind::RelActAutoXml );
 #endif
 
-  // --- ISOCS .ECC file, or ANGLE .outx file ---
-  if( header_contains("SGI_template") || header_contains("ISOCS_file_name")
-     || header_contains("<angle") )
+  // --- A DRF file with options: ISOCS .ecc, ANGLE, efficiency CSV, GADRAS Detector.dat, .par grid
+  //  or its DETECTOR.txt.  (Complete DRFs - XML, rel-eff CSVs - are matched above.) ---
   {
-    result.candidates.push_back( NonSpecFileKind::EccOrOutxFile );
-  }
-
-  // --- Efficiency CSV: GADRAS Efficiency.csv / gamEff CSV / Run_effoutput CSV ---
-  if( header_line_has_both("en", "eff")
-     || header_contains("energy,peak,pcom") )
-  {
-    result.candidates.push_back( NonSpecFileKind::EfficiencyCsv );
-  }
-
-  // --- GADRAS Detector.dat ---
-  //  The XML variant announces itself.  The legacy variant is a bare table of
-  //  numbered parameter lines - "<index> <value> <fit-flag>  <label>" - with no
-  //  signature of any kind, so it is recognized by that table's shape: after any
-  //  leading '!' or '#' comments, three or more consecutively-numbered lines,
-  //  each carrying at least two more numbers.  Requiring the run to be
-  //  consecutive AND to start the file is what keeps a CSV with a stray numeric
-  //  row from matching.
-  //
-  //  Every file seen so far numbers from 1; 0 is accepted as a start too, so a
-  //  zero-based variant would not be rejected out of hand.
-  //
-  //  This only nominates a candidate - handleGadrasDetectorDatFile runs the full
-  //  GadrasDetectorDat::isCandidateDetectorDat check over the whole file.
-  if( header_contains("<gamma_detector") )
-  {
-    result.candidates.push_back( NonSpecFileKind::GadrasDetectorDat );
-  }else if( (fileSize > 256) && (fileSize < 256*1024) )
-  {
-    const string head( (const char *)header, headerLen );
-
-    int run = 0, expect = -1;
-    size_t pos = 0;
-    bool past_comments = false;
-    while( (pos < head.size()) && (run < 3) )
+    const vector<DrfImport::FileKind> drf_kinds = DrfImport::candidateKinds( header, headerLen, fileSize );
+    for( const DrfImport::FileKind kind : drf_kinds )
     {
-      const size_t eol = std::min( head.find('\n', pos), head.size() );
-      string line = head.substr( pos, eol - pos );
-      pos = eol + 1;
-      SpecUtils::trim( line );
-
-      if( !past_comments )
+      if( !DrfImport::isCompleteDrfKind( kind ) )
       {
-        if( line.empty() || (line[0] == '!') || (line[0] == '#') )
-          continue;
-        past_comments = true;
+        result.candidates.push_back( NonSpecFileKind::DrfImportFile );
+        break;
       }
-
-      int idx = 0;
-      double value = 0.0, flag = 0.0;
-      const bool parsed = (sscanf( line.c_str(), "%d %lf %lf", &idx, &value, &flag ) == 3);
-
-      if( parsed && ((run == 0) ? ((idx == 0) || (idx == 1)) : (idx == expect)) )
-      {
-        run += 1;
-        expect = idx + 1;
-      }else
-      {
-        break;   //the table has to start the file, not appear somewhere in it
-      }
-    }//while( looking for the parameter table )
-
-    if( run >= 3 )
-      result.candidates.push_back( NonSpecFileKind::GadrasDetectorDat );
+    }
   }
 
   // --- Shielding/Source fit XML ---
@@ -2659,22 +2541,20 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         break;  // Classifier never produces this kind when USE_REL_ACT_TOOL is off.
 #endif
 
-      case NonSpecFileKind::EccOrOutxFile:
-        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-          [this, &infile]( SimpleDialog *d ){ return handleEccFile( infile, d ); } );
-        break;
+      case NonSpecFileKind::DrfImportFile:
+      {
+        shared_ptr<const string> data;
+        try
+        {
+          data = DrfImport::readFile( fileLocation );
+        }catch( std::exception & )
+        {
+          break;
+        }
 
-      case NonSpecFileKind::EfficiencyCsv:
-        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-          [this, &infile]( SimpleDialog *d ){ return handleEfficiencyCsvFile( infile, d ); } );
+        handled = openDrfImportDialog( displayName, data, infile, type );
         break;
-
-      case NonSpecFileKind::GadrasDetectorDat:
-        handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
-          [this, &infile, &displayName]( SimpleDialog *d ){
-            return handleGadrasDetectorDatFile( infile, d, displayName );
-          } );
-        break;
+      }//case NonSpecFileKind::DrfImportFile:
 
       case NonSpecFileKind::ShieldingSourceXml:
         handled = runWithNonSpecDialog( displayName, filesize, infile, type, /*undoRedo=*/true,
@@ -3798,1183 +3678,69 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
 #endif
 
 
-bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
+bool SpecMeasManager::openDrfImportDialog( const std::string &displayName,
+                                           std::shared_ptr<const std::string> data,
+                                           std::ifstream &infile,
+                                           const SpecUtils::SpectrumType type )
 {
-  const size_t start_pos = input.tellg();
-  
-  shared_ptr<DetectorPeakResponse> det;
-  double source_area = 0.0, source_mass = 0.0;
-
-  // Raw per-energy uncertainty arrays parsed from the .ecc file; used to build
-  //  the EccUncertOptions widget (empty when not an .ecc file).
-  vector<float> ecc_uncert_energies, ecc_baseline_frac, ecc_convergence_frac;
-
-  // Try parsing as ECC file first
+  // Parsed before the dialog is made, as making it closes any other one.
+  shared_ptr<const DrfImport::ParsedFile> parsed;
   try
   {
-    const DetectorPeakResponse::EccParseResult ecc_result
-      = DetectorPeakResponse::parseEccFile( input );
-
-    det = ecc_result.drf;
-    source_area = ecc_result.sourceArea;
-    source_mass = ecc_result.sourceMass;
-    ecc_uncert_energies = ecc_result.uncertEnergies;
-    ecc_baseline_frac = ecc_result.baselineFrac;
-    ecc_convergence_frac = ecc_result.convergenceFrac;
-
-    assert( det && det->isValid() );
-    if( !det || !det->isValid() )
-      throw std::logic_error( "DRF returned from DetectorPeakResponse::parseEccFile() should be valid." );
+    parsed = DrfImport::parseFile( SpecUtils::filename( displayName ), data, false );
   }catch( std::exception & )
   {
-    det.reset();
-  }//try / catch
+    return false;
+  }
 
-  // If not ECC, try parsing as ANGLE .outx file.  For ANGLE files we also
-  //  attempt the rich parse (physical detector model + measured reference
-  //  curve) so we can offer the "generic detector" import mode alongside the
-  //  fixed-geometry curve.
-  shared_ptr<const ceelo::GeometryDescriptor> angle_geometry;
-  shared_ptr<DetectorPeakResponse> angle_seed_drf;
-  if( !det )
-  {
-    input.clear();
-    input.seekg( start_pos );
-    try
-    {
-      const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( input );
-      det = contents.fixedGeomDrf;
-
-      assert( det && det->isValid() );
-      if( !det || !det->isValid() )
-        throw std::logic_error( "DRF returned from parseAngleOutxFileFull() should be valid." );
-
-      // Anything the file said that we could not model is the user's business:
-      //  a silently simplified detector is worse than a noisy one.
-      for( const string &note : contents.parseNotes )
-        passMessage( WString::tr("smm-outx-note").arg(note), WarningWidget::WarningMsgMedium );
-
-      if( contents.hasGeometry && contents.hasReference && contents.modeASupported )
-      {
-        try
-        {
-          vector<string> warnings;
-          angle_geometry = make_shared<const ceelo::GeometryDescriptor>(
-                                CeeLoUtils::buildAngleGeometry( contents, warnings ) );
-          angle_seed_drf = CeeLoUtils::buildAngleSeedDrf( contents );
-
-          // See the matching comment in DrfSelect::offerAngleImportModeChoice():
-          //  a silently simplified geometry is worse than a noisy one.
-          for( const string &warning : warnings )
-            passMessage( WString::tr("smm-outx-note").arg(warning), WarningWidget::WarningMsgMedium );
-        }catch( std::exception &e )
-        {
-          angle_geometry.reset();
-          angle_seed_drf.reset();
-          passMessage( WString::tr("smm-outx-note").arg(e.what()), WarningWidget::WarningMsgMedium );
-        }
-      }else if( contents.hasGeometry && !contents.modeASupported
-                && !contents.modeAObstruction.empty() )
-      {
-        // The file carries a physical detector model we cannot represent; say
-        //  so, rather than silently offering only the fixed-geometry curve.
-        passMessage( WString::tr("smm-outx-no-generic").arg(contents.modeAObstruction),
-                     WarningWidget::WarningMsgMedium );
-      }//if( Mode A might work ) / else if( it definitely cannot )
-    }catch( std::exception & )
-    {
-      // The ANGLE reader consumes to EOF, so `failbit` is set as well as
-      //  `eofbit`; without the clear() the seek is a silent no-op and the next
-      //  handler would be handed a stream still parked at EOF.
-      input.clear();
-      input.seekg( start_pos );
-      return false;
-    }//try / catch
-  }//if( !det )
-  
-  dialog->addStyleClass( "EccDrfDialog" );
-
-  assert( dialog );
-
-  // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
-
-  int chartw = 350, charth = 200;
-  if( m_viewer->renderedWidth() > 500 )
-    chartw = std::min( ((3*m_viewer->renderedWidth()/4) - 50), 500 );
-  if( m_viewer->renderedHeight() > 400 )
-    charth = std::min( m_viewer->renderedHeight()/4, (4*chartw)/7 );
-  chartw = std::max( chartw, 300 );
-  charth = std::max( charth, 175 );
-  
-  const bool is_outx = (det->drfSource() == DetectorPeakResponse::DrfSource::AngleOutx);
-  WText *title = dialog->contents()->addNew<WText>( WString::tr(is_outx ? "smm-outx-curve" : "smm-ecc-curve") );
-  title->addStyleClass( "title" );
-  title->setInline( false );
-
-  DrfChart *chart = dialog->contents()->addNew<DrfChart>();
-  chart->setMinimumSize( 300, 175 );
-  chart->resize( chartw, charth );
-  chart->updateChart( det );
-
-  if( det && (det->upperEnergy() > 10000.0) )
-    chart->setXAxisRange( std::max(det->lowerEnergy(),0.0), 4000.0 );
-
-  const string name = Wt::Utils::htmlEncode( det->name() );
-  const string desc = Wt::Utils::htmlEncode( det->description() );
-    
-  string txt_css = "style=\"text-align: left;"
-  " max-width: " + std::to_string(chartw-5) + "px;"
-  " white-space: nowrap;"
-  " text-overflow: ellipsis;"
-  " overflow-x: hidden;"
-  "\"";
-  
-  string msg =
-    //"<p style=\"white-space: nowrap;\">You can use this .ECC file as a DRF.</p>"
-    "<p " + txt_css + ">"
-      "Name: " + name +
-  "</p>";
-  if( !desc.empty() )
-    msg += "<p " + txt_css + ">"
-        "Desc: " + desc +
-    "</p>";
-  //msg += "<p>Would you like to use this DRF?</p>";
-  
-  WText *txt = dialog->contents()->addNew<WText>( msg, TextFormat::XHTML );
-
-  WContainerWidget *btn_div = dialog->contents()->addNew<WContainerWidget>();
-  btn_div->addStyleClass( "HowToUseGrp" );
-
-  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
-
-  WLabel *geom_label = btn_div->addNew<WLabel>( WString::tr("smm-ecc-how-to-interpret") );
-  WComboBox *geom_combo = btn_div->addNew<WComboBox>();
-  geom_combo->addItem( WString::tr("smm-ecc-far-field") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-  
-  geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
-  
-  if( source_area > 0.0 )
-  {
-    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-cm2") );
-    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
-    
-    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-m2") );
-    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
-  }//if( source_area > 0.0 )
-  
-  if( source_mass > 0 )
-  {
-    geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-gram") );
-    index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
-  }//if( source_mass > 0 )
-
-  // ANGLE files with a full physical model: offer the "generic detector"
-  //  import (seed the Make MC Response tool from the geometry + reference).
-  int generic_geom_index = -1;
-  if( angle_geometry && angle_seed_drf )
-  {
-    geom_combo->addItem( WString::tr("smm-outx-generic-geom") );
-    generic_geom_index = geom_combo->count() - 1;
-  }//if( angle_geometry && angle_seed_drf )
-
-  // A file that describes the whole detector is best used as one (geometry-modeled, answering any
-  //  source position), so that is the default; a curve-only file defaults to its fixed geometry.
-  geom_combo->setCurrentIndex( (generic_geom_index >= 0) ? generic_geom_index : 1 );
-    
-  WTable *far_field_opt = dialog->contents()->addNew<WTable>();
-  //far_field_opt->setHiddenKeepsGeometry( true );
-  far_field_opt->addStyleClass( "FarFieldOptTbl" );
-
-  auto dist_validator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
-  dist_validator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
-  dist_validator->setInvalidBlankText( "0.0 cm" );
-  dist_validator->setMandatory( true );
-
-  WTableCell *cell = far_field_opt->elementAt( 0, 0 );
-  WLabel *label = cell->addNew<WLabel>( WString::tr("smm-ecc-det-diam") );
-  cell = far_field_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = cell->addNew<WLineEdit>();
-  label->setBuddy( diameter_edit );
-  diameter_edit->setValidator( dist_validator );
-  diameter_edit->setPlaceholderText( "0 cm" );
-
-  if( det->detectorDiameter() > 0.0f )
-    diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
-
-  int ff_row = 1;
-
-  if( det->detectorSetback() > 0.0 )
-  {
-    cell = far_field_opt->elementAt( ff_row, 0 );
-    cell->addNew<WLabel>( WString::tr("smm-ecc-det-setback") );
-    cell = far_field_opt->elementAt( ff_row, 1 );
-    cell->addNew<WText>( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ) );
-    ++ff_row;
-  }//if( det->detectorSetback() > 0.0 )
-
-  cell = far_field_opt->elementAt( ff_row, 0 );
-  label = cell->addNew<WLabel>( WString::tr("smm-ecc-dist") );
-  cell = far_field_opt->elementAt( ff_row, 1 );
-  WLineEdit *distance_edit = cell->addNew<WLineEdit>();
-  label->setBuddy( distance_edit );
-  distance_edit->setValidator( dist_validator );
-  distance_edit->setPlaceholderText( "0 cm" );
-  
-  // TODO: make option to correct for air-attenuation
-  
-  far_field_opt->hide();
-
-  // ISOCS .ecc files carry per-energy uncertainties; let the user control how
-  //  they are imported (fully correlated by default).  ANGLE .outx files bring
-  //  their own uncertainty handling, so only offer this for .ecc.
-  EccUncertOptions *ecc_uncert_opts = nullptr;
-  if( !is_outx && (ecc_uncert_energies.size() >= 2) )
-    ecc_uncert_opts = dialog->contents()->addNew<EccUncertOptions>( ecc_uncert_energies,
-                                            ecc_baseline_frac, ecc_convergence_frac );
-
-  auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
-  shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
-  
-  const bool makeSerialNumCb = (fore && !fore->instrument_id().empty());
-  const bool makeModelCb = (fore
-                            && ((fore->detector_type() != SpecUtils::DetectorType::Unknown)
-                                 || !fore->instrument_model().empty()));
-
-  WCheckBox *defaultForSerialNumber = nullptr;
-  WCheckBox *defaultForDetectorModel = nullptr;
-
-  if( makeSerialNumCb || makeModelCb )
-  {
-    InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
-
-    WContainerWidget *saveCbDiv = dialog->contents()->addNew<WContainerWidget>();
-    saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
-
-    if( makeSerialNumCb )
-    {
-      WString msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
-      defaultForSerialNumber = saveCbDiv->addNew<WCheckBox>( msg );
-      defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
-      defaultForSerialNumber->setInline( false );
-    }//if( have serial number )
-
-    if( makeModelCb )
-    {
-      string model;
-      if( fore->detector_type() != SpecUtils::DetectorType::Unknown )
-        model = detectorTypeToString( fore->detector_type() );
-      else
-        model = fore->instrument_model();
-
-      WString msg = WString::tr("ds-use-for-model-cb").arg( model );
-      defaultForDetectorModel = saveCbDiv->addNew<WCheckBox>( msg );
-      defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
-      defaultForDetectorModel->setInline( false );
-    }//if( makeModelCb )
-  }//if( makeSerialNumCb || makeModelCb )
-
-  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
-  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf"), WidgetUtils::ButtonRole::Affirm );
-  
-  
-  auto try_create_farfield = [=]() -> shared_ptr<DetectorPeakResponse> {
-    const double distance = PhysicalUnits::stringToDistance( distance_edit->text().toUTF8() );
-    const double diameter = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
-      
-    if( distance < 0.0 )
-      throw runtime_error( "dist < 0" );
-    if( diameter <= 0.0 )
-      throw runtime_error( "diam <= 0" );
-    
-    const bool correct_for_air_atten = true;
-    return det->reinterpretAsFarFieldAbsEfficiency( diameter, distance, correct_for_air_atten );
-  };//try_create_farfield
-  
-  auto update_state = [=](){
-    const int index = geom_combo->currentIndex();
-
-    // "Generic detector" (ANGLE): preview the far-field seed curve; the actual
-    //  work happens when the user accepts (opens the Make MC Response tool).
-    if( (generic_geom_index >= 0) && (index == generic_geom_index) )
-    {
-      far_field_opt->hide();
-      chart->updateChart( angle_seed_drf );
-      if( angle_seed_drf && (angle_seed_drf->upperEnergy() > 10000.0) )
-        chart->setXAxisRange( std::max(angle_seed_drf->lowerEnergy(),0.0), 4000.0 );
-      accept->enable();
-      return;
-    }//if( generic detector option selected )
-
-    const auto pos = index_to_geom.find(index);
-    assert( pos != end(index_to_geom) );
-    if( pos == end(index_to_geom) )
-      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
-    
-    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
-    
-    try
-    {
-      shared_ptr<DetectorPeakResponse> new_drf = det;
-      
-      far_field_opt->setHidden( (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
-                               && (geom_type != DetectorPeakResponse::EffGeometryType::FarFieldAbsolute) );
-      
-      switch( geom_type )
-      {
-        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-          new_drf = try_create_farfield();
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-          new_drf = det->convertFixedGeometryType( source_area, geom_type );
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
-          break;
-      }//switch( geom_type )
-
-      // Reflect the user's uncertainty-import choice in the preview (the chart
-      //  draws the fractional-uncertainty envelope); nullptr clears it.
-      if( new_drf && ecc_uncert_opts )
-      {
-        new_drf = make_shared<DetectorPeakResponse>( *new_drf );
-        new_drf->setEfficiencyUncert( ecc_uncert_opts->buildUncert() );
-      }//if( new_drf && ecc_uncert_opts )
-
-      chart->updateChart( new_drf );
-
-      if( new_drf && (new_drf->upperEnergy() > 10000.0) )
-        chart->setXAxisRange( std::max(new_drf->lowerEnergy(),0.0), 4000.0 );
-
-      accept->enable();
-    }catch( std::exception & )
-    {
-      chart->updateChart( nullptr );
-      accept->disable();
-    }
-  };//update_state lambda
-  
-  geom_combo->activated().connect( this, update_state );
-  distance_edit->textInput().connect( this, update_state );
-  diameter_edit->textInput().connect( this, update_state );
-  if( ecc_uncert_opts )
-    ecc_uncert_opts->changed().connect( this, update_state );
-
-  // Show the preview / options for the default selection (the generic detector, when offered).
-  update_state();
+  // `infile` is only read for the undo/redo step, which re-opens the dialog from these bytes.
+  return runWithNonSpecDialog( displayName, parsed->data->size(), infile, type, /*undoRedo=*/true,
+    [this, parsed]( SimpleDialog *d ){
+      m_drfImportWidget = DrfImportWidget::setupDropDialog( d, parsed );
+      return !!m_drfImportWidget;
+    } );
+}//bool openDrfImportDialog(...)
 
 
-  accept->clicked().connect( this, [=](){
-    const int index = geom_combo->currentIndex();
-
-    // "Generic detector" (ANGLE): open the consolidated "Modify Detector
-    //  Response" dialog seeded with the physical geometry + measured reference
-    //  curve (geometry review/correction, editable measured-curve anchor, and
-    //  full response generation), instead of attaching a fixed-geometry curve.
-    if( (generic_geom_index >= 0) && (index == generic_geom_index) )
-    {
-      InterSpec *viewer = InterSpec::instance();
-      if( viewer )
-      {
-        //The DRF carries its own shape from here on - see DetectorPeakResponse::geometry().
-        angle_seed_drf->setGeometry( angle_geometry );
-        DrfModifyWindow *modify_win = viewer->showDrfModifyWindow( angle_seed_drf );
-
-        // Unlike the fixed-geometry entries, this branch does not import anything by itself: the
-        //  detector only becomes real when the user presses "Use" in the Modify dialog.  Closing
-        //  that dialog therefore throws the whole import away, which is worth saying out loud -
-        //  silently ending up with no detector after pressing Accept reads as a lost file.
-        if( modify_win )
-        {
-          auto applied = make_shared<bool>( false );
-
-          // Tracked to `this` (which outlives the dialog), NOT to the window: InterSpec connects
-          //  deleteDrfModifyWindow to finished() first, so a connection tracked to the window is
-          //  already severed by the time our handler's turn comes and never runs.  The lambdas
-          //  capture only the flag - no widget pointer - so outliving the window is harmless.
-          modify_win->tool()->updatedDrf().connect( this,
-                  [applied]( shared_ptr<DetectorPeakResponse> ){ *applied = true; } );
-
-          modify_win->finished().connect( this, [applied](){
-            if( !*applied )
-              passMessage( WString::tr("smm-outx-generic-discarded"), WarningWidget::WarningMsgHigh );
-          } );
-        }//if( modify_win )
-      }
-      return;
-    }//if( generic detector option selected )
-
-    const auto pos = index_to_geom.find(index);
-    assert( pos != end(index_to_geom) );
-    if( pos == end(index_to_geom) )
-      throw logic_error( "SpecMeasManager::handleEccFile: unexpected index" );
-    
-    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
-    
-    auto new_drf = det;
-    try
-    {
-      switch( geom_type )
-      {
-        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-          new_drf = try_create_farfield();
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-          new_drf = det->convertFixedGeometryType( source_area, geom_type );
-          break;
-          
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          new_drf = det->convertFixedGeometryType( source_mass, geom_type );
-          break;
-      }//switch( geom_type )
-
-      // Apply the user's .ecc uncertainty choice.  A default (fully-correlated)
-      //  uncertainty is already attached at parse time and carried through the
-      //  geometry conversions, so this is an override / clear step.
-      if( new_drf && ecc_uncert_opts )
-      {
-        new_drf = make_shared<DetectorPeakResponse>( *new_drf );
-        new_drf->setEfficiencyUncert( ecc_uncert_opts->buildUncert() );  //nullptr clears it
-      }//if( new_drf && ecc_uncert_opts )
-    }catch( std::exception &e )
-    {
-      passMessage( WString::tr(is_outx ? "smm-outx-error" : "smm-ecc-error").arg(e.what()),
-                   WarningWidget::WarningMsgHigh );
-      return;
-    }//try / catch
-    
-    auto interspec = InterSpec::instance();
-    if( !new_drf || !interspec )
-      return;
-      
-    shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
-    const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
-    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
-    interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
-
-    if( fore && new_drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
-      } ) );
-    }//if( defaultForSerialNumber and is checked )
-
-    if( fore && new_drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
-      } ) );
-    }//if( defaultForDetectorModel and is checked )
-
-    UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
-    if( undoManager && undoManager->canAddUndoRedoNow() )
-    {
-      auto undo = [prev](){
-        InterSpec *viewer = InterSpec::instance();
-        if( viewer )
-          viewer->detectorChanged().emit( prev );
-      };
-      
-      auto redo = [new_drf](){
-        InterSpec *viewer = InterSpec::instance();
-        if( viewer )
-          viewer->detectorChanged().emit( new_drf );
-      };
-       
-      // This next undo/redo wont bring up the dialog, but it will at least get us back
-      //  to the original detector.
-      undoManager->addUndoRedoStep( undo, redo, is_outx ? "Change to ANGLE DRF" : "Change to ECC DRF" );
-    }
-  } );
-
-  return true;
-}//bool handleEccFile( std::istream &input, SimpleDialog *dialog )
-
-
-
-bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDialog *dialog,
-                                                   const std::string &displayName )
+void SpecMeasManager::handleDrfFileDrop( const std::string &displayName, const std::string &spoolName )
 {
-  if( !dialog )
-    return false;
-
-  input.clear();
-  input.seekg( 0, ios::beg );
-  if( !GadrasDetectorDat::isCandidateDetectorDat( input ) )
-    return false;
-
-  GadrasDetectorDat dat;
-
+  shared_ptr<const DrfImport::ParsedFile> parsed;
   try
   {
-    input.clear();
-    input.seekg( 0, ios::beg );
-    dat = GadrasDetectorDat::fromStream( input );
+    parsed = DrfImport::parseFile( SpecUtils::filename( displayName ),
+                                   DrfImport::readFile( spoolName ), false );
   }catch( std::exception & )
   {
-    return false;
+    // The file names looked like a detector definition, but this is not one; open it as if
+    //  dropped normally (it may still be a spectrum file).
+    handleFileDrop( displayName, spoolName, SpecUtils::SpectrumType::Foreground );
+    return;
   }
 
-  shared_ptr<const ceelo::GeometryDescriptor> geometry;
-  vector<string> warnings;
-  try
+  // The second file of a dropped pair joins the first in its dialog.
+  if( m_drfImportWidget )
   {
-    geometry = make_shared<const ceelo::GeometryDescriptor>(
-                            CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
-  }catch( std::exception &e )
+    m_drfImportWidget->addFile( parsed );
+  }else
   {
-    dialog->setWindowTitle( WString::tr("smm-gadras-dat-title") );
-    dialog->contents()->addNew<WText>( WString::tr("smm-gadras-dat-no-geom").arg(e.what()) );
-    dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
-    return true;
-  }
-
-  // A seed DRF carrying everything the file DOES define - FWHM, peak shape,
-  //  crystal diameter, setback - but no efficiency; the Monte Carlo supplies
-  //  that.
-  auto seed = make_shared<DetectorPeakResponse>();
-  try
-  {
-    input.clear();
-    input.seekg( 0, ios::beg );
-    seed->fromGadrasDatOnly( input );
-  }catch( std::exception & )
-  {
-    seed.reset();
-  }
-
-  // The geometry belongs to the detector, not to this dialog: attaching it here is what lets it
-  //  survive an efficiency upload, a "Use", a save, and a later re-open of the Modify editor.
-  if( seed )
-    seed->setGeometry( geometry );
-
-  dialog->setWindowTitle( WString::tr("smm-gadras-dat-title") );
-  dialog->contents()->addNew<WText>( WString::tr("smm-gadras-dat-txt") );
-
-  for( const string &warning : warnings )
-  {
-    WText *note = dialog->contents()->addNew<WText>( WString::fromUTF8(warning) );
-    note->setInline( false );
-    note->addStyleClass( "GadrasImportNote" );
-  }
-
-  // A Detector.dat normally sits beside its Efficiency.csv, but a drop only
-  //  carries the one file.  Offering the partner here means the user does not
-  //  have to spend minutes of Monte Carlo to get an efficiency they already have
-  //  on disk - and a measured curve beats a computed one.
-  WContainerWidget *effRow = dialog->contents()->addNew<WContainerWidget>();
-  effRow->addStyleClass( "GadrasEffUploadRow" );
-  WText *effLabel = effRow->addNew<WText>( WString::tr("smm-gadras-dat-eff-label") );
-  effLabel->setInline( false );
-
-  WText *effStatus = dialog->contents()->addNew<WText>( "" );
-  effStatus->setInline( false );
-  effStatus->addStyleClass( "GadrasImportNote" );
-
-  WPushButton *characterize = dialog->addButton( WString::tr("smm-gadras-dat-characterize"), WidgetUtils::ButtonRole::Affirm );
-
-  // Accept AND go straight to the editor.  Only shown once there is a finished detector to accept -
-  //  without an efficiency, "Characterize..." already opens the editor, so this would be a second
-  //  button doing the same thing.
-  WPushButton *further = dialog->addButton( WString::tr("smm-further-options"), WidgetUtils::ButtonRole::Neutral );
-  further->hide();
-
-  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
-
-  InterSpec * const viewer = m_viewer;
-
-  // The uploaded curve makes the DRF valid on its own, so the dialog can hand it
-  //  straight over rather than sending the user through a characterization.
-  auto seedHolder = make_shared<shared_ptr<DetectorPeakResponse>>( seed );
-  const string datPath = displayName;
-
-  // Drop area (also click-to-pick) for the companion file - see setup_pair_file_drop.
-  WContainerWidget *effDrop = effRow->addNew<WContainerWidget>();
-  effDrop->addNew<WText>( WString::tr("smm-pair-drop-txt") );
-
-  auto handle_eff_file = [this, effStatus, characterize, further, seedHolder]
-                         ( const string &/*display_name*/, const string &spool ){
-    try
-    {
 #ifdef _WIN32
-      const std::wstring wspool = SpecUtils::convert_from_utf8_to_utf16(spool);
-      ifstream csv( wspool.c_str(), ios_base::binary | ios_base::in );
+    const std::wstring wspool = SpecUtils::convert_from_utf8_to_utf16( spoolName );
+    std::ifstream infile( wspool.c_str(), ios::in | ios::binary );
 #else
-      ifstream csv( spool.c_str(), ios_base::binary | ios_base::in );
+    std::ifstream infile( spoolName.c_str(), ios::in | ios::binary );
 #endif
-      if( !csv.is_open() )
-        throw runtime_error( "could not read the uploaded file" );
 
-      shared_ptr<DetectorPeakResponse> withEff = *seedHolder;
-      if( !withEff )
-        throw runtime_error( "no detector to attach the efficiency to" );
-
-      auto updated = make_shared<DetectorPeakResponse>( *withEff );
-      updated->fromEnergyEfficiencyCsv( csv, updated->detectorDiameter(), -1.0,
-                    static_cast<float>(PhysicalUnits::keV),
-                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
-      if( !updated->isValid() )
-        throw runtime_error( "the file held no usable efficiency" );
-
-      // Both halves of a proper efficiency transfer are now in hand - the geometry from the
-      //  Detector.dat and the measured curve from the CSV - so give the detector real off-axis and
-      //  near-field support instead of leaving it on the flat-disk approximation.  No Monte Carlo.
-      const bool transferred = CeeLoUtils::attachCurveTransferResponse( *updated );
-
-      *seedHolder = updated;
-      effStatus->setText( WString::tr( transferred ? "smm-gadras-dat-eff-ok-transfer"
-                                                   : "smm-gadras-dat-eff-ok" ) );
-      characterize->setText( WString::tr("smm-gadras-dat-use") );
-      further->show();
-    }catch( std::exception &e )
-    {
-      effStatus->setText( WString::tr("smm-gadras-dat-eff-err").arg(e.what()) );
-    }
-
-    wApp->triggerUpdate();
-  };//handle_eff_file
-
-  setup_pair_file_drop( dialog, effDrop, pairFileDragNDrop(), handle_eff_file );
-
-  characterize->clicked().connect( std::function<void()>( [viewer, geometry, seedHolder](){
-    if( !viewer )
-      return;
-
-    // With a measured curve the detector is already usable; without one the
-    //  Monte Carlo is the only way to give it an efficiency.  Either way the
-    //  geometry goes along, so the user can characterize it later if they want.
-    const shared_ptr<DetectorPeakResponse> drf = *seedHolder;
-    if( drf && drf->isValid() )
-      viewer->detectorChanged().emit( drf );
-    else
-      viewer->showDrfModifyWindow( drf );
-  } ) );
-
-  // Take the detector AND open the editor on it, for a user who wants to review the imported
-  //  geometry, upgrade the response with Monte Carlo, or set a FWHM before moving on.
-  further->clicked().connect( std::function<void()>( [viewer, seedHolder](){
-    if( !viewer )
-      return;
-
-    const shared_ptr<DetectorPeakResponse> drf = *seedHolder;
-    if( drf && drf->isValid() )
-      viewer->detectorChanged().emit( drf );
-    viewer->showDrfModifyWindow( drf );
-  } ) );
-
-  return true;
-}//bool handleGadrasDetectorDatFile(...)
-
-bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )
-{
-  const size_t start_pos = input.tellg();
-
-  DetectorPeakResponse::EffCsvParseResult parse_result;
-
-  try
-  {
-    parse_result = DetectorPeakResponse::parseEfficiencyCsvFile( input );
-
-    assert( parse_result.drf && parse_result.drf->isValid() );
-    if( !parse_result.drf || !parse_result.drf->isValid() )
-      throw std::logic_error( "parseEfficiencyCsvFile returned invalid DRF." );
-  }catch( std::exception &e )
-  {
-    cerr << "--- " << e.what() << " ---" << endl;
-    input.seekg( start_pos );
-    return false;
-  }
-
-  shared_ptr<DetectorPeakResponse> det = parse_result.drf;
-  const bool is_gadras = parse_result.is_gadras_format;
-
-  dialog->addStyleClass( "EccDrfDialog" );
-
-  // Dialog arrives empty from the dispatcher (runWithNonSpecDialog).
-
-  int chartw = 350, charth = 200;
-  if( m_viewer->renderedWidth() > 500 )
-    chartw = std::min( ((3 * m_viewer->renderedWidth() / 4) - 50), 500 );
-  if( m_viewer->renderedHeight() > 400 )
-    charth = std::min( m_viewer->renderedHeight() / 4, (4 * chartw) / 7 );
-  chartw = std::max( chartw, 300 );
-  charth = std::max( charth, 175 );
-
-  WText *title = dialog->contents()->addNew<WText>( WString::tr("smm-eff-csv-curve") );
-  title->addStyleClass( "title" );
-  title->setInline( false );
-
-  DrfChart *chart = dialog->contents()->addNew<DrfChart>();
-  chart->setMinimumSize( 300, 175 );
-  chart->resize( chartw, charth );
-  chart->updateChart( det );
-
-  if( det && (det->upperEnergy() > 10000.0) )
-    chart->setXAxisRange( std::max(det->lowerEnergy(),0.0), 4000.0 );
-
-  const string name = Wt::Utils::htmlEncode( det->name() );
-  const string desc = Wt::Utils::htmlEncode( det->description() );
-
-  string txt_css = "style=\"text-align: left;"
-  " max-width: " + std::to_string( chartw - 5 ) + "px;"
-  " white-space: nowrap;"
-  " text-overflow: ellipsis;"
-  " overflow-x: hidden;"
-  "\"";
-
-  string msg =
-    "<p " + txt_css + ">"
-      "Name: " + name +
-  "</p>";
-  if( !desc.empty() )
-    msg += "<p " + txt_css + ">"
-        "Desc: " + desc +
-    "</p>";
-
-  dialog->contents()->addNew<WText>( msg, TextFormat::XHTML );
-
-  WContainerWidget *btn_div = dialog->contents()->addNew<WContainerWidget>();
-  btn_div->addStyleClass( "HowToUseGrp" );
-
-  map<int,DetectorPeakResponse::EffGeometryType> index_to_geom;
-
-  WLabel *geom_label = btn_div->addNew<WLabel>( WString::tr("smm-ecc-how-to-interpret") );
-  WComboBox *geom_combo = btn_div->addNew<WComboBox>();
-
-  const int intrinsic_index = geom_combo->count();
-  geom_combo->addItem( WString::tr("smm-eff-csv-intrinsic") );
-  index_to_geom[intrinsic_index] = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-
-  geom_combo->addItem( WString::tr("smm-eff-csv-abs-eff") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FarFieldAbsolute;
-
-  geom_combo->addItem( WString::tr("smm-ecc-fix-geom-total-act") );
-  index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
-
-  // Default: GADRAS => intrinsic (index 0), otherwise => fixed geom total act (index 2)
-  geom_combo->setCurrentIndex( is_gadras ? 0 : 2 );
-
-  // For GADRAS format, add optional Detector.dat upload
-  // We create the widgets here for layout order, but connect signals after diameter_edit exists
-  WContainerWidget *det_dat_div = nullptr;
-  WContainerWidget *det_dat_drop = nullptr;
-  WText *det_dat_status = nullptr;
-  WText *setback_text = nullptr;
-
-  if( is_gadras )
-  {
-    det_dat_div = dialog->contents()->addNew<WContainerWidget>();
-    det_dat_div->addStyleClass( "DetDatUploadDiv" );
-
-    WLabel *det_dat_label = det_dat_div->addNew<WLabel>( WString::tr("smm-eff-csv-det-dat-label") );
-    det_dat_label->setInline( false );
-
-    // Drop area (also click-to-pick) for the companion file - see setup_pair_file_drop.
-    det_dat_drop = det_dat_div->addNew<WContainerWidget>();
-    det_dat_drop->addNew<WText>( WString::tr("smm-pair-drop-txt") );
-
-    det_dat_status = det_dat_div->addNew<WText>();
-    det_dat_status->setInline( false );
-    det_dat_status->setAttributeValue( "style", "margin-left: 20px;" );
-    setback_text = det_dat_div->addNew<WText>();
-    setback_text->setInline( false );
-    setback_text->setAttributeValue( "style", "margin-left: 20px;" );
-  }//if( is_gadras )
-
-
-  // Detector diameter and distance table - we put diameter and distance in separate tables
-  //  so we can independently show/hide the distance row (intrinsic needs only diameter,
-  //  absolute needs both).
-  WTable *diam_opt = dialog->contents()->addNew<WTable>();
-  diam_opt->addStyleClass( "FarFieldOptTbl" );
-
-  auto dist_validator2 = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
-  dist_validator2->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
-  dist_validator2->setInvalidBlankText( "0.0 cm" );
-  dist_validator2->setMandatory( true );
-
-  WTableCell *cell = diam_opt->elementAt( 0, 0 );
-  WLabel *label = cell->addNew<WLabel>( WString::tr("smm-ecc-det-diam") );
-  cell = diam_opt->elementAt( 0, 1 );
-  WLineEdit *diameter_edit = cell->addNew<WLineEdit>();
-  label->setBuddy( diameter_edit );
-  diameter_edit->setValidator( dist_validator2 );
-  diameter_edit->setPlaceholderText( "0 cm" );
-
-  if( det->detectorDiameter() > 0.0f )
-    diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( det->detectorDiameter() ) );
-
-  int diam_row = 1;
-  if( det->detectorSetback() > 0.0 )
-  {
-    cell = diam_opt->elementAt( diam_row, 0 );
-    cell->addNew<WLabel>( WString::tr("smm-ecc-det-setback") );
-    cell = diam_opt->elementAt( diam_row, 1 );
-    cell->addNew<WText>( PhysicalUnits::printToBestLengthUnits( det->detectorSetback() ) );
-    ++diam_row;
-  }
-
-  WTable *dist_opt = dialog->contents()->addNew<WTable>();
-  dist_opt->addStyleClass( "FarFieldOptTbl" );
-
-  cell = dist_opt->elementAt( 0, 0 );
-  label = cell->addNew<WLabel>( WString::tr("smm-ecc-dist") );
-  cell = dist_opt->elementAt( 0, 1 );
-  WLineEdit *distance_edit = cell->addNew<WLineEdit>();
-  label->setBuddy( distance_edit );
-  distance_edit->setValidator( dist_validator2 );
-  distance_edit->setPlaceholderText( "0 cm" );
-
-  // A lambda to update visibility of diameter/distance based on current geometry selection
-  auto update_field_visibility = [=](){
-    const int index = geom_combo->currentIndex();
-    const auto pos = index_to_geom.find( index );
-    if( pos == end( index_to_geom ) )
-      return;
-
-    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
-    const bool need_diam = (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic)
-                           || (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
-    const bool need_dist = (geom_type == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute);
-
-    diam_opt->setHidden( !need_diam );
-    dist_opt->setHidden( !need_dist );
-  };
-
-  // Set initial visibility
-  update_field_visibility();
-
-  // Holds the Detector.dat-derived DRF (FWHM, peak shape, energy range, crystal)
-  //  between the .dat upload and the user accepting the dialog.
-  auto datPrefs = make_shared<shared_ptr<DetectorPeakResponse>>();
-
-  // Now that diameter_edit and update_field_visibility exist, connect the Detector.dat upload signal
-  if( is_gadras && det_dat_drop )
-  {
-    auto handle_dat_file = [=]( const std::string &/*display_name*/, const std::string &spool ){
-      if( spool.empty() )
-        return;
-
-      try
-      {
-#ifdef _WIN32
-        const std::wstring wspool = SpecUtils::convert_from_utf8_to_utf16( spool );
-        std::ifstream dat_strm( wspool.c_str(), ios::in | ios::binary );
-#else
-        std::ifstream dat_strm( spool.c_str(), ios::in | ios::binary );
-#endif
-        if( !dat_strm )
-          throw runtime_error( "Could not open Detector.dat" );
-
-        // Take everything the file defines, not just the geometry: the FWHM
-        //  curve, the GADRAS peak shape, the valid energy range and the crystal
-        //  material all come from here, and a DRF built without them is a worse
-        //  detector than the file describes.  (This used to call
-        //  parseDetectorDatGeometry, which returns only diameter and setback.)
-        const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( dat_strm );
-
-        auto enriched = make_shared<DetectorPeakResponse>();
-        dat_strm.clear();
-        dat_strm.seekg( 0, ios::beg );
-        enriched->fromGadrasDatOnly( dat_strm );
-
-        // The crystal geometry the .dat states, carried onto the DRF so the efficiency curve from
-        //  the CSV can be transferred through it (see apply_dat_prefs).
-        try
-        {
-          vector<string> geom_warnings;
-          enriched->setGeometry( make_shared<const ceelo::GeometryDescriptor>(
-                                    CeeLoUtils::buildGadrasGeometry( dat, geom_warnings ) ) );
-        }catch( std::exception & )
-        {
-          //A geometry the ray-tracer cannot use; everything else the .dat gives still applies.
-        }
-
-        const float diam = enriched->detectorDiameter();
-        const float sb = static_cast<float>( enriched->detectorSetback() );
-
-        if( diam > 0.0f )
-          diameter_edit->setText( PhysicalUnits::printToBestLengthUnits( diam ) );
-
-        if( sb > 0.0 )
-          setback_text->setText( WString::tr("smm-ecc-det-setback").toUTF8()
-                                 + ": " + PhysicalUnits::printToBestLengthUnits( sb ) );
-        else
-          setback_text->setText( "" );
-
-        // Carry the FWHM/peak-shape/material onto the DRF the dialog will hand
-        //  over, so they are not lost between here and the user pressing Use.
-        *datPrefs = enriched;
-
-        const string crystal = dat.materialName();
-        det_dat_status->setText( crystal.empty()
-              ? WString::tr("smm-ecc-dat-ok")
-              : WString::tr("smm-ecc-dat-ok-material").arg(crystal) );
-
-        // Switch to intrinsic efficiency and update visibility
-        geom_combo->setCurrentIndex( intrinsic_index );
-        update_field_visibility();
-      }catch( std::exception &e )
-      {
-        det_dat_status->setText( WString::tr("smm-ecc-dat-err").arg( e.what() ) );
-        if( setback_text )
-          setback_text->setText( "" );
-      }
-
-      wApp->triggerUpdate();
-    };//handle_dat_file
-
-    setup_pair_file_drop( dialog, det_dat_drop, pairFileDragNDrop(), handle_dat_file );
-  }//if( is_gadras && det_dat_drop )
-
-  auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
-  shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
-
-  const bool makeSerialNumCb = (fore && !fore->instrument_id().empty());
-  const bool makeModelCb = (fore
-                            && ((fore->detector_type() != SpecUtils::DetectorType::Unknown)
-                                 || !fore->instrument_model().empty()));
-
-  WCheckBox *defaultForSerialNumber = nullptr;
-  WCheckBox *defaultForDetectorModel = nullptr;
-
-  if( makeSerialNumCb || makeModelCb )
-  {
-    InterSpec::instance()->useMessageResourceBundle( "DrfSelect" );
-
-    WContainerWidget *saveCbDiv = dialog->contents()->addNew<WContainerWidget>();
-    saveCbDiv->addStyleClass( "EccDrfDefaultCbs" );
-
-    if( makeSerialNumCb )
-    {
-      WString cb_msg = WString::tr("ds-use-for-serialnum-cb").arg( fore->instrument_id() );
-      defaultForSerialNumber = saveCbDiv->addNew<WCheckBox>( cb_msg );
-      defaultForSerialNumber->addStyleClass( "CbNoLineBreak" );
-      defaultForSerialNumber->setInline( false );
-    }
-
-    if( makeModelCb )
-    {
-      string model;
-      if( fore->detector_type() != SpecUtils::DetectorType::Unknown )
-        model = detectorTypeToString( fore->detector_type() );
-      else
-        model = fore->instrument_model();
-
-      WString cb_msg = WString::tr("ds-use-for-model-cb").arg( model );
-      defaultForDetectorModel = saveCbDiv->addNew<WCheckBox>( cb_msg );
-      defaultForDetectorModel->addStyleClass( "CbNoLineBreak" );
-      defaultForDetectorModel->setInline( false );
-    }
-  }//if( makeSerialNumCb || makeModelCb )
-
-  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
-
-  // Accept AND go straight to the editor - for reviewing an imported geometry, upgrading the
-  //  response with Monte Carlo, or setting a FWHM, without hunting for the tool afterwards.
-  WPushButton *further = dialog->addButton( WString::tr("smm-further-options"), WidgetUtils::ButtonRole::Neutral );
-
-  WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf"), WidgetUtils::ButtonRole::Affirm );
-
-
-  // Everything an uploaded Detector.dat defined - FWHM, GADRAS peak shape, valid
-  //  energy range, setback - onto the DRF built from the efficiency CSV.  Only
-  //  the efficiency comes from the CSV; the rest is the .dat's to give.
-  auto apply_dat_prefs = [datPrefs]( shared_ptr<DetectorPeakResponse> drf )
-                                                -> shared_ptr<DetectorPeakResponse> {
-    const shared_ptr<DetectorPeakResponse> from_dat = *datPrefs;
-    if( !drf || !from_dat )
-      return drf;
-
-    try
-    {
-      if( from_dat->resolutionFcnType() != DetectorPeakResponse::kNumResolutionFnctForm )
-        drf->setFwhmCoefficients( from_dat->resolutionFcnCoefficients(),
-                                  from_dat->resolutionFcnType() );
-    }catch( std::exception & )
-    {
-      //a .dat with an arity the form does not accept; keep the rest
-    }
-
-    if( from_dat->peakFitDetPrefs() )
-      drf->setPeakFitDetPrefs( from_dat->peakFitDetPrefs() );
-
-    if( from_dat->detectorSetback() > 0.0 )
-      drf->setDetectorSetback( from_dat->detectorSetback() );
-
-    // With the .dat's geometry and the CSV's measured curve both present, the detector can answer
-    //  off-axis and near-field for free - see CeeLoUtils::attachCurveTransferResponse.  Only
-    //  reached for the far-field interpretations; a fixed-geometry DRF has no geometry to transfer
-    //  through.
-    if( from_dat->geometry() )
-    {
-      drf->setGeometry( from_dat->geometry() );
-      CeeLoUtils::attachCurveTransferResponse( *drf );
-    }
-
-    return drf;
-  };//apply_dat_prefs
-
-  // Lambda to create DRF for the currently selected geometry type
-  auto create_drf_for_geom = [=]( const DetectorPeakResponse::EffGeometryType geom_type )
-    -> shared_ptr<DetectorPeakResponse>
-  {
-    switch( geom_type )
-    {
-      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-      {
-        const double diam = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
-        if( diam <= 0.0 )
-          throw runtime_error( "diam <= 0" );
-        return apply_dat_prefs( det->reinterpretAsFarFieldIntrinsicEfficiency( diam ) );
-      }
-
-      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-      {
-        const double diam = PhysicalUnits::stringToDistance( diameter_edit->text().toUTF8() );
-        const double distance = PhysicalUnits::stringToDistance( distance_edit->text().toUTF8() );
-        if( diam <= 0.0 )
-          throw runtime_error( "diam <= 0" );
-        if( distance < 0.0 )
-          throw runtime_error( "dist < 0" );
-        const bool correct_for_air_atten = true;
-        return apply_dat_prefs(
-                  det->reinterpretAsFarFieldAbsEfficiency( diam, distance, correct_for_air_atten ) );
-      }
-
-      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-        return det;
-    }//switch( geom_type )
-
-    return det;
-  };//create_drf_for_geom
-
-  auto update_state = [=](){
-    const int index = geom_combo->currentIndex();
-    const auto pos = index_to_geom.find( index );
-    assert( pos != end( index_to_geom ) );
-    if( pos == end( index_to_geom ) )
-      throw logic_error( "handleEfficiencyCsvFile: unexpected index" );
-
-    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
-
-    update_field_visibility();
-
-    try
-    {
-      shared_ptr<DetectorPeakResponse> new_drf = create_drf_for_geom( geom_type );
-      chart->updateChart( new_drf );
-
-      if( new_drf && (new_drf->upperEnergy() > 10000.0) )
-        chart->setXAxisRange( std::max(new_drf->lowerEnergy(),0.0), 4000.0 );
-
-      accept->enable();
-      further->enable();
-    }catch( std::exception & )
-    {
-      chart->updateChart( nullptr );
-      accept->disable();
-      further->disable();
-    }
-  };//update_state lambda
-
-  geom_combo->activated().connect( this, update_state );
-  distance_edit->textInput().connect( this, update_state );
-  diameter_edit->textInput().connect( this, update_state );
-
-
-  // Shared by "Use DRF" and "Further options..."; the latter also opens the editor on the result.
-  auto accept_drf = [=]( const bool open_modify ){
-    const int index = geom_combo->currentIndex();
-    const auto pos = index_to_geom.find( index );
-    assert( pos != end( index_to_geom ) );
-    if( pos == end( index_to_geom ) )
-      throw logic_error( "handleEfficiencyCsvFile: unexpected index" );
-
-    const DetectorPeakResponse::EffGeometryType geom_type = pos->second;
-
-    shared_ptr<DetectorPeakResponse> new_drf;
-    try
-    {
-      new_drf = create_drf_for_geom( geom_type );
-    }catch( std::exception &e )
-    {
-      passMessage( WString::tr("smm-eff-csv-error").arg( e.what() ),
-                   WarningWidget::WarningMsgHigh );
-      return;
-    }
-
-    auto interspec = InterSpec::instance();
-    if( !new_drf || !interspec )
-      return;
-
-    shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
-    const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
-    DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
-    interspec->detectorChanged().emit( new_drf );
-
-    if( fore && new_drf && defaultForSerialNumber && defaultForSerialNumber->isChecked() )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorSerialNumber;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
-      } ) );
-    }
-
-    if( fore && new_drf && defaultForDetectorModel && defaultForDetectorModel->isChecked() )
-    {
-      UseDrfPref::UseDrfType preftype = UseDrfPref::UseDrfType::UseDetectorModelName;
-      WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
-        DrfSelect::setUserPrefferedDetector( new_drf, sql, user, preftype, fore );
-      } ) );
-    }
-
-    UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
-    if( undoManager && undoManager->canAddUndoRedoNow() )
-    {
-      auto undo = [prev](){
-        InterSpec *viewer = InterSpec::instance();
-        if( viewer )
-          viewer->detectorChanged().emit( prev );
-      };
-
-      auto redo = [new_drf](){
-        InterSpec *viewer = InterSpec::instance();
-        if( viewer )
-          viewer->detectorChanged().emit( new_drf );
-      };
-
-      undoManager->addUndoRedoStep( undo, redo, "Change to efficiency CSV DRF" );
-    }
-
-    if( open_modify )
-      interspec->showDrfModifyWindow( new_drf );
-  };//accept_drf
-
-  accept->clicked().connect( this, [accept_drf](){ accept_drf( false ); } );
-  further->clicked().connect( this, [accept_drf](){ accept_drf( true ); } );
-
-  return true;
-}//bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )
+    runWithNonSpecDialog( displayName, parsed->data->size(), infile,
+                          SpecUtils::SpectrumType::Foreground, /*undoRedo=*/true,
+      [this, parsed]( SimpleDialog *d ){
+        m_drfImportWidget = DrfImportWidget::setupDropDialog( d, parsed );
+        return !!m_drfImportWidget;
+      } );
+  }//if( m_drfImportWidget ) / else
+
+  // Like the other drop resources, spooled files are left for the resource to delete at session
+  //  end - a non-DRF file above may still be being read, asynchronously, by handleFileDrop.
+}//void handleDrfFileDrop(...)
 
 
 bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDialog *dialog )

@@ -839,6 +839,15 @@ add_test( NAME TDrfModify
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Identifying detector-efficiency files and building DRFs from them (DrfImport) - the DRF Select
+#  "Import" tab and the dialog for a DRF file dropped onto the app, less the widgets.
+add_executable( test_DrfImport test_DrfImport.cpp )
+target_link_libraries( test_DrfImport PRIVATE InterSpecLib )
+add_test( NAME TDrfImport
+  COMMAND $<TARGET_FILE:test_DrfImport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
 target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
 add_test( NAME TDetectorEfficiency

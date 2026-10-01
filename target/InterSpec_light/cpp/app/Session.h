@@ -56,6 +56,11 @@ public:
 
   enum SpecType : int { Foreground = 0, Background = 1, Secondary = 2, NumSpecType = 3 };
 
+  /** "FOREGROUND", "BACKGROUND", or "SECONDARY": the names requests and responses use. */
+  static const char *typeName( const SpecType type );
+  /** The type `typeName` gives (ignoring case); throws for any other name. */
+  static SpecType typeFromName( const std::string &name );
+
   Session();
   ~Session();
 
@@ -104,6 +109,8 @@ private:
   nlohmann::json timeDrag( const nlohmann::json &p );
   nlohmann::json setDetectors( const nlohmann::json &p );
   nlohmann::json exportFile( const nlohmann::json &p );
+  /** The foreground file's name without its extension, for naming exported files. */
+  std::string foregroundBaseName() const;
 
   void setSlot( const SpecType type, std::shared_ptr<LoadedFile> file, std::set<int> samples );
   void updateSummed( const SpecType type );
@@ -146,16 +153,30 @@ private:
   void resetDragCaches();
 
   // Energy calibration (SessionEnergyCal.cpp)
+  typedef std::vector<std::pair<std::shared_ptr<const SpecUtils::Measurement>,
+                                std::shared_ptr<const SpecUtils::EnergyCalibration>>> CalChanges;
+
   nlohmann::json setEnergyCal( const nlohmann::json &p );
   nlohmann::json fitEnergyCal( const nlohmann::json &p );
   nlohmann::json revertEnergyCal( const nlohmann::json &p );
   nlohmann::json convertCalCoefs( const nlohmann::json &p );
+  nlohmann::json exportCALp( const nlohmann::json &p );
+  nlohmann::json importCALp( const nlohmann::json &p );
   nlohmann::json energyCalJson() const;
-  std::shared_ptr<const SpecUtils::EnergyCalibration> displayedEnergyCal() const;
-  /** Applies a change of the displayed calibration to every gamma Measurement of the foreground
-   file (all samples, displayed detectors), and moves all of that file's peaks to match. */
-  void applyCalChange( const std::shared_ptr<const SpecUtils::EnergyCalibration> &disp_prev,
-                       const std::shared_ptr<const SpecUtils::EnergyCalibration> &disp_new );
+  std::shared_ptr<const SpecUtils::EnergyCalibration> displayedEnergyCal( const SpecType type = Foreground ) const;
+  /** The new calibration of every gamma Measurement of the slot's file (all samples, displayed
+   detectors) for a change of its displayed calibration; throws if any is invalid, or has the wrong
+   number of channels, so `setCals` can not fail part way. */
+  CalChanges calChangesFor( const SpecType type,
+                            const std::shared_ptr<const SpecUtils::EnergyCalibration> &disp_prev,
+                            const std::shared_ptr<const SpecUtils::EnergyCalibration> &disp_new ) const;
+  /** The calibrations a CALp file gives the slot's file (all samples, displayed detectors); throws
+   if the file is not a valid CALp, or does not match the data.  `warning` is set if the CALp's
+   deviation pairs only reach some of the detectors. */
+  CalChanges calpChangesFor( const SpecType type, const std::string &calp, std::string &warning ) const;
+  /** Sets the calibrations of the slot's file, and moves each of that file's peak sets along with
+   its displayed calibration. */
+  void setCals( const SpecType type, const CalChanges &changes );
 
   int m_next_file_id;
   Slot m_slots[NumSpecType];

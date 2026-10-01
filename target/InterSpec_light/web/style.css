@@ -162,6 +162,16 @@ table.data tr:hover .set-source { visibility: visible; }
 /* Energy calibration */
 .coefs { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 6px; align-items: center; margin: 6px 0; }
 .coefs input[type=text] { width: 100%; font-variant-numeric: tabular-nums; }
+.calp-link { margin-left: auto; font-size: 12px; color: var(--accent); text-decoration: none; }
+.calp-link:hover { text-decoration: underline; }
+
+/* Dialogs */
+.dlg { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; max-width: min(360px, 92vw);
+       color: var(--text); background: var(--bg); box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+.dlg::backdrop { background: rgba(20, 30, 50, 0.35); }
+.dlg p { margin: 0 0 8px 0; }
+.dlg label { display: block; margin: 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlg-btns { justify-content: flex-end; margin-top: 12px; }
 
 /* Drag-and-drop */
 .drop-overlay {

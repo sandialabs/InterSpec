@@ -3,12 +3,6 @@
   font-size: x-small;
 }
 
-.DetUploadDiv .DetectorLabel
-{
-  font-size: 12px;
-  font-style: italic;
-}
-
 .DetEditContent
 {
     overflow-y: auto;
@@ -66,27 +60,6 @@ table.FormulaDrfTbl label
   flex-direction: row;
   flex-wrap: nowrap;
   justify-content: space-between;
-  align-items: center;
-}
-
-.DetUploadDiv
-{
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.DetUploadDiv .EfficiencyType
-{
-  
-}
-
-.DetectorDiamDiv
-{
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 5px;
   align-items: center;
 }
 

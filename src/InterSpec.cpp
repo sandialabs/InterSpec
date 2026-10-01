@@ -1896,6 +1896,8 @@ void InterSpec::initDragNDrop()
   doJavaScript( "window._IS.SecondUpUrl='" +
                m_fileManager->secondForegroundDragNDrop()->url() + "';" );
 
+  doJavaScript( "window._IS.DrfUpUrl='" + m_fileManager->drfDragNDrop()->url() + "';" );
+
 #if( USE_BATCH_GUI_TOOLS )
   doJavaScript( "window._IS.BatchUploadEnabled=true;" );
   doJavaScript( "window._IS.BatchUpUrl='" +

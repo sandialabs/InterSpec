@@ -30,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <ctime>
+#include <regex>
 #include <memory>
 #include <cctype>
 #include <string>
@@ -2731,6 +2732,289 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
     throw;
   }
 }//void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv(...)
+
+
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEffCsv( std::istream &csvfile )
+{
+  // The layout is MakeDrf::writeCsvSummary's.  Its detector-geometry line holds a whole XML
+  //  document, so lines can be long.
+  const size_t max_line_length = 1024*1024;
+
+  // The "GeometryType" column MakeDrf writes; older exports had a yes/no "Fixed Geometry"
+  //  column, which predates the per-area/per-mass kinds, so means total activity.
+  const auto geometry_from_field = []( string value ) -> EffGeometryType {
+    SpecUtils::trim( value );
+    SpecUtils::to_lower_ascii( value );
+    if( value == "farfieldabsolute" )
+      return EffGeometryType::FarFieldAbsolute;
+    if( value == "fixedpercm2" )
+      return EffGeometryType::FixedGeomActPerCm2;
+    if( value == "fixedperm2" )
+      return EffGeometryType::FixedGeomActPerM2;
+    if( value == "fixedpergram" )
+      return EffGeometryType::FixedGeomActPerGram;
+    if( (value == "fixedtotalact") || (value == "1") || (value == "true")
+        || SpecUtils::istarts_with( value, "y" ) )
+      return EffGeometryType::FixedGeomTotalAct;
+    return EffGeometryType::FarFieldIntrinsic;
+  };//geometry_from_field
+
+  // The text after `label`, trimmed and without a trailing '.'; empty if `line` doesn't have it.
+  const auto value_after = []( const string &line, const string &label ) -> string {
+    const size_t pos = SpecUtils::to_lower_ascii_copy( line ).find( SpecUtils::to_lower_ascii_copy( label ) );
+    if( pos == string::npos )
+      return string();
+    string value = line.substr( pos + label.size() );
+    SpecUtils::trim( value );
+    if( !value.empty() && (value.back() == '.') )
+      value.pop_back();
+    return value;
+  };//value_after
+
+  string line;
+  int nlineschecked = 0;
+
+  string drfname, drfdescrip;
+
+  // MakeDrf states the equation's energy unit in the comment above the coefficients; for a file
+  //  that doesn't, any "MeV" outside the name and description means MeV (the historical rule).
+  int stated_mev = -1;  //-1 not stated, 0 keV, 1 MeV
+  bool foundMeV = false;
+
+  //ToDo: Need to implement getting lines safely where a quoted field may span
+  //      several lines.
+  while( SpecUtils::safe_get_line(csvfile, line, max_line_length) && (++nlineschecked < 100) )
+  {
+    vector<string> fields;
+    split_escaped_csv( fields, line );
+
+    if( (fields.size() == 2) && ((fields[0] == "# Name") || (fields[0] == "# Description")) )
+    {
+      (fields[0] == "# Name" ? drfname : drfdescrip) = fields[1];
+      continue;
+    }
+
+    const string unit = SpecUtils::to_lower_ascii_copy( value_after( line, "where x is energy in" ) );
+    if( SpecUtils::istarts_with( unit, "mev" ) )
+      stated_mev = 1;
+    else if( SpecUtils::istarts_with( unit, "kev" ) )
+      stated_mev = 0;
+
+    foundMeV |= SpecUtils::icontains( line, "mev" );
+
+    if( fields.size() < 16 )
+      continue;
+
+    if( !SpecUtils::iequals_ascii( fields[3], "c0")
+       || !SpecUtils::iequals_ascii( fields[4], "c1")
+       || !SpecUtils::iequals_ascii( fields[5], "c2")
+       || !SpecUtils::iequals_ascii( fields[6], "c3")
+       || !SpecUtils::icontains( fields[15], "radius") )
+      continue;
+
+    int geom_col = -1;
+    for( size_t i = 16; (geom_col < 0) && (i < fields.size()); ++i )
+    {
+      if( SpecUtils::icontains( fields[i], "Geom" ) )
+        geom_col = static_cast<int>( i );
+    }
+
+    //Okay, next line should be the coefficients
+    if( !SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+      return nullptr;
+
+    split_escaped_csv( fields, line );
+
+    // Only the first coefficient table is used: when there are two, the second holds absolute
+    //  efficiencies at 25 cm, which must not be read as intrinsic if the first is unusable.
+    try
+    {
+      vector<float> coefs( 8, 0.0f ), coef_uncerts;
+      for( int i = 0; i < 8; ++i )
+      {
+        const string &field = fields.at(3+i);
+        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
+      }
+
+      while( !coefs.empty() && (coefs.back() == 0.0f) )
+        coefs.pop_back();
+
+      if( coefs.empty() )
+        return nullptr;
+
+      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
+      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
+
+      EffGeometryType geom_type = EffGeometryType::FarFieldIntrinsic;
+      if( (geom_col >= 0) && (static_cast<int>(fields.size()) > geom_col) )
+        geom_type = geometry_from_field( fields[geom_col] );
+
+      const string name = (fields[0].empty() ? drfname : fields[0]);
+      const bool in_mev = (stated_mev >= 0) ? (stated_mev == 1) : foundMeV;
+      const float energUnits = in_mev ? 1000.0f : 1.0f;
+
+      // The uncertainties line normally comes next; any other line is left for the loop below.
+      string pending_line;
+      if( SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+      {
+        vector<string> uncert_strs;
+        split_escaped_csv( uncert_strs, line );
+        if( !uncert_strs.empty()
+           && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
+           && (uncert_strs.size() >= (3 + coefs.size())) )
+        {
+          try
+          {
+            coef_uncerts.resize( coefs.size(), 0.0f );
+            for( size_t i = 0; i < coefs.size(); ++i )
+            {
+              const string &field = uncert_strs.at(3+i);
+              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
+            }
+          }catch( std::exception &e )
+          {
+            cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
+            coef_uncerts.clear();
+          }
+        }else
+        {
+          pending_line = line;
+        }
+      }//if( we got another line we'll check if its the uncertainties )
+
+      auto det = std::make_shared<DetectorPeakResponse>( name, drfdescrip );
+      det->fromExpOfLogPowerSeries( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
+                                    0.0f, 0.0f, geom_type );
+
+      // The rest of the file: FWHM, setback, geometry, then the valid energy range, which ends it.
+#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
+      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+#undef POS_DECIMAL_REGEX
+      const std::regex range_expression( rng_exprsn_txt );
+
+      bool have_line = !pending_line.empty();
+      if( have_line )
+        line = pending_line;
+
+      while( (have_line || SpecUtils::safe_get_line(csvfile, line, max_line_length)) && (++nlineschecked < 200) )
+      {
+        have_line = false;
+
+        if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
+        {
+          ResolutionFnctForm form = ResolutionFnctForm::kGadrasResolutionFcn;
+          if( SpecUtils::icontains( line, "A0 + A1*sqrt" ) )
+            form = ResolutionFnctForm::kConstantPlusSqrtEnergy;
+          else if( SpecUtils::icontains( line, "/energy" ) )
+            form = ResolutionFnctForm::kSqrtEnergyPlusInverse;
+          else if( SpecUtils::icontains( line, "sqrt(" ) )
+            form = ResolutionFnctForm::kSqrtPolynomial;
+
+          int nlinecheck = 0;
+          while( SpecUtils::safe_get_line(csvfile, line, max_line_length)
+                && !SpecUtils::istarts_with(line, "Values")
+                && (++nlinecheck < 15) )
+          {
+          }
+
+          const auto read_values = []( const string &values_line ) -> vector<float> {
+            vector<string> values_fields;
+            split_escaped_csv( values_fields, values_line );
+            vector<float> answer;
+            for( size_t i = 1; i < values_fields.size(); ++i )
+              answer.push_back( stof( values_fields[i] ) );
+            return answer;
+          };//read_values
+
+          vector<float> fwhm_coefs, fwhm_uncerts;
+          try
+          {
+            if( SpecUtils::istarts_with( line, "Values" ) )
+              fwhm_coefs = read_values( line );
+          }catch( std::exception & )
+          {
+            fwhm_coefs.clear();
+          }
+
+          if( SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+          {
+            if( SpecUtils::istarts_with( line, "Uncertainties" ) )
+            {
+              try
+              {
+                fwhm_uncerts = read_values( line );
+              }catch( std::exception & )
+              {
+              }
+            }else
+            {
+              have_line = true;  //not part of the FWHM block; look at it again
+            }
+          }//if( another line )
+
+          if( fwhm_uncerts.size() != fwhm_coefs.size() )
+            fwhm_uncerts.clear();
+
+          try
+          {
+            if( !fwhm_coefs.empty() )
+              det->setFwhmCoefficients( fwhm_coefs, form, fwhm_uncerts );
+          }catch( std::exception &e )
+          {
+            cerr << "parseInterSpecRelEffCsv: invalid FWHM: " << e.what() << endl;
+          }
+
+          continue;
+        }//if( start of FWHM section of CSV file )
+
+        const string setback = value_after( line, "Detector setback =" );
+        if( !setback.empty() )
+        {
+          try
+          {
+            det->setDetectorSetback( PhysicalUnits::stringToDistance( setback ) );
+          }catch( std::exception & )
+          {
+          }
+          continue;
+        }//if( setback line )
+
+        const string geometry_xml = value_after( line, "# Detector geometry (CeeLo XML):" );
+        if( !geometry_xml.empty() )
+        {
+          // A shape we cannot use is worse than none; the efficiency curve still stands.
+          try
+          {
+            ceelo::GeometryDescriptor descriptor = ceelo::GeometryDescriptor::from_xml_string( geometry_xml );
+            if( descriptor.problems().empty() )
+              det->setGeometry( make_shared<const ceelo::GeometryDescriptor>( std::move(descriptor) ) );
+          }catch( std::exception &e )
+          {
+            cerr << "parseInterSpecRelEffCsv: ignoring unusable detector geometry: " << e.what() << endl;
+          }
+          continue;
+        }//if( geometry line )
+
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
+        {
+          const float lowerEnergy = std::stof( range_matches[1] );
+          const float upperEnergy = std::stof( range_matches[6] );
+          det->setEnergyRange( lowerEnergy, upperEnergy );
+          break;
+        }
+      }//while( getline )
+
+      return det;
+    }catch( std::exception &e )
+    {
+      cerr << "parseInterSpecRelEffCsv: invalid coefficients: " << e.what() << endl;
+      return nullptr;
+    }
+  }//while( more lines )
+
+  return nullptr;
+}//parseInterSpecRelEffCsv(...)
 
 
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )

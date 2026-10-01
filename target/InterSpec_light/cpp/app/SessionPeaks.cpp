@@ -1086,12 +1086,7 @@ json Session::exportPeakCsv( const json &p )
     throw runtime_error( "Failed writing peak CSV." );
   out.close();
 
-  string base = fore.file->name;
-  const size_t dot = base.find_last_of( '.' );
-  if( (dot != string::npos) && (dot > 0) )
-    base = base.substr( 0, dot );
-
-  return { {"path", path}, {"filename", "peaks_" + base + ".CSV"} };
+  return { {"path", path}, {"filename", "peaks_" + foregroundBaseName() + ".CSV"} };
 }//json exportPeakCsv( const json &p )
 
 

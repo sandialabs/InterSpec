@@ -232,7 +232,7 @@ namespace
 
     // Reference runs: recurse for .ecc, pair with a like-named .gis in the same
     //  directory.  Matching is case-insensitive on the stem, because the sample
-    //  corpus has case-mismatched pairs (e.g. Lab06_*.ecc vs lab06_*.gis) that a
+    //  corpus has case-mismatched pairs (e.g. Det06_*.ecc vs det06_*.gis) that a
     //  literal path build would miss on a case-sensitive filesystem.
     auto stem_lower = []( const string &path ) -> string
     {
@@ -415,6 +415,25 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
     BOOST_TEST_MESSAGE( "Detector case: " + c.dir + "  (" + std::to_string(c.runs.size())
                         + " reference runs)" );
 
+    // The cheap checks that decide whether a dropped file is tried as one of these must accept
+    //  every real one - they only see the start of the file.
+    for( const string &path : { c.parPath, c.detectorTxtPath } )
+    {
+      ifstream strm( path.c_str(), ios::in | ios::binary );
+      BOOST_REQUIRE( strm.is_open() );
+      strm.seekg( 0, ios::end );
+      const size_t file_size = static_cast<size_t>( strm.tellg() );
+      strm.seekg( 0, ios::beg );
+      string header( (std::min)( file_size, size_t(1024) ), '\0' );
+      strm.read( &header[0], header.size() );
+      const bool is_par = (path == c.parPath);
+      BOOST_CHECK_MESSAGE( is_par == DetEffG2kPar::isCandidateParFile(
+                                reinterpret_cast<const uint8_t *>( header.data() ), header.size(), file_size ),
+                           "isCandidateParFile wrong for " << path );
+      BOOST_CHECK_MESSAGE( !is_par == DetEffG2kPar::isCandidateDetectorTxt( header ),
+                           "isCandidateDetectorTxt wrong for " << path );
+    }//for( both files )
+
     // Parse both files and assemble a DRF.
     shared_ptr<DetectorPeakResponse> drf;
     BOOST_REQUIRE_NO_THROW( drf = DetEffG2kPar::makeDrfFromFiles( c.parPath, c.detectorTxtPath ) );
@@ -592,7 +611,7 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
   // A germanium detector with a dead layer, so the Ge K-edge at 11.107 keV is in
   //  play, and a grid whose range STRADDLES it: crystal_k_edges keeps an edge only
   //  when it is inside the range by its 1.02/0.98 margins, which 11.107 is for a
-  //  10 keV first node.  This is the geometry LAB06 does not have (its grid starts
+  //  10 keV first node.  This is the geometry DET06 does not have (its grid starts
   //  at 45 keV, so no edge is retained and it never showed the bug).
   const string detector_txt =
     "# 99999 - SYNTHETIC-KEDGE - S/N-TEST-2\n"
@@ -734,8 +753,8 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
     //  `K`'s attenuation is exp(-tau) off the mu table's own log-log grid.  The
     //  measured residue is a ~10% bump over ~0.09 keV that recovers to 1.0002 the
     //  moment `K` clears the transition.  On a REAL detector that window is deep
-    //  in the sub-16 keV region whose peak efficiency is ~2e-09 (see the band
-    //  table in "DetectorEffG2kPar.h"), which is why that band is gated on
+    //  in the sub-16 keV region whose peak efficiency is ~8 decades below the
+    //  crystal's (see the band table in "DetectorEffG2kPar.h"), which is why that band is gated on
     //  ABSOLUTE error and passes; on this synthetic fixture the efficiency there
     //  is much larger (~8e-04) because the fixture's grid is not a real detector's,
     //  so do not read a magnitude off this case.  Fixing the residue means putting
@@ -992,15 +1011,15 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
   //  is an ABSOLUTE bound in efficiency units.  Below 22 keV the absolute bound is
   //  the one that carries the argument, but BOTH are applied there: an absolute
   //  gate alone leaves the relative error completely unpoliced, so a regression
-  //  that multiplied it while staying under a floor of ~1e-9 would pass silently.
+  //  that multiplied it while staying under the absolute floor would pass silently.
   //  The sub-22 relative gates are therefore set loosely (~1.5x measured), to
   //  catch a change in kind rather than to assert a tolerance.
   //
   // Why the two lowest bands are gated absolutely.  A relative bound is only
   //  meaningful next to the efficiency it sits on, and below 22 keV this crystal's
-  //  stored efficiency is 1e-11 to 1e-9 - seven to ten decades below its ~3e-1
-  //  peak.  The worst 10-16 keV locus is a 49% error on eps = 2.2e-09, i.e. an
-  //  absolute error of 6e-10, which cannot move any spectrum.  That residual is
+  //  stored efficiency is seven to ten decades below its peak.  The worst
+  //  10-16 keV locus is a 49% error on an efficiency ~8 decades down, an absolute
+  //  error that cannot move any spectrum.  That residual is
   //  also not reachable by node density: it is the crystal-frame lattice reading a
   //  face-frame grid, whose origins differ by `endcap_front_offset_cm`, so the
   //  angular skew grows from +0.08 deg at 300 cm to +3 deg at 8 cm against the
@@ -1257,7 +1276,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
       for( size_t b = 0; b < nbands; ++b )
       {
         if( !n_a[rg][b] && !n_b[rg][b] )
-          continue;   // LAB06 starts at 45 keV: its four low bands are legitimately empty
+          continue;   // DET06 starts at 45 keV: its four low bands are legitimately empty
         const double rms_a = n_a[rg][b]
             ? std::sqrt( sum2_a[rg][b]/static_cast<double>(n_a[rg][b]) ) : 0.0;
         char line[320];
@@ -1282,7 +1301,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
               "%s keV, %s: worst ON-LATTICE ABSOLUTE error %.3e over %zu probes"
               " exceeds %.3e.  This band is gated absolutely because its stored"
               " efficiency (peak %.2e here) is many decades below the crystal's"
-              " ~3e-1 peak, where a relative bound polices nothing; the worst"
+              " peak, where a relative bound polices nothing; the worst"
               " relative error was %.5f on eps %.2e.  The limit is the crystal-frame"
               " lattice reading a face-frame grid, not node density",
               bands[b].name, (rg == kMain) ? "MAIN" : "CORNER", absw_a[rg][b],
@@ -1468,7 +1487,7 @@ BOOST_AUTO_TEST_CASE( EccMatch )
       //  The off-axis runs say so themselves (~Geometry=SPHERE); see the
       //  DetectorEffG2kPar.h header for the full evidence.  With this reading
       //  every off-axis reference run reproduces to <0.08% at node energies
-      //  (worst over the corpus: 0.0785%, LAB06 at sd1=200/sd4=350 mm); the
+      //  (worst over the corpus: 0.0785%, DET06 at sd1=200/sd4=350 mm); the
       //  axial reading misses by tens of percent to 84x.
       const double sd1 = gis.sd1_mm;
       const double sd4 = std::isnan( gis.sd4_mm ) ? 0.0 : gis.sd4_mm;
@@ -1613,19 +1632,19 @@ BOOST_AUTO_TEST_CASE( EccMatch )
                       static_cast<float>(E_node), theta, 0.0, (dist_mm/10.0)*PhysicalUnits::cm );
 
           // Relative OR absolute, whichever is looser.  A purely relative bound
-          //  is not meaningful where the file's own efficiency is ~1e-9 (10 keV at
+          //  is not meaningful where the file's own efficiency is tiny (10 keV at
           //  a grazing angle is eight decades below this crystal's peak), and that
           //  is exactly the regime `GridReproductionByBand` shows is limited by
           //  the crystal/face frame skew rather than by anything this check can
           //  police.  The absolute floor is still far below the defects this check
           //  exists to catch: the pre-fix slant-sampling bug was 92% at 45 deg and
           //  8427% at 84 deg, and the fabricated K-edge discontinuity - the reason
-          //  a LOW probe is here at all - was ~95x, i.e. ~1e-7 absolute at this
-          //  locus.
+          //  a LOW probe is here at all - was ~95x, roughly a thousand times this
+          //  floor at this locus.
           //
           //  The floor is 1e-10 rather than a rounder 1e-8 because of how little
           //  the low probe is worth otherwise: at 10 keV and a grazing angle
-          //  `eff_eval` is itself ~1e-9, so a 1e-8 floor would tolerate an absolute
+          //  `eff_eval` is so small that a 1e-8 floor would tolerate an absolute
           //  error TEN TIMES the entire efficiency at that point, and a recurrence
           //  of the K-edge defect merely 5x smaller than the original would pass.
           //  1e-10 keeps the floor below the value being checked while staying far
