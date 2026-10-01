@@ -79,15 +79,18 @@ namespace
   const double sm_annihilation_energy = 510.9989;
 
   /** Lines below this are too unreliable to match against (huge line density, heavy
-   attenuation, and the candidate finder is noisy there).
+   attenuation, and the candidate finder is noisy there).  Kept low enough to still match the
+   characteristic x-rays (Pb ~75-88 keV, Ba/Cs K x-rays ~30-36 keV) that dominate low-energy and
+   XRF spectra, where they are often the strongest peaks present.
    */
-  const double sm_min_line_energy = 45.0;
+  const double sm_min_line_energy = 25.0;
 
   /** A hypothesis must place the top of the spectrum in this range.  Real-world spectra we
-   care about span at least ~250 keV full-scale and no more than ~13 MeV, so hypotheses
-   outside this are rejected outright.
+   care about span from ~120 keV full-scale (low-energy / XRF / x-ray detectors that top out
+   around the Ba-133 81/160 keV region) up to ~13 MeV, so hypotheses outside this are rejected
+   outright.
    */
-  const double sm_min_spectrum_span = 250.0;   //keV
+  const double sm_min_spectrum_span = 120.0;   //keV
   const double sm_max_spectrum_span = 13000.0; //keV
 
   const double sm_gate_fail_score = -999.0;
@@ -197,6 +200,22 @@ find_candidate_peaks_channelspace( const std::shared_ptr<const SpecUtils::Measur
     peak.area = get<2>( c );
     if( (peak.area <= 0.0) || (peak.channel <= 1.0) || (peak.channel >= (nchan - 2)) )
       continue;
+
+    // Reject pulser-like single-channel spikes: a test-pulse (or ADC glitch) deposits all of its
+    //  counts in one channel with near-empty neighbors, which no real gamma peak does.  If left in
+    //  it masquerades as a strong, narrow, high-channel peak and derails the anchor/endpoint seeds
+    //  (it is often the highest-channel or largest-area "peak" in the file).  The finder reports a
+    //  fractional center, so snap to the tallest channel in ±1 before testing its neighbors.
+    {
+      size_t cen = static_cast<size_t>( std::llround(peak.channel) );
+      for( size_t c = cen - 1; c <= cen + 1; ++c )
+        if( chanmeas->gamma_channel_content( c ) > chanmeas->gamma_channel_content( cen ) )
+          cen = c;
+      const double center = chanmeas->gamma_channel_content( cen );
+      const double neighbors = chanmeas->gamma_channels_sum( cen - 1, cen + 1 ) - center;
+      if( (center > 10.0) && (neighbors < std::max( 0.05*center, 2.0 )) )
+        continue;
+    }
 
     const size_t lo = static_cast<size_t>( std::max( 0.0, peak.channel - 2.0*peak.sigma_ch ) );
     const size_t hi = std::min( nchan - 1,
