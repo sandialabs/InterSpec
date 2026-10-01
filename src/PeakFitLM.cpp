@@ -1754,20 +1754,38 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
                                                     offset_type, reference_energy, skew_type, isHPGe, fit_options );
 
-    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
-    //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-
     const size_t num_fit_pars = cost_functor->number_parameters();
-
-    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-
     const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor->get_problem_setup();
 
     assert( prob_setup.m_parameters.size() == num_fit_pars );
     assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
     assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+    // Every Ceres parameter is held constant - e.g., a Peak Editor refit with centroid and FWHM fixed,
+    //  where only the amplitudes and continuum vary, and the linear least-squares in
+    //  `parametersToPeaks(...)` solves those directly.  Ceres would have nothing to minimize, and
+    //  rejects the zero initial trust-region radius such a problem gives it, so evaluate the starting
+    //  parameters directly.  Zero uncertainties are what Ceres reports for constant parameters, and
+    //  they make `parametersToPeaks(...)` keep the input peaks' mean/FWHM uncertainties.
+    if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
+    {
+      const vector<double> zero_uncertainties( num_fit_pars, 0.0 );
+      vector<double> residuals( cost_functor->number_residuals(), 0.0 );
+      const vector<PeakDef> fixed_peaks = cost_functor->parametersToPeaks<PeakDef,double>(
+                            prob_setup.m_parameters.data(), zero_uncertainties.data(), residuals.data() );
+
+      vector<shared_ptr<const PeakDef>> results;
+      for( const PeakDef &peak : fixed_peaks )
+        results.push_back( make_shared<PeakDef>( peak ) );
+      return results;
+    }//if( no free parameters )
+
+    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
+    //  without introducing a ton of extra overhead.
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+
+    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
 
     vector<double> parameters = prob_setup.m_parameters;
     double * const pars = &parameters[0];
