@@ -9266,7 +9266,10 @@ std::vector<PeakDef> compute_observable_peaks(
         // peak at once, and a weak line refit with a free width absorbs continuum (an Eu152
         // 719 keV peak came out 6x the resolution and 4x the true area), so only the amplitude
         // gets the medium freedom.
-        Wt::WFlags<PeakFitLM::PeakFitLMOptions> refine_amount;
+        // Chi2 fits with conditional area uncertainties: this file's significance gates were tuned on them.
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> refine_amount
+                       = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::ConditionalAreaUncertainties )
+                         | PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood;
         if( (det_type == PeakFitUtils::CoarseResolutionType::High)
             && ((config.observable_refit_level <= 0) || has_close_pair) )
         {

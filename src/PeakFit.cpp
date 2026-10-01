@@ -945,9 +945,11 @@ recover_background_peaks_under_foreground(
       const double ncausality = 7.5;
       const double stat_threshold = 2.0;       // minimum area significance (LM path)
       const double hypothesis_threshold = -1.0;
+      //  (Chi2 with conditional area uncertainties: the significance threshold was tuned on them.)
       const vector<PeakDef> fit = fitPeaksInRange( span_lo, span_hi, ncausality, stat_threshold,
                                         hypothesis_threshold, fit_input, background_spectrum,
-                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(), det_type );
+                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::ConditionalAreaUncertainties )
+                                          | PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood, det_type );
 
       // Require netting at least one new peak beyond what was already there.
       if( fit.size() <= existing_in_span.size() )
@@ -1426,7 +1428,9 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   shared_continuum->setRange( x0, x1 );
   shared_continuum->setType( offsetType );
   
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
+  // The callers choose between these fits, and the existing peaks, by `chi2_for_region(...)`, so they
+  //  must be chi2 fits (a likelihood fit of a sparse ROI has a slightly worse chi2).
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options( PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
   
@@ -2010,8 +2014,12 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
                        const PeakFitUtils::CoarseResolutionType det_type,
                        std::vector<PeakDef> &resultPeaks )
 {
+  // Part of the peak search, whose acceptance tests were tuned on chi2 fits with conditional area
+  //  uncertainties.
   const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options
-                                  = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+                                  = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly )
+                                    | PeakFitLM::PeakFitLMOptions::ConditionalAreaUncertainties
+                                    | PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood;
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
 
@@ -6085,10 +6093,13 @@ bool chi2_significance_test( const PeakDef &peak,
     const double * const step_coeffs = num_step_pars ? (fit_cont_pars.data() + num_poly_pars)
                                                      : nullptr;
 
+    // A NoOffset continuum leaves nothing to fit (the other peaks are held fixed), and the solve
+    //  cannot handle an empty system; the null model is then just the other peaks.
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
-                                    step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
-                                    amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+    if( num_poly_pars > 0 )
+      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
+                                      step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                      amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
 
     // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
     //  step coefficients appended - and they are the fitted ones we just handed it as known.

@@ -33,6 +33,21 @@
 
 #include "ceres/ceres.h"
 
+/** How a ROI is fit by Poisson maximum likelihood - by default only the sparse ones (see
+ `sm_sparse_data_likelihood_threshold`), or every ROI with `PeakFitLMOptions::ForcePoissonLikelihood`:
+   0: IRLS - after the chi2 fit, its solve is repeated with each channel's variance frozen at the
+      previous model, with a deviance line search, until the peaks stop changing.
+   1: all-in-Ceres - amplitudes and continuum become Ceres parameters, and the Poisson deviance is
+      minimized starting from the chi2 fit.  Only applies through `fit_peaks_in_roi_LM(...)`, and not
+      to an External continuum; a joint fit of several ROIs (`fit_peaks_in_spectrum_LM(...)` with a
+      skew type) still uses IRLS.
+ The two give the same areas and calibrated uncertainties for peaks of significance z >= 2 (2026-10
+ evaluation); all-in-Ceres takes ~1.5x chi2's CPU against IRLS's 2-4x, while IRLS has the smaller
+ tail of poor fits, is better for the weakest peaks, and stays closer to chi2 when the peak model
+ does not describe the data.
+ */
+#define SPARSE_DATA_LIKELIHOOD_USE_CERES 0
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
@@ -54,6 +69,7 @@
 #include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/PeakDists_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
+#include "InterSpec/PeakFitLMObjective_imp.hpp"
 
 // Undefine isnan and isinf macros
 #undef isnan
@@ -158,6 +174,179 @@ void local_unique_copy_continuum( vector<shared_ptr<const PeakDef>> &input_peaks
 namespace PeakFitLM
 {
 
+/** The statistic `PeakFitDiffCostFunction` minimizes.  IRLS is not an objective of its own: it is the
+ chi2 objective with per-channel variances set between solves (see `run_ceres_fit(...)`).
+ */
+enum class FitObjective : int
+{
+  NeymanChi2,
+
+  /** All-in-Ceres Poisson maximum likelihood (`SPARSE_DATA_LIKELIHOOD_USE_CERES`): amplitudes and
+   continuum are Ceres parameters, and the residuals are the signed-root Poisson deviance. */
+  PoissonAllInCeres
+};//enum class FitObjective
+
+
+static thread_local FitObjectiveDiagnostics tl_fit_objective_diagnostics;
+
+FitObjectiveDiagnostics take_fit_objective_diagnostics()
+{
+  const FitObjectiveDiagnostics answer = tl_fit_objective_diagnostics;
+  tl_fit_objective_diagnostics = FitObjectiveDiagnostics();
+  return answer;
+}
+
+
+/** The options to actually fit with: when the data has a negative channel (e.g., a
+ background-subtracted spectrum), where Poisson statistics do not apply, the likelihood is turned off.
+ Idempotent.  Throws if both `ForcePoissonLikelihood` and `NoSparseDataLikelihood` are given.
+ */
+static Wt::WFlags<PeakFitLMOptions> effective_options( Wt::WFlags<PeakFitLMOptions> options,
+                                                       const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  const bool forced = options.test( PeakFitLMOptions::ForcePoissonLikelihood );
+  if( options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+  {
+    if( forced )
+      throw std::logic_error( "PeakFitLM: ForcePoissonLikelihood and NoSparseDataLikelihood are exclusive." );
+    return options;
+  }
+
+  const std::shared_ptr<const std::vector<float>> counts = data ? data->gamma_counts() : nullptr;
+  const bool has_negative = counts && std::any_of( begin(*counts), end(*counts), []( const float c ){ return c < 0.0f; } );
+  if( !has_negative )
+    return options;
+
+  options.clear( PeakFitLMOptions::ForcePoissonLikelihood );
+  options |= PeakFitLMOptions::NoSparseDataLikelihood;
+  if( forced )
+    tl_fit_objective_diagnostics.fell_back_to_chi2 = true;
+
+  return options;
+}//effective_options(...)
+
+
+/** `options` for a plain chi2 fit: the likelihood off. */
+static Wt::WFlags<PeakFitLMOptions> chi2_only_options( Wt::WFlags<PeakFitLMOptions> options )
+{
+  options.clear( PeakFitLMOptions::ForcePoissonLikelihood );
+  return options | PeakFitLMOptions::NoSparseDataLikelihood;
+}
+
+
+/** For the Poisson-deviance residuals: expected counts below this fraction of the ROI's mean counts
+ per channel (or of one count, if larger) are smoothly floored; as `min_expected_channel_counts(...)`
+ in DetectionLimitCalc.
+ */
+const double sm_deviance_min_expected_frac = 1.0E-8;
+
+
+/** A ROI is refit by Poisson maximum likelihood, by default, when
+   sqrt( SUM 1/max(model,1) )
+ over the channels of its peak region (within 1.5 FWHM of a peak mean) exceeds this; see
+ `sparse_data_statistic(...)`.  The modified-Neyman chi2 is biased by about one count per channel, so
+ for a level fit over N channels of mu counts the bias, in units of its uncertainty, is about
+ sqrt(N/mu) - which is what the statistic estimates, channel by channel.
+
+ Chosen with target/peak_fit_improve_ai's peak_fit_objective_eval (2026-10):
+  - synthetic spectra with exact truth (26650 paired fits): below 1.5 the chi2 and maximum-likelihood
+    areas differ systematically by less than 0.1 sigma and both are unbiased; above it chi2's bias
+    grows to over 1 sigma while the likelihood fit stays unbiased.
+  - GADRAS-inject HPGe spectra (~46k fits), against truth: the likelihood fit's median area error is
+    the smaller from about 1 up, but below ~2.5 it also follows the (mild) peak-shape mismatch
+    further than chi2 does, so its mean bias there is a little worse; above 2.5 it is better on both.
+ 2.0 takes the likelihood fit where both data sets favour it; about a third of the synthetic grid
+ and half the inject fits (both deliberately low-statistics heavy) are above it.
+ */
+const double sm_sparse_data_likelihood_threshold = 2.0;
+
+
+/** The sparse-data statistic described at `sm_sparse_data_likelihood_threshold`, for one ROI.
+ `energies` holds `nchannel + 1` channel edges, `model` the fitted counts of each channel, and
+ `mean_fwhms` the (mean, FWHM) of the ROI's peaks.
+ */
+static double sparse_data_statistic( const float * const energies, const double * const model, const size_t nchannel,
+                                     const std::vector<std::pair<double,double>> &mean_fwhms )
+{
+  double sum_inverse = 0.0;
+  for( size_t ch = 0; ch < nchannel; ++ch )
+  {
+    const double energy = 0.5*(static_cast<double>(energies[ch]) + static_cast<double>(energies[ch+1]));
+    bool in_peak_region = false;
+    for( const std::pair<double,double> &mf : mean_fwhms )
+      in_peak_region |= (fabs( energy - mf.first ) <= 1.5*mf.second);
+    if( in_peak_region )
+      sum_inverse += 1.0 / std::max( model[ch], 1.0 );
+  }
+  return std::sqrt( sum_inverse );
+}//sparse_data_statistic(...)
+
+
+/** The model counts (continuum + peaks) of the `nchannel` channels starting at `ch0`, for peaks that
+ share one continuum.
+ */
+static std::vector<double> roi_model_counts( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                             const size_t ch0, const size_t nchannel )
+{
+  const float * const energies = data->channel_energies()->data() + ch0;
+  std::vector<const PeakDef *> roi_peaks;
+  for( const std::shared_ptr<const PeakDef> &p : peaks )
+    roi_peaks.push_back( p.get() );
+
+  std::vector<double> model( nchannel, 0.0 );
+  peaks.front()->continuum()->offset_integral( energies, model.data(), nchannel, data,
+                                               roi_peaks.data(), roi_peaks.size() );
+  for( const std::shared_ptr<const PeakDef> &p : peaks )
+    p->gauss_integral( energies, model.data(), nchannel );
+
+  return model;
+}//roi_model_counts(...)
+
+
+/** `sparse_data_statistic(...)` for fitted peaks that share one continuum, from their model. */
+static double sparse_data_statistic( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                     const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  if( peaks.empty() || !data || !data->channel_energies() )
+    return 0.0;
+
+  const std::shared_ptr<const PeakContinuum> cont = peaks.front()->continuum();
+  const size_t ch0 = data->find_gamma_channel( static_cast<float>( cont->lowerEnergy() ) );
+  const size_t ch1 = data->find_gamma_channel( static_cast<float>( cont->upperEnergy() ) );
+  if( ch1 < ch0 )
+    return 0.0;
+
+  const size_t nchannel = ch1 - ch0 + 1;
+  const std::vector<double> model = roi_model_counts( peaks, data, ch0, nchannel );
+  std::vector<std::pair<double,double>> mean_fwhms;
+  for( const std::shared_ptr<const PeakDef> &p : peaks )
+    mean_fwhms.emplace_back( p->mean(), p->fwhm() );
+
+  return sparse_data_statistic( data->channel_energies()->data() + ch0, model.data(), nchannel, mean_fwhms );
+}//sparse_data_statistic( peaks )
+
+
+/** Smallest per-channel variance the reweighted (IRLS) objective uses, so a channel whose model is
+ essentially zero cannot dominate the fit; relative to the ROI's mean counts per channel.
+ */
+const double sm_irls_min_variance_frac = 1.0E-3;
+
+/** Maximum number of reweighted (IRLS) passes after the initial chi2 fit. */
+const size_t sm_max_irls_passes = 12;
+
+/** A reweighted pass that lowers the Poisson deviance by less than this has converged: a deviance
+ change of 1E-4 corresponds to moving the parameters by about 0.01 of their uncertainty.
+ */
+const double sm_irls_deviance_tolerance = 1.0E-4;
+
+/** A likelihood refit of a ROI already at its likelihood minimum gets back there by way of the chi2
+ solution, so its deviance can come back above the input's by about `sm_irls_deviance_tolerance`;
+ `refitPeaksThatShareROI_LM(...)` only counts a refit as worse than its input beyond this.
+ */
+const double sm_refit_deviance_tolerance = 10.0*sm_irls_deviance_tolerance;
+
+
 /** Info about a single ROI (region of interest), used internally by PeakFitDiffCostFunction.
  A ROI is defined by peaks that share the same PeakContinuum pointer.
 */
@@ -171,6 +360,12 @@ struct RoiInfo
   double ref_energy;
   PeakContinuum::OffsetType offset_type;
   bool use_lls_for_cont;
+
+  /** Whether the chi2 fit would solve this ROI's continuum by LLS; equal to `use_lls_for_cont`
+   except for the all-in-Ceres objective, whose DOF and stamped Chi2DOF follow the chi2 fit's
+   convention (see `dof_for_roi(...)`), so they mean the same whichever way the ROI is fit.
+   */
+  bool chi2_uses_lls_for_cont;
   double max_initial_sigma;   // max sigma across peaks in this ROI
   size_t num_fit_sigmas;      // number of peaks with fitFor(Sigma)==true
 
@@ -392,7 +587,7 @@ struct PeakFitDiffCostFunction
   static std::vector<RoiInfo> make_rois(
       const std::shared_ptr<const SpecUtils::Measurement> &data,
       const std::vector<std::shared_ptr<const PeakDef>> &starting_peaks,
-      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> & /*options*/ )
+      const FitObjective objective )
   {
     // Group peaks by continuum pointer
     std::map<std::shared_ptr<const PeakContinuum>, std::vector<std::shared_ptr<const PeakDef>>> cont_to_peaks;
@@ -444,6 +639,14 @@ struct PeakFitDiffCostFunction
         }
       }
 
+      // The all-in-Ceres objective makes every parameter a Ceres parameter (an External continuum
+      //  is not one, so never gets that objective - see `fit_peaks_in_roi_imp(...)`).
+      assert( (objective != FitObjective::PoissonAllInCeres)
+              || (roi.offset_type != PeakContinuum::OffsetType::External) );
+      roi.chi2_uses_lls_for_cont = roi.use_lls_for_cont;
+      if( objective == FitObjective::PoissonAllInCeres )
+        roi.use_lls_for_cont = false;
+
 
       // Max sigma across all peaks in this ROI
       roi.max_initial_sigma = 1.0;
@@ -490,13 +693,15 @@ struct PeakFitDiffCostFunction
                            const double continuum_ref_energy, // kept for API compat, ignored
                            const PeakDef::SkewType skew_type,
                            const PeakFitUtils::CoarseResolutionType det_type,
-                           const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options )
+                           const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options,
+                           const FitObjective objective = FitObjective::NeymanChi2 )
   : m_data( data ),
     m_skew_type( skew_type ),
     m_det_type( det_type ),
-    m_options( options ),
+    m_options( effective_options( options, data ) ),
+    m_objective( objective ),
     m_ncalls( 0 ),
-    m_rois( make_rois( data, starting_peaks, options ) ),
+    m_rois( make_rois( data, starting_peaks, m_objective ) ),
     m_total_num_peaks( ([this]() -> size_t {
       size_t n = 0;
       for( const RoiInfo &r : m_rois )
@@ -666,7 +871,8 @@ struct PeakFitDiffCostFunction
   //  every non-CDF continuum type, so the 1-4 polynomial coefficients that
   //  `PeakFit::fit_amp_and_offset_imp(...)` solves never reduce DOF.  They are fit, so they do
   //  consume it, and this overstates DOF by `num_linear_fit_pars(type)` for every ROI on this
-  //  path.  `get_chi2_and_dof_for_roi(...)` in src/PeakFit.cpp counts every free continuum
+  //  path (it is decided by `chi2_uses_lls_for_cont`, so the all-in-Ceres objective stamps the
+  //  same convention).  `get_chi2_and_dof_for_roi(...)` in src/PeakFit.cpp counts every free continuum
   //  parameter and is the correct convention; see the long note there for why the fix has not been
   //  applied (the stamped chi2/DOF gates automated peak acceptance) and for the other, deliberate,
   //  divergences between the two.  If you fix this, count `continuum()->fitForParameter()`
@@ -677,7 +883,8 @@ struct PeakFitDiffCostFunction
     assert( roi_index < m_rois.size() );
     const RoiInfo &roi = m_rois[roi_index];
     const double num_channels = static_cast<double>( 1 + roi.upper_channel - roi.lower_channel );
-    const size_t num_fit_cont = roi_cont_parameter_count( roi );
+    const size_t num_fit_cont = roi.chi2_uses_lls_for_cont ? PeakContinuum::num_cdf_step_pars( roi.offset_type )
+                                                           : PeakContinuum::num_parameters( roi.offset_type );
 
     size_t num_fixed = 0;
     for( const auto &p : roi.peaks )
@@ -690,7 +897,7 @@ struct PeakFitDiffCostFunction
       //  path only the peak-CDF step coefficients are ours to count (the polynomial terms are not
       //  in `num_fit_cont` there); off it, every continuum parameter is.
       const vector<bool> cont_fit_for = roi.peaks[0]->continuum()->fitForParameter();
-      const size_t first = roi.use_lls_for_cont
+      const size_t first = roi.chi2_uses_lls_for_cont
                            ? PeakContinuum::num_linear_fit_pars( roi.offset_type ) : size_t(0);
       for( size_t i = first; i < cont_fit_for.size(); ++i )
         num_fixed += cont_fit_for[i] ? 0 : 1;
@@ -883,8 +1090,13 @@ struct PeakFitDiffCostFunction
   template<typename PeakType,typename T>
   vector<PeakType> parametersToPeaks( const T * const params, const T * const uncertainties, T *residuals,
                                       const double * const covariance = nullptr,
-                                      const size_t num_total_pars = 0 ) const
+                                      const size_t num_total_pars = 0,
+                                      std::vector<std::vector<double>> * const roi_models = nullptr ) const
   {
+    // Each ROI writes only its own entry, so the ROIs may be processed concurrently.
+    if( roi_models )
+      roi_models->assign( m_rois.size(), std::vector<double>() );
+
     std::unique_ptr<vector<T>> local_residuals;
     if( !residuals )
     {
@@ -1091,6 +1303,21 @@ struct PeakFitDiffCostFunction
       assert( fit_sigma_num == roi.num_fit_sigmas );
       std::sort( begin(peaks), end(peaks), &PeakType::lessThanByMean );
 
+      // In IndependentSkewValues mode the skew params are at the tail of this ROI's own block;
+      // otherwise they live at params[0..num_skew-1] (the shared / energy-dependent block).
+      const T *roi_skew_ptr;
+      if( m_options.test( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
+        roi_skew_ptr = roi_params + num_fit_cont + num_sigmas_fit + num_roi_peaks + num_amps_fit;
+      else
+        roi_skew_ptr = params;
+
+      // The skew must be on the peaks before any model is computed from them: the non-LLS branch
+      //  below, and the fixed-amplitude peaks in the LLS, evaluate `gauss_integral(...)` directly
+      //  (without it a skewed peak is evaluated with unset skew parameters - NaN).  Applied again,
+      //  with uncertainties, once the peaks are complete.
+      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr );
+      apply_skew_to_peaks<PeakType, T>( fixed_amp_peaks, roi_skew_ptr );
+
       // --- Compute predicted channel counts for this ROI ---
       const shared_ptr<const vector<float>> &energies_ptr = m_data->channel_energies();
       const vector<float> &counts_vec = *m_data->gamma_counts();
@@ -1106,22 +1333,49 @@ struct PeakFitDiffCostFunction
 
       vector<T> peak_counts( nchannel, T(0.0) );
 
-      // Build the skew parameter vector to pass to fit_amp_and_offset_imp.
-      // In IndependentSkewValues mode the skew params are at the tail of this ROI's own block;
-      // otherwise they live at params[0..num_skew-1] (the shared / energy-dependent block).
-      const T *roi_skew_ptr;
-      if( m_options.test( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) )
-        roi_skew_ptr = roi_params + num_fit_cont + num_sigmas_fit + num_roi_peaks + num_amps_fit;
-      else
-        roi_skew_ptr = params;
+      // The skew parameter vector to pass to fit_amp_and_offset_imp.
       const vector<T> skew_pars( roi_skew_ptr, roi_skew_ptr + num_skew );
+
+      // For a ROI being refit by IRLS, each channel's variance (see `m_irls_variances`); null for the
+      //  chi2 fit, including the first pass of the IRLS fit.
+      const bool irls_roi = (roi_idx < m_irls_variances.size()) && !m_irls_variances[roi_idx].empty();
+      assert( !irls_roi || (m_irls_variances[roi_idx].size() == nchannel) );
+      const double * const irls_variances = irls_roi ? m_irls_variances[roi_idx].data() : nullptr;
 
       if( roi.offset_type == PeakContinuum::OffsetType::External )
       {
         assert( m_external_continuum );
         continuum->setExternalContinuum( m_external_continuum );
 
-        if( !peaks.empty() )
+        if( !peaks.empty() && irls_variances )
+        {
+          // The external continuum is a fixed part of the model; nothing is subtracted or clipped.
+          vector<double> external_counts( nchannel );
+          for( size_t i = 0; i < nchannel; ++i )
+            external_counts[i] = m_external_continuum->gamma_integral( energies[i], energies[i+1] );
+
+          vector<T> means, sigmas;
+          for( const auto &p : peaks )
+          {
+            means.push_back( p.mean() );
+            sigmas.push_back( p.sigma() );
+          }
+
+          vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
+          PeakFitLMObjective::fit_amp_and_offset_weighted<PeakType,T>( energies, channel_counts,
+                                      irls_variances, external_counts.data(), nchannel,
+                                      roi.offset_type, nullptr, T(roi.ref_energy),
+                                      means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                      amplitudes, cont_coeffs, amp_uncerts, cont_uncerts, &peak_counts[0] );
+
+          assert( peaks.size() == amplitudes.size() );
+          for( size_t pi = 0; pi < peaks.size(); ++pi )
+          {
+            peaks[pi].setAmplitude( amplitudes[pi] );
+            peaks[pi].setAmplitudeUncert( amp_uncerts[pi] );
+          }
+        }
+        else if( !peaks.empty() )
         {
           // Subtract external continuum from data for amplitude fitting
           vector<float> data_copy( channel_counts, channel_counts + nchannel );
@@ -1166,13 +1420,22 @@ struct PeakFitDiffCostFunction
             fp.gauss_integral( energies, &peak_counts[0], nchannel );
         }
 
-        for( size_t i = 0; i < nchannel; ++i )
-          peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
+        if( peaks.empty() || !irls_variances )  //else the model already includes it
+        {
+          for( size_t i = 0; i < nchannel; ++i )
+            peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
+        }
       }
       else if( !roi.use_lls_for_cont )
       {
-        // Non-LLS continuum: continuum parameters are in roi_params[0..num_fit_cont-1]
-        continuum->setParameters( T(roi.ref_energy), roi_params, nullptr );
+        // Non-LLS continuum: continuum parameters are in roi_params[0..num_fit_cont-1].  Their
+        //  uncertainties are only passed on for the all-in-Ceres objective, leaving the default
+        //  fit's behaviour unchanged.
+        //  (A NoOffset continuum - on this branch only for that objective - has no parameters.)
+        const bool set_cont_uncerts = uncertainties && (m_objective == FitObjective::PoissonAllInCeres);
+        if( num_fit_cont )
+          continuum->setParameters( T(roi.ref_energy), roi_params,
+                                    set_cont_uncerts ? (uncertainties + param_offset) : nullptr );
 
         for( PeakType &p : peaks )
           p.gauss_integral( energies, &peak_counts[0], nchannel );
@@ -1214,6 +1477,15 @@ struct PeakFitDiffCostFunction
           step_coeffs[k] = roi_params[k] * T(cdf_step_par_scale( roi, k ));
 
         vector<T> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
+        if( irls_variances )
+        {
+          PeakFitLMObjective::fit_amp_and_offset_weighted<PeakType,T>( energies, channel_counts,
+                                        irls_variances, nullptr, nchannel,
+                                        roi.offset_type, step_coeffs.empty() ? nullptr : step_coeffs.data(),
+                                        T(roi.ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type,
+                                        skew_pars.data(), amplitudes, cont_coeffs, amp_uncerts, cont_uncerts,
+                                        &peak_counts[0] );
+        }else
         {
           PeakFit::fit_amp_and_offset_imp( energies, channel_counts, nullptr, nchannel,
                                            roi.offset_type,
@@ -1270,6 +1542,11 @@ struct PeakFitDiffCostFunction
                                         covariance, num_total_pars, skew_params_offset );
 
       // --- Compute residuals for this ROI ---
+      const double deviance_floor = sm_deviance_min_expected_frac
+                                   * std::max( 1.0, roi.data_area / static_cast<double>(nchannel) );
+
+      // `chi2` is always the modified-Neyman chi2, which is what gets stamped as Chi2DOF, however
+      //  the ROI is fit; see the notes on the fit statistic in `PeakFitLMOptions`.
       T chi2( 0.0 );
       for( size_t ch = 0; ch < nchannel; ++ch )
       {
@@ -1279,7 +1556,32 @@ struct PeakFitDiffCostFunction
         else
           roi_residuals[ch] = peak_counts[ch]; // ad-hoc, follows PeakFitChi2Fcn
         chi2 += roi_residuals[ch] * roi_residuals[ch];
+
+        if( irls_variances )
+        {
+          roi_residuals[ch] = (T(ndata) - peak_counts[ch]) / T(sqrt(irls_variances[ch]));
+        }else if( m_objective == FitObjective::PoissonAllInCeres )
+        {
+          if( !m_fisher_variances.empty() )
+            roi_residuals[ch] = (T(ndata) - peak_counts[ch]) / T(sqrt(m_fisher_variances[roi_idx][ch]));
+          else
+            roi_residuals[ch] = PeakFitLMObjective::poisson_deviance_residual( std::max( ndata, 0.0 ),
+                                                                peak_counts[ch], deviance_floor );
+        }
       }
+
+      if( roi_models )
+      {
+        vector<double> &model = (*roi_models)[roi_idx];
+        model.resize( nchannel );
+        for( size_t ch = 0; ch < nchannel; ++ch )
+        {
+          if constexpr ( std::is_same_v<T, double> )
+            model[ch] = peak_counts[ch];
+          else
+            model[ch] = peak_counts[ch].a;
+        }
+      }//if( roi_models )
 
       const double dof_val = dof_for_roi( roi_idx );
       const T chi2_dof = (dof_val > 0.0) ? (chi2 / T(dof_val)) : T(0.0);
@@ -1608,6 +1910,282 @@ struct PeakFitDiffCostFunction
 
     return all_peaks;
   }//parametersToPeaks(...)
+
+
+  /** The model counts (continuum + peaks) of every ROI's channels, at the given parameters. */
+  std::vector<std::vector<double>> roi_models( const double * const params ) const
+  {
+    std::vector<std::vector<double>> models;
+    std::vector<double> residuals( number_residuals(), 0.0 );
+    parametersToPeaks<PeakDef,double>( params, nullptr, residuals.data(), nullptr, 0, &models );
+    return models;
+  }//roi_models(...)
+
+
+  /** The statistic the IRLS passes minimize, for the given per-ROI models: the Poisson deviance of
+   the ROIs being refit (`reweight`), plus the modified-Neyman chi2 of the others (which a joint fit
+   with shared skew still fits by chi2).  Safeguards the IRLS passes in `run_ceres_fit(...)`.
+   */
+  double irls_merit( const std::vector<std::vector<double>> &models, const std::vector<bool> &reweight ) const
+  {
+    assert( (models.size() == m_rois.size()) && (reweight.size() == m_rois.size()) );
+    const vector<float> &counts = *m_data->gamma_counts();
+    double merit = 0.0;
+    for( size_t r = 0; r < m_rois.size(); ++r )
+    {
+      const RoiInfo &roi = m_rois[r];
+      for( size_t i = 0; i < models[r].size(); ++i )
+      {
+        const double n = static_cast<double>( counts[roi.lower_channel + i] );
+        const double m = models[r][i];
+        if( reweight[r] )
+          merit += PeakFitLMObjective::poisson_deviance_term( std::max( 0.0, n ), std::max( m, 1.0E-12 ) );
+        else
+          merit += (n >= PEAK_FIT_MIN_CHANNEL_UNCERT) ? ((n - m)*(n - m)/n) : (m*m);  //as the residuals
+      }
+    }
+    return merit;
+  }//irls_merit(...)
+
+
+  /** For the reweighted (IRLS) fit: sets each channel's variance to the given per-ROI model,
+   floored at `sm_irls_min_variance_frac` of the ROI's mean counts per channel (but at least that
+   fraction of a count), for the ROIs `reweight` marks; the others keep the chi2 weighting.
+   Must not be called while the functor is being evaluated.
+   */
+  void set_irls_variances( const std::vector<std::vector<double>> &models, const std::vector<bool> &reweight )
+  {
+    assert( models.size() == m_rois.size() );
+    assert( reweight.size() == m_rois.size() );
+
+    m_irls_variances = models;
+    for( size_t r = 0; r < m_rois.size(); ++r )
+    {
+      if( !reweight[r] )
+      {
+        m_irls_variances[r].clear();
+        continue;
+      }
+
+      const RoiInfo &roi = m_rois[r];
+      const size_t nchannel = roi.upper_channel - roi.lower_channel + 1;
+      assert( m_irls_variances[r].size() == nchannel );
+      const double min_variance = sm_irls_min_variance_frac
+                                  * std::max( 1.0, roi.data_area / static_cast<double>(nchannel) );
+      for( double &v : m_irls_variances[r] )
+      {
+        if( !(v >= min_variance) )  //also catches NaN
+          v = min_variance;
+      }
+    }//for( size_t r = 0; r < m_rois.size(); ++r )
+  }//set_irls_variances(...)
+
+
+  /** Back to the chi2 weighting for every ROI.  Must not be called while the functor is being evaluated. */
+  void clear_irls_variances()
+  {
+    m_irls_variances.clear();
+  }
+
+
+  /** Per ROI, whether its peak region is sparse enough, at the given parameters, for the Poisson
+   likelihood to matter; see `sm_sparse_data_likelihood_threshold`.
+   */
+  std::vector<bool> sparse_rois( const double * const params ) const
+  {
+    std::vector<std::vector<double>> models;
+    std::vector<double> residuals( number_residuals(), 0.0 );
+    const std::vector<PeakDef> peaks = parametersToPeaks<PeakDef,double>( params, nullptr, residuals.data(),
+                                                                           nullptr, 0, &models );
+    std::vector<bool> answer( m_rois.size(), false );
+    if( (models.size() != m_rois.size()) || (peaks.size() != m_total_num_peaks) )
+      return answer;
+
+    const float * const energies = m_data->channel_energies()->data();
+    size_t peak_index = 0;
+    for( size_t r = 0; r < m_rois.size(); ++r )
+    {
+      const RoiInfo &roi = m_rois[r];
+      std::vector<std::pair<double,double>> mean_fwhms;
+      for( size_t i = 0; i < roi.peaks.size(); ++i, ++peak_index )
+        mean_fwhms.emplace_back( peaks[peak_index].mean(), peaks[peak_index].fwhm() );
+
+      const double stat = sparse_data_statistic( energies + roi.lower_channel, models[r].data(),
+                                                 models[r].size(), mean_fwhms );
+      answer[r] = (stat > sm_sparse_data_likelihood_threshold);
+    }
+
+    return answer;
+  }//sparse_rois(...)
+
+
+  /** Adds, to the uncertainty of every quantity the linear sub-solve provides - the peak amplitudes,
+   and the polynomial continuum coefficients - the part due to the non-linear parameters' own
+   uncertainty, so the reported uncertainties are marginal rather than conditional on the fitted
+   means, widths and skew.
+
+   With x the linear and theta the non-linear parameters, the block inverse of the full
+   Gauss-Newton covariance gives
+     Cov(x) = Cov(x | theta) + G Cov(theta) G^T,   G = dx/dtheta,
+   where Cov(x | theta) is what the linear solve reports, and Cov(theta) is what Ceres computes from
+   the residuals with x solved out (variable projection).  G is the derivative of the linear solution with respect to theta,
+   obtained by evaluating with Jets (seeded eight parameters at a time).
+
+   The propagation is linear, so it is only as good as Cov(theta).  Ceres' covariance knows nothing
+   of the parameter bounds, and for a degenerate fit (e.g., an insignificant peak whose width sits at
+   a bound, or a step coefficient with nothing to step) it can be enormous; each parameter's standard
+   deviation is therefore capped at that of a uniform distribution over its allowed range,
+   (upper - lower)/sqrt(12), keeping the correlations.
+
+   `peaks` must be the `parametersToPeaks<PeakDef,double>(...)` output for `params`; amplitudes that
+   are Ceres parameters (a ROI off the LLS path) already have marginal uncertainties and are left
+   alone, as are the peak-CDF step coefficients.
+   */
+  void add_nonlinear_uncertainty_to_linear_pars( const double * const params,
+                                                 std::vector<double> row_major_covariance,
+                                                 const ProblemSetup &prob_setup,
+                                                 std::vector<PeakDef> &peaks ) const
+  {
+    using Jet8 = ceres::Jet<double,8>;
+    const size_t npar = m_num_parameters;
+    if( row_major_covariance.size() != npar*npar )
+      return;
+
+    // Only quantities the linear sub-solve provides need this.
+    if( std::none_of( begin(m_rois), end(m_rois), []( const RoiInfo &r ){ return r.use_lls_for_cont; } ) )
+      return;
+
+    std::vector<size_t> free_pars;
+    for( size_t k = 0; k < npar; ++k )
+    {
+      if( row_major_covariance[k*npar + k] > 0.0 )
+        free_pars.push_back( k );
+    }
+    if( free_pars.empty() || (peaks.size() != m_total_num_peaks) )
+      return;
+
+    // Cap each standard deviation at the spread of a uniform distribution over the bounds.
+    for( const size_t k : free_pars )
+    {
+      if( (k >= prob_setup.m_lower_bounds.size()) || !prob_setup.m_lower_bounds[k].has_value()
+         || !prob_setup.m_upper_bounds[k].has_value() )
+        continue;
+      const double max_sd = (*prob_setup.m_upper_bounds[k] - *prob_setup.m_lower_bounds[k]) / std::sqrt( 12.0 );
+      const double sd = std::sqrt( row_major_covariance[k*npar + k] );
+      if( (max_sd > 0.0) && (sd > max_sd) )
+      {
+        const double factor = max_sd / sd;
+        for( size_t j = 0; j < npar; ++j )
+        {
+          row_major_covariance[k*npar + j] *= factor;
+          row_major_covariance[j*npar + k] *= factor;
+        }
+      }
+    }//for( const size_t k : free_pars )
+
+    const size_t nfree = free_pars.size();
+    const size_t max_cont = 5;  // PeakContinuumImp holds up to five parameters
+    std::vector<std::vector<double>> amp_grad( peaks.size(), std::vector<double>( nfree, 0.0 ) );
+    std::vector<std::vector<std::vector<double>>> cont_grad( peaks.size(),
+                     std::vector<std::vector<double>>( max_cont, std::vector<double>( nfree, 0.0 ) ) );
+
+    std::vector<Jet8> jet_params( npar );
+    std::vector<Jet8> jet_residuals( number_residuals() );
+    for( size_t first = 0; first < nfree; first += 8 )
+    {
+      for( size_t k = 0; k < npar; ++k )
+        jet_params[k] = Jet8( params[k] );
+      for( size_t j = first; (j < nfree) && (j < first + 8); ++j )
+        jet_params[free_pars[j]].v[j - first] = 1.0;
+
+      const std::vector<PeakDefImpWithCont<Jet8>> jet_peaks
+          = parametersToPeaks<PeakDefImpWithCont<Jet8>,Jet8>( jet_params.data(), nullptr, jet_residuals.data() );
+      if( jet_peaks.size() != peaks.size() )
+        return;
+
+      for( size_t i = 0; i < jet_peaks.size(); ++i )
+      {
+        const PeakDefImpWithCont<Jet8> &jp = jet_peaks[i];
+        for( size_t j = first; (j < nfree) && (j < first + 8); ++j )
+        {
+          amp_grad[i][j] = jp.amplitude().v[j - first];
+          if( jp.m_continuum )
+          {
+            for( size_t c = 0; c < max_cont; ++c )
+              cont_grad[i][c][j] = jp.m_continuum->parameters()[c].v[j - first];
+          }
+        }
+      }//for( peaks )
+    }//for( blocks of eight free parameters )
+
+    // g^T Cov(theta) g, over the free parameters.
+    const auto propagated_variance = [&]( const std::vector<double> &g ) -> double {
+      double var = 0.0;
+      for( size_t a = 0; a < nfree; ++a )
+      {
+        if( g[a] == 0.0 )
+          continue;
+        for( size_t b = 0; b < nfree; ++b )
+          var += g[a] * row_major_covariance[free_pars[a]*npar + free_pars[b]] * g[b];
+      }
+      return (var > 0.0) ? var : 0.0;
+    };
+
+    size_t peak_index = 0;
+    for( const RoiInfo &roi : m_rois )
+    {
+      const bool amps_from_lls = (roi_amp_parameter_count( roi ) == 0);
+      const size_t num_lls_cont = roi.use_lls_for_cont ? PeakContinuum::num_linear_fit_pars( roi.offset_type ) : 0;
+
+      for( size_t n = 0; n < roi.peaks.size(); ++n, ++peak_index )
+      {
+        PeakDef &peak = peaks[peak_index];
+        if( amps_from_lls )
+        {
+          const double extra = propagated_variance( amp_grad[peak_index] );
+          if( extra > 0.0 )
+          {
+            const double cond = std::max( peak.amplitudeUncert(), 0.0 );
+            peak.setAmplitudeUncert( std::sqrt( cond*cond + extra ) );
+          }
+        }
+
+        // The ROI's peaks share one continuum; update it once, from its first peak.
+        if( (n == 0) && num_lls_cont )
+        {
+          const std::shared_ptr<PeakContinuum> cont = peak.getContinuum();
+          const std::vector<double> uncerts = cont->uncertainties();
+          for( size_t c = 0; (c < num_lls_cont) && (c < max_cont) && (c < uncerts.size()); ++c )
+          {
+            const double extra = propagated_variance( cont_grad[peak_index][c] );
+            if( extra > 0.0 )
+              cont->setPolynomialUncert( c, std::sqrt( uncerts[c]*uncerts[c] + extra ) );
+          }
+        }
+      }//for( peaks in this ROI )
+    }//for( ROIs )
+  }//add_nonlinear_uncertainty_to_linear_pars(...)
+
+
+  /** Sets (or, with an empty argument, clears) `m_fisher_variances` from per-ROI models, floored as
+   the deviance residuals floor the model.  Must not be called while the functor is being evaluated.
+   */
+  void set_fisher_variances( const std::vector<std::vector<double>> &models )
+  {
+    m_fisher_variances = models;
+    for( size_t r = 0; r < m_fisher_variances.size(); ++r )
+    {
+      const RoiInfo &roi = m_rois[r];
+      const size_t nchannel = roi.upper_channel - roi.lower_channel + 1;
+      const double floor = sm_deviance_min_expected_frac
+                           * std::max( 1.0, roi.data_area / static_cast<double>(nchannel) );
+      for( double &v : m_fisher_variances[r] )
+      {
+        if( !(v >= floor) )
+          v = floor;
+      }
+    }
+  }//set_fisher_variances(...)
 
 
   template<typename T>
@@ -2098,13 +2676,17 @@ struct PeakFitDiffCostFunction
                                  + roi.peaks.size() + fit_amp_num;
         const double amp_scale = roi_amp_par_scale( roi, i );
 
+        // The all-in-Ceres objective lets a peak's area go negative, as the LLS does for every other
+        //  objective, so a peak consistent with zero is not clipped (which biases it up); the
+        //  deviance residuals stay finite where the model dips below zero.  Otherwise a peak area
+        //  cannot be negative.  The bound's magnitude just keeps a runaway in check.
+        const bool allow_negative = (m_objective == FitObjective::PoissonAllInCeres);
         pars[amp_index] = roi.peaks[i]->amplitude() / amp_scale;
-        if( !std::isfinite(pars[amp_index]) || (pars[amp_index] < 0.0) )
+        if( !std::isfinite(pars[amp_index]) || (!allow_negative && (pars[amp_index] < 0.0)) )
           pars[amp_index] = 0.0;
 
-        // A peak area cannot be negative; the upper bound just keeps a runaway in check.
-        lower_bounds[amp_index] = 0.0;
-        upper_bounds[amp_index] = std::max( 100.0, 10.0*pars[amp_index] );
+        upper_bounds[amp_index] = std::max( 100.0, 10.0*fabs(pars[amp_index]) );
+        lower_bounds[amp_index] = allow_negative ? -upper_bounds[amp_index].value() : 0.0;
 
         fit_amp_num += 1;
       }//for( size_t i = 0; i < roi.peaks.size(); ++i )
@@ -2390,15 +2972,31 @@ struct PeakFitDiffCostFunction
 
 public:
   // NOTE: declaration order must match initialization dependency order.
-  //  m_rois depends on m_data, m_options; m_external_continuum depends on m_rois;
+  //  m_rois depends on m_data, m_objective; m_external_continuum depends on m_rois;
   //  m_fit_skew_energy_dependence depends on m_rois; m_num_parameters depends on
   //  m_fit_skew_energy_dependence; m_thread_pool depends on m_rois.
   const std::shared_ptr<const SpecUtils::Measurement> m_data;
   const PeakDef::SkewType m_skew_type;
   const PeakFitUtils::CoarseResolutionType m_det_type;
   const Wt::WFlags<PeakFitLMOptions> m_options;
+  const FitObjective m_objective;
 
   mutable std::atomic<unsigned int> m_ncalls;
+
+  /** For a ROI being refit by IRLS: per channel, the variance each channel's residual (and the
+   linear solve) is weighted by - the model of the previous fit pass, floored.  Empty for a ROI fit by
+   chi2, and for the first pass, which is the chi2 fit.  Only changed between solves
+   (`set_irls_variances`), never during an evaluation, so concurrent evaluations of the ROIs stay safe.
+   */
+  std::vector<std::vector<double>> m_irls_variances;
+
+  /** For `FitObjective::PoissonAllInCeres`: when not empty (per ROI, per channel), the channel
+   residuals are `(data - model)/sqrt(variance)` instead of the signed root deviance - set to the
+   fitted model while Ceres computes the covariance, so `J^T J` is the expected Fisher information
+   (the root-deviance residuals' `J^T J` gives empty channels half their information).  Like
+   `m_irls_variances`, only changed between solves.
+   */
+  std::vector<std::vector<double>> m_fisher_variances;
 
   const std::vector<RoiInfo> m_rois;
   const size_t m_total_num_peaks;
@@ -2425,8 +3023,18 @@ struct CeresFitResult
   vector<double> parameters;
   vector<double> uncertainties;
   vector<double> row_major_covariance;
-  size_t num_fit_pars;
+  size_t num_fit_pars = 0;
+
+  /** Some ROI was fit by Poisson likelihood (refit by IRLS, or the all-in-Ceres objective). */
+  bool by_likelihood = false;
+
+  /** The solve was aborted by the cancel flag; nothing else is valid. */
+  bool cancelled = false;
 };
+
+
+static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks,
+                                     const std::shared_ptr<const std::atomic<bool>> &cancel_flag = nullptr );
 
 
 /** Evaluates the model at the starting parameters, for a problem where every Ceres parameter is held
@@ -2457,14 +3065,18 @@ static CeresFitResult evaluate_without_free_parameters( const PeakFitDiffCostFun
 }//evaluate_without_free_parameters(...)
 
 
-/** All peaks passed in must share a PeakContinuum.
+/** `fit_peaks_in_roi_LM(...)`, also setting `by_likelihood` to whether the ROI was fit by Poisson
+ likelihood.
  */
-vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<const PeakDef>> coFitPeaks,
+static vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_imp( const vector<shared_ptr<const PeakDef>> &coFitPeaks,
                                                       const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                                                       const PeakFitUtils::CoarseResolutionType det_type,
                                                       const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
-                                                      std::shared_ptr<const std::atomic<bool>> cancel_flag )
+                                                      const std::shared_ptr<const std::atomic<bool>> &cancel_flag,
+                                                      bool &by_likelihood )
 {
+  by_likelihood = false;
+
   /** For this first go, we will have Ceres fit for things.
 
    This is only tested to the "seems to work, for simple cases" level.
@@ -2518,11 +3130,6 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
                           + std::to_string(upper_channel) + ") for " + std::to_string(coFitPeaks.size()) + " peaks." );
     assert( coFitPeaks.size() < (upper_channel - lower_channel) );
 
-    const size_t nchannels = dataH->num_gamma_channels();
-    const size_t midbin = dataH->find_gamma_channel( 0.5*(roiLowerEnergy + roiUpperEnergy) );
-    const float binwidth = dataH->gamma_channel_width( midbin );
-    const size_t num_fit_peaks = coFitPeaks.size() + 1;
-
     const PeakContinuum::OffsetType offset_type = input_continuum->type();
     const size_t num_continuum_pars = PeakContinuum::num_parameters( offset_type );
 
@@ -2534,353 +3141,65 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     assert( parFitFors.size() <= num_continuum_pars );
 
     const PeakDef::SkewType skew_type = PeakFitDiffCostFunction::skew_type_from_prev_peaks( coFitPeaks );
-    const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
 
-
-    auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
-                                                    reference_energy, skew_type, det_type, fit_options );
-
-    const size_t num_fit_pars = cost_functor->number_parameters();
-    const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor->get_problem_setup();
-
-    assert( prob_setup.m_parameters.size() == num_fit_pars );
-    assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
-    assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
-
-    if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
-    {
-      CeresFitResult fixed_result = evaluate_without_free_parameters( *cost_functor, prob_setup );
-
-      vector<shared_ptr<const PeakDef>> results;
-      for( PeakDef &peak : fixed_result.final_peaks )
-        results.push_back( make_shared<PeakDef>( std::move(peak) ) );
-      return results;
-    }//if( no free parameters )
-
-    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
-    //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-
-    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-
-    vector<double> parameters = prob_setup.m_parameters;
-    double * const pars = &parameters[0];
-
-
-    std::unique_ptr<ceres::Problem> problem = make_unique<ceres::Problem>();
-
-    // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
-    //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
-    //  peak fits, and by comparison of fit to truth peak areas.
-    ceres::LossFunction *lossfcn = nullptr;
-
-    problem->AddResidualBlock( cost_function, lossfcn, pars ); //Note: problem takes ownership of `cost_function`
-
-
-    if( !prob_setup.m_constant_parameters.empty() )
-    {
-      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
-      problem->SetManifold( pars, subset_manifold );
-    }
-
-    for( size_t i = 0; i < num_fit_pars; ++i )
-    {
-      if( prob_setup.m_lower_bounds[i].has_value() )
-      {
-        assert( *prob_setup.m_lower_bounds[i] <= parameters[i] );
-        problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
-      }
-
-      if( prob_setup.m_upper_bounds[i].has_value() )
-      {
-        assert( *prob_setup.m_upper_bounds[i] >= parameters[i] );
-        problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
-      }
-    }//for( size_t i = 0; i < num_fit_pars; ++i )
-
-
-    ceres::Solver::Options options;
-    options.linear_solver_type = ceres::DENSE_QR;
-    options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
-    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
-    options.use_nonmonotonic_steps = true;
-    options.max_consecutive_nonmonotonic_steps = 10;
-
-    //options.max_num_consecutive_invalid_steps = 10; //default 5
-
-    // Initial trust region was very coursely optimized using a fit over ~4k HPGe spectra, using the median peak area
-    //  error from truth value (whose value was 1.65*sqrt(area)); but also the average error was also about optimal
-    //  (value 3.12*sqrt(area)).
-    options.initial_trust_region_radius = 35*(cost_functor->number_parameters() - prob_setup.m_constant_parameters.size());
-    //options.initial_trust_region_radius = 1e4; //
-    options.max_trust_region_radius = 1e16;
-
-    // Minimizer terminates when the trust region radius becomes smaller than this value.
-    options.min_trust_region_radius = 1e-32;
-    // Lower bound for the relative decrease before a step is accepted.
-    options.min_relative_decrease = 1e-3; //pseudo optimized based on success rate of fitting peaks - but unknown effect on accuracy of fits.
-
-    // It looks like it usually takes well below 100 calls to solve most problems, but a tail up to ~500, and then rare
-    //  (pathelogical?) cases that can take >50k
-    //  However, for these pathological cases, if we just try again starting from where it left off, it will solve
-    //  it super quick - I guess because there will be more "momentum" to find the minimum, or something, not totally
-    //  sure.
-    //  We could probably reduce this number of iterations to ~100 - but the effects or impact of this hasnt been
-    //  evaluated.
-    //  Also, have not checked dependence on number of peaks at all
-    options.max_num_iterations = (coFitPeaks.size() > 2) ? 1000 : 500;
-    // Wall-clock cap is a pathological-case backstop only; the deterministic terminator is
-    //  max_num_iterations.  A cap that trips during a normal fit stops after a load-dependent
-    //  iteration count => run-to-run nondeterminism, so keep it large.  [determinism fix 2026-07-19]
-    options.max_solver_time_in_seconds = 1200.0;
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-    options.minimizer_progress_to_stdout = true;
-    options.logging_type = ceres::PER_MINIMIZER_ITERATION;
+    // With `SPARSE_DATA_LIKELIHOOD_USE_CERES`, the likelihood fit is all-in-Ceres, which starts from
+    //  the chi2 fit (its amplitudes and continuum are Ceres parameters, so need good starting values);
+    //  by default, that chi2 fit also decides whether the ROI is sparse enough to be refit.
+    const Wt::WFlags<PeakFitLMOptions> eff_options = effective_options( fit_options, dataH );
+    const bool forced = eff_options.test( PeakFitLMOptions::ForcePoissonLikelihood );
+#if( SPARSE_DATA_LIKELIHOOD_USE_CERES )
+    const bool likelihood_by_ceres = !eff_options.test( PeakFitLMOptions::NoSparseDataLikelihood )
+                                     && (offset_type != PeakContinuum::OffsetType::External);
 #else
-    options.minimizer_progress_to_stdout = false;
-    options.logging_type = ceres::SILENT;
+    const bool likelihood_by_ceres = false;
 #endif
-
-    /** Termination when `(new_cost - old_cost) < function_tolerance * old_cost`
-     Default 1e-9;  Setting this to 1e-6 from 1e-9 is a ~80x speedup, and slgiht success fitting more peaks.
-     Values from 1E-5 to 1E-9 dont seem to have a big effect on accuracy, but 1E-7 had best results for a HPGe dataset
-
-     Value      AvrgAccuracyNSigma   MedianAccuracyNSigma   CPU-Time
-     1e-5      3.25068                           1.66096                             465.296 s
-     1e-6      3.20428                           1.69388                             581.317 s
-     1e-7      3.16456                           1.6934                               1864.5 s
-     1e-8      3.29325                           1.6936                               16833.9 s
-     */
-    options.function_tolerance = 1e-7;
-    options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
-    options.num_threads = 1; //Probably wont have much/any effect
-
-    // Cooperative cancellation: if a `cancel_flag` was provided (e.g., by the
-    //  automated peak search during application shutdown), wire up an iteration
-    //  callback so the solver bails within one LM step rather than running out
-    //  the full `max_solver_time_in_seconds`.  Ceres reports `USER_FAILURE` on
-    //  return; the termination switch below short-circuits the retry paths
-    //  when that failure was caused by cancellation.
-    // Note: `update_state_every_iteration` is NOT needed - Ceres invokes
-    //  `IterationCallback` at the end of every iteration regardless; that flag
-    //  only controls whether parameter blocks are written back before the
-    //  callback runs, and the callback doesn't read parameters.
-    std::unique_ptr<CancelIterationCallback> cancel_callback;
-    if( cancel_flag )
+    FitObjective objective = FitObjective::NeymanChi2;
+    vector<shared_ptr<const PeakDef>> start_peaks = coFitPeaks;
+    if( likelihood_by_ceres )
     {
-      cancel_callback.reset( new CancelIterationCallback( cancel_flag ) );
-      options.callbacks.push_back( cancel_callback.get() );
-    }
+      bool chi2_by_likelihood = false;
+      const vector<shared_ptr<const PeakDef>> chi2_peaks = fit_peaks_in_roi_imp( coFitPeaks, dataH, det_type,
+                                                chi2_only_options( fit_options ), cancel_flag, chi2_by_likelihood );
+      if( chi2_peaks.size() != coFitPeaks.size() )
+        return chi2_peaks;  //cancelled
 
-    // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
-    //  near perfect values, occasionally the fit fails with the devault values - I guess the trust-region is just so
-    //  far off (but I dont really know - this is just a guess), but if we increase this value to 10, the fit seems
-    //  to be sucessful, for a limited number of test cases.
-    options.max_num_consecutive_invalid_steps = 10;
+      if( !forced )
+      {
+        if( sparse_data_statistic( chi2_peaks, dataH ) <= sm_sparse_data_likelihood_threshold )
+          return chi2_peaks;
+        tl_fit_objective_diagnostics.sparse_rois += 1;
+      }
 
-    // Just to note for the future, the following values are enabled by the default options, and are what we want.
-    //options.preconditioner_type = ceres::JACOBI;
-    //options.jacobi_scaling = true; // Let Ceres estimate scale based on Jacobian diagonal
+      objective = FitObjective::PoissonAllInCeres;
+      start_peaks = chi2_peaks;
+    }//if( likelihood_by_ceres )
 
-    ceres::Solver::Summary summary;
-    ceres::Solve(options, problem.get(), &summary);
+    // The solve, its retries, any reweighting (IRLS) passes, and the covariance are shared with
+    //  `fit_peaks_in_spectrum_LM(...)`.  A failed IRLS refit keeps the chi2 fit (see
+    //  `run_ceres_fit(...)`), so a failure here is the chi2 solve itself - except for all-in-Ceres,
+    //  which then falls back to the chi2 fit it started from.
+    CeresFitResult fit;
+    try
+    {
+      PeakFitDiffCostFunction cost_functor( dataH, start_peaks, roiLowerEnergy, roiUpperEnergy,
+                                            reference_energy, skew_type, det_type, fit_options, objective );
+      fit = run_ceres_fit( cost_functor, coFitPeaks.size(), cancel_flag );
+    }catch( std::exception & )
+    {
+      if( objective == FitObjective::NeymanChi2 )
+        throw;
 
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-    //std::cout << summary.BriefReport() << "\n";
-    std::cout << summary.FullReport() << "\n";
-    cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
-#endif
+      tl_fit_objective_diagnostics.fell_back_to_chi2 = true;
+      return start_peaks;
+    }//try / catch
 
-    // If cancellation triggered `SOLVER_ABORT` (which Ceres reports as
-    //  `USER_FAILURE`), short-circuit the NO_CONVERGENCE/FAILURE retry paths.
-    //  Both retry paths re-invoke `ceres::Solve` with the same callback list,
-    //  so without this check we'd just immediately abort again and end up
-    //  throwing from the inner `USER_FAILURE` case anyway.
-    if( cancel_flag && cancel_flag->load( std::memory_order_relaxed ) )
+    if( fit.cancelled )
       return {};
 
-    string failure_reason;
-
-    switch( summary.termination_type )
-    {
-      case ceres::CONVERGENCE:
-      case ceres::USER_SUCCESS:
-        break;
-
-      case ceres::NO_CONVERGENCE:
-      {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-        cerr << "The L-M ceres::Solver solving failed - NO_CONVERGENCE:\n" << summary.FullReport() << endl;
-#endif
-        // We will give it another go - for most cases it seems the solution will now be succesffuly found really
-        //  quickly.  The guess is this is from momentum, or whatever, but not really sure.
-        //cerr << "Initial L-M ceres::Solver failed with " << cost_functor->m_ncalls.load() << " calls and "
-        //  << summary.num_successful_steps << " steps - will try again" << endl;
-
-        options.max_num_iterations = 5000;
-        // TODO: see if we should loosed any of the following up.
-        //options.function_tolerance = 1e-6;
-        //options.parameter_tolerance = 1e-9;
-        //options.initial_trust_region_radius = 35*(cost_functor->number_parameters() - prob_setup.m_constant_parameters.size());
-        cost_functor->m_ncalls = 0;
-
-        summary = ceres::Solver::Summary();
-
-        ceres::Solve(options, problem.get(), &summary);
-
-        // If things worked out, we're good here and we can `break` from this case statement
-        if( (summary.termination_type == ceres::CONVERGENCE)
-            || (summary.termination_type == ceres::USER_SUCCESS) )
-        {
-          break;
-        }
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-        cerr << "Retry of L-M ceres::Solver Failed with " << cost_functor->m_ncalls.load() << " additional calls" << endl;
-#endif
-
-        // If we have failed here, we will re-try, but with numerical differentiation - havent explicitly found any
-        //  cases where this is necassary, or helpful
-        failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
-
-        [[fallthrough]]; //Fallthrough intentional
-      }//case ceres::NO_CONVERGENCE:
-
-      case ceres::FAILURE:
-      {
-        if( failure_reason.empty() )
-          failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-        cerr << "The L-M ceres::Solver solving failed - FAILURE:\n" << summary.FullReport() << endl;
-#endif
-        // We will re-try with numerical differntiation - the one case that the author has observed this being
-        //  necassary is with peak-refits, where all peak paramaeters are already about perfect, very rarely, it seems
-        //  to throw off trust-region searching, or something - however, numerical differentiating seems to work for
-        //  these (rare!) cases that this is observed.
-
-        auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>( cost_functor.get(),
-                                                                            ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-        numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
-        numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-
-        std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
-        numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars ); //Note: numerical_problem takes ownership of `numeric_cost_fnct`
-
-        if( !prob_setup.m_constant_parameters.empty() )
-        {
-          ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
-          numerical_problem->SetManifold( pars, subset_manifold );
-        }
-
-        for( size_t i = 0; i < num_fit_pars; ++i )
-        {
-          if( prob_setup.m_lower_bounds[i].has_value() )
-            numerical_problem->SetParameterLowerBound(pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
-          if( prob_setup.m_upper_bounds[i].has_value() )
-            numerical_problem->SetParameterUpperBound(pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
-        }//for( size_t i = 0; i < num_fit_pars; ++i )
-
-        cost_functor->m_ncalls = 0;
-        summary = ceres::Solver::Summary();
-        ceres::Solve(options, numerical_problem.get(), &summary);
-
-        switch( summary.termination_type )
-        {
-          case ceres::CONVERGENCE:
-          case ceres::USER_SUCCESS:
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-            cout << "Was able to solved problem using numerical differentiation!" << endl;
-#endif
-            problem = std::move(numerical_problem);
-            break;
-
-          case ceres::NO_CONVERGENCE:
-          case ceres::FAILURE:
-          case ceres::USER_FAILURE:
-          {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-            cerr << "Failed to get successful fit with numerical differentiation either - giving up." << endl;
-#endif
-            throw runtime_error( failure_reason );
-          }
-        }
-
-        break;
-      }//case ceres::FAILURE:
-
-      case ceres::USER_FAILURE:
-      {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-        cerr << "The L-M ceres::Solver solving failed - USER_FAILURE:\n" << summary.FullReport() << endl;
-#endif
-        throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
-      }//case ceres::USER_FAILURE:
-    }//switch( summary.termination_type )
-
-    cost_functor->m_ncalls = 0;
-
-    ceres::Covariance::Options cov_options;
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
-
-    // Some terms we are fitting may not matter much, so when computing the inverse of J'J, we will opt
-    //  to drop all terms where the eigen value of that term, divided by the maximum eigenvalue is
-    //  less than the condition number.
-    //  TODO: Currently leaving condition number at default 1e-14 - but what value is reasonable should be investigated
-    cov_options.null_space_rank = -1;
-    cov_options.min_reciprocal_condition_number = 1e-14;
-
-    vector<double> uncertainties( num_fit_pars, 0.0 );
-    double *uncertainties_ptr = uncertainties.data();
-    // Row-major covariance matrix (num_fit_pars x num_fit_pars); valid only when uncertainties_ptr != nullptr.
-    vector<double> row_major_covariance;
-    
-    ceres::Covariance covariance(cov_options);
-    vector<pair<const double*, const double*> > covariance_blocks;
-    covariance_blocks.push_back( make_pair( pars, pars) );
-    
-    if( !covariance.Compute(covariance_blocks, problem.get()) )
-    {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-      cerr << "Failed to compute covariance!" << endl;
-#endif
-      uncertainties_ptr = nullptr;
-    }else
-    {
-      row_major_covariance.resize( num_fit_pars * num_fit_pars );
-      const vector<const double *> const_par_blocks( 1, pars );
-
-      const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
-      assert( success );
-      if( success )
-      {
-        for( size_t i = 0; i < num_fit_pars; ++i )
-        {
-          if( row_major_covariance[i*num_fit_pars + i] > 0.0 )
-            uncertainties[i] = sqrt( row_major_covariance[i*num_fit_pars + i] );
-        }
-      }else 
-      {
-        uncertainties_ptr = nullptr;
-        row_major_covariance.clear();
-      }//
-    }//if( we failed to computer covariance ) / else
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-    // Using numeric differentiation, should only be a single call to get covariance.
-    cout << "Took " << cost_functor->m_ncalls.load() << " calls to get covariance." << endl;
-#endif
-
-    const double *cov_ptr = row_major_covariance.empty() ? nullptr : row_major_covariance.data();
-    vector<double> residuals( cost_functor->number_residuals(), 0.0 );
-    auto final_peaks = cost_functor->parametersToPeaks<PeakDef,double>( &parameters[0], uncertainties_ptr,
-                                                                         residuals.data(), cov_ptr, num_fit_pars );
-
-    vector<shared_ptr<const PeakDef>> results( final_peaks.size() );
-    for( size_t i = 0; i < final_peaks.size(); ++i )
-      results[i] = make_shared<PeakDef>( final_peaks[i] );
+    vector<shared_ptr<const PeakDef>> results( fit.final_peaks.size() );
+    for( size_t i = 0; i < fit.final_peaks.size(); ++i )
+      results[i] = make_shared<PeakDef>( std::move( fit.final_peaks[i] ) );
+    by_likelihood = fit.by_likelihood;
 
     return results;
   }catch( std::exception &e )
@@ -2895,7 +3214,20 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
   assert( 0 );
   throw runtime_error( "shouldnt have gotten here" );
   return {};
-}//void fit_peaks_in_roi_LM(...)
+}//fit_peaks_in_roi_imp(...)
+
+
+/** All peaks passed in must share a PeakContinuum.
+ */
+vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<const PeakDef>> coFitPeaks,
+                                                      const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                                                      const PeakFitUtils::CoarseResolutionType det_type,
+                                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
+                                                      std::shared_ptr<const std::atomic<bool>> cancel_flag )
+{
+  bool by_likelihood = false;
+  return fit_peaks_in_roi_imp( coFitPeaks, dataH, det_type, fit_options, cancel_flag, by_likelihood );
+}//fit_peaks_in_roi_LM(...)
 
 
 
@@ -3045,7 +3377,12 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
   std::sort( coFitPeaks.begin(), coFitPeaks.end(), &PeakDef::lessThanByMeanShrdPtr );
 
 
-  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( Wt::None );
+  // The peak-search acceptance tests this fit feeds (e.g., the area-significance cut in
+  //  `check_highres_single_peak_fit(...)`) were tuned on chi2 fits with area uncertainties
+  //  conditional on the fit mean and width, so keep those here until the tests are retuned.
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options
+                    = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::ConditionalAreaUncertainties )
+                      | PeakFitLM::NoSparseDataLikelihood;
   if( fitPrefs
      && (fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetPlusRefine)
      && drf && drf->hasResolutionInfo() )
@@ -3329,6 +3666,34 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
   return results;
 }//vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM(...)
 
+/** The statistic a fit of `peaks` (which must share one continuum) minimized, over channels
+ [lower_channel, upper_channel]: the Poisson deviance if the ROI was fit by likelihood, otherwise the
+ chi2 of `chi2_for_region(...)`.
+ */
+static double roi_fit_statistic( const vector<shared_ptr<const PeakDef>> &peaks,
+                                 const shared_ptr<const SpecUtils::Measurement> &data,
+                                 const int lower_channel, const int upper_channel,
+                                 const bool by_likelihood )
+{
+  if( !by_likelihood || peaks.empty() || (upper_channel < lower_channel) )
+    return chi2_for_region( peaks, data, lower_channel, upper_channel );
+
+  const size_t ch0 = static_cast<size_t>( lower_channel );
+  const size_t nchan = static_cast<size_t>( upper_channel - lower_channel ) + 1;
+  const vector<float> &counts = *data->gamma_counts();
+  const vector<double> model = roi_model_counts( peaks, data, ch0, nchan );
+
+  double deviance = 0.0;
+  for( size_t i = 0; i < nchan; ++i )
+  {
+    const double n = std::max( 0.0, static_cast<double>( counts[ch0 + i] ) );
+    deviance += PeakFitLMObjective::poisson_deviance_term( n, std::max( model[i], 1.0E-12 ) );
+  }
+
+  return deviance;
+}//roi_fit_statistic(...)
+
+
 std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
@@ -3349,7 +3714,8 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
       if( origCont != p->continuum() )
         throw runtime_error( "refitPeaksThatShareROI_LM: all input peaks must share a ROI" );
 
-    answer = fit_peaks_in_roi_LM( inpeaks, data, det_type, fit_options );
+    bool by_likelihood = false;
+    answer = fit_peaks_in_roi_imp( inpeaks, data, det_type, fit_options, nullptr, by_likelihood );
 
 
     //now we need to go through and make sure the peaks we're adding are both
@@ -3359,11 +3725,15 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
     const int lower_channel = static_cast<int>( data->find_gamma_channel( lx ) );
     const int upper_channel = static_cast<int>( data->find_gamma_channel( ux ) );
     const int nbin = (upper_channel > lower_channel) ? (upper_channel - lower_channel) : 1;
-    const double prechi2Dof = chi2_for_region( inpeaks, data, lower_channel, upper_channel ) / nbin;
-    const double postchi2Dof = chi2_for_region( answer, data, lower_channel, upper_channel ) / nbin;
+
+    // Judge the fit by the statistic it minimized; a likelihood fit generally has a slightly worse
+    //  chi2 than the chi2 fit it may be refining.
+    const double pre_stat = roi_fit_statistic( inpeaks, data, lower_channel, upper_channel, by_likelihood ) / nbin;
+    const double post_stat = roi_fit_statistic( answer, data, lower_channel, upper_channel, by_likelihood ) / nbin;
+    const double tolerance = by_likelihood ? (sm_refit_deviance_tolerance / nbin) : 0.0;
 
 
-    if( prechi2Dof < postchi2Dof )
+    if( (pre_stat + tolerance) < post_stat )
     {
       answer.clear();
 
@@ -3373,8 +3743,16 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
         const double stat_threshold  = 0.0;
         const double hypothesis_threshold = 0.0;
 
-        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options
+        // The caller's choice of fit statistic and uncertainties holds for this refit too.
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options
                                         = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+        for( const PeakFitLMOptions opt : { PeakFitLMOptions::ConditionalAreaUncertainties,
+                                            PeakFitLMOptions::NoSparseDataLikelihood,
+                                            PeakFitLMOptions::ForcePoissonLikelihood } )
+        {
+          if( fit_options.test( opt ) )
+            refit_options |= opt;
+        }
         const vector<shared_ptr<const PeakDef>> refit_peaks
                      = fit_peaks_in_range_LM( lx, ux, ncausalitysigma, stat_threshold, hypothesis_threshold,
                                              inpeaks, data, refit_options, det_type );
@@ -3382,9 +3760,10 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
 
         if( refit_peaks.size() == inpeaks.size() )
         {
-          const double refit_chi2Dof = chi2_for_region( refit_peaks, data, lower_channel, upper_channel ) / nbin;
-          cout << "refitPeaksThatShareROI_LM: refit_chi2Dof=" << refit_chi2Dof << ", prechi2Dof=" << prechi2Dof << ", postchi2Dof=" << postchi2Dof << endl;
-          if( refit_chi2Dof <= prechi2Dof )
+          const double refit_stat = roi_fit_statistic( refit_peaks, data, lower_channel,
+                                                       upper_channel, by_likelihood ) / nbin;
+          cout << "refitPeaksThatShareROI_LM: refit_stat=" << refit_stat << ", pre_stat=" << pre_stat << ", post_stat=" << post_stat << endl;
+          if( refit_stat <= (pre_stat + tolerance) )
           {
             //cout << "Using re-fit peaks!" << endl;
             answer = refit_peaks;
@@ -3394,7 +3773,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
 
       if( answer.empty() )
         return answer;
-    }//if( prechi2Dof >= 0.99*postchi2Dof )
+    }//if( (pre_stat + tolerance) < post_stat )
 
 
     for( const shared_ptr<const PeakDef> &peak : answer )
@@ -3429,22 +3808,129 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
 }//refitPeaksThatShareROI_LM(...)
 
 
+/** True when consecutive reweighted (IRLS) passes agree closely enough to stop: every peak's area
+ moved by less than 1% of its uncertainty, and its mean and width by less than 0.1% of its width.
+ */
+static bool irls_pass_converged( const vector<PeakDef> &prev, const vector<PeakDef> &current )
+{
+  if( prev.size() != current.size() )
+    return false;
+
+  for( size_t i = 0; i < current.size(); ++i )
+  {
+    const PeakDef &a = prev[i], &b = current[i];
+    const double sigma = std::max( b.sigma(), 1.0E-9 );
+    const double area_tol = 0.01 * std::max( b.amplitudeUncert(), 1.0E-6*fabs(b.amplitude()) );
+    if( !(fabs(a.amplitude() - b.amplitude()) <= area_tol)
+       || !(fabs(a.mean() - b.mean()) <= 1.0E-3*sigma)
+       || !(fabs(a.sigma() - b.sigma()) <= 1.0E-3*sigma) )
+      return false;
+  }
+
+  return true;
+}//irls_pass_converged(...)
+
+
 /** Internal helper: runs Ceres Levenberg-Marquardt solve on a PeakFitDiffCostFunction.
 
+ For the chi2 objective, ROIs to be fit by Poisson likelihood (the sparse ones by default, every one
+ with `ForcePoissonLikelihood`) are then refit by IRLS: the problem is re-solved, warm-started and
+ with the same parameter bounds, with each channel's variance frozen at the previous solution's
+ model, until the peaks stop changing.  The refit only refines the chi2 fit: if it fails, the chi2
+ solution is kept.  (In a joint fit of several ROIs with shared skew, refitting the sparse ROIs also
+ moves the shared parameters, so the other ROIs change a little too.)
+
  Returns the fitted peaks, and the raw fit parameter/uncertainty/covariance data.
- Throws on failure.
+ Throws on failure.  If `cancel_flag` is set during the solve, returns with `cancelled` set.
  */
-static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks )
+static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks,
+                                     const std::shared_ptr<const std::atomic<bool>> &cancel_flag )
 {
   const size_t num_fit_pars = cost_functor.number_parameters();
   const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
+
+  // Which ROIs get reweighted (IRLS) after the chi2 solve: all of them with `ForcePoissonLikelihood`;
+  //  by default, the sparse ones (decided from the chi2 solution).  None for the all-in-Ceres
+  //  objective, which already is the likelihood fit.
+  const bool chi2_objective = (cost_functor.m_objective == FitObjective::NeymanChi2);
+  const bool forced_irls = chi2_objective
+                           && cost_functor.m_options.test( PeakFitLMOptions::ForcePoissonLikelihood );
+  const bool sparse_auto = chi2_objective && !forced_irls
+                           && !cost_functor.m_options.test( PeakFitLMOptions::NoSparseDataLikelihood );
+  const auto rois_to_reweight = [&]( const double * const pars ) -> vector<bool> {
+    if( forced_irls )
+      return vector<bool>( cost_functor.m_rois.size(), true );
+    if( sparse_auto )
+      return cost_functor.sparse_rois( pars );
+    return vector<bool>( cost_functor.m_rois.size(), false );
+  };
 
   assert( prob_setup.m_parameters.size() == num_fit_pars );
   assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
   assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
 
   if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
-    return evaluate_without_free_parameters( cost_functor, prob_setup );
+  {
+    // Only the linear solve varies anything, so the reweighting is just iterating it.  A pass that
+    //  raises `irls_merit(...)` is undone, and ends it; a failure keeps the chi2 solution.
+    const double * const pars = prob_setup.m_parameters.data();
+    bool by_likelihood = false;
+    try
+    {
+      const vector<bool> reweight = rois_to_reweight( pars );
+      if( sparse_auto )
+        tl_fit_objective_diagnostics.sparse_rois += std::count( begin(reweight), end(reweight), true );
+      if( std::find( begin(reweight), end(reweight), true ) != end(reweight) )
+      {
+        vector<vector<double>> models = cost_functor.roi_models( pars );  //of the current solution
+        vector<vector<double>> solution_variances;  //the current solution was solved with; empty for chi2
+        double merit = cost_functor.irls_merit( models, reweight );
+        bool undone = false;
+        for( size_t pass = 1; pass <= sm_max_irls_passes; ++pass )
+        {
+          cost_functor.set_irls_variances( models, reweight );
+          vector<vector<double>> new_models = cost_functor.roi_models( pars );
+          const double new_merit = cost_functor.irls_merit( new_models, reweight );
+          if( new_merit > (merit + sm_irls_deviance_tolerance) )
+          {
+            if( solution_variances.empty() )
+              cost_functor.clear_irls_variances();
+            else
+              cost_functor.set_irls_variances( solution_variances, reweight );
+            undone = true;
+            tl_fit_objective_diagnostics.irls_converged = false;
+            break;
+          }
+
+          double max_rel_change = 0.0;
+          for( size_t r = 0; r < models.size(); ++r )
+            for( size_t i = 0; i < models[r].size(); ++i )
+              max_rel_change = std::max( max_rel_change, fabs(new_models[r][i] - models[r][i])
+                                                         / std::max( 1.0, fabs(models[r][i]) ) );
+          solution_variances = std::move( models );
+          models = std::move( new_models );
+          merit = new_merit;
+          tl_fit_objective_diagnostics.irls_passes += 1;
+          tl_fit_objective_diagnostics.irls_converged = (max_rel_change < 1.0E-6);
+          if( tl_fit_objective_diagnostics.irls_converged )
+            break;
+        }//for( size_t pass = 1; pass <= sm_max_irls_passes; ++pass )
+
+        if( !undone )
+          cost_functor.set_irls_variances( models, reweight );
+        by_likelihood = !undone || !solution_variances.empty();
+      }//if( any ROI to reweight )
+    }catch( std::exception & )
+    {
+      cost_functor.clear_irls_variances();
+      by_likelihood = false;
+      tl_fit_objective_diagnostics.fell_back_to_chi2 = true;
+    }//try / catch
+
+    CeresFitResult result = evaluate_without_free_parameters( cost_functor, prob_setup );
+    result.by_likelihood = by_likelihood;
+    return result;
+  }//if( no free parameters )
 
   auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>(
     &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
@@ -3457,8 +3943,11 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
 
   std::unique_ptr<ceres::Problem> problem = make_unique<ceres::Problem>();
 
+  // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
+  //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
+  //  peak fits, and by comparison of fit to truth peak areas.
   ceres::LossFunction *lossfcn = nullptr;
-  problem->AddResidualBlock( cost_function, lossfcn, pars );
+  problem->AddResidualBlock( cost_function, lossfcn, pars ); //Note: problem takes ownership of `cost_function`
 
   if( !prob_setup.m_constant_parameters.empty() )
   {
@@ -3485,15 +3974,33 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
 
   ceres::Solver::Options options;
   options.linear_solver_type = ceres::DENSE_QR;
-  options.minimizer_type = ceres::TRUST_REGION;
-  options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+  options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
+  options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
   options.use_nonmonotonic_steps = true;
   options.max_consecutive_nonmonotonic_steps = 10;
+
+  // Initial trust region was very coursely optimized using a fit over ~4k HPGe spectra, using the median peak area
+  //  error from truth value (whose value was 1.65*sqrt(area)); but also the average error was also about optimal
+  //  (value 3.12*sqrt(area)).
   options.initial_trust_region_radius = 35 * (num_fit_pars - prob_setup.m_constant_parameters.size());
   options.max_trust_region_radius = 1e16;
+
+  // Minimizer terminates when the trust region radius becomes smaller than this value.
   options.min_trust_region_radius = 1e-32;
-  options.min_relative_decrease = 1e-3;
-  options.max_num_iterations = (total_num_peaks > 2) ? 1000 : 500;
+  // Lower bound for the relative decrease before a step is accepted.
+  options.min_relative_decrease = 1e-3; //pseudo optimized based on success rate of fitting peaks - but unknown effect on accuracy of fits.
+
+  // It looks like it usually takes well below 100 calls to solve most problems, but a tail up to ~500, and then rare
+  //  (pathelogical?) cases that can take >50k
+  //  However, for these pathological cases, if we just try again starting from where it left off, it will solve
+  //  it super quick - I guess because there will be more "momentum" to find the minimum, or something, not totally
+  //  sure.
+  //  We could probably reduce this number of iterations to ~100 - but the effects or impact of this hasnt been
+  //  evaluated.
+  //  Also, have not checked dependence on number of peaks at all
+  const int max_num_iterations = (total_num_peaks > 2) ? 1000 : 500;
+  options.max_num_iterations = max_num_iterations;
+
   // Wall-clock cap is a pathological-case backstop only; the deterministic terminator is
   //  max_num_iterations.  A cap that trips during a normal fit stops after a load-dependent
   //  iteration count => run-to-run nondeterminism, so keep it large.  [determinism fix 2026-07-19]
@@ -3505,125 +4012,305 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
   options.minimizer_progress_to_stdout = false;
   options.logging_type = ceres::SILENT;
 #endif
+
+  /** Termination when `(new_cost - old_cost) < function_tolerance * old_cost`
+   Default 1e-9;  Setting this to 1e-6 from 1e-9 is a ~80x speedup, and slgiht success fitting more peaks.
+   Values from 1E-5 to 1E-9 dont seem to have a big effect on accuracy, but 1E-7 had best results for a HPGe dataset
+
+   Value      AvrgAccuracyNSigma   MedianAccuracyNSigma   CPU-Time
+   1e-5      3.25068                           1.66096                             465.296 s
+   1e-6      3.20428                           1.69388                             581.317 s
+   1e-7      3.16456                           1.6934                               1864.5 s
+   1e-8      3.29325                           1.6936                               16833.9 s
+   */
   options.function_tolerance = 1e-7;
-  options.parameter_tolerance = 1e-11;
-  options.num_threads = 1;
+  options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
+  options.num_threads = 1; //Probably wont have much/any effect
+
+  // Default value of `max_num_consecutive_invalid_steps` is 5, however, if we are re-fitting a peak who already has
+  //  near perfect values, occasionally the fit fails with the devault values - I guess the trust-region is just so
+  //  far off (but I dont really know - this is just a guess), but if we increase this value to 10, the fit seems
+  //  to be sucessful, for a limited number of test cases.
   options.max_num_consecutive_invalid_steps = 10;
 
-  ceres::Solver::Summary summary;
-  ceres::Solve( options, problem.get(), &summary );
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-  std::cout << summary.FullReport() << "\n";
-  cout << "run_ceres_fit: Took " << cost_functor.m_ncalls.load() << " calls to solve." << endl;
-#endif
-
-  string failure_reason;
-
-  switch( summary.termination_type )
+  // Cooperative cancellation: if a `cancel_flag` was provided (e.g., by the automated peak search
+  //  during application shutdown), an iteration callback makes the solver bail within one LM step
+  //  rather than running out the full `max_solver_time_in_seconds`.  Ceres reports `USER_FAILURE`.
+  std::unique_ptr<CancelIterationCallback> cancel_callback;
+  if( cancel_flag )
   {
-    case ceres::CONVERGENCE:
-    case ceres::USER_SUCCESS:
-      break;
+    cancel_callback.reset( new CancelIterationCallback( cancel_flag ) );
+    options.callbacks.push_back( cancel_callback.get() );
+  }
 
-    case ceres::NO_CONVERGENCE:
-    {
+  const auto was_cancelled = [&cancel_flag]() -> bool {
+    return cancel_flag && cancel_flag->load( std::memory_order_relaxed );
+  };
+
+  // Solves from the current `parameters`, retrying from where it stopped if it did not converge, and
+  //  then with numerical differentiation if that failed too (which replaces `problem`).  Returns
+  //  false if cancelled; throws if the solve fails.
+  const auto solve = [&]() -> bool {
+    options.max_num_iterations = max_num_iterations;
+
+    ceres::Solver::Summary summary;
+    ceres::Solve( options, problem.get(), &summary );
+
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-      cerr << "run_ceres_fit: NO_CONVERGENCE:\n" << summary.FullReport() << endl;
+    std::cout << summary.FullReport() << "\n";
+    cout << "run_ceres_fit: Took " << cost_functor.m_ncalls.load() << " calls to solve." << endl;
 #endif
-      options.max_num_iterations = 5000;
-      cost_functor.m_ncalls = 0;
-      summary = ceres::Solver::Summary();
-      ceres::Solve( options, problem.get(), &summary );
 
-      if( (summary.termination_type == ceres::CONVERGENCE)
-         || (summary.termination_type == ceres::USER_SUCCESS) )
-      {
+    // Cancellation (`SOLVER_ABORT`, reported as `USER_FAILURE`) short-circuits the retries, which
+    //  would just abort again.
+    if( was_cancelled() )
+      return false;
+
+    string failure_reason;
+
+    switch( summary.termination_type )
+    {
+      case ceres::CONVERGENCE:
+      case ceres::USER_SUCCESS:
         break;
-      }
 
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-      cerr << "run_ceres_fit: Retry failed with " << cost_functor.m_ncalls.load() << " additional calls" << endl;
-#endif
-      failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
-      [[fallthrough]];
-    }//case ceres::NO_CONVERGENCE:
-
-    case ceres::FAILURE:
-    {
-      if( failure_reason.empty() )
-        failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
-
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-      cerr << "run_ceres_fit: FAILURE:\n" << summary.FullReport() << endl;
-#endif
-
-      auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>(
-        &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-      numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
-      numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
-
-      std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
-      numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars );
-
-      if( !prob_setup.m_constant_parameters.empty() )
+      case ceres::NO_CONVERGENCE:
       {
-        ceres::Manifold *subset_manifold = new ceres::SubsetManifold(
-          static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
-        numerical_problem->SetManifold( pars, subset_manifold );
-      }
-
-      for( size_t i = 0; i < num_fit_pars; ++i )
-      {
-        if( prob_setup.m_lower_bounds[i].has_value() )
-          numerical_problem->SetParameterLowerBound( pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
-        if( prob_setup.m_upper_bounds[i].has_value() )
-          numerical_problem->SetParameterUpperBound( pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
-      }//for( size_t i = 0; i < num_fit_pars; ++i )
-
-      cost_functor.m_ncalls = 0;
-      summary = ceres::Solver::Summary();
-      ceres::Solve( options, numerical_problem.get(), &summary );
-
-      switch( summary.termination_type )
-      {
-        case ceres::CONVERGENCE:
-        case ceres::USER_SUCCESS:
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-          cout << "run_ceres_fit: Solved using numerical differentiation." << endl;
+        cerr << "run_ceres_fit: NO_CONVERGENCE:\n" << summary.FullReport() << endl;
 #endif
-          problem = std::move( numerical_problem );
-          break;
+        // We will give it another go - for most cases it seems the solution will now be succesffuly found really
+        //  quickly.  The guess is this is from momentum, or whatever, but not really sure.
+        options.max_num_iterations = 5000;
+        cost_functor.m_ncalls = 0;
+        summary = ceres::Solver::Summary();
+        ceres::Solve( options, problem.get(), &summary );
 
-        case ceres::NO_CONVERGENCE:
-        case ceres::FAILURE:
-        case ceres::USER_FAILURE:
+        if( was_cancelled() )
+          return false;
+
+        if( (summary.termination_type == ceres::CONVERGENCE)
+           || (summary.termination_type == ceres::USER_SUCCESS) )
         {
-#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-          cerr << "run_ceres_fit: Failed with numerical differentiation too - giving up." << endl;
-#endif
-          throw runtime_error( failure_reason );
+          break;
         }
-      }
 
-      break;
-    }//case ceres::FAILURE:
-
-    case ceres::USER_FAILURE:
-    {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
-      cerr << "run_ceres_fit: USER_FAILURE:\n" << summary.FullReport() << endl;
+        cerr << "run_ceres_fit: Retry failed with " << cost_functor.m_ncalls.load() << " additional calls" << endl;
 #endif
-      throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
-    }
-  }//switch( summary.termination_type )
+        failure_reason = "The L-M ceres::Solver solving failed - NO_CONVERGENCE.";
+        [[fallthrough]];
+      }//case ceres::NO_CONVERGENCE:
+
+      case ceres::FAILURE:
+      {
+        if( failure_reason.empty() )
+          failure_reason = "The L-M ceres::Solver solving failed - FAILURE.";
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "run_ceres_fit: FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        // We will re-try with numerical differntiation - the one case that the author has observed this being
+        //  necassary is with peak-refits, where all peak paramaeters are already about perfect, very rarely, it seems
+        //  to throw off trust-region searching, or something - however, numerical differentiating seems to work for
+        //  these (rare!) cases that this is observed.
+        auto numeric_cost_fnct = new ceres::DynamicNumericDiffCostFunction<PeakFitDiffCostFunction>(
+          &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+        numeric_cost_fnct->AddParameterBlock( static_cast<int>(num_fit_pars) );
+        numeric_cost_fnct->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
+
+        std::unique_ptr<ceres::Problem> numerical_problem = make_unique<ceres::Problem>();
+        numerical_problem->AddResidualBlock( numeric_cost_fnct, lossfcn, pars );
+
+        if( !prob_setup.m_constant_parameters.empty() )
+        {
+          ceres::Manifold *subset_manifold = new ceres::SubsetManifold(
+            static_cast<int>(num_fit_pars), prob_setup.m_constant_parameters );
+          numerical_problem->SetManifold( pars, subset_manifold );
+        }
+
+        for( size_t i = 0; i < num_fit_pars; ++i )
+        {
+          if( prob_setup.m_lower_bounds[i].has_value() )
+            numerical_problem->SetParameterLowerBound( pars, static_cast<int>(i), *prob_setup.m_lower_bounds[i] );
+          if( prob_setup.m_upper_bounds[i].has_value() )
+            numerical_problem->SetParameterUpperBound( pars, static_cast<int>(i), *prob_setup.m_upper_bounds[i] );
+        }//for( size_t i = 0; i < num_fit_pars; ++i )
+
+        cost_functor.m_ncalls = 0;
+        summary = ceres::Solver::Summary();
+        ceres::Solve( options, numerical_problem.get(), &summary );
+
+        if( was_cancelled() )
+          return false;
+
+        switch( summary.termination_type )
+        {
+          case ceres::CONVERGENCE:
+          case ceres::USER_SUCCESS:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cout << "run_ceres_fit: Solved using numerical differentiation." << endl;
+#endif
+            problem = std::move( numerical_problem );
+            break;
+
+          case ceres::NO_CONVERGENCE:
+          case ceres::FAILURE:
+          case ceres::USER_FAILURE:
+          {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cerr << "run_ceres_fit: Failed with numerical differentiation too - giving up." << endl;
+#endif
+            throw runtime_error( failure_reason );
+          }
+        }//switch( summary.termination_type )
+
+        break;
+      }//case ceres::FAILURE:
+
+      case ceres::USER_FAILURE:
+      {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "run_ceres_fit: USER_FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
+      }
+    }//switch( summary.termination_type )
+
+    return true;
+  };//solve lambda
+
+  CeresFitResult result;
+  result.num_fit_pars = num_fit_pars;
+  result.by_likelihood = !chi2_objective;
+
+  if( !solve() )
+  {
+    result.cancelled = true;
+    return result;
+  }
+
+  // Refit the ROIs that call for it by IRLS.  This only refines the chi2 fit, so if anything in it
+  //  fails, the chi2 solution is kept.
+  const vector<double> chi2_parameters = parameters;
+  try
+  {
+    const vector<bool> reweight = rois_to_reweight( pars );
+    if( sparse_auto )
+      tl_fit_objective_diagnostics.sparse_rois += std::count( begin(reweight), end(reweight), true );
+    if( std::find( begin(reweight), end(reweight), true ) != end(reweight) )
+    {
+      // Reweight: freeze each channel's variance at the current model and solve again, until the
+      //  peaks stop changing.  The parameter bounds stay those of the input peaks.  ROIs not being
+      //  reweighted keep their chi2 weighting throughout.
+      //
+      //  The reweighted objective has the same gradient as `irls_merit(...)` (for a single ROI, the
+      //  Poisson deviance) at the point its variances were frozen at, so each pass's step is a
+      //  descent direction for it - but a full step can overshoot (with near-empty channels it can
+      //  wander off to a far worse solution).  So we backtrack along the step until the merit
+      //  drops, and stop if it will not.
+      vector<vector<double>> models;
+      vector<PeakDef> prev_peaks = cost_functor.parametersToPeaks<PeakDef,double>( pars, nullptr, nullptr,
+                                                                                  nullptr, 0, &models );
+      double best_deviance = cost_functor.irls_merit( models, reweight );
+
+      for( size_t pass = 1; pass <= sm_max_irls_passes; ++pass )
+      {
+        const vector<double> start_parameters = parameters;
+        cost_functor.set_irls_variances( models, reweight );
+        cost_functor.m_ncalls = 0;
+
+        bool solved = false;
+        try
+        {
+          solved = solve();
+          if( !solved )
+          {
+            result.cancelled = true;
+            return result;
+          }
+        }catch( std::exception & )
+        {
+          // Keep the best pass so far.
+          std::copy( begin(start_parameters), end(start_parameters), begin(parameters) );
+          tl_fit_objective_diagnostics.irls_converged = false;
+          break;
+        }
+
+        tl_fit_objective_diagnostics.irls_passes += 1;
+
+        // Ceres stops each solve at a relative cost change of `function_tolerance`, so the deviance of
+        //  an already-converged point can come back a hair higher; allow for that much.
+        const double prev_deviance = best_deviance;
+        const double accept_tol = options.function_tolerance * std::max( 1.0, fabs(best_deviance) );
+        const vector<double> full_step = parameters;
+        double full_step_deviance = std::numeric_limits<double>::infinity();
+        bool accepted = false;
+        for( double frac = 1.0; frac > 0.06; frac *= 0.5 )
+        {
+          for( size_t i = 0; i < num_fit_pars; ++i )
+            parameters[i] = start_parameters[i] + frac*(full_step[i] - start_parameters[i]);
+
+          vector<vector<double>> trial_models = cost_functor.roi_models( pars );
+          const double deviance = cost_functor.irls_merit( trial_models, reweight );
+          if( frac == 1.0 )
+            full_step_deviance = deviance;
+
+          if( deviance <= (best_deviance + accept_tol) )
+          {
+            accepted = true;
+            best_deviance = std::min( deviance, best_deviance );
+            models = std::move( trial_models );
+            break;
+          }
+        }//for( backtracking along the step )
+
+        if( !accepted )
+        {
+          // Back to where this pass started.  If even the full step barely changed the deviance, we
+          //  were already at the minimum.
+          std::copy( begin(start_parameters), end(start_parameters), begin(parameters) );
+          tl_fit_objective_diagnostics.irls_converged
+                          = ((full_step_deviance - prev_deviance) < sm_irls_deviance_tolerance);
+          break;
+        }
+
+        vector<PeakDef> peaks = cost_functor.parametersToPeaks<PeakDef,double>( pars, nullptr, nullptr,
+                                                                               nullptr, 0, nullptr );
+        const bool converged = irls_pass_converged( prev_peaks, peaks )
+                               || ((prev_deviance - best_deviance) < sm_irls_deviance_tolerance);
+        prev_peaks = std::move( peaks );
+
+        tl_fit_objective_diagnostics.irls_converged = converged;
+        if( converged )
+          break;
+      }//for( size_t pass = 1; pass <= sm_max_irls_passes; ++pass )
+
+      // Freeze the variances at the final model, so the covariance below is the expected Fisher
+      //  information at the reported point (and the linear solve takes its last reweighting step).
+      cost_functor.set_irls_variances( cost_functor.roi_models( pars ), reweight );
+      result.by_likelihood = true;
+    }//if( any ROI to reweight )
+  }catch( std::exception & )
+  {
+    std::copy( begin(chi2_parameters), end(chi2_parameters), begin(parameters) );
+    cost_functor.clear_irls_variances();
+    result.by_likelihood = false;
+    tl_fit_objective_diagnostics.fell_back_to_chi2 = true;
+    tl_fit_objective_diagnostics.irls_converged = false;
+  }//try / catch( IRLS refit )
 
 
   // Compute covariance
   cost_functor.m_ncalls = 0;
 
   ceres::Covariance::Options cov_options;
-  cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
+  cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
+
+  // Some terms we are fitting may not matter much, so when computing the inverse of J'J, we will opt
+  //  to drop all terms where the eigen value of that term, divided by the maximum eigenvalue is
+  //  less than the condition number.
+  //  TODO: Currently leaving condition number at default 1e-14 - but what value is reasonable should be investigated
   cov_options.null_space_rank = -1;
   cov_options.min_reciprocal_condition_number = 1e-14;
 
@@ -3635,7 +4322,18 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
   vector<pair<const double*, const double*>> covariance_blocks;
   covariance_blocks.push_back( make_pair( pars, pars ) );
 
-  if( !covariance.Compute( covariance_blocks, problem.get() ) )
+  // For the deviance residuals, the covariance comes from Fisher residuals at the fit's model; see
+  //  `PeakFitDiffCostFunction::m_fisher_variances`.
+  const bool fisher_covariance = (cost_functor.m_objective == FitObjective::PoissonAllInCeres);
+  if( fisher_covariance )
+    cost_functor.set_fisher_variances( cost_functor.roi_models( pars ) );
+
+  const bool covariance_ok = covariance.Compute( covariance_blocks, problem.get() );
+
+  if( fisher_covariance )
+    cost_functor.set_fisher_variances( {} );
+
+  if( !covariance_ok )
   {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cerr << "run_ceres_fit: Failed to compute covariance!" << endl;
@@ -3670,15 +4368,24 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
 
   const double *cov_ptr = row_major_covariance.empty() ? nullptr : row_major_covariance.data();
   vector<double> residuals( cost_functor.number_residuals(), 0.0 );
-  vector<PeakDef> final_peaks = cost_functor.parametersToPeaks<PeakDef,double>(
+  result.final_peaks = cost_functor.parametersToPeaks<PeakDef,double>(
     parameters.data(), uncertainties_ptr, residuals.data(), cov_ptr, num_fit_pars );
 
-  CeresFitResult result;
-  result.final_peaks = std::move( final_peaks );
+  if( cov_ptr && !cost_functor.m_options.test( PeakFitLMOptions::ConditionalAreaUncertainties ) )
+  {
+    try
+    {
+      cost_functor.add_nonlinear_uncertainty_to_linear_pars( parameters.data(), row_major_covariance,
+                                                             prob_setup, result.final_peaks );
+    }catch( std::exception & )
+    {
+      // Keep the conditional uncertainties; the peaks are only changed once nothing can throw.
+    }
+  }
+
   result.parameters = std::move( parameters );
   result.uncertainties = std::move( uncertainties );
   result.row_major_covariance = std::move( row_major_covariance );
-  result.num_fit_pars = num_fit_pars;
 
   return result;
 }//run_ceres_fit(...)

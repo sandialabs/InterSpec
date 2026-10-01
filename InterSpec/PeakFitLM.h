@@ -158,7 +158,66 @@ enum PeakFitLMOptions
    */
   SmallRefinementOnly = SmallAmplitudeRefinementOnly | SmallFwhmRefinementOnly, // 0x90
 
+  /* The statistic the fit minimizes.
+
+   By default the fit minimizes the modified-Neyman chi2 - residual `(data - model)/sqrt(data)`,
+   data floored at 1 - which is biased (areas and continua pulled low) wherever channels hold only a
+   few counts.  So, by default, a ROI whose peak region is sparse (see
+   `sm_sparse_data_likelihood_threshold` in PeakFitLM.cpp) is then refit by Poisson maximum
+   likelihood; other ROIs are unaffected.  How the likelihood fit is done is a compile-time choice,
+   `SPARSE_DATA_LIKELIHOOD_USE_CERES` in PeakFitLM.cpp (IRLS by default).
+
+   The likelihood is never used when the spectrum has a negative channel (e.g., it was background
+   subtracted), where Poisson statistics do not apply.  The `PeakDef::Chi2DOF` stamped on the fit
+   peaks is the modified-Neyman chi2/DOF however the ROI was fit, so the gates that compare it between
+   fits keep their meaning.
+   */
+
+  /** Report peak-area (and LLS-solved continuum coefficient) uncertainties conditional on the
+   fitted means, widths and skew - the behaviour before 2026-10.  By default those uncertainties
+   are marginal: they include the effect of the non-linear parameters' uncertainties (through their
+   correlation with the areas), which the linear least-squares sub-solve alone does not see, and
+   without which areas are reported as up to several times more precise than they are whenever the
+   width or skew is fit.  For callers whose thresholds were tuned on the conditional values.
+   */
+  ConditionalAreaUncertainties = 0x100,
+
+  /** Do not refit sparse ROIs by Poisson maximum likelihood (see the objective notes above): every
+   ROI is fit by the modified-Neyman chi2, the behaviour before 2026-10.  For callers whose
+   thresholds were tuned on chi2 fits (the peak search, `fit_peaks_for_nuclides`).
+   */
+  NoSparseDataLikelihood = 0x200,
+
+  /** Refit every ROI by Poisson maximum likelihood, not just the sparse ones; for evaluating the
+   likelihood fit (see target/peak_fit_improve_ai/harness/peak_fit_objective_eval).  May not be
+   combined with `NoSparseDataLikelihood`.
+   */
+  ForcePoissonLikelihood = 0x400,
+
 };//enum PeakFitLMOptions
+
+
+/** Diagnostics of the Poisson-likelihood fits on the calling thread since the last
+ `take_fit_objective_diagnostics()`; for evaluation tools.
+ */
+struct FitObjectiveDiagnostics
+{
+  /** The chi2 fit was used where a likelihood fit was wanted: `ForcePoissonLikelihood` was given but
+   the data has a negative channel, or the likelihood fit failed. */
+  bool fell_back_to_chi2 = false;
+
+  /** The IRLS passes performed after the initial chi2 fits, and whether the last refit met the
+   convergence criteria. */
+  size_t irls_passes = 0;
+  bool irls_converged = false;
+
+  /** The number of ROIs refit by Poisson maximum likelihood because their data were sparse (not
+   counted with `ForcePoissonLikelihood`). */
+  size_t sparse_rois = 0;
+};//struct FitObjectiveDiagnostics
+
+/** Returns, then resets, the calling thread's `FitObjectiveDiagnostics`. */
+FitObjectiveDiagnostics take_fit_objective_diagnostics();
 
 
 /** Residual that punishes two peaks for being too close together, to break the amplitude
@@ -245,7 +304,9 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
  parameters marked as not-fit-for will be held constant.
 
  Uses the LLS-hybrid approach: means/sigmas/skew/step_coeff optimized by Ceres,
- amplitudes and polynomial coefficients solved by linear least-squares each iteration.
+ amplitudes and polynomial coefficients solved by linear least-squares each iteration.  A sparse ROI
+ is then, by default, refit by Poisson likelihood (see the notes on the fit statistic in
+ `PeakFitLMOptions`).
 
  @param coFitPeaks All peaks in the ROI (must share a continuum)
  @param dataH The spectrum data
