@@ -886,8 +886,10 @@ namespace {
       json skew_params = json::object();
       const PeakDef::CoefficientType skew_coefs[] = {
         PeakDef::CoefficientType::SkewPar0, PeakDef::CoefficientType::SkewPar1,
-        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3
+        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3,
+        PeakDef::CoefficientType::SkewPar4, PeakDef::CoefficientType::SkewPar5
       };
+      static_assert( static_cast<int>(PeakDef::CoefficientType::Chi2DOF - PeakDef::CoefficientType::SkewPar0) == 6 );
 
       for( size_t i = 0; i < num_skew; ++i )
       {
