@@ -229,6 +229,9 @@ struct Objective
 {
   string name;
   Wt::WFlags<PeakFitLM::PeakFitLMOptions> flags;
+  /** Report the area uncertainty conditional on the fitted shapes (amplitude over
+   `PeakFitLM::peak_detection_significance` with chi2 weights) instead of the fit's marginal one. */
+  bool conditional_uncert = false;
 };
 
 
@@ -244,10 +247,8 @@ vector<Objective> available_objectives()
   answer.push_back( { "likelihood", Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::ForcePoissonLikelihood ) } );
 
   // The chi2 fit with area uncertainties conditional on the means/widths/skew (the pre-2026-10
-  //  behaviour, still used by the peak search and fit_peaks_for_nuclides), for comparing
-  //  uncertainty calibration.
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> cond( PeakFitLM::PeakFitLMOptions::ConditionalAreaUncertainties );
-  answer.push_back( { "chi2-cond", cond | neyman } );
+  //  reported uncertainty), for comparing uncertainty calibration.
+  answer.push_back( { "chi2-cond", neyman, true } );
   return answer;
 }
 
@@ -1049,9 +1050,7 @@ vector<FitRecord> run_one( const vector<Problem> &problems, const size_t prob_in
       if( opt.path == "refit" )
       {
         // The peaks a refit typically starts from: the peak search's chi2 fit.
-        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> search_options
-                  = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood )
-                    | PeakFitLM::PeakFitLMOptions::ConditionalAreaUncertainties;
+        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> search_options( PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );
         const vector<shared_ptr<const PeakDef>> initial = PeakFitLM::fit_peaks_in_roi_LM( start, data, prob.det_type,
                                                                                           search_options );
         PeakFitLM::take_fit_objective_diagnostics();  //only the refit's
@@ -1071,6 +1070,19 @@ vector<FitRecord> run_one( const vector<Problem> &problems, const size_t prob_in
     const PeakFitLM::FitObjectiveDiagnostics diag = PeakFitLM::take_fit_objective_diagnostics();
 
     fit = sorted_by_mean( fit );
+    if( objectives[oi].conditional_uncert )
+    {
+      vector<shared_ptr<const PeakDef>> conditional;
+      for( const shared_ptr<const PeakDef> &p : fit )
+      {
+        auto copy = make_shared<PeakDef>( *p );
+        const double z = PeakFitLM::peak_detection_significance( *p, fit, data, /*chi2_weights=*/ true );
+        if( (z != 0.0) && std::isfinite( z ) )
+          copy->setAmplitudeUncert( std::fabs( p->amplitude() / z ) );
+        conditional.push_back( copy );
+      }
+      fit = conditional;
+    }
 
     double neyman = NAN, deviance = NAN;
     double sp_min = NAN, sp_mean = NAN, sp_roi = NAN, sp_peak = NAN, sp_nt = NAN;

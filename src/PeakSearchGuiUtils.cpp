@@ -3065,6 +3065,17 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   try
   {
     *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+    // The search's peaks become the user's: fit them like any other (the user's existing peaks are kept).
+    {
+      std::set<const PeakDef *> keep;
+      if( existingPeaks )
+      {
+        for( const shared_ptr<const PeakDef> &p : *existingPeaks )
+          keep.insert( p.get() );
+      }
+      *results = ExperimentalAutomatedPeakSearch::refit_sparse_rois( *results, data,
+                                     PeakFitUtils::effective_det_type( fitPrefs, data, nullptr ), keep );
+    }
     *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
@@ -4863,6 +4874,18 @@ void add_peak_from_right_click( InterSpec * const interspec,
   {
     passMessage( WString::tr("err-add-peak-no-improve"), WarningWidget::WarningMsgInfo );
     return;
+  }
+
+  // The candidates were chi2 trial fits; the one kept is fit like any other peak.
+  {
+    const vector<shared_ptr<const PeakDef>> chosen( begin(answer), end(answer) );
+    const vector<shared_ptr<const PeakDef>> refit = ExperimentalAutomatedPeakSearch::refit_sparse_rois(
+                                     chosen, dataH, PeakFitUtils::effective_det_type( fitPrefsForAdd, dataH, nullptr ), {} );
+    if( refit.size() == answer.size() )
+    {
+      for( size_t i = 0; i < refit.size(); ++i )
+        answer[i] = make_shared<PeakDef>( *refit[i] );
+    }
   }
   
   std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;

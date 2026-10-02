@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <deque>
 #include <tuple>
 #include <atomic>
@@ -279,6 +280,9 @@ void get_candidate_peak_estimates_for_user_click(
 //  can be away from the nominal energy.
 //  If pixelPerKev <= 0.0 is specified, then it is assumed this is an automated
 //  search, and tougher quality requirements will be placed on the fit peaks.
+//The peaks are chosen by chi2 trial fits; for a user click (pixelPerKev > 0) the returned ROI is then
+//  refit by the default fit, while an automated caller that delivers the peaks should refit them itself
+//  (ExperimentalAutomatedPeakSearch::refit_sparse_rois).
 std::pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                             double pixelPerKev,
                             const std::shared_ptr<const SpecUtils::Measurement> &data,
@@ -506,6 +510,57 @@ namespace ExperimentalAutomatedPeakSearch
         const std::shared_ptr<const DetectorPeakResponse> &background_drf,
         std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
         std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
+
+  /** Significance cuts of the automated search's peak acceptance tests (user clicks keep their own,
+   lower, values).  The search reads `search_cuts()`; an evaluation harness may change it before any
+   search starts (it is not synchronized, and production code never writes it).
+   */
+  struct SearchCuts
+  {
+    /** `check_highres_single_peak_fit`: a peak needs area/uncertainty of at least `highres_min_nsigma`,
+     or of `highres_low_stat_min_nsigma` / `highres_med_stat_min_nsigma` (with a minimum area) in a low or
+     medium statistics region.  Its ROI chi2/dof cut applies only below `highres_chi2dof_cut_max_nsigma`. */
+    double highres_min_nsigma = 5.0;
+    double highres_low_stat_min_nsigma = 3.5;
+    double highres_med_stat_min_nsigma = 4.25;
+    double highres_chi2dof_cut_max_nsigma = 100.0;
+
+    /** Gross-count significance (Gaussian area over the square root of the data) the other checks
+     require: `check_lowres_single_peak_fit`, `check_lowres_multi_peak_fit`, `check_highres_multi_peak_fit`. */
+    double lowres_single_min_nsigma = 3.0;
+    double lowres_multi_min_nsigma = 2.75;
+    double highres_multi_min_nsigma = 3.0;
+
+    /** Area/uncertainty a peak recovered by `recover_background_peaks_under_foreground` must have. */
+    double background_recovery_min_nsigma = 2.0;
+
+    /** The area-significance cut of `check_highres_single_peak_fit` reads a peak's detection significance
+     (`PeakFitLM::peak_detection_significance`) from its chi2 trial fit, but for a sparse ROI
+     (`PeakFitLM::is_sparse_roi`) from that ROI's likelihood refit - unless this is set, when the chi2
+     weights are used throughout (the decisions of the code before 2026-10).  Measured on the GADRAS-inject
+     corpus (2026-10, target/peak_fit_improve_ai `--search-only`), the likelihood refit's significance
+     found 291 more moderate HPGe photopeaks and 67 fewer peaks on no truth line, for ~65% more search CPU.
+     Kept to compare against. */
+    bool detection_z_chi2_weights = false;
+  };//struct SearchCuts
+
+  SearchCuts &search_cuts();
+
+  /** The search decides which peaks to keep with chi2 trial fits (its acceptance tests compare
+   modified-Neyman chi2 values) and returns those fits - they are evidence for the code that consumes
+   them (fit_peaks_for_nuclides, AnalystChecks, ...), whose decisions were tuned on them.  Where the
+   search's peaks become reported peaks, they are first fit like any other peak with this function: each
+   ROI of `peaks` that the default fit refits by Poisson likelihood (`PeakFitLM::is_sparse_roi`) is refit
+   that way.  ROIs holding any of `keep` (by address; e.g., the caller's existing peaks) or a non-Gaussian
+   peak are left as they are, as is a ROI whose refit fails or changes its number of peaks.  `fit_options`
+   are those of the refit; without a refinement limit in them, `SmallRefinementOnly` is used.  Peaks are
+   returned sorted by mean.
+   */
+  std::vector<std::shared_ptr<const PeakDef>> refit_sparse_rois( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                                                 const PeakFitUtils::CoarseResolutionType det_type,
+                                                                 const std::set<const PeakDef *> &keep,
+                                                                 const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options = {} );
 }//namespace ExperimentalAutomatedPeakSearch
 
 

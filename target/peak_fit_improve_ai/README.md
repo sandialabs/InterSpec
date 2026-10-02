@@ -99,8 +99,8 @@ Poisson draw from identical starting values (paired), straight through `PeakFitL
   (`--lowres-roi-fwhm`), since wider ones take in structure a polynomial continuum cannot follow.
 - Objectives (`--objectives=`): `chi2` (plain modified-Neyman, `NoSparseDataLikelihood`), `default`
   (no options: chi2 with sparse ROIs refit by Poisson likelihood), `likelihood` (every ROI refit,
-  `ForcePoissonLikelihood`), and `chi2-cond` (chi2 with the old conditional area uncertainties - what
-  the peak search and `fit_peaks_for_nuclides` use).  The likelihood fit is IRLS; to evaluate the
+  `ForcePoissonLikelihood`), and `chi2-cond` (chi2, reporting the area uncertainty conditional on the
+  shapes - the pre-2026-10 reported value, from `PeakFitLM::peak_detection_significance`).  The likelihood fit is IRLS; to evaluate the
   all-in-Ceres alternative, build with `SPARSE_DATA_LIKELIHOOD_USE_CERES` set to 1 in
   `src/PeakFitLM.cpp`.  (The profiled-MLE and Mighell objectives of the 2026-10 evaluation were
   removed after it.)
@@ -113,3 +113,37 @@ Poisson draw from identical starting values (paired), straight through `PeakFitL
   problems); `--paired` counts the tail; `--compare RUN_B` puts two runs side by side.
 - Bit-identity of the default fit across a code change: diff the `chi2` rows of `per_fit.tsv`
   excluding the `cpu_s` column (`cut -f1-19,21`).
+
+## Peak-search evaluation (`fit_peaks_corpus_eval --search-only`)
+
+Scores the automated peak search alone (`ExperimentalAutomatedPeakSearch::search_for_peaks`), and
+background-peak recovery, against the GADRAS-inject truth: no `fit_peaks_for_nuclides`, seconds per
+corpus.  Truth is the source's and the background's photopeaks together (resolution-merged); a search
+peak within a truth FWHM of one finds it, and one on no truth photopeak, 511 keV or escape peak is
+`unexplained`.  Needs `--corpus-format=inject`.
+
+- `tools/search_all.sh BIN TAG [args]` runs every guard detector (Detective-X/EX, HPGe planar, Falcon,
+  Fulcrum, R500, NGH, SAM, LaBr3, CZT) at 30/300/1800 s into `${TAG}_<set>_<dwell>`;
+  `tools/search_cmp.py A B` compares two tags (or run directories): found strong/moderate truth lines,
+  unexplained peaks, and the lines lost and gained.
+- `--search-set name=value` sets an `ExperimentalAutomatedPeakSearch::SearchCuts` field, in every mode
+  (the corpus fits consume the search's peaks); `--search-sweep name=v1,v2` sweeps one.
+  `--search-set detection_z_chi2_weights=1` gives the search the chi2-weighted detection gate (the
+  pre-2026-10 decisions) to compare against.  `--no-recovery` skips the background search.
+- The foreground search peaks are scored as a user gets them: refit by
+  `ExperimentalAutomatedPeakSearch::refit_sparse_rois` (the search itself returns its chi2 decision fits,
+  which `fit_peaks_for_nuclides` and the other consumers use as evidence); `--search-decision-peaks`
+  scores those instead.  Background and recovered peaks are always the decision fits.
+- A peak on no truth photopeak is `real_untabulated` when the PCF's reference spectrum - the noise-free
+  record 3 for the foreground, the long background (record 2, scaled) otherwise - has an excess of at
+  least 2 measurement sigma there (`reference_z`): the GADRAS truth lists photopeaks only, not sum peaks,
+  shield fluorescence or every weak background line.  The check misses real lines beside a strong
+  neighbour (its sidebands) and in a noisy long background, so look as well:
+  `tools/search_review.py A B OUT_DIR` renders the non-truth peaks B has and A lacks (data, reference, the
+  search fit) from `review_peaks.jsonl`.
+- Outputs: `search_peaks.tsv` (per search peak: area, reported area/uncertainty `marg_z`, detection
+  significance `det_z`, verdict), `search_truth.tsv` (per truth photopeak: found, and the finding peak's
+  area and uncertainty), `per_problem.tsv` (with the `coarse_resolution_from_peaks` verdict),
+  `summary.tsv`, `plot_data/`.
+- The search's result depends a little on what the process searched before (see TODO.md), so
+  per-problem diffs between runs of different code carry some churn; compare totals and inspect losses.

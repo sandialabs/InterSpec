@@ -104,10 +104,16 @@ enum class CoarseResolutionType : int
 };//enum class CoarseResolutionType
 
   
-CoarseResolutionType coarse_resolution_from_peaks( const std::vector<std::shared_ptr<const PeakDef>> &peaks );
+/** Guesses the detector class from the widths of fitted peaks, each voting with its significance.  With
+ `data` (the spectrum the peaks were fit to) a peak's significance is its chi2-weighted detection
+ significance (see `PeakFitLM::peak_detection_significance`), otherwise its area over the area uncertainty.
+ */
+CoarseResolutionType coarse_resolution_from_peaks( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                                   const std::shared_ptr<const SpecUtils::Measurement> &data = nullptr );
 
 /** Convenience function */
-CoarseResolutionType coarse_resolution_from_peaks( const std::deque<std::shared_ptr<const PeakDef>> &peaks );
+CoarseResolutionType coarse_resolution_from_peaks( const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                                                   const std::shared_ptr<const SpecUtils::Measurement> &data = nullptr );
   
   
 /** Tries to guess if the passed in spectrum is from a high-resolution system (i.e., HPGe), or a lower resolution system.

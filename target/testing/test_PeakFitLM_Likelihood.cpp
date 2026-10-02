@@ -466,8 +466,8 @@ BOOST_AUTO_TEST_CASE( objective_option_handling )
 BOOST_AUTO_TEST_CASE( marginal_area_uncertainty )
 {
   // With the mean and FWHM fit, the area uncertainty must include their correlation with the area
-  //  (`PeakFitLMOptions::ConditionalAreaUncertainties` gives the old, conditional, value): the
-  //  reported uncertainty should match the actual spread of the fitted areas over Poisson replicas.
+  //  (the uncertainty conditional on the shapes is `peak_detection_significance`'s): the reported
+  //  uncertainty should match the actual spread of the fitted areas over Poisson replicas.
   set_data_dir();
 
   // A doublet 1.3 FWHM apart: the areas are strongly correlated with the means and width.
@@ -479,7 +479,6 @@ BOOST_AUTO_TEST_CASE( marginal_area_uncertainty )
   const shared_ptr<const SpecUtils::Measurement> expected = spec.expected();
   const PeakFitUtils::CoarseResolutionType det = PeakFitUtils::CoarseResolutionType::High;
   const Wt::WFlags<PeakFitLM::PeakFitLMOptions> chi2( PeakFitLM::NoSparseDataLikelihood );
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> chi2_cond = chi2 | PeakFitLM::ConditionalAreaUncertainties;
 
   vector<double> areas, marg_uncerts, cond_uncerts;
   mt19937 rng( 31 );
@@ -487,13 +486,13 @@ BOOST_AUTO_TEST_CASE( marginal_area_uncertainty )
   {
     const shared_ptr<const SpecUtils::Measurement> data = spec.sample( expected, rng );
     const vector<shared_ptr<const PeakDef>> marg = PeakFitLM::fit_peaks_in_roi_LM( spec.start_doublet( 0.1, 1.05 ), data, det, chi2 );
-    const vector<shared_ptr<const PeakDef>> cond = PeakFitLM::fit_peaks_in_roi_LM( spec.start_doublet( 0.1, 1.05 ), data, det, chi2_cond );
-    BOOST_REQUIRE( (marg.size() == 2) && (cond.size() == 2) );
-    BOOST_REQUIRE_EQUAL( marg[0]->amplitude(), cond[0]->amplitude() );   // only the uncertainty differs
-    BOOST_CHECK( marg[0]->amplitudeUncert() >= cond[0]->amplitudeUncert() );
+    BOOST_REQUIRE( marg.size() == 2 );
+    const double cond_uncert = marg[0]->amplitude()
+                               / PeakFitLM::peak_detection_significance( *marg[0], marg, data, /*chi2_weights=*/ true );
+    BOOST_CHECK( marg[0]->amplitudeUncert() >= 0.999*cond_uncert );
     areas.push_back( marg[0]->amplitude() );
     marg_uncerts.push_back( marg[0]->amplitudeUncert() );
-    cond_uncerts.push_back( cond[0]->amplitudeUncert() );
+    cond_uncerts.push_back( cond_uncert );
   }
 
   double sum = 0.0, sum2 = 0.0;
@@ -520,12 +519,74 @@ BOOST_AUTO_TEST_CASE( marginal_area_uncertainty )
   auto fixed_peak = make_shared<PeakDef>( *spec.start_peak( 0.0, 1.0 ) );
   fixed_peak->setFitFor( PeakDef::Mean, false );
   fixed_peak->setFitFor( PeakDef::Sigma, false );
-  const vector<shared_ptr<const PeakDef>> a = PeakFitLM::fit_peaks_in_roi_LM( { fixed_peak }, data, det, {} );
-  const vector<shared_ptr<const PeakDef>> b = PeakFitLM::fit_peaks_in_roi_LM( { fixed_peak }, data, det,
-                                                                             PeakFitLM::ConditionalAreaUncertainties );
-  BOOST_REQUIRE( (a.size() == 1) && (b.size() == 1) );
-  BOOST_CHECK_EQUAL( a[0]->amplitudeUncert(), b[0]->amplitudeUncert() );
+  const vector<shared_ptr<const PeakDef>> a = PeakFitLM::fit_peaks_in_roi_LM( { fixed_peak }, data, det, chi2 );
+  BOOST_REQUIRE( a.size() == 1 );
+  const double a_cond_uncert = a[0]->amplitude()
+                               / PeakFitLM::peak_detection_significance( *a[0], {}, data, /*chi2_weights=*/ true );
+  BOOST_CHECK_CLOSE( a[0]->amplitudeUncert(), a_cond_uncert, 1.0E-6 );
 }//marginal_area_uncertainty
+
+
+BOOST_AUTO_TEST_CASE( shape_parameter_uncertainties )
+{
+  // The reported mean and FWHM uncertainties, in keV, must match the actual spread over Poisson replicas
+  //  - for a single peak, and for the high-energy peak of a two-peak ROI, whose width is the shared
+  //  width parameter times the high-end multiplier.  (The fit's mean parameter is the fraction of the
+  //  way through the ROI; its uncertainty was once reported without converting back to keV.)
+  set_data_dir();
+  const PeakFitUtils::CoarseResolutionType det = PeakFitUtils::CoarseResolutionType::High;
+
+  const auto median = []( vector<double> v ) -> double {
+    std::sort( begin(v), end(v) );
+    return v[v.size()/2];
+  };
+  const auto sd = []( const vector<double> &v ) -> double {
+    double sum = 0.0, sum2 = 0.0;
+    for( const double x : v )
+    {
+      sum += x;
+      sum2 += x*x;
+    }
+    const double n = static_cast<double>( v.size() );
+    return std::sqrt( (sum2 - sum*sum/n) / (n - 1.0) );
+  };
+
+  SyntheticPeak spec;
+  spec.area = 3000.0;
+  spec.continuum_per_channel = 2.0;
+  spec.area2 = 3000.0;
+  spec.second_offset_fwhm = 4.0;   //resolved, but in one ROI
+  const shared_ptr<const SpecUtils::Measurement> expected = spec.expected();
+
+  for( const bool doublet : { false, true } )
+  {
+    vector<double> means, mean_uncerts, fwhms, fwhm_uncerts;
+    mt19937 rng( doublet ? 43 : 41 );
+    for( size_t r = 0; r < 250; ++r )
+    {
+      const shared_ptr<const SpecUtils::Measurement> data = spec.sample( expected, rng );
+      const vector<shared_ptr<const PeakDef>> start = doublet ? spec.start_doublet( 0.1, 1.05 )
+                                                              : vector<shared_ptr<const PeakDef>>{ spec.start_peak( 0.1, 1.05 ) };
+      const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( start, data, det, {} );
+      BOOST_REQUIRE( fit.size() == start.size() );
+      const PeakDef &peak = *fit.back();   //the high-energy peak of the doublet
+      means.push_back( peak.mean() );
+      mean_uncerts.push_back( peak.meanUncert() );
+      fwhms.push_back( peak.fwhm() );
+      fwhm_uncerts.push_back( 2.35482*peak.sigmaUncert() );
+    }
+
+    const double mean_ratio = median( mean_uncerts ) / sd( means );
+    const double fwhm_ratio = median( fwhm_uncerts ) / sd( fwhms );
+    cout << (doublet ? "doublet, upper peak" : "single peak") << ": reported/actual spread, mean " << mean_ratio
+         << ", FWHM " << fwhm_ratio << "; mean uncert " << median( mean_uncerts ) << " keV vs sigma/sqrt(A) "
+         << spec.sigma()/std::sqrt( spec.area ) << endl;
+
+    // 250 replicas pin the actual spread to about +-5%.
+    BOOST_CHECK_MESSAGE( (mean_ratio > 0.85) && (mean_ratio < 1.18), "mean uncertainty / spread = " << mean_ratio );
+    BOOST_CHECK_MESSAGE( (fwhm_ratio > 0.85) && (fwhm_ratio < 1.18), "FWHM uncertainty / spread = " << fwhm_ratio );
+  }//for( const bool doublet : { false, true } )
+}//shape_parameter_uncertainties
 
 
 BOOST_AUTO_TEST_CASE( sparse_data_default )
@@ -694,3 +755,101 @@ BOOST_AUTO_TEST_CASE( skew_of_fixed_amplitude_and_non_lls_peaks )
                            "pinned continuum: second area " << fit[1]->amplitude() << " vs truth " << area2 );
   }//for( pin_continuum )
 }//skew_of_fixed_amplitude_and_non_lls_peaks
+
+
+BOOST_AUTO_TEST_CASE( detection_significance )
+{
+  // `peak_detection_significance(...)` is the amplitude over its uncertainty conditional on the fitted
+  //  shapes: for a chi2 fit, the likelihood-ratio z of dropping the peak - while the reported (marginal)
+  //  uncertainty of a doublet is larger.
+  set_data_dir();
+  const PeakFitUtils::CoarseResolutionType det = PeakFitUtils::CoarseResolutionType::High;
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> chi2( PeakFitLM::NoSparseDataLikelihood );
+
+  // A well-populated doublet 1.3 FWHM apart: fit by chi2.
+  SyntheticPeak spec;
+  spec.area = 3000.0;
+  spec.area2 = 1500.0;
+  spec.second_offset_fwhm = 1.3;
+  spec.continuum_per_channel = 60.0;
+  mt19937 rng( 41 );
+  const shared_ptr<const SpecUtils::Measurement> data = spec.sample( spec.expected(), rng );
+  const vector<shared_ptr<const PeakDef>> marg = PeakFitLM::fit_peaks_in_roi_LM( spec.start_doublet( 0.1, 1.05 ), data, det, chi2 );
+  BOOST_REQUIRE( marg.size() == 2 );
+
+  for( size_t i = 0; i < 2; ++i )
+  {
+    const double det_z = PeakFitLM::peak_detection_significance( *marg[i], marg, data );
+    const double marg_z = marg[i]->amplitude() / marg[i]->amplitudeUncert();
+    BOOST_CHECK_MESSAGE( marg_z < 0.98*det_z, "peak " << i << ": marginal z " << marg_z << " vs detection z " << det_z );
+  }
+
+  // The likelihood-ratio z: the chi2 rise from dropping the first peak (shapes held, the rest refit).
+  {
+    const shared_ptr<const PeakContinuum> cont = marg[0]->continuum();
+    const size_t ch0 = data->find_gamma_channel( static_cast<float>( cont->lowerEnergy() ) );
+    const size_t ch1 = data->find_gamma_channel( static_cast<float>( cont->upperEnergy() ) );
+    const size_t nchannel = ch1 - ch0 + 1;
+    const float * const x = data->channel_energies()->data() + ch0;
+    const float * const y = data->gamma_counts()->data() + ch0;
+    vector<double> amps, cont_coefs, amp_uncerts, cont_uncerts;
+    const double chi2_with = fit_amp_and_offset( x, y, nchannel, cont->type(), cont->referenceEnergy(),
+                                 { marg[0]->mean(), marg[1]->mean() }, { marg[0]->sigma(), marg[1]->sigma() }, {},
+                                 PeakDef::SkewType::NoSkew, nullptr, amps, cont_coefs, amp_uncerts, cont_uncerts );
+    const double chi2_without = fit_amp_and_offset( x, y, nchannel, cont->type(), cont->referenceEnergy(),
+                                 { marg[1]->mean() }, { marg[1]->sigma() }, {},
+                                 PeakDef::SkewType::NoSkew, nullptr, amps, cont_coefs, amp_uncerts, cont_uncerts );
+    const double lr_z = std::sqrt( chi2_without - chi2_with );
+    const double det_z = PeakFitLM::peak_detection_significance( *marg[0], marg, data );
+    BOOST_CHECK_MESSAGE( fabs( det_z/lr_z - 1.0 ) < 1.0E-3, "detection z " << det_z << " vs sqrt(delta chi2) " << lr_z );
+  }
+
+  // A sparse ROI is fit by likelihood; its detection z is the Wald statistic of the Poisson likelihood: the
+  //  amplitude over its uncertainty from the Fisher information of the fitted model (amplitude and a linear
+  //  continuum), computed here independently.
+  {
+    SyntheticPeak sparse;
+    sparse.area = 60.0;
+    sparse.continuum_per_channel = 0.5;
+    mt19937 rng2( 11 );
+    const shared_ptr<const SpecUtils::Measurement> sparse_data = sparse.sample( sparse.expected(), rng2 );
+    const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( { sparse.start_peak( 0.1, 1.05 ) }, sparse_data, det, {} );
+    BOOST_REQUIRE( fit.size() == 1 );
+    BOOST_REQUIRE( PeakFitLM::is_sparse_roi( fit, sparse_data ) );
+    const PeakDef &peak = *fit[0];
+    BOOST_REQUIRE( peak.continuum()->type() == PeakContinuum::OffsetType::Linear );
+    const double det_z = PeakFitLM::peak_detection_significance( peak, {}, sparse_data );
+
+    // F = SUM a a^T / m over the ROI's channels, a = (continuum constant, continuum slope, unit-area peak).
+    const shared_ptr<const PeakContinuum> cont = peak.continuum();
+    const size_t ch0 = sparse_data->find_gamma_channel( static_cast<float>( cont->lowerEnergy() ) );
+    const size_t ch1 = sparse_data->find_gamma_channel( static_cast<float>( cont->upperEnergy() ) );
+    const double ref = cont->referenceEnergy();
+    double F[3][3] = { {0,0,0}, {0,0,0}, {0,0,0} };
+    for( size_t ch = ch0; ch <= ch1; ++ch )
+    {
+      const double x0 = sparse_data->gamma_channel_lower( ch ), x1 = sparse_data->gamma_channel_upper( ch );
+      const double a[3] = { x1 - x0, 0.5*((x1 - ref)*(x1 - ref) - (x0 - ref)*(x0 - ref)),
+                            peak.gauss_integral( x0, x1 ) / peak.amplitude() };
+      const PeakDef *peak_ptr = &peak;
+      const double m = cont->offset_integral( x0, x1, sparse_data, &peak_ptr, 1 ) + peak.gauss_integral( x0, x1 );
+      for( int i = 0; i < 3; ++i )
+        for( int j = 0; j < 3; ++j )
+          F[i][j] += a[i]*a[j] / m;
+    }
+    // [F^-1]_22 = det(F_01 block) / det(F)
+    const double minor = F[0][0]*F[1][1] - F[0][1]*F[1][0];
+    const double detF = F[0][0]*(F[1][1]*F[2][2] - F[1][2]*F[2][1]) - F[0][1]*(F[1][0]*F[2][2] - F[1][2]*F[2][0])
+                        + F[0][2]*(F[1][0]*F[2][1] - F[1][1]*F[2][0]);
+    const double wald_z = peak.amplitude() / std::sqrt( minor / detF );
+    BOOST_CHECK_MESSAGE( fabs( det_z/wald_z - 1.0 ) < 1.0E-3, "sparse: detection z " << det_z << " vs Wald z " << wald_z );
+  }
+
+  // Where it cannot be evaluated it falls back to the reported amplitude/uncertainty.
+  {
+    PeakDef fixed_amp( *marg[0] );
+    fixed_amp.setFitFor( PeakDef::GaussAmplitude, false );
+    BOOST_CHECK_EQUAL( PeakFitLM::peak_detection_significance( fixed_amp, marg, data ),
+                       fixed_amp.amplitude() / fixed_amp.amplitudeUncert() );
+  }
+}//detection_significance

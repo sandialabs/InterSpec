@@ -173,18 +173,19 @@ enum PeakFitLMOptions
    fits keep their meaning.
    */
 
-  /** Report peak-area (and LLS-solved continuum coefficient) uncertainties conditional on the
-   fitted means, widths and skew - the behaviour before 2026-10.  By default those uncertainties
-   are marginal: they include the effect of the non-linear parameters' uncertainties (through their
-   correlation with the areas), which the linear least-squares sub-solve alone does not see, and
-   without which areas are reported as up to several times more precise than they are whenever the
-   width or skew is fit.  For callers whose thresholds were tuned on the conditional values.
+  /* Peak-area (and LLS-solved continuum coefficient) uncertainties are marginal: they include the
+   effect of the non-linear parameters' uncertainties (through their correlation with the areas), which
+   the linear least-squares sub-solve alone does not see, and without which areas are reported as up to
+   several times more precise than they are whenever the width or skew is fit.  The uncertainty
+   conditional on the shapes - what a detection test needs - is `peak_detection_significance(...)`.
    */
-  ConditionalAreaUncertainties = 0x100,
 
-  /** Do not refit sparse ROIs by Poisson maximum likelihood (see the objective notes above): every
-   ROI is fit by the modified-Neyman chi2, the behaviour before 2026-10.  For callers whose
-   thresholds were tuned on chi2 fits (the peak search, `fit_peaks_for_nuclides`).
+  /** Fit every ROI by the modified-Neyman chi2, without the sparse-data likelihood refit (see the
+   objective notes above).  For trial fits whose acceptance tests compare chi2 values (the peak search,
+   including its new-ROI refits and background-peak recovery, `findPeaksInUserRange`,
+   `fit_peaks_for_nuclides`' observable refit - their results are refit by the default fit where they
+   are reported; see `ExperimentalAutomatedPeakSearch::refit_sparse_rois`), and fits that must agree
+   with a chi2 elsewhere (RelActCalcAuto's CDF-step sub-fit).
    */
   NoSparseDataLikelihood = 0x200,
 
@@ -425,6 +426,38 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const std::vector<std::shared_ptr<cons
                                const std::function<bool(const PeakDef &,const PeakDef &)>
                                  &may_remove_close_pair = {} ) throw();
   
+
+/** Whether the default fit refits the ROI of `peaks` (peaks sharing one continuum, as fit) by Poisson
+ likelihood: its peak region is sparse (see `sm_sparse_data_likelihood_threshold` in PeakFitLM.cpp), and
+ the spectrum has no negative channel.  Goodness-of-fit comparisons of such a fit should use the Poisson
+ deviance, not the modified-Neyman chi2 the likelihood fit did not minimize.
+ */
+bool is_sparse_roi( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                    const std::shared_ptr<const SpecUtils::Measurement> &data );
+
+/** The detection significance of a fitted peak: its amplitude over the amplitude uncertainty
+ conditional on its ROI's fitted means, widths, skew and step coefficients - for a linear fit, the
+ likelihood-ratio z of dropping the peak with the ROI's other linear parameters refit.  Uses the chi2
+ weights, or for a sparse ROI (see `sm_sparse_data_likelihood_threshold` in PeakFitLM.cpp) the Fisher
+ weights of the likelihood fit.  The reported (marginal) amplitude uncertainty answers a different
+ question - how well the area is known - and for a weak peak whose width is free it is larger.
+
+ `chi2_weights` uses the chi2 weights regardless: for a peak known to be a chi2 fit (`NoSparseDataLikelihood`)
+ this is exactly its uncertainty conditional on the shapes, while the Fisher weights of a chi2 fit's model
+ overstate the information of a sparse ROI, the model being biased low.  The weights should match the
+ objective of the fit that produced the peak.
+
+ `roi_peaks` are the other peaks sharing `peak`'s continuum; entries on another continuum, or that are
+ `peak` itself, are ignored - `peak` is recognized by ADDRESS, so a copy of it in `roi_peaks` would be
+ counted twice.  Falls back to `amplitude()/amplitudeUncert()` (or 0) where it cannot be evaluated: a
+ data-defined or fixed-amplitude peak, an External continuum, a continuum coefficient the fit held, ROI
+ peaks with different skews.
+ */
+double peak_detection_significance( const PeakDef &peak,
+                                    const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                    const bool chi2_weights = false );
+
 }//namespace PeakFitLM
 
 

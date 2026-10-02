@@ -37,6 +37,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
@@ -108,7 +109,8 @@ float hpge_fwhm_fcn( const float energy )
 }//float hpge_fwhm_fcn( const float energy )
 
 
-CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
+CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks,
+                                                   const shared_ptr<const SpecUtils::Measurement> &data )
 {
   size_t num_peaks = 0;
   double max_sig = 0.0;
@@ -126,7 +128,10 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
     const double drf_czt_fwhm = czt_fwhm_fcn( p->mean() );
     const double drf_high_fwhm = hpge_fwhm_fcn( p->mean() );
 
-    const double stat_sig = p->peakArea() / p->peakAreaUncert();
+    // The chi2-weighted detection z at the peak's shapes (what the search decides with), whatever fit the
+    //  peak came from - its marginal uncertainty undervotes a weak peak whose width was free.
+    const double stat_sig = data ? PeakFitLM::peak_detection_significance( *p, peaks, data, /*chi2_weights=*/ true )
+                                 : (p->peakArea() / p->peakAreaUncert());
     max_sig = std::max( max_sig, stat_sig );
 
     const double w = std::min( stat_sig, 10.0 );
@@ -149,7 +154,8 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
       high_w += w;
   }//for( const auto &p : peak_candidates )
 
-  if( (num_peaks == 1) && (max_sig < 5) )
+  const double min_single_peak_significance = 5.0;  // area/uncertainty of a lone peak to classify by
+  if( (num_peaks == 1) && (max_sig < min_single_peak_significance) )
     return CoarseResolutionType::Unknown;
 
   if( all_w <= 0.0 )
@@ -168,9 +174,10 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
 }//CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 
   
-CoarseResolutionType coarse_resolution_from_peaks( const deque<std::shared_ptr<const PeakDef>> &inp )
+CoarseResolutionType coarse_resolution_from_peaks( const deque<std::shared_ptr<const PeakDef>> &inp,
+                                                   const shared_ptr<const SpecUtils::Measurement> &data )
 {
-  return coarse_resolution_from_peaks( vector<shared_ptr<const PeakDef>>{begin(inp), end(inp)} );
+  return coarse_resolution_from_peaks( vector<shared_ptr<const PeakDef>>{begin(inp), end(inp)}, data );
 }
 
 

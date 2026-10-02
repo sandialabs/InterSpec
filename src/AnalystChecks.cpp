@@ -41,6 +41,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -168,11 +169,26 @@ namespace
     const double continuum = cont_per_kev * (hi - lo);
     return gross - continuum;                   // net counts under the peak window
   }//estimate_net_counts_in_hist(...)
+
+
 }//anonymous namespace
 
 
 namespace AnalystChecks
 {
+  double elevation_test_uncert( const PeakDef &peak, const vector<shared_ptr<const PeakDef>> &roi_peaks,
+                                const shared_ptr<const SpecUtils::Measurement> &data )
+  {
+    if( data && (peak.amplitude() > 0.0) )
+    {
+      const double z = PeakFitLM::peak_detection_significance( peak, roi_peaks, data, /*chi2_weights=*/ true );
+      if( z > 0.0 )
+        return peak.amplitude() / z;
+    }
+    return peak.amplitudeUncert();
+  }//elevation_test_uncert(...)
+
+
   DetectedPeakStatus detected_peaks( const DetectedPeaksOptions& options, InterSpec *interspec )
   {
     if( !interspec )
@@ -391,6 +407,9 @@ namespace AnalystChecks
           = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( background_meas,
                           background_sample_nums, background_spectrum,
                           background_meas->detector(), fitPrefs ).get();
+      const vector<shared_ptr<const PeakDef>> background_auto_peak_vec = background_auto_peaks
+          ? vector<shared_ptr<const PeakDef>>( begin(*background_auto_peaks), end(*background_auto_peaks) )
+          : vector<shared_ptr<const PeakDef>>{};
 
       // Filter foreground peaks based on background
       vector<shared_ptr<const PeakDef>> filtered_peaks;
@@ -436,6 +455,7 @@ namespace AnalystChecks
       const double norm_min_sigma = 4.0;         // net-significance bar for known NORM lines
       const double norm_borderline_sigma = 2.0;  // below this a NORM peak is simply background
       const double seed_min_sigma = 2.25;
+      const double other_min_sigma = 2.25;       // a non-NORM, non-seed peak elevated >20%
 
       vector<FgPeakDecision> decisions;
       decisions.reserve( all_peaks.size() );
@@ -481,8 +501,9 @@ namespace AnalystChecks
             const double fg_cps = dec.fg_cps;
             const double bg_cps = (closest_bg_peak->amplitude() / background_live_time);
             dec.bg_cps = bg_cps;
-            const double fg_amp_uncert = fg_peak->amplitudeUncert();
-            const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+            const double fg_amp_uncert = elevation_test_uncert( *fg_peak, all_peaks, spectrum );
+            const double bg_amp_uncert = elevation_test_uncert( *closest_bg_peak, background_auto_peak_vec,
+                                                                background_spectrum );
             const bool have_uncert = (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0);
 
             double sigma_elevation = 0.0;
@@ -520,7 +541,7 @@ namespace AnalystChecks
               // Non-NORM, non-seed: original behavior - >20% elevated, then >2.25 sigma if available.
               const double elevation_threshold = 1.20;
               if( fg_cps > (bg_cps * elevation_threshold) )
-                include_peak = have_uncert ? (sigma_elevation > 2.25) : true;
+                include_peak = have_uncert ? (sigma_elevation > other_min_sigma) : true;
               else
                 include_peak = false;
             }//if( is_seed ) / else if( is_norm ) / else
@@ -536,7 +557,7 @@ namespace AnalystChecks
               const double bg_net = estimate_net_counts_in_hist( background_spectrum, fg_peak->mean(), fg_peak->fwhm() );
               const double bg_net_cps = std::max( 0.0, bg_net ) / background_live_time;
               const double fg_net_cps = fg_peak->amplitude() / foreground_live_time;
-              const double fg_cps_uncert = fg_peak->amplitudeUncert() / foreground_live_time;
+              const double fg_cps_uncert = elevation_test_uncert( *fg_peak, all_peaks, spectrum ) / foreground_live_time;
               const double bg_net_uncert_cps = sqrt( std::max( fabs(bg_net), 1.0 ) ) / background_live_time;
               const double combined = sqrt( fg_cps_uncert*fg_cps_uncert + bg_net_uncert_cps*bg_net_uncert_cps );
               const double sigma_vs_data = (combined > 0.0) ? ((fg_net_cps - bg_net_cps) / combined) : 0.0;
@@ -695,6 +716,10 @@ namespace AnalystChecks
     double pixelPerKev = -1.0; //This triggers an "automed" peak fit, which has higher thresholds for keeping peak.
     pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>> foundPeaks;
     foundPeaks = searchForPeakFromUser( options.energy, pixelPerKev, data, origPeaks, det, auto_search_peaks, fitPrefs );
+    // The peaks become the user's: fit them like any other (the automated fit returns its chi2 decision fits).
+    if( !foundPeaks.first.empty() )
+      foundPeaks.first = ExperimentalAutomatedPeakSearch::refit_sparse_rois( foundPeaks.first, data,
+                                                PeakFitUtils::effective_det_type( fitPrefs, data, nullptr ), {} );
 
     vector<shared_ptr<const PeakDef>> &peaks_to_add_in = foundPeaks.first;
     const vector<shared_ptr<const PeakDef>> &peaks_to_remove = foundPeaks.second;
@@ -960,6 +985,10 @@ namespace AnalystChecks
         {
           double pixelPerKev = -1.0; // Triggers "automed" peak fit
           *found_peaks_result = searchForPeakFromUser( energy, pixelPerKev, data_copy, origPeaks, det, auto_search_peaks, fitPrefs );
+          // The peaks become the user's: fit them like any other (see the synchronous version above).
+          if( !found_peaks_result->first.empty() )
+            found_peaks_result->first = ExperimentalAutomatedPeakSearch::refit_sparse_rois( found_peaks_result->first,
+                                          data_copy, PeakFitUtils::effective_det_type( fitPrefs, data_copy, nullptr ), {} );
         }catch( const exception &e )
         {
           *bg_error = string("Peak search failed: ") + e.what();
@@ -4747,11 +4776,13 @@ namespace AnalystChecks
       }//for( background peaks )
 
       const double bg_cps = closest_bg ? (closest_bg->amplitude() / back_lt) : 0.0;
-      const double fg_cps_uncert = (peak->amplitudeUncert() > 0.0)
-                                     ? (peak->amplitudeUncert() / fore_lt)
+      const double fg_amp_uncert = elevation_test_uncert( *peak, input.foregroundPeaks, fore );
+      const double bg_amp_uncert = closest_bg ? elevation_test_uncert( *closest_bg, input.backgroundPeaks, back ) : 0.0;
+      const double fg_cps_uncert = (fg_amp_uncert > 0.0)
+                                     ? (fg_amp_uncert / fore_lt)
                                      : (std::sqrt( std::max( peak->amplitude(), 1.0 ) ) / fore_lt);
-      const double bg_cps_uncert = (closest_bg && (closest_bg->amplitudeUncert() > 0.0))
-                                     ? (closest_bg->amplitudeUncert() / back_lt)
+      const double bg_cps_uncert = (closest_bg && (bg_amp_uncert > 0.0))
+                                     ? (bg_amp_uncert / back_lt)
                                      : (closest_bg ? (std::sqrt( std::max( closest_bg->amplitude(), 1.0 ) ) / back_lt) : 0.0);
       const double combined_uncert = std::sqrt( fg_cps_uncert*fg_cps_uncert
                                                 + bg_cps_uncert*bg_cps_uncert

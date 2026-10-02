@@ -1788,12 +1788,23 @@ FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConf
   FitPeaksForNuclides::PeakFitForNuclideConfig config
     = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
-  if( m_opt_roi_sig_z )
+  // The fitted-peak (area/uncertainty) thresholds split from these fields follow their control in
+  //  proportion to the defaults.
+  if( m_opt_roi_sig_z && (config.roi_significance_z > 0.0) )
+  {
+    const double scale = m_opt_roi_sig_z->value() / config.roi_significance_z;
+    config.found_peak_min_z *= scale;
+    config.observable_split_min_z *= scale;
     config.roi_significance_z = m_opt_roi_sig_z->value();
+  }
   if( m_opt_obs_initial_sig )
     config.observable_peak_initial_significance_threshold = m_opt_obs_initial_sig->value();
-  if( m_opt_obs_final_sig )
+  if( m_opt_obs_final_sig && (config.observable_peak_final_significance_threshold > 0.0) )
+  {
+    const double scale = m_opt_obs_final_sig->value() / config.observable_peak_final_significance_threshold;
+    config.observable_refit_min_z *= scale;
     config.observable_peak_final_significance_threshold = m_opt_obs_final_sig->value();
+  }
   if( m_opt_skew_type )
     config.skew_type = static_cast<PeakDef::SkewType>( m_opt_skew_type->currentIndex() );
   if( m_opt_fwhm_form )

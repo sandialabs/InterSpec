@@ -168,6 +168,25 @@ void local_unique_copy_continuum( vector<shared_ptr<const PeakDef>> &input_peaks
   }
   std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMeanShrdPtr );
 }//unique_copy_continuum(...)
+
+
+/** The detection significance of each of a fit's peaks, all evaluated on the whole fit, so a gate that
+ removes peaks does not depend on the order it visits them.  A peak with nothing to judge it by (no
+ detection z and no uncertainty) gets 999, i.e., is kept.
+ */
+vector<double> detection_significances( const vector<shared_ptr<const PeakDef>> &peaks,
+                                        const shared_ptr<const SpecUtils::Measurement> &data,
+                                        const bool chi2_weights )
+{
+  vector<double> answer( peaks.size(), 999.0 );
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    const double z = PeakFitLM::peak_detection_significance( *peaks[i], peaks, data, chi2_weights );
+    if( (z > 0.0) || (peaks[i]->amplitudeUncert() > 0.0) )
+      answer[i] = z;
+  }
+  return answer;
+}//detection_significances(...)
 }//namespace
 
 
@@ -1234,9 +1253,16 @@ struct PeakFitDiffCostFunction
 
             if( uncertainties )
             {
-              const T first_uncert = sigma_uncert;
-              const T last_uncert  = sigma_uncert * uncertainties[param_offset + sigma_index + 1];
-              sigma_uncert = first_uncert + frac_dist * (last_uncert - first_uncert);
+              // sigma = M*p0*(1 + f*(p1 - 1)), with M = max_initial_sigma, p0 the width parameter, p1 the
+              //  high-end multiplier and f this peak's fraction of the way across the peaks; propagate
+              //  the (p0, p1) covariance (f is taken as known).
+              const T d_p0 = T(roi.max_initial_sigma) * (T(1.0) + frac_dist*(roi_params[sigma_index + 1] - T(1.0)));
+              const T d_p1 = T(roi.max_initial_sigma) * roi_params[sigma_index] * frac_dist;
+              const size_t g0 = param_offset + sigma_index, g1 = g0 + 1;
+              T variance = d_p0*d_p0*uncertainties[g0]*uncertainties[g0] + d_p1*d_p1*uncertainties[g1]*uncertainties[g1];
+              if( covariance && (g1 < num_total_pars) )
+                variance += T(2.0) * d_p0 * d_p1 * T(covariance[g0*num_total_pars + g1]);
+              sigma_uncert = (variance > T(0.0)) ? sqrt( variance ) : T(0.0);
             }
           }//if( (i > 0) && (num_sigmas_fit > 1) )
 
@@ -1278,7 +1304,8 @@ struct PeakFitDiffCostFunction
 
         if( uncertainties )
         {
-          T mean_uncert = uncertainties[param_offset + mean_par_index];
+          // The parameter is the mean's fraction of the way through the ROI; back to keV.
+          T mean_uncert = uncertainties[param_offset + mean_par_index] * T(range);
           if( !src_peak->fitFor( PeakDef::Mean ) )
             mean_uncert = T( src_peak->meanUncert() );
           if( mean_uncert > 0.0 )
@@ -3377,12 +3404,10 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
   std::sort( coFitPeaks.begin(), coFitPeaks.end(), &PeakDef::lessThanByMeanShrdPtr );
 
 
-  // The peak-search acceptance tests this fit feeds (e.g., the area-significance cut in
-  //  `check_highres_single_peak_fit(...)`) were tuned on chi2 fits with area uncertainties
-  //  conditional on the fit mean and width, so keep those here until the tests are retuned.
-  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options
-                    = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::ConditionalAreaUncertainties )
-                      | PeakFitLM::NoSparseDataLikelihood;
+  // A chi2 trial fit: the peak-search acceptance tests it feeds (`check_highres_single_peak_fit(...)`
+  //  and the others) compare modified-Neyman chi2 values.  The peak the search returns to a user is
+  //  then refit by the default fit (see `searchForPeakFromUser(...)`).
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::NoSparseDataLikelihood );
   if( fitPrefs
      && (fitPrefs->m_fwhm_method == PeakFitDetPrefs::FwhmMethod::DetPlusRefine)
      && drf && drf->hasResolutionInfo() )
@@ -3478,6 +3503,11 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     //set_chi2_dof( data, results, 0, near_peaks.size() );
 
 
+    // A detection test, with the weights of the fit's own objective.
+    vector<double> num_sigmas = (stat_threshold > 0.0)
+         ? detection_significances( results, data, fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+         : vector<double>( results.size(), 999.0 );
+
     for( size_t i = 1; i <= results.size(); ++i ) //Note weird convntion of index
     {
       const shared_ptr<const PeakDef> &peak = (results[i-1]);
@@ -3496,7 +3526,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
         continue;
       }
 
-      const double num_sigma = (peak->amplitude() / peak->amplitudeUncert());
+      const double num_sigma = num_sigmas[i-1];
       const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
 
       const double dummy_stat_thresh = 0.0;
@@ -3509,6 +3539,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
         << "\n";
 #endif
         results.erase( results.begin() + --i );
+        num_sigmas.erase( num_sigmas.begin() + i );
       }//if( !significant )
     }//for( size_t i = 1; i < fitpeaks.size(); ++i )
 
@@ -3694,6 +3725,128 @@ static double roi_fit_statistic( const vector<shared_ptr<const PeakDef>> &peaks,
 }//roi_fit_statistic(...)
 
 
+bool is_sparse_roi( const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                    const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  if( peaks.empty() || !peaks.front() || !data || !data->gamma_counts()
+      || (sparse_data_statistic( peaks, data ) <= sm_sparse_data_likelihood_threshold) )
+    return false;
+
+  // As `effective_options(...)`: no likelihood for data with a negative channel.
+  const vector<float> &counts = *data->gamma_counts();
+  return std::none_of( begin(counts), end(counts), []( const float c ){ return c < 0.0f; } );
+}//is_sparse_roi(...)
+
+
+double peak_detection_significance( const PeakDef &peak,
+                                    const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                    const bool chi2_weights )
+{
+  const double amp_uncert = peak.amplitudeUncert();
+  const double fallback = (amp_uncert > 0.0) ? (peak.amplitude() / amp_uncert) : 0.0;
+
+  const shared_ptr<const PeakContinuum> cont = peak.continuum();
+  if( !peak.gausPeak() || !peak.fitFor( PeakDef::GaussAmplitude ) || !cont || !data
+      || !data->channel_energies() || !data->gamma_counts()
+      || (cont->type() == PeakContinuum::OffsetType::External) )
+    return fallback;
+
+  // `peak` first, then the other peaks of its ROI; the linear solve needs one skew for all fit peaks.
+  vector<shared_ptr<const PeakDef>> peaks{ make_shared<const PeakDef>( peak ) };
+  vector<PeakDef> fixed_amp_peaks;
+  vector<double> means{ peak.mean() }, sigmas{ peak.sigma() };
+  const size_t num_skew = PeakDef::num_skew_parameters( peak.skewType() );
+  vector<double> skew_pars( num_skew );
+  for( size_t i = 0; i < num_skew; ++i )
+    skew_pars[i] = peak.coefficient( static_cast<PeakDef::CoefficientType>( PeakDef::SkewPar0 + i ) );
+
+  for( const shared_ptr<const PeakDef> &p : roi_peaks )
+  {
+    if( !p || (p.get() == &peak) || (p->continuum() != cont) )
+      continue;
+    if( !p->gausPeak() )
+      return fallback;
+    peaks.push_back( p );
+    if( !p->fitFor( PeakDef::GaussAmplitude ) )
+    {
+      fixed_amp_peaks.push_back( *p );
+      continue;
+    }
+    if( p->skewType() != peak.skewType() )
+      return fallback;
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      if( p->coefficient( static_cast<PeakDef::CoefficientType>( PeakDef::SkewPar0 + i ) ) != skew_pars[i] )
+        return fallback;
+    }
+    means.push_back( p->mean() );
+    sigmas.push_back( p->sigma() );
+  }//for( const shared_ptr<const PeakDef> &p : roi_peaks )
+
+  const size_t ch0 = data->find_gamma_channel( static_cast<float>( cont->lowerEnergy() ) );
+  const size_t ch1 = data->find_gamma_channel( static_cast<float>( cont->upperEnergy() ) );
+  if( ch1 < ch0 )
+    return fallback;
+  const size_t nchannel = ch1 - ch0 + 1;
+  const float * const energies = data->channel_energies()->data() + ch0;
+  const float * const counts = data->gamma_counts()->data() + ch0;
+
+  // A CDF-step continuum's step coefficients are its trailing parameters; held, like the shapes.
+  const PeakContinuum::OffsetType cont_type = cont->type();
+  const size_t num_linear = PeakContinuum::num_linear_fit_pars( cont_type );
+  const vector<double> &cont_pars = cont->parameters();
+  const double * const step_coeffs = PeakContinuum::num_cdf_step_pars( cont_type )
+                                     ? (cont_pars.data() + num_linear) : nullptr;
+  if( step_coeffs && (cont_pars.size() < PeakContinuum::num_parameters( cont_type )) )
+    return fallback;
+
+  // The solve below re-fits every continuum coefficient; a peak whose fit held one is judged by its own σ.
+  const vector<bool> cont_fit_for = cont->fitForParameter();
+  for( size_t i = 0; i < std::min( num_linear, cont_fit_for.size() ); ++i )
+  {
+    if( !cont_fit_for[i] )
+      return fallback;
+  }
+
+  try
+  {
+    vector<double> amplitudes, cont_coeffs, amp_uncerts, cont_uncerts;
+    if( !chi2_weights && is_sparse_roi( peaks, data ) )
+    {
+      // Fisher weights of the likelihood fit: the fitted model, floored as the IRLS fit floors it.
+      vector<double> variances = roi_model_counts( peaks, data, ch0, nchannel );
+      double data_area = 0.0;
+      for( size_t i = 0; i < nchannel; ++i )
+        data_area += std::max( 0.0f, counts[i] );
+      const double min_variance = sm_irls_min_variance_frac * std::max( 1.0, data_area / nchannel );
+      for( double &v : variances )
+        v = (v >= min_variance) ? v : min_variance;  //also catches NaN
+
+      PeakFitLMObjective::fit_amp_and_offset_weighted<PeakDef,double>( energies, counts, variances.data(),
+                       nullptr, nchannel, cont_type, step_coeffs, cont->referenceEnergy(), means, sigmas,
+                       fixed_amp_peaks, peak.skewType(), skew_pars.data(), amplitudes, cont_coeffs,
+                       amp_uncerts, cont_uncerts, nullptr );
+    }else
+    {
+      PeakFit::fit_amp_and_offset_imp<PeakDef,double>( energies, counts, nullptr, nchannel, cont_type,
+                       step_coeffs, cont->referenceEnergy(), means, sigmas, fixed_amp_peaks,
+                       peak.skewType(), skew_pars.data(), amplitudes, cont_coeffs, amp_uncerts,
+                       cont_uncerts, nullptr );
+    }
+
+    if( amp_uncerts.empty() || !(amp_uncerts[0] > 0.0) || IsNan(amp_uncerts[0]) || IsInf(amp_uncerts[0]) )
+      return fallback;
+    return peak.amplitude() / amp_uncerts[0];
+  }catch( std::exception & )
+  {
+    return fallback;
+  }
+}//peak_detection_significance(...)
+
+
+
+
 std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
@@ -3746,8 +3899,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
         // The caller's choice of fit statistic and uncertainties holds for this refit too.
         Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options
                                         = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
-        for( const PeakFitLMOptions opt : { PeakFitLMOptions::ConditionalAreaUncertainties,
-                                            PeakFitLMOptions::NoSparseDataLikelihood,
+        for( const PeakFitLMOptions opt : { PeakFitLMOptions::NoSparseDataLikelihood,
                                             PeakFitLMOptions::ForcePoissonLikelihood } )
         {
           if( fit_options.test( opt ) )
@@ -4371,7 +4523,7 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
   result.final_peaks = cost_functor.parametersToPeaks<PeakDef,double>(
     parameters.data(), uncertainties_ptr, residuals.data(), cov_ptr, num_fit_pars );
 
-  if( cov_ptr && !cost_functor.m_options.test( PeakFitLMOptions::ConditionalAreaUncertainties ) )
+  if( cov_ptr )
   {
     try
     {
@@ -4443,7 +4595,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
     // Determine detector resolution type
     const PeakFitUtils::CoarseResolutionType res_type = resolution_type.has_value()
       ? *resolution_type
-      : PeakFitUtils::coarse_resolution_from_peaks( gauss_peaks );
+      : PeakFitUtils::coarse_resolution_from_peaks( gauss_peaks, data );
 
     // Deep copy all Gaussian peaks so we dont modify the inputs
     local_unique_copy_continuum( gauss_peaks );
@@ -4574,6 +4726,9 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
 
 
     // Apply significance testing - mirroring fit_peaks_LM
+    vector<double> num_sigmas = (stat_threshold > 0.0)
+         ? detection_significances( all_fit_peaks, data, fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+         : vector<double>( all_fit_peaks.size(), 999.0 );
     for( size_t i = 0; i < all_fit_peaks.size(); )
     {
       const shared_ptr<const PeakDef> &peak = all_fit_peaks[i];
@@ -4585,8 +4740,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
         continue;
       }
 
-      const double num_sigma = (peak->amplitudeUncert() > 0.0)
-        ? (peak->amplitude() / peak->amplitudeUncert()) : 999.0;
+      const double num_sigma = num_sigmas[i];
       const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
 
       const double dummy_stat_thresh = 0.0;
@@ -4596,6 +4750,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       {
         results.lost_peaks.push_back( peak );
         all_fit_peaks.erase( all_fit_peaks.begin() + i );
+        num_sigmas.erase( num_sigmas.begin() + i );
       }
       else
       {

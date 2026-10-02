@@ -3519,10 +3519,12 @@ nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann
           // Calculate percent elevation: ((fg_cps / bg_cps) - 1.0) * 100.0
           const double percent_elevation = ((fg_cps / bg_cps) - 1.0) * 100.0;
           
-          // Calculate sigma elevation if uncertainties are available
+          // Calculate sigma elevation if uncertainties are available; with the uncertainties
+          //  detected_peaks(...) judges elevation by (its ROI context is the reported peaks).
           double sigma_elevation = 0.0;
-          const double fg_amp_uncert = fg_peak->amplitudeUncert();
-          const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+          const double fg_amp_uncert = AnalystChecks::elevation_test_uncert( *fg_peak, result.peaks, meas );
+          const vector<shared_ptr<const PeakDef>> bg_peak_vec( bg_peaks->begin(), bg_peaks->end() );
+          const double bg_amp_uncert = AnalystChecks::elevation_test_uncert( *closest_bg_peak, bg_peak_vec, background );
           
           if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
           {
