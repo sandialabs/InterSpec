@@ -25,9 +25,11 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
+#include <Wt/WSignal.h>
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/GammaInteractionCalc.h"
@@ -36,13 +38,16 @@
 
 namespace Wt
 {
+  class WText;
+  class WCheckBox;
   class WComboBox;
-  class WGridLayout;
+  class WVBoxLayout;
 }
 
 // Forward declarations
 class Shielding2DView;
 class Shielding3DView;
+class DetectorPeakResponse;
 
 // Dialog class for displaying shielding diagrams with 2D/3D view switching
 class ShieldingDiagramDialog : public SimpleDialog
@@ -52,6 +57,7 @@ public:
   // Static factory method to create a dialog with 2D/3D view switcher.
   // sourceOffset0/sourceOffset1 are the user-set off-axis offsets
   // (GammaInteractionCalc::ShieldSourceConfig::source_offsets[0] and [1]).
+  // `drf` lets the 3D view draw the detector's actual geometry, when the DRF records one.
   static ShieldingDiagramDialog *createShieldingDiagram(
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                      const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
@@ -59,7 +65,8 @@ public:
                                      double detectorDistance,
                                      double detectorDiameter,
                                      double sourceOffset0 = 0.0,
-                                     double sourceOffset1 = 0.0
+                                     double sourceOffset1 = 0.0,
+                                     std::shared_ptr<const DetectorPeakResponse> drf = nullptr
                                      );
 
   // Switch between 2D and 3D views
@@ -72,7 +79,19 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
+
+  /** Emitted with a gamma energy (keV; <= 0 for the default) when the 3D view wants the fit's
+   integration lines - the owner answers with #setVolumetricLines or #setVolumetricLinesError. */
+  Wt::Signal<double> &volumetricLinesRequested();
+
+  /** Shows these lines (see GammaInteractionCalc::ShieldingSourceChi2Fcn::sampleVolumetricLines). */
+  void setVolumetricLines( const GammaInteractionCalc::VolumetricLineSample &sample );
+
+  /** The lines could not be computed: says why, and turns the option off (back to the default
+   energy, should that energy be the problem). */
+  void setVolumetricLinesError( const Wt::WString &message );
 
 protected:
   // Constructor is protected; use SimpleDialog::make<ShieldingDiagramDialog>() to create.
@@ -83,16 +102,31 @@ protected:
                          double detectorDistance,
                          double detectorDiameter,
                          double sourceOffset0,
-                         double sourceOffset1
+                         double sourceOffset1,
+                         std::shared_ptr<const DetectorPeakResponse> drf
                          );
 
 private:
   void handleViewTypeToggle();
+  void handleShowLinesToggled();
+  void handleLineEnergyChanged();
+  void requestLines();
+  bool linesPossible() const;
 
   Shielding2DView *m_2DView;
   Shielding3DView *m_3DView;
   Wt::WComboBox *m_select;
-  Wt::WGridLayout *m_layout;
+  Wt::WVBoxLayout *m_layout;
+  Wt::WContainerWidget *m_viewHolder;   //the stretching cell the current view fills
+
+  // The 3D view's integration-line controls
+  Wt::WContainerWidget *m_linesControls;
+  Wt::WCheckBox *m_showLines;
+  Wt::WComboBox *m_lineEnergy;
+  Wt::WText *m_linesMsg;
+  std::vector<double> m_lineEnergies;   //keV, the entries of m_lineEnergy
+  std::string m_linesJson;              //what the 3D view was last given; resent when it is rebuilt
+  Wt::Signal<double> m_linesRequested;
 
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
   std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
@@ -100,6 +134,7 @@ private:
   double m_detectorDistance;
   double m_detectorDiameter;
   double m_sourceOffsets[2];
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
 };
 
 // Create JSON representation of shielding data
@@ -155,7 +190,8 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
 
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
@@ -164,7 +200,18 @@ public:
                    double detectorDistance,
                    double detectorDiameter,
                    double sourceOffset0 = 0.0,
-                   double sourceOffset1 = 0.0 );
+                   double sourceOffset1 = 0.0,
+                   std::shared_ptr<const DetectorPeakResponse> drf = nullptr );
+
+  /** The detector's geometry for the 3D view: `null` when the DRF records none (the JS then draws
+   a placeholder), else each region of `DetectorGeometryDiagram::buildModel` as a polycone profile
+   in the crystal frame (cm), plus the endcap-front offset that places the crystal face behind the
+   detector face the source distance is measured to.
+   */
+  static std::string createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf );
+
+  /** Shows integration lines (JSON from the dialog), or none for "null". */
+  void setVolumetricLines( const std::string &json );
 
 private:
   void defineJavaScript();
@@ -176,6 +223,7 @@ private:
   double m_detectorDistance;
   double m_detectorDiameter;
   double m_sourceOffsets[2];
+  std::shared_ptr<const DetectorPeakResponse> m_drf;
 };
 
 #endif // Shielding2DView_h

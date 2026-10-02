@@ -242,9 +242,6 @@ namespace HelpSystem
     WPushButton *ok = addCloseButtonToFooter();
     ok->clicked().connect( this, [this](){ hide(); } );
     
-    if( !preselect.empty() || (app && app->isMobile()) )  //Keep keyboard from popping up
-      ok->setFocus();
-    
     rejectWhenEscapePressed();
     
     show();

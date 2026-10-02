@@ -73,6 +73,10 @@ struct PeakDefImp
   PeakDef::SkewType m_skew_type = PeakDef::SkewType::NoSkew;
   PeakDef::SourceGammaType m_gamma_type = PeakDef::SourceGammaType::NormalGamma;
 
+  /** An iodine K x-ray escape companion (see Options::iodine_escape_peaks) of the line the source
+   fields above describe; `m_src_energy` is that parent line's energy. */
+  bool m_is_iodine_escape = false;
+
   size_t m_rel_eff_index = std::numeric_limits<size_t>::max();
 
   // Some functions to be compatible with PeakDef, in templated functions

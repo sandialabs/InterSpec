@@ -560,9 +560,11 @@ void LlmConfigWindow::buildUi()
   m_previewToggle->clicked().connect( this, &LlmConfigWindow::togglePreviewXml );
 
   m_acceptBtn = foot->addNew<WPushButton>( WString::tr("lcw-accept") );
+  WidgetUtils::applyButtonRole( m_acceptBtn, WidgetUtils::ButtonRole::Affirm );
   m_acceptBtn->clicked().connect( this, &LlmConfigWindow::handleAccept );
 
   WPushButton *cancelBtn = foot->addNew<WPushButton>( WString::tr("lcw-cancel") );
+  WidgetUtils::applyButtonRole( cancelBtn, WidgetUtils::ButtonRole::Dismiss );
   cancelBtn->clicked().connect( this, &AuxWindow::hide );
 
   if( m_writableDir.empty() )
@@ -1515,8 +1517,8 @@ void LlmConfigWindow::handleAccept()
       WText *txt = dialog->contents()->addNew<WText>( WString::tr("lcw-overwrite-msg") );
       txt->setTextFormat( Wt::TextFormat::XHTML );
 
-      WPushButton *ok = dialog->addButton( WString::tr("lcw-overwrite-confirm") );
-      dialog->addButton( WString::tr("lcw-cancel") );  // just dismisses; settings window stays open
+      WPushButton *ok = dialog->addButton( WString::tr("lcw-overwrite-confirm"), WidgetUtils::ButtonRole::Affirm );
+      dialog->addButton( WString::tr("lcw-cancel"), WidgetUtils::ButtonRole::Dismiss );  // just dismisses; settings window stays open
       ok->clicked().connect( std::bind( [this](){ doAccept( true ); } ) );
       return;
     }//if( an existing config would be overwritten )
@@ -1561,9 +1563,9 @@ void LlmConfigWindow::handleAccept()
   WText *txt = dialog->contents()->addNew<WText>( msg );
   txt->setTextFormat( Wt::TextFormat::XHTML );
 
-  WPushButton *cont = dialog->addButton( WString::tr("lcw-apply-continue") );
-  WPushButton *fileOnly = dialog->addButton( WString::tr("lcw-apply-file-only") );
-  dialog->addButton( WString::tr("lcw-cancel") );  // just dismisses the dialog; settings window stays open
+  WPushButton *cont = dialog->addButton( WString::tr("lcw-apply-continue"), WidgetUtils::ButtonRole::Affirm );
+  WPushButton *fileOnly = dialog->addButton( WString::tr("lcw-apply-file-only"), WidgetUtils::ButtonRole::Neutral );
+  dialog->addButton( WString::tr("lcw-cancel"), WidgetUtils::ButtonRole::Dismiss );  // just dismisses the dialog; settings window stays open
 
   cont->clicked().connect( std::bind( [this](){ doAccept( true ); } ) );
   fileOnly->clicked().connect( std::bind( [this](){ doAccept( false ); } ) );
@@ -1576,7 +1578,7 @@ void LlmConfigWindow::doAccept( const bool applyToSession )
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("lcw-save-failed-title") );
     dialog->contents()->addNew<WText>( WString::tr("lcw-save-failed") );
-    dialog->addButton( WString::tr("lcw-ok") );
+    dialog->addButton( WString::tr("lcw-ok"), WidgetUtils::ButtonRole::Affirm );
     return;  // keep the settings window open so the user can retry
   }
 

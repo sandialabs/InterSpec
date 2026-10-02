@@ -334,13 +334,29 @@ public:
      DeepResearch sub-agent to have access to the `query_deep_research_endpoint` tool-call, and post a message
      formatted like:
      ```
-     {"messages": [{"content": "what is the primary use of Ba133?"}], "corpora": ["example_corpra"]}
+     {"query": "what is the primary use of Ba133?", "model": "openai/gpt-oss-120b", "corpora": ["example_corpra"]}
      ```
 
      If you leave this field blank, the DeepResearch sub-agent still remains available, but without
      the remote endpoint query tool-call.
      */
     std::string deep_research_url;
+
+    /** Model identifier sent as the `model` field of the deep-research POST body.
+
+     This names a model the *remote* research service understands (e.g., "openai/gpt-oss-120b"); it is
+     unrelated to the provider/model InterSpec itself talks to.  Empty means use the built-in default.
+     Only used when `deep_research_url` is non-empty.
+     */
+    std::string deep_research_model;
+
+    /** Corpora for the deep-research service to search, sent as the `corpora` array.
+
+     The remote service validates these against a fixed list of corpus names, and has renamed its corpus
+     before, so this is configurable to survive a rename without needing a rebuild.  Empty means use the
+     built-in default.  Only used when `deep_research_url` is non-empty.
+     */
+    std::vector<std::string> deep_research_corpora;
 
     /** System prompt used for context compaction (summarization of older conversation history).
 

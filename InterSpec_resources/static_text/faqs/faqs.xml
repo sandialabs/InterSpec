@@ -539,7 +539,8 @@
     response (at least for energies above around or above a couple hundred keV, lower energies would likely
     have larger errors).  
     But also please note that for very near measurements (i.e., sample less than ~10 cm from detector) cascade summing can become significant, leading 
-    to errors of up to 30% or so, just from this effect, which <code>InterSpec</code> does not currently account for.
+    to errors of up to 30% or so, just from this effect; the Activity/Shielding fit can correct for it (see the
+    &quot;Cascade summing&quot; FAQ).
   </p>
   </message>
 
@@ -768,12 +769,12 @@
 
   <message id="how-sum-peaks-handled" title="How are sum-peaks handled?">
     <p>
-    When fitting for activity, sum peaks (either random sum, or true-coincidence) are not currently
-    accounted for.
+    When fitting for activity, random sum peaks are not accounted for; true-coincidence (a.k.a. cascade)
+    summing is corrected for when the &quot;Cascade summing corr.&quot; option of the Activity/Shielding fit
+    is checked (see the &quot;Cascade summing&quot; FAQ).
     </p>
-    <p> If this might be a problem, it is recommended to move the sample 10 cm or greater from the detector
-      where true-coincidence (a.k.a. cascade) summing becomes negligible, and/or to reduce dead-time for
-      random summing.
+    <p> If summing might be a problem, moving the sample 10 cm or greater from the detector makes
+      cascade summing negligible, and reducing dead-time reduces random summing.
     </p>
     <p> The &quot;Reference Photopeak&quot; tab does offer the option to show cascade sums, to help 
       detect these issues; see the circled options below:
@@ -848,9 +849,22 @@
 
   <message id="cascade-summing" title="Cascade summing">
     <p>
-    <code>InterSpec</code> does not currently account for cascade (e.g., true-coincidence) summing 
-    when fitting activities.  If these effects might become significant, it is recommended to 
-    measure the sample at 10 cm, or greater, from the detector, if possible.
+    The Activity/Shielding fit corrects for cascade (e.g., true-coincidence) summing when its
+    &quot;Cascade summing corr.&quot; option is checked.  This needs the detector response to have
+    total-efficiency information, e.g., from a Monte-Carlo characterization of the detector.
+    For volumetric sources the correction is applied throughout the source volume.
+    </p>
+    <p>
+    A fixed-geometry detector response only supports the correction if it was made with the
+    &quot;Create MC Eff&quot; link of the Activity/Shielding fit.  For a volumetric source it then uses
+    efficiencies averaged over the source, which under-corrects summing for thick samples right
+    at the detector (roughly 1-3% low activity for Co-60 in a several-cm thick sample on the endcap).
+    Fixed-geometry responses made from calibration-source measurements have the calibration
+    nuclide's own summing built into their efficiency curve.
+    </p>
+    <p>
+    Where possible, measuring the sample at 10 cm, or greater, from the detector makes these
+    effects negligible.
     </p>
     <p> The &quot;Reference Photopeak&quot; tab does offer the option to show cascade sums, to help 
       detect these issues; see the circled options below:

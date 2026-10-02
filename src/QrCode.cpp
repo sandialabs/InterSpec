@@ -302,7 +302,7 @@ SimpleDialog *displayTxtAsQrCode( const std::string &url,
     
     SimpleDialog *window = SimpleDialog::make( title, "" );
     window->rejectWhenEscapePressed();
-    window->addButton( "Close" );
+    window->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
     
     if( is_phone )
       window->setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );

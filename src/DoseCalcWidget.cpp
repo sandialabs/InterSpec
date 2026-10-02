@@ -143,7 +143,7 @@ DoseCalcWindow::DoseCalcWindow( InterSpec *viewer )
     footer()->addWidget( std::move(qr_btn_owned) );
 #endif //USE_QR_CODES
 
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
 #if( USE_QR_CODES )

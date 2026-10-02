@@ -2010,6 +2010,13 @@ struct PeakFitDiffCostFunction
 
     double minsigma = binwidth, max_input_sigma = binwidth, min_input_sigma = binwidth;
     double maxsigma = 0.5*range;
+    // The input widths themselves - the two above are floored at a channel width, which made the
+    //  Small/Medium FWHM refinement's lower bound (relative to the narrowest input) a fraction of a
+    //  channel for any peak wider than one, so a width could shrink without limit (a NaI line at
+    //  2 MeV refit to a third of the resolution).  HPGe keeps the historical bounds until the change
+    //  is measured and accepted there (on Detective-X it moved 52 of 192 fits, one moderate line lost).
+    const bool width_bounds_from_input = (m_det_type != PeakFitUtils::CoarseResolutionType::High);
+    double narrowest_input_sigma = std::numeric_limits<double>::infinity(), widest_input_sigma = 0.0;
 
     // Mean parameters and compute minsigma/maxsigma
     for( size_t i = 0; i < roi.peaks.size(); ++i )
@@ -2058,6 +2065,8 @@ struct PeakFitDiffCostFunction
 
       min_input_sigma = std::min( min_input_sigma, sigma );
       max_input_sigma = std::max( max_input_sigma, sigma );
+      narrowest_input_sigma = std::min( narrowest_input_sigma, sigma );
+      widest_input_sigma = std::max( widest_input_sigma, sigma );
 
       if( !peak->fitFor( PeakDef::Sigma ) )
       {
@@ -2154,17 +2163,23 @@ struct PeakFitDiffCostFunction
       assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
       assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
 
+      const double refine_min_sigma = width_bounds_from_input ? narrowest_input_sigma : min_input_sigma;
+      const double refine_max_sigma = width_bounds_from_input ? widest_input_sigma : max_input_sigma;
       if( m_options.test( PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly ) )
       {
-        lower_bounds[fit_sigma_idx] = (0.5*min_input_sigma) / roi.max_initial_sigma;
-        upper_bounds[fit_sigma_idx] = (1.5*max_input_sigma) / roi.max_initial_sigma;
+        lower_bounds[fit_sigma_idx] = (0.5*refine_min_sigma) / roi.max_initial_sigma;
+        upper_bounds[fit_sigma_idx] = (1.5*refine_max_sigma) / roi.max_initial_sigma;
+        if( width_bounds_from_input )
+          pars[fit_sigma_idx] = std::min( pars[fit_sigma_idx], *upper_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
       }
       if( m_options.test( PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly ) )
       {
-        lower_bounds[fit_sigma_idx] = (0.85*min_input_sigma) / roi.max_initial_sigma;
-        upper_bounds[fit_sigma_idx] = (1.15*max_input_sigma) / roi.max_initial_sigma;
+        lower_bounds[fit_sigma_idx] = (0.85*refine_min_sigma) / roi.max_initial_sigma;
+        upper_bounds[fit_sigma_idx] = (1.15*refine_max_sigma) / roi.max_initial_sigma;
+        if( width_bounds_from_input )
+          pars[fit_sigma_idx] = std::min( pars[fit_sigma_idx], *upper_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] >= *lower_bounds[fit_sigma_idx] );
         assert( pars[fit_sigma_idx] <= *upper_bounds[fit_sigma_idx] );
       }
@@ -2401,6 +2416,46 @@ public:
 };//struct PeakFitDiffCostFunction
 
 
+/** Results of solving a PeakFitDiffCostFunction: the fitted peaks, and the raw fit
+ parameter/uncertainty/covariance data.
+ */
+struct CeresFitResult
+{
+  vector<PeakDef> final_peaks;
+  vector<double> parameters;
+  vector<double> uncertainties;
+  vector<double> row_major_covariance;
+  size_t num_fit_pars;
+};
+
+
+/** Evaluates the model at the starting parameters, for a problem where every Ceres parameter is held
+ constant - e.g., a Peak Editor refit with centroid and FWHM fixed, where only the amplitudes and
+ continuum vary, and the linear least-squares in `parametersToPeaks(...)` solves those directly.
+ Ceres would have nothing to minimize, and rejects the zero initial trust-region radius such a
+ problem gives it.  Zero uncertainties/covariance are what Ceres reports for constant parameters, and
+ they make `parametersToPeaks(...)` keep the input peaks' mean/FWHM uncertainties.
+ */
+static CeresFitResult evaluate_without_free_parameters( const PeakFitDiffCostFunction &cost_functor,
+                                         const PeakFitDiffCostFunction::ProblemSetup &prob_setup )
+{
+  const size_t num_fit_pars = prob_setup.m_parameters.size();
+  assert( prob_setup.m_constant_parameters.size() == num_fit_pars );
+
+  CeresFitResult result;
+  result.num_fit_pars = num_fit_pars;
+  result.parameters = prob_setup.m_parameters;
+  result.uncertainties.resize( num_fit_pars, 0.0 );
+  result.row_major_covariance.resize( num_fit_pars * num_fit_pars, 0.0 );
+
+  vector<double> residuals( cost_functor.number_residuals(), 0.0 );
+  result.final_peaks = cost_functor.parametersToPeaks<PeakDef,double>( result.parameters.data(),
+                         result.uncertainties.data(), residuals.data(),
+                         result.row_major_covariance.data(), num_fit_pars );
+
+  return result;
+}//evaluate_without_free_parameters(...)
+
 
 /** All peaks passed in must share a PeakContinuum.
  */
@@ -2485,20 +2540,29 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     auto cost_functor = make_unique<PeakFitDiffCostFunction>( dataH, coFitPeaks, roiLowerEnergy, roiUpperEnergy,
                                                     reference_energy, skew_type, det_type, fit_options );
 
-    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
-    //  without introducing a ton of extra overhead.
-    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
-
     const size_t num_fit_pars = cost_functor->number_parameters();
-
-    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
-    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
-
     const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor->get_problem_setup();
 
     assert( prob_setup.m_parameters.size() == num_fit_pars );
     assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
     assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+    if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
+    {
+      CeresFitResult fixed_result = evaluate_without_free_parameters( *cost_functor, prob_setup );
+
+      vector<shared_ptr<const PeakDef>> results;
+      for( PeakDef &peak : fixed_result.final_peaks )
+        results.push_back( make_shared<PeakDef>( std::move(peak) ) );
+      return results;
+    }//if( no free parameters )
+
+    //Choosing 8 paramaters to include in the `ceres::Jet<>` is 4 peaks in ROI, which covers most cases
+    //  without introducing a ton of extra overhead.
+    auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>( cost_functor.get(), ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+
+    cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
 
     vector<double> parameters = prob_setup.m_parameters;
     double * const pars = &parameters[0];
@@ -3370,30 +3434,23 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
  Returns the fitted peaks, and the raw fit parameter/uncertainty/covariance data.
  Throws on failure.
  */
-struct CeresFitResult
-{
-  vector<PeakDef> final_peaks;
-  vector<double> parameters;
-  vector<double> uncertainties;
-  vector<double> row_major_covariance;
-  size_t num_fit_pars;
-};
-
 static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, const size_t total_num_peaks )
 {
   const size_t num_fit_pars = cost_functor.number_parameters();
+  const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
+
+  assert( prob_setup.m_parameters.size() == num_fit_pars );
+  assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
+  assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
+
+  if( prob_setup.m_constant_parameters.size() >= num_fit_pars )
+    return evaluate_without_free_parameters( cost_functor, prob_setup );
 
   auto cost_function = new ceres::DynamicAutoDiffCostFunction<PeakFitDiffCostFunction,8>(
     &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
 
   cost_function->AddParameterBlock( static_cast<int>(num_fit_pars) );
   cost_function->SetNumResiduals( static_cast<int>(cost_functor.number_residuals()) );
-
-  const PeakFitDiffCostFunction::ProblemSetup prob_setup = cost_functor.get_problem_setup();
-
-  assert( prob_setup.m_parameters.size() == num_fit_pars );
-  assert( prob_setup.m_lower_bounds.size() == num_fit_pars );
-  assert( prob_setup.m_upper_bounds.size() == num_fit_pars );
 
   vector<double> parameters = prob_setup.m_parameters;
   double * const pars = parameters.data();

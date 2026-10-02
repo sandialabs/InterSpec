@@ -32,6 +32,7 @@ namespace Wt
 {
   class WDialog;
   class WWidget;
+  class WPushButton;
   class WContainerWidget;
 }//namespace Wt
 
@@ -154,6 +155,41 @@ namespace WidgetUtils
    Must be called on the session thread.
    */
   void trackSessionDialog( Wt::WDialog *dialog );
+
+
+  /** What a dialog button *means*.
+
+   The role fixes both the buttons emphasis and where it sits in the footer.  Position is applied as
+   a CSS `order` (see the `.DialogFooter` rules in InterSpec.css), so it does not depend on the order
+   buttons were added in - which is what it used to depend on, and why the app had no consistent
+   affirm/dismiss ordering.  Platforms that want the affirming action first (Windows) only need the
+   one `.IsWindows` override, rather than every call site re-ordering itself.
+   */
+  enum class ButtonRole
+  {
+    /** The action the dialog is asking for: "Okay", "Yes", "Save", "Accept".  Also the right answer
+     for a single-button dialog that just needs acknowledging. */
+    Affirm,
+
+    /** Backing out without doing the thing: "Cancel", "No", "Close", "Back". */
+    Dismiss,
+
+    /** A third choice that is neither of the above, e.g. "Further Options" or "Use Anyway".  Held
+     between the two ends, so it stays put when the ends swap by platform. */
+    Neutral,
+
+    /** An affirming action that destroys data: "Remove", "Delete", "Discard".  Sits where #Affirm
+     sits, but is coloured with the error token instead of the accent one. */
+    Destructive
+  };//enum class ButtonRole
+
+
+  /** Add the style class that gives `button` its role emphasis and footer position.
+
+   Additive - call sites routinely set other classes (`LightButton`, `LinkBtn`, ...) as well.
+   Safe to call with a null `button`.
+   */
+  void applyButtonRole( Wt::WPushButton *button, ButtonRole role );
 }//namespace WidgetUtils
 
 #endif //WidgetUtils_h

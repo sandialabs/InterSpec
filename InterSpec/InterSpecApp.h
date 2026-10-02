@@ -81,7 +81,15 @@ public:
   
   //isAndroid(): Searches for Android in the user agent string
   bool isAndroid() const;
-  
+
+  /** isWindows(): true when the *client* is running Windows.
+
+   Packaged builds answer from the build macros; everything else (browser, local server, web
+   deployment) falls back to a user-agent check, since there the compiling host is not the client.
+   Used to put the affirming dialog button first, per the platform convention.
+   */
+  bool isWindows() const;
+
   
   /* svlog send the message to the InterSpec for display to the user. */
   void svlog( const Wt::WString& message, int priority = 1 );

@@ -701,10 +701,12 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
     }
 
     m_loadSpectraButton = footer->addNew<WPushButton>( WString::tr("sb-load-spectrum-only") );
+    WidgetUtils::applyButtonRole( m_loadSpectraButton, WidgetUtils::ButtonRole::Neutral );
     m_loadSpectraButton->clicked().connect( this, [this](){ loadSpectraSelected(); } );
     m_loadSpectraButton->disable();
 
     m_loadSnapshotButton = footer->addNew<WPushButton>( WString::tr("sb-load-app-state") );
+    WidgetUtils::applyButtonRole( m_loadSnapshotButton, WidgetUtils::ButtonRole::Affirm );
     m_loadSnapshotButton->clicked().connect( this, [this](){ loadSnapshotSelected(); } );
     m_loadSnapshotButton->setDefault(true);
     //m_loadSnapshotButton->setIcon( "InterSpec_resources/images/time.svg" );
@@ -943,8 +945,8 @@ void SnapshotBrowser::startDeleteSelected()
   // We will rely on the SimpleDialog covering everything else to know that the selection didnt change or anything...
   SimpleDialog *dialog = SimpleDialog::make( title, msg );
   
-  dialog->addButton( WString::tr("No") );
-  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
   yes->clicked().connect( this, &SnapshotBrowser::deleteSelected );
   
   //Need to update text when selection changes, currently relying on modal underlay to protect against this.
@@ -1027,13 +1029,12 @@ void SnapshotBrowser::startEditSelected()
   
   WContainerWidget *foot = m_editWindow->footer();
   
+  // The footer is a flex container that ignores floats; the roles decide the order.
   WPushButton *cancel = foot->addNew<WPushButton>( WString::tr("Cancel") );
-  cancel->addStyleClass( "DialogClose" );
-  cancel->setFloatSide( Wt::Side::Right );
+  WidgetUtils::applyButtonRole( cancel, WidgetUtils::ButtonRole::Dismiss );
 
   WPushButton *yes = foot->addNew<WPushButton>( WString::tr("Accept") );
-  yes->addStyleClass( "DialogClose" );
-  yes->setFloatSide( Wt::Side::Right );
+  WidgetUtils::applyButtonRole( yes, WidgetUtils::ButtonRole::Affirm );
   
   cancel->clicked().connect( m_editWindow.get(), &AuxWindow::hide );
   yes->clicked().connect( this, [this, nameEdit, state, description, node](){

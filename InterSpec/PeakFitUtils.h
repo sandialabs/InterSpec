@@ -57,6 +57,25 @@ float czt_fwhm_fcn( const float energy );
 float hpge_fwhm_fcn( const float energy );
 
 
+/** Energies below a photon's own at which its NaI (or CsI) iodine K x-ray escape peaks sit: the
+ intensity-weighted K-alpha (28.61/28.32 keV) and K-beta (32.2/33.0 keV) lines.
+ */
+constexpr double sm_iodine_kalpha_escape_kev = 28.51;
+constexpr double sm_iodine_kbeta_escape_kev = 32.35;
+
+/** Iodine K x-ray escape in NaI/CsI: the area of a photon's K-alpha and K-beta escape peaks, each as
+ a fraction of that photon's full-energy peak area.  Zero below the iodine K edge (33.17 keV) and
+ above 250 keV, where the escape is under 0.4 % of the line and lost in its Compton continuum.  The
+ escape is a surface effect, so the fractions barely depend on crystal size; the values follow the
+ GADRAS NaI model (K-alpha 9 % at 60 keV, 1.6 % at 122 keV, 0.4 % at 200 keV; K-beta 0.30 of K-alpha).
+ */
+void nai_iodine_escape_fractions( const double energy, double &kalpha_fraction, double &kbeta_fraction );
+
+/** Escape peaks are modelled only for lines with at least this fraction of their source's strongest
+ line's yield; the weak lines of an actinide would otherwise triple the peaks every ROI carries. */
+constexpr double sm_iodine_escape_min_relative_yield = 1.0E-3;
+
+
 enum class CoarseResolutionType : int
 {
   /** NaI, CsI */

@@ -549,8 +549,8 @@ BOOST_AUTO_TEST_CASE( aperture_quadrature_reuse_is_equivalent )
       rather than the raw member - comparing the member reported every round-tripped MC-backed
       detector as changed, and threw a developer-check error on every spectrum save.
     - `hashValue()` equality after `fromXml` is vacuous: the hash is read verbatim out of the file.
-      What decides DB dedupe is the RECOMPUTED hash, which is what DrfSelect::detectorFromEffUpload
-      triggers via setName().
+      What decides DB dedupe is the RECOMPUTED hash, which is what DrfImport::build (the DRF
+      import) triggers via setName().
     - Nothing pinned the emitted `version`, so a change that bumped every DRF would go unnoticed.
     - Nothing covered the database extras codec for the geometry, in particular that an EMPTY
       extras column must clear a geometry the object already had (a Dbo re-read of a reused object).
@@ -591,7 +591,7 @@ BOOST_AUTO_TEST_CASE( round_trip_identity_and_extras_codec )
 
     // The hash that DB dedupe actually uses is the recomputed one, not the one read from the file.
     const uint64_t stored = restored->hashValue();
-    restored->setName( restored->name() );   //what detectorFromEffUpload does; recomputes the hash
+    restored->setName( restored->name() );   //what DrfImport::build does; recomputes the hash
     BOOST_CHECK_EQUAL( stored, restored->hashValue() );
     BOOST_CHECK_EQUAL( drf->hashValue(), restored->hashValue() );
   }
@@ -4758,8 +4758,8 @@ BOOST_AUTO_TEST_CASE( envelope_transfer_from_mc )
         det.name.c_str(), det.family.c_str(), det.fidelity.c_str(), a_cm, aspect,
         r.E, r.is_edge, r.theta, ct, r.d_face, r.d_face/a_cm, d_origin/a_cm,
         r.mc, r.mc_sig, t.value, t.value/r.mc - 1.0,
-        c.far_onaxis, c.offaxis, c.near,
-        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near*c.near),
+        c.far_onaxis, c.offaxis, c.near_field,
+        std::sqrt(c.far_onaxis*c.far_onaxis + c.offaxis*c.offaxis + c.near_field*c.near_field),
         ceelo::to_string(t.flag) );
       out << line << "\n";
       ++n_rows;

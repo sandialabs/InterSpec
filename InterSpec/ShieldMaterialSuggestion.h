@@ -70,7 +70,8 @@ public:
 private:
   /** Slot connected to `filterModel()`; rebuilds the suggestion list from
    `MaterialDB::instance()` plus the local formula cache, filtered against
-   the user's current input.
+   the user's current input, closest matches first (exact name, then whole
+   word, then prefix; shorter before longer).
    */
   void handleFilter( const Wt::WString &filter );
 

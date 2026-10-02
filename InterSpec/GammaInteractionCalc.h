@@ -754,6 +754,44 @@ struct EffectiveShieldingInfo
 };//struct EffectiveShieldingInfo
 
 
+/** A sample of the detector-side lines the volumetric sources are integrated along (see
+ VolumetricLineIntegration_imp.hpp), for display.  Everything is in the assembly frame, in
+ PhysicalUnits, as `std::array{x0, y0, z0, x1, y1, z1}` segments, each starting at its end nearer
+ the source's detector side.
+ */
+struct VolumetricLineSample
+{
+  struct Line
+  {
+    /** The whole line: from where it leaves the outermost layer it crosses, through the detector
+     to where it leaves the active crystal. */
+    std::array<double,6> extent;
+
+    /** Where 90% of the counts it carries are emitted, the most emitting part first: the
+     detector-side part of the source crossing, since emission from deeper is absorbed on its way
+     out, and for a hollow or in-situ source possibly also a stretch on the far side. */
+    std::vector<std::array<double,6>> source_segments;
+
+    /** Where 90% of its photons interact in the active crystal: the entry part of the chord. */
+    std::vector<std::array<double,6>> crystal_segments;
+  };//struct Line
+
+  /** Gamma energy (keV) the lines were drawn in proportion to their contribution at. */
+  double energy = 0.0;
+
+  /** Every gamma energy (keV, ascending) integrated along lines; empty when none is. */
+  std::vector<double> energies;
+
+  /** Lines in the sets of the sources emitting at `energy`, and how many of them contribute. */
+  size_t num_lines_in_set = 0;
+  size_t num_contributing = 0;
+
+  /** Drawn in proportion to their contribution, so where they bunch is where the counts come from;
+   a line drawn twice is listed once. */
+  std::vector<Line> lines;
+};//struct VolumetricLineSample
+
+
 /** This is the setup of the problem - distances, shielding, how to calculate. */
 struct ShieldSourceConfig
 {
@@ -1205,6 +1243,17 @@ public:
                                                      NucMixtureCache &mixturecache,
                                                      std::vector<std::string> *warnings = nullptr ) const;
 
+  /** For display: up to `max_lines` of the lines the volumetric sources are integrated along, drawn
+   in proportion to the counts each contributes at the gamma nearest `energy` (keV), or at the one
+   contributing the most counts when `energy <= 0` - pooled over every source emitting it.  No
+   energies when no source is integrated on the line path (e.g. the flat-disk efficiency is used).
+
+   A diagnostic like #computeEffectiveShielding; call with the parameters to show.
+   */
+  VolumetricLineSample sampleVolumetricLines( const std::vector<double> &params,
+                                              const double energy,
+                                              const size_t max_lines ) const;
+
   /** Templated equivalents of the same-named double-valued accessors below;
    defined in GammaInteractionCalc_imp.hpp.
    */
@@ -1505,7 +1554,7 @@ public:
    */
   const std::string &volumetricEffResolveNote() const;
 
-  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran) could not be
+  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran / ImportedGrid) could not be
    honored and the fit fell back to the best model the DRF still offers (its attached response, else
    flat-disk).  Distinct from #volumetricEffResolveNote: a note is informational (including every
    `Auto` resolution), whereas this says the user asked for something specific and did not get it,
@@ -1528,7 +1577,8 @@ public:
    through the DRF's geometry, else flat-disk.  There is no far-field step-down to flat-disk: the
    line quadrature makes the response cheap at any distance, and a far-field transfer reproduces the
    measured curve to within its anchor, so stepping down would only buy a second model in the same
-   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.
+   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.  A DRF
+   carrying an imported .par efficiency grid resolves to #VolumetricEffMethod::ImportedGrid.
    */
   static ShieldingSourceFitCalc::VolumetricEffMethod resolveVolumetricEffMethodForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -1686,6 +1736,12 @@ protected:
    safe for the fit worker threads.
    */
   std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
+
+  /** What the DRF's FEP curve must be divided by for the per-decay efficiency the cascade engine
+   needs: 1, except for a per-gram / per-area fixed-geometry DRF (see
+   MakeFixedGeomResponse::perDecayFepScale).  Set in #create when #m_cascadeCalc is.
+   */
+  double m_cascadeFepScale = 1.0;
 
   /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
   struct CascadeCorrEntry

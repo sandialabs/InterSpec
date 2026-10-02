@@ -74,7 +74,8 @@ namespace CeeLoUtils
 
   /** Converts an InterSpec MaterialDB material to a self-contained CeeLo
    material spec (per-element mass fractions; nuclide fractions folded into
-   their element).  Throws for elements CeeLo has no data for (Z > 92).
+   their element).  Throws for elements CeeLo has no data for (Z > ceelo::kMaxZ,
+   i.e. above californium).
    */
   ceelo::MaterialSpec to_ceelo_material( const Material &mat );
 
@@ -84,10 +85,11 @@ namespace CeeLoUtils
    those definitions are more authoritative than any name lookup.
 
    `<compound>` atom counts are converted to mass fractions using SandiaDecay's
-   natural atomic masses, and `<compounds>` are merged mass-weighted.
+   natural atomic masses (CeeLo's own weights above uranium, where the masses are
+   conventions), and `<compounds>` are merged mass-weighted.
 
    Throws std::runtime_error if `mat` has no usable composition or density, or
-   names an element outside Z in [1,92] (which the Monte Carlo has no
+   names an element outside Z in [1,ceelo::kMaxZ] (which the Monte Carlo has no
    cross-sections for). */
   ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
                                        const SandiaDecay::SandiaDecayDataBase *db );
@@ -378,7 +380,8 @@ namespace CeeLoUtils
    "Bi4Ge3O12", "CsI", "Cd0.96Zn0.04Te", "C14[H2]12".
 
    The subscripts are ATOM COUNTS (fractional counts allowed; a missing count
-   means 1), converted to mass fractions through the natural atomic masses.
+   means 1), converted to mass fractions through the natural atomic masses
+   (CeeLo's own weights above uranium, where the masses are conventions).
    `[H2]`-style isotope brackets are folded onto their element.
 
    Deliberately NOT `MaterialDB::materialFromChemicalFormula`, whose
@@ -387,7 +390,8 @@ namespace CeeLoUtils
    masses 4:3:12 and would throw outright on "CsI".
 
    Throws std::runtime_error on an unparseable formula, an unknown element, a
-   non-positive density, or an element the Monte Carlo has no data for (Z > 92).
+   non-positive density, or an element the Monte Carlo has no data for
+   (Z > ceelo::kMaxZ).
    */
   ceelo::MaterialSpec materialFromGadrasFormula( const std::string &formula,
                                                  const double density_g_per_cm3,
@@ -420,7 +424,7 @@ namespace CeeLoUtils
    interpolates across atomic number.
 
    Throws std::runtime_error unless `areal_density_g_cm2` and `thickness_cm` are
-   both positive and `atomic_number` is within [1,92].
+   both positive and `atomic_number` is within [1,ceelo::kMaxZ].
    */
   ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
                                                  const double areal_density_g_cm2,

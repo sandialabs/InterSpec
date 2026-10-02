@@ -510,17 +510,12 @@ AuxWindow::AuxWindow(const Wt::WString& windowTitle, Wt::WFlags<AuxWindowPropert
   const bool isPhone = viewer ? viewer->isPhone() : false;
   const bool isTablet = viewer ? viewer->isTablet() : false;
 
-  // On any touch device (phones and tablets, including a tablet running with the "Desktop
-  // Interface" preference enabled), suppress Wt's default WDialog behavior of focusing the
-  // first focusable widget on render.  When that first widget is a text input -- which is
-  // the case for many tool dialogs (Peak Editor, Flux Tool, etc.) -- the on-screen keyboard
-  // pops up immediately and covers half the dialog, which is a poor UX.  On desktop the
-  // initial focus is helpful (you can start typing right away), so leave the default there.
-  // We use InterSpecApp::isMobile() (user-agent based) rather than viewer->isMobile() so
-  // this fix still applies on tablets where TabletUseDesktopMenus is on.
-  InterSpecApp * const app = dynamic_cast<InterSpecApp *>( wApp );
-  if( app && app->isMobile() )
-    setAutoFocus( false );
+  // Suppress Wt's default WDialog behaviour of focusing the first enabled form widget on render.
+  //  Nothing in a tool window is reliably the right thing to start in, and what Wt picks is often
+  //  a stray control - e.g. the Color Themes "Auto apply Dark" check box, which then opens wearing
+  //  a focus ring.  On touch devices it was worse: a text input grabbing focus pops the on-screen
+  //  keyboard up over half the dialog.  A window that genuinely wants initial focus sets it itself.
+  setAutoFocus( false );
 
   const bool isPhoneNotFullScreen = properties.test(AuxWindowProperties::PhoneNotFullScreen);
   const bool isTabletNotFullScreen = properties.test(AuxWindowProperties::TabletNotFullScreen);
@@ -862,7 +857,10 @@ WContainerWidget* AuxWindow::footer()
   {
     m_footer = WDialog::footer();
     m_footer->setHeight(WLength(45,WLength::Unit::Pixel));
-    m_footer->setStyleClass("modal-footer");
+    // "DialogFooter" is shared with SimpleDialog: it supplies the flex layout and the by-role
+    //  button ordering, and unlike "modal-footer" its rules do not hang off ".AuxWindow", which is
+    //  not applied on Android (see AUX_WINDOW_RE_CENTER_SIZE_ON_WINDOW_CHANGE above).
+    m_footer->setStyleClass("modal-footer DialogFooter");
   }
   
   return m_footer;
@@ -920,8 +918,16 @@ bool AuxWindow::isPhone() const
   return m_isPhone;
 }
 
+Wt::WPushButton *AuxWindow::addFooterButton( const Wt::WString &txt, WidgetUtils::ButtonRole role )
+{
+  WPushButton * const button = footer()->addNew<WPushButton>( txt );
+  WidgetUtils::applyButtonRole( button, role );
+  return button;
+}//WPushButton *AuxWindow::addFooterButton( const WString &txt, ButtonRole role )
+
+
 Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
-                                                   const bool float_right,
+                                                   WidgetUtils::ButtonRole role,
                                                    Wt::WContainerWidget *footerOverride )
 {
   auto closeOwner = std::make_unique<WPushButton>();
@@ -946,10 +952,10 @@ Wt::WPushButton *AuxWindow::addCloseButtonToFooter( Wt::WString override_txt,
       override_txt = WString::tr("Close");
     
     close->setText( override_txt );
-    if( float_right )
-      close->addStyleClass( "DialogClose" );
   }//if( phone ) / else
- 
+
+  WidgetUtils::applyButtonRole( close, role );
+
   //Sometimes, the footer may not be footer(), so we allow user to override
   if( !footerOverride )
     footerOverride = footer();
@@ -1362,8 +1368,15 @@ void AuxWindow::addHelpInFooter( WContainerWidget *footer, std::string page )
   // Phone-fullscreen AuxWindows place the footer in the title bar with Close (MobileBackBtn)
   // floated left, so the help icon belongs on the far right.  All other dialogs - including
   // non-fullscreen dialogs on phones - follow the desktop convention with help on the left.
+  //
+  // A ".DialogFooter" is a flex container, which ignores floats; there the icon is pinned left by
+  // `order: 0; margin-right: auto` instead (see InterSpec.css).  Phone footers are not flex, so
+  // they still need the float.
   const bool isPhoneFullScreenFooter = footer && footer->hasStyleClass("PhoneAuxWindowFooter");
-  image->setFloatSide( isPhoneFullScreenFooter ? Wt::Side::Right : Wt::Side::Left );
+  if( isPhoneFullScreenFooter )
+    image->setFloatSide( Wt::Side::Right );
+  else if( !footer || !footer->hasStyleClass("DialogFooter") )
+    image->setFloatSide( Wt::Side::Left );
 
   image->setAlternateText("Help");
   image->clicked().connect( image, [page](){ HelpSystem::createHelpWindow( page ); } );

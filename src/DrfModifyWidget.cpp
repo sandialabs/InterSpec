@@ -72,6 +72,7 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -326,7 +327,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   // Fixed-geometry DRFs have no geometry to model, so no Geom & MC tab and no mode toggle.  A
   //  far-field DRF starts Geometry Modeled iff it already carries a Monte-Carlo response, knows its
   //  physical shape (an ANGLE / Detector.dat import, or a geometry saved with it), or is a
-  //  geometry-only import that has no efficiency yet, and so needs one.
+  //  geometry-only import that has no efficiency yet, and so needs one.  A shape that Flat Disk
+  //  switched off is kept, but `geometry()` does not return it (see buildWorkingDrf).
   const bool fixed_geom = (m_orig && m_orig->isFixedGeometry());
   const bool has_geom_tab = !fixed_geom;
   m_geometryModeled = has_geom_tab
@@ -1532,7 +1534,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
   // --- Geometry: flat disk / fixed / physical shape ----------------------------------------------
   {
     WString txt;
-    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->geometry() : nullptr;
+    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->storedGeometry() : nullptr;
 
     if( drf && drf->isFixedGeometry() )
     {
@@ -1561,6 +1563,11 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
         txt = WString::tr("dmw-info-geom-known");
 
       txt = WString::tr("dmw-info-geom-layers").arg( txt ).arg( static_cast<int>( gd->layers.size() ) );
+
+      // Flat Disk keeps the shape but switches it off - say so, or this row reads as the geometry
+      //  the detector is modeled with.
+      if( drf->geometryDisabled() )
+        txt = WString::tr("dmw-info-geom-disabled").arg( txt );
     }else
     {
       const double diam_cm = drf ? (drf->detectorDiameter() / PhysicalUnits::cm) : 0.0;
@@ -1590,7 +1597,8 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
           break;
 
         case ceelo::ProductionMethod::CurveTransfer:
-          txt = WString::tr("dmw-info-support-curve").arg( range );
+          txt = WString::tr( DetEffG2kPar::isGridResponse( mc ) ? "dmw-info-support-grid"
+                                                                : "dmw-info-support-curve" ).arg( range );
           break;
       }//switch( method )
 
@@ -1793,6 +1801,13 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   if( m_orig )
     working->setParentHashValue( m_orig->hashValue() );
 
+  // Flat Disk switches the geometry off rather than discarding it: kept, but hidden from `geometry()`,
+  //  so nothing models through it.  Set before the Anchor tab applies, so its distance corrections
+  //  use the flat disk the detector is evaluated with.  Geometry Modeled - and a regeneration seed,
+  //  characterized through that geometry - switch it back on.  No Geom & MC tab, no mode to record.
+  if( m_mcTool )
+    working->setGeometryDisabled( includeMcResponse && !m_geometryModeled );
+
   // Name / description.
   const string name = m_name->text().toUTF8();
   if( !name.empty() )
@@ -1858,14 +1873,15 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   const shared_ptr<const ceelo::DetectorResponse> resp
       = (includeMcResponse && m_geometryModeled && m_mcTool) ? m_mcTool->generatedResponse() : nullptr;
 
-  // What shape this detector knows, taken BEFORE any detach below.  `geometry()` prefers an attached
-  //  response's own descriptor, and the serializers write only one of the two - so for a DRF that
-  //  has been through a file or the database the shape lives *only* in the response, and detaching
-  //  it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps the
-  //  geometry, as this function has always claimed to.
-  //  Copied rather than aliased: `geometry()` hands back a pointer that shares ownership with the
-  //  response, which would keep the whole (~100 KB) response alive behind a detached DRF.
-  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->geometry();
+  // What shape this detector knows, taken BEFORE any detach below.  `storedGeometry()` prefers an
+  //  attached response's own descriptor, and the serializers write only one of the two - so for a
+  //  DRF that has been through a file or the database the shape lives *only* in the response, and
+  //  detaching it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps
+  //  the geometry, as this function has always claimed to.  (Stored, not `geometry()`, which hides
+  //  the shape Flat Disk has just switched off.)
+  //  Copied rather than aliased: it hands back a pointer that shares ownership with the response,
+  //  which would keep the whole (~100 KB) response alive behind a detached DRF.
+  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->storedGeometry();
   const shared_ptr<const ceelo::GeometryDescriptor> known_geom
       = from_drf ? make_shared<const ceelo::GeometryDescriptor>( *from_drf ) : nullptr;
   if( includeMcResponse && m_geometryModeled && resp )
@@ -1986,8 +2002,8 @@ void DrfModifyWidget::requestApply()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-detach-title"),
                                                              WString::tr("dmw-detach-body") );
-    WPushButton *ok = dialog->addButton( WString::tr("dmw-detach-accept") );
-    dialog->addButton( WString::tr("Cancel") );
+    WPushButton *ok = dialog->addButton( WString::tr("dmw-detach-accept"), WidgetUtils::ButtonRole::Affirm );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
     ok->clicked().connect( this, &DrfModifyWidget::apply );
     return;
   }//if( detaching a geometry-modeled response )
@@ -2005,9 +2021,9 @@ void DrfModifyWidget::requestApply()
     {
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-nogen-title"),
                                                                WString::tr("dmw-nogen-body") );
-      WPushButton *gen = dialog->addButton( WString::tr("dmw-nogen-generate") );
-      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-nogen-use-anyway") );
-      dialog->addButton( WString::tr("Cancel") );
+      WPushButton *gen = dialog->addButton( WString::tr("dmw-nogen-generate"), WidgetUtils::ButtonRole::Affirm );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-nogen-use-anyway"), WidgetUtils::ButtonRole::Neutral );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
       gen->clicked().connect( this, [this](){
         //handleResponseGenerated applies once THIS run lands; a run that never starts, or that
         //  fails part way, must not leave a later unrelated generation armed.
@@ -2030,8 +2046,8 @@ void DrfModifyWidget::requestApply()
       const string problem = Wt::Utils::htmlEncode( m_mcTool->geometryProblem() );
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-geom-incomplete-title"),
                              WString::tr("dmw-geom-incomplete-body").arg( WString::fromUTF8(problem) ) );
-      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-geom-incomplete-use-anyway") );
-      dialog->addButton( WString::tr("Cancel") );
+      WPushButton *useAnyway = dialog->addButton( WString::tr("dmw-geom-incomplete-use-anyway"), WidgetUtils::ButtonRole::Affirm );
+      dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
       useAnyway->clicked().connect( this, &DrfModifyWidget::apply );
     }//if( canGen ) / else
 
@@ -2062,7 +2078,7 @@ void DrfModifyWidget::requestApply()
                    WString::tr( canGen ? "dmw-regen-required-body" : "dmw-regen-impossible-body" ) );
     if( canGen )
     {
-      WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept") );
+      WPushButton *regen = dialog->addButton( WString::tr("dmw-regen-accept"), WidgetUtils::ButtonRole::Affirm );
       regen->clicked().connect( this, [this](){
         const bool started = handleGenerateResponse();
         m_applyAfterGenerationId = started ? m_mcTool->generationId() : -1;
@@ -2070,9 +2086,9 @@ void DrfModifyWidget::requestApply()
           passMessage( WString::tr("dmw-err-regen-failed"), WarningWidget::WarningMsgHigh );
       } );
     }
-    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach") );
+    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-detach"), WidgetUtils::ButtonRole::Neutral );
     detach->clicked().connect( this, &DrfModifyWidget::detachResponseAndApply );
-    dialog->addButton( WString::tr("Cancel") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
     return;
   }//if( the attached response no longer describes the edits )
 
@@ -2557,9 +2573,14 @@ bool DrfModifyWidget::responseStale()
   if( !resp )
     return false;
 
+  // An imported efficiency grid is kept as it is: none of the edits here are what it was made from.
+  const bool grid_selected = (m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::ImportedGrid);
+  if( grid_selected || DetEffG2kPar::isGridResponse( resp ) )
+    return (grid_selected != DetEffG2kPar::isGridResponse( resp ));
+
   // A method change makes the attached response the wrong KIND of response, whatever it was built
-  //  from.  (The two enumerations mirror each other; see MakeMcResponseForDrf's use of the same
-  //  mapping when it opens on an existing response.)
+  //  from.  (The two enumerations mirror each other - apart from ImportedGrid, above; see
+  //  MakeMcResponseForDrf's use of the same mapping when it opens on an existing response.)
   if( static_cast<int>(m_mcTool->selectedMethod()) != static_cast<int>(resp->provenance.method) )
     return true;
 
@@ -2810,6 +2831,7 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   cancel->clicked().connect( this, &AuxWindow::hide );
 
   WPushButton *use = footer()->addNew<WPushButton>( WString::tr("dmw-use-btn") );
+  WidgetUtils::applyButtonRole( use, WidgetUtils::ButtonRole::Affirm );
   use->clicked().connect( m_tool, &DrfModifyWidget::requestApply );
 
   // "Use" has two independent reasons to be closed, so they are combined in one place rather than

@@ -55,11 +55,20 @@ std::string skillToolNameFromCanonical( std::string canonical_name );
 
 std::vector<SkillInfo> loadSkills();
 
+/** Registers the DeepResearch skill tools, and - if `deep_research_url` is non-empty - the tool that
+ queries that endpoint.  An empty `deep_research_model` or `deep_research_corpora` means the built-in
+ default is sent for that field of the request.
+ */
 void registerDeepResearchTools( const std::string &deep_research_url,
+                                const std::string &deep_research_model,
+                                const std::vector<std::string> &deep_research_corpora,
                                 const std::function<void(const LlmTools::SharedTool&)> &register_tool,
                                 bool &loaded_any_skill );
 
-nlohmann::json executeQueryDeepResearchEndpoint( const nlohmann::json& params, const std::string &deep_research_url );
+nlohmann::json executeQueryDeepResearchEndpoint( const nlohmann::json& params,
+                                                 const std::string &deep_research_url,
+                                                 const std::string &deep_research_model,
+                                                 const std::vector<std::string> &deep_research_corpora );
 
 }//namespace LlmDeepResearch
 

@@ -1,12 +1,18 @@
+/* SimpleDialog wears the same chrome as AuxWindow - the grey `.titlebar` caption, the shared
+   `button` fill, the `.DialogFooter` strip - so the two read as one application.  What still marks
+   it as modal rather than a tool window is behaviour and weight: the `.Wt-dialogcover` scrim behind
+   it, a heavier drop shadow, and that it is centred and cannot be moved or resized.
+ */
 .simple-dialog
 {
   border: none;
-  font-size: 16px;
   background-color: var(--interspec-background-color);
   border-radius: 10px;
   /* We have to set min width in the C++ */
   overflow: hidden;
-  box-shadow: 0 1px 6px rgba(0,0,0,.06),0 2px 32px rgba(0,0,0,.16) !important;
+  /* Heavier than a tool window's, so the dialog clearly floats above the scrim.  Tokenised because
+     the alpha that reads over the light scrim disappears over the dark one. */
+  box-shadow: var(--interspec-modal-shadow) !important;
   max-height: 95vh;
 }
 
@@ -40,27 +46,20 @@
   width: fit-content !important;
 }
 
+/* The caption bar itself is the shared `.titlebar` rule in InterSpec.css - the same 25px grey bar
+   AuxWindow uses - so nothing is declared here for its background, height or ink.  The title WText
+   carries `.titleVertMiddle`, also shared with AuxWindow, for its padding and alignment.
+ */
 .simple-dialog .title
 {
-  /* line-height: 20px; */
-  padding: 20px 20px 6px;
-
-  text-align: center;
-  font-weight: 700;
-  font-size: x-large;
   user-select: none;
 }
 
-/* Wt4's default theme applies a dark-grey background and white text to .Wt-dialog .titlebar
-   (see Wt's wt.css).  SimpleDialog wants a plain white-background heading, so override it.
-   The C++ also tries to removeStyleClass("titlebar") but Wt's theme re-adds it on render,
-   so the CSS override is the reliable fix.  Selector includes .Wt-dialog to outrank Wt's
-   own rule on specificity. */
-.Wt-dialog.simple-dialog .titlebar
+/* AuxWindow lightens its caption on hover because that bar is a drag handle.  A SimpleDialog is
+   `setMovable(false)`, so the same feedback would promise something that does not work. */
+.Wt-dialog.simple-dialog .titlebar:hover
 {
-  background: transparent;
-  color: inherit;
-  padding: 0;
+  background: var(--interspec-titlebar-background);
 }
 
 /* The parent of .title, .body and .footer can be selected as below.
@@ -94,10 +93,10 @@ dialog
  */
 .simple-dialog .body
 {
-  /* Use 15px padding on right and left, instead of margin, so this way scroll bar will be
+  /* Use padding on right and left, instead of margin, so this way scroll bar will be
    along right edge of dialog, if it is present.
    */
-  padding: 0px 15px 0px 15px;
+  padding: 14px 16px 16px 16px;
   margin: 0px 0px 0px 0px;
 
   overflow-y: auto;
@@ -123,71 +122,76 @@ dialog
 
 .simple-dialog .content
 {
-  padding: 0 20px 20px;
-  text-align: center;
-  
+  /* The body element supplies the padding; prose is left-aligned like every other block of text in
+     the application, rather than centred the way an iOS alert sheet centres it. */
+  padding: 0;
+  text-align: left;
+  line-height: 1.5;
+
   -webkit-user-select: text;
   user-select: text;
 }
 
+/* A title-only dialog (a bare "Erase All Peaks?" confirm) has nothing in its body, and the padding
+   alone would draw ~30px of empty space between the caption and the footer.  `:empty` is evaluated
+   live, so a body that gets filled later still gets its padding. */
+.simple-dialog .body:empty
+{
+  padding: 0;
+}
+
+/* Option check boxes ("Don't ask again", "Truncate negative bins at zero") are choices about the
+   action, not part of the prose, so they sit in their own block behind a hairline. */
+.simple-dialog .body .DialogOptions
+{
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--interspec-border-color);
+}
+
+/* The flex layout, the 8px gap and the by-role ordering all come from `.DialogFooter`, shared with
+   AuxWindow's footer.  Only the strip itself is described here, matching `.modal-footer`. */
 .simple-dialog .footer
 {
-  display: flex;
-  padding: 0px 0px 0px 0px;
+  padding: 8px 10px 8px 10px;
+  border-top: 1px solid var(--interspec-border-color);
+}
+
+/* Every SimpleDialog has a footer element (init() asks for it so it can carry `DialogFooter`), but
+   a dialog that adds no buttons should not show an empty strip and rule. */
+.simple-dialog .footer:empty
+{
+  padding: 0;
+  border-top: none;
 }
 
 
-/* Anchors are used instead of buttons for downloads on macOS/iOS (see e.g. LlmInteractionDisplay),
-   so they need the same footer chrome as a button. */
-.simple-dialog .footer button,
+/* Footer buttons deliberately declare almost nothing: they inherit the same `button` chrome
+   AuxWindow's footer buttons use (see InterSpec.css), which is the point - the two dialog families
+   should not drift apart.  Emphasis and position come from the role classes in `.DialogFooter`.
+
+   Anchors are used instead of buttons for downloads on macOS/iOS (see e.g. LlmInteractionDisplay),
+   so they need to be given that chrome explicitly, since it hangs off the `button` element. */
 .simple-dialog .footer a.simple-dialog-btn
 {
-  align-items: flex-start;
-  text-align: center;
-  box-sizing: border-box;
-  white-space: pre;
-  -webkit-rtl-ordering: logical;
-  -webkit-user-select: text;
-  user-select: text;
-  font-style: normal;
-  font-weight: 400;
-  font-family: system-ui;
-  font-variant-caps: normal;
-  letter-spacing: normal;
-  word-spacing: normal;
-  text-transform: none;
-  text-indent: 0px;
-  text-shadow: none;
-  
-  border: 0;
-  outline: 0;
-  font-size: 14px;
   display: inline-block;
-  width: 100%;
+  box-sizing: border-box;
   cursor: pointer;
-  -webkit-appearance: none;
-  border-radius: 0;
-  background: none;
-  color: var(--interspec-accent-color);
-  /* color: rgb(18,101,200); */
-  border-top: 1px solid var(--interspec-border-color);
-  margin: 0;
-  padding: 12px;
-  line-height: normal;
-  height: auto;
-  
-  border-right: 1px solid var(--interspec-border-color);
+  text-decoration: none;
+  text-align: center;
+
+  font-weight: bold;
+  vertical-align: middle;
+  border: 1px solid var(--interspec-border-color);
+  color: var(--interspec-button-text-color);
+  background-color: var(--interspec-button-background);
+  border-radius: 5px;
+  height: 23px;
+  padding: 2px 12px;
 }
 
-/* Get rid of border on the right of the very last button */
-.simple-dialog .footer button:last-child,
-.simple-dialog .footer a.simple-dialog-btn:last-child
-{
-  border-right: none;
-}
-
-.simple-dialog .footer button:hover,
 .simple-dialog .footer a.simple-dialog-btn:hover
 {
-  color: var(--interspec-link-color);
+  color: var(--interspec-button-text-color);
+  background-color: var(--interspec-button-hover-background);
 }

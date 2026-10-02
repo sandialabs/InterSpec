@@ -46,6 +46,12 @@ tools/prepare_cross_sections/data/
 # CTest scratch
 Testing/
 
+# Generated outputs are regenerated locally, never committed (unless a unit test reads
+# them): the bremsstrahlung migration review bundle (its approval record lives in
+# tools/prepare_cross_sections/) and CeeLo's own benchmark results.
+/validation/
+/tests/data/ceelo_reference/our_*_multi.csv
+
 # Root-level diagnostic/comparison artifacts (regenerable)
 /diag_spectrum_*.csv
 /mc_diag_*.csv

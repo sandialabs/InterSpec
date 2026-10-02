@@ -72,13 +72,32 @@ struct BenchmarkJudgement
 };//struct BenchmarkJudgement
 
 
+/** An image attached to a benchmark question, sent to the LLM along with the prompt.
+
+ For problem sets whose "spectra" are only available as pictures (e.g. questions transcribed from
+ a written exam), rather than as spectrum files InterSpec could load.
+
+ The data comes either inline in the benchmark XML (base64 in the <Image> text node, making the
+ benchmark self-contained) or from a file path relative to the XML.  Exactly one of `base64Data`
+ and `filePath` is non-empty after parsing; a file is read and encoded when the question is sent,
+ so parsing stays independent of the filesystem.
+ */
+struct BenchmarkImage
+{
+  std::string caption;      // e.g. "Item A"; sent to the LLM as a text block before the image
+  std::string mimeType;     // e.g. "image/png"; sniffed from the data or extension when absent
+  std::string base64Data;   // Inline base64: no data-URL prefix, no whitespace
+  std::string filePath;     // Relative-to-XML path; read and encoded when the question is sent
+};//struct BenchmarkImage
+
+
 struct BenchmarkQuestion
 {
   int part = 1;
   bool skip = false;  // If true, skip this question (e.g., requires capabilities we don't have)
   std::string skipReason;  // Why the question is skipped
   std::string prompt;
-  std::string imagePath;  // Optional image file (resolved relative to benchmark XML)
+  std::vector<BenchmarkImage> images;  // Optional images sent with the prompt
   std::optional<BenchmarkJudgement> judgement;  // Absent means ungraded
 };//struct BenchmarkQuestion
 
@@ -120,6 +139,13 @@ struct BenchmarkQuestionResult
   std::string problemId;
   int questionPart = 0;
   std::string prompt;
+
+  /** Captions of the images sent with this question, in order.  Deliberately *not* the image data:
+   that would add hundreds of KB to every checkpoint write, and the data is already in the
+   benchmark XML.  Lets a reader of the results JSON see which images a question was given.
+   */
+  std::vector<std::string> imageCaptions;
+
   std::string llmAnswer;
   std::string expectedAnswer;
   bool graded = false;    // false if no judgement was specified
@@ -158,6 +184,12 @@ struct BenchmarkResults
   std::chrono::system_clock::time_point startTime;
   std::chrono::system_clock::time_point endTime;
   std::vector<BenchmarkQuestionResult> questionResults;
+
+  /** False when the benchmark XML asked not to be graded (grade="false"); see
+   LlmBenchmarkRunner::m_grade.  Recorded here so it survives into the results JSON, where
+   `gradedQuestions == 0` would otherwise be ambiguous with "every question errored".
+   */
+  bool graded = true;
 
   // Summary stats (computed from questionResults)
   int totalQuestions = 0;
@@ -208,10 +240,13 @@ public:
 
   /** Parse a benchmark XML file into problems.
    @param xmlPath Absolute path to the benchmark XML file
+   @param grade If non-null, set to the value of the root element's optional `grade` attribute;
+          true (the default, for all benchmarks that do not specify it) means answers are graded
+          as usual, false means record answers without judging them.
    @return Parsed problems
    @throws std::runtime_error on parse errors
    */
-  static std::vector<BenchmarkProblem> parseXml( const std::string &xmlPath );
+  static std::vector<BenchmarkProblem> parseXml( const std::string &xmlPath, bool *grade = nullptr );
 
   /** Scan a directory for benchmark XML files matching *_llm_benchmark.xml.
    @param directory The directory to scan
@@ -238,6 +273,17 @@ private:
   std::vector<BenchmarkProblem> m_problems;
   BenchmarkResults m_results;
   std::string m_benchmarkBaseDir;  // Directory of the benchmark XML file
+
+  /** Whether answers should be judged, from the benchmark XML root's `grade` attribute.
+   False for problem sets that have no answer key: every answer is recorded ungraded, no judge
+   LlmInterface is created, and the results JSON is just a question/answer transcript for a
+   human to review.  True for all existing benchmarks (the attribute defaults to true).
+   */
+  bool m_grade = true;
+
+  /** Set once we have warned that the active model cannot accept image input, so a benchmark with
+   many image questions does not repeat the same error for each of them. */
+  bool m_warnedNoImageSupport = false;
 
   size_t m_currentProblem;
   size_t m_currentQuestion;
@@ -309,6 +355,15 @@ private:
 
   /** Send the current judged question to the LLM. */
   void sendCurrentQuestion();
+
+  /** Stage `question`s images (if any) so the next submitted message carries them.
+
+   Called from sendCurrentQuestion() on every attempt, including retries, since sending a message
+   consumes the staged images.
+   @returns true if there was nothing to do, or all images were staged; false (after logging) if
+            the active model cannot accept images, or an image could not be read or encoded.
+   */
+  bool stageQuestionImages( const BenchmarkQuestion &question );
 
   // Re-ask the current question after an endpoint/LLM error, if we have retries
   //  left.  Clears the (failed) conversation turn so the retry starts fresh

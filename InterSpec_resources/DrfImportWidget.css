@@ -1,0 +1,122 @@
+/* DrfImportWidget: the DRF Select "Import" tab, and the dialog for a DRF file dropped on the app. */
+
+.DrfImportWidget
+{
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+/* Drop areas.  The drag/upload behavior is the batch tool's (BatchGuiWidget.js), which toggles the
+   DomIsDrugOver / DragedOver / Uploading classes. */
+.DrfImportDrop
+{
+  flex-shrink: 0;   /* the column can be height-limited (DRF Select tab); never squash the text */
+  padding: 10px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed var(--interspec-outline-color);
+  border-radius: 8px;
+  color: var(--interspec-fainter-text-color);
+  font-size: smaller;
+}
+
+.DrfImportDrop.DrfImportMainDrop
+{
+  min-height: 60px;
+  font-size: inherit;
+}
+
+/* A file is loaded: the main area only offers to replace it. */
+.DrfImportDrop.DrfImportMainDrop.DrfImportLoaded
+{
+  min-height: 0;
+  padding: 6px 10px;
+  font-size: smaller;
+}
+
+.DrfImportDrop.DomIsDrugOver
+{
+  border: 3px dashed var(--interspec-outline-color);
+  background-color: rgba(128, 128, 128, 0.5);
+}
+
+.DrfImportDrop.DragedOver,
+.DrfImportDrop.DragedOver.DomIsDrugOver
+{
+  border: 3px dashed var(--interspec-success-color);
+  background-color: transparent;
+}
+
+.DrfImportDrop.Uploading
+{
+  border: 3px dashed var(--interspec-success-color);
+  animation: DrfImportBlink 1s infinite;
+}
+
+@keyframes DrfImportBlink
+{
+  0%   { opacity: 1; }
+  50%  { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+.DrfImportFiles:empty
+{
+  display: none;
+}
+
+.DrfImportRow
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.DrfImportCharacterize
+{
+  align-self: flex-start;
+}
+
+.DrfImportStatus
+{
+  font-style: italic;
+}
+
+.DrfImportStatus:empty
+{
+  display: none;
+}
+
+.DrfImportStatus.DrfImportError
+{
+  color: var(--interspec-error-color);
+  font-style: normal;
+}
+
+.DrfImportNotes
+{
+  font-size: smaller;
+  color: var(--interspec-secondary-text-color);
+}
+
+.DrfImportNotes:empty
+{
+  display: none;
+}
+
+.simple-dialog.DrfImportDialog
+{
+  max-width: 85vw;
+}
+
+.DrfImportDialog .DrfImportDefaultCb
+{
+  margin-top: 4px;
+}

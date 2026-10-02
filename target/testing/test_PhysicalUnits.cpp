@@ -647,3 +647,25 @@ BOOST_AUTO_TEST_CASE( test_printToBestSpecificActivityUnits ) {
   BOOST_CHECK( printToBestSpecificActivityUnits(1.23456*1.0E16*actUnit/massUnit,nSigFigs,useCurry) == "1.23e+16 Ci/g" );
 }//printToBestSpecificActivityUnits
 
+
+BOOST_AUTO_TEST_CASE( test_printValueWithUncertainty )
+{
+  using PhysicalUnits::printValueWithUncertainty;
+
+  BOOST_CHECK_EQUAL( printValueWithUncertainty( 1.23456, 0.0123, 3 ), "1.23 \xC2\xB1 0.012" );
+  BOOST_CHECK_EQUAL( printValueWithUncertainty( 0.0, 0.0, 3 ), "0 \xC2\xB1 0" );
+
+  // Negative values (e.g., a fit peak with a negative amplitude) used to print "-nan \xC2\xB1 -nan"
+  BOOST_CHECK_EQUAL( printValueWithUncertainty( -1.23456, 0.0123, 3 ), "-1.23 \xC2\xB1 0.012" );
+  const double values[] = { 0.0414897, 1.23456E-6, 5.5, 987654.3 };
+  for( const double value : values )
+  {
+    for( const double rel_uncert : { 1.0E-5, 0.01, 0.9, 3.0 } )
+    {
+      const std::string pos = printValueWithUncertainty( value, rel_uncert*value, 4 );
+      const std::string neg = printValueWithUncertainty( -value, rel_uncert*value, 4 );
+      BOOST_CHECK_MESSAGE( neg == ("-" + pos), "'" << neg << "' is not '-" << pos << "'" );
+      BOOST_CHECK( neg.find( "nan" ) == std::string::npos );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( test_printValueWithUncertainty )

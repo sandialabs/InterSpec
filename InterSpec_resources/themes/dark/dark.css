@@ -64,7 +64,11 @@
   --interspec-selected-text-color: white;
   --interspec-hover-background: rgba(255,255,255,0.12);
   --interspec-button-background: rgb(86,88,90);
-  --interspec-button-hover-background: rgb(100,102,104); /* lighter than the button, and keeps its text at 4.6:1 */
+  /* Darkens, like the light theme.  Lightening is what a dark theme usually does, but the button
+     text is a fixed light grey, so any lightening strong enough to feel like feedback drops it below
+     AA - rgb(112,114,117) reads 3.87:1.  Darkening gives a comparable step (1.37x) at 7.83:1, and
+     the button still sits well clear of the dialog surface. */
+  --interspec-button-hover-background: rgb(66,68,71);
   --interspec-button-border-color: rgb(106,107,109);
   --interspec-button-text-color: rgb(230,230,230);
   --interspec-menubar-background: rgb(65,65,65);
@@ -85,6 +89,7 @@
   /* ---- Mode ---- */
   --interspec-icon-filter: invert(100%);
   --interspec-color-scheme: dark;
+  --interspec-modal-shadow: 0 8px 24px rgba(0,0,0,0.5);
 }
 
 /* -----------------------------------------------------------------------------

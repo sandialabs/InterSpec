@@ -587,6 +587,25 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       SpecUtils::trim( value_str );
       llmApi.deep_research_url = value_str;
 
+      // Optional model and corpora for the deep-research endpoint; absent means use the defaults
+      //  in LlmDeepResearchAgent.cpp, so configs predating these elements keep working.
+      const rapidxml::xml_node<char> * const deep_research_model = XML_FIRST_NODE( llmApiNode, "DeepResearchModel" );
+      value_str = SpecUtils::xml_value_str( deep_research_model );
+      SpecUtils::trim( value_str );
+      llmApi.deep_research_model = value_str;
+
+      llmApi.deep_research_corpora.clear();
+      const rapidxml::xml_node<char> * const deep_research_corpora = XML_FIRST_NODE( llmApiNode, "DeepResearchCorpora" );
+      value_str = SpecUtils::xml_value_str( deep_research_corpora );
+      vector<string> corpora;
+      SpecUtils::split( corpora, value_str, "," );
+      for( string &corpus : corpora )
+      {
+        SpecUtils::trim( corpus );
+        if( !corpus.empty() )
+          llmApi.deep_research_corpora.push_back( corpus );
+      }
+
       // Load optional CompactionSystemPrompt (if not present, remains empty - default used at runtime)
       const rapidxml::xml_node<char> * const compactionPromptNode = XML_FIRST_NODE( llmApiNode, "CompactionSystemPrompt" );
       value_str = SpecUtils::xml_value_str( compactionPromptNode );
@@ -809,11 +828,24 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
   append_comment( llmApi,
     " Optional <LlmApi> elements:\n"
     "         <DeepResearchUrl>        - HTTP endpoint for the DeepResearch sub-agent's query tool; empty disables it.\n"
+    "         <DeepResearchModel>      - model the deep-research service should use; empty uses the built-in default.\n"
+    "         <DeepResearchCorpora>    - comma-separated corpora for it to search; empty uses the built-in default.\n"
     "         <CompactionSystemPrompt> - overrides the default prompt used when summarizing old conversation history.\n"
     "         <DebugFile>              - \"stdout\", \"stderr\", or a file path for verbose LLM debug logging; empty disables it. " );
 
   if( !config.llmApi.deep_research_url.empty() )
     XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+
+  if( !config.llmApi.deep_research_model.empty() )
+    XmlUtils::append_string_node( llmApi, "DeepResearchModel", config.llmApi.deep_research_model );
+
+  if( !config.llmApi.deep_research_corpora.empty() )
+  {
+    string corpora;
+    for( const string &corpus : config.llmApi.deep_research_corpora )
+      corpora += (corpora.empty() ? "" : ",") + corpus;
+    XmlUtils::append_string_node( llmApi, "DeepResearchCorpora", corpora );
+  }
 
   if( !config.llmApi.compactionSystemPrompt.empty() )
     XmlUtils::append_string_node( llmApi, "CompactionSystemPrompt", config.llmApi.compactionSystemPrompt );

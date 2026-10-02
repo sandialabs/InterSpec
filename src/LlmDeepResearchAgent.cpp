@@ -24,23 +24,43 @@ using namespace std;
 
 namespace
 {
-std::string query_deep_research_endpoint( const std::string &queryText, const std::string &deep_query_url )
+/** Defaults for the remote deep-research service, used when `<DeepResearchModel>` or
+ `<DeepResearchCorpora>` are not given in llm_config.xml.  The service has renamed its corpus more
+ than once, which is why these are overridable from the config rather than only being defined here.
+ */
+const char * const sm_default_deep_research_model = "openai/gpt-oss-120b";
+const char * const sm_default_deep_research_corpus = "ldrd_llm_gamma_spec_labeled";
+
+
+std::string query_deep_research_endpoint( const std::string &queryText,
+                                          const std::string &deep_query_url,
+                                          const std::string &model,
+                                          const std::vector<std::string> &corpora )
 {
   try
   {
-    // Construct the JSON payload
-    nlohmann::json payload = {
-      {"messages", {{{"content", queryText}}}},
-      {"corpora", {"ldrd_llm_gamma_spec"}}
-    };
-    std::string jsonStr = payload.dump();
+    // Construct the JSON payload; the endpoint requires all three of these fields, and validates
+    //  `corpora` against a fixed list of names, rejecting the request with a HTTP 422 otherwise.
+    nlohmann::json payload;
+    payload["query"] = queryText;
+    payload["model"] = model;
+    payload["corpora"] = nlohmann::json::array();
+    for( const std::string &corpus : corpora )
+      payload["corpora"].push_back( corpus );
 
-    // Setup the curl command arguments
-    std::vector<std::string> args = {
+    const std::string jsonStr = payload.dump();
+
+    // Setup the curl command arguments.  We append the HTTP status code so a failed request
+    //  reports the actual server error, rather than us trying to parse the error body as an answer.
+    //  The service does multiple LLM round-trips per query, so it needs a generous timeout.
+    const std::vector<std::string> args = {
+      "-s",
       "-X", "POST",
       deep_query_url,
       "-H", "accept: application/json",
       "-H", "Content-Type: application/json",
+      "--max-time", "600",
+      "-w", "\n%{http_code}",
       "-d", jsonStr
     };
 
@@ -48,10 +68,16 @@ std::string query_deep_research_endpoint( const std::string &queryText, const st
     boost::process::ipstream is;
     boost::process::child c(boost::process::search_path("curl"), args, boost::process::std_out > is);
 
-    std::string output;
+    // Keep the lines seperate so we can pull the status code `-w` appended off the end; the body
+    //  itself is JSON, so re-joining it with newlines does not change its meaning.
+    std::vector<std::string> lines;
     std::string line;
     while( std::getline(is, line) )
-      output += line;
+    {
+      if( !line.empty() && (line.back() == '\r') )
+        line.pop_back();
+      lines.push_back( line );
+    }
 
     c.wait(); // Ensure the process finishes
 
@@ -60,6 +86,25 @@ std::string query_deep_research_endpoint( const std::string &queryText, const st
 
     if( c.exit_code() != 0 )
       throw std::runtime_error( "curl command failed with exit code " + std::to_string(c.exit_code()) );
+
+    // Last line is the HTTP status code from `-w`; everything before it is the response body.
+    int http_status = 0;
+    if( !lines.empty() )
+    {
+      if( !SpecUtils::parse_int(lines.back().c_str(), lines.back().size(), http_status) )
+        throw std::runtime_error( "Could not parse HTTP status code from deep-research endpoint response." );
+      lines.pop_back();
+    }
+
+    std::string output;
+    for( size_t i = 0; i < lines.size(); ++i )
+      output += (i ? "\n" : "") + lines[i];
+
+    // A non-2xx means the request itself was rejected (e.g. a HTTP 422 when the endpoint changes
+    //  the fields it expects), so surface the server's explanation instead of hunting for an answer.
+    if( (http_status < 200) || (http_status > 299) )
+      throw std::runtime_error( "deep-research endpoint returned HTTP " + std::to_string(http_status)
+                                + " for payload " + jsonStr + "; response: " + output );
 
     // Parse the result
     nlohmann::json result = nlohmann::json::parse(output);
@@ -365,6 +410,8 @@ std::vector<SkillInfo> loadSkills()
 
 
 void registerDeepResearchTools( const std::string &deep_research_url,
+                                const std::string &deep_research_model,
+                                const std::vector<std::string> &deep_research_corpora,
                                 const std::function<void(const LlmTools::SharedTool&)> &register_tool,
                                 bool &loaded_any_skill )
 {
@@ -389,12 +436,14 @@ void registerDeepResearchTools( const std::string &deep_research_url,
       "required": ["question"]
     })");
     query_tool.availableForAgents = {AgentType::DeepResearch};
-    query_tool.executor = [deep_research_url]( const nlohmann::json& params,
+    query_tool.executor = [deep_research_url, deep_research_model, deep_research_corpora](
+                                               const nlohmann::json& params,
                                                InterSpec* interspec,
                                                std::shared_ptr<LlmInteraction>,
                                                LlmConversationHistory* ) -> nlohmann::json {
       (void)interspec;
-      return executeQueryDeepResearchEndpoint( params, deep_research_url );
+      return executeQueryDeepResearchEndpoint( params, deep_research_url,
+                                               deep_research_model, deep_research_corpora );
     };
 
     register_tool( query_tool );
@@ -432,7 +481,10 @@ void registerDeepResearchTools( const std::string &deep_research_url,
 }//void registerDeepResearchTools(...)
 
 
-nlohmann::json executeQueryDeepResearchEndpoint( const nlohmann::json& params, const std::string &deep_research_url )
+nlohmann::json executeQueryDeepResearchEndpoint( const nlohmann::json& params,
+                                                 const std::string &deep_research_url,
+                                                 const std::string &deep_research_model,
+                                                 const std::vector<std::string> &deep_research_corpora )
 {
   const std::string question_key = find_case_insensitive_key( "question", params );
   if( !params.contains(question_key) || !params[question_key].is_string() )
@@ -445,11 +497,17 @@ nlohmann::json executeQueryDeepResearchEndpoint( const nlohmann::json& params, c
 
   cout << "In executeQueryDeepResearchEndpoint; question: " << question << endl << endl;
 
+  const std::string model = deep_research_model.empty() ? sm_default_deep_research_model
+                                                        : deep_research_model;
+  const std::vector<std::string> corpora = deep_research_corpora.empty()
+                                     ? std::vector<std::string>{ sm_default_deep_research_corpus }
+                                     : deep_research_corpora;
+
   nlohmann::json result;
 
   try
   {
-    const std::string query_result = query_deep_research_endpoint( question, deep_research_url );
+    const std::string query_result = query_deep_research_endpoint( question, deep_research_url, model, corpora );
     cout << "executeQueryDeepResearchEndpoint answer: " << query_result << endl << endl;
     result["success"] = true;
     result["answer"] = query_result;

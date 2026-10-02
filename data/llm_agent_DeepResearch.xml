@@ -8,7 +8,7 @@
 
 <AgentDefinitions version="0">
   <Agent name="DeepResearch">
-    <Description>Specialized sub-agent for deep research questions.  For example "What could be the cause of a triangle spectral feature near 477 keV?".
+    <Description>Specialized sub-agent for deep research questions - technical and policy.  For example "What could be the cause of a triangle spectral feature near 477 keV?".
 For the supplied context to the agent, you may only provide positively identified sources in the spectrum, suspected sources, relevant context provided by the user, and concrete facts (like detector resolution).  **DO NOT** include any self-knowledge, or inference, or what you think could be the answer to the problem - we want to have the much more capable agent not be biased. Keep the context as minimal as possible (even blank is fine).</Description>
     <AvailableFor>
       <Agent>MainAgent</Agent>

@@ -184,7 +184,7 @@ namespace
     SimpleDialog *dialog = SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ),
                                               WString::tr( "bgw-error-analysis-msg" ).arg( error_msg ) );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
   }
 
 }// namespace
@@ -1149,7 +1149,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
 
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
-  waiting_dialog->addButton( WString::tr( "Close" ) );
+  waiting_dialog->addButton( WString::tr( "Close" ), WidgetUtils::ButtonRole::Dismiss );
   // Captured into only the completion lambda; the worker never references it.
   // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
   //  completion on the worker thread, and copying an observing_ptr there would race the session
@@ -1220,7 +1220,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
           item->addNew<WText>( warn_msg );
         }
 
-        warnings_dialog->addButton( WString::tr( "Okay" ) );
+        warnings_dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
       }
     } );
 }// performAnalysis(...)
@@ -1433,7 +1433,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     SimpleDialog *dialog =
       SimpleDialog::make( WString::tr( "bgw-error-analysis-title" ), WString::tr( "bgw-no-exemplar-msg" ) );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -1466,7 +1466,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
 
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
-  waiting_dialog->addButton( WString::tr( "Close" ) );
+  waiting_dialog->addButton( WString::tr( "Close" ), WidgetUtils::ButtonRole::Dismiss );
   // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
   //  completion on the worker thread, and copying an observing_ptr there would race the session
   //  thread on Wt::Core::observable's unsynchronized observer list.
@@ -1527,7 +1527,7 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
           item->addNew<WText>( warn_msg );
         }
 
-        warnings_dialog->addButton( WString::tr( "Okay" ) );
+        warnings_dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
       }
     } );
 }// performAnalysis(...)
@@ -2328,7 +2328,7 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("bgw-error-analysis-title"),
                                                 WString::tr("bgw-no-exemplar-msg") );
     dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-    dialog->addButton( WString::tr("Okay") );
+    dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -2356,7 +2356,7 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
 
   SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
                                                       WString::tr("bgw-performing-work-msg") );
-  waiting_dialog->addButton( WString::tr("Close") );
+  waiting_dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
   //  completion on the worker thread, and copying an observing_ptr there would race the session
   //  thread on Wt::Core::observable's unsynchronized observer list.
@@ -2424,7 +2424,7 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
           WContainerWidget *item = contents->addNew<WContainerWidget>();
           item->addNew<WText>( warn_msg );
         }
-        warnings_dialog->addButton( WString::tr("Okay") );
+        warnings_dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
       }
     } );
 }//performAnalysis(...)
@@ -2836,7 +2836,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
     }
   }//if( warnings.empty() ) / else
 
-  dialog->addButton( WString::tr( "Okay" ) );
+  dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
 }//void FileConvertOpts::performAnalysis(...)
 
   

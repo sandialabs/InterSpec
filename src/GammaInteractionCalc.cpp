@@ -63,6 +63,8 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/DetectorEffG2kPar.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -832,21 +834,28 @@ ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolum
   //  been Monte-Carlo characterized (GADRAS Detector.dat, ANGLE model).  MC transfer needs an actual
   //  response to evaluate.
   const bool has_geometry = !!drf->geometry();
-  const bool attached_is_transfer = ceeloResp
+  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
+  const bool attached_is_transfer = ceeloResp && !has_grid
                     && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer);
 
   switch( requested )
   {
     case VolumetricEffMethod::MCTransfer:
+      // A .par grid is the only characterization such a DRF has, so it is what "MC" would evaluate.
+      if( has_grid )
+        return VolumetricEffMethod::ImportedGrid;
       return ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::EffTran:
       return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::Auto:
+    case VolumetricEffMethod::ImportedGrid:  //without a grid, falls back to what Auto picks
       // One model per fit, at any distance: whatever response the DRF carries (an attached curve
       //  transfer IS an EFFTRAN transfer, and is labelled as one), else a transfer through its
       //  geometry, else flat-disk.  See the header for why there is no far-field step-down.
+      if( has_grid )
+        return VolumetricEffMethod::ImportedGrid;
       if( ceeloResp )
         return attached_is_transfer ? VolumetricEffMethod::EffTran : VolumetricEffMethod::MCTransfer;
       return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
@@ -878,7 +887,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   //  silently downgraded: a quietly less-accurate answer is worse than a visible complaint.  Only
   //  `Auto` is allowed to fall back, since it is by definition best-effort.
   const bool explicitly_requested = ((requested == VolumetricEffMethod::MCTransfer)
-                                     || (requested == VolumetricEffMethod::EffTran));
+                                     || (requested == VolumetricEffMethod::EffTran)
+                                     || (requested == VolumetricEffMethod::ImportedGrid));
 
   if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
   {
@@ -904,6 +914,7 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
 
   const bool has_near_model = ceeloResp
                     && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
 
   // Builds an EFFTRAN transfer response from the DRF (measured points / fitted curve), anchored at
   //  the DRF's pinned reference distance.  Returns null (recording why) on failure.
@@ -950,9 +961,10 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       // A curve-transfer response may already be attached to the DRF - InterSpec builds one at load
       //  for any geometry-bearing DRF (CeeLoUtils::attachCurveTransferResponse).  Rebuilding an
       //  equivalent one here would repeat that work on every create(), i.e. on every interactive
-      //  chart update.  Reuse it.
+      //  chart update.  Reuse it - unless it is an imported .par grid, which is not a transfer of
+      //  the DRF's curve (asking for EFFTRAN on such a DRF means wanting a real one).
       const std::shared_ptr<const ceelo::DetectorResponse> transfer
-            = (ceeloResp
+            = (ceeloResp && !has_grid
                && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer))
                   ? ceeloResp : build_efftran();
       if( transfer )
@@ -968,7 +980,8 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
         // A response the DRF already carries still beats flat-disk, so it is the fallback for BOTH
         //  request kinds: a method asked for by name and refused must never leave the fit on a
         //  WORSE model than `Auto` would have picked for the same DRF.  Only the reporting differs.
-        m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+        m_resolvedVolEffMethod = has_grid ? VolumetricEffMethod::ImportedGrid
+                                          : VolumetricEffMethod::MCTransfer;
         m_volEffResponse = ceeloResp;
         if( requested == VolumetricEffMethod::Auto )
         {
@@ -994,6 +1007,17 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       break;
     }//case EffTran
 
+    case VolumetricEffMethod::ImportedGrid:
+      m_resolvedVolEffMethod = VolumetricEffMethod::ImportedGrid;
+      m_volEffResponse = ceeloResp;
+      if( requested == VolumetricEffMethod::Auto )
+        m_volEffResolveNote = "Auto -> imported efficiency grid (full-energy peak only)";
+      else if( requested == VolumetricEffMethod::MCTransfer )
+        m_volEffResolveError = "A Monte-Carlo detector efficiency was requested, but this detector"
+                               " response has no Monte-Carlo characterization; its imported"
+                               " efficiency grid was used instead.";
+      break;
+
     case VolumetricEffMethod::FlatDisk:
       if( explicitly_requested )
         m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but this"
@@ -1006,6 +1030,15 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       assert( 0 );  //resolveVolumetricEffMethodForDrf never returns Auto
       break;
   }//switch( resolved )
+
+  if( (requested == VolumetricEffMethod::ImportedGrid)
+      && (m_resolvedVolEffMethod != VolumetricEffMethod::ImportedGrid) )
+  {
+    m_volEffResolveError = "An imported efficiency grid was requested, but this detector response was"
+                           " not imported from a .par efficiency grid; the model \"Auto\" picks was"
+                           " used instead.";
+    m_volEffResolveNote.clear();
+  }
 
   // The integration branches on #m_volEffResponse alone (see DistributedSrcCalcT::eff_response_factor),
   //  so the two must never disagree - a non-FlatDisk
@@ -1071,6 +1104,15 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
       && detector && detector->isFixedGeometry() )
     throw runtime_error( "Off-axis source offsets are not allowed for fixed-geometry"
                          " detector response functions." );
+
+  // A fixed-geometry DRF computed for a specific scene (MakeFixedGeomResponse) already contains
+  //  that scene's source, shielding and air in its curves, so any layer passed here would be
+  //  applied a second time.  The GUI shows such a scene read-only and passes no layers.
+  if( detector && detector->isFixedGeometry() && !detector->fixedGeometrySetupXml().empty()
+      && !shieldings.empty() )
+    throw runtime_error( "The detector response was computed for a specific source/shielding"
+                         " setup, which it already includes; shieldings can not be added on top"
+                         " of it." );
 
   if( options.correct_for_cascade_summing )
   {
@@ -1185,6 +1227,10 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
                     detector, shield_frac_h, shields_present,
                     InterSpec::staticDataDirectory() );
     }//if( input.reuse_cascade_calc ) / else
+
+    // drfHasNeededInfo() guarantees this is known (> 0) for a fixed-geometry DRF.
+    answer->m_cascadeFepScale = detector ? MakeFixedGeomResponse::perDecayFepScale( *detector ) : 1.0;
+    assert( answer->m_cascadeFepScale > 0.0 );
   }//if( options.correct_for_cascade_summing )
 
   // Hold onto the input verbatim, so the per-peak supplemental information can be computed after
@@ -3867,6 +3913,146 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
 }//volumetricLineCache(...)
 
 
+VolumetricLineSample ShieldingSourceChi2Fcn::sampleVolumetricLines( const std::vector<double> &params,
+                                                                   const double energy,
+                                                                   const size_t max_lines ) const
+{
+  NucMixtureCache mixturecache;
+  const std::vector<std::pair<double,double>> energie_widths = observedPeakEnergyWidths( m_peaks );
+  const std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
+                              = build_volumetric_calculators<double>( params, mixturecache, energie_widths );
+  const VolumetricPartitionT<double> part = partition_volumetric_calculators( calculators );
+  const bool multithread = m_options.multithread_self_atten;
+
+  VolumetricLineSample answer;
+  for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+  {
+    for( const DistributedSrcCalcT<double> *calc : group )
+      answer.energies.push_back( calc->m_energy );
+  }
+  std::sort( begin(answer.energies), end(answer.energies) );
+  answer.energies.erase( std::unique( begin(answer.energies), end(answer.energies) ), end(answer.energies) );
+  if( answer.energies.empty() )
+    return answer;
+
+  // The gamma to draw: the one nearest the energy asked for, or by default the one giving the most
+  //  counts, over all the sources emitting it.
+  answer.energy = answer.energies.front();
+  if( energy > 0.0 )
+  {
+    for( const double e : answer.energies )
+    {
+      if( std::fabs( e - energy ) < std::fabs( answer.energy - energy ) )
+        answer.energy = e;
+    }
+  }else
+  {
+    std::map<double,double> counts;
+    for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+    {
+      line_source_integration_imp( group, multithread );
+      for( const DistributedSrcCalcT<double> *calc : group )
+        counts[calc->m_energy] += calc->integral * calc->m_srcVolumetricActivity;
+    }
+
+    double most = -1.0;
+    for( const std::pair<const double,double> &energy_counts : counts )
+    {
+      if( energy_counts.second > most )
+      {
+        most = energy_counts.second;
+        answer.energy = energy_counts.first;
+      }
+    }
+  }//if( energy asked for ) / else
+
+  // The counts each line contributes at that energy, summed over the sources emitting it.  Sources in
+  //  one shell share its line set, so they are summed line by line, and the lines are drawn with the
+  //  source stretches of the one giving the most counts.
+  struct SetCounts
+  {
+    const DistributedSrcCalcT<double> *calc;   //whose stretches are drawn
+    double calc_counts;
+    std::vector<double> weights;               //per line of the set
+  };
+  std::vector<SetCounts> line_counts;
+  for( const std::vector<DistributedSrcCalcT<double>*> &group : part.line_groups )
+  {
+    for( DistributedSrcCalcT<double> *calc : group )
+    {
+      if( calc->m_energy != answer.energy )
+        continue;
+
+      std::vector<std::vector<double>> terms;
+      line_source_integration_imp( std::vector<DistributedSrcCalcT<double>*>{ calc }, multithread,
+                                   nullptr, &terms );
+      std::vector<double> &weights = terms.front();
+      double calc_counts = 0.0;
+      for( double &w : weights )
+      {
+        w = std::max( 0.0, w * calc->m_srcVolumetricActivity );   //NaN -> 0
+        calc_counts += w;
+      }
+
+      SetCounts *set = nullptr;
+      for( SetCounts &s : line_counts )
+        set = (s.calc->m_lineCache == calc->m_lineCache) ? &s : set;
+      if( !set )
+      {
+        line_counts.push_back( SetCounts{ calc, calc_counts, std::move(weights) } );
+        continue;
+      }
+
+      assert( set->weights.size() == weights.size() );
+      for( size_t j = 0; (j < weights.size()) && (j < set->weights.size()); ++j )
+        set->weights[j] += weights[j];
+      if( calc_counts > set->calc_counts )
+      {
+        set->calc = calc;
+        set->calc_counts = calc_counts;
+      }
+    }//for( calculators of the group )
+  }//for( line groups )
+
+  double total = 0.0;
+  for( const SetCounts &set : line_counts )
+  {
+    answer.num_lines_in_set += set.weights.size();
+    for( const double w : set.weights )
+    {
+      total += w;
+      answer.num_contributing += (w > 0.0);
+    }
+  }
+
+  // Systematic resampling in the sets' own (low-discrepancy) order: `max_lines` equally spaced draws
+  //  through the cumulative counts, so the drawn density follows the contribution.  A total so small
+  //  its step underflows to zero draws nothing (and cannot stall the loop).
+  const double step = (max_lines > 0) ? (total / static_cast<double>( max_lines )) : 0.0;
+  if( !(step > 0.0) || !std::isfinite( step ) )
+    return answer;
+
+  double next = 0.5*step, cumulative = 0.0;
+  for( const SetCounts &set : line_counts )
+  {
+    for( size_t j = 0; j < set.weights.size(); ++j )
+    {
+      cumulative += set.weights[j];
+      if( next >= cumulative )
+        continue;
+      while( next < cumulative )
+        next += step;
+
+      VolumetricLineSample::Line line;
+      if( line_display_geometry( *set.calc, j, line ) )
+        answer.lines.push_back( std::move(line) );
+    }//for( lines of the set )
+  }//for( line sets emitting at the energy )
+
+  return answer;
+}//sampleVolumetricLines(...)
+
+
 void ShieldingSourceChi2Fcn::setVolumetricLineCount( const int num_lines, const std::vector<double> *params )
 {
   if( num_lines <= 0 )
@@ -5045,7 +5231,7 @@ vector<PeakResultPlotInfo>
 
       // A shielding layer can't attenuate past where the detector sits; cap a degenerate
       //  over-thick layer at the detector (keeps the chord and the air gap physical).
-      if( exit_dist > trueDist )
+      if( !(m_detector && m_detector->isFixedGeometry()) && (exit_dist > trueDist) )  //no distance for fixed geometry
         exit_dist = trueDist;
       const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
       shield_outer_rad = exit_dist;

@@ -926,7 +926,7 @@ GammaXsWindow::GammaXsWindow( InterSpec* viewer )
   } );
 #endif //USE_QR_CODES
   
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
   int w = viewer->renderedWidth();
@@ -960,11 +960,6 @@ GammaXsWindow::GammaXsWindow( InterSpec* viewer )
   
   resizeToFitOnScreen();
   centerWindowHeavyHanded();
-  
-  //If mobile take focus away from text field so the keyboard doesnt
-  //  automatically show - doesnt always work
-  if( viewer->isMobile() )
-    closeButton->setFocus();
   
   centerWindow();
 }//GammaXsWindow(...) constrctor

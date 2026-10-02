@@ -173,7 +173,7 @@
         "id":"decay-batch-dialog",
         "title":"Batch Decay",
         "help-xml":"batch_decay_dialog_help.xml",
-        "keywords":"Batch Decay Multiple Nuclides Activity Progeny Mixture CSV Export Time Steps Gamma Beta Alpha X-ray Bulk Aged"
+        "keywords":"Batch Decay Multiple Nuclides Activity Progeny Mixture CSV Export Time Steps Gamma Beta Alpha X-ray Bulk Aged Location Probe Group Backwards Past Minimum Cut"
       },
       {
         "id":"simple-mda-dialog",

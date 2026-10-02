@@ -40,6 +40,7 @@
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 
@@ -68,7 +69,6 @@ namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 #endif
 
 // Forward declarations
-class DetectorPeakResponse;
 struct PeakFitDetPrefs;
 struct Material;
 class MaterialDB;
@@ -524,6 +524,25 @@ enum class FwhmForm : int
   /** Berstein polynomial with 6 coefficients (order 5) */
   Berstein_6,
 
+  /** An electronic-noise floor added in quadrature to a power law whose log-log slope may vary
+   across the fitted range:
+
+     `FWHM(E)^2 = w0^2 + (w1 * (E/661 keV)^s(E))^2`,
+
+   where the slope `s` of `ln(w1 * (E/661)^s)` against `ln(E)` varies linearly in `ln(E)` from
+   `s_lo` at the lower end of the fitted energy range to `s_hi` at its upper end, and is held at
+   those end values beyond it.  Parameters: `{w0, w1, s_lo, s_hi, lower_energy, upper_energy}`
+   (keV), the last two constant.
+
+   With `w0 >= 0` and both slopes `>= 0` the curve is positive and never decreases with energy,
+   by construction, so its bounds are physical statements rather than envelopes on coefficients:
+   the noise floor, the width at 661 keV within the detector class's range, and slopes in
+   [0, 1.5].  Fit to the resolution curves of 35 GADRAS detector models (HPGe, NaI, LaBr3, CZT) it
+   was within 1.6 % (median worst case; 0.5 % median RMS), against 3.9 % for Berstein_4, which came
+   out non-monotone on 8 of them.
+   */
+  NoisePlusCurvedPower,
+
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
    #Options::fwhm_estimation_method must be set to FwhmEstimationMethod::FixedToDetectorEfficiency,
@@ -635,6 +654,20 @@ EnergyCalFitType energy_cal_fit_type_from_str( const char *str );
 
 
 size_t num_parameters( const FwhmForm eqn_form );
+
+/** The FWHM (keV) at `energy` (keV) for the given form and parameters.  Not valid for
+ `FwhmForm::NotApplicable`, which needs a detector response.
+ */
+double eval_fwhm( const double energy, const FwhmForm form, const std::vector<double> &pars );
+
+/** Least-squares fit (in log space) of the #FwhmForm::NoisePlusCurvedPower parameters to FWHM
+ values (keV) at the given energies (keV), for the energy range [lower_energy, upper_energy].
+ Returns the six parameters.  Throws when fewer than four usable points are given.
+ */
+std::vector<double> fit_noise_plus_curved_power( const std::vector<double> &energies,
+                                                 const std::vector<double> &fwhms,
+                                                 const double lower_energy,
+                                                 const double upper_energy );
 
 
 struct RelEffCurveInput
@@ -889,6 +922,16 @@ struct Options
   /** How the FWHM of peaks should be determined. */
   FwhmEstimationMethod fwhm_estimation_method;
 
+  /** Optional starting resolution curve, as `DetectorPeakResponse::peakResolutionFWHM` evaluates
+   it.  Used with #FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum when the detector
+   response carries no resolution information: the solve then starts from (and refines) this curve
+   instead of fitting one to the peaks in the spectrum itself, so a caller that already estimated
+   the widths (e.g. FitPeaksForNuclides) and the solve agree about them.  Leave the coefficients
+   empty (the default) to keep the fit-from-peaks behaviour.
+   */
+  DetectorPeakResponse::ResolutionFnctForm starting_fwhm_form;
+  std::vector<float> starting_fwhm_coefficients;
+
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
 
@@ -992,6 +1035,26 @@ struct Options
    */
   bool lorentzian_xrays;
 
+  /** Model the iodine K x-ray escape peaks of a NaI or CsI detector.
+
+   Each source line above the iodine K edge gets two companion peaks,
+   `PeakFitUtils::sm_iodine_kalpha_escape_kev` and `sm_iodine_kbeta_escape_kev` below it, whose areas
+   are fixed fractions of the line's own (`PeakFitUtils::nai_iodine_escape_fractions`), so no fit
+   parameters are added.  The companions are returned with no source assigned, and a user label
+   starting with #sm_iodine_escape_label_prefix that names their parent line.
+   */
+  bool iodine_escape_peaks;
+  static constexpr const char *sm_iodine_escape_label_prefix = "I-escape of ";
+
+  /** Whether a source line outside the energy span the ROIs cover (below the lowest ROI's lower
+   edge or above the highest's upper edge) is modelled for the tail it puts into an edge ROI.  Such a
+   line's efficiency is an extrapolation no data constrains, and with the curve still unsettled at the
+   start of a solve it can predict orders of magnitude too much: Hg L x-rays at 14 keV, below an ROI
+   starting at 23 keV, began a Tl201 solve at a chi2 of 8e13, and the optimizer escaped it only by
+   zeroing every activity.  Default true (model them).
+   */
+  bool model_lines_outside_roi_span;
+
   /** An additional uncertainty applied to each roughly independent peak.
    * 
    * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
@@ -1002,6 +1065,30 @@ struct Options
    * Its not perfect, but its something.
    */
   double additional_br_uncert;
+
+  /** The smallest multiple of its nominal yield an `additional_br_uncert` peak range may be fit to.
+   At the default of 0 a range can be switched off entirely, which costs only (1/additional_br_uncert)^2
+   in chi2 - nothing against the model-shape residuals of a high-statistics scintillator ROI, where
+   solves zeroed lines the data show at z of 50-170 (SAM Eagle Co57_Sh's 136 keV, Eu154_Unsh's
+   1002 keV).  Must be in [0, 1). */
+  double additional_br_min_yield_fraction;
+
+  /** With the #FwhmForm::NoisePlusCurvedPower form fit from a starting curve (see
+   #starting_fwhm_form): when above 1, the fit's width stays under this multiple of the starting
+   curve everywhere in the fitted range, through box bounds on the form's own parameters (its
+   width at 661 keV and both slopes near the start's, the noise floor at most this times the
+   start's).  The detector-class bounds alone let low-energy x-ray blobs and scatter humps pull a
+   scintillator's widths to 1.6-3x its resolution (IdentiFINDER NaI: 25 of 104 R500 and 41 of 103
+   NGH solves above 1.6x at 55-100 keV, where the caller's starting curve matched the true widths).
+   0 (the default) for no limit. */
+  double fwhm_max_ratio_to_start;
+
+  /** With #FwhmForm::NoisePlusCurvedPower, the noise floor of the width - the narrowest width the fit
+   may give any peak - is at least this many times the widest channel in the ROIs.  At the default
+   1.25, on a coarsely binned detector (SAM-Eagle's 12.5 keV channels) every line below ~150 keV is
+   held to ~16 keV wide where its true width is ~8 keV and most of it falls in one channel: Am241's
+   59.5 keV peak was fit to a third of its channel's counts.  1.25 by default. */
+  double fwhm_channel_floor_factor;
 
   /** Automatically compute bounded profile-likelihood intervals for mass fractions whose local
    Gaussian covariance is missing or demonstrably unreliable.  Explicit per-nuclide requests are
@@ -1763,6 +1850,13 @@ struct RelActAutoSolution
   RelActAutoSolution::Status m_status;
   std::string m_error_message;
   std::vector<std::string> m_warnings;
+  
+  /** True when Ceres reported convergence but rejected every trial step, so this solution is the
+   seed it started from rather than a minimum (see the `FunctionToleranceReached` discussion in
+   `solve_ceres`).  Callers that re-solve from an incumbent must not accept such a result over the
+   incumbent - a warm start that lands on a flat spot would otherwise silently replace a good fit
+   with its own starting point. */
+  bool m_optimizer_returned_seed = false;
   
   Options m_options;
   
@@ -2553,10 +2647,74 @@ struct RelActAutoSolution
      slab is EXACTLY equivalent - homogeneous slab attenuation composes - so this being true there
      means "consistent with a single homogeneous object/enrichment".) */
     bool single_curve_adequate = false;
+
+    /** The merged fit's own relative activities, i.e. the composition of the single material that
+     best describes the whole spectrum.  Kept because `TiedEnrichmentComparison` needs a candidate
+     COMMON composition to tie the curves at, and this is the only estimate of one that does not
+     come from the multi-curve fit's own (possibly degenerate) split - which is exactly the case
+     where the tied test matters.  Empty when the merged fit did not succeed. */
+    std::vector<NuclideRelAct> merged_activities;
   };//struct MergedCurveComparison
 
   /** Only attempted for multi-curve fits that reach Status::Success; unset otherwise. */
   std::optional<MergedCurveComparison> m_merged_single_curve_comparison;
+
+  /** Result of re-fitting the SAME multi-curve model with the curves' enrichments tied to one
+   common value - the direct likelihood-ratio test of "do these objects have different
+   compositions?", and the primary detection statistic when the curves share an element.
+
+   Why this exists alongside `MergedCurveComparison`.  The merged null collapses the curves to a
+   single rel-eff curve, so it forces one curve SHAPE and one COMPOSITION at the same time.  The
+   two-curve alternative then wins partly just by having a second efficiency shape available to
+   absorb peak-shape / continuum / efficiency model error, and at high statistics that absorption
+   dominates: on the 2026-09 240-min stacked grid the merged Δχ² of physically IDENTICAL disks ran
+   7, 144, 230, 377 as the count rate rose, against a 3-sigma bar of ~15.  The tied null keeps every
+   curve, every shielding and every shape parameter the alternative has and constrains only the
+   enrichment, so both models absorb the same model error and what is left is the composition
+   difference.  Measured on the same four identical-disk cases, the tied Δχ² was 2.9, −1.5, 95, 125,
+   while a genuinely heterogeneous 3.3/90 pair stayed at 9687.
+
+   Which isotopes are tied: exactly those whose per-curve mass fraction the data actually
+   determines on EVERY curve (`MassFractionCovarianceQuality::Usable`).  Tying the rest is actively
+   harmful - U234's fitted per-curve values differ by eight orders of magnitude because nothing
+   constrains them, so pinning it punishes the null for a parameter the data never measured (tying
+   all isotopics gave 123.5 where tying only U235/U238 gave −1.5 on the same spectrum). */
+  struct TiedEnrichmentComparison
+  {
+    bool valid = false;      ///< tied model built, solved to Success, and chi2/DOF comparable
+    std::string message;     ///< why not valid, and/or notes (which isotopes were tied, and at what)
+    double free_chi2_data = 0.0, tied_chi2_data = 0.0;
+    size_t free_dof_data = 0, tied_dof_data = 0;
+    double delta_chi2 = 0.0;
+    int extra_dof_of_free = 0;
+
+    /** The sources whose cross-curve ratio was tied, and the controlling source they were tied to. */
+    std::vector<SrcVariant> tied_sources;
+    SrcVariant controlling_source;
+
+    /** True when `delta_chi2` is within statistical expectation of the free model's extra effective
+     parameters, i.e. one common enrichment describes the data about as well.  Same
+     `max(1, chi2/dof)` model-error scaling as `MergedCurveComparison::single_curve_adequate`; set by
+     `finalize_curve_separation_status()` and only meaningful when `valid`. */
+    bool common_enrichment_adequate = false;
+
+    /** Set when the tied fit could not even reach the chi2 the MERGED single-curve fit achieved.
+     The merged model is essentially a point of the tied model (merged composition on both curves,
+     the base curve carrying the activity), so this cannot happen at a proper solution: it means the
+     tied fit is not at its own optimum, and since `delta_chi2` is measured from the free fit, the
+     shortfall is indistinguishable from - and gets reported as - a composition difference.
+
+     When set, `valid` is false AND no detection is claimed on any other evidence either: the same
+     failure to optimize undermines the free fit's per-curve compositions, which is what the
+     enrichment-difference z is computed from.  Measured on the 2026-09 corpus: 48 of 154 files
+     violated the inequality, 24 of them while reporting a detection - including a single 93 % disk
+     whose tied chi2 sat 110 above the merged fit. */
+    bool inconsistent_with_merged = false;
+  };//struct TiedEnrichmentComparison
+
+  /** Only attempted for multi-curve fits that reach Status::Success and share a determined element
+   across curves; unset otherwise. */
+  std::optional<TiedEnrichmentComparison> m_tied_enrichment_comparison;
 
   /** Computes `m_cross_curve_correlations`/`m_cross_curve_max_corr`, `m_evidence_purity`, and
    `m_enrichment_diff_z` from the already-filled `m_covariance`, `m_obs_eff_for_each_curve`, and
@@ -2576,6 +2734,20 @@ struct RelActAutoSolution
   enum class CurveDistinctBasis : int
   {
     None,                   ///< distinctness not established by the data
+    /** The tied-enrichment likelihood ratio rejected one common composition (3-sigma-scaled bar).
+     Preferred over every tier below whenever `m_tied_enrichment_comparison` is valid: it is the
+     only one of them that isolates the composition difference from model error - see
+     `TiedEnrichmentComparison`.  A MARGINAL rejection (below the 5-sigma-scaled bar) additionally
+     requires the merged single-curve comparison to reject at its own 5-sigma bar, since a two-curve
+     fit of a single disk clears the 3-sigma tied bar on noise alone.
+
+     Note this gates only THIS basis, not detection as a whole: a marginal uncorroborated tie declines
+     the Tier-0 accept and falls through, so for a non-stacked geometry `ZCorroboratedByMerged` can
+     still detect at its own (3-sigma) bar given a reliable marginal z.  That is intended - it is
+     separate evidence - but it means "requires 5 sigma" is true of the basis, not of the verdict.
+     (For a stacked geometry the short-circuit ends the question first, so it cannot arise there;
+     zero occurrences in the validation corpus.) */
+    TiedEnrichment,
     ZScore,                 ///< a reliable enrichment-difference z >= 3 (not overruled by the merged fit)
     ZCorroboratedByMerged,  ///< marginal z (>= 1.5) + single-curve fit rejected at the 3-sigma-scaled bar
     MergedOnly,             ///< single-curve fit decisively worse (5-sigma-scaled bar); z table silent or absent
@@ -2599,10 +2771,67 @@ struct RelActAutoSolution
   /** Convenience: `curves_distinct_basis() != CurveDistinctBasis::None`. */
   bool curves_detected_distinct() const;
 
+  /** True when curve `rel_eff_index` has a fitted self-attenuation areal density railed to an
+   unphysically large fraction of the ceiling it was actually fit against.  Genuine
+   two-curve detections keep self-atten AD <= ~10 g/cm2; a railed value is the fit absorbing a free
+   composition degree of freedom in an unconstrained shield rather than describing a real second
+   curve.  Value-based on purpose: the solver's at-bound tolerance works out to ~0.5 g/cm2 against the
+   default [0, 500] bounds, so a shield that flattens the objective well short of the ceiling (376 of
+   500 on the one real single-disk false positive) is not flagged at-bound yet is equally unphysical -
+   and this test needs no fit layout, so it also holds on a merged/tied re-fit and in unit tests.
+
+   The ceiling is the curve's own `phys_model_self_atten->upper_fit_areal_density` when the caller set
+   one, else `PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2` (which is what the
+   solver itself falls back to when both bounds are left at zero).  Comparing against the global value
+   unconditionally would never flag a fit railed against a tighter user bound, and would flag a
+   legitimately thick shield in a config whose ceiling really is the global one. */
+  bool self_atten_ad_railed( const size_t rel_eff_index ) const;
+
+  /** True when ANY curve's self-atten AD is railed (`self_atten_ad_railed`).  A detection resting on
+   such a fit is not evidence of a second curve, so `curves_distinct_basis()` returns None. */
+  bool detection_rests_on_railed_self_atten() const;
+
+  /** True when the tied-enrichment comparison rejected one common composition only MARGINALLY (above
+   its 3-sigma-scaled bar but below the 5-sigma one) and the merged single-curve comparison did not
+   also reject at its own 5-sigma-scaled bar.
+
+   With the usual 2 extra DOF the 3-sigma tied bar sits at delta-chi2 ~8, which a two-curve fit of a
+   single object clears on counting noise alone (it has two spare composition DOF and Poisson
+   fluctuations to spend them on), so in that marginal band the tied statistic is not informative by
+   itself.  The merged comparison tests a DIFFERENT null (one curve AND one composition) and in that
+   band it discriminates where the tied statistic does not.
+
+   Not a statistically independent test, and deliberately not described as one: both deltas are
+   measured against the same free-fit chi2 on the same data, and across the validation corpus they
+   correlate at Pearson r ~ 0.65 (Spearman ~ 0.53).  The rule's value is empirical - requiring the
+   second, differently-nulled view removed 3 of 4 false positives at a cost of 1 true detection in a
+   80-file corpus - not an appeal to independence.  False when either comparison is missing/invalid,
+   and when the merged delta is negative (a bad fit, not evidence of sameness - see
+   `merged_overrules_z_detection`): a tie with nothing usable to corroborate it is left to stand,
+   since it is then the only evidence available.
+
+   Single source for both the Tier-0 accept in `curves_distinct_basis()` and the reason/verdict text,
+   so the decision and its explanation cannot disagree. */
+  bool tie_marginal_and_uncorroborated() const;
+
+  /** One machine-readable line for why `curves_distinct_basis()` is None: a railed self-atten AD, a
+   tied fit inconsistent with the merged fit that the independent merged/z evidence did not rescue, an
+   uncorroborated marginal tie, or (stacked geometry only) a tied fit that was not rejected at all.
+   Empty when the curves WERE detected as distinct, and for a None with none of these causes.
+
+   Reported next to the merged delta-chi2, which can be large while the verdict is still None; without
+   the reason the two read as a contradiction.  Single source for the CSV/report reason column. */
+  std::string distinct_basis_none_reason() const;
+
   /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
-   single-material outcome does not read as an error: "Separated", "Distinct curves - see
-   per-nuclide notes", "Poorly separated", "Not distinguished (consistent with a single curve)", or
-   "NotApplicable". */
+   single-material outcome does not read as an error, and so that the label always states what was
+   CONCLUDED rather than only how well-determined the split is: "Distinct curves - per-curve values
+   usable", "Distinct curves - see per-nuclide notes", "Not distinguished (per-curve values still
+   individually anchored)", "Poorly separated", "Not distinguished (consistent with a single
+   curve)", or "NotApplicable".
+
+   Both `WellSeparated` labels describe the same status - the per-curve values are individually
+   anchored either way - and differ only in whether `curves_detected_distinct()` fired. */
   const char *curve_separation_display() const;
 
   /** Display name for a rel-eff curve: the user-assigned quoted name (e.g. "'Inner'") when one is

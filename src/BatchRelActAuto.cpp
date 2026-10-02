@@ -133,7 +133,7 @@ shared_ptr<RelActCalcAuto::RelActAutoGuiState>
 
   // Normalize the FwhmForm/FwhmEstimationMethod pairing the same way the GUI does on load:
   //  `solve()` requires FwhmForm::NotApplicable if-and-only-if FixedToDetectorEfficiency, but some
-  //  older config files (e.g. past versions of the "HPGe U inside U" preset) pair NotApplicable with
+  //  older config files (e.g. past versions of the multi-enrichment U preset, formerly "HPGe U inside U") pair NotApplicable with
   //  another estimation method, which the GUI silently coerces but headless use would reject.
   //  Polynomial_2 (sqrt(A0 + A1*E)) is the concrete form all the 2026-07 multi-curve review
   //  validation ran those presets with, so stale configs keep producing the recorded results.

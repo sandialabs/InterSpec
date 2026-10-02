@@ -2281,16 +2281,22 @@ double inflight_annih_prob(const Material& mat, double T_keV) {
     if (T_keV <= 1.0) return 0.0;
     constexpr double NA = 6.02214076e23;
     const double rho = mat.density();
+    // Electron-side quantities: Z 93-98 are treated as uranium, consistently with
+    // the reused electron tables (electron_table_z()).
     double ne = 0.0;  // electron density (1/cm^3)
-    for (const auto& c : mat.composition())
-        ne += rho * NA * c.mass_fraction * c.Z / ElectronCsda::atomic_weight(c.Z);
+    for (const auto& c : mat.composition()) {
+        const int Ze = electron_table_z(c.Z);
+        ne += rho * NA * c.mass_fraction * Ze / ElectronCsda::atomic_weight(Ze);
+    }
     auto S_keV_cm = [&](double E_keV) {        // positron collision stopping (keV/cm)
         double s = 0.0;
-        for (const auto& c : mat.composition())
+        for (const auto& c : mat.composition()) {
+            const int Ze = electron_table_z(c.Z);
             s += c.mass_fraction *
                  ElectronCsda::stopping_power_MeV_cm2_g(
-                     c.Z, ElectronCsda::atomic_weight(c.Z), E_keV,
+                     Ze, ElectronCsda::atomic_weight(Ze), E_keV,
                      /*is_positron=*/true);
+        }
         return s * rho * 1000.0;
     };
     constexpr int N = 20;

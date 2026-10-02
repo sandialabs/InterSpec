@@ -329,6 +329,7 @@ set(sources
     src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
     src/DetectorEffG2kPar.cpp
+    src/DrfImport.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
     src/GammaInteractionCalc.cpp
@@ -419,6 +420,7 @@ set(sources
     src/DetectorGeometryDiagram.cpp
     src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
+    src/DrfImportWidget.cpp
     src/DrfModifyCalc.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
@@ -481,6 +483,7 @@ set(headers
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/DetectorEffG2kPar.h
+    InterSpec/DrfImport.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
@@ -570,6 +573,7 @@ set(headers
     InterSpec/DetectorGeometryDiagram.h
     InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
+    InterSpec/DrfImportWidget.h
     InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h

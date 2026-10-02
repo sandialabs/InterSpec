@@ -396,7 +396,7 @@ SimpleDialog *showRiidInstrumentsAna( const std::shared_ptr<const SpecMeas> &spe
 {
   auto dialog = SimpleDialog::make();
   //dialog->setModal( false ); //doesnt seem to have any effect
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   
   WContainerWidget *contents = dialog->contents();
   WText *dialogTitle = contents->addNew<WText>( WString::tr("srria-inst-ana-window-title") );

@@ -23,6 +23,7 @@
  */
 
 #include "export/Geant4Export.h"
+#include "cross_sections/CrossSectionData.h"
 #include "geometry/Geometry.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
@@ -37,6 +38,8 @@
 #include <vector>
 #include <cmath>
 #include <iomanip>
+#include <iterator>
+#include <string>
 
 namespace ceelo {
 
@@ -113,6 +116,7 @@ static const ElementInfo kElementData[] = {
     { 58, "Ce", "Cerium",    140.116    },
     { 59, "Pr", "Praseodymium",140.908  },
     { 60, "Nd", "Neodymium", 144.242    },
+    { 61, "Pm", "Promethium",147.000    },  // xraylib (g_atomic_weights); no stable isotope
     { 62, "Sm", "Samarium",  150.360    },
     { 63, "Eu", "Europium",  151.964    },
     { 64, "Gd", "Gadolinium",157.250    },
@@ -144,7 +148,19 @@ static const ElementInfo kElementData[] = {
     { 90, "Th", "Thorium",   232.038    },
     { 91, "Pa", "Protactinium", 231.036 },
     { 92, "U",  "Uranium",   238.029    },
+    // Z 93-98: xraylib's conventional long-lived-isotope masses, the same values
+    // as g_atomic_weights, so the GEANT4 geometry matches the MC material.
+    { 93, "Np", "Neptunium",   237.000  },
+    { 94, "Pu", "Plutonium",   239.100  },
+    { 95, "Am", "Americium",   243.000  },
+    { 96, "Cm", "Curium",      247.000  },
+    { 97, "Bk", "Berkelium",   249.000  },
+    { 98, "Cf", "Californium", 251.000  },
 };
+
+// Material accepts Z = 1..kMaxZ, so every one of those must be exportable.
+static_assert(std::size(kElementData) == static_cast<std::size_t>(kMaxZ),
+              "GDML element table must cover every Z = 1..kMaxZ");
 
 const ElementInfo* find_element(uint8_t Z) {
     for (const auto& el : kElementData) {
@@ -194,10 +210,19 @@ std::string fmt(double v, int prec = 6) {
 // GDML generation
 // ---------------------------------------------------------------------------
 
+/// Element lookup that fails loudly: silently dropping a component would export
+/// a material whose composition no longer matches the MC.
+const ElementInfo& require_element(uint8_t Z) {
+    const ElementInfo* el = find_element(Z);
+    if (!el)
+        throw std::invalid_argument("GDML export: no element data for Z="
+                                    + std::to_string(static_cast<int>(Z)));
+    return *el;
+}
+
 void write_gdml_elements(std::ostream& out, const std::set<uint8_t>& zs) {
     for (uint8_t Z : zs) {
-        const ElementInfo* el = find_element(Z);
-        if (!el) continue;
+        const ElementInfo* el = &require_element(Z);
         out << "    <element name=\"" << el->symbol << "\" formula=\"" << el->symbol
             << "\" Z=\"" << static_cast<int>(Z) << "\">\n"
             << "      <atom type=\"A\" unit=\"g/mol\" value=\"" << fmt(el->atomic_weight_g_per_mol, 4) << "\"/>\n"
@@ -210,8 +235,7 @@ void write_gdml_material(std::ostream& out, const Material* mat) {
     out << "    <material name=\"" << safe << "\" state=\"solid\">\n"
         << "      <D type=\"density\" unit=\"g/cm3\" value=\"" << fmt(mat->density(), 5) << "\"/>\n";
     for (const auto& comp : mat->composition()) {
-        const ElementInfo* el = find_element(comp.Z);
-        if (!el) continue;
+        const ElementInfo* el = &require_element(comp.Z);
         out << "      <fraction n=\"" << fmt(comp.mass_fraction, 6) << "\" ref=\"" << el->symbol << "\"/>\n";
     }
     out << "    </material>\n";

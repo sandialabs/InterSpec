@@ -704,7 +704,7 @@ MoreNuclideInfoWindow::MoreNuclideInfoWindow( const SandiaDecay::Nuclide *const 
 
   nuclideUpdated( nuc );
 
-  addButton( "Close" );
+  addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
   rejectWhenEscapePressed( true );
 }//MoreNuclideInfoWindow
 

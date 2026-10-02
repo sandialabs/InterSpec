@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <ctime>
 #include <chrono>
 #include <random>
 #include <string>
@@ -75,6 +76,7 @@
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 
 #include "io/DetectorResponse.h"
 #include "io/EfficiencyTransfer.h"
@@ -530,7 +532,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.correct_for_cascade_summing = (rand() % 2);
     // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
     //  rather than silently reverting a user's choice on reload.
-    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 4 );
+    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 5 );
 
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
@@ -2632,6 +2634,32 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
       const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
             = make_ba133_point_input( det, near_dist, offset, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
       check_expected_counts_parity( chi_input, 1.0E-9, "NaI-geometry-only-Auto" + where );
+    }
+
+    {// Case H: that geometry switched off (Flat Disk in Modify Detector Response) - kept, but hidden,
+     //  so even EFFTRAN asked for by name has nothing to transfer through
+      using ShieldingSourceFitCalc::VolumetricEffMethod;
+      using ShieldingSourceFitCalc::PointEffModel;
+
+      const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( false );
+      det->setGeometryDisabled( true );
+      BOOST_REQUIRE( !det->geometry() && det->storedGeometry() );
+
+      for( const VolumetricEffMethod method : { VolumetricEffMethod::Auto, VolumetricEffMethod::EffTran } )
+      {
+        const string label = string( (method == VolumetricEffMethod::Auto) ? "NaI-geometry-off-Auto"
+                                                                           : "NaI-geometry-off-EffTran" ) + where;
+
+        const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+              = make_ba133_point_input( det, near_dist, offset, method );
+        const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> fcn
+              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input ).first;
+        BOOST_REQUIRE( fcn );
+        BOOST_CHECK_MESSAGE( fcn->pointSourceEffModel() == PointEffModel::FlatDisk,
+                             label << ": unexpected efficiency model" );
+
+        check_expected_counts_parity( chi_input, 1.0E-9, label );
+      }
     }
   }//for( on-axis, off-axis )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
@@ -5634,6 +5662,224 @@ BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
 }//BOOST_AUTO_TEST_CASE( FixedGeomSetupBlobRoundTrip )
 
 
+/** Fixed-geometry DRFs and the shielding layers passed to the fit:
+ - a DRF that embeds its scene (MakeFixedGeomResponse) already has that scene's shielding in its
+   curves, so create() refuses any layer - the GUI used to pass the scene's layers back in and the
+   point source was attenuated through them twice;
+ - for any other fixed-geometry DRF a layer is an additive absorber, and the cascade-summing
+   partners must be attenuated by it just as the primary line is (they were not);
+ - with no meaningful distance, a fixed-geometry layer's chord is its full thickness.
+ */
+BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
+{
+  set_data_dir();
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  typedef DetectorPeakResponse::EffGeometryType EffGeometryType;
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> fe = MaterialDB::instance()->material( "Fe" );
+  BOOST_REQUIRE( fe );
+
+  // A per-decay fixed geometry with summing-relevant efficiencies: FEP ~5%, total 15%.
+  const auto make_fixed = []() -> shared_ptr<DetectorPeakResponse> {
+    auto far = make_shared<DetectorPeakResponse>();
+    far->fromExpOfLogPowerSeries( {-3.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm, 5*PhysicalUnits::cm,
+                                  PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                  EffGeometryType::FarFieldAbsolute );
+    shared_ptr<DetectorPeakResponse> fixed = far->reinterpretAsFixedGeom( EffGeometryType::FixedGeomTotalAct );
+    auto tot = make_shared<DetectorEfficiencyCurve>();
+    tot->setFromPairs( { {10.0f, 0.15f}, {3000.0f, 0.15f} }, static_cast<float>(PhysicalUnits::keV) );
+    fixed->setTotalEfficiencyCurve( tot );
+    return fixed;
+  };
+
+  ShieldingSourceFitCalc::ShieldingInfo fe_layer;
+  fe_layer.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  fe_layer.m_isGenericMaterial = false;
+  fe_layer.m_forFitting = true;
+  fe_layer.m_material = fe;
+  fe_layer.m_dimensions[0] = 1.0*PhysicalUnits::cm;
+  fe_layer.m_dimensions[1] = fe_layer.m_dimensions[2] = 0.0;
+  fe_layer.m_fitDimensions[0] = fe_layer.m_fitDimensions[1] = fe_layer.m_fitDimensions[2] = false;
+
+  // The fit's expected counts per peak.  (Not compared to energy_chi_contributions: for a material
+  //  shield the display path still uses plain mu, not the fit's FEP-window/Rayleigh coefficient.)
+  const auto counts = []( const ShieldingSourceChi2Fcn::ShieldSourceInput &input ) -> vector<double> {
+    const auto fcn_pars = ShieldingSourceChi2Fcn::create( input );
+    ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    return fcn_pars.first->expected_peak_counts_imp<double>( fcn_pars.second.values(), cache );
+  };
+
+  {// 1) A DRF that embeds its scene refuses layers; bare, it evaluates.
+    const shared_ptr<DetectorPeakResponse> embedded = make_fixed();
+    MakeFixedGeomResponse::Setup setup;
+    setup.distance = 10.0*PhysicalUnits::cm;
+    setup.shieldings.push_back( fe_layer );
+    embedded->setFixedGeometrySetupXml( setup.toXmlString() );
+
+    ShieldingSourceChi2Fcn::ShieldSourceInput input = make_ba133_point_input( embedded,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    BOOST_CHECK_NO_THROW( ShieldingSourceChi2Fcn::create( input ) );
+    input.config.shieldings = { fe_layer };
+    BOOST_CHECK_THROW( ShieldingSourceChi2Fcn::create( input ), std::exception );
+  }
+
+  {// 2) Additive absorber on a plain fixed-geometry DRF.
+    const shared_ptr<DetectorPeakResponse> fixed = make_fixed();
+
+    // The hidden distance field is meaningless for fixed geometry; a value smaller than the layer
+    //  must not cap its chord.
+    ShieldingSourceChi2Fcn::ShieldSourceInput bare = make_ba133_point_input( fixed,
+                        0.5*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput shielded = bare;
+    shielded.config.shieldings = { fe_layer };
+
+    const vector<double> bare_counts = counts( bare );
+    const vector<double> shielded_counts = counts( shielded );
+    BOOST_REQUIRE_EQUAL( bare_counts.size(), 5u );
+    BOOST_REQUIRE_EQUAL( shielded_counts.size(), 5u );
+
+    // 356 keV through 1 cm of Fe: FEP transmission ~0.45 (well under the ~0.84 a 0.5 cm cap gives).
+    const double t356 = shielded_counts[3] / bare_counts[3];
+    BOOST_TEST_MESSAGE( "Fixed geometry, 1 cm Fe, 356 keV transmission " << t356 );
+    BOOST_CHECK( (t356 > 0.3) && (t356 < 0.6) );
+
+    // With summing on, the correction behind the shield must be smaller than bare: the 81 keV and
+    //  x-ray partners are mostly absorbed.  (Before, the partner legs ignored the absorber.)
+    ShieldingSourceChi2Fcn::ShieldSourceInput bare_casc = bare, shielded_casc = shielded;
+    bare_casc.config.options.correct_for_cascade_summing = true;
+    shielded_casc.config.options.correct_for_cascade_summing = true;
+
+    const vector<double> bare_casc_counts = counts( bare_casc );
+    const vector<double> shielded_casc_counts = counts( shielded_casc );
+    const double c_bare = bare_casc_counts[3] / bare_counts[3];
+    const double c_shielded = shielded_casc_counts[3] / shielded_counts[3];
+    BOOST_TEST_MESSAGE( "Ba133 356 keV summing factor: bare " << c_bare << ", behind 1 cm Fe " << c_shielded );
+    BOOST_CHECK_LT( c_bare, 0.99 );
+    BOOST_CHECK_LT( std::fabs(1.0 - c_shielded), 0.7*std::fabs(1.0 - c_bare) );
+  }
+
+  {// 3) Summing needs a per-decay FEP: a per-gram curve of unknown scale can't be used, one whose
+   //  scale the embedded scene records can, and gives the per-decay result.
+    const shared_ptr<DetectorPeakResponse> total_act = make_fixed();
+    BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( total_act ) );
+
+    const double mass_g = 250.0;
+    shared_ptr<DetectorPeakResponse> per_gram
+                      = total_act->convertFixedGeometryType( mass_g*PhysicalUnits::gram,
+                                                            EffGeometryType::FixedGeomActPerGram );
+    BOOST_REQUIRE( per_gram );
+    BOOST_CHECK( per_gram->hasTotalEfficiency() );
+    BOOST_CHECK_EQUAL( MakeFixedGeomResponse::perDecayFepScale( *per_gram ), 0.0 );
+    BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( per_gram ) );
+
+    const double scale = per_gram->farFieldIntrinsicEfficiency( 356.0f )
+                         / total_act->farFieldIntrinsicEfficiency( 356.0f );
+    MakeFixedGeomResponse::Setup setup;
+    setup.distance = 10.0*PhysicalUnits::cm;
+    setup.fep_scale = scale;
+    per_gram->setFixedGeometrySetupXml( setup.toXmlString() );
+    BOOST_CHECK_CLOSE( MakeFixedGeomResponse::perDecayFepScale( *per_gram ), scale, 1.0e-6 );
+    BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( per_gram ) );
+
+    MakeFixedGeomResponse::Setup back;
+    back.fromXmlString( setup.toXmlString() );
+    BOOST_CHECK_CLOSE( back.fep_scale, scale, 1.0e-6 );
+
+    // Converting a DRF that embeds its scene keeps the recorded scale in step with the curve.
+    {
+      const shared_ptr<DetectorPeakResponse> embedded = make_fixed();
+      MakeFixedGeomResponse::Setup total_setup;
+      total_setup.distance = 10.0*PhysicalUnits::cm;
+      embedded->setFixedGeometrySetupXml( total_setup.toXmlString() );
+      const shared_ptr<DetectorPeakResponse> converted
+                    = embedded->convertFixedGeometryType( mass_g*PhysicalUnits::gram,
+                                                          EffGeometryType::FixedGeomActPerGram );
+      BOOST_CHECK_CLOSE( MakeFixedGeomResponse::perDecayFepScale( *converted ), scale, 1.0e-4 );
+      BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( converted ) );
+    }
+
+    // Same summing factor per decay or per gram.
+    ShieldingSourceChi2Fcn::ShieldSourceInput a = make_ba133_point_input( total_act,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput b = make_ba133_point_input( per_gram,
+                        10.0*PhysicalUnits::cm, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    ShieldingSourceChi2Fcn::ShieldSourceInput a_casc = a, b_casc = b;
+    a_casc.config.options.correct_for_cascade_summing = true;
+    b_casc.config.options.correct_for_cascade_summing = true;
+    const vector<double> na = counts( a ), nb = counts( b ), na_c = counts( a_casc ), nb_c = counts( b_casc );
+    for( size_t i = 0; i < na.size(); ++i )
+      BOOST_CHECK_CLOSE( na_c[i]/na[i], nb_c[i]/nb[i], 1.0e-6 );
+  }
+
+  {// 4) Reinterpreting a far-field DRF as fixed geometry drops its far-field total curve (a
+   //  GADRAS PTOT is per photon on the face, not per decay).
+    auto far = make_shared<DetectorPeakResponse>();
+    far->fromExpOfLogPowerSeries( {-3.0f, 0.0f}, {}, 100.0*PhysicalUnits::cm, 5*PhysicalUnits::cm,
+                                  PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                  EffGeometryType::FarFieldAbsolute );
+    auto tot = make_shared<DetectorEfficiencyCurve>();
+    tot->setFromPairs( { {10.0f, 0.6f}, {3000.0f, 0.6f} }, static_cast<float>(PhysicalUnits::keV) );
+    far->setTotalEfficiencyCurve( tot );
+    const shared_ptr<DetectorPeakResponse> fixed
+                        = far->reinterpretAsFixedGeom( EffGeometryType::FixedGeomTotalAct );
+    BOOST_CHECK( !fixed->hasTotalEfficiency() );
+    BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( fixed ) );
+  }
+}//BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
+
+
+/** sceneRepresentable: one source layer, and one activity convention within it. */
+BOOST_AUTO_TEST_CASE( FixedGeomSceneSourceConventions )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const Material> soil = MaterialDB::instance()->material( "soil" );
+  BOOST_REQUIRE( soil );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+
+  const auto trace = [db]( const char *nuc, const GammaInteractionCalc::TraceActivityType type ){
+    ShieldingSourceFitCalc::TraceSourceInfo t;
+    t.m_type = type;
+    t.m_fitActivity = true;
+    t.m_nuclide = db->nuclide( nuc );
+    t.m_activity = 1.0*PhysicalUnits::becquerel;
+    t.m_relaxationDistance = 0.0f;
+    return t;
+  };
+
+  MakeFixedGeomResponse::Setup setup;
+  setup.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+  setup.distance = 5.0*PhysicalUnits::cm;
+  ShieldingSourceFitCalc::ShieldingInfo host;
+  host.m_geometry = setup.geometry;
+  host.m_isGenericMaterial = false;
+  host.m_forFitting = true;
+  host.m_material = soil;
+  host.m_dimensions[0] = 3.0*PhysicalUnits::cm;
+  host.m_dimensions[1] = 2.0*PhysicalUnits::cm;
+  host.m_dimensions[2] = 0.0;
+  host.m_fitDimensions[0] = host.m_fitDimensions[1] = host.m_fitDimensions[2] = false;
+
+  using GammaInteractionCalc::TraceActivityType;
+  host.m_traceSources = { trace("Cs137", TraceActivityType::TotalActivity),
+                          trace("Co60", TraceActivityType::ActivityPerCm3) };
+  setup.shieldings = { host };
+  BOOST_CHECK( MakeFixedGeomResponse::sceneRepresentable( setup, nullptr ) );  //both per decay
+
+  host.m_traceSources = { trace("Cs137", TraceActivityType::TotalActivity),
+                          trace("Co60", TraceActivityType::ActivityPerGram) };
+  setup.shieldings = { host };
+  string why;
+  BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable( setup, &why ) );
+  BOOST_CHECK( !why.empty() );
+
+  host.m_traceSources = { trace("Cs137", TraceActivityType::ActivityPerGram) };
+  setup.shieldings = { host, host };
+  BOOST_CHECK( !MakeFixedGeomResponse::sceneRepresentable( setup, nullptr ) );  //two source layers
+}//BOOST_AUTO_TEST_CASE( FixedGeomSceneSourceConventions )
+
+
 namespace
 {
 /** A hollow volumetric source for the fit-level cases: a steel core of `core_radius` inside a
@@ -5892,3 +6138,475 @@ BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )
                        "the core radius moves across line sets by " << 100.0*radius_spread*mean_radius/mean_uncert
                        << "% of its own uncertainty" );
 }//BOOST_AUTO_TEST_CASE( LineSetReplicaFitStability )
+
+
+/** The lines the Activity/Shielding 3D diagram draws (`ShieldingSourceChi2Fcn::sampleVolumetricLines`)
+ are the fit's own.  The integration's per-line terms sum to its integral; every drawn stretch lies
+ where it says it does - the source stretch inside the source from its detector side, the crystal
+ stretch inside the crystal from where the line enters, all on one straight line from the far side of
+ the outermost layer; and the gamma drawn is the one contributing the most counts, or the one asked for.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricLineSampleForDisplay )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> iron = matdb->material( "Fe" );
+  const shared_ptr<const Material> aluminum = matdb->material( "Al" );
+  BOOST_REQUIRE( iron && aluminum );
+
+  using GammaInteractionCalc::DistributedSrcCalcT;
+  using GammaInteractionCalc::VolumetricLineSample;
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  const double cm = PhysicalUnits::cm;
+  const double distance = 15.0*cm, src_radius = 2.0*cm, al_thickness = 0.5*cm;
+
+  // A Ba-133 trace source in an iron sphere, inside an aluminium shell, 15 cm from a 3"x3" NaI.
+  ShieldingSourceChi2Fcn::ShieldSourceInput input
+        = make_ba133_point_input( make_synthetic_nai_drf( true ), distance, 0.0,
+                                  ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+  add_ba133_trace_shell( input, iron, src_radius );
+  {
+    ShieldingSourceFitCalc::ShieldingInfo al;
+    al.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    al.m_isGenericMaterial = false;
+    al.m_forFitting = false;
+    al.m_material = aluminum;
+    al.m_dimensions[0] = al_thickness;
+    al.m_dimensions[1] = al.m_dimensions[2] = 0.0;
+    al.m_fitDimensions[0] = al.m_fitDimensions[1] = al.m_fitDimensions[2] = false;
+    input.config.shieldings.push_back( al );
+  }
+
+  const std::clock_t create_start = std::clock();
+  const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                    = ShieldingSourceChi2Fcn::create( input );
+  const double create_cpu = static_cast<double>( std::clock() - create_start ) / CLOCKS_PER_SEC;
+  const shared_ptr<ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+  BOOST_REQUIRE( fcn && fcn->hasVolumetricLineSets() );
+  const vector<double> params = fcn_pars.second.values();
+
+  // The per-line terms sum to the integral, for every gamma; and which gamma gives the most counts.
+  double mu_iron_81 = 0.0;   //the source's FEP removal coefficient at 81 keV, 1/PhysicalUnits
+  double most_counts = -1.0, most_counts_energy = 0.0;
+  {
+    vector<PeakDef> peaks;
+    for( const shared_ptr<const PeakDef> &p : input.foreground_peaks )
+      peaks.push_back( *p );
+    ShieldingSourceChi2Fcn::NucMixtureCache mix;
+    const vector<unique_ptr<DistributedSrcCalcT<double>>> calcs
+          = fcn->build_volumetric_calculators<double>( params, mix,
+                                                       ShieldingSourceChi2Fcn::observedPeakEnergyWidths( peaks ) );
+    BOOST_REQUIRE_EQUAL( calcs.size(), size_t(5) );
+    for( const unique_ptr<DistributedSrcCalcT<double>> &calc : calcs )
+    {
+      vector<vector<double>> terms;
+      GammaInteractionCalc::line_source_integration_imp( vector<DistributedSrcCalcT<double>*>{ calc.get() },
+                                                         false, nullptr, &terms );
+      BOOST_REQUIRE_EQUAL( terms.size(), size_t(1) );
+      double sum = 0.0;
+      for( const double t : terms[0] )
+        sum += t;
+      BOOST_CHECK( calc->integral > 0.0 );
+      BOOST_CHECK_MESSAGE( fabs(sum - calc->integral) <= 1.0E-12*fabs(calc->integral),
+                           "per-line terms at " << calc->m_energy << " keV sum to " << sum
+                           << ", not the integral " << calc->integral );
+      if( fabs(calc->m_energy - 80.9979) < 0.1 )
+        mu_iron_81 = calc->m_shells.front().fep_trans_len_coef;
+
+      const double counts = calc->integral * calc->m_srcVolumetricActivity;
+      if( counts > most_counts )
+      {
+        most_counts = counts;
+        most_counts_energy = calc->m_energy;
+      }
+    }//for( calculators )
+  }
+  BOOST_REQUIRE( mu_iron_81 > 0.0 );
+
+  // By default the gamma contributing the most counts, otherwise the one nearest the energy asked for.
+  const std::clock_t sample_start = std::clock();
+  const VolumetricLineSample sample = fcn->sampleVolumetricLines( params, -1.0, 250 );
+  const double sample_cpu = static_cast<double>( std::clock() - sample_start ) / CLOCKS_PER_SEC;
+  BOOST_TEST_MESSAGE( "  " << sample.lines.size() << " distinct lines drawn from " << sample.num_contributing
+                      << " contributing of " << sample.num_lines_in_set << ", at " << sample.energy << " keV;"
+                      << " CPU: fit function " << create_cpu << " s, sampling (5 gammas) " << sample_cpu << " s" );
+  BOOST_CHECK_MESSAGE( sample.energy == most_counts_energy, "default gamma is " << sample.energy
+                       << " keV, not the " << most_counts_energy << " keV giving the most counts" );
+  BOOST_CHECK_EQUAL( sample.energies.size(), size_t(5) );
+  BOOST_CHECK_EQUAL( sample.num_lines_in_set, static_cast<size_t>( fcn->volumetricLineCount() ) );
+  BOOST_CHECK( (sample.num_contributing > 0) && (sample.num_contributing < sample.num_lines_in_set) );
+  BOOST_CHECK( !sample.lines.empty() && (sample.lines.size() <= 250) );
+
+  const VolumetricLineSample near_303 = fcn->sampleVolumetricLines( params, 300.0, 50 );
+  BOOST_CHECK_MESSAGE( fabs(near_303.energy - 302.8508) < 0.1, "asked for 300 keV, drew " << near_303.energy );
+
+  // Where each stretch lies.  The NaI's face is the can's 0.5 mm behind the detector face, which is
+  //  `distance` along +z; the crystal is 3.81 cm in radius and 7.62 cm long.
+  const double tol = 1.0E-6*cm;
+  const double crystal_z0 = distance + 0.05*cm, crystal_z1 = crystal_z0 + 7.62*cm;
+  const auto norm3 = []( const double x, const double y, const double z ) -> double {
+    return std::sqrt( x*x + y*y + z*z );
+  };
+  for( const VolumetricLineSample::Line &line : sample.lines )
+  {
+    const array<double,6> &e = line.extent;
+    BOOST_CHECK_MESSAGE( fabs( norm3( e[0], e[1], e[2] ) - (src_radius + al_thickness) ) < tol,
+                         "a line does not start on the far side of the aluminium" );
+
+    // `u` runs along the line toward the detector.
+    const double len = norm3( e[3] - e[0], e[4] - e[1], e[5] - e[2] );
+    BOOST_REQUIRE( len > 0.0 );
+    const double u[3] = { (e[3] - e[0])/len, (e[4] - e[1])/len, (e[5] - e[2])/len };
+    const auto off_line = [&]( const double *p ) -> double {
+      const double v[3] = { p[0] - e[0], p[1] - e[1], p[2] - e[2] };
+      const double t = v[0]*u[0] + v[1]*u[1] + v[2]*u[2];
+      return norm3( v[0] - t*u[0], v[1] - t*u[1], v[2] - t*u[2] );
+    };
+    const auto along = [&]( const array<double,6> &seg ) -> double {
+      return (seg[3] - seg[0])*u[0] + (seg[4] - seg[1])*u[1] + (seg[5] - seg[2])*u[2];
+    };
+
+    // A solid source: one stretch, from where the line leaves the sphere toward the detector, inward.
+    BOOST_CHECK_EQUAL( line.source_segments.size(), size_t(1) );
+    for( const array<double,6> &seg : line.source_segments )
+    {
+      for( const size_t k : { size_t(0), size_t(3) } )
+      {
+        BOOST_CHECK( norm3( seg[k], seg[k+1], seg[k+2] ) <= src_radius + tol );
+        BOOST_CHECK( off_line( &seg[k] ) < tol );
+      }
+      BOOST_CHECK( fabs( norm3( seg[0], seg[1], seg[2] ) - src_radius ) < tol );
+      BOOST_CHECK( along( seg ) < 0.0 );
+    }
+
+    // The crystal stretch starts where the line enters the crystal, through its face or side.
+    BOOST_REQUIRE( !line.crystal_segments.empty() );
+    for( const array<double,6> &seg : line.crystal_segments )
+    {
+      for( const size_t k : { size_t(0), size_t(3) } )
+      {
+        BOOST_CHECK( std::hypot( seg[k], seg[k+1] ) <= 3.81*cm + tol );
+        BOOST_CHECK( (seg[k+2] >= crystal_z0 - tol) && (seg[k+2] <= crystal_z1 + tol) );
+        BOOST_CHECK( off_line( &seg[k] ) < tol );
+      }
+      BOOST_CHECK( along( seg ) > 0.0 );
+    }
+    const array<double,6> &entry = line.crystal_segments.front();
+    BOOST_CHECK( (fabs( entry[2] - crystal_z0 ) < tol) || (fabs( std::hypot( entry[0], entry[1] ) - 3.81*cm ) < tol) );
+  }//for( drawn lines )
+
+  // The source and crystal stretches mark where 90% of the counts come from: at 81 keV the iron lets
+  //  emission out of no more than ln(10)/mu of it, and the NaI stops the photons within ln(10)/mu of
+  //  its surface; at 384 keV the emitting skin is deeper than that.
+  const auto longest = []( const VolumetricLineSample &s, const bool crystal ) -> double {
+    double longest_len = 0.0;
+    for( const VolumetricLineSample::Line &line : s.lines )
+    {
+      for( const array<double,6> &seg : (crystal ? line.crystal_segments : line.source_segments) )
+        longest_len = std::max( longest_len, std::sqrt( (seg[3]-seg[0])*(seg[3]-seg[0])
+                                            + (seg[4]-seg[1])*(seg[4]-seg[1]) + (seg[5]-seg[2])*(seg[5]-seg[2]) ) );
+    }
+    return longest_len;
+  };
+  const VolumetricLineSample at_81 = fcn->sampleVolumetricLines( params, 81.0, 200 );
+  const VolumetricLineSample at_384 = fcn->sampleVolumetricLines( params, 384.0, 200 );
+  const double skin_81 = std::log( 10.0 ) / mu_iron_81;
+  const double nai_81 = std::log( 10.0 ) / ceelo::make_NaI().mu_total( 80.9979E-3 ) * cm;
+  BOOST_CHECK_MESSAGE( longest( at_81, false ) <= skin_81*(1.0 + 1.0E-9),
+                       "an 81 keV source stretch of " << longest( at_81, false )/cm
+                       << " cm is deeper than the 90% depth of " << skin_81/cm << " cm" );
+  BOOST_CHECK_MESSAGE( longest( at_81, true ) <= nai_81*(1.0 + 1.0E-6),
+                       "an 81 keV crystal stretch of " << longest( at_81, true )/cm
+                       << " cm is deeper than the 90% depth of " << nai_81/cm << " cm" );
+  BOOST_CHECK_MESSAGE( longest( at_384, false ) > skin_81,
+                       "384 keV source stretches reach no deeper than 81 keV's" );
+}//BOOST_AUTO_TEST_CASE( VolumetricLineSampleForDisplay )
+
+
+/** The source stretches the 3D diagram draws are where the most of the emission reaching the detector
+ comes from, holding 90% of it (`highest_emission_stretches`): exact on analytic profiles; for a
+ hollow source, the far wall only once the near wall holds less than 90%; for an in-situ source, the
+ skins at both surfaces rather than a stretch through the middle.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
+{
+  using GammaInteractionCalc::EmissionCell;
+  using GammaInteractionCalc::highest_emission_stretches;
+  using GammaInteractionCalc::depth_fraction_for_90pct;
+  typedef vector<pair<double,double>> Runs;
+
+  // An exponential profile: the classic 90% depth; a flat one: 90% of the length, from the start.
+  {
+    const Runs runs = highest_emission_stretches( { {0.0, 10.0, 0.0, 3.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( runs.size(), size_t(1) );
+    BOOST_CHECK_SMALL( runs[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( runs[0].second, 10.0*depth_fraction_for_90pct( 3.0 ), 1.0E-7 );
+
+    const Runs flat = highest_emission_stretches( { {0.0, 10.0, 0.0, 0.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( flat.size(), size_t(1) );
+    BOOST_CHECK_SMALL( flat[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( flat[0].second, 9.0, 1.0E-5 );
+  }
+
+  // Two pieces of a hollow source: behind an opaque core the far one holds nothing; behind a
+  //  transparent one, a thin near wall is taken whole and the far wall from its near side.
+  {
+    const Runs opaque = highest_emission_stretches( { {0.0, 1.0, 0.0, 5.0}, {2.0, 3.0, 55.0, 60.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( opaque.size(), size_t(1) );
+    BOOST_CHECK_CLOSE( opaque[0].second, depth_fraction_for_90pct( 5.0 ), 1.0E-7 );
+
+    const Runs clear = highest_emission_stretches( { {0.0, 1.0, 0.0, 0.5}, {2.0, 3.0, 0.5, 1.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( clear.size(), size_t(2) );
+    BOOST_CHECK_SMALL( clear[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( clear[0].second, 1.0, 1.0E-9 );
+    BOOST_CHECK_CLOSE( clear[1].first, 2.0, 1.0E-9 );
+    // The pair is one exponential profile over a total optical thickness of 1, with a gap in it.
+    BOOST_CHECK_CLOSE( 1.0 + (clear[1].second - 2.0), 2.0*depth_fraction_for_90pct( 1.0 ), 1.0E-7 );
+  }
+
+  // Emission densest at both ends (an in-situ source crossed through): a stretch at each end,
+  //  holding 45% each, and nothing in the middle.
+  {
+    const Runs both = highest_emission_stretches( { {0.0, 5.0, 0.0, 10.0}, {5.0, 10.0, 10.0, 0.0} }, 0.9 );
+    BOOST_REQUIRE_EQUAL( both.size(), size_t(2) );
+    const double x = -std::log( 1.0 - 0.9*(1.0 - std::exp( -10.0 )) ) / 2.0;
+    BOOST_CHECK_SMALL( both[0].first, 1.0E-12 );
+    BOOST_CHECK_CLOSE( both[0].second, x, 1.0E-5 );
+    BOOST_CHECK_CLOSE( both[1].first, 10.0 - x, 1.0E-5 );
+    BOOST_CHECK_CLOSE( both[1].second, 10.0, 1.0E-12 );
+  }
+
+  // The same, through the fit.
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> iron = matdb->material( "Fe" );
+  const shared_ptr<const Material> aluminum = matdb->material( "Al" );
+  const shared_ptr<const Material> voidmat = matdb->material( "void" );
+  BOOST_REQUIRE( iron && aluminum && voidmat );
+
+  using GammaInteractionCalc::VolumetricLineSample;
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  const double cm = PhysicalUnits::cm, tol = 1.0E-6*cm;
+  const auto radius = []( const array<double,6> &seg, const size_t k ) -> double {
+    return std::sqrt( seg[k]*seg[k] + seg[k+1]*seg[k+1] + seg[k+2]*seg[k+2] );
+  };
+
+  // A Ba-133 trace source in a 1 cm iron wall around a 1 cm radius void, 15 cm from the NaI.  At 81 keV
+  //  the near wall holds 99% of the emission along any line through the core, so the far wall is never
+  //  drawn; at 356 keV it holds ~70%, so lines through the core get both walls.
+  {
+    ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( make_synthetic_nai_drf( true ), 15.0*cm, 0.0,
+                                    ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    add_ba133_trace_shell( input, iron, 1.0*cm );
+    ShieldingSourceFitCalc::ShieldingInfo core = input.config.shieldings.front();
+    core.m_material = voidmat;
+    core.m_forFitting = false;
+    core.m_traceSources.clear();
+    input.config.shieldings.insert( begin(input.config.shieldings), core );
+
+    const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                      = ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn_pars.first && fcn_pars.first->hasVolumetricLineSets() );
+    const vector<double> params = fcn_pars.second.values();
+
+    const VolumetricLineSample at_81 = fcn_pars.first->sampleVolumetricLines( params, 81.0, 200 );
+    BOOST_REQUIRE( !at_81.lines.empty() );
+    for( const VolumetricLineSample::Line &line : at_81.lines )
+    {
+      BOOST_REQUIRE_EQUAL( line.source_segments.size(), size_t(1) );
+      BOOST_CHECK( fabs( radius( line.source_segments[0], 0 ) - 2.0*cm ) < tol );
+      BOOST_CHECK( radius( line.source_segments[0], 3 ) >= 1.0*cm - tol );
+    }
+
+    const VolumetricLineSample at_356 = fcn_pars.first->sampleVolumetricLines( params, 356.0, 200 );
+    size_t num_both_walls = 0;
+    for( const VolumetricLineSample::Line &line : at_356.lines )
+    {
+      BOOST_REQUIRE( !line.source_segments.empty() && (line.source_segments.size() <= 2) );
+      if( line.source_segments.size() < 2 )
+        continue;
+      num_both_walls += 1;
+      const array<double,6> &near_wall = line.source_segments[0], &far_wall = line.source_segments[1];
+      BOOST_CHECK( fabs( radius( near_wall, 0 ) - 2.0*cm ) < tol );
+      BOOST_CHECK( fabs( radius( near_wall, 3 ) - 1.0*cm ) < tol );
+      BOOST_CHECK( fabs( radius( far_wall, 0 ) - 1.0*cm ) < tol );
+      BOOST_CHECK( radius( far_wall, 3 ) <= 2.0*cm + tol );
+    }
+    BOOST_TEST_MESSAGE( "  hollow iron: " << num_both_walls << " of " << at_356.lines.size()
+                        << " lines drawn at 356 keV show both walls" );
+    BOOST_CHECK( num_both_walls > 0 );
+  }
+
+  // Ba-133 exponentially distributed below the surface of a 3 cm aluminium sphere (relaxation length
+  //  2 mm).  At 356 keV the far skin sends out a fifth as much as the near one along a line through the
+  //  middle, so such lines get a stretch at each skin, and none reaches the middle.
+  {
+    ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( make_synthetic_nai_drf( true ), 15.0*cm, 0.0,
+                                    ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+    add_ba133_trace_shell( input, aluminum, 3.0*cm );
+    ShieldingSourceFitCalc::TraceSourceInfo &trace = input.config.shieldings.front().m_traceSources.front();
+    trace.m_type = GammaInteractionCalc::TraceActivityType::ExponentialDistribution;
+    trace.m_relaxationDistance = static_cast<float>( 0.2*cm );
+
+    const pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                                      = ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn_pars.first && fcn_pars.first->hasVolumetricLineSets() );
+    const vector<double> params = fcn_pars.second.values();
+
+    const VolumetricLineSample at_356 = fcn_pars.first->sampleVolumetricLines( params, 356.0, 200 );
+    BOOST_REQUIRE( !at_356.lines.empty() );
+    size_t num_both_skins = 0;
+    for( const VolumetricLineSample::Line &line : at_356.lines )
+    {
+      BOOST_REQUIRE( !line.source_segments.empty() && (line.source_segments.size() <= 2) );
+      BOOST_CHECK( fabs( radius( line.source_segments.front(), 0 ) - 3.0*cm ) < tol );
+      for( const array<double,6> &seg : line.source_segments )
+      {
+        BOOST_CHECK_MESSAGE( (radius( seg, 0 ) > 2.0*cm) && (radius( seg, 3 ) > 2.0*cm),
+                             "an in-situ source stretch reaches " << (3.0*cm - std::min( radius( seg, 0 ), radius( seg, 3 ) ))/cm
+                             << " cm below the surface" );
+      }
+      if( line.source_segments.size() == 2 )
+      {
+        num_both_skins += 1;
+        BOOST_CHECK( fabs( radius( line.source_segments[1], 3 ) - 3.0*cm ) < tol );
+      }
+    }//for( drawn lines )
+    BOOST_TEST_MESSAGE( "  in-situ aluminium: " << num_both_skins << " of " << at_356.lines.size()
+                        << " lines drawn at 356 keV show both skins" );
+    BOOST_CHECK( num_both_skins > 0 );
+  }
+}//BOOST_AUTO_TEST_CASE( VolumetricLineSourceStretches )
+
+
+/** A DRF imported from a .par efficiency grid, used in an activity fit: peaks inside the grid's
+ energies must evaluate without an out-of-range flag - both as built, and as read back from the
+ database or a saved session.  The grid starts at 10 keV so its response is segmented at the Ge
+ K-edge, as a real grid starting there is.  Also pins how each detector-efficiency model request
+ resolves for such a DRF.
+ */
+BOOST_AUTO_TEST_CASE( ParGridDrfInActShieldFit )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const string detector_txt =
+    "SynthDet,70.0,60.0,0,80.0,150.0,4.0,4.0,26,synth.par,4, #\n"
+    "ge,0.23,5.35, #\n"
+    "be,0.5,1.848, #\n"
+    "al,1.5,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "al,1.0,2.70, #\n"
+    "al,2.0,2.70, #\n"
+    "ge,0.23,5.35, #\n"
+    "cu,3.0,8.96, #\n"
+    "al,5.0,2.70\n";
+  istringstream txt( detector_txt );
+  const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+  BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+
+  DetEffG2kPar::ParFile par;
+  par.energies_keV = { 10.0, 12.0, 16.0, 22.0, 45.0, 100.0, 1332.0 };
+  par.emin_keV = par.energies_keV.front();
+  par.emax_keV = par.energies_keV.back();
+  for( size_t e = 0; e < par.energies_keV.size(); ++e )
+  {
+    DetEffG2kPar::ParGrid g;
+    g.ncols = 19;
+    g.nrows = 40;
+    g.theta_step_rad = 10.0 * 3.14159265358979323846 / 180.0;
+    g.r_step = 0.2;
+    for( int r = 0; r < g.nrows; ++r )
+      for( int c = 0; c < g.ncols; ++c )
+        g.V.push_back( static_cast<uint16_t>( 2000 + 300*e + 40*r + 15*c ) );
+    par.grids.push_back( g );
+  }
+
+  shared_ptr<DetectorPeakResponse> built;
+  BOOST_REQUIRE_NO_THROW( built = DetEffG2kPar::makeDrf( par, defs.front() ) );
+  BOOST_REQUIRE( built && built->ceeloResponse() );
+
+  shared_ptr<DetectorPeakResponse> reread;
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    built->toXml( root, &doc );
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    reread = make_shared<DetectorPeakResponse>();
+    BOOST_REQUIRE_NO_THROW( reread->fromXml( doc2.first_node("root")->first_node("DetectorPeakResponse") ) );
+    BOOST_REQUIRE( reread->ceeloResponse() );
+  }
+
+  const vector<ShieldingSourceFitCalc::VolumetricEffMethod> methods{
+    ShieldingSourceFitCalc::VolumetricEffMethod::Auto,
+    ShieldingSourceFitCalc::VolumetricEffMethod::ImportedGrid,
+    ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk
+  };
+
+  for( const shared_ptr<DetectorPeakResponse> &det : { built, reread } )
+  {
+    for( const ShieldingSourceFitCalc::VolumetricEffMethod method : methods )
+    {
+      const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+            = make_ba133_point_input( det, 25.0*PhysicalUnits::cm, 0.0, method );
+      pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+      BOOST_REQUIRE( fcn_pars.first );
+
+      for( const pair<double,DetectorPeakResponse::EffFlag> &flag : fcn_pars.first->peakDrfEffFlags() )
+      {
+        BOOST_CHECK_MESSAGE( flag.second == DetectorPeakResponse::EffFlag::Ok,
+                             flag.first << " keV (" << ((det == reread) ? "re-read" : "as built")
+                             << ", method " << static_cast<int>(method) << ") was flagged "
+                             << DetectorPeakResponse::effFlagName( flag.second ) );
+      }
+    }//for( methods )
+  }//for( as built, and re-read )
+
+  // How each request resolves: Auto and "MC" use the grid (MC with an error, as there is no MC),
+  //  EFFTRAN builds a real transfer rather than reusing the grid, and a grid request on a DRF
+  //  without one falls back to what Auto picks, with an error.
+  typedef ShieldingSourceFitCalc::VolumetricEffMethod VolEff;
+  const auto resolve = []( const shared_ptr<DetectorPeakResponse> &det, const VolEff method )
+    -> shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>
+  {
+    return GammaInteractionCalc::ShieldingSourceChi2Fcn::create(
+                      make_ba133_point_input( det, 25.0*PhysicalUnits::cm, 0.0, method ) ).first;
+  };
+
+  for( const VolEff method : { VolEff::Auto, VolEff::ImportedGrid, VolEff::MCTransfer } )
+  {
+    const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> fcn = resolve( reread, method );
+    BOOST_REQUIRE( fcn );
+    BOOST_CHECK( fcn->resolvedVolumetricEffMethod() == VolEff::ImportedGrid );
+    BOOST_CHECK( GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( reread, method )
+                 == VolEff::ImportedGrid );
+    BOOST_CHECK_EQUAL( fcn->volumetricEffResolveError().empty(), (method != VolEff::MCTransfer) );
+  }
+
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> efftran = resolve( reread, VolEff::EffTran );
+  BOOST_REQUIRE( efftran );
+  BOOST_CHECK( efftran->resolvedVolumetricEffMethod() == VolEff::EffTran );
+  BOOST_CHECK( efftran->volumetricEffResolveError().empty() );
+  BOOST_CHECK( efftran->pointSourceFepEff( 356.0 ).value > 0.0 );
+
+  const shared_ptr<DetectorPeakResponse> nai = make_synthetic_nai_drf( true );
+  const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> no_grid = resolve( nai, VolEff::ImportedGrid );
+  BOOST_REQUIRE( no_grid );
+  BOOST_CHECK( no_grid->resolvedVolumetricEffMethod()
+               == GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( nai, VolEff::Auto ) );
+  BOOST_CHECK( !no_grid->volumetricEffResolveError().empty() );
+}//BOOST_AUTO_TEST_CASE( ParGridDrfInActShieldFit )

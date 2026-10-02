@@ -30,6 +30,7 @@
 #include <array>
 #include <cmath>
 #include <ctime>
+#include <regex>
 #include <memory>
 #include <cctype>
 #include <string>
@@ -784,9 +785,17 @@ void DetectorPeakResponse::computeHash()
     m_measuredPoints->appendToHash( seed );
 
   if( m_ceeloResponse )
+  {
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
-  else if( m_geometry )
+  }else if( m_geometry )
+  {
     boost::hash_combine( seed, m_geometry->to_xml_string() );
+
+    // Only when set, so every DRF from before the flag existed keeps its hash - but it has to be in
+    //  it, or switching to Flat Disk would collapse onto the geometry-enabled row in the database.
+    if( m_geometryDisabled )
+      boost::hash_combine( seed, std::string("GeometryDisabled") );
+  }
 
   // Embedded fixed-geometry source setup: only hashed when present, so legacy
   //  DRFs keep their hashes.
@@ -846,6 +855,7 @@ void DetectorPeakResponse::reset()
   m_totalEfficiency.reset();
   m_ceeloResponse.reset();
   m_geometry.reset();
+  m_geometryDisabled = false;
   m_measuredPoints.reset();
 }//void reset()
 
@@ -880,13 +890,14 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
-          // `geometry()`, not `m_geometry`: a response carries its own descriptor, which is what
-          //  `geometry()` prefers, and a DRF assembled in memory need not have it copied into
+          // `storedGeometry()`, not `m_geometry`: a response carries its own descriptor, which is
+          //  what it prefers, and a DRF assembled in memory need not have it copied into
           //  `m_geometry` as well.  Comparing the raw member reports every round-tripped MC-backed
-          //  detector as changed.
-          && ((!geometry() && !rhs.geometry())
-              || (geometry() && rhs.geometry()
-                  && (geometry()->to_xml_string() == rhs.geometry()->to_xml_string())))
+          //  detector as changed.  (Not `geometry()`, which hides a disabled one.)
+          && ((!storedGeometry() && !rhs.storedGeometry())
+              || (storedGeometry() && rhs.storedGeometry()
+                  && (storedGeometry()->to_xml_string() == rhs.storedGeometry()->to_xml_string())))
+          && (geometryDisabled() == rhs.geometryDisabled())
           );
 }//operator==
 
@@ -1095,13 +1106,19 @@ void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorRes
 
 shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::geometry() const
 {
+  return geometryDisabled() ? nullptr : storedGeometry();
+}//geometry()
+
+
+shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::storedGeometry() const
+{
   // A generated response was ray-traced for a specific geometry; that one wins.  Aliasing
   //  shared_ptr, so the returned descriptor lives as long as the response holding it.
   if( m_ceeloResponse )
     return shared_ptr<const ceelo::GeometryDescriptor>( m_ceeloResponse,
                                                         &m_ceeloResponse->descriptor );
   return m_geometry;
-}//geometry()
+}//storedGeometry()
 
 
 void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescriptor> geometry )
@@ -1109,6 +1126,20 @@ void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescript
   m_geometry = std::move( geometry );
   computeHash();
 }//setGeometry(...)
+
+
+bool DetectorPeakResponse::geometryDisabled() const
+{
+  // Only a stated geometry can be switched off, and an attached response IS the geometry modeled.
+  return (m_geometryDisabled && m_geometry && !m_ceeloResponse);
+}//geometryDisabled()
+
+
+void DetectorPeakResponse::setGeometryDisabled( const bool disabled )
+{
+  m_geometryDisabled = disabled;
+  computeHash();
+}//setGeometryDisabled(...)
 
 
 shared_ptr<const MeasuredDrfPoints> DetectorPeakResponse::measuredPoints() const
@@ -1408,6 +1439,11 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   if( m_geometry )
     append_ceelo_geometry_node( base_node, &doc, *m_geometry );
 
+  // Only while in effect, so every other blob is byte-for-byte what it always was; older readers
+  //  look nodes up by name, and skip it.
+  if( geometryDisabled() )
+    base_node->append_node( doc.allocate_node( rapidxml::node_element, "GeometryDisabled", "1" ) );
+
   if( !m_fixedGeomSetupXml.empty() )
   {
     const char *val = doc.allocate_string( m_fixedGeomSetupXml.c_str(),
@@ -1439,6 +1475,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_measuredPoints.reset();
   m_ceeloResponse.reset();
   m_geometry.reset();
+  m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
 
   // Cleared above, before this early-out: an extras column that no longer carries a geometry (or
@@ -1505,6 +1542,8 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( geom_node )
       m_geometry = parse_ceelo_geometry_node( geom_node );
 
+    m_geometryDisabled = !!base_node->first_node( "GeometryDisabled" );
+
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
     if( setup_node )
       m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
@@ -1514,6 +1553,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_measuredPoints.reset();
     m_ceeloResponse.reset();
     m_geometry.reset();
+    m_geometryDisabled = false;
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -2062,6 +2102,7 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
   //  shipped GADRAS detectors included - so the Modify editor shows the real crystal instead of
   //  guessing a cylinder, and so an efficiency curve can be transferred through it.  Best-effort:
   //  a .dat whose geometry the ray-tracer cannot use still gives everything else.
+  m_geometryDisabled = false;   //a shape the file states is one to use, whatever was here before
   try
   {
     std::vector<std::string> geom_warnings;
@@ -2693,6 +2734,289 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
 }//void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv(...)
 
 
+std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseInterSpecRelEffCsv( std::istream &csvfile )
+{
+  // The layout is MakeDrf::writeCsvSummary's.  Its detector-geometry line holds a whole XML
+  //  document, so lines can be long.
+  const size_t max_line_length = 1024*1024;
+
+  // The "GeometryType" column MakeDrf writes; older exports had a yes/no "Fixed Geometry"
+  //  column, which predates the per-area/per-mass kinds, so means total activity.
+  const auto geometry_from_field = []( string value ) -> EffGeometryType {
+    SpecUtils::trim( value );
+    SpecUtils::to_lower_ascii( value );
+    if( value == "farfieldabsolute" )
+      return EffGeometryType::FarFieldAbsolute;
+    if( value == "fixedpercm2" )
+      return EffGeometryType::FixedGeomActPerCm2;
+    if( value == "fixedperm2" )
+      return EffGeometryType::FixedGeomActPerM2;
+    if( value == "fixedpergram" )
+      return EffGeometryType::FixedGeomActPerGram;
+    if( (value == "fixedtotalact") || (value == "1") || (value == "true")
+        || SpecUtils::istarts_with( value, "y" ) )
+      return EffGeometryType::FixedGeomTotalAct;
+    return EffGeometryType::FarFieldIntrinsic;
+  };//geometry_from_field
+
+  // The text after `label`, trimmed and without a trailing '.'; empty if `line` doesn't have it.
+  const auto value_after = []( const string &line, const string &label ) -> string {
+    const size_t pos = SpecUtils::to_lower_ascii_copy( line ).find( SpecUtils::to_lower_ascii_copy( label ) );
+    if( pos == string::npos )
+      return string();
+    string value = line.substr( pos + label.size() );
+    SpecUtils::trim( value );
+    if( !value.empty() && (value.back() == '.') )
+      value.pop_back();
+    return value;
+  };//value_after
+
+  string line;
+  int nlineschecked = 0;
+
+  string drfname, drfdescrip;
+
+  // MakeDrf states the equation's energy unit in the comment above the coefficients; for a file
+  //  that doesn't, any "MeV" outside the name and description means MeV (the historical rule).
+  int stated_mev = -1;  //-1 not stated, 0 keV, 1 MeV
+  bool foundMeV = false;
+
+  //ToDo: Need to implement getting lines safely where a quoted field may span
+  //      several lines.
+  while( SpecUtils::safe_get_line(csvfile, line, max_line_length) && (++nlineschecked < 100) )
+  {
+    vector<string> fields;
+    split_escaped_csv( fields, line );
+
+    if( (fields.size() == 2) && ((fields[0] == "# Name") || (fields[0] == "# Description")) )
+    {
+      (fields[0] == "# Name" ? drfname : drfdescrip) = fields[1];
+      continue;
+    }
+
+    const string unit = SpecUtils::to_lower_ascii_copy( value_after( line, "where x is energy in" ) );
+    if( SpecUtils::istarts_with( unit, "mev" ) )
+      stated_mev = 1;
+    else if( SpecUtils::istarts_with( unit, "kev" ) )
+      stated_mev = 0;
+
+    foundMeV |= SpecUtils::icontains( line, "mev" );
+
+    if( fields.size() < 16 )
+      continue;
+
+    if( !SpecUtils::iequals_ascii( fields[3], "c0")
+       || !SpecUtils::iequals_ascii( fields[4], "c1")
+       || !SpecUtils::iequals_ascii( fields[5], "c2")
+       || !SpecUtils::iequals_ascii( fields[6], "c3")
+       || !SpecUtils::icontains( fields[15], "radius") )
+      continue;
+
+    int geom_col = -1;
+    for( size_t i = 16; (geom_col < 0) && (i < fields.size()); ++i )
+    {
+      if( SpecUtils::icontains( fields[i], "Geom" ) )
+        geom_col = static_cast<int>( i );
+    }
+
+    //Okay, next line should be the coefficients
+    if( !SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+      return nullptr;
+
+    split_escaped_csv( fields, line );
+
+    // Only the first coefficient table is used: when there are two, the second holds absolute
+    //  efficiencies at 25 cm, which must not be read as intrinsic if the first is unusable.
+    try
+    {
+      vector<float> coefs( 8, 0.0f ), coef_uncerts;
+      for( int i = 0; i < 8; ++i )
+      {
+        const string &field = fields.at(3+i);
+        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
+      }
+
+      while( !coefs.empty() && (coefs.back() == 0.0f) )
+        coefs.pop_back();
+
+      if( coefs.empty() )
+        return nullptr;
+
+      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
+      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
+
+      EffGeometryType geom_type = EffGeometryType::FarFieldIntrinsic;
+      if( (geom_col >= 0) && (static_cast<int>(fields.size()) > geom_col) )
+        geom_type = geometry_from_field( fields[geom_col] );
+
+      const string name = (fields[0].empty() ? drfname : fields[0]);
+      const bool in_mev = (stated_mev >= 0) ? (stated_mev == 1) : foundMeV;
+      const float energUnits = in_mev ? 1000.0f : 1.0f;
+
+      // The uncertainties line normally comes next; any other line is left for the loop below.
+      string pending_line;
+      if( SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+      {
+        vector<string> uncert_strs;
+        split_escaped_csv( uncert_strs, line );
+        if( !uncert_strs.empty()
+           && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
+           && (uncert_strs.size() >= (3 + coefs.size())) )
+        {
+          try
+          {
+            coef_uncerts.resize( coefs.size(), 0.0f );
+            for( size_t i = 0; i < coefs.size(); ++i )
+            {
+              const string &field = uncert_strs.at(3+i);
+              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
+            }
+          }catch( std::exception &e )
+          {
+            cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
+            coef_uncerts.clear();
+          }
+        }else
+        {
+          pending_line = line;
+        }
+      }//if( we got another line we'll check if its the uncertainties )
+
+      auto det = std::make_shared<DetectorPeakResponse>( name, drfdescrip );
+      det->fromExpOfLogPowerSeries( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
+                                    0.0f, 0.0f, geom_type );
+
+      // The rest of the file: FWHM, setback, geometry, then the valid energy range, which ends it.
+#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
+      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
+#undef POS_DECIMAL_REGEX
+      const std::regex range_expression( rng_exprsn_txt );
+
+      bool have_line = !pending_line.empty();
+      if( have_line )
+        line = pending_line;
+
+      while( (have_line || SpecUtils::safe_get_line(csvfile, line, max_line_length)) && (++nlineschecked < 200) )
+      {
+        have_line = false;
+
+        if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
+        {
+          ResolutionFnctForm form = ResolutionFnctForm::kGadrasResolutionFcn;
+          if( SpecUtils::icontains( line, "A0 + A1*sqrt" ) )
+            form = ResolutionFnctForm::kConstantPlusSqrtEnergy;
+          else if( SpecUtils::icontains( line, "/energy" ) )
+            form = ResolutionFnctForm::kSqrtEnergyPlusInverse;
+          else if( SpecUtils::icontains( line, "sqrt(" ) )
+            form = ResolutionFnctForm::kSqrtPolynomial;
+
+          int nlinecheck = 0;
+          while( SpecUtils::safe_get_line(csvfile, line, max_line_length)
+                && !SpecUtils::istarts_with(line, "Values")
+                && (++nlinecheck < 15) )
+          {
+          }
+
+          const auto read_values = []( const string &values_line ) -> vector<float> {
+            vector<string> values_fields;
+            split_escaped_csv( values_fields, values_line );
+            vector<float> answer;
+            for( size_t i = 1; i < values_fields.size(); ++i )
+              answer.push_back( stof( values_fields[i] ) );
+            return answer;
+          };//read_values
+
+          vector<float> fwhm_coefs, fwhm_uncerts;
+          try
+          {
+            if( SpecUtils::istarts_with( line, "Values" ) )
+              fwhm_coefs = read_values( line );
+          }catch( std::exception & )
+          {
+            fwhm_coefs.clear();
+          }
+
+          if( SpecUtils::safe_get_line(csvfile, line, max_line_length) )
+          {
+            if( SpecUtils::istarts_with( line, "Uncertainties" ) )
+            {
+              try
+              {
+                fwhm_uncerts = read_values( line );
+              }catch( std::exception & )
+              {
+              }
+            }else
+            {
+              have_line = true;  //not part of the FWHM block; look at it again
+            }
+          }//if( another line )
+
+          if( fwhm_uncerts.size() != fwhm_coefs.size() )
+            fwhm_uncerts.clear();
+
+          try
+          {
+            if( !fwhm_coefs.empty() )
+              det->setFwhmCoefficients( fwhm_coefs, form, fwhm_uncerts );
+          }catch( std::exception &e )
+          {
+            cerr << "parseInterSpecRelEffCsv: invalid FWHM: " << e.what() << endl;
+          }
+
+          continue;
+        }//if( start of FWHM section of CSV file )
+
+        const string setback = value_after( line, "Detector setback =" );
+        if( !setback.empty() )
+        {
+          try
+          {
+            det->setDetectorSetback( PhysicalUnits::stringToDistance( setback ) );
+          }catch( std::exception & )
+          {
+          }
+          continue;
+        }//if( setback line )
+
+        const string geometry_xml = value_after( line, "# Detector geometry (CeeLo XML):" );
+        if( !geometry_xml.empty() )
+        {
+          // A shape we cannot use is worse than none; the efficiency curve still stands.
+          try
+          {
+            ceelo::GeometryDescriptor descriptor = ceelo::GeometryDescriptor::from_xml_string( geometry_xml );
+            if( descriptor.problems().empty() )
+              det->setGeometry( make_shared<const ceelo::GeometryDescriptor>( std::move(descriptor) ) );
+          }catch( std::exception &e )
+          {
+            cerr << "parseInterSpecRelEffCsv: ignoring unusable detector geometry: " << e.what() << endl;
+          }
+          continue;
+        }//if( geometry line )
+
+        std::smatch range_matches;
+        if( std::regex_search( line, range_matches, range_expression ) )
+        {
+          const float lowerEnergy = std::stof( range_matches[1] );
+          const float upperEnergy = std::stof( range_matches[6] );
+          det->setEnergyRange( lowerEnergy, upperEnergy );
+          break;
+        }
+      }//while( getline )
+
+      return det;
+    }catch( std::exception &e )
+    {
+      cerr << "parseInterSpecRelEffCsv: invalid coefficients: " << e.what() << endl;
+      return nullptr;
+    }
+  }//while( more lines )
+
+  return nullptr;
+}//parseInterSpecRelEffCsv(...)
+
+
 std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseFromAppUrl( const std::string &url_query )
 {
   // Unlike the in-app path (`InterSpec::handleAppUrl` -> `AppUtils::split_uri` ->
@@ -2895,13 +3219,13 @@ std::string DetectorPeakResponse::toAppUrl() const
     }
   }//if( geom )
   
-  if( m_ceeloResponse )
+  if( m_ceeloResponse || geometryDisabled() )
   {
     // `computeHash` folds in the response's content_hash when one is attached, and the geometry's
-    //  XML otherwise - so the hash this DRF carries describes something the receiver, who gets no
-    //  response, can never reproduce.  Since that hash is the sole de-duplication key for the
-    //  "Previous" detector rows, send the identity of what is actually being sent, and record the
-    //  real one as the parent so the lineage survives.
+    //  XML otherwise (a switched-off one included, which is not sent) - so the hash this DRF carries
+    //  describes something the receiver can never reproduce.  Since that hash is the sole
+    //  de-duplication key for the "Previous" detector rows, send the identity of what is actually
+    //  being sent, and record the real one as the parent so the lineage survives.
     DetectorPeakResponse reduced( *this );
     reduced.setCeeloResponse( nullptr );
     // Deep copy: geometry() hands back a pointer that shares ownership with the response, which
@@ -3581,8 +3905,9 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
 
   // The detector's physical shape, if the sender had one.  Absent for every URL made before this
   //  existed, and by an older build that dropped it in its shortening cascade - so a missing key
-  //  is simply a DRF that does not know its shape, never an error.
+  //  is simply a DRF that does not know its shape, never an error.  (A switched-off one is not sent.)
   m_geometry.reset();
+  m_geometryDisabled = false;
   if( parts.count("DETGEOM") )
   {
     try
@@ -4609,6 +4934,39 @@ shared_ptr<DetectorPeakResponse> DetectorPeakResponse::convertFixedGeometryType(
   answer->m_efficiency = std::make_shared<DetectorEfficiencyCurve>(
                                   answer->m_efficiency->scaledByConstant( correction ) );
 
+  // An embedded MC scene (MakeFixedGeomResponse) records how its FEP curve relates to per-decay
+  //  efficiency ("FepScale"); keep that in step with the curve, or cascade summing would use a
+  //  per-mass/area curve as if it were per decay.  Without the element the scale stays unknown.
+  if( !answer->m_fixedGeomSetupXml.empty() )
+  {
+    try
+    {
+      vector<char> xml_buf( begin(answer->m_fixedGeomSetupXml), end(answer->m_fixedGeomSetupXml) );
+      xml_buf.push_back( '\0' );
+      rapidxml::xml_document<char> doc;
+      doc.parse<0>( xml_buf.data() );
+      rapidxml::xml_node<char> *base_node = doc.first_node( "ActShieldSetup" );
+      rapidxml::xml_node<char> *scale_node = base_node ? base_node->first_node( "FepScale" ) : nullptr;
+      double scale = 0.0;
+      if( scale_node && (stringstream( SpecUtils::xml_value_str(scale_node) ) >> scale) && (scale > 0.0) )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "%.9g", scale * correction );
+        const char * const new_val = doc.allocate_string( buffer );
+        scale_node->value( new_val );
+        //rapidxml prints an element's data child, not its value(), so update that too
+        rapidxml::xml_node<char> * const data_node = scale_node->first_node();
+        if( data_node && (data_node->type() == rapidxml::node_data) )
+          data_node->value( new_val );
+        string xml;
+        rapidxml::print( std::back_inserter(xml), doc, rapidxml::print_no_indenting );
+        answer->m_fixedGeomSetupXml = xml;
+      }
+    }catch( std::exception & )
+    {
+    }
+  }//if( an embedded scene )
+
   answer->computeHash();
 
   return answer;
@@ -4695,6 +5053,12 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::reinterpretAsFixedGe
   answer->m_absoluteEfficiencyDistance = -1.0;
   answer->m_absEffCorrectForAirAtten = true;
   answer->m_detectorDiameter = -1.0f;
+
+  // A far-field total curve (e.g. GADRAS "PTOT", per photon striking the face) or MC response
+  //  describes the bare detector, not this fixed geometry - but a fixed-geometry DRF's total curve
+  //  is read as the absolute per-decay total (cascade summing), so it can't be carried over.
+  answer->m_totalEfficiency.reset();
+  answer->m_ceeloResponse.reset();
   
   answer->computeHash();
   
@@ -5081,6 +5445,9 @@ void DetectorPeakResponse::toXml( ::rapidxml::xml_node<char> *parent,
   //  what loses the detector its shape.
   if( m_geometry )
     append_ceelo_geometry_node( base_node, doc, *m_geometry );
+
+  if( geometryDisabled() )  //see drfExtraToXmlString()
+    base_node->append_node( doc->allocate_node( node_element, "GeometryDisabled", "1" ) );
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -5544,6 +5911,8 @@ void DetectorPeakResponse::fromXml( const ::rapidxml::xml_node<char> *parent )
   if( node )
     m_geometry = parse_ceelo_geometry_node( node );  //throws on invalid content
 
+  m_geometryDisabled = !!parent->first_node( "GeometryDisabled", 16 );
+
   m_fixedGeomSetupXml.clear();
   node = parent->first_node( "FixedGeomSourceSetup", 20 );
   if( node )
@@ -5745,8 +6114,8 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   // The physical geometry a DRF carries without a response (an ANGLE / Detector.dat import) is
   //  serialized too, so a round trip that drops or corrupts it must be caught here - `m_hash` can
   //  not catch it, since fromXml restores the hash the file declared rather than recomputing it.
-  const shared_ptr<const ceelo::GeometryDescriptor> lhs_geom = lhs.geometry();
-  const shared_ptr<const ceelo::GeometryDescriptor> rhs_geom = rhs.geometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> lhs_geom = lhs.storedGeometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> rhs_geom = rhs.storedGeometry();
   if( (!lhs_geom) != (!rhs_geom) )
     throw runtime_error( "DetectorPeakResponse: availability of detector"
                          " geometry doesnt match" );
@@ -5754,6 +6123,9 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
   if( lhs_geom && rhs_geom
       && (lhs_geom->to_xml_string() != rhs_geom->to_xml_string()) )
     throw runtime_error( "DetectorPeakResponse: detector geometry doesnt match" );
+
+  if( lhs.geometryDisabled() != rhs.geometryDisabled() )
+    throw runtime_error( "DetectorPeakResponse: whether the detector geometry is disabled doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

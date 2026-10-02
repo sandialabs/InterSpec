@@ -265,6 +265,24 @@
   opacity: 1.0;
 }
 
+/* "Shielding" caption with the small "Create MC Eff" link to its right.  The link is absolutely
+   positioned so the caption alone sets the row height - showing/hiding it doesn't shift the
+   shielding box below. */
+.ShieldingSourceDisplay .ShieldCapRow
+{
+  position: relative;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink
+{
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  line-height: 1;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
 /* Link-styled push buttons (Show Diagram, calc. log) */
 .ShieldingSourceDisplay .SsdLink,
 .ShieldingSourceDisplay .SsdLink:hover,
@@ -283,6 +301,38 @@
 .ShieldingSourceDisplay .SsdLink:hover
 {
   text-decoration: underline;
+}
+
+/* "Create MC Eff" and "Show Diagram": normal weight, dimmed until moused over. */
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShowDiagramLink,
+.ShieldingSourceDisplay .ShowDiagramLink:hover,
+.ShieldingSourceDisplay .ShowDiagramLink:active,
+.ShieldingSourceDisplay .ShowDiagramLink:focus
+{
+  font-weight: 400;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShowDiagramLink
+{
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:hover,
+.ShieldingSourceDisplay .ShowDiagramLink:hover
+{
+  opacity: 1.0;
+}
+
+/* The small caption link keeps one size/weight in every state (no hover jitter). */
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:hover,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:active,
+.ShieldingSourceDisplay .ShieldCapRow .FixedGeomMcLink:focus
+{
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 /* Mult./Chi switch toolbar, placed under the chart */
@@ -364,7 +414,8 @@
    on the action half (see the .SsdPhone .SsdFitSplit.SsdFitManual > button.FitNeeded rule below). */
 .ShieldingSourceDisplay:not(.SsdPhone) .FitActions .SsdFitSplit.SsdFitNeeded
 {
-  box-shadow: 0 0 0 2px rgba(45,127,249,.55);
+  box-shadow: 0 0 0 2px var(--interspec-accent-color);
+  box-shadow: 0 0 0 2px color-mix( in srgb, var(--interspec-accent-color) 55%, transparent );
 }
 /* The footer pins this button flush to the panel's bottom-right corner, where the dialog's
    overflow:hidden clips the 2px accent ring.  Hold it just 1px off each edge (always, so the
@@ -523,16 +574,11 @@
   filter: var(--interspec-icon-filter);
 }
 
-/* Desktop footer: float the model icons (export/import/database) to the left, just after the help
-   icon, so the Close button (right-aligned, inline) stays the rightmost control.  The :hover variant
-   keeps the same margin so the icons don't shift on hover (".modal-footer button:hover" otherwise
-   forces margin-left:2px, which outranks the non-hover rule and caused jitter). */
-.SsdModelFooterDesktop .SsdFooterIcon,
-.SsdModelFooterDesktop .SsdFooterIcon:hover
-{
-  float: left;
-  margin-left: 6px;
-}
+/* Desktop footer: the model icons (export/import/database) sit just after the help icon, left of the
+   decision buttons.  That needs no rule now - `.DialogFooter` is a flex row and these carry no role
+   class, so they keep the default `order: 0` and group left, spaced by the footer's `gap`.  This
+   used to float them and duplicate the margin on `:hover`, to defeat `.modal-footer button:hover`,
+   which has since been deleted. */
 
 
 /* ============================================================
@@ -977,7 +1023,8 @@
   align-items: center;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 2px 6px rgba(45,127,249,.28);
+  box-shadow: 0 2px 6px var(--interspec-accent-color);
+  box-shadow: 0 2px 6px color-mix( in srgb, var(--interspec-accent-color) 28%, transparent );
 }
 /* Both halves: uniform height (override desktop .dropdown-toggle{height:21px}/.LightButton{height:19px}),
    square inner corners (the group clips to its radius), default blue. */
@@ -1067,7 +1114,8 @@
    light button, an odd strip on the dark one; a translucent accent reads on both). */
 .ShieldingSourceDisplay.SsdPhone .SsdFitSplit.SsdFitManual > button.FitNeeded
 {
-  box-shadow: inset 0 0 0 2px rgba(45,127,249,0.55);
+  box-shadow: inset 0 0 0 2px var(--interspec-accent-color);
+  box-shadow: inset 0 0 0 2px color-mix( in srgb, var(--interspec-accent-color) 55%, transparent );
 }
 
 /* fit-results sheet (SimpleDialog) */

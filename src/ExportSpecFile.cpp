@@ -187,7 +187,7 @@ std::string clean_uuid( string uuid )
     
     if( (index + 1) < urls.size() )
     {
-      WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code") );
+      WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code"), WidgetUtils::ButtonRole::Neutral );
       btn->clicked().connect( btn, [=](){
         displayQrDialog( urls, index + 1, successfullyDone, as_emailto, toogleEmailVsUri );
       } );
@@ -215,7 +215,7 @@ std::string clean_uuid( string uuid )
     if( toogleEmailVsUri )
     {
       WString btn_txt = as_emailto ? WString::tr("esf-url-link") : WString::tr("esf-email-link");
-      WPushButton *btn = dialog->addButton( btn_txt );
+      WPushButton *btn = dialog->addButton( btn_txt, WidgetUtils::ButtonRole::Neutral );
       // Wt4: removeWidget returns unique_ptr; capture it to keep the widget alive, then reinsert
       auto btn_owner = dialog->footer()->removeWidget( btn );
       dialog->footer()->insertWidget( 0, std::move(btn_owner) );
@@ -285,7 +285,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
       
       auto dialog = SimpleDialog::make( WString::tr("esf-error-title"),
                                      "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
-      dialog->addButton( WString::tr("Okay") );
+      dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
       return;
     }//if( urls.empty() )
     
@@ -298,7 +298,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   }catch( std::exception &e )
   {
     auto dialog = SimpleDialog::make( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
-    dialog->addButton( WString::tr("Okay") );
+    dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
   }//try catch
 }//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
 
@@ -364,7 +364,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
-    dialog->addButton( WString::tr("Ok") );
+    dialog->addButton( WString::tr("Ok"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -372,7 +372,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
-    dialog->addButton( WString::tr("Ok") );
+    dialog->addButton( WString::tr("Ok"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -406,7 +406,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
   SimpleDialog *window = SimpleDialog::make( WString::tr("esf-lossy-qr-title"), "" );
   window->rejectWhenEscapePressed();
-  window->addButton( "Close" );
+  window->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
 
   if( is_phone )
     window->setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );
@@ -3758,7 +3758,7 @@ void ExportSpecFileTool::handleGenerateQrCode()
   }catch( std::exception &e )
   {
     auto dialog = SimpleDialog::make( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
-    dialog->addButton( "Ok" );
+    dialog->addButton( "Ok", WidgetUtils::ButtonRole::Affirm );
   }//try catch
 }//void handleGenerateQrCode()
 #endif

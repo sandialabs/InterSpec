@@ -746,12 +746,24 @@ void DetectorGeometryInput::removeLayerRow()
   if( m_layers.size() <= 1 )
     return;
 
-  m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.pop_back();
+  popLayerRow();
   m_removeLayer->setEnabled( m_layers.size() > 1 );
 
   handleUserInput();
 }//removeLayerRow()
+
+
+void DetectorGeometryInput::popLayerRow()
+{
+  assert( !m_layers.empty() );
+  assert( m_layersTable->rowCount() == static_cast<int>(m_layers.size() + 1) );  //header + layers
+  if( m_layers.empty() )
+    return;
+
+  m_materialSuggestion->removeEdit( m_layers.back().material );
+  m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
+  m_layers.pop_back();
+}//popLayerRow()
 
 
 bool DetectorGeometryInput::State::Layer::operator==( const Layer &rhs ) const
@@ -841,9 +853,8 @@ void DetectorGeometryInput::setState( const State &state )
   m_collimatorExtension->setText( WString::fromUTF8(state.collimatorExtension) );
 
   // Rebuild the layer rows; `addLayerRow` is the only place that wires their signals up.
-  while( m_layersTable->rowCount() > 1 )
-    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.clear();
+  while( !m_layers.empty() )
+    popLayerRow();
   for( const State::Layer &layer : state.layers )
     addLayerRow( WString::fromUTF8(layer.material), WString::fromUTF8(layer.frontThickness),
                  WString::fromUTF8(layer.sideThickness), layer.seeded );
@@ -1140,6 +1151,8 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
 
   while( m_layers.size() > 1 )
     removeLayerRow();
+  if( m_layers.empty() )  //seedFromDiameter() without a setback, or setState(), can leave none
+    addLayerRow( "", "", "" );
 
   bool first = true;
   for( const ceelo::LayerSpec &layer : gd.layers )
@@ -1229,8 +1242,9 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
     return;
 
   // The DRFs own geometry, when it has one - from a generated response, or set by an importer
-  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.
-  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->geometry() )
+  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.  Stored, so a Flat
+  //  Disk detector's switched-off shape is still here to edit, or to switch back on.
+  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->storedGeometry() )
   {
     setFromDescriptor( *gd );
     return;
@@ -1292,11 +1306,11 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
 
   // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
   //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
-  while( m_layersTable->rowCount() > 1 )
-    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.clear();
+  while( !m_layers.empty() )
+    popLayerRow();
   if( setback > 0.0 )
     addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
+  m_removeLayer->setEnabled( m_layers.size() > 1 );
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();

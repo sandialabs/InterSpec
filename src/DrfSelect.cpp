@@ -54,7 +54,6 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WTableCell.h>
-#include <Wt/WTabWidget.h>
 #include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
@@ -87,7 +86,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/CeeLoUtils.h"
-#include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ColorTheme.h"
@@ -100,12 +98,12 @@
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/DrfModifyWidget.h"
+#include "InterSpec/DrfImportWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
-#include "InterSpec/EccUncertOptions.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -952,8 +950,8 @@ void RelEffFile::handleUserAskedRemove()
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-remove-drf-window-title"),
                                           WString::tr("ref-remove-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   
   string filepath = m_existingFilePath;
   // Only remove this entry on confirmation (Yes), not unconditionally below.  Connect to `this` so
@@ -1087,8 +1085,8 @@ void RelEffFile::handleFileUpload()
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ref-save-drf-window-title"),
                                 WString::tr("ref-save-drf-window-txt") );
   
-  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  Wt::WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   yes->clicked().connect( this, &RelEffFile::handleSaveFileForLater );
 #endif
 }//void handleFileUpload()
@@ -2190,21 +2188,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_drfContentChips( nullptr ),
     m_detector( currentDet ),
     m_gui_select_matches_det( false ),
-    m_tabs( nullptr ),
-    m_detectorDiameter( nullptr ),
-    m_detectorSetback( nullptr ),
-    m_uploadedDetNameDiv( nullptr ),
-    m_uploadedDetName( nullptr ),
-    m_detectrDiameterDiv( nullptr ),
-    m_efficiencyCsvUpload( nullptr ),
-    m_detectrDotDatLabel( nullptr ),
-    m_detectorDotDatUpload( nullptr ),
-    m_efficiencyType( nullptr ),
-    m_detectorDistanceLabel( nullptr ),
-    m_detectorDistance( nullptr ),
-    m_eccUncertContainer( nullptr ),
-    m_eccUncertWidget( nullptr ),
-    m_uploadedXmlDrf( nullptr ),
+    m_importWidget( nullptr ),
+    m_importMenuItem( nullptr ),
     m_acceptButton( nullptr ),
     m_cancelButton( nullptr ),
     m_noDrfButton( nullptr ),
@@ -2386,122 +2371,14 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   m_relEffSelect = relEffSelectOwned.get();
 
   //-------------------------------------
-  //--- 3)  Upload
+  //--- 3)  Import
   //-------------------------------------
 
-  
-  auto uploadDetTabOwned = std::make_unique<WContainerWidget>();
-  WContainerWidget *uploadDetTab = uploadDetTabOwned.get();
-  uploadDetTab->addStyleClass( "DetUploadDiv" );
-
-  WText *descrip = uploadDetTab->addNew<WText>( WString::tr("ds-csv-upload-desc") );
-  descrip->setStyleClass("DetectorLabel");
-
-  m_efficiencyCsvUpload = uploadDetTab->addNew<WFileUpload>();
-  m_efficiencyCsvUpload->setInline( false );
-  m_efficiencyCsvUpload->uploaded().connect( this, &DrfSelect::handleEfficiencyCsvUpload );
-  m_efficiencyCsvUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
-  m_efficiencyCsvUpload->changed().connect( m_efficiencyCsvUpload, &WFileUpload::upload );
-
-  m_efficiencyType = uploadDetTab->addNew<WComboBox>();
-  m_efficiencyType->setInline( false );
-  m_efficiencyType->addStyleClass( "EfficiencyType" );
-  m_efficiencyType->addItem( WString::tr("ds-eff-type-intrinsic") );
-  m_efficiencyType->addItem( WString::tr("ds-eff-type-farfield") );
-  m_efficiencyType->addItem( WString::tr("ds-eff-type-gadras") );
-  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-total") );
-  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-cm2") );
-  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-m2") );
-  m_efficiencyType->addItem( WString::tr("ds-fixed-geom-gram") );
-  m_efficiencyType->setCurrentIndex( 0 );
-  m_efficiencyType->hide();
-  m_efficiencyType->changed().connect( this, &DrfSelect::handleEfficiencyTypeChange );
-  
-  
-  
-  m_detectrDiameterDiv = uploadDetTab->addNew<WContainerWidget>();
-  m_detectrDiameterDiv->addStyleClass( "DetectorDiamDiv" );
-
-  WLabel *label = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-det-diam") );
-  m_detectorDiameter = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("0 cm") );
-  label->setBuddy( m_detectorDiameter );
-
-  m_detectorDiameter->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorDiameter->setAttributeValue( "autocorrect", "off" );
-  m_detectorDiameter->setAttributeValue( "spellcheck", "off" );
-#endif
-  
-  m_detectorDiameter->setValidator( distValidator );
-  m_detectorDiameter->setTextSize( 10 );
-  m_detectorDiameter->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDiameter->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDiameter->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-
-  label = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-det-setback") );
-  m_detectorSetback = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("0 cm") );
-  label->setBuddy( m_detectorSetback );
-
-  m_detectorSetback->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorSetback->setAttributeValue( "autocorrect", "off" );
-  m_detectorSetback->setAttributeValue( "spellcheck", "off" );
-#endif
-
-  m_detectorSetback->setValidator( distValidator );
-  m_detectorSetback->setTextSize( 10 );
-  m_detectorSetback->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorSetback->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorSetback->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-
-  m_detectorDistanceLabel = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-dist-label") );
-  m_detectorDistance = m_detectrDiameterDiv->addNew<WLineEdit>( WString::fromUTF8("25 cm") );
-  m_detectorDistanceLabel->setBuddy( m_detectorDistance );
-
-  m_detectorDistance->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_detectorDistance->setAttributeValue( "autocorrect", "off" );
-  m_detectorDistance->setAttributeValue( "spellcheck", "off" );
-#endif
-
-  m_detectorDistance->setValidator( distValidator );
-  m_detectorDistance->setTextSize( 10 );
-  m_detectorDistance->changed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDistance->enterPressed().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDistance->blurred().connect( this, &DrfSelect::handleDetectorDiameterOrDistanceChanged );
-  m_detectorDistanceLabel->hide();
-  m_detectorDistance->hide();
-
-  m_detectrDotDatLabel = m_detectrDiameterDiv->addNew<WLabel>( WString::tr("ds-gad-det-file-label") );
-  m_detectorDotDatUpload = m_detectrDiameterDiv->addNew<WFileUpload>();
-  m_detectorDotDatUpload->uploaded().connect( this, [this](){ handleGadrasDetectorDotDatUpload(); } );
-  m_detectorDotDatUpload->fileTooLarge().connect( this, []( ::int64_t size ){ SpecMeasManager::fileTooLarge( size ); } );
-  m_detectorDotDatUpload->changed().connect( m_detectorDotDatUpload, &WFileUpload::upload );
-  m_detectrDotDatLabel->hide();
-  m_detectorDotDatUpload->hide();
-
-  m_detectrDiameterDiv->hide();
-  m_detectrDiameterDiv->setHiddenKeepsGeometry( true );
-
-  m_uploadedDetNameDiv = uploadDetTab->addNew<WContainerWidget>();
-  label = m_uploadedDetNameDiv->addNew<WLabel>( WString::tr("ds-name-label") );
-  m_uploadedDetName = m_uploadedDetNameDiv->addNew<WLineEdit>();
-  label->setBuddy( m_uploadedDetName );
-
-  m_uploadedDetName->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  m_uploadedDetName->setAttributeValue( "autocorrect", "off" );
-  m_uploadedDetName->setAttributeValue( "spellcheck", "off" );
-#endif
-
-  m_uploadedDetName->textInput().connect( this, &DrfSelect::handleUserChangedUploadedDrfName );
-  m_uploadedDetName->setTextSize( 30 );
-  m_uploadedDetNameDiv->hide();
-
-  // Holds the EccUncertOptions widget, populated only when an ISOCS .ecc file
-  //  is uploaded.
-  m_eccUncertContainer = uploadDetTab->addNew<WContainerWidget>();
-  m_eccUncertContainer->hide();
+  // Not given the current detector: this tab is for bringing in a new one.
+  auto importWidgetOwned = std::make_unique<DrfImportWidget>( DrfImportWidget::Host::ImportTab );
+  m_importWidget = importWidgetOwned.get();
+  m_importWidget->changed().connect( this, &DrfSelect::handleImportChanged );
+  m_importWidget->characterizeRequested().connect( this, &DrfSelect::openModifyWindow );
 
 
   //-------------------------------------
@@ -2521,7 +2398,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   WTable *formulaTable = formulaDiv->addNew<WTable>();
   formulaTable->addStyleClass( "FormulaDrfTbl" );
   WTableCell *cell = formulaTable->elementAt( 0, 0 );
-  label = cell->addNew<WLabel>( WString::tr("ds-manual-det-name-label") );
+  WLabel *label = cell->addNew<WLabel>( WString::tr("ds-manual-det-name-label") );
   if( narrow_layout )
   {
     cell = formulaTable->elementAt( 1, 0 );
@@ -2897,8 +2774,15 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-rel-eff"), std::move(relEffSelectOwned) );
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
 
-  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), std::move(uploadDetTabOwned) );
+  item = m_drfTypeMenu->addItem( WString::tr("ds-mi-import"), std::move(importWidgetOwned) );
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
+  m_importMenuItem = item;
+
+  // Other tabs change the detector, so coming back to "Import" makes its detector current again.
+  m_drfTypeMenu->itemSelected().connect( this, [this]( WMenuItem *selected ){
+    if( selected == m_importMenuItem )
+      handleImportChanged();
+  } );
 
   item = m_drfTypeMenu->addItem( WString::tr("ds-mi-formula"), std::move(formulaDivOwned) );
   item->clicked().connect( this, [menu = m_drfTypeMenu, item](){ right_select_item( menu, item ); } );
@@ -3052,6 +2936,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   if( specViewer && !specViewer->isPhone() )
   {
     m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("Accept") );
+    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
     m_acceptButton->setFloatSide( Wt::Side::Right );
 
     m_cancelButton->setIcon( "InterSpec_resources/images/reject.png" );
@@ -3062,6 +2947,7 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
   }else
   {
     m_acceptButton = m_footer->addNew<WPushButton>( WString::tr("ds-use-det-btn") );
+    WidgetUtils::applyButtonRole( m_acceptButton, WidgetUtils::ButtonRole::Affirm );
     m_acceptButton->addStyleClass( "CenterBtnInMblAuxWindowHeader" );
   }//if( isMobile() ) / else
   
@@ -3105,8 +2991,8 @@ void DrfSelect::createChooseDrfDialog( vector<shared_ptr<DetectorPeakResponse>> 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr(title_key) );
   dialog->addStyleClass( "DrfFileSelectDialog" );
   
-  WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
-  WPushButton *accept = dialog->addButton( WString::tr("Accept") );
+  WPushButton *cancel = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *accept = dialog->addButton( WString::tr("Accept"), WidgetUtils::ButtonRole::Affirm );
   
   //WGridLayout *layout = new WGridLayout( dialog->contents() );
   //layout->setContentsMargins( 0, 0, 0, 0 );
@@ -3491,6 +3377,10 @@ void DrfSelect::handle_app_url_drf( const std::string &url_query )
         //  with no response attached, which is exactly what we have here.
         if( choice == UrlDrfModeling::GeometryTransfer )
           CeeLoUtils::attachCurveTransferResponse( *accepted );
+
+        // "Saved with the detector, but not used" (ds-url-modeling-desc-flat).
+        if( choice == UrlDrfModeling::FlatDisk )
+          accepted->setGeometryDisabled( true );
       };//hooks.beforeAccept
       
       hooks.afterAccept = [modeling,accuracy]( shared_ptr<DetectorPeakResponse> accepted ){
@@ -3556,24 +3446,6 @@ void DrfSelect::setAcceptButtonEnabled( const bool enable )
   if( m_defaultForDetectorModel )
     m_defaultForDetectorModel->setEnabled( enable );
 }
-
-
-void DrfSelect::handleUserChangedUploadedDrfName()
-{
-  if( !m_uploadedDetName || !m_detector )
-    return;
-  
-  string value = m_uploadedDetName->text().toUTF8();
-  if( value.empty() )
-  {
-    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += wApp->environment().timeZoneOffset();
-    value = SpecUtils::to_vax_string(now);
-    m_uploadedDetName->setText( WString::fromUTF8(value) );
-  }//if( value.empty() )
-  
-  m_detector->setName( value );
-}//handleUserChangedUploadedDrfName()
 
 
 void DrfSelect::handleFitFwhmRequested()
@@ -3666,7 +3538,18 @@ void DrfSelect::openModifyWindow()
     return;
   }
 
-  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector );
+  // On the "Import" tab, Modify is for the file being imported - including a geometry-only one
+  //  (e.g., a lone Detector.dat), which is characterized there.
+  shared_ptr<DetectorPeakResponse> seed = m_detector;
+  if( m_drfTypeMenu->currentItem() == m_importMenuItem )
+  {
+    if( m_importWidget->candidate() )
+      seed = m_importWidget->candidate();
+    else if( m_importWidget->characterizationSeed() )
+      seed = m_importWidget->characterizationSeed();
+  }
+
+  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, seed );
 
   // Hide the Modify window BEFORE handling its result: handleModifyFinished accepts this dialog,
   //  which closes it and (in ~DrfSelect) tears the Modify window down - the same order the
@@ -3711,6 +3594,34 @@ void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf 
   setDetector( drf );
   acceptAndFinish();
 }//void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
+
+
+void DrfSelect::handleImportChanged()
+{
+  // A slow import (a .par grid) can finish after the user has moved to another tab; it is picked
+  //  up when they come back.
+  if( m_drfTypeMenu->currentItem() != m_importMenuItem )
+    return;
+
+  const shared_ptr<DetectorPeakResponse> candidate = m_importWidget->candidate();
+  if( candidate )
+  {
+    m_detector = candidate;
+    m_gui_select_matches_det = true;
+    setAcceptButtonEnabled( true );
+    updateDrfContentSummary();
+    updateChart();
+    emitChangedSignal();
+  }else if( m_importWidget->hasFile() )
+  {
+    // An incomplete import (e.g., waiting on its companion file) can't be accepted, and leaves
+    //  the detector in use - m_detector - alone, so closing the dialog doesn't change it.
+    setAcceptButtonEnabled( false );
+    if( m_drfContentChips )
+      m_drfContentChips->clear();
+    m_chart->updateChart( nullptr );
+  }
+}//void handleImportChanged()
 
 
 void DrfSelect::updateDrfContentSummary()
@@ -3943,13 +3854,11 @@ void DrfSelect::setGuiToCurrentDetector()
         break;
       }//case kUserEfficiencyEquationSpecified:
         
+      // The "Import" tab is for bringing in a new detector, so imported ones are found under
+      //  "Previous".
       case DetectorPeakResponse::UserImportedIntrisicEfficiencyDrf:
-      {
-        m_drfTypeMenu->select( 2 );
-        m_gui_select_matches_det = true;
-        break;
-      }
-      
+      case DetectorPeakResponse::GadrasDetectorDatOnly:
+      case DetectorPeakResponse::CharacterizationParFile:
       case DetectorPeakResponse::UnknownDrfSource:
       case DetectorPeakResponse::UserImportedGadrasDrf:
       case DetectorPeakResponse::UserCreatedDrf:
@@ -4407,7 +4316,7 @@ void DrfSelect::selectButton( WStackedWidget *stack,
         break;
         
       case 2:
-        handleUploadTabSelected();
+        handleImportChanged();
         break;
         
       case 3:
@@ -4593,38 +4502,6 @@ std::vector<std::string> DrfSelect::potential_gadras_det_dirs( InterSpec *inters
 
 
 
-static bool isGadrasCsvFile( const std::string &filename )
-{
-  // Check if CSV file is a GADRAS file by looking for PCOM and PTOT in first few lines
-#ifdef _WIN32
-  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-  ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-  ifstream csvfile( filename.c_str(), ios_base::binary | ios_base::in );
-#endif
-  
-  if( !csvfile.is_open() )
-    return false;
-  
-  string line;
-  int lines_checked = 0;
-  bool found_pcom = false;
-  bool found_ptot = false;
-  
-  while( SpecUtils::safe_get_line( csvfile, line, 2048 ) && (++lines_checked < 10) )
-  {
-    SpecUtils::trim( line );
-    found_pcom |= SpecUtils::icontains( line, "PCOM" );
-    found_ptot |= SpecUtils::icontains( line, "PTOT" );
-    
-    if( found_pcom && found_ptot )
-      return true;
-  }
-  
-  return false;
-}//isGadrasCsvFile
-
-
 std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( const std::string filename )
 {
 #ifdef _WIN32
@@ -4637,1102 +4514,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::parseInterSpecRelEffCsvFile( co
   if( !csvfile.is_open() )
     return nullptr;
   
-  string line;
-  int nlineschecked = 0;
-  
-  string drfname, drfdescrip;
-  bool fixed_geometry = false;
-  bool foundMeV = false, foundKeV = false;
-  
-  //ToDo: Need to implement getting lines safely where a quoted field may span
-  //      several lines.
-  while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
-  {
-    foundKeV |= SpecUtils::icontains( line, "kev" );
-    foundMeV |= SpecUtils::icontains( line, "mev" );
-    fixed_geometry |= SpecUtils::icontains( line, "Fixed Geometry DRF" );
-    
-    vector<string> fields;
-    split_escaped_csv( fields, line );
-    
-    if( fields.size() == 2 )
-    {
-      if( fields[0] == "# Name" )
-        drfname = fields[1];
-      if( fields[0] == "# Description" )
-        drfdescrip = fields[1];
-    }
-    
-    if( fields.size() < 16 )
-      continue;
-    
-    if( !SpecUtils::iequals_ascii( fields[3], "c0")
-       || !SpecUtils::iequals_ascii( fields[4], "c1")
-       || !SpecUtils::iequals_ascii( fields[5], "c2")
-       || !SpecUtils::iequals_ascii( fields[6], "c3")
-       || !SpecUtils::icontains( fields[15], "radius") )
-      continue;
-    
-    // Nominally the header is "FixedGeometry", and be in column 17, but we'll be a little loose
-    int fixed_geom_col = -1;
-    for( size_t i = 0; (fixed_geom_col < 0) && (i < fields.size()); ++i )
-    {
-      if( SpecUtils::icontains( fields[i], "Fixed") && SpecUtils::icontains( fields[i], "Geom") )
-        fixed_geom_col = static_cast<int>( i );
-    }
-    
-    //Okay, next line should be
-    if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
-      throw runtime_error( "Couldnt get next line" );
-    
-    split_escaped_csv( fields, line );
-    
-    try
-    {
-      vector<float> coefs( 8, 0.0f ), coef_uncerts;
-      for( int i = 0; i < 8; ++i )
-      {
-        string field = fields.at(3+i);
-        coefs[i] = (field.empty() ? 0.0f : std::stof(field));
-      }
-      
-      for( int i = 7; i >= 0; --i )
-      {
-        if( coefs[i] != 0.0f )
-          break;
-        else
-          coefs.resize( coefs.size() - 1 );
-      }
-      
-      if( coefs.size() < 1 )
-        continue;
-      
-      const float dist = std::stof( fields.at(14) ) * PhysicalUnits::cm;
-      const float radius = std::stof( fields.at(15) ) * PhysicalUnits::cm;
-      
-      if( (fixed_geom_col >= 0) && (static_cast<int>(fields.size()) > fixed_geom_col) )
-      {
-        fixed_geometry |= (SpecUtils::icontains( fields[fixed_geom_col], "1")
-                           || SpecUtils::icontains( fields[fixed_geom_col], "yes")
-                           || SpecUtils::icontains( fields[fixed_geom_col], "true")
-                           || SpecUtils::istarts_with(fields[fixed_geom_col], "y"));
-      }//if( has_fixed_geom_col )
-      
-      
-      const string name = (fields[0].empty() ? drfname : fields[0]);
-      const float energUnits = ((foundKeV && !foundMeV) ? 1.0f : 1000.0f);
-      float lowerEnergy = 0.0f, upperEnergy = 0.0f;
-      
-      // Lets try to get coefs uncertainties
-      if( !SpecUtils::safe_get_line(csvfile, line, 2048) )
-      {
-        try
-        {
-          vector<string> uncert_strs;
-          split_escaped_csv( uncert_strs, line );
-          if( !uncert_strs.empty()
-             && SpecUtils::istarts_with(uncert_strs[0], "# 1 sigma Uncert")
-             && (uncert_strs.size() >= (3 + coefs.size())) )
-          {
-            coef_uncerts.resize( coefs.size(), 0.0f );
-            for( int i = 0; i < coefs.size(); ++i )
-            {
-              string field = uncert_strs.at(3+i);
-              coef_uncerts[i] = (field.empty() ? 0.0f : std::stof(field));
-            }
-          }//if( it looks like we found the uncertainty line )
-        }catch( std::exception &e )
-        {
-          cerr << "Error caught parsing DRF eff uncertainties: " << e.what() << endl;
-          coef_uncerts.clear();
-        }
-      }//if( we got another line we'll check if its the uncertainties )
-      
-      DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-      if( fixed_geometry )
-        geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
-      
-      auto det = std::make_shared<DetectorPeakResponse>( fields[0], drfdescrip );
-      
-      det->fromExpOfLogPowerSeries( coefs, coef_uncerts, dist, 2.0f*radius, energUnits,
-                                          lowerEnergy, upperEnergy, geom_type );
-      
-      //Look for the line that gives the appropriate energy range.
-#define POS_DECIMAL_REGEX "\\+?\\s*((\\d+(\\.\\d*)?)|(\\.\\d*))\\s*(?:[Ee][+\\-]?\\d+)?\\s*"
-      const char * const rng_exprsn_txt = "Valid energy range:\\s*(" POS_DECIMAL_REGEX ")\\s*keV to\\s*(" POS_DECIMAL_REGEX ")\\s*keV.";
-      
-      std::regex range_expression( rng_exprsn_txt );
-      
-      while( SpecUtils::safe_get_line(csvfile, line, 2048) && (++nlineschecked < 100) )
-      {
-        if( SpecUtils::icontains( line, "Full width half maximum (FWHM) follows equation" ) )
-        {
-          const bool isConstPlusSqrt = SpecUtils::icontains( line, "A0 + A1*sqrt" );
-          const bool isSqrt = !isConstPlusSqrt && SpecUtils::icontains( line, "sqrt(" );  //Else contains "GadrasEqn"
-          auto form = DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn;
-          if( isConstPlusSqrt )
-            form = DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy;
-          else if( isSqrt )
-            form = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
-          
-          int nlinecheck = 0;
-          while( SpecUtils::safe_get_line(csvfile, line, 2048)
-                && !SpecUtils::icontains(line, "Values")
-                && (++nlinecheck < 15) )
-          {
-          }
-        
-          vector<string> fwhm_fields;
-          split_escaped_csv( fwhm_fields, line );
-          
-          if( fwhm_fields.size() > 1 && SpecUtils::icontains(fwhm_fields[0], "Values") )
-          {
-            try
-            {
-              vector<float> coefs;
-              for( size_t i = 1; i < fwhm_fields.size(); ++i )
-                coefs.push_back( stof(fwhm_fields[i]) );
-              if( !coefs.empty() )
-                det->setFwhmCoefficients( coefs, form );
-            }catch(...)
-            {
-            }
-            break;
-          }
-        }//if( start of FWHM section of CSV file )
-        
-        std::smatch range_matches;
-        if( std::regex_search( line, range_matches, range_expression ) )
-        {
-          lowerEnergy = std::stof( range_matches[1] );
-          upperEnergy = std::stof( range_matches[6] );
-          det->setEnergyRange( lowerEnergy, upperEnergy );
-          break;
-        }
-      }//while( getline )
-      
-//#if( PERFORM_DEVELOPER_CHECKS )
-//      check_url_serialization( det );
-//#endif
-
-      return det;
-    }catch(...)
-    {
-      continue;
-    }
-  }//while( more lines )
-  
-  return nullptr;
+  return DetectorPeakResponse::parseInterSpecRelEffCsv( csvfile );
 }//parseInterSpecRelEffCsvFile(...)
-
-
-void DrfSelect::showWidgetsForCurrentEfficiencyType()
-{
-  if( m_uploadedXmlDrf )
-  {
-    // A DRF XML file is complete as read - nothing for these controls to decide.
-    m_efficiencyType->hide();
-    m_detectrDiameterDiv->hide();
-    return;
-  }//if( m_uploadedXmlDrf )
-
-  const int eff_type_index = m_efficiencyType->currentIndex();
-  if( eff_type_index >= 3 && eff_type_index <= 6 )
-  {
-    // Fixed Geometry options (indices 3-6): Hide everything
-    m_detectrDiameterDiv->hide();
-  }else if( eff_type_index == 2 )
-  {
-    // GADRAS (index 2): Show diameter, setback, GADRAS upload; hide distance
-    m_detectrDiameterDiv->show();
-    m_detectorDiameter->show();
-    m_detectorSetback->show();
-    m_detectrDotDatLabel->show();
-    m_detectorDotDatUpload->show();
-    m_detectorDistanceLabel->hide();
-    m_detectorDistance->hide();
-  }else if( eff_type_index == 0 )
-  {
-    // Intrinsic Efficiency (index 0): Show diameter, setback; hide distance and GADRAS
-    m_detectrDiameterDiv->show();
-    m_detectorDiameter->show();
-    m_detectorSetback->show();
-    m_detectorDiameter->enable();
-    m_detectorDistanceLabel->hide();
-    m_detectorDistance->hide();
-    m_detectrDotDatLabel->hide();
-    m_detectorDotDatUpload->hide();
-  }else if( eff_type_index == 1 )
-  {
-    // Far-Field Efficiency (index 1): Show diameter, setback, distance; hide GADRAS
-    m_detectrDiameterDiv->show();
-    m_detectorDiameter->show();
-    m_detectorSetback->show();
-    m_detectorDiameter->enable();
-    m_detectorDistanceLabel->show();
-    m_detectorDistance->show();
-    m_detectrDotDatLabel->hide();
-    m_detectorDotDatUpload->hide();
-  }
-}//void showWidgetsForCurrentEfficiencyType()
-
-
-void DrfSelect::updateUserNameFromCurrentDetEff()
-{
-  string userDrfFilename = m_efficiencyCsvUpload->clientFileName().toUTF8();
-  if( SpecUtils::iends_with( userDrfFilename, ".csv" ) )
-    userDrfFilename = userDrfFilename.substr(0, userDrfFilename.size()-4);
-  if( userDrfFilename.empty() )
-    userDrfFilename = "Uploaded";
-  
-  // Efficiency.csv is a really common name, as is a few other short names; lets
-  //  add current date/time to these short names as *some* type of differentiator.
-  //  Its something.
-  if( userDrfFilename.size() < 15 )
-  {
-    auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-    now += wApp->environment().timeZoneOffset();
-    userDrfFilename += " " + SpecUtils::to_vax_string(now);
-  }
-  
-  if( m_detector && m_uploadedDetName )
-  {
-    m_detector->setName( userDrfFilename );
-    m_uploadedDetName->setText( WString::fromUTF8(userDrfFilename) );
-  }
-}//void updateUserNameFromCurrentDetEff()
-
-
-void DrfSelect::handleGadrasDetectorDotDatUpload()
-{
-  m_uploadedXmlDrf.reset();  //this upload is a GADRAS pair, not a DRF XML
-
-  try
-  {
-    const string csv_spool = m_efficiencyCsvUpload->spoolFileName();
-    const string dat_spool = m_detectorDotDatUpload->spoolFileName();
-    
-#ifdef _WIN32
-    const std::wstring wcsv_spool = SpecUtils::convert_from_utf8_to_utf16(csv_spool);
-    ifstream csvfile( wcsv_spool.c_str(), ios_base::binary | ios_base::in );
-    
-    const std::wstring wdat_spool = SpecUtils::convert_from_utf8_to_utf16(dat_spool);
-    ifstream datfile( wdat_spool.c_str(), ios_base::binary|ios_base::in );
-#else
-    ifstream csvfile( csv_spool.c_str(), ios_base::binary|ios_base::in );
-    
-    ifstream datfile( dat_spool.c_str(), ios_base::binary|ios_base::in );
-#endif
-    
-    if( !csvfile.is_open() || !datfile.is_open() )
-      throw runtime_error( "Failed to open an input file." );
-    
-    shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
-    det->fromGadrasDefinition( csvfile, datfile ); //Throws exception on error
-    det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
-    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter()) );
-    m_detectorDiameter->setEnabled( false );
-    m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(det->detectorSetback()) );
-
-    m_detector = det;
-
-    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 4) );
-    
-    setAcceptButtonEnabled( true );
-    updateUserNameFromCurrentDetEff();
-    emitChangedSignal();
-
-    // Mode B is now applied.  The Detector.dat also describes the crystal, so
-    //  offer to use it as a generic detector - the measured curve then anchors an
-    //  efficiency transfer, which answers off-axis and near-field geometries the
-    //  fixed curve cannot.
-    offerGadrasImportModeChoice( dat_spool, csv_spool );
-  }catch( std::exception &e )
-  {
-    passMessage( WString::tr("ds-err-parsing-gadras").arg(e.what()), WarningWidget::WarningMsgHigh );
-    
-    handleEfficiencyCsvUpload();
-  }
-}//void handleGadrasDetectorDotDatUpload()
-
-
-std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
-{
-  if( m_efficiencyCsvUpload->empty() )
-    return nullptr;
-
-  // An uploaded DRF XML is used exactly as read, plus whatever name the user typed - its geometry
-  //  type, diameter and distance are its own, and re-interpreting it would only tear its
-  //  Monte-Carlo response away from the geometry it was computed for.
-  if( m_uploadedXmlDrf )
-  {
-    auto det = make_shared<DetectorPeakResponse>( *m_uploadedXmlDrf );
-    if( !m_uploadedDetName->text().empty() )
-      det->setName( m_uploadedDetName->text().toUTF8() );
-    return det;
-  }//if( m_uploadedXmlDrf )
-  
-  
-  float diameter = -1.0f;
-  if( !m_detectrDiameterDiv->isHidden() )
-  {
-    try
-    {
-      const double dist = PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() );
-      if( dist > 0.0 )
-        diameter = static_cast<float>( dist );
-    }catch(...)
-    {
-    }
-  }//if( !m_detectrDiameterDiv->isHidden() )
-  
-  double setback = 0.0;
-  if( !m_detectrDiameterDiv->isHidden() )
-  {
-    try
-    {
-      setback = PhysicalUnits::stringToDistance( m_detectorSetback->text().toUTF8() );
-      if( setback < 0.0 )
-        setback = 0.0;
-    }catch(...)
-    {
-    }
-  }//if( !m_detectrDiameterDiv->isHidden() ) - setback
-
-  double abs_eff_dist = -1.0;
-  if( !m_detectorDistance->isHidden() )
-  {
-    try
-    {
-      abs_eff_dist = PhysicalUnits::stringToDistance( m_detectorDistance->text().toUTF8() );
-    }catch(...)
-    {
-    }
-  }//if( !m_detectorDistance->isHidden() )
-  
-  
-  if( (m_efficiencyType->currentIndex() == 2) && !m_detectorDotDatUpload->empty() ) //GADRAS
-  {
-    try
-    {
-      const string csv_spool = m_efficiencyCsvUpload->spoolFileName();
-      const string dat_spool = m_detectorDotDatUpload->spoolFileName();
-      
-#ifdef _WIN32
-      const std::wstring wcsv_spool = SpecUtils::convert_from_utf8_to_utf16(csv_spool);
-      const std::wstring wdat_spool = SpecUtils::convert_from_utf8_to_utf16(dat_spool);
-      ifstream csvfile( wcsv_spool.c_str(), ios_base::binary | ios_base::in );
-      ifstream datfile( wdat_spool.c_str(), ios_base::binary|ios_base::in );
-#else
-      ifstream csvfile( csv_spool.c_str(), ios_base::binary|ios_base::in );
-      ifstream datfile( dat_spool.c_str(), ios_base::binary|ios_base::in );
-#endif
-      
-      shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
-      det->fromGadrasDefinition( csvfile, datfile ); //Throws exception on error
-      det->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
-      if( !m_uploadedDetName->text().empty() )
-        det->setName( m_uploadedDetName->text().toUTF8() );
-      return det;
-    }catch( std::exception &e )
-    {
-    }
-    
-    return nullptr;
-  }//if( m_efficiencyType->currentIndex() == 2 )
-  
-  
-  const string filename = m_efficiencyCsvUpload->spoolFileName();
-  shared_ptr<DetectorPeakResponse> det = DrfSelect::parseInterSpecRelEffCsvFile( filename );
-  
-  if( det && (diameter <= 0.0f) )
-    diameter = det->detectorDiameter();
-  
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-      
-      const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile( csvfile );
-      const std::shared_ptr<DetectorPeakResponse> trial_det = ecc_result.drf;
-      const double source_area = ecc_result.sourceArea;
-
-      if( trial_det && trial_det->isValid() )
-      {
-        det = trial_det;
-        
-        if( m_efficiencyType->currentIndex() == 0 )
-        {
-          if( (diameter > 0.0) && (abs_eff_dist > 0) )
-            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
-          else if( diameter > 0.0 )
-            det = trial_det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
-          else
-            return nullptr;
-        }else if( m_efficiencyType->currentIndex() == 1 )
-        {
-          if( (diameter > 0.0) && (abs_eff_dist > 0) )
-            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
-          else
-            return nullptr;
-        }if( m_efficiencyType->currentIndex() == 2 )
-        {
-          if( diameter > 0.0 )
-            det = trial_det;
-          else
-            return nullptr;
-        }else if( m_efficiencyType->currentIndex() == 3 )
-        {
-          det = trial_det;
-        }else if( m_efficiencyType->currentIndex() == 4 )
-        {
-          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2 );
-        }else if( m_efficiencyType->currentIndex() == 5 )
-        {
-          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2 );
-        }else if( m_efficiencyType->currentIndex() == 6 )
-        {
-          det = trial_det->convertFixedGeometryType( source_area, DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram );
-        }else
-        {
-          assert( 0 );
-          return nullptr;
-        }
-
-        // Apply the user's .ecc uncertainty choice (overrides the default
-        //  fully-correlated uncertainty attached at parse time).
-        if( det && m_eccUncertWidget )
-        {
-          det = make_shared<DetectorPeakResponse>( *det );
-          det->setEfficiencyUncert( m_eccUncertWidget->buildUncert() );  //nullptr clears it
-        }
-      }//if( trial_det && trial_det->isValid() )
-    }catch( std::exception & )
-    {
-    }
-  }//if( !det )
-
-  // Try an ANGLE .outx file
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-
-      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
-
-      if( trial_det && trial_det->isValid() )
-      {
-        det = trial_det;
-
-        // .outx files have no source area/mass, so only far-field and total-activity modes apply
-        if( m_efficiencyType->currentIndex() == 0 )
-        {
-          if( (diameter > 0.0) && (abs_eff_dist > 0) )
-            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
-          else if( diameter > 0.0 )
-            det = trial_det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
-          else
-            return nullptr;
-        }else if( m_efficiencyType->currentIndex() == 1 )
-        {
-          if( (diameter > 0.0) && (abs_eff_dist > 0) )
-            det = trial_det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
-          else
-            return nullptr;
-        }else if( m_efficiencyType->currentIndex() == 2 )
-        {
-          if( diameter > 0.0 )
-            det = trial_det;
-          else
-            return nullptr;
-        }else if( m_efficiencyType->currentIndex() == 3 )
-        {
-          det = trial_det;
-        }else
-        {
-          // Per-cm2, per-m2, per-gram modes not available for .outx (no source area/mass)
-          return nullptr;
-        }
-      }//if( trial_det && trial_det->isValid() )
-    }catch( std::exception & )
-    {
-    }
-  }//if( !det ) -- try .outx
-
-  // The XML attempt below is the last resort, so its error is the one that gets printed -
-  //  keep why the CSV attempt failed, since for a CSV that is the informative reason.
-  string csv_parse_error;
-
-  if( !det )
-  {
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-    ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-
-    DetectorPeakResponse::EffGeometryType eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-    if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
-    {
-      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-      if( diameter <= 0.0 )
-        return nullptr;
-    }else if( m_efficiencyType->currentIndex() == 1 )
-    {
-      if( (diameter <= 0.0) || (abs_eff_dist < 0.0) )
-        return nullptr;
-      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldAbsolute;
-    }else
-    {
-      diameter = 2.54*3*PhysicalUnits::cm;
-      eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-    }
-
-    try
-    {
-      shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
-      trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
-      if( trial_det->isValid() )
-        det = trial_det;
-    }catch( std::exception &e )
-    {
-      csv_parse_error = e.what();
-    }
-  }//if( !det )
-
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream infile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream infile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-      rapidxml::file<char> input_file( infile );
-
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_default>( input_file.data() );
-      auto *node = doc.first_node( "DetectorPeakResponse" );
-      if( !node )
-        throw runtime_error( "No DetectorPeakResponse node" );
-
-      shared_ptr<DetectorPeakResponse> xml_det = make_shared<DetectorPeakResponse>();
-      xml_det->fromXml( node );
-
-      if( (diameter > 0.0) && (fabs(diameter - xml_det->detectorDiameter()) > 0.001*std::max(diameter,xml_det->detectorDiameter())) )
-        xml_det->setDetectorDiameter( diameter );
-
-      if( (xml_det->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
-         && (abs_eff_dist >= 0.0)
-         && (fabs(abs_eff_dist - xml_det->absoluteEfficiencyDistance()) > 0.001*std::max(abs_eff_dist,xml_det->absoluteEfficiencyDistance())) )
-      {
-        xml_det->setAbsoluteEfficiencyDistance( abs_eff_dist );
-      }
-
-      if( xml_det->isValid() )
-        det = xml_det;
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to parse uploaded DRF XML: " << e.what();
-      if( !csv_parse_error.empty() )
-        cerr << " (CSV parsing said: " << csv_parse_error << ")";
-      cerr << endl;
-    }
-  }//if( !det )
-
-  if( !det )
-    return nullptr;
-
-  if( !m_uploadedDetName->text().empty() )
-    det->setName( m_uploadedDetName->text().toUTF8() );
-
-  if( setback > 0.0 )
-    det->setDetectorSetback( setback );
-
-  try
-  {
-    if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
-    {
-      switch( det->geometryType() )
-      {
-        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-          return det;
-          
-        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          return det->reinterpretAsFarFieldIntrinsicEfficiency( diameter );
-      }
-      assert( 0 );
-      return nullptr;
-    }//if( m_efficiencyType->currentIndex() == 0 )
-    
-    
-    if( m_efficiencyType->currentIndex() == 1 )
-    {
-      switch( det->geometryType() )
-      {
-        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-          return det;
-          
-        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          if( (diameter <= 0.0f) || (abs_eff_dist < 0.0) )
-            return nullptr;
-          return det->reinterpretAsFarFieldAbsEfficiency( diameter, abs_eff_dist, true );
-      }
-      assert( 0 );
-      return nullptr;
-    }//if( m_efficiencyType->currentIndex() == 1 )
-    
-    
-    DetectorPeakResponse::EffGeometryType geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
-    if( m_efficiencyType->currentIndex() == 3 )
-      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
-    else if( m_efficiencyType->currentIndex() == 4 )
-      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2;
-    else if( m_efficiencyType->currentIndex() == 5 )
-      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2;
-    else if( m_efficiencyType->currentIndex() == 6 )
-      geom_type_wanted = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
-    else
-    {
-      assert( 0 );
-      return nullptr;
-    }
-    
-    if( det->geometryType() == geom_type_wanted )
-      return det;
-    
-    return det->reinterpretAsFixedGeom(geom_type_wanted);
-  }catch( std::exception & )
-  {
-  }
-  
-  return nullptr;
-}//std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
-
-
-void DrfSelect::handleEfficiencyCsvUpload()
-{
-  // Reset any prior .ecc uncertainty options; rebuilt below if this upload is
-  //  an .ecc file with usable uncertainties.
-  m_eccUncertWidget = nullptr;
-  m_eccUncertEnergies.clear();
-  m_eccBaselineFrac.clear();
-  m_eccConvergenceFrac.clear();
-  if( m_eccUncertContainer )
-  {
-    m_eccUncertContainer->clear();
-    m_eccUncertContainer->hide();
-  }
-  m_uploadedXmlDrf.reset();
-
-  m_detectrDiameterDiv->enable();
-  if( m_efficiencyCsvUpload->empty() )
-  {
-    m_efficiencyType->hide();
-    m_detectrDiameterDiv->hide();
-    passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );
-    setAcceptButtonEnabled( false );
-    return;
-  }//if( m_efficiencyCsvUpload->empty() )
-  
-  
-  const string filename = m_efficiencyCsvUpload->spoolFileName();
-  shared_ptr<DetectorPeakResponse> det = DrfSelect::parseInterSpecRelEffCsvFile( filename );
-  
-  if( det )
-  {
-    m_efficiencyType->show();
-    m_uploadedDetNameDiv->show();
-    m_detector = det;
-    m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(det->detectorDiameter(), 6) );
-    m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(det->detectorSetback()) );
-    setAcceptButtonEnabled( true );
-    updateUserNameFromCurrentDetEff();
-    m_efficiencyType->setCurrentIndex( 0 );
-    showWidgetsForCurrentEfficiencyType();
-    emitChangedSignal();
-    return;
-  }//if( det )
-  
-  
-  try
-  {
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-    ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-    
-    const DetectorPeakResponse::EccParseResult ecc_result = DetectorPeakResponse::parseEccFile( csvfile );
-    const std::shared_ptr<DetectorPeakResponse> trial_det = ecc_result.drf;
-    if( trial_det && trial_det->isValid() )
-    {
-      det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
-
-      // Offer the .ecc uncertainty import options for this upload.
-      if( m_eccUncertContainer && (ecc_result.uncertEnergies.size() >= 2) )
-      {
-        m_eccUncertEnergies = ecc_result.uncertEnergies;
-        m_eccBaselineFrac = ecc_result.baselineFrac;
-        m_eccConvergenceFrac = ecc_result.convergenceFrac;
-        m_eccUncertWidget = m_eccUncertContainer->addNew<EccUncertOptions>( m_eccUncertEnergies,
-                                                m_eccBaselineFrac, m_eccConvergenceFrac );
-        m_eccUncertContainer->show();
-
-        // Re-derive the DRF (with the chosen uncertainty) and refresh the
-        //  preview chart when the user changes the import options.
-        m_eccUncertWidget->changed().connect( std::function<void()>( [this](){
-          m_detector = detectorFromEffUpload();
-          setAcceptButtonEnabled( !!m_detector );
-          updateChart();
-          emitChangedSignal();
-        } ) );
-      }//if( have uncertainties )
-    }//if( trial_det && trial_det->isValid() )
-  }catch( std::exception & )
-  {
-  }
-
-  // Try an ANGLE .outx file
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream outxfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-
-      shared_ptr<DetectorPeakResponse> trial_det = DetectorPeakResponse::parseAngleOutxFile( outxfile );
-      if( trial_det && trial_det->isValid() )
-        det = trial_det->reinterpretAsFixedGeom( DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
-    }catch( std::exception & )
-    {
-    }
-  }//if( !det ) -- try .outx
-
-
-  const bool fixed_geometry = (det && det->isFixedGeometry());
-  bool can_accept = fixed_geometry;
-
-  // The XML attempt below is the last resort, so its error is the one that gets printed -
-  //  keep why the CSV attempt failed, since for a CSV that is the informative reason.
-  string csv_parse_error;
-
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream csvfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-
-      if( !csvfile.is_open() )
-        throw runtime_error( "Failed to open uploaded file." );
-
-      float diameter = -1.0f;
-      if( !m_detectrDiameterDiv->isHidden()
-         && ((m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 1)) )
-      {
-        try
-        {
-          const double dist = PhysicalUnits::stringToDistance( m_detectorDiameter->text().toUTF8() );
-          if( dist < (0.001*PhysicalUnits::cm) )
-            throw runtime_error( "Negative or near zero diameter" );
-          diameter = static_cast<float>( dist );
-        }catch(...)
-        {
-          m_detectorDiameter->setText( "" );
-        }
-      }//if( !m_detectrDiameterDiv->isHidden() && (m_efficiencyType->currentIndex() == 1) )
-
-      double abs_eff_dist = -1.0;
-      if( !m_detectorDistance->isHidden() && (m_efficiencyType->currentIndex() == 1) )
-      {
-        try
-        {
-          abs_eff_dist = PhysicalUnits::stringToDistance( m_detectorDistance->text().toUTF8() );
-          if( abs_eff_dist < 0.0 )
-            throw runtime_error( "Negative or near zero diameter" );
-        }catch(...)
-        {
-          m_detectorDistance->setText( "" );
-        }
-      }
-
-      const DetectorPeakResponse::EffGeometryType eff_type = (abs_eff_dist >= 0.0f) ? DetectorPeakResponse::EffGeometryType::FarFieldAbsolute
-                                                                              : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-
-      can_accept = ((diameter > 0.0f) && ((m_efficiencyType->currentIndex() == 0) || (abs_eff_dist >= 0.0)));
-      if( diameter < 0.0f )
-        diameter = 2.53*3*PhysicalUnits::cm;
-      if( (m_efficiencyType->currentIndex() == 1) && (abs_eff_dist < 0.0f) )
-        abs_eff_dist = 1.0*PhysicalUnits::m;
-
-      shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
-      trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
-      if( trial_det->isValid() )
-        det = trial_det;
-      else
-        can_accept = false;
-    }catch( std::exception &e )
-    {
-      csv_parse_error = e.what();
-    }
-  }//if( !det )
-  
-  if( !det )
-  {
-    try
-    {
-#ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-      ifstream infile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-      ifstream infile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-      rapidxml::file<char> input_file( infile );
-      
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_default>( input_file.data() );
-      auto *node = doc.first_node( "DetectorPeakResponse" );
-      if( !node )
-        throw runtime_error( "No DetectorPeakResponse node" );
-      
-      shared_ptr<DetectorPeakResponse> xml_det = make_shared<DetectorPeakResponse>();
-      xml_det->fromXml( node );
-      m_uploadedDetName->setText( WString::fromUTF8( xml_det->name() ) );
-      switch( xml_det->geometryType() )
-      {
-        case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-          m_efficiencyType->setCurrentIndex( 0 );
-          m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
-          m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorSetback()) );
-          break;
-        case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-          m_efficiencyType->setCurrentIndex( 1 );
-          m_detectorDiameter->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorDiameter(), 6) );
-          m_detectorSetback->setText( PhysicalUnits::printToBestLengthUnits(xml_det->detectorSetback()) );
-          m_detectorDistance->setText( PhysicalUnits::printToBestLengthUnits(xml_det->absoluteEfficiencyDistance(), 6) );
-          break;
-        case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-          m_efficiencyType->setCurrentIndex( 3 );
-          break;
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-          m_efficiencyType->setCurrentIndex( 4 );
-          break;
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-          m_efficiencyType->setCurrentIndex( 5 );
-          break;
-        case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-          m_efficiencyType->setCurrentIndex( 6 );
-          break;
-      }//switch( xml_det->geometryType() )
-
-      det = xml_det;
-      can_accept = true;
-      // Set last, so a throw anywhere above leaves this an ordinary failed upload rather than one
-      //  the Import tab treats as a complete detector - see detectorFromEffUpload.
-      m_uploadedXmlDrf = xml_det;
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to parse uploaded DRF XML: " << e.what();
-      if( !csv_parse_error.empty() )
-        cerr << " (CSV parsing said: " << csv_parse_error << ")";
-      cerr << endl;
-    }
-  }//if( !det )
-
-  if( !det )
-  {
-    passMessage( WString::tr("ds-err-invalid-csv-format"), WarningWidget::WarningMsgHigh );
-    
-    m_efficiencyType->hide();
-    m_detectrDiameterDiv->hide();
-    setAcceptButtonEnabled( false );
-    m_uploadedDetNameDiv->hide();
-    return;
-  }
-  
-  m_uploadedDetNameDiv->show();
-
-  if( m_uploadedXmlDrf )
-  {
-    // A complete detector: there is nothing to interpret, so no type / diameter / distance controls
-    //  (and no re-interpretation of it below - detectorFromEffUpload hands it back as read).
-    m_efficiencyType->hide();
-    m_detectrDiameterDiv->hide();
-  }else
-  {
-    m_efficiencyType->show();
-
-    switch( det->geometryType() )
-    {
-      case DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic:
-      case DetectorPeakResponse::EffGeometryType::FarFieldAbsolute:
-      {
-        if( isGadrasCsvFile(filename) )
-        {
-          m_efficiencyType->setCurrentIndex( 2 ); //GADRAS
-        }else
-        {
-          if( m_efficiencyType->currentIndex() > 1 )
-          {
-            const float eff_120 = det->farFieldIntrinsicEfficiency( 120.0 );
-            const bool is_far_field = ((eff_120 >= 0.0f) && (eff_120 < 0.1f)); // Less than 10%
-            m_efficiencyType->setCurrentIndex( is_far_field ? 1 : 0 ); // Far-Field Efficiency
-          }
-        }
-        break;
-      }//case FarFieldIntrinsic or FarFieldAbsolute
-
-      case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
-      case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
-        if( m_efficiencyType->currentIndex() < 3 )
-          m_efficiencyType->setCurrentIndex( 3 ); //FixedGeomTotalAct
-        break;
-    }//switch( det->geometryType() )
-
-    showWidgetsForCurrentEfficiencyType();
-  }//if( m_uploadedXmlDrf ) / else
-  
-  det = detectorFromEffUpload();
-  const bool det_changed = (m_detector != det);
-  
-  m_detector = det;
-  setAcceptButtonEnabled( !!m_detector );
-  
-  if( det_changed )
-  {
-    // A DRF XML file brings its own name; the others get one from the file name.
-    if( !m_uploadedXmlDrf )
-      updateUserNameFromCurrentDetEff();
-    emitChangedSignal();
-  }
-
-  // If this was an ANGLE file carrying a full detector model + reference curve,
-  //  offer the "generic detector" import mode (the fixed-geometry curve set
-  //  above is the default / Mode B).
-  if( !m_uploadedXmlDrf )
-    offerAngleImportModeChoice( filename );
-}//void handleEfficiencyCsvUpload()
-
-
-void DrfSelect::offerAngleImportModeChoice( const string &filename )
-{
-  // Full-parse the file as ANGLE; bail quietly on anything that isn't an ANGLE
-  //  file (so non-ANGLE uploads never see a dialog).
-  AngleOutxContents contents;
-  try
-  {
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
-#else
-    ifstream outxfile( filename.c_str(), ios_base::binary | ios_base::in );
-#endif
-    contents = DetectorPeakResponse::parseAngleOutxFileFull( outxfile );
-  }catch( std::exception & )
-  {
-    return;
-  }
-
-  // Nothing to offer beyond the fixed-geometry curve already applied.
-  if( !contents.hasGeometry )
-    return;
-
-  // Anything the file said that we could not model is the user's business: a
-  //  silently simplified detector is worse than a noisy one.
-  for( const string &note : contents.parseNotes )
-    passMessage( WString::tr("ds-angle-note").arg(note), WarningWidget::WarningMsgMedium );
-
-  string obstruction = contents.modeAObstruction;
-  shared_ptr<const ceelo::GeometryDescriptor> geometry;
-  shared_ptr<DetectorPeakResponse> seedDrf;
-
-  if( contents.modeASupported && !contents.hasReference )
-    obstruction = WString::tr("ds-angle-no-refcurve").toUTF8();
-
-  // Build the CeeLo geometry + a far-field seed DRF now, so the dialog only
-  //  offers Mode A when it can actually be delivered.
-  if( contents.modeASupported && contents.hasReference )
-  {
-    try
-    {
-      vector<string> warnings;
-      geometry = make_shared<const ceelo::GeometryDescriptor>(
-                                  CeeLoUtils::buildAngleGeometry( contents, warnings ) );
-      seedDrf = CeeLoUtils::buildAngleSeedDrf( contents );
-
-      for( const string &warning : warnings )
-        passMessage( WString::tr("ds-angle-note").arg(warning), WarningWidget::WarningMsgMedium );
-    }catch( std::exception &e )
-    {
-      geometry.reset();
-      seedDrf.reset();
-      obstruction = e.what();
-    }
-  }//if( contents.modeASupported && contents.hasReference )
-
-  if( !geometry || !seedDrf )
-  {
-    // Mode B has already been applied.  Say why the better import is not on
-    //  offer rather than showing nothing at all and leaving the user to wonder.
-    if( obstruction.empty() )
-      return;
-
-    SimpleDialog * const why = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
-                                  WString::tr("ds-angle-mode-unavailable").arg(obstruction) );
-    why->addButton( WString::tr("ds-angle-ok") );
-    return;
-  }//if( !geometry || !seedDrf )
-
-  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
-                                             WString::tr("ds-angle-mode-txt") );
-  WPushButton *generic = dialog->addButton( WString::tr("ds-angle-mode-generic") );
-  dialog->addButton( WString::tr("ds-angle-mode-fixed") );
-
-  // Mode A: seed the consolidated "Modify Detector Response" dialog with the
-  //  far-field DRF built from the reference curve AND the physical geometry, so
-  //  the user can review/correct the geometry, edit the measured-curve anchor,
-  //  and generate a full response - all in one place.
-  generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf](){
-    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
-    setDetector( seedDrf );
-    openModifyWindow();
-  } ) );
-}//offerAngleImportModeChoice(...)
 
 
 void DrfSelect::startGadrasGeometryImport( const std::string &directory,
@@ -5772,123 +4555,6 @@ void DrfSelect::startGadrasGeometryImport( const std::string &directory,
 
   openModifyWindow();
 }//startGadrasGeometryImport(...)
-
-
-void DrfSelect::offerGadrasImportModeChoice( const std::string &datFilename,
-                                             const std::string &csvFilename )
-{
-  // Bail quietly on anything that is not a geometry-bearing Detector.dat, so an
-  //  ordinary efficiency-CSV upload never sees a dialog.
-  GadrasDetectorDat dat;
-  try
-  {
-    dat = GadrasDetectorDat::fromFile( datFilename );
-  }catch( std::exception & )
-  {
-    return;
-  }
-
-  shared_ptr<const ceelo::GeometryDescriptor> geometry;
-  vector<string> warnings;
-  try
-  {
-    geometry = make_shared<const ceelo::GeometryDescriptor>(
-                            CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
-  }catch( std::exception & )
-  {
-    return;  //Mode B is already applied, and is the only offer we can honor
-  }
-
-  if( !geometry )
-    return;
-
-  // The DRF Mode B produced, which already carries the measured curve; Mode A
-  //  keeps it and adds the geometry, so the curve anchors the transfer.
-  shared_ptr<DetectorPeakResponse> seedDrf = m_detector;
-  if( !seedDrf || !seedDrf->isValid() )
-    return;
-
-  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-gadras-mode-title"),
-                                             WString::tr("ds-gadras-mode-txt") );
-  WPushButton *generic = dialog->addButton( WString::tr("ds-gadras-mode-generic") );
-  dialog->addButton( WString::tr("ds-gadras-mode-fixed") );
-
-  generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf, warnings](){
-    for( const string &warning : warnings )
-      passMessage( warning, WarningWidget::WarningMsgMedium );
-    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
-    setDetector( seedDrf );
-    openModifyWindow();
-  } ) );
-}//offerGadrasImportModeChoice(...)
-
-
-void DrfSelect::handleEfficiencyTypeChange()
-{
-  if( m_efficiencyCsvUpload->empty() )
-  {
-    m_detectrDiameterDiv->hide();
-    m_uploadedDetNameDiv->hide();
-    m_efficiencyType->hide();
-    return;
-  }//if( m_efficiencyCsvUpload->empty() )
-  
-  
-  showWidgetsForCurrentEfficiencyType();
-  
-  if( (m_efficiencyType->currentIndex() == 2) && !m_detectorDotDatUpload->empty() )
-  {
-    handleGadrasDetectorDotDatUpload();
-    return;
-  }
-
-  
-  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
-  
-  if( det )
-    updateUserNameFromCurrentDetEff();
-  setAcceptButtonEnabled( !!det );   //enabled when there IS a detector; every other call site agrees
-  
-  if( m_detector != det )
-  {
-    m_detector = det;
-    emitChangedSignal();
-  }//if( m_detector != det )
-}//void handleEfficiencyTypeChange()
-
-
-void DrfSelect::handleDetectorDiameterOrDistanceChanged()
-{
-  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
-  
-  setAcceptButtonEnabled( (det && det->isValid()) );
-  
-  if( det != m_detector )
-  {
-    m_detector = det;
-    emitChangedSignal();
-  }
-}//void handleDetectorDiameterOrDistanceChanged()
-
-
-void DrfSelect::handleUploadTabSelected()
-{
-  m_efficiencyType->setHidden( m_efficiencyCsvUpload->empty() || !!m_uploadedXmlDrf );
-  if( m_efficiencyCsvUpload->empty() )
-  {
-    m_detectrDiameterDiv->hide();
-    m_efficiencyType->hide();
-  }
-  
-  std::shared_ptr<DetectorPeakResponse> det = detectorFromEffUpload();
-  setAcceptButtonEnabled( (det && det->isValid()) );
-  
-  if( det != m_detector )
-  {
-    m_detector = det;
-    emitChangedSignal();
-  }
-}//void handleUploadTabSelected();
 
 
 void DrfSelect::relEffDetectorSelectCallback()
@@ -5957,13 +4623,13 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
 
 std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
                                 std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                Wt::Dbo::ptr<InterSpecUser> user,
+                                const long long db_user_id,
                                 const std::string &serial_number,
                                 SpecUtils::DetectorType detType,
                                 const std::string &detector_model )
 {
   std::shared_ptr<DetectorPeakResponse> answer;
-  if( !sql || !user )
+  if( !sql || (db_user_id < 0) )
     return answer;
   
   
@@ -5977,7 +4643,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     {
       auto results = sql->session()->find<UseDrfPref>()
                      .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                     .bind( user.id() )
+                     .bind( db_user_id )
                      .bind( UseDrfPref::UseDrfType::UseDetectorSerialNumber )
                      .bind( serial_number )
                      .orderBy("id desc") //shouldnt have an effect because we should only get at most one result
@@ -5997,7 +4663,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
       {
         auto results = sql->session()->find<UseDrfPref>()
                        .where( "InterSpecUser_id = ? AND MatchField = ? AND Criteria = ?" )
-                       .bind( user.id() )
+                       .bind( db_user_id )
                        .bind( UseDrfPref::UseDrfType::UseDetectorModelName )
                        .bind( model )
                        .orderBy("id desc")  //shouldnt have an effect because we should only get at most one result
@@ -6025,7 +4691,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::getUserPreferredDetector(
     
     auto drflist = sql->session()->find<DetectorPeakResponse>()
     .where("InterSpecUser_id = ? AND id = ?")
-    .bind( user.id() )
+    .bind( db_user_id )
     .bind( pref->m_drfIndex )
     .resultList();
     
@@ -6552,8 +5218,20 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
 }//initARelEffDetector( int type )
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
-                                                            const SpecUtils::DetectorType type, InterSpec *interspec )
+std::string DrfSelect::gadrasDrfSearchPaths( InterSpec *interspec )
+{
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  const string datadir = InterSpec::staticDataDirectory();
+  return SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
+         + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
+#else
+  return UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
+#endif
+}//std::string gadrasDrfSearchPaths( InterSpec *interspec )
+
+
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const SpecUtils::DetectorType type,
+                                                                      const std::string &searchPaths )
 
 {
   using SpecUtils::DetectorType;
@@ -6638,7 +5316,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( name, interspec );
+    det = initAGadrasDetector( name, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -6678,7 +5356,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
   
   try
   {
-    det = initAGadrasDetector( secondname, interspec );
+    det = initAGadrasDetector( secondname, searchPaths );
     if( det )
       return det;
   }catch(...)
@@ -6690,22 +5368,13 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
 }//initAGadrasDetector
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName, InterSpec *interspec )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std::string &currentDetName,
+                                                                      const std::string &searchPaths )
 {
-  //Grab "GadrasDRFPath" and split it by semicolon and newlines, then go through
-  //  and look for sub-folders with the given name that contain Detector.data
-  //  and Efficiency.csv.
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  const string datadir = InterSpec::staticDataDirectory();
-  const string drfpaths = SpecUtils::append_path( datadir, "GenericGadrasDetectors" )
-                          + ";" + SpecUtils::append_path( datadir, "OUO_GadrasDetectors" );
-#else
-  const string drfpaths = UserPreferences::preferenceValue<string>( "GadrasDRFPath", interspec );
-#endif
-  
-  
+  //Split searchPaths by semicolon and newlines, then go through and look for sub-folders with the
+  //  given name that contain Detector.data and Efficiency.csv.
   vector<string> paths;
-  SpecUtils::split( paths, drfpaths, "\r\n;" );
+  SpecUtils::split( paths, searchPaths, "\r\n;" );
   for( string basepath : paths )
   {
     SpecUtils::trim( basepath );

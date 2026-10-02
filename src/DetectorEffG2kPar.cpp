@@ -410,6 +410,24 @@ DetectorDef selectDetectorDef( const std::vector<DetectorDef> &defs,
 }//selectDetectorDef(...)
 
 
+bool isCandidateDetectorTxt( const std::string &headerText )
+{
+  // Guards against feeding the line parser a binary file.
+  if( headerText.find( '\0' ) != std::string::npos )
+    return false;
+
+  std::istringstream strm( headerText );
+  const std::vector<DetectorDef> defs = parseDetectorTxt( strm );
+  for( const DetectorDef &def : defs )
+  {
+    if( (def.d1_crystal_diam_mm > 0.0) && (def.d2_crystal_len_mm > 0.0) )
+      return true;  //NaN compares false, so both were present and positive
+  }
+
+  return false;
+}//isCandidateDetectorTxt(...)
+
+
 //=============================================================================
 //  .PAR  (binary spatial-efficiency grid)   - a port of par_decode.py
 //=============================================================================
@@ -423,7 +441,7 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   // Bounds-checked accessors into the byte buffer.
   auto need = [&]( size_t off, size_t n )
   {
-    if( off + n > len )
+    if( (off > len) || (n > (len - off)) )  //not `off + n > len`, which can wrap around
       throw std::runtime_error( "parseParFile: read past end of file (corrupt or truncated)." );
   };
   auto u16 = [&]( size_t o ){ need(o,2); return read_u16le( &bytes[o] ); };
@@ -442,6 +460,11 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   if( markers.empty() )
     throw std::runtime_error( "parseParFile: no record markers found (not a recognized grid file)." );
 
+  // A marker any earlier would put its record's start before the file's; the framing arithmetic
+  //  below would wrap around.  (Real files have the energy table first, so it is far later.)
+  if( markers[0] < (0x12 + sm_marker_in_record) )
+    throw std::runtime_error( "parseParFile: record marker inside the header (not a recognized grid file)." );
+
   const size_t header_bytes = markers[0] - sm_marker_in_record;
   const size_t record_bytes = (markers.size() > 1)
                                 ? (markers[1] - markers[0])
@@ -453,6 +476,8 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   const uint16_t n = u16( 0x10 );
   if( n == 0 )
     throw std::runtime_error( "parseParFile: zero energies in header." );
+  if( header_bytes < (0x12 + 8*static_cast<size_t>(n)) )
+    throw std::runtime_error( "parseParFile: header too short for its energy table." );
 
   out.energies_keV.resize( n );
   for( uint16_t e = 0; e < n; ++e )
@@ -512,7 +537,12 @@ ParFile parseParFile( const std::string &path )
 {
   // Read the exact bytes (SpecUtils::load_file_data appends a trailing NUL,
   //  which would break the strict file-size identity check).
+#ifdef _WIN32
+  const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16( path );
+  std::ifstream input( wpath.c_str(), std::ios::binary | std::ios::ate );
+#else
   std::ifstream input( path.c_str(), std::ios::binary | std::ios::ate );
+#endif
   if( !input.is_open() )
     throw std::runtime_error( "parseParFile: could not open '" + path + "'." );
 
@@ -527,6 +557,36 @@ ParFile parseParFile( const std::string &path )
 
   return parseParFile( bytes );
 }//parseParFile( path )
+
+
+bool isCandidateParFile( const uint8_t *header, const size_t headerLen, const size_t fileSize )
+{
+  if( !header || (headerLen < 0x12) || (fileSize < 32) )
+    return false;
+
+  // The limits are loose on purpose; they only need to reject text and other binary formats.  The
+  //  lower energy bound matters for text: ASCII digits read as a double give a tiny positive value.
+  const double emin = read_f64le( header + 0x00 );
+  const double emax = read_f64le( header + 0x08 );
+  if( !std::isfinite(emin) || !std::isfinite(emax)
+      || (emin < 0.1) || (emax <= emin) || (emax > 1.0E5) )
+    return false;
+
+  const uint16_t n = read_u16le( header + 0x10 );
+  if( (n < 1) || (n > 1000) || ((0x12 + 8*static_cast<size_t>(n)) >= fileSize) )
+    return false;
+
+  double prev = 0.0;
+  for( size_t e = 0; (e < n) && ((0x12 + 8*(e + 1)) <= headerLen); ++e )
+  {
+    const double energy = read_f64le( header + 0x12 + 8*e );
+    if( !std::isfinite(energy) || (energy <= prev) || (energy > 1.0E5) )
+      return false;
+    prev = energy;
+  }
+
+  return true;
+}//isCandidateParFile(...)
 
 
 //=============================================================================
@@ -1364,9 +1424,12 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   // Angular nodes: cosines of the grid's polar columns on [0, 90 deg], stored
   //  ascending in cos(theta) (theta=90 -> 0 first ... theta=0 -> 1 last).  The
   //  same node set is shared by eta_fep and near_field so the far term cancels.
+  //  The file stores the step as a float, so 90 deg is a few 1e-8 rad off a multiple of it: the
+  //  tolerance keeps the 90 deg column, and its cosine is snapped to exactly 0 - else a query in
+  //  the face plane (cos = 0) lies outside the nodes and is flagged as clamped.
   const double theta_step = par.grids.front().theta_step_rad;
   const double half_pi = 0.5 * 3.14159265358979323846;
-  size_t nhalf = static_cast<size_t>( std::floor( half_pi / theta_step ) ) + 1;
+  size_t nhalf = static_cast<size_t>( std::floor( half_pi / theta_step + 1.0e-4 ) ) + 1;
   nhalf = std::min<size_t>( nhalf, par.grids.front().ncols );
   if( nhalf < 2 )
     throw std::runtime_error( "makeDrf: too few angular columns to build a response." );
@@ -1375,7 +1438,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   for( size_t j = 0; j < nhalf; ++j )
   {
     const double angle = static_cast<double>( nhalf - 1 - j ) * theta_step;
-    cos_thetas[j] = std::cos( angle );
+    cos_thetas[j] = (std::fabs( angle - half_pi ) < 1.0e-4*theta_step) ? 0.0 : std::cos( angle );
   }
   const size_t nc = cos_thetas.size();
 
@@ -1527,7 +1590,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  sentinel instead of a number.  Converting the zone's boundary from the
   //  grid's (radial, theta) into cylindrical coords recovers the can: lateral
   //  extent 42.5 mm vs the 43.8 mm endcap radius, depth 81.0 mm vs the 83.8 mm
-  //  endcap length (LAB06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
+  //  endcap length (DET06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
   //  therefore only exists behind the face plane - zero such cells at
   //  theta <= 90 deg, onset at 92.5 deg.
   //
@@ -1628,11 +1691,11 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //
   // Also note d_min_cm is a floor on the ON-AXIS reach only, not a validity
   //  radius: it is measured along the axis from the endcap FACE, whereas the
-  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on 18211381).
+  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on DET1381).
   //  A point further than d_min_cm from the face centre can therefore still be
   //  inside the housing once it is past 90 deg - validity off-axis is bounded by
   //  the can's envelope, not by a sphere of radius d_min_cm.  Measured first
-  //  valid radial range versus face-frame polar angle (18211381): 1 mm at
+  //  valid radial range versus face-frame polar angle (DET1381): 1 mm at
   //  0-90 deg, then 42 mm at 95-100 deg, 50 mm at 120 deg, 84 mm at 150 deg.
   resp->provenance.min_distance_cm = d_min_cm;
 
@@ -1681,12 +1744,26 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
 }//makeDrf(...)
 
 
+bool isGridResponse( const std::shared_ptr<const ceelo::DetectorResponse> &resp )
+{
+  return resp
+         && (resp->provenance.method == ceelo::ProductionMethod::CurveTransfer)
+         && !resp->model_transfer.has_value()
+         && !resp->near_field.empty();
+}//isGridResponse(...)
+
+
 std::shared_ptr<DetectorPeakResponse> makeDrfFromFiles( const std::string &parPath,
                                                         const std::string &detectorTxtPath )
 {
   const ParFile par = parseParFile( parPath );
 
+#ifdef _WIN32
+  const std::wstring wtxtpath = SpecUtils::convert_from_utf8_to_utf16( detectorTxtPath );
+  std::ifstream txt( wtxtpath.c_str(), std::ios::binary );
+#else
   std::ifstream txt( detectorTxtPath.c_str(), std::ios::binary );
+#endif
   if( !txt.is_open() )
     throw std::runtime_error( "makeDrfFromFiles: could not open '" + detectorTxtPath + "'." );
   const std::vector<DetectorDef> defs = parseDetectorTxt( txt );

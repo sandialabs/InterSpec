@@ -144,6 +144,14 @@ add_test( NAME TDoseCalc
 )
 
 
+add_executable( test_DecayBatchCalc test_DecayBatchCalc.cpp )
+target_link_libraries( test_DecayBatchCalc PRIVATE InterSpecLib )
+add_test( NAME TDecayBatchCalc
+  COMMAND $<TARGET_FILE:test_DecayBatchCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RelEffManual test_RelEffManual.cpp )
 target_link_libraries( test_RelEffManual PRIVATE InterSpecLib )
 add_test( NAME TestRelEffManual
@@ -199,6 +207,11 @@ add_test( NAME TRelActCalcAuto_ProfileScan
 # dumps per-profile-sample delta-chi2 so scan convergence can be studied over a population.
 add_executable( rel_act_corpus_sweep rel_act_corpus_sweep.cpp )
 target_link_libraries( rel_act_corpus_sweep PRIVATE InterSpecLib )
+
+# The fit-peaks-for-nuclides corpus evaluation (fit_peaks_corpus_eval) and its scorer's unit test
+# (TFitPeaksCorpusScore) live with the rest of the peak-fit improvement tools.
+add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../peak_fit_improve_ai"
+                  "${CMAKE_CURRENT_BINARY_DIR}/peak_fit_improve_ai" )
 
 # The JRC known-truth plutonium grid always builds, so its sources are compile-checked with every
 # other test, but it is not registered as a ctest by default: each of the three cases runs a free-age
@@ -358,6 +371,13 @@ add_executable( test_RelActCalcAuto_MassFracConstraint test_RelActCalcAuto_MassF
 target_link_libraries( test_RelActCalcAuto_MassFracConstraint PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_MassFracConstraint
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_MassFracConstraint> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_FwhmForm test_RelActCalcAuto_FwhmForm.cpp )
+target_link_libraries( test_RelActCalcAuto_FwhmForm PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_FwhmForm
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_FwhmForm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -830,6 +850,15 @@ add_executable( test_DrfModify test_DrfModify.cpp )
 target_link_libraries( test_DrfModify PRIVATE InterSpecLib )
 add_test( NAME TDrfModify
   COMMAND $<TARGET_FILE:test_DrfModify> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Identifying detector-efficiency files and building DRFs from them (DrfImport) - the DRF Select
+#  "Import" tab and the dialog for a DRF file dropped onto the app, less the widgets.
+add_executable( test_DrfImport test_DrfImport.cpp )
+target_link_libraries( test_DrfImport PRIVATE InterSpecLib )
+add_test( NAME TDrfImport
+  COMMAND $<TARGET_FILE:test_DrfImport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

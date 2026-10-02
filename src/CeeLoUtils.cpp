@@ -42,6 +42,7 @@
 #include "io/SolidAngle.h"
 #include "io/ResponseKernel.h"
 #include "geometry/Geometry.h"
+#include "cross_sections/CrossSectionData.h"
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -63,6 +64,29 @@ using namespace std;
 namespace CeeLoUtils
 {
 
+namespace
+{
+  /** Uranium: the last element with a standard atomic weight. */
+  constexpr int sm_last_standard_weight_z = 92;
+
+  /** Atomic mass (g/mol) that turns a formula's atom counts into mass fractions.
+   Through uranium this is SandiaDecay's natural atomic mass.  Above it there is
+   no standard atomic weight, and SandiaDecay's convention differs from CeeLo's
+   (Pu 244 vs 239.1, Bk 247 vs 249); CeeLo's is used there, because CeeLo turns
+   the mass fractions back into atom densities with it - with SandiaDecay's, a
+   PuO2 formula would reach the transport as PuO(1.96).  Not CeeLo's below
+   uranium: those are xraylib's two-decimal weights (H 1.01), which would move
+   a water formula's hydrogen mass fraction by 0.2%.
+   */
+  double formula_atomic_mass( const SandiaDecay::Element &el )
+  {
+    if( (el.atomicNumber > sm_last_standard_weight_z) && (el.atomicNumber <= ceelo::kMaxZ) )
+      return ceelo::CrossSectionData::instance().atomic_weight( el.atomicNumber );
+    return el.atomicMass();
+  }//formula_atomic_mass(...)
+}//namespace
+
+
 ceelo::MaterialSpec to_ceelo_material( const Material &mat )
 {
   ceelo::MaterialSpec spec;
@@ -83,7 +107,7 @@ ceelo::MaterialSpec to_ceelo_material( const Material &mat )
 
   for( const auto &zf : frac_by_z )
   {
-    if( (zf.first < 1) || (zf.first > 92) )
+    if( (zf.first < 1) || (zf.first > ceelo::kMaxZ) )
       throw runtime_error( "Material '" + mat.name + "' contains an element"
                            " (Z=" + std::to_string(zf.first) + ") the Monte"
                            " Carlo has no cross-section data for." );
@@ -132,7 +156,7 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
       if( !el )
         throw runtime_error( "Material '" + mat.name + "': '" + ce.symbol
                              + "' is not an element." );
-      const double mass = ce.atoms * el->atomicMass();
+      const double mass = ce.atoms * formula_atomic_mass( *el );
       cmp_mass[el->atomicNumber] += mass;
       cmp_total += mass;
     }//for( const AngleCompoundElement &ce : cmp.elements )
@@ -155,7 +179,7 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
   spec.density_g_per_cm3 = mat.density_g_cm3;
   for( const auto &zf : frac_by_z )
   {
-    if( (zf.first < 1) || (zf.first > 92) )
+    if( (zf.first < 1) || (zf.first > ceelo::kMaxZ) )
       throw runtime_error( "Material '" + mat.name + "' contains an element"
                            " (Z=" + std::to_string(zf.first) + ") the Monte"
                            " Carlo has no cross-section data for." );
@@ -1298,7 +1322,7 @@ namespace
     spec.density_g_per_cm3 = density_g_per_cm3;
     for( const auto &zm : mass_by_z )
     {
-      if( (zm.first < 1) || (zm.first > 92) )
+      if( (zm.first < 1) || (zm.first > ceelo::kMaxZ) )
         throw runtime_error( "Material '" + name + "' contains an element (Z="
                              + std::to_string(zm.first) + ") the Monte Carlo has"
                              " no cross-section data for." );
@@ -1337,7 +1361,7 @@ ceelo::MaterialSpec materialFromGadrasFormula( const std::string &formula,
       const SandiaDecay::Element * const el = db->element( symbol );
       if( !el )
         throw runtime_error( "'" + symbol + "' is not an element" );
-      mass_by_z[el->atomicNumber] += atoms * el->atomicMass();
+      mass_by_z[el->atomicNumber] += atoms * formula_atomic_mass( *el );
     }
   }catch( std::exception &e )
   {
@@ -1390,7 +1414,7 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     throw runtime_error( "genericAttenuatorMaterial: areal density and thickness"
                          " must both be positive." );
 
-  if( (atomic_number < 1.0) || (atomic_number > 92.0) )
+  if( (atomic_number < 1.0) || (atomic_number > ceelo::kMaxZ) )
     throw runtime_error( "genericAttenuatorMaterial: atomic number "
                          + std::to_string(atomic_number) + " is outside the"
                          " range the Monte Carlo has cross sections for." );
@@ -1400,7 +1424,7 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     throw runtime_error( "genericAttenuatorMaterial: no nuclide database." );
 
   const int z_lo = static_cast<int>( std::floor( atomic_number ) );
-  const int z_hi = std::min( 92, z_lo + 1 );
+  const int z_hi = std::min( ceelo::kMaxZ, z_lo + 1 );
   const double f_hi = atomic_number - z_lo;   //0 when the AN is an integer
 
   map<int,double> mass_by_z;
@@ -1595,11 +1619,12 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
     if( att->arealDensity <= 0.0f )       //every shipped generic detector has outer AD == 0
       continue;
 
-    if( (att->atomicNumber < 1.0f) || (att->atomicNumber > 92.0f) )
+    if( (att->atomicNumber < 1.0f) || (att->atomicNumber > ceelo::kMaxZ) )
     {
       warnings.push_back( "An attenuator with an effective atomic number of "
                           + SpecUtils::printCompact(att->atomicNumber, 3)
-                          + " was dropped; only 1 through 92 can be modeled." );
+                          + " was dropped; only 1 through "
+                          + std::to_string(ceelo::kMaxZ) + " can be modeled." );
       continue;
     }
 
@@ -1647,7 +1672,7 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
   {
     const bool full = (side.covPlusX >= 99.0f) && (side.covMinusX >= 99.0f)
                       && (side.covPlusY >= 99.0f) && (side.covMinusY >= 99.0f);
-    if( full && (side.atomicNumber >= 1.0f) && (side.atomicNumber <= 92.0f) )
+    if( full && (side.atomicNumber >= 1.0f) && (side.atomicNumber <= ceelo::kMaxZ) )
     {
       // Unlike the front stack there is no length in the file to divide up - the
       //  setback says nothing about a side wall - so this is a nominal wall
@@ -1992,7 +2017,7 @@ bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
   if( !value_after( t, an_pos, an ) || !value_after( t, ad_pos, ad ) )
     return false;
 
-  if( (an < 1.0) || (an > 92.0) || (ad <= 0.0) )
+  if( (an < 1.0) || (an > ceelo::kMaxZ) || (ad <= 0.0) )
     return false;
 
   atomic_number = an;

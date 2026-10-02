@@ -663,7 +663,7 @@ protected:
     refreshRelEffChart();
 #endif
     
-    WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
+    WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), WidgetUtils::ButtonRole::Affirm );
     acceptButton->clicked().connect( this, [this](){ hide(); } );
     // Undo/redo for the accept action is registered inside doFinish(), so it can capture
     //  the actually-committed peaks (post-edits from "Keep peak" checkboxes and the
@@ -673,10 +673,11 @@ protected:
     if( viewer->isPhone() )
     {
       cancelButton = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+      WidgetUtils::applyButtonRole( cancelButton, WidgetUtils::ButtonRole::Dismiss );
       cancelButton->setFloatSide( Wt::Side::Right );
     }else
     {
-      cancelButton = addCloseButtonToFooter( WString::tr("Cancel"), true );
+      cancelButton = addCloseButtonToFooter( WString::tr("Cancel"));
     }
 
     cancelButton->clicked().connect( this, [this](){ cancelOperation(); } );
@@ -2452,7 +2453,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   const WString content = WString::tr("psgu-search-wait-content");
   SimpleDialog *msg = SimpleDialog::make( title, content );
   msg->rejectWhenEscapePressed();
-  msg->addButton( WString::tr("Close") );
+  msg->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
   // Captured into only the completion lambda (session thread).  The worker
   // never references the dialog, so it is fine for the user to dismiss the
@@ -3372,8 +3373,8 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
       //  somewhere.
       msg->contents()->setObjectName( "AskToFitFwhmDialog" );
       msg->rejectWhenEscapePressed();
-      WPushButton *yes_btn = msg->addButton( WString::tr("Yes") );
-      WPushButton *no_btn = msg->addButton( WString::tr("No") );
+      WPushButton *yes_btn = msg->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+      WPushButton *no_btn = msg->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
       
       no_btn->clicked().connect( no_btn, [interspec,rightClickEnergy](){
         auto undo = [interspec,rightClickEnergy](){

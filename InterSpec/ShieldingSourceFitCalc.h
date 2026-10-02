@@ -375,7 +375,13 @@ private:
 
     /** Legacy behavior: flat-disk fractional solid angle times the intrinsic
      efficiency; bit-for-bit unchanged from before this option existed. */
-    FlatDisk
+    FlatDisk,
+
+    /** Evaluate the full-energy-peak efficiency grid imported from a Genie/ISOCS .par file
+     (see `DetEffG2kPar::isGridResponse`) as-is.  Full-energy peak only - the grid carries no
+     total efficiency.  What `Auto` picks for such a DRF; for any other DRF falls back to what
+     `Auto` would pick, with an error. */
+    ImportedGrid
   };//enum class VolumetricEffMethod
 
   /** The detector-efficiency model the POINT sources of a fit were evaluated with.  The same
@@ -805,11 +811,11 @@ private:
       Initialized to 120 seconds (e.g., 120*1000)
    */
 #ifdef NDEBUG
-  // Give up after two minutes for release builds
-  const size_t sm_max_model_fit_time_ms = 120*1000;
+  // Give up after five minutes for release builds
+  const size_t sm_max_model_fit_time_ms = 300*1000;
 #else
   // For debug builds we'll let it go 7 times longer, which is about the debug slow down
-  const size_t sm_max_model_fit_time_ms = 7*120*1000;
+  const size_t sm_max_model_fit_time_ms = 7*300*1000;
 #endif
 
   

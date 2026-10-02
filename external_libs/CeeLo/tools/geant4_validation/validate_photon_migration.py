@@ -40,11 +40,26 @@ import json
 import math
 import re
 import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+PREPARE = ROOT / "tools/prepare_cross_sections"
+sys.path.insert(0, str(PREPARE))
+from generate_epics_photon import (  # noqa: E402
+    ENERGY_MAX_EV,
+    ENERGY_MIN_EV,
+    PHOTON_Z_MAX,
+    RAYLEIGH_XS_GROUP_SIZE,
+)
+
+# The historical Geant4-fitted cache (DEFAULT_BASELINE) covers only Z=1..92 over
+# 10 keV-10 MeV, so the migration comparison stays on that domain even though the
+# runtime tables now extend further.
+HISTORICAL_Z_MAX = 92
+HISTORICAL_MAX_KEV = 10_000.0
 DEFAULT_CPP = ROOT / "src/cross_sections/photon_epics_data.cpp"
 DEFAULT_JSON = ROOT / "tools/prepare_cross_sections/reports/photon_migration.json"
 DEFAULT_MARKDOWN = ROOT / "tools/prepare_cross_sections/reports/photon_migration.md"
@@ -111,23 +126,25 @@ def direct_curves(text: str) -> dict[tuple[int, str], tuple[list[float], list[fl
     grid_index = [int(value) for value in parse_array(text, "g_photon_process_grid_index")]
     packed_value = [int(value) for value in parse_array(text, "g_photon_process_log_value_q")]
     descriptor_match = re.search(
-        r"g_photon_epics_data\[92\]\s*=\s*\{(.*?)\n\};",
+        r"g_photon_epics_data\[(\d+)\]\s*=\s*\{(.*?)\n\};",
         text, re.DOTALL,
     )
     if not descriptor_match:
         raise ValueError("missing generated photon descriptor table")
+    if int(descriptor_match.group(1)) != PHOTON_Z_MAX:
+        raise ValueError(f"generated photon descriptor table is not {PHOTON_Z_MAX} elements")
     descriptor_lines = [
-        line for line in descriptor_match.group(1).splitlines() if "// Z=" in line
+        line for line in descriptor_match.group(2).splitlines() if "// Z=" in line
     ]
-    if len(descriptor_lines) != 92:
-        raise ValueError("generated photon descriptor table is not 92 elements")
+    if len(descriptor_lines) != PHOTON_Z_MAX:
+        raise ValueError(f"generated photon descriptor table is not {PHOTON_Z_MAX} elements")
     process_slot = {
         "compton": 0,
         "pair_production": 1,
         "photoelectric": 2,
     }
     curves = {}
-    for z in range(1, 93):
+    for z in range(1, PHOTON_Z_MAX + 1):
         fields = [
             float(token) for token in NUMBER.findall(
                 re.sub(r"//.*", "", descriptor_lines[z - 1])
@@ -135,8 +152,8 @@ def direct_curves(text: str) -> dict[tuple[int, str], tuple[list[float], list[fl
         ]
         if len(fields) != 22:
             raise ValueError(f"Z={z}: malformed compact descriptor")
-        group = (z - 1) // 4
-        lane = (z - 1) % 4
+        group = (z - 1) // RAYLEIGH_XS_GROUP_SIZE
+        lane = (z - 1) % RAYLEIGH_XS_GROUP_SIZE
         grid_begin, grid_end = (
             rayleigh_grid_offset[group], rayleigh_grid_offset[group + 1]
         )
@@ -247,7 +264,7 @@ def main() -> int:
     by_z_pe: dict[int, list[tuple[float, float]]] = defaultdict(list)
     for row in rows:
         energy = float(row["E_keV"])
-        if 10.0 <= energy <= 10_000.0:
+        if 10.0 <= energy <= HISTORICAL_MAX_KEV:
             by_z[int(row["Z"])].append(energy)
             by_z_pe[int(row["Z"])].append((energy, float(row["pe_barn"])))
     edge_nodes = set()
@@ -273,8 +290,9 @@ def main() -> int:
 
     cases = {name: {"away_from_edges": [], "edge_neighborhoods": []} for name in PROCESS}
     historical: dict[tuple[int, str], tuple[list[float], list[float]]] = {}
-    for z in range(1, 93):
-        z_rows = [row for row in rows if int(row["Z"]) == z and 10.0 <= float(row["E_keV"]) <= 10_000.0]
+    for z in range(1, HISTORICAL_Z_MAX + 1):
+        z_rows = [row for row in rows
+                  if int(row["Z"]) == z and 10.0 <= float(row["E_keV"]) <= HISTORICAL_MAX_KEV]
         for process, column in PROCESS.items():
             historical[z, process] = (
                 [float(row["E_keV"]) for row in z_rows],
@@ -297,7 +315,7 @@ def main() -> int:
     for row in rows:
         z = int(row["Z"])
         energy = float(row["E_keV"])
-        if not 10.0 <= energy <= 10_000.0:
+        if not 10.0 <= energy <= HISTORICAL_MAX_KEV:
             continue
         edge = (z, energy) in edge_nodes
         bucket = "edge_neighborhoods" if edge else "away_from_edges"
@@ -319,7 +337,7 @@ def main() -> int:
     # and trace constituents do not dominate a percentile merely by case count.
     attenuation = {"away_from_edges": [], "edge_neighborhoods": []}
     # These are the committed downstream material-comparison energies within
-    # the restored historical photon-table upper bound of 10 MeV.
+    # the historical comparison domain (at most 10 MeV).
     material_energies = [20.0, 50.0, 100.0, 500.0, 1000.0, 3000.0, 10_000.0]
     for material, composition in MATERIALS.items():
         for energy in material_energies:
@@ -394,8 +412,10 @@ def main() -> int:
         "source_lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
         "historical_baseline_ref": args.baseline_ref,
         "historical_input": "transient git object; raw columns are not emitted",
-        "historical_comparison_range_keV": [10.0, 10_000.0],
-        "runtime_photon_range_keV": [10.0, 10_000.0],
+        "historical_comparison_range_keV": [10.0, HISTORICAL_MAX_KEV],
+        "historical_comparison_elements": [1, HISTORICAL_Z_MAX],
+        "runtime_photon_range_keV": [ENERGY_MIN_EV / 1.0e3, ENERGY_MAX_EV / 1.0e3],
+        "runtime_photon_elements": [1, PHOTON_Z_MAX],
         "attenuation_materials": list(MATERIALS),
         "attenuation_energies_keV": material_energies,
         "edge_definition": (

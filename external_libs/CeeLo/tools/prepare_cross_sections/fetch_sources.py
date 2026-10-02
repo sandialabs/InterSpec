@@ -46,6 +46,13 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+from generation_utils import ELECTRON_Z_MAX
+
+# NIST's web front end rejects urllib's default "Python-urllib" agent (HTTP 403,
+# seen Sep 2026). Identify the tool explicitly; the downloaded content is
+# still verified against the locked digests.
+USER_AGENT = "CeeLo-prepare-cross-sections/1 (fetch_sources.py; +https://github.com/sandialabs/InterSpec)"
+
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_LOCK = HERE / "sources.lock.json"
@@ -77,7 +84,8 @@ def download(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=destination.name + ".", dir=destination.parent)
     try:
-        with os.fdopen(fd, "wb") as out, urllib.request.urlopen(url) as response:
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with os.fdopen(fd, "wb") as out, urllib.request.urlopen(request) as response:
             shutil.copyfileobj(response, out, length=1024 * 1024)
         os.replace(temporary, destination)
     except Exception:
@@ -107,8 +115,10 @@ def safe_extract_tar(archive: Path, destination: Path) -> None:
 def epq_table_set_sha256(directory: Path, pattern: str) -> str:
     """Hash the logical EPQ table set independent of archive metadata."""
     paths = sorted(directory.glob(pattern), key=lambda item: item.name)
-    if len(paths) != 92:
-        raise ValueError(f"expected 92 EPQ tables in {directory}, found {len(paths)}")
+    if len(paths) != ELECTRON_Z_MAX:
+        raise ValueError(
+            f"expected {ELECTRON_Z_MAX} EPQ tables in {directory}, found {len(paths)}"
+        )
     digest = hashlib.sha256()
     for path in paths:
         digest.update(path.name.encode("ascii"))
@@ -157,7 +167,7 @@ def prepare_estar_text_source(
 ) -> Path:
     destination = cache / "generated" / source_name
     destination.mkdir(parents=True, exist_ok=True)
-    for z in range(1, 93):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         path = destination / spec["filename_pattern"].replace("NNN", f"{z:03d}")
         if not path.is_file():
             if offline:
@@ -165,7 +175,8 @@ def prepare_estar_text_source(
             request = urllib.request.Request(
                 spec["url"],
                 data=urllib.parse.urlencode({"matno": f"{z:03d}", "ShowDefault": "on"}).encode("ascii"),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={"Content-Type": "application/x-www-form-urlencoded",
+                         "User-Agent": USER_AGENT},
             )
             fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=destination)
             try:
@@ -179,7 +190,7 @@ def prepare_estar_text_source(
                     pass
                 raise
     digest = hashlib.sha256()
-    for z in range(1, 93):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         path = destination / spec["filename_pattern"].replace("NNN", f"{z:03d}")
         digest.update(struct.pack("<H", z))
         for row in parse_estar_text(path):

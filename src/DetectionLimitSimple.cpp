@@ -144,7 +144,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( InterSpec *viewer )
     footer()->addWidget( std::move(qr_btn_owned) );
 #endif //USE_QR_CODES
 
-  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"), true );
+  WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
 #if( USE_QR_CODES )
@@ -2228,7 +2228,7 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
            (m_currentNuclide ? (m_currentNuclide->symbol + " ").c_str() : ""), energy );
   
   SimpleDialog *dialog = SimpleDialog::make( WString(buffer).arg(WString::tr("dls-Info")) );
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   
   WContainerWidget *contents = dialog->contents()->addNew<WContainerWidget>();
   contents->addStyleClass( "DeconvMoreInfo" );
@@ -2556,7 +2556,7 @@ void DetectionLimitSimple::createMoreInfoWindow()
     assert( !m_moreInfoWindow );
     m_moreInfoWindow = SimpleDialog::make( WString::tr("dls-err-more-info-title"),
                                             WString::tr("dls-err-more-info-content").arg(e.what()) );
-    m_moreInfoWindow->addButton( WString::tr("Close") );
+    m_moreInfoWindow->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   }//try / catch
 
   assert( m_moreInfoWindow );

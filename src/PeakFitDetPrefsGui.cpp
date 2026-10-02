@@ -197,8 +197,8 @@ void PeakFitDetPrefsGui::init()
       WString::tr( "pfdpg-no-fwhm-title" ),
       WString::tr( "pfdpg-no-fwhm-content" ));
 
-    WPushButton *fitBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-fit" ));
-    WPushButton *cancelBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-cancel" ));
+    WPushButton *fitBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-fit" ), WidgetUtils::ButtonRole::Affirm );
+    WPushButton *cancelBtn = dialog->addButton( WString::tr( "pfdpg-no-fwhm-cancel" ), WidgetUtils::ButtonRole::Dismiss );
 
     const PeakFitDetPrefs::FwhmMethod pending = (idx == 1)
       ? PeakFitDetPrefs::FwhmMethod::DetFwhm

@@ -817,6 +817,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
       case RelActCalcAuto::FwhmForm::Berstein_4:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3) - stable"); break;
       case RelActCalcAuto::FwhmForm::Berstein_5:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4) - stable"); break;
       case RelActCalcAuto::FwhmForm::Berstein_6:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5) - stable"); break;
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower: name = WString::fromUTF8("sqrt(noise² + (A*E^s(E))²) - monotone"); break;
       case RelActCalcAuto::FwhmForm::NotApplicable: name = WString::tr("raag-use-det-eff"); break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
@@ -4366,8 +4367,8 @@ void RelActAutoGui::handleSortEnergyRanges()
 void RelActAutoGui::handleClearAllEnergyRanges()
 {
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-clear-energy-ranges-title"), "&nbsp;" );
-  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   yes->clicked().connect( this, &RelActAutoGui::removeAllEnergyRanges );
 }//void handleClearAllEnergyRanges()
 
@@ -4484,7 +4485,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
                                             "Sorry, a valid solution is needed before an energy range can be split." );
-    dialog->addButton( WString::tr("Continue") );
+    dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
     
     return;
   }//if( !solution || !is_usable_status(solution->m_status) )
@@ -4493,7 +4494,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
                                             "Sorry, energy range is currently not valid." );
-    dialog->addButton( WString::tr("Continue") );
+    dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
   
@@ -4528,7 +4529,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
                       .arg(formatNumber(lower_energy, 1))
                       .arg(formatNumber(upper_energy, 1));
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"), msg );
-    dialog->addButton( WString::tr("Continue") );
+    dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
     return;
   }//if( to_ranges.empty() )
   
@@ -4540,8 +4541,8 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
                     .arg(static_cast<int>(to_ranges.size()));
   
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-divide-energy-range-title"), msg );
-  WPushButton *yes_button = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  WPushButton *yes_button = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   
   
   const auto on_yes = [this,w,to_ranges](){
@@ -4553,7 +4554,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     {
       SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
                                               + " energy range - sorry, cant complete operation." );
-      dialog->addButton( WString::tr("Continue") );
+      dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
       return;
     }//
 
@@ -4844,8 +4845,8 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
                       .arg(files_part);
   
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-apply-fit-energy-cal-title"), msg );
-  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
-  dialog->addButton( WString::tr("No") );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
   yes->clicked().connect( this, &RelActAutoGui::applyFitEnergyCalToSpecFile );
 }//void startApplyFitEnergyCalToSpecFile();
 
@@ -4994,7 +4995,7 @@ void RelActAutoGui::setPeaksToForeground()
   if( !m_solution || m_solution->m_fit_peaks_in_spectrums_cal.empty() )
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-continue"), WString::tr("raag-no-peaks-in-solution") );
-    dialog->addButton( WString::tr("Close") );
+    dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
     return;
   }//if( no solution peaks )
   
@@ -5037,8 +5038,8 @@ void RelActAutoGui::setPeaksToForeground()
   HelpSystem::attachToolTipOn( refit_holder, tooltip, showToolTips );
   
   
-  dialog->addButton( "No" );
-  WPushButton *yes = dialog->addButton( "Yes" );
+  dialog->addButton( "No", WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *yes = dialog->addButton( "Yes", WidgetUtils::ButtonRole::Affirm );
   
   
   const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
@@ -5628,7 +5629,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 void RelActAutoGui::handleRequestToUploadXmlConfig()
 {
   SimpleDialog *dialog = SimpleDialog::make();
-  WPushButton *closeButton = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *closeButton = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   (void)closeButton;
   dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
   WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->layout() );
@@ -5650,7 +5651,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
     dialog->contents()->clear();
     dialog->footer()->clear();
 
-    WPushButton *closeButton2 = dialog->addButton( WString::tr("Close") );
+    WPushButton *closeButton2 = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
     (void)closeButton2;
     dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
     WGridLayout *inner_stretcher = static_cast<WGridLayout *>( dialog->contents()->layout() );

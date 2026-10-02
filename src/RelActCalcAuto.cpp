@@ -642,6 +642,138 @@ double eval_berstein_fwhm( double energy, const double * const pars, const size_
 }//double eval_berstein_fwhm(...)
 
 
+/** FWHM for #RelActCalcAuto::FwhmForm::NoisePlusCurvedPower; `pars` are
+ `{w0, w1, s_lo, s_hi, lower_energy, upper_energy}` (keV).
+
+ The log of the power-law term is quadratic in `u = ln(E/661)` inside the range, with slopes `s_lo`
+ and `s_hi` at its ends, and continues on those end slopes outside it - so the curve is C1 and,
+ for non-negative slopes, non-decreasing everywhere.
+ */
+template<typename T>
+T noise_curved_power_fwhm( const T &energy, const T * const pars, const size_t num_pars )
+{
+  using std::log;
+  using std::exp;
+  using std::sqrt;
+
+  if( num_pars != 6 )
+    throw std::runtime_error( "noise_curved_power_fwhm(): expected 6 parameters" );
+
+  const T &noise = pars[0];
+  const T stat_661 = (pars[1] > T(1.0E-9)) ? pars[1] : T(1.0E-9);
+  const T &slope_lo = pars[2];
+  const T &slope_hi = pars[3];
+  const T u_lo = log( ((pars[4] > T(1.0)) ? pars[4] : T(1.0)) / 661.0 );
+  const T u_hi = log( ((pars[5] > T(1.0)) ? pars[5] : T(1.0)) / 661.0 );
+  const T u = log( ((energy > T(1.0)) ? energy : T(1.0)) / 661.0 );
+
+  const T span = u_hi - u_lo;
+  const T curvature = (span > T(1.0E-6)) ? ((slope_hi - slope_lo) / (2.0*span)) : T(0.0);
+  const T slope_661 = slope_lo - 2.0*curvature*u_lo;
+
+  T log_stat;
+  if( u < u_lo )
+    log_stat = log(stat_661) + slope_661*u_lo + curvature*u_lo*u_lo + slope_lo*(u - u_lo);
+  else if( u > u_hi )
+    log_stat = log(stat_661) + slope_661*u_hi + curvature*u_hi*u_hi + slope_hi*(u - u_hi);
+  else
+    log_stat = log(stat_661) + slope_661*u + curvature*u*u;
+
+  return sqrt( noise*noise + exp( 2.0*log_stat ) );
+}//T noise_curved_power_fwhm(...)
+
+
+/** One FWHM point's log-space residual for #fit_noise_curved_power. */
+struct NoiseCurvedPowerResidual
+{
+  double m_energy, m_log_fwhm, m_lower, m_upper;
+
+  template<typename T>
+  bool operator()( const T * const x, T *residual ) const
+  {
+    using std::log;
+    const T pars[6] = { x[0], x[1], x[2], x[3], T(m_lower), T(m_upper) };
+    residual[0] = log( noise_curved_power_fwhm( T(m_energy), pars, 6 ) ) - T(m_log_fwhm);
+    return true;
+  }
+};//struct NoiseCurvedPowerResidual
+
+
+/** Fits the #RelActCalcAuto::FwhmForm::NoisePlusCurvedPower parameters to FWHM values, in log
+ space (every point weighted equally, as a relative error), from several starting points. */
+std::vector<double> fit_noise_curved_power( const std::vector<double> &energies,
+                                            const std::vector<double> &fwhms,
+                                            const double lower_energy, const double upper_energy )
+{
+  if( energies.size() != fwhms.size() )
+    throw std::logic_error( "fit_noise_curved_power(): energies and widths differ in length" );
+
+  vector<pair<double,double>> points;
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    if( (energies[i] > 0.0) && (fwhms[i] > 0.0) && std::isfinite(energies[i]) && std::isfinite(fwhms[i]) )
+      points.emplace_back( energies[i], fwhms[i] );
+  }
+  if( points.size() < 4 )
+    throw std::runtime_error( "fit_noise_curved_power(): fewer than four usable points" );
+  std::sort( begin(points), end(points) );
+
+  // The width near 661 keV (or the median width) scales the starting points.
+  double ref_fwhm = points[points.size()/2].second;
+  for( size_t i = 1; i < points.size(); ++i )
+  {
+    if( (points[i-1].first <= 661.0) && (points[i].first >= 661.0) )
+    {
+      const double frac = (661.0 - points[i-1].first) / std::max( points[i].first - points[i-1].first, 1.0E-9 );
+      ref_fwhm = points[i-1].second + frac*(points[i].second - points[i-1].second);
+    }
+  }
+
+  const double starts[6][4] = {
+    { 0.5*ref_fwhm, ref_fwhm, 0.5, 0.5 }, { 0.1*ref_fwhm, ref_fwhm, 0.7, 0.7 },
+    { ref_fwhm, 0.5*ref_fwhm, 0.9, 0.9 }, { 0.3*ref_fwhm, 0.9*ref_fwhm, 0.7, 0.8 },
+    { 0.1*ref_fwhm, ref_fwhm, 0.5, 0.9 }, { 0.5*ref_fwhm, 0.7*ref_fwhm, 0.3, 0.8 }
+  };
+
+  double best_cost = std::numeric_limits<double>::infinity();
+  std::array<double,4> best = { starts[0][0], starts[0][1], starts[0][2], starts[0][3] };
+  for( const double (&start)[4] : starts )
+  {
+    std::array<double,4> x = { start[0], start[1], start[2], start[3] };
+    ceres::Problem problem;
+    for( const pair<double,double> &p : points )
+    {
+      problem.AddResidualBlock( new ceres::AutoDiffCostFunction<NoiseCurvedPowerResidual,1,4>(
+                                  new NoiseCurvedPowerResidual{ p.first, std::log(p.second), lower_energy, upper_energy } ),
+                                nullptr, x.data() );
+    }
+    problem.SetParameterLowerBound( x.data(), 0, 0.0 );
+    problem.SetParameterLowerBound( x.data(), 1, 1.0E-6 );
+    for( int i = 2; i < 4; ++i )
+    {
+      problem.SetParameterLowerBound( x.data(), i, 0.0 );
+      problem.SetParameterUpperBound( x.data(), i, 1.5 );
+    }
+
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.max_num_iterations = 200;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
+    ceres::Solver::Summary summary;
+    ceres::Solve( options, &problem, &summary );
+
+    if( summary.IsSolutionUsable() && (summary.final_cost < best_cost) )
+    {
+      best_cost = summary.final_cost;
+      best = x;
+    }
+  }//for( const double (&start)[4] : starts )
+
+  return { best[0], best[1], best[2], best[3], lower_energy, upper_energy };
+}//fit_noise_curved_power(...)
+
+
 struct DoWorkOnDestruct
 {
   std::function<void()> m_worker;
@@ -828,6 +960,35 @@ struct DoWorkOnDestruct
 //       (e.g., NaI, CZT, LaBr, etc.), rather than just branching on High vs non-High.
 void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
 {
+  if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+  {
+    // Fit to this detector class's default quadratic curve.
+    if( !(lowest_energy > 0.0) || !(highest_energy > lowest_energy) )
+    {
+      lowest_energy = 50.0;
+      highest_energy = 3000.0;
+    }
+
+    vector<double> quad_pars;
+    fill_in_default_start_fwhm_pars( quad_pars, 0, det_type, RelActCalcAuto::FwhmForm::Polynomial_3,
+                                     lowest_energy, highest_energy );
+    vector<double> energies, fwhms;
+    const size_t num_samples = 24;
+    for( size_t i = 0; i < num_samples; ++i )
+    {
+      const double energy = lowest_energy * std::pow( highest_energy/lowest_energy, i/(num_samples - 1.0) );
+      energies.push_back( energy );
+      fwhms.push_back( DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::kSqrtPolynomial,
+                                                                  quad_pars.data(), quad_pars.size() ) );
+    }
+
+    const vector<double> fit_pars = fit_noise_curved_power( energies, fwhms, lowest_energy, highest_energy );
+    if( parameters.size() < (fwhm_start + fit_pars.size()) )
+      parameters.resize( fwhm_start + fit_pars.size(), 0.0 );
+    std::copy( begin(fit_pars), end(fit_pars), begin(parameters) + fwhm_start );
+    return;
+  }//if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+
   if( det_type == PeakFitUtils::CoarseResolutionType::High )
   {
     // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
@@ -1038,6 +1199,10 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
         }
         break;
+
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
@@ -1253,6 +1418,10 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         }
         break;
 
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
+
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
         throw runtime_error( "NotApplicable should not be used here" );
@@ -1367,7 +1536,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
             std::shared_ptr<const DetectorPeakResponse> input_drf,
             vector<double> &paramaters,
             vector<string> &warnings,
-            const bool reuse_input_resolution = false )
+            const bool reuse_input_resolution = false,
+            const DetectorPeakResponse::ResolutionFnctForm seed_form = DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm,
+            const std::vector<float> &seed_coefficients = std::vector<float>() )
 {
   paramaters.clear();
   const size_t num_fwhm_pars = num_parameters(fwhm_form);
@@ -1378,6 +1549,68 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     throw runtime_error( "When FwhmEstimationMethod is specified as FixedToDetectorEfficiency,"
                          " FWHM form must be set to NotApplicable, and vice-versa." );
   }//if( check FWHM type and method are compatible )
+
+  if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+  {
+    // Fit this form to the curve the source of the widths gives: the DRF's, or a curve the caller
+    //  supplied, across the whole range; otherwise the quadratic sqrt-polynomial fit to the peaks
+    //  (with its outlier handling), across the peaks' span only - this form carries on beyond it on
+    //  its end slopes, where a polynomial is not to be trusted.  The quadratic path also supplies the
+    //  returned response and its warnings and checks.
+    vector<double> quad_pars;
+    const shared_ptr<const DetectorPeakResponse> quad_drf
+                     = get_fwhm_coefficients( RelActCalcAuto::FwhmForm::Polynomial_3, fwhm_estimation_method,
+                                              all_peaks, det_type, lowest_energy, highest_energy, input_drf,
+                                              quad_pars, warnings, reuse_input_resolution, seed_form,
+                                              seed_coefficients );
+
+    const bool drf_resolution = input_drf && input_drf->hasResolutionInfo()
+         && (reuse_input_resolution
+             || (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum)
+             || (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency));
+    const bool supplied_curve = !drf_resolution
+                                && (seed_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+                                && !seed_coefficients.empty();
+
+    const auto source_fwhm = [&]( const double energy ) -> double {
+      if( drf_resolution )
+        return input_drf->peakResolutionFWHM( static_cast<float>(energy) );
+      if( supplied_curve )
+        return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy), seed_form, seed_coefficients );
+      return DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::kSqrtPolynomial,
+                                                      quad_pars.data(), quad_pars.size() );
+    };//source_fwhm
+
+    double sample_lower = lowest_energy, sample_upper = highest_energy;
+    if( !drf_resolution && !supplied_curve && !all_peaks.empty() )
+    {
+      double peaks_lower = std::numeric_limits<double>::max(), peaks_upper = 0.0;
+      for( const shared_ptr<const PeakDef> &peak : all_peaks )
+      {
+        peaks_lower = std::min( peaks_lower, peak->mean() );
+        peaks_upper = std::max( peaks_upper, peak->mean() );
+      }
+      const double span_lower = std::max( lowest_energy, peaks_lower );
+      const double span_upper = std::min( highest_energy, peaks_upper );
+      if( (span_lower > 0.0) && (span_upper > 1.2*span_lower) )
+      {
+        sample_lower = span_lower;
+        sample_upper = span_upper;
+      }
+    }//if( the curve came from the peaks alone )
+
+    vector<double> energies, fwhms;
+    const size_t num_samples = 24;
+    for( size_t i = 0; i < num_samples; ++i )
+    {
+      const double energy = sample_lower * std::pow( sample_upper/sample_lower, i/(num_samples - 1.0) );
+      energies.push_back( energy );
+      fwhms.push_back( source_fwhm( energy ) );
+    }
+
+    paramaters = fit_noise_curved_power( energies, fwhms, lowest_energy, highest_energy );
+    return quad_drf;
+  }//if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
 
   
   bool use_drf_fwhm = false, estimate_fwhm_from_data = false;
@@ -1512,6 +1745,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         break;
       }//case any Berstein
 
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
+
       case RelActCalcAuto::FwhmForm::NotApplicable:
       {
         needToFitOtherType = false;
@@ -1625,6 +1862,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         // Fit using corresponding polynomial order, then convert to Berstein
         formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       break;
+
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
@@ -1765,6 +2006,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       fit_order = static_cast<int>( num_parameters(fwhm_form) - 2 ); // Subtract min/max energy params
     break;
           
+    case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+      assert( 0 );
+      throw logic_error( "NoisePlusCurvedPower is handled before this point" );
+
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( 0 );
       throw runtime_error( "NotApplicable should not be used here" );
@@ -1775,7 +2020,44 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     //Instead of the below, we could potentially do
     //  new_drf->fitResolution( peaks_deque, spectrum, form_to_fit );
-    const vector<float> fwhm_paramatersf = fit_resolution_to_peaks( all_peaks, form_to_fit, fit_order, warnings );
+    // A caller-supplied starting curve (Options::starting_fwhm_coefficients) stands in for the
+    // peaks: the same form and order is taken as-is, any other form is sampled and fit, and the
+    // peak-list outlier pass is skipped.
+    vector<float> fwhm_paramatersf;
+    bool seeded = false;
+    if( !reuse_input_resolution
+        && (seed_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+        && !seed_coefficients.empty() )
+    {
+      if( (seed_form == form_to_fit) && (seed_coefficients.size() == static_cast<size_t>(fit_order)) )
+      {
+        fwhm_paramatersf = seed_coefficients;
+        seeded = true;
+      }else
+      {
+        vector<float> uncerts;
+        auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
+        const int nsamples = 20;
+        for( int i = 0; i < nsamples; ++i )
+        {
+          const double e = lowest_energy + (highest_energy - lowest_energy)*i/(nsamples - 1);
+          const float fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(e), seed_form, seed_coefficients );
+          if( !std::isfinite(fwhm) || (fwhm <= 0.0f) )
+            continue;
+          auto p = make_shared<PeakDef>( e, fwhm/PhysicalUnits::fwhm_nsigma, 1000.0 );
+          p->setSigmaUncert( 0.05*fwhm/PhysicalUnits::fwhm_nsigma );
+          peaks_deque->push_back( p );
+        }
+        seeded = (peaks_deque->size() >= static_cast<size_t>( std::max( 3, fit_order ) ));
+        if( seeded )
+          MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
+        else
+          warnings.push_back( "The supplied starting FWHM curve was not usable over the analysis range; fitting the FWHM from the peaks instead." );
+      }
+    }//if( a starting curve was supplied )
+
+    if( !seeded )
+      fwhm_paramatersf = fit_resolution_to_peaks( all_peaks, form_to_fit, fit_order, warnings );
 
     // performResolutionFit() can return FEWER coefficients than the requested fit_order when the
     //  spectrum has too few peaks to constrain the full order (e.g. sparse spectra with only 2-3
@@ -2326,6 +2608,11 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
   };//struct EnergyYield
   
   std::shared_ptr<const vector<EnergyYield>> nominal_gammas;
+
+  /** Sorted energies of the nominal lines that get iodine escape companions (see
+   Options::iodine_escape_peaks and PeakFitUtils::sm_iodine_escape_min_relative_yield); fixed here so
+   which peaks exist never depends on the fit parameters (e.g. a fitted age). */
+  vector<double> escape_parent_energies;
   
   // Implemeneted below RelActAutoCostFcn, so we can access it
   NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn );
@@ -2984,10 +3271,12 @@ struct RelActAutoCostFcn
           found_peaks.push_back( peak );
       }
 
+      // A caller-supplied starting curve (`Options::starting_fwhm_coefficients`) is already in `m_drf`,
+      //  when the solve uses it, and is the caller's estimate of these widths, so it is not overridden.
       vector<float> peaks_fwhm_pars;
       const bool fwhm_is_fixed = (m_options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency)
                           || (m_options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum);
-      if( !fwhm_is_fixed && (found_peaks.size() >= 3) )
+      if( !fwhm_is_fixed && m_options.starting_fwhm_coefficients.empty() && (found_peaks.size() >= 3) )
       {
         try
         {
@@ -3463,7 +3752,7 @@ struct RelActAutoCostFcn
         // Putting a narrow window first is numerically destructive in two ways: the remaining
         // fractions become differences of nearly-equal numbers, and the stick/hinge radius - a
         // fraction of the window width - collapses onto a scale where the hinge corner sits right
-        // where the fit lives.  Concretely, the "HPGe U inside U" preset constrains U-234 to a 1e-2
+        // where the fit lives.  Concretely, the "Multi-enrich U - back higher" preset constrains U-234 to a 1e-2
         // window and U-232 to 3e-6; with U-232 carrying, that fixture fits at chi2/dof 33.4 instead
         // of 0.78.  Widest-first also guarantees the general invariant: the conditional interval at
         // every later step is at least as wide as that step's own window, so no window is ever
@@ -4432,7 +4721,8 @@ struct RelActAutoCostFcn
         solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
                                               det_type, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
                                               starting_fwhm_paramaters, solution.m_warnings,
-                                              all_peaks_are_frozen );
+                                              all_peaks_are_frozen,
+                                              options.starting_fwhm_form, options.starting_fwhm_coefficients );
 
         if( !all_peaks_are_frozen )
         {
@@ -5047,6 +5337,139 @@ struct RelActAutoCostFcn
           
           break;
         }//case Berstein
+
+        case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        {
+          // Positive and non-decreasing by construction, so the bounds are statements about the
+          //  detector rather than an envelope on each coefficient: a noise floor no wider than the
+          //  widest plausible peak at the bottom of the range - and, like the Bernstein floor above, at
+          //  least 1.25 of the widest ROI channel, so no peak becomes unresolvably narrow at any energy -
+          //  a width at 661 keV inside the detector class's range, and log-log slopes between flat and
+          //  a steeper-than-linear 1.5.
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+          {
+            break;
+          }
+
+          const size_t start = cost_functor->m_fwhm_par_start_index;
+          assert( (start + 6) <= parameters.size() );
+
+          double channel_floor = 0.0;
+          for( const RelActCalcAuto::RoiRange &roi : energy_ranges )
+          {
+            const size_t lower_channel = spectrum->find_gamma_channel( roi.lower_energy );
+            const size_t upper_channel = spectrum->find_gamma_channel( roi.upper_energy );
+            for( size_t ch = lower_channel; ch <= upper_channel; ++ch )
+              channel_floor = std::max( channel_floor, options.fwhm_channel_floor_factor * spectrum->gamma_channel_width( ch ) );
+          }
+
+          float low_min_sigma, low_max_sigma, ref_min_sigma, ref_max_sigma;
+          expected_peak_width_limits( static_cast<float>(lowest_fwhm_energy), det_type, spectrum,
+                                      low_min_sigma, low_max_sigma );
+          expected_peak_width_limits( 661.0f, det_type, spectrum, ref_min_sigma, ref_max_sigma );
+
+          double bounds[4][2] = {
+            { channel_floor, std::max( 1.5*channel_floor, 2.35482*low_max_sigma ) },  // noise floor
+            { 1.0E-3*2.35482*ref_min_sigma, 2.35482*ref_max_sigma },                  // width at 661 keV
+            { 0.0, 1.5 },                                                             // slope, lower end
+            { 0.0, 1.5 }                                                              // slope, upper end
+          };
+
+          // See Options::fwhm_max_ratio_to_start: box bounds around the starting curve's own parameters
+          //  that keep the curve under `ratio` times it everywhere in the fitted range.  The power term
+          //  moves by at most w1's factor times exp(slope change * max|ln(E/661)|), so each gets half of
+          //  ln(ratio) in log width; the noise floor may grow by `ratio` itself.
+          //  The reference is the caller's own curve (#Options::starting_fwhm_form) refit into this form
+          //  over the fitted range - not the solve's starting parameters, which come from its canonical
+          //  resolution response and can sit far from that curve (R500 Co56_Unsh: ~1/7 of it at 400 keV),
+          //  so bounds around them held every width to it.
+          std::vector<double> reference;
+          if( (options.fwhm_max_ratio_to_start > 1.0) && !options.starting_fwhm_coefficients.empty()
+             && (lowest_fwhm_energy > 0.0) && (highest_fwhm_energy > lowest_fwhm_energy) )
+          {
+            std::vector<double> ref_energies, ref_fwhms;
+            const size_t num_samples = 24;
+            for( size_t i = 0; i < num_samples; ++i )
+            {
+              const double energy = lowest_fwhm_energy
+                                    * std::pow( highest_fwhm_energy/lowest_fwhm_energy, i/(num_samples - 1.0) );
+              const double fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                           options.starting_fwhm_form, options.starting_fwhm_coefficients );
+              // No narrower than the resolvability floor the noise term is held to anyway: on SAM-Eagle's
+              //  12.5 keV channels the caller's curve is sub-channel below ~150 keV, and bounds around it
+              //  fought the floor (Co57_Sh's z=97 136 keV line was lost).
+              if( std::isfinite(fwhm) && (fwhm > 0.0) )
+              {
+                ref_energies.push_back( energy );
+                ref_fwhms.push_back( std::max( fwhm, channel_floor ) );
+              }
+            }//for( size_t i = 0; i < num_samples; ++i )
+            try
+            {
+              reference = fit_noise_curved_power( ref_energies, ref_fwhms, lowest_fwhm_energy, highest_fwhm_energy );
+            }catch( const std::exception &e )
+            {
+              solution.m_warnings.push_back( "Could not fit the starting FWHM curve for its ratio limit: "
+                                             + std::string(e.what()) );
+              reference.clear();
+            }
+          }//if( a ratio limit to the starting curve was asked for )
+
+          if( reference.size() >= 4 )
+          {
+            const double ln_ratio = std::log( options.fwhm_max_ratio_to_start );
+            const double max_lever = std::max( std::fabs( std::log( lowest_fwhm_energy / 661.0 ) ),
+                                               std::fabs( std::log( highest_fwhm_energy / 661.0 ) ) );
+            const double w1_factor = std::exp( 0.5*ln_ratio );
+            const double slope_delta = (max_lever > 0.0) ? (0.5*ln_ratio / max_lever) : 1.5;
+            const double ref_w0 = reference[0], ref_w1 = reference[1];
+            const double wanted[4][2] = {
+              { bounds[0][0], std::max( bounds[0][0]*1.5, options.fwhm_max_ratio_to_start*ref_w0 ) },
+              { ref_w1 / w1_factor, ref_w1 * w1_factor },
+              { reference[2] - slope_delta, reference[2] + slope_delta },
+              { reference[3] - slope_delta, reference[3] + slope_delta }
+            };
+            for( size_t i = 0; i < 4; ++i )
+            {
+              const double lower = std::max( bounds[i][0], wanted[i][0] );
+              const double upper = std::min( bounds[i][1], wanted[i][1] );
+              if( std::isfinite(lower) && std::isfinite(upper) && (upper > lower) )
+              {
+                bounds[i][0] = lower;
+                bounds[i][1] = upper;
+              }else
+              {
+                solution.m_warnings.push_back( "The FWHM limit relative to the starting curve left no room for"
+                    " parameter " + std::to_string(i) + "; kept the detector-class bounds for it." );
+              }
+            }//for( size_t i = 0; i < 4; ++i )
+          }//if( reference.size() >= 4 )
+
+          for( size_t i = 0; i < 4; ++i )
+          {
+            const size_t par_index = start + i;
+            lower_bounds[par_index] = bounds[i][0];
+            upper_bounds[par_index] = bounds[i][1];
+            if( (parameters[par_index] < bounds[i][0]) || (parameters[par_index] > bounds[i][1]) )
+            {
+              solution.m_warnings.push_back( "Initial FWHM parameter " + std::to_string(i) + " ("
+                  + std::to_string(parameters[par_index]) + ") is outside [" + std::to_string(bounds[i][0])
+                  + ", " + std::to_string(bounds[i][1]) + "] - clamped into range." );
+              parameters[par_index] = std::clamp( parameters[par_index], bounds[i][0], bounds[i][1] );
+            }
+          }//for( size_t i = 0; i < 4; ++i )
+
+          // The energy range sets where the slopes are pinned; it is not fit.
+          parameters[start + 4] = lowest_fwhm_energy;
+          parameters[start + 5] = highest_fwhm_energy;
+          for( const size_t index : { start + 4, start + 5 } )
+          {
+            if( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(index) ) == end(constant_parameters) )
+              constant_parameters.push_back( static_cast<int>(index) );
+          }
+          break;
+        }//case NoisePlusCurvedPower
           
         default:
           break;
@@ -6315,8 +6738,25 @@ struct RelActAutoCostFcn
             {
               const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
               const size_t act_index = cost_functor->nuclide_parameter_index(nuc.source, re_eff_index);
-              double rel_act = empirical_seed_activity_scale
+
+              // The manual stage only fits sources its matched peaks actually name, so a requested
+              // source it saw no peaks for has no entry here.  That is normal - an element requested
+              // for its fluorescence x-rays contributes no matched peak whenever those x-rays fall
+              // outside the analysed range - and it must not cost the OTHER sources their fitted
+              // starting values: letting the lookup throw discarded this curve's whole seed and
+              // restarted it from a flat line, which is what made the shielded U/Pu fits fail or run
+              // out their time budget once the element sources were requested alongside the isotopes.
+              double rel_act = 0.0;
+              try
+              {
+                rel_act = empirical_seed_activity_scale
                                 * manual_solution.relative_activity( nuc.name() ) / live_time;
+              }catch( std::exception & )
+              {
+                rel_act = 0.0;   // clamped to the 1.0 default just below
+                solution.m_warnings.push_back( "The initial relative-efficiency estimate had no peaks"
+                    " for " + nuc.name() + ", so it starts from a default activity." );
+              }//try / catch on this source having a manual estimate
 
               // If the rel_act has an uncertainty approaching 100%, we may get totally wild starting values of activity,
               //  so we'll arbitrarily use an initial guess of 1, which may be well-off
@@ -7157,9 +7597,12 @@ struct RelActAutoCostFcn
         parameters.resize( num_pars, sm_peak_range_uncert_offset );
         pars = &parameters[0];
                   
-        const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
+        // The parameter at which the yield is `additional_br_min_yield_fraction` of nominal (zero by default).
+        const double min_yield = std::clamp( options.additional_br_min_yield_fraction, 0.0, 0.99 );
+        const double val_with_min_yield = sm_peak_range_uncert_offset
+                                  - (1.0 - min_yield)*sm_peak_range_uncert_par_scale/options.additional_br_uncert;
 
-        lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
+        lower_bounds.resize( num_pars, optional<double>(val_with_min_yield) );
         upper_bounds.resize( num_pars );
         
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
@@ -8511,9 +8954,13 @@ struct RelActAutoCostFcn
               " step and never moved a single parameter, so the result is the starting point rather"
               " than a minimum (" + summary.message + ").";
         solution.m_warnings.push_back( msg );
+        solution.m_optimizer_returned_seed = true;
         cerr << "RelActCalcAuto: " << msg << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-        assert( 0 );
+        // Was `assert(0)`, but a single degenerate fit returning its seed must not abort the whole
+        //  process - a batch/survey over many spectra needs the offending file to complete with the
+        //  warning above (and its degenerate answer) rather than core-dumping.  Logged, not fatal.
+        log_developer_error( __func__, msg.c_str() );
 #endif
       }
 
@@ -9621,6 +10068,9 @@ struct RelActAutoCostFcn
     // ---------------------------------------------------------------------------------------------
     size_t num_effective_paramaters = num_pars;
 
+    // Parameters held out of the rank and covariance analysis (see the tangent-space reduction below).
+    vector<char> absent_source_par( num_pars, 0 );
+
     if( success )
     {
       solution.m_covariance.clear();
@@ -9646,7 +10096,7 @@ struct RelActAutoCostFcn
         if( (sparse_jacobian.num_rows == 0) || (sparse_jacobian.num_cols == 0) )
           throw runtime_error( "Failed to evaluate Jacobian" );
 
-        const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+        const size_t num_tangent_pars = static_cast<size_t>( sparse_jacobian.num_cols );
 
         Eigen::MatrixXd jacobian;
         jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
@@ -9663,16 +10113,16 @@ struct RelActAutoCostFcn
         Eigen::MatrixXd plus_jacobian;
         if( !manifold )
         {
-          if( num_free_pars != num_pars )
+          if( num_tangent_pars != num_pars )
             throw std::logic_error( "No manifold, but tangent size != ambient size" );
           plus_jacobian = Eigen::MatrixXd::Identity(
-              static_cast<Eigen::Index>(num_pars),static_cast<Eigen::Index>(num_free_pars) );
+              static_cast<Eigen::Index>(num_pars),static_cast<Eigen::Index>(num_tangent_pars) );
         }else
         {
           const int amb_size = manifold->AmbientSize();
           const int tan_size = manifold->TangentSize();
           if( (static_cast<size_t>(amb_size) != num_pars)
-              || (static_cast<size_t>(tan_size) != num_free_pars) )
+              || (static_cast<size_t>(tan_size) != num_tangent_pars) )
             throw std::logic_error( "Manifold ambient/tangent size mismatch with Jacobian" );
 
           vector<double> plus_jac( static_cast<size_t>(amb_size)
@@ -9683,6 +10133,147 @@ struct RelActAutoCostFcn
               mapped_plus_jacobian( plus_jac.data(), amb_size, tan_size );
           plus_jacobian = mapped_plus_jacobian;
         }
+
+        // Two kinds of parameter leave the tangent space here, exactly as if held constant - no
+        //  variance, no degree of freedom spent, and the flat directions only they span are not
+        //  counted as rank deficiency - and are reported as pinned at a bound below:
+        //   - A mass-fraction block's carrier (the element's constrained total) sitting on a bound.
+        //     There the block's sequential decode leaves each other constrained nuclide's fraction
+        //     depending on the PRODUCT of its share and the total's excess over the bound, so the
+        //     two trade along a flat direction whenever the carrier nuclide itself is barely seen.
+        //     Which point of that flat direction the optimizer stopped at decided whether a fit was
+        //     called rank-deficient (TRelActCalcAuto_MultiCurve two_disk_default_seeding_reaches_truth
+        //     flipped on a 1E-9 perturbation of the path); the carrier is at a bound by construction,
+        //     as the candidate-search trigger above also recognizes.
+        //   - A nuclide whose fitted activity cannot be told from zero while another nuclide of the
+        //     same element on the same curve clearly is present: a trace isotope simply not in the
+        //     item.  Its activity slot goes, and its age when that is its own rather than the
+        //     element's shared one.  "Cannot be told from zero" uses the conditional uncertainty
+        //     (every other parameter held), the smallest the activity could have, so a borderline
+        //     line is never dismissed; a nuclide the data do not see at all (a zero column) is not
+        //     judged.
+        {
+          constexpr double absent_max_nsigma = 2.0;
+
+          const auto tangent_col = [&plus_jacobian]( const size_t ambient ) -> Eigen::Index {
+            if( ambient >= static_cast<size_t>(plus_jacobian.rows()) )
+              return -1;
+            for( Eigen::Index col = 0; col < plus_jacobian.cols(); ++col )
+            {
+              if( plus_jacobian( static_cast<Eigen::Index>(ambient), col ) != 0.0 )
+                return col;
+            }
+            return -1;
+          };//tangent_col
+
+          // A source's relative activity over the uncertainty it would have with every other
+          //  parameter held; infinite when that cannot be judged.
+          const auto activity_significance = [&]( const RelActCalcAuto::SrcVariant &src, const size_t curve,
+                                                  const size_t slot, const Eigen::Index col ) -> double {
+            vector<ceres::Jet<double,sm_auto_diff_stride_size>> x( begin(parameters), end(parameters) );
+            x[slot].v[0] = 1.0;
+            const ceres::Jet<double,sm_auto_diff_stride_size> activity
+                                                    = cost_functor->relative_activity( src, curve, x );
+            const double col_norm = jacobian.col( col ).norm();
+            if( !(col_norm > 0.0) || !(std::fabs(activity.v[0]) > 0.0) || !std::isfinite(activity.a) )
+              return std::numeric_limits<double>::infinity();
+            return activity.a * col_norm / std::fabs( activity.v[0] );
+          };//activity_significance
+
+          vector<Eigen::Index> absent_cols;
+
+          // Carriers on a bound; the same tolerance as the post-fit at-bound flag.
+          for( const vector<MassFracBlock> &curve_blocks : cost_functor->m_mass_frac_blocks )
+          {
+            for( const MassFracBlock &block : curve_blocks )
+            {
+              const size_t par = block.carrier_par;
+              const Eigen::Index col = tangent_col( par );
+              if( (col < 0) || (par >= lower_bounds.size()) || (par >= upper_bounds.size())
+                  || !lower_bounds[par] || !upper_bounds[par] || !(*upper_bounds[par] > *lower_bounds[par]) )
+                continue;
+
+              const double tol = 1.0e-3*(*upper_bounds[par] - *lower_bounds[par]);
+              if( ((parameters[par] - *lower_bounds[par]) <= tol) || ((*upper_bounds[par] - parameters[par]) <= tol) )
+              {
+                absent_source_par[par] = 1;
+                absent_cols.push_back( col );
+              }
+            }//for( const MassFracBlock &block : curve_blocks )
+          }//for( loop over curves' mass-fraction blocks )
+
+          for( size_t curve = 0; curve < cost_functor->m_options.rel_eff_curves.size(); ++curve )
+          {
+            const RelActCalcAuto::RelEffCurveInput &curve_input = cost_functor->m_options.rel_eff_curves[curve];
+            const vector<RelActCalcAuto::NucInputInfo> &nucs = curve_input.nuclides;
+
+            // NaN: not judged - not a nuclide, held constant, or an element-total carrier slot.
+            vector<double> significance( nucs.size(), std::numeric_limits<double>::quiet_NaN() );
+            for( size_t i = 0; i < nucs.size(); ++i )
+            {
+              const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nucs[i].source );
+              if( !nuc )
+                continue;
+              const size_t slot = cost_functor->nuclide_parameter_index( nucs[i].source, curve );
+              const Eigen::Index col = tangent_col( slot );
+              const MassFracBlock * const block = cost_functor->mass_frac_block( nuc->atomicNumber, curve );
+              if( (col < 0) || (block && (block->carrier_par == slot)) )
+                continue;
+              significance[i] = activity_significance( nucs[i].source, curve, slot, col );
+            }//for( size_t i = 0; i < nucs.size(); ++i )
+
+            for( size_t i = 0; i < nucs.size(); ++i )
+            {
+              if( !(significance[i] < absent_max_nsigma) )
+                continue;
+
+              const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nucs[i].source );
+              bool element_present = false;
+              for( size_t j = 0; (j < nucs.size()) && !element_present; ++j )
+              {
+                const SandiaDecay::Nuclide * const other = RelActCalcAuto::nuclide( nucs[j].source );
+                element_present = (j != i) && other && (other->atomicNumber == nuc->atomicNumber)
+                                  && (significance[j] >= absent_max_nsigma);
+              }
+              if( !element_present )
+                continue;
+
+              const size_t slot = cost_functor->nuclide_parameter_index( nucs[i].source, curve );
+              absent_source_par[slot] = 1;
+              absent_cols.push_back( tangent_col( slot ) );
+
+              const Eigen::Index age_col = curve_input.nucs_of_el_same_age ? Eigen::Index(-1) : tangent_col( slot + 1 );
+              if( age_col >= 0 )
+              {
+                absent_source_par[slot + 1] = 1;
+                absent_cols.push_back( age_col );
+              }
+            }//for( size_t i = 0; i < nucs.size(); ++i )
+          }//for( loop over rel. eff. curves )
+
+          if( !absent_cols.empty() )
+          {
+            std::sort( begin(absent_cols), end(absent_cols) );
+            vector<Eigen::Index> kept;
+            for( Eigen::Index col = 0; col < jacobian.cols(); ++col )
+            {
+              if( !std::binary_search( begin(absent_cols), end(absent_cols), col ) )
+                kept.push_back( col );
+            }
+
+            Eigen::MatrixXd kept_jacobian( jacobian.rows(), static_cast<Eigen::Index>(kept.size()) );
+            Eigen::MatrixXd kept_plus_jacobian( plus_jacobian.rows(), static_cast<Eigen::Index>(kept.size()) );
+            for( size_t k = 0; k < kept.size(); ++k )
+            {
+              kept_jacobian.col( static_cast<Eigen::Index>(k) ) = jacobian.col( kept[k] );
+              kept_plus_jacobian.col( static_cast<Eigen::Index>(k) ) = plus_jacobian.col( kept[k] );
+            }
+            jacobian = std::move( kept_jacobian );
+            plus_jacobian = std::move( kept_plus_jacobian );
+          }//if( !absent_cols.empty() )
+        }
+
+        const size_t num_free_pars = static_cast<size_t>( jacobian.cols() );
 
         // Column-equilibrate (a zero-norm column has no gradient at all: fully unconstrained -
         //  zero variance, and counted as a degenerate direction).
@@ -10124,6 +10715,10 @@ struct RelActAutoCostFcn
           at_bound = (std::fabs(val - *hi) <= tol_frac*scale);
         }
 
+        // Held out of the rank analysis: a carrier on its bound, or a nuclide judged not present
+        //  (at its zero bound in effect, even a little above it).
+        at_bound = at_bound || (absent_source_par[i] != 0);
+
         if( at_bound )
         {
           solution.m_param_at_bound[i] = 1;
@@ -10283,6 +10878,10 @@ struct RelActAutoCostFcn
         {
           // Zero-amplitude placeholder peaks (from ROIs with no gammas in range) are expected
           if( removed_peak.amplitude() < 1.0 )
+            continue;
+
+          // Iodine escape companions carry no source by design (see Options::iodine_escape_peaks)
+          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_iodine_escape_label_prefix ) )
             continue;
 
           bool found_matching_floating_peak = false;
@@ -14586,6 +15185,21 @@ struct RelActAutoCostFcn
     
     vector<RelActCalcAuto::PeakDefImp<T>> &peaks = answer.peaks;
 
+    // The energy span the ROIs cover; lines outside it are left out unless
+    //  Options::model_lines_outside_roi_span.
+    double span_lower = -std::numeric_limits<double>::infinity();
+    double span_upper = std::numeric_limits<double>::infinity();
+    if( !m_options.model_lines_outside_roi_span && !m_energy_ranges.empty() )
+    {
+      span_lower = m_energy_ranges.front().lower_energy;
+      span_upper = m_energy_ranges.front().upper_energy;
+      for( const RoiRangeChannels &r : m_energy_ranges )
+      {
+        span_lower = std::min( span_lower, r.lower_energy );
+        span_upper = std::max( span_upper, r.upper_energy );
+      }
+    }//if( only lines within the ROI span )
+
     // Go through and create peaks based on rel act, eff, etc
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     {
@@ -14645,13 +15259,29 @@ struct RelActAutoCostFcn
           // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
           const NucInputGamma::EnergyYield &gamma = (*gammas)[gamma_index];
           const double energy = gamma.energy;
+          if( (energy < span_lower) || (energy > span_upper) )
+            continue;
+
+          // The line's iodine escape companions (see Options::iodine_escape_peaks), which can reach
+          // this ROI when the line itself does not.
+          double escape_fractions[2] = { 0.0, 0.0 };
+          if( m_options.iodine_escape_peaks
+             && std::binary_search( begin(src_info.escape_parent_energies), end(src_info.escape_parent_energies), energy ) )
+            PeakFitUtils::nai_iodine_escape_fractions( energy, escape_fractions[0], escape_fractions[1] );
+          const double escape_energies[2] = { energy - PeakFitUtils::sm_iodine_kalpha_escape_kev,
+                                              energy - PeakFitUtils::sm_iodine_kbeta_escape_kev };
+          bool escape_in_range[2] = { false, false };
+          for( size_t i = 0; i < 2; ++i )
+            escape_in_range[i] = (escape_fractions[i] > 0.0)
+                                 && (escape_energies[i] >= lower_mean) && (escape_energies[i] <= upper_mean);
 
           // Which lines this ROI integrates is decided here, from the peak-coverage limits
           // computed above for exactly this purpose ("what peaks might affect this ROI":
           // `missing_frac` of the peak area lies outside `max_nsigma`).  `energy` is the nominal
           // line energy - a fixed input - and `lower_mean`/`upper_mean` come from scalar parts, so
           // scalar and every Jet lane of one evaluation make the identical decision.
-          if( (energy < lower_mean) || (energy > upper_mean) )
+          const bool line_in_range = ((energy >= lower_mean) && (energy <= upper_mean));
+          if( !line_in_range && !escape_in_range[0] && !escape_in_range[1] )
             continue;
           T yield = T(gamma.yield);
           const size_t transition_index = gamma.transition_index;
@@ -14702,7 +15332,7 @@ struct RelActAutoCostFcn
                 const T par_value = x[m_add_br_uncert_start_index + range_index];
                 const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
 
-                // This parameter has a Ceres lower bound at exactly zero yield.  Do not clamp the
+                // This parameter has a Ceres lower bound at (by default exactly) zero yield.  Do not clamp the
                 // expression here: at equality, max(T(0), expression) selects the constant Jet and
                 // erases the feasible inward derivative that lets the solver leave the bound.
                 br_uncert_adj = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
@@ -14840,7 +15470,30 @@ struct RelActAutoCostFcn
           //if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
           //  continue;
 
-          peaks.push_back( std::move(peak) );
+          // Escape companions: the line's own amplitude times a fixed fraction, at the width of the
+          //  energy actually deposited.  No channel-count check - they add no width freedom.
+          for( size_t i = 0; i < 2; ++i )
+          {
+            if( !escape_in_range[i] )
+              continue;
+
+            RelActCalcAuto::PeakDefImp<T> escape = peak;
+            escape.m_mean = apply_energy_cal_adjustment( escape_energies[i], x, cached_splines );
+            escape.m_sigma = fwhm( T(escape_energies[i]), x ) / 2.35482;
+            escape.m_amplitude = peak_amplitude * escape_fractions[i];
+            escape.m_is_iodine_escape = true;
+            set_peak_skew( escape, x );
+
+            if( isinf(escape.m_sigma) || isnan(escape.m_sigma) || (escape.m_sigma <= T(0.0))
+               || isinf(escape.m_amplitude) || isnan(escape.m_amplitude) )
+              throw runtime_error( "peaks_for_energy_range_imp: invalid escape peak for "
+                                  + std::to_string(gamma.energy) + " keV gamma." );
+
+            peaks.push_back( std::move(escape) );
+          }//for( the K-alpha and K-beta escapes )
+
+          if( line_in_range )
+            peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
       }//for( const NucInputGamma &src_info : m_nuclides )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -15221,7 +15874,18 @@ struct RelActAutoCostFcn
         }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
-      if( comp_peak.m_parent_nuclide )
+      if( comp_peak.m_is_iodine_escape )
+      {
+        // The detector's peak, not a line of the source; name the line it escaped from.
+        std::string parent = comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol : std::string();
+        if( !comp_peak.m_parent_nuclide && comp_peak.m_xray_element )
+          parent = comp_peak.m_xray_element->symbol + " x-ray";
+        else if( !comp_peak.m_parent_nuclide && comp_peak.m_reaction )
+          parent = comp_peak.m_reaction->name();
+        char energy_str[32];
+        snprintf( energy_str, sizeof(energy_str), " %.1f keV", comp_peak.m_src_energy );
+        peak.setUserLabel( RelActCalcAuto::Options::sm_iodine_escape_label_prefix + parent + energy_str );
+      }else if( comp_peak.m_parent_nuclide )
       {
         peak.setNuclearTransition( comp_peak.m_parent_nuclide, comp_peak.m_transition,
                                   static_cast<int>(comp_peak.m_rad_particle_index), comp_peak.m_gamma_type );
@@ -17370,6 +18034,21 @@ NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const Re
     
   assert( cost_fcn );
   nominal_gammas = cost_fcn->decay_gammas( info, info.age, gammas_to_exclude );
+
+  if( cost_fcn->m_options.iodine_escape_peaks && nominal_gammas )
+  {
+    double max_yield = 0.0;
+    for( const EnergyYield &gamma : *nominal_gammas )
+      max_yield = std::max( max_yield, gamma.yield );
+    for( const EnergyYield &gamma : *nominal_gammas )
+    {
+      double kalpha = 0.0, kbeta = 0.0;
+      PeakFitUtils::nai_iodine_escape_fractions( gamma.energy, kalpha, kbeta );
+      if( (kalpha > 0.0) && (gamma.yield >= PeakFitUtils::sm_iodine_escape_min_relative_yield*max_yield) )
+        escape_parent_energies.push_back( gamma.energy );
+    }
+    std::sort( begin(escape_parent_energies), end(escape_parent_energies) );
+  }//if( model iodine escape peaks )
 }//NucInputGamma constructor
 
 }//namespace RelActCalcAutoImp
@@ -17808,6 +18487,7 @@ const char *to_str( const FwhmForm form )
     case FwhmForm::Berstein_4:    return "Berstein_4";
     case FwhmForm::Berstein_5:    return "Berstein_5";
     case FwhmForm::Berstein_6:    return "Berstein_6";
+    case FwhmForm::NoisePlusCurvedPower: return "NoisePlusCurvedPower";
     case FwhmForm::NotApplicable: return "NotApplicable";
   }//switch( form )
   
@@ -18032,6 +18712,9 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
     case RelActCalcAuto::FwhmForm::Berstein_6:
       // Handle Berstein polynomials directly without using fctntype
       return bersteinPeakResolutionFWHM( energy, pars, num_pars );
+
+    case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+      return RelActCalcAutoImp::noise_curved_power_fwhm( energy, pars, num_pars );
 
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( drf && drf->isValid() && drf->hasResolutionInfo() );
@@ -18575,6 +19258,8 @@ bool Options::operator==( const Options &rhs ) const
   return (energy_cal_type == rhs.energy_cal_type)
     && (fwhm_form == rhs.fwhm_form)
     && (fwhm_estimation_method == rhs.fwhm_estimation_method)
+    && (starting_fwhm_form == rhs.starting_fwhm_form)
+    && (starting_fwhm_coefficients == rhs.starting_fwhm_coefficients)
     && (spectrum_title == rhs.spectrum_title)
     && (foreground_filename == rhs.foreground_filename)
     && (background_filename == rhs.background_filename)
@@ -18582,7 +19267,12 @@ bool Options::operator==( const Options &rhs ) const
     && (background_sample_numbers == rhs.background_sample_numbers)
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
+    && (iodine_escape_peaks == rhs.iodine_escape_peaks)
+    && (model_lines_outside_roi_span == rhs.model_lines_outside_roi_span)
     && (additional_br_uncert == rhs.additional_br_uncert)
+    && (additional_br_min_yield_fraction == rhs.additional_br_min_yield_fraction)
+    && (fwhm_max_ratio_to_start == rhs.fwhm_max_ratio_to_start)
+    && (fwhm_channel_floor_factor == rhs.fwhm_channel_floor_factor)
     && (auto_profile_weak_mass_fractions == rhs.auto_profile_weak_mass_fractions)
     && (robust_solve == rhs.robust_solve)
     && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
@@ -19732,11 +20422,25 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
 
   const char *fwhm_form_str = to_str( fwhm_form );
   auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
-  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6" );
+  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6, NoisePlusCurvedPower" );
   
   const char *fwhm_estimation_method_str = to_str( fwhm_estimation_method );
   auto fwhm_estimation_method_node = append_string_node( base_node, "FwhmEstimationMethod", fwhm_estimation_method_str );
   append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
+
+  if( (starting_fwhm_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+      && !starting_fwhm_coefficients.empty() )
+  {
+    string coefs;
+    for( size_t i = 0; i < starting_fwhm_coefficients.size(); ++i )
+    {
+      char buffer[32];
+      snprintf( buffer, sizeof(buffer), "%s%.9g", (i ? " " : ""), starting_fwhm_coefficients[i] );
+      coefs += buffer;
+    }
+    append_string_node( base_node, "StartingFwhmForm", std::to_string( static_cast<int>(starting_fwhm_form) ) );
+    append_string_node( base_node, "StartingFwhmCoefficients", coefs );
+  }
 
   append_string_node( base_node, "Title", spectrum_title );
 
@@ -19799,8 +20503,18 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   }
 
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
+  if( iodine_escape_peaks )
+    append_bool_node( base_node, "IodineEscapePeaks", iodine_escape_peaks );
+  if( !model_lines_outside_roi_span )
+    append_bool_node( base_node, "ModelLinesOutsideRoiSpan", model_lines_outside_roi_span );
 
   append_float_node( base_node, "AddUncert", additional_br_uncert );
+  if( additional_br_min_yield_fraction > 0.0 )
+    append_float_node( base_node, "AddUncertMinYieldFraction", additional_br_min_yield_fraction );
+  if( fwhm_max_ratio_to_start > 0.0 )
+    append_float_node( base_node, "FwhmMaxRatioToStart", fwhm_max_ratio_to_start );
+  if( fwhm_channel_floor_factor != 1.25 )
+    append_float_node( base_node, "FwhmChannelFloorFactor", fwhm_channel_floor_factor );
 
   if( !auto_profile_weak_mass_fractions )
     append_bool_node( base_node, "AutoProfileWeakMassFractions", false );
@@ -19920,6 +20634,23 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       fwhm_estimation_method = FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
     }
 
+    starting_fwhm_form = DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
+    starting_fwhm_coefficients.clear();
+    const rapidxml::xml_node<char> *seed_form_node = XML_FIRST_NODE( parent, "StartingFwhmForm" );
+    const rapidxml::xml_node<char> *seed_coef_node = XML_FIRST_NODE( parent, "StartingFwhmCoefficients" );
+    if( seed_form_node && seed_coef_node )
+    {
+      const int form_int = std::stoi( SpecUtils::xml_value_str( seed_form_node ) );
+      vector<float> coefs;
+      SpecUtils::split_to_floats( SpecUtils::xml_value_str( seed_coef_node ), coefs );
+      if( (form_int >= 0) && (form_int < static_cast<int>(DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm))
+          && !coefs.empty() )
+      {
+        starting_fwhm_form = static_cast<DetectorPeakResponse::ResolutionFnctForm>( form_int );
+        starting_fwhm_coefficients = coefs;
+      }
+    }//if( a starting FWHM curve was written )
+
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
 
@@ -20016,6 +20747,31 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       lorentzian_xrays = false;
     }
+
+    // iodine_escape_peaks added 20260923; optional, defaults to false
+    iodine_escape_peaks = false;
+    if( XML_FIRST_NODE(parent, "IodineEscapePeaks") )
+      iodine_escape_peaks = get_bool_node_value( parent, "IodineEscapePeaks" );
+
+    // model_lines_outside_roi_span added 20260923; optional, defaults to true
+    model_lines_outside_roi_span = true;
+    if( XML_FIRST_NODE(parent, "ModelLinesOutsideRoiSpan") )
+      model_lines_outside_roi_span = get_bool_node_value( parent, "ModelLinesOutsideRoiSpan" );
+
+    // additional_br_min_yield_fraction added 20260923; optional, defaults to zero
+    additional_br_min_yield_fraction = 0.0;
+    if( XML_FIRST_NODE(parent, "AddUncertMinYieldFraction") )
+      additional_br_min_yield_fraction = std::clamp( get_float_node_value( parent, "AddUncertMinYieldFraction" ), 0.0, 0.99 );
+
+    // fwhm_max_ratio_to_start added 20260926; optional, defaults to zero (no limit)
+    fwhm_max_ratio_to_start = 0.0;
+    if( XML_FIRST_NODE(parent, "FwhmMaxRatioToStart") )
+      fwhm_max_ratio_to_start = std::max( 0.0, static_cast<double>( get_float_node_value( parent, "FwhmMaxRatioToStart" ) ) );
+
+    // fwhm_channel_floor_factor added 20260926; optional, defaults to 1.25
+    fwhm_channel_floor_factor = 1.25;
+    if( XML_FIRST_NODE(parent, "FwhmChannelFloorFactor") )
+      fwhm_channel_floor_factor = std::max( 0.0, static_cast<double>( get_float_node_value( parent, "FwhmChannelFloorFactor" ) ) );
 
     // Additional uncertainty added 202250125, so we'll allow it to be missing.
     try
@@ -20261,6 +21017,7 @@ size_t num_parameters( const FwhmForm eqn_form )
     case FwhmForm::Berstein_4:    return 6;  // 4 Berstein coefficients + min_energy + max_energy
     case FwhmForm::Berstein_5:    return 7;  // 5 Berstein coefficients + min_energy + max_energy
     case FwhmForm::Berstein_6:    return 8;  // 6 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::NoisePlusCurvedPower: return 6;  // w0, w1, s_lo, s_hi + min_energy + max_energy
     case FwhmForm::NotApplicable: return 0;
   }//switch( m_options.fwhm_form )
   
@@ -20268,6 +21025,25 @@ size_t num_parameters( const FwhmForm eqn_form )
   throw runtime_error( "Invalid FwhmForm" );
   return 0;
 }//size_t num_parameters( const FwhmForm eqn_form )
+
+
+double eval_fwhm( const double energy, const FwhmForm form, const std::vector<double> &pars )
+{
+  if( form == FwhmForm::NotApplicable )
+    throw std::runtime_error( "eval_fwhm(): FwhmForm::NotApplicable needs a detector response." );
+  if( pars.size() != num_parameters(form) )
+    throw std::runtime_error( "eval_fwhm(): wrong number of parameters for the form." );
+  return eval_fwhm<double>( energy, form, pars.data(), pars.size(), nullptr );
+}//double eval_fwhm( energy, form, pars )
+
+
+std::vector<double> fit_noise_plus_curved_power( const std::vector<double> &energies,
+                                                 const std::vector<double> &fwhms,
+                                                 const double lower_energy,
+                                                 const double upper_energy )
+{
+  return RelActCalcAutoImp::fit_noise_curved_power( energies, fwhms, lower_energy, upper_energy );
+}//fit_noise_plus_curved_power(...)
 
 RelEffCurveInput::RelEffCurveInput()
 : nuclides{},
@@ -21270,11 +22046,18 @@ Options::Options()
 : energy_cal_type( RelActCalcAuto::EnergyCalFitType::NonLinearFit ),
   fwhm_form( FwhmForm::Polynomial_2 ),
   fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
+  starting_fwhm_form( DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ),
+  starting_fwhm_coefficients{},
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
   skew_prefs_usage( SkewPrefsUsage::Ignore ),
   lorentzian_xrays( false ),
+  iodine_escape_peaks( false ),
+  model_lines_outside_roi_span( true ),
   additional_br_uncert( 0.0 ),
+  additional_br_min_yield_fraction( 0.0 ),
+  fwhm_max_ratio_to_start( 0.0 ),
+  fwhm_channel_floor_factor( 1.25 ),
   auto_profile_weak_mass_fractions( true ),
   robust_solve( false ),
   rel_eff_curves{},
@@ -21683,8 +22466,19 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
                      : "Δχ² ≫ Δdof: one merged curve cannot describe this data - note this says more"
                        " than one curve is needed, not that the per-curve split is well determined"))
             << ").\n";
-        if( !merged.message.empty() )
+        if( !SpecUtils::trim_copy(merged.message).empty() )
           out << "    Note: " << merged.message << "\n";
+        // Without this the "more than one curve is needed" clause above sits next to a
+        //  "not distinguished" headline and reads as a contradiction: the merged delta-chi2 can be
+        //  arbitrarily large while some other criterion (an uncorroborated marginal tie, a
+        //  not-rejected tie on a stacked geometry) is what decides the verdict.  Mirrors the same
+        //  guard in the report templates.
+        //  Only on the "raises chi2" branch: the merged_better sentence reports a FIT DEFECT, not a
+        //  "more than one curve is needed" claim, so there is no contradiction there to explain.
+        const string none_reason = (merged_better || merged.single_curve_adequate)
+                                   ? string() : distinct_basis_none_reason();
+        if( !none_reason.empty() )
+          out << "    Note: this did not on its own establish two curves - " << none_reason << ".\n";
       }else
       {
         out << "  Single-curve comparison: not available (" << merged.message << ").\n";
@@ -22466,8 +23260,15 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
                        " note this says more than one curve is needed, not that the per-curve split is"
                        " well determined"))
             << ").";
-          if( !merged.message.empty() )
+          if( !SpecUtils::trim_copy(merged.message).empty() )
             results_html << " Note: " << merged.message << ".";
+          // Same anti-contradiction note as print_summary() and the report templates - including
+          //  the merged_better exclusion (that branch reports a fit defect, not a two-curve claim).
+          const string none_reason = (merged_better || merged.single_curve_adequate)
+                                     ? string() : distinct_basis_none_reason();
+          if( !none_reason.empty() )
+            results_html << " Note: this did not on its own establish two curves - " << none_reason
+                         << ".";
           results_html << "</div>\n";
         }else
         {
@@ -24567,7 +25368,7 @@ void RelActAutoSolution::compute_curve_separation_metrics()
               //  an activity (see the block setup and the ROI warm transfer, which both special-case
               //  it).  The correlation is still a real statement about how the two curves trade this
               //  source off, so report it - but do not label it "Act(...)", which reads as an
-              //  activity correlation.  The shipped "HPGe U inside U" preset constrains three
+              //  activity correlation.  The shipped "Multi-enrich U - back higher" preset constrains three
               //  nuclides, so this is the two-disk fixture's normal case, not a corner.
               const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide( src_curve.first );
               const auto is_mass_constrained = [&]( const size_t curve_index ) -> bool {
@@ -24932,6 +25733,34 @@ std::string RelActAutoSolution::z_row_annotation( const EnrichmentDiffZ &diff ) 
 
 std::string RelActAutoSolution::curve_separation_trigger_text() const
 {
+  // A self-atten AD railed near the physical ceiling is the most specific/actionable diagnosis: an
+  //  unconstrained shield absorbing the free composition parameters rather than a genuine second curve.
+  for( size_t re = 0; re < m_phys_model_results.size(); ++re )
+  {
+    if( !self_atten_ad_railed( re ) )
+      continue;
+
+    const double ad_g_per_cm2 = m_phys_model_results[re]->self_atten->areal_density
+                                / PhysicalUnits::g_per_cm2;
+    return "the self-attenuation areal density of " + curve_label(re) + " is railed to an unphysical "
+           + SpecUtils::printCompact(ad_g_per_cm2, 4) + " g/cm2 (physical ceiling "
+           + SpecUtils::printCompact(
+               RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2, 4)
+           + " g/cm2), i.e. an unconstrained shield absorbing the free composition parameters rather"
+             " than a genuine second curve, so no separation statistic from this fit is usable";
+  }//for( each curve )
+
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged )
+    return "the fits are not mutually consistent - constraining the curves to a common enrichment"
+           " gave a HIGHER chi2 ("
+           + SpecUtils::printCompact(m_tied_enrichment_comparison->tied_chi2_data, 6)
+           + ") than merging them into a single curve ("
+           + SpecUtils::printCompact(m_merged_single_curve_comparison.has_value()
+                        ? m_merged_single_curve_comparison->merged_chi2_data : 0.0, 6)
+           + "), which cannot happen at a proper solution, so at least one of these fits did not"
+             " reach its optimum and no separation statistic from them is usable";
+
   if( poor_fit_quality() )
     return "the fit does not describe the data (weighted R" + string("\xc2\xb2") + " = "
            + SpecUtils::printCompact(m_r2, 3) + "), so no per-curve result from it is meaningful -"
@@ -25118,6 +25947,19 @@ void RelActAutoSolution::finalize_curve_separation_status()
   //  so a fit sitting on an irreducible model-error floor (every chi2 difference inflated by that
   //  factor) is not misread as demanding multiple curves: e.g. an equal-enrichment stacked pair at
   //  chi2/dof 4.1 measured delta-chi2 = 30 for 3 extra DOF, which is "comparable" once scaled.
+  // The direct composition test, when available (see `TiedEnrichmentComparison`): "one common
+  //  enrichment describes this data about as well".  Same 3-sigma-scaled bar as below.
+  if( m_tied_enrichment_comparison.has_value() && m_tied_enrichment_comparison->valid )
+  {
+    const double extra_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+    const double model_error_scale = (m_dof_data > 0)
+              ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+    m_tied_enrichment_comparison->common_enrichment_adequate
+        = (m_tied_enrichment_comparison->delta_chi2 >= 0.0)
+          && (m_tied_enrichment_comparison->delta_chi2
+                <= model_error_scale*(extra_dof + 3.0*std::sqrt(2.0*extra_dof)) );
+  }
+
   bool single_curve_adequate = false;
   if( m_merged_single_curve_comparison.has_value() && m_merged_single_curve_comparison->valid )
   {
@@ -25138,6 +25980,8 @@ void RelActAutoSolution::finalize_curve_separation_status()
   const bool gauge_flag = (rank_deficient || huge_kappa);
   const bool merged_valid = (m_merged_single_curve_comparison.has_value()
                              && m_merged_single_curve_comparison->valid);
+  const bool tied_valid = (m_tied_enrichment_comparison.has_value()
+                           && m_tied_enrichment_comparison->valid);
 
   // Detection tier FIRST: when the data clearly shows the curves differ (enrichment-difference
   //  z >= 3 that the merged-curve comparison does not overrule, or - for disjoint-nuclide configs
@@ -25152,17 +25996,25 @@ void RelActAutoSolution::finalize_curve_separation_status()
     m_curve_separation_status = (unanchored_curve || gauge_flag)
                                   ? CurveSeparationStatus::PoorlySeparated
                                   : CurveSeparationStatus::WellSeparated;
-  }else if( merged_valid )
+  }else if( merged_valid || tied_valid )
   {
-    if( single_curve_adequate && (gauge_flag || blended_source || (max_corr > 0.95)) )
+    // Which "the data is consistent with one material" signal to believe.  The tied-enrichment test
+    //  when it exists: it differs from the fitted model only by forcing a common enrichment, so it
+    //  answers the physical question directly, whereas the merged comparison also pays for
+    //  collapsing two curve shapes into one and is inflated by model error at high statistics.
+    const bool one_material_adequate = tied_valid
+        ? m_tied_enrichment_comparison->common_enrichment_adequate
+        : single_curve_adequate;
+
+    if( one_material_adequate && (gauge_flag || blended_source || (max_corr > 0.95)) )
       m_curve_separation_status = CurveSeparationStatus::Degenerate;
     else if( unanchored_curve || (gauge_flag && (max_corr > 0.95)) )
       m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
     else
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
-    // Note: `single_curve_adequate` with clean shares/conditioning stays WellSeparated - per-curve
-    //  values are individually anchored; the "consistent with a single curve" answer is carried as
-    //  a note in curve_separation_verdict(), not as a downgraded status.
+    // Note: adequacy with clean shares/conditioning stays WellSeparated - per-curve values are
+    //  individually anchored; the "consistent with a single material" answer is carried as a note
+    //  in curve_separation_verdict(), not as a downgraded status.
   }else
   {
     // Merged comparison unavailable: the pre-comparison fallback rule.
@@ -25173,6 +26025,31 @@ void RelActAutoSolution::finalize_curve_separation_status()
     else
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
   }
+
+  // Same idea as the poor-fit floor below, but for a different failure: the tied fit could not even
+  //  reach the merged fit's chi2, so the three nested models disagree about their own ordering.  No
+  //  per-curve statement from that set is supportable.
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged
+      && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
+    m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
+
+  // The plain nesting violation: a model NESTED inside the two-curve fit (the merged single curve, or
+  //  the common-enrichment tie) reached a strictly lower data chi2.  That cannot happen at a proper
+  //  optimum - the two-curve fit contains both as special cases - so the two-curve fit did not reach
+  //  its own optimum and no per-curve statement it makes is trustworthy.  A rescue is attempted
+  //  earlier (add_merged/tied_..._comparison); if a negative delta still stands here, the rescue did
+  //  not recover it, so the status must not read "well separated".  Distinct from the flag above:
+  //  that one is tied-vs-merged (two nulls disagreeing); this one is null-vs-free (a null beating the
+  //  model that contains it).  Guarded on `valid` so a merge that legitimately gained freedom - where
+  //  a negative delta can be honest - does not trip it.
+  const auto null_beats_free = []( const auto &comparison ) -> bool {
+    return comparison.has_value() && comparison->valid && (comparison->delta_chi2 < 0.0);
+  };
+  if( (null_beats_free(m_merged_single_curve_comparison)
+       || null_beats_free(m_tied_enrichment_comparison))
+      && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
+    m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
 
   // A fit that does not describe the data cannot support ANY confident statement about the curves -
   //  neither "per-curve results can be used with their reported uncertainties" nor "consistent with a
@@ -25226,6 +26103,15 @@ void RelActAutoSolution::finalize_curve_separation_status()
       {
         case CurveDistinctBasis::None:
           warning += "not well separated by this data (";
+          break;
+
+        case CurveDistinctBasis::TiedEnrichment:
+          warning += "genuinely distinct: forcing them to a single common enrichment fits this data"
+                     " significantly worse (chi2 rises by "
+                     + (m_tied_enrichment_comparison
+                          ? SpecUtils::printCompact(m_tied_enrichment_comparison->delta_chi2, 4)
+                          : string("?"))
+                     + "), but per-curve values partly rest on the fit's division of shared peaks (";
           break;
 
         case CurveDistinctBasis::ZScore:
@@ -25313,6 +26199,104 @@ bool RelActAutoSolution::merged_overrules_z_detection() const
 }//bool merged_overrules_z_detection() const
 
 
+bool RelActAutoSolution::self_atten_ad_railed( const size_t rel_eff_index ) const
+{
+  // Genuine front-higher two-curve detections keep max self-atten AD <= ~10 g/cm2; a value pushed to
+  //  a large fraction of the physical ceiling is the fit absorbing a free composition DOF in an
+  //  unphysical shield (e.g. an Outer U232 with nothing to explain driving the Inner shield to 376 of
+  //  500 g/cm2 on a single natural-U disk), not a real second curve.  A VALUE test is used
+  //  deliberately, NOT `m_param_at_bound`: the solver's at-bound tolerance is ~0.5 g/cm2, so a shield
+  //  that flattens the objective short of the ceiling is never flagged at-bound yet is every bit as
+  //  unphysical - and this test needs no fit layout, so it also holds on a merged/tied re-fit and in
+  //  unit tests.
+  static constexpr double sm_railed_self_atten_ad_fraction = 0.5;
+
+  if( rel_eff_index >= m_phys_model_results.size() )
+    return false;
+
+  const std::optional<PhysicalModelFitInfo> &phys = m_phys_model_results[rel_eff_index];
+  if( !phys.has_value() || !phys->self_atten.has_value() )
+    return false;
+
+  // Compare against the bound this shield was ACTUALLY fit against, not the global ceiling: a user
+  //  may set `upper_fit_areal_density` per shield (RelActCalc.h), and the global default only applies
+  //  when both bounds are left at zero (see the AD setup in setup_physical_model_shield_par).  Using
+  //  the global 500 would never flag a fit railed against a user-set bound of, say, 20 g/cm2, and
+  //  would flag a legitimately thick shield in a config whose ceiling really is 500.
+  double ceiling
+      = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+  if( rel_eff_index < m_options.rel_eff_curves.size() )
+  {
+    const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+        = m_options.rel_eff_curves[rel_eff_index].phys_model_self_atten;
+    if( shield )
+    {
+      const double lower_ad = shield->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+      const double upper_ad = shield->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+      if( (upper_ad > 0.0) && (upper_ad != lower_ad) )
+        ceiling = upper_ad;
+    }
+  }
+
+  const PhysicalModelFitInfo::ShieldInfo &self_atten = *phys->self_atten;
+  if( !self_atten.areal_density_was_fit )
+    return false;
+
+  const double ad_g_per_cm2 = self_atten.areal_density / PhysicalUnits::g_per_cm2;
+
+  return (ad_g_per_cm2 >= sm_railed_self_atten_ad_fraction*ceiling);
+}//bool self_atten_ad_railed( const size_t rel_eff_index ) const
+
+
+bool RelActAutoSolution::detection_rests_on_railed_self_atten() const
+{
+  for( size_t re = 0; re < m_phys_model_results.size(); ++re )
+  {
+    if( self_atten_ad_railed( re ) )
+      return true;
+  }
+
+  return false;
+}//bool detection_rests_on_railed_self_atten() const
+
+
+bool RelActAutoSolution::tie_marginal_and_uncorroborated() const
+{
+  if( !m_tied_enrichment_comparison.has_value() || !m_tied_enrichment_comparison->valid
+      || !m_merged_single_curve_comparison.has_value() || !m_merged_single_curve_comparison->valid )
+    return false;
+
+  const double scale = (m_dof_data > 0)
+            ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+
+  const double tied_delta = m_tied_enrichment_comparison->delta_chi2;
+  const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+  const bool marginal = (tied_delta >= 0.0)
+            && (tied_delta > scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof)))
+            && (tied_delta < scale*(tied_dof + 5.0*std::sqrt(2.0*tied_dof)));
+  if( !marginal )
+    return false;
+
+  const double merged_delta = m_merged_single_curve_comparison->delta_chi2;
+
+  // A negative merged delta means the multi-curve fit never reached its own optimum (merging only
+  //  removes freedom), so the merged comparison is evidence of a BAD FIT, not of sameness - the same
+  //  doctrine merged_overrules_z_detection() states explicitly.  Letting it count as "failed to
+  //  corroborate" would let a defective merged fit veto the tie by omission, which is exactly the
+  //  sign-convention error that doctrine exists to prevent.  Not reachable on the current corpus
+  //  under the assigned configs, but the rule has to be right, not merely unexercised.
+  if( merged_delta < 0.0 )
+    return false;
+
+  const double merged_dof
+            = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
+  const bool corroborated
+            = (merged_delta >= scale*(merged_dof + 5.0*std::sqrt(2.0*merged_dof)));
+
+  return !corroborated;
+}//bool tie_marginal_and_uncorroborated() const
+
+
 RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis() const
 {
   // See the header doc for the three-tier rule.  The delta-chi2 thresholds are scaled by
@@ -25328,6 +26312,77 @@ RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis
     max_z = (std::max)( max_z, diff.z );
   }
 
+  // Tier 0: the tied-enrichment likelihood ratio, when it could be computed.  This is the only
+  //  statistic here that isolates the physical question: the tied model differs from the fitted one
+  //  ONLY by forcing a common enrichment, so the model error both carry cancels in the difference
+  //  (see the TiedEnrichmentComparison doc in RelActCalcAuto.h for the grid that established this).
+  //  It takes precedence over the merged comparison in BOTH directions - it can detect where the
+  //  merged test is silent, and its "one composition describes this data" answer overrules a merged
+  //  Δχ2 that only reflects the second curve soaking up model error.
+  const double model_error_scale = (m_dof_data > 0)
+            ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+
+  // A detection resting on a self-atten areal density railed to an unphysically large value is the
+  //  fit soaking up a free composition DOF (e.g. an Outer U232 with nothing to explain driving the
+  //  Inner shield to 376 of 500 g/cm2 on a single natural-U disk), not evidence of a second curve.
+  //  Runs before every tier - including the Tier-0 tied accept below - because the railed shield
+  //  corrupts the tied, merged and per-curve-composition statistics alike.
+  if( detection_rests_on_railed_self_atten() )
+    return CurveDistinctBasis::None;
+
+  // A tied fit that could not reach the merged fit's chi2 has valid==false and inconsistent==true set
+  //  together (see add_tied_enrichment_comparison), so the Tier-0 tied block below is skipped and its
+  //  untrustworthy delta-chi2 is never used.  We deliberately DO NOT return None here: a detection may
+  //  still stand on the SEPARATELY-NULLED merged-curve comparison (Tiers 2-3, which require
+  //  delta_chi2 >= 0 above their bar) or a reliable z (Tier 1) - evidence the bad tie does not taint.
+  //  finalize_curve_separation_status() still downgrades such a solution to PoorlySeparated.
+
+  const bool tied_valid = (m_tied_enrichment_comparison.has_value()
+                           && m_tied_enrichment_comparison->valid);
+  if( tied_valid )
+  {
+    const double tied_delta = m_tied_enrichment_comparison->delta_chi2;
+    const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+    // A negative delta means the tied (restricted) fit beat the free one, i.e. the free fit is not
+    //  at its optimum - never a detection.
+    // A tied delta-chi2 only just over the 3-sigma bar is not, on its own, enough: with 2 extra DOF
+    //  that bar sits at chi2 ~8, and a two-curve fit of a SINGLE disk clears it on noise alone
+    //  (measured: 10.5-24.0 on four homogeneous/single-disk spectra, versus 10.9 for the weakest
+    //  genuine two-disk detection - the two populations are inseparable on this axis).  The merged
+    //  single-curve comparison nulls something DIFFERENT (one curve AND one composition), and inside
+    //  this marginal band it does discriminate: measured on the 80-file corpus, the false positives
+    //  sit at merged 3.56/4.28/4.41 sigma while the genuine pair sits at 18.93.  So a MARGINAL tie
+    //  must be corroborated by the merged test, at the same 5-sigma bar Tier 3 uses.
+    //  Not an independent test - both deltas share the free-fit chi2 (corpus r ~ 0.65) - so the
+    //  justification is the measured separation in this band, not an independence argument.  Outside
+    //  the band the merged axis does NOT cleanly separate (an FP reaches 49.3 on a bad basin, and
+    //  --robust-solve is what fixes that one), which is exactly why the rule is scoped to it.
+    //
+    //  Scoped to marginal ties on purpose: at or above 5 sigma the tied statistic keeps the
+    //  standalone precedence documented above (it must, since it detects where the merged test is
+    //  silent), and when no valid merged comparison exists the tie is all there is, so it stands.
+    if( (tied_delta >= 0.0) && !tie_marginal_and_uncorroborated()
+        && (tied_delta > model_error_scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof))) )
+      return CurveDistinctBasis::TiedEnrichment;
+
+    // An uncorroborated marginal tie only declines the Tier-0 ACCEPT rather than returning None, so
+    //  the independent tiers below can still stand on their own evidence - the same reasoning that
+    //  removed the blunt inconsistent-with-merged veto above.  (For a STACKED geometry the
+    //  short-circuit just below ends the question first, which is intended: that is the geometry
+    //  where the false positives live, and where equal composition really does mean one layer.)
+
+    // "Same composition" ends the question only for a STACKED geometry, where same-material layers
+    //  are exactly one thicker layer and there is nothing left to detect.  For co-located or
+    //  side-by-side objects, two bodies of equal enrichment that differ in size or shielding are
+    //  still two bodies - the user's stated second use case - and the merged single-curve test is
+    //  what sees that.  So fall through to the tiers below rather than short-circuiting.
+    bool stacked = false;
+    for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
+      stacked = (stacked || !curve.shielded_by_other_phys_model_curve_shieldings.empty());
+    if( stacked )
+      return CurveDistinctBasis::None;
+  }//if( the tied-enrichment comparison is available )
+
   // Tier 1: a clear composition detection on its own.
   if( have_reliable_z && (max_z >= 3.0) && !merged_overrules_z_detection() )
     return CurveDistinctBasis::ZScore;
@@ -25337,8 +26392,6 @@ RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis
 
   const double delta_chi2 = m_merged_single_curve_comparison->delta_chi2;
   const double extra_dof = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
-  const double model_error_scale = (m_dof_data > 0)
-            ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
 
   // Tier 2: single-curve model rejected (the same 3-sigma-scaled bar `single_curve_adequate` uses,
   //  computed here so this function does not depend on finalize_curve_separation_status() having
@@ -25367,12 +26420,125 @@ bool RelActAutoSolution::curves_detected_distinct() const
 }//bool curves_detected_distinct()
 
 
+std::string RelActAutoSolution::distinct_basis_none_reason() const
+{
+  // Empty when the curves WERE detected as distinct - the reason column only explains a None.
+  if( curves_distinct_basis() != CurveDistinctBasis::None )
+    return std::string();
+
+  // The railed self-atten AD is the most specific cause; curve_separation_trigger_text() already
+  //  leads with it, so reuse that single source rather than re-wording here.
+  if( detection_rests_on_railed_self_atten() )
+    return curve_separation_trigger_text();
+
+  // A tied fit that could not reach the merged fit's chi2 no longer hard-vetoes (Tiers 1-3 could
+  //  still fire on independent evidence); when none did, say so.
+  if( m_tied_enrichment_comparison.has_value()
+      && m_tied_enrichment_comparison->inconsistent_with_merged )
+    return "the common-enrichment (tied) fit was inconsistent with the merged single-curve fit, and"
+           " the independent merged/z evidence did not on its own support two curves";
+
+  // A marginal tied rejection (3 to 5 sigma) that the merged comparison declined to corroborate:
+  //  worth naming, because the tied delta-chi2 shown in the report DID clear its own 3-sigma bar,
+  //  which without this note reads as a contradiction.
+  if( tie_marginal_and_uncorroborated() )
+    return "the common-enrichment (tied) fit was rejected only marginally (between the 3- and"
+           " 5-sigma-scaled chi2 bars, not a p-value), and the independent merged single-curve fit"
+           " did not corroborate two curves - a two-curve fit of a single object can clear the"
+           " marginal tied bar on counting noise alone";
+
+  // The stacked short-circuit: for layers in a beam, one composition IS one layer, so a tied fit that
+  //  was not rejected ends the question no matter how large the merged delta-chi2 is.  Named because
+  //  that merged number is printed right above, and a large one next to a "not distinguished"
+  //  headline otherwise looks like the report disagreeing with itself.
+  const bool tied_valid = (m_tied_enrichment_comparison.has_value()
+                           && m_tied_enrichment_comparison->valid);
+  if( tied_valid )
+  {
+    bool stacked = false;
+    for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
+      stacked = (stacked || !curve.shielded_by_other_phys_model_curve_shieldings.empty());
+
+    if( stacked )
+    {
+      // A negative delta means the tied (restricted) fit beat the free one - a fit defect rather than
+      //  a statement about the data, so it is worth wording differently.
+      if( m_tied_enrichment_comparison->delta_chi2 < 0.0 )
+        return "the common-enrichment (tied) fit reached a LOWER chi2 than the free two-curve fit, so"
+               " the two-curve fit is not at its own optimum and no composition difference is"
+               " established; for stacked layers one composition means one layer";
+
+      // Saying "not rejected" here is only correct because of the checks ABOVE: a tie over the
+      //  3-sigma bar either passed the Tier-0 accept (so we are not in a None at all) or was marginal
+      //  and uncorroborated (returned by the clause above).  Exhaustively enumerated - there is no
+      //  reachable state that lands here with a rejected tie - so this is not re-tested against the
+      //  bar; a branch for it would be dead code.  The dev check pins the invariant instead, so a
+      //  future reorder of either this function or the Tier-0 block trips a developer build rather
+      //  than silently printing "not rejected" next to a tied delta-chi2 that cleared its own bar.
+#if( PERFORM_DEVELOPER_CHECKS )
+      {
+        const double tied_dof = (std::max)( m_tied_enrichment_comparison->extra_dof_of_free, 1 );
+        const double dev_scale = (m_dof_data > 0)
+                  ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
+        const double bar_3sigma = dev_scale*(tied_dof + 3.0*std::sqrt(2.0*tied_dof));
+        // log_developer_error() rather than a bare assert(): developer builds are compiled -DNDEBUG
+        //  (see the Release flags), which expands assert() to nothing, so an assert here would be a
+        //  no-op in exactly the builds meant to catch this.
+        if( m_tied_enrichment_comparison->delta_chi2 > bar_3sigma )
+        {
+          char buffer[256];
+          snprintf( buffer, sizeof(buffer), "distinct_basis_none_reason: about to report the tied fit"
+                    " as \"not rejected\", but its delta-chi2 (%.6g) is over the 3-sigma-scaled bar"
+                    " (%.6g) - the Tier-0 ordering this wording relies on has changed.",
+                    m_tied_enrichment_comparison->delta_chi2, bar_3sigma );
+          log_developer_error( __func__, buffer );
+        }
+      }
+#endif
+
+      return "the common-enrichment (tied) fit was not rejected: one composition describes this data,"
+             " and for stacked layers that means one layer - a merged single-curve chi2 penalty can"
+             " still be large because merging also removes the per-curve shielding freedom";
+    }//if( stacked )
+  }//if( tied_valid )
+
+  // Last cause: the merged fit WAS rejected at the 3-sigma-scaled bar (which is what makes the
+  //  "one merged curve cannot describe this data" clause print) but fell short of the higher
+  //  5-sigma-scaled bar Tier 3 demands when delta-chi2 is the only evidence.  Without this the
+  //  gap between the two bars yields a None with no reason at all, next to a large printed
+  //  delta-chi2 - the exact contradiction this accessor exists to prevent.
+  if( m_merged_single_curve_comparison.has_value() && m_merged_single_curve_comparison->valid
+      && !m_merged_single_curve_comparison->single_curve_adequate
+      && (m_merged_single_curve_comparison->delta_chi2 >= 0.0) )
+  {
+    const bool no_tie = !tied_valid;
+    return string("the merged single-curve fit was rejected, but not decisively enough to establish two"
+                  " curves on that evidence alone (it did not reach the higher bar required when the"
+                  " merged chi2 difference is the only evidence)")
+           + (no_tie ? ", and no common-enrichment (tied) comparison was available - this data does not"
+                       " determine a shared element's composition on every curve"
+                     : " and no per-curve composition difference corroborated it");
+  }
+
+  return std::string();
+}//std::string distinct_basis_none_reason() const
+
+
 const char *RelActAutoSolution::curve_separation_display() const
 {
   switch( m_curve_separation_status )
   {
     case CurveSeparationStatus::NotApplicable:   return "NotApplicable";
-    case CurveSeparationStatus::WellSeparated:   return "Separated";
+
+    // "Separated" alone is ambiguous, and measurably so: on the 2026-09 corpus this status covered
+    //  11 files where the curves WERE detected as distinct and 4 where they were not, under one
+    //  identical headline.  The status describes how well the per-curve values are determined; the
+    //  headline has to say what was actually concluded.
+    case CurveSeparationStatus::WellSeparated:
+      return curves_detected_distinct()
+               ? "Distinct curves - per-curve values usable"
+               : "Not distinguished (per-curve values still individually anchored)";
+
     case CurveSeparationStatus::PoorlySeparated:
       // A failed fit (R^2 floor, S4) forfeits the "distinct" label even when detection evidence
       //  exists - that evidence comes from the same fit the verdict declares meaningless.
@@ -25458,6 +26624,33 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
       case CurveDistinctBasis::None:
         break;
 
+      case CurveDistinctBasis::TiedEnrichment:
+      {
+        // The direct test: the same model, differing only in whether the curves must share one
+        //  enrichment.  Nothing else changes, so the rise in chi2 is the composition difference and
+        //  not the second curve absorbing model error.
+        const TiedEnrichmentComparison &tied = *m_tied_enrichment_comparison;
+        string tied_names;
+        for( const SrcVariant &src : tied.tied_sources )
+          tied_names += (tied_names.empty() ? "" : ", ") + RelActCalcAuto::to_name(src);
+
+        string txt = "The data shows the objects have different compositions: forcing every curve to"
+               " the same " + tied_names + "/" + RelActCalcAuto::to_name(tied.controlling_source)
+               + " ratio raises " + chi2_txt + " by "
+               + SpecUtils::printCompact(tied.delta_chi2, 4) + " for "
+               + std::to_string(tied.extra_dof_of_free) + " fewer effective parameters."
+               "  Unlike the single-curve comparison, this test changes nothing but the"
+               " enrichment - same curves, same shielding, same shape freedom - so it is not"
+               " inflated by overall model error.";
+        if( max_z_entry )
+          txt += "  Fitted values: " + RelActCalcAuto::to_name(max_z_entry->nuclide) + " = "
+                 + enrich_txt(max_z_entry->enrichment_a, max_z_entry->sigma_a) + " on "
+                 + curve_label(max_z_entry->curve_a) + " vs "
+                 + enrich_txt(max_z_entry->enrichment_b, max_z_entry->sigma_b) + " on "
+                 + curve_label(max_z_entry->curve_b) + ".";
+        return txt;
+      }//case CurveDistinctBasis::TiedEnrichment
+
       case CurveDistinctBasis::ZScore:
       {
         // max_z_entry is guaranteed non-null for this tier (a reliable z >= 3 exists).
@@ -25540,6 +26733,26 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
                                  " of its own best answer.  Treat the per-curve split as unreliable"
                                  " and re-fit (e.g. from different starting values) before using it.";
 
+  // Appended where the curves were NOT detected as distinct but a delta-chi2 printed elsewhere in the
+  //  report DID clear its own bar - an uncorroborated marginal tie, or a not-rejected tie on a stacked
+  //  geometry sitting next to a large merged delta-chi2.  Without it those numbers read as a
+  //  contradiction of the "not distinguished" headline.  Sourced from distinct_basis_none_reason() so
+  //  the wording lives in one place; empty when that has nothing specific to say.
+  //  Two causes are deliberately NOT repeated here: a railed self-atten AD (already the leading
+  //  sentence of this verdict, via curve_separation_trigger_text()), and a not-rejected stacked tie
+  //  when the merged fit was ALSO adequate (the merged_adequate && stacked branch below says it
+  //  better, naming the single-material interpretation).
+  //  `merged_rejected` rather than `!merged_adequate` on purpose: the latter is also true when the
+  //  merged comparison is invalid or absent, where there is no printed merged number to contradict.
+  const bool merged_rejected = (merged_valid
+                                && !m_merged_single_curve_comparison->single_curve_adequate);
+  const bool worth_naming = !curves_detected_distinct()
+            && !detection_rests_on_railed_self_atten()
+            && (tie_marginal_and_uncorroborated() || merged_rejected);
+  const string none_reason = worth_naming ? distinct_basis_none_reason() : string();
+  const string uncorroborated_tie_note
+        = none_reason.empty() ? string() : ("  Note: " + none_reason + ".");
+
   switch( m_curve_separation_status )
   {
     case CurveSeparationStatus::NotApplicable:
@@ -25582,6 +26795,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
           verdict += "  Note: whether the curves genuinely differ could not be assessed (no nuclide"
                      " shared between curves has usable uncertainties, and the single-curve"
                      " comparison was not available).";
+        verdict += uncorroborated_tie_note;
       }//if( no strong detection )
 
       if( merged_fits_better )
@@ -25626,6 +26840,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
           verdict += "  A composition difference is hinted at only marginal significance (z = "
                      + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
                      + RelActCalcAuto::to_name(max_z_entry->nuclide) + "; not conclusive).";
+        verdict += uncorroborated_tie_note;
       }
 
       const string caveat = blended_source_caveat_text( html );
@@ -25637,8 +26852,27 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
 
     case CurveSeparationStatus::Degenerate:
     {
+      // Name the test that actually decided this.  `finalize_curve_separation_status()` prefers the
+      //  tied-enrichment result over the merged one whenever it exists, so quoting the merged
+      //  numbers here would credit a test that did not make the call - the headline-versus-evidence
+      //  mismatch this reporting exists to prevent.
+      const bool tied_decided = (m_tied_enrichment_comparison.has_value()
+                                 && m_tied_enrichment_comparison->valid);
       string verdict;
-      if( merged_valid )
+      if( tied_decided )
+      {
+        const TiedEnrichmentComparison &tied = *m_tied_enrichment_comparison;
+        string tied_names;
+        for( const SrcVariant &src : tied.tied_sources )
+          tied_names += (tied_names.empty() ? "" : ", ") + RelActCalcAuto::to_name(src);
+        verdict = "The data does not show the objects having different compositions: forcing every"
+                  " curve to the same " + tied_names + "/"
+                  + RelActCalcAuto::to_name(tied.controlling_source) + " ratio costs only "
+                  + string(delta_txt) + chi2_txt + " = "
+                  + SpecUtils::printCompact(tied.delta_chi2, 4) + " for "
+                  + std::to_string(tied.extra_dof_of_free) + " fewer effective parameters, which is"
+                  " within what that extra freedom explains by chance.";
+      }else if( merged_valid )
       {
         verdict = "The data does not distinguish the curves: a single merged curve describes it"
                   " essentially as well (" + merged_numbers + ")";
@@ -25662,7 +26896,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
         verdict += ".";
       }
 
-      if( merged_valid )
+      if( merged_valid || tied_decided )
         verdict += (stacked ? "  For a stacked geometry this is consistent with a single material of"
                               " one enrichment - stacked layers of the same material are"
                               " mathematically identical to one thicker layer - so this can simply"
@@ -27293,8 +28527,13 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
  nest); per-curve activity boxes and constraints touching cross-curve-shared sources are dropped (with
  a note), since the merged activity is the sum of the per-curve ones.
 
- Never affects the main solution: any failure (invalid merged constraints, failed solve, cancellation)
- is recorded as `valid = false` with a message. */
+ A failed comparison (invalid merged constraints, failed solve, cancellation) is recorded as
+ `valid = false` with a message and never affects the main solution.  A comparison that comes out
+ NEGATIVE does: see `rescue_multi_curve_with_candidate_matrix` below - a merged model that beats the
+ model it is nested inside is proof the multi-curve fit is in a worse basin, and `sol` is then
+ re-solved and possibly replaced.
+
+ @param rescue_depth recursion guard for that re-solve; callers pass 0. */
 static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const Options &orig_options,
                          const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -27302,7 +28541,279 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
                          const std::shared_ptr<const DetectorPeakResponse> &input_drf,
                          const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
-                         std::shared_ptr<std::atomic_bool> cancel_calc )
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         const unsigned rescue_depth = 0,
+                         std::shared_ptr<const RelActAutoSolution> *merged_out = nullptr );
+
+static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
+                         const Options &orig_options,
+                         const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                         const std::shared_ptr<const SpecUtils::Measurement> &background,
+                         const std::shared_ptr<const DetectorPeakResponse> &input_drf,
+                         const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         const unsigned rescue_depth = 0,
+                         std::shared_ptr<const RelActAutoSolution> merged_sol = nullptr );
+
+
+/** The nuisance-parameter seed handed to the merged null: the multi-curve solution, with its
+ per-curve activities removed.
+
+ The merged solve must not be handicapped relative to the multi-curve fit it is compared against -
+ a null that is merely solved worse manufactures evidence for "the curves are distinct".  It shares
+ the spectrum, so the converged energy calibration, deviation pairs, FWHM and skew are strictly
+ better starting values than a cold re-estimate, and `solve_ceres`'s semantic warm start transfers
+ exactly those: it matches by parameter NAME, and the name of every rel-eff shape parameter carries
+ its curve index when (and only when) there is more than one curve (`SAtt0(AD)` vs the merged
+ model's `SAtt(AD)` - see `parameter_name`), so no shape parameter can cross over and clobber the
+ summed-areal-density seed computed below.
+
+ Activities are deliberately dropped rather than summed.  Name-based transfer already skips
+ `Act*`/`MFrac*`/`MTot*`/`MFSum*` slots, so the only path that could move them is the explicit
+ per-curve `m_rel_activities` walk, which maps curve-for-curve: it would seed the merged curve from
+ the FIRST multi curve alone (for U-inside-U, the small shielded one), which is worse than the cold
+ estimate.  Clearing the vector disables that walk and leaves activity seeding exactly as it is
+ today. */
+static RelActAutoSolution merged_null_nuisance_seed( const RelActAutoSolution &sol )
+{
+  RelActAutoSolution seed = sol;
+  seed.m_rel_activities.clear();
+  return seed;
+}//merged_null_nuisance_seed(...)
+
+
+/** Which curve the merged single-curve model is built from: an UNSHIELDED (outermost)
+ physical-model curve when one exists, else the first physical one.
+
+ Basing the merge on a shielded (inner) curve loses that curve's external shielding entirely - the
+ "Multi-enrich U - back higher" preset's inner curve carries no Fe-case external of its own, it inherits it
+ through ShieldedByCurves, which the merge clears - which produced a merged model with no Fe case
+ and a spuriously huge delta-chi2 even where a single curve is exactly equivalent (stacked
+ EQUAL-enrichment objects: homogeneous slab attenuation composes, so one summed-AD slab reproduces
+ the stack identically).  Shared so the tied comparison's retry seeds the same curve. */
+static size_t merged_base_curve_index( const Options &options )
+{
+  size_t base_index = 0;
+  bool have_phys_base = false;
+  for( size_t i = 0; i < options.rel_eff_curves.size(); ++i )
+  {
+    const RelEffCurveInput &curve = options.rel_eff_curves[i];
+    if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      continue;
+    if( !have_phys_base )
+    {
+      base_index = i;
+      have_phys_base = true;
+    }
+    if( curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      base_index = i;
+      break;
+    }
+  }
+  return base_index;
+}//merged_base_curve_index(...)
+
+
+/** Re-express a converged MERGED single-curve solution as a starting point for the multi-curve
+ model, or nullopt when it cannot be done faithfully.
+
+ The merged model is nested inside the multi-curve one, so its solution IS a point of the
+ multi-curve parameter space: one curve carrying the merged shape and all of the activity, the
+ others carrying almost none.  When the merged null comes out better than the multi-curve fit, that
+ point is a known-better place to restart from - and the deterministic candidate matrix cannot find
+ it on its own, because every candidate is a transform of the same default seed (measured: the
+ matrix alone rescued 2 of 4 provably non-optimal files; with this seed, see the rescue below).
+
+ `solve_ceres`'s semantic warm start matches by parameter NAME, and rel-eff shape names carry a
+ curve index only when there is more than one curve (`SAtt(AD)` merged vs `SAtt0(AD)` multi - see
+ `parameter_name`).  So the names are rewritten onto `base_index`, the curve the merged model was
+ built from.  Physical-model curves only: the empirical forms carry a QR/gauge frame that the
+ transfer re-derives from `m_rel_eff_coefficients` per curve, which a one-curve solution cannot
+ supply for a multi-curve layout.
+
+ @param base_index which multi-curve curve the merged model was based on; it receives the merged
+        shape and activities.  The other curves keep their config shape and start at
+        `sm_dormant_activity_fraction` of the merged activities - small enough to let the base curve
+        carry the data, but off the zero bound so the fit can still move them. */
+static std::optional<RelActAutoSolution> multi_curve_seed_from_merged(
+                         const RelActAutoSolution &merged_sol,
+                         const Options &orig_options,
+                         const size_t base_index )
+{
+  constexpr double sm_dormant_activity_fraction = 0.02;
+
+  const size_t num_curves = orig_options.rel_eff_curves.size();
+  if( (base_index >= num_curves)
+      || !RelActAutoSolution::is_usable_status(merged_sol.m_status)
+      || merged_sol.m_parameter_names.empty()
+      || (merged_sol.m_parameter_names.size() != merged_sol.m_final_parameters.size())
+      || (merged_sol.m_rel_activities.size() != 1) )
+    return std::nullopt;
+
+  for( const RelEffCurveInput &curve : orig_options.rel_eff_curves )
+  {
+    if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      return std::nullopt;
+  }
+
+  RelActAutoSolution seed = merged_sol;
+
+  // Single-curve shape names -> the same name qualified by `base_index`.  Energy-calibration,
+  //  deviation-pair, FWHM and skew names carry no curve index and are left alone; activity slots
+  //  are never transferred by name (the walk below is the only activity path).
+  const string index_str = std::to_string( base_index );
+  for( string &name : seed.m_parameter_names )
+  {
+    for( const char * const prefix : { "SAtt", "EAtt", "Hoerl", "Cheby" } )
+    {
+      const size_t prefix_len = string(prefix).size();
+      if( name.rfind(prefix,0) == 0 )
+      {
+        name.insert( prefix_len, index_str );
+        break;
+      }
+    }
+  }//for( each merged parameter name )
+
+  const vector<RelActCalcAuto::NuclideRelAct> merged_acts = seed.m_rel_activities.front();
+  seed.m_rel_activities.assign( num_curves, merged_acts );
+  for( size_t re = 0; re < num_curves; ++re )
+  {
+    if( re == base_index )
+      continue;
+    for( RelActCalcAuto::NuclideRelAct &act : seed.m_rel_activities[re] )
+      act.rel_activity *= sm_dormant_activity_fraction;
+  }
+
+  return seed;
+}//multi_curve_seed_from_merged(...)
+
+
+/** Replaces `sol` with `rescued`, a re-solve of the same problem on `sol`s final ROIs passed as `Fixed`
+ ROIs, prepending `sol`s warnings.  That re-solve took the final ROIs as its input ROIs, so how they
+ were derived from the caller's ROIs (`m_input_rois`, `m_final_roi_info`, `m_num_roi_refits`, and
+ the resolved ROIs in `m_options.rois`) is kept from `sol`. */
+static void adopt_rescued_solution( RelActAutoSolution &sol, const RelActAutoSolution &rescued )
+{
+  assert( rescued.m_final_roi_ranges.size() == sol.m_final_roi_ranges.size() );
+
+  const vector<string> prior_warnings = sol.m_warnings;
+  vector<RoiRange> resolved_rois = sol.m_options.rois;
+  vector<RoiRange> input_rois = sol.m_input_rois;
+  vector<RoiResolutionInfo> roi_info = sol.m_final_roi_info;
+  const size_t num_roi_refits = sol.m_num_roi_refits;
+
+  sol = rescued;
+  sol.m_options.rois = std::move( resolved_rois );
+  sol.m_input_rois = std::move( input_rois );
+  sol.m_final_roi_info = std::move( roi_info );
+  sol.m_num_roi_refits = num_roi_refits;
+  sol.m_warnings.insert( begin(sol.m_warnings), begin(prior_warnings), end(prior_warnings) );
+}//adopt_rescued_solution(...)
+
+
+/** Re-solve the multi-curve model from a better-known starting point, and adopt the result when it
+ genuinely lowers the objective.
+
+ Called only when the merged single-curve null - a model strictly nested inside this one - reached a
+ LOWER chi2.  Merging only removes freedom, so that cannot happen at a proper optimum; it is a proof
+ that the multi-curve fit sits in a worse basin, and every per-curve number and separation statistic
+ derived from it is meaningless (measured: 21 of 124 two-disk files, 2026-09).
+
+ Two strategies, tried in this order by the caller's recursion because they cost very differently:
+
+   `FromMergedSolution` - restart at the merged solution itself, re-expressed in the multi-curve
+     parameter space (`multi_curve_seed_from_merged`).  One ordinary solve; it is aimed straight at
+     the basin we have proof is better.
+
+   `CandidateMatrix` - `Options::robust_solve` makes the whole named candidate matrix applicable
+     rather than only the EM-attribution rescue pair (see `em_attribution_rescue_applicable` and the
+     candidate-search block of `solve_ceres`), with the incumbent handed in as the warm start so its
+     basin stays among the ranked candidates.  This is the same escalation the profile
+     baseline-reselection flow uses when a cheap warm restart stalls.  Several solves.
+
+ Only `robust_solve` and the ROI ranges are changed, and both are restored on the adopted solution
+ (see `adopt_rescued_solution`) so it reports the options the caller actually asked for.  Multi-curve only, so the ordinary
+ single-curve path cannot pay for any of this.
+
+ @returns true if `sol` was replaced. */
+enum class MultiCurveRescueStrategy : int { FromMergedSolution, CandidateMatrix };
+
+static bool rescue_multi_curve_fit( RelActAutoSolution &sol,
+                         const MultiCurveRescueStrategy strategy,
+                         const std::optional<RelActAutoSolution> &merged_seed,
+                         const Options &orig_options,
+                         const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                         const std::shared_ptr<const SpecUtils::Measurement> &background,
+                         const std::shared_ptr<const DetectorPeakResponse> &drf,
+                         const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         const std::shared_ptr<std::atomic_bool> &cancel_calc )
+{
+  const bool use_matrix = (strategy == MultiCurveRescueStrategy::CandidateMatrix);
+  if( use_matrix && orig_options.robust_solve )
+    return false;  //already had the matrix; nothing further to escalate to
+  if( !use_matrix && !merged_seed.has_value() )
+    return false;
+
+  try
+  {
+    Options rescue = orig_options;
+    rescue.rois = sol.m_final_roi_ranges;
+    if( rescue.rois.empty() )
+      return false;
+    for( RoiRange &roi : rescue.rois )
+      roi.range_limits_type = RoiRange::RangeLimitsType::Fixed;
+    rescue.robust_solve = (use_matrix || orig_options.robust_solve);
+
+    const RelActAutoSolution * const warm_start = use_matrix ? &sol : &merged_seed.value();
+    const RelActAutoSolution rescued = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                        rescue, foreground, background, drf, peaks,
+                        det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                        /*force_candidate_search=*/use_matrix, warm_start,
+                        /*allow_candidate_search=*/true, nullptr, nullptr, true,
+                        RelActCalcAutoImp::solve_may_profile(orig_options) );
+
+    if( !RelActAutoSolution::is_usable_status(rescued.m_status)
+        || !std::isfinite(rescued.m_chi2_data)
+        || !(rescued.m_chi2_data < sol.m_chi2_data) )
+      return false;
+
+    const double old_chi2 = sol.m_chi2_data;
+    adopt_rescued_solution( sol, rescued );
+    sol.m_options.robust_solve = orig_options.robust_solve;
+    sol.m_warnings.push_back( "A single merged relative-efficiency curve - a model this one"
+        " contains - fit the data better, which cannot happen at a proper solution, so the"
+        " multi-curve fit was re-solved "
+        + string(use_matrix ? "with the full deterministic candidate search"
+                            : "starting from that merged solution")
+        + ".  That lowered the data chi2 from " + SpecUtils::printCompact(old_chi2, 6) + " to "
+        + SpecUtils::printCompact(sol.m_chi2_data, 6) + "; the earlier result was not an optimum"
+        " and has been replaced." );
+    return true;
+  }catch( const std::exception &e )
+  {
+    sol.m_warnings.push_back( "A single merged relative-efficiency curve fit this data better than"
+        " the multi-curve model containing it, so the multi-curve fit is not at its own optimum;"
+        " the attempted re-solve failed (" + string(e.what()) + ").  Treat the per-curve results and"
+        " the curve-separation verdict as unreliable." );
+    return false;
+  }
+}//rescue_multi_curve_fit(...)
+
+
+static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
+                         const Options &orig_options,
+                         const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                         const std::shared_ptr<const SpecUtils::Measurement> &background,
+                         const std::shared_ptr<const DetectorPeakResponse> &input_drf,
+                         const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         const unsigned rescue_depth,
+                         std::shared_ptr<const RelActAutoSolution> *merged_out )
 {
   // Every solve() return path calls this exactly once, so the separation status (which folds in the
   //  comparison computed below) is finalized here whether or not the comparison itself applies.
@@ -27317,6 +28828,23 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
   comparison.multi_chi2_data = sol.m_chi2_data;
   comparison.multi_dof_data = sol.m_dof_data;
 
+  // The null comparison, and any re-solve it triggers, must reuse the exact peak-search result and
+  //  derived DRF of the main solve; re-running either input stage would no longer be an
+  //  identical-data/model comparison.  Held by value, so a re-solve that replaces `sol` cannot pull
+  //  them out from under a reference.
+  const std::shared_ptr<const DetectorPeakResponse> retained_drf = sol.m_drf ? sol.m_drf : input_drf;
+  const std::vector<std::shared_ptr<const PeakDef>> retained_peaks
+      = sol.m_cost_functor ? sol.m_cost_functor->m_all_peaks : sol.m_spectrum_peaks;
+
+  // Kept for the rescue below: a merged null that beat this fit is the known-better restart point.
+  std::optional<RelActAutoSolution> merged_restart_seed;
+
+  // True when building the merged model had to give up a constraint or bound the multi-curve model
+  //  still carries.  The null is then NOT strictly nested, so a negative delta-chi2 can be honest
+  //  rather than a proof that the multi-curve fit missed its optimum - and must not trigger a
+  //  rescue that would report a defect that is not there.
+  bool merge_added_freedom = false;
+
   try
   {
     Options merged = orig_options;
@@ -27328,32 +28856,7 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     for( RoiRange &roi : merged.rois )
       roi.range_limits_type = RoiRange::RangeLimitsType::Fixed;
 
-    // Base the merged curve on an UNSHIELDED (outermost) physical-model curve when one exists: its
-    //  external attenuators are the true external shielding of the whole stack.  Basing on a shielded
-    //  (inner) curve loses that shielding entirely - e.g. the "HPGe U inside U" preset's inner curve
-    //  carries no Fe-case external of its own (it inherits it through ShieldedByCurves, which the
-    //  merge clears), so a first-physical-curve choice produced a merged model with no Fe case and a
-    //  spuriously huge delta-chi2 even where a single curve is exactly equivalent (stacked
-    //  EQUAL-enrichment objects: homogeneous slab attenuation composes, so one summed-AD slab
-    //  reproduces the stack identically).
-    size_t base_index = 0;
-    bool have_phys_base = false;
-    for( size_t i = 0; i < orig_options.rel_eff_curves.size(); ++i )
-    {
-      const RelEffCurveInput &curve = orig_options.rel_eff_curves[i];
-      if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        continue;
-      if( !have_phys_base )
-      {
-        base_index = i;
-        have_phys_base = true;
-      }
-      if( curve.shielded_by_other_phys_model_curve_shieldings.empty() )
-      {
-        base_index = i;
-        break;
-      }
-    }//for( each curve )
+    const size_t base_index = merged_base_curve_index( orig_options );
 
     string notes;
     const auto add_note = [&notes]( const string &note ){
@@ -27449,6 +28952,9 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     {
       if( duplicated_srcs.count(nuc.source) )
       {
+        // Only the activity BOX is freedom; a starting value is not.
+        merge_added_freedom = merge_added_freedom
+                              || nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value();
         nuc.min_rel_act.reset();
         nuc.max_rel_act.reset();
         nuc.starting_rel_act.reset();
@@ -27490,18 +28996,57 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
       }
     }//if( merged_curve.nucs_of_el_same_age )
 
-    // Constraints: union across curves, but drop anything touching a cross-curve-shared source (its
-    //  ratio/fraction was calibrated within one curve's share) or duplicating an earlier constraint.
+    // Constraints: union across curves, dropping anything whose meaning does not survive the merge
+    //  (and duplicates of an earlier constraint).
+    //
+    //  A constraint on a source that appears on ONLY ONE curve carries over unchanged.  For a
+    //  cross-curve-shared source it depends on whether every curve carrying that source states the
+    //  SAME constraint: if they do, the constraint is a statement about the material rather than
+    //  about one curve's share of it, and it is exactly as true of the merged material - so keep it.
+    //  Only genuinely conflicting (or one-sided) constraints are dropped.
+    //
+    //  This matters well beyond tidiness.  Dropping a constraint hands the null EXTRA freedom, and
+    //  then delta_chi2 = merged - multi is no longer a nested-model likelihood ratio: the null can
+    //  legitimately fit better, negative delta-chi2 stops being a defect report, and the bias runs
+    //  toward "a single curve describes this data about as well".  Every shipped U-inside-U preset
+    //  states the identical U234 mass-fraction window on both curves, so the old blanket rule
+    //  un-nested the comparison on exactly the problems it exists for.  `merge_added_freedom`
+    //  records whether anything was actually given up, so callers can tell a strict nesting from a
+    //  loosened one.
+    const auto same_source = []( const SrcVariant &lhs, const SrcVariant &rhs ) {
+      return lhs == rhs;
+    };
+
     merged_curve.act_ratio_constraints.clear();
     for( const RelEffCurveInput &curve : orig_options.rel_eff_curves )
     {
       for( const RelEffCurveInput::ActRatioConstraint &constraint : curve.act_ratio_constraints )
       {
-        if( duplicated_srcs.count(constraint.constrained_source)
-            || duplicated_srcs.count(constraint.controlling_source) )
+        const bool shared = duplicated_srcs.count(constraint.constrained_source)
+                            || duplicated_srcs.count(constraint.controlling_source);
+        // Stated identically wherever both of its sources appear?
+        bool consistent = true;
+        for( const RelEffCurveInput &other : orig_options.rel_eff_curves )
         {
+          const bool has_both
+              = std::any_of( begin(other.nuclides), end(other.nuclides),
+                    [&]( const NucInputInfo &n ){ return same_source(n.source,constraint.constrained_source); } )
+                && std::any_of( begin(other.nuclides), end(other.nuclides),
+                    [&]( const NucInputInfo &n ){ return same_source(n.source,constraint.controlling_source); } );
+          if( !has_both )
+            continue;
+          consistent = consistent
+              && std::any_of( begin(other.act_ratio_constraints), end(other.act_ratio_constraints),
+                    [&constraint]( const RelEffCurveInput::ActRatioConstraint &o ){
+                      return o == constraint; } );
+        }
+
+        if( shared && !consistent )
+        {
+          merge_added_freedom = true;
           add_note( "dropped activity-ratio constraint on "
-                    + RelActCalcAuto::to_name(constraint.constrained_source) );
+                    + RelActCalcAuto::to_name(constraint.constrained_source)
+                    + " (the curves do not state it identically)" );
           continue;
         }
         const bool already = std::any_of( begin(merged_curve.act_ratio_constraints),
@@ -27519,9 +29064,30 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     {
       for( const RelEffCurveInput::MassFractionConstraint &constraint : curve.mass_fraction_constraints )
       {
-        if( constraint.nuclide && duplicated_srcs.count( SrcVariant(constraint.nuclide) ) )
+        const bool shared = constraint.nuclide
+                            && duplicated_srcs.count( SrcVariant(constraint.nuclide) );
+        bool consistent = true;
+        for( const RelEffCurveInput &other : orig_options.rel_eff_curves )
         {
-          add_note( "dropped mass-fraction constraint on " + constraint.nuclide->symbol );
+          const bool has_nuc = std::any_of( begin(other.nuclides), end(other.nuclides),
+                    [&]( const NucInputInfo &n ){
+                      return same_source( n.source, SrcVariant(constraint.nuclide) ); } );
+          if( !has_nuc )
+            continue;
+          consistent = consistent
+              && std::any_of( begin(other.mass_fraction_constraints),
+                    end(other.mass_fraction_constraints),
+                    [&constraint]( const RelEffCurveInput::MassFractionConstraint &o ){
+                      return (o.nuclide == constraint.nuclide)
+                             && (o.lower_mass_fraction == constraint.lower_mass_fraction)
+                             && (o.upper_mass_fraction == constraint.upper_mass_fraction); } );
+        }
+
+        if( shared && !consistent )
+        {
+          merge_added_freedom = true;
+          add_note( "dropped mass-fraction constraint on " + constraint.nuclide->symbol
+                    + " (the curves do not state it identically)" );
           continue;
         }
         const bool already = std::any_of( begin(merged_curve.mass_fraction_constraints),
@@ -27554,17 +29120,12 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     // from the caller would name sources this problem no longer has, and its row is not built here
     // anyway (`may_host_profile` is false below).
 
-    // Single-curve options => the normal single-curve solver time cap applies automatically.  The
-    // null comparison must reuse the exact peak-search result and derived DRF from the main solve;
-    // re-running either input stage would no longer be an identical-data/model comparison.
-    const std::shared_ptr<const DetectorPeakResponse> retained_drf
-        = sol.m_drf ? sol.m_drf : input_drf;
-    const std::vector<std::shared_ptr<const PeakDef>> &retained_peaks
-        = sol.m_cost_functor ? sol.m_cost_functor->m_all_peaks : sol.m_spectrum_peaks;
+    // Single-curve options => the normal single-curve solver time cap applies automatically.
+    const RelActAutoSolution nuisance_seed = merged_null_nuisance_seed( sol );
     const RelActAutoSolution merged_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                         merged, foreground, background, retained_drf, retained_peaks,
                         det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
-                        false,nullptr,true,nullptr,nullptr,true,
+                        false,&nuisance_seed,true,nullptr,nullptr,true,
                         /*may_host_profile=*/false );
 
     if( merged_sol.m_cost_functor
@@ -27584,6 +29145,10 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     {
       comparison.merged_chi2_data = merged_sol.m_chi2_data;
       comparison.merged_dof_data = merged_sol.m_dof_data;
+      if( !merged_sol.m_rel_activities.empty() )
+        comparison.merged_activities = merged_sol.m_rel_activities.front();
+      if( merged_out )
+        *merged_out = std::make_shared<const RelActAutoSolution>( merged_sol );
       comparison.delta_chi2 = merged_sol.m_chi2_data - sol.m_chi2_data;
       comparison.extra_dof_of_multi = static_cast<int>(merged_sol.m_dof_data)
                                       - static_cast<int>(sol.m_dof_data);
@@ -27594,6 +29159,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
         add_note( "effective-DOF difference was not positive; comparison not meaningful" );
         comparison.message = notes;
       }
+      if( (comparison.delta_chi2 < 0.0) && !merge_added_freedom )
+        merged_restart_seed = multi_curve_seed_from_merged( merged_sol, orig_options, base_index );
     }
   }catch( std::exception &e )
   {
@@ -27601,8 +29168,518 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     comparison.message = e.what();
   }//try / catch
 
+  // A negative delta-chi2 is not a statistic, it is a defect report: the null is nested inside this
+  //  model, so it cannot genuinely fit better.  Try the cheap targeted restart first, then escalate
+  //  to the candidate matrix; each success redoes the whole comparison against the solution that
+  //  replaced this one, so a rescue that only partly recovers still gets the next strategy.
+  static constexpr unsigned sm_max_rescue_depth = 2;
+  if( comparison.valid && (comparison.delta_chi2 < 0.0) && !merge_added_freedom
+      && (rescue_depth < sm_max_rescue_depth) && (!cancel_calc || !cancel_calc->load()) )
+  {
+    // Stands if no strategy helps, so the defect is still reported rather than silently dropped.
+    sol.m_merged_single_curve_comparison = comparison;
+
+    for( const MultiCurveRescueStrategy strategy : { MultiCurveRescueStrategy::FromMergedSolution,
+                                                     MultiCurveRescueStrategy::CandidateMatrix } )
+    {
+      if( cancel_calc && cancel_calc->load() )
+        break;
+      if( !rescue_multi_curve_fit( sol, strategy, merged_restart_seed, orig_options, foreground,
+                                   background, retained_drf, retained_peaks, det_type, cancel_calc ) )
+        continue;
+
+      // `merged_out` must be forwarded: it was already written above, against the solution this
+      //  rescue just replaced.  The caller compares the tied chi2 against it, so leaving the stale
+      //  value in place can void a perfectly good tied statistic (and print a self-contradictory
+      //  "tied is HIGHER than merged" message quoting two numbers in the other order).  Cleared
+      //  first so that a recursive merged solve which fails leaves no stale pointer behind either -
+      //  the caller treats null as "no merged solution to compare against".
+      sol.m_merged_single_curve_comparison.reset();
+      if( merged_out )
+        merged_out->reset();
+      add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
+                                          all_peaks, det_type, cancel_calc, rescue_depth + 1,
+                                          merged_out );
+      return;
+    }//for( each rescue strategy, cheapest first )
+
+    return;
+  }//if( the null beat the model containing it )
+
   sol.m_merged_single_curve_comparison = std::move( comparison );
 }//add_merged_single_curve_comparison(...)
+
+
+/** Re-fit the same multi-curve model with the curves' enrichments tied to one common composition,
+ and record the chi2 comparison on `sol.m_tied_enrichment_comparison`.
+
+ This is the detection statistic for "do these objects have DIFFERENT compositions?", and it is a
+ proper nested-model likelihood ratio: the tied model is the free one plus activity-ratio equality
+ constraints, so nothing else changes - same curves, same shieldings, same shape freedom, same ROIs
+ - and the model error both models carry cancels in the difference.  See the
+ `TiedEnrichmentComparison` doc in RelActCalcAuto.h for why this is the right null and what the
+ merged single-curve comparison measures instead.
+
+ Only the isotopes whose per-curve mass fraction the data actually determines on every curve are
+ tied (`MassFractionCovarianceQuality::Usable`); tying an unconstrained trace isotope punishes the
+ null for a parameter nothing measured.
+
+ The common composition is not known a priori, so it is profiled coarsely: the tied model is solved
+ once per candidate ratio set and the best (lowest chi2) is kept.  The candidates are the
+ model-counts-weighted mean over the curves and each curve's own composition - the first is the
+ natural single-material estimate, the others bracket it when one curve dominates.
+
+ Never affects the main solution: any failure is recorded as `valid = false` with a message. */
+static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
+                         const Options &orig_options,
+                         const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                         const std::shared_ptr<const SpecUtils::Measurement> &background,
+                         const std::shared_ptr<const DetectorPeakResponse> &input_drf,
+                         const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         const unsigned rescue_depth,
+                         std::shared_ptr<const RelActAutoSolution> merged_sol )
+{
+  const DoWorkOnDestruct finalize_status( [&sol](){ sol.finalize_curve_separation_status(); } );
+
+  const size_t num_curves = orig_options.rel_eff_curves.size();
+  if( (num_curves < 2)
+      || !RelActAutoSolution::is_usable_status(sol.m_status)
+      || sol.m_tied_enrichment_comparison.has_value() )
+    return;
+
+  RelActAutoSolution::TiedEnrichmentComparison comparison;
+  comparison.free_chi2_data = sol.m_chi2_data;
+  comparison.free_dof_data = sol.m_dof_data;
+
+  const std::shared_ptr<const DetectorPeakResponse> retained_drf = sol.m_drf ? sol.m_drf : input_drf;
+  const std::vector<std::shared_ptr<const PeakDef>> retained_peaks
+      = sol.m_cost_functor ? sol.m_cost_functor->m_all_peaks : sol.m_spectrum_peaks;
+
+  string notes;
+  const auto add_note = [&notes]( const string &note ){
+    if( notes.find(note) == string::npos )
+      notes += (notes.empty() ? "" : "; ") + note;
+  };
+
+  try
+  {
+    // --- Which isotopes can be tied? -------------------------------------------------------------
+    // Exactly the ones the enrichment-difference table already judged usable: `m_enrichment_diff_z`
+    //  holds one entry per (nuclide, curve pair) sharing a nuclide, and its `reliable` flag encodes
+    //  the reasoning that a bound-pinned or unconstrained composition carries no information (see
+    //  `compute_curve_separation_metrics`).  Reusing it means the tied test and the z table can
+    //  never disagree about which isotopes the data determines - and it keeps the unconstrained
+    //  trace isotopes out, which is what makes this null informative at all: pinning U234, whose
+    //  per-curve fitted values differ by eight orders of magnitude because nothing measures it,
+    //  cost 125 chi2 of pure noise on a homogeneous pair where tying only U235/U238 cost none.
+    const auto total_model_counts = [&sol,num_curves]( const SandiaDecay::Nuclide *nuc ) -> double {
+      double total = 0.0;
+      for( size_t re = 0; (re < num_curves) && (re < sol.m_source_model_counts.size()); ++re )
+      {
+        const auto pos = sol.m_source_model_counts[re].find( SrcVariant(nuc) );
+        if( pos != end(sol.m_source_model_counts[re]) )
+          total += pos->second;
+      }
+      return total;
+    };
+
+    // Every isotope of an element that sits on EVERY curve is a candidate.
+    map<short,vector<const SandiaDecay::Nuclide *>> element_nucs;
+    for( const NucInputInfo &nuc : orig_options.rel_eff_curves.front().nuclides )
+    {
+      const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide( nuc.source );
+      if( !nuclide )
+        continue;
+      bool on_every_curve = true;
+      for( size_t re = 1; re < num_curves; ++re )
+        on_every_curve = on_every_curve
+            && std::any_of( begin(orig_options.rel_eff_curves[re].nuclides),
+                            end(orig_options.rel_eff_curves[re].nuclides),
+                            [&nuc]( const NucInputInfo &other ){ return other.source == nuc.source; } );
+      if( on_every_curve )
+        element_nucs[nuclide->atomicNumber].push_back( nuclide );
+    }//for( each nuclide of the first curve )
+
+    // Of those, tie the TWO carrying the most modeled peak counts, and no more.  For uranium that
+    //  is U235 and U238 and the tie is exactly "the same enrichment"; for plutonium, Pu239/Pu240.
+    //
+    //  Two, rather than all of them, is the whole point.  A trace isotope's ratio is not determined
+    //  by the data - on a homogeneous 3.3/3.3 pair the fitted U234/U238 differed between the curves
+    //  by eight orders of magnitude simply because nothing measures it - so pinning it charges the
+    //  null for noise: tying all isotopics cost 123 chi2 there, tying only U235/U238 cost none,
+    //  while a genuinely heterogeneous 3.3/90 pair stayed at ~5000 either way.
+    //
+    //  Counts, not the covariance-quality/`EnrichmentDiffZ::reliable` flags, decide it.  Those flags
+    //  are unavailable on precisely the degenerate fits this test exists to adjudicate (they were
+    //  empty for both identical-disk cases in the 2026-09 grid), and a nuclide dominating the
+    //  spectrum is determined whether or not its local Gaussian covariance came out usable.
+    vector<const SandiaDecay::Nuclide *> tie_nucs;
+    const SandiaDecay::Nuclide *controller = nullptr;
+    for( auto &element : element_nucs )
+    {
+      if( element.second.size() < 2 )
+        continue;  //nothing to tie: a single isotope's "ratio" is just its own normalization
+
+      std::sort( begin(element.second), end(element.second),
+          [&total_model_counts]( const SandiaDecay::Nuclide *lhs, const SandiaDecay::Nuclide *rhs ){
+            const double lhs_counts = total_model_counts(lhs), rhs_counts = total_model_counts(rhs);
+            if( lhs_counts != rhs_counts )
+              return lhs_counts > rhs_counts;
+            return lhs->symbol < rhs->symbol;   //deterministic when counts are unavailable
+          } );
+
+      // The element whose top pair carries the most counts wins, so a trace element sharing two
+      //  isotopes cannot outrank the material actually being measured.
+      const double weight = total_model_counts(element.second[0]) + total_model_counts(element.second[1]);
+      const double incumbent = controller
+                ? (total_model_counts(tie_nucs[0]) + total_model_counts(tie_nucs[1])) : -1.0;
+      if( weight > incumbent )
+      {
+        tie_nucs = { element.second[0], element.second[1] };
+        controller = tie_nucs[0];  //most counts; it keeps carrying each curve's own normalization
+      }
+    }//for( each element shared by all curves )
+
+    if( !controller || (tie_nucs.size() < 2) )
+    {
+      comparison.valid = false;
+      comparison.message = "no element has two isotopes whose composition this data determines on"
+                           " every curve, so there is no enrichment to tie";
+      sol.m_tied_enrichment_comparison = std::move( comparison );
+      return;
+    }
+
+    comparison.controlling_source = SrcVariant( controller );
+    for( const SandiaDecay::Nuclide * const nuc : tie_nucs )
+      if( nuc != controller )
+        comparison.tied_sources.push_back( SrcVariant(nuc) );
+
+    // --- Candidate common compositions (a coarse profile of the shared enrichment) ---------------
+    const auto activity_of = [&sol]( const SandiaDecay::Nuclide *nuc, const size_t re ) -> double {
+      if( re >= sol.m_rel_activities.size() )
+        return 0.0;
+      for( const NuclideRelAct &act : sol.m_rel_activities[re] )
+      {
+        if( RelActCalcAuto::nuclide(act.source) == nuc )
+          return act.rel_activity;
+      }
+      return 0.0;
+    };
+
+    // Two candidates, because the common composition is unknown and each is right in a different
+    //  regime.  Keeping it to two also keeps the cost at two extra solves.
+    //
+    //  1. The MERGED fit's composition - the best single-material description of the whole
+    //     spectrum, derived without reference to the multi-curve split.  This is the one that
+    //     matters when the free fit is degenerate: on a homogeneous 20/20 pair the free fit put
+    //     U235/U238 = 0.28 on one curve and 162 on the other, so any candidate built from it is
+    //     nonsense, while the merged fit's 1.48 is close to the truth and ties at almost no cost.
+    //  2. The summed-activity composition of the free fit, for when the merged fit is unavailable
+    //     or is itself the poorly-behaved one.
+    const auto ratios_from = [&]( const std::function<double(const SandiaDecay::Nuclide *)> &activity )
+                                                  -> map<const SandiaDecay::Nuclide *,double> {
+      map<const SandiaDecay::Nuclide *,double> ratios;
+      const double control = activity( controller );
+      if( !(control > 0.0) )
+        return ratios;
+      for( const SandiaDecay::Nuclide * const nuc : tie_nucs )
+      {
+        if( nuc == controller )
+          continue;
+        const double ratio = activity( nuc ) / control;
+        if( !(ratio > 0.0) || !std::isfinite(ratio) )
+          return {};
+        ratios[nuc] = ratio;
+      }
+      return ratios;
+    };
+
+    vector<pair<string,map<const SandiaDecay::Nuclide *,double>>> candidates;  //label -> ratios to controller
+    if( sol.m_merged_single_curve_comparison.has_value()
+        && !sol.m_merged_single_curve_comparison->merged_activities.empty() )
+    {
+      const vector<NuclideRelAct> &merged_acts = sol.m_merged_single_curve_comparison->merged_activities;
+      const map<const SandiaDecay::Nuclide *,double> ratios
+          = ratios_from( [&merged_acts]( const SandiaDecay::Nuclide *nuc ) -> double {
+              for( const NuclideRelAct &act : merged_acts )
+                if( RelActCalcAuto::nuclide(act.source) == nuc )
+                  return act.rel_activity;
+              return 0.0;
+            } );
+      if( !ratios.empty() )
+        candidates.emplace_back( "merged single-curve composition", ratios );
+    }
+    {
+      const map<const SandiaDecay::Nuclide *,double> ratios
+          = ratios_from( [&activity_of,num_curves]( const SandiaDecay::Nuclide *nuc ) -> double {
+              double total = 0.0;
+              for( size_t re = 0; re < num_curves; ++re )
+                total += activity_of( nuc, re );
+              return total;
+            } );
+      if( !ratios.empty() )
+        candidates.emplace_back( "summed-activity composition", ratios );
+    }
+
+    if( candidates.empty() )
+      throw runtime_error( "no usable candidate common composition" );
+
+    // --- Solve the tied model at each candidate, keep the best ----------------------------------
+    Options tied_base = orig_options;
+    tied_base.rois = sol.m_final_roi_ranges;
+    if( tied_base.rois.empty() )
+      throw runtime_error( "no final ROI ranges recorded" );
+    for( RoiRange &roi : tied_base.rois )
+      roi.range_limits_type = RoiRange::RangeLimitsType::Fixed;
+    // Deliberately NOT forcing `auto_simplify_model` off: the free fit this is differenced against
+    //  used whatever the caller set, and simplification removes effective parameters.  Turning it
+    //  off here alone made the "restricted" model report 11 MORE effective parameters than the
+    //  model it is nested in, which is meaningless.
+
+    const RelActAutoSolution *best_tied = nullptr;
+    std::optional<RelActAutoSolution> best_tied_storage;
+    string best_label;
+    Options best_options;   //the winning candidate's model, so the retry below re-solves the same one
+
+    for( const pair<string,map<const SandiaDecay::Nuclide *,double>> &candidate : candidates )
+    {
+      if( cancel_calc && cancel_calc->load() )
+        break;
+
+      Options tied = tied_base;
+      for( RelEffCurveInput &curve : tied.rel_eff_curves )
+      {
+        // A tied nuclide cannot also be mass-fraction constrained or ratio-constrained elsewhere.
+        for( const pair<const SandiaDecay::Nuclide *,double> &entry : candidate.second )
+        {
+          const SandiaDecay::Nuclide * const nuc = entry.first;
+          curve.mass_fraction_constraints.erase(
+              std::remove_if( begin(curve.mass_fraction_constraints),
+                              end(curve.mass_fraction_constraints),
+                              [nuc]( const RelEffCurveInput::MassFractionConstraint &c ){
+                                return c.nuclide == nuc; } ),
+              end(curve.mass_fraction_constraints) );
+          curve.act_ratio_constraints.erase(
+              std::remove_if( begin(curve.act_ratio_constraints),
+                              end(curve.act_ratio_constraints),
+                              [nuc,controller]( const RelEffCurveInput::ActRatioConstraint &c ){
+                                return (RelActCalcAuto::nuclide(c.constrained_source) == nuc)
+                                       || (RelActCalcAuto::nuclide(c.controlling_source) == nuc)
+                                       || (RelActCalcAuto::nuclide(c.constrained_source) == controller); } ),
+              end(curve.act_ratio_constraints) );
+
+          RelEffCurveInput::ActRatioConstraint constraint;
+          constraint.controlling_source = SrcVariant( controller );
+          constraint.constrained_source = SrcVariant( nuc );
+          constraint.constrained_to_controlled_activity_ratio = entry.second;
+          curve.act_ratio_constraints.push_back( constraint );
+        }
+        // The controller must stay free: it carries each curve's own normalization.
+        curve.mass_fraction_constraints.erase(
+            std::remove_if( begin(curve.mass_fraction_constraints),
+                            end(curve.mass_fraction_constraints),
+                            [controller]( const RelEffCurveInput::MassFractionConstraint &c ){
+                              return c.nuclide == controller; } ),
+            end(curve.mass_fraction_constraints) );
+      }//for( each curve )
+
+      RelActAutoSolution tied_sol;
+      try
+      {
+        tied_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                        tied, foreground, background, retained_drf, retained_peaks,
+                        det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                        false, &sol, true, nullptr, nullptr, true, /*may_host_profile=*/false );
+      }catch( const std::exception &e )
+      {
+        add_note( "tied fit at the " + candidate.first + " failed (" + string(e.what()) + ")" );
+        continue;
+      }
+
+      if( !RelActAutoSolution::is_usable_status(tied_sol.m_status)
+          || !std::isfinite(tied_sol.m_chi2_data) )
+      {
+        add_note( "tied fit at the " + candidate.first + " did not succeed" );
+        continue;
+      }
+      if( !best_tied || (tied_sol.m_chi2_data < best_tied->m_chi2_data) )
+      {
+        best_tied_storage = std::move( tied_sol );
+        best_tied = &best_tied_storage.value();
+        best_label = candidate.first;
+        best_options = tied;
+      }
+
+      // The remaining candidates exist only to find a LOWER tied chi2.  Once one common composition
+      //  already describes the data within the detection bar, no cheaper one can change the answer,
+      //  so stop paying for it - this is the common case on homogeneous material, which is where
+      //  the extra solves would otherwise be pure cost.
+      const double nominal_extra_dof
+          = (std::max)( size_t(1), num_curves * (tie_nucs.size() - 1) );
+      const double model_error_scale = (sol.m_dof_data > 0)
+                ? (std::max)( 1.0, sol.m_chi2_data / static_cast<double>(sol.m_dof_data) ) : 1.0;
+      const double bar = model_error_scale*(nominal_extra_dof + 3.0*std::sqrt(2.0*nominal_extra_dof));
+      if( (best_tied->m_chi2_data - sol.m_chi2_data) <= bar )
+        break;
+    }//for( each candidate common composition )
+
+    // --- Sanity floor: the tied fit must not be worse than the MERGED single-curve fit -----------
+    //
+    // The merged model is, to a very good approximation, a point of the tied model: put the merged
+    // composition on both curves, let the base curve carry the activity and leave the other one
+    // negligible (it can still host a source the base curve lacks, e.g. U232, with its own free
+    // ratio).  So chi2_tied should come out at or below chi2_merged, and when it does not, the tied
+    // fit missed - which INVENTS a detection, because delta_chi2 is measured from the free fit.
+    //
+    // This is not hypothetical: 48 of 154 corpus files violated it, 24 of them while reporting a
+    // detection, and for several the excess was as large as the delta-chi2 itself (a single 93 %
+    // disk - one object - reported "distinct" on a tied chi2 that sat 110 above the merged fit).
+    // So: retry from the merged solution re-expressed in the two-curve space, and if that still
+    // cannot match the merged fit, refuse to report the comparison at all rather than let a
+    // convergence failure masquerade as evidence.
+    const bool merged_usable = (merged_sol
+                                && RelActAutoSolution::is_usable_status(merged_sol->m_status)
+                                && std::isfinite(merged_sol->m_chi2_data));
+    static constexpr double sm_tied_vs_merged_tolerance = 1.0;  //chi2 units, above solver noise
+    if( best_tied && merged_usable
+        && (best_tied->m_chi2_data > (merged_sol->m_chi2_data + sm_tied_vs_merged_tolerance))
+        && (!cancel_calc || !cancel_calc->load()) )
+    {
+      const std::optional<RelActAutoSolution> merged_seed
+          = multi_curve_seed_from_merged( *merged_sol, orig_options,
+                                          merged_base_curve_index(orig_options) );
+      if( merged_seed.has_value() && !best_options.rel_eff_curves.empty() )
+      {
+        try
+        {
+          const RelActAutoSolution retried = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                          best_options, foreground, background, retained_drf, retained_peaks,
+                          det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                          false, &merged_seed.value(), true, nullptr, nullptr, true,
+                          /*may_host_profile=*/false );
+          if( RelActAutoSolution::is_usable_status(retried.m_status)
+              && std::isfinite(retried.m_chi2_data)
+              && (retried.m_chi2_data < best_tied->m_chi2_data) )
+          {
+            add_note( "the first tied fits landed above the merged single-curve fit, so the tie was"
+                      " re-solved from the merged solution (chi2 "
+                      + SpecUtils::printCompact(best_tied->m_chi2_data, 6) + " -> "
+                      + SpecUtils::printCompact(retried.m_chi2_data, 6) + ")" );
+            best_tied_storage = std::move( retried );
+            best_tied = &best_tied_storage.value();
+          }
+        }catch( const std::exception &e )
+        {
+          add_note( string("merged-seeded tied retry failed (") + e.what() + ")" );
+        }
+      }//if( a merged-derived seed could be built )
+
+      if( best_tied->m_chi2_data > (merged_sol->m_chi2_data + sm_tied_vs_merged_tolerance) )
+      {
+        comparison.tied_chi2_data = best_tied->m_chi2_data;
+        comparison.tied_dof_data = best_tied->m_dof_data;
+        comparison.delta_chi2 = best_tied->m_chi2_data - sol.m_chi2_data;
+        comparison.valid = false;
+        comparison.inconsistent_with_merged = true;
+        add_note( "the common-enrichment fit could not reach the merged single-curve fit's chi2 ("
+                  + SpecUtils::printCompact(best_tied->m_chi2_data, 6) + " vs "
+                  + SpecUtils::printCompact(merged_sol->m_chi2_data, 6) + "), so it is not at its"
+                  " own optimum and this comparison would overstate the composition difference" );
+        comparison.message = notes;
+        sol.m_tied_enrichment_comparison = std::move( comparison );
+        return;
+      }
+    }//if( the tied fit came out above the merged fit )
+
+    if( !best_tied )
+    {
+      comparison.valid = false;
+      comparison.message = notes.empty() ? "no tied fit succeeded" : notes;
+      sol.m_tied_enrichment_comparison = std::move( comparison );
+      return;
+    }
+
+    string tied_names;
+    for( const SrcVariant &src : comparison.tied_sources )
+      tied_names += (tied_names.empty() ? "" : ", ") + RelActCalcAuto::to_name(src);
+    add_note( "tied " + tied_names + " to " + RelActCalcAuto::to_name(comparison.controlling_source)
+              + " at the " + best_label );
+
+    comparison.tied_chi2_data = best_tied->m_chi2_data;
+    comparison.tied_dof_data = best_tied->m_dof_data;
+    comparison.delta_chi2 = best_tied->m_chi2_data - sol.m_chi2_data;
+
+    // Counted analytically, NOT as the difference of the two reported DOF.  Automatic model
+    //  simplification eliminates whichever parameters happen to sit at identity values, and it does
+    //  not eliminate the same ones in both fits, so the reported difference came out NEGATIVE (the
+    //  "restricted" model appearing to have more effective parameters than the model it is nested
+    //  in) on two of the first four spectra tried.  The tie removes exactly one activity per tied
+    //  non-controlling source per curve.
+    //
+    //  This is the conservative count: the common composition is coarsely profiled over the
+    //  candidates below rather than fitted, so up to (tied sources) of these are arguably recovered.
+    //  Overstating the extra freedom raises the detection bar, which is the safe direction.
+    comparison.extra_dof_of_free
+        = static_cast<int>( num_curves * comparison.tied_sources.size() );
+    comparison.valid = (best_tied->m_dof_data > 0) && (comparison.extra_dof_of_free > 0);
+    if( !comparison.valid )
+      add_note( "no tied degrees of freedom; comparison not meaningful" );
+    comparison.message = notes;
+
+    // The tied model is the fitted model plus equality constraints, so it cannot genuinely fit
+    //  better.  When it does, the FREE fit is in a worse basin - and this catches cases the merged
+    //  null misses entirely: on the 30-minute grid 8 of 34 files had a negative tied delta-chi2,
+    //  including several where the merged comparison looked perfectly healthy.  A fit stuck in a
+    //  bad basin cannot show a composition difference, so this directly costs detections.
+    //
+    //  The restart seed here is much better than the merged one: the tied solution has the SAME
+    //  curves and the same parameter names, so `solve_ceres`'s semantic warm start transfers
+    //  essentially all of it.
+    if( (comparison.delta_chi2 < 0.0) && (rescue_depth == 0)
+        && (!cancel_calc || !cancel_calc->load()) )
+    {
+      Options rescue = tied_base;   //final ROIs, Fixed; no ratio constraints added
+      const double old_chi2 = sol.m_chi2_data;
+      const RelActAutoSolution rescued = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                      rescue, foreground, background, retained_drf, retained_peaks,
+                      det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                      false, best_tied, true, nullptr, nullptr, true,
+                      RelActCalcAutoImp::solve_may_profile(orig_options) );
+
+      if( RelActAutoSolution::is_usable_status(rescued.m_status)
+          && std::isfinite(rescued.m_chi2_data)
+          && (rescued.m_chi2_data < old_chi2) )
+      {
+        adopt_rescued_solution( sol, rescued );
+        sol.m_warnings.push_back( "Constraining the relative-efficiency curves to a common"
+            " enrichment - a restriction of this very model - fit the data better, which cannot"
+            " happen at a proper solution, so the fit was re-solved from that point.  That lowered"
+            " the data chi2 from " + SpecUtils::printCompact(old_chi2, 6) + " to "
+            + SpecUtils::printCompact(sol.m_chi2_data, 6) + "; the earlier result was not an optimum"
+            " and has been replaced." );
+
+        // Both comparisons were measured against the solution just replaced.
+        sol.m_merged_single_curve_comparison.reset();
+        sol.m_tied_enrichment_comparison.reset();
+        std::shared_ptr<const RelActAutoSolution> new_merged;
+        add_merged_single_curve_comparison( sol, orig_options, foreground, background, input_drf,
+                                            all_peaks, det_type, cancel_calc, 0, &new_merged );
+        add_tied_enrichment_comparison( sol, orig_options, foreground, background, input_drf,
+                                        all_peaks, det_type, cancel_calc, rescue_depth + 1,
+                                        new_merged );
+        return;
+      }
+    }//if( the restricted model beat the model containing it )
+  }catch( const std::exception &e )
+  {
+    comparison.valid = false;
+    comparison.message = e.what();
+  }//try / catch
+
+  sol.m_tied_enrichment_comparison = std::move( comparison );
+}//add_tied_enrichment_comparison(...)
 
 
 #include "InterSpec/RelActCalcAuto_Profile_imp.hpp"
@@ -27841,6 +29918,29 @@ RelActAutoSolution solve( const Options input_options,
             RelActCalcAutoImp::SearchSeedVariant::Default, false, &current_sol,
             true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
 
+        // A warm start can land on a flat spot the trust region cannot leave, and Ceres then reports
+        // CONVERGENCE having moved nothing (see `m_optimizer_returned_seed`).  Accepting that over the
+        // incumbent replaces a real fit with the mapped seed - measured as a U235 185.7 keV line at
+        // z=50 whose ROI came back with a chi2 WORSE than no peaks at all, and was then filtered out.
+        // Re-solve cold before giving up on the new ROI layout; keep the incumbent if that stalls too.
+        if( updated_sol.m_optimizer_returned_seed )
+        {
+          RelActAutoSolution cold_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+              updated_options, foreground, background, current_sol.m_drf,
+              current_sol.m_spectrum_peaks, det_type, cancel_calc,
+              RelActCalcAutoImp::SearchSeedVariant::Default, false, nullptr,
+              true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
+
+          if( !RelActAutoSolution::is_usable_status(cold_sol.m_status)
+             || cold_sol.m_optimizer_returned_seed )
+            throw runtime_error( "re-solving with the updated ROIs returned its own starting point"
+                                 " rather than a minimum" );
+
+          cold_sol.m_warnings.push_back( "The warm-started ROI-refinement solve returned its own"
+              " starting point, so it was re-solved from the ordinary seed." );
+          updated_sol = std::move( cold_sol );
+        }//if( updated_sol.m_optimizer_returned_seed )
+
         if( updated_sol.m_cost_functor
             && !updated_sol.m_cost_functor->exact_retained_inputs_match(
                                 current_sol.m_drf, current_sol.m_spectrum_peaks) )
@@ -27862,8 +29962,11 @@ RelActAutoSolution solve( const Options input_options,
         // The helper's guards skip the merged solve for a canceled fit, but its finalize keeps
         //  the metrics/status contract intact on this return path too.
         updated_sol.m_input_rois = options.rois;
+        std::shared_ptr<const RelActAutoSolution> merged_sol;
         add_merged_single_curve_comparison( updated_sol, options, foreground, background,
-                                            input_drf, all_peaks, det_type, cancel_calc );
+                                            input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
+        add_tied_enrichment_comparison( updated_sol, options, foreground, background,
+                                        input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
         return updated_sol;
       }//if( user canceled )
 
@@ -27911,8 +30014,11 @@ RelActAutoSolution solve( const Options input_options,
 
   current_sol.m_input_rois = options.rois;
 
+  std::shared_ptr<const RelActAutoSolution> merged_sol;
   add_merged_single_curve_comparison( current_sol, options, foreground, background,
-                                      input_drf, all_peaks, det_type, cancel_calc );
+                                      input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
+  add_tied_enrichment_comparison( current_sol, options, foreground, background,
+                                  input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
   add_mass_fraction_profiles( current_sol, foreground, background, input_drf,
                               all_peaks, det_type, cancel_calc );
 
@@ -28097,6 +30203,16 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.fwhm_estimation_method != rhs.fwhm_estimation_method )
     throw std::runtime_error( "FWHM estimation method in lhs and rhs are not the same" );
 
+  if( (lhs.starting_fwhm_form != rhs.starting_fwhm_form)
+      || (lhs.starting_fwhm_coefficients.size() != rhs.starting_fwhm_coefficients.size()) )
+    throw std::runtime_error( "Starting FWHM curve in lhs and rhs are not the same" );
+  for( size_t i = 0; i < lhs.starting_fwhm_coefficients.size(); ++i )
+  {
+    const float a = lhs.starting_fwhm_coefficients[i], b = rhs.starting_fwhm_coefficients[i];
+    if( fabs(a - b) > 1.0e-5*std::max( fabs(a), fabs(b) ) )
+      throw std::runtime_error( "Starting FWHM coefficients in lhs and rhs are not the same" );
+  }
+
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
 
@@ -28126,9 +30242,24 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.lorentzian_xrays != rhs.lorentzian_xrays )
     throw std::runtime_error( "Lorentzian xrays in lhs and rhs are not the same" );
 
+  if( lhs.iodine_escape_peaks != rhs.iodine_escape_peaks )
+    throw std::runtime_error( "Iodine escape peaks in lhs and rhs are not the same" );
+
+  if( lhs.model_lines_outside_roi_span != rhs.model_lines_outside_roi_span )
+    throw std::runtime_error( "Model lines outside ROI span in lhs and rhs are not the same" );
+
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );
+
+  if( fabs(lhs.additional_br_min_yield_fraction - rhs.additional_br_min_yield_fraction) > 1.0e-5 )
+    throw std::runtime_error( "Additional BR minimum yield fraction in lhs and rhs are not the same" );
+
+  if( fabs(lhs.fwhm_max_ratio_to_start - rhs.fwhm_max_ratio_to_start) > 1.0e-5 )
+    throw std::runtime_error( "FWHM maximum ratio to the starting curve in lhs and rhs are not the same" );
+
+  if( fabs(lhs.fwhm_channel_floor_factor - rhs.fwhm_channel_floor_factor) > 1.0e-5 )
+    throw std::runtime_error( "FWHM channel floor factor in lhs and rhs are not the same" );
 
   if( lhs.auto_profile_weak_mass_fractions != rhs.auto_profile_weak_mass_fractions )
     throw std::runtime_error( "Automatic mass-fraction profiling in lhs and rhs are not the same" );

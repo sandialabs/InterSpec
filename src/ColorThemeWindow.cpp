@@ -269,14 +269,23 @@ m_apply( nullptr )
   UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, m_interspec );
 
   m_save = foot->addNew<WPushButton>( WString::tr("Save") );
+  WidgetUtils::applyButtonRole( m_save, WidgetUtils::ButtonRole::Affirm );
   m_apply = foot->addNew<WPushButton>( WString::tr("Apply") );
-  m_save->setHiddenKeepsGeometry( true );
-  m_apply->setHiddenKeepsGeometry( true );
+  WidgetUtils::applyButtonRole( m_apply, WidgetUtils::ButtonRole::Neutral );
+  // "Save" and "Apply" come and go constantly - Save on any edit, Apply whenever the selected theme
+  //  is not the active one - so they are disabled rather than hidden.  Hiding them either reflowed
+  //  the footer on every toggle, or (with the geometry reserved to stop that) left an empty slot at
+  //  the footer's trailing edge, since these are its right-most buttons.
+
+  // Nothing has been edited yet.  themeSelected() disables Save on every selection, but it is wired
+  //  up below - after the initial select() - so without this the window opens offering to save a
+  //  theme the user has not touched.
+  m_save->setDisabled( true );
 
   m_save->clicked().connect( this, [this](){ saveCallback(); } );
   m_apply->clicked().connect( this, [this](){ applyCallback(); } );
   
-  m_close = AuxWindow::addCloseButtonToFooter( WString::tr("Close"), true, foot );
+  m_close = AuxWindow::addCloseButtonToFooter( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss, foot );
   m_close->clicked().connect( this, [this](){ AuxWindow::hide(); } );
 
   if( phone ) //Keep "Close" the left most item
@@ -341,7 +350,7 @@ m_apply( nullptr )
     m_menu->select( currentItem );
     m_edit->setTheme( currentItem->theme(), currentItem->editable() );
     if( currentThemeSelected )
-      m_apply->hide();
+      m_apply->setDisabled( true );
   }//if( currentItem )
 
   m_menu->itemSelected().connect( this, [this]( Wt::WMenuItem *item ){ themeSelected( item ); } );
@@ -523,7 +532,7 @@ void ColorThemeWindow::uploadThemeCallback()
         editParent->setMaximumSize( 0.75*w, 0.75*h );
         ColorThemeWidget *edit = editParent->addNew<ColorThemeWidget>();
         edit->setTheme( theme.get(), false );
-        WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes") );
+        WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
         yes->clicked().connect( this, [=](){
           //5) Add to database, and set as current theme to display
           std::unique_ptr<ColorTheme> newtheme = this->saveThemeToDb( theme.get() );
@@ -533,7 +542,7 @@ void ColorThemeWindow::uploadThemeCallback()
             ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
             m_menu->select( newitem );
             newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
-            m_apply->show();
+            m_apply->setDisabled( false );
           }else
           {
             m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
@@ -590,10 +599,10 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ctw-save-changes-title"), content );
   
   
-  WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn") );
+  WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn"), WidgetUtils::ButtonRole::Destructive );
   discard->clicked().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
 
-  WPushButton *save = dialog->addButton( WString::tr("Save") );
+  WPushButton *save = dialog->addButton( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
   save->clicked().connect( this, [this](){ saveAndDelete(); } );
 }//void checkForSavesAndCleanUp()
 
@@ -749,7 +758,7 @@ void ColorThemeWindow::saveCallback()
   
   m_edit->setTheme( item->theme(), true );
   
-  m_save->hide();
+  m_save->setDisabled( true );
 }//void saveCallback()
 
 
@@ -772,14 +781,14 @@ void ColorThemeWindow::applyCallback()
   m_interspec->applyColorTheme( make_shared<ColorTheme>(*theme) );
   
   item->setEditedSinceApply( false );
-  m_apply->hide();
+  m_apply->setDisabled( true );
 }//void applyCallback()
 
 
 void ColorThemeWindow::themEditedCallback()
 {
-  m_save->show();
-  m_apply->show();
+  m_save->setDisabled( false );
+  m_apply->setDisabled( false );
   
   ThemeMenuItem *themeItem = dynamic_cast<ThemeMenuItem *>(m_menu->currentItem());
   if( themeItem )
@@ -846,7 +855,7 @@ void ColorThemeWindow::themeSelected( Wt::WMenuItem *item )
   
   m_edit->setTheme( themeItem->theme(), themeItem->editable() );
   m_removeIcn->setHidden( !themeItem->editable() );
-  m_save->setHidden( true );
+  m_save->setDisabled( true );
   
   showOrHideApplyButton();
 }//themeSelected(Wt::WMenuItem *item)
@@ -875,5 +884,5 @@ void ColorThemeWindow::showOrHideApplyButton()
   else if( themeItem->editable() && themeItem->isEditedSinceApply() )
     showApply = true;
   
-  m_apply->setHidden( !showApply );
+  m_apply->setDisabled( !showApply );
 }//void showOrHideApplyButton()

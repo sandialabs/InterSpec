@@ -24,7 +24,7 @@
  */
 
 /// @file CrossSectionData.h
-/// @brief Photon cross-section data access for all elements Z=1..92.
+/// @brief Photon cross-section data access for all elements Z=1..98.
 ///
 /// Cross-section data is compiled directly into the library as constant arrays.
 /// Photon curves and angular factors come directly from EPICS2023 EPDL; K/L
@@ -47,8 +47,41 @@ struct PhotonProcessCurve;
 struct PhotonRayleighValues;
 struct PhotonAngularCurve;
 
-/// Maximum atomic number we support data for.
-static constexpr int kMaxZ = 92;
+/// Maximum atomic number of the photon and material domain: photon cross
+/// sections, angular factors, Compton-profile support and atomic weights exist
+/// for every Z=1..kMaxZ, and Material accepts exactly this range.
+static constexpr int kMaxZ = 98;
+
+/// Electron-side tables (Seltzer-Berger bremsstrahlung from NIST EPQ, NIST ESTAR
+/// stopping powers, ICRU-49 mean excitation energies, and the CSDA-range and
+/// bremsstrahlung-integral tables built from them) stop at uranium.
+static constexpr int kMaxElectronTableZ = 92;
+
+/// Map an element to the electron-side tables: Z > kMaxElectronTableZ reuses
+/// uranium. Every electron-table access goes through this; indexing an
+/// electron table with a raw photon-domain Z is a bug.
+///
+/// This is an approximation for Np..Cf. Measured against NIST ESTAR for Z 93-98
+/// at all 53 ESTAR nodes (10 keV-20 MeV, per unit mass, as the runtime uses it),
+/// reusing U gives:
+///   collision stopping  -2.1% .. +2.3%              (Pu -1.3% .. -0.4%)
+///   radiative stopping  Np -1.9% .. Cf -8.9%        (Pu -4.5% .. -2.6%)
+///   CSDA range          -1.7% .. +2.9% above 50 keV (Pu +0.6% .. +2.1%); down to
+///                       -6.8% (Cf) at 10 keV, where the range is ~1 micron
+/// and the mean excitation energy is U's 890 eV (ESTAR: Np 902 ... Cf 966 eV).
+/// Electron transport is a small channel for photon efficiency; see DESIGN.md.
+inline constexpr int electron_table_z(int Z) {
+    return Z < kMaxElectronTableZ ? Z : kMaxElectronTableZ;
+}
+
+/// The photon-data energy window. Every photon process curve is tabulated from
+/// kPhotonDataMinEnergy_keV to kPhotonDataMaxEnergy_keV (pair production and
+/// K-shell photoelectric start at their thresholds). The stored top node is a
+/// float32 log10 value that decodes to 20.0000075 MeV. Outside the window the
+/// accessors return the endpoint value (they clamp, they do not extrapolate);
+/// callers that must not clamp should refuse energies outside it.
+inline constexpr double kPhotonDataMinEnergy_keV = 10.0;
+inline constexpr double kPhotonDataMaxEnergy_keV = 20000.0;
 
 /// Seltzer-Berger bremsstrahlung spectral shape data.
 /// chi(Z, T, kappa) = (beta^2 / Z^2) * kappa * dSigma/dkappa
@@ -57,7 +90,7 @@ extern const uint16_t kSB_n_kappa;       ///< Number of k/T fraction grid points
 extern const uint16_t kSB_n_energy;      ///< Number of electron energy grid points (27)
 extern const float kSB_kappa[];          ///< k/T fraction values, ascending [kSB_n_kappa]
 extern const float kSB_log_E_keV[];      ///< log10(electron KE / keV), ascending [kSB_n_energy]
-extern const float kSB_chi_scale[kMaxZ]; ///< Per-element uint16 decode scales
+extern const float kSB_chi_scale[kMaxElectronTableZ]; ///< Per-element uint16 decode scales
 
 /// Fluorescence line data for a single element.
 /// Only K-shell fluorescence is tracked (L-shell and higher are deposited locally).
@@ -86,8 +119,8 @@ struct LSubshellFluor {
 /// line set. Only elements whose L lines clear the 10 keV x-ray cut have
 /// populated subshells; lighter elements have all-zero (empty) subshells.
 /// Generated separately from element_data.cpp (see relaxation_epics_data.cpp).
-/// Relaxation data extends through Z=99 for radioactive-decay daughters even
-/// though photon/electron transport tables stop at Z=92.
+/// Relaxation data extends through Z=99 for radioactive-decay daughters, one
+/// beyond the Z=98 photon tables (electron tables stop at Z=92).
 struct LFluorescenceData {
     float l3_edge_keV;          ///< L3-shell binding energy (keV)
     /// Coster-Kronig L-vacancy transfer yields {f12, f13, f23}: probability an
@@ -105,7 +138,8 @@ struct ElementData {
     uint8_t Z;
 
     /// Quantized Seltzer-Berger table. Decode coefficient i as
-    /// sb_chi_quantized[i] * kSB_chi_scale[Z-1].
+    /// sb_chi_quantized[i] * kSB_chi_scale[electron_table_z(Z)-1]. For
+    /// Z > kMaxElectronTableZ this points at uranium's table.
     const uint16_t* sb_chi_quantized;
 
     // Subshell data for Compton Doppler broadening (impulse approximation with
@@ -133,7 +167,8 @@ public:
 
     /// Interpolate a single cross-section type at energy E (MeV) for element Z.
     /// Returns the cross-section in barns.
-    /// Uses log-log linear interpolation.
+    /// Uses log-log linear interpolation. Outside [kPhotonDataMinEnergy_keV,
+    /// kPhotonDataMaxEnergy_keV] the endpoint value is returned (clamped).
     double sigma_photoelectric(int Z, double energy_MeV) const;
     double sigma_K_photoelectric(int Z, double energy_MeV) const;
     double sigma_compton(int Z, double energy_MeV) const;
@@ -141,7 +176,7 @@ public:
     double sigma_pair_production(int Z, double energy_MeV) const;
 
     /// Get all four partial cross-sections at once (more efficient — single binary search).
-    /// Results in barns.
+    /// Results in barns. Clamped outside the photon-data window, like sigma_*().
     struct PartialCrossSections {
         double sigma_pe;
         double sigma_cs;
@@ -175,7 +210,8 @@ public:
 
     /// Interpolate the Seltzer-Berger chi function for element Z at electron
     /// kinetic energy T_keV and reduced photon energy kappa = k/T.
-    /// Uses bilinear interpolation in (log10(T_keV), kappa).
+    /// Uses bilinear interpolation in (log10(T_keV), kappa). Z > 92 uses
+    /// uranium's table (electron_table_z).
     double sb_chi(int Z, double T_keV, double kappa) const;
 
     /// Hoisted Seltzer-Berger chi evaluation for compound materials.
@@ -191,7 +227,9 @@ public:
     SBChiKBracket sb_chi_kappa_bracket(double kappa) const;
     double sb_chi_bracketed(int Z, const SBChiEBracket& eb, const SBChiKBracket& kb) const;
 
-    /// Atomic weight in g/mol for element Z.
+    /// Atomic weight in g/mol for element Z (xraylib). Above Z=92 these are
+    /// conventional long-lived-isotope masses (e.g. Pu 239.1), not standard
+    /// atomic weights.
     double atomic_weight(int Z) const;
 
 private:
