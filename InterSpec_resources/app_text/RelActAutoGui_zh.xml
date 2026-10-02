@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">相对活度同位素分析</message>
+  <message id="raag-window-title">按核素分析同位素</message>
   
   <!-- Presets section -->
   <message id="raag-presets">预设</message>

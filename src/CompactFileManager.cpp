@@ -1436,7 +1436,9 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
 
   Wt::WFlags<InterSpec::SetSpectrumOptions> options;
   options |= InterSpec::SetSpectrumOptions::SkipParseWarnings;
+#if( USE_REMOTE_RID )
   options |= InterSpec::SetSpectrumOptions::SkipExternalRid;
+#endif
 
   m_interspec->setSpectrum( meas, samples, SpecUtils::SpectrumType::Foreground, options );
   m_interspec->setSpectrum( foreground_meas, foreground_samples, type, options );

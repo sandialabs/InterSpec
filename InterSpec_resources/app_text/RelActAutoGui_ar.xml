@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">نشاط نسبي نظائري</message>
+  <message id="raag-window-title">النظائر حسب النوى</message>
   
   <!-- Presets section -->
   <message id="raag-presets">الإعدادات المسبقة</message>

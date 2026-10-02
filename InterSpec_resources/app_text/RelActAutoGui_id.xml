@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">Isotopik Akt. Relatif</message>
+  <message id="raag-window-title">Isotopik menurut nuklida</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Pra-atur</message>

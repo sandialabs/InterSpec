@@ -3,7 +3,10 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <cmath>
+#include <limits>
 #include <algorithm>
+#include <optional>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
@@ -100,6 +103,33 @@ nlohmann::json stateToJsonSummary( const RelActCalcAuto::RelActAutoGuiState &sta
 }//stateToJsonSummary()
 
 
+/** JSON for one ROI, using the same names `modify_isotopics_rois` accepts. */
+nlohmann::json roiToJson( const RelActCalcAuto::RoiRange &roi )
+{
+  json roi_json;
+  roi_json["lower_energy"] = roi.lower_energy;
+  roi_json["upper_energy"] = roi.upper_energy;
+
+  // `offset_type_str` keeps a historical misspelling ("Quardratic"); both spellings are accepted back.
+  string continuum = roi.auto_continuum ? string("Auto") : string( PeakContinuum::offset_type_str(roi.continuum_type) );
+  if( !roi.auto_continuum && (roi.continuum_type == PeakContinuum::OffsetType::Quadratic) )
+    continuum = "Quadratic";
+  roi_json["continuum_type"] = continuum;
+  roi_json["range_type"] = RelActCalcAuto::RoiRange::to_str( roi.range_limits_type );
+
+  if( roi.lower_edge.tail_fraction.has_value() )
+    roi_json["lower_edge_peak_coverage_percent"] = 100.0*(1.0 - roi.lower_edge.tail_fraction.value());
+  if( roi.lower_edge.sideband_fwhm.has_value() )
+    roi_json["lower_edge_sideband_fwhm"] = roi.lower_edge.sideband_fwhm.value();
+  if( roi.upper_edge.tail_fraction.has_value() )
+    roi_json["upper_edge_peak_coverage_percent"] = 100.0*(1.0 - roi.upper_edge.tail_fraction.value());
+  if( roi.upper_edge.sideband_fwhm.has_value() )
+    roi_json["upper_edge_sideband_fwhm"] = roi.upper_edge.sideband_fwhm.value();
+
+  return roi_json;
+}//roiToJson(...)
+
+
 /** Helper function to convert RelActAutoGuiState to a detailed JSON representation.
 
  This provides complete configuration details suitable for reviewing the full configuration.
@@ -127,15 +157,7 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
   result["rois"] = json::array();
   for( const auto &roi : opts.rois )
   {
-    json roi_json;
-    roi_json["lower_energy"] = roi.lower_energy;
-    roi_json["upper_energy"] = roi.upper_energy;
-    roi_json["continuum_type"] = PeakContinuum::offset_type_label_tr(roi.continuum_type);
-
-    const char *range_type_str = RelActCalcAuto::RoiRange::to_str( roi.range_limits_type );
-    roi_json["range_type"] = range_type_str;
-
-    result["rois"].push_back( roi_json );
+    result["rois"].push_back( roiToJson( roi ) );
   }
 
   // Lambda to create JSON for a rel eff curve
@@ -253,6 +275,8 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
   result["fwhm_form"] = RelActCalcAuto::to_str(opts.fwhm_form);
   result["fwhm_estimation_method"] = RelActCalcAuto::to_str(opts.fwhm_estimation_method);
   result["skew_type"] = PeakDef::to_string(opts.skew_type);
+  if( opts.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore )
+    result["skew_from_peak_fit_preferences"] = RelActCalcAuto::Options::skew_prefs_usage_str( opts.skew_prefs_usage );
   result["additional_br_uncert"] = opts.additional_br_uncert;
   result["background_subtract"] = state.background_subtract;
   result["show_ref_lines"] = state.show_ref_lines;
@@ -452,11 +476,17 @@ void saveRelActState(
  with energy ranges, chi²/dof, and peak details for each ROI.
 
  @param peaks Vector of fitted peaks (typically from solution.m_fit_peaks_in_spectrums_cal)
+ @param solution The solution the peaks are from; used to give the input ROI(s) each ROI was made from.
  @returns JSON object with "description" and "rois" array
  */
-nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks )
+nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks,
+                             const RelActCalcAuto::RelActAutoSolution &solution )
 {
   using namespace std;
+
+  const vector<RelActCalcAuto::RoiRange> &final_rois = solution.m_final_roi_ranges;
+  const vector<RelActCalcAuto::RoiResolutionInfo> &final_info = solution.m_final_roi_info;
+  const vector<RelActCalcAuto::RoiRange> &input_rois = solution.m_input_rois;
 
   // Group peaks by shared PeakContinuum
   map<shared_ptr<const PeakContinuum>, vector<const PeakDef *>> roi_groups;
@@ -482,6 +512,36 @@ nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks )
     json roi_obj;
     roi_obj["lower_energy_kev"] = continuum->lowerEnergy();
     roi_obj["upper_energy_kev"] = continuum->upperEnergy();
+
+    // The ROI(s) of the configuration this ROI was made from; for ROIs sized from the peak shape, or
+    //  split by lines, these bounds differ from the ones fit.  The fit ROI is the one closest in energy
+    //  (the peaks are in the spectrum's energy calibration, which a fit adjustment may differ from).
+    size_t nearest = final_rois.size();
+    double nearest_diff = std::numeric_limits<double>::infinity();
+    for( size_t i = 0; (i < final_rois.size()) && (final_info.size() == final_rois.size()); ++i )
+    {
+      const double diff = fabs( final_rois[i].lower_energy - continuum->lowerEnergy() )
+                          + fabs( final_rois[i].upper_energy - continuum->upperEnergy() );
+      if( diff < nearest_diff )
+      {
+        nearest_diff = diff;
+        nearest = i;
+      }
+    }//for( loop over final ROIs )
+
+    if( nearest < final_rois.size() )
+    {
+      json from_rois = json::array();
+      for( const size_t index : final_info[nearest].input_roi_indices )
+      {
+        if( index < input_rois.size() )
+          from_rois.push_back( json{ {"lower_energy", input_rois[index].lower_energy},
+                                     {"upper_energy", input_rois[index].upper_energy},
+                                     {"range_type", RelActCalcAuto::RoiRange::to_str( input_rois[index].range_limits_type )} } );
+      }
+      if( !from_rois.empty() )
+        roi_obj["from_input_rois"] = from_rois;
+    }//if( nearest < final_rois.size() )
 
     // Get chi²/dof from any peak (all peaks in ROI share this value)
     if( roi_peaks[0]->chi2Defined() )
@@ -547,7 +607,8 @@ nlohmann::json buildRoiInfo( const std::vector<PeakDef> &peaks )
 
   json roi_info;
   roi_info["description"] = "The bounds, chi-squared per degree of freedom, total area of fit peaks, and fit areas/means of individual peaks in ROIs used."
-                            " This may be useful to help identify significant, poorly fitting";
+                            " This may be useful to help identify significant, poorly fitting ROIs.  from_input_rois gives the configured"
+                            " ROI(s) each was made from; use those bounds to remove or update a ROI with modify_isotopics_rois.";
   roi_info["rois"] = rois_array;
 
   return roi_info;
@@ -1185,7 +1246,8 @@ nlohmann::json executePerformIsotopics(
       drf,
       all_peaks,
       det_type,
-      nullptr  // no cancel callback
+      nullptr,  // no cancel callback
+      fitPrefs
     );
 
     // Check if solve was successful
@@ -1357,7 +1419,7 @@ nlohmann::json executePerformIsotopics(
 
     // Add ROI information with chi²/dof for each ROI
     if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
-      result["roi_info"] = buildRoiInfo( solution.m_fit_peaks_in_spectrums_cal );
+      result["roi_info"] = buildRoiInfo( solution.m_fit_peaks_in_spectrums_cal, solution );
 
     // Add observed efficiency information
     json obs_eff_obj;
@@ -1530,6 +1592,104 @@ namespace
   }//parseNuclideFromJson()
 
 
+  /** Sets the continuum from a JSON string: a continuum type name (as `PeakContinuum::offset_type_str`
+   gives, or the GUI label key, e.g. "pct-linear", that older versions of this tool reported), or
+   "Auto" to have the continuum chosen automatically (starting from the current type). */
+  void setContinuumFromJson( RelActCalcAuto::RoiRange &roi, const std::string &continuum_str )
+  {
+    if( SpecUtils::iequals_ascii( continuum_str, "Auto" ) )
+    {
+      roi.auto_continuum = true;
+      return;
+    }
+
+    roi.auto_continuum = false;
+    for( int i = 0; i <= static_cast<int>(PeakContinuum::OffsetType::External); ++i )
+    {
+      const PeakContinuum::OffsetType type = PeakContinuum::OffsetType(i);
+      if( continuum_str == PeakContinuum::offset_type_label_tr( type ) )
+      {
+        roi.continuum_type = type;
+        return;
+      }
+    }//for( loop over continuum types )
+
+    roi.continuum_type = PeakContinuum::str_to_offset_type_str( continuum_str.c_str(), continuum_str.size() );
+  }//setContinuumFromJson(...)
+
+
+  /** Applies the optional ROI fields of `roi_json` (continuum, range type, and edge overrides). */
+  void applyOptionalRoiFields( RelActCalcAuto::RoiRange &roi, const nlohmann::json &roi_json )
+  {
+    if( roi_json.contains( "continuum_type" ) )
+      setContinuumFromJson( roi, roi_json.at( "continuum_type" ).get<std::string>() );
+
+    if( roi_json.contains( "range_type" ) )
+    {
+      const std::string range_str = roi_json.at( "range_type" ).get<std::string>();
+      roi.range_limits_type = RelActCalcAuto::RoiRange::range_limits_type_from_str( range_str.c_str() );
+    }
+
+    // Peak coverage is given in percent (e.g., 99.9), and stored as the fraction of the peak outside.
+    const auto coverage = [&roi_json]( const char *key, std::optional<double> &tail_fraction ){
+      if( !roi_json.contains( key ) )
+        return;
+      if( roi_json.at( key ).is_null() )
+      {
+        tail_fraction.reset();
+        return;
+      }
+      const double percent = roi_json.at( key ).get<double>();
+      if( !(percent > 50.0) || !(percent < 100.0) )
+        throw std::runtime_error( std::string(key) + " must be greater than 50 and less than 100 (percent)" );
+      tail_fraction = std::round( 1.0E10*(100.0 - percent) ) / 1.0E12; //Same rounding as the GUI, so 99.9 gives exactly 1E-3
+    };//coverage
+
+    const auto sideband = [&roi_json]( const char *key, std::optional<double> &value ){
+      if( !roi_json.contains( key ) )
+        return;
+      if( roi_json.at( key ).is_null() )
+      {
+        value.reset();
+        return;
+      }
+      value = roi_json.at( key ).get<double>();
+      if( !(value.value() >= 0.0) || !(value.value() < 100.0) )
+        throw std::runtime_error( std::string(key) + " must be between 0 and 100 (FWHM)" );
+    };//sideband
+
+    coverage( "lower_edge_peak_coverage_percent", roi.lower_edge.tail_fraction );
+    sideband( "lower_edge_sideband_fwhm", roi.lower_edge.sideband_fwhm );
+    coverage( "upper_edge_peak_coverage_percent", roi.upper_edge.tail_fraction );
+    sideband( "upper_edge_sideband_fwhm", roi.upper_edge.sideband_fwhm );
+
+    // A fixed range is used as given, so has no use for extent settings.
+    if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
+    {
+      for( const char *key : { "lower_edge_peak_coverage_percent", "lower_edge_sideband_fwhm",
+                               "upper_edge_peak_coverage_percent", "upper_edge_sideband_fwhm" } )
+      {
+        if( roi_json.contains( key ) && !roi_json.at( key ).is_null() )
+          throw std::runtime_error( std::string(key) + " only applies to LineAnchored and CanBeBrokenUp ROIs,"
+                                    " not Fixed ones" );
+      }
+      roi.lower_edge = roi.upper_edge = RelActCalcAuto::RoiRange::EdgeOverride{};
+    }//if( a fixed range )
+  }//applyOptionalRoiFields(...)
+
+
+  /** Throws if the ROI's energies are inconsistent with its range type. */
+  void validateRoiBounds( const RelActCalcAuto::RoiRange &roi )
+  {
+    // A line-anchored ROI may be a single line (lower == upper)
+    const bool single_line_ok = (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::LineAnchored);
+    if( (roi.lower_energy > roi.upper_energy) || ((roi.lower_energy == roi.upper_energy) && !single_line_ok) )
+      throw std::runtime_error( "lower_energy (" + std::to_string( roi.lower_energy )
+                                + ") must be less than upper_energy (" + std::to_string( roi.upper_energy )
+                                + "), or equal to it for a LineAnchored ROI" );
+  }//validateRoiBounds(...)
+
+
   // Helper to parse an ROI from JSON
   RelActCalcAuto::RoiRange parseRoiFromJson( const nlohmann::json &roi_json )
   {
@@ -1537,31 +1697,18 @@ namespace
 
     roi.lower_energy = roi_json.at( "lower_energy" ).get<double>();
     roi.upper_energy = roi_json.at( "upper_energy" ).get<double>();
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
 
-    if( roi.lower_energy >= roi.upper_energy )
-      throw std::runtime_error( "lower_energy (" + std::to_string( roi.lower_energy )
-                                + ") must be less than upper_energy (" + std::to_string( roi.upper_energy ) + ")" );
-
-    if( roi_json.contains( "continuum_type" ) )
-    {
-      const std::string continuum_str = roi_json.at( "continuum_type" ).get<std::string>();
-      roi.continuum_type = PeakContinuum::str_to_offset_type_str( continuum_str.c_str(), continuum_str.size() );
-    }
-
-    if( roi_json.contains( "range_type" ) )
-    {
-      const std::string range_str = roi_json.at( "range_type" ).get<std::string>();
-      roi.range_limits_type = RelActCalcAuto::RoiRange::range_limits_type_from_str( range_str.c_str() );
-    }else
-    {
-      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
-    }
+    applyOptionalRoiFields( roi, roi_json );
+    validateRoiBounds( roi );
 
     return roi;
   }//parseRoiFromJson()
 
 
-  // Helper to validate that ROIs do not overlap
+  // Helper to validate that fixed ROIs do not overlap (ROIs sized from the peak shape are merged if
+  //  they overlap, and a fixed ROI takes precedence over them).
   void validateRoisNonOverlapping( const std::vector<RelActCalcAuto::RoiRange> &rois )
   {
     if( rois.size() < 2 )
@@ -1570,7 +1717,10 @@ namespace
     // Create a sorted copy by lower_energy
     std::vector<const RelActCalcAuto::RoiRange *> sorted_rois;
     for( const auto &roi : rois )
-      sorted_rois.push_back( &roi );
+    {
+      if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
+        sorted_rois.push_back( &roi );
+    }
 
     std::sort( sorted_rois.begin(), sorted_rois.end(),
       []( const RelActCalcAuto::RoiRange *a, const RelActCalcAuto::RoiRange *b ) {
@@ -1895,26 +2045,26 @@ nlohmann::json executeModifyIsotopicsRois(
         throw runtime_error( "ROI [" + to_string( lower ) + ", " + to_string( upper ) + "] not found" );
 
       // Update bounds if new values specified
+      const bool new_bounds = roi_json.contains( "new_lower_energy" ) && roi_json.contains( "new_upper_energy" );
       if( roi_json.contains( "new_lower_energy" ) )
         it->lower_energy = roi_json.at( "new_lower_energy" ).get<double>();
 
       if( roi_json.contains( "new_upper_energy" ) )
         it->upper_energy = roi_json.at( "new_upper_energy" ).get<double>();
 
-      if( it->lower_energy >= it->upper_energy )
-        throw runtime_error( "lower_energy must be less than upper_energy" );
+      const RelActCalcAuto::RoiRange::RangeLimitsType old_type = it->range_limits_type;
+      applyOptionalRoiFields( *it, roi_json );
 
-      if( roi_json.contains( "continuum_type" ) )
-      {
-        const string continuum_str = roi_json.at( "continuum_type" ).get<string>();
-        it->continuum_type = PeakContinuum::str_to_offset_type_str( continuum_str.c_str(), continuum_str.size() );
-      }
-
-      if( roi_json.contains( "range_type" ) )
-      {
-        const string range_str = roi_json.at( "range_type" ).get<string>();
-        it->range_limits_type = RelActCalcAuto::RoiRange::range_limits_type_from_str( range_str.c_str() );
-      }
+      // A LineAnchored ROI's energies are its lowest and highest lines, which as a range would cut the
+      //  peaks of those lines (or be a single point).
+      if( (old_type == RelActCalcAuto::RoiRange::RangeLimitsType::LineAnchored)
+         && (it->range_limits_type != old_type) && !new_bounds )
+        throw runtime_error( "Changing the LineAnchored ROI [" + to_string( lower ) + ", " + to_string( upper )
+                             + "] to " + RelActCalcAuto::RoiRange::to_str( it->range_limits_type )
+                             + " requires new_lower_energy and new_upper_energy, since its energies are"
+                             " lines, not a range (roi_info from the last calculation gives the range it"
+                             " was fit over)." );
+      validateRoiBounds( *it );
 
       json roi_result;
       roi_result["lower_energy"] = it->lower_energy;
@@ -2135,6 +2285,14 @@ nlohmann::json executeModifyIsotopicsOptions(
     const string skew_str = params.at( "skew_type" ).get<string>();
     state.options.skew_type = PeakDef::skew_from_string( skew_str.c_str() );
     changes.push_back( "skew_type=" + skew_str );
+
+    // An explicitly chosen skew type replaces using the one from the peak-fit preferences, which
+    //  would otherwise override it.
+    if( state.options.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore )
+    {
+      state.options.skew_prefs_usage = RelActCalcAuto::Options::SkewPrefsUsage::Ignore;
+      changes.push_back( "no longer using the skew from the peak-fit preferences" );
+    }
   }
 
   // Handle background_subtract
@@ -2502,27 +2660,35 @@ nlohmann::json executeGetIsotopicsConfigSchema(
   // ============================================================================
   result["rois"] = json::object();
   result["rois"]["description"] = "Array of energy regions to fit. Each ROI defines an energy range containing peaks to be analyzed. "
-    "ROIs must not overlap. Peaks within ROIs are fit simultaneously.";
+    "Fixed ROIs must not overlap each other; ROIs sized from the peak shape that overlap are merged. Peaks within a ROI are fit simultaneously.";
 
   result["rois"]["fields"] = json::object();
   result["rois"]["fields"]["lower_energy"] = "Lower energy bound of the ROI in keV.";
-  result["rois"]["fields"]["upper_energy"] = "Upper energy bound of the ROI in keV. Must be > lower_energy.";
+  result["rois"]["fields"]["upper_energy"] = "Upper energy bound of the ROI in keV. Must be > lower_energy (or equal to it, for a single-line LineAnchored ROI).";
   result["rois"]["fields"]["continuum_type"] = "Type of continuum (background) model for this ROI.";
   result["rois"]["fields"]["range_type"] = "How the ROI bounds behave during fitting.";
+  result["rois"]["fields"]["lower_edge_peak_coverage_percent"] = "Optional, non-Fixed ROIs: extend below the lowest line until this percent (more than 50, less than 100) of its peak is covered (default depends on the detector: 99.9, or 98 for CZT).";
+  result["rois"]["fields"]["lower_edge_sideband_fwhm"] = "Optional, non-Fixed ROIs: extra continuum below the coverage limit, in FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT).";
+  result["rois"]["fields"]["upper_edge_peak_coverage_percent"] = "Optional, non-Fixed ROIs: extend above the highest line until this percent (more than 50, less than 100) of its peak is covered (default 99.9).";
+  result["rois"]["fields"]["upper_edge_sideband_fwhm"] = "Optional, non-Fixed ROIs: extra continuum above the coverage limit, in FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT).";
 
   // Continuum types
   result["continuum_types"] = json::array();
+  result["continuum_types"].push_back( {{"value", "Auto"}, {"description", "Chosen automatically after an initial fit, from how well each candidate continuum describes the data (starting from Linear, or the ROI's current type)"}} );
   result["continuum_types"].push_back( {{"value", "Linear"}, {"description", "Linear continuum - 2 parameters"}} );
   result["continuum_types"].push_back( {{"value", "Quadratic"}, {"description", "Quadratic continuum - 3 parameters"}} );
   result["continuum_types"].push_back( {{"value", "Cubic"}, {"description", "Cubic continuum - 4 parameters"}} );
   result["continuum_types"].push_back( {{"value", "FlatStep"}, {"description", "Flat step continuum - accounts for Compton edge"}} );
   result["continuum_types"].push_back( {{"value", "LinearStep"}, {"description", "Linear step continuum"}} );
   result["continuum_types"].push_back( {{"value", "BiLinearStep"}, {"description", "Bi-linear step continuum"}} );
+  result["continuum_types"].push_back( {{"value", "FlatStepCDF"}, {"description", "Flat continuum with a step proportional to the cumulative peak area (a physically motivated step, e.g. for large peaks)"}} );
+  result["continuum_types"].push_back( {{"value", "LinearStepCDF"}, {"description", "Linear continuum with a peak-area-proportional step"}} );
+  result["continuum_types"].push_back( {{"value", "BiLinearStepCDF"}, {"description", "Bi-linear continuum (different slopes either side of the peaks) with a peak-area-proportional step"}} );
 
   // ROI range types
   result["range_types"] = json::array();
   result["range_types"].push_back( {{"value", "Fixed"}, {"description", "ROI bounds are fixed at specified energies"}} );
-  result["range_types"].push_back( {{"value", "CanExpandForFwhm"}, {"description", "ROI can expand to accommodate peak FWHM"}} );
+  result["range_types"].push_back( {{"value", "LineAnchored"}, {"description", "lower_energy/upper_energy are the energies of the lowest and highest gamma lines to include (equal for a single line); the ROI extends past them based on the detector's peak width and shape, so it adapts to any detector resolution.  Preferred for new ROIs."}} );
   result["range_types"].push_back( {{"value", "CanBeBrokenUp"}, {"description", "ROI can be split into multiple regions, based on gamma lines of source and FWHM of detector, if needed"}} );
 
   // ============================================================================

@@ -585,20 +585,24 @@ Result run_on_file( const std::string &exemplar_filename,
   }
 
   // ---- 7. Solve --------------------------------------------------------------
+  // The detector type is of this file; its peak-fit preferences, if it has none, are those of the
+  //  exemplar the state came from, as the state was set up with (and `solve` then falls back to the DRF's).
+  const std::shared_ptr<const PeakFitDetPrefs> file_prefs = specfile ? specfile->peakFitDetPrefs() : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs
+                        = (file_prefs || !cached_exemplar) ? file_prefs : cached_exemplar->peakFitDetPrefs();
+
   PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Unknown;
-  {
-    const std::shared_ptr<const PeakFitDetPrefs> prefs = specfile ? specfile->peakFitDetPrefs() : nullptr;
-    if( prefs && (prefs->m_det_type != PeakFitUtils::CoarseResolutionType::Unknown) )
-      det_type = prefs->m_det_type;
-    else
-      det_type = PeakFitUtils::coarse_det_type( foreground, specfile );
-  }
+  if( file_prefs && (file_prefs->m_det_type != PeakFitUtils::CoarseResolutionType::Unknown) )
+    det_type = file_prefs->m_det_type;
+  else
+    det_type = PeakFitUtils::coarse_det_type( foreground, specfile );
 
   RelActCalcAuto::RelActAutoSolution solution;
   try
   {
     solution = RelActCalcAuto::solve( state->options, foreground, background, drf,
-                                      /*all_peaks=*/{}, det_type, /*cancel_calc=*/nullptr );
+                                      /*all_peaks=*/{}, det_type, /*cancel_calc=*/nullptr,
+                                      peak_fit_prefs );
   }catch( std::exception &e )
   {
     result.m_error_msg = string("RelActCalcAuto::solve threw: ") + e.what();

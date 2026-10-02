@@ -693,6 +693,29 @@ padding-bottom: 1px;
   width: 9ex;
 }
 
+/* How far a non-fixed ROI extends past its lines, below and above; and the range it was fit over. */
+.RelActAutoGuiEnergyRange .RoiEdges
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+
+.RelActAutoGuiEnergyRange .RoiEdge
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.RelActAutoGuiEnergyRange .RoiEdge > input
+{
+  width: 6ex;
+}
+
 
 .RelActAutoGui .RelActAutoGuiNuclide
 {

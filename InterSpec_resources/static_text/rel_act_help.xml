@@ -25,6 +25,37 @@ the uncertainty of the fitted curve itself.  The same convention is used by the
 
 
 <div style="display:table-row">
+<h4>Energy ranges</h4>
+<p>
+The <em>Range</em> type of each energy range (ROI) says how its lower and upper energies are used:
+</p>
+<ul>
+  <li><b>Lines + peak width</b>: they are the lowest and highest gamma lines the ROI must include
+  (the same energy for a single line).  The ROI extends below its lower line until that line's
+  peak is covered to the given percent, plus a given number of FWHM of continuum, and likewise
+  above its upper line.  The peak width and shape come from the fit, so the same ROIs suit any
+  detector resolution.  The continuum on either side stops short of other peaks found in the
+  spectrum, and ROIs whose peaks are close together are merged.  A floating peak the ROI reaches is
+  covered as fully as the ROI's own lines.  The range actually fit is shown under the ROI's fields.</li>
+  <li><b>Fixed range</b>: they are the ROI's limits, whatever the detector.</li>
+  <li><b>Split by lines</b>: an ROI is made around each significant gamma line within them, as for
+  <em>Lines + peak width</em>, with overlapping ones merged.  An initial fit uses the lines at peaks
+  found in the spectrum; the final fit uses the lines that fit predicts to be statistically
+  significant.</li>
+</ul>
+<p>
+How far a ROI extends past its lines (the <em>Below</em> and <em>Above</em> fields) defaults to
+values suited to the detector type, shown in grey; enter a value to override it for that ROI.  (For
+example, CZT ROIs cover less of each peak below its line, where CZT's long tail is.)  Changing a
+<em>Lines + peak width</em> ROI to another range type starts from the range it was last fit over.
+Dragging the edge of a ROI on the chart makes it a fixed range; a ROI split by lines, or merged from
+several, becomes the individual fixed ROIs it was fit as.  A continuum type of <em>Auto</em> chooses
+the continuum from how well each candidate describes the data after an initial fit.
+</p>
+</div>
+
+
+<div style="display:table-row">
 <h4>Custom report templates</h4>
 <p>
 The HTML, plain-text, CSV, etc. reports this tool produces &mdash; both in the GUI's

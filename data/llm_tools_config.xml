@@ -2078,12 +2078,17 @@ Only specify fields you want to change - unspecified fields remain unchanged.
 Actions:
 - add: Add new ROIs to the configuration
 - remove: Remove ROIs matching the specified energy bounds
-- update: Modify properties of existing ROIs (continuum_type, range_type, or change bounds)
+- update: Modify properties of existing ROIs (continuum_type, range_type, edge settings, or change bounds)
 - replace_all: Replace all ROIs with the specified list
 
-For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.
+For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.  Changing a LineAnchored ROI to another range type requires new bounds, since its energies are lines rather than a range (roi_info from the last calculation gives the range it was fit over).  The ROIs in roi_info list the configured ROI(s) they were made from (from_input_rois); use those bounds to identify a ROI here.
 
-Validation: ROIs may not overlap - tool returns error if overlapping ROIs would result.</Description>
+Range types:
+- LineAnchored (preferred for new ROIs): lower_energy/upper_energy are the energies of the lowest and highest gamma lines to include (equal for a single line); the fit ROI extends past them based on the detector's peak width and shape, so it suits any detector resolution.  ROIs whose peaks are close together are merged; otherwise ROIs share the continuum between them, and a ROI's continuum region stops short of other peaks in the spectrum.
+- Fixed: lower_energy/upper_energy are the exact ROI limits.
+- CanBeBrokenUp: an ROI is made around each significant gamma line in the range.
+
+Validation: Fixed ROIs may not overlap - tool returns error if overlapping Fixed ROIs would result.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -2116,13 +2121,29 @@ Validation: ROIs may not overlap - tool returns error if overlapping ROIs would 
               },
               "continuum_type": {
                 "type": "string",
-                "description": "Optional. Continuum type for peak fitting. Valid values: Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep.",
-                "enum": ["Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep"]
+                "description": "Optional (default Linear for new ROIs). Continuum type for peak fitting; 'Auto' chooses it after an initial fit, based on how well each candidate describes the data.",
+                "enum": ["Auto", "Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep", "FlatStepCDF", "LinearStepCDF", "BiLinearStepCDF"]
               },
               "range_type": {
                 "type": "string",
-                "description": "Optional. How ROI bounds behave. Valid values: Fixed (bounds strictly enforced), CanExpandForFwhm (can expand to accommodate peak FWHM), CanBeBrokenUp (ROI can be broken up based on peaks).",
-                "enum": ["Fixed", "CanExpandForFwhm", "CanBeBrokenUp"]
+                "description": "Optional (default Fixed for new ROIs). LineAnchored: energies are the lowest/highest gamma lines to include, and the ROI extends past them by the detector's peak shape. Fixed: energies are the ROI limits. CanBeBrokenUp: an ROI is made around each significant line in the range.",
+                "enum": ["Fixed", "LineAnchored", "CanBeBrokenUp"]
+              },
+              "lower_edge_peak_coverage_percent": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Extend below the lowest line until this percent (more than 50, less than 100) of its peak area is covered (default depends on the detector: 99.9, or 98 for CZT)."
+              },
+              "lower_edge_sideband_fwhm": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Additional continuum below the coverage limit, in units of FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT)."
+              },
+              "upper_edge_peak_coverage_percent": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Extend above the highest line until this percent (more than 50, less than 100) of its peak area is covered (default 99.9)."
+              },
+              "upper_edge_sideband_fwhm": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Additional continuum above the coverage limit, in units of FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT)."
               }
             }
           }
@@ -2264,7 +2285,7 @@ Note: background_subtract requires a background spectrum to be loaded.</Descript
         },
         "skew_type": {
           "type": "string",
-          "description": "Optional. Peak skew type for fitting.",
+          "description": "Optional. Peak skew type for fitting.  If the configuration used the skew from the peak-fit preferences (skew_from_peak_fit_preferences in get_isotopics_config), setting this stops doing so.",
           "enum": ["NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall"]
         },
         "additional_br_uncert": {

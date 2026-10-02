@@ -1783,6 +1783,15 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     opts.n_anchor_angles = (m_anchorAngles->currentIndex() == 0) ? 1 : 3;
   }
 
+
+  unsigned int num_cores = std::thread::hardware_concurrency();
+  if( num_cores >= 8 )
+    opts.num_threads = num_cores - 2;
+  else if( num_cores >= 2 )
+    opts.num_threads = num_cores - 1;
+  else
+    opts.num_threads = 1;
+
   return opts;
 }//generationOptions()
 

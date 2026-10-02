@@ -1,14 +1,15 @@
 <RelActCalcAuto version="0">
-	<Description>Uranium enrichment (U-235, U-234, U-238, and U-232) from HPGe spectra that cover 120 to 1001 keV.
-Each ROI lists the gamma lines it must contain; its extent is computed from the detector's peak width and shape, so the same preset suits any HPGe resolution.
-Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (or will use a default one if not loaded), and the attenuation of the uranium and of external shielding - selecting a detector efficiency close to your detector's noticeably improves accuracy.</Description>
+	<Description>Uranium enrichment (U-235 and U-238) from CZT spectra that cover about 130 to 1010 keV.
+Each ROI lists the gamma lines it must contain, and its extent is computed from the detector's peak width and shape.  CZT peaks have long low-energy tails, so ROIs cover 98% of a peak's area on its low side; the U-235 ROIs use a step continuum (for the shelf below CZT peaks), while the U-238 ROIs (258, 742-786, and 1001 keV) use a linear continuum, since a step there can absorb a whole peak.  U-234 and U-232 are not included, as their lines are not resolvable at CZT resolution.
+Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (a generic CZT one is fine), and the attenuation of the uranium and of external shielding.
+On long measurements of CBNM standards (0.3 to 4.5% U-235) with a 500 mm3 CZT, results were typically within 10 to 20%, with a few-percent low bias and occasional larger misses; check the fit quality before relying on a result.</Description>
 	<Options version="7">
     <FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
     <EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
 		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">Berstein_4</FwhmForm>
 		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
 		<Title>Foreground</Title>
-		<SkewType>GaussExp</SkewType>
+		<SkewType>ExpGaussExp</SkewType>
 		<AddUncert>0.00000000e+00</AddUncert>
 		<RelEffCurveInputs>
 			<RelEffCurveInput version="1">
@@ -25,18 +26,6 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 						<Age>20.0000000000 y</Age>
 						<FitAge>false</FitAge>
 						<PeakColorCss>#00B9FF</PeakColorCss>
-					</NucInputInfo>
-					<NucInputInfo version="0">
-						<Nuclide>U234</Nuclide>
-						<Age>20.0000000000 y</Age>
-						<FitAge>false</FitAge>
-						<PeakColorCss>#006600</PeakColorCss>
-					</NucInputInfo>
-					<NucInputInfo version="0">
-						<Nuclide>U232</Nuclide>
-						<Age>20.0000000000 y</Age>
-						<FitAge>false</FitAge>
-						<PeakColorCss>#5c0700</PeakColorCss>
 					</NucInputInfo>
 				</NucInputInfoList>
 				<NucsOfElSameAge>true</NucsOfElSameAge>
@@ -79,26 +68,12 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 		<AutoRemoveDegeneraciesChi2Delta remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="1">
-				<LowerEnergy>120.35</LowerEnergy>
-				<UpperEnergy>120.9</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
 				<LowerEnergy>140.76</LowerEnergy>
-				<UpperEnergy>145.912</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
+				<UpperEnergy>143.76</UpperEnergy>
+				<ContinuumType>LinearStepCDF</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -107,12 +82,12 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 				</UpperEdge>
 			</RoiRange>
 			<RoiRange version="1">
-				<LowerEnergy>163.105</LowerEnergy>
+				<LowerEnergy>163.38</LowerEnergy>
 				<UpperEnergy>163.38</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
+				<ContinuumType>LinearStepCDF</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -123,24 +98,10 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 			<RoiRange version="1">
 				<LowerEnergy>182.52</LowerEnergy>
 				<UpperEnergy>185.71</UpperEnergy>
-				<ContinuumType>FlatStep</ContinuumType>
+				<ContinuumType>LinearStepCDF</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
-				<LowerEnergy>194.94</LowerEnergy>
-				<UpperEnergy>194.94</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -151,38 +112,10 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 			<RoiRange version="1">
 				<LowerEnergy>202.11</LowerEnergy>
 				<UpperEnergy>205.309</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
+				<ContinuumType>LinearStepCDF</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
-				<LowerEnergy>221.4</LowerEnergy>
-				<UpperEnergy>221.4</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
-				<LowerEnergy>238.632</LowerEnergy>
-				<UpperEnergy>240.99</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -196,7 +129,7 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 				<ContinuumType>Linear</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -205,40 +138,12 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 				</UpperEdge>
 			</RoiRange>
 			<RoiRange version="1">
-				<LowerEnergy>739.95</LowerEnergy>
-				<UpperEnergy>742.77</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
-				<LowerEnergy>763.13</LowerEnergy>
-				<UpperEnergy>766.37</UpperEnergy>
-				<ContinuumType>Linear</ContinuumType>
-				<RangeLimitType>LineAnchored</RangeLimitType>
-				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</LowerEdge>
-				<UpperEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
-					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
-				</UpperEdge>
-			</RoiRange>
-			<RoiRange version="1">
-				<LowerEnergy>785.37</LowerEnergy>
+				<LowerEnergy>742.77</LowerEnergy>
 				<UpperEnergy>786.25</UpperEnergy>
 				<ContinuumType>Linear</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -249,10 +154,10 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 			<RoiRange version="1">
 				<LowerEnergy>1000.99</LowerEnergy>
 				<UpperEnergy>1000.99</UpperEnergy>
-				<ContinuumType>FlatStep</ContinuumType>
+				<ContinuumType>Linear</ContinuumType>
 				<RangeLimitType>LineAnchored</RangeLimitType>
 				<LowerEdge>
-					<TailFraction>1.00000000e-03</TailFraction>
+					<TailFraction>2.00000000e-02</TailFraction>
 					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
 				</LowerEdge>
 				<UpperEdge>
@@ -267,4 +172,3 @@ Uses the 'Physical' model for the relative efficiency curve, meaning it takes in
 		<UpperDisplayEnergy>1100</UpperDisplayEnergy>
 	</Options>
 </RelActCalcAuto>
-
