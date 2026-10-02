@@ -699,6 +699,7 @@ if( USE_REL_ACT_TOOL )
         src/PeakFitLM.cpp
         src/RelActCalc.cpp
         src/RelActCalcAuto.cpp
+        src/RelActCalcAuto_Roi.cpp
         src/RelActCalcManual.cpp
         src/RelActAutoGui.cpp
         src/RelActManualGui.cpp
@@ -721,6 +722,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
+        InterSpec/RelActCalcAuto_Roi.h
         InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h

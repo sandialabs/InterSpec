@@ -273,7 +273,9 @@ active blue style at all times. The original issue was a misobservation. No chan
 
 ## Issue 18 — SimpleDialog title bar: white text on dark background in Wt4
 
-**Status**: Fixed
+**Status**: Fixed. **Superseded 2026-09-22** by 5450eb13, which deliberately gave SimpleDialog the
+AuxWindow title bar (grey `.titlebar`, white text) for consistency. The override described below no
+longer applies. See Issue 18 in `wt4_ui_issues.md`.
 
 **Root cause**: Wt4's default theme stylesheet (`themes/default/wt.css`) applies
 `.Wt-dialog .titlebar { background:#888888; color:#FFFFFF; padding: 2px 6px 3px; }`.

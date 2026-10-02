@@ -306,6 +306,11 @@ namespace CeeLoUtils
   double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd );
   Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd );
 
+  /** Worker threads for a detector Monte Carlo run from the GUI: all but two cores with 8 or more,
+   all but one with 2-7, so the session and the rest of the machine stay responsive.
+   */
+  unsigned monteCarloThreadCount();
+
   /** The detector face (endcap front) in the crystal-face frame, (0, 0, -endcap_front_offset_cm):
    the point InterSpec's distances are measured to, and the point a source-side ray aims at.
    */

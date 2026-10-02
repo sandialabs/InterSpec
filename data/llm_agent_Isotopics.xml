@@ -76,14 +76,16 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
   * **HPGe Pu (610-775 keV).xml** - High-energy only; age-dependent fractions may be non-identifiable, so prefer a lower-energy preset when age is unknown
 
 **For Uranium isotopics:**
-  * **HPGe U (120-1001 keV).xml** - RECOMMENDED for U-235/U-238 enrichment analysis
+  * **HPGe U (120-1001 keV).xml** - RECOMMENDED for U-235/U-238 enrichment analysis; its ROIs are sized from the detector's peak width, so it suits any HPGe resolution
+  * **CZT-std U (130-1010 keV).xml** - U-235/U-238 enrichment from CZT spectra that reach 1001 keV; less accurate than HPGe (typically within 10-20%)
 
 **Other sources:**
   * Start with a blank slate (reset_isotopics_config),
-  * Use the "modify_isotopics_rois" tool to add ROIs; if you dont know what to add, you can add a single ROI with `"range_type": "CanBeBrokenUp"`, but make sure it at least spans the major gamma lines of the source (and you may consider only going above ~120 keV if there are major lines above that energy).
+  * Use the "modify_isotopics_rois" tool to add ROIs.  Prefer one ROI per group of nearby major gamma lines with `"range_type": "LineAnchored"`, `lower_energy`/`upper_energy` set to the lowest/highest line energies of the group (equal for a single line), and `"continuum_type": "Auto"`; the ROI then extends past the lines according to the detector's peak width, so it suits any detector resolution (ROIs whose peaks are close together are merged, and the continuum on either side of a ROI stops short of other peaks).  If you dont know which lines to use, you can add a single ROI with `"range_type": "CanBeBrokenUp"` spanning the major gamma lines of the source (you may consider only going above ~120 keV if there are major lines above that energy).
 
 **Preset Selection Criteria for U:**
 * Use **HPGe U (120-1001 keV).xml** for standard U-235/U-238 enrichment
+* Use **CZT-std U (130-1010 keV).xml** for CZT (medium-resolution) spectra
 
 **Transition to:** VALIDATE_CONFIGURATION
 
@@ -135,8 +137,9 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
   * **Acceptable:** χ²/DOF < 5.0
   * **Possibly acceptable:** χ²/DOF < 10.0 (especially possible for high statistics spectra)
   * **Poor fit:** χ²/DOF > 10.0 (investigate issues - solution is very likely not acceptable)
-* Check χ²/DOF for individual ROIs (see roi_info -> chi2_per_dof) to check for problem ROIs (maybe an ROI can be removed - or perhaps a source is missing that the ROI needs)
-  * If it is a higher statics ROI, it could be helpful to change continuum type, to for example a stepped continuum.
+* Check χ²/DOF for individual ROIs (see roi_info -> chi2_per_dof) to check for problem ROIs (maybe an ROI can be removed - or perhaps a source is missing that the ROI needs); each entry's from_input_rois gives the configured ROI(s) it came from - use those bounds with modify_isotopics_rois
+  * If it is a higher statics ROI, it could be helpful to change continuum type, to for example a stepped continuum, or to "Auto" to have it chosen from the data.
+  * For a `LineAnchored` ROI, widen (or narrow) how far it extends past its lines with `lower_edge_sideband_fwhm` / `upper_edge_sideband_fwhm` (continuum margin, in FWHM) or `lower_edge_peak_coverage_percent` / `upper_edge_peak_coverage_percent`.
 * Check how well the relative efficiency solution matches peak areas to what would be freely-fit in the spectrum (see observed_efficiencies -> deviation_from_solution_sigma).
   * If the solution under-predicts the peak that would be freely fit - it could be a sign of a missing source, or too much shielding being applied
   * If the solution over-predicts, then perhaps shielding should be added (especially if low energy peaks are over-predicted and/or higher energy peaks under-predict)
@@ -247,7 +250,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Tool>list_isotopics_presets</Tool>
           <Tool>load_isotopics_preset</Tool>
         </SuggestedTools>
-        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 keV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml'. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
+        <PromptGuidance>For Pu: Choose from 'HPGe Pu (120-780 keV).xml' (default), 'HPGe Pu (120-420 keV).xml' (low-energy), or 'HPGe Pu (610-775 keV).xml' (high-energy if Am-241 severe). For U: Use 'HPGe U (120-1001 keV).xml', or 'CZT-std U (130-1010 keV).xml' for CZT spectra. Use list_isotopics_presets to see all available presets. Load chosen preset with load_isotopics_preset. Document choice and rationale. Transition to VALIDATE_CONFIGURATION.</PromptGuidance>
       </State>
 
       <State name="VALIDATE_CONFIGURATION">

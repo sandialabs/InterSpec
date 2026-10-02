@@ -888,8 +888,10 @@ namespace {
       json skew_params = json::object();
       const PeakDef::CoefficientType skew_coefs[] = {
         PeakDef::CoefficientType::SkewPar0, PeakDef::CoefficientType::SkewPar1,
-        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3
+        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3,
+        PeakDef::CoefficientType::SkewPar4, PeakDef::CoefficientType::SkewPar5
       };
+      static_assert( static_cast<int>(PeakDef::CoefficientType::Chi2DOF - PeakDef::CoefficientType::SkewPar0) == 6 );
 
       for( size_t i = 0; i < num_skew; ++i )
       {
@@ -7140,7 +7142,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
         shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
         if( sql )
         {
-          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user(),
+          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user().id(),
                                                            serial, detType, model );
         }
       }catch( std::exception & )
@@ -7163,7 +7165,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
       {
         try
         {
-          suggested = DrfSelect::initAGadrasDetector( detType, interspec );
+          suggested = DrfSelect::initAGadrasDetector( detType, DrfSelect::gadrasDrfSearchPaths( interspec ) );
         }catch( std::exception & )
         {
         }

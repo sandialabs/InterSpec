@@ -104,6 +104,7 @@ class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
 namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
+namespace WidgetUtils{ class WidgetHandle; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
 #if( USE_TERMINAL_WIDGET )
@@ -331,13 +332,22 @@ public:
    
    The modified() and modified_since_decode() statuses of meas will not be changed by loading of a
    DRF.
+
+   Runs on a worker thread, so it takes no `InterSpec *`: the caller resolves the database session,
+   user id and GADRAS search paths (DrfSelect::gadrasDrfSearchPaths) on the session thread.  The DRF
+   found is posted back to the `InterSpec` that `viewerHandle` names, and dropped if that instance
+   is gone by then (e.g., "Clear Session...").
    */
-  void loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
+  static void loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
                                      const SpecUtils::DetectorType type,
                                      const std::string serial_number,
                                      const std::string manufacturer,
                                      const std::string model,
                                      const bool tryDefaultDrf,
+                                     std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                     const long long db_user_id,
+                                     const std::string gadras_search_paths,
+                                     const WidgetUtils::WidgetHandle &viewerHandle,
                                      const std::string sessionId );
 
   /** Determines and sets the PeakFitDetPrefs for a foreground SpecMeas.
@@ -1109,7 +1119,7 @@ protected:
   //  Note that the WApplication::UpdateLock is not taken while the workers are
   //  doing their thing, so you should explicitly do this if necassarry, or call
   //  this function from within the main loop.
-  void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
+  static void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<std::function<void(void)> > workers );
   
   // Available in the chart's right-click menu regardless of USE_DETECTION_LIMIT_TOOL,
@@ -1792,6 +1802,8 @@ protected:
   PopupDivMenuItem *m_remoteRidMenuItem;
   Wt::Core::observing_ptr<RemoteRid> m_remoteRid;
   Wt::Core::observing_ptr<AuxWindow> m_remoteRidWindow;
+  /** The "your data will be sent..." warning shown before the tool opens; null once answered. */
+  Wt::Core::observing_ptr<SimpleDialog> m_remoteRidWarning;
 #endif
 
 #if( USE_DETECTION_LIMIT_TOOL )

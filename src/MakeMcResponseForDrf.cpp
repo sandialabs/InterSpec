@@ -28,7 +28,6 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 #include <iostream>
 #include <stdexcept>
@@ -2018,13 +2017,15 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     }
   }//if( a total efficiency for an imported grid )
 
+  opts.num_threads = CeeLoUtils::monteCarloThreadCount();
+
   return opts;
 }//generationOptions()
 
 
 void MakeMcResponseForDrf::scheduleTimeCalibration()
 {
-  // m_calibrating: a probe already running is a full-core Monte Carlo on the shared server thread
+  // m_calibrating: a probe already running is a multi-core Monte Carlo on the shared server thread
   //  pool; queueing more of them behind a burst of edits would just take cores from the session.
   if( !m_calibTimer || !m_shown || m_generating || m_calibrating || !isEnabled()
       || (selectedMethod() == Method::CurveTransfer) || !m_geometry->isValid() )
@@ -2098,7 +2099,9 @@ void MakeMcResponseForDrf::startTimeCalibration()
       cfg.termination.max_cpu_seconds = 3.0;
       cfg.termination.max_wall_seconds = 6.0;
       cfg.seed = 7;
-      const unsigned threads = std::max( 1u, std::thread::hardware_concurrency() );
+      // The run's thread count, so the parallelism measured here is the run's.
+      const unsigned threads = CeeLoUtils::monteCarloThreadCount();
+      cfg.num_threads = threads;
       cfg.batch_size = std::max<uint64_t>( 2000, 20000 / threads );
 
       const ceelo::EfficiencyResult r = calc.compute( cfg );

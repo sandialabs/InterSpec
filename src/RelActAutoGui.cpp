@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <set>
 #include <cstdio>
 
 #include <boost/math/distributions/chi_squared.hpp>
@@ -92,6 +93,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RelActCalcAuto_Roi.h"
 #include "InterSpec/RelEffShieldWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -478,6 +480,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_lorentzian_xrays( nullptr ),
   m_use_fixed_skew_enabled( false ),
   m_use_fixed_skew( nullptr ),
+  m_edge_defaults_det_type( PeakFitUtils::CoarseResolutionType::Unknown ),
   m_auto_simplify( nullptr ),
   m_auto_simplify_dchi2_div( nullptr ),
   m_auto_simplify_max_dchi2( nullptr ),
@@ -662,8 +665,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   {
     string dispname = SpecUtils::filename(filename);
     if( dispname.size() > 4 )
-      dispname = dispname.substr(0, filename.size() - 4);
-    
+      dispname = dispname.substr(0, dispname.size() - 4);
+
     m_presets->addItem( WString::tr("raag-user-preset").arg(WString::fromUTF8(dispname)) );
     m_preset_paths.push_back( filename );
   }//for( string filename : default_par_sets )
@@ -1428,6 +1431,10 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   {
     updateDuringRenderForSpectrumChange();
     m_render_flags |= RenderActions::UpdateCalculations;
+
+    // A different type of detector has different default ROI extents.
+    if( currentDetType() != m_edge_defaults_det_type )
+      m_render_flags |= RenderActions::UpdateEnergyRanges;
   }
 
   if( m_render_flags.test(RenderActions::UpdateShowHideBack) )
@@ -1609,19 +1616,11 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
          || (options.skew_type == PeakDef::SkewType::NoSkew)
          || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
 
-  // Copy fixed skew parameter values from PeakFitDetPrefs if checkbox is checked
-  if( m_use_fixed_skew_enabled && m_use_fixed_skew->isChecked() )
-  {
-    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-    if( prefs )
-    {
-      for( size_t i = 0; i < 4; ++i )
-      {
-        options.fixed_lower_skew[i] = prefs->m_lower_energy_skew[i];
-        options.fixed_upper_skew[i] = prefs->m_upper_energy_skew[i];
-      }
-    }
-  }//if( use fixed skew from prefs )
+  // Use the skew (type, and fixed values) of the peak-fit preferences if the checkbox is checked;
+  //  `RelActCalcAuto::solve(...)` applies them, from the preferences we give it.
+  options.skew_prefs_usage = (m_use_fixed_skew_enabled && m_use_fixed_skew->isChecked())
+                              ? RelActCalcAuto::Options::SkewPrefsUsage::AsPreferencesSpecify
+                              : RelActCalcAuto::Options::SkewPrefsUsage::Ignore;
 
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
@@ -1644,6 +1643,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   options.floating_peaks = getFloatingPeaks();
   options.rois = getRoiRanges();
+  options.roi_settings = m_roi_settings;
   
   int num_phys_model_curves = 0;
   bool any_using_corr_fcn = false, same_corr_fcn_all_curves = false, same_ext_shieldings = false;
@@ -1822,18 +1822,78 @@ vector<RelActCalcAuto::RoiRange> RelActAutoGui::getRoiRanges() const
 }//RelActCalcAuto::RoiRange getRoiRanges() const
 
 
+vector<RelActAutoGuiEnergyRange *> RelActAutoGui::nonEmptyRoiRows() const
+{
+  vector<RelActAutoGuiEnergyRange *> rows;
+  for( WWidget *w : m_energy_ranges->children() )
+  {
+    RelActAutoGuiEnergyRange *row = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
+    assert( row );
+    if( row && !row->isEmpty() )
+      rows.push_back( row );
+  }
+  return rows;
+}//nonEmptyRoiRows()
+
+
+bool RelActAutoGui::isFitOfCurrentRois( const shared_ptr<const RelActCalcAuto::RelActAutoSolution> &solution ) const
+{
+  return solution
+         && RelActCalcAuto::RelActAutoSolution::is_usable_status( solution->m_status )
+         && (solution->m_final_roi_info.size() == solution->m_final_roi_ranges.size())
+         && (solution->m_input_rois == getRoiRanges());
+}//isFitOfCurrentRois(...)
+
+
+void RelActAutoGui::replaceRoiRows( const vector<RelActAutoGuiEnergyRange *> &rows,
+                                    const vector<RelActCalcAuto::RoiRange> &ranges )
+{
+  const vector<WWidget *> &kids = m_energy_ranges->children();
+  size_t index = kids.size();
+  for( RelActAutoGuiEnergyRange *row : rows )
+  {
+    const auto pos = std::find( begin(kids), end(kids), static_cast<WWidget *>(row) );
+    if( pos != end(kids) )
+      index = std::min( index, static_cast<size_t>( pos - begin(kids) ) );
+  }
+
+  assert( index < kids.size() );
+  if( index >= kids.size() )
+    return;
+
+  // Wt4: detach now, destroy after the current event/emit unwinds (avoids double-free / freeing an
+  //  emitting signal).  The rows are all at or after `index`, so it stays where the first one was.
+  for( RelActAutoGuiEnergyRange *row : rows )
+    removeWidgetLater( m_energy_ranges, row );
+
+  // Inserted in reverse order, at a fixed index, so they end up in the order given.
+  for( auto iter = ranges.rbegin(); iter != ranges.rend(); ++iter )
+  {
+    auto roi_owner = std::make_unique<RelActAutoGuiEnergyRange>();
+    RelActAutoGuiEnergyRange *roi = roi_owner.get();
+    roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    roi->remove().connect( this, [this, roi](){ handleRemoveEnergy( static_cast<WWidget *>(roi) ); } );
+    roi->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
+      handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
+    } );
+
+    roi->setFromRoiRange( *iter );
+    roi->setForceFullRange( true );
+
+    m_energy_ranges->insertWidget( static_cast<int>(index), std::move(roi_owner) );
+  }//for( loop over ranges )
+
+  handleEnergyRangeChange();
+}//replaceRoiRows(...)
+
+
 vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
 {
-  // We will only return peaks within defined ROIs.
-  vector<pair<float,float>> rois;
-  const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
-  for( WWidget *w : roi_widgets )
-  {
-    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
-    assert( roi );
-    if( roi && !roi->isEmpty() )
-      rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
-  }//for( WWidget *w : kids )
+  // We will only return peaks within defined ROIs; for ROIs sized from the peak shape, within the
+  //  range last fit (the calculation extends these ROIs to cover a floating peak next to them).
+  vector<pair<double,double>> rois;
+  for( const RelActAutoGuiEnergyRange *roi : nonEmptyRoiRows() )
+    rois.push_back( roi->displayRange() );
   
   
   vector<RelActCalcAuto::FloatingPeak> answer;
@@ -1910,72 +1970,14 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
                    string spectrum_type,
                    const bool is_final_range )
 {
-  //cout << "RelActAutoGui::handleRoiDrag: original_roi_lower_energy=" << original_roi_lower_energy
-  //<< ", new_roi_lower_energy=" << new_roi_lower_energy << ", new_roi_upper_energy=" << new_roi_upper_energy
-  //<< ", is_final_range=" << is_final_range << endl;
-  
-  double min_de = 999999.9;
-  RelActAutoGuiEnergyRange *range = nullptr;
-  
-  const vector<WWidget *> &kids = m_energy_ranges->children();
-  for( WWidget *w : kids )
+  if( !is_final_range )
   {
-    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
-    assert( roi );
-    if( !roi || roi->isEmpty() )
-      continue;
-    
-    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
-    
-    const double de = fabs(roi_range.lower_energy - original_roi_lower_energy);
-    if( de < min_de )
-    {
-      min_de = de;
-      range = roi;
-    }
-  }//for( WWidget *w : kids )
-
-  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoGuiEnergyRange might say 604.2.
-  {
-    cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
-    cout << "\t\toriginal_roi_lower_energy=" << original_roi_lower_energy
-    << ", new_roi_lower_energy=" << new_roi_lower_energy << ", new_roi_upper_energy=" << new_roi_upper_energy
-    << ", is_final_range=" << is_final_range << endl;
-    for( WWidget *w : kids )
-    {
-      RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
-      assert( roi );
-      if( !roi || roi->isEmpty() )
-        continue;
-      
-      RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
-      cout << "\t\tRange: " << roi_range.lower_energy << ", " << roi_range.upper_energy << endl;
-    }
-    cout << endl << endl;
-    
-    return;
-  }//if( failed to find continuum )
-  
-  if( is_final_range && (new_roi_px < 0.0) )
-  {
-    handleRemoveEnergy( range );
-    return;
-  }//if( the user
-  
-  // We will only set RelActAutoGuiEnergyRange energies when its final, otherwise the lower energy wont
-  //  match on later updates
-  if( is_final_range )
-  {
-    range->setEnergyRange( new_roi_lower_energy, new_roi_upper_energy );
-    
-    handleEnergyRangeChange();
-  }else
-  {
+    // While dragging, just show the ROI with its new extent.
     shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = m_peak_model->peaks();
     if( !origpeaks )
       return;
     
-    double minDe = 999999.9;
+    double min_de = 999999.9;
     std::shared_ptr<const PeakContinuum> continuum;
     for( auto p : *origpeaks )
     {
@@ -2019,7 +2021,133 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     }//for( auto p : *origpeaks )
     
     m_spectrum->updateRoiBeingDragged( new_roi_initial_peaks );
-  }//if( is_final_range )
+    return;
+  }//if( !is_final_range )
+
+  // Dragging an edge sets the ROI's extent directly, so the ROI becomes a fixed range; dragging it off
+  //  the chart (`new_roi_px < 0`) removes it.
+  const bool remove_roi = (new_roi_px < 0.0);
+  const vector<RelActAutoGuiEnergyRange *> rows = nonEmptyRoiRows();
+
+  // Sometimes the ROI might say its original lower energy is like 603 keV, but the ROI we have
+  //  might say 604.2, so we allow a little slop when matching.
+  const double max_energy_diff = 2.5;
+
+  // With a fit of the current rows, the chart shows the ROIs fit; a row split by lines is several of
+  //  them, and rows whose ROIs merged share one.
+  const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
+  if( isFitOfCurrentRois( solution ) )
+  {
+    const vector<RelActCalcAuto::RoiRange> &final_rois = solution->m_final_roi_ranges;
+    const vector<RelActCalcAuto::RoiResolutionInfo> &final_info = solution->m_final_roi_info;
+
+    size_t dragged = final_rois.size();
+    double min_de = max_energy_diff;
+    for( size_t i = 0; i < final_rois.size(); ++i )
+    {
+      const double de = fabs( final_rois[i].lower_energy - original_roi_lower_energy );
+      if( de < min_de )
+      {
+        min_de = de;
+        dragged = i;
+      }
+    }//for( loop over final ROIs )
+
+    if( dragged < final_rois.size() )
+    {
+      // The rows the dragged ROI came from, and the fit ROIs those rows gave (following merges until
+      //  no more rows are involved).
+      set<size_t> from_rows( begin(final_info[dragged].input_roi_indices), end(final_info[dragged].input_roi_indices) );
+      vector<size_t> row_rois;
+      for( size_t num_rows = 0; num_rows != from_rows.size(); )
+      {
+        num_rows = from_rows.size();
+        row_rois.clear();
+        for( size_t i = 0; i < final_rois.size(); ++i )
+        {
+          const vector<size_t> &inputs = final_info[i].input_roi_indices;
+          if( std::any_of( begin(inputs), end(inputs), [&from_rows]( size_t r ){ return from_rows.count(r) > 0; } ) )
+          {
+            row_rois.push_back( i );
+            from_rows.insert( begin(inputs), end(inputs) );
+          }
+        }//for( loop over final ROIs )
+      }//for( until no more rows are involved )
+
+      const bool rows_valid = std::all_of( begin(from_rows), end(from_rows), [&rows]( size_t r ){ return r < rows.size(); } );
+      assert( rows_valid );
+      if( rows_valid && (from_rows.size() == 1) && (row_rois.size() == 1) )
+      {
+        // A row that was fit as a single ROI
+        RelActAutoGuiEnergyRange * const row = rows[*begin(from_rows)];
+        if( remove_roi )
+        {
+          handleRemoveEnergy( row );
+        }else
+        {
+          row->setForceFullRange( true );
+          row->setEnergyRange( new_roi_lower_energy, new_roi_upper_energy );
+          handleEnergyRangeChange();
+        }
+        return;
+      }//if( a row that was fit as a single ROI )
+
+      if( rows_valid )
+      {
+        // Replace the rows with the ROIs fit for them, with the dragged one changed (or removed).
+        vector<RelActCalcAuto::RoiRange> ranges;
+        for( const size_t i : row_rois )
+        {
+          RelActCalcAuto::RoiRange range = final_rois[i];
+          if( i == dragged )
+          {
+            if( remove_roi )
+              continue;
+            range.lower_energy = new_roi_lower_energy;
+            range.upper_energy = new_roi_upper_energy;
+          }
+          ranges.push_back( range );
+        }//for( const size_t i : row_rois )
+
+        vector<RelActAutoGuiEnergyRange *> to_replace;
+        for( const size_t r : from_rows )
+          to_replace.push_back( rows[r] );
+
+        replaceRoiRows( to_replace, ranges );
+        return;
+      }//if( rows_valid )
+    }//if( dragged < final_rois.size() )
+  }//if( isFitOfCurrentRois( solution ) )
+
+  // Otherwise the chart shows each row over its range last fit (see `makeZeroAmplitudeRoisToChart()`).
+  double min_de = max_energy_diff;
+  RelActAutoGuiEnergyRange *range = nullptr;
+  for( RelActAutoGuiEnergyRange *row : rows )
+  {
+    const double de = fabs( row->displayRange().first - original_roi_lower_energy );
+    if( de < min_de )
+    {
+      min_de = de;
+      range = row;
+    }
+  }//for( RelActAutoGuiEnergyRange *row : rows )
+
+  if( !range )
+  {
+    cerr << "RelActAutoGui::handleRoiDrag: couldnt find ROI with lower energy " << original_roi_lower_energy
+         << " keV" << endl;
+    return;
+  }//if( failed to find ROI )
+  
+  if( remove_roi )
+  {
+    handleRemoveEnergy( range );
+    return;
+  }
+  
+  range->setForceFullRange( true );
+  range->setEnergyRange( new_roi_lower_energy, new_roi_upper_energy );
+  handleEnergyRangeChange();
 }//void handleRoiDrag(...)
 
 
@@ -2279,17 +2407,21 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   
   std::sort( begin(ranges), end(ranges),
              []( const RelActAutoGuiEnergyRange *lhs, const RelActAutoGuiEnergyRange *rhs) -> bool{
-    return lhs->lowerEnergy() < rhs->lowerEnergy();
+    return lhs->displayRange().first < rhs->displayRange().first;
   } );
   
   
+  // The range each ROI covers on the chart (for a ROI sized from the peak shape, its energies are
+  //  lines - a single point, for a single line - so the range last fit, or a little around its lines).
   RelActAutoGuiEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
   for( size_t i = 0; i < ranges.size(); ++i )
   {
     RelActAutoGuiEnergyRange *roi = ranges[i];
-    RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+    pair<double,double> extent = roi->displayRange();
+    if( !roi->forceFullRange() && (extent.second < (extent.first + 4.0)) )
+      extent = { extent.first - 2.0, extent.second + 2.0 };
   
-    if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
+    if( (energy >= extent.first) && (energy < extent.second) )
     {
       range = roi;
       if( i > 0 )
@@ -2354,7 +2486,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   {
     WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
     item->triggered().connect( this, [range, type](){ range->setContinuumType( type ); } );
-    if( type == roi.continuum_type )
+    if( !roi.auto_continuum && (type == roi.continuum_type) )
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
   
@@ -2365,12 +2497,8 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   item = menu->addMenuItem( split_text );
   item->triggered().connect( this, [this, range, energy](){ handleSplitEnergyRange( static_cast<WWidget *>(range), energy ); } );
 
-  const char *item_label = "";
-  if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
-    item_label = "Don't force full-range";
-  else
-    item_label = "Force full-range";
-  item = menu->addMenuItem( item_label );
+  const bool is_fixed = (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed);
+  item = menu->addMenuItem( WString::tr( is_fixed ? "raag-dont-force-full-range" : "raager-force-full-range" ) );
   item->triggered().connect( this, [this, range](){ handleToggleForceFullRange( static_cast<WWidget *>(range) ); } );
 
   // TODO: we could be a little more intelligent about when offering to combine ROIs
@@ -2436,10 +2564,11 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   populateSkewTypeComboBox( options.lorentzian_xrays );
   setCurrentSkewType( options.skew_type );
 
-  // Update fixed skew checkbox state: checked if options have any fixed skew values
+  // Update fixed skew checkbox state: checked if the options use the peak-fit preferences skew (or,
+  //  for states saved before `skew_prefs_usage` existed, have fixed skew values copied from them).
   {
-    bool has_fixed = false;
-    for( size_t i = 0; i < 4; ++i )
+    bool has_fixed = (options.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore);
+    for( size_t i = 0; i < 6; ++i )
       has_fixed |= options.fixed_lower_skew[i].has_value();
     m_use_fixed_skew->setChecked( has_fixed );
     // Re-check prefs to see if checkbox should be visible, and disable/enable combo
@@ -2587,6 +2716,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   }//for( loop over curve_index )
 
   
+  m_roi_settings = options.roi_settings;
   m_energy_ranges->clear();
   for( const RelActCalcAuto::RoiRange &roi : options.rois )
   {
@@ -2711,22 +2841,40 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   const RelActCalcAuto::RoiRange lroi = left_range->toRoiRange();
   const RelActCalcAuto::RoiRange rroi = right_range->toRoiRange();
   
+  // If either ROI is Fixed, the combined ROI is Fixed; otherwise if either is split by lines, the
+  //  combined ROI is too; otherwise it is anchored on the lines of both.
+  using RangeType = RelActCalcAuto::RoiRange::RangeLimitsType;
+  const auto either_is = [&lroi, &rroi]( const RangeType type ) -> bool {
+    return (lroi.range_limits_type == type) || (rroi.range_limits_type == type);
+  };
+
   RelActCalcAuto::RoiRange new_roi = lroi;
-  new_roi.lower_energy = std::min( lroi.lower_energy, rroi.lower_energy );
-  new_roi.upper_energy = std::max( lroi.upper_energy, rroi.upper_energy );
-  // If either ROI is Fixed, the combined ROI should be Fixed
-  // Otherwise, if either is CanExpandForFwhm, use that, otherwise CanBeBrokenUp
-  if( (lroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed)
-     || (rroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed) )
-  {
-    new_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
-  }
-  else if( (lroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm)
-          || (rroi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) )
-  {
-    new_roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
-  }
-  new_roi.continuum_type = std::max( lroi.continuum_type, rroi.continuum_type );
+  if( either_is( RangeType::Fixed ) )
+    new_roi.range_limits_type = RangeType::Fixed;
+  else if( either_is( RangeType::CanBeBrokenUp ) || either_is( RangeType::CanExpandForFwhm ) )
+    new_roi.range_limits_type = RangeType::CanBeBrokenUp;
+  else
+    new_roi.range_limits_type = RangeType::LineAnchored;
+
+  // The energies of a "Lines + peak width" ROI are its lines; when combined into a range, the range
+  //  covers what the ROI was last fit over.
+  const auto extent = [&new_roi]( const RelActAutoGuiEnergyRange *row,
+                                  const RelActCalcAuto::RoiRange &roi ) -> pair<double,double> {
+    if( (roi.range_limits_type == RangeType::LineAnchored) && (new_roi.range_limits_type != RangeType::LineAnchored) )
+      return row->displayRange();
+    return { roi.lower_energy, roi.upper_energy };
+  };
+  const pair<double,double> lextent = extent( left_range, lroi ), rextent = extent( right_range, rroi );
+  new_roi.lower_energy = std::min( lextent.first, rextent.first );
+  new_roi.upper_energy = std::max( lextent.second, rextent.second );
+
+  // Each side keeps the extent settings of the ROI it came from.
+  new_roi.lower_edge = (lextent.first <= rextent.first) ? lroi.lower_edge : rroi.lower_edge;
+  new_roi.upper_edge = (rextent.second >= lextent.second) ? rroi.upper_edge : lroi.upper_edge;
+
+  // The combined ROI keeps the more capable continuum, and chooses it automatically if either did.
+  new_roi.continuum_type = RelActCalcAutoRoi::merged_continuum_type( lroi.continuum_type, rroi.continuum_type );
+  new_roi.auto_continuum = (lroi.auto_continuum || rroi.auto_continuum);
   
   // Wt4: detach now, destroy after the current signal emit unwinds (avoids double-free and freeing
   //  an emitting signal).
@@ -3562,6 +3710,10 @@ void RelActAutoGui::handlePeakFitDetPrefsChanged()
     m_skew_type->setDisabled( false );
   }
 
+  // The detector type sets the default extents of ROIs that are not fixed ranges (shown, and fit).
+  if( currentDetType() != m_edge_defaults_det_type )
+    m_render_flags |= RenderActions::UpdateEnergyRanges;
+
   // Render even when the calculation does not need redoing: we may have just changed the skew type,
   //  which is serialized state, and the undo baseline has to be refreshed so the users next edit
   //  does not fold this change into its undo step.
@@ -3926,19 +4078,22 @@ void RelActAutoGui::setOptionsForNoSolution()
   m_fit_chi2_msg->setText( "" );
   m_fit_chi2_msg->hide();
 
-  makeZeroAmplitudeRoisToChart();
-  m_set_peaks_foreground->setDisabled( true );
-  
-  m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
-
   for( WWidget *w : m_energy_ranges->children() )
   {
     RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi )
+    {
       roi->enableSplitToIndividualRanges( false );
+      roi->setFitRange( 0.0, 0.0 );
+    }
   }//for( WWidget *w : kids )
+
+  // After clearing the fit ranges, so the chart does not show the ranges of a previous fit.
+  makeZeroAmplitudeRoisToChart();
+  m_set_peaks_foreground->setDisabled( true );
   
+  m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
 }//void setOptionsForNoSolution()
 
 
@@ -3953,25 +4108,44 @@ void RelActAutoGui::setOptionsForValidSolution()
   m_apply_energy_cal_item->setDisabled( !fit_energy_cal );
   m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks_in_spectrums_cal.empty() );
   
+  // Each (non-empty) ROI row is the input ROI of the same index; show each row the range(s) it was
+  //  actually fit over, and only offer to split a row that resulted in more than one ROI.  (If the
+  //  rows were changed since the calculation started, the fit can not be related to them.)
+  const bool fit_of_rows = isFitOfCurrentRois( m_solution );
+  const vector<RelActCalcAuto::RoiRange> &final_rois = m_solution->m_final_roi_ranges;
+  const vector<RelActCalcAuto::RoiResolutionInfo> &final_info = m_solution->m_final_roi_info;
+  size_t input_index = 0;
   for( WWidget *w : m_energy_ranges->children() )
   {
     RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi )
       continue;
-    
-    const float lower_energy = roi->lowerEnergy();
-    const float upper_energy = roi->upperEnergy();
-    
-    // Only enable splitting the energy range if it will split into more than one sub-range
-    size_t num_sub_ranges = 0;
-    for( const RelActCalcAuto::RoiRange &range : m_solution->m_final_roi_ranges )
+
+    if( roi->isEmpty() || !fit_of_rows )
     {
-      const double mid_energy = 0.5*(range.lower_energy + range.upper_energy);
-      num_sub_ranges += ((mid_energy > lower_energy) && (mid_energy < upper_energy));
+      roi->setFitRange( 0.0, 0.0 );
+      roi->enableSplitToIndividualRanges( false );
+      continue;
     }
-    
+
+    double fit_lower = std::numeric_limits<double>::infinity();
+    double fit_upper = -std::numeric_limits<double>::infinity();
+    size_t num_sub_ranges = 0;
+    for( size_t i = 0; (i < final_rois.size()) && (i < final_info.size()); ++i )
+    {
+      const vector<size_t> &inputs = final_info[i].input_roi_indices;
+      if( std::find( begin(inputs), end(inputs), input_index ) == end(inputs) )
+        continue;
+
+      num_sub_ranges += 1;
+      fit_lower = std::min( fit_lower, final_rois[i].lower_energy );
+      fit_upper = std::max( fit_upper, final_rois[i].upper_energy );
+    }//for( loop over final ROIs )
+
+    roi->setFitRange( fit_lower, fit_upper );
     roi->enableSplitToIndividualRanges( (num_sub_ranges > 1) );
+    input_index += 1;
   }//for( WWidget *w : kids )
   
 }//void setOptionsForValidSolution()
@@ -3980,7 +4154,27 @@ void RelActAutoGui::setOptionsForValidSolution()
 void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 {
   m_peak_model->setPeaks( vector<PeakDef>{} );
-  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
+
+  // Draw each ROI over the range it was last fit over, or if not known, its energies - widened a
+  //  little for ROIs whose extent comes from the peak shape (e.g., a single line).
+  vector<RelActCalcAuto::RoiRange> rois;
+  for( WWidget *w : m_energy_ranges->children() )
+  {
+    const RelActAutoGuiEnergyRange *row = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
+    if( !row || row->isEmpty() )
+      continue;
+
+    RelActCalcAuto::RoiRange roi = row->toRoiRange();
+    const pair<double,double> range = row->displayRange();
+    roi.lower_energy = range.first;
+    roi.upper_energy = range.second;
+    if( !row->forceFullRange() && (roi.upper_energy < (roi.lower_energy + 4.0)) )
+    {
+      roi.lower_energy -= 2.0;
+      roi.upper_energy += 2.0;
+    }
+    rois.push_back( roi );
+  }//for( loop over ROI rows )
   
   if( !m_foreground )
     return;
@@ -4078,6 +4272,19 @@ void RelActAutoGui::handleAddNuclideForCurrentRelEffCurve()
 }//void handleAddNuclideForCurrentRelEffCurve()
 
 
+PeakFitUtils::CoarseResolutionType RelActAutoGui::currentDetType() const
+{
+  const std::shared_ptr<const SpecMeas> meas = m_interspec ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground )
+                                                           : nullptr;
+  const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  if( prefs )
+    return prefs->m_det_type;
+
+  return m_foreground ? PeakFitUtils::coarse_det_type( m_foreground, nullptr )
+                      : PeakFitUtils::CoarseResolutionType::Unknown;
+}//PeakFitUtils::CoarseResolutionType currentDetType() const
+
+
 void RelActAutoGui::handleAddEnergy()
 {
   const int nprev = m_energy_ranges->count();
@@ -4092,12 +4299,24 @@ void RelActAutoGui::handleAddEnergy()
   } );
   if( nprev == 0 )
   {
+    // The first ROI spans most of the spectrum, so is split up around the significant lines, rather
+    //  than fit as a single ROI (whose continuum could not follow the spectrum).
     const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
-    const float upper_energy = (cal && cal->valid()) ? cal->upper_energy() : 3000.0f;
-    energy_range->setEnergyRange( 125.0f, upper_energy );
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = 125.0;
+    roi.upper_energy = (cal && cal->valid()) ? cal->upper_energy() : 3000.0;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.auto_continuum = true;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp;
+    energy_range->setFromRoiRange( roi );
   }else
   {
-    energy_range->setForceFullRange( true );
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = roi.upper_energy = 0.0;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.auto_continuum = true;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    energy_range->setFromRoiRange( roi );
   }//if( this is the first energy range ) / else
   
   checkIfInUserConfigOrCreateOne( false );
@@ -4259,10 +4478,11 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   RelActAutoGuiEnergyRange *energy_range = dynamic_cast<RelActAutoGuiEnergyRange *>(w);
   assert( energy_range );
   
+  // The button is only shown for a row a solution split into multiple ROIs, but the rows may have
+  //  changed since (e.g., while a new calculation is running).
   const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
-  if( !solution || !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution->m_status) )
+  if( !isFitOfCurrentRois( solution ) )
   {
-    // TODO: just hide/disable the button untill we have a valid solution
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
                                             "Sorry, a valid solution is needed before an energy range can be split." );
     dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
@@ -4280,28 +4500,27 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   
   const float lower_energy = energy_range->lowerEnergy();
   const float upper_energy = energy_range->upperEnergy();
+
+  // This row's index among the (non-empty) rows is its index in the ROIs the solution was fit with.
+  size_t input_index = 0;
+  for( WWidget *kid : m_energy_ranges->children() )
+  {
+    const RelActAutoGuiEnergyRange *row = dynamic_cast<const RelActAutoGuiEnergyRange *>( kid );
+    if( row == energy_range )
+      break;
+    if( row && !row->isEmpty() )
+      input_index += 1;
+  }//for( loop over ROI rows )
   
   vector<RelActCalcAuto::RoiRange> to_ranges;
-  for( const RelActCalcAuto::RoiRange &range : solution->m_final_roi_ranges )
+  const vector<RelActCalcAuto::RoiRange> &final_rois = solution->m_final_roi_ranges;
+  const vector<RelActCalcAuto::RoiResolutionInfo> &final_info = solution->m_final_roi_info;
+  for( size_t i = 0; i < final_rois.size(); ++i )
   {
-    // If the center of `range` falls between `lower_energy` and `upper_energy`, we'll
-    //  assume its a match.  This is strictly true, as `range.allow_expand_for_peak_width`
-    //  could be true, and/or another ROI can slightly overlap the original one we are
-    //  interested in.
-    //  TODO: improve the robustness of the matching between the initial ROI, and auto-split ROIs
-    
-    const double mid_energy = 0.5*(range.lower_energy + range.upper_energy);
-    
-    if( (mid_energy > lower_energy) && (mid_energy < upper_energy) )
-      to_ranges.push_back( range );
+    const vector<size_t> &inputs = final_info[i].input_roi_indices;
+    if( std::find( begin(inputs), end(inputs), input_index ) != end(inputs) )
+      to_ranges.push_back( final_rois[i] );
   }//for( loop over m_final_roi_ranges )
-  
-  
-  // We'll sort the ranges into reverse energy order so when we insert them at a fixed index,
-  //  they will be in increasing energy order.
-  std::sort( begin(to_ranges), end(to_ranges), []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ) -> bool {
-    return (lhs.lower_energy + lhs.upper_energy) > (rhs.lower_energy + rhs.upper_energy);
-  } );
   
   
   if( to_ranges.empty() )
@@ -4327,44 +4546,19 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   
   
   const auto on_yes = [this,w,to_ranges](){
-    
+    // (`w` may have been removed since the dialog was shown, so is not dereferenced until found.)
     const std::vector<WWidget *> &kids = m_energy_ranges->children();
-    const auto pos = std::find( begin(kids), end(kids), w );
-    if( pos == end(kids) )
+    const bool found = (std::find( begin(kids), end(kids), w ) != end(kids));
+    RelActAutoGuiEnergyRange * const row = found ? dynamic_cast<RelActAutoGuiEnergyRange *>( w ) : nullptr;
+    if( !row )
     {
       SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
                                               + " energy range - sorry, cant complete operation." );
       dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
       return;
     }//
-    
-    const int orig_w_index = static_cast<int>( pos - begin(kids) );
 
-    // Wt4: detach now, destroy after the current event/emit unwinds (avoids double-free / freeing an
-    //  emitting signal).
-    removeWidgetLater( m_energy_ranges, w );
-
-    for( const RelActCalcAuto::RoiRange &range : to_ranges )
-    {
-      auto roi_owner = std::make_unique<RelActAutoGuiEnergyRange>();
-      RelActAutoGuiEnergyRange *roi = roi_owner.get();
-      roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-      roi->remove().connect( this, [this, roi](){ handleRemoveEnergy( static_cast<WWidget *>(roi) ); } );
-      roi->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
-        handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
-      } );
-
-      roi->setFromRoiRange( range );
-      roi->setForceFullRange( true );
-
-      m_energy_ranges->insertWidget( orig_w_index, std::move(roi_owner) );
-    }//for( const RelActCalcAuto::RoiRange &range : to_ranges )
-    
-    checkIfInUserConfigOrCreateOne( false );
-    m_render_flags |= RenderActions::UpdateEnergyRanges;
-    m_render_flags |= RenderActions::UpdateCalculations;
-    m_render_flags |= RenderActions::AddUndoRedoStep;
-    scheduleRender();
+    replaceRoiRows( { row }, to_ranges );
   };//on_yes lamda
   
   
@@ -4417,6 +4611,16 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     return;
   
   RelActCalcAuto::RoiRange roi = range->toRoiRange();
+
+  // A "Lines + peak width" ROI's energies are lines, so it is cut up as the range it covers, into
+  //  fixed ranges (pieces anchored on the lines at the cut would extend back over it, and be merged).
+  if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::LineAnchored )
+  {
+    const pair<double,double> extent = range->displayRange();
+    roi.lower_energy = extent.first;
+    roi.upper_energy = extent.second;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  }
   
   if( (upper_energy < roi.lower_energy) || (lower_energy > roi.upper_energy) )
   {
@@ -4479,8 +4683,8 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     right_range->splitRangesRequested().connect( this, [this]( RelActAutoGuiEnergyRange *a1 ){
       handleConvertEnergyRangeToIndividuals( static_cast<WWidget *>(a1) );
     } );
-    right_range->setEnergyRange( upper_energy, roi.upper_energy );
     right_range->setFromRoiRange( roi );
+    right_range->setEnergyRange( upper_energy, roi.upper_energy );
     m_energy_ranges->insertWidget( orig_w_index, std::move(right_owner) );
 
     // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
@@ -5665,6 +5869,17 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
   else
     m_background_sf = 1.0;
 
+  // A newly loaded background file is almost always meant to be subtracted (otherwise, e.g., NORM
+  //  lines are fit as if from the sources), so turn subtraction on; the user can still turn it off.
+  //  A state being loaded says for itself whether to subtract.
+  const shared_ptr<const SpecMeas> back_file = m_interspec->measurment( SpecUtils::SpectrumType::Background );
+  if( m_foreground && m_background && back_file && (back_file != m_back_sub_background_file.lock()) )
+  {
+    m_back_sub_background_file = back_file;
+    if( !m_loading_preset )
+      m_background_subtract->setChecked( true );
+  }
+
   m_back_sub_foreground = nullptr;
   m_spectrum->setData( m_foreground, foreground_same );
   const bool back_sub = m_background_subtract->isChecked();
@@ -5969,15 +6184,10 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   if( m_free_peaks_container->isHidden() )
     return;
   
-  vector<pair<float,float>> rois;
-  const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
-  for( WWidget *w : roi_widgets )
-  {
-    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
-    assert( roi );
-    if( roi && !roi->isEmpty() )
-      rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
-  }//for( WWidget *w : kids )
+  // The same ROIs as `getFloatingPeaks()` uses.
+  vector<pair<double,double>> rois;
+  for( const RelActAutoGuiEnergyRange *roi : nonEmptyRoiRows() )
+    rois.push_back( roi->displayRange() );
   
   
   const bool fit_energy_cal = (m_fit_energy_cal->currentIndex() != static_cast<int>(RelActCalcAuto::EnergyCalFitType::NoFit));
@@ -6017,6 +6227,19 @@ void RelActAutoGui::updateDuringRenderForEnergyRangeChange()
   const bool show_sort_ranges = (m_energy_ranges->count() > 1);
   if( m_sort_energy_ranges->isVisible() != show_sort_ranges )
     m_sort_energy_ranges->setHidden( !show_sort_ranges );
+
+  // So empty edge fields show the defaults that will be used, for this detector (rows may have been
+  //  added since the options were last loaded, or the detector type changed).
+  const PeakFitUtils::CoarseResolutionType det_type = currentDetType();
+  m_edge_defaults_det_type = det_type;
+  const RelActCalcAuto::RoiEdge lower_edge = RelActCalcAuto::default_roi_edge( det_type, true );
+  const RelActCalcAuto::RoiEdge upper_edge = RelActCalcAuto::default_roi_edge( det_type, false );
+  for( WWidget *w : m_energy_ranges->children() )
+  {
+    RelActAutoGuiEnergyRange *row = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
+    if( row )
+      row->setEdgeDefaults( lower_edge, upper_edge );
+  }
 }//void updateDuringRenderForEnergyRangeChange()
 
 
@@ -6157,22 +6380,20 @@ void RelActAutoGui::startUpdatingCalculation()
       self->handleCalcException( error_msg, cancel_calc );
   } );
 
-  PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
+  const PeakFitUtils::CoarseResolutionType det_type = currentDetType();
+  std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs;
   {
     const std::shared_ptr<const SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
-    const std::shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-    assert( prefs );
-    if( prefs )
-      det_type = prefs->m_det_type;
-    else
-      det_type = PeakFitUtils::coarse_det_type( foreground, nullptr );
+    peak_fit_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+    assert( peak_fit_prefs );
   }
 
   auto worker = [=](){
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, det_type,
+                                 cancel_calc, peak_fit_prefs );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();

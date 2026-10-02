@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 #include <cassert>
 #include <cstring>
@@ -783,6 +784,17 @@ double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd )
 {
   return std::max( 1000.0 * gd.transverse_half_extent(), 100.0 );
 }//farFieldDistanceCm(...)
+
+
+unsigned monteCarloThreadCount()
+{
+  const unsigned num_cores = std::thread::hardware_concurrency();
+  if( num_cores >= 8 )
+    return num_cores - 2;
+  if( num_cores >= 2 )
+    return num_cores - 1;
+  return 1;
+}//monteCarloThreadCount()
 
 
 Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd )

@@ -4351,7 +4351,11 @@ void fit_model( const std::string wtsession,
     if( num_var_params < 1 )
       throw runtime_error( "No parameters are selected for fitting." );
 
-    chi2Fcn->fittingIsStarting( sm_max_model_fit_time_ms );
+    // Cascade decay corrections can take a lot longer, so we'll arbitrarily increase the time out by a factor
+    //  of 10 for the moment.
+    const size_t fit_timeout_ms = (results->options.correct_for_cascade_summing ? 10 : 1) * sm_max_model_fit_time_ms;
+
+    chi2Fcn->fittingIsStarting( fit_timeout_ms );
 
     // The background-subtracted observed counts for each peak in the fit - same peak
     //  inclusion and background-subtraction as #ShieldingSourceChi2Fcn::expected_observed_chis

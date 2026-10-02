@@ -69,6 +69,7 @@ namespace PeakFitUtils{ enum class CoarseResolutionType : int; }
 #endif
 
 // Forward declarations
+struct PeakFitDetPrefs;
 struct Material;
 class MaterialDB;
 
@@ -160,23 +161,54 @@ std::string to_name( const SrcVariant &src );
 SrcVariant source_from_string( const std::string &name );
 
 
+/** How far a (non-`Fixed`) ROI extends past the gamma line that bounds it on one side.
+
+ The ROI edge is placed where only `tail_fraction` of that line's peak area (including any skew
+ tail) lies beyond it, plus a continuum-only `sideband_fwhm` (in units of the FWHM at the line),
+ so the same specification gives appropriate ROIs for any detector resolution.
+ */
+struct RoiEdge
+{
+  /** Fraction of the bounding line's peak area allowed to lie outside the ROI on this side. */
+  double tail_fraction = 1.0E-3;
+
+  /** Continuum margin beyond the coverage limit, in FWHM at the bounding line's energy. */
+  double sideband_fwhm = 1.0;
+
+  bool operator==( const RoiEdge &rhs ) const;
+  bool operator!=( const RoiEdge &rhs ) const { return !(*this == rhs); }
+};//struct RoiEdge
+
+
+/** How far a (non-`Fixed`) ROI extends below (if `lower`), or above, its bounding gamma line, unless
+ the ROI overrides it (see `RoiRange::lower_edge` / `RoiRange::upper_edge`); depends on the detector
+ type, e.g., CZT covers less of the peak below the line, where its long tail is.
+ */
+RoiEdge default_roi_edge( const PeakFitUtils::CoarseResolutionType det_type, const bool lower );
+
+
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
+
+ The ROI actually fit is derived from this specification by `RelActCalcAutoRoi::resolve(...)`; see
+ #RangeLimitsType for how the energies are interpreted.
  */
 struct RoiRange
 {
   double lower_energy = -1.0;
   double upper_energy = -1.0;
-  
-  /** The continuum type to use.
-   
-   TODO: Allow setting to #PeakContinuum::OffsetType::External to auto-choose this.
-   */
+
+  /** The continuum type to use, or if #auto_continuum is true, the type to start from. */
   PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Quadratic;
+
+  /** If true, after an initial fit the continuum type is chosen from a set of candidates (starting
+   from #continuum_type) by how well each describes the data with the model peaks held fixed.
+   */
+  bool auto_continuum = false;
 
   /** Specifies how the energy range limits should be interpreted during fitting.
 
-   This controls whether the ROI boundaries are strictly enforced, can expand to accommodate
-   peaks at the edges, or can be broken into smaller ranges based on peak locations.
+   This controls whether the ROI boundaries are strictly enforced, or derived from the gamma lines
+   to be fit and the detector's peak shape.
    */
   enum class RangeLimitsType : int
   {
@@ -185,19 +217,49 @@ struct RoiRange
      */
     Fixed = 0,
 
-    /** The lower and upper energy values can be expanded to accommodate the FWHM of peaks
-     at or near the ROI edges. Not well tested yet.
+    /** Deprecated - use #LineAnchored or #CanBeBrokenUp.
+
+     Treated like #CanBeBrokenUp, except the ROIs made around the significant lines are not
+     limited to the lower and upper energies.
      */
     CanExpandForFwhm = 1,
 
     /** The ROI can be broken up into multiple smaller ROIs based on expected significant peaks.
-     The range may be subdivided to optimize fitting.
+
+     Each significant gamma line within the lower and upper energy gets a window extending past it
+     the same way as a #LineAnchored ROI (overlapping windows are handled as described for
+     `RelActCalcAutoRoi::resolve(...)`), limited to the lower and upper energies.  For the first
+     fit, the lines at peaks found in the spectrum are significant (or every line, if none are);
+     the ROIs are then re-made around the lines that fit predicts to be statistically significant,
+     and the problem re-fit.
      */
-    CanBeBrokenUp = 2
+    CanBeBrokenUp = 2,
+
+    /** The lower and upper energies are the energies of the lowest and highest gamma lines the ROI
+     is to include (they may be equal, for a single line), and the ROI extends past each of these
+     lines according to #lower_edge / #upper_edge (see #RoiEdge), using the detector's peak shape.
+     */
+    LineAnchored = 3
   };//enum class RangeLimitsType
 
   /** Specifies how the ROI limits should be interpreted. */
   RangeLimitsType range_limits_type = RangeLimitsType::CanBeBrokenUp;
+
+  /** Per-ROI overrides of the #RoiEdge values; an unset value uses `default_roi_edge(...)` for the
+   detector type.  Not used for #RangeLimitsType::Fixed ROIs.
+   */
+  struct EdgeOverride
+  {
+    std::optional<double> tail_fraction;
+    std::optional<double> sideband_fwhm;
+
+    bool empty() const { return !tail_fraction.has_value() && !sideband_fwhm.has_value(); }
+    RoiEdge apply_to( RoiEdge defaults ) const;
+    bool operator==( const EdgeOverride &rhs ) const;
+    bool operator!=( const EdgeOverride &rhs ) const { return !(*this == rhs); }
+  };//struct EdgeOverride
+
+  EdgeOverride lower_edge, upper_edge;
 
   /** Returns string representation of the RangeLimitsType.
    String returned is a static string, so do not delete it.
@@ -210,9 +272,17 @@ struct RoiRange
    */
   static RangeLimitsType range_limits_type_from_str( const char *str );
 
-  static const int sm_xmlSerializationVersion = 0;
+  /** Version 1 (from 0): adds #auto_continuum, #RangeLimitsType::LineAnchored, and the edge
+   overrides.  Version 0 is still written when none of these are used, along with the legacy
+   `<ForceFullRange>` and `<AllowExpandForPeakWidth>` elements, so older builds can read it.
+   */
+  static const int sm_xmlSerializationVersion = 1;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+  /** Whether any of the version 1 features are used; edge overrides do not count for a `Fixed` ROI,
+   which does not use them (and does not write them to XML). */
+  bool uses_v1_features() const;
 
   bool operator==( const RoiRange &rhs ) const;
   bool operator!=( const RoiRange &rhs ) const;
@@ -221,6 +291,28 @@ struct RoiRange
   static void equalEnough( const RoiRange &lhs, const RoiRange &rhs );
 #endif
 };//struct RoiRange
+
+
+/** How one of the ROIs actually fit (see `RelActAutoSolution::m_final_roi_ranges`) was derived
+ from the input `Options::rois`.
+ */
+struct RoiResolutionInfo
+{
+  /** Indices into the input `Options::rois` this ROI came from; more than one if ROIs were merged. */
+  std::vector<size_t> input_roi_indices;
+
+  /** The lowest and highest gamma line (or floating peak) energies the ROI was sized around.
+   NaN for a ROI that came from an input `Fixed` ROI (which is used as given).
+   */
+  double lower_anchor_energy = std::numeric_limits<double>::quiet_NaN();
+  double upper_anchor_energy = std::numeric_limits<double>::quiet_NaN();
+
+  /** Whether the ROI's continuum type is chosen automatically (`RoiRange::auto_continuum`). */
+  bool auto_continuum = false;
+
+  bool operator==( const RoiResolutionInfo &rhs ) const;
+  bool operator!=( const RoiResolutionInfo &rhs ) const { return !(*this == rhs); }
+};//struct RoiResolutionInfo
 
 
 /** Struct to specify a nuclide to use for doing relative-efficiency/activity calc.
@@ -889,6 +981,48 @@ struct Options
    */
   std::optional<double> fixed_upper_skew[6];
 
+  /** Optional starting values of the skew parameters, at the lower and upper energy end of the
+   spectrum (see #fixed_lower_skew / #fixed_upper_skew); unlike those, these parameters are still fit.
+   A value outside the parameter's allowed range is moved into it.  An unset upper value, for an
+   energy-dependent parameter, starts from the lower value.
+   */
+  std::optional<double> start_lower_skew[6];
+  std::optional<double> start_upper_skew[6];
+
+  /** How the skew of peaks is taken from the peak-fit preferences (`PeakFitDetPrefs`) of the spectrum
+   or detector response, when they are available (see the `peak_fit_prefs` argument of #solve).
+   */
+  enum class SkewPrefsUsage : int
+  {
+    /** Ignore the peak-fit preferences; use #skew_type and the fixed/starting values above. */
+    Ignore,
+
+    /** Use the skew type from the preferences, holding fixed the parameters the preferences give
+     values for, and fitting the rest - i.e., what the preferences mean for peak fitting too.  If the
+     preferences are for ROI-independent skew, only the type is used, and all parameters are fit.
+     */
+    AsPreferencesSpecify,
+
+    /** Use the skew type from the preferences, and start the fit from their values, but fit all
+     the skew parameters to the data.
+     */
+    StartingValuesOnly
+  };//enum class SkewPrefsUsage
+
+  static const char *skew_prefs_usage_str( const SkewPrefsUsage usage );
+  static SkewPrefsUsage skew_prefs_usage_from_str( const std::string &str );
+
+  SkewPrefsUsage skew_prefs_usage;
+
+  /** Applies peak-fit preferences to #skew_type and the fixed/starting skew values, according to
+   #skew_prefs_usage (does nothing for `Ignore`, or if `prefs` is null or its skew type is `NoSkew`,
+   which is also what preferences that were never set up have).
+
+   The fixed/starting values are set from the preferences (and cleared for parameters the
+   preferences have no value for), so the options describe exactly the skew that will be fit.
+   */
+  void apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs );
+
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
    * When true, x-ray peaks will use VoigtPlusBortel skew type with the
@@ -999,6 +1133,25 @@ struct Options
 
 
   std::vector<RelActCalcAuto::RoiRange> rois;
+
+
+  /** Settings for how automatic continua are chosen (how far ROIs extend past their lines is
+   per-ROI; see `RoiRange::lower_edge` and `default_roi_edge(...)`).
+
+   A data-tuned default; serialized (as `<RoiSettings>`) only when not the default.
+   */
+  struct RoiSettings
+  {
+    /** A ROI with `RoiRange::auto_continuum` switches away from its starting continuum type only
+     if another candidate improves the (AICc-like) score by more than this. */
+    double continuum_switch_min_improvement = 2.0;
+
+    bool is_default() const;
+    bool operator==( const RoiSettings &rhs ) const;
+    bool operator!=( const RoiSettings &rhs ) const { return !(*this == rhs); }
+  };//struct RoiSettings
+
+  RoiSettings roi_settings;
 
 
   std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
@@ -1216,11 +1369,12 @@ struct Options
    `background_filename`, `foreground_sample_numbers`, and `background_sample_numbers`. v2
    XML still parses (the new fields default to empty / no samples). v4 adds
    `auto_profile_weak_mass_fractions` and permits v1 `NucInputInfo` children.  v5 adds
-   `robust_solve`.  v6 adds `profile_targets`.
+   `robust_solve`.  v6 adds `profile_targets`.  v7 adds `roi_settings`, and permits v1 `RoiRange`
+   children (line-anchored ROIs, automatic continua, and edge overrides).
 
    Serialization writes the lowest version a reader actually needs, so a config that leaves the
    newer options at their defaults stays byte-identical and keeps parsing in older builds. */
-  static const int sm_xmlSerializationVersion = 6;
+  static const int sm_xmlSerializationVersion = 7;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -2059,16 +2213,32 @@ struct RelActAutoSolution
   static const double sm_max_obs_eff_leak_fraction;
 
 
-  /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
-   be assessed based on peak localities and expected counts; this variable holds the ROI
-   ranges that were assessed and used to compute final answer.
-   If all input RoiRanges had #RoiRange::force_full_range as true, and computation was
-   successful then this variable will be equal to #m_options.rois.
+  /** The ROIs as the caller specified them (i.e., `Options::rois` passed to #solve), before being
+   resolved into the fit ROIs of #m_final_roi_ranges.
+
+   #m_options holds the options the final fit actually used, so its `rois` are the resolved ROIs.
+   */
+  std::vector<RoiRange> m_input_rois;
+
+  /** The ROIs used to compute the final answer: the input ROIs resolved (see
+   `RelActCalcAutoRoi::resolve(...)`) into sorted, non-overlapping, `Fixed` ROIs.  An input `Fixed` ROI
+   is used exactly as given; the others are sized from the fitted peak shape, and a
+   `CanBeBrokenUp` ROI is reduced to its statistically significant lines.
    If computation is not successful, this variable may, or may not, be empty.
 
    Note: these ROIs are in true energy, not the energy of the spectrum.
    */
   std::vector<RoiRange> m_final_roi_ranges;
+
+  /** How each of #m_final_roi_ranges was derived from #m_input_rois; same size and order as
+   #m_final_roi_ranges (when that is filled out). */
+  std::vector<RoiResolutionInfo> m_final_roi_info;
+
+  /** The number of times the problem was re-fit because the ROIs sized from the fit peak shape, or the
+   automatically chosen continua, differed materially from those of the previous fit.  Always zero if
+   every input ROI is `Fixed`, without `RoiRange::auto_continuum`.
+   */
+  size_t m_num_roi_refits = 0;
 
   /** These ROIs are in the energy of the spectrum. */
   std::vector<RoiRange> m_final_roi_ranges_in_spectrum_cal;
@@ -2802,6 +2972,9 @@ struct RelActAutoSolution
  
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
+ @param peak_fit_prefs The peak-fit preferences of the spectrum (e.g., `SpecMeas::peakFitDetPrefs()`);
+        if null, those of `drf` are used, if any.  How (and if) their skew is used is set by
+        `Options::skew_prefs_usage`.
 
  TODO: right now live-time normalization is always used for background - but users may have overriden this for e.g., bad or unknown live-times
  */
@@ -2811,7 +2984,8 @@ RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const DetectorPeakResponse> drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
-                         std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
+                         std::shared_ptr<std::atomic_bool> cancel_calc = nullptr,
+                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs = nullptr
                          );
 
 

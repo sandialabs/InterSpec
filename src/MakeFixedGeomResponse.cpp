@@ -509,6 +509,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
       cfg.termination.max_events = 40000000;
       cfg.termination.max_wall_seconds = 20.0;
       cfg.termination.min_events = 20000;
+      cfg.num_threads = CeeLoUtils::monteCarloThreadCount();
       cfg.seed = 9000 + i;  //deterministic
       const ceelo::EfficiencyResult res = point_calc.compute( cfg );
       const double resp_eff = mc_resp->eps_fep_at( energy, resp_pos ).value;
@@ -553,6 +554,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
     cfg.termination.max_events = 40000000;
     cfg.termination.max_wall_seconds = 20.0;
     cfg.termination.min_events = 20000;
+    cfg.num_threads = CeeLoUtils::monteCarloThreadCount();
     cfg.seed = 7000 + i;  //deterministic
     const ceelo::EfficiencyResult res = calc.compute( cfg );
 

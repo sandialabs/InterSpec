@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">सापेक्ष सक्रियता समस्थानिक</message>
+  <message id="raag-window-title">न्यूक्लाइड द्वारा आइसोटोपिक्स</message>
 
   <!-- Presets section -->
   <message id="raag-presets">प्रीसेट</message>

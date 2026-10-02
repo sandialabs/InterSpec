@@ -36,6 +36,7 @@
 
 
 class PeakDef;
+class SpecMeas;
 class PeakModel;
 class AuxWindow;
 class InterSpec;
@@ -48,6 +49,7 @@ class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
 class NativeFloatSpinBox;
 class RelActAutoGuiNuclide;
+class RelActAutoGuiEnergyRange;
 class RelActAutoGuiRelEffOptions;
 
 namespace SpecUtils
@@ -204,9 +206,24 @@ public:
   void handleAdditionalUncertChanged();
   void handleAutoSimplifyChanged();
 
+  /** The coarse resolution type of the foreground's detector (from its peak-fit preferences, or
+   else the spectrum), which the fit and the ROI extent defaults are based on. */
+  PeakFitUtils::CoarseResolutionType currentDetType() const;
+
   void setOptionsForNoSolution();
   void setOptionsForValidSolution();
   void makeZeroAmplitudeRoisToChart();
+
+  /** The ROI rows that are not empty; in order, these are the ROIs the calculation is given. */
+  std::vector<RelActAutoGuiEnergyRange *> nonEmptyRoiRows() const;
+
+  /** Whether `solution` is a fit of the current ROI rows, so the ROIs it fit can be related to the
+   rows (through `RelActAutoSolution::m_final_roi_info`). */
+  bool isFitOfCurrentRois( const std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> &solution ) const;
+
+  /** Replaces `rows` with a row for each of `ranges`, placed where the first of `rows` was. */
+  void replaceRoiRows( const std::vector<RelActAutoGuiEnergyRange *> &rows,
+                       const std::vector<RelActCalcAuto::RoiRange> &ranges );
   
   /** Checks if the m_presets is in a "custom" state, and if not, puts it there
    
@@ -508,6 +525,10 @@ protected:
   Wt::WComboBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
 
+  /** The background file background subtraction was last turned on (or left as a loaded state had
+   it) for; a newly loaded background file turns it on (see #updateDuringRenderForSpectrumChange). */
+  std::weak_ptr<const SpecMeas> m_back_sub_background_file;
+
   /** This variable should always match the visibility state of `m_same_z_age`, but is necassary since we cant use
    the visibility state of the widget to track validity of this settings, because `isVisisble()` will return false when we
    are saving the state while closiing the RelActAuto tool.
@@ -530,7 +551,16 @@ protected:
    True when PeakFitDetPrefs has fixed skew parameter values set.
    */
   bool m_use_fixed_skew_enabled;
+
+  /** The `RelActCalcAuto::Options::roi_settings` of the loaded options, kept so they are not lost
+   (they are not editable in this GUI). */
+  RelActCalcAuto::Options::RoiSettings m_roi_settings;
+
   Wt::WCheckBox *m_use_fixed_skew;
+
+  /** The detector type the ROI rows' default extents were last shown for; when it changes, the
+   defaults (and the extents of ROIs that are not fixed ranges) change. */
+  PeakFitUtils::CoarseResolutionType m_edge_defaults_det_type;
 
   /** Auto-simplify model: when checked, the solver greedily removes redundant degrees of freedom (see
    `RelActCalcAuto::Options::auto_simplify_model`).  Checking it reveals `m_auto_simplify_dchi2_div`, which
