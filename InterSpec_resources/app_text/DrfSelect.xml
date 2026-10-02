@@ -103,6 +103,7 @@
   <message id="ds-use-for-model-cb">Use as default DRF for model '{1}'</message>
   <message id="ds-no-drf-loaded">No DRF loaded</message>
   <message id="ds-qr-no-mc-note">This link carries the detector geometry, but not Monte-Carlo characterization.  When read-in it will need re-generating (the XML download avoids this).</message>
+  <message id="ds-qr-no-grid-note">This link carries the detector geometry and its far-field efficiency, but not the efficiency grid it was imported with (nor any total efficiency added to it), and the grid cannot be re-created from them.  The XML download carries everything.</message>
   <message id="ds-url-drf-received">DRF received from external program.</message>
   <message id="ds-url-drf-geom-only">Received detector efficiency contains the detector geometry.</message>
   <message id="ds-url-modeling-label">Detector response:</message>
@@ -140,9 +141,13 @@
   <message id="ds-chip-tt-total-eff">Total efficiency (probability of depositing any energy) - the input needed for cascade-summing corrections. This detector has none, so cascade-summing corrections are unavailable.</message>
   <message id="ds-chip-tt-total-eff-curve">Total-efficiency curve (probability of depositing any energy; input for cascade-summing corrections).</message>
   <message id="ds-chip-tt-total-eff-mc">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), supplied by this detector's Monte-Carlo response rather than by a separate curve.</message>
+  <message id="ds-chip-tt-total-eff-grid">Total efficiency (probability of depositing any energy; input for cascade-summing corrections), from a Monte Carlo of this detector's geometry, grounded to its imported efficiency grid.</message>
   <message id="ds-chip-points">Measured points</message>
   <message id="ds-chip-tt-points">The raw per-peak efficiency measurements this DRF was made from (kept for provenance, and to anchor a Monte-Carlo characterization).</message>
   <message id="ds-chip-mc">MC response</message>
+  <message id="ds-chip-grid">Imported grid</message>
+  <message id="ds-chip-tt-grid">Full-energy-peak efficiency from the grid this detector was imported with (a .par detector-characterization file; valid {1}-{2} keV): off-axis and near-field efficiencies as the file tabulates them.  A total efficiency, for cascade-summing corrections, can be added by Monte Carlo ("Modify...", Geom &amp; MC tab).</message>
+  <message id="ds-chip-tt-grid-geom-edited">Full-energy-peak efficiency from the grid this detector was imported with (a .par detector-characterization file; valid {1}-{2} keV).  The detector geometry was edited after import; the grid&apos;s efficiencies are unchanged, and the edited geometry is used for Monte-Carlo calculations such as the total efficiency.</message>
   <message id="ds-chip-tt-mc">Full Monte-Carlo-parameterized response ({1} profile; valid {2}-{3} keV): off-axis and near-field efficiencies with honest uncertainties.</message>
   <message id="ds-chip-tt-no-mc">No Monte-Carlo parameterization - efficiencies are on-axis far-field only. Use "Characterize by MC..." to add one.</message>
   <message id="ds-chip-transfer">Transfer</message>

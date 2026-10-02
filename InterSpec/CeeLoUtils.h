@@ -137,10 +137,23 @@ namespace CeeLoUtils
                       const ceelo::GeometryDescriptor &geom,
                       const double override_ref_distance_cm );
 
+  /** The transfer anchor for an imported efficiency grid (DetEffG2kPar::isGridResponse): the
+   grid's own absolute efficiency, on-axis at `ref_distance_cm` (<= 0 for
+   DetEffG2kPar::gridReferenceDistanceCm, i.e. 50 cm or more) - see DetEffG2kPar::groundingPoints.
+
+   #transferAnchorForDrf and #curveAnchorWithCovarianceForDrf use this for a DRF carrying a grid:
+   its legacy curve is sampled tens of metres out, and reconstructing an absolute efficiency from
+   it discards everything the grid knows about the near field.  `curve_derived` is true.
+   */
+  TransferAnchor gridTransferAnchor( const ceelo::DetectorResponse &grid,
+                                     const double ref_distance_cm );
+
   /** Samples the DRF's total-efficiency curve (when it has one) at the FEP
    anchor's energies and reference distance, for use as the transfer's
    total-efficiency anchor - transferred measured totals (endcap/dead-layer
    effects included) beat the bare-crystal fallback tier for cascade-summing.
+   Without a curve, a total the attached response characterizes (e.g., a Monte-Carlo total on an
+   imported grid) is sampled instead.
    Returns an empty curve when the DRF has no total-efficiency information.
    */
   ceelo::AnchorCurve totalTransferAnchorForDrf(

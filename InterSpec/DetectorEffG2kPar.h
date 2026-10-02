@@ -110,8 +110,9 @@
      not look to be derivable from these files, so the assembled response is marked
      `ceelo::TotEffTier::NotCharacterized`: its eps_total queries refuse rather
      than return a number, `DetectorPeakResponse::hasAnyTotalEfficiencyInfo()`
-     is false, and cascade-summing corrections are therefore unavailable on an
-     imported detector.
+     is false, and cascade-summing corrections are unavailable - until the user
+     generates a Monte-Carlo total, which `attachTotalEfficiency` grafts onto the
+     grid without touching its FEP.
 
  -----------------------------------------------------------------------------
   ENERGY INTERPOLATION: WE USE PCHIP AND DIFFER FROM ISOCS BY ~1-2% BETWEEN NODES
@@ -432,7 +433,12 @@
 */
 
 class DetectorPeakResponse;
-namespace ceelo { class DetectorResponse; }
+namespace ceelo
+{
+  class DetectorResponse;
+  struct GroundingPoint;
+  struct GeometryDescriptor;
+}
 
 /** Reader for a detector-characterization efficiency parameter file (binary
  spatial FEP-efficiency grid) plus its ASCII geometry record.  See the file
@@ -650,7 +656,9 @@ namespace DetEffG2kPar
    the DRF source as `DetectorPeakResponse::DrfSource::CharacterizationParFile`.
 
    The response is FEP-only: its total-efficiency tier is
-   `ceelo::TotEffTier::NotCharacterized`, so cascade summing declines to run.
+   `ceelo::TotEffTier::NotCharacterized`, so cascade summing declines to run until a Monte-Carlo
+   total is attached (#attachTotalEfficiency).  The DRF's setback is the descriptor's endcap-front
+   offset (the GADRAS convention), so flat-disk displays put the crystal where it is.
    A layer whose material token is not a recognizable element cannot be modeled;
    it is omitted from the geometry and noted in the DRF description rather than
    dropped silently (the grid still holds the true efficiency at its own nodes,
@@ -664,10 +672,88 @@ namespace DetEffG2kPar
   /** Whether `resp` is a response #makeDrf built from a grid - an "imported efficiency grid".
 
    CeeLo has no category for one, so it is labelled a curve transfer (no Monte Carlo); unlike a
-   genuine curve transfer it carries its own near-field table, and no transfer sigma model.  It is
-   full-energy-peak only, and tied to the geometry it was built with.
+   genuine curve transfer it carries its own near-field table, and no transfer sigma model.  Its
+   full-energy-peak efficiency is tied to the geometry it was built with; it carries a total
+   efficiency only once #attachTotalEfficiency has given it one.
    */
   bool isGridResponse( const std::shared_ptr<const ceelo::DetectorResponse> &resp );
+
+  /** The geometry `makeDrf` models a DETECTOR.txt record as.  The record has no bore or bullet, so
+   coaxial families get a conservative guessed bore - which is why users may edit the geometry
+   afterwards (see DetectorPeakResponse::monteCarloGeometry).  Unmodelable layers are noted in
+   `warnings`.  Throws std::runtime_error without a crystal diameter and length.
+   */
+  ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
+                                                     std::vector<std::string> &warnings );
+
+  /** The one distance (cm, from the endcap face) at which an imported grid stands in for a
+   measurement - transfer anchors, grounding a Monte Carlo to it, and pinning an attached total:
+   max( 50 cm, 10 x the transverse half-extent ), a calibration-like distance clear of the near
+   field.  (The legacy far-field curve a grid DRF also carries is sampled ~1000 half-extents out -
+   tens of metres - which is no place to anchor anything.)
+   */
+  double gridReferenceDistanceCm( const ceelo::GeometryDescriptor &gd );
+
+  /** On-axis absolute FEP efficiencies of a grid response at `dist_from_face_cm` (<= 0 for
+   #gridReferenceDistanceCm): 24 log-spaced energies over its validated range, plus flanks either
+   side of each crystal K-edge.  Grounding a Monte-Carlo response to these makes it agree with the
+   grid; they are also the grid's transfer anchor (CeeLoUtils::gridTransferAnchor).
+   */
+  std::vector<ceelo::GroundingPoint> groundingPoints( const ceelo::DetectorResponse &grid,
+                                                      double dist_from_face_cm = -1.0 );
+
+  /** A copy of grid response `grid` carrying `donor`'s total efficiency - or none, for a null
+   `donor`.  The full-energy-peak efficiency is untouched (bit-identical).
+
+   The donor is typically a Monte Carlo of the user's (possibly edited) geometry, grounded to the
+   grid with #groundingPoints, so its total is scaled by the same k(E) = grid / MC its FEP needed.
+   It is re-expressed on the GRID's response, whose kernel is the imported geometry's:
+     - an `EtaTotTable` on the grid's own energy x angle nodes, pinned to the donor in the true far
+       field (max(1000 a, 100 cm) from the crystal face); and
+     - everywhere closer, a distance table (`ceelo::TotEffPayload::near_field`) holding the
+       donor's total at the same physical points - so the imported geometry's kernel never decides
+       the total, and a donor's own measured near-field total carries over.
+   End to end on the mock pair - the imported grid, with the total of a General-profile Monte Carlo
+   of the corrected geometry attached, against direct point-source Monte Carlo (1-27 cm, 0-75 deg,
+   60-2614 keV, 0.2% MC): worst 0.93%, RMS <=0.37% at every distance.  (Before the distance table,
+   up to 9.5% at 2 cm, 75 deg; and before CeeLo kept its near-field totals, its own close-in total
+   was 1.5-4.4% off.)  The app's own run - scans stopped on total precision
+   (ceelo::GenerationOptions::scans_stop_on_total), then grounded to the grid - gave worst 1.4-1.6%,
+   RMS <=0.82%; ungrounded, worst 1.07%, RMS <=0.57%.  Grounding passes the grid's representation
+   error (the mock's rounded values: +0.5% at 344 keV) and the backbone's MC noise to the total.
+   The graft's own interpolation error is in test_ImportedGridDrf's `TotalOnEditedGeometry`.
+
+   Throws std::runtime_error if `donor` has no total efficiency, or `grid` carries a grounding
+   (which would scale its FEP too).
+   */
+  std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency(
+                                                    const ceelo::DetectorResponse &grid,
+                                                    const ceelo::DetectorResponse *donor );
+
+  /** How closely a Monte Carlo of the user's geometry reproduces the imported grid's FEP close in,
+   where grounding on axis at #gridReferenceDistanceCm does not tie them together.
+   */
+  struct GridFepConsistency
+  {
+    size_t num_nodes = 0;
+    double mean_ln = 0.0;    //mean of ln( Monte-Carlo FEP / grid FEP )
+    double rms_ln = 0.0;     //RMS of the same
+    double worst_ln = 0.0;   //largest-magnitude value, signed
+    double worst_energy_keV = 0.0, worst_dist_cm = 0.0, worst_cos_theta = 1.0;  //from the endcap-face centre
+  };//struct GridFepConsistency
+
+  /** Compares `donor` (grounded to `grid` with #groundingPoints) with the grid's FEP at the donor's
+   near-field Monte-Carlo nodes - where its FEP is the node's own MC - that lie in front of the
+   endcap face and inside the grid's validated energy range.  A large value means the geometry does
+   not reproduce the vendor's characterization there, and the Monte-Carlo total close in deserves
+   the same doubt.  Empty (`num_nodes` 0) when the donor has no near-field table.
+
+   On the mock pair, from the app's run (whose near-field FEP is only 0.3-1.2% precise): RMS 1.0%,
+   worst 4.5%, for the geometry the grid was made from; RMS 3.9%, worst 23%, for the importer's
+   guessed core - whose total was then 3.7-8.1% off at worst, against <=1.6%.
+   */
+  GridFepConsistency gridFepConsistency( const ceelo::DetectorResponse &grid,
+                                         const ceelo::DetectorResponse &donor );
 
   /** Convenience: parse both files from disk, select the matching geometry
    record, and build the DRF.  Throws std::runtime_error on failure.

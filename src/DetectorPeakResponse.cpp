@@ -78,6 +78,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -787,6 +788,11 @@ void DetectorPeakResponse::computeHash()
   if( m_ceeloResponse )
   {
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
+
+    // An imported grid stays on its imported geometry, so a geometry the user edited is not covered
+    //  by the response's hash - but it is what Monte Carlo runs use (#monteCarloGeometry).
+    if( geometryModifiedFromImport() )
+      boost::hash_combine( seed, m_geometry->to_xml_string() );
   }else if( m_geometry )
   {
     boost::hash_combine( seed, m_geometry->to_xml_string() );
@@ -898,6 +904,9 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
               || (storedGeometry() && rhs.storedGeometry()
                   && (storedGeometry()->to_xml_string() == rhs.storedGeometry()->to_xml_string())))
           && (geometryDisabled() == rhs.geometryDisabled())
+          && (geometryModifiedFromImport() == rhs.geometryModifiedFromImport())
+          && (!geometryModifiedFromImport()
+              || (m_geometry->to_xml_string() == rhs.m_geometry->to_xml_string()))
           );
 }//operator==
 
@@ -1126,6 +1135,27 @@ void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescript
   m_geometry = std::move( geometry );
   computeHash();
 }//setGeometry(...)
+
+
+bool DetectorPeakResponse::hasImportedGrid() const
+{
+  return DetEffG2kPar::isGridResponse( m_ceeloResponse );
+}//hasImportedGrid()
+
+
+shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::monteCarloGeometry() const
+{
+  if( m_geometry && hasImportedGrid() )
+    return m_geometry;
+  return storedGeometry();
+}//monteCarloGeometry()
+
+
+bool DetectorPeakResponse::geometryModifiedFromImport() const
+{
+  return m_geometry && hasImportedGrid()
+         && (m_geometry->to_xml_string() != m_ceeloResponse->descriptor.to_xml_string());
+}//geometryModifiedFromImport()
 
 
 bool DetectorPeakResponse::geometryDisabled() const
@@ -3099,8 +3129,14 @@ std::string DetectorPeakResponse::toAppUrl() const
   if( !m_name.empty() )
     parts["NAME"] = url_encode( m_name, false );
   
-  if( !m_description.empty() )
-    parts["DESC"] = url_encode( m_description, false );
+  // An imported efficiency grid is a response, so it cannot travel either (see "DETGEOM" below);
+  //  the receiver would otherwise read an import description for a detector that has no grid.
+  string sent_desc = m_description;
+  if( hasImportedGrid() )
+    sent_desc += string(sent_desc.empty() ? "" : "  ") + "(Imported efficiency grid not included in this transfer.)";
+
+  if( !sent_desc.empty() )
+    parts["DESC"] = url_encode( sent_desc, false );
 
   if( (m_geomType == EffGeometryType::FarFieldIntrinsic) || (m_geomType == EffGeometryType::FarFieldAbsolute) || (m_detectorDiameter > 0.0) )
     parts["DIAM"] = SpecUtils::printCompact( m_detectorDiameter, 5 );
@@ -3203,7 +3239,8 @@ std::string DetectorPeakResponse::toAppUrl() const
   //  its higher density returns.  See AppUtils::base32_encode.
   uint64_t hash_to_send = m_hash, parent_to_send = m_parentHash;
   
-  const shared_ptr<const ceelo::GeometryDescriptor> geom = geometry();
+  //  An imported grid sends the user's (possibly edited) description of the detector.
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = geometryDisabled() ? nullptr : monteCarloGeometry();
   if( geom )
   {
     try
@@ -3227,6 +3264,7 @@ std::string DetectorPeakResponse::toAppUrl() const
     //  de-duplication key for the "Previous" detector rows, send the identity of what is actually
     //  being sent, and record the real one as the parent so the lineage survives.
     DetectorPeakResponse reduced( *this );
+    reduced.setDescription( sent_desc );
     reduced.setCeeloResponse( nullptr );
     // Deep copy: geometry() hands back a pointer that shares ownership with the response, which
     //  would keep the whole (~100 KB) response alive behind the detached DRF.
@@ -6126,6 +6164,13 @@ void DetectorPeakResponse::equalEnough( const DetectorPeakResponse &lhs,
 
   if( lhs.geometryDisabled() != rhs.geometryDisabled() )
     throw runtime_error( "DetectorPeakResponse: whether the detector geometry is disabled doesnt match" );
+
+  if( lhs.geometryModifiedFromImport() != rhs.geometryModifiedFromImport() )
+    throw runtime_error( "DetectorPeakResponse: whether the imported geometry was modified doesnt match" );
+
+  if( lhs.geometryModifiedFromImport()
+      && (lhs.m_geometry->to_xml_string() != rhs.m_geometry->to_xml_string()) )
+    throw runtime_error( "DetectorPeakResponse: modified detector geometry doesnt match" );
 }//void equalEnough(...)
 #endif //PERFORM_DEVELOPER_CHECKS
 

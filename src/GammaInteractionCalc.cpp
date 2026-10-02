@@ -910,11 +910,14 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   //  known detector - so anchoring the transfer on `geometry()` (rather than on a CeeLo response's
   //  descriptor) is what makes "EffTran" reachable at all for most DRFs.  When a CeeLo response IS
   //  attached, `geometry()` returns its descriptor, which is authoritative.
-  const std::shared_ptr<const ceelo::GeometryDescriptor> geom = m_detector->geometry();
+  //  An imported grid's descriptor is the imported geometry, kept for the grid; a transfer goes
+  //  through the user's fuller description of the detector, if edited (see monteCarloGeometry).
+  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
+  const std::shared_ptr<const ceelo::GeometryDescriptor> geom
+                  = has_grid ? m_detector->monteCarloGeometry() : m_detector->geometry();
 
   const bool has_near_model = ceeloResp
                     && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
-  const bool has_grid = DetEffG2kPar::isGridResponse( ceeloResp );
 
   // Builds an EFFTRAN transfer response from the DRF (measured points / fitted curve), anchored at
   //  the DRF's pinned reference distance.  Returns null (recording why) on failure.
@@ -1011,7 +1014,9 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
       m_resolvedVolEffMethod = VolumetricEffMethod::ImportedGrid;
       m_volEffResponse = ceeloResp;
       if( requested == VolumetricEffMethod::Auto )
-        m_volEffResolveNote = "Auto -> imported efficiency grid (full-energy peak only)";
+        m_volEffResolveNote = ceeloResp->tot_eff.characterized()
+                      ? "Auto -> imported efficiency grid (with Monte-Carlo total efficiency)"
+                      : "Auto -> imported efficiency grid (full-energy peak only)";
       else if( requested == VolumetricEffMethod::MCTransfer )
         m_volEffResolveError = "A Monte-Carlo detector efficiency was requested, but this detector"
                                " response has no Monte-Carlo characterization; its imported"
@@ -4397,6 +4402,15 @@ DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceTotEff( const d
       //  a measured FEP curve says nothing about peak-to-total, so there is no total to report.
       //  Cascade summing is gated upstream on DetectorPeakResponse::hasAnyTotalEfficiencyInfo(),
       //  which is false for exactly those responses, so a fit does not reach this refusal.
+      //  The exception is a response that characterizes no total while the DRF still has one (an
+      //  imported grid on a DRF that also carries a legacy total curve): a coarser model then, not
+      //  a silent zero that would turn the requested cascade correction into a no-op.
+      if( !m_volEffResponse->tot_eff.characterized() )
+      {
+        answer = m_detector->totalEfficiencyEval( energy_f, theta, phi, true_dist );
+        break;
+      }
+
       assert( m_pointRays && (m_pointRays->response == m_volEffResponse) );
       const ceelo::EffResult res = m_volEffResponse->eps_total_at( energy, m_pointRays->position_cm,
                                                                    m_pointRays->quadrature );

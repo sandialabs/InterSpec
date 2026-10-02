@@ -23,6 +23,8 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "io/DetectorResponse.h"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -6884,13 +6886,20 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
       final_efficiency *= air_attenuation;
     }
 
+    // A geometry-modeled detector (a Monte-Carlo response, an efficiency transfer, an imported
+    //  efficiency grid) knows its absolute efficiency at this distance, near field included; the
+    //  flat-disk product of solid angle and far-field intrinsic efficiency is then only a breakdown.
+    const bool use_response = has_distance && detector && detector->isValid()
+                              && !detector->isFixedGeometry() && detector->ceeloResponse();
+
     // Calculate distance geometry factor
     if( has_distance && detector )
     {
       const double detector_diameter = detector->detectorDiameter();
       const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector_diameter, distance );
       result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
-      final_efficiency *= solid_angle;
+      if( !use_response )
+        final_efficiency *= solid_angle;
     }
 
     // Calculate detector intrinsic efficiency
@@ -6898,7 +6907,15 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     {
       const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( energy );
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
-      final_efficiency *= intrinsic_eff;
+      if( !use_response )
+        final_efficiency *= intrinsic_eff;
+    }
+
+    if( use_response )
+    {
+      const double abs_eff = detector->efficiency( energy, distance );
+      result["detectorAbsoluteEfficiency"] = round_to_sig_figs( abs_eff, 6 );
+      final_efficiency *= abs_eff;
     }
 
     result["finalEfficiency"] = round_to_sig_figs( final_efficiency, 6 );
@@ -7881,10 +7898,35 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
     case DetectorPeakResponse::DrfSource::FromSpectrumFileDrf:           drfSourceStr = "FromSpectrumFileDrf";           break;
     case DetectorPeakResponse::DrfSource::UserCreatedDrf:                drfSourceStr = "UserCreatedDrf";                break;
     case DetectorPeakResponse::DrfSource::IsocsEcc:                      drfSourceStr = "IsocsEcc";                      break;
+    case DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf: drfSourceStr = "UserImportedIntrisicEfficiencyDrf"; break;
+    case DetectorPeakResponse::DrfSource::UserImportedGadrasDrf:         drfSourceStr = "UserImportedGadrasDrf";         break;
+    case DetectorPeakResponse::DrfSource::DefaultRelativeEfficiencyDrf:  drfSourceStr = "DefaultRelativeEfficiencyDrf";  break;
+    case DetectorPeakResponse::DrfSource::AngleOutx:                     drfSourceStr = "AngleOutx";                     break;
+    case DetectorPeakResponse::DrfSource::UserImportedEfficiencyCsvDrf:  drfSourceStr = "UserImportedEfficiencyCsvDrf";  break;
+    case DetectorPeakResponse::DrfSource::GadrasDetectorDatOnly:         drfSourceStr = "GadrasDetectorDatOnly";         break;
+    case DetectorPeakResponse::DrfSource::CharacterizationParFile:       drfSourceStr = "CharacterizationParFile";       break;
     case DetectorPeakResponse::DrfSource::UnknownDrfSource:
     default:                                                              drfSourceStr = "UnknownDrfSource";              break;
   }
   result["drfSource"] = drfSourceStr;
+
+  // How efficiency away from the far field is modeled - which the 1/r^2 description above does not
+  //  hold for once a response is attached.
+  const std::shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+  if( drf->hasImportedGrid() )
+    result["efficiencyModel"] = "ImportedEfficiencyGrid";
+  else if( resp )
+    result["efficiencyModel"] = (resp->provenance.method == ceelo::ProductionMethod::CurveTransfer)
+                                ? "EfficiencyTransfer" : "MonteCarloResponse";
+  else
+    result["efficiencyModel"] = "FlatDisk";
+
+  if( resp )
+    result["efficiencyModelDescription"] = "Geometry-modeled: near-field and off-axis efficiencies"
+                                           " come from the detector response, not ~1/r\xC2\xB2 scaling";
+  result["hasTotalEfficiency"] = drf->hasAnyTotalEfficiencyInfo();
+  if( drf->hasImportedGrid() )
+    result["geometryModifiedFromImport"] = drf->geometryModifiedFromImport();
 
   // Calculate efficiencies and FWHM at standard energies if valid
   if( drf->isValid() )

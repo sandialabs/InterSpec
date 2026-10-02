@@ -6603,6 +6603,38 @@ BOOST_AUTO_TEST_CASE( ParGridDrfInActShieldFit )
   BOOST_CHECK( efftran->volumetricEffResolveError().empty() );
   BOOST_CHECK( efftran->pointSourceFepEff( 356.0 ).value > 0.0 );
 
+  // With a total efficiency attached to the grid (what "Generate Total Efficiency" does with a Monte
+  //  Carlo), cascade summing becomes available - and the total must reach the fit through the grid
+  //  AND through an EFFTRAN built from the DRF: one that dropped it would zero every summing
+  //  correction behind a gate that had passed.
+  {
+    const shared_ptr<ceelo::DetectorResponse> donor
+                = ceelo::DetectorResponse::from_xml_string( reread->ceeloResponse()->to_xml_string() );
+    ceelo::EtaTable &eta = donor->tot_eff.eta_tot;
+    donor->tot_eff.tier = ceelo::TotEffTier::EtaTotTable;
+    eta.energies_keV = donor->eta_fep.energies_keV;
+    eta.cos_thetas = donor->eta_fep.cos_thetas;
+    eta.edges_keV = donor->eta_fep.edges_keV;
+    eta.ln_eta.assign( eta.energies_keV.size() * eta.cos_thetas.size(), std::log( 2.0 ) );
+    eta.frac_sigma.assign( eta.ln_eta.size(), 0.01 );
+    donor->tot_eff.finalize();
+
+    auto with_total = make_shared<DetectorPeakResponse>( *reread );
+    with_total->setCeeloResponse( DetEffG2kPar::attachTotalEfficiency( *reread->ceeloResponse(), donor.get() ) );
+    BOOST_CHECK( with_total->hasImportedGrid() );
+    BOOST_CHECK( GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( with_total ) );
+    BOOST_CHECK( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( reread ) );
+
+    for( const VolEff method : { VolEff::ImportedGrid, VolEff::EffTran } )
+    {
+      const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> fcn = resolve( with_total, method );
+      BOOST_REQUIRE( fcn );
+      BOOST_CHECK( fcn->resolvedVolumetricEffMethod() == method );
+      BOOST_CHECK_MESSAGE( fcn->pointSourceTotEff( 356.0 ).value > 0.0,
+                           "no total efficiency with volumetric method " << static_cast<int>(method) );
+    }
+  }
+
   const shared_ptr<DetectorPeakResponse> nai = make_synthetic_nai_drf( true );
   const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> no_grid = resolve( nai, VolEff::ImportedGrid );
   BOOST_REQUIRE( no_grid );

@@ -1232,22 +1232,24 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
 }//setFromDescriptor(...)
 
 
-void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf )
+std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFromDrf(
+                                                std::shared_ptr<const DetectorPeakResponse> drf )
 {
   // Real geometry (descriptor branch) or nothing to seed leaves this false; only the fabricated
   //  length==diameter guess below sets it.
   m_seededFromDiameterGuess = false;
 
   if( !drf || !drf->isValid() || (drf->detectorDiameter() <= 0.0f) )
-    return;
+    return nullptr;
 
   // The DRFs own geometry, when it has one - from a generated response, or set by an importer
   //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.  Stored, so a Flat
-  //  Disk detector's switched-off shape is still here to edit, or to switch back on.
-  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->storedGeometry() )
+  //  Disk detector's switched-off shape is still here to edit, or to switch back on.  For an
+  //  imported efficiency grid, the user's (possibly edited) geometry rather than the imported one.
+  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->monteCarloGeometry() )
   {
     setFromDescriptor( *gd );
-    return;
+    return gd;
   }
 
   const double diam_cm = drf->detectorDiameter() / PhysicalUnits::cm;
@@ -1272,6 +1274,8 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   //  (handleCrystalDimensionInput); set after handleShapeChange() so the note it draws sees it.
   m_seededFromDiameterGuess = true;
   updateFromForm();
+
+  return nullptr;
 }//seedFromDrf(...)
 
 

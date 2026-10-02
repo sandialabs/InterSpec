@@ -848,6 +848,13 @@ add_test( NAME TDrfImport
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ImportedGridDrf test_ImportedGridDrf.cpp )
+target_link_libraries( test_ImportedGridDrf PRIVATE InterSpecLib )
+add_test( NAME TImportedGridDrf
+  COMMAND $<TARGET_FILE:test_ImportedGridDrf> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
 target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
 add_test( NAME TDetectorEfficiency

@@ -393,6 +393,12 @@ protected:
    Geometry-Modeled toggle cannot make a current response look stale - the mode is not content.  */
   bool responseStale();
 
+  /** Whether an imported efficiency grid is being kept while the efficiency curve or its uncertainty
+   was edited - edits the grid, which answers every efficiency and uncertainty query, ignores.  Not
+   part of #responseStale: nothing can be regenerated to take them in, and that also drives the
+   Generate button. */
+  bool gridIgnoresEdits();
+
   /** Rebuilds the General tab's chart and summary table from a quiet preview of the working DRF
    (see #buildWorkingDrf) - what "Use" would produce right now.  Cheap enough for every visit. */
   void refreshGeneralTab();
@@ -595,6 +601,9 @@ protected:
   /** The fingerprint of the seed handed to the generation now running, promoted to
    #m_generatedFromFingerprint when it lands. */
   std::size_t m_pendingSeedFingerprint;
+
+  /** `DrfModifyCalc::efficiencyFingerprint` of the DRF as it arrived; see #gridIgnoresEdits. */
+  std::size_t m_origEfficiencyFingerprint;
 
   /** The export tip in the footer, hidden while #m_generateHint has something to say. */
   Wt::WText *m_exportNote;

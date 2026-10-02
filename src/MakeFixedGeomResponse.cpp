@@ -30,6 +30,7 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+#include <algorithm>
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
@@ -270,9 +271,14 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
     throw runtime_error( "Scene not representable: " + why );
 
   // --- Assemble the CeeLo scene: detector from the stored descriptor -------
+  //  For an imported efficiency grid, the user's (possibly edited) description of the detector rather
+  //  than the imported geometry the grid is tied to - see DetectorPeakResponse::monteCarloGeometry.
+  const shared_ptr<const ceelo::GeometryDescriptor> det_geom = base_drf->monteCarloGeometry();
+  const ceelo::GeometryDescriptor &det_gd = det_geom ? *det_geom : mc_resp->descriptor;
+
   ceelo::EfficiencyCalculator calc;
   vector<unique_ptr<ceelo::Material>> owned_mats;
-  ceelo::ResponseGenerator::configure_calculator( calc, mc_resp->descriptor, owned_mats );
+  ceelo::ResponseGenerator::configure_calculator( calc, det_gd, owned_mats );
   calc.set_air_attenuation( ceelo::AirAttenuation::AnalyticNoScatter );
 
   const auto add_material = [&owned_mats]( const Material &mat ) -> const ceelo::Material * {
@@ -283,9 +289,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
 
   // z = 0 is the crystal face; DRF distances are from the detector face
   //  (front of the outermost attenuator).
-  double front_off_cm = 0.0;
-  for( const ceelo::LayerSpec &layer : mc_resp->descriptor.layers )
-    front_off_cm += layer.front_thickness_cm;
+  const double front_off_cm = det_gd.endcap_front_offset_cm();
 
   const double center_z_cm = -( front_off_cm + (setup.distance / PhysicalUnits::cm) );
   const Eigen::Vector3d center( 0.0, 0.0, center_z_cm );
@@ -467,6 +471,73 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
 
   const vector<double> energies( begin(energy_set), end(energy_set) );
 
+  // --- Correction of the detector model to the detector, k(E) -----------------
+  //  A curve-transfer response - an EFFTRAN of a measured curve, or an imported efficiency grid - IS
+  //  the measured efficiency; there is no Monte-Carlo model behind it whose grounding says how far
+  //  the model is off.  So measure that here: a bare point source on axis at the scene's distance,
+  //  in vacuum like the response, and k(E) = response / MC there - on ~10 energies, interpolated
+  //  linearly in (ln E, ln k).  Any other response carries its own k(E) in its grounding.
+  const bool ground_to_response = (mc_resp->provenance.method == ceelo::ProductionMethod::CurveTransfer);
+  const size_t n_k = ground_to_response ? 10 : 0;
+  const size_t n_steps = n_k + energies.size();
+  vector<double> k_ln_energies, ln_k;
+
+  if( ground_to_response )
+  {
+    ceelo::EfficiencyCalculator point_calc;
+    vector<unique_ptr<ceelo::Material>> point_mats;
+    ceelo::ResponseGenerator::configure_calculator( point_calc, det_gd, point_mats );
+
+    // Not closer than the response is characterized (its floor is from the crystal-face origin).
+    const double min_face_cm = CeeLoUtils::faceDistanceFromCrystalOrigin( mc_resp->descriptor,
+                                                              mc_resp->provenance.min_distance_cm );
+    const double d_face_cm = std::max( setup.distance / PhysicalUnits::cm, min_face_cm );
+    point_calc.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(front_off_cm + d_face_cm) ) );
+    const Eigen::Vector3d resp_pos = CeeLoUtils::sourcePositionFromFace( mc_resp->descriptor,
+                                                                         0.0, 0.0, d_face_cm );
+
+    for( size_t i = 0; i < n_k; ++i )
+    {
+      if( cancel && cancel->load() )
+        throw runtime_error( "cancelled" );
+
+      const double energy = e_lo * std::pow( e_hi/e_lo, static_cast<double>(i)/(n_k - 1) );
+
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = energy;
+      cfg.termination.target_fep_rel_precision = fep_precision;
+      cfg.termination.max_events = 40000000;
+      cfg.termination.max_wall_seconds = 20.0;
+      cfg.termination.min_events = 20000;
+      cfg.seed = 9000 + i;  //deterministic
+      const ceelo::EfficiencyResult res = point_calc.compute( cfg );
+      const double resp_eff = mc_resp->eps_fep_at( energy, resp_pos ).value;
+
+      if( (res.full_energy_peak_efficiency > 0.0) && (resp_eff > 0.0) )
+      {
+        k_ln_energies.push_back( std::log( energy ) );
+        ln_k.push_back( std::log( resp_eff / res.full_energy_peak_efficiency ) );
+      }
+
+      if( progress )
+        progress( static_cast<double>(i + 1) / n_steps );
+    }//for( size_t i = 0; i < n_k; ++i )
+
+    if( ln_k.empty() )
+      throw runtime_error( "Could not relate the detector model to the detector's efficiency." );
+  }//if( ground_to_response )
+
+  const auto k_at = [&k_ln_energies,&ln_k]( const double energy ) -> double {
+    const double x = std::log( energy );
+    if( x <= k_ln_energies.front() )
+      return std::exp( ln_k.front() );
+    if( x >= k_ln_energies.back() )
+      return std::exp( ln_k.back() );
+    const size_t hi = std::upper_bound( begin(k_ln_energies), end(k_ln_energies), x ) - begin(k_ln_energies);
+    const double frac = (x - k_ln_energies[hi-1]) / (k_ln_energies[hi] - k_ln_energies[hi-1]);
+    return std::exp( ln_k[hi-1] + frac*(ln_k[hi] - ln_k[hi-1]) );
+  };//k_at
+
   // --- Per-energy precision-targeted MC -------------------------------------
   vector<DetectorPeakResponse::EnergyEffPoint> fep_points;
   vector<DetectorPeakResponse::EnergyEfficiencyPair> tot_pairs;
@@ -491,7 +562,10 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
     //  detector that is more (or less) efficient than its model is so for any deposit too - which
     //  matches the response's eta-table total tier; its other tiers model the total differently.
     double k_ground = 1.0;
-    if( !mc_resp->grounding.empty() )
+    if( ground_to_response )
+    {
+      k_ground = k_at( energies[i] );
+    }else if( !mc_resp->grounding.empty() )
     {
       bool clamped = false;
       k_ground = std::exp( mc_resp->grounding.eval_ln_k( energies[i], clamped ) );
@@ -511,7 +585,7 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
     tot_pairs.push_back( tot );
 
     if( progress )
-      progress( static_cast<double>(i + 1) / energies.size() );
+      progress( static_cast<double>(n_k + i + 1) / n_steps );
   }//for( energies )
 
   // --- Package the DRF -------------------------------------------------------
@@ -555,6 +629,9 @@ std::shared_ptr<DetectorPeakResponse> MakeFixedGeomResponse::computeFixedGeomDrf
   embedded.fep_scale = fep_scale;
   drf->setFixedGeometrySetupXml( embedded.toXmlString() );
   drf->setName( base_drf->name() + " (fixed-geom MC)" );
+  if( base_drf->hasImportedGrid() )
+    drf->setDescription( base_drf->description()
+                         + "  Fixed-geometry Monte Carlo, corrected to the imported efficiency grid." );
 
   return drf;
 }//computeFixedGeomDrf(...)

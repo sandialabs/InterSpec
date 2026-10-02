@@ -26,10 +26,17 @@ from a Genie/ISOCS .par file:
   <li><b>Full MC</b>: Monte Carlo over energy, angle and distance.  Takes minutes, and is the choice
       when sources will be measured well off-axis or in contact with the detector.</li>
   <li><b>Imported efficiency grid</b>: only offered for a detector imported from a .par file, and
-      selected by default for one.  The file&apos;s efficiency grid (energy, distance and angle) is
-      used as-is, so the geometry cannot be edited while it is selected.  It is full-energy peak
-      only: there is no total efficiency, so cascade-summing corrections are not available.
-      Building or generating another response replaces the grid.</li>
+      selected by default for one.  The file&apos;s full-energy-peak efficiency grid (energy,
+      distance and angle) is used as-is.  The file has no total efficiency, so cascade-summing
+      corrections need one: <b>Generate Total Efficiency</b> computes it by Monte Carlo of the
+      geometry shown, corrected to agree with the grid&apos;s full-energy-peak efficiency.  The
+      <b>General</b> profile also measures it close to the detector, where summing matters most;
+      <b>Far-field only</b> is several times quicker, but is then a few percent less accurate
+      within a few centimeters of the detector, especially well off-axis.  The
+      geometry can be edited first - a DETECTOR.txt cannot describe the crystal&apos;s core, for
+      example, so the imported core is a guess - without changing the grid&apos;s efficiencies, which
+      stay tied to the imported geometry; <b>Revert to Imported Geometry</b> undoes the edits.
+      Building or generating another kind of response replaces the grid.</li>
 </ul>
 <p>
 When the detector has measured efficiency points, a generated response is corrected to them

@@ -837,7 +837,7 @@ bool sigmaRhoFromLegacyUncerts( const DetectorPeakResponse &drf,
 }//sigmaRhoFromLegacyUncerts(...)
 
 
-std::size_t seedFingerprint( const DetectorPeakResponse &drf )
+std::size_t efficiencyFingerprint( const DetectorPeakResponse &drf )
 {
   std::size_t seed = 0;
 
@@ -848,6 +848,14 @@ std::size_t seedFingerprint( const DetectorPeakResponse &drf )
   const shared_ptr<const MeasuredDrfPoints> points = drf.measuredPoints();
   if( points && !points->empty() )
     points->appendToHash( seed );
+
+  return seed;
+}//efficiencyFingerprint(...)
+
+
+std::size_t seedFingerprint( const DetectorPeakResponse &drf )
+{
+  std::size_t seed = efficiencyFingerprint( drf );
 
   // The geometry a response is ray-traced for.  Read the member-or-response geometry, so that
   //  attaching a response generated for the same geometry does not by itself look like a change.

@@ -235,6 +235,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_generateBtn( nullptr ),
     m_generatedFromFingerprint( 0 ),
     m_pendingSeedFingerprint( 0 ),
+    m_origEfficiencyFingerprint( 0 ),
     m_exportNote( nullptr ),
     m_generateHint( nullptr ),
     m_applyAfterGenerationId( -1 ),
@@ -745,6 +746,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_mcTool->userChanged().connect( this, &DrfModifyWidget::markEdited );
     m_mcTool->userChangedNoRegen().connect( this, &DrfModifyWidget::markEditedNoRegen );
     m_mcTool->responseGenerated().connect( this, &DrfModifyWidget::handleResponseGenerated );
+    // Which response would answer the queries changes with the method (e.g. back to an imported
+    //  grid), and the Anchor tab's note says which.
+    m_mcTool->validationChanged().connect( this, [this]( bool ){ updateAnchorEditorVisibility(); } );
 
     // EVERY generation - the footer button, and the automatic one a geometry change triggers for the
     //  instant curve-transfer method - anchors on the live edits, with the response detached so the
@@ -811,6 +815,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     vector<DrfModifyCalc::Problem> problems;
     const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false, problems );
     m_generatedFromFingerprint = seed ? DrfModifyCalc::seedFingerprint( *seed ) : 0;
+    m_origEfficiencyFingerprint = seed ? DrfModifyCalc::efficiencyFingerprint( *seed ) : 0;
   }
 
   updateGenerateButton();
@@ -1534,7 +1539,7 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
   // --- Geometry: flat disk / fixed / physical shape ----------------------------------------------
   {
     WString txt;
-    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->storedGeometry() : nullptr;
+    const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->monteCarloGeometry() : nullptr;
 
     if( drf && drf->isFixedGeometry() )
     {
@@ -1568,6 +1573,8 @@ void DrfModifyWidget::fillInfoTable( const std::shared_ptr<const DetectorPeakRes
       //  the detector is modeled with.
       if( drf->geometryDisabled() )
         txt = WString::tr("dmw-info-geom-disabled").arg( txt );
+      else if( drf->geometryModifiedFromImport() )
+        txt = WString::tr("dmw-info-geom-modified").arg( txt );
     }else
     {
       const double diam_cm = drf ? (drf->detectorDiameter() / PhysicalUnits::cm) : 0.0;
@@ -1854,11 +1861,16 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   // The geometry the user described.  Recorded whether or not a response is attached: the response
   //  carries its own descriptor, but a later switch to Flat Disk must not leave the detector with no
   //  statement of what it physically is (and hence unable to ever have a response again).
+  //  For an imported grid it is the user's own description, which the grid's descriptor (the imported
+  //  geometry) does not shadow - exactly what was seeded while unedited, since the form rounds.
   if( m_mcTool && m_mcTool->geometryInput() && m_mcTool->generationReady() )
   {
     try
     {
-      working->setGeometry( make_shared<const ceelo::GeometryDescriptor>(
+      if( m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::ImportedGrid )
+        working->setGeometry( m_mcTool->effectiveGeometry() );
+      else
+        working->setGeometry( make_shared<const ceelo::GeometryDescriptor>(
                                                   m_mcTool->geometryInput()->toDescriptor() ) );
     }catch( std::exception & )
     {
@@ -1878,10 +1890,11 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   //  DRF that has been through a file or the database the shape lives *only* in the response, and
   //  detaching it would erase the crystal outright.  Re-applied after the detach so Flat Disk keeps
   //  the geometry, as this function has always claimed to.  (Stored, not `geometry()`, which hides
-  //  the shape Flat Disk has just switched off.)
+  //  the shape Flat Disk has just switched off.)  `monteCarloGeometry()`, so detaching an imported
+  //  grid keeps the user's edited geometry rather than the imported one.
   //  Copied rather than aliased: it hands back a pointer that shares ownership with the response,
   //  which would keep the whole (~100 KB) response alive behind a detached DRF.
-  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->storedGeometry();
+  const shared_ptr<const ceelo::GeometryDescriptor> from_drf = working->monteCarloGeometry();
   const shared_ptr<const ceelo::GeometryDescriptor> known_geom
       = from_drf ? make_shared<const ceelo::GeometryDescriptor>( *from_drf ) : nullptr;
   if( includeMcResponse && m_geometryModeled && resp )
@@ -2000,8 +2013,11 @@ void DrfModifyWidget::requestApply()
                                    || (m_mcTool && m_mcTool->generatedResponse()));
   if( losing_response )
   {
+    // An imported grid can only come back by re-importing its files, unlike a generated response.
+    const bool losing_grid = (m_orig && m_orig->hasImportedGrid())
+              || (m_mcTool && DetEffG2kPar::isGridResponse( m_mcTool->generatedResponse() ));
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-detach-title"),
-                                                             WString::tr("dmw-detach-body") );
+                                WString::tr( losing_grid ? "dmw-detach-grid-body" : "dmw-detach-body" ) );
     WPushButton *ok = dialog->addButton( WString::tr("dmw-detach-accept"), WidgetUtils::ButtonRole::Affirm );
     dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
     ok->clicked().connect( this, &DrfModifyWidget::apply );
@@ -2053,6 +2069,19 @@ void DrfModifyWidget::requestApply()
 
     return;
   }//if( Geometry Modeled with no response )
+
+  // An imported grid kept over edits to the efficiency curve or its uncertainty: it answers every
+  //  efficiency and uncertainty query, so the edits would be ignored - and it cannot be rebuilt to
+  //  take them in.  Either it goes, or the edits wait.
+  if( m_geometryModeled && gridIgnoresEdits() )
+  {
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-regen-title"),
+                                                             WString::tr("dmw-regen-grid-body") );
+    WPushButton *detach = dialog->addButton( WString::tr("dmw-regen-grid-detach"), WidgetUtils::ButtonRole::Neutral );
+    detach->clicked().connect( this, &DrfModifyWidget::detachResponseAndApply );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+    return;
+  }//if( the grid would ignore the edits )
 
   // A response that IS attached but does not reflect the edits is not a cosmetic mismatch: while it
   //  is attached it answers every efficiency and uncertainty query, so the edit would simply be
@@ -2215,13 +2244,16 @@ void DrfModifyWidget::updateAnchorEditorVisibility()
     m_anchorHelp->setText( WString::tr( help_id ) );
   }//if( m_anchorHelp )
 
-  // Whether a response is (going to be) in charge of every query.
+  // Whether a response is (going to be) in charge of every query - and whether it is an imported
+  //  grid, which is not rebuilt from what this tab shows.
   if( m_responseNote )
   {
-    const bool have_resp = (m_geometryModeled
-                            && ((m_mcTool && m_mcTool->generatedResponse())
-                                || (m_orig && m_orig->ceeloResponse())));
-    m_responseNote->setHidden( !have_resp );
+    const shared_ptr<const ceelo::DetectorResponse> resp
+                  = (m_mcTool && m_mcTool->generatedResponse()) ? m_mcTool->generatedResponse()
+                                                                : (m_orig ? m_orig->ceeloResponse() : nullptr);
+    m_responseNote->setHidden( !m_geometryModeled || !resp );
+    m_responseNote->setText( WString::tr( DetEffG2kPar::isGridResponse( resp ) ? "dmw-anchor-note-grid"
+                                                                              : "dmw-anchor-note-response" ) );
   }
 }//updateAnchorEditorVisibility()
 
@@ -2593,6 +2625,18 @@ bool DrfModifyWidget::responseStale()
 }//responseStale()
 
 
+bool DrfModifyWidget::gridIgnoresEdits()
+{
+  if( !m_geometryModeled || !m_mcTool
+      || (m_mcTool->selectedMethod() != MakeMcResponseForDrf::Method::ImportedGrid) )
+    return false;
+
+  vector<DrfModifyCalc::Problem> problems;
+  const shared_ptr<DetectorPeakResponse> seed = buildWorkingDrf( false, problems );
+  return seed && (DrfModifyCalc::efficiencyFingerprint( *seed ) != m_origEfficiencyFingerprint);
+}//gridIgnoresEdits()
+
+
 bool DrfModifyWidget::handleGenerateResponse()
 {
   if( !m_mcTool || !m_geometryModeled )
@@ -2630,9 +2674,13 @@ void DrfModifyWidget::updateGenerateButton()
   //  and there is work to do: the first generation (no response yet), or a regeneration once the
   //  response no longer reflects the edits.  While the geometry blocks it, the reason is spelled
   //  out beside it, in the export tip's place.
+  // For an imported grid, generating makes its total efficiency - always worth offering, since the
+  //  grid is always there as the "response" and never goes stale.
+  const bool grid = (m_mcTool && (m_mcTool->selectedMethod() == MakeMcResponseForDrf::Method::ImportedGrid));
+  m_generateBtn->setText( WString::tr( grid ? "dmw-generate-total-btn" : "dmw-generate-btn" ) );
   m_generateBtn->setHidden( !m_geometryModeled );
   m_generateBtn->setEnabled( m_geometryModeled && canGen && !running
-                             && (!haveResp || responseStale()) );
+                             && (grid || !haveResp || responseStale()) );
 
   // Flipping to Flat Disk calls `m_mcTool->setDisabled(true)`, which greys the whole tool - the run
   //  row's Cancel button with it.  Mid-run that leaves a Monte Carlo burning every core with no way
