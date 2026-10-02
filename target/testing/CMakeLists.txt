@@ -326,6 +326,20 @@ add_test( NAME TRelActCalcAuto_Search
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_Roi test_RelActCalcAuto_Roi.cpp )
+target_link_libraries( test_RelActCalcAuto_Roi PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_Roi
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_Roi> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_LineAnchoredFit test_RelActCalcAuto_LineAnchoredFit.cpp )
+target_link_libraries( test_RelActCalcAuto_LineAnchoredFit PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_LineAnchoredFit
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_LineAnchoredFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_Conditioning test_RelActCalcAuto_Conditioning.cpp )
 target_link_libraries( test_RelActCalcAuto_Conditioning PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_Conditioning

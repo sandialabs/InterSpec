@@ -45,11 +45,12 @@ Use `list_isotopics_presets` to see available presets, then `load_isotopics_pres
 **For Uranium:**
 | Preset | When to use |
 |---|---|
-| HPGe U (120-1001 keV).xml | **Default** for U-235/U-238 enrichment analysis. |
+| HPGe U (120-1001 keV).xml | **Default** for U-235/U-238 enrichment analysis; its ROIs are sized from the detector's peak width, so it suits any HPGe resolution. |
+| CZT-std U (130-1010 keV).xml | U-235/U-238 enrichment from CZT spectra that reach 1001 keV; less accurate than HPGe (typically within 10-20%). |
 
 **For other sources:**
 - `reset_isotopics_config` to start blank
-- `modify_isotopics_rois` to add ROIs covering the major gamma lines (consider restricting to >~120 keV if sufficient high-energy lines exist)
+- `modify_isotopics_rois` to add ROIs covering the major gamma lines (consider restricting to >~120 keV if sufficient high-energy lines exist).  Prefer one ROI per group of nearby major lines, with `range_type: LineAnchored`, `lower_energy`/`upper_energy` set to the lowest/highest line energies of the group (equal for a single line), and `continuum_type: Auto`: the ROI then extends past the lines according to the detector's peak width, so it suits any detector resolution (ROIs whose peaks are close together are merged, and the continuum on either side of a ROI stops short of other peaks).  `CanBeBrokenUp` over a wide range is a fallback when unsure which lines to use.
 - `modify_isotopics_nuclides` to add the nuclides of interest
 
 ### Step 3: Validate Configuration
@@ -92,9 +93,10 @@ Returns:
 | > 10.0 | Poor - solution likely not acceptable |
 
 **Per-ROI evaluation:**
-- Check `roi_info -> chi2_per_dof` for individual ROIs to find problem regions
+- Check `roi_info -> chi2_per_dof` for individual ROIs to find problem regions; each entry's `from_input_rois` gives the configured ROI(s) it came from - use those bounds with `modify_isotopics_rois`
 - High chi2 in a single ROI may indicate missing source, wrong continuum type, or interference
-- For high-statistics ROIs, try changing continuum type (e.g., to stepped continuum)
+- For high-statistics ROIs, try changing continuum type (e.g., to stepped continuum, or `Auto` to have it chosen from the data)
+- For `LineAnchored` ROIs, adjust how far they extend past their lines with `lower_edge_sideband_fwhm`/`upper_edge_sideband_fwhm` (continuum margin, in FWHM) or `lower_edge_peak_coverage_percent`/`upper_edge_peak_coverage_percent`
 
 **Mass-fraction uncertainty:**
 - Use profile intervals as the primary uncertainty when present; inspect their physical/input-bound/likelihood-crossing endpoint kinds
@@ -142,7 +144,7 @@ Include:
 
 ## Glossary
 
-- **ROI**: Energy range used for isotopics analysis (distinct from peak ROI).
+- **ROI**: Energy range used for isotopics analysis (distinct from peak ROI).  A `LineAnchored` ROI is given by the gamma lines it includes, and its actual energy range comes from the detector's peak shape.
 - **Mass fraction**: Percentage of total mass from each isotope.
 - **Relative activity**: Activity ratio between isotopes (not absolute activity).
 - **Age**: Time since purification of U or Pu (for Pu: when Am-241 was separated from Pu-241).

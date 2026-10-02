@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">Relative Act. Isotopics</message>
+  <message id="raag-window-title">Isotopics by nuclides</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Presets</message>
@@ -68,6 +68,7 @@
   <message id="raag-show-background">Show Background</message>
   <message id="raag-hide-background">Hide Background</message>
   <message id="raag-roi-options">ROI options:</message>
+  <message id="raag-dont-force-full-range">Don't force full-range</message>
   <message id="raag-remove-roi">Remove ROI</message>
   <message id="raag-combine-roi-left">Combine with ROI to left</message>
   <message id="raag-combine-roi-right">Combine with ROI to right</message>
@@ -168,7 +169,7 @@
   <message id="raag-and-background-period"> and background</message>
 
   <!-- Error messages -->
-  <message id="raag-error-creating-tool">Error creating Relative Act. Isotopics tool: {1}</message>
+  <message id="raag-error-creating-tool">Error creating Isotopics by nuclides tool: {1}</message>
   <message id="raag-handle-double-click-error">handleDoubleLeftClick error: {1}</message>
   <message id="raag-expected-state-info">Expected state information for '{1}' is not available - this is not expected - sorry!</message>
   <message id="raag-state-info-not-saved">State information was not previously able to be saved for '{1}' - this is not expected - sorry!</message>

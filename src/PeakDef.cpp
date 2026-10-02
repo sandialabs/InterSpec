@@ -3783,9 +3783,6 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           case NoSkew:
             vis_limits.first = p.mean() - 5.0*p.sigma();
             vis_limits.second = p.mean() + 5.0*p.sigma();
-            //const boost::math::normal_distribution gaus_dist( 1.0 );
-            //vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*hidden_frac );
-            //vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*hidden_frac );
             break;
             
           case Bortel:

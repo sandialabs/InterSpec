@@ -214,6 +214,14 @@ struct PeakDefImp
     }
 
 
+    // Where the given fraction of a Gaussian of this mean and sigma lies below.  Used for the
+    //  unskewed limits, and for the high-energy limit of low-energy-tailed shapes whose own
+    //  calculation fails.
+    const auto gaussian_limit = [mean,sigma]( const double below_frac ) -> double {
+      const boost::math::normal_distribution<double> std_normal( 0.0, 1.0 );
+      return mean + sigma*boost::math::quantile( std_normal, below_frac );
+    };
+
     pair<double,double> vis_limits;
 
     switch( m_skew_type )
@@ -224,12 +232,9 @@ struct PeakDefImp
         // Fall through to NoSkew for non-debug builds
 
       case PeakDef::SkewType::NoSkew:
-      {
-        const boost::math::normal_distribution gaus_dist( 1.0 );
-        vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*missing_frac );
-        vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*missing_frac );
+        vis_limits.first = gaussian_limit( 0.5*missing_frac );
+        vis_limits.second = gaussian_limit( 1.0 - 0.5*missing_frac );
         break;
-      }
 
       case PeakDef::SkewType::Bortel:
         try
@@ -240,8 +245,7 @@ struct PeakDefImp
           // Bortel has a low-energy tail; go wide on the left, use Gaussian limit on the right
           vis_limits.first = mean - 15.0*sigma;
 
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+          vis_limits.second = gaussian_limit( 1.0 - missing_frac );
         }
       break;
 
@@ -253,8 +257,7 @@ struct PeakDefImp
         {
           vis_limits.first = mean - 15.0*sigma;
 
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+          vis_limits.second = gaussian_limit( 1.0 - missing_frac );
         }
         break;
 
@@ -268,8 +271,7 @@ struct PeakDefImp
           //  of unreasonable values - in this case we'll just go way out
           vis_limits.first = mean - 20.0*sigma;
 
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+          vis_limits.second = gaussian_limit( 1.0 - missing_frac );
         }
       break;
 
@@ -335,8 +337,7 @@ struct PeakDefImp
         {
           vis_limits.first = mean - 15.0*sigma;
 
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
+          vis_limits.second = gaussian_limit( 1.0 - missing_frac );
         }
       break;
 
@@ -422,7 +423,6 @@ struct PeaksForEnergyRangeImp
   size_t first_channel;
   size_t last_channel;
   bool no_gammas_in_range;
-  bool forced_full_range;
 
   /** Peak plus continuum counts for [first_channel, last_channel] */
   std::vector<T> peak_counts;
