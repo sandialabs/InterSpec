@@ -165,8 +165,9 @@
     (deterministic, near-field correct); "Flat-disk" is the legacy far-field solid-angle
     approximation, applied to point and volumetric sources alike.  "Imported efficiency grid" is
     only listed for a detector response imported from a Genie/ISOCS .par file, and is what "Auto"
-    picks for one: it uses that file&apos;s efficiency grid as-is, and is full-energy peak only, so
-    cascade-summing corrections are not available with it.  The status to the right shows
+    picks for one: it uses that file&apos;s efficiency grid as-is.  Cascade-summing corrections with
+    it need a Monte-Carlo total efficiency, which the detector&apos;s &quot;Modify&quot; dialog can
+    add.  The status to the right shows
     which model the fit will actually use with the current detector response; the calculation log
     names it for both source kinds.  All distances are measured from the front face of the
     detector.</message>

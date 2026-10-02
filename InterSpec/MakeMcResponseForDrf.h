@@ -108,7 +108,11 @@ public:
 
     /** The response the DRF was imported with from a .par efficiency grid (see
      DetEffG2kPar::isGridResponse), kept as it is.  Only offered for such a DRF; it has no CeeLo
-     ProductionMethod of its own (CeeLo labels it CurveTransfer). */
+     ProductionMethod of its own (CeeLo labels it CurveTransfer).
+
+     Its full-energy-peak efficiency stays tied to the imported geometry, but the geometry form stays
+     editable: it is the user's description of the detector, which a Monte Carlo of it uses to add
+     a total efficiency (#startGeneration, DetEffG2kPar::attachTotalEfficiency). */
     ImportedGrid = 3
   };//enum class Method
 
@@ -222,6 +226,14 @@ public:
   /** The geometry form's descriptor; throws std::runtime_error (with a user message) when invalid. */
   ceelo::GeometryDescriptor geometryDescriptor() const;
 
+  /** The geometry the form stands for: while it is unedited since it was last seeded, the exact
+   descriptor it was seeded from - the form rounds values and remaps materials, so it does not round
+   trip one - else #geometryDescriptor.  For #Method::ImportedGrid, this (not the grid's own
+   descriptor) is the detector's geometry for Monte Carlo; see DetectorPeakResponse::monteCarloGeometry.
+   Throws like #geometryDescriptor.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> effectiveGeometry() const;
+
   /** The embedded geometry form. */
   DetectorGeometryInput *geometryInput();
 
@@ -296,6 +308,8 @@ public:
     std::shared_ptr<const ceelo::DetectorResponse> result;
     std::string status;
     DetectorGeometryInput::State geometry;
+    std::shared_ptr<const ceelo::DetectorResponse> gridWithTotal;
+    std::string totalGeometryKey;
 
     bool operator==( const State &rhs ) const;
     bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
@@ -429,6 +443,41 @@ protected:
 
   /** Says the imported grid will be replaced, while another method is selected. */
   Wt::WText *m_gridNote;
+
+  /** For #Method::ImportedGrid: the grid with no total efficiency (#m_gridResponse itself, unless
+   that carries one - then made on first need), and the latest grid carrying a Monte-Carlo total,
+   with the geometry (#effectiveGeometry, as XML) that total was generated for.  #syncGridResult
+   picks between them, so a geometry edit drops a total that no longer describes it - and undoing
+   the edit gets it back. */
+  std::shared_ptr<const ceelo::DetectorResponse> m_gridFepOnly;
+  std::shared_ptr<const ceelo::DetectorResponse> m_gridWithTotal;
+  std::string m_totalGeometryKey;
+
+  /** What the geometry form was last seeded from, and the form's state right after; see
+   #effectiveGeometry. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> m_formBaseline;
+  DetectorGeometryInput::State m_formBaselineState;
+
+  /** Beneath the geometry form, for an imported grid whose geometry was edited: what that means,
+   and a way back to the imported geometry. */
+  Wt::WContainerWidget *m_gridGeomRow;
+  Wt::WPushButton *m_revertGeomBtn;
+
+  /** Whether the imported grid has a (current) total efficiency. */
+  Wt::WText *m_gridTotalInfo;
+  Wt::WTableRow *m_gridTotalRow;
+
+  /** The grid with no total efficiency; see #m_gridFepOnly. */
+  std::shared_ptr<const ceelo::DetectorResponse> gridFepOnly();
+
+  /** Records the form's current content as what it was seeded from (`seeded_from`). */
+  void setFormBaseline( std::shared_ptr<const ceelo::GeometryDescriptor> seeded_from );
+
+  /** For #Method::ImportedGrid: makes #m_result the grid with the total efficiency that matches the
+   current geometry (if any), and refreshes the grid's geometry/total rows. */
+  void syncGridResult();
+
+  void revertToImportedGeometry();
   Wt::WComboBox *m_profile;     //Far-field | General | Contact
   Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;

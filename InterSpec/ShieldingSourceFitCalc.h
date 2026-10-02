@@ -378,9 +378,10 @@ private:
     FlatDisk,
 
     /** Evaluate the full-energy-peak efficiency grid imported from a Genie/ISOCS .par file
-     (see `DetEffG2kPar::isGridResponse`) as-is.  Full-energy peak only - the grid carries no
-     total efficiency.  What `Auto` picks for such a DRF; for any other DRF falls back to what
-     `Auto` would pick, with an error. */
+     (see `DetEffG2kPar::isGridResponse`) as-is.  The grid carries no total efficiency of its own;
+     it has one only if a Monte-Carlo total was attached (`DetEffG2kPar::attachTotalEfficiency`).
+     What `Auto` picks for such a DRF; for any other DRF falls back to what `Auto` would pick, with
+     an error. */
     ImportedGrid
   };//enum class VolumetricEffMethod
 

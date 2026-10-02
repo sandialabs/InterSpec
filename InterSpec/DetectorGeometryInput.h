@@ -84,11 +84,12 @@ public:
                           const std::vector<std::string> &notes = {} );
 
 
-  /** Seeds the form from a legacy DRF: a cylinder with diameter =
-   `drf->detectorDiameter()` and (estimated) length = diameter; a note is
-   shown that the length is a guess.  Does nothing for null/invalid DRFs.
+  /** Seeds the form from a DRF: its own geometry (DetectorPeakResponse::monteCarloGeometry) when it
+   has one - returned, so an owner can tell an unedited form from the descriptor it stands for -
+   else a cylinder with diameter = `drf->detectorDiameter()` and (estimated) length = diameter, with
+   a note that the length is a guess (returns nullptr).  Does nothing for null/invalid DRFs.
    */
-  void seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
+  std::shared_ptr<const ceelo::GeometryDescriptor> seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
 
   /** Seeds the form from just a diameter (PhysicalUnits): a cylinder with the guessed
    length == diameter (flagged, see #generationReady), an optional crystal setback from the

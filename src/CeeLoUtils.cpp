@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 #include <cassert>
 #include <cstring>
@@ -53,6 +54,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -204,6 +206,9 @@ TransferAnchor transferAnchorForDrf(
   if( drf->isFixedGeometry() )
     throw runtime_error( "transferAnchorForDrf: a fixed-geometry efficiency"
                          " has no source-detector geometry to transfer." );
+
+  if( drf->hasImportedGrid() )
+    return gridTransferAnchor( *drf->ceeloResponse(), override_ref_distance_cm );
 
   TransferAnchor answer;
 
@@ -419,14 +424,58 @@ TransferAnchor transferAnchorForDrf(
 }//transferAnchorForDrf(...)
 
 
+TransferAnchor gridTransferAnchor( const ceelo::DetectorResponse &grid, const double ref_distance_cm )
+{
+  TransferAnchor answer;
+  answer.curve_derived = true;
+  answer.ref_distance_cm = (ref_distance_cm > 0.0) ? ref_distance_cm
+                                                   : DetEffG2kPar::gridReferenceDistanceCm( grid.descriptor );
+
+  for( const ceelo::GroundingPoint &p : DetEffG2kPar::groundingPoints( grid, answer.ref_distance_cm ) )
+  {
+    answer.curve.energies_keV.push_back( p.energy_keV );
+    answer.curve.eff.push_back( p.measured_eff );
+    answer.curve.frac_sigma.push_back( p.frac_stat_sigma );
+  }
+
+  if( answer.curve.energies_keV.size() < 2 )
+    throw runtime_error( "gridTransferAnchor: fewer than two usable efficiency points." );
+
+  return answer;
+}//gridTransferAnchor(...)
+
+
 ceelo::AnchorCurve totalTransferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const TransferAnchor &anchor )
 {
   ceelo::AnchorCurve tot_curve;
 
-  if( !drf || !drf->isValid() || !drf->totalEfficiencyCurve() )
+  if( !drf || !drf->isValid() )
     return tot_curve;
+
+  if( !drf->totalEfficiencyCurve() )
+  {
+    // A total the response characterizes, at the anchor's own position.  Without this an EFFTRAN
+    //  rebuilt from such a DRF (e.g., in Act/Shield) would silently have no total at all, while
+    //  the DRF itself says it has one.
+    const shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+    if( !resp || !resp->tot_eff.characterized() )
+      return tot_curve;
+
+    const double dist = anchor.ref_distance_cm * PhysicalUnits::cm;
+    for( const double energy : anchor.curve.energies_keV )
+    {
+      const DetectorPeakResponse::EffEval tot
+                        = drf->totalEfficiencyEval( static_cast<float>(energy), 0.0, 0.0, dist );
+      if( tot.value > 0.0 )
+      {
+        tot_curve.energies_keV.push_back( energy );
+        tot_curve.eff.push_back( tot.value );
+      }
+    }
+    return tot_curve;
+  }//if( !drf->totalEfficiencyCurve() )
 
   const double diam = drf->detectorDiameter();
   const double dist = anchor.ref_distance_cm * PhysicalUnits::cm;
@@ -624,6 +673,9 @@ TransferAnchor curveAnchorWithCovarianceForDrf(
     throw runtime_error( "curveAnchorWithCovarianceForDrf: a fixed-geometry efficiency"
                          " has no source-detector geometry to transfer." );
 
+  if( drf->hasImportedGrid() )
+    return gridTransferAnchor( *drf->ceeloResponse(), ref_distance_cm );
+
   double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
   if( (e_lo <= 0.0) || (e_hi <= e_lo) )
   {
@@ -732,6 +784,17 @@ double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd )
 {
   return std::max( 1000.0 * gd.transverse_half_extent(), 100.0 );
 }//farFieldDistanceCm(...)
+
+
+unsigned monteCarloThreadCount()
+{
+  const unsigned num_cores = std::thread::hardware_concurrency();
+  if( num_cores >= 8 )
+    return num_cores - 2;
+  if( num_cores >= 2 )
+    return num_cores - 1;
+  return 1;
+}//monteCarloThreadCount()
 
 
 Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd )

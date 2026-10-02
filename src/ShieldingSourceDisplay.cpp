@@ -100,7 +100,6 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SwitchCheckbox.h"
-#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -6161,7 +6160,7 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
 
   // "Imported efficiency grid" is only listed for a DRF imported from a .par grid, or while selected.
   const int grid_index = static_cast<int>( VolumetricEffMethod::ImportedGrid );
-  const bool list_grid = (det && DetEffG2kPar::isGridResponse( det->ceeloResponse() ))
+  const bool list_grid = (det && det->hasImportedGrid())
                          || (m_volEffMethodCombo->currentIndex() == grid_index);
   if( list_grid && (m_volEffMethodCombo->count() <= grid_index) )
     m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );

@@ -1248,7 +1248,7 @@ older templates keep rendering):
 
 | Field | Type | Notes |
 |---|---|---|
-| `Method`   | string | Human-readable name of the *resolved* method — the `Auto` setting, or a method the DRF cannot honor, has already been reduced to exactly one of: `"Monte-Carlo transfer (near-field & off-axis correct)"`, `"EFFTRAN transfer (near-field & off-axis correct)"`, `"Flat-disk (solid angle x intrinsic efficiency)"`, `"Imported efficiency grid (full-energy peak only)"`. |
+| `Method`   | string | Human-readable name of the *resolved* method — the `Auto` setting, or a method the DRF cannot honor, has already been reduced to exactly one of: `"Monte-Carlo transfer (near-field & off-axis correct)"`, `"EFFTRAN transfer (near-field & off-axis correct)"`, `"Flat-disk (solid angle x intrinsic efficiency)"`, `"Imported efficiency grid"`. |
 | `Note`     | string | Why it resolved that way — e.g. `"Auto -> MC transfer"`, `"EFFTRAN transfer unavailable (<reason>)"`, or `"requested near-field method, but the DRF has no CeeLo response; using flat-disk"`.  Empty when the requested method was used as-is. |
 | `HasNote`  | bool   | `Note` is non-empty.  Always emitted. |
 

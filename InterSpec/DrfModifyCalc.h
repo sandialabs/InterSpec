@@ -285,6 +285,13 @@ namespace DrfModifyCalc
    */
   std::size_t seedFingerprint( const DetectorPeakResponse &drf );
 
+  /** The part of #seedFingerprint that is the efficiency itself - the curve, both covariances and the
+   raw measured points - with nothing about the geometry.  An imported efficiency grid is not built
+   from any of these, so an edit to them is simply ignored while one is attached; this is how the
+   editor notices such an edit.
+   */
+  std::size_t efficiencyFingerprint( const DetectorPeakResponse &drf );
+
 
   /** Checks the editing invariants listed at the top of this file.  Returns true when the DRF is
    self-consistent; otherwise `why` gets a one-line explanation.

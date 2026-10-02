@@ -59,6 +59,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "ParTestUtils.h"
+
 using namespace std;
 using DrfImport::FileKind;
 using DrfImport::Status;
@@ -142,39 +144,13 @@ bool offers( const DrfImport::Source &src, const Interpretation interp )
 }
 
 
-void append_u16( string &out, const uint16_t v )
-{
-  out.push_back( static_cast<char>( v & 0xFF ) );
-  out.push_back( static_cast<char>( (v >> 8) & 0xFF ) );
-}
-
-template<class T>
-void append_le( string &out, const T value )
-{
-  static_assert( (sizeof(T) == 4) || (sizeof(T) == 8), "float or double only" );
-  uint8_t bytes[sizeof(T)];
-  memcpy( bytes, &value, sizeof(T) );  // all supported platforms are little-endian
-  out.append( reinterpret_cast<const char *>( bytes ), sizeof(T) );
-}
-
-
-/** The bytes of a small .par grid, in the layout `DetEffG2kPar::parseParFile` decodes: an energy
- header, then one record per energy - a 28-byte record header (the marker double at offset 16),
- then the uint16 cells.
- */
+/** The bytes of a small .par grid (see ParTestUtils::par_file_bytes), and in `par` the grid itself. */
 string synthetic_par_bytes( DetEffG2kPar::ParFile &par )
 {
   par.emin_keV = 60.0;
   par.emax_keV = 1332.0;
   par.energies_keV = { 60.0, 300.0, 1332.0 };
   par.grids.clear();
-
-  string out;
-  append_le<double>( out, par.emin_keV );
-  append_le<double>( out, par.emax_keV );
-  append_u16( out, static_cast<uint16_t>( par.energies_keV.size() ) );
-  for( const double energy : par.energies_keV )
-    append_le<double>( out, energy );
 
   for( size_t e = 0; e < par.energies_keV.size(); ++e )
   {
@@ -188,22 +164,10 @@ string synthetic_par_bytes( DetEffG2kPar::ParFile &par )
       for( int c = 0; c < g.ncols; ++c )  // efficiency falls with distance, angle and energy
         g.V.push_back( static_cast<uint16_t>( 2000 + 400*e + 40*r + 15*c ) );
     }
-
-    const size_t rec_start = out.size();
-    append_u16( out, g.ncols );
-    append_u16( out, g.nrows );
-    out.append( 8, '\0' );
-    append_le<float>( out, static_cast<float>( g.theta_step_rad ) );
-    append_le<double>( out, 4707532.0 );
-    append_le<float>( out, static_cast<float>( g.r_step ) );
-    BOOST_REQUIRE_EQUAL( out.size() - rec_start, 28 );
-    for( const uint16_t v : g.V )
-      append_u16( out, v );
-
     par.grids.push_back( g );
   }//for( each energy )
 
-  return out;
+  return ParTestUtils::par_file_bytes( par );
 }//synthetic_par_bytes(...)
 
 
@@ -249,6 +213,8 @@ BOOST_AUTO_TEST_CASE( IdentifiesTestFiles )
     { SpecUtils::append_path( g_test_file_dir, "gadras_detectors/NaI_3x3_text/Detector.dat" ), FileKind::GadrasDetectorDat },
     { SpecUtils::append_path( g_test_file_dir, "gadras_detectors/Detective_X_xml/Detector.dat" ), FileKind::GadrasDetectorDat },
     { SpecUtils::append_path( g_test_file_dir, "RelActAutoBatch/Eu152/other_det_eff.drf.xml" ), FileKind::DrfXml },
+    { SpecUtils::append_path( det_eff, "mock.par" ), FileKind::ParGrid },
+    { SpecUtils::append_path( det_eff, "mock_DETECTOR.txt" ), FileKind::ParDetectorTxt },
   };
 
   for( const pair<string,FileKind> &file : expected )
