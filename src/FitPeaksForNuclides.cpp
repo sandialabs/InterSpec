@@ -874,6 +874,10 @@ static constexpr double sm_interferer_doublet_min_fwhm = 1.0;
 // Bound the number of automatically-added nuisance activities.  Allowing every detected NORM
 // parent onto the extra curve can make a multi-source solve poorly conditioned.
 static constexpr size_t sm_max_auto_interferer_nuclides = 2;
+// Iteration budget of an (optional) ROI-refinement fit.  Most converge in tens to hundreds of iterations, a
+//  few legitimately need thousands (corpus 2026-10: a 2000 budget changed 9 accepted refinements, 10000
+//  changed one); a stalled one creeps for tens of thousands, to the solver's 1200 s backstop.
+static constexpr size_t sm_refinement_max_solve_iterations = 10000;
 
 namespace detail
 {
@@ -19892,6 +19896,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         }
         remove_floating_peaks_without_roi( refined_options );
 
+        // The refinement is optional - if its fit fails, the accepted solution is kept - so its fit gets a
+        //  deterministic budget: a cold-started solve on wide refined ROIs can stall (SAM Pu239_Sh_100g: cost
+        //  2299 -> 2296 over 3000 iterations, running to the solver's 1200 s backstop).
+        refined_options.max_solve_iterations = sm_refinement_max_solve_iterations;
+
         RelActCalcAuto::RelActAutoSolution refined_solution = RelActCalcAuto::solve(
             refined_options, foreground, background, drf, auto_search_peaks, det_type, cancel_calc );
 
@@ -19919,6 +19928,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             refined_solution = retry_solution;
           }
         }//if( the refined solve returned its own seed )
+
+        // Solves built later from this solution's options are not part of the refinement.
+        refined_solution.m_options.max_solve_iterations = solution.m_options.max_solve_iterations;
 
         if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(refined_solution.m_status) )
         {

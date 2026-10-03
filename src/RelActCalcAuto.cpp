@@ -8505,6 +8505,8 @@ struct RelActAutoCostFcn
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #endif
     ceres_options.max_num_iterations = 50000;
+    if( cost_functor->m_options.max_solve_iterations > 0 )
+      ceres_options.max_num_iterations = static_cast<int>( std::min( cost_functor->m_options.max_solve_iterations, size_t(50000) ) );
     // Wall-clock time limits are a *pathological-case* backstop only; the deterministic terminator
     //  is `max_num_iterations` (above).  A wall-clock cap that trips during normal optimization makes
     //  the solve stop after a load-dependent number of iterations, which is a source of run-to-run
@@ -19275,6 +19277,7 @@ bool Options::operator==( const Options &rhs ) const
     && (fwhm_channel_floor_factor == rhs.fwhm_channel_floor_factor)
     && (auto_profile_weak_mass_fractions == rhs.auto_profile_weak_mass_fractions)
     && (robust_solve == rhs.robust_solve)
+    && (max_solve_iterations == rhs.max_solve_iterations)
     && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
     && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
     && (auto_simplify_model == rhs.auto_simplify_model)
@@ -22060,6 +22063,7 @@ Options::Options()
   fwhm_channel_floor_factor( 1.25 ),
   auto_profile_weak_mass_fractions( true ),
   robust_solve( false ),
+  max_solve_iterations( 0 ),
   rel_eff_curves{},
   rois{},
   floating_peaks{},

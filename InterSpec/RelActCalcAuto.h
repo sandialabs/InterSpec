@@ -1126,6 +1126,12 @@ struct Options
    regardless: those are a deliberate user request for a specific expensive quantity. */
   bool robust_solve;
 
+  /** The most Levenberg-Marquardt iterations the main fit (and each of its restarts) may take; zero for the
+   default (50000, with a wall-clock backstop).  A caller that can fall back when a fit does not converge -
+   e.g., an optional refinement of an accepted solution - can give it a deterministic budget, so a fit that
+   stalls fails quickly instead of running to the backstop.  A solve-time setting: not saved to XML. */
+  size_t max_solve_iterations;
+
 
   /** The relative efficiency curves to use.
    */
