@@ -28298,7 +28298,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       try
       {
         const vector<shared_ptr<const PeakDef>> lm_results
-          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
+          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type,
+                                            PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );  // consistent with this solve's chi2
 
         // Extract amplitudes from fitting peaks (first effective_means.size() results)
         // Note: fit_peaks_in_roi_LM may reorder peaks by mean; match by closest mean.

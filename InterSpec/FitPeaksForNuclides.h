@@ -1843,7 +1843,7 @@ struct PeakFitForNuclideConfig
    Heavily overlapping NaI lines leak into each other in the planner, so one ROI can hold several
    features with valleys between them and no gap wide enough for observable_split_gap_fwhm: R500
    Lu177m_Unsh 85-451 keV (14 FWHM, 5 groups; the data drop to the continuum at ~262 keV), Pu239_Unsh
-   21-117 keV, Ag110m_Unsh 524-1014 keV.  Each part must keep a peak at roi_significance_z, and the
+   21-117 keV, Ag110m_Unsh 524-1014 keV.  Each part must keep a peak at observable_split_min_z, and the
    refit parts must fit their channels no worse than the whole ROI did, or it stays whole (SAM
    In111_Sh's 204-275 keV part put its step continuum far above the data). */
   double observable_split_valley_fraction = 0.0;
@@ -1885,9 +1885,30 @@ struct PeakFitForNuclideConfig
   // peak's counts no longer dilute this peak's significance.
   double observable_peak_initial_significance_threshold = 2.25;
 
-  // Threshold for final peak significance after refitting for observable_peaks.
+  // Threshold for final peak significance of the fixed-shape (linear least-squares) observable fits
+  // (measure_on_continuum, rescue_roi_locally); the observable refit uses observable_refit_min_z.
   // Significance = peak_area / peak_area_uncertainty
   double observable_peak_final_significance_threshold = 2.0;
+
+  // Thresholds on the area / area-uncertainty of a peak fit with free shapes (automated-search peaks,
+  // observable-refit peaks).  Until 2026-10 they were the same fields as the likelihood-ratio,
+  // data-z and fixed-shape thresholds; they are kept apart to follow the peak fit's uncertainties.
+
+  /** Minimum area/uncertainty of an automated-search peak used as evidence of a source line (manual
+   rel-eff anchors, a refinement's found-peak confirmation, found-peak ROI re-seeding). */
+  double found_peak_min_z = 3.0;
+
+  /** A part of an observable ROI split at a valley must keep a peak of at least this area/uncertainty
+   (see observable_split_valley_fraction). */
+  double observable_split_min_z = 3.0;
+
+  /** The observable refit drops peaks below this area/uncertainty. */
+  double observable_refit_min_z = 2.0;
+
+  /** Without a background spectrum (observable_background_lines_without_background), the
+   area/uncertainty a foreground search peak on a common background line needs to be delivered (see
+   observable_deliver_background_line_z). */
+  double observable_background_line_fit_z = 5.0;
 
   // Single-pass ROI planner and its band quantities (see GammaClusteringSettings::use_roi_plan).
   bool use_roi_plan = true;   // HPGe default since 2026-09-06; the NaI defaults switch it off until tuned

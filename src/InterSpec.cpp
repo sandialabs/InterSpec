@@ -14086,8 +14086,14 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     shared_ptr<const PeakFitDetPrefs> hintFitPrefs = spectrum->peakFitDetPrefs();
     if( !hintFitPrefs || (hintFitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown) )
     {
+      // The peaks' detection z needs the data they were fit to; if the calibration changed during the
+      //  search, the displayed spectrum is not that, so their own uncertainties are used instead.
+      shared_ptr<const SpecUtils::Measurement> search_data = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      if( search_data && searchCal && search_data->energy_calibration()
+         && (*search_data->energy_calibration() != *searchCal) )
+        search_data = nullptr;
       const PeakFitUtils::CoarseResolutionType peak_fwhm_type
-              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks );
+              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks, search_data );
       if( peak_fwhm_type != PeakFitUtils::CoarseResolutionType::Unknown )
       {
         shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();

@@ -8,7 +8,8 @@ The harness, scripts and review material used, in AI-assisted sessions, to measu
 | `harness/` | `fit_peaks_corpus_eval`, which fits a corpus and scores it against hand fits and/or GADRAS-inject truth, plus its scorer (`FitPeaksCorpusScore.*`), outputs and HTML gallery (`FitPeaksCorpusReport.*`), and the scorer's unit test (ctest `TFitPeaksCorpusScore`). |
 | `tools/` | Shell scripts to snapshot binaries and run corpora, and Python scripts to compare runs, diagnose and render fits.  Tables below. |
 | `review/` | Instructions for visual review by agents: `RUBRIC.md` (one fit; written for NaI), `RUBRIC_BOTH.md` (new vs old) and `calibration/` example images. |
-| `CMakeLists.txt` | The two targets; added from `target/testing/CMakeLists.txt`. |
+| `harness/peak_fit_objective_eval.cpp` | Compares PeakFitLM's fit objectives (chi2, the default sparse-data likelihood refit, the likelihood forced on every ROI) on Poisson replicas with known truth - see the section below. |
+| `CMakeLists.txt` | The targets; added from `target/testing/CMakeLists.txt`. |
 | `*PROMPT*.md` | Session prompts (tracked, although the repository's `*prompt*.md` ignore rule matches them, so a new one needs `git add -f`): `HPGE_PROMPT.md` (the same effort for HPGe), `LOWRES_FOLLOWON_PROMPT.md` (continue the scintillator work), `INVESTIGATION_PROMPT.md` (the generic template for any other detector class or dataset). |
 
 ## Build and setup
@@ -79,3 +80,70 @@ The harness, scripts and review material used, in AI-assisted sessions, to measu
 | `review_page.py 'PART_GLOB' IMG_DIR OUT.html TITLE` | An HTML page of a review: spectra grouped by verdict, each with its notes and image. |
 | `rr_compare.py 'OLD_GLOB' 'NEW_GLOB'` | Verdict transitions between a review and a later re-review. |
 | `triage_page.py` | An older single-fit review page. |
+
+## Fit-objective comparison (`peak_fit_objective_eval`)
+
+Measures the statistics of `PeakFitLM`'s fit objectives - bias, pulls `(fit - reference)/reported
+uncertainty`, coverage, failure and bad-fit-tail rates, CPU - running every objective on the identical
+Poisson draw from identical starting values (paired), straight through `PeakFitLM::fit_peaks_in_roi_LM`
+(no significance culls, so nothing is censored).  `ninja peak_fit_objective_eval`; `--help` for options.
+
+- `--mode=synthetic`: spectra from InterSpec's own peak + continuum model (exact truth, no model
+  mismatch): a primary grid of detector class x FWHM-in-channels x area x continuum level, plus
+  continuum-type, skew and doublet suites (`--suites=`).
+- `--mode=inject`: `peak_fit_accuracy_inject_compact` spectra; PCF record 3 is the noise-free
+  spectrum, so `--replicas` draws are made from it.  Bias is reported against the GADRAS truth and
+  against each objective's own pseudo-truth (its fit to the noise-free spectrum x1000), which removes
+  peak-shape model mismatch from the statistical comparison; `pseudo_vs_chi2` shows how differently
+  the objectives respond to that mismatch.  Low-resolution ROIs default to +-2.5 FWHM
+  (`--lowres-roi-fwhm`), since wider ones take in structure a polynomial continuum cannot follow.
+- Objectives (`--objectives=`): `chi2` (plain modified-Neyman, `NoSparseDataLikelihood`), `default`
+  (no options: chi2 with sparse ROIs refit by Poisson likelihood), `likelihood` (every ROI refit,
+  `ForcePoissonLikelihood`), and `chi2-cond` (chi2, reporting the area uncertainty conditional on the
+  shapes - the pre-2026-10 reported value, from `PeakFitLM::peak_detection_significance`).  The likelihood fit is IRLS; to evaluate the
+  all-in-Ceres alternative, build with `SPARSE_DATA_LIKELIHOOD_USE_CERES` set to 1 in
+  `src/PeakFitLM.cpp`.  (The profiled-MLE and Mighell objectives of the 2026-10 evaluation were
+  removed after it.)
+- Outputs: `per_fit.tsv`, `summary.tsv` (per problem x peak x objective), `paired.tsv` (replicas where
+  an objective differs from chi2 by > 3 sd), `run_meta.txt`; `--dump=SUBSTR:K` writes channel data and
+  each objective's model for `tools/plot_objective_dump.py`.  `per_fit.tsv` also carries candidate
+  sparse-data statistics of each fit (`sp_*`; `sp_peak` is the one PeakFitLM uses) and the number of
+  ROIs the default fit refit by likelihood (`sparse_rois`).
+- `tools/objective_report.py RUN --by area,cont_level --filter det=HPGe` tabulates (median over
+  problems); `--paired` counts the tail; `--compare RUN_B` puts two runs side by side.
+- Bit-identity of the default fit across a code change: diff the `chi2` rows of `per_fit.tsv`
+  excluding the `cpu_s` column (`cut -f1-19,21`).
+
+## Peak-search evaluation (`fit_peaks_corpus_eval --search-only`)
+
+Scores the automated peak search alone (`ExperimentalAutomatedPeakSearch::search_for_peaks`), and
+background-peak recovery, against the GADRAS-inject truth: no `fit_peaks_for_nuclides`, seconds per
+corpus.  Truth is the source's and the background's photopeaks together (resolution-merged); a search
+peak within a truth FWHM of one finds it, and one on no truth photopeak, 511 keV or escape peak is
+`unexplained`.  Needs `--corpus-format=inject`.
+
+- `tools/search_all.sh BIN TAG [args]` runs every guard detector (Detective-X/EX, HPGe planar, Falcon,
+  Fulcrum, R500, NGH, SAM, LaBr3, CZT) at 30/300/1800 s into `${TAG}_<set>_<dwell>`;
+  `tools/search_cmp.py A B` compares two tags (or run directories): found strong/moderate truth lines,
+  unexplained peaks, and the lines lost and gained.
+- `--search-set name=value` sets an `ExperimentalAutomatedPeakSearch::SearchCuts` field, in every mode
+  (the corpus fits consume the search's peaks); `--search-sweep name=v1,v2` sweeps one.
+  `--search-set detection_z_chi2_weights=1` gives the search the chi2-weighted detection gate (the
+  pre-2026-10 decisions) to compare against.  `--no-recovery` skips the background search.
+- The foreground search peaks are scored as a user gets them: refit by
+  `ExperimentalAutomatedPeakSearch::refit_sparse_rois` (the search itself returns its chi2 decision fits,
+  which `fit_peaks_for_nuclides` and the other consumers use as evidence); `--search-decision-peaks`
+  scores those instead.  Background and recovered peaks are always the decision fits.
+- A peak on no truth photopeak is `real_untabulated` when the PCF's reference spectrum - the noise-free
+  record 3 for the foreground, the long background (record 2, scaled) otherwise - has an excess of at
+  least 2 measurement sigma there (`reference_z`): the GADRAS truth lists photopeaks only, not sum peaks,
+  shield fluorescence or every weak background line.  The check misses real lines beside a strong
+  neighbour (its sidebands) and in a noisy long background, so look as well:
+  `tools/search_review.py A B OUT_DIR` renders the non-truth peaks B has and A lacks (data, reference, the
+  search fit) from `review_peaks.jsonl`.
+- Outputs: `search_peaks.tsv` (per search peak: area, reported area/uncertainty `marg_z`, detection
+  significance `det_z`, verdict), `search_truth.tsv` (per truth photopeak: found, and the finding peak's
+  area and uncertainty), `per_problem.tsv` (with the `coarse_resolution_from_peaks` verdict),
+  `summary.tsv`, `plot_data/`.
+- The search's result depends a little on what the process searched before (see TODO.md), so
+  per-problem diffs between runs of different code carry some churn; compare totals and inspect losses.

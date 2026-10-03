@@ -75,6 +75,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FitPeaksForNuclides.h"
 
+#include "PeakSearchEval.h"
 #include "FitPeaksCorpusScore.h"
 #include "FitPeaksCorpusReport.h"
 
@@ -121,6 +122,14 @@ struct Options
   bool list_only = false;
   bool force = false;
   bool help = false;
+
+  // --search-only: score the automated peak search (see PeakSearchEval.h)
+  bool search_only = false;
+  bool search_recovery = true;
+  bool search_decision_peaks = false;
+  vector<pair<string,string>> search_sets;
+  string search_sweep_name;
+  vector<string> search_sweep_values;
 };//struct Options
 
 
@@ -164,7 +173,13 @@ void print_usage()
   "  --dump-truth-stats      only write the reference-set statistics (no fitting)\n"
   "  --list                  list the selected problems and their sources, then exit\n"
   "  --debug ID              run one problem serially with the fitter's debug trace\n"
-  "  --force                 allow writing into an existing output directory\n";
+  "  --force                 allow writing into an existing output directory\n"
+  "  --search-only           score only the automated peak search (and background-peak recovery) against\n"
+  "                          the inject truth; writes search_peaks.tsv, search_truth.tsv, summary.tsv\n"
+  "  --search-set name=value set an ExperimentalAutomatedPeakSearch::SearchCuts field (repeatable; every mode)\n"
+  "  --search-sweep name=v1,v2,...  run the search once per value of one of those\n"
+  "  --no-recovery           --search-only: skip the background search and recovery\n"
+  "  --search-decision-peaks --search-only: score the search's chi2 decision fits, not its peaks as reported\n";
 }
 
 
@@ -260,7 +275,10 @@ Options parse_options( const int argc, char **argv )
     else if( name == "dump-truth-stats" ) opt.dump_truth_stats = true;
     else if( name == "list" )             opt.list_only = true;
     else if( name == "force" )            opt.force = true;
-    else if( (name == "set") || (name == "weight") || (name == "sweep") )
+    else if( name == "search-only" )      opt.search_only = true;
+    else if( name == "no-recovery" )      opt.search_recovery = false;
+    else if( name == "search-decision-peaks" ) opt.search_decision_peaks = true;
+    else if( (name == "set") || (name == "weight") || (name == "sweep") || (name == "search-set") || (name == "search-sweep") )
     {
       const string v = need_value();
       const size_t veq = v.find( '=' );
@@ -272,6 +290,15 @@ Options parse_options( const int argc, char **argv )
         opt.sets.emplace_back( field, rhs );
       else if( name == "weight" )
         opt.weight_sets.emplace_back( field, rhs );
+      else if( name == "search-set" )
+        opt.search_sets.emplace_back( field, rhs );
+      else if( name == "search-sweep" )
+      {
+        if( !opt.search_sweep_name.empty() )
+          throw runtime_error( "Only one --search-sweep is supported" );
+        opt.search_sweep_name = field;
+        SpecUtils::split( opt.search_sweep_values, rhs, "," );
+      }
       else
       {
         if( !opt.sweep_name.empty() )
@@ -284,6 +311,9 @@ Options parse_options( const int argc, char **argv )
       throw runtime_error( "Unknown option --" + name );
     }
   }//for( int i = 1; i < argc; ++i )
+
+  if( !opt.search_only && (!opt.search_sweep_name.empty() || !opt.search_recovery || opt.search_decision_peaks) )
+    throw runtime_error( "--search-sweep, --no-recovery and --search-decision-peaks need --search-only" );
 
   return opt;
 }//parse_options
@@ -1145,6 +1175,56 @@ int main( int argc, char **argv )
       }
     }//for( size_t i = 0; i < problems.size(); ++i )
 
+    RunMeta meta;
+    for( int i = 0; i < argc; ++i )
+      meta.command_line += string( i ? " " : "" ) + argv[i];
+    meta.started = now_string();
+    const string repo_dir = SpecUtils::append_path( opt.datadir, ".." );
+    meta.git_head = run_command( "git -C '" + repo_dir + "' rev-parse --short HEAD 2>/dev/null" );
+    meta.git_dirty = run_command( "git -C '" + repo_dir + "' status --porcelain 2>/dev/null | head -c 1" ).empty() ? "clean" : "dirty";
+    meta.binary_sha256 = run_command( string("shasum -a 256 '") + argv[0] + "' 2>/dev/null | cut -c1-16" );
+    meta.corpus_dir = opt.corpus;
+    meta.mode = opt.mode + " engine=" + opt.engine + " background=" + opt.background + " score_set=" + opt.score_set
+                + (opt.truth_inject.empty() ? string() : (" truth_inject=" + opt.truth_inject));
+    meta.weights_text = weights.to_string();
+
+    ensure_directory( opt.out, opt.force );
+
+    // The search cuts apply to every mode (the fit consumes the search's peaks).
+    for( const pair<string,string> &kv : opt.search_sets )
+    {
+      if( !apply_search_setting( kv.first, kv.second ) )
+        throw runtime_error( "--search-set " + kv.first + "=" + kv.second + ": unknown name or bad value" );
+    }
+    {
+      string settings_line = search_settings_text();
+      std::replace( begin(settings_line), end(settings_line), '\n', ' ' );
+      meta.mode += " search_settings{" + settings_line + "}";
+    }
+
+    if( opt.search_only )
+    {
+      if( !inject_format )
+        throw runtime_error( "--search-only needs --corpus-format=inject" );
+      SearchEvalSettings search_settings;
+      search_settings.out = opt.out;
+      search_settings.det_type = det_type;
+      search_settings.recovery = opt.search_recovery;
+      search_settings.decision_peaks = opt.search_decision_peaks;
+      search_settings.plot_data = opt.plot_data;
+      search_settings.sets = opt.search_sets;
+      search_settings.sweep_name = opt.search_sweep_name;
+      search_settings.sweep_values = opt.search_sweep_values;
+      search_settings.truth_min_z = weights.truth_min_z;
+      search_settings.min_energy = std::max( 0.0, weights.min_scored_energy );
+      search_settings.match_num_fwhm = weights.match_num_fwhm;
+      search_settings.match_min_kev = weights.match_min_kev;
+      search_settings.moderate_z = weights.weak_z;
+      search_settings.strong_z = weights.strong_z;
+      return run_search_eval( problems, search_settings, meta,
+                              [&opt]( const size_t n, const std::function<void(size_t)> &fcn ){ parallel_for( n, opt.threads, fcn ); } );
+    }//if( opt.search_only )
+
     // ---- auto-search peaks, once per problem ----
     vector<vector<shared_ptr<const PeakDef>>> auto_peaks( problems.size() );
     {
@@ -1184,20 +1264,6 @@ int main( int argc, char **argv )
       problem_index_by_result[problems[pi].id + "|seq_rev"] = pi;
     }
 
-    RunMeta meta;
-    for( int i = 0; i < argc; ++i )
-      meta.command_line += string( i ? " " : "" ) + argv[i];
-    meta.started = now_string();
-    const string repo_dir = SpecUtils::append_path( opt.datadir, ".." );
-    meta.git_head = run_command( "git -C '" + repo_dir + "' rev-parse --short HEAD 2>/dev/null" );
-    meta.git_dirty = run_command( "git -C '" + repo_dir + "' status --porcelain 2>/dev/null | head -c 1" ).empty() ? "clean" : "dirty";
-    meta.binary_sha256 = run_command( string("shasum -a 256 '") + argv[0] + "' 2>/dev/null | cut -c1-16" );
-    meta.corpus_dir = opt.corpus;
-    meta.mode = opt.mode + " engine=" + opt.engine + " background=" + opt.background + " score_set=" + opt.score_set
-                + (opt.truth_inject.empty() ? string() : (" truth_inject=" + opt.truth_inject));
-    meta.weights_text = weights.to_string();
-
-    ensure_directory( opt.out, opt.force );
 
     // ---- truth statistics only ----
     if( opt.dump_truth_stats )

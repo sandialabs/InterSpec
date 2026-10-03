@@ -12,7 +12,8 @@ endif()
 # HTML review gallery.  See harness/fit_peaks_corpus_eval.cpp (--help) for usage.
 add_executable( fit_peaks_corpus_eval harness/fit_peaks_corpus_eval.cpp
                 harness/FitPeaksCorpusScore.h harness/FitPeaksCorpusScore.cpp
-                harness/FitPeaksCorpusReport.h harness/FitPeaksCorpusReport.cpp )
+                harness/FitPeaksCorpusReport.h harness/FitPeaksCorpusReport.cpp
+                harness/PeakSearchEval.h harness/PeakSearchEval.cpp )
 target_link_libraries( fit_peaks_corpus_eval PRIVATE InterSpecLib )
 
 # Unit tests of the corpus scorer (synthetic peak sets; no data files needed).
@@ -25,5 +26,12 @@ add_test( NAME TFitPeaksCorpusScore
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
-set_target_properties( fit_peaks_corpus_eval test_fitPeaksCorpusScore
+# PeakFitLM fit-objective comparison (developer tool, not a ctest): bias, pulls, failure tail and CPU
+# of the chi2 vs Poisson-likelihood objectives on Poisson replicas of synthetic and GADRAS-inject
+# spectra.  See harness/peak_fit_objective_eval.cpp (--help) for usage.
+add_executable( peak_fit_objective_eval harness/peak_fit_objective_eval.cpp
+                harness/FitPeaksCorpusScore.h harness/FitPeaksCorpusScore.cpp )
+target_link_libraries( peak_fit_objective_eval PRIVATE InterSpecLib )
+
+set_target_properties( fit_peaks_corpus_eval test_fitPeaksCorpusScore peak_fit_objective_eval
                        PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}" )

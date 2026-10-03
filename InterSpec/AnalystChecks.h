@@ -79,6 +79,16 @@ namespace AnalystChecks
    @throws std::runtime_error if spectrum is not available or other errors occur
    */
   InterSpec_API DetectedPeakStatus detected_peaks(const DetectedPeaksOptions& options, InterSpec* interspec);
+
+  /** The amplitude uncertainty the elevated-above-background tests use: the detection-equivalent one,
+   the amplitude over its detection significance (see PeakFitLM::peak_detection_significance, chi2
+   weights), which their thresholds were tuned on, rather than the larger, marginal, uncertainty a fit
+   reports; the reported one where that cannot be had.  `roi_peaks` should hold the other peaks of
+   `peak`'s ROI; `data` is the spectrum it was fit to.
+   */
+  InterSpec_API double elevation_test_uncert( const PeakDef &peak,
+                                              const std::vector<std::shared_ptr<const PeakDef>> &roi_peaks,
+                                              const std::shared_ptr<const SpecUtils::Measurement> &data );
   
   
   struct FitPeakOptions {

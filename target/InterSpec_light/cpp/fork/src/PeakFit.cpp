@@ -5781,10 +5781,13 @@ bool chi2_significance_test( const PeakDef &peak,
     const double * const step_coeffs = num_step_pars ? (fit_cont_pars.data() + num_poly_pars)
                                                      : nullptr;
 
+    // A NoOffset continuum leaves nothing to fit (the other peaks are held fixed), and the solve
+    //  cannot handle an empty system; the null model is then just the other peaks.
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
-                                    step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
-                                    amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+    if( num_poly_pars > 0 )
+      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
+                                      step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                      amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
 
     // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
     //  step coefficients appended - and they are the fitted ones we just handed it as known.

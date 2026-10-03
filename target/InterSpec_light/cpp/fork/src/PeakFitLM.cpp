@@ -1003,9 +1003,16 @@ struct PeakFitDiffCostFunction
 
             if( uncertainties )
             {
-              const T first_uncert = sigma_uncert;
-              const T last_uncert  = sigma_uncert * uncertainties[param_offset + sigma_index + 1];
-              sigma_uncert = first_uncert + frac_dist * (last_uncert - first_uncert);
+              // sigma = M*p0*(1 + f*(p1 - 1)), with M = max_initial_sigma, p0 the width parameter, p1 the
+              //  high-end multiplier and f this peak's fraction of the way across the peaks; propagate
+              //  the (p0, p1) covariance (f is taken as known).
+              const T d_p0 = T(roi.max_initial_sigma) * (T(1.0) + frac_dist*(roi_params[sigma_index + 1] - T(1.0)));
+              const T d_p1 = T(roi.max_initial_sigma) * roi_params[sigma_index] * frac_dist;
+              const size_t g0 = param_offset + sigma_index, g1 = g0 + 1;
+              T variance = d_p0*d_p0*uncertainties[g0]*uncertainties[g0] + d_p1*d_p1*uncertainties[g1]*uncertainties[g1];
+              if( covariance && (g1 < num_total_pars) )
+                variance += T(2.0) * d_p0 * d_p1 * T(covariance[g0*num_total_pars + g1]);
+              sigma_uncert = (variance > T(0.0)) ? sqrt( variance ) : T(0.0);
             }
           }//if( (i > 0) && (num_sigmas_fit > 1) )
 
@@ -1047,7 +1054,8 @@ struct PeakFitDiffCostFunction
 
         if( uncertainties )
         {
-          T mean_uncert = uncertainties[param_offset + mean_par_index];
+          // The parameter is the mean's fraction of the way through the ROI; back to keV.
+          T mean_uncert = uncertainties[param_offset + mean_par_index] * T(range);
           if( !src_peak->fitFor( PeakDef::Mean ) )
             mean_uncert = T( src_peak->meanUncert() );
           if( mean_uncert > 0.0 )
