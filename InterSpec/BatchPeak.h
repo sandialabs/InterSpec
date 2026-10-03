@@ -149,7 +149,8 @@ namespace BatchPeak
     bool use_exemplar_energy_cal_for_background;
     // TODO: right now there is no option to refit energy calibration of background
     
-    /** The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.
+    /** The detection significance a fit peak needs to be kept: its area over its uncertainty, conditional on
+     the fitted shapes (`PeakFitLM::peak_detection_significance`).
      
      A negative or zero value indicates no requirement (and default, since we are asserting peak
      is likely in the spectrum for batch analysis), and for general peak searching, reasonable
@@ -161,10 +162,10 @@ namespace BatchPeak
      
      The higher this number, the more like a gaussian the fit peak is.
      It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian),
-     to the test hypothesis (continuum + Gaussian) chi2.
+     to the test hypothesis (continuum + Gaussian) chi2, over +-2.5 sigma of the peak; for a ROI fit by
+     Poisson likelihood (sparse data), the ratio of the Poisson deviances (see `chi2_significance_test`).
      A reasonable value for this seems to be ~4.
-     A zero or negative value will mean no requirement, and also no
-     `peak_stat_threshold` requirement.
+     A zero or negative value will mean no requirement; it is independent of `peak_stat_threshold`.
      */
     double peak_hypothesis_threshold;
 

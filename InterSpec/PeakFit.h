@@ -450,11 +450,26 @@ double chi2_for_region( const PeakShrdVec &peaks,
 //                      is actually the ratio of the null hypothesis chi2
 //                      to the test hypothesis chi2.  A reasonable value for
 //                      this seems to be 4.
+//
+//The two statistics are summed over +-2.5 sigma of the peak (the whole ROI for a step continuum): the
+//  ROI's model as fit, and the "null" model without the peak, whose continuum is refit over that window.
+//  By default they are modified-Neyman chi2 values and the null refit is least squares.  With
+//  `by_likelihood` (for a peak whose ROI was fit by Poisson likelihood) they are Poisson deviances, and the
+//  null continuum is the Poisson maximum-likelihood fit - so `stat_threshold` is compared to twice the log
+//  of the likelihood ratio.  `statistics`, if given, receives the two values.
+struct SignificanceTestStatistics
+{
+  double with_peak = 0.0;
+  double without_peak = 0.0;
+};
+
 bool chi2_significance_test( const PeakDef &peak,
                              const double stat_threshold,  //this is how large the chi2 without the peak must be, inorder for peak to be necessary - the higher the number this is, the further away from the background the data must be before a peak becomes necaassary
                              const double hypothesis_threshold,  //this says roughly how good a gaussian explains the excess of data over background - higher the number input, the more closer to a gaussian the shape has to be
                              std::vector<PeakDef> other_peaks,
-                             const std::shared_ptr<const SpecUtils::Measurement> &data );
+                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                             const bool by_likelihood = false,
+                             SignificanceTestStatistics *statistics = nullptr );
 
 
 namespace ExperimentalAutomatedPeakSearch

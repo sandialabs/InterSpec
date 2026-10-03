@@ -6079,14 +6079,121 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 }//double fit_amp_and_offset(...)
-        
-        
+
+
+namespace
+{
+/** The polynomial coefficients of `cont` (its CDF-step coefficients, if any, held at their fitted values)
+ that maximize the Poisson likelihood of `counts` over `nchannel` channels, the model being the continuum
+ plus `fixed_counts` (the other peaks).  A plain polynomial is fit by `DetectionLimitCalc::fit_continuum_poisson`,
+ which keeps the model positive (an unconstrained fit could dip below zero in empty channels and so fit the
+ occupied ones better than any valid model); a step continuum, or a failed fit, by iteratively reweighted
+ least squares started from the fitted continuum, each pass kept only if it lowers the deviance.
+ */
+vector<double> poisson_null_continuum( const PeakContinuum &cont,
+                                       const float * const energies,
+                                       const float * const counts,
+                                       const vector<double> &fixed_counts,
+                                       const size_t nchannel,
+                                       const shared_ptr<const Measurement> &data,
+                                       const vector<PeakDef> &other_peaks,
+                                       const vector<const PeakDef *> &other_peak_ptrs )
+{
+  const PeakContinuum::OffsetType type = cont.type();
+  const size_t num_poly = PeakContinuum::num_linear_fit_pars( type );
+  const size_t num_step = PeakContinuum::num_cdf_step_pars( type );
+  const vector<double> &fit_pars = cont.parameters();
+  const double ref_energy = cont.referenceEnergy();
+  assert( fit_pars.size() == (num_poly + num_step) );
+  const double * const step_coeffs = num_step ? (fit_pars.data() + num_poly) : nullptr;
+
+  vector<double> coefs( begin(fit_pars), begin(fit_pars) + num_poly );
+
+  vector<double> observed( nchannel );
+  double data_area = 0.0;
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    observed[i] = std::max( 0.0f, counts[i] );
+    data_area += observed[i];
+  }
+
+  if( !PeakContinuum::is_step_continuum( type ) )
+  {
+    try
+    {
+      const DetectionLimitCalc::PoissonContinuumFit fit
+                = DetectionLimitCalc::fit_continuum_poisson( energies, observed.data(), fixed_counts.data(),
+                                                            nchannel, num_poly, ref_energy, coefs );
+      if( fit.converged )
+        return fit.coefficients;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !PeakContinuum::is_step_continuum( type ) )
+
+  const auto null_model = [&]( const vector<double> &poly ) -> vector<double> {
+    vector<double> pars = poly;
+    pars.insert( end(pars), begin(fit_pars) + num_poly, end(fit_pars) );
+    PeakContinuum tmp( cont );
+    tmp.setParameters( ref_energy, pars, vector<double>( pars.size(), 0.0 ) );
+    vector<double> model = fixed_counts;
+    tmp.offset_integral( energies, model.data(), nchannel, data, other_peak_ptrs.data(), other_peak_ptrs.size() );
+    return model;
+  };
+
+  const auto deviance = [&observed]( const vector<double> &model ) -> double {
+    double answer = 0.0;
+    for( size_t i = 0; i < model.size(); ++i )
+      answer += DetectionLimitCalc::poisson_deviance( observed[i], std::max( model[i], 1.0E-12 ) );
+    return answer;
+  };
+
+  // The variance floor and pass limits of PeakFitLM's own IRLS refits.
+  const double min_variance = 1.0E-3 * std::max( 1.0, data_area / nchannel );
+  vector<double> model = null_model( coefs );
+  double merit = deviance( model );
+  for( size_t pass = 0; pass < 12; ++pass )
+  {
+    vector<float> variances( nchannel );
+    for( size_t i = 0; i < nchannel; ++i )
+      variances[i] = static_cast<float>( (model[i] >= min_variance) ? model[i] : min_variance );  //also catches NaN
+
+    vector<double> amplitudes, new_coefs, amp_uncerts, cont_uncerts;
+    try
+    {
+      PeakFit::fit_amp_and_offset_imp( energies, counts, variances.data(), nchannel, type, step_coeffs, ref_energy,
+                                       {}, {}, other_peaks, PeakDef::SkewType::NoSkew, (const double *)nullptr,
+                                       amplitudes, new_coefs, amp_uncerts, cont_uncerts, (double *)nullptr );
+    }catch( std::exception & )
+    {
+      break;
+    }
+
+    const vector<double> new_model = null_model( new_coefs );
+    const double new_merit = deviance( new_model );
+    if( !(new_merit < merit) )  //also catches NaN
+      break;
+
+    const bool converged = ((merit - new_merit) < 1.0E-4);
+    coefs = new_coefs;
+    model = new_model;
+    merit = new_merit;
+    if( converged )
+      break;
+  }//for( size_t pass = 0; pass < 12; ++pass )
+
+  return coefs;
+}//poisson_null_continuum(...)
+}//namespace
+
         
 bool chi2_significance_test( const PeakDef &peak,
                              const double withoutPeakDSigma,
                              const double chi2ratioRequired,
                              std::vector<PeakDef> other_peaks,
-                             const std::shared_ptr<const Measurement> &data )
+                             const std::shared_ptr<const Measurement> &data,
+                             const bool by_likelihood,
+                             SignificanceTestStatistics *statistics )
 {
   if( !peak.gausPeak() )
     throw logic_error( "chi2_significance_test: can only evaluate gaussian defined peaks" );
@@ -6134,6 +6241,10 @@ bool chi2_significance_test( const PeakDef &peak,
 
   if( peak.fitFor(PeakDef::CoefficientType::Sigma) && ((peak.sigma() <= 0.0)) )
     return false;
+
+  // Neither test asked for: skip the likelihood refit of the null.
+  if( by_likelihood && !statistics && (withoutPeakDSigma <= 0.0) && (chi2ratioRequired <= 0.0) )
+    return true;
 
 
   const double xmin = is_step ? cont->lowerEnergy() : std::max( cont->lowerEnergy(), peak.mean() - 2.5*peak.sigma() );
@@ -6235,10 +6346,15 @@ bool chi2_significance_test( const PeakDef &peak,
     // A NoOffset continuum leaves nothing to fit (the other peaks are held fixed), and the solve
     //  cannot handle an empty system; the null model is then just the other peaks.
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    if( num_poly_pars > 0 )
+    if( (num_poly_pars > 0) && !by_likelihood )
       PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
                                       step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
                                       amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+
+    if( (num_poly_pars > 0) && by_likelihood )
+      continuum_coeffs = poisson_null_continuum( *cont, energies, channel_counts, without_peak_counts,
+                                                 num_roi_channel, data, other_peaks, other_peak_ptrs );
+    cont_uncerts.resize( continuum_coeffs.size(), 0.0 );
 
     // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
     //  step coefficients appended - and they are the fitted ones we just handed it as known.
@@ -6265,7 +6381,14 @@ bool chi2_significance_test( const PeakDef &peak,
 
   //Now compute Chi2
   double with_peak_chi2 = 0.0, without_peak_chi2 = 0.0;
-  for( size_t i = 0; i < num_roi_channel; ++i )
+  for( size_t i = 0; by_likelihood && (i < num_roi_channel); ++i )
+  {
+    const double ndata = std::max( 0.0f, channel_counts[i] );
+    with_peak_chi2 += DetectionLimitCalc::poisson_deviance( ndata, std::max( original_counts[i], 1.0E-12 ) );
+    without_peak_chi2 += DetectionLimitCalc::poisson_deviance( ndata, std::max( without_peak_counts[i], 1.0E-12 ) );
+  }
+
+  for( size_t i = 0; !by_likelihood && (i < num_roi_channel); ++i )
   {
     const double ndata = channel_counts[i];
     const double uncert2 = (ndata > 1.0) ? ndata : 1.0;
@@ -6283,6 +6406,12 @@ bool chi2_significance_test( const PeakDef &peak,
       with_peak_chi2 += original_counts[i];
       without_peak_chi2 += without_peak_counts[i];
     }//if( ndata >= PEAK_FIT_MIN_CHANNEL_UNCERT ) / else
+  }
+
+  if( statistics )
+  {
+    statistics->with_peak = with_peak_chi2;
+    statistics->without_peak = without_peak_chi2;
   }
 
   const double chi2Ratio = without_peak_chi2 / with_peak_chi2;
