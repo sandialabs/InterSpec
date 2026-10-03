@@ -1892,6 +1892,11 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  name = "DrfUncertIncludeAssumed";
+  value = drf_uncert_include_assumed ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "CorrectForCascadeSumming";
   value = correct_for_cascade_summing ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -1985,6 +1990,10 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
                                           : DrfUncertaintyMethod::None;
   }//if( new enum node ) / else ( legacy bool node )
 
+  // Absent from state written before this option existed - those fits used the assumed part.
+  node = XML_FIRST_NODE( parent_node, "DrfUncertIncludeAssumed" );
+  drf_uncert_include_assumed = node ? boolval( node ) : true;
+
   node = XML_FIRST_NODE( parent_node, "CorrectForCascadeSumming" );
   if( node )
     correct_for_cascade_summing = boolval( node );  //absent in older XML -> keeps the default (false)
@@ -2048,6 +2057,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
   if( lhs.drf_uncert_method != rhs.drf_uncert_method )
     throw runtime_error( "ShieldingSourceFitOptions LHS drf_uncert_method != RHS drf_uncert_method" );
 
+  if( lhs.drf_uncert_include_assumed != rhs.drf_uncert_include_assumed )
+    throw runtime_error( "ShieldingSourceFitOptions LHS drf_uncert_include_assumed != RHS drf_uncert_include_assumed" );
+
   if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
     throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
 
@@ -2057,6 +2069,35 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 #endif
   
   
+const char *drfUncertUsedName( const DrfUncertUsed used )
+{
+  switch( used )
+  {
+    case DrfUncertUsed::None:              return "None";
+    case DrfUncertUsed::Stated:            return "Stated";
+    case DrfUncertUsed::GeometryModelOnly: return "GeometryModelOnly";
+    case DrfUncertUsed::IncludesAssumed:   return "IncludesAssumed";
+  }//switch( used )
+
+  assert( 0 );
+  return "None";
+}//drfUncertUsedName(...)
+
+
+const char *drfUncertMethodName( const DrfUncertaintyMethod method )
+{
+  switch( method )
+  {
+    case DrfUncertaintyMethod::None:             return "None";
+    case DrfUncertaintyMethod::ErrorPropagation: return "ErrorPropagation";
+    case DrfUncertaintyMethod::Likelihood:       return "Likelihood";
+  }//switch( method )
+
+  assert( 0 );
+  return "None";
+}//drfUncertMethodName(...)
+
+
 ModelFitProgress::ModelFitProgress()
   : m_mutex{},
   chi2( std::numeric_limits<double>::max() ),
@@ -2264,9 +2305,9 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
 
   // Stale detector-efficiency-uncertainty selection: the user asked to propagate or fit with the
   //  efficiency uncertainty, but the DRF/peaks provided no efficiency covariance, so the fit ran
-  //  statistics-only.  The GUI hides the control when the current DRF has no uncertainty, but a
-  //  restored session, a batch exemplar, or a DRF swapped after the choice was made can all reach
-  //  here with a non-None method and an empty band - surface it rather than silently ignoring it.
+  //  statistics-only.  A restored session, a batch exemplar, or a DRF swapped after the choice was
+  //  made can all reach here with a non-None method and an empty band - surface it rather than
+  //  silently ignoring it (the GUI's status line also says the detector reports none).
   if( (chi2Fcn.options().drf_uncert_method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None)
       && chi2Fcn.peakEffFracCovariance().empty() )
   {
@@ -2709,6 +2750,19 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
     results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
     results->point_eff_model = chi2Fcn->pointSourceEffModel();
+
+    // Which efficiency uncertainty was used: an assumed part is in it exactly when the covariance
+    //  used is more than its geometry-model part (it is that part when dropped, or when zero).
+    vector<double> model_cov;
+    const vector<double> used_cov = chi2Fcn->peakEffFracCovariance( &model_cov );
+    if( (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::None) || used_cov.empty() )
+      results->drf_uncert_used = DrfUncertUsed::None;
+    else if( chi2Fcn->detector()->statesOwnEfficiencyUncert() )
+      results->drf_uncert_used = DrfUncertUsed::Stated;
+    else if( used_cov == model_cov )
+      results->drf_uncert_used = DrfUncertUsed::GeometryModelOnly;
+    else
+      results->drf_uncert_used = DrfUncertUsed::IncludesAssumed;
 
     // A near-field method the user asked for by name but did not get is an error, not a footnote:
     //  the answer is quietly less accurate than requested, which is exactly what should not pass

@@ -529,6 +529,7 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.background_peak_subtract = (rand() % 2);
     test.same_age_isotopes = (rand() % 2);
     test.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>( rand() % 3 );
+    test.drf_uncert_include_assumed = (rand() % 2);
     test.correct_for_cascade_summing = (rand() % 2);
     // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
     //  rather than silently reverting a user's choice on reload.
@@ -576,6 +577,23 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
         "legacy AccountForDrfUncert=" << legacy_on << " should map to "
         << static_cast<int>(expected) << ", got " << static_cast<int>(from_legacy.drf_uncert_method) );
   }//for( legacy_on )
+
+  // Back-compat: state written before "DrfUncertIncludeAssumed" existed used the assumed part, so its
+  //  absence must read as true - though a new options struct defaults to false.
+  {
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions seed;
+    BOOST_CHECK( !seed.drf_uncert_include_assumed );
+
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( seed.serialize( &doc ) );
+    rapidxml::xml_node<char> * const node = doc.first_node( "DrfUncertIncludeAssumed" );
+    BOOST_REQUIRE( node );
+    doc.remove_node( node );
+
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions from_old;
+    BOOST_REQUIRE_NO_THROW( from_old.deSerialize( &doc ) );
+    BOOST_CHECK( from_old.drf_uncert_include_assumed );
+  }
 }//BOOST_AUTO_TEST_CASE( SourceFitDefSerialization )
 
 
@@ -2665,6 +2683,95 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 
 
+/** A DRF that states no efficiency uncertainty of its own - as every GADRAS detector, a curve transferred
+ through its geometry - reports the assumed CeeLoUtils::sm_default_anchor_frac_sigma beside its
+ geometry-model envelope.  The fit uses only the envelope unless `drf_uncert_include_assumed`; a DRF
+ that states its own uncertainty is unaffected, and the results say which was used. */
+BOOST_AUTO_TEST_CASE( DrfUncertAssumedPartIsOptIn )
+{
+  set_data_dir();
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  using ShieldingSourceFitCalc::DrfUncertUsed;
+  using ShieldingSourceFitCalc::DrfUncertaintyMethod;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+
+  struct Out
+  {
+    vector<double> cov, model_cov;
+    bool drops = false;
+    DrfUncertUsed used = DrfUncertUsed::None;
+    double act_uncert = 0.0;
+  };
+
+  auto run = []( const shared_ptr<DetectorPeakResponse> &det, const DrfUncertaintyMethod method,
+                 const bool include_assumed ) -> Out {
+    ShieldingSourceChi2Fcn::ShieldSourceInput input
+                     = make_ba133_point_input( det, 50.0*PhysicalUnits::cm, 0.0, VolumetricEffMethod::Auto );
+    input.config.options.drf_uncert_method = method;
+    input.config.options.drf_uncert_include_assumed = include_assumed;
+
+    pair<shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters> fcn_pars
+                                                      = ShieldingSourceChi2Fcn::create( input );
+    Out out;
+    out.cov = fcn_pars.first->peakEffFracCovariance( &out.model_cov );
+    out.drops = fcn_pars.first->dropsAssumedEffUncert();
+
+    const shared_ptr<ShieldingSourceFitCalc::FitParameters> inputPrams
+                    = make_shared<ShieldingSourceFitCalc::FitParameters>( fcn_pars.second );
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, [](){}, results, [](){} );
+    BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), 1 );
+    BOOST_REQUIRE( results->fit_src_info[0].activityUncertainty.has_value() );
+    out.act_uncert = *results->fit_src_info[0].activityUncertainty;
+    out.used = results->drf_uncert_used;
+    return out;
+  };//run(...)
+
+  const shared_ptr<DetectorPeakResponse> bare = make_synthetic_nai_drf( true );
+  BOOST_REQUIRE( !bare->statesOwnEfficiencyUncert() );
+
+  const Out dropped = run( bare, DrfUncertaintyMethod::ErrorPropagation, false );
+  const Out kept = run( bare, DrfUncertaintyMethod::ErrorPropagation, true );
+  const Out unused = run( bare, DrfUncertaintyMethod::None, false );
+
+  BOOST_CHECK( dropped.drops );
+  BOOST_CHECK( !kept.drops );
+  BOOST_CHECK( dropped.used == DrfUncertUsed::GeometryModelOnly );
+  BOOST_CHECK( kept.used == DrfUncertUsed::IncludesAssumed );
+  BOOST_CHECK( unused.used == DrfUncertUsed::None );
+
+  // Dropped: the covariance IS the geometry-model part, smaller than the full budget on the diagonal.
+  const size_t n = 5;
+  BOOST_REQUIRE_EQUAL( dropped.cov.size(), n*n );
+  BOOST_REQUIRE_EQUAL( kept.cov.size(), n*n );
+  BOOST_REQUIRE_EQUAL( dropped.model_cov.size(), n*n );
+  for( size_t i = 0; i < n*n; ++i )
+    BOOST_CHECK_EQUAL( dropped.cov[i], dropped.model_cov[i] );
+  for( size_t i = 0; i < n; ++i )
+  {
+    BOOST_CHECK_GT( dropped.cov[i*n+i], 0.0 );  //the far-field floor, at least
+    BOOST_CHECK_LT( dropped.cov[i*n+i], kept.cov[i*n+i] );
+    BOOST_CHECK_GT( kept.cov[i*n+i], 0.5*std::pow( CeeLoUtils::sm_default_anchor_frac_sigma, 2 ) );
+  }
+
+  BOOST_CHECK_LT( unused.act_uncert, dropped.act_uncert );
+  BOOST_CHECK_LT( dropped.act_uncert, kept.act_uncert );
+
+  // A DRF stating its own uncertainty is used in full either way.
+  auto stated = make_shared<DetectorPeakResponse>( *bare );
+  {
+    auto uncert = make_shared<DetectorEfficiencyUncert>();
+    uncert->setNodeCovariance( { 10.0f, 3000.0f }, { 0.0009f, 0.0009f, 0.0009f, 0.0009f } );
+    stated->setEfficiencyUncert( uncert );
+  }
+  BOOST_REQUIRE( stated->statesOwnEfficiencyUncert() );
+  const Out stated_out = run( stated, DrfUncertaintyMethod::ErrorPropagation, false );
+  BOOST_CHECK( !stated_out.drops );
+  BOOST_CHECK( stated_out.used == DrfUncertUsed::Stated );
+}//BOOST_AUTO_TEST_CASE( DrfUncertAssumedPartIsOptIn )
+
+
 /** A point source and a vanishingly small volumetric (trace) source at the same place must give
  the same expected counts.  They come from two different quadratures of the same detector response -
  a ray fan from the point, versus the detector-side line integral over the tiny volume - so this is a
@@ -2728,68 +2835,77 @@ BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )
       if( (offset > 0.0) && c.det->isFixedGeometry() )
         continue;
 
-      const string where = string(c.name) + ((offset > 0.0) ? " (off-axis)" : " (on-axis)");
-      const ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
-                          = make_ba133_point_input( c.det, 5.0*PhysicalUnits::cm, offset, c.method );
-      const shared_ptr<ShieldingSourceChi2Fcn> fcn = ShieldingSourceChi2Fcn::create( chi_input ).first;
-      BOOST_REQUIRE( fcn );
-      BOOST_REQUIRE_MESSAGE( fcn->pointSourceEffModel() == c.expect, where << ": unexpected efficiency model" );
-
-      const vector<double> energies = fcn->includedPeakEnergies();
-      const size_t n = energies.size();
-      BOOST_REQUIRE_EQUAL( n, 5u );
-
-      vector<double> model_cov, model_uncerts;
-      const vector<double> cov = fcn->peakEffFracCovariance( &model_cov );
-      const vector<double> uncerts = fcn->peakEffFracUncerts( &model_uncerts );
-      BOOST_REQUIRE_MESSAGE( cov.size() == n*n, where << ": no covariance" );
-      BOOST_REQUIRE_EQUAL( model_cov.size(), n*n );
-      BOOST_REQUIRE_EQUAL( uncerts.size(), n );
-      BOOST_REQUIRE_EQUAL( model_uncerts.size(), n );
-
-      // Exact for every model: the non-Response branches now ask the covariance at the same
-      //  float-rounded energies their sigma is evaluated at.
-      const double tol = 1.0e-9;
-      for( size_t i = 0; i < n; ++i )
+      // The synthetic NaI states no uncertainty of its own, so by default the fit leaves its assumed
+      //  part out and uses the model part alone (see DrfUncertAssumedPartIsOptIn); the invariant must
+      //  hold both ways.
+      for( const bool include_assumed : { true, false } )
       {
-        const DetectorPeakResponse::EffEval ev = fcn->pointSourceFepEff( energies[i] );
-        BOOST_REQUIRE_GT( ev.value, 0.0 );
-        const double frac2 = (ev.sigma/ev.value) * (ev.sigma/ev.value);
-        const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
-        BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= tol*frac2,
-                             where << " at " << energies[i] << " keV: C_ii " << cov[i*n+i] << " vs sigma^2 " << frac2 );
-        BOOST_CHECK_MESSAGE( std::fabs(model_cov[i*n+i] - frac2_model) <= tol*std::max(frac2_model, 1.0e-12),
-                             where << " at " << energies[i] << " keV: model part " << model_cov[i*n+i] << " vs " << frac2_model );
-        BOOST_CHECK_CLOSE( uncerts[i], std::sqrt(cov[i*n+i]), 1.0e-9 );
-        BOOST_CHECK_CLOSE( model_uncerts[i], std::sqrt(model_cov[i*n+i]), 1.0e-9 );
-        BOOST_CHECK_LE( ev.sigmaModel, ev.sigma*(1.0 + 1.0e-12) );
-        for( size_t j = 0; j < n; ++j )
-          BOOST_CHECK_CLOSE( cov[i*n+j], cov[j*n+i], 1.0e-9 );
-      }//for( each included peak )
+        const string where = string(c.name) + ((offset > 0.0) ? " (off-axis)" : " (on-axis)")
+                             + (include_assumed ? "" : " (assumed part dropped)");
+        ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+                            = make_ba133_point_input( c.det, 5.0*PhysicalUnits::cm, offset, c.method );
+        chi_input.config.options.drf_uncert_include_assumed = include_assumed;
+        const shared_ptr<ShieldingSourceChi2Fcn> fcn = ShieldingSourceChi2Fcn::create( chi_input ).first;
+        BOOST_REQUIRE( fcn );
+        BOOST_REQUIRE_MESSAGE( fcn->pointSourceEffModel() == c.expect, where << ": unexpected efficiency model" );
 
-      if( (c.det == legacy) || (c.det == fixed_geom) )
-      {
-        // A legacy curve's uncertainty is all data-derived
-        for( size_t i = 0; i < n*n; ++i )
-          BOOST_CHECK_EQUAL( model_cov[i], 0.0 );
-      }else if( c.expect == PointEffModel::Response )
-      {
-        // 5 cm is inside the transfer's near gate, so the model envelopes are present and
-        //  they are common modes: every pair of peaks stays positively, substantially
-        //  correlated.  What this guards is that the common mode is THERE - a fit that
-        //  treated a shared efficiency error as independent per peak would report an
-        //  activity several times more certain than it is (uncert overview sec 4).
-        //
-        // The threshold tracks the near-field envelope size: a smaller shared envelope
-        //  means a smaller shared FRACTION of the variance, so the data covariance
-        //  competes rather than being swamped.  It is a floor on "the common mode is
-        //  present", not a calibration - that is act_fit_pulls_calibrated.
+        const vector<double> energies = fcn->includedPeakEnergies();
+        const size_t n = energies.size();
+        BOOST_REQUIRE_EQUAL( n, 5u );
+
+        vector<double> model_cov, model_uncerts;
+        const vector<double> cov = fcn->peakEffFracCovariance( &model_cov );
+        const vector<double> uncerts = fcn->peakEffFracUncerts( &model_uncerts );
+        BOOST_REQUIRE_MESSAGE( cov.size() == n*n, where << ": no covariance" );
+        BOOST_REQUIRE_EQUAL( model_cov.size(), n*n );
+        BOOST_REQUIRE_EQUAL( uncerts.size(), n );
+        BOOST_REQUIRE_EQUAL( model_uncerts.size(), n );
+
+        // Exact for every model: the non-Response branches now ask the covariance at the same
+        //  float-rounded energies their sigma is evaluated at.
+        const double tol = 1.0e-9;
         for( size_t i = 0; i < n; ++i )
+        {
+          const DetectorPeakResponse::EffEval ev = fcn->pointSourceFepEff( energies[i] );
+          BOOST_REQUIRE_GT( ev.value, 0.0 );
+          const double sigma = fcn->dropsAssumedEffUncert() ? ev.sigmaModel : ev.sigma;
+          const double frac2 = (sigma/ev.value) * (sigma/ev.value);
+          const double frac2_model = (ev.sigmaModel/ev.value) * (ev.sigmaModel/ev.value);
+          BOOST_CHECK_MESSAGE( std::fabs(cov[i*n+i] - frac2) <= tol*frac2,
+                               where << " at " << energies[i] << " keV: C_ii " << cov[i*n+i] << " vs sigma^2 " << frac2 );
+          BOOST_CHECK_MESSAGE( std::fabs(model_cov[i*n+i] - frac2_model) <= tol*std::max(frac2_model, 1.0e-12),
+                               where << " at " << energies[i] << " keV: model part " << model_cov[i*n+i] << " vs " << frac2_model );
+          BOOST_CHECK_CLOSE( uncerts[i], std::sqrt(cov[i*n+i]), 1.0e-9 );
+          BOOST_CHECK_CLOSE( model_uncerts[i], std::sqrt(model_cov[i*n+i]), 1.0e-9 );
+          BOOST_CHECK_LE( ev.sigmaModel, ev.sigma*(1.0 + 1.0e-12) );
           for( size_t j = 0; j < n; ++j )
-            BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.3,
-                                 where << ": rho(" << energies[i] << "," << energies[j] << ") = "
-                                 << cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) );
-      }
+            BOOST_CHECK_CLOSE( cov[i*n+j], cov[j*n+i], 1.0e-9 );
+        }//for( each included peak )
+
+        if( (c.det == legacy) || (c.det == fixed_geom) )
+        {
+          // A legacy curve's uncertainty is all data-derived
+          for( size_t i = 0; i < n*n; ++i )
+            BOOST_CHECK_EQUAL( model_cov[i], 0.0 );
+        }else if( c.expect == PointEffModel::Response )
+        {
+          // 5 cm is inside the transfer's near gate, so the model envelopes are present and
+          //  they are common modes: every pair of peaks stays positively, substantially
+          //  correlated.  What this guards is that the common mode is THERE - a fit that
+          //  treated a shared efficiency error as independent per peak would report an
+          //  activity several times more certain than it is (uncert overview sec 4).
+          //
+          // The threshold tracks the near-field envelope size: a smaller shared envelope
+          //  means a smaller shared FRACTION of the variance, so the data covariance
+          //  competes rather than being swamped.  It is a floor on "the common mode is
+          //  present", not a calibration - that is act_fit_pulls_calibrated.
+          for( size_t i = 0; i < n; ++i )
+            for( size_t j = 0; j < n; ++j )
+              BOOST_CHECK_MESSAGE( cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) > 0.3,
+                                   where << ": rho(" << energies[i] << "," << energies[j] << ") = "
+                                   << cov[i*n+j] / std::sqrt(cov[i*n+i]*cov[j*n+j]) );
+        }
+      }//for( include_assumed )
     }//for( each case )
   }//for( on-axis, off-axis )
 }//BOOST_AUTO_TEST_CASE( PeakEffCovarianceMatchesPointSourceSigma )

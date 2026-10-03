@@ -939,6 +939,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       fit_options["DrfUncertaintyMethod"]     = static_cast<int>( method );
       fit_options["DrfUncertaintyMethodName"] = method_name;
       fit_options["AccountForDrfUncert"]      = (method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None);
+      fit_options["DrfUncertIncludeAssumed"]  = options.drf_uncert_include_assumed;
     }
     fit_options["CorrectForCascadeSumming"] = options.correct_for_cascade_summing;
   }//void add_act_shield_fit_options_to_json(...)
@@ -1169,6 +1170,26 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       dj["VolumetricModel"] = volumetric_str;
       dj["Note"] = results.volumetric_eff_note;
       dj["HasNote"] = !results.volumetric_eff_note.empty();
+
+      // Which efficiency uncertainty the fit used, so a report says so whether or not one was.
+      const char *uncert_str = "none (statistical uncertainties only)";
+      switch( results.drf_uncert_used )
+      {
+        case ShieldingSourceFitCalc::DrfUncertUsed::None:
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::Stated:
+          uncert_str = "stated by the detector response";
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::GeometryModelOnly:
+          uncert_str = "geometry model only (the detector states no efficiency uncertainty of its"
+                       " own; the assumed default was not used)";
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::IncludesAssumed:
+          uncert_str = "assumed default (the detector states no efficiency uncertainty of its own)";
+          break;
+      }//switch( results.drf_uncert_used )
+      dj["UncertUsed"] = ShieldingSourceFitCalc::drfUncertUsedName( results.drf_uncert_used );
+      dj["UncertUsedDescription"] = uncert_str;
 
       auto &vj = data["VolumetricEff"];
       vj["Method"] = volumetric_str;

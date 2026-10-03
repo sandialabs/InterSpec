@@ -100,6 +100,12 @@
   <message id="dlt-peak-detection-limit">Peak detection limit <span style="font-size: smaller;">(L<sub>d</sub>)</span></message>
   <message id="dlt-detector-intrinsic-eff">Detector Intrinsic Eff.</message>
   <message id="dlt-solid-angle-fraction">Solid angle fraction</message>
+  <message id="dlt-detector-eff-used">Detector efficiency used</message>
+  <message id="dlt-det-eff-uncert">Det. eff. uncertainty</message>
+  <message id="dlt-det-eff-uncert-none">none stated</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (stated by detector)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (geometry model only)</message>
+  <message id="dlt-systematic-uncert-used">Systematic uncert. used</message>
   <message id="dlt-shielding-transmission">Shielding transmission</message>
   <message id="dlt-air-transmission">Air transmission</message>
   <message id="dlt-nuclide-branching-ratio">Nuclide branching ratio</message>
@@ -147,6 +153,9 @@
   <message id="dlt-tt-solid-angle-fraction">The fraction of the solid angle, the detector face takes up, at the specified distance.
     This is the nominal flat-disk geometry; see the note on the intrinsic efficiency above for why
     the two do not necessarily multiply to the efficiency used.</message>
+  <message id="dlt-tt-detector-eff-used">The probability that a gamma emitted by the source, at this distance, is detected in the full-energy peak - the efficiency this calculation actually uses.</message>
+  <message id="dlt-tt-det-eff-uncert">The 1-sigma relative uncertainty of the detector efficiency at this energy and distance: what the detector response states of its own, plus - for a geometry-modeled detector - the uncertainty its geometry model adds near the detector or off axis.  An uncertainty the detector response does not state, but is assumed for it, is not included.</message>
+  <message id="dlt-tt-systematic-uncert-used">The 1-sigma relative systematic uncertainty the Currie limits above used: the detector efficiency uncertainty, combined in quadrature with any entered efficiency or distance uncertainty.</message>
   <message id="dlt-tt-shielding-transmission">The fraction of gammas, at this energy, that will make it through the shielding without interacting.</message>
   <message id="dlt-tt-air-transmission">The fraction of gammas, at this energy, that will make it through the air (assuming sea level) without interacting.</message>
   <message id="dlt-tt-branching-ratio">The number of gamma rays emitted at this energy, from the radioactive
@@ -186,4 +195,5 @@
   <message id="dlt-estimating-spread">Calculating spread…</message>
   <message id="dlt-spread-band">(typically {1}&ndash;{2}&times; this)</message>
   <message id="dlt-spread-unavailable">Spread could not be estimated.</message>
+  <message id="dlt-drf-uncert-decon-excluded">These limits do not include the detector response's efficiency uncertainty (up to {1}% for the lines used); the per-line Currie limits do.</message>
 </messages>

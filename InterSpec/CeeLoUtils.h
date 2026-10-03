@@ -131,6 +131,11 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for fixed-geometry DRFs, or when fewer than two
    usable anchor points can be constructed.
+
+   TODO: only per-point sigmas are kept - the curve covariance's diagonal, or a per-node
+   #sm_default_anchor_frac_sigma when the DRF states none - so a common-mode efficiency error
+   averages down over a multi-peak fit.  Carry the full covariance, as
+   #curveAnchorWithCovarianceForDrf does (the assumed part needs a measured correlation first).
    */
   TransferAnchor transferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -525,6 +530,9 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.
+
+   TODO: the carried sigma is the response's total, so the DRF then "states" an uncertainty even
+   when it was only assumed - see DetectorPeakResponse::statesOwnEfficiencyUncert.
    */
   void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
@@ -563,6 +571,8 @@ namespace CeeLoUtils
     - It is a transient.  It has its own hash and is NOT the user's detector: never store
       one in a SpecMeas, hand it to a setter, or let it reach the "Previous" DRF database.
       Its name is suffixed so one that escapes is recognizable.
+    - TODO: its curve carries the response's total sigma, so `statesOwnEfficiencyUncert()` is
+      true on it even when the original DRF states none - classify on the original.
 
    Interpolation between the sampled points makes it an approximation to the response of
    order a percent - the same grid, K-edge flanking and per-point Monte-Carlo sigma that

@@ -793,7 +793,8 @@ public:
    see #flatDiskEfficiency.
 
    For a fixed-geometry DRF, `distance` is ignored and this returns
-   #farFieldIntrinsicEfficiency.
+   `intrinsicEfficiencyEval( energy ).value` - i.e. #farFieldIntrinsicEfficiency, unless a response
+   is attached, in which case it is that response's far-field view (as is its uncertainty).
 
    Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
 
@@ -1304,6 +1305,11 @@ public:
    response's budget, so it is indistinguishable there from a measurement - and every surface that
    splits "from its own data" from "model envelope" has to say which it is looking at.  An all-zero
    covariance counts as stating nothing: it is a claim of perfect knowledge that nothing propagates.
+
+   TODO: two misclassifications.  A curve sampled from a response (CeeLoUtils::flatDiskSnapshotAt,
+   setLegacyEfficiencyFromResponse) carries the response's total sigma, so it "states" even an
+   assumed 5% - ask the original DRF instead.  And a Monte-Carlo response generated from a DRF that
+   states none leaves this false, so its real MC statistics (~0.3%) are treated as assumed.
    */
   bool statesOwnEfficiencyUncert() const;
 

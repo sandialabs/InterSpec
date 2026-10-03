@@ -259,10 +259,7 @@
     Az egységnyi aktivitásra várt beütésszám 1&#963; <b>relatív</b> bizonytalansága,
     <b>százalékban</b> - például <b>5</b> az 5%-hoz.  Hagyja üresen, vagy írjon be 0-t, ha nincs.
     <p>
-      Mindazt lefedi, ami a várt beütésszámot skálázza, és nem számlálási statisztika: a detektor
-      hatásfokgörbéjét és a gamma elágazási arányt, amelyek azonos módon lépnek be.  Ha mindkettő
-      számít, a kettő négyzetes összegét adja meg.  A detektorhatásfok bizonytalansága jellemzően
-      3&#8211;10%.
+      Mindent lefed, ami a várt beütésszámot skálázza és nem számlálási statisztika, azon a hatásfok-bizonytalanságon felül, amelyet a detektorválasz maga megad: az mindig benne van, ez pedig négyzetesen hozzáadódik.  Használja a gamma elágazási arányhoz, vagy olyan detektorválaszhoz, amely nem ad meg bizonytalanságot (a detektorhatásfok bizonytalansága jellemzően 3&#8211;10%).
     </p>
     <p>
       A távolság bizonytalanságával négyzetesen adódik össze, és az összegnek 100% alatt kell

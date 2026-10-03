@@ -178,4 +178,14 @@
   <message id="dlt-estimating-spread">Menghitung sebaran…</message>
   <message id="dlt-spread-band">(biasanya {1}&ndash;{2}&times; nilai ini)</message>
   <message id="dlt-spread-unavailable">Sebaran tidak dapat diperkirakan.</message>
+  <message id="dlt-detector-eff-used">Efisiensi detektor yang digunakan</message>
+  <message id="dlt-det-eff-uncert">Ketidakpastian ef. det.</message>
+  <message id="dlt-det-eff-uncert-none">tidak dinyatakan</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (dinyatakan oleh detektor)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (hanya model geometri)</message>
+  <message id="dlt-systematic-uncert-used">Ketidakpastian sistematik dipakai</message>
+  <message id="dlt-tt-detector-eff-used">Probabilitas bahwa gamma yang dipancarkan sumber, pada jarak ini, terdeteksi di puncak energi penuh: efisiensi yang benar-benar digunakan perhitungan ini.</message>
+  <message id="dlt-tt-det-eff-uncert">Ketidakpastian relatif 1-sigma dari efisiensi detektor pada energi dan jarak ini: yang dinyatakan respons detektor sendiri, ditambah, untuk detektor yang dimodelkan secara geometris, ketidakpastian yang ditambahkan model geometrinya di dekat detektor atau di luar sumbu.  Ketidakpastian yang tidak dinyatakan respons detektor, tetapi diasumsikan untuknya, tidak disertakan.</message>
+  <message id="dlt-tt-systematic-uncert-used">Ketidakpastian sistematik relatif 1-sigma yang digunakan batas Currie di atas: ketidakpastian efisiensi detektor, digabungkan secara kuadratur dengan ketidakpastian efisiensi atau jarak yang dimasukkan.</message>
+  <message id="dlt-drf-uncert-decon-excluded">Batas-batas ini tidak menyertakan ketidakpastian efisiensi respons detektor (hingga {1}% untuk garis yang digunakan); batas Currie per garis menyertakannya.</message>
 </messages>

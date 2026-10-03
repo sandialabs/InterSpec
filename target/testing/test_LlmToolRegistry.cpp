@@ -611,10 +611,11 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   BOOST_CHECK_EQUAL( detector_info["name"].get<string>(), "ORTEC Detective-EX100_LANL_025cm (40%)" );
 
   // Test with Detective-EX100 at 25 cm, Fe shielding 1.0 cm, specific energies
-  // Expected values from calibration:
-  // 185.0 keV: intrinsic=0.4749, solid_angle=0.004172, shielding_transmission=0.3204, total=0.0006348
-  // 661.7 keV: intrinsic=0.2038, solid_angle=0.004172, shielding_transmission=0.5657, total=0.0004811
-  // 1460.8 keV: intrinsic=0.1072, solid_angle=0.004172, shielding_transmission=0.6791, total=0.0003038
+  // Expected values from calibration (the solid angle is at 25 cm from the face PLUS the detector's
+  //  setback - as DetectorPeakResponse::efficiency uses; 0.004172 without the setback):
+  // 185.0 keV: intrinsic=0.4749, solid_angle=0.004012, shielding_transmission=0.3204
+  // 661.7 keV: intrinsic=0.2038, solid_angle=0.004012, shielding_transmission=0.5657
+  // 1460.8 keV: intrinsic=0.1072, solid_angle=0.004012, shielding_transmission=0.6791
   json params;
   params["Energies"] = json::array({185.0, 661.7, 1460.8});
   params["Distance"] = "25 cm";
@@ -646,7 +647,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction (distanceGeometryFactor)
   if( results[0].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[0]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[0]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -669,7 +670,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction
   if( results[1].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[1]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[1]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -692,7 +693,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction
   if( results[2].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[2]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[2]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -708,6 +709,22 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   }
 
   BOOST_REQUIRE( results[2].contains("finalEfficiency") );
+
+  // The detector factor is the DRF's own absolute efficiency at the distance - the same number
+  //  every other tool uses - and its relative uncertainty is reported beside it.
+  {
+    const shared_ptr<SpecMeas> meas = fixture.m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const shared_ptr<DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+    BOOST_REQUIRE( drf && drf->isValid() );
+    const float energies[3] = { 185.0f, 661.7f, 1460.8f };
+    for( size_t i = 0; i < 3; ++i )
+    {
+      BOOST_REQUIRE( results[i].contains("detectorAbsoluteEfficiency") );
+      BOOST_CHECK_CLOSE( results[i]["detectorAbsoluteEfficiency"].get<double>(),
+                         drf->efficiency( energies[i], 25.0*PhysicalUnits::cm ), 1.0e-3 );
+      BOOST_CHECK( results[i].contains("detectorEffFracUncert") );
+    }
+  }
 
   // Test error handling - no energies
   params = json::object();
@@ -2698,6 +2715,15 @@ BOOST_AUTO_TEST_CASE( test_executeCurrieMdaCalc_WithNuclideAndDistance )
     const double br = result["branchRatio"].get<double>();
     BOOST_CHECK_GT( br, 0.5 );
     BOOST_CHECK_LT( br, 1.0 );
+
+    // The detector efficiency uncertainty the limits used is reported, and the caller's own
+    //  additional uncertainty (none here) is echoed separately from the combined total.
+    BOOST_REQUIRE( result.contains("drfEffFracUncert") );
+    BOOST_REQUIRE( result.contains("drfStatesOwnUncert") );
+    BOOST_REQUIRE( result.contains("totalSystematicUncertainty") );
+    BOOST_CHECK_EQUAL( result["additionalUncertainty"].get<double>(), 0.0 );
+    BOOST_CHECK_CLOSE( result["totalSystematicUncertainty"].get<double>(),
+                       result["drfEffFracUncert"].get<double>(), 0.5 );
   }
   catch( const std::exception &e )
   {

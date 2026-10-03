@@ -281,6 +281,14 @@
   color: var(--interspec-warning-color);
 }
 
+/* Whether the limit includes the detector-efficiency uncertainty: informational, so de-emphasized. */
+.DetectionLimitSimple .MdaDrfUncertTxt {
+  display: block;
+  font-size: smaller;
+  font-style: italic;
+  opacity: 0.8;
+}
+
 /* Phone: shrink the advanced inputs to match the rest of the tool, and let the Calc. Method row wrap
    - "Calc. Method:" + two radio labels + "Adv." do not fit across 320px, and once it wraps the auto
    margin would strand the checkbox on the right of an otherwise empty line. */

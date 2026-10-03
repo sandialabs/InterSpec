@@ -50,6 +50,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -5657,9 +5658,32 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     input.num_upper_side_channels = 4;
   }
   
+  // The detector, when the result is to be given in activity.
+  shared_ptr<const DetectorPeakResponse> drf;
+  DrfModifyCalc::UncertSummary drf_uncert;
+  if( has_nuclide && has_distance )
+  {
+    drf = meas ? meas->detector() : nullptr;
+    if( drf && !drf->isValid() )
+      drf.reset();
+
+    if( !drf )
+      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
+
+    if( drf->isFixedGeometry() )
+      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
+
+    // What the DRF states (plus any geometry-model part; never an assumed one) - it scales the
+    //  expected counts like any other systematic, so it joins `additionalUncertainty` in quadrature.
+    drf_uncert = DrfModifyCalc::uncertSummary( *drf, static_cast<float>(energy), distance );
+  }//if( has_nuclide && has_distance )
+
+  const double drf_used_uncert = std::min( 0.99, drf_uncert.usedFrac( false ) );  //Currie needs < 1
+
   // Use the parsed parameters
   input.detection_probability = detection_probability;
-  input.additional_uncertainty = additional_uncertainty;
+  input.additional_uncertainty = static_cast<float>( std::sqrt( additional_uncertainty*additional_uncertainty
+                                                                + drf_used_uncert*drf_used_uncert ) );
 
   // Call the DetectionLimitCalc function to perform the calculation
   const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc(input);
@@ -5668,23 +5692,24 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   json result_json;
   to_json(result_json, result);
 
+  // Echo the caller's own value under its own name - the calculation used it combined with the DRF's
+  //  (`drfEffFracUncert`), and feeding that combination back in would count the DRF's twice.
+  result_json["additionalUncertainty"] = additional_uncertainty;
+  result_json["totalSystematicUncertainty"] = input.additional_uncertainty;
+
   // If nuclide and distance are provided, calculate and add activity information
-  if( has_nuclide && has_distance )
+  if( drf )
   {
-    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
-    if( drf && !drf->isValid() )
-      drf.reset();
-    
-    if( !drf )
-      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
-    
+    // So it is plain whether, and what, efficiency uncertainty went into the limits.
+    result_json["drfEffFracUncert"] = round_to_sig_figs( drf_used_uncert, 3 );
+    result_json["drfEffFracUncertModel"] = round_to_sig_figs( drf_uncert.model, 3 );
+    result_json["drfStatesOwnUncert"] = drf->statesOwnEfficiencyUncert();
+    if( drf_uncert.dataIsAssumed )
+      result_json["drfAssumedFracUncertNotUsed"] = round_to_sig_figs( drf_uncert.data, 3 );
+
     const bool fixed_geom = drf->isFixedGeometry();
-    if( fixed_geom && has_distance )
-      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
-    
     const float energy_float = static_cast<float>(energy);
-    const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(energy_float)
-                                      : drf->efficiency(energy_float, distance);
+    const double det_eff = drf->efficiency( energy_float, distance );
     
     const float live_time = spectrum->live_time();
     const double air_transmission = (distance > 0.0) 
@@ -5714,8 +5739,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
         if( distance >= 0.0 && !fixed_geom )
         {
-          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(), distance );
+          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
+                                                                    distance + drf->detectorSetback() );
           result_json["solidAngleFraction"] = round_to_sig_figs( geom_eff, 6 );
+          result_json["detectorAbsoluteEfficiency"] = round_to_sig_figs( det_eff, 6 );
         }
       }
 
@@ -6888,37 +6915,40 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
       final_efficiency *= air_attenuation;
     }
 
-    // A geometry-modeled detector (a Monte-Carlo response, an efficiency transfer, an imported
-    //  efficiency grid) knows its absolute efficiency at this distance, near field included; the
-    //  flat-disk product of solid angle and far-field intrinsic efficiency is then only a breakdown.
-    const bool use_response = has_distance && detector && detector->isValid()
-                              && !detector->isFixedGeometry() && detector->ceeloResponse();
-
-    // Calculate distance geometry factor
-    if( has_distance && detector )
-    {
-      const double detector_diameter = detector->detectorDiameter();
-      const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector_diameter, distance );
-      result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
-      if( !use_response )
-        final_efficiency *= solid_angle;
-    }
-
-    // Calculate detector intrinsic efficiency
+    // With a distance, the detector's absolute efficiency there - `efficiency()` is the DRF's own
+    //  answer: the flat-disk model, or a geometry-modeled detector's (a Monte-Carlo response, an
+    //  efficiency transfer, an imported efficiency grid), near field included.  The solid angle and
+    //  far-field intrinsic efficiency are then only a breakdown, which a geometry-modeled detector
+    //  need not multiply to.
     if( detector && detector->isValid() )
     {
       const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( energy );
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
-      if( !use_response )
-        final_efficiency *= intrinsic_eff;
-    }
 
-    if( use_response )
-    {
-      const double abs_eff = detector->efficiency( energy, distance );
-      result["detectorAbsoluteEfficiency"] = round_to_sig_figs( abs_eff, 6 );
-      final_efficiency *= abs_eff;
-    }
+      if( has_distance )
+      {
+        const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector->detectorDiameter(),
+                                                                   distance + detector->detectorSetback() );
+        result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
+
+        const double abs_eff = detector->efficiency( energy, distance );
+        result["detectorAbsoluteEfficiency"] = round_to_sig_figs( abs_eff, 6 );
+        final_efficiency *= abs_eff;
+      }else
+      {
+        final_efficiency *= intrinsic_eff;
+      }//if( has_distance ) / else
+
+      // The detector efficiency's relative uncertainty: what the DRF states, plus any geometry-model
+      //  part.  An uncertainty assumed for a DRF that states none is reported separately, not used.
+      const DrfModifyCalc::UncertSummary drf_uncert
+                              = has_distance ? DrfModifyCalc::uncertSummary( *detector, energy, distance )
+                                             : DrfModifyCalc::uncertSummary( *detector, energy );
+      result["detectorEffFracUncert"] = round_to_sig_figs( drf_uncert.usedFrac( false ), 3 );
+      result["detectorEffFracUncertModel"] = round_to_sig_figs( drf_uncert.model, 3 );
+      if( drf_uncert.dataIsAssumed )
+        result["detectorAssumedFracUncertNotUsed"] = round_to_sig_figs( drf_uncert.data, 3 );
+    }//if( detector && detector->isValid() )
 
     result["finalEfficiency"] = round_to_sig_figs( final_efficiency, 6 );
     results.push_back( result );
@@ -7912,6 +7942,10 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
   }
   result["drfSource"] = drfSourceStr;
 
+  // Whether the efficiency uncertainty reported below is one the DRF states; when it is not, a
+  //  geometry-modeled detector's uncertainty includes an assumed part that calculations leave out.
+  result["statesOwnEfficiencyUncert"] = drf->statesOwnEfficiencyUncert();
+
   // How efficiency away from the far field is modeled - which the 1/r^2 description above does not
   //  hold for once a response is attached.
   const std::shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
@@ -7946,6 +7980,15 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
       {
         const float eff = drf->farFieldIntrinsicEfficiency( energy );
         effData["intrinsicEfficiency"] = round_to_sig_figs( eff, 6 );
+
+        // Far-field relative 1-sigma uncertainty calculations use: stated, plus any geometry-model part.
+        const DrfModifyCalc::UncertSummary uncert = DrfModifyCalc::uncertSummary( *drf, energy );
+        if( uncert.valid )
+        {
+          effData["intrinsicEfficiencyFracUncert"] = round_to_sig_figs( uncert.usedFrac( false ), 3 );
+          if( uncert.dataIsAssumed )
+            effData["assumedFracUncertNotUsed"] = round_to_sig_figs( uncert.data, 3 );
+        }
       }catch( std::exception &e )
       {
         effData["intrinsicEfficiency"] = nullptr;

@@ -1014,7 +1014,7 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "additionalUncertainty": {
           "type": "number",
-          "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
+          "description": "Optional: Additional relative uncertainty to include (e.g., from the gamma branching ratio). The detector efficiency uncertainty the loaded detector response states of its own is always included when a nuclide and distance are given (reported as 'drfEffFracUncert'); this adds to it in quadrature. Defaults to 0.0.",
           "minimum": 0.0,
           "default": 0.0
         },
@@ -1122,7 +1122,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="photopeak_detection_efficiency">
-    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.  When the detector efficiency function is geometry-modeled (Monte-Carlo response, efficiency transfer, or imported efficiency grid) and a distance is given, the total uses its absolute efficiency at that distance ('detectorAbsoluteEfficiency', near-field aware), and the solid-angle and intrinsic factors are reported only as a flat-disk breakdown.</Description>
+    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.  When the detector efficiency function is geometry-modeled (Monte-Carlo response, efficiency transfer, or imported efficiency grid) and a distance is given, the total uses its absolute efficiency at that distance ('detectorAbsoluteEfficiency', near-field aware), and the solid-angle and intrinsic factors are reported only as a flat-disk breakdown.  'detectorEffFracUncert' is the relative 1-sigma uncertainty of the detector efficiency (what the detector response states, plus any geometry-model part, 'detectorEffFracUncertModel'); 'detectorAssumedFracUncertNotUsed' is present when the detector response states no uncertainty of its own, giving the assumed value that was not used.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1257,7 +1257,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="detector_efficiency_function_info">
-    <Description>Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.</Description>
+    <Description>Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.  At each sampled energy, 'intrinsicEfficiencyFracUncert' is the relative 1-sigma efficiency uncertainty calculations use; 'statesOwnEfficiencyUncert' false means the detector states none of its own, and any 'assumedFracUncertNotUsed' is an assumed value that calculations leave out.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1629,6 +1629,15 @@ Further investigation of top returned candidates is required to make sure they m
       "same_age_isotopes": {
         "type": "boolean",
         "description": "For `set_fit_options`: isotopes of the same element share the same age (e.g., U235 and U238). Default: true."
+      },
+      "drf_uncert_method": {
+        "type": "string",
+        "enum": ["None", "ErrorPropagation", "Likelihood"],
+        "description": "For `set_fit_options`: how the detector efficiency uncertainty is used. 'None': counting statistics only. 'ErrorPropagation' (default): best-fit values as for 'None', but the reported uncertainties include the efficiency uncertainty. 'Likelihood': the correlated efficiency uncertainty is folded into the fit itself."
+      },
+      "include_assumed_drf_uncert": {
+        "type": "boolean",
+        "description": "For `set_fit_options`: also use an efficiency uncertainty that is assumed for a detector response stating none of its own (e.g., GADRAS detectors). Default: false - then only the geometry-model part of such a detector's uncertainty is used. The fit result's `fit_configuration.fit_options.drf_uncert_used` says what was used ('None', 'Stated', 'GeometryModelOnly', or 'IncludesAssumed')."
       }
     },
     "required": ["operation"],
@@ -1757,7 +1766,9 @@ Further investigation of top returned candidates is required to make sure they m
             { "required": ["attenuate_for_air"] },
             { "required": ["multiple_nucs_contribute_to_peaks"] },
             { "required": ["background_peak_subtract"] },
-            { "required": ["same_age_isotopes"] }
+            { "required": ["same_age_isotopes"] },
+            { "required": ["drf_uncert_method"] },
+            { "required": ["include_assumed_drf_uncert"] }
           ]
         }
       }

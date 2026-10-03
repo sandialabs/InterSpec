@@ -1461,7 +1461,11 @@ public:
    near-field penalty) are fully correlated common modes in it, a fitted
    curve's coefficient covariance is strongly correlated between nearby
    energies; `model_part`, when given, receives the envelope-only matrix.
-   Empty if the detector has no uncertainty information.
+   When #dropsAssumedEffUncert, the returned matrix IS the envelope-only one.
+   Empty if the detector has no uncertainty information, or it is all zero.
+
+   TODO: volumetric sources use the point-source position's covariance; the per-element sigma of
+   the line integral is discarded, so close-in extended sources are likely under-covered.
 
    Consumed by #peakEffFracUncerts (displayed marginal pulls) and by
    ShieldingSourceFitCalc's GLS whitening of the fit residuals, so a
@@ -1469,6 +1473,13 @@ public:
    averaged down by sqrt(num-peaks).
    */
   std::vector<double> peakEffFracCovariance( std::vector<double> *model_part = nullptr ) const;
+
+  /** Whether #peakEffFracCovariance leaves out an assumed efficiency uncertainty: the DRF states
+   none of its own (DetectorPeakResponse::statesOwnEfficiencyUncert) and
+   `ShieldingSourceFitOptions::drf_uncert_include_assumed` is false, so only the geometry-model
+   envelope is used.
+   */
+  bool dropsAssumedEffUncert() const;
 
   /** Square root of the diagonal of #peakEffFracCovariance - the per-peak
    1-sigma fractional efficiency uncertainty envelope; `model_uncerts`, when

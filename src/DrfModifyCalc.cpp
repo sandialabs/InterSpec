@@ -1084,9 +1084,37 @@ UncertSummary uncertSummary( const DetectorPeakResponse &drf, const float energy
   // Whether anything the DRF itself states backs up the data-derived part - see the field's comment.
   //  One implementation, shared with DetectorPeakResponse::toJSON, so the chart cannot call a number
   //  "from data" that the chip calls assumed.
-  answer.dataIsAssumed = (answer.data > 0.0) && !drf.statesOwnEfficiencyUncert();
+  answer.statesOwn = drf.statesOwnEfficiencyUncert();
+  answer.dataIsAssumed = (answer.data > 0.0) && !answer.statesOwn;
 
   return answer;
 }//uncertSummary(...)
+
+
+UncertSummary uncertSummary( const DetectorPeakResponse &drf, const float energy,
+                             const double distance )
+{
+  UncertSummary answer;
+
+  if( !drf.isValid() || !(energy > 0.0f) )
+    return answer;
+
+  const DetectorPeakResponse::EffEval eval = drf.efficiencyEval( energy, distance );
+  if( !(eval.value > 0.0) || std::isinf( eval.value ) )
+    return answer;
+
+  const double total = eval.sigma / eval.value;
+  const double model = eval.sigmaModel / eval.value;
+
+  answer.valid = true;
+  answer.energy = energy;
+  answer.total = (total > 0.0) && !std::isinf( total ) ? total : 0.0;
+  answer.model = (model > 0.0) && !std::isinf( model ) ? std::min( model, answer.total ) : 0.0;
+  answer.data = std::sqrt( std::max( 0.0, answer.total*answer.total - answer.model*answer.model ) );
+  answer.statesOwn = drf.statesOwnEfficiencyUncert();
+  answer.dataIsAssumed = (answer.data > 0.0) && !answer.statesOwn;
+
+  return answer;
+}//uncertSummary( drf, energy, distance )
 
 }//namespace DrfModifyCalc
