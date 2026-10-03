@@ -479,6 +479,19 @@ namespace ExperimentalAutomatedPeakSearch
                                 std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 
 
+  /** The search's last step for a high-resolution spectrum: removes peaks whose width does not fit the
+   others.  With more than five peaks a resolution function is fit to them and a peak far from it is
+   removed (or split in two); with three to five, a peak at least twice as wide as the reference width
+   of a higher-energy peak is removed, the reference being the highest-energy peak no narrower than
+   `PeakFitUtils::ge_fano_limited_fwhm` (peaks above it are kept).  Fewer than three are returned as is.
+   */
+  std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highres(
+                          const std::shared_ptr<const SpecUtils::Measurement> meas,
+                          std::vector<std::shared_ptr<const PeakDef> > input,
+                          std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                          const std::shared_ptr<const std::atomic<bool>> &cancel_flag );
+
+
   /** Recovers real background peaks sitting underneath foreground peaks.
 
    For each foreground peak that has NO matching background automated-search peak, this actively

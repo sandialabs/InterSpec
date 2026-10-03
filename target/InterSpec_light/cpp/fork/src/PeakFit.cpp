@@ -268,8 +268,13 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
   {
     //We cant really fit for resolution here, but we can do some sanity checks
     //  To make sure peaks are thinner than higher energy peaks.
-    double maxwidth = input.back()->sigma();
-    double maxWidthMean = input.back()->mean();
+    //  The reference width is that of the highest-energy peak whose width is physically possible: a weak
+    //  peak can fit far narrower than the detector's resolution, and as the reference it would remove the
+    //  real peaks below it.  Peaks above the reference are kept.
+    std::sort( begin(input), end(input), &PeakDef::lessThanByMeanShrdPtr );
+
+    bool have_reference = false;
+    double maxwidth = 0.0, maxWidthMean = 0.0;
     vector<std::shared_ptr<const PeakDef> > answer;
     
     for( int i = static_cast<int>(input.size()) - 1; i >= 0; --i )
@@ -277,6 +282,18 @@ std::vector<std::shared_ptr<const PeakDef> > filter_anomolous_width_peaks_highre
       const double sigma = input[i]->sigma();
       const double sigmaUncert = input[i]->sigmaUncert();
       
+      if( !have_reference )
+      {
+        answer.push_back( input[i] );
+        if( input[i]->fwhm() >= PeakFitUtils::ge_fano_limited_fwhm( input[i]->mean() ) )
+        {
+          have_reference = true;
+          maxwidth = sigma;
+          maxWidthMean = input[i]->mean();
+        }
+        continue;
+      }//if( !have_reference )
+
       if( sigma < 2.0*maxwidth )  //2.0 is made up
       {
         answer.push_back( input[i] );

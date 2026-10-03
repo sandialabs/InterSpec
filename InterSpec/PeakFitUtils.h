@@ -56,6 +56,13 @@ float czt_fwhm_fcn( const float energy );
 /** Gives approximate nominal FWHM for a HPGe detector */
 float hpge_fwhm_fcn( const float energy );
 
+/** The narrowest FWHM, in keV, a semiconductor peak at `energy` (keV) can physically have: the Fano-limited
+ charge-carrier statistics of germanium, 2.355*sqrt(F*w*E) with w = 2.96 eV per pair and F = 0.05 (below
+ every measured Fano factor of Ge).  Ge has the smallest F*w of any semiconductor (Si, CdTe and CZT are
+ larger), so a fitted width below this is a statistical fluctuation, not the detector's resolution.
+ */
+double ge_fano_limited_fwhm( const double energy );
+
 
 /** Energies below a photon's own at which its NaI (or CsI) iodine K x-ray escape peaks sit: the
  intensity-weighted K-alpha (28.61/28.32 keV) and K-beta (32.2/33.0 keV) lines.
