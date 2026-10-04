@@ -44,8 +44,8 @@ infeasible. Counts in the original audit snapshot (1052 topology-bearing violati
 occurrences, and 1897 distinct parent->child candidates -> 1542 valid / 355 rejected) are retained in
 the study artifacts for provenance, but are **not current effective-tree counts**: they used the old
 XML and an earlier acceptance policy. The final regenerated-XML test reports per-branch-instance,
-disjoint audit categories: **4504 valid, 817 raw-only, 1782 partial-only, and 1328 both raw+partial**;
-accepted graphs contain **323 E0 repairs and 801 intensity caps**. Those categories deliberately do
+disjoint audit categories: **4567 valid, 754 raw-only, 1782 partial-only, and 1328 both raw+partial**;
+accepted graphs contain **323 E0 repairs and 801 intensity caps** (2026-10-03, after the A=234 review). Those categories deliberately do
 not collapse into the historical distinct-pair denominator; a final distinct parent->child recount
 is still needed before quoting a replacement rejection percentage. Rejected branches fall back to
 the pairwise-coincidence model described above.
@@ -54,7 +54,10 @@ Historically rejected examples with parent half-life > 1 y include **U-235 -> Th
 (current raw_total_feed 2.37344), Th-229 -> Ra-225 (2.13),
 Hf-172 -> Lu-172m (2.01), Pu-241 -> U-237 (1.96), Pa-231 -> Ac-227 (1.58), Sb-125 -> Te-125 (1.05)**,
 Am-242m, Cf-249, Bk-247, Cm-243, Np-235, Ho-166m, Po-208, Sn-126 (two pairs), Es-252. Shorter-lived
-but notable: Pa-234 -> U-234 (3.31, T½ 6.7 h) and Pa-234m -> U-234 (1.10, T½ 1.16 min). Counting
+but notable: Pa-234 -> U-234 (1.25, T½ 6.7 h; was 3.31 before the 2026-10 A=234 review). What is left
+comes partly from its 880.5/980.3 keV doublets, which have no GEANT4 level, and partly from the evaluation
+itself: placed on the ENSDF scheme, its lines still give 1.14. Pa-234m -> U-234 (was 1.10)
+is now valid: its 43.5/41.82 keV records held transition flux as photon intensity. Counting
 distinct parent->child pairs, a further 36 have T½ > 1 d and 41 T½ > 1 h. **Pu-241 matters for any
 reactor-grade plutonium and
 Sb-125 is a common fission product** — both silently switch estimator model. U-235's summing factors

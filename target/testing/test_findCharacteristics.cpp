@@ -157,7 +157,7 @@ BOOST_AUTO_TEST_CASE( testFindCharacteristics )
   vector<string> required_results = { "I132 S.E. 2614.50 keV", "Th232 S.E. 2614.53 keV",
     "Th228 S.E. 2614.53 keV", "U232 S.E. 2614.53 keV", "Tl208 S.E. 2614.53 keV",
     "Pb212 S.E. 2614.53 keV", "Pb(n,g) S.E. 2614.53 keV", "Pb(n,n) S.E. 2614.68 keV",
-    "U238 2101.90 keV", "Co62m 2104.60 keV", "Y92 2105.60 keV"
+    "U238 2102.14 keV", "Co62m 2104.60 keV", "Y92 2105.60 keV"
   };
   for( const string &required : required_results )
     check_results_contain( required, char_nucs );
