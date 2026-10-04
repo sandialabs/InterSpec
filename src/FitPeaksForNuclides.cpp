@@ -17401,7 +17401,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             static_cast<float>(fwhm_eval_energy), fwhm_form, fwhm_coefficients );
 
         float min_sigma_width, max_sigma_width;
-        expected_peak_width_limits( roi_info.fwhm,
+        expected_peak_width_limits( static_cast<float>(roi_info.center_energy),
           det_type,
           orig_foreground, min_sigma_width, max_sigma_width );
 
@@ -23311,7 +23311,7 @@ PeakFitResult fit_peaks_for_nuclides(
             static_cast<float>(fwhm_eval_energy), fwhmFnctnlForm, fwhm_coefficients );
 
         float min_sigma_width, max_sigma_width;
-        expected_peak_width_limits( roi_info.fwhm,
+        expected_peak_width_limits( static_cast<float>(roi_info.center_energy),
           det_type,
           foreground, min_sigma_width, max_sigma_width );
 
