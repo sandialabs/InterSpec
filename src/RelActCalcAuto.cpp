@@ -28122,6 +28122,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
     vector<double> effective_means, effective_sigmas, effective_res_sigmas, effective_amps;
     vector<vector<double>> effective_curve_amps; //[cluster][rel_eff_index] -> that curves model counts in the cluster
+    // Each cluster's shape: that of its largest peak when that peak's shape is not `options.skew_type` (i.e., a
+    //  Voigt x-ray when `Options::lorentzian_xrays`), otherwise `options.skew_type` with `peak_skews`.
+    vector<pair<PeakDef::SkewType,vector<double>>> effective_skews;
     vector<pair<double,double>> clusters;
     vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
     for( size_t range_index = 0; range_index < clustered_ranges.size(); ++range_index )
@@ -28142,6 +28145,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         vector<double> curve_amps( num_curves, 0.0 );
         vector<pair<size_t,size_t>> range_peak_indices;
         vector<double> means, sigmas, amps;
+        const PeakDef *cluster_largest = nullptr;
         for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
         {
           const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index]; //Note: do not include free-floating peaks.
@@ -28160,7 +28164,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
             if( (energy < range.first) || (energy > range.second) )
               continue;
 
-            if( p.amplitude() > max_peak_amp )
+            // Only a peak of `options.skew_type` has its skew parameters in that type's order (a Voigt x-ray's
+            //  first parameter is its Lorentzian width).
+            if( (p.skewType() == options.skew_type) && (p.amplitude() > max_peak_amp) )
             {
               max_peak_amp = p.amplitude();
               for( int skew_index = 0; skew_index < static_cast<int>(num_skew); ++skew_index )
@@ -28170,6 +28176,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
                 peak_skews[skew_index] = p.coefficient( par );
               }
             }//if( p.amplitude() > max_counts )
+
+            if( !cluster_largest || (p.amplitude() > cluster_largest->amplitude()) )
+              cluster_largest = &p;
 
             num_peaks_in_range += 1;
             const double w = p.amplitude();
@@ -28209,6 +28218,17 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         effective_curve_amps.push_back( curve_amps );
         peak_indices.push_back( range_peak_indices );
         clusters.push_back( range );
+
+        assert( cluster_largest );
+        pair<PeakDef::SkewType,vector<double>> cluster_skew{ options.skew_type, {} };
+        if( cluster_largest->skewType() != options.skew_type )
+        {
+          cluster_skew.first = cluster_largest->skewType();
+          for( size_t s = 0; s < PeakDef::num_skew_parameters( cluster_skew.first ); ++s )
+            cluster_skew.second.push_back( cluster_largest->coefficient(
+                        static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s ) ) );
+        }
+        effective_skews.push_back( std::move(cluster_skew) );
       }//if( cluseter in in ROI )
     }//for( pair<double,double> &range : clustered_ranges )
     
@@ -28261,7 +28281,33 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     const float * const channel_counts = &((*spectrum)[channel_range.first]);
     const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
 
-    if( is_cdf_step )
+    // Clusters of `options.skew_type` use the ROI's skew parameters.
+    for( pair<PeakDef::SkewType,vector<double>> &cluster_skew : effective_skews )
+    {
+      if( cluster_skew.first == options.skew_type )
+        cluster_skew.second = peak_skews;
+    }
+
+    const bool mixed_shapes = std::any_of( begin(effective_skews), end(effective_skews),
+      [&options]( const pair<PeakDef::SkewType,vector<double>> &s ){ return s.first != options.skew_type; } );
+
+    if( mixed_shapes )
+    {
+      // Each cluster keeps its own shape (e.g., Voigt x-rays among the gammas), which neither the single-shape
+      //  LLS nor the L-M fit below supports; a CDF step's coefficients are held at the solution's values.
+      const size_t num_step = PeakContinuum::num_cdf_step_pars( roi.continuum_type );
+      const vector<double> &cont_pars = continuum->parameters();
+      assert( cont_pars.size() >= num_step );
+      const vector<double> step_coeffs( end(cont_pars) - num_step, end(cont_pars) );
+
+      PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
+                                      roi.continuum_type, step_coeffs.empty() ? nullptr : step_coeffs.data(),
+                                      ref_energy, effective_means, effective_sigmas, fixed_amp_peaks,
+                                      options.skew_type, skew_parameters, fit_amps, fit_continuum_coefs,
+                                      fit_amp_uncert, fit_continuum_uncerts, peak_counts, &effective_skews );
+      fit_continuum_coefs.insert( end(fit_continuum_coefs), begin(step_coeffs), end(step_coeffs) );
+      fit_continuum_uncerts.resize( fit_continuum_coefs.size(), 0.0 );
+    }else if( is_cdf_step )
     {
       // For CDF step types, step_coeff must be optimized by a non-linear solver (it can't be solved
       //  by fit_amp_and_offset_imp which takes step_coeff as a known input).  So we construct PeakDef
@@ -28367,12 +28413,12 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     for( size_t i = 0; i < fit_amps.size(); ++i )
     {
       PeakDef p( effective_means[i], effective_sigmas[i], std::max(0.0, fit_amps[i]) );
-      p.setSkewType( options.skew_type );
-      for( size_t s = 0; s < num_skew; ++s )
+      p.setSkewType( effective_skews[i].first );
+      for( size_t s = 0; s < effective_skews[i].second.size(); ++s )
       {
         const PeakDef::CoefficientType ct
           = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s );
-        p.set_coefficient( peak_skews[s], ct );
+        p.set_coefficient( effective_skews[i].second[s], ct );
       }
       p.setContinuum( new_continuum );
       cluster_peaks.push_back( std::move(p) );
