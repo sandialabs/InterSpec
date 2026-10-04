@@ -594,6 +594,152 @@ T physical_model_basis_correction( const double energy,
 }//physical_model_basis_correction(...)
 
 
+/** Exponential integral E1(x) for x > 0 (doubles or Ceres Jets): power series for x <= 1, else a continued fraction
+ (Numerical Recipes 6.3), both with a fixed term count so derivatives propagate. */
+template<typename T>
+T expint_e1( const T &x )
+{
+  using namespace std;
+  using namespace ceres;
+
+  if( x <= T(1.0) )
+  {
+    T sum( 0.0 ), term( 1.0 );
+    for( int k = 1; k <= 30; ++k )
+    {
+      term *= -x / T(k);
+      sum += term / T(k);
+    }
+    return T(-0.5772156649015329) - log( x ) - sum;
+  }//if( x <= 1 )
+
+  // Modified Lentz evaluation of the continued fraction for E_1
+  const double tiny = 1.0E-300;
+  T b = x + T(1.0);
+  T c = T(1.0 / tiny);
+  T d = T(1.0) / b;
+  T h = d;
+  for( int i = 1; i <= 60; ++i )
+  {
+    const double an = -static_cast<double>(i) * i;
+    b += T(2.0);
+    d = T(1.0) / (T(an) * d + b);
+    c = b + T(an) / c;
+    h *= c * d;
+  }
+  return h * exp( -x );
+}//expint_e1(...)
+
+
+/** E2(x) = exp(-x) - x E1(x) and E3(x) = (exp(-x) - x E2(x))/2, for x >= 0. */
+template<typename T>
+T expint_e2( const T &x )
+{
+  using namespace std;
+  using namespace ceres;
+  if( x <= T(0.0) )
+    return T(1.0);
+  return exp( -x ) - x * expint_e1( x );
+}
+
+template<typename T>
+T expint_e3( const T &x )
+{
+  using namespace std;
+  using namespace ceres;
+  if( x <= T(0.0) )
+    return T(0.5);
+  return T(0.5) * (exp( -x ) - x * expint_e2( x ));
+}
+
+
+/** 40-point Gauss-Legendre nodes and weights on [0,1]. */
+inline const std::pair<std::vector<double>,std::vector<double>> &gauss_legendre_unit_40()
+{
+  static const std::pair<std::vector<double>,std::vector<double>> nodes_weights = [](){
+    const int n = 40;
+    std::vector<double> x( n ), w( n );
+    for( int i = 0; i < n; ++i )
+    {
+      double z = std::cos( 3.141592653589793 * (i + 0.75) / (n + 0.5) ), dp = 0.0;
+      for( int iter = 0; iter < 100; ++iter )
+      {
+        double p1 = 1.0, p2 = 0.0;
+        for( int j = 1; j <= n; ++j )
+        {
+          const double p3 = p2;
+          p2 = p1;
+          p1 = ((2.0*j - 1.0) * z * p2 - (j - 1.0) * p3) / j;
+        }
+        dp = n * (z * p1 - p2) / (z*z - 1.0);
+        const double dz = p1 / dp;
+        z -= dz;
+        if( std::fabs( dz ) < 1.0E-15 )
+          break;
+      }
+      x[i] = 0.5 * (1.0 - z);
+      w[i] = 1.0 / ((1.0 - z*z) * dp * dp);   //(2/((1-z^2) dp^2)) on [-1,1], halved for [0,1]
+    }
+    return std::make_pair( x, w );
+  }();
+  return nodes_weights;
+}//gauss_legendre_unit_40()
+
+
+/** Self-attenuation of fluorescence x-rays induced in a self-attenuating slab, relative to the uniform-source factor
+ (1 - exp(-mu*A))/(mu*A) that is used for gammas.
+
+ Fluorescence is produced where the source's own photons (above the fluorescing element's K edge) are photo-absorbed,
+ so it is depleted near the faces, where those photons escape: for uniform isotropic emission in a laterally infinite
+ slab of areal density A, the uncollided flux of a line with attenuation mu_g at depth z is proportional to
+ 2 - E2(mu_g z) - E2(mu_g (A - z)).  The production density is the sum of these, weighted by `exciting_weight`
+ (relative rate x K-shell photoabsorption / mu_g), and fluorescence escapes toward the detector with exp(-mu_f z).
+ For thick U3O8 this raises K-beta/K-alpha1 by ~3-4 %; for thin layers the factor goes to 1.  The detector
+ efficiency, external attenuation and any overall scale (a free fluorescence activity) are unaffected.
+
+ @param mu_f Attenuation coefficient of the material at the fluorescence energy, per unit areal density.
+ @param exciting_mu Attenuation coefficients of the exciting lines, per unit areal density.
+ @param exciting_weight Relative production weights of the exciting lines (same size as `exciting_mu`).
+ @param areal_density The slab's areal density, in the units the coefficients are per.
+ */
+template<typename T>
+T fluorescence_self_atten_correction( const double mu_f, const std::vector<double> &exciting_mu,
+                                      const std::vector<T> &exciting_weight, const T &areal_density )
+{
+  using namespace std;
+  using namespace ceres;
+
+  assert( exciting_mu.size() == exciting_weight.size() );
+  if( exciting_mu.empty() || !(mu_f > 0.0) || (areal_density <= T(1.0E-6) / T(mu_f)) )
+    return T(1.0);
+
+  // Mean production density along depth, from the analytic integral of the flux profile
+  T total_production( 0.0 );
+  for( size_t g = 0; g < exciting_mu.size(); ++g )
+    total_production += exciting_weight[g] * (T(2.0) * areal_density
+                         - (T(1.0) - T(2.0) * expint_e3( T(exciting_mu[g]) * areal_density )) / T(exciting_mu[g]));
+  if( !(total_production > T(0.0)) )
+    return T(1.0);
+
+  // Production density averaged over the escape-weighted depth: z(s) = -ln(1 - s (1 - exp(-mu_f A)))/mu_f maps a
+  //  uniform s in [0,1] onto exp(-mu_f z), concentrating the nodes where escaping fluorescence is made.
+  const pair<vector<double>,vector<double>> &gl = gauss_legendre_unit_40();
+  const T one_minus_trans = T(1.0) - exp( -T(mu_f) * areal_density );
+  T escape_weighted( 0.0 );
+  for( size_t i = 0; i < gl.first.size(); ++i )
+  {
+    const T z = -log( T(1.0) - T(gl.first[i]) * one_minus_trans ) / T(mu_f);
+    T production( 0.0 );
+    for( size_t g = 0; g < exciting_mu.size(); ++g )
+      production += exciting_weight[g] * (T(2.0) - expint_e2( T(exciting_mu[g]) * z )
+                                          - expint_e2( T(exciting_mu[g]) * (areal_density - z) ));
+    escape_weighted += T(gl.second[i]) * production;
+  }
+
+  return areal_density * escape_weighted / total_production;
+}//fluorescence_self_atten_correction(...)
+
+
 template<typename T>
 T eval_physical_model_eqn_imp( const double energy,
                                 std::optional<RelActCalc::PhysModelShield<T>> self_atten,

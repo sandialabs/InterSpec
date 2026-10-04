@@ -395,6 +395,13 @@ add_test( NAME TRelActCalcAuto_MicroCalFwhm
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalc_FluorescenceDepth test_RelActCalc_FluorescenceDepth.cpp )
+target_link_libraries( test_RelActCalc_FluorescenceDepth PRIVATE InterSpecLib )
+add_test( NAME TRelActCalc_FluorescenceDepth
+  COMMAND $<TARGET_FILE:test_RelActCalc_FluorescenceDepth> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_XrayObsEff test_RelActCalcAuto_XrayObsEff.cpp )
 target_link_libraries( test_RelActCalcAuto_XrayObsEff PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_XrayObsEff

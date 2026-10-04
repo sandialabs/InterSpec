@@ -2824,6 +2824,40 @@ struct RelActAutoCostFcn
   /** How each of `m_energy_ranges` came from the input ROIs; same size and order as `m_energy_ranges`. */
   std::vector<RelActCalcAuto::RoiResolutionInfo> m_roi_info;
 
+  /** The fluorescence source-depth model (`RelActCalc::fluorescence_self_atten_correction`) for an element source
+   on a Physical-model curve whose self-attenuating material contains that element; see
+   `setup_fluorescence_depth_model()`.
+   */
+  struct FluorescenceDepth
+  {
+    size_t rel_eff_index = 0;
+    const SandiaDecay::Element *element = nullptr;
+
+    /** The curve's photon lines above the element's K edge: their source, attenuation coefficient (per areal
+     density), and yield x photoelectric absorption / attenuation - the activity is applied when evaluating. */
+    std::vector<RelActCalcAuto::SrcVariant> exciting_source;
+    std::vector<double> exciting_mu, exciting_base_weight;
+
+    /** The material's attenuation coefficient at each of the element's fluorescence energies. */
+    std::vector<std::pair<double,double>> mu_at_energy;
+
+    double mu_at( const double energy ) const
+    {
+      assert( !mu_at_energy.empty() );
+      const auto nearest = std::min_element( begin(mu_at_energy), end(mu_at_energy),
+        [energy]( const std::pair<double,double> &a, const std::pair<double,double> &b ){
+          return fabs(a.first - energy) < fabs(b.first - energy);
+      } );
+      return nearest->second;
+    }
+  };//struct FluorescenceDepth
+
+  std::vector<FluorescenceDepth> m_fluorescence_depth;
+
+  /** The fluorescence lines of an element in the fit must span at least this many keV for the source-depth model to
+   be used; below it the correction is ~constant over the lines, which the free fluorescence activity absorbs. */
+  static constexpr double sm_fluorescence_depth_min_span_kev = 5.0;
+
   /** Per-element mass-fraction constraint block: the exact "sigma-block" reparameterization.
 
    Each range-constrained (lower < upper) nuclide of the element owns one activity slot; the
@@ -3516,7 +3550,121 @@ struct RelActAutoCostFcn
       m_aged_gammas_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
       m_aged_gamma_derivative_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
     }
+
+    setup_fluorescence_depth_model();
   }//RelActAutoCostFcn constructor.
+
+
+  /** Fills `m_fluorescence_depth`: fluorescence x-rays of an element that is part of a curve's self-attenuating
+   material are produced where the source's own photons are absorbed, which is not uniform in depth, so they get
+   `RelActCalc::fluorescence_self_atten_correction` on top of the uniform-source self-attenuation.
+
+   Used only when (1) the curve is a Physical model with a self-attenuating material containing the element,
+   (2) the element is a source of the curve, (3) its lines in the ROIs span at least
+   `sm_fluorescence_depth_min_span_kev` (otherwise the correction is a constant the free fluorescence activity takes
+   up), and (4) the curve has nuclide lines above the element's K edge to excite it.  No fit parameters are added:
+   the correction follows the fitted areal density and activities.  Bremsstrahlung (e.g., Pa-234m betas in DU) also
+   excites, but with nearly the same depth profile, so it changes the fluorescence amount, not the line pattern.
+   */
+  void setup_fluorescence_depth_model()
+  {
+    m_fluorescence_depth.clear();
+
+    for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[re];
+      if( (curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || !curve.phys_model_self_atten )
+        continue;
+
+      const shared_ptr<const Material> material = curve.phys_model_self_atten->material;
+      if( !material || !(material->density > 0.0f) )
+        continue;
+
+      const auto mu_of = [&material]( const double energy ) -> double {
+        return GammaInteractionCalc::transmition_length_coefficient( material.get(), static_cast<float>(energy) )
+               / material->density;
+      };
+
+      for( const NucInputGamma &src : m_nuclides[re] )
+      {
+        const SandiaDecay::Element * const el = RelActCalcAuto::element( src.source );
+        if( !el || !src.nominal_gammas || src.nominal_gammas->empty() )
+          continue;
+
+        bool in_material = false;
+        for( const Material::ElementFractionPair &ef : material->elements )
+          in_material |= (ef.first && (ef.first->atomicNumber == el->atomicNumber) && (ef.second > 0.0f));
+        for( const Material::NuclideFractionPair &nf : material->nuclides )
+          in_material |= (nf.first && (nf.first->atomicNumber == el->atomicNumber) && (nf.second > 0.0f));
+        if( !in_material )
+          continue;
+
+        double lowest_in_roi = std::numeric_limits<double>::max(), highest_in_roi = -lowest_in_roi;
+        double highest_line = 0.0;
+        for( const NucInputGamma::EnergyYield &ey : *src.nominal_gammas )
+        {
+          highest_line = std::max( highest_line, ey.energy );
+          for( const RoiRangeChannels &r : m_energy_ranges )
+          {
+            if( (ey.energy >= r.lower_energy) && (ey.energy <= r.upper_energy) )
+            {
+              lowest_in_roi = std::min( lowest_in_roi, ey.energy );
+              highest_in_roi = std::max( highest_in_roi, ey.energy );
+            }
+          }
+        }//for( loop over the element's fluorescence lines )
+
+        if( !((highest_in_roi - lowest_in_roi) >= sm_fluorescence_depth_min_span_kev) )
+          continue;
+
+        // The element's highest K line (K-P) lies within ~30 eV of its K edge.
+        const double k_edge = highest_line + 0.05;
+
+        FluorescenceDepth info;
+        info.rel_eff_index = re;
+        info.element = el;
+        for( const NucInputGamma &exciter : m_nuclides[re] )
+        {
+          if( !RelActCalcAuto::nuclide( exciter.source ) || !exciter.nominal_gammas )
+            continue;
+
+          vector<pair<double,double>> lines; //{mu, yield x photo-absorption / mu}
+          for( const NucInputGamma::EnergyYield &ey : *exciter.nominal_gammas )
+          {
+            if( (ey.energy <= k_edge) || !(ey.yield > 0.0) )
+              continue;
+
+            const double mu = mu_of( ey.energy );
+            const double photo = MassAttenuation::massAttenuationCoefficientElement( el->atomicNumber,
+                                   static_cast<float>(ey.energy), MassAttenuation::GammaEmProcces::PhotoElectric );
+            if( (mu > 0.0) && (photo > 0.0) )
+              lines.emplace_back( mu, ey.yield * photo / mu );
+          }//for( loop over the exciting nuclide's lines )
+
+          // Lines exciting < 0.1 % as much as this source's strongest only cost evaluation time
+          double max_weight = 0.0;
+          for( const pair<double,double> &l : lines )
+            max_weight = std::max( max_weight, l.second );
+          for( const pair<double,double> &l : lines )
+          {
+            if( l.second < 1.0E-3 * max_weight )
+              continue;
+            info.exciting_source.push_back( exciter.source );
+            info.exciting_mu.push_back( l.first );
+            info.exciting_base_weight.push_back( l.second );
+          }
+        }//for( loop over the curve's sources )
+
+        if( info.exciting_mu.empty() )
+          continue;
+
+        for( const NucInputGamma::EnergyYield &ey : *src.nominal_gammas )
+          info.mu_at_energy.emplace_back( ey.energy, mu_of( ey.energy ) );
+
+        m_fluorescence_depth.push_back( std::move(info) );
+      }//for( const NucInputGamma &src : m_nuclides[re] )
+    }//for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+  }//void setup_fluorescence_depth_model()
 
 
 
@@ -15222,6 +15370,26 @@ struct RelActAutoCostFcn
         const T rel_act = relative_activity( src_info.source, rel_eff_index, x );
         //cout << "peaks_for_energy_range_imp: Relative activity of " << src_info.name()
         //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
+
+        // The source-depth model for this element's fluorescence lines, if it applies (see setup_fluorescence_depth_model())
+        const FluorescenceDepth *fluor_depth = nullptr;
+        T fluor_areal_density( 0.0 );
+        vector<T> fluor_weights;
+        for( size_t i = 0; el && (i < m_fluorescence_depth.size()); ++i )
+        {
+          if( (m_fluorescence_depth[i].rel_eff_index == rel_eff_index) && (m_fluorescence_depth[i].element == el) )
+            fluor_depth = &m_fluorescence_depth[i];
+        }
+        if( fluor_depth )
+        {
+          const PhysModelRelEqnDef<T> phys = make_phys_eqn_input( rel_eff_index, x );
+          assert( phys.self_atten.has_value() );
+          if( phys.self_atten.has_value() )
+            fluor_areal_density = phys.self_atten->areal_density;
+          for( size_t i = 0; i < fluor_depth->exciting_mu.size(); ++i )
+            fluor_weights.push_back( T(fluor_depth->exciting_base_weight[i])
+                                     * relative_activity( fluor_depth->exciting_source[i], rel_eff_index, x ) );
+        }//if( fluor_depth )
         
         T nuc_age;
         if( fixed_age )
@@ -15310,7 +15478,10 @@ struct RelActAutoCostFcn
           }
           
           // We compute the relative efficiency and FWHM based off of "true" energy
-          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x );
+          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x )
+                * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_depth->mu_at( gamma.energy ),
+                                                fluor_depth->exciting_mu, fluor_weights, fluor_areal_density )
+                               : T(1.0));
           // Membership and fixed detector-domain exclusions were frozen in the constructor.  A
           // non-finite value here therefore describes an invalid trial, not a reason to mutate the
           // model by dropping this line for one scalar/Jet pass.
