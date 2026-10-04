@@ -1026,8 +1026,7 @@ struct Options
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
    * When true, x-ray peaks will use VoigtPlusBortel skew type with the
-   * Lorentzian HWHM set to the natural x-ray linewidth (plus thermal/recoil
-   * Doppler broadening for decay x-rays).
+   * Lorentzian HWHM set to the natural x-ray linewidth.
    *
    * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
    * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception

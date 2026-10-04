@@ -602,8 +602,6 @@ double get_xray_lorentzian_width( const SandiaDecay::Element *element, const dou
 double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition,
                                        const double xray_energy_kev )
 {
-  // Returns total x-ray linewidth (natural + alpha recoil Doppler) for decay x-rays
-  // Accounts for both natural linewidth and nuclear recoil from alpha decay
 
   if( !transition )
   {
@@ -650,12 +648,6 @@ double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition
     return -1.0;
   }
 
-  // Check if this is an alpha decay and compute recoil Doppler broadening
-  const bool is_alpha_decay = (transition->mode == SandiaDecay::AlphaDecay
-                                || transition->mode == SandiaDecay::BetaAndAlphaDecay
-                                || transition->mode == SandiaDecay::ElectronCaptureAndAlphaDecay
-                                || transition->mode == SandiaDecay::BetaPlusAndAlphaDecay);
-
   // Determine which element emits the x-ray
   // For most decays (alpha, beta, electron capture, etc.), the x-ray is emitted by the
   // daughter atom after the decay process creates an atomic vacancy. The only exception
@@ -684,77 +676,12 @@ double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition
     return -1.0;
   }
 
-  // Get natural linewidth (same for parent and daughter if same element)
-  const double natural_hwhm_kev = get_xray_lorentzian_width( element, xray_energy_kev, energy_tolerance );
-  if( natural_hwhm_kev < 0.0 )
-    return -1.0;
-
-  if( !is_alpha_decay )
-  {
-    // For non-alpha decays, return only natural width
-    return natural_hwhm_kev;
-  }
-
-  // For alpha decays, compute recoil Doppler broadening
-  // The x-ray is emitted by the daughter nucleus after recoil
-  const SandiaDecay::Nuclide *parent = transition->parent;
-  const SandiaDecay::Nuclide *daughter = transition->child;
-  
-  if( !parent || !daughter )
-  {
-    // If no parent or daughter specified, use natural width only
-    return natural_hwhm_kev;
-  }
-
-  // Compute intensity-weighted recoil Doppler broadening for all alpha energies
-  // Different alpha energies give different recoil velocities, so we compute the
-  // Doppler width for each alpha and combine them weighted by intensity
-  const double alpha_mass_amu = 4.002603;  // Alpha particle mass in amu
-  const double amu_to_kev = 931494.0;  // keV per amu (1 amu·c² = 931.494 MeV)
-  const double sqrt_2ln2 = 1.177410022515;  // sqrt(2×ln(2))
-  const double daughter_mass_amu = daughter->massNumber;
-
-  double weighted_hwhm_sum = 0.0;
-  double total_alpha_intensity = 0.0;
-  size_t num_alpha_particles = 0;
-
-  // Single loop: find alpha particles and compute their recoil Doppler contributions
-  for( const SandiaDecay::RadParticle &particle : transition->products )
-  {
-    if( particle.type == SandiaDecay::AlphaParticle )
-    {
-      ++num_alpha_particles;
-      const double alpha_intensity = particle.intensity;
-      total_alpha_intensity += alpha_intensity;
-
-      // Compute recoil energy from momentum conservation
-      // E_recoil = E_alpha × (m_alpha / m_daughter)
-      const double recoil_energy_kev = particle.energy * (alpha_mass_amu / daughter_mass_amu);
-
-      // Compute recoil velocity: E = 0.5 × m × v²  →  v = sqrt(2 × E / m)
-      const double recoil_velocity_over_c = sqrt( 2.0 * recoil_energy_kev / (daughter_mass_amu * amu_to_kev) );
-
-      // Compute Doppler broadening HWHM for this alpha
-      // For random recoil directions (isotropic): HWHM ≈ E × (v/c) / sqrt(2×ln2)
-      const double this_hwhm_kev = xray_energy_kev * recoil_velocity_over_c / sqrt_2ln2;
-
-      // Weight by intensity
-      weighted_hwhm_sum += this_hwhm_kev * alpha_intensity;
-    }
-  }
-
-  if( num_alpha_particles == 0 || total_alpha_intensity <= 0.0 )
-  {
-    // No alpha particles found, return natural width only
-    return natural_hwhm_kev;
-  }
-
-  const double recoil_hwhm_kev = weighted_hwhm_sum / total_alpha_intensity;
-
-  // Combine natural and recoil widths in quadrature
-  const double total_hwhm_kev = sqrt( natural_hwhm_kev * natural_hwhm_kev + recoil_hwhm_kev * recoil_hwhm_kev );
-
-  return total_hwhm_kev;
+  // The natural width only - no alpha-recoil Doppler term.  The K vacancies of alpha decays come almost
+  //  entirely from internal conversion in the daughter, whose recoil (v/c ~ 1E-3) stops within ~0.1 ps,
+  //  before most levels de-excite; LANL micro-calorimeter spectra of U-235 standards give the Th K-alpha1 and
+  //  K-beta1 Lorentzian HWHM as 48-51 eV, the natural 48 eV, not the 82-90 eV that adding the full recoil
+  //  in quadrature gave.  (Prompt K ionization by the alpha itself, which would be broadened, is ~1E-5 per decay.)
+  return get_xray_lorentzian_width( element, xray_energy_kev, energy_tolerance );
 }//double get_xray_total_width_for_decay(...)
 
 
