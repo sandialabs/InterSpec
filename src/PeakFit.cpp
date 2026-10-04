@@ -4129,9 +4129,11 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
 
     bool outsideExpectedFwhm = (sigma < min_sigma || sigma > max_sigma);
     
-    // We checked against reasonable expected FWHM, but incase this failed for some reason,
-    //  we'll give it another opportunity by seeing if channel counts are reasonable.
-    if( outsideExpectedFwhm )
+    // Very high resolution spectra with <= 4096 channels (e.g., a 0-300 keV planar HPGe, at
+    //  0.075 keV/channel) don't get the fine-binning relaxation of `min_sigma`, and can have peaks
+    //  narrower than it - so accept a too-narrow peak if it spans a reasonable number of channels.
+    //  A too-wide peak is always rejected.
+    if( sigma < min_sigma )
     {
       auto cal = dataH->energy_calibration();
       if( cal && cal->valid() )
@@ -4143,10 +4145,10 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
         const double lowerSigmaChannel = cal->channel_for_energy( mean - sigma );
         const double upperSigmaChannel = cal->channel_for_energy( mean + sigma );
         const double nchandiff = upperSigmaChannel - lowerSigmaChannel;
-        outsideExpectedFwhm = (nchandiff > min_num_channel && nchandiff < max_num_channel);
+        outsideExpectedFwhm = ((nchandiff < min_num_channel) || (nchandiff > max_num_channel));
       }
     
-    }//if( outsideExpectedFwhm )
+    }//if( sigma < min_sigma )
     
     if( outsideExpectedFwhm )
     {
