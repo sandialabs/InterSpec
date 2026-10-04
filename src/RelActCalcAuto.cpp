@@ -958,7 +958,7 @@ struct DoWorkOnDestruct
 
 // TODO: better customize the default FWHM parameters for each specific detector type
 //       (e.g., NaI, CZT, LaBr, etc.), rather than just branching on High vs non-High.
-void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
+void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, const std::shared_ptr<const SpecUtils::Measurement> &spectrum, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
 {
   if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
   {
@@ -970,7 +970,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
     }
 
     vector<double> quad_pars;
-    fill_in_default_start_fwhm_pars( quad_pars, 0, det_type, RelActCalcAuto::FwhmForm::Polynomial_3,
+    fill_in_default_start_fwhm_pars( quad_pars, 0, det_type, spectrum, RelActCalcAuto::FwhmForm::Polynomial_3,
                                      lowest_energy, highest_energy );
     vector<double> energies, fwhms;
     const size_t num_samples = 24;
@@ -1116,7 +1116,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
           {
             float min_sigma, max_sigma;
-            expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+            expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
             assert( min_sigma > 0 );
             
             min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1335,7 +1335,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
           {
             float min_sigma, max_sigma;
-            expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+            expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
             assert( min_sigma > 0 );
             
             min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1508,6 +1508,8 @@ vector<float> fit_resolution_to_peaks( const std::vector<std::shared_ptr<const P
  * @param fwhm_estimation_method 
  * @param all_peaks 
  * @param det_type
+ * @param spectrum The spectrum being analyzed; passed to `expected_peak_width_limits(...)`, which lets
+ *        finely binned spectra (e.g., micro-calorimeters) have narrower peaks than the per-detector-type tables.
  * @param lowest_energy The lowest energy in the analysis energy range; used only when converting 
  *        DetectorPeakResponse FWHM info to a different form, and is not used when fitting FWHM from data.
  * @param highest_energy The highest energy in the analysis energy range; used only when converting 
@@ -1531,6 +1533,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
             const RelActCalcAuto::FwhmEstimationMethod fwhm_estimation_method,
             const std::vector<std::shared_ptr<const PeakDef>> all_peaks, 
             const PeakFitUtils::CoarseResolutionType det_type,
+            const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
             const double lowest_energy,
             const double highest_energy,
             std::shared_ptr<const DetectorPeakResponse> input_drf,
@@ -1560,7 +1563,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     vector<double> quad_pars;
     const shared_ptr<const DetectorPeakResponse> quad_drf
                      = get_fwhm_coefficients( RelActCalcAuto::FwhmForm::Polynomial_3, fwhm_estimation_method,
-                                              all_peaks, det_type, lowest_energy, highest_energy, input_drf,
+                                              all_peaks, det_type, spectrum, lowest_energy, highest_energy, input_drf,
                                               quad_pars, warnings, reuse_input_resolution, seed_form,
                                               seed_coefficients );
 
@@ -1686,7 +1689,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
     {
       float min_sigma, max_sigma;
-      expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+      expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
       assert( min_sigma > 0 );
       
       min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -2108,7 +2111,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   }catch( std::exception &e )
   {
     paramaters.clear();
-    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
+    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, spectrum, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
 
@@ -2149,7 +2152,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
       float min_sigma, max_sigma;
-      expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+      expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
       assert( min_sigma > 0 );
 
       min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -2194,7 +2197,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           const double e = cen_lo + ((cen_hi - cen_lo) * i) / (n_samples - 1);
           float mn_s, mx_s;
-          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          expected_peak_width_limits( static_cast<float>(e), det_type, spectrum, mn_s, mx_s );
           synth_peaks->push_back( make_shared<PeakDef>( e, 0.5*(static_cast<double>(mn_s) + mx_s), 1000.0 ) );
         }
 
@@ -2205,7 +2208,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           const double e = lowest_energy + ((highest_energy - lowest_energy) * i) / 20.0;
           float mn_s, mx_s;
-          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          expected_peak_width_limits( static_cast<float>(e), det_type, spectrum, mn_s, mx_s );
           glob_min_sigma = (std::min)( glob_min_sigma, static_cast<double>(mn_s) );
           glob_max_sigma = (std::max)( glob_max_sigma, static_cast<double>(mx_s) );
         }
@@ -2239,7 +2242,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
       warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
       paramaters.clear();
-      fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
+      fill_in_default_start_fwhm_pars( paramaters, 0, det_type, spectrum, fwhm_form, lowest_energy, highest_energy );
     }
 
     assert( paramaters.size() == num_parameters( fwhm_form ) );
@@ -4719,7 +4722,7 @@ struct RelActAutoCostFcn
         //  otherwise it will add FWHM estimate, or if it isnt valid at all, it will
         //  load a default efficiency function
         solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
-                                              det_type, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
+                                              det_type, spectrum, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
                                               starting_fwhm_paramaters, solution.m_warnings,
                                               all_peaks_are_frozen,
                                               options.starting_fwhm_form, options.starting_fwhm_coefficients );
@@ -4735,7 +4738,7 @@ struct RelActAutoCostFcn
           vector<double> retained_fwhm_parameters;
           const std::shared_ptr<const DetectorPeakResponse> retained_drf
               = get_fwhm_coefficients( options.fwhm_form,options.fwhm_estimation_method,
-                  all_peaks,det_type,lowest_fwhm_energy,highest_fwhm_energy,solution.m_drf,
+                  all_peaks,det_type,spectrum,lowest_fwhm_energy,highest_fwhm_energy,solution.m_drf,
                   retained_fwhm_parameters,solution.m_warnings,true );
           if( retained_drf.get() != solution.m_drf.get() )
             throw logic_error( "Canonical retained-DRF conversion changed detector identity." );
