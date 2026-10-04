@@ -163,6 +163,8 @@ namespace DataBaseUtils
   //  in principle it should only be changed by setPreferenceDatabaseFile(...)
   //  and only then before this function is ever called (this is dicey, but I
   //  think valid).
+  //  In the unit-test build (BUILD_AS_UNIT_TEST_SUITE) the default is an
+  //  in-memory database, private to the process.
   const std::string &preferenceDatabaseFile();
   
   //setPreferenceDatabaseFile(...): should be set before any instances of

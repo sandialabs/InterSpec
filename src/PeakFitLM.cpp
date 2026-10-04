@@ -991,10 +991,46 @@ struct PeakFitDiffCostFunction
       return std::make_shared<T>();
   }
 
+  /** Where between the skew anchor energies a ROI's energy-dependent skew is evaluated: the ROI's
+   center.  Every peak in a ROI gets this one skew, as the linear amplitude solve takes a single skew
+   for all of a ROI's peaks - so the model fit, and the peaks returned, are the same.
+   */
+  double roi_skew_frac( const RoiInfo &roi ) const
+  {
+    const double energy = 0.5*(roi.lower_energy + roi.upper_energy);
+    return (energy - m_skew_anchor_lower_energy) / (m_skew_anchor_upper_energy - m_skew_anchor_lower_energy);
+  }
+
+
+  /** The skew values for a ROI: `params[0..num_skew-1]`, with the energy-dependent ones interpolated
+   to `skew_frac` when the skew is energy dependent - see #roi_skew_frac and #apply_skew_to_peaks.
+   */
+  template<typename T>
+  vector<T> skew_values( const T * const params, const double skew_frac ) const
+  {
+    const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
+    vector<T> values( params, params + num_skew );
+    if( !m_fit_skew_energy_dependence )
+      return values;
+
+    size_t upper_offset = num_skew;
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+      if( PeakDef::is_energy_dependent( m_skew_type, ct ) )
+      {
+        values[i] = params[i] + T(skew_frac) * (params[upper_offset] - params[i]);
+        upper_offset += 1;
+      }
+    }
+    return values;
+  }//skew_values(...)
+
+
   /** Apply the shared skew parameters to all peaks in the given vector.
    For single-ROI (or no energy dependence), all peaks get the same skew values.
    For multi-ROI with energy-dependent params, the skew is interpolated between
-   the lower and upper anchor energies based on each peak's mean energy.
+   the lower and upper anchor energies, to `skew_frac` (the ROI's #roi_skew_frac).
 
    Skew parameter layout in params[0..skew_block_size-1]:
      params[0..num_skew-1]:        base (lower-anchor) values for all skew params
@@ -1009,7 +1045,7 @@ struct PeakFitDiffCostFunction
    params_offset: the index of params[0] in the global parameter array (needed to index covariance).
   */
   template<typename PeakType, typename T>
-  void apply_skew_to_peaks( vector<PeakType> &peaks, const T * const params,
+  void apply_skew_to_peaks( vector<PeakType> &peaks, const T * const params, const double skew_frac,
                             const T * const uncertainties = nullptr,
                             const double * const covariance = nullptr,
                             const size_t num_total_pars = 0,
@@ -1018,8 +1054,6 @@ struct PeakFitDiffCostFunction
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
     if( num_skew == 0 )
       return;
-
-    const double energy_span = m_skew_anchor_upper_energy - m_skew_anchor_lower_energy;
 
     for( PeakType &peak : peaks )
     {
@@ -1038,14 +1072,8 @@ struct PeakFitDiffCostFunction
       }
       else
       {
-        // Multi-ROI with energy dependence: interpolate per-peak based on mean
-        T mean_val;
-        if constexpr ( std::is_same_v<T, double> )
-          mean_val = T( peak.mean() );
-        else
-          mean_val = peak.mean();
-
-        const T mean_frac = (mean_val - T(m_skew_anchor_lower_energy)) / T(energy_span);
+        // Multi-ROI with energy dependence: interpolate to the ROI's evaluation energy
+        const T frac = T( skew_frac );
 
         size_t upper_offset = num_skew; // index of first upper-anchor param
         for( size_t i = 0; i < num_skew; ++i )
@@ -1055,7 +1083,7 @@ struct PeakFitDiffCostFunction
           if( PeakDef::is_energy_dependent( m_skew_type, ct ) )
           {
             // Interpolate between lower (params[i]) and upper (params[upper_offset])
-            val = params[i] + mean_frac * (params[upper_offset] - params[i]);
+            val = params[i] + frac * (params[upper_offset] - params[i]);
             peak.set_coefficient( val, ct );
 
             // Uncertainty propagation only applies when T=double (post-solve), not during Jet-based solve.
@@ -1065,7 +1093,7 @@ struct PeakFitDiffCostFunction
               // sigma^2 = (1-f)^2*Var[lower] + f^2*Var[upper] + 2*(1-f)*f*Cov[lower,upper]
               if( covariance && (num_total_pars > 0) )
               {
-                const double f = mean_frac;
+                const double f = frac;
                 const double one_minus_f = 1.0 - f;
                 const size_t gi = params_offset + i;              // global index of lower-anchor param
                 const size_t gu = params_offset + upper_offset;   // global index of upper-anchor param
@@ -1081,7 +1109,7 @@ struct PeakFitDiffCostFunction
               else if( uncertainties )
               {
                 // Fallback: propagate in quadrature ignoring correlation
-                const double f = mean_frac;
+                const double f = frac;
                 const double sigma_lower = uncertainties[i];
                 const double sigma_upper = uncertainties[upper_offset];
                 const double sigma = sqrt( (1.0-f)*(1.0-f)*sigma_lower*sigma_lower
@@ -1129,7 +1157,6 @@ struct PeakFitDiffCostFunction
         residuals[i] = T(0.0);
     }
 
-    const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
     const size_t skew_block_size = skew_parameter_count();
 
     // Pre-compute per-ROI parameter and residual offsets so we can launch ROIs in parallel.
@@ -1342,8 +1369,9 @@ struct PeakFitDiffCostFunction
       //  below, and the fixed-amplitude peaks in the LLS, evaluate `gauss_integral(...)` directly
       //  (without it a skewed peak is evaluated with unset skew parameters - NaN).  Applied again,
       //  with uncertainties, once the peaks are complete.
-      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr );
-      apply_skew_to_peaks<PeakType, T>( fixed_amp_peaks, roi_skew_ptr );
+      const double skew_frac = roi_skew_frac( roi );
+      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr, skew_frac );
+      apply_skew_to_peaks<PeakType, T>( fixed_amp_peaks, roi_skew_ptr, skew_frac );
 
       // --- Compute predicted channel counts for this ROI ---
       const shared_ptr<const vector<float>> &energies_ptr = m_data->channel_energies();
@@ -1360,8 +1388,8 @@ struct PeakFitDiffCostFunction
 
       vector<T> peak_counts( nchannel, T(0.0) );
 
-      // The skew parameter vector to pass to fit_amp_and_offset_imp.
-      const vector<T> skew_pars( roi_skew_ptr, roi_skew_ptr + num_skew );
+      // The skew parameter vector to pass to fit_amp_and_offset_imp - the same values the peaks got.
+      const vector<T> skew_pars = skew_values( roi_skew_ptr, skew_frac );
 
       // For a ROI being refit by IRLS, each channel's variance (see `m_irls_variances`); null for the
       //  chi2 fit, including the first pass of the IRLS fit.
@@ -1565,7 +1593,7 @@ struct PeakFitDiffCostFunction
       // Pass uncertainties at the same offset as the skew params, so uncertainties are set too.
       const T *roi_skew_uncert_ptr = uncertainties ? (uncertainties + (roi_skew_ptr - params)) : nullptr;
       const size_t skew_params_offset = static_cast<size_t>( roi_skew_ptr - params );
-      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr, roi_skew_uncert_ptr,
+      apply_skew_to_peaks<PeakType, T>( peaks, roi_skew_ptr, skew_frac, roi_skew_uncert_ptr,
                                         covariance, num_total_pars, skew_params_offset );
 
       // --- Compute residuals for this ROI ---
@@ -2977,6 +3005,19 @@ struct PeakFitDiffCostFunction
     setup_skew_parameters( &parameters[0], constant_parameters, lower_bounds, upper_bounds,
                            all_starting_peaks() );
 
+    if( !m_skew_block_start.empty() && (m_skew_block_start.size() == skew_parameter_count()) )
+    {
+      for( size_t i = 0; i < m_skew_block_start.size(); ++i )
+      {
+        double value = m_skew_block_start[i];
+        if( lower_bounds[i].has_value() )
+          value = (std::max)( value, *lower_bounds[i] );
+        if( upper_bounds[i].has_value() )
+          value = (std::min)( value, *upper_bounds[i] );
+        parameters[i] = value;
+      }
+    }//if( m_skew_block_start )
+
     // Per-ROI parameters following the skew block
     size_t param_offset = skew_parameter_count();
     for( const RoiInfo &roi : m_rois )
@@ -3024,6 +3065,12 @@ public:
    `m_irls_variances`, only changed between solves.
    */
   std::vector<std::vector<double>> m_fisher_variances;
+
+  /** When `skew_parameter_count()` long, the starting values of the shared skew block, in place of
+   those taken from the input peaks (clamped to the bounds) - so a joint fit can be restarted from a
+   previous solution's skew relation, both anchors included.
+   */
+  std::vector<double> m_skew_block_start;
 
   const std::vector<RoiInfo> m_rois;
   const size_t m_total_num_peaks;
@@ -4543,6 +4590,96 @@ static CeresFitResult run_ceres_fit( PeakFitDiffCostFunction &cost_functor, cons
 }//run_ceres_fit(...)
 
 
+/** Refits each ROI of a shared-skew joint fit on its own, with the skew held at the joint value; a
+ refit is kept only if it lowers the ROI's fit statistic by more than 1.  ROIs with a peak not of
+ `skew_type` (the VoigtPlusBortel exception) are left alone.
+
+ Returns all the peaks, with the improved ROIs replaced, or empty if no ROI improved.
+ */
+static vector<PeakDef> polish_rois_at_joint_skew( const vector<PeakDef> &joint_peaks,
+                                                  const shared_ptr<const SpecUtils::Measurement> &data,
+                                                  const PeakFitUtils::CoarseResolutionType res_type,
+                                                  const Wt::WFlags<PeakFitLMOptions> fit_options,
+                                                  const PeakDef::SkewType skew_type )
+{
+  const size_t num_skew_pars = PeakDef::num_skew_parameters( skew_type );
+
+  map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> rois;
+  for( const PeakDef &p : joint_peaks )
+    rois[p.continuum()].push_back( make_shared<PeakDef>( p ) );
+
+  bool any_improved = false;
+  vector<PeakDef> answer;
+  answer.reserve( joint_peaks.size() );
+
+  for( auto &cont_peaks : rois )
+  {
+    vector<shared_ptr<const PeakDef>> &roi_peaks = cont_peaks.second;
+    std::sort( begin(roi_peaks), end(roi_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    bool all_skew_type = true;
+    vector<shared_ptr<const PeakDef>> held;
+    for( const shared_ptr<const PeakDef> &p : roi_peaks )
+    {
+      all_skew_type = (all_skew_type && (p->skewType() == skew_type));
+      const shared_ptr<PeakDef> copy = make_shared<PeakDef>( *p );
+      for( size_t i = 0; i < num_skew_pars; ++i )
+        copy->setFitFor( PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) ), false );
+      held.push_back( copy );
+    }
+
+    vector<shared_ptr<const PeakDef>> refit;
+    try
+    {
+      bool by_likelihood = false;
+      if( all_skew_type )
+        refit = fit_peaks_in_roi_imp( held, data, res_type, fit_options, nullptr, by_likelihood );
+
+      const shared_ptr<const PeakContinuum> &cont = cont_peaks.first;
+      const int lower_channel = static_cast<int>( data->find_gamma_channel( cont->lowerEnergy() ) );
+      const int upper_channel = static_cast<int>( data->find_gamma_channel( cont->upperEnergy() ) );
+      if( (refit.size() != roi_peaks.size())
+         || ((roi_fit_statistic( refit, data, lower_channel, upper_channel, by_likelihood ) + 1.0)
+              >= roi_fit_statistic( roi_peaks, data, lower_channel, upper_channel, by_likelihood )) )
+      {
+        refit.clear();
+      }
+    }catch( std::exception & )
+    {
+      refit.clear();
+    }
+
+    if( refit.empty() )
+    {
+      for( const shared_ptr<const PeakDef> &p : roi_peaks )
+        answer.push_back( *p );
+      continue;
+    }
+
+    any_improved = true;
+    std::sort( begin(refit), end(refit), &PeakDef::lessThanByMeanShrdPtr );
+    for( size_t peak_index = 0; peak_index < refit.size(); ++peak_index )
+    {
+      // Put back the skew's fit-for flags and (joint) uncertainties
+      PeakDef peak = *refit[peak_index];
+      const PeakDef &joint_peak = *roi_peaks[peak_index];
+      for( size_t i = 0; i < num_skew_pars; ++i )
+      {
+        const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
+        peak.setFitFor( ct, joint_peak.fitFor( ct ) );
+        peak.set_uncertainty( joint_peak.uncertainty( ct ), ct );
+      }
+      answer.push_back( peak );
+    }
+  }//for( auto &cont_peaks : rois )
+
+  if( !any_improved )
+    answer.clear();
+
+  return answer;
+}//polish_rois_at_joint_skew(...)
+
+
 FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>> input_peaks,
                                           shared_ptr<const SpecUtils::Measurement> data,
                                           const double stat_threshold,
@@ -4672,6 +4809,54 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
                                               target_skew, res_type, fit_options );
 
         CeresFitResult ceres_result = run_ceres_fit( cost_functor, peaks_to_fit.size() );
+
+        // The joint fit can leave a ROI stuck in a poor state - e.g., one peak of a close doublet slid
+        //  toward its neighbor while the shared skew was far from its final value (AEGIS Eu-152 45/46 keV
+        //  doublet: chi2 41, against 18.7 at the same skew).  So refit each ROI with the joint skew held,
+        //  and if any improved, run the joint fit again from there, keeping whichever is better.
+        if( (cost_functor.m_rois.size() > 1) && (PeakDef::num_skew_parameters( target_skew ) > 0)
+           && !fit_options.test( PeakFitLMOptions::IndependentSkewValues ) )
+        {
+          try
+          {
+            vector<PeakDef> polished = polish_rois_at_joint_skew( ceres_result.final_peaks, data,
+                                                                  res_type, fit_options, target_skew );
+            if( !polished.empty() )
+            {
+              vector<shared_ptr<const PeakDef>> polished_ptrs;
+              for( const PeakDef &p : polished )
+                polished_ptrs.push_back( make_shared<PeakDef>( p ) );
+
+              PeakFitDiffCostFunction refit_functor( data, polished_ptrs, 0, 0, 0,
+                                                     target_skew, res_type, fit_options );
+              const size_t num_skew_block = cost_functor.skew_parameter_count();
+              assert( refit_functor.skew_parameter_count() == num_skew_block );
+              refit_functor.m_skew_block_start.assign( begin(ceres_result.parameters),
+                                                       begin(ceres_result.parameters) + num_skew_block );
+
+              CeresFitResult refit_result = run_ceres_fit( refit_functor, polished_ptrs.size() );
+
+              vector<shared_ptr<const PeakDef>> refit_ptrs;
+              for( const PeakDef &p : refit_result.final_peaks )
+                refit_ptrs.push_back( make_shared<PeakDef>( p ) );
+
+              if( (refit_result.final_peaks.size() == polished.size())
+                 && (chi2_for_region( refit_ptrs, data, 0, 0 ) <= chi2_for_region( polished_ptrs, data, 0, 0 )) )
+              {
+                ceres_result = std::move( refit_result );
+              }else
+              {
+                // The skew relation (ceres_result.parameters) is unchanged by the polish
+                ceres_result.final_peaks = std::move( polished );
+              }
+            }//if( !polished.empty() )
+          }catch( std::exception &e )
+          {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+            cerr << "fit_peaks_in_spectrum_LM: per-ROI polish failed: " << e.what() << endl;
+#endif
+          }
+        }//if( a shared skew over multiple ROIs )
 
         // Convert to shared_ptr
         all_fit_peaks.reserve( ceres_result.final_peaks.size() );

@@ -378,6 +378,7 @@ struct FitPeaksResults
     static_assert( sm_max_num_skew_pars == 6 );
     
     /** The values of energy-dependent skew paramaters at the lower and upper energies.
+     The skew varies linearly between them; the peaks of each ROI all use its value at the ROI's center.
      See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
      */
     std::optional<std::pair<double,double>> energy_dependent_skew_pars[sm_max_num_skew_pars];

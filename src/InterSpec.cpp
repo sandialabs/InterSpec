@@ -1529,14 +1529,27 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_charts )
     m_charts->removeFromParent();
   
+  // UserPreferences holds Dbo::ptr's into m_sql's session.  As a child WObject it would only be
+  //  deleted by ~WObject, after m_sql is released below - by when a worker still holding the
+  //  DbSession (e.g., loadDetectorResponseFunction, from setSpectrum) may be destroying the session
+  //  on another thread.  So release it, and m_user, while we still hold the session, under its lock.
   try
   {
+    std::unique_ptr<DataBaseUtils::DbTransaction> transaction;
+    if( m_sql )
+      transaction = std::make_unique<DataBaseUtils::DbTransaction>( *m_sql );
+
+    if( m_preferences )
+      removeChild( m_preferences.get() );
     m_user.reset();
+
+    if( transaction )
+      transaction->commit();
   }catch( ... )
   {
-    cerr << "Caught unexpected exception doing m_user.reset()" << endl;
+    cerr << "Caught unexpected exception releasing preferences and m_user" << endl;
   }
-  
+
   try
   {
     m_sql.reset();

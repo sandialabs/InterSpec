@@ -46,6 +46,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitLM.h"
@@ -160,9 +161,11 @@ static const vector<TestFileConfig> g_test_files = {
   //},
   { "AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42",
     PeakFitUtils::CoarseResolutionType::High, 5,
-    {}
-    //{ {44.0, 48.0},      // 2-peak ROI at ~45/46 keV: very close peaks
-    //  {1083.0, 1092.0} } // 2-peak ROI at ~1085/1089 keV
+    // The stored (2023) fits of these 2-peak ROIs are not at the current fitter's minimum - the
+    //  refit has lower chi2, with areas ~1 sigma of the stored uncertainties away; `check_roi_chi2`
+    //  still guards their fit quality.
+    { {44.0, 48.0},      // 2-peak ROI at ~45/46 keV
+      {1083.0, 1092.0} } // 2-peak ROI at ~1085/1089 keV
   },
 };
 
@@ -365,15 +368,7 @@ DeviationStats compute_deviations(
          << (excluded ? "  [EXCLUDED from stats]" : "")
          << endl;
 
-    if( excluded )
-    {
-      ++num_excluded;
-      continue;
-    }
-
-    stats.sorted_area_pcts.push_back( area_pct );
-    stats.sorted_fwhm_pcts.push_back( fwhm_pct );
-
+    // The maximums include excluded peaks, so the outlier limits still apply to them.
     if( area_pct > stats.max_area_pct )
     {
       stats.max_area_pct = area_pct;
@@ -386,6 +381,15 @@ DeviationStats compute_deviations(
     }
     if( mean_pct > stats.max_mean_pct )
       stats.max_mean_pct = mean_pct;
+
+    if( excluded )
+    {
+      ++num_excluded;
+      continue;
+    }
+
+    stats.sorted_area_pcts.push_back( area_pct );
+    stats.sorted_fwhm_pcts.push_back( fwhm_pct );
   }//for( const auto &m : matches )
 
   for( const size_t ui : unmatched )
@@ -416,6 +420,48 @@ DeviationStats compute_deviations(
 
   return stats;
 }
+
+
+/// Checks each ROI's refit chi2 is not much worse than the reference peaks' chi2 over the same
+///  channels, so a bad refit can't hide behind an excluded energy range.
+void check_roi_chi2( const vector<shared_ptr<const PeakDef>> &ref_peaks,
+                     const vector<shared_ptr<const PeakDef>> &fit_peaks,
+                     const shared_ptr<const SpecUtils::Measurement> &data,
+                     const string &prefix )
+{
+  typedef map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> RoiMap;
+  const RoiMap ref_rois = group_peaks_by_roi( ref_peaks );
+  const RoiMap fit_rois = group_peaks_by_roi( fit_peaks );
+
+  for( const RoiMap::value_type &ref_roi : ref_rois )
+  {
+    const double lower = ref_roi.first->lowerEnergy();
+    const double upper = ref_roi.first->upperEnergy();
+
+    vector<shared_ptr<const PeakDef>> fit_roi;
+    for( const RoiMap::value_type &roi : fit_rois )
+    {
+      if( (fabs( roi.first->lowerEnergy() - lower ) < 1.0E-3)
+         && (fabs( roi.first->upperEnergy() - upper ) < 1.0E-3) )
+        fit_roi = roi.second;
+    }
+
+    BOOST_CHECK_MESSAGE( !fit_roi.empty(), prefix << "No refit ROI for [" << lower << ", " << upper << "]" );
+    if( fit_roi.empty() )
+      continue;
+
+    const double ref_chi2 = chi2_for_region( ref_roi.second, data, 0, 0 );
+    const double fit_chi2 = chi2_for_region( fit_roi, data, 0, 0 );
+    const double max_chi2 = ref_chi2 + (std::max)( 3.0, 0.25*ref_chi2 );
+
+    cout << prefix << "ROI [" << lower << ", " << upper << "] chi2 ref=" << ref_chi2
+         << ", fit=" << fit_chi2 << " (limit " << max_chi2 << ")" << endl;
+
+    BOOST_CHECK_MESSAGE( fit_chi2 <= max_chi2, prefix << "ROI [" << lower << ", " << upper
+                         << "] refit chi2 " << fit_chi2 << " exceeds limit " << max_chi2
+                         << " (reference chi2 " << ref_chi2 << ")" );
+  }//for( const RoiMap::value_type &ref_roi : ref_rois )
+}//check_roi_chi2(...)
 
 
 BOOST_AUTO_TEST_CASE( test_refit_all_peaks_no_skew )
@@ -449,6 +495,8 @@ BOOST_AUTO_TEST_CASE( test_refit_all_peaks_no_skew )
 
     const DeviationStats stats = compute_deviations( td.original_peaks, result.fit_peaks,
       prefix + "refit", config.exclude_energy_ranges );
+
+    check_roi_chi2( td.original_peaks, result.fit_peaks, td.foreground, prefix );
 
     // Peaks in multi-peak ROIs can shift significantly (esp. when one peak is borderline-significant),
     // so we check the 3rd-worst deviation against a tight tolerance, and the overall max against a
@@ -564,6 +612,8 @@ void test_skew_type_helper( const PeakDef::SkewType skew_type,
 
     const DeviationStats stats = compute_deviations( td.original_peaks, result.fit_peaks,
       prefix, config.exclude_energy_ranges );
+
+    check_roi_chi2( td.original_peaks, result.fit_peaks, td.foreground, prefix );
 
     // Multi-peak ROI peaks can shift significantly when changing skew type, so check 3rd-worst
     // deviation against the tight tolerance, and overall max against a wider one.

@@ -83,7 +83,7 @@
 
 .SimpleActivityCalc .result .FitWarning
 {
-  color: var(--interspec-warning-color, inherit);
+  color: var(--interspec-warning-color);
 }
 
 .SimpleActivityCalc .result .DoseTxt,

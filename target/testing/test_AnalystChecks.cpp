@@ -172,7 +172,7 @@ public:
     m_interspec = m_app->viewer();
     BOOST_REQUIRE( m_interspec );
 
-    // Each session auto-saves its state into `InterSpecUserData.db` in the CWD and the next
+    // Each session auto-saves its state into the user database (one per test process) and the next
     //  restores it, so without this a fixture can start with a previous session's spectrum
     //  already displayed - which makes `InterSpec::userOpenFile` treat the file we want as a
     //  possible background and only show a dialog no headless test answers.

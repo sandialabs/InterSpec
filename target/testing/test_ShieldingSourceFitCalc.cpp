@@ -194,7 +194,7 @@ public:
     BOOST_REQUIRE( m_interspec );
 
     // A fresh fixture is only fresh in C++ terms: each session auto-saves its state into
-    //  `InterSpecUserData.db` in the CWD, and the next session restores it at startup - so without
+    //  the user database (one per test process), and the next session restores it at startup - so without
     //  this, a test that makes one fixture per file starts each file already displaying the
     //  previous one's spectrum.  `InterSpec::userOpenFile` then sees a foreground with a different
     //  UUID but matching instrument id and channel count, decides the new file could be a
