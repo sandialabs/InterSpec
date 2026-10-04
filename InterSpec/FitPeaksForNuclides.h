@@ -872,6 +872,19 @@ namespace detail
     const RelActCalcAuto::FloatingPeakResult &fpr,
     const std::shared_ptr<PeakContinuum> &roi_continuum,
     const char * const mode_label );
+
+  /** The external shield of the physical-model "desperation" re-solve: element `atomic_number` (held
+   fixed), areal density fit within [0.1, 10] g/cm2, starting from `starting_areal_density` (g/cm2)
+   clamped into that range - a start outside it makes the solve's setup throw.
+
+   Throws std::invalid_argument if `atomic_number` is outside [1, 98]. */
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput>
+  create_desperation_shielding( const double atomic_number, const double starting_areal_density );
+
+  /** The number of requested nuclides (sources that are nuclides, not elements or reactions) a solve
+   still describes: activity above 1E-6 of the largest activity in the solve, and fitted peaks
+   explaining at least one count.  A fallback re-solve with none left fits the continuum alone. */
+  size_t num_requested_nuclides_kept( const RelActCalcAuto::RelActAutoSolution &solution );
 }//namespace detail
 
 

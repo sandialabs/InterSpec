@@ -182,6 +182,37 @@ BOOST_AUTO_TEST_CASE( objective_order_is_strict_at_large_scale )
   BOOST_CHECK_EQUAL( removals[*selected].semantic_key, "z-lower" );
 }
 
+BOOST_AUTO_TEST_CASE( exact_tie_keeps_the_default_candidate )
+{
+  // A flat objective (e.g., zero source activity) lets every seed "converge" where it started, so the
+  //  perturbed seeds tie the default exactly; the alphabetically-first perturbation must not win.
+  const std::string default_name = search_seed_variant_name( SearchSeedVariant::Default );
+  const std::string calibration_name = search_seed_variant_name( SearchSeedVariant::CalibrationLowerQuartile );
+  BOOST_REQUIRE( calibration_name < default_name );
+
+  std::vector<DeterministicSearchScore> scores{
+    { calibration_name, 15423.6, {0.95,0.90,3.0}, true },
+    { default_name,     15423.6, {1.00,1.00,3.0}, true },
+    { "activity-semantic-split-a", 15437.0, {0.96,1.20,4.0}, true }
+  };
+
+  for( size_t rotation = 0; rotation < scores.size(); ++rotation )
+  {
+    const std::vector<size_t> order = deterministic_search_order(scores);
+    BOOST_REQUIRE_EQUAL( order.size(), 3U );
+    BOOST_CHECK_EQUAL( scores[order[0]].semantic_name, default_name );
+    BOOST_CHECK_EQUAL( scores[order[1]].semantic_name, calibration_name );
+    std::rotate( scores.begin(), scores.begin() + 1, scores.end() );
+  }
+
+  // A strictly lower objective still beats the default.
+  scores[0].full_objective = 15423.5;
+  const std::vector<size_t> order = deterministic_search_order(scores);
+  BOOST_REQUIRE( !order.empty() );
+  BOOST_CHECK_EQUAL( scores[order.front()].semantic_name, scores[0].semantic_name );
+  BOOST_CHECK( scores[order.front()].semantic_name != default_name );
+}
+
 BOOST_AUTO_TEST_CASE( duplicate_basins_are_collapsed_after_ranking )
 {
   const std::vector<DeterministicSearchScore> scores{

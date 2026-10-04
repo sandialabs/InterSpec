@@ -114,8 +114,8 @@ namespace
   // This allows easy replacement of all instances
 #define PEAK_FIT_DEBUG_PRINTOUT should_debug_print()
   
-  // Helper functions that need access to should_use_desperation_shielding and create_desperation_shielding
-  // These are used by fit_peaks_for_nuclide_relactauto but were in the anonymous namespace in the original
+  // Used by fit_peaks_for_nuclide_relactauto, but was in the anonymous namespace in the original code;
+  //  detail::create_desperation_shielding builds the shield this gates.
   bool should_use_desperation_shielding( const double atomic_number,
                                          const std::vector<RelActCalcAuto::RoiRange> &rois )
   {
@@ -151,33 +151,6 @@ namespace
     return true;
   }//should_use_desperation_shielding(...)
 
-
-  std::shared_ptr<RelActCalc::PhysicalModelShieldInput>
-  create_desperation_shielding( const double atomic_number, const double starting_areal_density )
-  {
-    if( atomic_number < 1.0 || atomic_number > 98.0 )
-      throw std::invalid_argument( "create_desperation_shielding: atomic_number must be in range [1, 98]" );
-
-    std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
-      = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-
-    // Configure as generic element (not material)
-    shield->atomic_number = atomic_number;
-    shield->material = nullptr;
-
-    // Set starting areal density (convert from g/cm2 to PhysicalUnits)
-    shield->areal_density = starting_areal_density * PhysicalUnits::g_per_cm2;
-
-    // Do NOT fit atomic number - only fit areal density
-    shield->fit_atomic_number = false;
-
-    // Configure areal density fitting with reasonable bounds
-    shield->fit_areal_density = true;
-    shield->lower_fit_areal_density = 0.1 * PhysicalUnits::g_per_cm2;
-    shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
-
-    return shield;
-  }//create_desperation_shielding(...)
 }
 
 using namespace std;
@@ -881,6 +854,61 @@ static constexpr size_t sm_refinement_max_solve_iterations = 10000;
 
 namespace detail
 {
+
+std::shared_ptr<RelActCalc::PhysicalModelShieldInput>
+create_desperation_shielding( const double atomic_number, const double starting_areal_density )
+{
+  if( atomic_number < 1.0 || atomic_number > 98.0 )
+    throw std::invalid_argument( "create_desperation_shielding: atomic_number must be in range [1, 98]" );
+
+  std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+    = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+
+  // Configure as generic element (not material)
+  shield->atomic_number = atomic_number;
+  shield->material = nullptr;
+
+  // Do NOT fit atomic number - only fit areal density
+  shield->fit_atomic_number = false;
+
+  // Configure areal density fitting with reasonable bounds
+  shield->fit_areal_density = true;
+  shield->lower_fit_areal_density = 0.1 * PhysicalUnits::g_per_cm2;
+  shield->upper_fit_areal_density = 10.0 * PhysicalUnits::g_per_cm2;
+
+  // The starting areal density must lie within the fit bounds, or setting up the solve throws: the
+  //  non-HPGe default (13.75 g/cm2) did, so the physical-model re-solve never ran for those detectors.
+  shield->areal_density = std::clamp( starting_areal_density * PhysicalUnits::g_per_cm2,
+                                      shield->lower_fit_areal_density, shield->upper_fit_areal_density );
+
+  return shield;
+}//create_desperation_shielding(...)
+
+size_t num_requested_nuclides_kept( const RelActCalcAuto::RelActAutoSolution &solution )
+{
+  double max_activity = 0.0;
+  for( const std::vector<RelActCalcAuto::NuclideRelAct> &curve : solution.m_rel_activities )
+    for( const RelActCalcAuto::NuclideRelAct &act : curve )
+      max_activity = std::max( max_activity, act.rel_activity );
+
+  size_t num_kept = 0;
+  for( const std::vector<RelActCalcAuto::NuclideRelAct> &curve : solution.m_rel_activities )
+  {
+    for( const RelActCalcAuto::NuclideRelAct &act : curve )
+    {
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( act.source );
+      if( !nuc )
+        continue;
+      double area = 0.0;
+      for( const PeakDef &peak : solution.m_fit_peaks )
+        area += (peak.parentNuclide() == nuc) ? std::max( 0.0, peak.peakArea() ) : 0.0;
+      if( (act.rel_activity > sm_zero_activity_fraction * max_activity) && (area >= 1.0) )
+        ++num_kept;
+    }
+  }
+  return num_kept;
+}//num_requested_nuclides_kept(...)
+
 
 double LocalContinuumEstimate::integral( const double x0, const double x1 ) const
 {
@@ -17773,7 +17801,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           try
           {
             std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
-            = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+            = detail::create_desperation_shielding( config.desperation_phys_model_atomic_number,
                                            config.desperation_phys_model_areal_density_g_per_cm2 );
             curve.phys_model_external_atten.push_back( shield );
             
@@ -17836,13 +17864,20 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             candidate, sources, recovered_source_anchors,
             config.roi_significance_z, global_fwhm_at );
       };
+      // A re-solve that zeroes every requested nuclide fits the continuum alone, so it is no rescue however
+      //  low its chi2 (SAM Gd153_Unsh, Sm153_Phantom: the physical-model re-solve beat a z=40 incumbent this
+      //  way).  Zeroing only some is allowed - a requested nuclide may be absent (Tl202 in Tl201woTl202).
       const auto is_better_than_solution
         = [&solution, &preserves_recovered_evidence](
             const RelActCalcAuto::RelActAutoSolution &cand ) -> bool {
-        return RelActCalcAuto::RelActAutoSolution::is_usable_status(cand.m_status)
-               && preserves_recovered_evidence( cand )
-               && ( (!RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status))
-                   || (reduced_chi2(solution) > reduced_chi2(cand)) );
+        if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(cand.m_status)
+            || !preserves_recovered_evidence( cand ) )
+          return false;
+        if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status) )
+          return true;
+        return (reduced_chi2(solution) > reduced_chi2(cand))
+               && ((detail::num_requested_nuclides_kept( cand ) > 0)
+                   || (detail::num_requested_nuclides_kept( solution ) == 0));
       };
 
       trace_first_solve( "no-energy-cal re-solve", no_ecal_solution );
@@ -19735,7 +19770,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               try
               {
                 std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
-                  = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+                  = detail::create_desperation_shielding( config.desperation_phys_model_atomic_number,
                                                   config.desperation_phys_model_areal_density_g_per_cm2 );
                 curve.phys_model_external_atten.push_back( shield );
 

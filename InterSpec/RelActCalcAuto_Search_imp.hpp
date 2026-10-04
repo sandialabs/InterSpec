@@ -530,8 +530,8 @@ inline bool same_search_basin( const std::vector<double> &lhs, const std::vector
 }
 
 /** Return candidate indices best-first, with unusable/non-finite candidates omitted and duplicate
-    basins collapsed.  Meaningful objective differences rank first; numerical ties use the semantic
-    name, never generation or caller order. */
+    basins collapsed.  Meaningful objective differences rank first; numerical ties go to the Default
+    (unperturbed) candidate, then the semantic name, never generation or caller order. */
 inline std::vector<size_t> deterministic_search_order( const std::vector<DeterministicSearchScore> &scores )
 {
   std::vector<size_t> order;
@@ -539,12 +539,20 @@ inline std::vector<size_t> deterministic_search_order( const std::vector<Determi
     if( scores[i].usable && std::isfinite(scores[i].full_objective) )
       order.push_back(i);
 
+  // An exact tie means the perturbation bought nothing - typically a flat objective (e.g., a source fit
+  //  to zero activity, so its calibration and widths do not matter), where every seed "converges" where
+  //  it started.  Ranking such a tie by name returned an arbitrary, never-fitted seed (an unmoved -5 keV
+  //  calibration offset from 'calibration-lower-quartile'), so the unperturbed solution keeps it.
+  const std::string default_name = search_seed_variant_name( SearchSeedVariant::Default );
   std::sort( order.begin(), order.end(), [&]( const size_t lhs, const size_t rhs ){
     const DeterministicSearchScore &a = scores[lhs], &b = scores[rhs];
     if( a.full_objective < b.full_objective )
       return a.full_objective < b.full_objective;
     if( b.full_objective < a.full_objective )
       return false;
+    const bool a_default = (a.semantic_name == default_name), b_default = (b.semantic_name == default_name);
+    if( a_default != b_default )
+      return a_default;
     if( a.semantic_name != b.semantic_name )
       return a.semantic_name < b.semantic_name;
     return lhs < rhs;
