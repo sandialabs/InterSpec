@@ -36,7 +36,7 @@ Relative efficiency analysis allows you to determine enrichments and relative ac
 * [20240728_Isotopics_from_peaks-Rel-Eff-ana_SAND2024-10138O.pdf](isotopics_from_peaks/20240728_Isotopics_from_peaks-Rel-Eff-ana_SAND2024-10138O.pdf).
 * Example spectra files:
   * [Disk_C1153a_5_AE3204.n42](isotopics_from_peaks/Disk_C1153a_5_AE3204.n42)
-  * [EnrichUraniumExample(20%)_withPeaks.n42](isotopics_from_peaks/EnrichUraniumExample\(20%\)_withPeaks.n42)
+  * [EnrichUraniumExample(20%)_withPeaks.n42](isotopics_from_peaks/EnrichUraniumExample%2820%25%29_withPeaks.n42)
   * [EX1_Cs134_Cs137.n42](isotopics_from_peaks/EX1_Cs134_Cs137.n42)
   * [nearby_example_HPGe.n42](isotopics_from_peaks/nearby_example_HPGe.n42)
   
