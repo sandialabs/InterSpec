@@ -214,3 +214,106 @@ BOOST_AUTO_TEST_CASE( fluorescence_xray_obs_eff_uses_voigt_shape )
 
   BOOST_CHECK_MESSAGE( num_checked >= 2, "Expected the U K-alpha1 and K-alpha2 points; found " << num_checked );
 }//fluorescence_xray_obs_eff_uses_voigt_shape
+
+
+BOOST_AUTO_TEST_CASE( lorentzian_tail_from_outside_roi )
+{
+  // With micro-calorimeter resolution (72 eV FWHM, 10 eV channels) the detector-shape coverage that decides which
+  //  lines a ROI models is only ~0.5 keV, but a Voigt U K-alpha1 still has ~2.5 % of its area beyond 0.6 keV.  A ROI
+  //  ending 0.6 keV below K-alpha1 must model that tail, else the (noiseless) data cannot be fit.
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Element * const uranium = db->element( "U" );
+  BOOST_REQUIRE( uranium );
+
+  const size_t nchannel = 32768;
+  const float fwhm = 0.072f;
+  const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( nchannel, { 0.0f, 0.01f }, {} );
+  const shared_ptr<const vector<float>> energies = cal->channel_energies();
+
+  vector<double> model( nchannel, 0.0 );
+  for( size_t i = 0; i < nchannel; ++i )
+    model[i] = 200.0;
+
+  double ka2_energy = 0.0, ka2_area = 0.0;
+  for( const SandiaDecay::EnergyIntensityPair &xray : uranium->xrays )
+  {
+    if( (xray.energy < 91.0) || (xray.energy > 100.0) )
+      continue;
+    const double hwhm = XRayWidths::get_xray_lorentzian_width( uranium, xray.energy, 0.5 );
+    BOOST_REQUIRE( hwhm > 0.0 );
+    PeakDef peak( xray.energy, sigma, 1.0E7 * xray.intensity );
+    peak.setSkewType( PeakDef::SkewType::VoigtPlusBortel );
+    peak.set_coefficient( hwhm, PeakDef::CoefficientType::SkewPar0 );
+    peak.set_coefficient( 0.0, PeakDef::CoefficientType::SkewPar1 );
+    peak.set_coefficient( 1.0, PeakDef::CoefficientType::SkewPar2 );
+    peak.gauss_integral( energies->data(), model.data(), nchannel );
+    if( fabs( xray.energy - 94.65 ) < 0.05 )
+    {
+      ka2_energy = xray.energy;
+      ka2_area = peak.amplitude();
+    }
+  }//for( loop over U x-rays )
+  BOOST_REQUIRE( ka2_area > 0.0 );
+
+  auto counts = make_shared<vector<float>>( nchannel, 0.0f );
+  for( size_t i = 0; i < nchannel; ++i )
+    (*counts)[i] = static_cast<float>( model[i] );
+  auto spectrum = make_shared<SpecUtils::Measurement>();
+  spectrum->set_gamma_counts( counts, 1000.0f, 1000.0f );
+  spectrum->set_energy_calibration( cal );
+
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::High;
+  auto drf = make_shared<DetectorPeakResponse>( "FlatMicroCal", "Flat efficiency" );
+  drf->fromExpOfLogPowerSeries( { -3.0f }, {}, 25.0*PhysicalUnits::cm, 1.0f*PhysicalUnits::cm,
+                                static_cast<float>(PhysicalUnits::MeV), 0.0f, 3000.0f,
+                                DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  drf->setFwhmCoefficients( { fwhm*fwhm, 0.0f }, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+
+  RelActCalcAuto::Options options;
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
+  options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency;
+  options.skew_type = PeakDef::SkewType::GaussPlusBortel;
+  options.lorentzian_xrays = true;
+  options.additional_br_uncert = 0.0;
+  options.auto_profile_weak_mass_fractions = false;
+  options.auto_simplify_model = false;
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+  curve.rel_eff_eqn_order = 0;
+  RelActCalcAuto::NucInputInfo u_input;
+  u_input.source = uranium;
+  u_input.peak_color_css = "rgb(0,0,255)";
+  curve.nuclides.push_back( u_input );
+  options.rel_eff_curves.push_back( curve );
+
+  RelActCalcAuto::RoiRange roi;
+  roi.lower_energy = 93.0;
+  roi.upper_energy = 97.8;   // U K-alpha1 (98.43 keV) is 0.63 keV above
+  roi.continuum_type = PeakContinuum::OffsetType::Linear;
+  roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  options.rois.push_back( roi );
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, spectrum, nullptr, drf, {}, det_type, nullptr, nullptr ) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status( sol.m_status ),
+                         "solve failed: " << sol.m_error_message );
+
+  const double chi2_per_dof = sol.m_chi2 / std::max( 1.0, static_cast<double>(sol.m_dof) );
+  BOOST_TEST_MESSAGE( "chi2/dof " << chi2_per_dof );
+  BOOST_CHECK_MESSAGE( chi2_per_dof < 0.05, "Noiseless data not reproduced; chi2/dof = " << chi2_per_dof );
+
+  const PeakDef *ka2 = nullptr;
+  for( const PeakDef &peak : sol.m_fit_peaks )
+  {
+    if( fabs( peak.mean() - ka2_energy ) < 0.005 )
+      ka2 = &peak;
+  }
+  BOOST_REQUIRE( ka2 );
+  BOOST_CHECK_CLOSE( ka2->amplitude(), ka2_area, 0.2 );
+}//lorentzian_tail_from_outside_roi

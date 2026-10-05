@@ -2858,6 +2858,11 @@ struct RelActAutoCostFcn
    be used; below it the correction is ~constant over the lines, which the free fluorescence activity absorbs. */
   static constexpr double sm_fluorescence_depth_min_span_kev = 5.0;
 
+  /** With `Options::lorentzian_xrays`, x-ray lines within this many keV of an ROI are modelled in it, for their
+   Lorentzian tails, even when that is beyond the detector-shape coverage (beyond 1.5 keV a ~50 eV HWHM K x-ray has
+   ~1 % of its area). */
+  static constexpr double sm_lorentzian_xray_reach_kev = 1.5;
+
   /** Per-element mass-fraction constraint block: the exact "sigma-block" reparameterization.
 
    Each range-constrained (lower < upper) nuclide of the element owns one activity slot; the
@@ -15460,7 +15465,13 @@ struct RelActAutoCostFcn
           // `missing_frac` of the peak area lies outside `max_nsigma`).  `energy` is the nominal
           // line energy - a fixed input - and `lower_mean`/`upper_mean` come from scalar parts, so
           // scalar and every Jet lane of one evaluation make the identical decision.
-          const bool line_in_range = ((energy >= lower_mean) && (energy <= upper_mean));
+          // A Voigt x-ray's Lorentzian wings can reach past the detector-shape coverage `lower_mean`/`upper_mean`
+          //  come from - with a micro-calorimeter's ~30 eV sigma that is only ~0.5 keV, while a K x-ray has 2-3 % of
+          //  its area beyond that - so an x-ray within sm_lorentzian_xray_reach_kev of the ROI is always included.
+          const double reach = (m_options.lorentzian_xrays && (gamma.gamma_type == PeakDef::SourceGammaType::XrayGamma))
+                               ? sm_lorentzian_xray_reach_kev : 0.0;
+          const bool line_in_range = ((energy >= std::min( lower_mean, range.lower_energy - reach ))
+                                      && (energy <= std::max( upper_mean, range.upper_energy + reach )));
           if( !line_in_range && !escape_in_range[0] && !escape_in_range[1] )
             continue;
           T yield = T(gamma.yield);
