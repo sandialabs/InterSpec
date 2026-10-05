@@ -3641,17 +3641,25 @@ struct RelActAutoCostFcn
               lines.emplace_back( mu, ey.yield * photo / mu );
           }//for( loop over the exciting nuclide's lines )
 
-          // Lines exciting < 0.1 % as much as this source's strongest only cost evaluation time
+          // Lines exciting < 0.1 % as much as this source's strongest only cost evaluation time, and lines with
+          //  attenuation coefficients within ~3 % of each other give the same depth profile, so are merged.
           double max_weight = 0.0;
           for( const pair<double,double> &l : lines )
             max_weight = std::max( max_weight, l.second );
+          std::map<long,pair<double,double>> merged; //{log-mu bin, {sum weight x mu, sum weight}}
           for( const pair<double,double> &l : lines )
           {
             if( l.second < 1.0E-3 * max_weight )
               continue;
+            pair<double,double> &bin = merged[std::lround( std::log( l.first ) / 0.03 )];
+            bin.first += l.second * l.first;
+            bin.second += l.second;
+          }
+          for( const auto &bin : merged )
+          {
             info.exciting_source.push_back( exciter.source );
-            info.exciting_mu.push_back( l.first );
-            info.exciting_base_weight.push_back( l.second );
+            info.exciting_mu.push_back( bin.second.first / bin.second.second );
+            info.exciting_base_weight.push_back( bin.second.second );
           }
         }//for( loop over the curve's sources )
 
@@ -15373,22 +15381,23 @@ struct RelActAutoCostFcn
 
         // The source-depth model for this element's fluorescence lines, if it applies (see setup_fluorescence_depth_model())
         const FluorescenceDepth *fluor_depth = nullptr;
-        T fluor_areal_density( 0.0 );
-        vector<T> fluor_weights;
         for( size_t i = 0; el && (i < m_fluorescence_depth.size()); ++i )
         {
           if( (m_fluorescence_depth[i].rel_eff_index == rel_eff_index) && (m_fluorescence_depth[i].element == el) )
             fluor_depth = &m_fluorescence_depth[i];
         }
+        RelActCalc::FluorescenceDepthProfile<T> fluor_profile;
         if( fluor_depth )
         {
           const PhysModelRelEqnDef<T> phys = make_phys_eqn_input( rel_eff_index, x );
           assert( phys.self_atten.has_value() );
-          if( phys.self_atten.has_value() )
-            fluor_areal_density = phys.self_atten->areal_density;
+          vector<T> fluor_weights;
           for( size_t i = 0; i < fluor_depth->exciting_mu.size(); ++i )
             fluor_weights.push_back( T(fluor_depth->exciting_base_weight[i])
                                      * relative_activity( fluor_depth->exciting_source[i], rel_eff_index, x ) );
+          if( phys.self_atten.has_value() )
+            fluor_profile = RelActCalc::fluorescence_depth_profile( fluor_depth->exciting_mu, fluor_weights,
+                                                                    phys.self_atten->areal_density );
         }//if( fluor_depth )
         
         T nuc_age;
@@ -15479,8 +15488,8 @@ struct RelActAutoCostFcn
           
           // We compute the relative efficiency and FWHM based off of "true" energy
           const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x )
-                * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_depth->mu_at( gamma.energy ),
-                                                fluor_depth->exciting_mu, fluor_weights, fluor_areal_density )
+                * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_profile,
+                                                                                  fluor_depth->mu_at( gamma.energy ) )
                                : T(1.0));
           // Membership and fixed detector-domain exclusions were frozen in the constructor.  A
           // non-finite value here therefore describes an invalid trial, not a reason to mutate the

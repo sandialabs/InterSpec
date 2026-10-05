@@ -594,8 +594,8 @@ T physical_model_basis_correction( const double energy,
 }//physical_model_basis_correction(...)
 
 
-/** Exponential integral E1(x) for x > 0 (doubles or Ceres Jets): power series for x <= 1, else a continued fraction
- (Numerical Recipes 6.3), both with a fixed term count so derivatives propagate. */
+/** Exponential integral E1(x) for x > 0 (doubles or Ceres Jets), from the rational approximations of Abramowitz and
+ Stegun 5.1.53 (x <= 1, absolute error < 2E-7) and 5.1.56 (x > 1, relative error < 2E-8). */
 template<typename T>
 T expint_e1( const T &x )
 {
@@ -603,31 +603,12 @@ T expint_e1( const T &x )
   using namespace ceres;
 
   if( x <= T(1.0) )
-  {
-    T sum( 0.0 ), term( 1.0 );
-    for( int k = 1; k <= 30; ++k )
-    {
-      term *= -x / T(k);
-      sum += term / T(k);
-    }
-    return T(-0.5772156649015329) - log( x ) - sum;
-  }//if( x <= 1 )
+    return -log( x ) - 0.57721566 + x*(0.99999193 + x*(-0.24991055 + x*(0.05519968
+                                       + x*(-0.00976004 + x*0.00107857))));
 
-  // Modified Lentz evaluation of the continued fraction for E_1
-  const double tiny = 1.0E-300;
-  T b = x + T(1.0);
-  T c = T(1.0 / tiny);
-  T d = T(1.0) / b;
-  T h = d;
-  for( int i = 1; i <= 60; ++i )
-  {
-    const double an = -static_cast<double>(i) * i;
-    b += T(2.0);
-    d = T(1.0) / (T(an) * d + b);
-    c = b + T(an) / c;
-    h *= c * d;
-  }
-  return h * exp( -x );
+  const T num = 0.2677737343 + x*(8.6347608925 + x*(18.0590169730 + x*(8.5733287401 + x)));
+  const T den = 3.9584969228 + x*(21.0996530827 + x*(25.6329561486 + x*(9.5733223454 + x)));
+  return exp( -x ) * num / (den * x);
 }//expint_e1(...)
 
 
@@ -653,90 +634,128 @@ T expint_e3( const T &x )
 }
 
 
-/** 40-point Gauss-Legendre nodes and weights on [0,1]. */
-inline const std::pair<std::vector<double>,std::vector<double>> &gauss_legendre_unit_40()
+/** Nodes and weights, as fractions u of a slab's depth, for integrating over it: 8-point Gauss-Legendre on panels with
+ breakpoints u = 0, 1E-4, 1E-3, 0.01, 0.03, 0.1, 0.3, 1, so integrands like exp(-mu z) are resolved for mu A up to
+ ~1E4 (and the z ln(z) behaviour of the production density near a face is handled). */
+inline const std::pair<std::vector<double>,std::vector<double>> &fluorescence_depth_nodes()
 {
   static const std::pair<std::vector<double>,std::vector<double>> nodes_weights = [](){
-    const int n = 40;
-    std::vector<double> x( n ), w( n );
-    for( int i = 0; i < n; ++i )
+    const double gl_x[8] = { -0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498,
+                              0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363 };
+    const double gl_w[8] = { 0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.3626837833783620,
+                             0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763 };
+    const double breaks[] = { 0.0, 1.0E-4, 1.0E-3, 0.01, 0.03, 0.1, 0.3, 1.0 };
+    std::vector<double> u, w;
+    for( size_t p = 0; (p + 1) < (sizeof(breaks)/sizeof(breaks[0])); ++p )
     {
-      double z = std::cos( 3.141592653589793 * (i + 0.75) / (n + 0.5) ), dp = 0.0;
-      for( int iter = 0; iter < 100; ++iter )
+      const double lo = breaks[p], hi = breaks[p+1], half = 0.5*(hi - lo), mid = 0.5*(hi + lo);
+      for( int i = 0; i < 8; ++i )
       {
-        double p1 = 1.0, p2 = 0.0;
-        for( int j = 1; j <= n; ++j )
-        {
-          const double p3 = p2;
-          p2 = p1;
-          p1 = ((2.0*j - 1.0) * z * p2 - (j - 1.0) * p3) / j;
-        }
-        dp = n * (z * p1 - p2) / (z*z - 1.0);
-        const double dz = p1 / dp;
-        z -= dz;
-        if( std::fabs( dz ) < 1.0E-15 )
-          break;
+        u.push_back( mid + half*gl_x[i] );
+        w.push_back( half*gl_w[i] );
       }
-      x[i] = 0.5 * (1.0 - z);
-      w[i] = 1.0 / ((1.0 - z*z) * dp * dp);   //(2/((1-z^2) dp^2)) on [-1,1], halved for [0,1]
     }
-    return std::make_pair( x, w );
+    return std::make_pair( u, w );
   }();
   return nodes_weights;
-}//gauss_legendre_unit_40()
+}//fluorescence_depth_nodes()
+
+
+/** The depth profile of fluorescence production in a self-attenuating slab; see `fluorescence_depth_profile(...)`. */
+template<typename T>
+struct FluorescenceDepthProfile
+{
+  T areal_density = T(0.0);
+  /** Node depths z_i, and quadrature weight times production density there. */
+  std::vector<T> depth, weighted_production;
+  /** Integral of the production density over the slab. */
+  T total_production = T(0.0);
+  bool valid = false;
+};//struct FluorescenceDepthProfile
+
+
+/** Production density of fluorescence in a laterally infinite slab of areal density A that emits uniformly and
+ isotropically: the sum over the exciting lines of weight_g x (2 - E2(mu_g z) - E2(mu_g (A - z))), the line's
+ uncollided flux at depth z.  Computed once, and shared by all of an element's fluorescence lines.
+
+ @param exciting_mu Attenuation coefficients of the exciting lines, per unit areal density.
+ @param exciting_weight Relative production weights (relative rate x K-shell photoabsorption / mu_g).
+ @param areal_density The slab's areal density, in the units the coefficients are per.
+ */
+template<typename T>
+FluorescenceDepthProfile<T> fluorescence_depth_profile( const std::vector<double> &exciting_mu,
+                                                        const std::vector<T> &exciting_weight, const T &areal_density )
+{
+  using namespace std;
+  using namespace ceres;
+
+  assert( exciting_mu.size() == exciting_weight.size() );
+  FluorescenceDepthProfile<T> profile;
+  profile.areal_density = areal_density;
+  if( exciting_mu.empty() || !(areal_density > T(0.0)) )
+    return profile;
+
+  for( size_t g = 0; g < exciting_mu.size(); ++g )
+    profile.total_production += exciting_weight[g] * (T(2.0) * areal_density
+                         - (T(1.0) - T(2.0) * expint_e3( T(exciting_mu[g]) * areal_density )) / T(exciting_mu[g]));
+  if( !(profile.total_production > T(0.0)) )
+    return profile;
+
+  const pair<vector<double>,vector<double>> &nodes = fluorescence_depth_nodes();
+  for( size_t i = 0; i < nodes.first.size(); ++i )
+  {
+    const T z = T(nodes.first[i]) * areal_density;
+    T production( 0.0 );
+    for( size_t g = 0; g < exciting_mu.size(); ++g )
+      production += exciting_weight[g] * (T(2.0) - expint_e2( T(exciting_mu[g]) * z )
+                                          - expint_e2( T(exciting_mu[g]) * (areal_density - z) ));
+    profile.depth.push_back( z );
+    profile.weighted_production.push_back( T(nodes.second[i]) * areal_density * production );
+  }
+  profile.valid = true;
+
+  return profile;
+}//fluorescence_depth_profile(...)
 
 
 /** Self-attenuation of fluorescence x-rays induced in a self-attenuating slab, relative to the uniform-source factor
  (1 - exp(-mu*A))/(mu*A) that is used for gammas.
 
  Fluorescence is produced where the source's own photons (above the fluorescing element's K edge) are photo-absorbed,
- so it is depleted near the faces, where those photons escape: for uniform isotropic emission in a laterally infinite
- slab of areal density A, the uncollided flux of a line with attenuation mu_g at depth z is proportional to
- 2 - E2(mu_g z) - E2(mu_g (A - z)).  The production density is the sum of these, weighted by `exciting_weight`
- (relative rate x K-shell photoabsorption / mu_g), and fluorescence escapes toward the detector with exp(-mu_f z).
- For thick U3O8 this raises K-beta/K-alpha1 by ~3-4 %; for thin layers the factor goes to 1.  The detector
- efficiency, external attenuation and any overall scale (a free fluorescence activity) are unaffected.
+ so it is depleted near the faces, where those photons escape (see `fluorescence_depth_profile(...)`), and it escapes
+ toward the detector with exp(-mu_f z).  For thick U3O8 this raises K-beta/K-alpha1 by ~3-4 %; for thin layers the
+ factor goes to 1.  The detector efficiency, external attenuation and any overall scale (a free fluorescence activity)
+ are unaffected.
 
+ @param profile The production profile, from `fluorescence_depth_profile(...)`.
  @param mu_f Attenuation coefficient of the material at the fluorescence energy, per unit areal density.
- @param exciting_mu Attenuation coefficients of the exciting lines, per unit areal density.
- @param exciting_weight Relative production weights of the exciting lines (same size as `exciting_mu`).
- @param areal_density The slab's areal density, in the units the coefficients are per.
  */
 template<typename T>
-T fluorescence_self_atten_correction( const double mu_f, const std::vector<double> &exciting_mu,
-                                      const std::vector<T> &exciting_weight, const T &areal_density )
+T fluorescence_self_atten_correction( const FluorescenceDepthProfile<T> &profile, const double mu_f )
 {
   using namespace std;
   using namespace ceres;
 
-  assert( exciting_mu.size() == exciting_weight.size() );
-  if( exciting_mu.empty() || !(mu_f > 0.0) || (areal_density <= T(1.0E-6) / T(mu_f)) )
+  const T &areal_density = profile.areal_density;
+  if( !profile.valid || !(mu_f > 0.0) || (areal_density <= T(1.0E-6) / T(mu_f)) )
     return T(1.0);
 
-  // Mean production density along depth, from the analytic integral of the flux profile
-  T total_production( 0.0 );
-  for( size_t g = 0; g < exciting_mu.size(); ++g )
-    total_production += exciting_weight[g] * (T(2.0) * areal_density
-                         - (T(1.0) - T(2.0) * expint_e3( T(exciting_mu[g]) * areal_density )) / T(exciting_mu[g]));
-  if( !(total_production > T(0.0)) )
-    return T(1.0);
+  T escape( 0.0 );
+  for( size_t i = 0; i < profile.depth.size(); ++i )
+    escape += profile.weighted_production[i] * exp( -T(mu_f) * profile.depth[i] );
 
-  // Production density averaged over the escape-weighted depth: z(s) = -ln(1 - s (1 - exp(-mu_f A)))/mu_f maps a
-  //  uniform s in [0,1] onto exp(-mu_f z), concentrating the nodes where escaping fluorescence is made.
-  const pair<vector<double>,vector<double>> &gl = gauss_legendre_unit_40();
-  const T one_minus_trans = T(1.0) - exp( -T(mu_f) * areal_density );
-  T escape_weighted( 0.0 );
-  for( size_t i = 0; i < gl.first.size(); ++i )
-  {
-    const T z = -log( T(1.0) - T(gl.first[i]) * one_minus_trans ) / T(mu_f);
-    T production( 0.0 );
-    for( size_t g = 0; g < exciting_mu.size(); ++g )
-      production += exciting_weight[g] * (T(2.0) - expint_e2( T(exciting_mu[g]) * z )
-                                          - expint_e2( T(exciting_mu[g]) * (areal_density - z) ));
-    escape_weighted += T(gl.second[i]) * production;
-  }
+  const T uniform = (T(1.0) - exp( -T(mu_f) * areal_density )) / (T(mu_f) * areal_density);
+  return escape / (profile.total_production * uniform);
+}//fluorescence_self_atten_correction(...)
 
-  return areal_density * escape_weighted / total_production;
+
+/** Convenience form of the above, for a single fluorescence energy. */
+template<typename T>
+T fluorescence_self_atten_correction( const double mu_f, const std::vector<double> &exciting_mu,
+                                      const std::vector<T> &exciting_weight, const T &areal_density )
+{
+  return fluorescence_self_atten_correction( fluorescence_depth_profile( exciting_mu, exciting_weight, areal_density ),
+                                             mu_f );
 }//fluorescence_self_atten_correction(...)
 
 
