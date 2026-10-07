@@ -24,7 +24,12 @@
   <message id="raag-fwhm-form">FWHM Form</message>
   <message id="raag-peak-skew">Peak Skew</message>
   <message id="raag-lorentzian-xrays">Lorentzian X-rays</message>
-  <message id="raag-use-fixed-skew">Peak fit opt. skew</message>
+  <message id="raag-skew-source">Source</message>
+  <message id="raag-skew-source-prefs">Peak Fit Opts</message>
+  <message id="raag-skew-source-custom">Custom</message>
+  <message id="raag-skew-type">Type</message>
+  <message id="raag-skew-roi-indep-note">Peak Fit Opts use ROI-independent skew, so only the skew type is used.</message>
+  <message id="raag-skew-use-fit">use fit values</message>
   <message id="raag-add-uncert">Add. Uncert</message>
   <message id="raag-auto-simplify">Auto-simplify model</message>
   <message id="raag-auto-simplify-dchi2">Max &#967;&#178; increase</message>
@@ -82,9 +87,11 @@
     </ul>
   </message>
   <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
-  <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
+  <message id="raag-tt-skew-type">The type of skew to apply to the peaks.  When choosing a type, the values of its parameters start from the Peak Fit Opts (if they are for this type), or else the detector response function, or else defaults.</message>
+  <message id="raag-tt-skew-source">Where the peak skew comes from.<br /><b>Peak Fit Opts</b>: the skew type and parameter values of the spectrum's Peak Fit Opts are used when the calculation is done (so a saved configuration follows the spectrum it is used with).  Parameters the Peak Fit Opts give values for are held at them; the others are fit, or held at the detector's (or default) values for parameters that are usually fixed.  If the Peak Fit Opts have no skew, no skew is used.<br /><b>Custom</b>: the skew type, parameter values, and which parameters are fit, are set here (and saved with the configuration).</message>
+  <message id="raag-tt-skew-simplified">Auto-simplify held this parameter at its no-skew (Gaussian) value, as the fit did not need it.</message>
+  <message id="raag-tt-skew-use-fit">Switch to custom skew, using the parameter values from the last fit; you can then uncheck parameters to hold them at these values.</message>
   <message id="raag-tt-lorentzian-xrays">When checked, x-ray peaks will use a Voigt profile with the Lorentzian width set to the natural x-ray linewidth. This accounts for the intrinsic Lorentzian shape of x-ray lines. Only compatible with NoSkew or GaussPlusBortel peak skew types.</message>
-  <message id="raag-tt-use-fixed-skew">When checked, the peak skew type and any fixed skew parameter values from the Peak Fit Options will be used. The skew type selector will be disabled. When unchecked, you can manually select the skew type and all skew parameters will be fit.</message>
   <message id="raag-tt-auto-simplify">When checked, after the initial fit the solver removes near-degenerate / redundant degrees of freedom — the empirical correction, then external attenuator(s), then a high-order polynomial term — keeping each removal only if it does not worsen the fit's &#967;&#178; by more than the value you set. This gives a more robust, more accurate result by dropping parameters the data cannot actually constrain. Self-attenuation and the sources are never removed.</message>
   <message id="raag-tt-auto-simplify-dchi2">The most a single parameter removal may increase &#967;&#178; and still be accepted. A small value (~1) means "a unit or two of &#967;&#178; is not physically meaningful, prefer the simpler model"; larger values remove more aggressively.</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>

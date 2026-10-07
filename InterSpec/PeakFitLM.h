@@ -377,13 +377,14 @@ struct FitPeaksResults
     static constexpr size_t sm_max_num_skew_pars = 1 + PeakDef::CoefficientType::SkewPar5 - PeakDef::CoefficientType::SkewPar0;
     static_assert( sm_max_num_skew_pars == 6 );
     
-    /** The values of energy-dependent skew paramaters at the lower and upper energies.
+    /** The values of energy-dependent skew paramaters at the lower and upper energies: {lower, upper}.
      The skew varies linearly between them; the peaks of each ROI all use its value at the ROI's center.
      See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
      */
     std::optional<std::pair<double,double>> energy_dependent_skew_pars[sm_max_num_skew_pars];
     
-    /** The skew values for the non-energy-dependent skew terms.
+    /** The skew values for the non-energy-dependent skew terms: {value, uncertainty}.  Also used for an
+     energy-dependent term when the ROIs span too little energy to fit an energy dependence.
      See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.
      */
     std::optional<std::pair<double,double>> non_energy_dependent_skew_pars[sm_max_num_skew_pars];

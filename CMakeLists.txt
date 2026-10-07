@@ -362,6 +362,7 @@ set(sources
     src/PeakFitDetPrefs.cpp
     src/PeakFitDetPrefsGui.cpp
     src/FitSkewParamsTool.cpp
+    src/SkewParamsGrid.cpp
     src/PeakFitSpecImp.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
@@ -515,6 +516,7 @@ set(headers
     InterSpec/PeakFitUtils.h
     InterSpec/PeakFitDetPrefs.h
     InterSpec/PeakFitDetPrefsGui.h
+    InterSpec/SkewParamsGrid.h
     InterSpec/PeakFitSpecImp.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h

@@ -969,7 +969,10 @@ struct Options
 
   /** Optional fixed skew parameter values for the lower energy end of the spectrum.
    If a value is set, that skew parameter will be held constant during fitting
-   (not optimized), using the specified value.  If nullopt, the parameter is fit as usual.
+   (not optimized), using the specified value.
+   A parameter with neither a fixed nor a starting value (#start_lower_skew) is fit from its default
+   starting value - unless it is not fit by default (see `PeakDef::skew_parameter_fit_by_default`;
+   e.g., the GADRAS powers and extents), in which case it is held at that default.
    Index 0..5 correspond to SkewPar0..SkewPar5.
    */
   std::optional<double> fixed_lower_skew[6];
@@ -982,46 +985,44 @@ struct Options
   std::optional<double> fixed_upper_skew[6];
 
   /** Optional starting values of the skew parameters, at the lower and upper energy end of the
-   spectrum (see #fixed_lower_skew / #fixed_upper_skew); unlike those, these parameters are still fit.
+   spectrum (see #fixed_lower_skew / #fixed_upper_skew); unlike those, these parameters are fit -
+   including ones not fit by default.
    A value outside the parameter's allowed range is moved into it.  An unset upper value, for an
    energy-dependent parameter, starts from the lower value.
    */
   std::optional<double> start_lower_skew[6];
   std::optional<double> start_upper_skew[6];
 
-  /** How the skew of peaks is taken from the peak-fit preferences (`PeakFitDetPrefs`) of the spectrum
-   or detector response, when they are available (see the `peak_fit_prefs` argument of #solve).
+  /** If true, the skew is taken from the peak-fit preferences (`PeakFitDetPrefs`) of the spectrum (or
+   else of the detector response) when the solve is done - see #apply_peak_fit_prefs, and the
+   `peak_fit_prefs` argument of #solve.  #skew_type and the fixed/starting values above are then only
+   used if there are no preferences.
    */
-  enum class SkewPrefsUsage : int
-  {
-    /** Ignore the peak-fit preferences; use #skew_type and the fixed/starting values above. */
-    Ignore,
+  bool skew_from_peak_fit_prefs;
 
-    /** Use the skew type from the preferences, holding fixed the parameters the preferences give
-     values for, and fitting the rest - i.e., what the preferences mean for peak fitting too.  If the
-     preferences are for ROI-independent skew, only the type is used, and all parameters are fit.
-     */
-    AsPreferencesSpecify,
+  /** If #skew_from_peak_fit_prefs, sets the skew from `prefs` - see #set_skew_from_prefs, with
+   `prefs->m_peak_skew_type` (so preferences without skew mean no skew).  Does nothing if `prefs` is
+   null.
 
-    /** Use the skew type from the preferences, and start the fit from their values, but fit all
-     the skew parameters to the data.
-     */
-    StartingValuesOnly
-  };//enum class SkewPrefsUsage
-
-  static const char *skew_prefs_usage_str( const SkewPrefsUsage usage );
-  static SkewPrefsUsage skew_prefs_usage_from_str( const std::string &str );
-
-  SkewPrefsUsage skew_prefs_usage;
-
-  /** Applies peak-fit preferences to #skew_type and the fixed/starting skew values, according to
-   #skew_prefs_usage (does nothing for `Ignore`, or if `prefs` is null or its skew type is `NoSkew`,
-   which is also what preferences that were never set up have).
-
-   The fixed/starting values are set from the preferences (and cleared for parameters the
-   preferences have no value for), so the options describe exactly the skew that will be fit.
+   Lorentzian x-rays are turned off if the preferences' skew type is incompatible with them.
    */
-  void apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs );
+  void apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs, const PeakFitDetPrefs * const drf_prefs );
+
+  /** Sets #skew_type to `type`, and gives every one of its parameters a fixed or starting value, so
+   the options describe exactly the skew that will be fit:
+   - parameters `prefs` gives values for (when they are for this skew type, and not ROI-independent)
+     are held fixed at them (moved into the allowed range, if needed);
+   - otherwise, parameters fit by default start from `skew_starting_value(...)` (the detector's own
+     value, if it has one, else the default), and the others are held fixed at it.
+   Either prefs may be null.
+   */
+  void set_skew_from_prefs( const PeakDef::SkewType type, const PeakFitDetPrefs * const prefs,
+                            const PeakFitDetPrefs * const drf_prefs );
+
+  /** Sets #skew_type explicitly - so no longer from the peak-fit preferences - clearing fixed/starting
+   values if they were for another skew type (its parameters then start from their defaults).
+   */
+  void set_skew_type( const PeakDef::SkewType type );
 
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
@@ -1029,11 +1030,15 @@ struct Options
    * Lorentzian HWHM set to the natural x-ray linewidth (plus thermal/recoil
    * Doppler broadening for decay x-rays).
    *
-   * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
+   * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel (see
+   * #lorentzian_xrays_compatible).
    * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
    * in `check_same_corr_fcn_and_external_shielding_specifications()` will be thrown)
    */
   bool lorentzian_xrays;
+
+  /** Whether #lorentzian_xrays can be used with the skew type. */
+  static bool lorentzian_xrays_compatible( const PeakDef::SkewType skew_type );
 
   /** Model the iodine K x-ray escape peaks of a NaI or CsI detector.
 
@@ -1767,6 +1772,25 @@ struct RelActAutoSolution
    Throws exception if covariance matrix is invalid.
    */
   std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
+
+
+  /** A skew parameter's value from the fit, at the lower and upper energy of the spectrum (the same
+   value, for a parameter without an energy dependence).
+   */
+  struct SkewParResult
+  {
+    double lower = 0.0;
+    double upper = 0.0;
+    bool was_fit = false;
+
+    /** If the parameter was free, but auto-simplify held it (see `m_parameter_fixed_by_model_selection`). */
+    bool simplified = false;
+  };
+
+  /** The skew parameters (of `m_options.skew_type`) the fit ended with; empty if there was no skew, or
+   no successful fit.
+   */
+  std::vector<SkewParResult> skew_parameters() const;
 
 
   /** Floors a derived-quantity uncertainty when the linearized covariance is known to under-state it.
@@ -2973,8 +2997,8 @@ struct RelActAutoSolution
  @param rel_eff_order The number of energy dependent terms to have in the relative efficiency
         equation (e.g., one more parameter than this will be fit for).
  @param peak_fit_prefs The peak-fit preferences of the spectrum (e.g., `SpecMeas::peakFitDetPrefs()`);
-        if null, those of `drf` are used, if any.  How (and if) their skew is used is set by
-        `Options::skew_prefs_usage`.
+        if null, those of `drf` are used, if any.  Their skew is used if
+        `Options::skew_from_peak_fit_prefs` is set.
 
  TODO: right now live-time normalization is always used for background - but users may have overriden this for e.g., bad or unknown live-times
  */

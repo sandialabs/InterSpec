@@ -187,6 +187,34 @@ vector<double> detection_significances( const vector<shared_ptr<const PeakDef>> 
   }
   return answer;
 }//detection_significances(...)
+
+
+/** A skew coefficient's starting value: NaN/Inf, or out of range while being fit, restart at
+ `default_start`; a fixed value outside the range is moved to the nearest limit, rather than
+ discarded (e.g., one saved before a range changed).
+ */
+double skew_start_in_range( const double val, const double default_start,
+                            const double lower, const double upper, const bool is_fit )
+{
+  if( IsInf(val) || IsNan(val) || (is_fit && ((val < lower) || (val > upper))) )
+    return default_start;
+  return (std::min)( (std::max)( val, lower ), upper );
+}//skew_start_in_range(...)
+
+
+/** Bounds for a skew coefficient restricted to near its starting value: a window centred on it,
+ floored at a quarter of the parameter's full range so a zero starting value doesnt collapse it to
+ a point - see `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
+
+ Expressed as an OFFSET from the starting value rather than a multiple of it: scaling by the value
+ silently inverts for a negative parameter (lower bound above upper bound, i.e. an infeasible
+ starting point handed to Ceres) - and the GADRAS tail extents can be negative.
+ */
+pair<double,double> restricted_skew_bounds( const double start, const double lower, const double upper )
+{
+  const double half_window = (std::max)( 0.125*(upper - lower), 0.5*fabs(start) );
+  return { (std::max)( lower, start - half_window ), (std::min)( upper, start + half_window ) };
+}//restricted_skew_bounds(...)
 }//namespace
 
 
@@ -2314,6 +2342,7 @@ struct PeakFitDiffCostFunction
 
     vector<bool> fit_parameter( num_skew_pars, true );
     vector<double> starting_value( num_skew_pars, 0.0 );
+    vector<double> default_start( num_skew_pars, 0.0 );
     vector<double> lower_values( num_skew_pars, 0.0 );
     vector<double> upper_values( num_skew_pars, 0.0 );
 
@@ -2326,11 +2355,12 @@ struct PeakFitDiffCostFunction
       if( !use )
         throw logic_error( "Inconsistent skew par val" );
       starting_value[i] = start;
+      default_start[i]  = start;
       lower_values[i]   = lower;
       upper_values[i]   = upper;
     }
 
-    // Use values from the first matching peak (matching global skew type)
+    // Use values from the matching peaks (matching global skew type); the last one wins
     for( const auto &p : inpeaks )
     {
       if( p->skewType() != m_skew_type )
@@ -2340,10 +2370,8 @@ struct PeakFitDiffCostFunction
       {
         const auto ct = PeakDef::CoefficientType( static_cast<int>(PeakDef::SkewPar0) + static_cast<int>(i) );
         fit_parameter[i] = p->fitFor( ct );
-        double val = p->coefficient( ct );
-
-        if( IsInf(val) || IsNan(val) || (val < lower_values[i]) || (val > upper_values[i]) )
-          val = starting_value[i];
+        double val = skew_start_in_range( p->coefficient( ct ), default_start[i],
+                                          lower_values[i], upper_values[i], fit_parameter[i] );
 
         // Sanity-clamp Crystal Ball power-law params that can drift high
         switch( m_skew_type )
@@ -2393,6 +2421,10 @@ struct PeakFitDiffCostFunction
     const bool restrict_skew_range = m_options.test( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
                                      || m_options.test( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
 
+    // A refinement keeps the given values (tails that really are zero shouldnt restart each refit)
+    if( !restrict_skew_range )
+      PeakDef::avoid_stationary_skew_start( m_skew_type, starting_value, fit_parameter );
+
     // Set up the base (lower-anchor) skew parameters at params[0..num_skew_pars-1]
     for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
     {
@@ -2402,22 +2434,10 @@ struct PeakFitDiffCostFunction
       {
         if( restrict_skew_range )
         {
-          // A window centred on the starting value, floored at a quarter of the parameter's full
-          //  range so a zero starting value doesnt collapse it to a point - see
-          //  `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
-          //
-          // Expressed as an OFFSET from the starting value rather than a multiple of it: scaling by
-          //  the value silently inverts for a negative parameter (lower bound above upper bound,
-          //  i.e. an infeasible starting point handed to Ceres).  No skew parameter is negative
-          //  today, so this is latent - but it bit immediately when a log-scaled skew coordinate
-          //  was trialled, and cost an afternoon to find.
-          const double par_range = upper_values[skew_index] - lower_values[skew_index];
-          const double half_window = (std::max)( 0.125*par_range,
-                                                0.5*fabs(starting_value[skew_index]) );
-          lower_bounds[skew_index] = (std::max)( lower_values[skew_index],
-                                                starting_value[skew_index] - half_window );
-          upper_bounds[skew_index] = (std::min)( upper_values[skew_index],
-                                                starting_value[skew_index] + half_window );
+          const pair<double,double> bounds = restricted_skew_bounds( starting_value[skew_index],
+                                                        lower_values[skew_index], upper_values[skew_index] );
+          lower_bounds[skew_index] = bounds.first;
+          upper_bounds[skew_index] = bounds.second;
         }else
         {
           lower_bounds[skew_index] = lower_values[skew_index];
@@ -2864,6 +2884,7 @@ struct PeakFitDiffCostFunction
         // Determine default ranges and starting values for each skew parameter
         vector<bool>   fit_parameter( num_skew_pars, false ); // OR'd across matching peaks below
         vector<double> starting_value( num_skew_pars, 0.0 );
+        vector<double> default_start( num_skew_pars, 0.0 );
         vector<double> lower_values( num_skew_pars, 0.0 );
         vector<double> upper_values( num_skew_pars, 0.0 );
 
@@ -2876,6 +2897,7 @@ struct PeakFitDiffCostFunction
           if( !use )
             throw logic_error( "Inconsistent skew par val (IndependentSkewValues)" );
           starting_value[i] = start;
+          default_start[i]  = start;
           lower_values[i]   = lower;
           upper_values[i]   = upper;
         }
@@ -2900,11 +2922,9 @@ struct PeakFitDiffCostFunction
 
             if( !found_first )
             {
-              // Coefficient starting value: use first matching peak only
+              // Coefficient starting value: use first matching peak only (range-checked below, once
+              //  `fit_parameter` is final)
               double val = p->coefficient( ct );
-
-              if( IsInf(val) || IsNan(val) || (val < lower_values[i]) || (val > upper_values[i]) )
-                val = starting_value[i];
 
               // Sanity-clamp Crystal Ball power-law params that can drift high
               switch( m_skew_type )
@@ -2952,13 +2972,22 @@ struct PeakFitDiffCostFunction
           found_first = true;
         }//for( const auto &p : roi.peaks )
 
+        const bool restrict_skew_range = m_options.test( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
+                                         || m_options.test( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
+
+        for( size_t i = 0; i < num_skew_pars; ++i )
+          starting_value[i] = skew_start_in_range( starting_value[i], default_start[i],
+                                                   lower_values[i], upper_values[i], fit_parameter[i] );
+
+        // A refinement keeps the given values (tails that really are zero shouldnt restart each refit)
+        if( !restrict_skew_range )
+          PeakDef::avoid_stationary_skew_start( m_skew_type, starting_value, fit_parameter );
+
         // Write the per-ROI skew params into the global parameter array
         // Must match process_one_roi's `roi_skew_ptr`: the skew block sits after the amplitude
         //  block, which is only present when the LLS is not solving the amplitudes.
         const size_t skew_base_idx = param_offset + num_fit_cont + num_sigmas_fit
                                      + roi.peaks.size() + num_amps_fit;
-        const bool restrict_skew_range = m_options.test( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
-                                         || m_options.test( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
         for( size_t skew_index = 0; skew_index < num_skew_pars; ++skew_index )
         {
           const size_t abs_idx = skew_base_idx + skew_index;
@@ -2968,12 +2997,10 @@ struct PeakFitDiffCostFunction
           {
             if( restrict_skew_range )
             {
-              // Floor the window at a quarter of the parameters full range, so a zero starting
-              //  value doesnt collapse it to a point.
-              const double par_range = upper_values[skew_index] - lower_values[skew_index];
-              lower_bounds[abs_idx] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-              upper_bounds[abs_idx] = std::min( upper_values[skew_index],
-                                    std::max( 1.5*fabs(starting_value[skew_index]), 0.25*par_range ) );
+              const pair<double,double> bounds = restricted_skew_bounds( starting_value[skew_index],
+                                                        lower_values[skew_index], upper_values[skew_index] );
+              lower_bounds[abs_idx] = bounds.first;
+              upper_bounds[abs_idx] = bounds.second;
             }else
             {
               lower_bounds[abs_idx] = lower_values[skew_index];
@@ -3334,34 +3361,8 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
   assert( fitPrefs );
   if( fitPrefs )
   {
-    candidatepeak->setSkewType( fitPrefs->m_peak_skew_type );
-
-    const size_t num_prefs_skew
-      = PeakDef::num_skew_parameters( fitPrefs->m_peak_skew_type );
-    for( size_t i = 0; i < num_prefs_skew; ++i )
-    {
-      const PeakDef::CoefficientType ct
-        = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
-
-      if( fitPrefs->m_lower_energy_skew[i].has_value() )
-      {
-        double val = fitPrefs->m_lower_energy_skew[i].value();
-
-        if( PeakDef::is_energy_dependent( fitPrefs->m_peak_skew_type, ct )
-           && fitPrefs->m_upper_energy_skew[i].has_value()
-           && dataH && dataH->num_gamma_channels() > 0 )
-        {
-          const double lower_energy = dataH->gamma_channel_lower( 0 );
-          const double upper_energy
-            = dataH->gamma_channel_upper( dataH->num_gamma_channels() - 1 );
-          const double frac = (mean0 - lower_energy) / (upper_energy - lower_energy);
-          val += frac * (fitPrefs->m_upper_energy_skew[i].value() - val);
-        }
-
-        candidatepeak->set_coefficient( val, ct );
-        candidatepeak->setFitFor( ct, false );
-      }//if( skew param value specified )
-    }//for( loop over skew parameters )
+    const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+    apply_prefs_skew_to_peak( *candidatepeak, *fitPrefs, dataH, drf_prefs.get() );
 
     // Apply FWHM method from preferences
     if( (fitPrefs->m_fwhm_method != PeakFitDetPrefs::FwhmMethod::Normal)
@@ -4785,7 +4786,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
         {
           newpeak->setSkewType( target_skew );
 
-          // Set default starting values and enable fitting for skew parameters
+          // Set default starting values, and fit the skew parameters that are fit by default
           const size_t num_skew_pars = PeakDef::num_skew_parameters( target_skew );
           for( size_t i = 0; i < num_skew_pars; ++i )
           {
@@ -4794,7 +4795,7 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
             double lower, upper, start, dx;
             PeakDef::skew_parameter_range( target_skew, ct, lower, upper, start, dx );
             newpeak->set_coefficient( start, ct );
-            newpeak->setFitFor( ct, true );
+            newpeak->setFitFor( ct, PeakDef::skew_parameter_fit_by_default( target_skew, ct ) );
           }
         }
         // else if peak already had the target skew type, preserve its fitFor settings

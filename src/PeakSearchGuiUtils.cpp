@@ -4283,7 +4283,12 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
     }//if( all_peaks )
     
     
-    // Grab the suggested skew starting parameters, but use values from `near_skew_peak`, if valid
+    // Grab the suggested skew starting parameters (from the peak-fit prefs, if for this skew type),
+    //  but use values from `near_skew_peak`, if valid
+    const shared_ptr<const PeakFitDetPrefs> meas_prefs = foreground->peakFitDetPrefs();
+    const shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
+    const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+
     const size_t num_skew_pars = PeakDef::num_skew_parameters( type );
     vector<double> skew_pars( num_skew_pars, 0.0 );
     vector<bool> fit_for_skew_pars( num_skew_pars, true );
@@ -4296,7 +4301,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       if( !use )
         throw std::logic_error("inconsistent skew par def");
       
-      double val = starting;
+      double val = skew_starting_value( type, ct, meas_prefs.get(), drf_prefs.get() );
       bool fit_for = PeakDef::skew_parameter_fit_by_default( type, ct );
       if( near_skew_peak )
       {

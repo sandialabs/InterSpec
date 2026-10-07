@@ -54,92 +54,14 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/AnalystChecks.h"
+#include "InterSpec/SkewParamsGrid.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/FitSkewParamsTool.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
 using namespace std;
 using namespace Wt;
-
-
-namespace
-{
-  // Returns the PeakEdit.xml message IDs for label and tooltip of a given skew parameter.
-  // Duplicated from PeakFitDetPrefsGui.cpp to keep files self-contained.
-  void skew_param_msg_ids( const PeakDef::SkewType skewType, const size_t paramIndex,
-                           const char *&labelId, const char *&tooltipId )
-  {
-    labelId = nullptr;
-    tooltipId = nullptr;
-
-    switch( skewType )
-    {
-      case PeakDef::NoSkew:
-      case PeakDef::NumSkewType:
-        return;
-
-      case PeakDef::Bortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-bortel-tau"; tooltipId = "pe-tt-skew-bortel-tau"; }
-        return;
-
-      case PeakDef::GaussExp:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-gaussexp-k"; tooltipId = "pe-tt-skew-gaussexp-k"; }
-        return;
-
-      case PeakDef::CrystalBall:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-crystalball-alpha"; tooltipId = "pe-tt-skew-crystalball-alpha"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-crystalball-n"; tooltipId = "pe-tt-skew-crystalball-n"; }
-        return;
-
-      case PeakDef::ExpGaussExp:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-expgaussexp-kl"; tooltipId = "pe-tt-skew-expgaussexp-kl"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-expgaussexp-kh"; tooltipId = "pe-tt-skew-expgaussexp-kh"; }
-        return;
-
-      case PeakDef::DoubleSidedCrystalBall:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-dscb-alphalow"; tooltipId = "pe-tt-skew-dscb-alphalow"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-dscb-nlow"; tooltipId = "pe-tt-skew-dscb-nlow"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-dscb-alphahigh"; tooltipId = "pe-tt-skew-dscb-alphahigh"; }
-        if( paramIndex == 3 ){ labelId = "pe-label-skew-dscb-nhigh"; tooltipId = "pe-tt-skew-dscb-nhigh"; }
-        return;
-
-      case PeakDef::VoigtPlusBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-voigtplusbortel-gamma"; tooltipId = "pe-tt-skew-voigtplusbortel-gamma"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-voigtplusbortel-r"; tooltipId = "pe-tt-skew-voigtplusbortel-r"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-voigtplusbortel-tau"; tooltipId = "pe-tt-skew-voigtplusbortel-tau"; }
-        return;
-
-      case PeakDef::GaussPlusBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-gaussplusbortel-r"; tooltipId = "pe-tt-skew-gaussplusbortel-r"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-gaussplusbortel-tau"; tooltipId = "pe-tt-skew-gaussplusbortel-tau"; }
-        return;
-
-      case PeakDef::DoubleBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-doublebortel-tau1"; tooltipId = "pe-tt-skew-doublebortel-tau1"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-doublebortel-deltatau2"; tooltipId = "pe-tt-skew-doublebortel-deltatau2"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-doublebortel-eta"; tooltipId = "pe-tt-skew-doublebortel-eta"; }
-        return;
-
-      case PeakDef::GadrasGeneric:
-      case PeakDef::GadrasCZT:
-      {
-        // GADRAS types use 6 parameters (low/high skew, low/high power, low/high extent).
-        static const char * const s_gadras_label_ids[6] = {
-          "pe-label-skew-gadras-0", "pe-label-skew-gadras-1", "pe-label-skew-gadras-2",
-          "pe-label-skew-gadras-3", "pe-label-skew-gadras-4", "pe-label-skew-gadras-5"
-        };
-        static const char * const s_gadras_tt_ids[6] = {
-          "pe-tt-skew-gadras-0", "pe-tt-skew-gadras-1", "pe-tt-skew-gadras-2",
-          "pe-tt-skew-gadras-3", "pe-tt-skew-gadras-4", "pe-tt-skew-gadras-5"
-        };
-        if( paramIndex < 6 ){ labelId = s_gadras_label_ids[paramIndex]; tooltipId = s_gadras_tt_ids[paramIndex]; }
-        return;
-      }
-    }//switch( skewType )
-  }//void skew_param_msg_ids(...)
-}//anonymous namespace
 
 
 FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer )
@@ -148,20 +70,13 @@ FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer )
     m_chart( nullptr ),
     m_peakModel( nullptr ),
     m_skewTypeCombo( nullptr ),
-    m_paramsDiv( nullptr ),
+    m_paramsGrid( nullptr ),
     m_updatePeaksCb( nullptr ),
     m_fitBtn( nullptr ),
     m_statusText( nullptr ),
     m_isCalculating( false )
 {
   assert( m_viewer );
-
-  for( int i = 0; i < 6; ++i )
-  {
-    m_lowerSpin[i] = nullptr;
-    m_upperSpin[i] = nullptr;
-    m_fitCb[i] = nullptr;
-  }
 
   m_rightClickMenu = nullptr;
   m_rightClickEnergy = 0.0;
@@ -239,8 +154,9 @@ void FitSkewParamsTool::initWidgets()
   } );
 
   // Skew parameter rows container
-  m_paramsDiv = controlsDiv->addNew<WContainerWidget>();
-  m_paramsDiv->addStyleClass( "FswSkewParams");
+  m_paramsGrid = controlsDiv->addNew<SkewParamsGrid>( true, false );
+  m_paramsGrid->addStyleClass( "FswSkewParams");
+  m_paramsGrid->userChanged().connect( this, &FitSkewParamsTool::userEditedSkewValue );
 
   // Fit button and status on one line
   WContainerWidget *fitRow = controlsDiv->addNew<WContainerWidget>();
@@ -288,24 +204,7 @@ void FitSkewParamsTool::initWidgets()
       m_skewTypeCombo->setCurrentIndex( skewIdx);
   }
 
-  // Build skew param rows
-  updateSkewParamRows();
-
-  // If prefs have skew param values, fill them in
-  if( prefs )
-  {
-    const PeakDef::SkewType skewType = prefs->m_peak_skew_type;
-    const size_t nparams = PeakDef::num_skew_parameters( skewType);
-    for( size_t p = 0; p < nparams; ++p )
-    {
-      if( m_lowerSpin[p] && prefs->m_lower_energy_skew[p].has_value() )
-        m_lowerSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ));
-      if( m_upperSpin[p] && prefs->m_upper_energy_skew[p].has_value() )
-        m_upperSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ));
-    }
-  }//if( prefs )
-
-  // Detect peaks and display them
+  // Detect peaks (before building the skew rows, whose defaults depend on the peaks)
   if( m_spectrum )
   {
     try
@@ -320,14 +219,17 @@ void FitSkewParamsTool::initWidgets()
     {
       // Peak detection failed; continue with empty list
     }
-
-    // Apply current skew values to peaks and display
-    if( !m_detectedPeaks.empty() )
-    {
-      const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( m_detectedPeaks);
-      m_peakModel->setPeaks( displayPeaks);
-    }
   }//if( m_spectrum )
+
+  // Build skew param rows (their values come from the prefs, where they are for this skew type)
+  updateSkewParamRows();
+
+  // Apply current skew values to peaks and display
+  if( !m_detectedPeaks.empty() )
+  {
+    const vector<shared_ptr<const PeakDef>> displayPeaks = applySkewToPeaks( m_detectedPeaks);
+    m_peakModel->setPeaks( displayPeaks);
+  }
 
   // Disable fit button if no peaks or NoSkew
   const int skewIdx = m_skewTypeCombo->currentIndex();
@@ -348,154 +250,66 @@ void FitSkewParamsTool::initWidgets()
 
 void FitSkewParamsTool::updateSkewParamRows()
 {
-  m_paramsDiv->clear();
-  for( int i = 0; i < 6; ++i )
-  {
-    m_lowerSpin[i] = nullptr;
-    m_upperSpin[i] = nullptr;
-    m_fitCb[i] = nullptr;
-  }
-
   const int skewIdx = m_skewTypeCombo->currentIndex();
-  if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
-    return;
-
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
+  const PeakDef::SkewType skewType = ((skewIdx >= 0) && (skewIdx < static_cast<int>( PeakDef::NumSkewType )))
+                                     ? static_cast<PeakDef::SkewType>( skewIdx ) : PeakDef::NoSkew;
   const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
+  m_paramsGrid->setSkewType( skewType );
+  m_fitBtn->setEnabled( (nparams > 0) && !m_detectedPeaks.empty() );
   if( nparams == 0 )
-  {
-    m_fitBtn->setEnabled( false);
     return;
-  }
 
-  m_fitBtn->setEnabled( !m_detectedPeaks.empty());
+  // Starting values come from the spectrum's (or else the detector's) peak-fit prefs, when they are
+  //  for this skew type - so, e.g., a GADRAS detector's own tail powers and extents are used.
+  const shared_ptr<const SpecMeas> meas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  const shared_ptr<const PeakFitDetPrefs> measPrefs = meas ? meas->peakFitDetPrefs() : nullptr;
+  const shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+  const shared_ptr<const PeakFitDetPrefs> drfPrefs = drf ? drf->peakFitDetPrefs() : nullptr;
+  const bool measPrefsMatch = measPrefs && (measPrefs->m_peak_skew_type == skewType);
+  const bool isGadras = (skewType == PeakDef::SkewType::GadrasGeneric)
+                        || (skewType == PeakDef::SkewType::GadrasCZT);
 
-  // Check if any parameter is energy-dependent
-  bool hasEnergyDep = false;
+  // The GADRAS powers (their energy dependence) are fit by default only when the peaks can pin them
+  //  down: more than one ROI, spanning at least the 100 keV PeakFitLM requires for energy dependence.
+  bool peaksSpanEnergy = false;
+  if( isGadras && !m_detectedPeaks.empty() )
+  {
+    set<shared_ptr<const PeakContinuum>> rois;
+    double minEnergy = m_detectedPeaks.front()->mean(), maxEnergy = minEnergy;
+    for( const shared_ptr<const PeakDef> &peak : m_detectedPeaks )
+    {
+      rois.insert( peak->continuum() );
+      minEnergy = (std::min)( minEnergy, peak->mean() );
+      maxEnergy = (std::max)( maxEnergy, peak->mean() );
+    }
+    peaksSpanEnergy = (rois.size() > 1) && ((maxEnergy - minEnergy) >= 100.0);
+  }//if( isGadras && !m_detectedPeaks.empty() )
+
   for( size_t p = 0; p < nparams; ++p )
   {
-    const PeakDef::CoefficientType coefType
-      = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+    const PeakDef::CoefficientType coefType = PeakDef::CoefficientType( PeakDef::SkewPar0 + p );
+
     if( PeakDef::is_energy_dependent( skewType, coefType ) )
     {
-      hasEnergyDep = true;
-      break;
-    }
-  }
-
-  // Grid: name | fit_cb | lower_val | upper_val  (or name | fit_cb | val for non-energy-dep only)
-  WContainerWidget *table = m_paramsDiv->addNew<WContainerWidget>();
-  if( hasEnergyDep )
-    table->addStyleClass( "FswParamTable");
-  else
-    table->addStyleClass( "FswParamTable FswParamTableSingleCol");
-
-  // Column headers: name | lower | upper | fit_cb  (or name | val | fit_cb)
-  if( hasEnergyDep )
-  {
-    table->addNew<WText>( ""); // name col placeholder
-    WText *lowHeader = table->addNew<WText>( WString::tr( "fsw-lower-header" ));
-    lowHeader->addStyleClass( "FswColHeader");
-    WText *highHeader = table->addNew<WText>( WString::tr( "fsw-upper-header" ));
-    highHeader->addStyleClass( "FswColHeader");
-    WText *fitHeader = table->addNew<WText>( WString::tr( "fsw-fit-cb-header" ));
-    fitHeader->addStyleClass( "FswColHeader");
-  }
-  else
-  {
-    table->addNew<WText>( "");
-    table->addNew<WText>( ""); // val col placeholder (no header needed for single-col)
-    WText *fitHeader = table->addNew<WText>( WString::tr( "fsw-fit-cb-header" ));
-    fitHeader->addStyleClass( "FswColHeader");
-  }
-
-  for( size_t p = 0; p < nparams; ++p )
-  {
-    const PeakDef::CoefficientType coefType
-      = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
-
-    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
-
-    double range_lower = 0, range_upper = 0, start_val = 0, step_size = 0;
-    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size);
-
-    const char *labelMsgId = nullptr;
-    const char *tooltipMsgId = nullptr;
-    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId);
-
-    // Build tooltip
-    WString tooltipText;
-    if( tooltipMsgId )
-      tooltipText = WString::tr( tooltipMsgId);
-
-    // Parameter label
-    WText *paramLabel = table->addNew<WText>(
-      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "fsw-param-label" ).arg( static_cast<int>( p ) ));
-    paramLabel->addStyleClass( "FswParamName");
-
-    if( !tooltipText.empty() )
+      double range_lower = 0, range_upper = 0, start_val = 0, step_size = 0;
+      PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size );
+      const optional<double> prefsLower = measPrefsMatch ? measPrefs->m_lower_energy_skew[p] : optional<double>{};
+      const optional<double> prefsUpper = measPrefsMatch ? measPrefs->m_upper_energy_skew[p] : optional<double>{};
+      const double lowerVal = prefsLower.value_or( start_val );
+      m_paramsGrid->setValue( p, lowerVal, prefsUpper.value_or( lowerVal ) );
+    }else
     {
-      HelpSystem::attachToolTipOn( paramLabel, tooltipText, true );
+      m_paramsGrid->setValue( p, skew_starting_value( skewType, coefType, measPrefs.get(), drfPrefs.get() ),
+                              std::nullopt );
     }
 
-    if( energyDep )
-    {
-      // Lower spin
-      NativeFloatSpinBox *lowerSpin = table->addNew<NativeFloatSpinBox>();
-      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      lowerSpin->setFormatString( "%.4G");
-      lowerSpin->setSpinnerHidden( true);
-      lowerSpin->addStyleClass( "FswSpin");
-      lowerSpin->setValue( static_cast<float>( start_val ));
-      m_lowerSpin[p] = lowerSpin;
-      lowerSpin->valueChanged().connect( this, [this]( float ){
-        userEditedSkewValue();
-      } );
-
-      // Upper spin
-      NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
-      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      upperSpin->setFormatString( "%.4G");
-      upperSpin->setSpinnerHidden( true);
-      upperSpin->addStyleClass( "FswSpin");
-      upperSpin->setValue( static_cast<float>( start_val ));
-      m_upperSpin[p] = upperSpin;
-      upperSpin->valueChanged().connect( this, [this]( float ){
-        userEditedSkewValue();
-      } );
-
-      if( !tooltipText.empty() )
-      {
-        HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true );
-        HelpSystem::attachToolTipOn( upperSpin, tooltipText, true );
-      }
-    }
-    else
-    {
-      // Single value spin
-      NativeFloatSpinBox *valSpin = table->addNew<NativeFloatSpinBox>();
-      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      valSpin->setFormatString( "%.4G");
-      valSpin->setSpinnerHidden( true);
-      valSpin->addStyleClass( hasEnergyDep ? "FswSpin FswSpinWide" : "FswSpin");
-      valSpin->setValue( static_cast<float>( start_val ));
-      m_lowerSpin[p] = valSpin;
-      valSpin->valueChanged().connect( this, [this]( float ){
-        userEditedSkewValue();
-      } );
-
-      if( !tooltipText.empty() )
-      {
-        HelpSystem::attachToolTipOn( valSpin, tooltipText, true );
-      }
-    }
-
-    // "Fit" checkbox — last column (right side)
-    m_fitCb[p] = table->addNew<WCheckBox>();
-    m_fitCb[p]->setChecked( true);
+    // Fitting across the whole spectrum is what can pin down the GADRAS powers (their energy
+    //  dependence), so they are fit by default here too.
+    const bool fitByDefault = PeakDef::skew_parameter_fit_by_default( skewType, coefType )
+          || (peaksSpanEnergy && ((coefType == PeakDef::CoefficientType::SkewPar2)
+                                  || (coefType == PeakDef::CoefficientType::SkewPar3)));
+    m_paramsGrid->setFit( p, fitByDefault );
   }//for( each skew param )
 }//void updateSkewParamRows()
 
@@ -513,16 +327,12 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
   if( nparams == 0 )
     return peaks;
 
-  // Determine energy range for interpolation
-  double minEnergy = 1e30, maxEnergy = -1e30;
-  for( const shared_ptr<const PeakDef> &peak : peaks )
-  {
-    const double mean = peak->mean();
-    if( mean < minEnergy ) minEnergy = mean;
-    if( mean > maxEnergy ) maxEnergy = mean;
-  }
-
-  const double energySpan = maxEnergy - minEnergy;
+  // Energy-dependent values are linear between the spectrum's lowest and highest energies (the same
+  //  anchors PeakFitDetPrefs and PeakFitLM use), evaluated at each ROI's center (as PeakFitLM does).
+  const size_t nchannel = m_spectrum ? m_spectrum->num_gamma_channels() : size_t(0);
+  const double lowerEnergy = nchannel ? m_spectrum->gamma_channel_lower( 0 ) : 0.0;
+  const double upperEnergy = nchannel ? m_spectrum->gamma_channel_upper( nchannel - 1 ) : 0.0;
+  const double energySpan = upperEnergy - lowerEnergy;
 
   vector<shared_ptr<const PeakDef>> result;
   result.reserve( peaks.size());
@@ -540,18 +350,17 @@ vector<shared_ptr<const PeakDef>> FitSkewParamsTool::applySkewToPeaks(
 
       const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
 
-      double value = 0;
-      if( energyDep && m_lowerSpin[p] && m_upperSpin[p] && (energySpan > 1.0) )
+      const double lowerVal = m_paramsGrid->lowerValue( p ).value_or( 0.0 );
+      const optional<double> upperVal = m_paramsGrid->upperValue( p );
+      double value = lowerVal;
+      if( energyDep && upperVal.has_value() && (energySpan > 1.0) )
       {
-        // Interpolate between lower and upper based on peak energy
-        const double lowerVal = static_cast<double>( m_lowerSpin[p]->value());
-        const double upperVal = static_cast<double>( m_upperSpin[p]->value());
-        const double frac = (newPeak->mean() - minEnergy) / energySpan;
-        value = lowerVal + frac * (upperVal - lowerVal);
-      }
-      else if( m_lowerSpin[p] )
-      {
-        value = static_cast<double>( m_lowerSpin[p]->value());
+        const shared_ptr<const PeakContinuum> cont = newPeak->continuum();
+        const double energy = cont->energyRangeDefined()
+                              ? 0.5*(cont->lowerEnergy() + cont->upperEnergy())
+                              : newPeak->mean();
+        const double frac = (energy - lowerEnergy) / energySpan;
+        value = lowerVal + frac * (upperVal.value() - lowerVal);
       }
 
       newPeak->set_coefficient( value, coefType);
@@ -626,10 +435,39 @@ void FitSkewParamsTool::doFit()
         = static_cast<PeakDef::CoefficientType>(
             static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
 
-      const bool shouldFit = m_fitCb[p] && m_fitCb[p]->isChecked();
-      peak->setFitFor( coefType, shouldFit);
+      peak->setFitFor( coefType, m_paramsGrid->isFit( p ));
     }
   }
+
+  // The refinement fit below keeps the starting skew as given, but a fit could never leave both
+  //  GADRAS tail amplitudes at zero (e.g., the shipped generic GADRAS detectors) - so start from the
+  //  defaults instead.  GADRAS skew has no energy dependence, so all peaks have the same values.
+  if( !inputPeaks.empty() )
+  {
+    vector<double> startValues( nparams, 0.0 );
+    vector<bool> isFit( nparams, false );
+    for( size_t p = 0; p < nparams; ++p )
+    {
+      const PeakDef::CoefficientType coefType
+        = static_cast<PeakDef::CoefficientType>(
+            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+      startValues[p] = inputPeaks.front()->coefficient( coefType );
+      isFit[p] = inputPeaks.front()->fitFor( coefType );
+    }
+
+    const vector<double> origValues = startValues;
+    PeakDef::avoid_stationary_skew_start( skewType, startValues, isFit );
+    if( startValues != origValues )
+    {
+      for( shared_ptr<const PeakDef> &constPeak : inputPeaks )
+      {
+        shared_ptr<PeakDef> peak = const_pointer_cast<PeakDef>( constPeak);
+        for( size_t p = 0; p < nparams; ++p )
+          peak->set_coefficient( startValues[p], static_cast<PeakDef::CoefficientType>(
+                                   static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p )) );
+      }
+    }//if( moved off the stationary point )
+  }//if( !inputPeaks.empty() )
 
   // Get detector type
   shared_ptr<const SpecMeas> meas
@@ -722,70 +560,44 @@ void FitSkewParamsTool::handleFitResults( const shared_ptr<PeakFitLM::FitPeaksRe
   m_fitPeaks = results->fit_peaks;
   m_fitSkewRelation = results->skew_relation;
 
-  // Update spin boxes from SkewRelation if available
-  if( m_fitSkewRelation.has_value() )
-  {
-    const PeakFitLM::FitPeaksResults::SkewRelation &sr = m_fitSkewRelation.value();
+  // Update the spin boxes from the fit.  The skew relation gives energy-dependent values at the
+  //  spectrum's lowest and highest energies (what the spin boxes, and PeakFitDetPrefs, hold); a
+  //  single ROI has no relation, so then all its peaks have the same values.
+  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( m_skewTypeCombo->currentIndex());
+  const size_t nparams = PeakDef::num_skew_parameters( skewType);
 
-    for( size_t p = 0; p < PeakFitLM::FitPeaksResults::SkewRelation::sm_max_num_skew_pars; ++p )
+  shared_ptr<const PeakDef> skewPeak;
+  for( size_t i = 0; !skewPeak && (i < m_fitPeaks.size()); ++i )
+  {
+    if( m_fitPeaks[i]->skewType() == skewType )
+      skewPeak = m_fitPeaks[i];
+  }
+
+  for( size_t p = 0; p < nparams; ++p )
+  {
+    const PeakDef::CoefficientType coefType
+      = static_cast<PeakDef::CoefficientType>(
+          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
+
+    optional<pair<double,double>> lowerUpper;
+    if( m_fitSkewRelation.has_value() && (m_fitSkewRelation->skew_type == skewType) )
     {
-      // Energy-dependent params: pair is {value, uncertainty}
+      const PeakFitLM::FitPeaksResults::SkewRelation &sr = m_fitSkewRelation.value();
       if( sr.energy_dependent_skew_pars[p].has_value() )
-      {
-        // The SkewRelation stores values at energy_range lower and upper anchors.
-        // energy_dependent_skew_pars[p] = {lower_energy_value, upper_energy_value} ... actually
-        // looking at the struct, it's {value, uncertainty}. Let me use fit peaks directly instead.
-      }
-
-      // Non-energy-dependent params
-      if( sr.non_energy_dependent_skew_pars[p].has_value() )
-      {
-        if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( sr.non_energy_dependent_skew_pars[p].value().first ));
-      }
-    }
-  }//if( m_fitSkewRelation )
-
-  // If SkewRelation didn't fully fill in values, extract from fit peaks directly
-  // by looking at the lowest and highest energy peaks
-  if( !m_fitPeaks.empty() )
-  {
-    const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( m_skewTypeCombo->currentIndex());
-    const size_t nparams = PeakDef::num_skew_parameters( skewType);
-
-    // Find lowest and highest energy peaks
-    shared_ptr<const PeakDef> lowestPeak = m_fitPeaks.front();
-    shared_ptr<const PeakDef> highestPeak = m_fitPeaks.front();
-    for( const shared_ptr<const PeakDef> &pk : m_fitPeaks )
+        lowerUpper = sr.energy_dependent_skew_pars[p];  // {lower energy value, upper energy value}
+      else if( sr.non_energy_dependent_skew_pars[p].has_value() )  // {value, uncertainty}
+        lowerUpper = make_pair( sr.non_energy_dependent_skew_pars[p]->first,
+                                sr.non_energy_dependent_skew_pars[p]->first );
+    }else if( skewPeak )
     {
-      if( pk->mean() < lowestPeak->mean() )
-        lowestPeak = pk;
-      if( pk->mean() > highestPeak->mean() )
-        highestPeak = pk;
+      lowerUpper = make_pair( skewPeak->coefficient( coefType ), skewPeak->coefficient( coefType ) );
     }
 
-    for( size_t p = 0; p < nparams; ++p )
-    {
-      const PeakDef::CoefficientType coefType
-        = static_cast<PeakDef::CoefficientType>(
-            static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
-      const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
+    if( !lowerUpper.has_value() )
+      continue;
 
-      if( energyDep )
-      {
-        if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ));
-        if( m_upperSpin[p] )
-          m_upperSpin[p]->setValue( static_cast<float>( highestPeak->coefficient( coefType ) ));
-      }
-      else
-      {
-        // Non-energy-dep: all peaks should have the same value; use lowest peak's
-        if( m_lowerSpin[p] )
-          m_lowerSpin[p]->setValue( static_cast<float>( lowestPeak->coefficient( coefType ) ));
-      }
-    }//for( each param )
-  }//if( !m_fitPeaks.empty() )
+    m_paramsGrid->setValue( p, lowerUpper->first, lowerUpper->second );
+  }//for( each param )
 
   // Update spectrum display with fit peaks
   m_peakModel->setPeaks( m_fitPeaks);
@@ -827,13 +639,11 @@ void FitSkewParamsTool::acceptResults()
   if( !meas )
     return;
 
-  // Build PeakFitDetPrefs from the dialog's current values
-  shared_ptr<PeakFitDetPrefs> newPrefs = make_shared<PeakFitDetPrefs>();
-
-  // Keep the detector type from current prefs
-  shared_ptr<const PeakFitDetPrefs> oldPrefs = meas->peakFitDetPrefs();
-  if( oldPrefs )
-    newPrefs->m_det_type = oldPrefs->m_det_type;
+  // Build PeakFitDetPrefs from the current prefs (keeping detector type, FWHM method, etc), with
+  //  the skew from the dialog's current values
+  const shared_ptr<const PeakFitDetPrefs> oldPrefs = meas->peakFitDetPrefs();
+  const shared_ptr<PeakFitDetPrefs> newPrefs = oldPrefs ? make_shared<PeakFitDetPrefs>( *oldPrefs )
+                                                        : make_shared<PeakFitDetPrefs>();
 
   // Skew type from combo
   const int skewIdx = m_skewTypeCombo->currentIndex();
@@ -842,14 +652,11 @@ void FitSkewParamsTool::acceptResults()
   else
     newPrefs->m_peak_skew_type = PeakDef::NoSkew;
 
-  // Skew param values from spin boxes
-  const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type);
-  for( size_t p = 0; p < nparams; ++p )
+  // Skew param values (the upper value is only given for energy-dependent params)
+  for( size_t p = 0; p < std::size( newPrefs->m_lower_energy_skew ); ++p )
   {
-    if( m_lowerSpin[p] )
-      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSpin[p]->value());
-    if( m_upperSpin[p] )
-      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSpin[p]->value());
+    newPrefs->m_lower_energy_skew[p] = m_paramsGrid->lowerValue( p );
+    newPrefs->m_upper_energy_skew[p] = m_paramsGrid->upperValue( p );
   }
 
   newPrefs->m_roi_independent_skew = false; // This tool is for related skew

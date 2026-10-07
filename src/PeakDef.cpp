@@ -64,6 +64,8 @@ using namespace std;
 using SpecUtils::Measurement;
 
 /** Peak XML version changes:
+ 20260824: Added GadrasGeneric and GadrasCZT skew models (6 skew parameters, so adds Skew4/Skew5 elements);
+           no version change, but these peaks write version 1.1, like VoigtPlusBortel.
  20260120: Added GaussPlusBortel and DoubleBortel skew models. Renamed VoigtWithExpTail to VoigtPlusBortel.
  20260113: Major version incremented from 0 to 1 to account for VoigtPlusBortel skew model (breaking change).
            For backward compatibility, peaks without VoigtPlusBortel/GaussPlusBortel/DoubleBortel still write version 0.2.
@@ -1691,8 +1693,8 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
     case SkewType::GadrasCZT:
     {
       // SkewPar0=low_skew, SkewPar1=high_skew (fittable amplitudes, GADRAS magnitudes @ 661 keV).
-      // SkewPar2/3 = low/high skew power (energy-dependence exponent, fixed detector characteristic).
-      // SkewPar4/5 = low/high skew extent (tail slope shaping, fixed detector characteristic).
+      // SkewPar2/3 = low/high skew power (energy-dependence exponent, detector characteristic).
+      // SkewPar4/5 = low/high skew extent (tail slope shaping, detector characteristic).
       switch( coef )
       {
         case CoefficientType::SkewPar0: // low_skew amplitude
@@ -1705,6 +1707,8 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
         case CoefficientType::SkewPar2: // low_skew_power
         case CoefficientType::SkewPar3: // high_skew_power
+          // Detector.dat files can have negative powers, but the shape treats a negative power as
+          //  zero (as GADRAS does), so `DetectorPeakResponse` clamps them to zero on import.
           starting_value = 0.0;
           step_size = 0.1;
           lower_value = 0.0;
@@ -1713,10 +1717,12 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
         case CoefficientType::SkewPar4: // low_skew_extent
         case CoefficientType::SkewPar5: // high_skew_extent
+          // Slope scale is exp(extent/3) below zero, but only 1 + extent/3 above, so allow a longer
+          //  positive range (e.g., the Kromek GR1 Detector.dat has a high-E extent of 11.5).
           starting_value = 0.0;
           step_size = 0.5;
           lower_value = -10.0;
-          upper_value = 10.0;
+          upper_value = 30.0;
           break;
 
         default:
@@ -1787,10 +1793,9 @@ bool PeakDef::skew_no_skew_value( const SkewType skew_type, const CoefficientTyp
 
     case SkewType::GadrasGeneric:
     case SkewType::GadrasCZT:
-      // GADRAS shapes carry an intrinsic, energy-dependent skew (the low/high tail amplitudes are
-      //  fixed detector characteristics, not a generic Gaussian-plus-skew add-on), and do not use
-      //  InterSpec's generic skew machinery - so there is no pure-Gaussian value to snap to.  Do
-      //  not offer generic skew removal for them.
+      // Zero tail amplitudes do give a pure Gaussian, but GADRAS shapes are meant to carry the
+      //  detector's own (intrinsically energy-dependent) skew, and zero amplitude is a point with
+      //  zero derivative (see #avoid_stationary_skew_start) - so do not offer skew removal for them.
       return false;
   }//switch( skew_type )
 
@@ -1913,6 +1918,25 @@ bool PeakDef::skew_parameter_fit_by_default( const SkewType skew_type, const Coe
   return ((coef >= CoefficientType::SkewPar0) && (coef <= CoefficientType::SkewPar5)
           && (par_num < num_skew_parameters(skew_type)));
 }//bool skew_parameter_fit_by_default(...)
+
+
+void PeakDef::avoid_stationary_skew_start( const SkewType skew_type, std::vector<double> &values,
+                                           const std::vector<bool> &is_fit )
+{
+  if( (skew_type != SkewType::GadrasGeneric) && (skew_type != SkewType::GadrasCZT) )
+    return;
+
+  assert( (values.size() == 6) && (is_fit.size() == 6) );
+  if( (values.size() < 2) || (is_fit.size() < 2) || (values[0] > 0.0) || (values[1] > 0.0) )
+    return;
+
+  for( size_t i = 0; i < 2; ++i )
+  {
+    double lower, upper, starting, step;
+    if( is_fit[i] && skew_parameter_range( skew_type, CoefficientType( SkewPar0 + i ), lower, upper, starting, step ) )
+      values[i] = starting;
+  }
+}//void avoid_stationary_skew_start(...)
 
 
 double PeakDef::extract_energy_from_peak_source_string( std::string &str )

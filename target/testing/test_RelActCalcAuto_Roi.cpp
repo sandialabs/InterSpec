@@ -780,8 +780,6 @@ BOOST_AUTO_TEST_CASE( roi_xml_round_trip )
 
 BOOST_AUTO_TEST_CASE( skew_from_peak_fit_prefs )
 {
-  using SkewPrefsUsage = RelActCalcAuto::Options::SkewPrefsUsage;
-
   // GADRAS-style preferences: a 6-parameter skew, with every parameter given a (fixed) value.
   PeakFitDetPrefs gadras;
   gadras.m_peak_skew_type = PeakDef::SkewType::GadrasGeneric;
@@ -792,16 +790,16 @@ BOOST_AUTO_TEST_CASE( skew_from_peak_fit_prefs )
   RelActCalcAuto::Options preset;
   preset.skew_type = PeakDef::SkewType::GaussExp;
 
-  // Ignore (the default): the preset's skew is untouched.
+  // Not using the preferences (the default): the preset's skew is untouched.
   RelActCalcAuto::Options ignore = preset;
-  ignore.apply_peak_fit_prefs( &gadras );
+  ignore.apply_peak_fit_prefs( &gadras, nullptr );
   BOOST_CHECK( ignore.skew_type == PeakDef::SkewType::GaussExp );
   BOOST_CHECK( !ignore.fixed_lower_skew[0].has_value() );
 
-  // As the preferences specify: the type, and all six values are held fixed.
+  // Using the preferences: the type, and all six values are held fixed.
   RelActCalcAuto::Options as_prefs = preset;
-  as_prefs.skew_prefs_usage = SkewPrefsUsage::AsPreferencesSpecify;
-  as_prefs.apply_peak_fit_prefs( &gadras );
+  as_prefs.skew_from_peak_fit_prefs = true;
+  as_prefs.apply_peak_fit_prefs( &gadras, nullptr );
   BOOST_CHECK( as_prefs.skew_type == PeakDef::SkewType::GadrasGeneric );
   for( size_t i = 0; i < 6; ++i )
   {
@@ -810,61 +808,82 @@ BOOST_AUTO_TEST_CASE( skew_from_peak_fit_prefs )
     BOOST_CHECK( !as_prefs.start_lower_skew[i].has_value() );
   }
 
-  // Starting values only: the same values, but as starting points, so all parameters are fit.
-  RelActCalcAuto::Options start = preset;
-  start.skew_prefs_usage = SkewPrefsUsage::StartingValuesOnly;
-  start.apply_peak_fit_prefs( &gadras );
-  BOOST_CHECK( start.skew_type == PeakDef::SkewType::GadrasGeneric );
-  for( size_t i = 0; i < 6; ++i )
-  {
-    BOOST_CHECK( !start.fixed_lower_skew[i].has_value() );
-    BOOST_REQUIRE( start.start_lower_skew[i].has_value() );
-  }
+  // Parameters without a value in the preferences: the amplitude is fit, from its default, and the
+  //  detector's power and extent are held at its values (or, without them, at the default).
+  PeakFitDetPrefs gadras_amp_only, gadras_drf;
+  gadras_amp_only.m_peak_skew_type = gadras_drf.m_peak_skew_type = PeakDef::SkewType::GadrasGeneric;
+  gadras_amp_only.m_roi_independent_skew = gadras_drf.m_roi_independent_skew = false;
+  gadras_amp_only.m_lower_energy_skew[0] = 2.0;
+  gadras_drf.m_lower_energy_skew[2] = 0.3;
+  gadras_drf.m_lower_energy_skew[4] = 1.5;
+  RelActCalcAuto::Options with_drf = preset;
+  with_drf.skew_from_peak_fit_prefs = true;
+  with_drf.apply_peak_fit_prefs( &gadras_amp_only, &gadras_drf );
+  double lower = 0.0, upper = 0.0, starting = 0.0, step = 0.0;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GadrasGeneric, PeakDef::CoefficientType::SkewPar1,
+                                                lower, upper, starting, step ) );
+  BOOST_CHECK( with_drf.fixed_lower_skew[0].has_value() && (with_drf.fixed_lower_skew[0].value() == 2.0) );
+  BOOST_REQUIRE( with_drf.start_lower_skew[1].has_value() && !with_drf.fixed_lower_skew[1].has_value() );
+  BOOST_CHECK_CLOSE( with_drf.start_lower_skew[1].value(), starting, 1.0E-9 );
+  BOOST_CHECK( with_drf.fixed_lower_skew[2].has_value() && (with_drf.fixed_lower_skew[2].value() == 0.3) );
+  BOOST_CHECK( with_drf.fixed_lower_skew[3].has_value() && !with_drf.start_lower_skew[3].has_value() );
+  BOOST_CHECK( with_drf.fixed_lower_skew[4].has_value() && (with_drf.fixed_lower_skew[4].value() == 1.5) );
 
-  // A parameter without a value in the preferences is fit (not fixed), and an energy-dependent one
-  //  keeps its upper-energy value.
+  // An energy-dependent parameter keeps its upper-energy value; one without a value is fit.
   PeakFitDetPrefs gauss_exp;
   gauss_exp.m_peak_skew_type = PeakDef::SkewType::ExpGaussExp;
   gauss_exp.m_roi_independent_skew = false;
   gauss_exp.m_lower_energy_skew[0] = 1.5;
   gauss_exp.m_upper_energy_skew[0] = 2.5;
   RelActCalcAuto::Options partial = preset;
-  partial.skew_prefs_usage = SkewPrefsUsage::AsPreferencesSpecify;
-  partial.apply_peak_fit_prefs( &gauss_exp );
+  partial.skew_from_peak_fit_prefs = true;
+  partial.apply_peak_fit_prefs( &gauss_exp, nullptr );
   BOOST_CHECK( partial.skew_type == PeakDef::SkewType::ExpGaussExp );
   BOOST_REQUIRE( partial.fixed_lower_skew[0].has_value() && partial.fixed_upper_skew[0].has_value() );
   BOOST_CHECK_CLOSE( partial.fixed_upper_skew[0].value(), 2.5, 1.0E-9 );
-  BOOST_CHECK( !partial.fixed_lower_skew[1].has_value() );
+  BOOST_CHECK( !partial.fixed_lower_skew[1].has_value() && partial.start_lower_skew[1].has_value() );
 
-  // ROI-independent preferences give only the type; preferences without a skew are not used.
+  // ROI-independent preferences give only the type.
   gauss_exp.m_roi_independent_skew = true;
   RelActCalcAuto::Options independent = preset;
-  independent.skew_prefs_usage = SkewPrefsUsage::AsPreferencesSpecify;
-  independent.apply_peak_fit_prefs( &gauss_exp );
+  independent.skew_from_peak_fit_prefs = true;
+  independent.apply_peak_fit_prefs( &gauss_exp, nullptr );
   BOOST_CHECK( independent.skew_type == PeakDef::SkewType::ExpGaussExp );
   BOOST_CHECK( !independent.fixed_lower_skew[0].has_value() );
 
+  // Preferences without skew mean no skew; without preferences, the options' own skew is used.
   PeakFitDetPrefs no_skew;
-  RelActCalcAuto::Options unchanged = preset;
-  unchanged.skew_prefs_usage = SkewPrefsUsage::AsPreferencesSpecify;
-  unchanged.apply_peak_fit_prefs( &no_skew );
-  BOOST_CHECK( unchanged.skew_type == PeakDef::SkewType::GaussExp );
-  unchanged.apply_peak_fit_prefs( nullptr );
-  BOOST_CHECK( unchanged.skew_type == PeakDef::SkewType::GaussExp );
+  RelActCalcAuto::Options none = preset;
+  none.skew_from_peak_fit_prefs = true;
+  none.apply_peak_fit_prefs( nullptr, nullptr );
+  BOOST_CHECK( none.skew_type == PeakDef::SkewType::GaussExp );
+  none.apply_peak_fit_prefs( &no_skew, nullptr );
+  BOOST_CHECK( none.skew_type == PeakDef::SkewType::NoSkew );
 
-  // The usage and starting values survive the XML round trip.
+  // A skew from the preferences that can't be used with Lorentzian x-rays turns them off.
+  RelActCalcAuto::Options lorentzian = preset;
+  lorentzian.skew_type = PeakDef::SkewType::NoSkew;
+  lorentzian.lorentzian_xrays = true;
+  lorentzian.skew_from_peak_fit_prefs = true;
+  lorentzian.apply_peak_fit_prefs( &no_skew, nullptr );
+  BOOST_CHECK( lorentzian.lorentzian_xrays );
+  lorentzian.apply_peak_fit_prefs( &gadras, nullptr );
+  BOOST_CHECK( !lorentzian.lorentzian_xrays );
+
+  // The flag, and fixed and starting values, survive the XML round trip.
   rapidxml::xml_document<char> doc;
   rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "Root" );
   doc.append_node( root );
-  start.toXml( root );
+  with_drf.toXml( root );
   RelActCalcAuto::Options back;
   back.fromXml( root->first_node( "Options" ) );
-  BOOST_CHECK( back.skew_prefs_usage == SkewPrefsUsage::StartingValuesOnly );
+  BOOST_CHECK( back.skew_from_peak_fit_prefs );
+  BOOST_CHECK( back.skew_type == PeakDef::SkewType::GadrasGeneric );
   for( size_t i = 0; i < 6; ++i )
   {
-    BOOST_REQUIRE( back.start_lower_skew[i].has_value() );
-    BOOST_CHECK_CLOSE( back.start_lower_skew[i].value(), 0.1*(i + 1), 1.0E-4 );
+    BOOST_CHECK( back.fixed_lower_skew[i].has_value() == with_drf.fixed_lower_skew[i].has_value() );
+    BOOST_REQUIRE( back.start_lower_skew[i].has_value() == with_drf.start_lower_skew[i].has_value() );
+    if( back.start_lower_skew[i].has_value() )
+      BOOST_CHECK_CLOSE( back.start_lower_skew[i].value(), with_drf.start_lower_skew[i].value(), 1.0E-4 );
   }
-  BOOST_CHECK( RelActCalcAuto::Options::skew_prefs_usage_from_str( "AsPreferencesSpecify" )
-               == SkewPrefsUsage::AsPreferencesSpecify );
 }//skew_from_peak_fit_prefs

@@ -338,7 +338,7 @@ Result run_on_file( const std::string &exemplar_filename,
   if( options.fwhm_form )
     state->options.fwhm_form = *options.fwhm_form;
   if( options.skew_type )
-    state->options.skew_type = *options.skew_type;
+    state->options.set_skew_type( *options.skew_type );
   if( options.auto_profile_weak_mass_fractions )
     state->options.auto_profile_weak_mass_fractions = *options.auto_profile_weak_mass_fractions;
   if( options.robust_solve )

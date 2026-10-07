@@ -41,6 +41,8 @@
 #define BOOST_TEST_MODULE GadrasPeakDists_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include "ceres/jet.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakDists_imp.hpp"
@@ -377,7 +379,7 @@ namespace
 
     // The analytic (production) form does not implement PVT; production callers always pass
     //  false, so we do too here.  (The legacy discrete form below still exercises PVT.)
-    const PeakDists::GadrasPeakShape shape = PeakDists::gadras_build_peak_shape( energy,
+    const PeakDists::GadrasPeakShape<double> shape = PeakDists::gadras_build_peak_shape( energy,
                               p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
                               p.low_skew_extent, p.high_skew_extent, p.material,
                               false );
@@ -631,3 +633,160 @@ BOOST_AUTO_TEST_CASE( PureGaussianMatchesAnalytic )
     }
   }
 }
+
+
+// The production array-filling `PeakDists::gadras_integral` (what the fitters call) gives the same
+//  per-bin areas as integrating the shape's CDF directly.
+BOOST_AUTO_TEST_CASE( ArrayIntegralMatchesCdf )
+{
+  for( const RefCase &rc : kRefCases )
+  {
+    const DetParams p = make_params( rc.det_key );
+    if( p.low_photopeak_probability )
+      continue;   // analytic form has no PVT
+
+    const double sigma = det_sigma( rc.energy, p );
+    const std::vector<float> edges = make_edges( rc );
+    const std::vector<double> expected = integrate( rc.energy, sigma, p, edges );
+
+    const double skew[6] = { p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
+                             p.low_skew_extent, p.high_skew_extent };
+    std::vector<double> got( expected.size(), 0.0 );
+    PeakDists::gadras_integral<double>( rc.energy, sigma, 1.0, skew, p.material,
+                                        edges.data(), got.data(), got.size() );
+
+    double max_diff = 0.0;
+    for( size_t i = 0; i < got.size(); ++i )
+      max_diff = (std::max)( max_diff, std::fabs( got[i] - expected[i] ) );
+    BOOST_TEST_INFO( "case=" << rc.name << " max_diff=" << max_diff );
+    BOOST_CHECK( max_diff < 1.0e-12 );
+  }
+}//ArrayIntegralMatchesCdf
+
+
+// The fitters use Ceres autodiff, so the gradient of the per-bin areas w.r.t. the six skew
+//  parameters and the mean (which also sets the energy the shape is resolved at) must be right -
+//  the shape used to be built in `double`, which silently gave zero gradient for every skew
+//  parameter, so no fit could ever move them.
+BOOST_AUTO_TEST_CASE( JetGradientMatchesFiniteDifference )
+{
+  typedef ceres::Jet<double,7> Jet7;  // [0] = mean, [1..6] = the six skew parameters
+
+  struct GradCase
+  {
+    const char *name;
+    PeakDists::GadrasMaterial material;
+    double mean, sigma;
+    double skew[6];
+    bool one_sided_powers;  // powers at zero: compare to a forward difference
+  };
+
+  const GradCase cases[] = {
+    { "generic", PeakDists::GadrasMaterial::Generic,  300.37, 8.0, { 6.0, 3.0, 0.4, 0.3, 1.5, -2.0 }, false },
+    { "czt",     PeakDists::GadrasMaterial::CZT_CdTe, 1001.3, 5.0, { 30.0, 8.0, 0.6, 0.1, 1.0, 2.2 }, false },
+    { "low-only",PeakDists::GadrasMaterial::Generic,  186.21, 1.2, { 4.0, 0.0, 0.2, 0.0, -1.0, 0.0 }, false },
+    { "power0",  PeakDists::GadrasMaterial::Generic,  300.37, 8.0, { 6.0, 3.0, 0.0, 0.0, 1.5, -2.0 }, true },
+  };
+
+  for( const GradCase &gc : cases )
+  {
+    // Bins within +-7.5 sigma, so always inside the integration window (which spans at least +-8
+    //  sigma) - otherwise a perturbation could move the window edge across a bin, giving a jump.
+    //  The range is offset so no bin edge falls on the mean: when the low and high powers differ,
+    //  the shape's density is discontinuous there (each side's zeta is rescaled differently), so a
+    //  central difference across it would not be a derivative.
+    const int nbins = 300;
+    const double lo = gc.mean - 7.33*gc.sigma, hi = gc.mean + 7.5*gc.sigma;
+    std::vector<float> edges( nbins + 1 );
+    for( int i = 0; i <= nbins; ++i )
+      edges[i] = static_cast<float>( lo + (hi - lo)*(double(i)/nbins) );
+
+    const auto eval = [&]( const double mean, const double skew[6] ) -> std::vector<double> {
+      std::vector<double> y( nbins, 0.0 );
+      PeakDists::gadras_integral<double>( mean, gc.sigma, 1.0, skew, gc.material, edges.data(), y.data(), y.size() );
+      return y;
+    };
+
+    Jet7 jet_skew[6];
+    for( int k = 0; k < 6; ++k )
+      jet_skew[k] = Jet7( gc.skew[k], k + 1 );
+    std::vector<Jet7> jet_y( nbins, Jet7(0.0) );
+    PeakDists::gadras_integral<Jet7>( Jet7(gc.mean, 0), Jet7(gc.sigma), Jet7(1.0), jet_skew, gc.material,
+                                      edges.data(), jet_y.data(), jet_y.size() );
+
+    const std::vector<double> y0 = eval( gc.mean, gc.skew );
+    for( int i = 0; i < nbins; ++i )
+      BOOST_REQUIRE_CLOSE( jet_y[i].a + 1.0, y0[i] + 1.0, 1.0e-10 );
+
+    for( int k = 0; k < 7; ++k )
+    {
+      // Skip the high-tail parameters when there is no high tail (they then have no effect)
+      if( (gc.skew[1] <= 0.0) && ((k == 2) || (k == 4) || (k == 6)) )
+        continue;
+
+      const bool forward = gc.one_sided_powers && ((k == 3) || (k == 4));
+      const double x = (k == 0) ? gc.mean : gc.skew[k-1];
+      const double h = (forward ? 1.0e-7 : 1.0e-5) * (std::max)( 1.0, std::fabs(x) );
+
+      double skew_up[6], skew_down[6];
+      std::copy( gc.skew, gc.skew + 6, skew_up );
+      std::copy( gc.skew, gc.skew + 6, skew_down );
+      double mean_up = gc.mean, mean_down = gc.mean;
+      if( k == 0 )
+      {
+        mean_up += h;
+        mean_down -= (forward ? 0.0 : h);
+      }else
+      {
+        skew_up[k-1] += h;
+        skew_down[k-1] -= (forward ? 0.0 : h);
+      }
+
+      const std::vector<double> y_up = eval( mean_up, skew_up );
+      const std::vector<double> y_down = eval( mean_down, skew_down );
+
+      double max_fd = 0.0, max_diff = 0.0;
+      for( int i = 0; i < nbins; ++i )
+      {
+        const double fd = (y_up[i] - y_down[i]) / (forward ? h : 2.0*h);
+        max_fd = (std::max)( max_fd, std::fabs(fd) );
+        max_diff = (std::max)( max_diff, std::fabs( fd - jet_y[i].v[k] ) );
+      }
+
+      BOOST_TEST_INFO( "case=" << gc.name << " par=" << k << " max|fd|=" << max_fd
+                       << " max|fd-jet|=" << max_diff );
+      BOOST_CHECK( max_fd > 1.0e-6 );  // the parameter really does change the shape
+      BOOST_CHECK( max_diff <= ((forward ? 1.0e-3 : 1.0e-4)*max_fd + 1.0e-9) );
+    }//for( int k = 0; k < 7; ++k )
+  }//for( const GradCase &gc : cases )
+}//JetGradientMatchesFiniteDifference
+
+
+BOOST_AUTO_TEST_CASE( AvoidStationarySkewStart )
+{
+  const std::vector<bool> fit_amps = { true, true, false, false, false, false };
+
+  // Both GADRAS amplitudes zero: the fitted ones move to the default start
+  std::vector<double> values = { 0.0, 0.0, 0.3, 0.0, 1.0, 0.0 };
+  PeakDef::avoid_stationary_skew_start( PeakDef::SkewType::GadrasGeneric, values, fit_amps );
+  double lower, upper, starting, step;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GadrasGeneric, PeakDef::SkewPar0,
+                                                lower, upper, starting, step ) );
+  BOOST_CHECK_EQUAL( values[0], starting );
+  BOOST_CHECK_EQUAL( values[1], starting );
+  BOOST_CHECK_EQUAL( values[2], 0.3 );
+  BOOST_CHECK_EQUAL( values[4], 1.0 );
+
+  // Only the fitted amplitude moves
+  values = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  PeakDef::avoid_stationary_skew_start( PeakDef::SkewType::GadrasCZT, values,
+                                        { true, false, false, false, false, false } );
+  BOOST_CHECK_EQUAL( values[0], starting );
+  BOOST_CHECK_EQUAL( values[1], 0.0 );
+
+  // A non-zero amplitude is not a stationary point - nothing changes (e.g., HPGe has no high tail)
+  values = { 3.8, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  PeakDef::avoid_stationary_skew_start( PeakDef::SkewType::GadrasGeneric, values, fit_amps );
+  BOOST_CHECK_EQUAL( values[0], 3.8 );
+  BOOST_CHECK_EQUAL( values[1], 0.0 );
+}//AvoidStationarySkewStart

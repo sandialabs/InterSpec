@@ -57,53 +57,11 @@
 
 /* ==================== Skew parameters section ==================== */
 
-/* 4-column grid: name | lower | upper | fit_cb */
-.FswParamTable
+/* The skew parameter grid (see SkewParamsGrid.css) */
+.FitSkewParamsTool .FswSkewParams
 {
-  display: grid;
-  grid-template-columns: auto auto auto auto;
-  row-gap: 2px;
-  column-gap: 4px;
-  align-items: center;
   border-top: 1px solid var(--interspec-border-color);
   padding-top: 3px;
-}
-
-/* For non-energy-dependent params only: name | value | fit_cb */
-.FswParamTable.FswParamTableSingleCol
-{
-  grid-template-columns: auto auto auto;
-}
-
-.FswColHeader
-{
-  font-size: 9px;
-  font-weight: bold;
-  opacity: 0.5;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.FswParamName
-{
-  font-size: 10px;
-  font-weight: bold;
-  opacity: 0.7;
-  white-space: nowrap;
-}
-
-.FswSpin
-{
-  width: 80px;
-  min-width: 50px;
-  font-size: 11px;
-  box-sizing: border-box;
-}
-
-/* Non-energy-dependent spin in a 4-column grid: span both value columns */
-.FswSpinWide
-{
-  grid-column: span 2;
 }
 
 

@@ -831,10 +831,14 @@ namespace {
     p.skewPar1              = get_opt_double( j, "skewPar1" );
     p.skewPar2              = get_opt_double( j, "skewPar2" );
     p.skewPar3              = get_opt_double( j, "skewPar3" );
+    p.skewPar4              = get_opt_double( j, "skewPar4" );
+    p.skewPar5              = get_opt_double( j, "skewPar5" );
     p.fitForSkewPar0        = get_opt_bool( j, "fitForSkewPar0" );
     p.fitForSkewPar1        = get_opt_bool( j, "fitForSkewPar1" );
     p.fitForSkewPar2        = get_opt_bool( j, "fitForSkewPar2" );
     p.fitForSkewPar3        = get_opt_bool( j, "fitForSkewPar3" );
+    p.fitForSkewPar4        = get_opt_bool( j, "fitForSkewPar4" );
+    p.fitForSkewPar5        = get_opt_bool( j, "fitForSkewPar5" );
 
     // Continuum
     p.continuumType         = get_opt_string( j, "continuumType" );

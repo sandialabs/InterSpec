@@ -947,6 +947,149 @@ BOOST_AUTO_TEST_CASE( test_gadras_dat_only_import )
 
 
 
+/** Every fixture's peak-shape preferences must be usable by every tool: within
+ `PeakDef::skew_parameter_range` (Fit Peaks for Nuclides used to reject the
+ negative powers outright, and PeakFitLM replaced Kromek's 11.5 extent with 0),
+ the same shape as the file (a negative power acts as zero, so is stored as
+ zero), and kept when the DRF goes through the database's `m_drfExtra` column.
+ */
+BOOST_AUTO_TEST_CASE( test_gadras_skew_prefs_usable )
+{
+  const vector<string> fixtures = { "CZT_1.5x2x2_text", "CZT_1cm_text", "Detective_X_xml",
+    "HPGe_Planar50_text", "IdentiFINDER_LaBr3_xml", "IdentiFINDER_NGH_xml",
+    "Kromek_GR1_CZT_text", "MikesCzt_xml", "NaI_2x2_text", "NaI_3x3_text" };
+
+  for( const string &det : fixtures )
+  {
+    const string dir = SpecUtils::append_path( gadras_dir(), det );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(dir), "Missing fixture " + dir );
+
+    DetectorPeakResponse drf;
+    BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( dir, true ) );
+    const shared_ptr<const PeakFitDetPrefs> prefs = drf.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!prefs, det + ": no peak-shape preferences" );
+
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile( dat_path(det) );
+    const double file_values[6] = { dat.lowSkew(), dat.highSkew(),
+                                    (std::max)( 0.0f, dat.lowSkewPower() ),
+                                    (std::max)( 0.0f, dat.highSkewPower() ),
+                                    dat.lowSkewExtent(), dat.highSkewExtent() };
+
+    for( int i = 0; i < 6; ++i )
+    {
+      const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+      double lower, upper, starting, step;
+      BOOST_REQUIRE( PeakDef::skew_parameter_range( prefs->m_peak_skew_type, ct, lower, upper, starting, step ) );
+      BOOST_REQUIRE( prefs->m_lower_energy_skew[i].has_value() );
+
+      const double value = prefs->m_lower_energy_skew[i].value();
+      BOOST_CHECK_MESSAGE( (value >= lower) && (value <= upper),
+                           det + ": skew parameter " + std::to_string(i) + " = " + std::to_string(value)
+                           + " is outside [" + std::to_string(lower) + ", " + std::to_string(upper) + "]" );
+      BOOST_CHECK_MESSAGE( fabs( value - file_values[i] ) < 1.0e-6,
+                           det + ": skew parameter " + std::to_string(i) + " = " + std::to_string(value)
+                           + ", but file gives " + std::to_string(file_values[i]) );
+    }//for( int i = 0; i < 6; ++i )
+
+    // Through the database's extras column, and back (the XML keeps 9 significant figures).
+    DetectorPeakResponse restored;
+    restored.setDrfExtraFromXmlString( drf.drfExtraToXmlString() );
+    const shared_ptr<const PeakFitDetPrefs> restored_prefs = restored.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!restored_prefs, det + ": prefs lost through m_drfExtra" );
+    BOOST_CHECK( restored_prefs->m_peak_skew_type == prefs->m_peak_skew_type );
+    BOOST_CHECK( restored_prefs->m_det_type == prefs->m_det_type );
+    BOOST_CHECK( restored_prefs->m_source == prefs->m_source );
+    BOOST_CHECK( restored_prefs->m_roi_independent_skew == prefs->m_roi_independent_skew );
+    for( int i = 0; i < 6; ++i )
+    {
+      BOOST_REQUIRE( restored_prefs->m_lower_energy_skew[i].has_value() );
+      BOOST_CHECK_SMALL( restored_prefs->m_lower_energy_skew[i].value() - prefs->m_lower_energy_skew[i].value(),
+                         1.0e-7*(std::max)( 1.0, fabs( prefs->m_lower_energy_skew[i].value() ) ) );
+    }
+
+    restored.setDrfExtraFromXmlString( "" );
+    BOOST_CHECK( !restored.peakFitDetPrefs() );
+  }//for( const string &det : fixtures )
+
+  // The two out-of-range fixtures this was about
+  {
+    DetectorPeakResponse kromek;
+    BOOST_REQUIRE_NO_THROW( kromek.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "Kromek_GR1_CZT_text" ), true ) );
+    BOOST_REQUIRE( kromek.peakFitDetPrefs() );
+    BOOST_CHECK_CLOSE( kromek.peakFitDetPrefs()->m_lower_energy_skew[5].value(), 11.5, 1.0e-4 );
+    BOOST_CHECK_EQUAL( kromek.peakFitDetPrefs()->m_lower_energy_skew[2].value(), 0.0 );  // file: -0.613
+
+    DetectorPeakResponse planar;
+    BOOST_REQUIRE_NO_THROW( planar.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "HPGe_Planar50_text" ), true ) );
+    BOOST_REQUIRE( planar.peakFitDetPrefs() );
+    BOOST_CHECK_EQUAL( planar.peakFitDetPrefs()->m_lower_energy_skew[2].value(), 0.0 );  // file: -0.193
+    BOOST_CHECK_EQUAL( planar.peakFitDetPrefs()->m_lower_energy_skew[3].value(), 0.0 );  // file: -0.5
+  }
+}//test_gadras_skew_prefs_usable
+
+
+/** A GADRAS detector's own tail powers/extents are what a peak or tool switched to its skew type
+ starts from (`skew_starting_value`), and what a peak is held at when the peak-fit prefs dont give
+ them (`apply_prefs_skew_to_peak`) - not the generic defaults.
+ */
+BOOST_AUTO_TEST_CASE( test_gadras_skew_seeding_from_detector )
+{
+  DetectorPeakResponse drf;
+  BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "CZT_1.5x2x2_text" ) ) );
+  const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf.peakFitDetPrefs();
+  BOOST_REQUIRE( drf_prefs && (drf_prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) );
+
+  const PeakDef::SkewType type = PeakDef::SkewType::GadrasCZT;
+  for( int i = 0; i < 6; ++i )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+    BOOST_REQUIRE( drf_prefs->fixed_skew_value( type, ct ).has_value() );
+    BOOST_CHECK_EQUAL( skew_starting_value( type, ct, nullptr, drf_prefs.get() ),
+                       drf_prefs->m_lower_energy_skew[i].value() );
+
+    // Another skew type's prefs give no value for this type
+    BOOST_CHECK( !drf_prefs->fixed_skew_value( PeakDef::SkewType::GadrasGeneric, ct ).has_value() );
+  }
+
+  // The spectrum's prefs, when for this type, are used before the detector's
+  PeakFitDetPrefs meas_prefs;
+  meas_prefs.m_peak_skew_type = type;
+  meas_prefs.m_lower_energy_skew[0] = 12.5;
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar0, &meas_prefs, drf_prefs.get() ), 12.5 );
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar2, &meas_prefs, drf_prefs.get() ),
+                     drf_prefs->m_lower_energy_skew[2].value() );
+
+  // Neither gives a value: the generic starting value
+  double lower, upper, starting, step;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( type, PeakDef::SkewPar4, lower, upper, starting, step ) );
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar4, &meas_prefs, nullptr ), starting );
+
+  // Prefs with only the amplitudes: the amplitudes are fixed at them, and the powers/extents (not
+  //  fit by default) held at the detector's values; without the detector's prefs, at the defaults.
+  meas_prefs.m_lower_energy_skew[1] = 3.5;
+  PeakDef peak( 661.66, 4.0, 1000.0 );
+  apply_prefs_skew_to_peak( peak, meas_prefs, nullptr, drf_prefs.get() );
+  BOOST_CHECK( peak.skewType() == type );
+  BOOST_CHECK_EQUAL( peak.coefficient( PeakDef::SkewPar0 ), 12.5 );
+  BOOST_CHECK_EQUAL( peak.coefficient( PeakDef::SkewPar1 ), 3.5 );
+  for( int i = 0; i < 6; ++i )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+    BOOST_CHECK( !peak.fitFor( ct ) );
+    if( i >= 2 )
+      BOOST_CHECK_EQUAL( peak.coefficient( ct ), drf_prefs->m_lower_energy_skew[i].value() );
+  }
+
+  PeakDef no_drf_peak( 661.66, 4.0, 1000.0 );
+  meas_prefs.m_lower_energy_skew[0].reset();
+  apply_prefs_skew_to_peak( no_drf_peak, meas_prefs, nullptr, nullptr );
+  BOOST_CHECK( no_drf_peak.fitFor( PeakDef::SkewPar0 ) );   // no value: fit
+  BOOST_CHECK( !no_drf_peak.fitFor( PeakDef::SkewPar1 ) );
+  BOOST_CHECK( !no_drf_peak.fitFor( PeakDef::SkewPar4 ) );  // not fit by default: held
+  BOOST_CHECK_EQUAL( no_drf_peak.coefficient( PeakDef::SkewPar4 ), starting );
+}//test_gadras_skew_seeding_from_detector
+
+
 /** The sniffer must not call a spectrum or an efficiency CSV a Detector.dat -
  the text parser itself is far too permissive to use for classification. */
 BOOST_AUTO_TEST_CASE( test_is_candidate_detector_dat )

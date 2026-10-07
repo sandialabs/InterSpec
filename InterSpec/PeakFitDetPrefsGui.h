@@ -30,7 +30,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 
 class InterSpec;
-class NativeFloatSpinBox;
+class SkewParamsGrid;
 
 namespace Wt
 {
@@ -105,6 +105,9 @@ protected:
   /** Guard to suppress undo/redo when updating controls programmatically. */
   bool m_programmaticUpdate;
 
+  /** True while notifying others of a change the user made here, so we dont re-read it ourselves. */
+  bool m_notifyingOwnChange;
+
   // Compact-mode collapse/expand widgets
   Wt::WContainerWidget *m_collapsedDiv;
   Wt::WContainerWidget *m_expandedDiv;
@@ -114,16 +117,8 @@ protected:
   Wt::WComboBox *m_fwhmMethodCombo;
   Wt::WComboBox *m_skewTypeCombo;
 
-  /** Container for the dynamically generated skew parameter rows. */
-  Wt::WContainerWidget *m_skewParamsDiv;
-
-  /** Lower-energy spin boxes for skew params (index 0..5; GADRAS types use 6). May be nullptr
-   if the parameter is not used by the current skew type.
-   */
-  NativeFloatSpinBox *m_lowerSkewSpin[6];
-
-  /** Upper-energy spin boxes for skew params (index 0..5; GADRAS types use 6). */
-  NativeFloatSpinBox *m_upperSkewSpin[6];
+  /** The skew parameter values; a blank value means none is given. */
+  SkewParamsGrid *m_skewParamsGrid;
 
   /** Checkbox for ROI-independent skew. */
   Wt::WCheckBox *m_roiIndepCb;

@@ -904,16 +904,15 @@ double peak_cdf( const double x, const double mean, const double sigma,
   // ========== GADRAS Peak Shape Distribution Functions ==========
   //
   // A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces
-  // the Fortran shape).  See the well-marked GADRAS section in PeakDists_imp.hpp for the math (this
-  // section is expected to receive a math upgrade to an analytic form).
+  // the Fortran shape).  See the well-marked GADRAS section in PeakDists_imp.hpp for the math.
   //
   // The six skew parameters (SkewPar0..SkewPar5) are:
-  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fittable
-  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fittable
-  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - fixed detector characteristic
-  //   [3] high_skew_power  (high-tail energy-dependence exponent) - fixed detector characteristic
-  //   [4] low_skew_extent  (low-tail slope shaping)               - fixed detector characteristic
-  //   [5] high_skew_extent (high-tail slope shaping)              - fixed detector characteristic
+  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fit by default
+  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fit by default
+  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - detector characteristic
+  //   [3] high_skew_power  (high-tail energy-dependence exponent) - detector characteristic
+  //   [4] low_skew_extent  (low-tail slope shaping)               - detector characteristic
+  //   [5] high_skew_extent (high-tail slope shaping)              - detector characteristic
 
   /** Detector material categories that change the GADRAS tail construction. */
   enum class GadrasMaterial

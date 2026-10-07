@@ -745,10 +745,11 @@ public:
      Uses 6 skew parameters:
      - SkewPar0: `low_skew`         - low-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
      - SkewPar1: `high_skew`        - high-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
-     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent.  Fixed detector characteristic.
-     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent.  Fixed detector characteristic.
-     - SkewPar4: `low_skew_extent`  - low-tail slope shaping.  Fixed detector characteristic.
-     - SkewPar5: `high_skew_extent` - high-tail slope shaping.  Fixed detector characteristic.
+     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent (>= 0).  Detector characteristic.
+     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent (>= 0).  Detector characteristic.
+     - SkewPar4: `low_skew_extent`  - low-tail slope shaping.  Detector characteristic.
+     - SkewPar5: `high_skew_extent` - high-tail slope shaping.  Detector characteristic.
+     The detector characteristics are not fit by default (see #skew_parameter_fit_by_default).
      */
     GadrasGeneric,
 
@@ -877,9 +878,20 @@ public:
    Most skew types fit all their parameters by default, so this returns true for any parameter within
    `num_skew_parameters(skew_type)`.  The GADRAS types are an exception: only the two amplitude parameters
    (SkewPar0=low_skew, SkewPar1=high_skew) are fit by default; the energy-dependence powers and tail extents
-   (SkewPar2..SkewPar5) are fixed detector characteristics.
+   (SkewPar2..SkewPar5) are detector characteristics, held fixed unless the user chooses to fit them.
    */
   static bool skew_parameter_fit_by_default( const SkewType skew_type, const CoefficientType coefficient );
+
+  /** Moves a fit's skew starting values off a point the fit could never leave.
+
+   For the GADRAS types, when both tail amplitudes (SkewPar0/1) are zero the shape is an exact
+   Gaussian, and the derivative w.r.t. every skew coefficient is zero there; so in that case each
+   amplitude being fit is set to its #skew_parameter_range starting value.  No-op for other types.
+
+   `values` and `is_fit` are indexed from SkewPar0, and are `num_skew_parameters(skew_type)` long.
+   */
+  static void avoid_stationary_skew_start( const SkewType skew_type, std::vector<double> &values,
+                                           const std::vector<bool> &is_fit );
 
 public:
   PeakDef();

@@ -1460,10 +1460,9 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 //  NOT implemented here (it is not an exposed skew type).  It survives only in the
 //  legacy discrete copy in the unit test.
 //
-//  NOTE (pending upgrade): the mixture (weights/scales/sum_skew/zeta factors) is built
-//  in `double`, so Ceres autodiff gradients flow through mean/sigma/amplitude (via the
-//  zeta argument) but NOT through the six skew parameters.  Making the skew amplitudes
-//  analytically fittable requires templating the shape build on T.
+//  The shape is built in `T`, so Ceres autodiff gradients flow through the six skew
+//  parameters (and the peak energy the shape is resolved at), not just mean/sigma/amplitude.
+//  The `double` results are identical to the previous double-only build.
 // ============================================================================
 
 /** Extract the scalar (double) value from a scalar or ceres::Jet type. */
@@ -1523,7 +1522,7 @@ inline T gadras_erfcx_nonneg( const T x )
  would overflow (large exp_arg, which always coincides with erfc_arg > 0) we use the
  equivalent  0.5 * erfcx(erfc_arg) * exp(-0.5 z^2).  This is the same trick used by
  InterSpec's bortel_indefinite_integral, and keeps the function C-infinity smooth across
- the switch (important for future Jet gradients). */
+ the switch (important for Jet gradients). */
 template<typename T>
 inline T gadras_stable_tail_term( const T exp_arg, const T erfc_arg, const T z )
 {
@@ -1545,7 +1544,7 @@ inline T gadras_stable_tail_term( const T exp_arg, const T erfc_arg, const T z )
  *left* exponential tail of scale `s` (density (1/s) exp(z/s) for z<=0).  EMG, negative
  skew.  F_left(z) = Phi(z) + exp(z/s + 1/(2 s^2)) Phi(-z - 1/s). */
 template<typename T>
-inline T gadras_left_tail_cdf( const T z, const double s )
+inline T gadras_left_tail_cdf( const T z, const T s )
 {
   const double inv_sqrt2 = 0.70710678118654752440;
   const T exp_arg  = z / s + 1.0 / (2.0 * s * s);
@@ -1557,7 +1556,7 @@ inline T gadras_left_tail_cdf( const T z, const double s )
  of scale `s` (density (1/s) exp(-z/s) for z>=0).  EMG, positive skew.
  F_right(z) = Phi(z) - exp(-z/s + 1/(2 s^2)) Phi(z - 1/s). */
 template<typename T>
-inline T gadras_right_tail_cdf( const T z, const double s )
+inline T gadras_right_tail_cdf( const T z, const T s )
 {
   const double inv_sqrt2 = 0.70710678118654752440;
   const T exp_arg  = -z / s + 1.0 / (2.0 * s * s);
@@ -1566,22 +1565,23 @@ inline T gadras_right_tail_cdf( const T z, const double s )
 }
 
 
-/** A fully-resolved GADRAS peak shape at a given energy (built in double).  The skewed
- part is a mixture of up to two left-tail EMG components and up to two right-tail EMG
- components; all scales are in zeta (== sigma) units. */
+/** A fully-resolved GADRAS peak shape at a given energy.  The skewed part is a mixture of up
+ to two left-tail EMG components and up to two right-tail EMG components; all scales are in
+ zeta (== sigma) units. */
+template<typename T>
 struct GadrasPeakShape
 {
-  double sum_skew = 0.0;          // weight of the skewed shape (0 => pure Gaussian)
-  double low_zeta_factor = 1.0;   // energy rescale of shape zeta, z<0 side
-  double high_zeta_factor = 1.0;  // energy rescale of shape zeta, z>0 side
+  T sum_skew = T(0.0);          // weight of the skewed shape (0 => pure Gaussian)
+  T low_zeta_factor = T(1.0);   // energy rescale of shape zeta, z<0 side
+  T high_zeta_factor = T(1.0);  // energy rescale of shape zeta, z>0 side
 
-  int    n_low = 0;                    // number of active left-tail components (0..2)
-  double low_weight[2] = {0.0, 0.0};   // already includes SCN; sum == SCN
-  double low_scale[2]  = {1.0, 1.0};
+  int n_low = 0;                            // number of active left-tail components (0..2)
+  T low_weight[2] = { T(0.0), T(0.0) };     // already includes SCN; sum == SCN
+  T low_scale[2]  = { T(1.0), T(1.0) };
 
-  int    n_high = 0;                   // number of active right-tail components (0..2)
-  double high_weight[2] = {0.0, 0.0};  // already includes SCP; sum == SCP
-  double high_scale[2]  = {1.0, 1.0};
+  int n_high = 0;                           // number of active right-tail components (0..2)
+  T high_weight[2] = { T(0.0), T(0.0) };    // already includes SCP; sum == SCP
+  T high_scale[2]  = { T(1.0), T(1.0) };
 
   // How far (in zeta units, on the *measured* axis) the tails reach; used to size the
   // integration/coverage window.  Includes the energy zeta rescale.
@@ -1592,113 +1592,128 @@ struct GadrasPeakShape
 /** Build the resolved GADRAS peak shape (EMG tail mixture + sum_skew) for a peak at
  `energy` (keV).  The six skew parameters and material are as documented above.
  `low_photopeak_probability` (PVT) has no closed-form EMG and is ignored here (it is
- not an exposed skew type; see the section comment). */
-inline GadrasPeakShape gadras_build_peak_shape( const double energy,
-                                                const double low_skew, const double high_skew,
-                                                const double low_skew_power, const double high_skew_power,
-                                                const double low_skew_extent, const double high_skew_extent,
-                                                const GadrasMaterial material,
-                                                const bool low_photopeak_probability )
+ not an exposed skew type; see the section comment).
+
+ A negative power acts as zero (as in the Fortran); the power tests below use `>= 0` rather
+ than `> 0` so the gradient survives at power == 0 (the usual start and lower bound) - the
+ value is the same either way, since pow(x,0) == 1.
+ */
+template<typename T>
+inline GadrasPeakShape<T> gadras_build_peak_shape( const T energy,
+                                                   const T low_skew, const T high_skew,
+                                                   const T low_skew_power, const T high_skew_power,
+                                                   const T low_skew_extent, const T high_skew_extent,
+                                                   const GadrasMaterial material,
+                                                   const bool low_photopeak_probability )
 {
+  using std::abs;
+  using std::exp;
+  using std::pow;
+
   // PVT is not representable as a closed-form EMG; the analytic path does not support it.
   (void)low_photopeak_probability;
   assert( !low_photopeak_probability );
 
-  GadrasPeakShape s;
+  // max(0,v), but keeping v's derivative at v == 0
+  const auto non_neg = []( const T &v ) -> T { return (gadras_scalar(v) >= 0.0) ? v : T(0.0); };
 
-  // sum_skew (GetSumSkew): raw magnitudes, energy-scaled only when power > 0.
-  double skew_p = std::abs( high_skew );
-  if( (skew_p > 0.0) && (high_skew_power > 0.0) )
-    skew_p *= std::pow( energy / 661.0, high_skew_power );
-  double skew_n = std::abs( low_skew );
-  if( (skew_n > 0.0) && (low_skew_power > 0.0) )
-    skew_n *= std::pow( energy / 661.0, low_skew_power );
-  s.sum_skew = std::min( 1.0, (skew_p + skew_n) / 100.0 );
+  GadrasPeakShape<T> s;
 
-  if( s.sum_skew <= 0.0 )
+  // sum_skew (GetSumSkew): raw magnitudes, energy-scaled by a non-negative power.
+  T skew_p = abs( high_skew );
+  if( gadras_scalar(high_skew_power) >= 0.0 )
+    skew_p *= pow( energy / 661.0, high_skew_power );
+  T skew_n = abs( low_skew );
+  if( gadras_scalar(low_skew_power) >= 0.0 )
+    skew_n *= pow( energy / 661.0, low_skew_power );
+  s.sum_skew = std::min( T(1.0), (skew_p + skew_n) / 100.0 );
+
+  if( gadras_scalar(s.sum_skew) <= 0.0 )
     return s;   // pure Gaussian; no mixture needed
 
   // Effective magnitudes used to build the shape (note the 0.1 low floor with a high tail).
-  double low_val  = std::max( 0.0, low_skew );
-  double high_val = std::max( 0.0, high_skew );
-  if( high_val > 0.0 )
-    low_val = std::max( low_val, 0.1 );
+  T low_val  = non_neg( low_skew );
+  const T high_val = non_neg( high_skew );
+  if( gadras_scalar(high_val) > 0.0 )
+    low_val = std::max( low_val, T(0.1) );
 
-  if( (low_val <= 0.0) && (high_val <= 0.0) )
+  if( (gadras_scalar(low_val) <= 0.0) && (gadras_scalar(high_val) <= 0.0) )
   {
-    s.sum_skew = 0.0;
+    s.sum_skew = T(0.0);
     return s;
   }
 
-  const double denom = low_val + high_val;
-  const double scn = (denom > 0.0) ? (low_val / denom) : 0.0;
-  const double scp = (denom > 0.0) ? (high_val / denom) : 0.0;
+  const T denom = low_val + high_val;
+  const T scn = (gadras_scalar(denom) > 0.0) ? T(low_val / denom) : T(0.0);
+  const T scp = (gadras_scalar(denom) > 0.0) ? T(high_val / denom) : T(0.0);
 
   // extent -> slope scaling (same piecewise form for low and high)
-  auto slope_scale = []( const double extent ) -> double {
-    return (extent >= 0.0) ? (1.0 + extent / 3.0) : std::exp( extent / 3.0 );
+  const auto slope_scale = []( const T &extent ) -> T {
+    return (gadras_scalar(extent) >= 0.0) ? T(1.0 + extent / 3.0) : T(exp( extent / 3.0 ));
   };
 
   // Turn (coeff, scale) tail components into area-normalized weights.  For a one-sided
   // exponential the area is coeff*scale, so component i's normalized weight is
   // (coeff_i*scale_i) / sum_j(coeff_j*scale_j), scaled by the side weight (SCN or SCP).
-  auto fill_side = []( int &n, double *w, double *sc,
-                       const double *coeff, const double *scale, int count,
-                       const double side_weight )
+  const auto fill_side = []( int &n, T *w, T *sc,
+                             const T *coeff, const T *scale, const int count,
+                             const T &side_weight )
   {
-    double area = 0.0;
+    T area( 0.0 );
     for( int i = 0; i < count; ++i )
       area += coeff[i] * scale[i];
     n = count;
     for( int i = 0; i < count; ++i )
     {
-      w[i]  = (area > 0.0) ? (side_weight * (coeff[i] * scale[i]) / area) : 0.0;
+      w[i]  = (gadras_scalar(area) > 0.0) ? T(side_weight * (coeff[i] * scale[i]) / area) : T(0.0);
       sc[i] = scale[i];
     }
   };
 
-  if( low_val > 0.0 )
+  if( gadras_scalar(low_val) > 0.0 )
   {
-    const double lss = slope_scale( low_skew_extent );
+    const T lss = slope_scale( low_skew_extent );
     if( material == GadrasMaterial::CZT_CdTe )
     {
-      const double slopen = 0.1 * lss * low_val;
-      const double coeff[2] = { 0.8, 0.2 };
-      const double scale[2] = { slopen, slopen / 0.8 };
+      const T slopen = 0.1 * lss * low_val;
+      const T coeff[2] = { T(0.8), T(0.2) };
+      const T scale[2] = { slopen, slopen / 0.8 };
       fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
     }
     else
     {
-      const double slopen = 0.2 * lss * low_val;
-      const double fr = 0.04 * low_val;
-      const double coeff[2] = { 1.0 - fr, fr };
-      const double scale[2] = { slopen, slopen / 0.4 };
+      const T slopen = 0.2 * lss * low_val;
+      const T fr = 0.04 * low_val;
+      const T coeff[2] = { 1.0 - fr, fr };
+      const T scale[2] = { slopen, slopen / 0.4 };
       fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
     }
   }
 
-  if( high_val > 0.0 )
+  if( gadras_scalar(high_val) > 0.0 )
   {
-    const double hss = slope_scale( high_skew_extent );
+    const T hss = slope_scale( high_skew_extent );
     if( material == GadrasMaterial::CZT_CdTe )
     {
-      const double slopep = 0.1 * hss * high_val;
-      const double coeff[2] = { 0.8, 0.2 };
-      const double scale[2] = { slopep, slopep / 0.65 };
+      const T slopep = 0.1 * hss * high_val;
+      const T coeff[2] = { T(0.8), T(0.2) };
+      const T scale[2] = { slopep, slopep / 0.65 };
       fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 2, scp );
     }
     else
     {
-      const double slopep = 0.2 * hss * high_val;
-      const double coeff[1] = { 1.0 };
-      const double scale[1] = { slopep };
+      const T slopep = 0.2 * hss * high_val;
+      const T coeff[1] = { T(1.0) };
+      const T scale[1] = { slopep };
       fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 1, scp );
     }
   }
 
-  // Energy-dependent zeta rescale for the shape (max(0,power) like the old code).
-  s.low_zeta_factor  = std::pow( 661.0 / energy, std::max( 0.0, low_skew_power ) );
-  s.high_zeta_factor = std::pow( 661.0 / energy, std::max( 0.0, high_skew_power ) );
+  // Energy-dependent zeta rescale for the shape (again, a negative power acts as zero).
+  if( gadras_scalar(low_skew_power) >= 0.0 )
+    s.low_zeta_factor = pow( 661.0 / energy, low_skew_power );
+  if( gadras_scalar(high_skew_power) >= 0.0 )
+    s.high_zeta_factor = pow( 661.0 / energy, high_skew_power );
 
   // Tail reach on the measured axis: a one-sided exponential of shape-zeta scale `s`
   // has ~e^{-k} of its area beyond k*s, so k = ln(1/eps) covers all but eps.  The shape
@@ -1707,11 +1722,13 @@ inline GadrasPeakShape gadras_build_peak_shape( const double energy,
   const double kreach = std::log( 1.0e9 );  // eps = 1e-9
   double low_scale_max = 0.0, high_scale_max = 0.0;
   for( int i = 0; i < s.n_low; ++i )
-    low_scale_max = std::max( low_scale_max, s.low_scale[i] );
+    low_scale_max = std::max( low_scale_max, gadras_scalar(s.low_scale[i]) );
   for( int i = 0; i < s.n_high; ++i )
-    high_scale_max = std::max( high_scale_max, s.high_scale[i] );
-  const double lf = (s.low_zeta_factor  > 0.0) ? s.low_zeta_factor  : 1.0;
-  const double hf = (s.high_zeta_factor > 0.0) ? s.high_zeta_factor : 1.0;
+    high_scale_max = std::max( high_scale_max, gadras_scalar(s.high_scale[i]) );
+  const double lzf = gadras_scalar( s.low_zeta_factor );
+  const double hzf = gadras_scalar( s.high_zeta_factor );
+  const double lf = (lzf > 0.0) ? lzf : 1.0;
+  const double hf = (hzf > 0.0) ? hzf : 1.0;
   s.low_reach_zeta  = 8.0 + kreach * low_scale_max  / lf;
   s.high_reach_zeta = 8.0 + kreach * high_scale_max / hf;
 
@@ -1719,17 +1736,16 @@ inline GadrasPeakShape gadras_build_peak_shape( const double energy,
 }//gadras_build_peak_shape(...)
 
 
-/** Cumulative distribution of the full GADRAS peak shape at zeta.  `zeta` is templated so
- gradients flow through it (i.e. through mean/sigma); the shape mixture is a fixed `double`. */
+/** Cumulative distribution of the full GADRAS peak shape at zeta. */
 template<typename T>
-inline T gadras_peak_shape_cdf( const T zeta, const GadrasPeakShape &s )
+inline T gadras_peak_shape_cdf( const T zeta, const GadrasPeakShape<T> &s )
 {
   const T gauss = gadras_std_normal_cdf( zeta );
-  if( s.sum_skew <= 0.0 )
+  if( gadras_scalar(s.sum_skew) <= 0.0 )
     return gauss;
 
   // zeta used for the skewed shape, rescaled per side (sign-preserving).
-  const double factor = (gadras_scalar(zeta) > 0.0) ? s.high_zeta_factor : s.low_zeta_factor;
+  const T factor = (gadras_scalar(zeta) > 0.0) ? s.high_zeta_factor : s.low_zeta_factor;
   const T z_shape = zeta * factor;
   const T shape_gauss = gadras_std_normal_cdf( z_shape );
 
@@ -1795,17 +1811,14 @@ void gadras_integral( const T peak_mean, const T sigma, const T peak_amplitude,
       return;
   }
 
-  // Build the shape (in double) at the peak energy from the six skew parameters.
-  const double energy = gadras_scalar( peak_mean );
-  const GadrasPeakShape shape = gadras_build_peak_shape( energy,
-                                    gadras_scalar(skew[0]), gadras_scalar(skew[1]),
-                                    gadras_scalar(skew[2]), gadras_scalar(skew[3]),
-                                    gadras_scalar(skew[4]), gadras_scalar(skew[5]),
-                                    material, false );
+  // Build the shape at the peak energy from the six skew parameters.
+  const GadrasPeakShape<T> shape = gadras_build_peak_shape<T>( peak_mean,
+                                         skew[0], skew[1], skew[2], skew[3], skew[4], skew[5],
+                                         material, false );
 
   // Coverage window: the shape carries its own tail reach (Gaussian core + EMG tails).
   double zlo = -8.0, zhi = 8.0;
-  if( shape.sum_skew > 0.0 )
+  if( gadras_scalar(shape.sum_skew) > 0.0 )
   {
     zlo = std::min( zlo, -shape.low_reach_zeta );
     zhi = std::max( zhi,  shape.high_reach_zeta );

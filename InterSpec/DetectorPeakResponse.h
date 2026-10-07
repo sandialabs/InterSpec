@@ -1483,9 +1483,9 @@ public:
               ::rapidxml::xml_document<char> *doc ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
-  /** Serializes the full-energy efficiency uncertainty and #m_totalEfficiency
-   into a compact `<DrfExtra>` XML string, for database persistence (the
-   `m_drfExtra` column); returns an empty string when neither is set.
+  /** Serializes the full-energy efficiency uncertainty, #m_totalEfficiency, geometry, and
+   #m_peakFitDetPrefs (among others) into a compact `<DrfExtra>` XML string, for database
+   persistence (the `m_drfExtra` column); returns an empty string when none are set.
    Future optional additions (detector geometry, angular response) should go
    into this same column, avoiding further schema changes.
    */

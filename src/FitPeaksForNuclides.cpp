@@ -16652,15 +16652,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   options.fwhm_max_ratio_to_start = config.rel_eff_auto_fwhm_max_ratio_to_model;
   options.fwhm_channel_floor_factor = config.rel_eff_auto_fwhm_channel_floor_factor;
 
-  // Copy fixed skew parameter values from PeakFitDetPrefs, if available and not ROI-independent
-  if( peak_fit_prefs && !peak_fit_prefs->m_roi_independent_skew )
-  {
-    for( size_t i = 0; i < 4; ++i )
-    {
-      options.fixed_lower_skew[i] = peak_fit_prefs->m_lower_energy_skew[i];
-      options.fixed_upper_skew[i] = peak_fit_prefs->m_upper_energy_skew[i];
-    }
-  }//if( peak_fit_prefs && !roi_independent )
+  // Skew parameter values from PeakFitDetPrefs (held fixed where they give values), when they are for
+  //  the skew type being fit; `set_skew_from_prefs` skips ROI-independent prefs, and keeps values within
+  //  range.  `options.skew_from_peak_fit_prefs` stays false, so `RelActCalcAuto::solve` keeps these.
+  if( peak_fit_prefs && (peak_fit_prefs->m_peak_skew_type == options.skew_type) )
+    options.set_skew_from_prefs( options.skew_type, peak_fit_prefs.get(), drf ? drf->peakFitDetPrefs().get() : nullptr );
 
   // Find valid energy range, clamped to a physically-valid low-energy floor (see low_energy_analysis_floor).
   const std::pair<double,double> raw_valid_range = find_valid_energy_range( orig_foreground );
