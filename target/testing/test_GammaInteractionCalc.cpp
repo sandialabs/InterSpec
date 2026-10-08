@@ -1094,7 +1094,7 @@ BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
     {
       const double frac_mu = MassAttenuation::mass_atten_coef_frac_an<double>( an, energy );
       const double elem_mu = MassAttenuation::massAttenuationCoefficientElement( an, energy );
-      BOOST_CHECK_CLOSE( frac_mu, elem_mu, 1.0E-4 );
+      BOOST_CHECK_CLOSE( frac_mu, elem_mu, 1.0E-10 );  //exact, up to double rounding of exp(log(mu))
     }
   }//for( loop over energies )
 
@@ -1129,7 +1129,7 @@ BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
     for( const double an : { 25.5, 26.0, 73.2 } )
     {
       const Jet1 an_jet( an, 0 );
-      const Jet1 mu_jet = MassAttenuation::mass_atten_coef_frac_an( an_jet, static_cast<float>(energy) );
+      const Jet1 mu_jet = MassAttenuation::mass_atten_coef_frac_an( an_jet, energy );
 
       const double mu_val = MassAttenuation::mass_atten_coef_frac_an<double>( an, energy );
       const double mu_plus = MassAttenuation::mass_atten_coef_frac_an<double>( an + diff_step, energy );
@@ -1141,8 +1141,80 @@ BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
                            "Jet derivative (" << mu_jet.v[0] << ") doesnt match numeric ("
                            << numeric_deriv << ") at AN=" << an << ", E=" << energy << " keV" );
     }
+
+    // Exactly on the [1,98] bounds (where Ceres parks a bounded AN) the derivative must stay live,
+    //  matching a one-sided numeric derivative taken inside the range.
+    for( const double an : { 1.0, 98.0 } )
+    {
+      const Jet1 mu_jet = MassAttenuation::mass_atten_coef_frac_an( Jet1(an, 0), energy );
+      const double step = (an < 50.0) ? diff_step : -diff_step;
+      const double numeric_deriv = (MassAttenuation::mass_atten_coef_frac_an<double>( an + step, energy )
+                                    - MassAttenuation::mass_atten_coef_frac_an<double>( an, energy )) / step;
+      BOOST_CHECK_MESSAGE( fabs(mu_jet.v[0] - numeric_deriv) <= 1.0E-3*fabs(numeric_deriv),
+                           "Jet derivative on bound (" << mu_jet.v[0] << ") doesnt match one-sided numeric ("
+                           << numeric_deriv << ") at AN=" << an << ", E=" << energy << " keV" );
+    }
   }//for( loop over energies )
 }//BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
+
+
+/** Pins MassAttenuation's contract: energies outside the 10 keV - 20 MeV data range are clamped to
+ it (not thrown, and not zero), invalid inputs throw, the total is exactly the sum of its
+ (non-Rayleigh) processes, and absorption edges are sharp at their true energies.
+ */
+BOOST_AUTO_TEST_CASE( MassAttenuationContract )
+{
+  set_data_dir();
+
+  using MassAttenuation::GammaEmProcces;
+  const double kev = PhysicalUnits::keV;
+  const double lo = MassAttenuation::sm_min_xs_energy_keV * kev;
+  const double hi = MassAttenuation::sm_max_xs_energy_keV * kev;
+
+  for( const int z : { 1, 8, 26, 82, 92, 98 } )
+  {
+    const double mu_lo = MassAttenuation::massAttenuationCoefficientElement( z, lo );
+    const double mu_hi = MassAttenuation::massAttenuationCoefficientElement( z, hi );
+    BOOST_CHECK( (mu_lo > 0.0) && (mu_hi > 0.0) );
+
+    for( const double e : { 5.0*kev, 0.0, -1.0*kev } )
+      BOOST_CHECK_EQUAL( MassAttenuation::massAttenuationCoefficientElement( z, e ), mu_lo );
+    BOOST_CHECK_EQUAL( MassAttenuation::massAttenuationCoefficientElement( z, 50.0*hi ), mu_hi );
+
+    for( const double e : { 15.0, 59.5, 661.7, 2614.5, 15000.0 } )
+    {
+      const double total = MassAttenuation::massAttenuationCoefficientElement( z, e*kev );
+      const double sum = MassAttenuation::massAttenuationCoefficientElement( z, e*kev, GammaEmProcces::ComptonScatter )
+                       + MassAttenuation::massAttenuationCoefficientElement( z, e*kev, GammaEmProcces::PhotoElectric )
+                       + MassAttenuation::massAttenuationCoefficientElement( z, e*kev, GammaEmProcces::PairProduction );
+      BOOST_CHECK_CLOSE( total, sum, 1.0E-10 );
+    }
+  }//for( loop over atomic numbers )
+
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientElement( 0, 100.0*kev ), std::runtime_error );
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientElement( 99, 100.0*kev ), std::runtime_error );
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientElement( 26, nan ), std::runtime_error );
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientElement( 26, inf ), std::runtime_error );
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientElement( 26, 100.0*kev,
+                                                         GammaEmProcces::NumGammaEmProcces ), std::runtime_error );
+  BOOST_CHECK_THROW( MassAttenuation::massAttenuationCoefficientFracAN( nan, 100.0*kev ), std::runtime_error );
+
+  // Pair production only above threshold
+  BOOST_CHECK_EQUAL( MassAttenuation::massAttenuationCoefficientElement( 82, 1000.0*kev,
+                                                                GammaEmProcces::PairProduction ), 0.0 );
+  BOOST_CHECK_GT( MassAttenuation::massAttenuationCoefficientElement( 82, 1100.0*kev,
+                                                                GammaEmProcces::PairProduction ), 0.0 );
+
+  // K edges sit at their EADL energies (Pb 88.0 keV, U 115.6 keV), not smeared above them
+  const double pb_below = MassAttenuation::massAttenuationCoefficientElement( 82, 87.9*kev );
+  const double pb_above = MassAttenuation::massAttenuationCoefficientElement( 82, 88.1*kev );
+  BOOST_CHECK_GT( pb_above, 3.0*pb_below );
+  const double u_below = MassAttenuation::massAttenuationCoefficientElement( 92, 115.5*kev );
+  const double u_above = MassAttenuation::massAttenuationCoefficientElement( 92, 115.7*kev );
+  BOOST_CHECK_GT( u_above, 3.0*u_below );
+}//BOOST_AUTO_TEST_CASE( MassAttenuationContract )
 
 
 namespace

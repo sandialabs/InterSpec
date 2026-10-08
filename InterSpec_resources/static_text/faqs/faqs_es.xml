@@ -741,7 +741,7 @@
     otras fuentes de datos. Los datos de rayos X provienen de la base de datos LBNL ToRI.<br />
     Toda esta información se accede a través de la biblioteca <code>SandiaDecay</code>
     (<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>).
-    Las secciones eficaces de gamma/rayos X también provienen de ENSDF.<br />
+    Las secciones eficaces de atenuación de gamma/rayos X provienen de la EPICS2023 Evaluated Photon Data Library (EPDL), a través de la biblioteca CeeLo.<br />
     Los datos de reacción provienen de varios lugares, incluyendo
     &quot;<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>&quot; (A.M. Demidov <i>et al.</i>),
     y la &quot;<em>base de datos de Análisis por Activación con Gammas Promptos (PGAA) de la IAEA</em>&quot;.

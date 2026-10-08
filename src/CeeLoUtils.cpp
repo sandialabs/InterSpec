@@ -1453,14 +1453,10 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     {
       try
       {
-        const double lo = MassAttenuation::massAttenuationCoefficientElement(
-                                      z_lo, static_cast<float>(energy) );
-        const double hi = MassAttenuation::massAttenuationCoefficientElement(
-                                      z_hi, static_cast<float>(energy) );
+        const double lo = MassAttenuation::massAttenuationCoefficientElement( z_lo, energy );
+        const double hi = MassAttenuation::massAttenuationCoefficientElement( z_hi, energy );
         const double mix = (1.0 - f_hi)*lo + f_hi*hi;
-        const double ref = MassAttenuation::massAttenuationCoefficientFracAN(
-                                      static_cast<float>(atomic_number),
-                                      static_cast<float>(energy) );
+        const double ref = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, energy );
 
         // Skip energies where an absorption edge falls BETWEEN the two
         //  bracketing elements: their mu/rho then differ by a large factor and

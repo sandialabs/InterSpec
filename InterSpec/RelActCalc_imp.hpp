@@ -519,7 +519,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
     derivative information - see #MassAttenuation::mass_atten_coef_frac_an, which it forwards to.
 */
 template<typename T>
-T get_atten_coef_for_an( const T &an, const float energy )
+T get_atten_coef_for_an( const T &an, const double energy )
 {
 #ifndef NDEBUG
   // `T` is either a `ceres::Jet<>` or a `double` here, so we'll use compile time if
@@ -774,7 +774,7 @@ T eval_physical_model_eqn_imp( const double energy,
   using namespace std;
   using namespace ceres; //So we can use the math functions defined in the `ceres` namespace for Jets
   
-  const float energyf = static_cast<float>( energy );
+  const float energyf = static_cast<float>( energy );  //DetectorPeakResponse takes float energies
   
   assert( b.has_value() == c.has_value() );
   
@@ -825,9 +825,9 @@ T eval_physical_model_eqn_imp( const double energy,
   {
     T mu( 0.0 );
     if( self_atten->material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( self_atten->material.get(), energyf ) / self_atten->material->density );
+      mu = T( GammaInteractionCalc::transmition_length_coefficient( self_atten->material.get(), energy ) / self_atten->material->density );
     else
-      mu = get_atten_coef_for_an( self_atten->atomic_number, energyf );
+      mu = get_atten_coef_for_an( self_atten->atomic_number, energy );
     
     T areal_density = self_atten->areal_density;
 
@@ -875,9 +875,9 @@ T eval_physical_model_eqn_imp( const double energy,
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
     T mu( 0.0 );
     if( ext_atten.material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energyf ) / ext_atten.material->density );
+      mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energy ) / ext_atten.material->density );
     else
-      mu = get_atten_coef_for_an( ext_atten.atomic_number, energyf );
+      mu = get_atten_coef_for_an( ext_atten.atomic_number, energy );
     
     T areal_density = ext_atten.areal_density;
 

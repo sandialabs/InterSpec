@@ -740,7 +740,7 @@
     Mindezek az információk a <code>SandiaDecay</code> 
     (<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>)
     könyvtáron keresztül érhetők el.
-    A gamma/röntgen-keresztmetszetek szintén az ENSDF-ből származnak.<br />
+    A gamma/röntgen gyengítési keresztmetszetek az EPICS2023 Evaluated Photon Data Library (EPDL) adatbázisból származnak, a CeeLo könyvtáron keresztül.<br />
     A reakcióadatok különböző helyekről származnak, többek között 
     az &quot;<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>&quot; (A.M. Demidov <i>et al.</i>) című műből, 
     és az &quot;<em>IAEA Prompt Gamma Activation Analysis (PGAA) database</em>&quot;-ből.

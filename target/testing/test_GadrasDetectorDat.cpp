@@ -427,12 +427,12 @@ BOOST_AUTO_TEST_CASE( test_generic_attenuator_material )
     for( const double energy : { 60.0, 122.0, 662.0, 1332.0 } )
     {
       const double lo = MassAttenuation::massAttenuationCoefficientElement(
-                                        z_lo, static_cast<float>(energy) );
+                                        z_lo, energy );
       const double hi = MassAttenuation::massAttenuationCoefficientElement(
-                                        z_hi, static_cast<float>(energy) );
+                                        z_hi, energy );
       const double mix = (1.0 - f_hi)*lo + f_hi*hi;
       const double ref = MassAttenuation::massAttenuationCoefficientFracAN(
-                                        static_cast<float>(an), static_cast<float>(energy) );
+                                        an, energy );
       BOOST_REQUIRE( ref > 0.0 );
       BOOST_CHECK_MESSAGE( std::fabs(mix - ref) <= 0.05*ref,
                           "AN=" + std::to_string(an) + " at " + std::to_string(energy)
@@ -508,11 +508,9 @@ BOOST_AUTO_TEST_CASE( test_actinide_materials )
   BOOST_CHECK_NO_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.0, 10.0, 0.5 ) );
   BOOST_CHECK_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.5, 10.0, 0.5 ), std::exception );
 
-  // InterSpec's own attenuation data uses CeeLo's masses above uranium (Pu 239.1,
-  //  Bk 249), so the two agree per gram and not just per atom; with the former
-  //  244 and 247 they differed by 2.0% and 0.8%.  Coherent scattering is left
-  //  out because MassAttenuation does not include it, and every energy is clear
-  //  of the absorption edges, which MassAttenuation smooths.
+  // MassAttenuation forwards to these same CeeLo cross sections and atomic weights,
+  //  so the two agree per gram to rounding.  Coherent scattering is left out because
+  //  MassAttenuation does not include it.
   const double avogadro = 6.02214076e23, barn_cm2 = 1.0e-24;
   for( const int Z : { 92, 93, 94, 95, 96, 97, 98 } )
   {
@@ -522,9 +520,9 @@ BOOST_AUTO_TEST_CASE( test_actinide_materials )
       const double ceelo_mu = (p.sigma_pe + p.sigma_cs + p.sigma_pp)
                               * barn_cm2 * avogadro / xs.atomic_weight( Z );
       const double interspec_mu = MassAttenuation::massAttenuationCoefficientElement(
-                                                        Z, static_cast<float>(energy) )
+                                                        Z, energy )
                                   / (PhysicalUnits::cm2 / PhysicalUnits::g);
-      BOOST_CHECK_MESSAGE( std::fabs( interspec_mu / ceelo_mu - 1.0 ) < 0.005,
+      BOOST_CHECK_MESSAGE( std::fabs( interspec_mu / ceelo_mu - 1.0 ) < 1.0e-9,
                           "Z=" + std::to_string(Z) + " at " + std::to_string(energy)
                           + " keV: InterSpec mu/rho=" + std::to_string(interspec_mu)
                           + " vs CeeLo " + std::to_string(ceelo_mu) + " cm2/g" );

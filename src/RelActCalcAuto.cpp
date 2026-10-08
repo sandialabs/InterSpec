@@ -3586,7 +3586,7 @@ struct RelActAutoCostFcn
         continue;
 
       const auto mu_of = [&material]( const double energy ) -> double {
-        return GammaInteractionCalc::transmition_length_coefficient( material.get(), static_cast<float>(energy) )
+        return GammaInteractionCalc::transmition_length_coefficient( material.get(), energy )
                / material->density;
       };
 
@@ -3641,7 +3641,7 @@ struct RelActAutoCostFcn
 
             const double mu = mu_of( ey.energy );
             const double photo = MassAttenuation::massAttenuationCoefficientElement( el->atomicNumber,
-                                   static_cast<float>(ey.energy), MassAttenuation::GammaEmProcces::PhotoElectric );
+                                   ey.energy, MassAttenuation::GammaEmProcces::PhotoElectric );
             if( (mu > 0.0) && (photo > 0.0) )
               lines.emplace_back( mu, ey.yield * photo / mu );
           }//for( loop over the exciting nuclide's lines )

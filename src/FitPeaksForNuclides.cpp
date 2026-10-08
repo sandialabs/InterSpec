@@ -5180,15 +5180,15 @@ SiblingAbsenceResult sibling_absence_check(
   // MORE than 60-88 keV ones - a lead-only scan wrongly condemned the 99 keV line of shielded Am241
   // and the 103 keV line of shielded Sm153).  The claim passes if either material can explain it.
   const double mu_units = PhysicalUnits::cm2 / PhysicalUnits::g;
-  const float shield_materials[] = { 26.0f, 82.0f };
+  const double shield_materials[] = { 26.0, 82.0 };
   // The same source lines are checked many times per fit; memoise the table lookups per thread.
   static thread_local std::map<std::pair<int,int>, double> mu_cache;
-  const auto mu_of = [mu_units]( const float atomic_number, const double energy ) -> double {
+  const auto mu_of = [mu_units]( const double atomic_number, const double energy ) -> double {
     const std::pair<int,int> key( static_cast<int>( atomic_number ), static_cast<int>( std::lround( 100.0 * energy ) ) );
     const auto pos = mu_cache.find( key );
     if( pos != mu_cache.end() )
       return pos->second;
-    const double mu = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, static_cast<float>(energy) ) / mu_units;
+    const double mu = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, energy ) / mu_units;
     if( mu_cache.size() > 200000 )
       mu_cache.clear();
     mu_cache[key] = mu;
@@ -5299,7 +5299,7 @@ SiblingAbsenceResult sibling_absence_check(
                                         / (drf_slack * own_yield * eff_c) );
   const int nsteps = 40;
   bool any_base_feasible = false;
-  for( const float material : shield_materials )
+  for( const double material : shield_materials )
   {
   const double mu_c = mu_of( material, claimed_energy );
   for( Constraint &k : strong )

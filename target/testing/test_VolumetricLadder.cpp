@@ -384,7 +384,7 @@ build_point_at_depth_calc( const AngleDetector &det, const PointAtDepth &p, cons
   const double mu = transparent ? 0.0
         : ( (fep_window_keV > 0.0)
               ? fep_removal_coefficient( *mat, energy_keV, fep_window_keV )
-              : transmition_length_coefficient( mat.get(), static_cast<float>(energy_keV) ) );
+              : transmition_length_coefficient( mat.get(), energy_keV ) );
 
   DistributedSrcCalcT<double> calc;
   calc.m_geometry = GeometryType::Rectangular;
@@ -611,7 +611,7 @@ BOOST_AUTO_TEST_CASE( PerRayKernelIdentityVsRayMarch )
       const double energy = 60.0;
       const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
       const shared_ptr<const Material> mat = matdb->material( scenario_matrix_material( dense ) );
-      const double mu = transmition_length_coefficient( mat.get(), static_cast<float>(energy) );
+      const double mu = transmition_length_coefficient( mat.get(), energy );
 
       DistributedSrcCalcT<double> calc;
       calc.m_geometry = GeometryType::CylinderEndOn;
@@ -893,7 +893,7 @@ BOOST_AUTO_TEST_CASE( Rung4_SlabThicknessSweep, * boost::unit_test::disabled() )
       {
         // transmition_length_coefficient is per PhysicalUnits length, so MULTIPLYING by `cm` gives
         //  the per-centimetre coefficient (the same way scenario_optical_depth forms its tau).
-        const double mu = transmition_length_coefficient( mat.get(), static_cast<float>(e) ) * PhysicalUnits::cm;
+        const double mu = transmition_length_coefficient( mat.get(), e ) * PhysicalUnits::cm;
         for( const double tau : { 0.1, 0.3, 1.0, 3.0, 10.0 } )
         {
           const double t = tau / mu;   //cm
@@ -1035,7 +1035,7 @@ double fep_leg_mu( const Material &mat, const double energy_keV, const double wi
                    const double tau_src, const double tau_c )
 {
   const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
-                                                  &mat, static_cast<float>(energy_keV) );
+                                                  &mat, energy_keV );
   if( !(win_keV > 0.0) )
     return mu_total;
 
@@ -1114,7 +1114,7 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
 
           for( const double e : energies )
           {
-            const double mu_tot = transmition_length_coefficient( mat.get(), static_cast<float>(e) );
+            const double mu_tot = transmition_length_coefficient( mat.get(), e );
             const double tau = mu_tot * depth * PhysicalUnits::cm;
             if( (standoff > 20.0) && (tau > 1.6) )
               continue;   //the row rung 3 skipped; its MC is not in the cache
@@ -1167,7 +1167,7 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
     {
       for( const double e : { 60.0, 344.0, 1332.5 } )
       {
-        const double mu_per_cm = transmition_length_coefficient( mat.get(), static_cast<float>(e) )
+        const double mu_per_cm = transmition_length_coefficient( mat.get(), e )
                                  * PhysicalUnits::cm;
         for( const double tau : { 0.1, 0.3, 1.0, 3.0, 10.0 } )
         {
@@ -1690,7 +1690,7 @@ BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
       for( int i = 0; i < 3; ++i )
         info.dims[i] = sh.second[i]*cm;
       info.trans_len_coef = transmition_length_coefficient( sh.first.get(),
-                                                            static_cast<float>(energy) );
+                                                            energy );
       info.type = ShellType::Material;
       calc.m_shells.push_back( info );
     }
@@ -1997,7 +1997,7 @@ BOOST_AUTO_TEST_CASE( LineProposalContinuity )
     DistributedSrcCalcT<double>::ShellInfo info;
     info.dims = { radius_cm*cm, half_len*cm, 0.0 };
     info.trans_len_coef = transmition_length_coefficient( water.get(),
-                                                          static_cast<float>(energy) );
+                                                          energy );
     info.type = ShellType::Material;
     calc.m_shells.push_back( info );
 
@@ -2072,7 +2072,7 @@ BOOST_AUTO_TEST_CASE( LineProposalContinuity )
       DistributedSrcCalcT<double>::ShellInfo info;
       info.dims = { r*cm, half_len*cm, 0.0 };
       info.trans_len_coef = transmition_length_coefficient( water.get(),
-                                                            static_cast<float>(energy) );
+                                                            energy );
       info.type = ShellType::Material;
       calc.m_shells.push_back( info );
       integrate_on_path( calc, VolumetricIntegrator::Element, -1 );
@@ -2199,7 +2199,7 @@ BOOST_AUTO_TEST_CASE( LineProposalContinuityNoiseScaling, * boost::unit_test::di
                                         det.gd.transverse_half_extent()*cm, 0.0 );
     DistributedSrcCalcT<double>::ShellInfo info;
     info.dims = { radius_cm*cm, half_len*cm, 0.0 };
-    info.trans_len_coef = transmition_length_coefficient( water.get(), static_cast<float>(energy) );
+    info.trans_len_coef = transmition_length_coefficient( water.get(), energy );
     info.type = ShellType::Material;
     calc.m_shells.push_back( info );
     return calc;
@@ -2314,7 +2314,7 @@ BOOST_AUTO_TEST_CASE( NestedRectConvergenceProbe, * boost::unit_test::disabled()
       for( int k = 0; k < 3; ++k )
         info.dims[k] = dims[i][k]*cm;
       info.trans_len_coef = transmition_length_coefficient( mats[i].get(),
-                                                            static_cast<float>(energy) );
+                                                            energy );
       info.type = ShellType::Material;
       calc.m_shells.push_back( info );
     }
@@ -2774,11 +2774,11 @@ BOOST_AUTO_TEST_CASE( Rung9_FepWindowCreditProbe, * boost::unit_test::disabled()
     for( const Material::ElementFractionPair &p : mat.elements )
       mu += p.second * mat.density
             * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                  static_cast<float>(e), MassAttenuation::GammaEmProcces::ComptonScatter );
+                  e, MassAttenuation::GammaEmProcces::ComptonScatter );
     for( const Material::NuclideFractionPair &p : mat.nuclides )
       mu += p.second * mat.density
             * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                  static_cast<float>(e), MassAttenuation::GammaEmProcces::ComptonScatter );
+                  e, MassAttenuation::GammaEmProcces::ComptonScatter );
     return mu;
   };
 
@@ -2889,7 +2889,7 @@ BOOST_AUTO_TEST_CASE( Rung9_FepWindowCreditProbe, * boost::unit_test::disabled()
   for( const Probe &p : probes )
   {
     const shared_ptr<const ceelo::DetectorResponse> resp = centre_anchor( p.centre_cm );
-    const double mu_tot = transmition_length_coefficient( p.mat.get(), static_cast<float>(energy) );
+    const double mu_tot = transmition_length_coefficient( p.mat.get(), energy );
     const double mu_c = mu_compton_of( *p.mat, energy );
     const ceelo::Material cmat = CeeLoUtils::to_ceelo_material( *p.mat ).to_material();
     const double f_fwhm = ceelo::kn_in_window_fraction( energy, win_fwhm_half, cmat );

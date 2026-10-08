@@ -149,7 +149,6 @@
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FeatureMarkerWidget.h"
-#include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
@@ -1237,11 +1236,6 @@ void InterSpec::setStaticDataDirectory( const std::string &dir )
   ns_staticDataDirectory = dir;
   sm_haveSetStaticDataDirectory = true;
 
-#ifdef _WIN32
-  MassAttenuation::set_data_directory( SpecUtils::convert_from_utf8_to_utf16(dir) );
-#else
-  MassAttenuation::set_data_directory( dir );
-#endif
   const string rctn_xml_file = SpecUtils::append_path( dir, "sandia.reactiongamma.xml" );
   if( !SpecUtils::is_file(rctn_xml_file) )
     throw runtime_error( "InterSpec::setStaticDataDirectory(): " + dir + " does not contain a sandia.reactiongamma.xml file." );

@@ -304,7 +304,7 @@ const double ShieldingSourceChi2Fcn::sm_activityUnits = SandiaDecay::MBq;
 //  exp( -transmition_length_coefficient(...) * thickness)
 //  gives you the probability a gamma of given energy will go through the
 //  material of given thickness.
-double transmition_length_coefficient( const Material *material, float energy )
+double transmition_length_coefficient( const Material *material, const double energy )
 {
   double mu = 0.0;
   
@@ -338,7 +338,7 @@ double transmition_length_coefficient( const Material *material, float energy )
 }//double transmition_length_coefficient(...)
 
 
-double fep_survival_removal_coefficient( const Material *material, const float energy,
+double fep_survival_removal_coefficient( const Material *material, const double energy,
                                          const double window_keV, const double normal_thickness )
 {
   const double mu_total = transmition_length_coefficient( material, energy );
@@ -364,7 +364,7 @@ double fep_survival_removal_coefficient( const Material *material, const float e
   //  density is part of the key as well, since the Rayleigh term depends on it.
   struct Key
   {
-    const Material *mat; float energy; double window; double density;
+    const Material *mat; double energy; double window; double density;
     bool operator<( const Key &o ) const
     {
       if( mat != o.mat ) return mat < o.mat;
@@ -477,14 +477,14 @@ double fep_survival_removal_coefficient( const Material *material, const float e
 }//double fep_survival_removal_coefficient(...)
 
 
-double transmition_coefficient_material( const Material *material, float energy,
-                                float length )
+double transmition_coefficient_material( const Material *material, const double energy,
+                                const double length )
 {
   return length * transmition_length_coefficient( material, energy );
 }
 
 
-double transmission_length_coefficient_air( float energy )
+double transmission_length_coefficient_air( const double energy )
 {
   double mu = 0.0;
   
@@ -513,7 +513,7 @@ double transmission_length_coefficient_air( float energy )
 }//transmission_length_coefficient_air(...)
 
 
-double transmission_coefficient_air( float energy, float length )
+double transmission_coefficient_air( const double energy, const double length )
 {
   return length * transmission_length_coefficient_air( energy );
 }
@@ -524,15 +524,15 @@ double transmission_coefficient_air( float energy, float length )
 //  gives you the probability a gamma of given energy will go through the
 //  material with given atomic number and areal_density.
 //  The quantity retuned by this function is commonly labeled μ
-double mass_attenuation_coef( float atomic_number, float energy )
+double mass_attenuation_coef( const double atomic_number, const double energy )
 {
   const double xs_per_mass = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, energy );
   
   return xs_per_mass;
 }
 
-double transmition_coefficient_generic( float atomic_number, float areal_density,
-                                float energy )
+double transmition_coefficient_generic( const double atomic_number, const double areal_density,
+                                const double energy )
 {
   return areal_density * mass_attenuation_coef( atomic_number, energy );
 }
@@ -5170,7 +5170,7 @@ vector<PeakResultPlotInfo>
   
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
-    std::function<double(float)> att_coef_fcn;
+    std::function<double(double)> att_coef_fcn;
     const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
     const shared_ptr<const Material> &material = shielding.m_material;
 
@@ -5178,8 +5178,8 @@ vector<PeakResultPlotInfo>
     {
       // Generic material here.
       
-      float atomic_number = static_cast<float>(atomicNumber( materialN, x ));
-      float areal_density = static_cast<float>(arealDensity( materialN, x ));
+      double atomic_number = atomicNumber( materialN, x );
+      double areal_density = arealDensity( materialN, x );
       
       // Even though we always set AD and AN limits on the parameters when creating them in
       //  ShieldingSourceDisplay::shieldingFitnessFcn(...), sometimes Minuit will go (way!) outside
@@ -5193,9 +5193,9 @@ vector<PeakResultPlotInfo>
       if( ad_in_gcm2 < 0.0 )
         areal_density = 0.0;
       if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
-        areal_density = static_cast<float>(sm_max_areal_density_g_cm2*PhysicalUnits::g/PhysicalUnits::cm2);
+        areal_density = sm_max_areal_density_g_cm2*PhysicalUnits::g/PhysicalUnits::cm2;
   
-      att_coef_fcn = [atomic_number, areal_density]( float energy ){
+      att_coef_fcn = [atomic_number, areal_density]( const double energy ){
         return transmition_coefficient_generic( atomic_number, areal_density, energy );
       };
     }else
@@ -5236,8 +5236,8 @@ vector<PeakResultPlotInfo>
       const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
       shield_outer_rad = exit_dist;
 
-      att_coef_fcn = [mat = material.get(), thickness]( float energy ){
-        return transmition_coefficient_material( mat, energy, static_cast<float>(thickness) );
+      att_coef_fcn = [mat = material.get(), thickness]( const double energy ){
+        return transmition_coefficient_material( mat, energy, thickness );
       };
     }//if( generic material ) / else
 
@@ -5704,8 +5704,8 @@ void ShieldingSourceChi2Fcn::log_shield_info( const vector<double> &params,
       
       if( shieldInfo.m_is_generic )
       {
-        const float atomic_number = static_cast<float>(chi2Fcn->atomicNumber( shielding_index, params ));
-        const float areal_density = static_cast<float>(chi2Fcn->arealDensity( shielding_index, params ));
+        const double atomic_number = chi2Fcn->atomicNumber( shielding_index, params );
+        const double areal_density = chi2Fcn->arealDensity( shielding_index, params );
         const double ad_in_gcm2 = areal_density * PhysicalUnits::cm2 / PhysicalUnits::g;
         //auto att_coef_fcn = boost::bind( &transmition_coefficient_generic, atomic_number, areal_density, boost::placeholders::_1 );
         

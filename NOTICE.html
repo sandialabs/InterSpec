@@ -262,8 +262,9 @@ of additional open-source libraries.
     <li>In addition to the many libraries used within <b>InterSpec</b>, many open-source, or publicly available tools
         and resources are used to develop <b>InterSpec</b> including, but not limited to:
         <ul style="list-style-type: none; margin-left: 1em; padding: 0; font-size: small;">
-           <li><a href="https://www.nndc.bnl.gov/ensdf/" target="_blank">Evaluated Nuclear Structure Data File (ENSDF)</a>: used to derive nuclear decay information and gamma cross sections.</li>
-           <li><a href="http://geant4.web.cern.ch/" target="_blank">Geant4</a>: Used to extract gamma cross section data from ENSDF to a custom format for InterSpec.  Also used to validate physics calculations.</li>
+           <li><a href="https://www.nndc.bnl.gov/ensdf/" target="_blank">Evaluated Nuclear Structure Data File (ENSDF)</a>: used to derive nuclear decay information.</li>
+           <li><a href="https://www-nds.iaea.org/epics/" target="_blank">EPICS2023 Evaluated Photon Data Library (EPDL)</a>: photon interaction cross sections, used for gamma attenuation and detector response (via the CeeLo library).</li>
+           <li><a href="http://geant4.web.cern.ch/" target="_blank">Geant4</a>: used to validate physics calculations.</li>
            <li><b>X-ray atomic transition data</b> (used to generate <code>xray_widths.xml</code>):
              <ul style="margin-left: 1.5em; margin-top: 0.2em;">
                <li><a href="https://github.com/tschoonj/xraylib/wiki" target="_blank">xraylib: a library for interactions of X-rays with matter</a> (see Schoonjans et al., Spectrochimica Acta Part B 66 (2011) 776-784, DOI: <a href="https://doi.org/10.1016/j.sab.2011.09.011" target="_blank">10.1016/j.sab.2011.09.011</a>).</li>

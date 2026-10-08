@@ -160,7 +160,7 @@ const char *to_str( const GeometryType type );
 //  gives you the probability a gamma of given energy will go through the
 //  material of given thickness.
 //Energy units should be in SandiaDecay/PhysicalUnits units.
-double transmition_length_coefficient( const Material *material, float energy );
+double transmition_length_coefficient( const Material *material, double energy );
 
 
 /** The FULL-ENERGY-PEAK survival-removal coefficient (plan 3.4, Rayleigh term 2026-09-04):
@@ -174,7 +174,7 @@ double transmition_length_coefficient( const Material *material, float energy );
 
  Rayleigh scattering is elastic, so it cannot move a photon out of the peak window BY ENERGY - and
  InterSpec's mu already excludes it (`massAttenuationCoefficientElement` returns
- compton+photoelectric+pair; the SNL path returns 0.0 for RayleighScatter), i.e. the model treats
+ compton+photoelectric+pair), i.e. the model treats
  a coherently scattered photon as continuing undeflected.  That is right for a THIN layer and wrong
  for a thick one: in Fe at 60 keV half the coherent scatters exceed 20 degrees, the deflection
  lengthens the photon's remaining path through the layer, and a fraction h of those photons is
@@ -201,10 +201,10 @@ double transmition_length_coefficient( const Material *material, float energy );
  steel versus 3.1% for water, under 0.3% for both above 344 keV - and the Rayleigh term by
  mu_Rayleigh/mu_total, about 10-13% in Fe from 60 to 150 keV, 4% at 344 keV.
  */
-double fep_survival_removal_coefficient( const Material *material, float energy,
+double fep_survival_removal_coefficient( const Material *material, double energy,
                                          double window_keV, double normal_thickness = 0.0 );
-double transmition_coefficient_material( const Material *material, float energy,
-                                float length );
+double transmition_coefficient_material( const Material *material, double energy,
+                                double length );
 
 
 /** The value of a quantity that is either a plain `double` or a `ceres::Jet` - i.e. its scalar part.
@@ -230,7 +230,7 @@ inline bool has_active_lanes( const T &val );
  double transmission_fraction = exp( -mu );
  \endcode
  */
-double transmission_coefficient_air( float energy, float length );
+double transmission_coefficient_air( double energy, double length );
 
 /** Similar to #transmission_coefficient_air, but not including length.
  
@@ -242,7 +242,7 @@ double transmission_coefficient_air( float energy, float length );
  double transmission_fraction = exp( - mu * distance );
  \endcode
  */
-double transmission_length_coefficient_air( float energy );
+double transmission_length_coefficient_air( double energy );
 
 
 //Returned in units of [Length]^2/[mass], so that
@@ -251,9 +251,9 @@ double transmission_length_coefficient_air( float energy );
 //  material with given atomic number and areal_density.
 //  The quantity retuned by this function is commonly labeled μ
 //Energy units should be in SandiaDecay/PhysicalUnits units.
-double mass_attenuation_coef( float atomic_number, float energy );
-double transmition_coefficient_generic( float atomic_number, float areal_density,
-                                float energy );
+double mass_attenuation_coef( double atomic_number, double energy );
+double transmition_coefficient_generic( double atomic_number, double areal_density,
+                                double energy );
 
 /** Returns the average gammas per second during a measurement, when the decay of the input nuclides is accounted for.
  @param mixture The nuclide mixture - currently may only have a single parent nuclide.
@@ -1922,7 +1922,7 @@ public:
   template <typename T>
   struct PointSrcAttenContext
   {
-    std::vector<std::function<T(float)>> att_fcns;
+    std::vector<std::function<T(double)>> att_fcns;
     T air_dist = T(0.0);        //length units
     T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
     T eff_an = T(0.0);          //AD-weighted effective atomic number

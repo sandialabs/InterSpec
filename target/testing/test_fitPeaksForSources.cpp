@@ -2083,8 +2083,8 @@ BOOST_AUTO_TEST_CASE( test_sibling_absence_check )
 
   // The attenuation tables come back in PhysicalUnits units; the check converts to cm2/g.
   const double mu_units = PhysicalUnits::cm2 / PhysicalUnits::g;
-  const double mu_pb_60 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 59.5f ) / mu_units;
-  const double mu_pb_662 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 662.0f ) / mu_units;
+  const double mu_pb_60 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0, 59.5 ) / mu_units;
+  const double mu_pb_662 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0, 662.0 ) / mu_units;
   BOOST_CHECK_MESSAGE( (mu_pb_60 > 3.0) && (mu_pb_60 < 8.0), "mu/rho(Pb, 59.5 keV) = " << mu_pb_60 << " cm2/g" );
   BOOST_CHECK_MESSAGE( (mu_pb_662 > 0.08) && (mu_pb_662 < 0.14), "mu/rho(Pb, 662 keV) = " << mu_pb_662 << " cm2/g" );
 

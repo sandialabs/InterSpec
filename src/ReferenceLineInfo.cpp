@@ -2718,7 +2718,7 @@ void ReferenceLineInfo::markMajorLines()
   if( no_shielding )
   {
     // Apply 0.5cm Pb shielding (AN=82, AD=11.34 g/cm2) by default
-    float atomic_number = 82;
+    double atomic_number = 82;
     double areal_density = 0.5*11.34 * (PhysicalUnits::gram / PhysicalUnits::cm2);
     
     // But if ref-lines only go up to say 200 keV (totally arbitrary!), use 0.5 cm Fe

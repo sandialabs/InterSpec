@@ -879,7 +879,7 @@
     All this information is accessed via the <code>SandiaDecay</code> 
     (<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>)
     library.
-    Gamma/x-ray cross-sections also come from ENSDF.<br />
+    Gamma/x-ray attenuation cross-sections come from the EPICS2023 Evaluated Photon Data Library (EPDL), via the CeeLo library.<br />
     Reaction data comes from various places, including 
     &quot;<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>&quot; (A.M. Demidov <i>et al.</i>), 
     and the &quot;<em>IAEA Prompt Gamma Activation Analysis (PGAA) database</em>&quot;.

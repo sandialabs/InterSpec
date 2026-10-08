@@ -3802,7 +3802,7 @@ BOOST_AUTO_TEST_CASE( SelfAttenUNpFitGoldenValues )
   };
   const size_t num_expected = sizeof(expected) / sizeof(expected[0]);
 
-  BOOST_CHECK_CLOSE( fit_results->chi2, 161.194097258, 1.0 );
+  BOOST_CHECK_CLOSE( fit_results->chi2, 155.777699707, 1.0 );
 
   BOOST_REQUIRE_EQUAL( fit_results->paramValues.size(), num_expected );
   BOOST_REQUIRE_EQUAL( fcn_pars.second.parameters().size(), num_expected );

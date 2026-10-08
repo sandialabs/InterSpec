@@ -75,9 +75,7 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     m_effectiveZ( nullptr ),
     m_totalAttenuation( nullptr ),
     m_compton( nullptr ),
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
     m_rayleigh( nullptr ),
-#endif
     m_photoElectric( nullptr ),
     m_conversion( nullptr ),
     m_density( nullptr ),
@@ -128,7 +126,8 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
     // Validator is a child of the edit widget, so create after parenting
     m_layout->addWidget( std::move(edit), 0, 1, 1, 1 );
   }
-  m_energyValidator = std::make_shared<WDoubleValidator>( 1.0, 10000.0 );
+  m_energyValidator = std::make_shared<WDoubleValidator>( MassAttenuation::sm_min_xs_energy_keV,
+                                                          MassAttenuation::sm_max_xs_energy_keV );
   m_energyEdit->setValidator( m_energyValidator );
 
   int row = 0;
@@ -187,7 +186,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
   m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
 
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   ++row;
   m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-rayleigh-label") ), row, 0, 1, 1, AlignmentFlag::Left );
   {
@@ -201,7 +199,6 @@ GammaXsGui::GammaXsGui( InterSpec* viewer )
 #else
   m_layout->addWidget( std::make_unique<WLabel>( "cm2/g" ), row, 2, 1, 1, AlignmentFlag::Left );
 #endif
-#endif //#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
 
   ++row;
   m_layout->addWidget( std::make_unique<WLabel>( WString::tr("gxsg-photoelec-label") ), row, 0, 1, 1, AlignmentFlag::Left );
@@ -655,9 +652,7 @@ void GammaXsGui::resetAnserFields()
   m_effectiveZ->setText( "---" );
   m_totalAttenuation->setText( "---" );
   m_compton->setText( "---" );
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   m_rayleigh->setText( "---" );
-#endif
   m_photoElectric->setText( "---" );
   m_conversion->setText( "---" );
   m_transmissionFraction->setText( "---" );
@@ -693,20 +688,20 @@ void GammaXsGui::calculateCrossSections()
 {
   checkAndAddUndoRedo();
   
-  float energy = -999.0;
+  double energy = -999.0;
   vector<pair<const SandiaDecay::Element *, float> > chemFormula;
 
   if( m_energyEdit->validate() == ValidationState::Valid )
   {
     try
     {
-      energy = static_cast<float>( std::stod( m_energyEdit->text().narrow() ) );
+      energy = std::stod( m_energyEdit->text().narrow() );
     }catch(...){}
   }//if( m_energyEdit->validate() == ValidationState::Valid )
 
   chemFormula = parseMaterial();
 
-  if( (energy <= 0.0f) || chemFormula.empty() )
+  if( (energy <= 0.0) || chemFormula.empty() )
   {
     resetAnserFields();
     return;
@@ -716,11 +711,9 @@ void GammaXsGui::calculateCrossSections()
   double comptonMu = 0.0, photoMu = 0.0, pairMu = 0.0;
   double totalMu = 0.0;
 
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   double rayleighMu = 0.0;
-#endif
   
-  energy *= static_cast<float>(PhysicalUnits::keV);
+  energy *= PhysicalUnits::keV;
 
   for( Material::ElementFractionPair &nf : chemFormula )
   {
@@ -739,7 +732,6 @@ void GammaXsGui::calculateCrossSections()
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
 
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
     try
     {
       rayleighMu += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
@@ -747,7 +739,6 @@ void GammaXsGui::calculateCrossSections()
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
     }
-#endif
 
     try
     {
@@ -775,9 +766,7 @@ void GammaXsGui::calculateCrossSections()
   }//for( Material::NuclideFractionPair &nf : chemFormula )
 
   comptonMu  *= PhysicalUnits::g / PhysicalUnits::cm2;
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   rayleighMu *= PhysicalUnits::g / PhysicalUnits::cm2;
-#endif
   photoMu    *= PhysicalUnits::g / PhysicalUnits::cm2;
   pairMu     *= PhysicalUnits::g / PhysicalUnits::cm2;
   totalMu    *= PhysicalUnits::g / PhysicalUnits::cm2;
@@ -792,10 +781,8 @@ void GammaXsGui::calculateCrossSections()
   snprintf( buffer, sizeof(buffer), "%.4g", comptonMu );
   m_compton->setText( buffer );
   
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   snprintf( buffer, sizeof(buffer), "%.4g", rayleighMu );
   m_rayleigh->setText( buffer );
-#endif
   
   snprintf( buffer, sizeof(buffer), "%.4g", photoMu );
   m_photoElectric->setText( buffer );

@@ -971,7 +971,7 @@ BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetry )
 
     DistributedSrcCalcT<double>::ShellInfo src;
     src.dims = { hx*cm, hy*cm, hz*cm };
-    src.trans_len_coef = transmition_length_coefficient( steel.get(), static_cast<float>(energy) );
+    src.trans_len_coef = transmition_length_coefficient( steel.get(), energy );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
 
@@ -1073,7 +1073,7 @@ BOOST_AUTO_TEST_CASE( PerRayGradientVsFiniteDifference )
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { ScalarT(radius), ScalarT(src_hz*cm), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( steel.get(),
-                                                       static_cast<float>(energy_keV) ) );
+                                                       energy_keV ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
 
@@ -1081,7 +1081,7 @@ BOOST_AUTO_TEST_CASE( PerRayGradientVsFiniteDifference )
     shield.dims = { ScalarT(radius) + ScalarT(thickness), ScalarT(src_hz*cm) + ScalarT(thickness),
                     ScalarT(0.0) };
     shield.trans_len_coef = ScalarT( transmition_length_coefficient( iron.get(),
-                                                          static_cast<float>(energy_keV) ) );
+                                                          energy_keV ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
 
@@ -1677,11 +1677,11 @@ BOOST_AUTO_TEST_CASE( RemovalMuHeadroom, * boost::unit_test::disabled() )
     BOOST_TEST_MESSAGE( "  " << (dense ? "steel" : "water") << ":" );
     for( const double e : scenario_energies() )
     {
-      const double mu_tot = GammaInteractionCalc::transmition_length_coefficient( m.get(), (float)e );
+      const double mu_tot = GammaInteractionCalc::transmition_length_coefficient( m.get(), e );
       double mu_cs = 0.0;
       for( const Material::ElementFractionPair &pr : m->elements )
         mu_cs += pr.second * m->density * MassAttenuation::massAttenuationCoefficientElement(
-                   pr.first->atomicNumber, (float)e, MassAttenuation::GammaEmProcces::ComptonScatter );
+                   pr.first->atomicNumber, e, MassAttenuation::GammaEmProcces::ComptonScatter );
       const double fwhm = std::sqrt( 0.359 + 0.00230*e );
       const double f_free = ceelo::kn_in_window_fraction( e, 0.5*fwhm );
       const double f_mat  = ceelo::kn_in_window_fraction( e, 0.5*fwhm, cm );
@@ -1922,9 +1922,10 @@ BOOST_AUTO_TEST_CASE( TransferValidationStudy, * boost::unit_test::disabled() )
  *
  * Compared like-for-like: CeeLo's mu_total INCLUDES Rayleigh, InterSpec's excludes it, so the
  * comparison uses CeeLo's (mu_total - mu_rs).  The Rayleigh coefficient itself gets its own column:
- * the deep-shield deflection loss (fep_removal_coefficient) multiplies InterSpec's Rayleigh table,
- * which nothing else in the program had ever read - and under USE_SNL_GAMMA_ATTENUATION_VALUES it
- * is silently zero.
+ * the deep-shield deflection loss (fep_removal_coefficient) multiplies InterSpec's Rayleigh table.
+ *
+ * MassAttenuation now forwards to CeeLo's own cross sections, so this guards against the two
+ * drifting apart again (e.g. a material composition that to_ceelo_material translates differently).
  *
  * The material names are the ones the scenarios actually use (scenario_matrix_material /
  * scenario_shield_material): an unknown name is skipped, so a typo here checks nothing.
@@ -1953,7 +1954,7 @@ BOOST_AUTO_TEST_CASE( CrossSectionConsistency )
     for( const double e : { 50.0, 60.0, 80.0, 100.0, 122.0, 150.0, 200.0, 344.0, 661.7, 1332.5, 2614.0 } )
     {
       // InterSpec: per PhysicalUnits length; convert to 1/cm.
-      const double mu_is = GammaInteractionCalc::transmition_length_coefficient( m.get(), (float)e )
+      const double mu_is = GammaInteractionCalc::transmition_length_coefficient( m.get(), e )
                              * PhysicalUnits::cm;
       const ceelo::MacroscopicXS xs = cm.macroscopic_xs( e*1.0e-3 );
       const double mu_ce = xs.mu_total() - xs.mu_rs;     //match InterSpec's no-Rayleigh convention
@@ -1970,10 +1971,10 @@ BOOST_AUTO_TEST_CASE( CrossSectionConsistency )
       double mu_rs_is = 0.0;
       for( const Material::ElementFractionPair &p : m->elements )
         mu_rs_is += p.second * m->density * MassAttenuation::massAttenuationCoefficientElement(
-                      p.first->atomicNumber, (float)e, MassAttenuation::GammaEmProcces::RayleighScatter );
+                      p.first->atomicNumber, e, MassAttenuation::GammaEmProcces::RayleighScatter );
       for( const Material::NuclideFractionPair &p : m->nuclides )
         mu_rs_is += p.second * m->density * MassAttenuation::massAttenuationCoefficientElement(
-                      p.first->atomicNumber, (float)e, MassAttenuation::GammaEmProcces::RayleighScatter );
+                      p.first->atomicNumber, e, MassAttenuation::GammaEmProcces::RayleighScatter );
       mu_rs_is *= PhysicalUnits::cm;
       const double rel_rs = (xs.mu_rs > 0.0) ? 100.0*(mu_rs_is/xs.mu_rs - 1.0) : 0.0;
       if( std::fabs(rel_rs) > worst_rayleigh )
@@ -1995,10 +1996,10 @@ BOOST_AUTO_TEST_CASE( CrossSectionConsistency )
   BOOST_TEST_MESSAGE( "  worst mu disagreement: " << worst << "% (" << worst_where << ")" );
   BOOST_TEST_MESSAGE( "  worst Rayleigh mu disagreement: " << worst_rayleigh << "% ("
                       << worst_rayleigh_where << ")" );
-  // Tables agree to <0.1% on the removal mu; the Rayleigh sub-table is checked loosely, since a
-  //  few percent of a ~9% term is noise, but a ZERO here (SNL tables) would be a silent switch-off.
-  BOOST_CHECK_LT( worst, 0.5 );
-  BOOST_CHECK_LT( worst_rayleigh, 10.0 );   // Pb reads -6.7% at 200 keV; Fe/steel/water within 2.8%
+  // Both sides use CeeLo's tables, so they agree to the composition's rounding in to_ceelo_material
+  //  (~5e-6 %, water); anything visible here means InterSpec and CeeLo have drifted apart again.
+  BOOST_CHECK_LT( worst, 1.0E-3 );
+  BOOST_CHECK_LT( worst_rayleigh, 1.0E-3 );
 }
 
 
@@ -2699,7 +2700,7 @@ BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetryContact, * boost::unit_test::disable
 
     DistributedSrcCalcT<double>::ShellInfo src;
     src.dims = { hx*cm, hy*cm, hz*cm };
-    src.trans_len_coef = transmition_length_coefficient( steel.get(), static_cast<float>(energy) );
+    src.trans_len_coef = transmition_length_coefficient( steel.get(), energy );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
 

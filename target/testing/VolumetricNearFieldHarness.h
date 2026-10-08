@@ -192,8 +192,8 @@ AngleDetector load_angle_detector()
  stays inside the window are still counted in the peak.
 
  CAREFUL: InterSpec's `transmition_length_coefficient` already EXCLUDES Rayleigh
- (`massAttenuationCoefficientElement` returns compton+photoelectric+pair, and the SNL path returns
- 0 for RayleighScatter), so subtracting it again would double-count.  In InterSpec terms:
+ (`massAttenuationCoefficientElement` returns compton+photoelectric+pair), so subtracting it again
+ would double-count.  In InterSpec terms:
 
      mu_rem = transmition_length_coefficient(mat, E) - f_win * mu_Compton(mat, E)
               + mu_Rayleigh(mat, E) * h(E, mat, mu * normal_thickness_cm)
@@ -215,18 +215,18 @@ double fep_removal_coefficient( const Material &mat, const double energy_keV, co
                                 const double normal_thickness_cm = 0.0 )
 {
   const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
-                                                    &mat, static_cast<float>(energy_keV) );
+                                                    &mat, energy_keV );
 
   const auto process_mu = [&]( const MassAttenuation::GammaEmProcces process ) -> double {
     double mu = 0.0;
     for( const Material::ElementFractionPair &p : mat.elements )
       mu += p.second * mat.density
             * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                                                static_cast<float>(energy_keV), process );
+                                                energy_keV, process );
     for( const Material::NuclideFractionPair &p : mat.nuclides )
       mu += p.second * mat.density
             * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                                                static_cast<float>(energy_keV), process );
+                                                energy_keV, process );
     return mu;
   };
   const double mu_compton = process_mu( MassAttenuation::GammaEmProcces::ComptonScatter );
@@ -319,7 +319,7 @@ build_scenario_calc( const AngleDetector &det,
         ? 0.0
         : ( (fep_window_keV > 0.0)
               ? fep_removal_coefficient( *matrix, energy_keV, fep_window_keV )
-              : transmition_length_coefficient( matrix.get(), static_cast<float>(energy_keV) ) );
+              : transmition_length_coefficient( matrix.get(), energy_keV ) );
   src_shell.type = ShellType::Material;
   calc.m_shells.push_back( src_shell );
 
@@ -341,7 +341,7 @@ build_scenario_calc( const AngleDetector &det,
           ? 0.0
           : ( (fep_window_keV > 0.0)
                 ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV, s.shield_cm )
-                : transmition_length_coefficient( iron.get(), static_cast<float>(energy_keV) ) );
+                : transmition_length_coefficient( iron.get(), energy_keV ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
   }//if( shielded )
@@ -668,7 +668,7 @@ double scenario_shield_optical_depth( const Scenario &s, const double energy_keV
     return 0.0;
 
   return GammaInteractionCalc::transmition_length_coefficient( shield.get(),
-                                                    static_cast<float>(energy_keV) )
+                                                    energy_keV )
          * s.shield_cm * PhysicalUnits::cm;
 }//scenario_shield_optical_depth(...)
 

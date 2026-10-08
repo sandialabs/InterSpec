@@ -123,7 +123,7 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
                           spec.offset_x, spec.offset_y );
   calc.m_attenuateForAir = spec.attenuate_for_air;
   calc.m_airTransLenCoef = spec.attenuate_for_air
-              ? GammaInteractionCalc::transmission_length_coefficient_air( static_cast<float>(spec.energy) )
+              ? GammaInteractionCalc::transmission_length_coefficient_air( spec.energy )
               : 0.0;
   calc.m_isInSituExponential = spec.in_situ_exponential;
   calc.m_inSituRelaxationLength = spec.relaxation_length;
@@ -154,9 +154,9 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
 
       info.dims = outer_dims;
       info.trans_len_coef = GammaInteractionCalc::transmition_coefficient_generic(
-                                          static_cast<float>(shell.atomic_number),
-                                          static_cast<float>(shell.areal_density),
-                                          static_cast<float>(spec.energy) );
+                                          shell.atomic_number,
+                                          shell.areal_density,
+                                          spec.energy );
       info.type = GammaInteractionCalc::ShellType::Generic;
 
       // Metadata for the effective-AN/AD/H accumulation
@@ -195,7 +195,7 @@ inline GammaInteractionCalc::DistributedSrcCalcT<double>
 
     info.dims = outer_dims;
     info.trans_len_coef = GammaInteractionCalc::transmition_length_coefficient(
-                                          material.get(), static_cast<float>(spec.energy) );
+                                          material.get(), spec.energy );
     info.type = GammaInteractionCalc::ShellType::Material;
 
     // Metadata for the effective-AN/AD/H accumulation
