@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -570,6 +571,34 @@ inline std::vector<size_t> deterministic_search_order( const std::vector<Determi
   }
   return unique;
 }
+
+/** Detects a solve that only creeps: once its last `window` successful steps have together lowered the
+    objective by less than `min_drop`.  A solve along a nearly flat valley can creep for thousands of
+    iterations under tight convergence tolerances, each step gaining a statistically meaningless amount. */
+class StallDetector
+{
+public:
+  StallDetector( const size_t window, const double min_drop )
+    : m_window( window ), m_min_drop( min_drop )
+  {
+  }
+
+  /** Records the objective after a successful step, returning true if the solve has stalled. */
+  bool successful_step( const double objective )
+  {
+    m_objectives.push_back( objective );
+    if( m_objectives.size() <= m_window )
+      return false;
+    const bool stalled = ((m_objectives.front() - objective) < m_min_drop);
+    m_objectives.pop_front();
+    return stalled;
+  }
+
+private:
+  const size_t m_window;
+  const double m_min_drop;
+  std::deque<double> m_objectives;
+};//class StallDetector
 
 struct BackwardEliminationScore
 {

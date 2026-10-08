@@ -542,6 +542,51 @@ namespace RelActCalcAutoImp
 const double ns_decay_act_mult = SandiaDecay::MBq;
 
 
+/** A solve whose last `sm_stall_window_steps` successful steps together lowered chi2 by less than
+ `sm_stall_min_chi2_drop` is stopped - see `solve_stopping_creep(...)`. */
+static constexpr size_t sm_stall_window_steps = 50;
+static constexpr double sm_stall_min_chi2_drop = 0.01;
+
+/** Runs `ceres::Solve`, ending it - as a success - once it only creeps (see `StallDetector`).
+
+ The tolerances the fits use (function 1E-9, parameter 1E-11) let a solve follow a nearly flat valley -
+ e.g., between a physical-model attenuator and its correction curve - for thousands of iterations, each
+ gaining a statistically meaningless amount of chi2.  On the uranium benchmark (123 HPGe spectra) stopping
+ those cut the CPU time from 3300 to 1200 s with the chi2 of every fit unchanged; restarting a stalled
+ solve with a fresh trust region, or extrapolating along its creep, gained nothing.
+
+ Only solves with the full iteration budget use this: the pre-fit stages and backward-elimination trials
+ are capped at a few hundred iterations, and a trial that does not converge within that is discarded -
+ a decision a stall stop would change.
+ */
+static void solve_stopping_creep( const ceres::Solver::Options &options,
+                                  ceres::Problem &problem,
+                                  ceres::Solver::Summary &summary )
+{
+  class StallCallback : public ceres::IterationCallback
+  {
+    StallDetector m_detector;
+  public:
+    StallCallback()
+     : m_detector( sm_stall_window_steps, 0.5*sm_stall_min_chi2_drop ) // Ceres' cost is chi2/2
+    {
+    }
+
+    virtual ceres::CallbackReturnType operator()( const ceres::IterationSummary &iteration )
+    {
+      if( iteration.step_is_successful && m_detector.successful_step( iteration.cost ) )
+        return ceres::CallbackReturnType::SOLVER_TERMINATE_SUCCESSFULLY;
+      return ceres::CallbackReturnType::SOLVER_CONTINUE;
+    }
+  };//class StallCallback
+
+  StallCallback stall_callback;
+  ceres::Solver::Options stall_options = options;
+  stall_options.callbacks.push_back( &stall_callback );
+  ceres::Solve( stall_options, &problem, &summary );
+}//solve_stopping_creep(...)
+
+
 // Forward declaration
 struct RelActAutoCostFcn;
 
@@ -8818,7 +8863,7 @@ struct RelActAutoCostFcn
     // that reported convergence without accepting anything: did the answer actually move?
     const vector<double> pre_solve_parameters = parameters;
 
-    ceres::Solve(ceres_options, &problem, &summary);
+    solve_stopping_creep( ceres_options, problem, summary );
     //std::cout << summary.BriefReport() << "\n";
 
     // The effort of the primary solve (with its restarts); a severe-misfit rescue gives each of its
@@ -8890,7 +8935,7 @@ struct RelActAutoCostFcn
         const double pre_restart_cost = (*cost_functor)(pre_restart_pars);
 
         ceres::Solver::Summary restart_summary;
-        ceres::Solve( ceres_options, &problem, &restart_summary );
+        solve_stopping_creep( ceres_options, problem, restart_summary );
         primary_solve_iterations += restart_summary.iterations.size();
 
         const bool restart_converged = ((restart_summary.termination_type == ceres::CONVERGENCE)
@@ -9608,7 +9653,7 @@ struct RelActAutoCostFcn
                 candidate_options.max_num_iterations = static_cast<int>( std::max( primary_solve_iterations, size_t(300) ) );
 
               ceres::Solver::Summary candidate_summary;
-              ceres::Solve( candidate_options, &problem, &candidate_summary );
+              solve_stopping_creep( candidate_options, problem, candidate_summary );
 
               // A candidate that cannot converge within budget is not a trustworthy basin; the
               // budget-exhaustion audit is reserved for the primary solve.
@@ -17415,7 +17460,7 @@ struct ProfileConditionalHost
 
     ceres::Solver::Summary summary;
     m_solve_in_flight = true;
-    ceres::Solve( m_solver_options, &m_problem, &summary );
+    solve_stopping_creep( m_solver_options, m_problem, summary );
     m_solve_in_flight = false;
     ++m_num_conditional_solves;
 
@@ -17498,7 +17543,7 @@ struct ProfileConditionalHost
 
         ceres::Solver::Summary repair_summary;
         m_solve_in_flight = true;
-        ceres::Solve( m_solver_options, &m_problem, &repair_summary );
+        solve_stopping_creep( m_solver_options, m_problem, repair_summary );
         m_solve_in_flight = false;
         ++m_num_conditional_solves;
         ++result.restarts_used;
@@ -17616,7 +17661,7 @@ struct ProfileConditionalHost
 
         ceres::Solver::Summary restart_summary;
         m_solve_in_flight = true;
-        ceres::Solve( m_solver_options, &m_problem, &restart_summary );
+        solve_stopping_creep( m_solver_options, m_problem, restart_summary );
         m_solve_in_flight = false;
         ++m_num_conditional_solves;
         ++result.restarts_used;

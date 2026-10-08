@@ -213,6 +213,45 @@ BOOST_AUTO_TEST_CASE( exact_tie_keeps_the_default_candidate )
   BOOST_CHECK( scores[order.front()].semantic_name != default_name );
 }
 
+BOOST_AUTO_TEST_CASE( stall_detector_flags_only_a_creeping_solve )
+{
+  // A solve converging normally: big early drops, never `window` steps gaining less than `min_drop`.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 1000.0;
+    for( int step = 0; step < 20; ++step )
+    {
+      objective *= 0.5;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+  }
+
+  // A creep: each step gains 1E-4, so five steps together gain 5E-4 < 0.01.  It is flagged only once
+  //  more than `window` steps are recorded, and not before.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 383.195;
+    for( int step = 0; step < 5; ++step )
+    {
+      objective -= 1.0E-4;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+    objective -= 1.0E-4;
+    BOOST_CHECK( detector.successful_step( objective ) );
+  }
+
+  // Slow but paying steps (0.003 each, 0.015 over the window) are not a stall.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 500.0;
+    for( int step = 0; step < 30; ++step )
+    {
+      objective -= 0.003;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE( duplicate_basins_are_collapsed_after_ranking )
 {
   const std::vector<DeterministicSearchScore> scores{
