@@ -288,7 +288,7 @@ Skew types (number of parameters, and their meaning):
 - GaussPlusBortel: 2 params (skewPar0=R mixing 0-1, skewPar1=tau 0.01-15)
 - DoubleBortel: 3 params (skewPar0=tau1, skewPar1=tau2_delta, skewPar2=eta 0-1)
 - VoigtPlusBortel: 3 params (skewPar0=gamma_lor keV, skewPar1=R 0-1, skewPar2=tau 0.01-15)
-- GadrasGeneric / GadrasCZT: 6 params (skewPar0=low tail amplitude 0-100, skewPar1=high tail amplitude 0-100, both at 661 keV; skewPar2/skewPar3=low/high tail energy-dependence power 0-5; skewPar4/skewPar5=low/high tail extent -10 to 30). The tail energy dependence is built in; parameters 2-5 are detector characteristics, fixed by default. Changing to a GADRAS type takes the values from the detector, when it is a GADRAS detector.
+- GadrasGeneric / GadrasCZT: 6 params (skewPar0=low tail amplitude -100 to 100, skewPar1=high tail amplitude -100 to 100, both at 661 keV, normally positive; skewPar2/skewPar3=low/high tail energy-dependence power 0-5; skewPar4/skewPar5=low/high tail extent -100 to 30). The tail energy dependence is built in; parameters 2-5 are detector characteristics, fixed by default. Changing to a GADRAS type takes the values from the detector, when it is a GADRAS detector.
 
 Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Quadratic (3), Cubic (4), FlatStep (2), LinearStep (3), BiLinearStep (4), FlatStepCDF (2), LinearStepCDF (3), BiLinearStepCDF (4), External.</Description>
     <AvailableFor>

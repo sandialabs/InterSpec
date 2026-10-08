@@ -15180,7 +15180,20 @@ struct RelActAutoCostFcn
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+    double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+
+    // GADRAS CZT shapes routinely have >10% of their area beyond 15 sigma (e.g., ~12% below -15
+    //  sigma at 1.4 MeV), which is real peak area that must be modelled.  With truncation the GADRAS
+    //  tails are bounded anyway; without it, cap only extreme (e.g., RapiScan RPM) tails.
+    if( (m_options.skew_type == PeakDef::SkewType::GadrasGeneric)
+       || (m_options.skew_type == PeakDef::SkewType::GadrasCZT) )
+    {
+#if( USE_GADRAS_TRUNCATION )
+      max_nsigma = 0.0;   //no cap
+#else
+      max_nsigma = 60.0;
+#endif
+    }//if( a GADRAS skew type )
     const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
     const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 

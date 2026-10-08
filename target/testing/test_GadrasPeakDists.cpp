@@ -67,8 +67,12 @@ namespace
   //  against it (AnalyticCloseToDiscrete).  Do not use it in production; the
   //  analytic form (PeakDists::gadras_*) is the maintained implementation.
   //
-  //  It also retains the PVT ("low photopeak probability") high-tail branch,
-  //  which the analytic form deliberately does not implement.
+  //  It also has the PVT ("low photopeak probability") high-tail branch, verbatim
+  //  (including its tiny 3E-6 widening and log-extrapolation fudge, which the
+  //  analytic skew-normal form does not reproduce).
+  //
+  //  The grid size and quadrature rule are parameters, so the tests can also refine
+  //  it to show the analytic form is its continuous limit.
   // ==========================================================================
   namespace legacy
   {
@@ -84,12 +88,18 @@ namespace
       double sum_skew = 0.0;
       double low_zeta_factor = 1.0;
       double high_zeta_factor = 1.0;
-      int    n = 0;
-      double gz[kNumGridPoints];
-      double w[kNumGridPoints];
+      std::vector<double> gz;   // impulse positions (zeta)
+      std::vector<double> w;    // impulse weights
     };
 
-    inline void build_zeta_grid( const double base_low_skew, const double base_high_skew, double *gz )
+    /** The GADRAS zeta grid (ZetaRange), refined by an integer factor `refine`.
+
+     GADRAS's grid is zeta = sign(u)*(u/Divider)^2 for u = -63, -62, ..., 64 (128 points; Divider
+     differing below/above u=0).  Refining keeps the same end-points by stepping u by 1/refine, so
+     there are 127*refine + 1 points, with u = 0 at index 63*refine; refine == 1 is exactly GADRAS's.
+     */
+    inline std::vector<double> build_zeta_grid( const double base_low_skew, const double base_high_skew,
+                                                const int refine )
     {
       double low = std::abs( base_low_skew );
       double high = std::abs( base_high_skew );
@@ -98,24 +108,32 @@ namespace
 
       const double divider_lo = 12.0 / std::pow( std::max( 1.0, low ), 0.2 );
       const double divider_hi = 18.0 / std::pow( std::max( 1.0, high ), 0.2 );
-      const int half = kNumGridPoints / 2;
 
-      for( int i = 1; i <= kNumGridPoints; ++i )
+      const int npoints = 127*refine + 1;
+      std::vector<double> gz( npoints );
+      for( int j = 0; j < npoints; ++j )
       {
-        const double divider = (i < half) ? divider_lo : divider_hi;
-        double zeta = (i - half) / divider;
-        zeta = (zeta >= 0.0) ? (zeta * zeta) : -(zeta * zeta);
-        gz[i - 1] = zeta;
+        const double u = (j - 63.0*refine) / refine;
+        const double zeta = u / ((u < 0.0) ? divider_lo : divider_hi);
+        gz[j] = (zeta >= 0.0) ? (zeta * zeta) : -(zeta * zeta);
       }
+      return gz;
     }
 
+    /** Builds GADRAS's discrete shape.  With `refine == 1` and `midpoint == false` this is exactly
+     GADRAS's construction (right-endpoint rectangle rule: each grid interval's mass is the density
+     at its upper zeta, placed there); `refine > 1` subdivides GADRAS's grid over the same span, and
+     `midpoint == true` evaluates and places the mass at interval midpoints instead, which converges
+     to the continuous limit as 1/N^2, not 1/N. */
     inline GadrasPeakShape build_peak_shape( const double energy,
                                              const double low_skew, const double high_skew,
                                              const double low_skew_power, const double high_skew_power,
                                              const double low_skew_extent, const double high_skew_extent,
                                              const PeakDists::GadrasMaterial material,
-                                             const bool low_photopeak_probability )
+                                             const int refine = 1,
+                                             const bool midpoint = false )
     {
+      const bool low_photopeak_probability = (material == PeakDists::GadrasMaterial::LowPhotopeakProbability);
       GadrasPeakShape s;
 
       // sum_skew (GetSumSkew): raw magnitudes, energy-scaled only when power > 0.
@@ -141,13 +159,19 @@ namespace
         return s;
       }
 
-      double gz[kNumGridPoints];
-      build_zeta_grid( low_skew, high_skew, gz );
+      const std::vector<double> gz_edges = build_zeta_grid( low_skew, high_skew, refine );
+      const int N = static_cast<int>( gz_edges.size() );
+      // Where each interval's density is evaluated and its mass placed.
+      std::vector<double> gz = gz_edges;
+      if( midpoint )
+        for( int i = 1; i < N; ++i )
+          gz[i] = 0.5*(gz_edges[i] + gz_edges[i-1]);
+      const double *gze = gz_edges.data();
 
-      const int half = kNumGridPoints / 2;
-      double gs[kNumGridPoints];
-      for( int i = 0; i < kNumGridPoints; ++i )
-        gs[i] = 0.0;
+      // First index of the high side (GADRAS's halfPointIdx+1, 1-based); the low side's last
+      //  interval ends at zeta = 0, index half-1.
+      const int half = 63*refine + 1;
+      std::vector<double> gs( N, 0.0 );
 
       auto slope_scale = []( const double extent ) -> double {
         return (extent >= 0.0) ? (1.0 + extent / 3.0) : std::exp( extent / 3.0 );
@@ -163,7 +187,7 @@ namespace
           const double sn = 0.1 * lss * low_val;
           for( int i = 1; i < half; ++i )
           {
-            gs[i] = (gz[i] - gz[i-1]) * (0.8 * std::exp( gz[i] / sn ) + 0.2 * std::exp( 0.8 * gz[i] / sn ));
+            gs[i] = (gze[i] - gze[i-1]) * (0.8 * std::exp( gz[i] / sn ) + 0.2 * std::exp( 0.8 * gz[i] / sn ));
             sum += gs[i];
           }
         }
@@ -173,13 +197,20 @@ namespace
           const double fr = 0.04 * low_val;
           for( int i = 1; i < half; ++i )
           {
-            gs[i] = (gz[i] - gz[i-1]) * ((1.0 - fr) * std::exp( gz[i] / sn ) + fr * std::exp( 0.4 * gz[i] / sn ));
+            gs[i] = (gze[i] - gze[i-1]) * ((1.0 - fr) * std::exp( gz[i] / sn ) + fr * std::exp( 0.4 * gz[i] / sn ));
             sum += gs[i];
           }
         }
-        if( sum > 0.0 )
-          for( int i = 0; i < half; ++i )
-            gs[i] /= sum;
+        if( !(sum > 0.0) )
+        {
+          // Tail scale so small every midpoint density underflowed: it is a delta at zero (as the
+          //  right-endpoint rule, which samples zeta = 0 itself, would give).
+          gs[half-1] = 1.0;
+          gz[half-1] = 0.0;
+          sum = 1.0;
+        }
+        for( int i = 0; i < half; ++i )
+          gs[i] /= sum;
       }
 
       // --- high (right) tail density (starts at `half`, matching the Fortran) ---
@@ -190,9 +221,9 @@ namespace
         if( material == PeakDists::GadrasMaterial::CZT_CdTe )
         {
           const double sp = 0.1 * hss * high_val;
-          for( int i = half; i < kNumGridPoints; ++i )
+          for( int i = half; i < N; ++i )
           {
-            gs[i] = (gz[i] - gz[i-1]) * (0.8 * std::exp( -gz[i] / sp ) + 0.2 * std::exp( -0.65 * gz[i] / sp ));
+            gs[i] = (gze[i] - gze[i-1]) * (0.8 * std::exp( -gz[i] / sp ) + 0.2 * std::exp( -0.65 * gz[i] / sp ));
             sum += gs[i];
           }
         }
@@ -202,9 +233,9 @@ namespace
           // switching to logarithmic extrapolation once that widening term dominates.
           const double divider = high_val / 9.0;
           double gl = 0.5, gintl = 0.5, zeta_last = 0.0;
-          for( int i = half; i < kNumGridPoints; ++i )
+          for( int i = half; i < N; ++i )
           {
-            const double zeta = gz[i] / divider;
+            const double zeta = gze[i] / divider;
             const double gintn = snorm_cdf( zeta );
             const double gn = gintn * (1.0 + 3.0e-6 * hss * zeta);
             if( std::fabs(gintn - gintl)
@@ -212,30 +243,35 @@ namespace
             {
               const double gs_intercept = std::log( gs[i-2] );
               const double gs_slope = (std::log(gs[i-1]) - std::log(gs[i-2]))
-                                      / (gz[i-1]/divider - gz[i-2]/divider);
-              const double zeta_intercept = gz[i-2] / divider;
-              for( int j = i; j < kNumGridPoints; ++j )
-                gs[j] = std::exp( gs_intercept + gs_slope * (gz[j]/divider - zeta_intercept) );
+                                      / (gze[i-1]/divider - gze[i-2]/divider);
+              const double zeta_intercept = gze[i-2] / divider;
+              for( int j = i; j < N; ++j )
+                gs[j] = std::exp( gs_intercept + gs_slope * (gze[j]/divider - zeta_intercept) );
               break;
             }
             gs[i] = gn - gl;
             gl = gn; gintl = gintn; zeta_last = zeta;
           }
-          for( int i = half; i < kNumGridPoints; ++i )
+          for( int i = half; i < N; ++i )
             sum += gs[i];
         }
         else
         {
           const double sp = 0.2 * hss * high_val;
-          for( int i = half; i < kNumGridPoints; ++i )
+          for( int i = half; i < N; ++i )
           {
-            gs[i] = (gz[i] - gz[i-1]) * std::exp( -gz[i] / sp );
+            gs[i] = (gze[i] - gze[i-1]) * std::exp( -gz[i] / sp );
             sum += gs[i];
           }
         }
-        if( sum > 0.0 )
-          for( int i = half; i < kNumGridPoints; ++i )
-            gs[i] /= sum;
+        if( !(sum > 0.0) )
+        {
+          gs[half] = 1.0;
+          gz[half] = 0.0;
+          sum = 1.0;
+        }
+        for( int i = half; i < N; ++i )
+          gs[i] /= sum;
       }
 
       // Weight the two halves by their relative skew fractions (SCN / SCP).
@@ -244,19 +280,20 @@ namespace
       const double scp = (denom > 0.0) ? (high_val / denom) : 0.0;
       for( int i = 0; i < half; ++i )
         gs[i] *= scn;
-      for( int i = half; i < kNumGridPoints; ++i )
+      for( int i = half; i < N; ++i )
         gs[i] *= scp;
 
-      // Compact the mixture, dropping negligible weights.
-      const double weight_cutoff = 1.0e-9;
-      s.n = 0;
-      for( int i = 0; i < kNumGridPoints; ++i )
+      // Compact the mixture, dropping negligible weights (scaled so the total dropped stays tiny).
+      const double weight_cutoff = 1.0e-9 / refine;
+      for( int i = 0; i < N; ++i )
       {
         if( std::fabs( gs[i] ) > weight_cutoff )
         {
-          s.gz[s.n] = gz[i];
-          s.w[s.n]  = gs[i];
-          ++s.n;
+          // The PVT tail is built from CDF differences between grid *edges*, so its mass belongs
+          //  at the interval it spans; GADRAS places it at the upper edge (as for the others).
+          const bool pvt_side = low_photopeak_probability && (i >= half);
+          s.gz.push_back( (pvt_side && midpoint && (i > 0)) ? 0.5*(gze[i] + gze[i-1]) : gz[i] );
+          s.w.push_back( gs[i] );
         }
       }
 
@@ -276,7 +313,7 @@ namespace
       const double z_shape = zeta * factor;
 
       double shape = 0.0;
-      for( int j = 0; j < s.n; ++j )
+      for( size_t j = 0; j < s.w.size(); ++j )
         shape += s.w[j] * snorm_cdf( z_shape - s.gz[j] );
 
       const double result = (1.0 - s.sum_skew) * gauss + s.sum_skew * shape;
@@ -355,7 +392,37 @@ namespace
       p.low_skew = 0.0; p.high_skew = 11.5;
       p.low_skew_power = 0.01; p.high_skew_power = -0.383;
       p.low_skew_extent = 0.0; p.high_skew_extent = -9.57;
+      p.material = PeakDists::GadrasMaterial::LowPhotopeakProbability;
       p.low_photopeak_probability = true;
+    }
+    else if( key == "rapiscan" )           // RapiScan Metor 6S RPM (PVT, but used here as Generic):
+    {                                      //  a long high-E extent, where GADRAS's grid truncates the tail
+      p.resolution_offset = -0.0737; p.resolution_661 = 33.4; p.resolution_power = 0.98;
+      p.low_skew = 0.0; p.high_skew = 21.9;
+      p.low_skew_power = 0.0; p.high_skew_power = 0.0535;
+      p.low_skew_extent = 0.0; p.high_skew_extent = 21.5;
+    }
+    else if( key == "bege" )               // LANL BEGe: a long low-E extent
+    {
+      p.resolution_offset = 1.0; p.resolution_661 = 0.25; p.resolution_power = 0.5;
+      p.low_skew = 5.18; p.high_skew = 0.0;
+      p.low_skew_power = 0.0; p.high_skew_power = 0.0;
+      p.low_skew_extent = 13.3; p.high_skew_extent = 0.0;
+    }
+    else if( key == "nanoraider" )         // Kromek nanoRaider-Z CZT: very large low skew
+    {
+      p.resolution_offset = 0.0; p.resolution_661 = 2.5; p.resolution_power = 0.5;
+      p.low_skew = 65.6; p.high_skew = 0.0;
+      p.low_skew_power = 0.2; p.high_skew_power = 0.0;
+      p.low_skew_extent = 0.0; p.high_skew_extent = 0.0;
+      p.material = PeakDists::GadrasMaterial::CZT_CdTe;
+    }
+    else if( key == "lds_cebr3" )          // LDS CeBr3: negative low magnitude, very negative extents
+    {
+      p.resolution_offset = 2.0; p.resolution_661 = 4.0; p.resolution_power = 0.5;
+      p.low_skew = -5.98; p.high_skew = 25.5;
+      p.low_skew_power = 0.0; p.high_skew_power = 0.227;
+      p.low_skew_extent = -94.3; p.high_skew_extent = -10.0;
     }
     return p;
   }//make_params(...)
@@ -367,8 +434,8 @@ namespace
                                     p.low_photopeak_probability );
   }
 
-  // Integrate a unit-area GADRAS peak over the given bin edges (mirrors PeakDists::gadras_integral,
-  //  but lets us pass the low_photopeak_probability flag for the PVT case).
+  // Integrate a unit-area GADRAS peak over the given bin edges, by differencing the production
+  //  (analytic) CDF.
   std::vector<double> integrate( const double energy, const double sigma, const DetParams &p,
                                  const std::vector<float> &edges )
   {
@@ -377,12 +444,9 @@ namespace
     if( (nbins <= 0) || (sigma <= 0.0) )
       return y;
 
-    // The analytic (production) form does not implement PVT; production callers always pass
-    //  false, so we do too here.  (The legacy discrete form below still exercises PVT.)
     const PeakDists::GadrasPeakShape<double> shape = PeakDists::gadras_build_peak_shape( energy,
                               p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
-                              p.low_skew_extent, p.high_skew_extent, p.material,
-                              false );
+                              p.low_skew_extent, p.high_skew_extent, p.material );
 
     double cdf_low = PeakDists::gadras_peak_shape_cdf<double>( (edges[0] - energy)/sigma, shape );
     for( int i = 0; i < nbins; ++i )
@@ -394,10 +458,12 @@ namespace
     return y;
   }//integrate(...)
 
-  // Integrate a unit-area GADRAS peak using the LEGACY discrete (128-point) form.  Used to
-  //  reproduce the Fortran gold standard, and as the reference for the analytic-vs-discrete test.
+  // Integrate a unit-area GADRAS peak using the LEGACY discrete form; with the defaults this is
+  //  GADRAS's own 128-point construction, used to reproduce the Fortran gold standard.
   std::vector<double> legacy_integrate( const double energy, const double sigma, const DetParams &p,
-                                        const std::vector<float> &edges )
+                                        const std::vector<float> &edges,
+                                        const int refine = 1,
+                                        const bool midpoint = false )
   {
     const int nbins = static_cast<int>( edges.size() ) - 1;
     std::vector<double> y( std::max(0,nbins), 0.0 );
@@ -407,7 +473,7 @@ namespace
     const legacy::GadrasPeakShape shape = legacy::build_peak_shape( energy,
                               p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
                               p.low_skew_extent, p.high_skew_extent, p.material,
-                              p.low_photopeak_probability );
+                              refine, midpoint );
 
     double cdf_low = legacy::peak_shape_cdf( (edges[0] - energy)/sigma, shape );
     for( int i = 0; i < nbins; ++i )
@@ -488,8 +554,9 @@ BOOST_AUTO_TEST_CASE( MatchesFortranPerBin )
 //  drift apart by ~1-2% in the far tails, where the discrete grid is coarsest and the
 //  quadrature error is largest (the analytic form is the more accurate of the two).
 //  We assert a tight tolerance where the (normalized) reference density is appreciable and
-//  a looser relative tolerance in the sparse tails.  PVT is skipped: the analytic form
-//  does not implement it.
+//  a looser relative tolerance in the sparse tails.  This includes PVT (the analytic
+//  skew-normal high tail vs GADRAS's discrete half-Gaussian), which also checks the PVT
+//  analytic form against the Fortran, since the legacy form matches it (MatchesFortranPerBin).
 BOOST_AUTO_TEST_CASE( AnalyticCloseToDiscrete )
 {
   const double core_abs_tol = 1.0e-3;   // absolute, where the discrete bin has real area
@@ -499,9 +566,6 @@ BOOST_AUTO_TEST_CASE( AnalyticCloseToDiscrete )
   for( const RefCase &rc : kRefCases )
   {
     const DetParams p = make_params( rc.det_key );
-    if( p.low_photopeak_probability )
-      continue;   // analytic form has no PVT
-
     const double sigma = det_sigma( rc.energy, p );
     const std::vector<float> edges = make_edges( rc );
 
@@ -545,12 +609,6 @@ BOOST_AUTO_TEST_CASE( HighSkewCarriesTailArea )
       continue;
 
     const DetParams p = make_params( rc.det_key );
-    // The analytic (production) form does not implement PVT, so PVT's high-tail parameters do
-    //  not map to a broad tail here; its real tail is validated via the legacy form in
-    //  MatchesFortranPerBin.  Skip it in this production-based property test.
-    if( p.low_photopeak_probability )
-      continue;
-
     const double sigma = det_sigma( rc.energy, p );
     const std::vector<float> edges = make_edges( rc );
     const std::vector<double> yn = normalized( integrate( rc.energy, sigma, p, edges ) );
@@ -642,9 +700,6 @@ BOOST_AUTO_TEST_CASE( ArrayIntegralMatchesCdf )
   for( const RefCase &rc : kRefCases )
   {
     const DetParams p = make_params( rc.det_key );
-    if( p.low_photopeak_probability )
-      continue;   // analytic form has no PVT
-
     const double sigma = det_sigma( rc.energy, p );
     const std::vector<float> edges = make_edges( rc );
     const std::vector<double> expected = integrate( rc.energy, sigma, p, edges );
@@ -686,6 +741,10 @@ BOOST_AUTO_TEST_CASE( JetGradientMatchesFiniteDifference )
     { "czt",     PeakDists::GadrasMaterial::CZT_CdTe, 1001.3, 5.0, { 30.0, 8.0, 0.6, 0.1, 1.0, 2.2 }, false },
     { "low-only",PeakDists::GadrasMaterial::Generic,  186.21, 1.2, { 4.0, 0.0, 0.2, 0.0, -1.0, 0.0 }, false },
     { "power0",  PeakDists::GadrasMaterial::Generic,  300.37, 8.0, { 6.0, 3.0, 0.0, 0.0, 1.5, -2.0 }, true },
+    { "pvt",     PeakDists::GadrasMaterial::LowPhotopeakProbability, 477.3, 30.0, { 2.0, 11.5, 0.3, 0.2, 0.5, -1.0 }, false },
+    // Long high extent: the high tail is truncated (when USE_GADRAS_TRUNCATION), so its gradient
+    //  w.r.t. the magnitude/extent/power includes the truncation terms.
+    { "trunc",   PeakDists::GadrasMaterial::Generic,  300.37, 3.0, { 1.0, 21.9, 0.3, 0.2, 0.0, 21.5 }, false },
   };
 
   for( const GradCase &gc : cases )
@@ -695,8 +754,11 @@ BOOST_AUTO_TEST_CASE( JetGradientMatchesFiniteDifference )
     //  The range is offset so no bin edge falls on the mean: when the low and high powers differ,
     //  the shape's density is discontinuous there (each side's zeta is rescaled differently), so a
     //  central difference across it would not be a derivative.
-    const int nbins = 300;
-    const double lo = gc.mean - 7.33*gc.sigma, hi = gc.mean + 7.5*gc.sigma;
+    // (The "trunc" case uses a wider range, into where its truncated tail ends, ~43 sigma, but
+    //  inside its integration window, ~51 sigma.)
+    const bool wide = (std::string(gc.name) == "trunc");
+    const int nbins = wide ? 900 : 300;
+    const double lo = gc.mean - 7.33*gc.sigma, hi = gc.mean + (wide ? 47.0 : 7.5)*gc.sigma;
     std::vector<float> edges( nbins + 1 );
     for( int i = 0; i <= nbins; ++i )
       edges[i] = static_cast<float>( lo + (hi - lo)*(double(i)/nbins) );
@@ -720,8 +782,11 @@ BOOST_AUTO_TEST_CASE( JetGradientMatchesFiniteDifference )
 
     for( int k = 0; k < 7; ++k )
     {
-      // Skip the high-tail parameters when there is no high tail (they then have no effect)
+      // Skip the high-tail parameters when there is no high tail (they then have no effect), and
+      //  the high extent for the PVT-like tail (which does not use it).
       if( (gc.skew[1] <= 0.0) && ((k == 2) || (k == 4) || (k == 6)) )
+        continue;
+      if( (gc.material == PeakDists::GadrasMaterial::LowPhotopeakProbability) && (k == 6) )
         continue;
 
       const bool forward = gc.one_sided_powers && ((k == 3) || (k == 4));
@@ -789,4 +854,305 @@ BOOST_AUTO_TEST_CASE( AvoidStationarySkewStart )
   PeakDef::avoid_stationary_skew_start( PeakDef::SkewType::GadrasGeneric, values, fit_amps );
   BOOST_CHECK_EQUAL( values[0], 3.8 );
   BOOST_CHECK_EQUAL( values[1], 0.0 );
+
+  // Nor is a negative one, which still adds to the tail fraction
+  values = { -2.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  PeakDef::avoid_stationary_skew_start( PeakDef::SkewType::GadrasGeneric, values, fit_amps );
+  BOOST_CHECK_EQUAL( values[0], -2.0 );
+  BOOST_CHECK_EQUAL( values[1], 0.0 );
 }//AvoidStationarySkewStart
+
+
+namespace
+{
+  // Detectors exercising the parts of parameter space the Fortran reference cases do not: long
+  //  extents (where GADRAS's grid truncates the tails), very large magnitudes, PVT, and negative
+  //  values straight from shipped Detector.dat files.
+  const char * const kExtraKeys[] = { "identifinder", "detective", "czt", "pvt", "rapiscan",
+                                      "bege", "nanoraider", "lds_cebr3" };
+  const double kExtraEnergies[] = { 186.2, 661.7, 1460.8 };
+
+  bool truncation_negligible( const PeakDists::GadrasPeakShape<double> &s )
+  {
+    // Whether every tail component ends well inside GADRAS's grid, so truncation makes no difference
+    for( int i = 0; i < s.n_low; ++i )
+      if( (s.low_reach > 0.0) && (s.low_reach < 15.0*s.low_scale[i]) )
+        return false;
+    for( int i = 0; i < s.n_high; ++i )
+      if( (s.high_reach > 0.0) && (s.high_reach < 15.0*s.high_scale[i]) )
+        return false;
+    return true;
+  }
+}//namespace
+
+
+// The analytic form is the continuous limit of GADRAS's discretization: refining GADRAS's own
+//  grid (same zeta range, more points, midpoint rule so it converges quickly), the discrete CDF
+//  approaches the analytic one.  With USE_GADRAS_TRUNCATION this holds for every detector,
+//  including long-extent ones whose tails run past GADRAS's grid; without it, only where the
+//  grid's truncation is negligible.
+BOOST_AUTO_TEST_CASE( AnalyticIsContinuumLimit )
+{
+  const int refine = 16;   // ~2000 grid points
+  for( const char *key : kExtraKeys )
+  {
+    const DetParams p = make_params( key );
+    for( const double energy : kExtraEnergies )
+    {
+      const PeakDists::GadrasPeakShape<double> shape = PeakDists::gadras_build_peak_shape( energy,
+                                p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
+                                p.low_skew_extent, p.high_skew_extent, p.material );
+#if( !USE_GADRAS_TRUNCATION )
+      {
+        // Check the untruncated shape against GADRAS's reach directly
+        const double skew[6] = { p.low_skew, p.high_skew, 0, 0, 0, 0 };
+        const pair<double,double> reach = PeakDists::gadras_truncation_reach( skew );
+        PeakDists::GadrasPeakShape<double> probe = shape;
+        probe.low_reach = reach.first;
+        probe.high_reach = reach.second;
+        if( !truncation_negligible( probe ) )
+          continue;
+      }
+#endif
+
+      const legacy::GadrasPeakShape discrete = legacy::build_peak_shape( energy,
+                                p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
+                                p.low_skew_extent, p.high_skew_extent, p.material, refine, true );
+
+      double max_diff = 0.0, worst_z = 0.0;
+      for( double z = -170.0; z <= 120.0; z += 0.1 )
+      {
+        const double a = PeakDists::gadras_peak_shape_cdf<double>( z, shape );
+        const double d = legacy::peak_shape_cdf( z, discrete );
+        if( std::fabs(a - d) > max_diff )
+        {
+          max_diff = std::fabs(a - d);
+          worst_z = z;
+        }
+      }
+
+      BOOST_TEST_INFO( "key=" << key << " energy=" << energy << " max|cdf diff|=" << max_diff
+                       << " at z=" << worst_z );
+      BOOST_CHECK( max_diff < 1.0e-4 );
+    }//for( const double energy : kExtraEnergies )
+  }//for( const char *key : kExtraKeys )
+}//AnalyticIsContinuumLimit
+
+
+// GADRAS's grid only cuts the tails off for long tails; for the ordinary detectors truncating
+//  changes nothing, so the choice of USE_GADRAS_TRUNCATION only matters for the few long ones.
+BOOST_AUTO_TEST_CASE( TruncationOnlyMattersForLongTails )
+{
+  for( const char *key : kExtraKeys )
+  {
+    const DetParams p = make_params( key );
+    const PeakDists::GadrasPeakShape<double> shape = PeakDists::gadras_build_peak_shape( 661.7,
+                              p.low_skew, p.high_skew, p.low_skew_power, p.high_skew_power,
+                              p.low_skew_extent, p.high_skew_extent, p.material );
+    double max_trunc_wt = 0.0;
+    for( int i = 0; i < shape.n_low; ++i )
+      max_trunc_wt = std::max( max_trunc_wt, shape.low_trunc_wt[i] );
+    for( int i = 0; i < shape.n_high; ++i )
+      max_trunc_wt = std::max( max_trunc_wt, shape.high_trunc_wt[i] );
+
+    const string k = key;
+    const bool long_tail = (k == "rapiscan") || (k == "bege");
+    BOOST_TEST_INFO( "key=" << key << " max e^{-R/s}=" << max_trunc_wt );
+#if( USE_GADRAS_TRUNCATION )
+    if( long_tail )
+      BOOST_CHECK( max_trunc_wt > 1.0e-3 );
+    else
+      BOOST_CHECK( max_trunc_wt < 1.0e-3 );
+#else
+    BOOST_CHECK( max_trunc_wt == 0.0 );
+#endif
+  }//for( const char *key : kExtraKeys )
+
+  // The reach itself is GADRAS's ZetaRange end-points
+  const double czt[6] = { 39.64508, 9.71002, 0, 0, 0, 0 };
+  const pair<double,double> reach = PeakDists::gadras_truncation_reach( czt );
+  const double lo_end = 63.0 * std::pow( 39.64508, 0.2 ) / 12.0;
+  const double hi_end = 64.0 * std::pow( 9.71002, 0.2 ) / 18.0;
+  BOOST_CHECK_CLOSE( reach.first, lo_end*lo_end, 1.0e-10 );
+  BOOST_CHECK_CLOSE( reach.second, hi_end*hi_end, 1.0e-10 );
+
+  // A high skew floors |low| at 0.1, which max(1,|low|) then hides; no skew => the 1.0 floor.
+  const double hi_only[6] = { 0.0, 18.0, 0, 0, 0, 0 };
+  const pair<double,double> reach2 = PeakDists::gadras_truncation_reach( hi_only );
+  BOOST_CHECK_CLOSE( reach2.first, std::pow( 63.0/12.0, 2 ), 1.0e-10 );
+}//TruncationOnlyMattersForLongTails
+
+
+// gadras_coverage_limits must give the quantiles of the (continuous-limit) GADRAS shape - checked
+//  against bisecting a finely-discretized GADRAS shape - including tails reaching well past the
+//  15 sigma RelActAuto used to cap them at.
+BOOST_AUTO_TEST_CASE( CoverageLimitsMatchDiscreteQuantiles )
+{
+  const double p = 1.0E-3;   // 99.9% coverage
+  for( const char *key : kExtraKeys )
+  {
+    const DetParams dp = make_params( key );
+    const double skew[6] = { dp.low_skew, dp.high_skew, dp.low_skew_power, dp.high_skew_power,
+                             dp.low_skew_extent, dp.high_skew_extent };
+    for( const double energy : kExtraEnergies )
+    {
+      const double sigma = 1.0;
+      const pair<double,double> lim = PeakDists::gadras_coverage_limits( energy, sigma, skew, dp.material, p );
+
+#if( !USE_GADRAS_TRUNCATION )
+      if( (string(key) == "rapiscan") || (string(key) == "bege") )
+        continue;
+#endif
+      const legacy::GadrasPeakShape discrete = legacy::build_peak_shape( energy,
+                                dp.low_skew, dp.high_skew, dp.low_skew_power, dp.high_skew_power,
+                                dp.low_skew_extent, dp.high_skew_extent, dp.material, 16, true );
+      const auto quantile = [&]( const double target ) -> double {
+        double lo = -400.0, hi = 400.0;
+        for( int i = 0; i < 80; ++i )
+        {
+          const double mid = 0.5*(lo + hi);
+          if( legacy::peak_shape_cdf( mid, discrete ) < target )
+            lo = mid;
+          else
+            hi = mid;
+        }
+        return 0.5*(lo + hi);
+      };
+
+      const double zlo = quantile( 0.5*p ), zhi = quantile( 1.0 - 0.5*p );
+      BOOST_TEST_INFO( "key=" << key << " energy=" << energy << " limits=[" << (lim.first - energy)
+                       << ", " << (lim.second - energy) << "] sigma; discrete=[" << zlo << ", " << zhi << "]" );
+      // The quantile moves by dz = dCDF/density, so in the far tails a 1E-5 CDF difference can be
+      //  a sizable fraction of a sigma; compare relative to the distance from the mean.
+      BOOST_CHECK( std::fabs( (lim.first - energy) - zlo ) < 0.05 + 0.01*std::fabs(zlo) );
+      BOOST_CHECK( std::fabs( (lim.second - energy) - zhi ) < 0.05 + 0.01*std::fabs(zhi) );
+    }//for( const double energy : kExtraEnergies )
+  }//for( const char *key : kExtraKeys )
+
+  // A CZT peak at 1.46 MeV really does have its 99.9% extent far beyond 15 sigma.
+  const DetParams czt = make_params( "czt" );
+  const double czt_skew[6] = { czt.low_skew, czt.high_skew, czt.low_skew_power, czt.high_skew_power,
+                               czt.low_skew_extent, czt.high_skew_extent };
+  const pair<double,double> czt_lim = PeakDists::gadras_coverage_limits( 1460.8, 1.0, czt_skew, czt.material, p );
+  BOOST_CHECK( (1460.8 - czt_lim.first) > 40.0 );
+
+#if( USE_GADRAS_TRUNCATION )
+  // ... while a truncated tail stops near where GADRAS's grid does (~43 sigma), rather than ~200.
+  const DetParams rs = make_params( "rapiscan" );
+  const double rs_skew[6] = { rs.low_skew, rs.high_skew, rs.low_skew_power, rs.high_skew_power,
+                              rs.low_skew_extent, rs.high_skew_extent };
+  const pair<double,double> rs_lim = PeakDists::gadras_coverage_limits( 661.7, 1.0, rs_skew, rs.material, p );
+  BOOST_CHECK( (rs_lim.second - 661.7) < 50.0 );
+#endif
+}//CoverageLimitsMatchDiscreteQuantiles
+
+
+// Values GADRAS accepts, and how it treats them (see scratch/GADRAS_skew_par_audit_20261006.md).
+BOOST_AUTO_TEST_CASE( NegativeValuesBehaveLikeGadras )
+{
+  const double energy = 300.0;
+  const auto cdf_at = []( const double energy, const double s[6], const PeakDists::GadrasMaterial m,
+                          const double z ) -> double {
+    const PeakDists::GadrasPeakShape<double> shape = PeakDists::gadras_build_peak_shape( energy,
+                                                          s[0], s[1], s[2], s[3], s[4], s[5], m );
+    return PeakDists::gadras_peak_shape_cdf<double>( z, shape );
+  };
+
+  // A negative power is exactly a power of zero (GADRAS uses MAX(0,power) everywhere).
+  const double neg_pow[6] = { 6.0, 3.0, -0.4, -0.8, 1.5, -2.0 };
+  const double zero_pow[6] = { 6.0, 3.0, 0.0, 0.0, 1.5, -2.0 };
+  for( double z = -20.0; z <= 20.0; z += 0.25 )
+    BOOST_CHECK_EQUAL( cdf_at( energy, neg_pow, PeakDists::GadrasMaterial::Generic, z ),
+                       cdf_at( energy, zero_pow, PeakDists::GadrasMaterial::Generic, z ) );
+
+  // A negative magnitude still adds to the tail fraction (as |value|), but builds no tail on its
+  //  side - so it is NOT the same as zero, nor as +|value|.
+  const double neg_low[6]  = { -6.0, 10.0, 0.0, 0.0, 0.0, 0.0 };
+  const double zero_low[6] = {  0.0, 10.0, 0.0, 0.0, 0.0, 0.0 };
+  const double pos_low[6]  = {  6.0, 10.0, 0.0, 0.0, 0.0, 0.0 };
+  const PeakDists::GadrasPeakShape<double> s_neg = PeakDists::gadras_build_peak_shape( energy,
+              neg_low[0], neg_low[1], neg_low[2], neg_low[3], neg_low[4], neg_low[5], PeakDists::GadrasMaterial::Generic );
+  const PeakDists::GadrasPeakShape<double> s_zero = PeakDists::gadras_build_peak_shape( energy,
+              zero_low[0], zero_low[1], zero_low[2], zero_low[3], zero_low[4], zero_low[5], PeakDists::GadrasMaterial::Generic );
+  const PeakDists::GadrasPeakShape<double> s_pos = PeakDists::gadras_build_peak_shape( energy,
+              pos_low[0], pos_low[1], pos_low[2], pos_low[3], pos_low[4], pos_low[5], PeakDists::GadrasMaterial::Generic );
+  BOOST_CHECK( s_neg.sum_skew > s_zero.sum_skew );
+  BOOST_CHECK_CLOSE( s_neg.sum_skew, s_pos.sum_skew, 1.0e-12 );
+  BOOST_CHECK( std::fabs( cdf_at( energy, neg_low, PeakDists::GadrasMaterial::Generic, -3.0 )
+                          - cdf_at( energy, pos_low, PeakDists::GadrasMaterial::Generic, -3.0 ) ) > 1.0e-3 );
+  // (vs zero, the difference is the larger tail fraction, which shows up in the high tail)
+  BOOST_CHECK( std::fabs( cdf_at( energy, neg_low, PeakDists::GadrasMaterial::Generic, 3.0 )
+                          - cdf_at( energy, zero_low, PeakDists::GadrasMaterial::Generic, 3.0 ) ) > 1.0e-3 );
+
+  // ...and GADRAS's own (Fortran-reproducing) discrete form agrees on all of it.
+  {
+    DetParams p = make_params( "lds_cebr3" );
+    const double sigma = 2.0;
+    std::vector<float> edges( 401 );
+    for( int i = 0; i <= 400; ++i )
+      edges[i] = static_cast<float>( energy - 20.0*sigma + 0.25*sigma*i + 0.0123 );
+    const std::vector<double> a = normalized( integrate( energy, sigma, p, edges ) );
+    const std::vector<double> d = normalized( legacy_integrate( energy, sigma, p, edges, 16, true ) );
+    double max_diff = 0.0;
+    for( size_t i = 0; i < a.size(); ++i )
+      max_diff = std::max( max_diff, std::fabs( a[i] - d[i] ) );
+    BOOST_TEST_INFO( "max per-bin diff=" << max_diff );
+    BOOST_CHECK( max_diff < 1.0e-4 );
+  }
+
+  // Both magnitudes non-positive: no tail is built, so a pure Gaussian (GADRAS: the same, after its
+  //  renormalization).
+  const double neg_both[6] = { -4.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+  for( double z = -6.0; z <= 6.0; z += 0.5 )
+    BOOST_CHECK_CLOSE( cdf_at( energy, neg_both, PeakDists::GadrasMaterial::Generic, z ) + 1.0,
+                       PeakDists::gadras_std_normal_cdf( z ) + 1.0, 1.0e-12 );
+
+  // The parameter ranges accept what shipped Detector.dat files contain.
+  double lower, upper, starting, step;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GadrasGeneric, PeakDef::SkewPar0,
+                                                lower, upper, starting, step ) );
+  BOOST_CHECK( lower <= -5.98 );
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GadrasGeneric, PeakDef::SkewPar4,
+                                                lower, upper, starting, step ) );
+  BOOST_CHECK( lower <= -94.3 );
+  BOOST_CHECK( upper >= 21.5 );
+}//NegativeValuesBehaveLikeGadras
+
+
+// GADRAS's PVT ("low photopeak probability") high tail is a half-Gaussian of width high/9 sigma,
+//  convolved with the core: a skew-normal.  Check the closed form against direct numerical
+//  convolution, and that the extent does not enter it (GADRAS only uses it in a 3E-6 term).
+BOOST_AUTO_TEST_CASE( PvtTailIsSkewNormal )
+{
+  for( const double d : { 0.3, 1.2778, 2.556, 5.0 } )
+  {
+    for( double z = -6.0; z <= 6.0 + 6.0*d; z += 0.37 )
+    {
+      // F(z) = Integral_0^inf (2/d) phi(t/d) Phi(z - t) dt, by Simpson's rule
+      const int n = 4000;
+      const double tmax = 12.0*d, h = tmax/n;
+      double sum = 0.0;
+      for( int i = 0; i <= n; ++i )
+      {
+        const double t = i*h;
+        const double f = (2.0/d) * std::exp( -0.5*(t/d)*(t/d) ) * 0.3989422804014327
+                         * legacy::snorm_cdf( z - t );
+        sum += f * ((i == 0) || (i == n) ? 1.0 : ((i % 2) ? 4.0 : 2.0));
+      }
+      const double numeric = sum * h / 3.0;
+      const double analytic = PeakDists::gadras_half_gauss_tail_cdf<double>( z, d );
+      BOOST_TEST_INFO( "d=" << d << " z=" << z );
+      BOOST_CHECK( std::fabs( numeric - analytic ) < 1.0e-9 );
+    }
+  }
+
+  const double ext0[6] = { 0.0, 11.5, 0.0, 0.0, 0.0, 0.0 };
+  const double ext9[6] = { 0.0, 11.5, 0.0, 0.0, 0.0, -9.57 };
+  const PeakDists::GadrasPeakShape<double> a = PeakDists::gadras_build_peak_shape( 600.0,
+                  ext0[0], ext0[1], ext0[2], ext0[3], ext0[4], ext0[5], PeakDists::GadrasMaterial::LowPhotopeakProbability );
+  const PeakDists::GadrasPeakShape<double> b = PeakDists::gadras_build_peak_shape( 600.0,
+                  ext9[0], ext9[1], ext9[2], ext9[3], ext9[4], ext9[5], PeakDists::GadrasMaterial::LowPhotopeakProbability );
+  BOOST_CHECK( a.pvt_high_tail && b.pvt_high_tail );
+  for( double z = -5.0; z <= 20.0; z += 0.5 )
+    BOOST_CHECK_EQUAL( PeakDists::gadras_peak_shape_cdf<double>( z, a ), PeakDists::gadras_peak_shape_cdf<double>( z, b ) );
+}//PvtTailIsSkewNormal

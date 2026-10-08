@@ -440,6 +440,26 @@ std::string GadrasDetectorDat::materialName() const
 }
 
 
+bool GadrasDetectorDat::hasLowPhotopeakProbability( const std::string &material_name )
+{
+  const MaterialInfo * const info = materialByName( material_name );
+  if( !info )
+    return false;
+
+  // GADRAS decides this from cross-sections at runtime; for its material table the answer is
+  //  these hydrocarbons (test_GadrasDetectorDat checks this list against the cross-sections).
+  const int idx = info->index;
+  return (idx == 6) || (idx == 32) || (idx == 33) || (idx == 34) || (idx == 35);
+}//hasLowPhotopeakProbability(...)
+
+
+bool GadrasDetectorDat::usesCztPeakShape( const std::string &material_name )
+{
+  const MaterialInfo * const info = materialByName( material_name );
+  return info && ((info->index == 8) || (info->index == 9));  //MATERIAL_CZT, MATERIAL_CDTE
+}//usesCztPeakShape(...)
+
+
 const std::array<GadrasDetectorDat::MaterialInfo, 36> &GadrasDetectorDat::materialTable()
 {
   return sm_material_table;

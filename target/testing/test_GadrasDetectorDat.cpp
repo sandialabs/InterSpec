@@ -1286,15 +1286,56 @@ BOOST_AUTO_TEST_CASE( test_coarse_type_for_every_gadras_material )
                           << " (nominal " << info.resolution661 << "% FWHM)" );
     }
 
-    // A semiconductor gets the CZT tail construction; nothing else does.
-    const bool want_czt = (prefs->m_det_type == PeakFitUtils::CoarseResolutionType::CZT);
-    BOOST_CHECK_MESSAGE( (prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) == want_czt,
-                        string(info.name) + ": peak-shape family does not follow its class" );
+    // GADRAS builds the CZT tail for exactly CZT and CdTe (not TlBr or HgI2, even though they
+    //  share the coarse CZT class); PVT-like plastics get no GADRAS skew at all.
+    const string name = info.name;
+    const bool want_czt = ((name == "CZT") || (name == "CdTe"));
+    const bool want_none = GadrasDetectorDat::hasLowPhotopeakProbability( name );
+    const PeakDef::SkewType want_type = want_none ? PeakDef::SkewType::NoSkew
+                                      : (want_czt ? PeakDef::SkewType::GadrasCZT
+                                                  : PeakDef::SkewType::GadrasGeneric);
+    BOOST_CHECK_MESSAGE( prefs->m_peak_skew_type == want_type,
+                        string(info.name) + ": peak-shape family is " + PeakDef::to_string(prefs->m_peak_skew_type) );
+    BOOST_CHECK_EQUAL( GadrasDetectorDat::usesCztPeakShape( name ), want_czt );
   }//for( every material )
 
   BOOST_CHECK_MESSAGE( unknown == 0, std::to_string(unknown)
                        + " GADRAS materials could not be classified" );
 }
+
+
+/** `GadrasDetectorDat::hasLowPhotopeakProbability` runtime test for HasLowPhotopeakProbability): 
+ * photoelectric/Compton at 661.7 keV below 0.001.  Check that list against the cross-sections, for every material in the table. */
+BOOST_AUTO_TEST_CASE( test_low_photopeak_probability_materials )
+{
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Need --datadir" );
+
+  const float energy = 661.7f;
+  size_t num_low = 0;
+  for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
+  {
+    ceelo::MaterialSpec spec;
+    BOOST_REQUIRE_NO_THROW( spec = CeeLoUtils::gadrasCrystalMaterial( info.name ) );
+
+    double photo = 0.0, compton = 0.0;
+    for( const ceelo::MaterialComponent &c : spec.composition )
+    {
+      photo += c.mass_fraction * MassAttenuation::massAttenuationCoefficientElement( c.Z, energy,
+                                              MassAttenuation::GammaEmProcces::PhotoElectric );
+      compton += c.mass_fraction * MassAttenuation::massAttenuationCoefficientElement( c.Z, energy,
+                                              MassAttenuation::GammaEmProcces::ComptonScatter );
+    }
+    BOOST_REQUIRE( compton > 0.0 );
+
+    const double ratio = photo / compton;
+    const bool is_low = (ratio < 0.001);
+    num_low += is_low;
+    BOOST_CHECK_MESSAGE( GadrasDetectorDat::hasLowPhotopeakProbability( info.name ) == is_low,
+                         string(info.name) + ": photo/Compton at 661.7 keV = " + std::to_string(ratio) );
+  }//for( every material )
+
+  BOOST_CHECK_EQUAL( num_low, 5 );   //PVT, Stilbene, Deuterated Stilbene, EJ301, EJ301D
+}//test_low_photopeak_probability_materials
 
 
 /** Every crystal a Detector.dat can name has to be one the geometry form offers,

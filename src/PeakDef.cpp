@@ -1695,20 +1695,28 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
       // SkewPar0=low_skew, SkewPar1=high_skew (fittable amplitudes, GADRAS magnitudes @ 661 keV).
       // SkewPar2/3 = low/high skew power (energy-dependence exponent, detector characteristic).
       // SkewPar4/5 = low/high skew extent (tail slope shaping, detector characteristic).
+      //  GADRAS itself places no bounds on any of these (only the shape code's own clamps apply), so
+      //  these ranges are chosen to accept every value seen, while keeping fits to physically sensible 
+      //  shapes.
       switch( coef )
       {
         case CoefficientType::SkewPar0: // low_skew amplitude
         case CoefficientType::SkewPar1: // high_skew amplitude
+          // The tail fraction is min(1, (|low|+|high|)/100) at 661 keV, so beyond 100 nothing
+          //  changes.  A negative magnitude is legal in GADRAS (a few Detector.dat files have one,
+          //  e.g. -5.98): it counts as |value| toward the tail fraction, but builds no tail on its
+          //  side - so the shape is not symmetric in the sign, and we keep the value as given.
           starting_value = 5.0;
           step_size = 0.5;
-          lower_value = 0.0;
+          lower_value = -100.0;
           upper_value = 100.0;
           break;
 
         case CoefficientType::SkewPar2: // low_skew_power
         case CoefficientType::SkewPar3: // high_skew_power
-          // Detector.dat files can have negative powers, but the shape treats a negative power as
-          //  zero (as GADRAS does), so `DetectorPeakResponse` clamps them to zero on import.
+          // Detector.dat files can have negative powers, but GADRAS uses MAX(0,power) everywhere a
+          //  power enters, so a negative power is exactly a power of zero; `DetectorPeakResponse`
+          //  clamps them to zero on import.
           starting_value = 0.0;
           step_size = 0.1;
           lower_value = 0.0;
@@ -1717,11 +1725,13 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
         case CoefficientType::SkewPar4: // low_skew_extent
         case CoefficientType::SkewPar5: // high_skew_extent
-          // Slope scale is exp(extent/3) below zero, but only 1 + extent/3 above, so allow a longer
-          //  positive range (e.g., the Kromek GR1 Detector.dat has a high-E extent of 11.5).
+          // Slope scale is exp(extent/3) below zero (so very negative extents just shrink that tail
+          //  toward the core - shipped files go down to -94), but 1 + extent/3 above, so the
+          //  positive range is where the shape actually changes (e.g., Kromek GR1 high-E extent of
+          //  11.5).
           starting_value = 0.0;
           step_size = 0.5;
-          lower_value = -10.0;
+          lower_value = -100.0;
           upper_value = 30.0;
           break;
 
@@ -1927,7 +1937,9 @@ void PeakDef::avoid_stationary_skew_start( const SkewType skew_type, std::vector
     return;
 
   assert( (values.size() == 6) && (is_fit.size() == 6) );
-  if( (values.size() < 2) || (is_fit.size() < 2) || (values[0] > 0.0) || (values[1] > 0.0) )
+  // Only both amplitudes being zero is stationary; a negative amplitude still adds to the tail
+  //  fraction, so is not.
+  if( (values.size() < 2) || (is_fit.size() < 2) || (values[0] != 0.0) || (values[1] != 0.0) )
     return;
 
   for( size_t i = 0; i < 2; ++i )
@@ -3785,6 +3797,19 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         dist_norm = 1.0;  //Distribution should already be normed
         break;
     }//switch( p.type() )
+
+#if( USE_GADRAS_TRUNCATION )
+    // Where GADRAS's tails stop (shape-zeta units); the JS only truncates when this is present, so
+    //  it always follows `USE_GADRAS_TRUNCATION`.
+    if( (p.skewType() == GadrasGeneric) || (p.skewType() == GadrasCZT) )
+    {
+      double skew[6];
+      for( int i = 0; i < 6; ++i )
+        skew[i] = p.coefficient( CoefficientType(CoefficientType::SkewPar0 + i) );
+      const pair<double,double> reach = PeakDists::gadras_truncation_reach( skew );
+      answer << q << "GadrasTrunc" << q << ":[" << reach.first << "," << reach.second << "],";
+    }
+#endif
 
     if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
       answer << q << "DistNorm" << q << ":" << dist_norm << ",";

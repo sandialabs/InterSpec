@@ -2127,27 +2127,37 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
     auto prefs = make_shared<PeakFitDetPrefs>();
     prefs->m_det_type = det_type;
 
-    // GADRAS builds the CZT/CdTe tail differently, so the skew family follows
-    //  the same classification rather than a second string match.
-    prefs->m_peak_skew_type = (det_type == PeakFitUtils::CoarseResolutionType::CZT)
-                                ? PeakDef::SkewType::GadrasCZT
-                                : PeakDef::SkewType::GadrasGeneric;
+    if( GadrasDetectorDat::hasLowPhotopeakProbability( gadrasMaterialName ) )
+    {
+      // PVT-like detectors: GADRAS's peak shape for these (a special high tail, a 10 keV
+      //  widening, and the photopeak folded into the continuum) is not something a peak fit can
+      //  use, and the PVT tail is not an exposed skew type, so dont seed one.
+      prefs->m_peak_skew_type = PeakDef::SkewType::NoSkew;
+    }else
+    {
+      // GADRAS builds the CZT/CdTe tail differently, but only for exactly those two materials;
+      //  the coarse classification (which also puts TlBr and HgI2 with CZT) is not used for this.
+      prefs->m_peak_skew_type = GadrasDetectorDat::usesCztPeakShape( gadrasMaterialName )
+                                  ? PeakDef::SkewType::GadrasCZT
+                                  : PeakDef::SkewType::GadrasGeneric;
 
-    // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
-    //
-    //  All six are given values, which in PeakFitDetPrefs means FIXED - a
-    //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
-    //  this shape against the real detector, so it is better information than
-    //  anything a per-ROI fit would recover, and re-fitting it would throw that
-    //  away.
-    //  A negative power acts as zero in the shape (as in GADRAS), so is stored as zero - keeping it
-    //  within PeakDef::skew_parameter_range for every tool.
-    prefs->m_lower_energy_skew[0] = gadrasLowSkew;
-    prefs->m_lower_energy_skew[1] = gadrasHighSkew;
-    prefs->m_lower_energy_skew[2] = (std::max)( 0.0f, gadrasLowSkewPower );
-    prefs->m_lower_energy_skew[3] = (std::max)( 0.0f, gadrasHighSkewPower );
-    prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
-    prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+      // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
+      //
+      //  All six are given values, which in PeakFitDetPrefs means FIXED - a
+      //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
+      //  this shape against the real detector, so it is better information than
+      //  anything a per-ROI fit would recover, and re-fitting it would throw that
+      //  away.
+      //  A negative power acts as zero in the shape (as in GADRAS), so is stored as zero - keeping it
+      //  within PeakDef::skew_parameter_range for every tool.  Negative magnitudes and extents are
+      //  kept as-is (GADRAS treats them differently from zero; see skew_parameter_range).
+      prefs->m_lower_energy_skew[0] = gadrasLowSkew;
+      prefs->m_lower_energy_skew[1] = gadrasHighSkew;
+      prefs->m_lower_energy_skew[2] = (std::max)( 0.0f, gadrasLowSkewPower );
+      prefs->m_lower_energy_skew[3] = (std::max)( 0.0f, gadrasHighSkewPower );
+      prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
+      prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+    }//if( PVT-like ) / else
 
     prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
 
