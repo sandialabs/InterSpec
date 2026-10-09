@@ -406,6 +406,13 @@ public:
      */
     bool httpDisableCertCheck = false;
 
+    /** Write each assistant conversation to `<writable data dir>/llm_logs/` as XML.
+
+     The file is rewritten at the end of every turn; a new file is started whenever the
+     conversation is cleared.  Absent from the config file means false.
+     */
+    bool logConversations = false;
+
     std::vector<ApiProvider> providers;
     size_t activeProviderIndex = 0;  // Index of the active provider; resolved at parse time
 
