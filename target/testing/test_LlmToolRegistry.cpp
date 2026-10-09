@@ -45,6 +45,7 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/LlmToolGui.h"
@@ -611,10 +612,11 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   BOOST_CHECK_EQUAL( detector_info["name"].get<string>(), "ORTEC Detective-EX100_LANL_025cm (40%)" );
 
   // Test with Detective-EX100 at 25 cm, Fe shielding 1.0 cm, specific energies
-  // Expected values from calibration:
-  // 185.0 keV: intrinsic=0.4749, solid_angle=0.004172, shielding_transmission=0.3204, total=0.0006348
-  // 661.7 keV: intrinsic=0.2038, solid_angle=0.004172, shielding_transmission=0.5657, total=0.0004811
-  // 1460.8 keV: intrinsic=0.1072, solid_angle=0.004172, shielding_transmission=0.6791, total=0.0003038
+  // Expected values from calibration (the solid angle is at 25 cm from the face PLUS the detector's
+  //  setback - as DetectorPeakResponse::efficiency uses; 0.004172 without the setback):
+  // 185.0 keV: intrinsic=0.4749, solid_angle=0.004012, shielding_transmission=0.3204
+  // 661.7 keV: intrinsic=0.2038, solid_angle=0.004012, shielding_transmission=0.5657
+  // 1460.8 keV: intrinsic=0.1072, solid_angle=0.004012, shielding_transmission=0.6791
   json params;
   params["Energies"] = json::array({185.0, 661.7, 1460.8});
   params["Distance"] = "25 cm";
@@ -646,7 +648,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction (distanceGeometryFactor)
   if( results[0].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[0]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[0]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -669,7 +671,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction
   if( results[1].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[1]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[1]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -692,7 +694,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   // Check solid angle fraction
   if( results[2].contains("distanceGeometryFactor") )
   {
-    BOOST_CHECK_CLOSE( results[2]["distanceGeometryFactor"].get<double>(), 0.004172, 1.0 );
+    BOOST_CHECK_CLOSE( results[2]["distanceGeometryFactor"].get<double>(), 0.004012, 1.0 );
   }
 
   // Check shielding transmission
@@ -708,6 +710,22 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
   }
 
   BOOST_REQUIRE( results[2].contains("finalEfficiency") );
+
+  // The detector factor is the DRF's own absolute efficiency at the distance - the same number
+  //  every other tool uses - and its relative uncertainty is reported beside it.
+  {
+    const shared_ptr<SpecMeas> meas = fixture.m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    const shared_ptr<DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+    BOOST_REQUIRE( drf && drf->isValid() );
+    const float energies[3] = { 185.0f, 661.7f, 1460.8f };
+    for( size_t i = 0; i < 3; ++i )
+    {
+      BOOST_REQUIRE( results[i].contains("detectorAbsoluteEfficiency") );
+      BOOST_CHECK_CLOSE( results[i]["detectorAbsoluteEfficiency"].get<double>(),
+                         drf->efficiency( energies[i], 25.0*PhysicalUnits::cm ), 1.0e-3 );
+      BOOST_CHECK( results[i].contains("detectorEffFracUncert") );
+    }
+  }
 
   // Test error handling - no energies
   params = json::object();
@@ -1955,7 +1973,8 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
     {"NoSkew", "NoSkew"}, {"Bortel", "ExGauss"}, {"GaussExp", "GaussExp"},
     {"CrystalBall", "CrystalBall"}, {"ExpGaussExp", "ExpGaussExp"},
     {"DoubleSidedCrystalBall", "DoubleSidedCrystalBall"}, {"GaussPlusBortel", "GaussPlusExGauss"},
-    {"DoubleBortel", "DoubleExGauss"}, {"VoigtPlusBortel", "VoigtPlusExGauss"} };
+    {"DoubleBortel", "DoubleExGauss"}, {"VoigtPlusBortel", "VoigtPlusExGauss"},
+    {"GadrasGeneric", "GadrasGeneric"}, {"GadrasCZT", "GadrasCZT"} };
   for( const std::pair<std::string,std::string> &skew_type : skew_types )
   {
     params = json::object();
@@ -2012,6 +2031,33 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
     BOOST_CHECK( result["modifiedPeak"]["fitFor"]["skewPar0"].get<bool>() == false );
     BOOST_CHECK( result["modifiedPeak"]["fitFor"]["skewPar1"].get<bool>() == false );
   }
+
+  // Test 8b: GADRAS skew - all six parameters are reachable, and changing to it gives the default
+  //  fit-for flags (only the two tail amplitudes fit; the detector characteristics fixed).
+  params = json::object();
+  params["energy"] = fitted_peak_energies[1];
+  params["skewType"] = "GadrasGeneric";
+  params["skewPar4"] = 1.5;
+  params["skewPar5"] = 2.5;
+  params["refit"] = false;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_REQUIRE( result["modifiedPeak"].contains("skewParams") && result["modifiedPeak"].contains("fitFor") );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["skewParams"]["skewPar4"].get<double>(), 1.5, 1.0E-6 );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["skewParams"]["skewPar5"].get<double>(), 2.5, 1.0E-6 );
+  for( int i = 0; i < 6; ++i )
+  {
+    const std::string key = "skewPar" + std::to_string(i);
+    BOOST_CHECK_EQUAL( result["modifiedPeak"]["fitFor"][key].get<bool>(), (i < 2) );
+  }
+
+  params = json::object();
+  params["energy"] = fitted_peak_energies[1];
+  params["fitForSkewPar5"] = true;
+  params["refit"] = false;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result["modifiedPeak"]["fitFor"]["skewPar5"].get<bool>() );
 
   // Test 9: Set fit-for flags only (should NOT trigger refit)
   params = json::object();
@@ -2698,6 +2744,15 @@ BOOST_AUTO_TEST_CASE( test_executeCurrieMdaCalc_WithNuclideAndDistance )
     const double br = result["branchRatio"].get<double>();
     BOOST_CHECK_GT( br, 0.5 );
     BOOST_CHECK_LT( br, 1.0 );
+
+    // The detector efficiency uncertainty the limits used is reported, and the caller's own
+    //  additional uncertainty (none here) is echoed separately from the combined total.
+    BOOST_REQUIRE( result.contains("drfEffFracUncert") );
+    BOOST_REQUIRE( result.contains("drfStatesOwnUncert") );
+    BOOST_REQUIRE( result.contains("totalSystematicUncertainty") );
+    BOOST_CHECK_EQUAL( result["additionalUncertainty"].get<double>(), 0.0 );
+    BOOST_CHECK_CLOSE( result["totalSystematicUncertainty"].get<double>(),
+                       result["drfEffFracUncert"].get<double>(), 0.5 );
   }
   catch( const std::exception &e )
   {
@@ -3754,6 +3809,52 @@ static json find_peak_near_energy( const json &result, const double target_energ
 
   return json();
 }//find_peak_near_energy(...)
+
+
+// The LLM/MCP "fit peaks for nuclides" uses the skew type of the peak-fit prefs, like the GUI does
+//  (e.g., a GADRAS detector's peak shape) - it used to always fit with no skew.
+BOOST_AUTO_TEST_CASE( test_fitPeaksForNuclides_uses_prefs_skew )
+{
+  InterSpecTestFixture fixture;
+
+  const string test_file = SpecUtils::append_path( g_test_file_dir, "SimpleActivityCalc/Ra226 Shielded.n42" );
+  load_spectrum_as_foreground( fixture.m_interspec, test_file );
+
+  const shared_ptr<SpecMeas> meas = fixture.m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  BOOST_REQUIRE( meas );
+
+  auto prefs = meas->peakFitDetPrefs() ? make_shared<PeakFitDetPrefs>( *meas->peakFitDetPrefs() )
+                                       : make_shared<PeakFitDetPrefs>();
+  prefs->m_peak_skew_type = PeakDef::SkewType::GadrasGeneric;
+  prefs->m_roi_independent_skew = false;
+  const double skew[6] = { 3.8, 0.0, 0.0, 0.0, 0.0, 0.0 };  // the HPGe_Planar50 Detector.dat shape
+  for( size_t i = 0; i < 6; ++i )
+    prefs->m_lower_energy_skew[i] = skew[i];
+  meas->setPeakFitDetPrefs( prefs );
+
+  AnalystChecks::FitPeaksForNuclideOptions fit_options;
+  fit_options.sources = { "Ra226" };
+  fit_options.specType = SpecUtils::SpectrumType::Foreground;
+
+  const AnalystChecks::FitPeaksForNuclideStatus fit_status
+    = AnalystChecks::fit_peaks_for_nuclides( fit_options, fixture.m_interspec );
+  BOOST_REQUIRE( !fit_status.fitPeaks.empty() );
+
+  // Only the Ra226 peaks are fit; peaks already in the file for other sources are kept as they were
+  size_t num_ra226 = 0;
+  for( const shared_ptr<const PeakDef> &p : fit_status.fitPeaks )
+  {
+    if( !p->parentNuclide() || (p->parentNuclide()->symbol != "Ra226") )
+      continue;
+
+    num_ra226 += 1;
+    BOOST_TEST_INFO( "peak at " << p->mean() << " keV, skew=" << PeakDef::to_string(p->skewType()) );
+    BOOST_CHECK( p->skewType() == PeakDef::SkewType::GadrasGeneric );
+    if( p->skewType() == PeakDef::SkewType::GadrasGeneric )
+      BOOST_CHECK_CLOSE( p->coefficient( PeakDef::SkewPar0 ), skew[0], 1.0E-6 );
+  }
+  BOOST_CHECK( num_ra226 >= 3 );
+}//test_fitPeaksForNuclides_uses_prefs_skew
 
 
 BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )

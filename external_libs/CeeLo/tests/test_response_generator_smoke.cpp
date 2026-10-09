@@ -32,6 +32,7 @@
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
 #include "materials/Material.h"
+#include "efficiency/EfficiencyCalculator.h"
 
 #include <cmath>
 #include <cstdio>
@@ -101,6 +102,16 @@ BOOST_AUTO_TEST_CASE(generate_evaluates_and_round_trips) {
     const EffResult tot = resp->eps_total(662.0, 0.0, 0.0, 50.0);
     BOOST_CHECK_GT(tot.value, far.value);
 
+    // The near-field nodes' totals are kept, on the FEP table's lattice, anchored to 1.
+    const NearFieldModel& tn = resp->tot_eff.near_field;
+    BOOST_REQUIRE(!tn.empty());
+    BOOST_CHECK(tn.energies_keV == resp->near_field.energies_keV);
+    BOOST_CHECK(tn.cos_thetas == resp->near_field.cos_thetas);
+    BOOST_CHECK(tn.dists_cm == resp->near_field.dists_cm);
+    for (size_t e = 0; e < tn.energies_keV.size(); ++e)
+        for (size_t c = 0; c < tn.cos_thetas.size(); ++c)
+            BOOST_CHECK_EQUAL(tn.ln_n[tn.index(e, c, tn.dists_cm.size() - 1)], 0.0);
+
     // XML round trip of a REAL generated object stays bit-stable.
     const std::string xml = resp->to_xml_string();
     std::shared_ptr<DetectorResponse> r2 = DetectorResponse::from_xml_string(xml);
@@ -125,9 +136,72 @@ BOOST_AUTO_TEST_CASE(generate_evaluates_and_round_trips) {
                             "probe E=" << p.energy_keV << " d=" << p.d_cm
                                        << " ct=" << p.cos_theta << " rel="
                                        << rel);
+        if (p.eps_tot > 0.0 && p.tot_unc / p.eps_tot < 0.05) {
+            const EffResult t = resp->eps_total(p.energy_keV, theta,
+                                                p.phi_deg * 3.14159265358979 / 180.0, p.d_cm);
+            BOOST_CHECK_MESSAGE(std::fabs(t.value / p.eps_tot - 1.0) < 0.15,
+                                "total probe E=" << p.energy_keV << " d=" << p.d_cm
+                                                 << " ct=" << p.cos_theta);
+        }
         ++n_checked;
     }
     BOOST_CHECK_GT(n_checked, 3);
+}
+
+BOOST_AUTO_TEST_CASE(scans_stop_on_total_keeps_the_total) {
+    const GeometryDescriptor gd = small_nai();
+    GenerationOptions opts = coarse_options();
+    opts.scans_stop_on_total = true;
+    GenerationStats stats;
+    opts.stats_out = &stats;
+
+    std::shared_ptr<DetectorResponse> resp = ResponseGenerator::generate(gd, opts);
+    BOOST_REQUIRE(resp);
+    BOOST_CHECK(!resp->tot_eff.near_field.empty());
+
+    // The backbone stops on FEP precision, the scans on the total's (a budget cap aside).
+    int n_backbone = 0, n_scan = 0;
+    for (const NodeStat& ns : stats.nodes) {
+        const StopReason why = static_cast<StopReason>(ns.stop);
+        if (why != StopReason::FepPrecision && why != StopReason::TotalPrecision)
+            continue;
+        if (ns.stage == 1) {
+            BOOST_CHECK(why == StopReason::FepPrecision);
+            ++n_backbone;
+        } else if (ns.stage == 2 || ns.stage == 3) {
+            BOOST_CHECK(why == StopReason::TotalPrecision);
+            BOOST_CHECK_LE(ns.tot_rel_prec, opts.node_fep_precision * 1.0001);
+            ++n_scan;
+        }
+    }
+    BOOST_CHECK_GT(n_backbone, 3);
+    BOOST_CHECK_GT(n_scan, 10);
+
+    // The total - the product of this mode - still agrees with fresh MC near and far.
+    GenerationOptions probe_opts = coarse_options();
+    probe_opts.node_fep_precision = 0.02;
+    const std::vector<ProbePoint> bank =
+        ResponseGenerator::probe_bank(gd, probe_opts, 8, 5001, 3.0, 60.0);
+    int n_checked = 0;
+    for (const ProbePoint& p : bank) {
+        if (p.eps_tot <= 0.0 || p.tot_unc / p.eps_tot > 0.05) continue;
+        const EffResult t = resp->eps_total(p.energy_keV, std::acos(p.cos_theta),
+                                            p.phi_deg * 3.14159265358979 / 180.0, p.d_cm);
+        BOOST_CHECK_MESSAGE(std::fabs(t.value / p.eps_tot - 1.0) < 0.15,
+                            "total probe E=" << p.energy_keV << " d=" << p.d_cm
+                                             << " ct=" << p.cos_theta);
+        ++n_checked;
+    }
+    BOOST_CHECK_GT(n_checked, 3);
+
+    // Refused where the angular nodes exist for the FEP.
+    GenerationOptions bad = coarse_options();
+    bad.scans_stop_on_total = true;
+    bad.transfer_mode = true;
+    BOOST_CHECK_THROW(ResponseGenerator::generate(gd, bad), std::runtime_error);
+    bad.transfer_mode = false;
+    bad.closed_loop = true;
+    BOOST_CHECK_THROW(ResponseGenerator::generate(gd, bad), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(grounding_recovers_injected_bias) {

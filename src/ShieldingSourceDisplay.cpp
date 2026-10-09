@@ -97,10 +97,10 @@
 #include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SwitchCheckbox.h"
-#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -3436,10 +3436,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
 
   // Detector-efficiency-uncertainty handling: a 3-option dropdown (None / propagate-to-results /
-  //  use-in-likelihood) mapping 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  The whole
-  //  row is hidden by #handleDetectorChanged when the current DRF carries no efficiency uncertainty.
+  //  use-in-likelihood) mapping 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod, an opt-in for
+  //  an assumed uncertainty, and a status line saying what is used - see
+  //  #updateDrfUncertMethodAvailability.
   m_drfUncertMethodRow = m_optionsDiv->addNew<WContainerWidget>();
-  m_drfUncertMethodRow->addStyleClass( "FitOptionsRow" );
+  m_drfUncertMethodRow->addStyleClass( "FitOptionsRow DrfUncertRow" );
   WLabel *drfUncertLabel = m_drfUncertMethodRow->addNew<WLabel>( WString::tr("ssd-drf-uncert-label") );
   HelpSystem::attachToolTipOn( m_drfUncertMethodRow, WString::tr("ssd-tt-drf-uncert"), showToolTips );
   m_drfUncertMethodCombo = m_drfUncertMethodRow->addNew<WComboBox>();
@@ -3451,6 +3452,19 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_drfUncertMethodCombo->setCurrentIndex( 1 );  //matches ShieldingSourceFitOptions default (ErrorPropagation)
   m_lastDrfUncertMethodIndex = 1;
   m_drfUncertMethodCombo->changed().connect( this, &ShieldingSourceDisplay::drfUncertMethodChanged );
+
+  // Only shown for a DRF that states no efficiency uncertainty of its own, yet reports an assumed one.
+  m_drfUncertAssumedCb = m_drfUncertMethodRow->addNew<WCheckBox>( WString::tr("ssd-cb-drf-uncert-assumed") );
+  m_drfUncertAssumedCb->addStyleClass( "CbNoLineBreak DrfUncertAssumedCb" );
+  m_drfUncertAssumedCb->setChecked( false );  //matches ShieldingSourceFitOptions default
+  m_drfUncertAssumedCb->setHidden( true );
+  HelpSystem::attachToolTipOn( m_drfUncertAssumedCb, WString::tr("ssd-tt-drf-uncert-assumed"), showToolTips );
+  m_drfUncertAssumedCb->checked().connect( this, &ShieldingSourceDisplay::drfUncertAssumedChanged );
+  m_drfUncertAssumedCb->unChecked().connect( this, &ShieldingSourceDisplay::drfUncertAssumedChanged );
+
+  m_drfUncertStatus = m_drfUncertMethodRow->addNew<WText>();
+  m_drfUncertStatus->addStyleClass( "DrfUncertStatus" );
+  updateDrfUncertMethodAvailability();  //the detector display and distance already exist
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
   lineDiv->addStyleClass( "FitOptionsRow" );
@@ -3869,12 +3883,13 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
                                          && m_correctForCascade->isEnabled());
 
   // Combo index maps directly to the DrfUncertaintyMethod enum (None, ErrorPropagation, Likelihood).
-  //  Read unconditionally, even when the row is hidden (DRF carries no efficiency uncertainty): this
-  //  preserves the user's choice across DRF swaps and into serialization.  When the choice ends up
-  //  non-None against an uncertainty-free DRF the fit still runs statistics-only (empty
-  //  peakEffFracCovariance) and the calc surfaces a warning - see check_for_fit_warnings.
+  //  Read as chosen, whatever the DRF: this preserves the user's choice across DRF swaps and into
+  //  serialization.  A non-None choice against a DRF reporting no uncertainty runs statistics-only
+  //  and the calc warns (check_for_fit_warnings); the row stays visible and enabled, with a status
+  //  line saying the detector reports none, so the user can act on that warning.
   options.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>(
                                 std::max( 0, m_drfUncertMethodCombo->currentIndex() ) );
+  options.drf_uncert_include_assumed = m_drfUncertAssumedCb->isChecked();  //read even when hidden
 
   // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk,
   //  ImportedGrid).
@@ -5950,6 +5965,27 @@ void ShieldingSourceDisplay::drfUncertMethodChanged()
 }//void drfUncertMethodChanged()
 
 
+void ShieldingSourceDisplay::drfUncertAssumedChanged()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_drfUncertAssumedCb->setChecked( !display->m_drfUncertAssumedCb->isChecked() );
+        display->drfUncertAssumedChanged();
+      }
+    };
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Use assumed detector-efficiency uncertainty changed." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void drfUncertAssumedChanged()
+
+
 void ShieldingSourceDisplay::correctForCascadeChanged()
 {
   using GammaInteractionCalc::CascadeSummingCalc;
@@ -6161,7 +6197,7 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
 
   // "Imported efficiency grid" is only listed for a DRF imported from a .par grid, or while selected.
   const int grid_index = static_cast<int>( VolumetricEffMethod::ImportedGrid );
-  const bool list_grid = (det && DetEffG2kPar::isGridResponse( det->ceeloResponse() ))
+  const bool list_grid = (det && det->hasImportedGrid())
                          || (m_volEffMethodCombo->currentIndex() == grid_index);
   if( list_grid && (m_volEffMethodCombo->count() <= grid_index) )
     m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );
@@ -7193,41 +7229,97 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
   if( m_showDiagramBtn )
     m_showDiagramBtn->setHidden( !locked_setup && (numberShieldings() == 0) );
 
-  updateDrfUncertMethodAvailability();
-  updateChi2Chart();
+  updateChi2Chart();  //also updates the efficiency-uncertainty controls
   updateCascadeAvailability();
 }//void handleDetectorChanged()
 
 
 void ShieldingSourceDisplay::updateDrfUncertMethodAvailability()
 {
-  // A DRF carries efficiency-uncertainty information when it has an attached CeeLo MC response or a
-  //  DetectorEfficiencyUncert - exactly the two branches DetectorPeakResponse::efficiencyFracCovariance
-  //  dispatches to (checking those is cheaper and more robust than probing the covariance itself).
-  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  const bool has_uncert = ( det && (det->efficiencyUncert() || det->ceeloResponse()) );
+  if( !m_drfUncertMethodCombo || !m_drfUncertAssumedCb || !m_drfUncertStatus || !m_detectorDisplay )
+    return;  //still being constructed
 
-  if( m_drfUncertMethodRow )
-    m_drfUncertMethodRow->setHidden( !has_uncert );
+  // What the DRF reports, asked the way the fit asks (DetectorPeakResponse::efficiencyFracCovariance
+  //  / efficiencyEval): at a representative energy, and at the source distance when it is known, so
+  //  a response's near-field allowance shows.
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  DrfModifyCalc::UncertSummary summary;
+  if( det && det->isValid() )
+  {
+    summary = DrfModifyCalc::uncertSummary( *det );
+    if( summary.valid && !det->isFixedGeometry() )
+    {
+      try
+      {
+        const double distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+        summary = DrfModifyCalc::uncertSummary( *det, summary.energy, distance );
+      }catch( std::exception & )
+      {
+        //Unparsable distance - the far-field summary will do
+      }
+    }//if( not fixed geometry )
+  }//if( det && det->isValid() )
+
+  const bool has_uncert = (summary.valid && (summary.total > 0.0));
+
+  // The row stays visible and enabled either way, so it is plain whether an uncertainty is used, and
+  //  a "requested but none available" fit warning can be answered by choosing "Don't use".
 
   // First-load default: if the very first DRF we see has no efficiency uncertainty, start on None
   //  rather than the struct default (ErrorPropagation), per the requested first-load behavior.  This
-  //  fires once; later DRF swaps only toggle visibility, and a subsequent state restore overrides it.
+  //  fires once; later DRF swaps only toggle availability, and a subsequent state restore overrides it.
   if( !m_drfUncertMethodDefaultApplied )
   {
     m_drfUncertMethodDefaultApplied = true;
-    if( !has_uncert && m_drfUncertMethodCombo )
+    if( !has_uncert )
     {
       m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>(ShieldingSourceFitCalc::DrfUncertaintyMethod::None) );
       m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();
     }
   }//if( !m_drfUncertMethodDefaultApplied )
+
+  const auto pct = []( const double frac ) -> string {
+    return SpecUtils::printCompact( 100.0*frac, 2 );
+  };
+
+  m_drfUncertAssumedCb->setHidden( !summary.dataIsAssumed );
+  if( summary.dataIsAssumed )
+    m_drfUncertAssumedCb->setText( WString::tr("ssd-cb-drf-uncert-assumed").arg( pct(summary.data) ) );
+
+  char energy[32] = { '\0' };
+  snprintf( energy, sizeof(energy), "%.0f", summary.energy );
+
+  const bool include_assumed = m_drfUncertAssumedCb->isChecked();
+  const bool method_none = (m_drfUncertMethodCombo->currentIndex()
+                            == static_cast<int>(ShieldingSourceFitCalc::DrfUncertaintyMethod::None));
+  WString status;
+  if( !has_uncert )
+    status = WString::tr("ssd-drf-uncert-status-none");
+  else if( method_none )
+    status = WString::tr("ssd-drf-uncert-status-off");
+  else if( summary.usedFrac( include_assumed ) <= 0.0 )
+    status = WString::tr("ssd-drf-uncert-status-assumed-unused").arg( pct(summary.data) );
+  else if( summary.statesOwn && (summary.model > 0.0) )
+    status = WString::tr("ssd-drf-uncert-status-stated-model").arg( pct(summary.total) ).arg( energy )
+                                                               .arg( pct(summary.model) );
+  else if( summary.statesOwn )
+    status = WString::tr("ssd-drf-uncert-status-stated").arg( pct(summary.total) ).arg( energy );
+  else if( summary.dataIsAssumed && include_assumed )
+    status = WString::tr("ssd-drf-uncert-status-assumed").arg( pct(summary.total) ).arg( energy )
+                                                         .arg( pct(summary.data) );
+  else
+    status = WString::tr("ssd-drf-uncert-status-model-only").arg( pct(summary.model) ).arg( energy )
+                                                           .arg( pct(summary.data) );
+  m_drfUncertStatus->setText( status );
 }//void updateDrfUncertMethodAvailability()
 
 void ShieldingSourceDisplay::updateChi2Chart()
 {
   m_chi2ChartNeedsUpdating = true;
   scheduleRender(); //trigger re-render
+
+  // Every fit-input change (DRF, distance, method) can change what efficiency uncertainty is used.
+  updateDrfUncertMethodAvailability();
 
   // Single chokepoint for "the user changed a fit input": drives live/auto-fit (re)launch, or
   //  the manual-mode "needs update" button hint.  No-op during construction and while applying
@@ -8847,6 +8939,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_drfUncertMethodDefaultApplied = true;
   m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>( options.drf_uncert_method ) );
   m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();  //else the next user change undoes to a stale index
+  m_drfUncertAssumedCb->setChecked( options.drf_uncert_include_assumed );
   updateDrfUncertMethodAvailability();
   setVolEffMethodIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index

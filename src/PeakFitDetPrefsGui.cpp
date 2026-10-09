@@ -41,9 +41,9 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/SkewParamsGrid.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -56,24 +56,19 @@ PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMod
     m_viewer( viewer ),
     m_compactMode( compactMode ),
     m_programmaticUpdate( false ),
+    m_notifyingOwnChange( false ),
     m_collapsedDiv( nullptr ),
     m_expandedDiv( nullptr ),
     m_detTypeCombo( nullptr ),
     m_fwhmMethodCombo( nullptr ),
     m_skewTypeCombo( nullptr ),
-    m_skewParamsDiv( nullptr ),
+    m_skewParamsGrid( nullptr ),
     m_roiIndepCb( nullptr ),
     m_fitSkewLink( nullptr ),
     m_sourceLabel( nullptr ),
     m_pendingFwhmMethod( PeakFitDetPrefs::FwhmMethod::Normal )
 {
   assert( m_viewer );
-
-  for( int i = 0; i < 6; ++i )
-  {
-    m_lowerSkewSpin[i] = nullptr;
-    m_upperSkewSpin[i] = nullptr;
-  }
 
   addStyleClass( "PeakFitDetPrefsGui");
 
@@ -277,16 +272,20 @@ void PeakFitDetPrefsGui::init()
     if( !m_programmaticUpdate )
     {
       const bool hide = m_roiIndepCb->isChecked();
-      m_skewParamsDiv->setHidden( hide);
+      m_skewParamsGrid->setHidden( hide || !PeakDef::num_skew_parameters( m_skewParamsGrid->skewType() ));
       if( m_fitSkewLink )
         m_fitSkewLink->setHidden( hide);
       userChangedValue();
     }
   } );
 
-  // Skew parameters container (dynamic rows)
-  m_skewParamsDiv = contentDiv->addNew<WContainerWidget>();
-  m_skewParamsDiv->addStyleClass( "PfdpgSkewParams");
+  // Skew parameter values (blank for a parameter the preferences give no value for)
+  m_skewParamsGrid = contentDiv->addNew<SkewParamsGrid>( false, true );
+  m_skewParamsGrid->addStyleClass( "PfdpgSkewParams");
+  m_skewParamsGrid->userChanged().connect( this, [this](){
+    if( !m_programmaticUpdate )
+      userChangedValue();
+  } );
 
   // "fit skew pars" link - visible when skew is selected and ROI-independent is unchecked
   m_fitSkewLink = contentDiv->addNew<WText>( WString::tr( "pfdpg-fit-skew-link" ));
@@ -322,81 +321,6 @@ void PeakFitDetPrefsGui::toggleExpanded()
 
 namespace
 {
-  // Returns the PeakEdit.xml message IDs for label and tooltip of a given skew parameter.
-  // The PeakEdit message resource bundle is already loaded by InterSpecApp.
-  void skew_param_msg_ids( const PeakDef::SkewType skewType, const size_t paramIndex,
-                           const char *&labelId, const char *&tooltipId )
-  {
-    labelId = nullptr;
-    tooltipId = nullptr;
-
-    switch( skewType )
-    {
-      case PeakDef::NoSkew:
-      case PeakDef::NumSkewType:
-        return;
-
-      case PeakDef::Bortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-bortel-tau"; tooltipId = "pe-tt-skew-bortel-tau"; }
-        return;
-
-      case PeakDef::GaussExp:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-gaussexp-k"; tooltipId = "pe-tt-skew-gaussexp-k"; }
-        return;
-
-      case PeakDef::CrystalBall:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-crystalball-alpha"; tooltipId = "pe-tt-skew-crystalball-alpha"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-crystalball-n"; tooltipId = "pe-tt-skew-crystalball-n"; }
-        return;
-
-      case PeakDef::ExpGaussExp:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-expgaussexp-kl"; tooltipId = "pe-tt-skew-expgaussexp-kl"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-expgaussexp-kh"; tooltipId = "pe-tt-skew-expgaussexp-kh"; }
-        return;
-
-      case PeakDef::DoubleSidedCrystalBall:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-dscb-alphalow"; tooltipId = "pe-tt-skew-dscb-alphalow"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-dscb-nlow"; tooltipId = "pe-tt-skew-dscb-nlow"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-dscb-alphahigh"; tooltipId = "pe-tt-skew-dscb-alphahigh"; }
-        if( paramIndex == 3 ){ labelId = "pe-label-skew-dscb-nhigh"; tooltipId = "pe-tt-skew-dscb-nhigh"; }
-        return;
-
-      case PeakDef::VoigtPlusBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-voigtplusbortel-gamma"; tooltipId = "pe-tt-skew-voigtplusbortel-gamma"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-voigtplusbortel-r"; tooltipId = "pe-tt-skew-voigtplusbortel-r"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-voigtplusbortel-tau"; tooltipId = "pe-tt-skew-voigtplusbortel-tau"; }
-        return;
-
-      case PeakDef::GaussPlusBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-gaussplusbortel-r"; tooltipId = "pe-tt-skew-gaussplusbortel-r"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-gaussplusbortel-tau"; tooltipId = "pe-tt-skew-gaussplusbortel-tau"; }
-        return;
-
-      case PeakDef::DoubleBortel:
-        if( paramIndex == 0 ){ labelId = "pe-label-skew-doublebortel-tau1"; tooltipId = "pe-tt-skew-doublebortel-tau1"; }
-        if( paramIndex == 1 ){ labelId = "pe-label-skew-doublebortel-deltatau2"; tooltipId = "pe-tt-skew-doublebortel-deltatau2"; }
-        if( paramIndex == 2 ){ labelId = "pe-label-skew-doublebortel-eta"; tooltipId = "pe-tt-skew-doublebortel-eta"; }
-        return;
-
-      case PeakDef::GadrasGeneric:
-      case PeakDef::GadrasCZT:
-      {
-        // GADRAS types use 6 parameters (low/high skew, low/high power, low/high extent).
-        static const char * const s_gadras_label_ids[6] = {
-          "pe-label-skew-gadras-0", "pe-label-skew-gadras-1", "pe-label-skew-gadras-2",
-          "pe-label-skew-gadras-3", "pe-label-skew-gadras-4", "pe-label-skew-gadras-5"
-        };
-        static const char * const s_gadras_tt_ids[6] = {
-          "pe-tt-skew-gadras-0", "pe-tt-skew-gadras-1", "pe-tt-skew-gadras-2",
-          "pe-tt-skew-gadras-3", "pe-tt-skew-gadras-4", "pe-tt-skew-gadras-5"
-        };
-        if( paramIndex < 6 ){ labelId = s_gadras_label_ids[paramIndex]; tooltipId = s_gadras_tt_ids[paramIndex]; }
-        return;
-      }
-    }//switch( skewType )
-  }//void skew_param_msg_ids(...)
-
-
   /** Returns reasonable default skew parameter values for a given skew type and detector type.
    *  For scintillators (NaI/LaBr), values are chosen to produce near-Gaussian peaks.
    *  For HPGe, values reflect typical low-energy tailing that is stronger at lower energies.
@@ -621,192 +545,35 @@ namespace
 
 void PeakFitDetPrefsGui::updateSkewParamRows()
 {
-  // Clear existing param widgets
-  m_skewParamsDiv->clear();
-  for( int i = 0; i < 6; ++i )
-  {
-    m_lowerSkewSpin[i] = nullptr;
-    m_upperSkewSpin[i] = nullptr;
-  }
-
   const int skewIdx = m_skewTypeCombo->currentIndex();
-  if( skewIdx < 0 || skewIdx >= static_cast<int>( PeakDef::NumSkewType ) )
-    return;
-
-  const PeakDef::SkewType skewType = static_cast<PeakDef::SkewType>( skewIdx);
-  const size_t nparams = PeakDef::num_skew_parameters( skewType);
+  const PeakDef::SkewType skewType = ((skewIdx >= 0) && (skewIdx < static_cast<int>( PeakDef::NumSkewType )))
+                                     ? static_cast<PeakDef::SkewType>( skewIdx ) : PeakDef::NoSkew;
+  const size_t nparams = PeakDef::num_skew_parameters( skewType );
   const bool hasSkew = (nparams > 0);
+
+  m_skewParamsGrid->setSkewType( skewType );
 
   // Hide checkbox, skew params, and fit link when NoSkew is selected
   if( m_roiIndepCb && m_roiIndepCb->parent() )
     m_roiIndepCb->parent()->setHidden( !hasSkew);
-  m_skewParamsDiv->setHidden( !hasSkew || m_roiIndepCb->isChecked());
+  m_skewParamsGrid->setHidden( !hasSkew || m_roiIndepCb->isChecked());
   if( m_fitSkewLink )
     m_fitSkewLink->setHidden( !hasSkew || m_roiIndepCb->isChecked());
 
-  if( !hasSkew )
+  // When the user picks a skew type, start from the detector's own values for it, if it has them
+  //  (e.g., a GADRAS detector's tail powers and extents); the grid starts the others at their defaults.
+  if( m_programmaticUpdate )
     return;
 
-  // Check if any parameter is energy-dependent (needs two columns)
-  bool hasEnergyDep = false;
+  const shared_ptr<const SpecMeas> fgMeas = m_viewer ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+  const shared_ptr<const DetectorPeakResponse> fgDrf = fgMeas ? fgMeas->detector() : nullptr;
+  const shared_ptr<const PeakFitDetPrefs> drfPrefs = fgDrf ? fgDrf->peakFitDetPrefs() : nullptr;
   for( size_t p = 0; p < nparams; ++p )
   {
-    const PeakDef::CoefficientType coefType
-      = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
-    if( PeakDef::is_energy_dependent( skewType, coefType ) )
-    {
-      hasEnergyDep = true;
-      break;
-    }
-  }//for( check energy dependence )
-
-  // Use a single grid table for all params: 3-col if energy-dep, 2-col otherwise
-  WContainerWidget *table = m_skewParamsDiv->addNew<WContainerWidget>();
-  table->addStyleClass( hasEnergyDep ? "PfdpgParamTable" : "PfdpgParamTable PfdpgSingleCol");
-
-  // Single header row at top with "Low E" / "High E" column labels
-  if( hasEnergyDep )
-  {
-    table->addNew<WText>( ""); // empty name-column cell
-    WText *lowHeader = table->addNew<WText>( WString::tr( "pfdpg-lower-header" ));
-    lowHeader->addStyleClass( "PfdpgColHeader");
-    WText *highHeader = table->addNew<WText>( WString::tr( "pfdpg-upper-header" ));
-    highHeader->addStyleClass( "PfdpgColHeader");
+    const PeakDef::CoefficientType coefType = PeakDef::CoefficientType( PeakDef::SkewPar0 + p );
+    if( !PeakDef::is_energy_dependent( skewType, coefType ) )
+      m_skewParamsGrid->setValue( p, skew_starting_value( skewType, coefType, nullptr, drfPrefs.get() ), std::nullopt );
   }
-
-  for( size_t p = 0; p < nparams; ++p )
-  {
-    const PeakDef::CoefficientType coefType
-      = static_cast<PeakDef::CoefficientType>(
-          static_cast<int>( PeakDef::CoefficientType::SkewPar0 ) + static_cast<int>( p ));
-
-    const bool energyDep = PeakDef::is_energy_dependent( skewType, coefType);
-
-    double range_lower = 0, range_upper = 0, start_val = 0, step_size = 0;
-    PeakDef::skew_parameter_range( skewType, coefType, range_lower, range_upper, start_val, step_size);
-
-    const char *labelMsgId = nullptr;
-    const char *tooltipMsgId = nullptr;
-    skew_param_msg_ids( skewType, p, labelMsgId, tooltipMsgId);
-
-    // Build tooltip text: base tooltip + energy-dependence note
-    WString tooltipText;
-    if( tooltipMsgId )
-    {
-      tooltipText = WString::tr( tooltipMsgId);
-      tooltipText += energyDep ? WString::tr( "pfdpg-tt-energy-dep" )
-                               : WString::tr( "pfdpg-tt-not-energy-dep");
-    }
-
-    // Parameter label
-    WText *paramLabel = table->addNew<WText>(
-      labelMsgId ? WString::tr( labelMsgId ) : WString::tr( "pfdpg-param-label" ).arg( static_cast<int>( p ) ));
-    paramLabel->addStyleClass( "PfdpgParamName");
-
-    if( !tooltipText.empty() )
-    {
-      HelpSystem::attachToolTipOn( paramLabel, tooltipText, true );
-    }
-
-    if( energyDep )
-    {
-      // Energy-dependent: label | lowerSpin | upperSpin on one row
-      NativeFloatSpinBox *lowerSpin = table->addNew<NativeFloatSpinBox>();
-      lowerSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      //lowerSpin->setSingleStep( static_cast<float>( step_size ));
-      lowerSpin->setFormatString( "%.4G");
-      lowerSpin->setSpinnerHidden( true);
-      lowerSpin->addStyleClass( "PfdpgSpin");
-      lowerSpin->setPlaceholderText( "fit");
-      m_lowerSkewSpin[p] = lowerSpin;
-      lowerSpin->valueChanged().connect( this, [this]( float ){
-        if( !m_programmaticUpdate )
-          userChangedValue();
-      } );
-
-      NativeFloatSpinBox *upperSpin = table->addNew<NativeFloatSpinBox>();
-      upperSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      //upperSpin->setSingleStep( static_cast<float>( step_size ));
-      upperSpin->setFormatString( "%.4G");
-      upperSpin->setSpinnerHidden( true);
-      upperSpin->addStyleClass( "PfdpgSpin");
-      upperSpin->setPlaceholderText( "fit");
-      
-      m_upperSkewSpin[p] = upperSpin;
-      upperSpin->valueChanged().connect( this, [this]( float ){
-        if( !m_programmaticUpdate )
-          userChangedValue();
-      } );
-
-      if( !m_programmaticUpdate )
-      {
-        lowerSpin->setValue( static_cast<float>(start_val));
-        upperSpin->setValue( static_cast<float>(start_val));
-      }
-      
-      if( !tooltipText.empty() )
-      {
-        HelpSystem::attachToolTipOn( lowerSpin, tooltipText, true );
-        HelpSystem::attachToolTipOn( upperSpin, tooltipText, true );
-      }
-    }
-    else
-    {
-      // Non-energy-dependent: label | valSpin (spanning remaining columns if 3-col grid)
-      NativeFloatSpinBox *valSpin = table->addNew<NativeFloatSpinBox>();
-      valSpin->setRange( static_cast<float>( range_lower ), static_cast<float>( range_upper ));
-      //valSpin->setSingleStep( static_cast<float>( step_size ));
-      valSpin->setFormatString( "%.4G");
-      valSpin->setSpinnerHidden( true);
-      valSpin->addStyleClass( hasEnergyDep ? "PfdpgSpin PfdpgSpinWide" : "PfdpgSpin");
-      valSpin->setPlaceholderText( "fit");
-      
-      m_lowerSkewSpin[p] = valSpin;
-      valSpin->valueChanged().connect( this, [this]( float ){
-        if( !m_programmaticUpdate )
-          userChangedValue();
-      } );
-
-      if( !m_programmaticUpdate )
-        valSpin->setValue( static_cast<float>(start_val));
-      
-      if( !tooltipText.empty() )
-      {
-        HelpSystem::attachToolTipOn( valSpin, tooltipText, true );
-      }
-    }
-  }//for( each skew param )
-
-  // Fill in reasonable defaults when user changes skew type (not during programmatic update)
-  if( !m_programmaticUpdate )
-  {
-    /*
-    const int detIdx = m_detTypeCombo->currentIndex();
-    PeakFitUtils::CoarseResolutionType detType = PeakFitUtils::CoarseResolutionType::Unknown;
-    switch( detIdx )
-    {
-      case 0:  detType = PeakFitUtils::CoarseResolutionType::Low;        break;
-      case 1:  detType = PeakFitUtils::CoarseResolutionType::LaBr;       break;
-      case 2:  detType = PeakFitUtils::CoarseResolutionType::CZT;        break;
-      case 3:  detType = PeakFitUtils::CoarseResolutionType::MedRes;     break;
-      case 4:  detType = PeakFitUtils::CoarseResolutionType::LowOrMedRes; break;
-      case 5:  detType = PeakFitUtils::CoarseResolutionType::High;       break;
-      default: break;
-    }
-
-    std::optional<double> defLower[6], defUpper[6];
-    default_skew_values( skewType, detType, defLower, defUpper);
-
-    for( size_t p = 0; p < nparams; ++p )
-    {
-      if( m_lowerSkewSpin[p] && defLower[p].has_value() )
-        m_lowerSkewSpin[p]->setValue( static_cast<float>( defLower[p].value() ));
-      if( m_upperSkewSpin[p] && defUpper[p].has_value() )
-        m_upperSkewSpin[p]->setValue( static_cast<float>( defUpper[p].value() ));
-    }
-     */
-  }//if( !m_programmaticUpdate )
 }//void updateSkewParamRows()
 
 
@@ -847,21 +614,12 @@ void PeakFitDetPrefsGui::userChangedValue()
   else
     newPrefs->m_peak_skew_type = PeakDef::NoSkew;
 
-  // Skew params: read from spin boxes if they exist and have valid text
+  // Skew params: blank values are not given
   const size_t nparams = PeakDef::num_skew_parameters( newPrefs->m_peak_skew_type);
   for( size_t p = 0; p < nparams; ++p )
   {
-    if( m_lowerSkewSpin[p] && !m_lowerSkewSpin[p]->text().empty()
-       && m_lowerSkewSpin[p]->text().toUTF8() != "fit" )
-    {
-      newPrefs->m_lower_energy_skew[p] = static_cast<double>( m_lowerSkewSpin[p]->value());
-    }
-
-    if( m_upperSkewSpin[p] && !m_upperSkewSpin[p]->text().empty()
-       && m_upperSkewSpin[p]->text().toUTF8() != "fit" )
-    {
-      newPrefs->m_upper_energy_skew[p] = static_cast<double>( m_upperSkewSpin[p]->value());
-    }
+    newPrefs->m_lower_energy_skew[p] = m_skewParamsGrid->lowerValue( p );
+    newPrefs->m_upper_energy_skew[p] = m_skewParamsGrid->upperValue( p );
   }
 
   newPrefs->m_roi_independent_skew = m_roiIndepCb->isChecked();
@@ -893,6 +651,11 @@ void PeakFitDetPrefsGui::userChangedValue()
   // Update the source label
   m_sourceLabel->setText( WString::tr( "pfdpg-source-label" )
                          + WString::tr( "pfdpg-src-user" ));
+
+  // Let other tools (e.g., Isotopics by nuclides, when it uses these prefs) know
+  m_notifyingOwnChange = true;
+  m_viewer->peakFitDetPrefsChanged().emit();
+  m_notifyingOwnChange = false;
 
   // Register undo/redo
   UndoRedoManager *undoManager = m_viewer->undoRedoManager();
@@ -926,7 +689,9 @@ void PeakFitDetPrefsGui::userChangedValue()
 
 void PeakFitDetPrefsGui::handlePrefsChanged()
 {
-  updateFromSpecMeas();
+  // Our own controls already show a change the user just made here
+  if( !m_notifyingOwnChange )
+    updateFromSpecMeas();
 }//void handlePrefsChanged()
 
 
@@ -1010,26 +775,10 @@ void PeakFitDetPrefsGui::updateFromSpecMeas()
   // Rebuild skew param rows and update checkbox/params visibility
   updateSkewParamRows();
 
-  // Fill in skew param values
+  // Fill in skew param values (blank where the prefs have none)
   const size_t nparams = PeakDef::num_skew_parameters( prefs->m_peak_skew_type);
   for( size_t p = 0; p < nparams; ++p )
-  {
-    if( m_lowerSkewSpin[p] )
-    {
-      if( prefs->m_lower_energy_skew[p].has_value() )
-        m_lowerSkewSpin[p]->setValue( static_cast<float>( prefs->m_lower_energy_skew[p].value() ));
-      else
-        m_lowerSkewSpin[p]->setText( "");
-    }
-
-    if( m_upperSkewSpin[p] )
-    {
-      if( prefs->m_upper_energy_skew[p].has_value() )
-        m_upperSkewSpin[p]->setValue( static_cast<float>( prefs->m_upper_energy_skew[p].value() ));
-      else
-        m_upperSkewSpin[p]->setText( "");
-    }
-  }//for( each param )
+    m_skewParamsGrid->setValue( p, prefs->m_lower_energy_skew[p], prefs->m_upper_energy_skew[p] );
 
   // Update source label
   WString srcTxt;
@@ -1054,13 +803,7 @@ void PeakFitDetPrefsGui::setControlsEnabled( const bool enabled )
   m_skewTypeCombo->setEnabled( enabled);
   m_roiIndepCb->setEnabled( enabled);
 
-  for( int i = 0; i < 6; ++i )
-  {
-    if( m_lowerSkewSpin[i] )
-      m_lowerSkewSpin[i]->setEnabled( enabled);
-    if( m_upperSkewSpin[i] )
-      m_upperSkewSpin[i]->setEnabled( enabled);
-  }
+  m_skewParamsGrid->setEditable( enabled );
 }//void setControlsEnabled( bool )
 
 

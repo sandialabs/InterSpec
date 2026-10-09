@@ -275,8 +275,8 @@ nlohmann::json stateToJsonDetailed( const RelActCalcAuto::RelActAutoGuiState &st
   result["fwhm_form"] = RelActCalcAuto::to_str(opts.fwhm_form);
   result["fwhm_estimation_method"] = RelActCalcAuto::to_str(opts.fwhm_estimation_method);
   result["skew_type"] = PeakDef::to_string(opts.skew_type);
-  if( opts.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore )
-    result["skew_from_peak_fit_preferences"] = RelActCalcAuto::Options::skew_prefs_usage_str( opts.skew_prefs_usage );
+  if( opts.skew_from_peak_fit_prefs )
+    result["skew_from_peak_fit_preferences"] = true;
   result["additional_br_uncert"] = opts.additional_br_uncert;
   result["background_subtract"] = state.background_subtract;
   result["show_ref_lines"] = state.show_ref_lines;
@@ -2283,16 +2283,13 @@ nlohmann::json executeModifyIsotopicsOptions(
   if( params.contains( "skew_type" ) )
   {
     const string skew_str = params.at( "skew_type" ).get<string>();
-    state.options.skew_type = PeakDef::skew_from_string( skew_str.c_str() );
     changes.push_back( "skew_type=" + skew_str );
 
     // An explicitly chosen skew type replaces using the one from the peak-fit preferences, which
     //  would otherwise override it.
-    if( state.options.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore )
-    {
-      state.options.skew_prefs_usage = RelActCalcAuto::Options::SkewPrefsUsage::Ignore;
+    if( state.options.skew_from_peak_fit_prefs )
       changes.push_back( "no longer using the skew from the peak-fit preferences" );
-    }
+    state.options.set_skew_type( PeakDef::skew_from_string( skew_str.c_str() ) );
   }
 
   // Handle background_subtract

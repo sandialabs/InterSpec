@@ -170,7 +170,9 @@ def getFWHM( energy ):
                      <li>A <b>.par</b> full-energy-peak efficiency grid, together with its
                         <b>DETECTOR.txt</b> geometry file; both are required.  If the <b>DETECTOR.txt</b>
                         describes several detectors, the one naming the <b>.par</b> file is used, or
-                        you will be asked to choose.</li>
+                        you will be asked to choose.  The grid has no total efficiency, which
+                        cascade-summing corrections need; add one by Monte Carlo with <em>Modify...</em>,
+                        on its &#34;Geom &amp; MC&#34; tab.</li>
                      <li>An ISOCS <b>.ecc</b> file, or an ANGLE file.  If an ANGLE file describes the
                         detector as well as a measured reference efficiency, it can be used as a
                         &#34;generic detector&#34;, so efficiencies are available for any source position.</li>

@@ -56,6 +56,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/MaterialDB.h"
@@ -198,6 +199,7 @@ DetectionLimitSimple::DetectionLimitSimple( InterSpec *specViewer )
   m_peakModel( nullptr ),
   m_resultTxt( nullptr ),
   m_warningTxt( nullptr ),
+  m_drfUncertTxt( nullptr ),
   m_moreInfoButton( nullptr ),
   m_chartErrMsgStack( nullptr ),
   m_errMsg( nullptr ),
@@ -334,6 +336,11 @@ void DetectionLimitSimple::init()
   m_warningTxt->addStyleClass( "MdaWarnMsg" );
   m_warningTxt->setInline( false );
   m_warningTxt->hide();
+
+  m_drfUncertTxt = resultsDiv->addNew<WText>( "" );
+  m_drfUncertTxt->addStyleClass( "MdaDrfUncertTxt" );
+  m_drfUncertTxt->setInline( false );
+  m_drfUncertTxt->hide();
   
   // Now put the "more info..." link below here and to the right
   m_moreInfoButton = resultsDiv->addNew<WPushButton>();
@@ -1497,36 +1504,42 @@ void DetectionLimitSimple::handleSystematicUncertChanged()
 }//void handleSystematicUncertChanged()
 
 
-float DetectionLimitSimple::currentSystematicUncertainty( Wt::WString &note ) const
+float DetectionLimitSimple::currentSystematicUncertainty( const double energy, Wt::WString &note ) const
 {
-  // With "Advanced" off, nothing here reaches the calculation: the tool must give exactly the
-  //  answers it gave before this section existed.
-  if( !m_advancedCb || !m_advancedCb->isChecked() )
-    return 0.0f;
+  // The detector response's own efficiency uncertainty always applies; kept below 1 (which the Currie
+  //  calculation requires) so an extrapolated, huge one gives "no finite detection limit" rather
+  //  than an error about fields the user did not fill in.
+  const double drf_uncert = std::min( 0.99, currentDrfUncert( energy ).usedFrac( false ) );
 
-  double dist_uncert = 0.0;
-  string txt = m_distanceUncert->text().toUTF8();
-  SpecUtils::trim( txt );
-  if( !txt.empty() )
+  // With "Advanced" off, the fields there do not reach the calculation.
+  double dist_uncert = 0.0, user_eff_uncert = 0.0;
+  if( m_advancedCb && m_advancedCb->isChecked() )
   {
-    try
+    string txt = m_distanceUncert->text().toUTF8();
+    SpecUtils::trim( txt );
+    if( !txt.empty() )
     {
-      dist_uncert = PhysicalUnits::stringToDistance( txt );
-    }catch( std::exception & )
-    {
-      throw runtime_error( WString::tr("dl-err-bad-dist-uncert").toUTF8() );
-    }
-  }//if( a distance uncertainty was entered )
+      try
+      {
+        dist_uncert = PhysicalUnits::stringToDistance( txt );
+      }catch( std::exception & )
+      {
+        throw runtime_error( WString::tr("dl-err-bad-dist-uncert").toUTF8() );
+      }
+    }//if( a distance uncertainty was entered )
 
-  double eff_uncert = 0.0;
-  txt = m_effUncert->text().toUTF8();
-  SpecUtils::trim( txt );
-  if( !txt.empty() )
-  {
-    if( !(stringstream(txt) >> eff_uncert) || (eff_uncert < 0.0) )
-      throw runtime_error( WString::tr("dl-err-bad-eff-uncert").toUTF8() );
-    eff_uncert /= 100.0;  //the field is a percent
-  }//if( an efficiency uncertainty was entered )
+    txt = m_effUncert->text().toUTF8();
+    SpecUtils::trim( txt );
+    if( !txt.empty() )
+    {
+      if( !(stringstream(txt) >> user_eff_uncert) || (user_eff_uncert < 0.0) )
+        throw runtime_error( WString::tr("dl-err-bad-eff-uncert").toUTF8() );
+      user_eff_uncert /= 100.0;  //the field is a percent
+    }//if( an efficiency uncertainty was entered )
+  }//if( "Advanced" is checked )
+
+  // The entered efficiency uncertainty is in addition to the DRF's.
+  const double eff_uncert = std::sqrt( user_eff_uncert*user_eff_uncert + drf_uncert*drf_uncert );
 
   if( (dist_uncert <= 0.0) && (eff_uncert <= 0.0) )
     return 0.0f;
@@ -1567,7 +1580,35 @@ float DetectionLimitSimple::currentSystematicUncertainty( Wt::WString &note ) co
                         .arg( SpecUtils::printCompact(100.0*u_rel, 3) ).toUTF8() );
 
   return static_cast<float>( u_rel );
-}//float currentSystematicUncertainty( Wt::WString &note ) const
+}//float currentSystematicUncertainty( const double energy, Wt::WString &note ) const
+
+
+DrfModifyCalc::UncertSummary DetectionLimitSimple::currentDrfUncert( const double energy ) const
+{
+  // Only when the result is converted to activity - which takes a gamma line, a DRF, and a distance
+  //  (see updateSpectrumDecorationsAndResultText); a limit in counts has no efficiency in it.
+  const int energyIndex = m_photoPeakEnergy->currentIndex();
+  if( (energyIndex < 0) || (energyIndex >= static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    return DrfModifyCalc::UncertSummary{};
+
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  if( !drf || !drf->isValid() || !(energy > 0.0) )
+    return DrfModifyCalc::UncertSummary{};
+
+  double distance = 0.0;
+  if( !drf->isFixedGeometry() )
+  {
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+    }catch( std::exception & )
+    {
+      return DrfModifyCalc::UncertSummary{};  //no distance, no limit in activity either
+    }
+  }//if( !drf->isFixedGeometry() )
+
+  return DrfModifyCalc::uncertSummary( *drf, static_cast<float>(energy), distance );
+}//DrfModifyCalc::UncertSummary currentDrfUncert( const double energy ) const
 
 
 void DetectionLimitSimple::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf )
@@ -1713,6 +1754,37 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       m_warningTxt->show();
     }
   }
+
+  // Whether the limit includes the detector efficiency's uncertainty - said either way, but only
+  //  beside a result, not an error.
+  m_drfUncertTxt->setText( "" );
+  m_drfUncertTxt->hide();
+  if( m_currentCurrieInput && (m_currentCurrieResults || m_currentDeconResults) )
+  {
+    const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+    const DrfModifyCalc::UncertSummary drf_uncert = currentDrfUncert( m_currentCurrieInput->gamma_energy );
+    const double used = drf_uncert.usedFrac( false );
+    const string used_pct = SpecUtils::printCompact( 100.0*used, 2 );
+
+    WString txt;
+    if( !drf_uncert.valid )
+      txt = WString();  //no activity limit to qualify
+    else if( !currieMethod )
+      txt = (used > 0.0) ? WString::tr("dls-drf-uncert-decon-excluded").arg( used_pct ) : WString();
+    else if( used <= 0.0 )
+      txt = WString::tr("dls-drf-uncert-none");
+    else if( !drf_uncert.statesOwn )
+      txt = WString::tr("dls-drf-uncert-model-only").arg( used_pct );
+    else
+      txt = WString::tr("dls-drf-uncert-stated").arg( used_pct );
+
+    if( !txt.empty() )
+    {
+      m_drfUncertTxt->setText( txt );
+      m_drfUncertTxt->show();
+    }
+  }//if( m_currentCurrieInput )
+
   m_moreInfoButton->hide();
   m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
   m_spectrum->removeAllDecorativeHighlightRegions();
@@ -2437,6 +2509,18 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       cell = table->elementAt( table->rowCount() - 1, 1 );
       cell->addNew<WText>( value );
       //addTooltipToRow( "The fraction of the solid angle, the detector face takes up, at the specified distance." );
+
+      // The efficiency actually used, which a geometry-modeled detector's need not equal the above product.
+      if( !drf->isFixedGeometry() )
+      {
+        label = WString::tr("dls-det-eff-used");
+        value = SpecUtils::printCompact( drf->efficiency( energy, distance ), 5 );
+
+        cell = table->elementAt( table->rowCount(), 0 );
+        cell->addNew<WText>( label );
+        cell = table->elementAt( table->rowCount() - 1, 1 );
+        cell->addNew<WText>( value );
+      }//if( !drf->isFixedGeometry() )
     }//if( distance >= 0.0 )
   }//if( drf )
   
@@ -2735,7 +2819,7 @@ void DetectionLimitSimple::updateResult()
     {
       currie_input->alpha = m_alphaUserSet ? m_alpha->value() : 0.0;
       currie_input->beta = m_betaUserSet ? m_beta->value() : 0.0;
-      currie_input->additional_uncertainty = currentSystematicUncertainty( m_systematicNote );
+      currie_input->additional_uncertainty = currentSystematicUncertainty( energy, m_systematicNote );
     }else
     {
       currie_input->alpha = currie_input->beta = 0.0;

@@ -78,6 +78,7 @@ struct NodeStat {
     double wall_s = 0.0;
     uint8_t stop = 0;          ///< numeric ceelo::StopReason value
     double fep_rel_prec = 0.0; ///< achieved sigma/eps (0 when eps == 0)
+    double tot_rel_prec = 0.0; ///< achieved total-efficiency sigma/eps (0 when eps == 0)
 };
 
 /// Aggregated per-generation MC cost statistics (see GenerationOptions::stats_out).
@@ -191,6 +192,19 @@ struct GenerationOptions {
     double max_cpu_seconds_per_node = 80.0;
     /// Minimum MC events per node before precision-based termination.
     uint64_t min_events_per_node = 20000;
+
+    /// Stop each angular (stage 2) and near-field (stage 3) node on TOTAL-efficiency precision
+    /// (the node's resolved target) rather than FEP precision; the on-axis backbone (stage 1)
+    /// still stops on FEP.  For a host that keeps only the total and the on-axis FEP - InterSpec
+    /// attaching the total to an imported FEP grid, grounded on axis.  The total converges on far
+    /// fewer histories: 6-16x less CPU per node at >= 662 keV, and a General run of a 5x5 cm HPGe
+    /// took 2260 CPU-s instead of about an hour on 4 threads, its total still within 0.84% of
+    /// direct MC (RMS <= 0.47%; DESIGN.md "Total efficiency close in").  The off-axis and
+    /// near-field FEP keep whatever precision that leaves them (0.3-1.2% at a 0.3% target),
+    /// honestly in their sigma.  The cos-theta nodes then also resolve the
+    /// total's angular shape (the eta_tot table shares them).  generate() refuses it together
+    /// with transfer_mode or closed_loop, whose angular nodes exist for the FEP.
+    bool scans_stop_on_total = false;
 
     /// Log-spaced scan range; generate(), plan_nodes() and estimated_node_count() all throw
     /// std::runtime_error unless 0 < e_min_keV < e_max_keV (a non-positive floor makes the

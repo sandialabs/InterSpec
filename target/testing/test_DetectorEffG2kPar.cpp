@@ -93,6 +93,7 @@
 
 #include "io/ResponseKernel.h"
 #include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -104,6 +105,8 @@
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "ParTestUtils.h"
+
 using namespace std;
 
 namespace
@@ -111,6 +114,7 @@ namespace
   string g_data_dir;       ///< --datadir=   (nuclear data; for InterSpec statics)
   string g_test_data_dir;  ///< --testfiledir=
   string g_par_dir;        ///< --pardir=    (root of the uncommitted corpus)
+  string g_write_mock_dir; ///< --write-mock-par=  (where WriteMockParFiles writes the mock pair)
 
   const double pi = 3.14159265358979323846;
 
@@ -373,6 +377,8 @@ namespace
           g_test_data_dir = arg.substr( 14 );
         else if( arg.find("--pardir=") == 0 )
           g_par_dir = arg.substr( 9 );
+        else if( arg.find("--write-mock-par=") == 0 )
+          g_write_mock_dir = arg.substr( 17 );
       }
 
       if( !g_data_dir.empty() )
@@ -1851,3 +1857,161 @@ BOOST_AUTO_TEST_CASE( SerializationRoundTrip )
     }
   }//for( each case )
 }//BOOST_AUTO_TEST_CASE( SerializationRoundTrip )
+
+
+/** Writes the mock pair committed as test_data/det_eff/mock_DETECTOR.txt and mock.par into the
+ directory `--write-mock-par=<dir>` names (with `--datadir=` and `--testfiledir=`); skipped otherwise.
+
+ NOT VENDOR DATA, and that is the point of the "mock_" names: the repository can carry no real
+ .par files (see the header), but the import, its geometry editing and the Monte-Carlo total
+ efficiency (test_ImportedGridDrf) need a pair that exercises them.
+   * mock_DETECTOR.txt describes the ANGLE test detector Angle-detector-only.detx - a 50 x 50 mm
+     closed-end coax with 0.5 mm inactive Ge, a 1.5 mm Al endcap and 4 / 5 mm front / side vacuum
+     gaps - in the record format the reader decodes.  It cannot state the .detx's 5 mm radius,
+     35 mm deep core or 5 mm bulletizing, so the importer guesses those.
+   * mock.par is CeeLo's: a full Monte-Carlo characterization (ResponseGenerator, fixed seed) of
+     ParTestUtils::mock_truth_geometry - the record's geometry with the .detx core and
+     bulletizing - sampled at every cell the format stores, as V = round(-1000 log10(eff)).  Cells
+     inside the endcap can, behind the face plane, hold the format's V = 0 no-data sentinel; the
+     other cells past 90 deg are the response's own behind-the-face-plane values, which CeeLo flags
+     as a guess (only the importer's grazing near-field rungs read any of them).
+ The response itself is written alongside as mock_truth_response.xml, for comparisons; it is not
+ committed.  The Monte Carlo takes many minutes, so run this from a Release build.
+ */
+BOOST_AUTO_TEST_CASE( WriteMockParFiles )
+{
+  if( g_write_mock_dir.empty() || g_data_dir.empty() || g_test_data_dir.empty() )
+  {
+    BOOST_TEST_MESSAGE( "WriteMockParFiles: skipped (pass --write-mock-par=<dir>, --datadir= and --testfiledir=)." );
+    return;
+  }
+
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory( g_write_mock_dir ),
+                         "--write-mock-par directory '" << g_write_mock_dir << "' does not exist" );
+
+  const char * const detector_txt =
+    "# MOCK - NOT VENDOR DATA - written by InterSpec test_DetectorEffG2kPar WriteMockParFiles with"
+    " CeeLo; dimensions from Angle-detector-only.detx\r\n"
+    "MockAngleCoax,50.0,50.0,0,63.0,100.0,4.0,5.0,26,mock.par,4, #\r\n"
+    "ge,0.5,5.32, #\r\n"     // front: dead layer, (empty) window, endcap
+    ",,, #\r\n"
+    "al,1.5,2.70, #\r\n"
+    "ge,0.5,5.32, #\r\n"     // side: dead layer, (empty) liner, endcap
+    ",,, #\r\n"
+    "al,1.5,2.70, #\r\n"
+    ",,, #\r\n"              // back: nothing
+    ",,, #\r\n"
+    ",,\r\n";
+
+  istringstream txt( detector_txt );
+  const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+  BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+  const DetEffG2kPar::DetectorDef &def = defs.front();
+  BOOST_REQUIRE( def.kind == DetEffG2kPar::DetectorDef::Kind::NCoax );  //so the importer guesses a bore
+
+  const string detx_path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-detector-only.detx" );
+  const ceelo::GeometryDescriptor truth = ParTestUtils::mock_truth_geometry( def, detx_path );
+  BOOST_REQUIRE( truth.problems().empty() );
+
+  const vector<double> energies = { 40.0, 50.0, 60.0, 80.0, 100.0, 122.0, 150.0, 200.0, 300.0,
+                                    500.0, 662.0, 1000.0, 1400.0, 2000.0, 3000.0 };
+
+  ceelo::GenerationOptions opts;
+  opts.profile = ceelo::ResponseProfile::General;   //the grid has near-field rows
+  opts.e_min_keV = 0.9 * energies.front();
+  opts.e_max_keV = 1.05 * energies.back();
+  opts.base_seed = 1;
+  opts.num_threads = 4;   //a run of many minutes need not take the whole machine
+  opts.detector_name = "MOCK (Angle-detector-only.detx)";
+  opts.node_progress = []( const ceelo::NodeProgress &p ){
+    if( (p.nodes_done % 25) == 0 || (p.nodes_done >= p.nodes_total) )
+      cerr << "WriteMockParFiles: node " << p.nodes_done << " of ~" << p.nodes_total << endl;
+  };
+
+  shared_ptr<ceelo::DetectorResponse> resp;
+  BOOST_REQUIRE_NO_THROW( resp = ceelo::ResponseGenerator::generate( truth, opts ) );
+  BOOST_REQUIRE( !!resp );
+
+  // The grid, as the file stores it: rows are ln(radial range from the endcap-face centre, mm),
+  //  columns the polar angle - both steps stored as floats.
+  const float theta_step = static_cast<float>( 5.0 * pi / 180.0 );
+  const float r_step = 0.1f;
+  const uint16_t ncols = 37, nrows = 117;    // 0-180 deg; 1 mm to ~115 m
+
+  DetEffG2kPar::ParFile par;
+  par.emin_keV = energies.front();
+  par.emax_keV = energies.back();
+  par.energies_keV = energies;
+  par.grids.resize( energies.size() );
+  for( DetEffG2kPar::ParGrid &g : par.grids )
+  {
+    g.ncols = ncols;
+    g.nrows = nrows;
+    g.theta_step_rad = theta_step;
+    g.r_step = r_step;
+    g.V.assign( static_cast<size_t>(nrows) * ncols, 0 );
+  }
+
+  // The endcap can, which no source can be inside: behind the face plane, within the endcap's
+  //  outer diameter and length.
+  const Eigen::Vector3d face = CeeLoUtils::detectorFacePosition( truth );
+  const double can_radius_cm = 0.05 * def.d4_endcap_od_mm, can_length_cm = 0.1 * def.d5_endcap_len_mm;
+
+  for( uint16_t r = 0; r < nrows; ++r )
+  {
+    const double d_cm = 0.1 * std::exp( r * static_cast<double>(r_step) );
+    for( uint16_t c = 0; c < ncols; ++c )
+    {
+      const double theta = c * static_cast<double>(theta_step);
+      const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( truth, theta, 0.0, d_cm );
+      const Eigen::Vector3d v = pos - face;
+      const bool in_can = (v.z() > 1.0e-6) && (v.z() <= can_length_cm)
+                          && (std::hypot( v.x(), v.y() ) <= can_radius_cm);
+      if( in_can )
+        continue;  //V stays 0, the no-data sentinel
+
+      const ceelo::ApertureQuadrature quad = resp->make_quadrature( pos );
+      for( size_t e = 0; e < energies.size(); ++e )
+      {
+        const double eff = resp->eps_fep_at( energies[e], pos, quad ).value;
+        const double v_raw = (eff > 0.0 && std::isfinite( eff )) ? std::round( -1000.0 * std::log10( eff ) ) : 65535.0;
+        par.grids[e].V[static_cast<size_t>(r)*ncols + c] = static_cast<uint16_t>( std::min( 65535.0, std::max( 1.0, v_raw ) ) );
+      }
+    }//for( each column )
+  }//for( each row )
+
+  const string par_bytes = ParTestUtils::par_file_bytes( par );
+  const string par_path = SpecUtils::append_path( g_write_mock_dir, "mock.par" );
+  const string txt_path = SpecUtils::append_path( g_write_mock_dir, "mock_DETECTOR.txt" );
+  const string resp_path = SpecUtils::append_path( g_write_mock_dir, "mock_truth_response.xml" );
+  {
+    ofstream out( par_path.c_str(), ios::out | ios::binary );
+    out.write( par_bytes.data(), par_bytes.size() );
+    BOOST_REQUIRE( out.good() );
+  }
+  {
+    ofstream out( txt_path.c_str(), ios::out | ios::binary );
+    out << detector_txt;
+    BOOST_REQUIRE( out.good() );
+  }
+  {
+    ofstream out( resp_path.c_str(), ios::out | ios::binary );
+    out << resp->to_xml_string();
+    BOOST_REQUIRE( out.good() );
+  }
+
+  // What was written reads back as what was meant.
+  const DetEffG2kPar::ParFile reread = DetEffG2kPar::parseParFile( par_path );
+  BOOST_REQUIRE_EQUAL( reread.energies_keV.size(), energies.size() );
+  for( size_t e = 0; e < energies.size(); ++e )
+    BOOST_CHECK( reread.grids[e].V == par.grids[e].V );
+
+  const DetEffG2kPar::ParEfficiency par_eff( reread );
+  for( const double energy : { 122.0, 662.0 } )
+  {
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( truth, 0.0, 0.0, 25.0 );
+    BOOST_TEST_MESSAGE( "WriteMockParFiles: " << energy << " keV on-axis at 25 cm: grid "
+                        << par_eff.efficiency( energy, 250.0, 0.0 ) << ", CeeLo "
+                        << resp->eps_fep_at( energy, pos ).value );
+  }
+}//BOOST_AUTO_TEST_CASE( WriteMockParFiles )

@@ -131,16 +131,34 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for fixed-geometry DRFs, or when fewer than two
    usable anchor points can be constructed.
+
+   TODO: only per-point sigmas are kept - the curve covariance's diagonal, or a per-node
+   #sm_default_anchor_frac_sigma when the DRF states none - so a common-mode efficiency error
+   averages down over a multi-peak fit.  Carry the full covariance, as
+   #curveAnchorWithCovarianceForDrf does (the assumed part needs a measured correlation first).
    */
   TransferAnchor transferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const ceelo::GeometryDescriptor &geom,
                       const double override_ref_distance_cm );
 
+  /** The transfer anchor for an imported efficiency grid (DetEffG2kPar::isGridResponse): the
+   grid's own absolute efficiency, on-axis at `ref_distance_cm` (<= 0 for
+   DetEffG2kPar::gridReferenceDistanceCm, i.e. 50 cm or more) - see DetEffG2kPar::groundingPoints.
+
+   #transferAnchorForDrf and #curveAnchorWithCovarianceForDrf use this for a DRF carrying a grid:
+   its legacy curve is sampled tens of metres out, and reconstructing an absolute efficiency from
+   it discards everything the grid knows about the near field.  `curve_derived` is true.
+   */
+  TransferAnchor gridTransferAnchor( const ceelo::DetectorResponse &grid,
+                                     const double ref_distance_cm );
+
   /** Samples the DRF's total-efficiency curve (when it has one) at the FEP
    anchor's energies and reference distance, for use as the transfer's
    total-efficiency anchor - transferred measured totals (endcap/dead-layer
    effects included) beat the bare-crystal fallback tier for cascade-summing.
+   Without a curve, a total the attached response characterizes (e.g., a Monte-Carlo total on an
+   imported grid) is sampled instead.
    Returns an empty curve when the DRF has no total-efficiency information.
    */
   ceelo::AnchorCurve totalTransferAnchorForDrf(
@@ -292,6 +310,11 @@ namespace CeeLoUtils
    */
   double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd );
   Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd );
+
+  /** Worker threads for a detector Monte Carlo run from the GUI: all but two cores with 8 or more,
+   all but one with 2-7, so the session and the rest of the machine stay responsive.
+   */
+  unsigned monteCarloThreadCount();
 
   /** The detector face (endcap front) in the crystal-face frame, (0, 0, -endcap_front_offset_cm):
    the point InterSpec's distances are measured to, and the point a source-side ray aims at.
@@ -507,6 +530,9 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.
+
+   TODO: the carried sigma is the response's total, so the DRF then "states" an uncertainty even
+   when it was only assumed - see DetectorPeakResponse::statesOwnEfficiencyUncert.
    */
   void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
@@ -545,6 +571,8 @@ namespace CeeLoUtils
     - It is a transient.  It has its own hash and is NOT the user's detector: never store
       one in a SpecMeas, hand it to a setter, or let it reach the "Previous" DRF database.
       Its name is suffixed so one that escapes is recognizable.
+    - TODO: its curve carries the response's total sigma, so `statesOwnEfficiencyUncert()` is
+      true on it even when the original DRF states none - classify on the original.
 
    Interpolation between the sampled points makes it an approximation to the response of
    order a percent - the same grid, K-edge flanking and per-point Monte-Carlo sigma that

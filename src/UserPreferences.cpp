@@ -552,13 +552,14 @@ Wt::cpp17::any UserPreferences::preferenceValueAny( const std::string &name, Int
   //  << "' preference from " << (from_default ? "default-xml" : "data-base") << "." << endl;
   //} BOOST_SCOPE_EXIT_END
   
-  if( !viewer )
+  // No preferences also happens while an InterSpec is being destroyed (they are released early).
+  if( !viewer || !viewer->preferences() )
   {
     Dbo::ptr<UserOption> option = getDefaultUserPreference( name, InterSpecUser::DeviceType::Desktop );
     Wt::cpp17::any value = option->value();
     return value;
   }
-  
+
   UserPreferences * const self = viewer->preferences();
   assert( self );
   

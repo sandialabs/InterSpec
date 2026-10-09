@@ -8587,6 +8587,56 @@ void add_background_lines_to_model( std::vector<PeakDef> &peaks, std::vector<Pea
 }//add_background_lines_to_model(...)
 
 
+/** The freedom the observable refit gives one ROI's peaks (see compute_observable_peaks); also used for
+ the likelihood refit of the delivered sparse ROIs, so it measures the ROI the refit decided on.
+ */
+static Wt::WFlags<PeakFitLM::PeakFitLMOptions> observable_refit_freedom( const std::vector<PeakDef> &roi_peaks,
+                                                         const PeakFitUtils::CoarseResolutionType det_type,
+                                                         const PeakFitForNuclideConfig &config )
+{
+  // An isolated line's amplitude is best decided by the data (medium refinement recovers lines the
+  // rel-eff under-predicted), but lines closer than 2 FWHM to a neighbour cannot have their relative
+  // amplitudes measured by a free refit - the model's ratio (from the decay data through the activity)
+  // is the better prior, so such ROIs keep the small refinement (the Ac225 81.4/83.2 keV doublet
+  // collapsed into one peak otherwise).
+  bool has_close_pair = false;
+  for( size_t i = 0; (i + 1 < roi_peaks.size()) && !has_close_pair; ++i )
+  {
+    const double fwhm = 0.5*(roi_peaks[i].fwhm() + roi_peaks[i+1].fwhm());
+    has_close_pair = (fwhm > 0.0) && ((roi_peaks[i+1].mean() - roi_peaks[i].mean()) < 2.0*fwhm);
+  }
+  // The width is never re-measured: the solve fitted the resolution function on every peak at once,
+  // and a weak line refit with a free width absorbs continuum (an Eu152 719 keV peak came out 6x the
+  // resolution and 4x the true area), so only the amplitude gets the medium freedom.
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> freedom;
+  if( (det_type == PeakFitUtils::CoarseResolutionType::High)
+      && ((config.observable_refit_level <= 0) || has_close_pair) )
+  {
+    freedom |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+  }else
+  {
+    freedom |= PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly;
+    freedom |= PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly;
+  }
+  // See PeakFitForNuclideConfig::observable_independent_widths.
+  if( config.observable_independent_widths && (det_type != PeakFitUtils::CoarseResolutionType::High) )
+  {
+    double narrowest = std::numeric_limits<double>::infinity(), widest = 0.0;
+    for( const PeakDef &p : roi_peaks )
+    {
+      if( p.fitFor( PeakDef::Sigma ) && (p.fwhm() > 0.0) )
+      {
+        narrowest = std::min( narrowest, p.fwhm() );
+        widest = std::max( widest, p.fwhm() );
+      }
+    }
+    if( (widest > 0.0) && (widest > 1.2*narrowest) )
+      freedom |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+  }
+  return freedom;
+}//observable_refit_freedom(...)
+
+
 std::vector<PeakDef> compute_observable_peaks(
   const std::vector<PeakDef> &fit_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -8666,7 +8716,17 @@ std::vector<PeakDef> compute_observable_peaks(
   // than documented, and inconsistent with compute_roi_chi2_significance.)
   const double fwhm_fraction = gaussian_fraction_within_num_fwhm( 1.0 );
   const double initial_significance_threshold = config.observable_peak_initial_significance_threshold;
-  const double final_significance_threshold = config.observable_peak_final_significance_threshold;
+  const double final_significance_threshold = config.observable_peak_final_significance_threshold;  // fixed-shape fits
+  const double refit_significance_z = config.observable_refit_min_z;  // free-shape refit
+
+  // The refit's significance gates judge detection - is the line there - so they read a refit peak's
+  //  detection significance (see PeakFitLM::peak_detection_significance), not its reported, marginal,
+  //  uncertainty; `roi` holds the peaks of its fit.
+  const auto refit_peak_z = [&refit_data]( const PeakDef &peak,
+                                           const std::vector<std::shared_ptr<const PeakDef>> &roi ) -> double {
+    // The refit's decisions are made on chi2 fits: chi2 weights.
+    return PeakFitLM::peak_detection_significance( peak, roi, refit_data, /*chi2_weights=*/ true );
+  };
 
   // ROI half-widths used when shrinking a ROI after edge peaks are dropped: the configured core
   // plus a fixed one-FWHM sideband (the dropped-peak region was continuum-consistent, but there
@@ -8925,7 +8985,7 @@ std::vector<PeakDef> compute_observable_peaks(
   for( size_t roi_index = 0; roi_index < num_rois; ++roi_index )
   {
     pool.post( [roi_index, &roi_vec, &roi_results, &roi_notes, &refit_data, &config,
-                final_significance_threshold, det_type, &reduce_roi_bounds_if_needed,
+                final_significance_threshold, refit_significance_z, &refit_peak_z, det_type, &reduce_roi_bounds_if_needed,
                 &may_combine_peaks, &must_refit_peak, &must_keep_peak, &background_line_peaks]()
     {
       std::vector<PeakDef> roi_peaks = roi_vec[roi_index].second;
@@ -9251,46 +9311,10 @@ std::vector<PeakDef> compute_observable_peaks(
         }
 #endif
 
-        // Refinement freedom: an isolated line's amplitude is best decided by the data (medium
-        // refinement recovers lines the rel-eff under-predicted), but lines closer than 2 FWHM to a
-        // neighbour cannot have their relative amplitudes measured by a free refit - the model's
-        // ratio (from the decay data through the activity) is the better prior, so such ROIs keep
-        // the small refinement (the Ac225 81.4/83.2 keV doublet collapsed into one peak otherwise).
-        bool has_close_pair = false;
-        for( size_t i = 0; (i + 1 < roi_peaks.size()) && !has_close_pair; ++i )
-        {
-          const double fwhm = 0.5*(roi_peaks[i].fwhm() + roi_peaks[i+1].fwhm());
-          has_close_pair = (fwhm > 0.0) && ((roi_peaks[i+1].mean() - roi_peaks[i].mean()) < 2.0*fwhm);
-        }
-        // The width is never re-measured here: the solve fitted the resolution function on every
-        // peak at once, and a weak line refit with a free width absorbs continuum (an Eu152
-        // 719 keV peak came out 6x the resolution and 4x the true area), so only the amplitude
-        // gets the medium freedom.
-        Wt::WFlags<PeakFitLM::PeakFitLMOptions> refine_amount;
-        if( (det_type == PeakFitUtils::CoarseResolutionType::High)
-            && ((config.observable_refit_level <= 0) || has_close_pair) )
-        {
-          refine_amount |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
-        }else
-        {
-          refine_amount |= PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly;
-          refine_amount |= PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly;
-        }
-        // See PeakFitForNuclideConfig::observable_independent_widths.
-        if( config.observable_independent_widths && (det_type != PeakFitUtils::CoarseResolutionType::High) )
-        {
-          double narrowest = std::numeric_limits<double>::infinity(), widest = 0.0;
-          for( const PeakDef &p : roi_peaks )
-          {
-            if( p.fitFor( PeakDef::Sigma ) && (p.fwhm() > 0.0) )
-            {
-              narrowest = std::min( narrowest, p.fwhm() );
-              widest = std::max( widest, p.fwhm() );
-            }
-          }
-          if( (widest > 0.0) && (widest > 1.2*narrowest) )
-            refine_amount |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
-        }
+        // The refit decides which peaks to keep with chi2 fits; the peaks delivered at the end are then
+        //  refit like any other (see fit_peaks_for_nuclide_relactauto, before translate_peaks_to_orig_cal).
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> refine_amount = observable_refit_freedom( roi_peaks, det_type, config );
+        refine_amount |= PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood;
 
         // Use fit_peaks_in_spectrum_LM rather than refitPeaksThatShareROI_LM: when a peak becomes
         // INSIGNIFICANT in the (honest) refit it is reported in `lost_peaks` and DROPPED here.
@@ -9301,7 +9325,7 @@ std::vector<PeakDef> compute_observable_peaks(
         const bool has_protected_peak = must_refit_peak && std::any_of(
           std::begin(roi_peaks), std::end(roi_peaks), must_refit_peak );
         const double refit_significance_threshold
-          = has_protected_peak ? 0.0 : final_significance_threshold;
+          = has_protected_peak ? 0.0 : refit_significance_z;
         PeakFitLM::FitPeaksResults refit_res = PeakFitLM::fit_peaks_in_spectrum_LM(
             input_peaks, refit_data, /*stat_threshold=*/ refit_significance_threshold,
             /*hypothesis_threshold=*/ 0.0, det_type, std::nullopt /*keep peaks' own skew*/,
@@ -9363,14 +9387,17 @@ std::vector<PeakDef> compute_observable_peaks(
         // dropped by simply not carrying them forward.
         const std::vector<std::shared_ptr<const PeakDef>> &refit_result = refit_res.fit_peaks;
 
+        // Peaks are judged against the refit as it was fit: its survivors and the peaks it dropped.
+        std::vector<std::shared_ptr<const PeakDef>> fit_roi = refit_res.fit_peaks;
+        fit_roi.insert( std::end(fit_roi), std::begin(refit_res.lost_peaks), std::end(refit_res.lost_peaks) );
+
         // See PeakFitForNuclideConfig::observable_backward_elimination: of several insignificant peaks
         // only the weakest goes; the others are refit without it.
         std::vector<PeakDef> carried_insignificant;
         if( config.observable_backward_elimination && (refit_res.lost_peaks.size() > 1) )
         {
-          const auto peak_z = []( const std::shared_ptr<const PeakDef> &p ) -> double {
-            const double unc = p->peakAreaUncert();
-            return (unc > 0.0) ? (p->peakArea() / unc) : 0.0;
+          const auto peak_z = [&refit_peak_z, &fit_roi]( const std::shared_ptr<const PeakDef> &p ) -> double {
+            return refit_peak_z( *p, fit_roi );
           };
           const auto weakest = std::min_element( std::begin(refit_res.lost_peaks), std::end(refit_res.lost_peaks),
             [&peak_z]( const std::shared_ptr<const PeakDef> &lhs, const std::shared_ptr<const PeakDef> &rhs ) {
@@ -9392,13 +9419,16 @@ std::vector<PeakDef> compute_observable_peaks(
         // continuum-only null over the same channels - had already said those channels need peaks.
         if( refit_result.empty() && carried_insignificant.empty() )
         {
+          // The first pass's input is the solve's peaks, later passes' the previous refit's.
+          const bool input_from_refit = (iteration > 0);
           const bool had_measured_line = std::any_of( std::begin(input_peaks), std::end(input_peaks),
-            [final_significance_threshold]( const std::shared_ptr<const PeakDef> &p ) -> bool {
+            [refit_significance_z, input_from_refit, &refit_peak_z, &input_peaks]( const std::shared_ptr<const PeakDef> &p ) -> bool {
               if( !p || !(p->peakArea() > 0.0) )
                 return false;
               const double unc = p->peakAreaUncert();
-              const double z = (unc > 0.0) ? (p->peakArea() / unc) : std::sqrt( p->peakArea() );
-              return (z >= final_significance_threshold);
+              const double z = input_from_refit ? refit_peak_z( *p, input_peaks )
+                               : ((unc > 0.0) ? (p->peakArea() / unc) : std::sqrt( p->peakArea() ));
+              return (z >= refit_significance_z);
             } );
           // See PeakFitForNuclideConfig::observable_collapse_restores_solve.
           if( had_measured_line && config.observable_collapse_restores_solve && !solved_roi_peaks.empty() )
@@ -9435,14 +9465,10 @@ std::vector<PeakDef> compute_observable_peaks(
         {
           const double mean = peak->mean();
           const double area = peak->peakArea();
-          const double area_uncert = peak->peakAreaUncert();
-          // Guard the -1 uncertainty sentinel: fall back to Poisson sqrt(area).
-          const double final_sig = (area_uncert > 0.0)
-            ? (area / area_uncert)
-            : ((area > 0.0) ? std::sqrt(area) : 0.0);
+          const double final_sig = refit_peak_z( *peak, fit_roi );
 
           if( (must_keep_peak && must_keep_peak(*peak))
-              || (final_sig >= final_significance_threshold) )
+              || (final_sig >= refit_significance_z) )
           {
             kept_peaks.push_back( *peak );
 
@@ -9479,7 +9505,7 @@ std::vector<PeakDef> compute_observable_peaks(
             changed = true;
             if( should_debug_print() )
             {
-              std::cout << "  Observable filter post-refit (final sig=" << final_sig << " < " << final_significance_threshold
+              std::cout << "  Observable filter post-refit (final sig=" << final_sig << " < " << refit_significance_z
                    << "): peak at " << mean << " keV" << std::endl;
             }
           }
@@ -9960,11 +9986,11 @@ std::vector<PeakDef> compute_observable_peaks(
                                 && ((right.mean() - left.mean()) > config.observable_split_gap_fwhm*mid_fwhm);
           // A part must keep a significant peak: a weak line cut off alone loses the context it was
           // measured in (R500 Eu154_Sh's z=3 595 keV line, split from 716 keV, was then dropped).
-          const auto holds_significant = [&peaks, &config]( const size_t begin, const size_t end ) -> bool {
+          // (Judged on the unsplit ROI's fit: `peak_ptrs` all keep the `whole` continuum.)
+          const auto holds_significant = [&peak_ptrs, &config, &refit_peak_z]( const size_t begin, const size_t end ) -> bool {
             for( size_t k = begin; k < end; ++k )
             {
-              const double uncert = peaks[k].amplitudeUncert();
-              if( (uncert > 0.0) && ((peaks[k].amplitude() / uncert) >= config.roi_significance_z) )
+              if( refit_peak_z( *peak_ptrs[k], peak_ptrs ) >= config.observable_split_min_z )
                 return true;
             }
             return false;
@@ -15530,7 +15556,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
   // Every requested-source match the data show significantly, x-ray matches included - the evidence
   // the zero-activity retry judges a solve by (see PeakFitForNuclideConfig::zero_activity_evidence_anchors).
   if( significant_matched_peaks )
-    *significant_matched_peaks = distinct_significant_source_anchors( peaks_matched, config.roi_significance_z );
+    *significant_matched_peaks = distinct_significant_source_anchors( peaks_matched, config.found_peak_min_z );
 
   // If no matched peaks, fall back to estimate_initial_rois_without_peaks
   if( peaks_matched.empty() )
@@ -16104,7 +16130,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     if( manual_settings.use_automatic_roi_policy )
     {
       provisional_fallback_source_anchors = distinct_significant_source_anchors(
-          peaks_matched, config.roi_significance_z );
+          peaks_matched, config.found_peak_min_z );
       if( provisional_fallback_source_anchors.size() < 2 )
         provisional_fallback_source_anchors.clear();
       else
@@ -16626,15 +16652,11 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   options.fwhm_max_ratio_to_start = config.rel_eff_auto_fwhm_max_ratio_to_model;
   options.fwhm_channel_floor_factor = config.rel_eff_auto_fwhm_channel_floor_factor;
 
-  // Copy fixed skew parameter values from PeakFitDetPrefs, if available and not ROI-independent
-  if( peak_fit_prefs && !peak_fit_prefs->m_roi_independent_skew )
-  {
-    for( size_t i = 0; i < 4; ++i )
-    {
-      options.fixed_lower_skew[i] = peak_fit_prefs->m_lower_energy_skew[i];
-      options.fixed_upper_skew[i] = peak_fit_prefs->m_upper_energy_skew[i];
-    }
-  }//if( peak_fit_prefs && !roi_independent )
+  // Skew parameter values from PeakFitDetPrefs (held fixed where they give values), when they are for
+  //  the skew type being fit; `set_skew_from_prefs` skips ROI-independent prefs, and keeps values within
+  //  range.  `options.skew_from_peak_fit_prefs` stays false, so `RelActCalcAuto::solve` keeps these.
+  if( peak_fit_prefs && (peak_fit_prefs->m_peak_skew_type == options.skew_type) )
+    options.set_skew_from_prefs( options.skew_type, peak_fit_prefs.get(), drf ? drf->peakFitDetPrefs().get() : nullptr );
 
   // Find valid energy range, clamped to a physically-valid low-energy floor (see low_energy_analysis_floor).
   const std::pair<double,double> raw_valid_range = find_valid_energy_range( orig_foreground );
@@ -18263,7 +18285,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
                 return false;
               const double width_ratio = p->fwhm() / fwhm;
               return (std::fabs( p->mean() - anchor.mean() ) <= 0.5*fwhm)
-                     && ((p->amplitude() / p->amplitudeUncert()) >= config.roi_significance_z)
+                     && ((p->amplitude() / p->amplitudeUncert()) >= config.found_peak_min_z)
                      && (width_ratio >= 0.6) && (width_ratio <= 1.6);
             } );
         };
@@ -18293,7 +18315,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             for( const std::shared_ptr<const PeakDef> &p : auto_search_peaks )
             {
               if( !(fwhm > 0.0) || !p || !p->gausPeak() || !(p->amplitudeUncert() > 0.0)
-                  || ((p->amplitude() / p->amplitudeUncert()) < config.roi_significance_z) )
+                  || ((p->amplitude() / p->amplitudeUncert()) < config.found_peak_min_z) )
                 continue;
               const double width_ratio = p->fwhm() / fwhm;
               const double dist = std::fabs( p->mean() - line.mean() );
@@ -19615,7 +19637,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
                 continue;
               const double z = (pk->amplitudeUncert() > 0.0)
                               ? (pk->amplitude() / pk->amplitudeUncert()) : 0.0;
-              if( z < config.roi_significance_z )
+              if( z < config.found_peak_min_z )
                 continue;  // only data-significant found peaks pin an ROI (self-limiting)
               if( !best || (pk->amplitude() > best->amplitude()) )
                 best = pk;
@@ -20995,8 +21017,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // The background's lines that show in the foreground at `min_z`, on the fitted calibration the refit
     // works in: the background spectrum's own search peaks, scaled to the foreground's live time, or with
     // no background spectrum, the foreground's search peaks on the common background lines (see
-    // PeakFitForNuclideConfig::observable_background_lines_without_background).
-    const auto find_background_lines = [&]( const double min_z ) -> std::vector<PeakDef> {
+    // PeakFitForNuclideConfig::observable_background_lines_without_background) of area/uncertainty
+    // `min_fit_z`.
+    const auto find_background_lines = [&]( const double min_z, const double min_fit_z ) -> std::vector<PeakDef> {
       deque<shared_ptr<const PeakDef>> lines;
       const bool have_background = orig_background && orig_foreground
                                    && (orig_background->live_time() > 0.0f) && (orig_foreground->live_time() > 0.0f);
@@ -21032,7 +21055,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             [&line]( const StrongNormGammaLine &known ) { return std::fabs( known.energy - line->mean() ) < 0.5*line->fwhm(); } );
           z = (on_common_line && (line->amplitudeUncert() > 0.0)) ? (line->amplitude() / line->amplitudeUncert()) : 0.0;
         }
-        if( z < min_z )
+        if( z < (have_background ? min_z : min_fit_z) )
           continue;
         const shared_ptr<PeakDef> scaled = make_shared<PeakDef>( *line );
         scaled->setAmplitude( scale * line->amplitude() );
@@ -21073,11 +21096,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     std::vector<PeakDef> background_line_peaks;
     if( config.observable_deliver_background_line_z > 0.0 )
     {
-      add_background_lines_to_model( full_combined_peaks, find_background_lines( config.observable_deliver_background_line_z ),
+      add_background_lines_to_model( full_combined_peaks, find_background_lines( config.observable_deliver_background_line_z,
+                                                                                 config.observable_background_line_fit_z ),
                                      solution_foreground, config.norm_css_color );
     }else if( config.observable_fixed_background_line_z > 0.0 )
     {
-      background_line_peaks = find_background_lines( config.observable_fixed_background_line_z );
+      background_line_peaks = find_background_lines( config.observable_fixed_background_line_z,
+                                                     config.observable_fixed_background_line_z );
       std::string trace_line = "observable refit holds the background's lines (keV/FWHM/area):";
       for( const PeakDef &line : background_line_peaks )
       {
@@ -21216,6 +21241,26 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       std::sort( std::begin(confirmed_peaks), std::end(confirmed_peaks), &PeakDef::lessThanByMean );
       full_observable_peaks.swap( confirmed_peaks );
     }//if( some ROIs were left unconfirmed by the final filter )
+
+    // The observable refit decided with chi2 fits; the peaks it delivers are fit like any other: each ROI
+    //  the default fit treats as sparse is refit by Poisson likelihood, with the freedom the observable
+    //  refit gave it.  (Neighbouring ROIs' tails, which that refit held in the ROI, are not carried: the
+    //  ROI is fit as a user's refit of it would be.)
+    if( solution_foreground )
+    {
+      std::vector<PeakDef> polished;
+      for( std::pair<const PeakContinuum *, std::vector<PeakDef>> &roi : group_peaks_by_roi( full_observable_peaks ) )
+      {
+        std::vector<std::shared_ptr<const PeakDef>> roi_ptrs;
+        for( const PeakDef &p : roi.second )
+          roi_ptrs.push_back( std::make_shared<const PeakDef>( p ) );
+        for( const std::shared_ptr<const PeakDef> &p : ExperimentalAutomatedPeakSearch::refit_sparse_rois(
+              roi_ptrs, solution_foreground, det_type, {}, observable_refit_freedom( roi.second, det_type, config ) ) )
+          polished.push_back( *p );
+      }
+      std::sort( std::begin(polished), std::end(polished), &PeakDef::lessThanByMean );
+      full_observable_peaks.swap( polished );
+    }//if( refit the delivered sparse ROIs by likelihood )
 
     translate_peaks_to_orig_cal( full_combined_peaks );
     translate_peaks_to_orig_cal( full_uncombined_peaks );
@@ -21910,8 +21955,11 @@ const PeakFitForNuclideConfig &PeakFitForNuclideConfig::default_config( const Pe
   // recovered 30 matched peaks for 16 more significant extras, which is the right side of that
   // trade when a miss costs four and an extra one and a half.
   s_default_non_hpge_config.roi_significance_z=3.5;
+  s_default_non_hpge_config.found_peak_min_z=3.5;
+  s_default_non_hpge_config.observable_split_min_z=3.5;
   s_default_non_hpge_config.observable_peak_initial_significance_threshold=3.0;
   s_default_non_hpge_config.observable_peak_final_significance_threshold=2.5;
+  s_default_non_hpge_config.observable_refit_min_z=2.5;
   // Measured together on IdentiFINDER-NGH and -R500 (2026-09-19): 635 / 649 matched against 616 /
   // 638 without.  The 15 keV floor lets Pd103 and similar x-ray lines be planned (it fixed three of
   // four solves that collapsed to nothing); the keep gate at 2 plans the moderate lines the GA gate
@@ -22336,6 +22384,10 @@ namespace
       FPN_BOOL_FIELD( step_use_chi2_trial );
       FPN_DOUBLE_FIELD( step_low_side_extra_fwhm );
       FPN_ENUM_FIELD( skew_type, skew_type_names );
+      FPN_DOUBLE_FIELD( found_peak_min_z );
+      FPN_DOUBLE_FIELD( observable_split_min_z );
+      FPN_DOUBLE_FIELD( observable_refit_min_z );
+      FPN_DOUBLE_FIELD( observable_background_line_fit_z );
       a.push_back( ConfigFieldAccessor{ "norm_css_color",
         []( const PeakFitForNuclideConfig &c ){ return c.norm_css_color; },
         []( PeakFitForNuclideConfig &c, const std::string &s ){ c.norm_css_color = config_trim( s ); return true; } } );
@@ -22939,6 +22991,43 @@ void fit_fwhm_function_robust( const std::vector<std::shared_ptr<const PeakDef>>
 }//namespace detail
 
 
+/** The automated-search peaks as `fit_peaks_for_nuclides` uses them: as evidence that a line is present.
+ Each copy's amplitude uncertainty is the detection-equivalent one, the amplitude over its detection
+ significance (`PeakFitLM::peak_detection_significance`, with the chi2 weights of the chi2 fits it is
+ given; Fisher weights of a chi2 model overstate a sparse ROI's information - inflated search-peak z added
+ phantom interferer sources to Pu spectra), so the area/uncertainty tests of this file on
+ search peaks are detection tests - as they were tuned, on the search's conditional uncertainties before
+ 2026-10 - rather than tests of the larger, marginal, uncertainty the search reports.  The copies of one ROI
+ keep sharing its continuum.  None of these copies is delivered.
+ */
+static std::vector<std::shared_ptr<const PeakDef>> detection_evidence_peaks(
+                                      const std::vector<std::shared_ptr<const PeakDef>> &peaks,
+                                      const std::shared_ptr<const SpecUtils::Measurement> &data )
+{
+  if( !data )
+    return peaks;
+
+  std::vector<std::shared_ptr<const PeakDef>> answer;
+  answer.reserve( peaks.size() );
+  for( const std::shared_ptr<const PeakDef> &p : peaks )
+  {
+    if( !p || !p->gausPeak() || !(p->amplitude() > 0.0) )
+    {
+      answer.push_back( p );
+      continue;
+    }
+
+    const double z = PeakFitLM::peak_detection_significance( *p, peaks, data, /*chi2_weights=*/ true );
+    const std::shared_ptr<PeakDef> copy = std::make_shared<PeakDef>( *p );
+    if( z > 0.0 )
+      copy->setAmplitudeUncert( p->amplitude() / z );
+    answer.push_back( copy );
+  }//for( const std::shared_ptr<const PeakDef> &p : peaks )
+
+  return answer;
+}//detection_evidence_peaks(...)
+
+
 PeakFitResult fit_peaks_for_nuclides(
   const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
@@ -22970,7 +23059,7 @@ PeakFitResult fit_peaks_for_nuclides(
   
   
 PeakFitResult fit_peaks_for_nuclides(
-  const std::vector<std::shared_ptr<const PeakDef>> &auto_search_peaks,
+  const std::vector<std::shared_ptr<const PeakDef>> &input_auto_search_peaks,
   const std::shared_ptr<const SpecUtils::Measurement> &foreground,
   const std::vector<RelActCalcAuto::NucInputInfo> &sources,
   const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
@@ -22982,6 +23071,7 @@ PeakFitResult fit_peaks_for_nuclides(
   const std::shared_ptr<std::atomic_bool> cancel_calc )
 {
   assert( peak_fit_prefs );
+
   // Diagnostics are per top-level fit; discard any abandoned thread-local construction from a
   // prior exception before beginning this request.
   static_cast<void>( detail::take_automatic_roi_diagnostics() );
@@ -22990,6 +23080,9 @@ PeakFitResult fit_peaks_for_nuclides(
   const PeakFitUtils::CoarseResolutionType det_type = peak_fit_prefs
     ? peak_fit_prefs->m_det_type
     : PeakFitUtils::coarse_det_type( foreground, nullptr );
+
+  const std::vector<std::shared_ptr<const PeakDef>> auto_search_peaks
+                                    = detection_evidence_peaks( input_auto_search_peaks, foreground );
 
   PeakFitResult result;
 
@@ -23210,8 +23303,8 @@ PeakFitResult fit_peaks_for_nuclides(
     {
       try
       {
-        background_auto_search_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks(
-          long_background, nullptr, nullptr, true, peak_fit_prefs );
+        background_auto_search_peaks = detection_evidence_peaks( ExperimentalAutomatedPeakSearch::search_for_peaks(
+          long_background, nullptr, nullptr, true, peak_fit_prefs ), long_background );
       }catch( const std::exception &e )
       {
         local_warnings.push_back( "Unable to search supplied background for RelActManual seeding: "

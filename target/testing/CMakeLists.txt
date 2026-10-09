@@ -297,6 +297,13 @@ add_test( NAME TPeakFitLM_MultiPeak
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_PeakFitLM_Likelihood test_PeakFitLM_Likelihood.cpp )
+target_link_libraries( test_PeakFitLM_Likelihood PRIVATE InterSpecLib )
+add_test( NAME TPeakFitLM_Likelihood
+  COMMAND $<TARGET_FILE:test_PeakFitLM_Likelihood> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakContinuumCdfStep test_PeakContinuumCdfStep.cpp )
 target_link_libraries( test_PeakContinuumCdfStep PRIVATE InterSpecLib )
 add_test( NAME TPeakContinuumCdfStep
@@ -880,6 +887,13 @@ add_executable( test_DrfImport test_DrfImport.cpp )
 target_link_libraries( test_DrfImport PRIVATE InterSpecLib )
 add_test( NAME TDrfImport
   COMMAND $<TARGET_FILE:test_DrfImport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_ImportedGridDrf test_ImportedGridDrf.cpp )
+target_link_libraries( test_ImportedGridDrf PRIVATE InterSpecLib )
+add_test( NAME TImportedGridDrf
+  COMMAND $<TARGET_FILE:test_ImportedGridDrf> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

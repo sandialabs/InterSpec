@@ -1265,15 +1265,20 @@ void FitPeaksAdvancedWidget::startComputation()
   if( m_opt_use_background && !m_opt_use_background->isChecked() )
     bg_to_use = nullptr;
 
-  // If "use fixed skew" checkbox is unchecked, clear fixed skew values from prefs copy
+  // If "use fixed skew" checkbox is unchecked, clear the fixed values of the skew parameters that are
+  //  fit by default - detector characteristics (e.g., GADRAS powers/extents) are kept.
   std::shared_ptr<const PeakFitDetPrefs> fit_prefs_to_use = m_peak_fit_prefs;
   if( m_opt_use_fixed_skew && !m_opt_use_fixed_skew->isChecked() && m_peak_fit_prefs )
   {
     std::shared_ptr<PeakFitDetPrefs> prefs_copy = std::make_shared<PeakFitDetPrefs>( *m_peak_fit_prefs );
-    for( size_t i = 0; i < 4; ++i )
+    for( size_t i = 0; i < std::size(prefs_copy->m_lower_energy_skew); ++i )
     {
-      prefs_copy->m_lower_energy_skew[i] = std::nullopt;
-      prefs_copy->m_upper_energy_skew[i] = std::nullopt;
+      const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+      if( PeakDef::skew_parameter_fit_by_default( prefs_copy->m_peak_skew_type, ct ) )
+      {
+        prefs_copy->m_lower_energy_skew[i] = std::nullopt;
+        prefs_copy->m_upper_energy_skew[i] = std::nullopt;
+      }
     }
     fit_prefs_to_use = prefs_copy;
   }
@@ -1788,12 +1793,23 @@ FitPeaksForNuclides::PeakFitForNuclideConfig FitPeaksAdvancedWidget::currentConf
   FitPeaksForNuclides::PeakFitForNuclideConfig config
     = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
-  if( m_opt_roi_sig_z )
+  // The fitted-peak (area/uncertainty) thresholds split from these fields follow their control in
+  //  proportion to the defaults.
+  if( m_opt_roi_sig_z && (config.roi_significance_z > 0.0) )
+  {
+    const double scale = m_opt_roi_sig_z->value() / config.roi_significance_z;
+    config.found_peak_min_z *= scale;
+    config.observable_split_min_z *= scale;
     config.roi_significance_z = m_opt_roi_sig_z->value();
+  }
   if( m_opt_obs_initial_sig )
     config.observable_peak_initial_significance_threshold = m_opt_obs_initial_sig->value();
-  if( m_opt_obs_final_sig )
+  if( m_opt_obs_final_sig && (config.observable_peak_final_significance_threshold > 0.0) )
+  {
+    const double scale = m_opt_obs_final_sig->value() / config.observable_peak_final_significance_threshold;
+    config.observable_refit_min_z *= scale;
     config.observable_peak_final_significance_threshold = m_opt_obs_final_sig->value();
+  }
   if( m_opt_skew_type )
     config.skew_type = static_cast<PeakDef::SkewType>( m_opt_skew_type->currentIndex() );
   if( m_opt_fwhm_form )

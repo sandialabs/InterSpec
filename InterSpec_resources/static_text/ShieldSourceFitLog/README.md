@@ -434,6 +434,7 @@ it does not exist in the payload.
     "DrfUncertaintyMethod":     1,
     "DrfUncertaintyMethodName": "ErrorPropagation",
     "AccountForDrfUncert":      true,
+    "DrfUncertIncludeAssumed":  false,
     "CorrectForCascadeSumming": false
   }
 }
@@ -460,6 +461,7 @@ it does not exist in the payload.
 | `FitOptions.DrfUncertaintyMethod`     | number |  | How the detector-efficiency uncertainty band is used: `0` none (statistics-only), `1` `ErrorPropagation` (default — central values identical to `0`, reported parameter uncertainties widened by the band post-fit), `2` `Likelihood` (band folded into the fit itself, so the central value may move and the per-peak pulls sit coherently off zero). |
 | `FitOptions.DrfUncertaintyMethodName` | string |  | The same value as a name: `"None"`, `"ErrorPropagation"` or `"Likelihood"`.  `act_fit.tmplt.html` keys its "DRF eff. uncert." column off this. |
 | `FitOptions.AccountForDrfUncert`      | bool   |  | Legacy field, kept so older report templates keep working: true whenever `DrfUncertaintyMethod` is not `0`.  It does **not** distinguish the two non-zero states — prefer `DrfUncertaintyMethod`. |
+| `FitOptions.DrfUncertIncludeAssumed`  | bool   |  | Whether the method above also used an *assumed* efficiency uncertainty: one reported for a detector that states none of its own (e.g. every GADRAS detector).  When false only the geometry-model part of such a detector's uncertainty is used.  See `DetectorEff.UncertUsed` for what the fit actually used. |
 | `FitOptions.CorrectForCascadeSumming` | bool   |  | Cascade (true-coincidence) summing corrections applied to predicted counts. |
 
 ### 5.4 `foreground` and `background`
@@ -1225,7 +1227,9 @@ names always describe the same response.  Always emitted.
   "PointModel": "detector response at the source position (near-field & off-axis correct)",
   "VolumetricModel": "EFFTRAN transfer (near-field & off-axis correct)",
   "Note": "Auto -> EFFTRAN transfer (the one attached to the detector response)",
-  "HasNote": true
+  "HasNote": true,
+  "UncertUsed": "GeometryModelOnly",
+  "UncertUsedDescription": "geometry model only (the detector states no efficiency uncertainty of its own; the assumed default was not used)"
 }
 ```
 
@@ -1234,6 +1238,8 @@ names always describe the same response.  Always emitted.
 | `PointModel` | string | How the point sources' efficiency was evaluated: `"detector response at the source position (near-field & off-axis correct)"` (the resolved response, through a ray fan traced once per fit), `"flat-disk (solid angle x intrinsic efficiency)"`, `"fixed-geometry intrinsic efficiency"`, or `"none (solid angle of a 1 cm disk)"`. |
 | `VolumetricModel` | string | The `Method` of `VolumetricEff` below; only meaningful when `HasVolumetricSource` is true. |
 | `Note` / `HasNote` | string / bool | As for `VolumetricEff`. |
+| `UncertUsed` | string | Which detector-efficiency uncertainty the fit used: `"None"` (statistics only - none requested, or the detector reports none), `"Stated"` (the detector's own), `"GeometryModelOnly"` (the detector states none, so only its response's geometry-model part), or `"IncludesAssumed"` (the detector states none, and the assumed default was used, as `FitOptions.DrfUncertIncludeAssumed` asked). |
+| `UncertUsedDescription` | string | The same, as a phrase for a report. |
 
 `VolumetricEff` is the same information under the name the reports used before 2026-09 (kept so
 older templates keep rendering):
@@ -1248,7 +1254,7 @@ older templates keep rendering):
 
 | Field | Type | Notes |
 |---|---|---|
-| `Method`   | string | Human-readable name of the *resolved* method — the `Auto` setting, or a method the DRF cannot honor, has already been reduced to exactly one of: `"Monte-Carlo transfer (near-field & off-axis correct)"`, `"EFFTRAN transfer (near-field & off-axis correct)"`, `"Flat-disk (solid angle x intrinsic efficiency)"`, `"Imported efficiency grid (full-energy peak only)"`. |
+| `Method`   | string | Human-readable name of the *resolved* method — the `Auto` setting, or a method the DRF cannot honor, has already been reduced to exactly one of: `"Monte-Carlo transfer (near-field & off-axis correct)"`, `"EFFTRAN transfer (near-field & off-axis correct)"`, `"Flat-disk (solid angle x intrinsic efficiency)"`, `"Imported efficiency grid"`. |
 | `Note`     | string | Why it resolved that way — e.g. `"Auto -> MC transfer"`, `"EFFTRAN transfer unavailable (<reason>)"`, or `"requested near-field method, but the DRF has no CeeLo response; using flat-disk"`.  Empty when the requested method was used as-is. |
 | `HasNote`  | bool   | `Note` is non-empty.  Always emitted. |
 

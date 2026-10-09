@@ -73,6 +73,19 @@
   /* Error displayed in the answer - dont ever expect, instead see ".SimpleActivityCalc .error" */
 }
 
+.SimpleActivityCalc .result .DrfUncertNote,
+.SimpleActivityCalc .result .FitWarning
+{
+  font-size: 11px;
+  font-weight: normal;
+  font-style: italic;
+}
+
+.SimpleActivityCalc .result .FitWarning
+{
+  color: var(--interspec-warning-color);
+}
+
 .SimpleActivityCalc .result .DoseTxt,
 .SimpleActivityCalc .result .MassFrac,
 .SimpleActivityCalc .result .SrcRad,

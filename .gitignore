@@ -65,6 +65,8 @@ IDB*
 *.PAR
 *.par
 DETECTOR.txt
+# ...except the CeeLo-generated mock (NOT vendor data; see WriteMockParFiles in test_DetectorEffG2kPar.cpp)
+!target/testing/test_data/det_eff/mock.par
 WtsRsrcs
 XcodeFiles
 build

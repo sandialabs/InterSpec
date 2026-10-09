@@ -2896,7 +2896,8 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
       //  characterized detector.
       if( dialog && m_detector->ceeloResponse() )
       {
-        WText *note = dialog->contents()->addNew<WText>( WString::tr("ds-qr-no-mc-note") );
+        WText *note = dialog->contents()->addNew<WText>(
+                 WString::tr( m_detector->hasImportedGrid() ? "ds-qr-no-grid-note" : "ds-qr-no-mc-note" ) );
         note->addStyleClass( "DrfQrNoMcNote" );
         note->setInline( false );
       }
@@ -3691,10 +3692,12 @@ void DrfSelect::updateDrfContentSummary()
   //  curve, so a DRF whose total comes from an attached MC response would be shown
   //  as lacking one while cascade summing was in fact available.
   const bool has_tot_eff = det->hasAnyTotalEfficiencyInfo();
+  const bool has_grid = det->hasImportedGrid();
   add_chip( WString::tr("ds-chip-total-eff"),
             WString::tr( !has_tot_eff        ? "ds-chip-tt-total-eff"
                          : det->hasTotalEfficiency() ? "ds-chip-tt-total-eff-curve"
-                                                     : "ds-chip-tt-total-eff-mc" ),
+                         : has_grid ? "ds-chip-tt-total-eff-grid"
+                                    : "ds-chip-tt-total-eff-mc" ),
             has_tot_eff );
 
   //Raw measured points (provenance / grounding input)
@@ -3704,7 +3707,16 @@ void DrfSelect::updateDrfContentSummary()
 
   //Monte-Carlo parameterized response
   const shared_ptr<const ceelo::DetectorResponse> mc = det->ceeloResponse();
-  if( mc )
+  if( mc && has_grid )
+  {
+    // A detector-characterization file's own efficiency, not a Monte Carlo of ours: neither the
+    //  "MC response" nor the (absent) "grounded" chip describes it.
+    WString tip = WString::tr( det->geometryModifiedFromImport() ? "ds-chip-tt-grid-geom-edited"
+                                                                 : "ds-chip-tt-grid" )
+                    .arg( mc->provenance.valid_e_min_keV )
+                    .arg( mc->provenance.valid_e_max_keV );
+    add_chip( WString::tr("ds-chip-grid"), tip, true );
+  }else if( mc )
   {
     WString tip = WString::tr("ds-chip-tt-mc")
                     .arg( ceelo::to_string( mc->provenance.profile ) )
@@ -3795,6 +3807,7 @@ void DrfSelect::dbTableSelectionChanged()
   m_detector = det;
   m_gui_select_matches_det = true;
   setAcceptButtonEnabled( !failed );
+  updateDrfContentSummary();
   emitChangedSignal();
 }//void dbTableSelectionChanged()
 
@@ -4595,6 +4608,11 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
     int nupdated = 0;
     for( auto iter = result.begin(); iter != result.end(); ++iter )
     {
+      // The hash doesnt include the peak-fit prefs, and rows stored before they were saved to the DB
+      //  (see `DetectorPeakResponse::drfExtraToXmlString`) dont have them - so give them them now.
+      if( !(*iter)->peakFitDetPrefs() && drf->peakFitDetPrefs() )
+        (*iter).modify()->setPeakFitDetPrefs( drf->peakFitDetPrefs() );
+
       (*iter).modify()->updateLastUsedTimeToNow();
       ++nupdated;
     }//

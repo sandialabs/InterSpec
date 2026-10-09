@@ -382,6 +382,54 @@ static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
       }
     };//class ToolTabContentWrapper
 #endif // InterSpec_PHONE_ROTATE_FOR_TABS
+
+
+  /** The peak-fit prefs for a spectrum, when nothing more specific (file, DRF, or user) gives them:
+   the defaults for its detector type, or else the application defaults.
+   */
+  shared_ptr<const PeakFitDetPrefs> default_peak_fit_prefs( const SpecMeas &meas )
+  {
+    const shared_ptr<const PeakFitDetPrefs> prefs
+      = PeakFitDetPrefs::defaultForDetectorType( static_cast<int>( meas.detector_type() ),
+                                                 meas.manufacturer(), meas.instrument_model() );
+    if( prefs )
+      return prefs;
+
+    auto default_prefs = make_shared<PeakFitDetPrefs>();
+    default_prefs->m_source = PeakFitDetPrefs::LoadingSource::Default;
+    return default_prefs;
+  }//default_peak_fit_prefs(...)
+
+
+  /** Updates the spectrum's peak-fit prefs for a change of its DRF (unless the user set them in the
+   GUI): the DRF's prefs are used, or if the DRF has none, prefs that came from the previous DRF are
+   replaced by the defaults - so, e.g., a GADRAS detector's peak shape doesnt stay with the spectrum.
+   Returns if the spectrum's prefs changed.
+   */
+  bool update_peak_fit_prefs_for_drf( SpecMeas &meas, const DetectorPeakResponse *drf )
+  {
+    const shared_ptr<const PeakFitDetPrefs> meas_prefs = meas.peakFitDetPrefs();
+    if( meas_prefs && (meas_prefs->m_source == PeakFitDetPrefs::LoadingSource::UserInputInGui) )
+      return false;
+
+    const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+    shared_ptr<const PeakFitDetPrefs> prefs;
+    if( drf_prefs )
+    {
+      auto from_drf = make_shared<PeakFitDetPrefs>( *drf_prefs );
+      from_drf->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+      prefs = from_drf;
+    }else if( meas_prefs && (meas_prefs->m_source == PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse) )
+    {
+      prefs = default_peak_fit_prefs( meas );
+    }
+
+    if( !prefs || (meas_prefs && (*meas_prefs == *prefs)) )
+      return false;
+
+    meas.setPeakFitDetPrefs( prefs );
+    return true;
+  }//bool update_peak_fit_prefs_for_drf(...)
 }//namespace
 
 
@@ -1523,14 +1571,27 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_charts )
     m_charts->removeFromParent();
   
+  // UserPreferences holds Dbo::ptr's into m_sql's session.  As a child WObject it would only be
+  //  deleted by ~WObject, after m_sql is released below - by when a worker still holding the
+  //  DbSession (e.g., loadDetectorResponseFunction, from setSpectrum) may be destroying the session
+  //  on another thread.  So release it, and m_user, while we still hold the session, under its lock.
   try
   {
+    std::unique_ptr<DataBaseUtils::DbTransaction> transaction;
+    if( m_sql )
+      transaction = std::make_unique<DataBaseUtils::DbTransaction>( *m_sql );
+
+    if( m_preferences )
+      removeChild( m_preferences.get() );
     m_user.reset();
+
+    if( transaction )
+      transaction->commit();
   }catch( ... )
   {
-    cerr << "Caught unexpected exception doing m_user.reset()" << endl;
+    cerr << "Caught unexpected exception releasing preferences and m_user" << endl;
   }
-  
+
   try
   {
     m_sql.reset();
@@ -12150,18 +12211,8 @@ void InterSpec::determinePeakFitDetPrefs( shared_ptr<SpecMeas> meas,
     return;
   }
 
-  // 4. Default for SpecUtils::DetectorType + keyword matching
-  {
-    const shared_ptr<const PeakFitDetPrefs> prefs
-      = PeakFitDetPrefs::defaultForDetectorType( static_cast<int>( meas->detector_type() ),
-                                                  meas->manufacturer(),
-                                                  meas->instrument_model() );
-    if( prefs )
-    {
-      meas->setPeakFitDetPrefs( prefs );
-      return;
-    }
-  }
+  // 4. Default for SpecUtils::DetectorType + keyword matching, and 6. the application default: both
+  //  in `default_peak_fit_prefs`, below (so if step 5 is enabled, split that function around it).
 
   // 5. Guess from spectral data (stub - currently returns nullptr). NOTE: the peak-fit entry
   //  points (e.g. fit_peak_from_double_click) do a lazy synchronous classification when
@@ -12177,10 +12228,8 @@ void InterSpec::determinePeakFitDetPrefs( shared_ptr<SpecMeas> meas,
   //   }
   // }
 
-  // 6. Default
-  auto prefs = make_shared<PeakFitDetPrefs>();
-  prefs->m_source = PeakFitDetPrefs::LoadingSource::Default;
-  meas->setPeakFitDetPrefs( prefs );
+  // 4. and 6.
+  meas->setPeakFitDetPrefs( default_peak_fit_prefs( *meas ) );
 }//void determinePeakFitDetPrefs(...)
 
 
@@ -12258,15 +12307,8 @@ void InterSpec::loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
     meas->setDetector( det );
 
     // Update PeakFitDetPrefs from DRF if the user hasnt explicitly set them
-    if( det->peakFitDetPrefs()
-       && (!meas->peakFitDetPrefs()
-           || meas->peakFitDetPrefs()->m_source != PeakFitDetPrefs::LoadingSource::UserInputInGui) )
-    {
-      auto prefs = std::make_shared<PeakFitDetPrefs>( *det->peakFitDetPrefs() );
-      prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
-      meas->setPeakFitDetPrefs( prefs );
+    if( update_peak_fit_prefs_for_drf( *meas, det.get() ) )
       viewer->m_peakFitDetPrefsChanged.emit();
-    }
 
     if( !wasModified )
       meas->reset_modified();
@@ -12484,8 +12526,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }//if( we could try to load a detector type )
 
         SpecMeas *measPtr = meas.get();
-        m_detectorChangedConnection = m_detectorChanged.connect( this, [measPtr]( std::shared_ptr<DetectorPeakResponse> drf ){
+        m_detectorChangedConnection = m_detectorChanged.connect( this, [this, measPtr]( std::shared_ptr<DetectorPeakResponse> drf ){
           measPtr->detectorChangedCallback( drf );
+
+          // A DRF the user picks brings its peak-fit prefs (e.g., a GADRAS detector's peak shape),
+          //  unless the user has set the spectrum's prefs themselves.
+          if( update_peak_fit_prefs_for_drf( *measPtr, drf.get() ) )
+            m_peakFitDetPrefsChanged.emit();
         } );
         m_detectorModifiedConnection = m_detectorModified.connect( this, [measPtr]( std::shared_ptr<DetectorPeakResponse> drf ){
           measPtr->detectorChangedCallback( drf );
@@ -14080,16 +14127,23 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     shared_ptr<const PeakFitDetPrefs> hintFitPrefs = spectrum->peakFitDetPrefs();
     if( !hintFitPrefs || (hintFitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown) )
     {
+      // The peaks' detection z needs the data they were fit to; if the calibration changed during the
+      //  search, the displayed spectrum is not that, so their own uncertainties are used instead.
+      shared_ptr<const SpecUtils::Measurement> search_data = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      if( search_data && searchCal && search_data->energy_calibration()
+         && (*search_data->energy_calibration() != *searchCal) )
+        search_data = nullptr;
       const PeakFitUtils::CoarseResolutionType peak_fwhm_type
-              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks );
+              = PeakFitUtils::coarse_resolution_from_peaks( *resultpeaks, search_data );
       if( peak_fwhm_type != PeakFitUtils::CoarseResolutionType::Unknown )
       {
-        shared_ptr<PeakFitDetPrefs> prefs = make_shared<PeakFitDetPrefs>();
+        // Only the detector type is guessed; the rest of the prefs (e.g., a skew the user chose while
+        //  the search ran) is kept.
+        shared_ptr<PeakFitDetPrefs> prefs = hintFitPrefs ? make_shared<PeakFitDetPrefs>( *hintFitPrefs )
+                                                         : make_shared<PeakFitDetPrefs>();
         prefs->m_det_type = peak_fwhm_type;
-        prefs->m_peak_skew_type = PeakDef::SkewType::NoSkew;
-        prefs->m_roi_independent_skew = false;
-        prefs->m_fwhm_method = PeakFitDetPrefs::FwhmMethod::Normal;
-        prefs->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
+        if( prefs->m_source != PeakFitDetPrefs::LoadingSource::UserInputInGui )
+          prefs->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
         m_dataMeasurement->setPeakFitDetPrefs( prefs );
         m_peakFitDetPrefsChanged.emit();
 

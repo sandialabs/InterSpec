@@ -341,6 +341,30 @@ crystals, on and off axis: within ~0.4% at 2^16 lines) and against the analytic
 hull measure. InterSpec's volumetric Activity/Shielding fit is the first
 consumer.
 
+### Total efficiency close in (`CEELO_BUILD_RESPONSE`)
+
+A generated `DetectorResponse` stores the total as a far-field tier (kernel, b(E) or
+eta_tot(E,θ) measured at `far_distance_a`) and carries it inward with the ray-traced
+kernel. Measured against direct point-source MC on a 5×5 cm closed-end HPGe coax
+(1–27 cm, 0/45/75°, 60–2614 keV, 0.2% MC): on axis that holds to ≤1.3%, but off axis it
+drifts to 1.7% at 1 cm, 2.7% at 2 cm and 4.4% at 5 cm (75°, 60 keV) - 2–3× the FEP's
+error, which has its measured near-field table N. So the near-field nodes, which run full
+transport anyway, now also keep their totals: `TotEffPayload::near_field` holds
+ln N_tot = ln(MC total / far-field model) on the FEP table's lattice and breakpoints, built
+after the tier is final, and every total query applies it below its breakpoint. Re-measured
+on the same detector and points with the table: worst 0.44/0.90/0.88/0.94% (RMS ≤0.4%) at
+1/2/5/10 cm - the FEP's level. A far-field-profile or transfer response has none, and a
+response without one serializes exactly as before (same bytes, same `content_hash`).
+
+A host that keeps only the total and the on-axis FEP (InterSpec grafting the total onto an
+imported FEP grid) sets `GenerationOptions::scans_stop_on_total`: the angular and near-field
+nodes stop on total precision, the backbone still on FEP. At 0.3% the total converges on
+6-16× fewer histories at ≥662 keV, where the cap-limited nodes are, so the same General run
+took 2260 CPU-s (10 min on 4 threads) instead of about an hour. Its total, re-measured the
+same way: worst 0.84/0.57/0.81/0.53% at 1/2/5/10 cm, RMS ≤0.47% - the FEP-stopped run's
+accuracy, a little looser at 1 cm (there 0.44%, RMS 0.26%). The FEP off the backbone is left
+at 0.3-1.2%, honestly in its sigma.
+
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 
 `src/io/EfficiencyTransfer.h` packages the classic EFFTRAN workflow: anchor an

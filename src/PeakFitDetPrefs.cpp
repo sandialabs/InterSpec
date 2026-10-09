@@ -92,6 +92,21 @@ bool PeakFitDetPrefs::operator!=( const PeakFitDetPrefs &rhs ) const
 }//operator!=
 
 
+std::optional<double> PeakFitDetPrefs::fixed_skew_value( const PeakDef::SkewType skew_type,
+                                                         const PeakDef::CoefficientType coef ) const
+{
+  const int index = static_cast<int>(coef) - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
+  if( (skew_type != m_peak_skew_type) || (index < 0)
+     || (index >= static_cast<int>( PeakDef::num_skew_parameters( skew_type ) ))
+     || PeakDef::is_energy_dependent( skew_type, coef ) )
+  {
+    return std::nullopt;
+  }
+
+  return m_lower_energy_skew[index];
+}//fixed_skew_value(...)
+
+
 const char *PeakFitDetPrefs::to_str( const PeakFitUtils::CoarseResolutionType type )
 {
   switch( type )
@@ -618,40 +633,67 @@ void apply_fit_prefs_to_peaks(
   apply_fwhm_method_to_peaks( peaks, drf, prefs, fit_options );
 
   // Apply skew type and parameters
+  const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+  for( shared_ptr<PeakDef> &peak : peaks )
+  {
+    if( peak )
+      apply_prefs_skew_to_peak( *peak, prefs, data, drf_prefs.get() );
+  }
+}//apply_fit_prefs_to_peaks
+
+
+void apply_prefs_skew_to_peak( PeakDef &peak, const PeakFitDetPrefs &prefs,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                               const PeakFitDetPrefs *drf_prefs )
+{
   const PeakDef::SkewType prefs_skew = prefs.m_peak_skew_type;
   const size_t num_skew = PeakDef::num_skew_parameters( prefs_skew );
 
-  for( shared_ptr<PeakDef> &peak : peaks )
+  peak.setSkewType( prefs_skew );
+
+  for( size_t i = 0; i < num_skew; ++i )
   {
-    if( !peak )
-      continue;
+    const PeakDef::CoefficientType ct
+      = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
 
-    peak->setSkewType( prefs_skew );
-
-    for( size_t i = 0; i < num_skew; ++i )
+    if( prefs.m_lower_energy_skew[i].has_value() )
     {
-      const PeakDef::CoefficientType ct
-        = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+      double val = prefs.m_lower_energy_skew[i].value();
 
-      if( prefs.m_lower_energy_skew[i].has_value() )
+      if( PeakDef::is_energy_dependent( prefs_skew, ct )
+         && prefs.m_upper_energy_skew[i].has_value()
+         && data && data->num_gamma_channels() > 0 )
       {
-        double val = prefs.m_lower_energy_skew[i].value();
+        const double lower_energy = data->gamma_channel_lower( 0 );
+        const double upper_energy
+          = data->gamma_channel_upper( data->num_gamma_channels() - 1 );
+        const double frac = (peak.mean() - lower_energy)
+                            / (upper_energy - lower_energy);
+        val += frac * (prefs.m_upper_energy_skew[i].value() - val);
+      }
 
-        if( PeakDef::is_energy_dependent( prefs_skew, ct )
-           && prefs.m_upper_energy_skew[i].has_value()
-           && data && data->num_gamma_channels() > 0 )
-        {
-          const double lower_energy = data->gamma_channel_lower( 0 );
-          const double upper_energy
-            = data->gamma_channel_upper( data->num_gamma_channels() - 1 );
-          const double frac = (peak->mean() - lower_energy)
-                              / (upper_energy - lower_energy);
-          val += frac * (prefs.m_upper_energy_skew[i].value() - val);
-        }
+      peak.set_coefficient( val, ct );
+      peak.setFitFor( ct, false );
+    }else if( !PeakDef::skew_parameter_fit_by_default( prefs_skew, ct ) )
+    {
+      peak.set_coefficient( skew_starting_value( prefs_skew, ct, &prefs, drf_prefs ), ct );
+      peak.setFitFor( ct, false );
+    }//if( skew param value specified ) / else if( not fit by default )
+  }//for( loop over skew parameters )
+}//apply_prefs_skew_to_peak(...)
 
-        peak->set_coefficient( val, ct );
-        peak->setFitFor( ct, false );
-      }//if( skew param value specified )
-    }//for( loop over skew parameters )
-  }//for( peak : peaks )
-}//apply_fit_prefs_to_peaks
+
+double skew_starting_value( const PeakDef::SkewType skew_type, const PeakDef::CoefficientType coef,
+                            const PeakFitDetPrefs *meas_prefs, const PeakFitDetPrefs *drf_prefs )
+{
+  for( const PeakFitDetPrefs *prefs : { meas_prefs, drf_prefs } )
+  {
+    const optional<double> value = prefs ? prefs->fixed_skew_value( skew_type, coef ) : optional<double>{};
+    if( value.has_value() )
+      return value.value();
+  }
+
+  double lower = 0.0, upper = 0.0, starting = 0.0, step = 0.0;
+  PeakDef::skew_parameter_range( skew_type, coef, lower, upper, starting, step );
+  return starting;
+}//skew_starting_value(...)

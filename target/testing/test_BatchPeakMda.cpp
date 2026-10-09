@@ -1368,6 +1368,9 @@ struct NominalActivityFixture
 
     ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
     options.attenuate_for_air = false;
+    // The DRF above states no efficiency uncertainty, so asking for one would (correctly) warn -
+    //  callers pass None in that case, as SimpleActivityCalc does.
+    options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
     chi_input.config.distance = distance;

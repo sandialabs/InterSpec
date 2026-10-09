@@ -137,6 +137,15 @@
     "Don't use" - only the peak counting-statistics uncertainties are used (the historical behavior).
     "Propagate to results" (default) - the best-fit activities/shieldings are the same as "Don't use", but the reported uncertainties are widened to include the efficiency uncertainty. This is usually what you want: a detector-wide efficiency error maps onto the reported activity uncertainty rather than being averaged away across peaks, without moving the answer.
     "Use in fit" - folds the correlated efficiency uncertainty into the fit itself, so it can also shift the best-fit values when peaks disagree under the efficiency band. The residual chart then shows the coherent offset; see the Help for why.</message>
+  <message id="ssd-cb-drf-uncert-assumed">Include assumed {1}%</message>
+  <message id="ssd-tt-drf-uncert-assumed">This detector response does not state how well its efficiency is known.  Because it describes the detector's geometry, InterSpec assigns its efficiency curve an assumed uncertainty - 5%, from comparing the shipped GADRAS detectors' efficiencies against Monte Carlo simulations of the geometries they describe (median deviations of 2.3% to 3.0% for LaBr3, NaI and CZT, and 5.8% for HPGe).  That number does not reflect how well the curve describes your particular detector, so it is only used when this is checked.  The geometry-model part of the uncertainty (for near-field and off-axis positions) is used either way.</message>
+  <message id="ssd-drf-uncert-status-none">The detector response reports no efficiency uncertainty.</message>
+  <message id="ssd-drf-uncert-status-off">Not used: uncertainties are from counting statistics only.</message>
+  <message id="ssd-drf-uncert-status-stated">Using {1}% (at {2} keV), as stated by the detector response.</message>
+  <message id="ssd-drf-uncert-status-stated-model">Using {1}% (at {2} keV), as stated by the detector response, including {3}% from the geometry model.</message>
+  <message id="ssd-drf-uncert-status-model-only">Using {1}% (at {2} keV) from the geometry model only; the detector response states no uncertainty of its own, and the assumed {3}% is not used.</message>
+  <message id="ssd-drf-uncert-status-assumed">Using {1}% (at {2} keV), including the assumed {3}% - the detector response states no uncertainty of its own.</message>
+  <message id="ssd-drf-uncert-status-assumed-unused">The detector response states no efficiency uncertainty of its own; the assumed {1}% is not used.</message>
   <message id="ssd-cb-cascade-corr">Cascade summing corr.</message>
   <message id="ssd-tt-cascade-corr">Correct expected peak counts for true-coincidence (cascade) summing:
     gammas emitted in coincidence (e.g., Co-60, Eu-152, Ba-133 cascades) can sum in the detector,
@@ -165,8 +174,9 @@
     (deterministic, near-field correct); "Flat-disk" is the legacy far-field solid-angle
     approximation, applied to point and volumetric sources alike.  "Imported efficiency grid" is
     only listed for a detector response imported from a Genie/ISOCS .par file, and is what "Auto"
-    picks for one: it uses that file&apos;s efficiency grid as-is, and is full-energy peak only, so
-    cascade-summing corrections are not available with it.  The status to the right shows
+    picks for one: it uses that file&apos;s efficiency grid as-is.  Cascade-summing corrections with
+    it need a Monte-Carlo total efficiency, which the detector&apos;s &quot;Modify&quot; dialog can
+    add.  The status to the right shows
     which model the fit will actually use with the current detector response; the calculation log
     names it for both source kinds.  All distances are measured from the front face of the
     detector.</message>

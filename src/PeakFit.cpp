@@ -591,7 +591,7 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
   if( is_search_canceled( cancel_flag ) )
     return fitpeakvec;
 
-  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
+  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec, meas );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs, cancel_flag );
 
@@ -712,12 +712,72 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks_singlethread(
   if( is_search_canceled( cancel_flag ) )
     return fitpeakvec;
 
-  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec );
+  const auto detResolution = PeakFitUtils::coarse_resolution_from_peaks( fitpeakvec, meas );
   if( detResolution == PeakFitUtils::CoarseResolutionType::High )
     fitpeakvec = filter_anomolous_width_peaks_highres( meas, fitpeakvec, fitPrefs, cancel_flag );
 
   return fitpeakvec;
 }//search_for_peaks_singlethread(...)
+
+
+vector<shared_ptr<const PeakDef>> refit_sparse_rois( const vector<shared_ptr<const PeakDef>> &peaks,
+                                                          const shared_ptr<const Measurement> &data,
+                                                          const PeakFitUtils::CoarseResolutionType det_type,
+                                                          const set<const PeakDef *> &keep,
+                                                          const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
+{
+  vector<vector<shared_ptr<const PeakDef>>> rois;
+  map<const PeakContinuum *, size_t> roi_index;
+  for( const shared_ptr<const PeakDef> &p : peaks )
+  {
+    const PeakContinuum * const cont = p ? p->continuum().get() : nullptr;
+    const auto pos = roi_index.find( cont );
+    if( cont && (pos != end(roi_index)) )
+    {
+      rois[pos->second].push_back( p );
+    }else
+    {
+      roi_index[cont] = rois.size();
+      rois.push_back( { p } );
+    }
+  }//for( const shared_ptr<const PeakDef> &p : peaks )
+
+  vector<shared_ptr<const PeakDef>> answer;
+  for( const vector<shared_ptr<const PeakDef>> &roi : rois )
+  {
+    const bool skip = std::any_of( begin(roi), end(roi), [&keep]( const shared_ptr<const PeakDef> &p ){
+      return !p || !p->gausPeak() || !p->continuum() || keep.count( p.get() );
+    } );
+
+    vector<shared_ptr<const PeakDef>> refit;
+    if( !skip && PeakFitLM::is_sparse_roi( roi, data ) )
+    {
+      try
+      {
+        // A refinement of the chi2 fit, unless the caller limits it: with a free width, a weak peak in
+        //  sparse data can widen into the continuum (the area is solved linearly, so is free either way).
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> options = fit_options;
+        if( !options.test( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly )
+            && !options.test( PeakFitLM::PeakFitLMOptions::SmallAmplitudeRefinementOnly )
+            && !options.test( PeakFitLM::PeakFitLMOptions::MediumFwhmRefinementOnly )
+            && !options.test( PeakFitLM::PeakFitLMOptions::SmallFwhmRefinementOnly ) )
+        {
+          options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+        }
+        refit = PeakFitLM::fit_peaks_in_roi_LM( roi, data, det_type, options );
+      }catch( std::exception & )
+      {
+        refit.clear();
+      }
+    }//if( a sparse ROI )
+
+    const vector<shared_ptr<const PeakDef>> &use = (refit.size() == roi.size()) ? refit : roi;
+    answer.insert( end(answer), begin(use), end(use) );
+  }//for( const vector<shared_ptr<const PeakDef>> &roi : rois )
+
+  std::sort( begin(answer), end(answer), &PeakDef::lessThanByMeanShrdPtr );
+  return answer;
+}//refit_sparse_rois(...)
 
 
 vector<std::shared_ptr<const PeakDef> > search_for_peaks(
@@ -943,11 +1003,13 @@ recover_background_peaks_under_foreground(
       //  together); peaks below the significance threshold are dropped.  Because the Currie
       //  pre-screen already confirmed a real excess, a modest significance threshold is used.
       const double ncausality = 7.5;
-      const double stat_threshold = 2.0;       // minimum area significance (LM path)
+      const double stat_threshold = search_cuts().background_recovery_min_nsigma;  // minimum area significance
       const double hypothesis_threshold = -1.0;
+      //  (Chi2 trial fits, as the search; the recovered peaks are evidence - see AnalystChecks.)
+      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );
       const vector<PeakDef> fit = fitPeaksInRange( span_lo, span_hi, ncausality, stat_threshold,
                                         hypothesis_threshold, fit_input, background_spectrum,
-                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(), det_type );
+                                        fit_options, det_type );
 
       // Require netting at least one new peak beyond what was already there.
       if( fit.size() <= existing_in_span.size() )
@@ -982,6 +1044,13 @@ recover_background_peaks_under_foreground(
 
   return std::make_shared<PeakDequeT>( running.begin(), running.end() );
 }//recover_background_peaks_under_foreground(...)
+
+
+SearchCuts &search_cuts()
+{
+  static SearchCuts s_cuts;
+  return s_cuts;
+}
 
 }//namespace ExperimentalAutomatedPeakSearch
 
@@ -1426,7 +1495,10 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   shared_continuum->setRange( x0, x1 );
   shared_continuum->setType( offsetType );
   
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options;
+  // The callers choose between these fits, and the existing peaks, by `chi2_for_region(...)`, so they
+  //  are chi2 trial fits (a likelihood fit of a sparse ROI has a slightly worse chi2); the fit a caller
+  //  keeps is then refit by the default fit (see ExperimentalAutomatedPeakSearch::refit_sparse_rois).
+  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options( PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
   
@@ -2010,8 +2082,9 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
                        const PeakFitUtils::CoarseResolutionType det_type,
                        std::vector<PeakDef> &resultPeaks )
 {
-  const Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options
-                                  = PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+  // Part of the peak search, which decides with chi2 trial fits (its acceptance tests compare chi2 values).
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> lm_fit_options( PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+  lm_fit_options |= PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood;
   const double stat_threshold = 0.0;
   const double hypothesis_threshold = 0.0;
 
@@ -3392,7 +3465,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
   const double lowres_min_withinsigma_chi2dof_peak_improvment = automated ? 1.5 : 0.5;
   const double lowres_min_energy_require_chi2dof_cut = 100.0;
   const double lowres_max_nsigma_to_require_chi2dof_cut = 50;
-  const double lowres_min_nsigma_peak = automated ? 3.0 : 1.5;
+  const double lowres_min_nsigma_peak = automated ? ExperimentalAutomatedPeakSearch::search_cuts().lowres_single_min_nsigma : 1.5;
   const double lowres_roi_min_nsigma = 3.5;
   const double lowres_min_for_narrow_roi_nsigma_peak = automated ? 10.0 : 5.0;
   const double lowres_min_core_chi2dof_over_line_improvment = automated ? 0.8 : 0.5;
@@ -3738,7 +3811,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
                                   const std::shared_ptr<const Measurement> &dataH,
                                   const bool automated )
 {
-  const double lowres_min_nsigma_peak = automated ? 2.75 : 1.5;
+  const double lowres_min_nsigma_peak = automated ? ExperimentalAutomatedPeakSearch::search_cuts().lowres_multi_min_nsigma : 1.5;
   const double lowres_min_core_multipeak_chi2dof_peak_improvment = automated ? 0.75 : 0.5;
   const double max_ratio_make_chi2_worse = 2.0;
   const double min_line_chi2 = 1.2;
@@ -4038,7 +4111,7 @@ PeakRejectionStatus check_highres_multi_peak_fit( const vector<std::shared_ptr<c
   const double min_sigma_nearest_existing_peak = 1.0;
   const double max_chi2_dof = 25.0;
   const double max_nsigma_newpeak_to_nearest_other = 10.0; //guessed
-  const double min_nsigma_peak = automated ? 3.0 : 1.5;
+  const double min_nsigma_peak = automated ? ExperimentalAutomatedPeakSearch::search_cuts().highres_multi_min_nsigma : 1.5;
   
   vector<std::shared_ptr<const PeakDef> > toadd = fitpeaks;
   vector<std::shared_ptr<const PeakDef> > toremove = originalpeaks;
@@ -4230,14 +4303,16 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
                                    const bool automated )
 {
   const double max_chi2dof_persignificance = 2.0;
-  const double min_nsigma_peak = automated ? 5.0 : 1.5;
-  const double low_stat_min_nsigma_peak = automated ? 3.5 : 0.5;
-  const double med_stat_min_nsigma_peak = automated ? 4.25 : 0.75;
+  const ExperimentalAutomatedPeakSearch::SearchCuts &cuts = ExperimentalAutomatedPeakSearch::search_cuts();
+  const double min_nsigma_peak = automated ? cuts.highres_min_nsigma : 1.5;
+  const double low_stat_min_nsigma_peak = automated ? cuts.highres_low_stat_min_nsigma : 0.5;
+  const double med_stat_min_nsigma_peak = automated ? cuts.highres_med_stat_min_nsigma : 0.75;
   const double min_core_chi2dof_peak_improvment = automated ? 0.5 : 0.25;
   const double min_significance_test_width = 7.5;
   const double min_chi2dof_test_width = 3.0;
   const double max_chi2dof_roi = automated ? 50.0 : 250.0;
-  const double max_nsignif_to_apply_chidof_check = 100.0; //based on a single example (80.0 keV peak of example Ba133 spectrum)
+  //based on a single example (80.0 keV peak of example Ba133 spectrum)
+  const double max_nsignif_to_apply_chidof_check = automated ? cuts.highres_chi2dof_cut_max_nsigma : 100.0;
   
   const double fwhm = peak->fwhm();
   const double mean = peak->mean();
@@ -4319,7 +4394,25 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
     return false;
   }//if( chi2Dof > 25.0 )
   
-  const double nsignif = peak->amplitude() / peak->amplitudeUncert();
+  // Is the peak there: its detection significance - the area over its uncertainty conditional on the
+  //  shapes - not the reported (marginal) uncertainty.  For this chi2 trial fit, with chi2 weights; but a
+  //  sparse ROI, where the chi2 model is biased low, is judged by its likelihood refit (unless
+  //  `SearchCuts::detection_z_chi2_weights`, which see).
+  double nsignif = PeakFitLM::peak_detection_significance( *peak, {}, dataH, /*chi2_weights=*/ true );
+  if( !ExperimentalAutomatedPeakSearch::search_cuts().detection_z_chi2_weights
+      && PeakFitLM::is_sparse_roi( { peak }, dataH ) )
+  {
+    try
+    {
+      const vector<shared_ptr<const PeakDef>> refit = PeakFitLM::fit_peaks_in_roi_LM( { peak }, dataH,
+                         PeakFitUtils::CoarseResolutionType::High, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+      if( refit.size() == 1 )
+        nsignif = PeakFitLM::peak_detection_significance( *refit[0], {}, dataH );
+    }catch( std::exception & )
+    {
+      // The refit failed: the chi2 trial fit's significance stands.
+    }
+  }//if( a sparse ROI )
   const bool lowstatregion = ((dataarea - gausarea) <= 3.0*sqrt(dataarea));
   const bool medstatregion = ((dataarea - gausarea) <= 9.0*sqrt(dataarea));
 
@@ -4623,7 +4716,44 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
 
 
 
+/** `searchForPeakFromUser(...)` without the final refit of its result. */
+static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const double x,
+                                                        double pixelPerKev,
+                                                        const std::shared_ptr<const Measurement> &dataH,
+                                                        const PeakShrdVec &inpeaks,
+                                                        std::shared_ptr<const DetectorPeakResponse> drf,
+                                                       const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
+                                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag );
+
+
 pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
+                                                        double pixelPerKev,
+                                                        const std::shared_ptr<const Measurement> &dataH,
+                                                        const PeakShrdVec &inpeaks,
+                                                        std::shared_ptr<const DetectorPeakResponse> drf,
+                                                       const std::shared_ptr<const std::deque<shared_ptr<const PeakDef>>> &auto_search_peaks,
+                                                       std::shared_ptr<const PeakFitDetPrefs> fitPrefs,
+                                                       std::shared_ptr<const std::atomic<bool>> cancel_flag )
+{
+  pair< PeakShrdVec, PeakShrdVec > answer = search_for_peak_from_user_imp( x, pixelPerKev, dataH, inpeaks, drf,
+                                                                    auto_search_peaks, fitPrefs, cancel_flag );
+
+  // The peak is chosen by chi2 trial fits; a user's peak is then fit like any other.  Automated callers
+  //  (pixelPerKev <= 0) get the decision fits: the search, which hands them on as evidence, and callers
+  //  that deliver them, which refit them with ExperimentalAutomatedPeakSearch::refit_sparse_rois.
+  const bool automated = (pixelPerKev <= 0.0);
+  if( !automated && !answer.first.empty() )
+  {
+    answer.first = ExperimentalAutomatedPeakSearch::refit_sparse_rois( answer.first, dataH,
+                                    PeakFitUtils::effective_det_type( fitPrefs, dataH, nullptr ), {} );
+  }
+
+  return answer;
+}//searchForPeakFromUser(...)
+
+
+static pair< PeakShrdVec, PeakShrdVec > search_for_peak_from_user_imp( const double x,
                                                         double pixelPerKev,
                                                         const std::shared_ptr<const Measurement> &dataH,
                                                         const PeakShrdVec &inpeaks,
@@ -4813,7 +4943,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   answer.second = coFitPeaks;
   
   return answer;
-}//searchForPeakFromUser(...)
+}//search_for_peak_from_user_imp(...)
 
 
 void secondDerivativePeakCanidates( const std::shared_ptr<const Measurement> data,
@@ -6087,10 +6217,13 @@ bool chi2_significance_test( const PeakDef &peak,
     const double * const step_coeffs = num_step_pars ? (fit_cont_pars.data() + num_poly_pars)
                                                      : nullptr;
 
+    // A NoOffset continuum leaves nothing to fit (the other peaks are held fixed), and the solve
+    //  cannot handle an empty system; the null model is then just the other peaks.
     vector<double> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
-    PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
-                                    step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
-                                    amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
+    if( num_poly_pars > 0 )
+      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, num_roi_channel, cont->type(),
+                                      step_coeffs, ref_energy, {}, {}, other_peaks, peak.skewType(), skew_pars,
+                                      amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts, (double *)0 );
 
     // fit_amp_and_offset_imp returns only the polynomial coefficients; setParameters expects the
     //  step coefficients appended - and they are the fitted ones we just handed it as known.

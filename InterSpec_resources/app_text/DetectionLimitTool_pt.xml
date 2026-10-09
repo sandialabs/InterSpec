@@ -175,4 +175,14 @@
   <message id="dlt-estimating-spread">Calculando dispersão…</message>
   <message id="dlt-spread-band">(tipicamente {1}&ndash;{2}&times; este valor)</message>
   <message id="dlt-spread-unavailable">Não foi possível estimar a dispersão.</message>
+  <message id="dlt-detector-eff-used">Eficiência do detector usada</message>
+  <message id="dlt-det-eff-uncert">Incert. ef. det.</message>
+  <message id="dlt-det-eff-uncert-none">não declarada</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (declarada pelo detector)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (apenas modelo geométrico)</message>
+  <message id="dlt-systematic-uncert-used">Incert. sistemática usada</message>
+  <message id="dlt-tt-detector-eff-used">A probabilidade de que um gama emitido pela fonte, a esta distância, seja detectado no pico de energia total: a eficiência que este cálculo realmente usa.</message>
+  <message id="dlt-tt-det-eff-uncert">A incerteza relativa 1-sigma da eficiência do detector nesta energia e distância: o que a resposta do detector declara por si, mais, para um detector modelado geometricamente, a incerteza que seu modelo geométrico acrescenta perto do detector ou fora do eixo.  Uma incerteza que a resposta do detector não declara, mas que é suposta para ele, não é incluída.</message>
+  <message id="dlt-tt-systematic-uncert-used">A incerteza sistemática relativa 1-sigma usada pelos limites de Currie acima: a incerteza de eficiência do detector, combinada em quadratura com qualquer incerteza de eficiência ou de distância inserida.</message>
+  <message id="dlt-drf-uncert-decon-excluded">Estes limites não incluem a incerteza de eficiência da resposta do detector (até {1}% para as linhas usadas); os limites de Currie por linha a incluem.</message>
 </messages>

@@ -73,6 +73,9 @@
   <message id="dmw-anchor-note-response">This detector answers every efficiency and uncertainty
     question through its geometry-modeled response.  The numbers below are what that response is built
     from; it is rebuilt from them when you press &quot;Use&quot;.</message>
+  <message id="dmw-anchor-note-grid">This detector answers every efficiency and uncertainty question
+    through the efficiency grid it was imported with.  The curve below is only a far-field sample of
+    that grid, so editing it has no effect while the grid is kept.</message>
 
   <!-- The read-only "what this detector reports" line, and its tooltip. -->
   <message id="dmw-uncert-summary">At {1} keV this detector reports an efficiency uncertainty of
@@ -194,9 +197,13 @@
 
   <!-- Footer "Generate Response" (Geometry-Modeled only) and the two Use-flow confirmations. -->
   <message id="dmw-generate-btn">Generate Response</message>
+  <message id="dmw-generate-total-btn">Generate Total Efficiency</message>
   <message id="dmw-regen-from-points-note">The regenerated response derives its uncertainty from the measured points, not from a hand-edited covariance matrix.</message>
   <message id="dmw-detach-title">Remove geometry-modeled response?</message>
   <message id="dmw-detach-body">Switching to Flat Disk removes the geometry-modeled Monte-Carlo response and reverts this detector to the flat-disk far-field model.  Continue?</message>
+  <message id="dmw-detach-grid-body">Switching to Flat Disk removes the efficiency grid this detector
+    was imported with, and reverts it to the flat-disk far-field model.  The grid can only be
+    recovered by importing its .par and DETECTOR.txt files again.  Continue?</message>
   <message id="dmw-detach-accept">Remove &amp; use</message>
   <message id="dmw-regen-title">Response does not reflect your edits</message>
   <message id="dmw-regen-required-body">While a geometry-modeled response is attached, it - not the
@@ -210,6 +217,12 @@
     back to the flat-disk far-field model, or to cancel and finish the geometry.</message>
   <message id="dmw-regen-accept">Regenerate &amp; use</message>
   <message id="dmw-regen-detach">Remove response, use flat disk</message>
+  <message id="dmw-regen-grid-body">This detector&apos;s efficiency comes from the grid it was
+    imported with - not from the efficiency curve or uncertainty you edited - so using it as it
+    stands would simply ignore your edits, and the grid cannot be rebuilt from them.  Either remove
+    the grid and use your edits with the flat-disk far-field model (the grid can only be recovered by
+    importing its files again), or cancel.</message>
+  <message id="dmw-regen-grid-detach">Remove grid, use flat disk</message>
 
   <!-- A Geometry-Modeled detector that has no Monte-Carlo response at all when "Use" is pressed. -->
   <message id="dmw-nogen-title">No Monte-Carlo response yet</message>
@@ -238,12 +251,13 @@
   <message id="dmw-info-geom-known">Physical geometry recorded</message>
   <message id="dmw-info-geom-layers">{1}; {2} endcap/housing layer(s)</message>
   <message id="dmw-info-geom-disabled">{1} - kept, but not used (Flat Disk)</message>
+  <message id="dmw-info-geom-modified">{1} - edited from the imported geometry</message>
   <message id="dmw-info-support">Location support</message>
   <message id="dmw-info-support-none">None - flat-disk model (on-axis efficiency scaled by solid angle; off-axis queries are flagged)</message>
   <message id="dmw-info-support-full">Full Monte-Carlo characterization ({1} profile; valid {2})</message>
   <message id="dmw-info-support-quick">Quick Monte-Carlo transfer, EFFTRAN-style (valid {1})</message>
   <message id="dmw-info-support-curve">Measured-curve transfer, no Monte Carlo (valid {1})</message>
-  <message id="dmw-info-support-grid">Imported efficiency grid, full-energy peak only (valid {1})</message>
+  <message id="dmw-info-support-grid">Imported efficiency grid (valid {1})</message>
   <message id="dmw-info-support-min-dist">{1}; best beyond {2} from the face</message>
   <message id="dmw-info-grounded-points">{1}; grounded to the measured points</message>
   <message id="dmw-info-grounded-curve">{1}; grounded to the efficiency curve</message>

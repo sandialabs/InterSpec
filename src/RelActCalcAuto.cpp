@@ -7621,6 +7621,14 @@ struct RelActAutoCostFcn
           constant_parameters.push_back( static_cast<int>(skew_start + i) );
           lower_bounds[skew_start + i] = std::nullopt;
           upper_bounds[skew_start + i] = std::nullopt;
+        }else if( !options.start_lower_skew[i].has_value()
+                 && !PeakDef::skew_parameter_fit_by_default( options.skew_type, ct ) )
+        {
+          // Not given a value, and not fit by default either (e.g., a GADRAS power or extent):
+          //  hold it at its default value.
+          constant_parameters.push_back( static_cast<int>(skew_start + i) );
+          lower_bounds[skew_start + i] = std::nullopt;
+          upper_bounds[skew_start + i] = std::nullopt;
         }
 
         // 20250324 HACK to test fitting peak skew
@@ -7697,6 +7705,21 @@ struct RelActAutoCostFcn
 #endif
         }
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
+
+      {// Move the skew start off a point the fit could never leave (both GADRAS amplitudes zero)
+        const size_t skew_start = cost_functor->m_skew_par_start_index;
+        vector<double> skew_values( num_skew_coefs, 0.0 );
+        vector<bool> skew_is_fit( num_skew_coefs, false );
+        for( size_t i = 0; i < num_skew_coefs; ++i )
+        {
+          skew_values[i] = parameters[skew_start + i];
+          skew_is_fit[i] = (std::find( begin(constant_parameters), end(constant_parameters),
+                                       static_cast<int>(skew_start + i) ) == end(constant_parameters));
+        }
+        PeakDef::avoid_stationary_skew_start( options.skew_type, skew_values, skew_is_fit );
+        for( size_t i = 0; i < num_skew_coefs; ++i )
+          parameters[skew_start + i] = skew_values[i];
+      }
     
       // Floating peaks; one parameter for amplitude, one for FWHM (which will usually be unused)
     for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
@@ -8582,10 +8605,15 @@ struct RelActAutoCostFcn
       if( pos != end(constant_parameters) )
       {
         // Test that if the paramater is totally const (e.g., not just `initial_const_parameters`), then we
-        //  shouldnt have put lower/upper bounds on the paramater
+        //  shouldnt have put lower/upper bounds on the paramater - other than a replayed model-selection
+        //  freeze, which keeps its bounds (its value was checked against them above).
         const auto init_pos = std::find( begin(initial_const_parameters), end(initial_const_parameters), static_cast<int>(i) );
+        const auto frozen_pos = std::find( begin(model_selection_fixed_parameters),
+                                           end(model_selection_fixed_parameters), static_cast<int>(i) );
         assert( (init_pos != end(initial_const_parameters))
+               || (frozen_pos != end(model_selection_fixed_parameters))
                || (!lower_bounds[i].has_value() && !upper_bounds[i].has_value()) );
+        (void)frozen_pos;
         
         continue;
       }
@@ -15316,7 +15344,20 @@ struct RelActAutoCostFcn
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+    double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+
+    // GADRAS CZT shapes routinely have >10% of their area beyond 15 sigma (e.g., ~12% below -15
+    //  sigma at 1.4 MeV), which is real peak area that must be modelled.  With truncation the GADRAS
+    //  tails are bounded anyway; without it, cap only extreme (e.g., RapiScan RPM) tails.
+    if( (m_options.skew_type == PeakDef::SkewType::GadrasGeneric)
+       || (m_options.skew_type == PeakDef::SkewType::GadrasCZT) )
+    {
+#if( USE_GADRAS_TRUNCATION )
+      max_nsigma = 0.0;   //no cap
+#else
+      max_nsigma = 60.0;
+#endif
+    }//if( a GADRAS skew type )
     const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
     const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
@@ -16057,8 +16098,12 @@ struct RelActAutoCostFcn
              = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
 
-        // If this skew parameter was fixed (not fit), mark fitFor as false
-        const bool was_fixed = (skew_index < 6) && m_options.fixed_lower_skew[skew_index].has_value();
+        // If this skew parameter was fixed (not fit), mark fitFor as false - the same test as the
+        //  solve's setup uses.
+        const bool was_fixed = (skew_index < 6)
+                               && (m_options.fixed_lower_skew[skew_index].has_value()
+                                   || (!m_options.start_lower_skew[skew_index].has_value()
+                                       && !PeakDef::skew_parameter_fit_by_default( comp_peak.m_skew_type, coef )));
         peak.setFitFor( coef, !was_fixed );
 
         // Set skew parameter uncertainty if computed
@@ -19016,41 +19061,29 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 }//T eval_fwhm( const T energy, const FwhmForm form, ... )
 
 
-const char *Options::skew_prefs_usage_str( const SkewPrefsUsage usage )
+bool Options::lorentzian_xrays_compatible( const PeakDef::SkewType skew_type )
 {
-  switch( usage )
-  {
-    case SkewPrefsUsage::Ignore:               return "Ignore";
-    case SkewPrefsUsage::AsPreferencesSpecify: return "AsPreferencesSpecify";
-    case SkewPrefsUsage::StartingValuesOnly:   return "StartingValuesOnly";
-  }//switch( usage )
-
-  assert( 0 );
-  return "Ignore";
-}//Options::skew_prefs_usage_str(...)
+  return (skew_type == PeakDef::SkewType::NoSkew) || (skew_type == PeakDef::SkewType::GaussPlusBortel);
+}
 
 
-Options::SkewPrefsUsage Options::skew_prefs_usage_from_str( const std::string &str )
+void Options::apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs, const PeakFitDetPrefs * const drf_prefs )
 {
-  for( const SkewPrefsUsage usage : { SkewPrefsUsage::Ignore, SkewPrefsUsage::AsPreferencesSpecify,
-                                      SkewPrefsUsage::StartingValuesOnly } )
-  {
-    if( SpecUtils::iequals_ascii( str, skew_prefs_usage_str(usage) ) )
-      return usage;
-  }
-
-  throw runtime_error( "Invalid SkewPrefsUsage '" + str + "'" );
-}//Options::skew_prefs_usage_from_str(...)
-
-
-void Options::apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs )
-{
-  if( (skew_prefs_usage == SkewPrefsUsage::Ignore)
-     || !prefs
-     || (prefs->m_peak_skew_type == PeakDef::SkewType::NoSkew) )
+  if( !skew_from_peak_fit_prefs || !prefs )
     return;
 
-  skew_type = prefs->m_peak_skew_type;
+  set_skew_from_prefs( prefs->m_peak_skew_type, prefs, drf_prefs );
+
+  // The skew the user chose for the spectrum takes priority over Lorentzian x-rays.
+  if( !lorentzian_xrays_compatible( skew_type ) )
+    lorentzian_xrays = false;
+}//Options::apply_peak_fit_prefs(...)
+
+
+void Options::set_skew_from_prefs( const PeakDef::SkewType type, const PeakFitDetPrefs * const prefs,
+                                   const PeakFitDetPrefs * const drf_prefs )
+{
+  skew_type = type;
   for( size_t i = 0; i < 6; ++i )
   {
     fixed_lower_skew[i].reset();
@@ -19059,47 +19092,57 @@ void Options::apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs )
     start_upper_skew[i].reset();
   }
 
-  // ROI-independent skew values are for each peak fit on its own, not across the spectrum, so only
-  //  the skew type is used.
-  if( prefs->m_roi_independent_skew )
-    return;
+  // ROI-independent skew values are for each peak fit on its own, not across the spectrum.
+  const bool use_prefs_values = prefs && (prefs->m_peak_skew_type == type) && !prefs->m_roi_independent_skew;
 
-  const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
+  const size_t num_skew = PeakDef::num_skew_parameters( type );
   for( size_t i = 0; i < num_skew; ++i )
   {
     const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
-    const std::optional<double> &lower = prefs->m_lower_energy_skew[i];
-    if( !lower.has_value() )
-      continue;
-
-    std::optional<double> upper = PeakDef::is_energy_dependent( skew_type, ct )
-                                  ? prefs->m_upper_energy_skew[i] : std::optional<double>{};
 
     // Values outside the range this tool allows (e.g., from another tool) are moved to its limit,
     //  rather than failing a fit the user gave no skew values to.
     double min_value = 0.0, max_value = 0.0, starting = 0.0, step = 0.0;
-    std::optional<double> lower_value = lower;
-    if( PeakDef::skew_parameter_range( skew_type, ct, min_value, max_value, starting, step )
-       && (min_value < max_value) )
-    {
-      for( std::optional<double> *value : { &lower_value, &upper } )
-      {
-        if( value->has_value() && std::isfinite( value->value() ) )
-          *value = std::clamp( value->value(), min_value, max_value );
-      }
-    }//if( we know the allowed range )
+    const bool have_range = PeakDef::skew_parameter_range( type, ct, min_value, max_value, starting, step )
+                            && (min_value < max_value);
+    const auto in_range = [=]( std::optional<double> value ) -> std::optional<double> {
+      if( have_range && value.has_value() && std::isfinite( value.value() ) )
+        value = std::clamp( value.value(), min_value, max_value );
+      return value;
+    };
 
-    if( skew_prefs_usage == SkewPrefsUsage::AsPreferencesSpecify )
+    if( use_prefs_values && prefs->m_lower_energy_skew[i].has_value() )
     {
-      fixed_lower_skew[i] = lower_value;
-      fixed_upper_skew[i] = upper;
+      fixed_lower_skew[i] = in_range( prefs->m_lower_energy_skew[i] );
+      if( PeakDef::is_energy_dependent( type, ct ) )
+        fixed_upper_skew[i] = in_range( prefs->m_upper_energy_skew[i] );
+    }else if( PeakDef::skew_parameter_fit_by_default( type, ct ) )
+    {
+      start_lower_skew[i] = in_range( skew_starting_value( type, ct, prefs, drf_prefs ) );
     }else
     {
-      start_lower_skew[i] = lower_value;
-      start_upper_skew[i] = upper;
+      fixed_lower_skew[i] = in_range( skew_starting_value( type, ct, prefs, drf_prefs ) );
     }
   }//for( size_t i = 0; i < num_skew; ++i )
-}//Options::apply_peak_fit_prefs(...)
+}//Options::set_skew_from_prefs(...)
+
+
+void Options::set_skew_type( const PeakDef::SkewType type )
+{
+  if( type != skew_type )
+  {
+    for( size_t i = 0; i < 6; ++i )
+    {
+      fixed_lower_skew[i].reset();
+      fixed_upper_skew[i].reset();
+      start_lower_skew[i].reset();
+      start_upper_skew[i].reset();
+    }
+  }//if( type != skew_type )
+
+  skew_type = type;
+  skew_from_peak_fit_prefs = false;
+}//Options::set_skew_type(...)
 
 
 bool RoiEdge::operator==( const RoiEdge &rhs ) const
@@ -19477,7 +19520,7 @@ bool Options::operator==( const Options &rhs ) const
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
     && (roi_settings == rhs.roi_settings)
-    && (skew_prefs_usage == rhs.skew_prefs_usage)
+    && (skew_from_peak_fit_prefs == rhs.skew_from_peak_fit_prefs)
     && std::equal( std::begin(fixed_lower_skew), std::end(fixed_lower_skew), std::begin(rhs.fixed_lower_skew) )
     && std::equal( std::begin(fixed_upper_skew), std::end(fixed_upper_skew), std::begin(rhs.fixed_upper_skew) )
     && std::equal( std::begin(start_lower_skew), std::end(start_lower_skew), std::begin(rhs.start_lower_skew) )
@@ -20601,7 +20644,7 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   for( size_t i = 0; i < 6; ++i )
     uses_start_skew = uses_start_skew || start_lower_skew[i].has_value() || start_upper_skew[i].has_value();
   const bool uses_v7_fields = !roi_settings.is_default() || uses_v1_rois || uses_start_skew
-                              || (skew_prefs_usage != SkewPrefsUsage::Ignore);
+                              || skew_from_peak_fit_prefs;
   static_assert( Options::sm_xmlSerializationVersion == 7, "Update conditional Options version logic." );
   append_version_attrib( base_node, uses_v7_fields ? 7 : (uses_v6_fields ? 6 : (uses_v5_fields ? 5
                                   : (uses_v4_fields ? 4 : (uses_v3_fields ? 3 : 2)))) );
@@ -20688,12 +20731,12 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
     }
   }
 
-  if( skew_prefs_usage != SkewPrefsUsage::Ignore )
+  if( skew_from_peak_fit_prefs )
   {
-    xml_node<char> *prefs_node = append_string_node( base_node, "SkewFromPeakFitPrefs", skew_prefs_usage_str(skew_prefs_usage) );
-    append_attrib( prefs_node, "remark", "How the skew is taken from the spectrum's (or detector's) peak-fit"
-                   " preferences, when available: Ignore, AsPreferencesSpecify (fixed where the preferences give"
-                   " values), or StartingValuesOnly (all skew parameters are fit)." );
+    xml_node<char> *prefs_node = append_string_node( base_node, "SkewFromPeakFitPrefs", "true" );
+    append_attrib( prefs_node, "remark", "If true, the skew is taken from the spectrum's (or detector's) peak-fit"
+                   " preferences when they are available (fixed where the preferences give values), instead of"
+                   " the SkewType and skew values above." );
   }
 
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
@@ -20927,10 +20970,9 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
         start_upper_skew[i] = std::stod( SpecUtils::xml_value_str(upper_node) );
     }//for( size_t i = 0; i < 6; ++i )
 
-    skew_prefs_usage = SkewPrefsUsage::Ignore;
-    const rapidxml::xml_node<char> *skew_prefs_node = XML_FIRST_NODE( parent, "SkewFromPeakFitPrefs" );
-    if( skew_prefs_node )
-      skew_prefs_usage = skew_prefs_usage_from_str( SpecUtils::xml_value_str(skew_prefs_node) );
+    skew_from_peak_fit_prefs = false;
+    if( XML_FIRST_NODE( parent, "SkewFromPeakFitPrefs" ) )
+      skew_from_peak_fit_prefs = get_bool_node_value( parent, "SkewFromPeakFitPrefs" );
 
     // lorentzian_xrays added 20260121; optional, defaults to false
     lorentzian_xrays = false;
@@ -22244,7 +22286,7 @@ Options::Options()
   starting_fwhm_coefficients{},
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
-  skew_prefs_usage( SkewPrefsUsage::Ignore ),
+  skew_from_peak_fit_prefs( false ),
   lorentzian_xrays( false ),
   iodine_escape_peaks( false ),
   model_lines_outside_roi_span( true ),
@@ -27827,7 +27869,36 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
   return {rel_eff, uncertainty};
 }//pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
 
-  
+
+vector<RelActAutoSolution::SkewParResult> RelActAutoSolution::skew_parameters() const
+{
+  vector<SkewParResult> answer;
+
+  const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+  if( !num_skew || !m_cost_functor )
+    return answer;
+
+  // The lower-energy values, then the upper-energy values (-999.9 when not energy dependent)
+  const size_t skew_start = m_cost_functor->m_skew_par_start_index;
+  if( (skew_start + 2*num_skew) > m_final_parameters.size() )
+    return answer;
+
+  for( size_t i = 0; i < num_skew; ++i )
+  {
+    SkewParResult result;
+    result.lower = m_final_parameters[skew_start + i];
+    const double upper = m_final_parameters[skew_start + i + num_skew];
+    result.upper = (upper > -500.0) ? upper : result.lower;
+    result.was_fit = ((skew_start + i) < m_parameter_were_fit.size()) && m_parameter_were_fit[skew_start + i];
+    result.simplified = ((skew_start + i) < m_parameter_fixed_by_model_selection.size())
+                        && m_parameter_fixed_by_model_selection[skew_start + i];
+    answer.push_back( result );
+  }
+
+  return answer;
+}//vector<SkewParResult> skew_parameters() const
+
+
   
 size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const
 {
@@ -28538,7 +28609,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       try
       {
         const vector<shared_ptr<const PeakDef>> lm_results
-          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
+          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type,
+                                            PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );  // consistent with this solve's chi2
 
         // Extract amplitudes from fitting peaks (first effective_means.size() results)
         // Note: fit_peaks_in_roi_LM may reorder peaks by mean; match by closest mean.
@@ -30058,9 +30130,10 @@ RelActAutoSolution solve( const Options input_options,
   // Take the skew from the peak-fit preferences, if wanted, so everything downstream (the fit, the
   //  returned options, and any re-solves) sees exactly the skew that was used.
   Options options = input_options;
-  if( !peak_fit_prefs && input_drf )
-    peak_fit_prefs = input_drf->peakFitDetPrefs();
-  options.apply_peak_fit_prefs( peak_fit_prefs.get() );
+  const shared_ptr<const PeakFitDetPrefs> drf_prefs = input_drf ? input_drf->peakFitDetPrefs() : nullptr;
+  if( !peak_fit_prefs )
+    peak_fit_prefs = drf_prefs;
+  options.apply_peak_fit_prefs( peak_fit_prefs.get(), drf_prefs.get() );
 
   // Build the profile row up front when this solve could possibly profile, so the winning frame can
   // host its conditional optimizations in place; see `solve_may_profile`.
@@ -30537,7 +30610,7 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( !close( lhs.roi_settings.continuum_switch_min_improvement, rhs.roi_settings.continuum_switch_min_improvement ) )
     throw std::runtime_error( "ROI settings in lhs and rhs are not the same" );
 
-  if( lhs.skew_prefs_usage != rhs.skew_prefs_usage )
+  if( lhs.skew_from_peak_fit_prefs != rhs.skew_from_peak_fit_prefs )
     throw std::runtime_error( "Skew from peak-fit preferences in lhs and rhs are not the same" );
 
   for( size_t i = 0; i < 6; ++i )

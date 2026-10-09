@@ -285,6 +285,13 @@ namespace DrfModifyCalc
    */
   std::size_t seedFingerprint( const DetectorPeakResponse &drf );
 
+  /** The part of #seedFingerprint that is the efficiency itself - the curve, both covariances and the
+   raw measured points - with nothing about the geometry.  An imported efficiency grid is not built
+   from any of these, so an edit to them is simply ignored while one is attached; this is how the
+   editor notices such an edit.
+   */
+  std::size_t efficiencyFingerprint( const DetectorPeakResponse &drf );
+
 
   /** Checks the editing invariants listed at the top of this file.  Returns true when the DRF is
    self-consistent; otherwise `why` gets a one-line explanation.
@@ -319,10 +326,33 @@ namespace DrfModifyCalc
      terrible.  Callers must say so rather than presenting #data as what the detector's data supports.
      */
     bool dataIsAssumed = false;
+
+    /** `DetectorPeakResponse::statesOwnEfficiencyUncert` - what calculations key "stated" on, so text
+     saying the uncertainty is the DRF's own must too (#dataIsAssumed is false also when #data is 0). */
+    bool statesOwn = false;
+
+    /** The fractional 1-sigma a calculation should use - the one policy every tool shares: all of
+     #total, except that an assumed #data part (see #dataIsAssumed) is left out unless
+     `include_assumed`, leaving only #model.  Zero when nothing is reported.
+     */
+    double usedFrac( const bool include_assumed ) const
+    {
+      return (dataIsAssumed && !include_assumed) ? model : total;
+    }
   };//struct UncertSummary
 
   /** @param energy keV; <= 0 picks a representative energy inside the DRF's range. */
   UncertSummary uncertSummary( const DetectorPeakResponse &drf, const float energy = -1.0f );
+
+  /** As above, but for an on-axis point source `distance` (PhysicalUnits) from the detector face -
+   the numbers `DetectorPeakResponse::efficiencyEval` gives, so a response's near-field allowance is
+   included.  `distance` is ignored for a fixed-geometry DRF.
+
+   Unlike the far-field overload, `valid` is true whenever the efficiency could be evaluated, even if
+   the DRF reports no uncertainty (then #total is zero).
+   */
+  UncertSummary uncertSummary( const DetectorPeakResponse &drf, const float energy,
+                               const double distance );
 }//namespace DrfModifyCalc
 
 #endif //DrfModifyCalc_h

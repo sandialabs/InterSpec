@@ -61,8 +61,15 @@ namespace
 #if( USE_SQLITE3_DB )
   std::mutex PreferenceDbMutex;
   int PreferenceDatabaseFileSetCount = 0;
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  // Each unit-test process gets its own in-memory database, so tests run in parallel do not contend
+  //  for a file, and nothing carries over between runs.  This relies on the single pooled connection
+  //  (see DbPoolManager) - every connection to ":memory:" is a separate, empty database.
+  std::string PreferenceDatabaseFile = ":memory:";
+#else
   std::string PreferenceDatabaseFile = "InterSpecUserData.db";
 #endif
+#endif //#if( USE_SQLITE3_DB )
 
 #if( USE_GLOBAL_DATABASE_CONNECTION_POOL )
   //We need a mechanism to ensure that the database connection stays alive until
@@ -116,6 +123,7 @@ namespace
           //  consistent or something, when multiple sessions are open, if we have multiple
           //  connections - so we'll just have a single connection.
           // https://www.sqlite.org/faq.html#q5
+          // (The unit-test build's in-memory database also requires exactly one connection.)
           const int nconn = 1;
 #else
 #if( defined(IOS) || defined(ANDROID) )

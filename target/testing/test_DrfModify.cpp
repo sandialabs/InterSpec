@@ -439,6 +439,88 @@ BOOST_AUTO_TEST_CASE( uncertainty_only_edit_keeps_the_efficiency )
 }//BOOST_AUTO_TEST_CASE( uncertainty_only_edit_keeps_the_efficiency )
 
 
+/** The one policy every tool uses for the efficiency uncertainty (UncertSummary::usedFrac), and the
+ distance-aware summary those tools ask for. */
+BOOST_AUTO_TEST_CASE( uncert_summary_used_part_and_distance )
+{
+  set_data_dir();
+
+  // An assumed data part is left out unless asked for; a stated one is always used.
+  {
+    DrfModifyCalc::UncertSummary s;
+    s.valid = true;
+    s.total = 0.05;
+    s.model = 0.01;
+    s.data = std::sqrt( s.total*s.total - s.model*s.model );
+    s.dataIsAssumed = true;
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), 0.01 );
+    BOOST_CHECK_EQUAL( s.usedFrac( true ), 0.05 );
+
+    s.dataIsAssumed = false;
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), 0.05 );
+    BOOST_CHECK_EQUAL( DrfModifyCalc::UncertSummary{}.usedFrac( true ), 0.0 );
+  }
+
+  const float energy = 661.7f;
+
+  // A created DRF states its own uncertainty, and carries a transfer response: the summary at a
+  //  distance is exactly efficiencyEval's there, which grows close in.
+  const shared_ptr<DetectorPeakResponse> created = make_created_drf( make_measured_points() );
+  BOOST_REQUIRE( created->statesOwnEfficiencyUncert() && created->ceeloResponse() );
+  double near_total = 0.0, far_total = 0.0;
+  for( const double dist_cm : { 2.0, 100.0 } )
+  {
+    const double dist = dist_cm * PhysicalUnits::cm;
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *created, energy, dist );
+    BOOST_REQUIRE( s.valid );
+    BOOST_CHECK( !s.dataIsAssumed );
+
+    const DetectorPeakResponse::EffEval ev = created->efficiencyEval( energy, dist );
+    BOOST_REQUIRE( ev.value > 0.0 );
+    BOOST_CHECK_CLOSE( s.total, ev.sigma / ev.value, 1.0e-9 );
+    BOOST_CHECK_LE( s.model, s.total );
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), s.total );
+    (dist_cm < 10.0 ? near_total : far_total) = s.total;
+  }//for( const double dist_cm : { 2.0, 100.0 } )
+  BOOST_CHECK_GT( near_total, far_total );
+
+  // The same shape of detector stating no uncertainty at all (as every GADRAS detector): a transfer
+  //  of its curve reports the assumed anchor sigma as "data", which is left out - only the
+  //  geometry-model envelope remains.
+  {
+    const MakeDrfCalc::GeometryChoice geom = nai_geometry();
+    auto bare = make_shared<DetectorPeakResponse>( "bare", "no stated uncertainty" );
+    bare->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                         geom.diameter, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                         DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    bare->setDetectorSetback( geom.setback );
+    bare->setGeometry( geom.geometry );
+    BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( *bare ) );
+    BOOST_REQUIRE( !bare->statesOwnEfficiencyUncert() );
+
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *bare, energy, 100.0*PhysicalUnits::cm );
+    BOOST_REQUIRE( s.valid );
+    BOOST_CHECK( s.dataIsAssumed );
+    BOOST_CHECK_GT( s.data, 0.5*CeeLoUtils::sm_default_anchor_frac_sigma );
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), s.model );
+    BOOST_CHECK_LT( s.usedFrac( false ), s.total );
+  }
+
+  // No uncertainty at all: valid (the efficiency evaluated), but nothing to use.
+  {
+    auto plain = make_shared<DetectorPeakResponse>( "plain", "flat disk" );
+    plain->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                          5.0*PhysicalUnits::cm, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *plain, energy, 100.0*PhysicalUnits::cm );
+    BOOST_CHECK( s.valid );
+    BOOST_CHECK_EQUAL( s.total, 0.0 );
+    BOOST_CHECK( !s.dataIsAssumed );
+    BOOST_CHECK_EQUAL( s.usedFrac( true ), 0.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( uncert_summary_used_part_and_distance )
+
+
 BOOST_AUTO_TEST_CASE( refit_of_unedited_rows_reproduces_the_curve )
 {
   set_data_dir();

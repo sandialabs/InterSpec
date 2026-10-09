@@ -247,9 +247,11 @@ the source-to-detector distance, written like the distance itself
 reaches the counts with a factor of two, so a 5% distance uncertainty is a 10%
 counts uncertainty.  It is not applied for a fixed-geometry detector response,
 whose efficiency does not depend on distance; the tool says so when that happens.
-<b>Eff. uncert.</b> is a percentage covering the detector efficiency curve and
-the gamma branching ratio, which enter identically.  The two are combined in
-quadrature, and the total must stay below 100%.
+<b>Eff. uncert.</b> is a percentage for anything else that scales the expected
+counts, such as the gamma branching ratio, or the efficiency of a detector response
+that states no uncertainty of its own.  It is <em>in addition to</em> the
+efficiency uncertainty the detector response states (see below).  All of these are
+combined in quadrature, and the total must stay below 100%.
 </p>
 <p>
 Note the detection limit gives out before the upper limit does: once the
@@ -291,11 +293,14 @@ Carlo at low counts rather than assumed, and is not yet implemented.
 </p>
 <p>
 Uncertainties here come from counting statistics and, where applicable, the
-finite statistics of a background reference.  Detector-response and distance
-uncertainty are propagated only if you enter them under <b>Advanced</b>, and only
-for the Currie method &mdash; nothing is derived from the detector response
-itself, because a <code>DetectorPeakResponse</code> does not yet carry an
-uncertainty on its efficiency.  Peak positions, widths, and gamma yields are held
-fixed by both methods.
+finite statistics of a background reference.  For the Currie method, the
+efficiency uncertainty the detector response states of its own &mdash; plus, for a
+geometry-modeled detector, the uncertainty its geometry model adds close to the
+detector &mdash; is always included; a line under the result says how much.  An
+uncertainty that is only assumed for a detector response stating none (as for the
+GADRAS detectors) is not used; enter one under <b>Advanced</b> if you want it.
+Distance and any further efficiency uncertainty are propagated only if you enter
+them under <b>Advanced</b>.  The deconvolution method does not yet include any of
+these.  Peak positions, widths, and gamma yields are held fixed by both methods.
 </p>
 </div>

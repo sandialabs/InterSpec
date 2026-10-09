@@ -378,9 +378,10 @@ private:
     FlatDisk,
 
     /** Evaluate the full-energy-peak efficiency grid imported from a Genie/ISOCS .par file
-     (see `DetEffG2kPar::isGridResponse`) as-is.  Full-energy peak only - the grid carries no
-     total efficiency.  What `Auto` picks for such a DRF; for any other DRF falls back to what
-     `Auto` would pick, with an error. */
+     (see `DetEffG2kPar::isGridResponse`) as-is.  The grid carries no total efficiency of its own;
+     it has one only if a Monte-Carlo total was attached (`DetEffG2kPar::attachTotalEfficiency`).
+     What `Auto` picks for such a DRF; for any other DRF falls back to what `Auto` would pick, with
+     an error. */
     ImportedGrid
   };//enum class VolumetricEffMethod
 
@@ -440,6 +441,33 @@ private:
     Likelihood = 2
   };//enum class DrfUncertaintyMethod
 
+
+  /** Which detector-efficiency uncertainty a fit actually used - for reports and the GUI, so it is
+   visible whether one was, and what kind.  See #ModelFitResults::drf_uncert_used.
+   */
+  enum class DrfUncertUsed : int
+  {
+    /** Statistics only: #DrfUncertaintyMethod::None, or the DRF reports no uncertainty here. */
+    None = 0,
+
+    /** The uncertainty the DRF states of its own, plus any geometry-model envelope. */
+    Stated = 1,
+
+    /** The DRF states none, so only the geometry-model envelope of its response was used; the
+     assumed uncertainty it also reports was left out (see
+     #ShieldingSourceFitOptions::drf_uncert_include_assumed). */
+    GeometryModelOnly = 2,
+
+    /** The DRF states none, and the assumed uncertainty it reports was used, as requested. */
+    IncludesAssumed = 3
+  };//enum class DrfUncertUsed
+
+  /** Stable identifier for a #DrfUncertUsed value (e.g. "GeometryModelOnly"), as batch JSON gives it. */
+  const char *drfUncertUsedName( const DrfUncertUsed used );
+
+  /** Stable identifier for a #DrfUncertaintyMethod value ("None", "ErrorPropagation", "Likelihood"). */
+  const char *drfUncertMethodName( const DrfUncertaintyMethod method );
+
   struct ShieldingSourceFitOptions
   {
     bool multiple_nucs_contribute_to_peaks = true;
@@ -489,6 +517,19 @@ private:
      #None; see `deSerialize`.
      */
     DrfUncertaintyMethod drf_uncert_method = DrfUncertaintyMethod::ErrorPropagation;
+
+    /** Whether #drf_uncert_method also uses an ASSUMED efficiency uncertainty.
+
+     A DRF that states no uncertainty of its own (`DetectorPeakResponse::statesOwnEfficiencyUncert`
+     is false - e.g., every GADRAS detector) still reports one when a response is attached: the
+     flat `CeeLoUtils::sm_default_anchor_frac_sigma` standing in for the anchor's, plus the
+     response's geometry-model envelope.  When false (the default), only the geometry-model part is
+     used for such a DRF; a DRF that states its own uncertainty is unaffected either way.
+
+     Back-compat: absent from serialized state written before this option existed, which reads as
+     true - those fits used the assumed part.
+     */
+    bool drf_uncert_include_assumed = false;
 
     /** Correct expected peak counts for true-coincidence (cascade) summing.
 
@@ -717,6 +758,9 @@ private:
     /** The model the POINT sources were evaluated with - from the same resolution, so it names the
      response above when one was resolved.  See `ShieldingSourceChi2Fcn::pointSourceEffModel`. */
     PointEffModel point_eff_model = PointEffModel::FlatDisk;
+
+    /** Which detector-efficiency uncertainty the fit used. */
+    DrfUncertUsed drf_uncert_used = DrfUncertUsed::None;
 
     /** Why `volumetric_eff_method` came out the way it did (e.g. "Auto -> MC transfer", or
      "EFFTRAN transfer unavailable (...)"); empty when the requested method was used as-is.
