@@ -489,6 +489,7 @@ PeakFitDetPrefs::defaultForDetectorType( const int specutils_det_type,
     // CZT detectors
     case DT::MicroRaider:
     case DT::KromekGR1:
+    case DT::H3D400:
       coarse_type = CRT::CZT;
       break;
 
