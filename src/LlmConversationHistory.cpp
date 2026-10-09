@@ -1,12 +1,17 @@
 #include "InterSpec_config.h"
 
-#include <iostream>
+#include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <iostream>
+#include <iterator>
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
 
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/LlmConfig.h"
@@ -752,7 +757,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
   rapidxml::xml_node<char>* historyNode = doc->allocate_node(rapidxml::node_element, "LlmHistory");
   parent->append_node(historyNode);
 
-  cout << "Serializing " << conversations.size() << " conversations to XML" << endl;
+  //cout << "Serializing " << conversations.size() << " conversations to XML" << endl;
 
   for( const shared_ptr<LlmInteraction> &conv : conversations )
   {
@@ -783,6 +788,18 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
       const string finishTimeStr = std::to_string( finishTimeT );
       XmlUtils::append_attrib(convNode, "finishTime", finishTimeStr );
     }
+
+    // Add token usage, where known
+    const auto append_tokens = [convNode]( const char *name, const std::optional<size_t> &value ){
+      if( value.has_value() )
+        XmlUtils::append_attrib( convNode, name, std::to_string( value.value() ) );
+    };
+    append_tokens( "promptTokens", conv->promptTokens );
+    append_tokens( "completionTokens", conv->completionTokens );
+    append_tokens( "totalTokens", conv->totalTokens );
+    append_tokens( "lastCallPromptTokens", conv->lastCallPromptTokens );
+    append_tokens( "cachedTokens", conv->cachedTokens );
+    append_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
 
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
@@ -968,6 +985,76 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
   }//for( const shared_ptr<LlmInteraction> &conv : conversations )
 }//void toXml( const vector<shared_ptr<LlmInteraction>> &conversations ... )
 
+std::string LlmConversationHistory::formatLocalTime( const std::chrono::system_clock::time_point &t,
+                                                     const char *format )
+{
+  const time_t time_val = chrono::system_clock::to_time_t( t );
+  struct tm local_tm{};
+#if( defined(WIN32) )
+  localtime_s( &local_tm, &time_val );
+#else
+  localtime_r( &time_val, &local_tm );
+#endif
+
+  char buffer[64] = { '\0' };
+  strftime( buffer, sizeof(buffer), format, &local_tm );
+  return buffer;
+}//formatLocalTime(...)
+
+
+std::string LlmConversationHistory::logFileName( const std::chrono::system_clock::time_point &start,
+                                                 const std::string &uniqueId )
+{
+  return formatLocalTime( start, "%Y%m%dT%H%M" ) + "_" + uniqueId + "_llm_log.xml";
+}//logFileName(...)
+
+
+void LlmConversationHistory::writeLogFile( const std::string &path,
+                                  const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const
+{
+  rapidxml::xml_document<char> doc;
+
+  rapidxml::xml_node<char> * const decl = doc.allocate_node( rapidxml::node_declaration );
+  decl->append_attribute( doc.allocate_attribute( "version", "1.0" ) );
+  decl->append_attribute( doc.allocate_attribute( "encoding", "UTF-8" ) );
+  doc.append_node( decl );
+
+  rapidxml::xml_node<char> * const root = doc.allocate_node( rapidxml::node_element, "LlmConversationLog" );
+  doc.append_node( root );
+  XmlUtils::append_version_attrib( root, 0 );
+  for( const pair<string,string> &attrib : rootAttribs )
+    XmlUtils::append_attrib( root, attrib.first, attrib.second );
+
+  toXml( root, &doc );
+
+  string xml;
+  rapidxml::print( std::back_inserter(xml), doc );
+
+  // Write to a temporary file, then move it into place, so a crash mid-write cant truncate the log.
+  const string tmp_path = path + ".tmp";
+  {
+#ifdef _WIN32
+    const std::wstring wtmp_path = SpecUtils::convert_from_utf8_to_utf16( tmp_path );
+    std::ofstream file( wtmp_path.c_str(), ios::binary | ios::out | ios::trunc );
+#else
+    std::ofstream file( tmp_path.c_str(), ios::binary | ios::out | ios::trunc );
+#endif
+    if( !file.is_open() )
+      throw runtime_error( "Could not open '" + tmp_path + "' for writing." );
+
+    file.write( xml.data(), static_cast<std::streamsize>( xml.size() ) );
+    if( !file.good() )
+      throw runtime_error( "Error writing '" + tmp_path + "'." );
+  }
+
+  if( SpecUtils::is_file( path ) && !SpecUtils::remove_file( path ) )
+    throw runtime_error( "Could not replace existing '" + path + "'." );
+
+  if( !SpecUtils::rename_file( tmp_path, path ) )
+    throw runtime_error( "Could not rename '" + tmp_path + "' to '" + path + "'." );
+}//writeLogFile(...)
+
+
 void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node )
 {
   fromXml(node, m_conversations);
@@ -1036,6 +1123,18 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
       // If loaded from XML without finishTime, mark as completed with current time for backward compatibility
       conv->finishTime = std::nullopt;
     }
+
+    // Read token usage (optional; older files dont have it)
+    const auto read_tokens = [convNode]( const char *name, std::optional<size_t> &value ){
+      if( const rapidxml::xml_attribute<char> *attr = convNode->first_attribute( name ) )
+        value = static_cast<size_t>( parse_ull_or( SpecUtils::xml_value_str( attr ), 0 ) );
+    };
+    read_tokens( "promptTokens", conv->promptTokens );
+    read_tokens( "completionTokens", conv->completionTokens );
+    read_tokens( "totalTokens", conv->totalTokens );
+    read_tokens( "lastCallPromptTokens", conv->lastCallPromptTokens );
+    read_tokens( "cachedTokens", conv->cachedTokens );
+    read_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
 
     // Read responses
     if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )

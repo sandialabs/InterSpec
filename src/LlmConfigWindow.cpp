@@ -50,6 +50,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
@@ -187,6 +188,8 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_netNoVerify( nullptr ),
     m_netNoVerifyWarn( nullptr ),
 #endif
+    m_logEnable( nullptr ),
+    m_logDetail( nullptr ),
     m_validationSummary( nullptr ),
     m_acceptBtn( nullptr ),
     m_previewToggle( nullptr ),
@@ -539,6 +542,61 @@ void LlmConfigWindow::buildUi()
   m_netOverride->setChecked( anyNetOverride );
   m_netDetail->setHidden( !anyNetOverride );
 #endif //USE_NATIVE_HTTP_CLIENT
+
+  // --- Conversation-log card ---
+  //  Only offered where there is a writable data directory to put the logs in.
+  if( !m_writableDir.empty() )
+  {
+    const string logDir = SpecUtils::append_path( m_writableDir, "llm_logs" );
+
+    WContainerWidget *logCard = body->addNew<WContainerWidget>();
+    logCard->addStyleClass( "LcwCard LcwMcpCard" );
+
+    WContainerWidget *logTop = logCard->addNew<WContainerWidget>();
+    logTop->addStyleClass( "LcwEnableRow" );
+    m_logEnable = logTop->addNew<WCheckBox>( WString() );
+    m_logEnable->addStyleClass( "LcwCheck" );
+    m_logEnable->setChecked( m_working.llmApi.logConversations );
+    HelpSystem::attachToolTipOn( m_logEnable, WString::tr("lcw-log-tip"), showToolTips );
+    WContainerWidget *logText = logTop->addNew<WContainerWidget>();
+    logText->addStyleClass( "LcwLabelStack" );
+    WText *logTitle = logText->addNew<WText>( WString::tr("lcw-log-title") );
+    logTitle->addStyleClass( "LcwTitle" );
+    WText *logSub = logText->addNew<WText>( WString::tr("lcw-log-sub") );
+    logSub->addStyleClass( "LcwSubtle" );
+
+    m_logDetail = logCard->addNew<WContainerWidget>();
+    m_logDetail->addStyleClass( "LcwMcpDetail" );
+    m_logDetail->setHidden( !m_working.llmApi.logConversations );
+
+    WText *logLocation = m_logDetail->addNew<WText>( WString::tr("lcw-log-location").arg( WString::fromUTF8(logDir) ),
+                                                      Wt::TextFormat::Plain );
+    logLocation->addStyleClass( "LcwSubtle LcwMono" );
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+#ifdef _WIN32
+    const char * const showKey = "lcw-log-show-win";
+#elif defined( __APPLE__ )
+    const char * const showKey = "lcw-log-show-mac";
+#else
+    const char * const showKey = "lcw-log-show-linux";
+#endif
+    WPushButton *showBtn = m_logDetail->addNew<WPushButton>( WString::tr(showKey) );
+    showBtn->addStyleClass( "LinkBtn LcwShowLogsBtn" );
+    showBtn->clicked().connect( std::bind( [logDir](){
+      // The folder is normally only created at the first logged turn; create it now so there is
+      //  something to show.
+      if( SpecUtils::create_directory( logDir ) != 0 )
+        AppUtils::showFileInOsFileBrowser( logDir );
+    } ) );
+#endif
+
+    m_logEnable->changed().connect( std::bind( [this](){
+      m_working.llmApi.logConversations = m_logEnable->isChecked();
+      m_logDetail->setHidden( !m_logEnable->isChecked() );
+      refreshPreview();
+    } ) );
+  }//if( !m_writableDir.empty() )
 
   // --- XML preview (hidden until toggled) ---
   m_previewContainer = body->addNew<WContainerWidget>();

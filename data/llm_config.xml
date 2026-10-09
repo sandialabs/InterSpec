@@ -207,6 +207,12 @@
     <!-- <DebugFile>llm_debug.log</DebugFile> -->
     <!-- <DebugFile>stdout</DebugFile> -->
 
+    <!-- Optional: save each assistant conversation as an XML file in the "llm_logs" folder of the
+         user data directory (rewritten at the end of every turn).  Defaults to false if not present.
+         Only applies to builds with a writable user data directory (i.e., not web deployments).
+    -->
+    <!-- <LogConversations>true</LogConversations> -->
+
   </LlmApi>
   
   <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.

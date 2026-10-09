@@ -720,6 +720,29 @@ public:
   static void fromXml(const rapidxml::xml_node<char>* node,
                       std::vector<std::shared_ptr<LlmInteraction>>& conversations);
 
+  /** Formats `t` in local time using `strftime` format codes, ex. "%Y-%m-%dT%H:%M:%S%z". */
+  static std::string formatLocalTime( const std::chrono::system_clock::time_point &t, const char *format );
+
+  /** Returns the file name used for a conversation log, ex. "20261008T1232_a1B2c3_llm_log.xml".
+
+   @param start Time the conversation started; formatted in local time to minute precision.
+   @param uniqueId Short string to distinguish conversations started in the same minute.
+   */
+  static std::string logFileName( const std::chrono::system_clock::time_point &start,
+                                  const std::string &uniqueId );
+
+  /** Writes the full history as a stand-alone XML file, replacing any existing file at `path`.
+
+   The root element is `<LlmConversationLog version="0">`, with `rootAttribs` added as attributes,
+   containing the same `<LlmHistory>` element that toXml() produces (so fromXml() can read it).
+   The file is written to a temporary file first and then renamed into place, so a failure mid-write
+   does not leave a truncated log.
+
+   Throws std::exception on failure.
+   */
+  void writeLogFile( const std::string &path,
+                     const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const;
+
   /** Build the messages array for a MainAgent conversation, including all prior
    history and the system prompt.
 
