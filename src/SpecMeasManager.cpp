@@ -133,6 +133,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/EnergyCalUndoRedo.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
@@ -3437,6 +3438,9 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       assert( caltool );
       if( !caltool )
         throw runtime_error( "Invalid EnergyCalTool" );
+
+      // Make applying to the foreground/background/secondary a single undo/redo step
+      EnergyCalImp::EnergyCalUndoRedoSentry undo_sentry;
 
       if( !cbs.foreground || cbs.foreground->isChecked() )
       {

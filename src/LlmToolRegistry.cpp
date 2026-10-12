@@ -35,6 +35,7 @@
 
 
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -9037,6 +9038,8 @@ json ToolRegistry::executeRestoreEnergyCalCheckpoint( const json& params,
   }//for( const SpecUtils::SpectrumType type : spec_types )
 
   interspec->refreshDisplayedCharts();
+  if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+    caltool->refreshGuiFromFiles();
 
   json result = json::object();
   result["checkpoint_name"] = checkpoint_name;
@@ -9536,6 +9539,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   }//for( const ApplyEntry &entry : apply_entries )
 
   interspec->refreshDisplayedCharts();
+  if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+    caltool->refreshGuiFromFiles();  //so it shows the new coefficients
 
   // Register a single undo/redo step for the whole calibration change (+ translated peaks), so the
   // user can revert an agent-driven energy-cal fit just like a manual one.
@@ -9575,6 +9580,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
           pm->setPeakFromSpecMeas( sm, interspec->displayedSamples( t ), t );
       }
       interspec->refreshDisplayedCharts();
+      if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+        caltool->refreshGuiFromFiles();
     };//applyState lambda
 
     undoManager->addUndoRedoStep( [applyState](){ applyState( false ); },  // undo -> restore old

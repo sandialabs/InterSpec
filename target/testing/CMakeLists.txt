@@ -932,6 +932,13 @@ add_test( NAME TExportSpecFile
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_EnergyCalTool test_EnergyCalTool.cpp )
+target_link_libraries( test_EnergyCalTool PRIVATE InterSpecLib )
+add_test( NAME TEnergyCalTool
+  COMMAND $<TARGET_FILE:test_EnergyCalTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ExportCAM test_ExportCAM.cpp )
 target_link_libraries( test_ExportCAM PRIVATE InterSpecLib )
 add_test( NAME TExportCAM
