@@ -95,4 +95,9 @@
   <!-- Mostrado por baixo das entradas avançadas quando o método Deconvolução está selecionado, onde
        ficam desativadas.  Um controlo desativado sem explicação parece um erro. -->
   <message id="dls-advanced-decon-note">Aplicam-se ao método Currie; o limite por deconvolução ainda não os utiliza.</message>
+  <message id="dls-drf-uncert-none">Nenhuma incerteza de eficiência do detector é incluída: a resposta do detector não declara nenhuma.</message>
+  <message id="dls-drf-uncert-stated">Inclui a incerteza de eficiência do detector de {1}% declarada pela resposta do detector.</message>
+  <message id="dls-drf-uncert-model-only">Inclui {1}% de incerteza de eficiência do detector vinda apenas do modelo geométrico; a resposta do detector não declara nenhuma própria.</message>
+  <message id="dls-drf-uncert-decon-excluded">A incerteza de eficiência de {1}% da resposta do detector não está incluída no limite por deconvolução.</message>
+  <message id="dls-det-eff-used">Eficiência do detector usada</message>
 </messages>

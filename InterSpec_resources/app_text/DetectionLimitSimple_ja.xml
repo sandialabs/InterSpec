@@ -95,4 +95,9 @@
   <!-- 逆畳み込み法が選択されていて、これらが無効化されているときに、詳細設定の下に表示される。
        説明のない無効化された項目は不具合のように見えるため。 -->
   <message id="dls-advanced-decon-note">これらは Currie 法に適用されます。逆畳み込みの限界ではまだ使用されません。</message>
+  <message id="dls-drf-uncert-none">検出器効率の不確かさは含まれていません: 検出器応答に記載がありません。</message>
+  <message id="dls-drf-uncert-stated">検出器応答に記載された {1}% の検出器効率の不確かさを含みます。</message>
+  <message id="dls-drf-uncert-model-only">幾何モデルのみによる {1}% の検出器効率の不確かさを含みます。検出器応答自体には記載がありません。</message>
+  <message id="dls-drf-uncert-decon-excluded">検出器応答の {1}% の効率の不確かさは、逆畳み込みの限界には含まれていません。</message>
+  <message id="dls-det-eff-used">使用した検出器効率</message>
 </messages>

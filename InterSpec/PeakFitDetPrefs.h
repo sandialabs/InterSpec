@@ -136,6 +136,12 @@ struct PeakFitDetPrefs
   bool operator==( const PeakFitDetPrefs &rhs ) const;
   bool operator!=( const PeakFitDetPrefs &rhs ) const;
 
+  /** The value of a skew coefficient that is not energy dependent, if these preferences are for
+   `skew_type` and give it a value (e.g., a GADRAS detector's power or extent); otherwise nullopt.
+   */
+  std::optional<double> fixed_skew_value( const PeakDef::SkewType skew_type,
+                                          const PeakDef::CoefficientType coef ) const;
+
 
   // -- String conversion for CoarseResolutionType --
 
@@ -176,7 +182,7 @@ struct PeakFitDetPrefs
 
   /** Returns "&"-separated key=value pairs for embedding in a URL query string.
    Returns empty string if all defaults.
-   Keys: DT (det type), SK (skew type), LS0..LS3 / US0..US3 (skew params).
+   Keys: DT (det type), SK (skew type), LS0..LS5 / US0..US5 (skew params).
    */
   std::string toUrlQueryParts() const;
 
@@ -222,12 +228,32 @@ void apply_fwhm_method_to_peaks(
   Wt::WFlags<PeakFitLM::PeakFitLMOptions> &fit_options );
 
 
+/** The value to start a skew coefficient at, when a peak or tool is switched to `skew_type`: the
+ value from `meas_prefs`, else from `drf_prefs` (see #PeakFitDetPrefs::fixed_skew_value), else the
+ #PeakDef::skew_parameter_range starting value.  Either prefs may be null.
+
+ So a GADRAS detector's own tail powers/extents are used, rather than generic defaults.
+ */
+double skew_starting_value( const PeakDef::SkewType skew_type, const PeakDef::CoefficientType coef,
+                            const PeakFitDetPrefs *meas_prefs, const PeakFitDetPrefs *drf_prefs );
+
+
+/** Sets the peak's skew type to `prefs.m_peak_skew_type`, and its skew coefficients from the prefs.
+
+ Coefficients the prefs give a value are fixed at it (interpolated to the peak's energy, between the
+ spectrum's lowest and highest energies, for energy-dependent coefficients).  Coefficients without a
+ value are left to be fit - except those not fit by default (e.g., GADRAS powers/extents), which are
+ fixed at the DRF's value (`drf_prefs`, may be null), or else their #PeakDef::skew_parameter_range
+ starting value; see #skew_starting_value.
+ */
+void apply_prefs_skew_to_peak( PeakDef &peak, const PeakFitDetPrefs &prefs,
+                               const std::shared_ptr<const SpecUtils::Measurement> &data,
+                               const PeakFitDetPrefs *drf_prefs );
+
+
 /** Applies both FWHM method and skew type/parameters from prefs to peaks.
 
- Calls apply_fwhm_method_to_peaks for FWHM, then sets each peak's skew type
- to prefs.m_peak_skew_type.  If skew parameter values are specified in prefs
- (m_lower_energy_skew, m_upper_energy_skew), they are applied as fixed values
- with energy interpolation for energy-dependent parameters.
+ Calls apply_fwhm_method_to_peaks for FWHM, then #apply_prefs_skew_to_peak for each peak.
  */
 void apply_fit_prefs_to_peaks(
   std::vector<std::shared_ptr<PeakDef>> &peaks,

@@ -176,6 +176,10 @@ private:
   Wt::WText *m_netNoVerifyWarn;
 #endif
 
+  // Conversation-log card; only created when there is a writable data directory.
+  Wt::WCheckBox *m_logEnable;
+  Wt::WContainerWidget *m_logDetail;
+
   // Footer + XML preview
   Wt::WText *m_validationSummary;
   Wt::WPushButton *m_acceptBtn;

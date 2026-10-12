@@ -81,6 +81,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/SkewParamsGrid.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -478,8 +479,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_add_uncert( nullptr ),
   m_lorentzian_xrays_enabled( false ),
   m_lorentzian_xrays( nullptr ),
-  m_use_fixed_skew_enabled( false ),
-  m_use_fixed_skew( nullptr ),
+  m_skew_source( nullptr ),
+  m_skew_params( nullptr ),
+  m_skew_note( nullptr ),
+  m_skew_use_fit( nullptr ),
   m_edge_defaults_det_type( PeakFitUtils::CoarseResolutionType::Unknown ),
   m_auto_simplify( nullptr ),
   m_auto_simplify_dchi2_div( nullptr ),
@@ -713,8 +716,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     presetDiv->insertWidget( 0, std::move(error_owner) );
   }//if( isPhone )
 
-  // We'll take care of the options that apply to all types of Rel Eff curves now.
-  GroupBox *generalOptionsDiv = addNew<GroupBox>( WString::tr("raag-spectrum-peak-options") );
+  // The options that apply to all types of Rel Eff curves, with the peak skew in a box to their right.
+  WContainerWidget *spectrumOptionsRow = addNew<WContainerWidget>();
+  spectrumOptionsRow->addStyleClass( "RelActAutoSpectrumOptionsRow" );
+
+  GroupBox *generalOptionsDiv = spectrumOptionsRow->addNew<GroupBox>( WString::tr("raag-spectrum-peak-options") );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
   WContainerWidget *energyCalDiv = generalOptionsDiv->addNew<WContainerWidget>();
@@ -835,44 +841,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
-  WContainerWidget *skewDiv = generalOptionsDiv->addNew<WContainerWidget>();
-  skewDiv->addStyleClass( "RelActAutoSkewDiv" );
-  label = skewDiv->addNew<WLabel>( WString::tr("raag-peak-skew") );
-  m_skew_type = skewDiv->addNew<WComboBox>();
-  label->setBuddy( m_skew_type );
-  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
-  tooltip = WString::tr("raag-tt-skew-type");
-  HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
-
-  // Use WStandardItemModel to store enum values with each item
-  {
-    auto skew_model_owner = std::make_shared<WStandardItemModel>();
-    WStandardItemModel *skew_model = skew_model_owner.get();
-    (void)skew_model; // skew_model is used by populateSkewTypeComboBox via m_skew_type->model()
-    m_skew_type->setModel( skew_model_owner );
-  }
-  populateSkewTypeComboBox( false ); // false = show all skew types
-
-  // Lorentzian X-rays checkbox - initially hidden, shown when x-rays present in ROIs
-  m_lorentzian_xrays = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-lorentzian-xrays") );
-  m_lorentzian_xrays->addStyleClass( "LorentzianXraysCb CbNoLineBreak" );
-  m_lorentzian_xrays->setHidden( true );
-  m_lorentzian_xrays->checked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
-  m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
-  tooltip = WString::tr("raag-tt-lorentzian-xrays");
-  HelpSystem::attachToolTipOn( m_lorentzian_xrays, tooltip, showToolTips );
-
-  // "Peak fit opt. skew" checkbox - when checked, skew type and fixed params come from PeakFitDetPrefs
-  m_use_fixed_skew = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-use-fixed-skew") );
-  m_use_fixed_skew->addStyleClass( "UseFixedSkewCb CbNoLineBreak" );
-  m_use_fixed_skew->setChecked( true );
-  m_use_fixed_skew->setHidden( true );
-  m_use_fixed_skew_enabled = false;
-  m_use_fixed_skew->checked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
-  m_use_fixed_skew->unChecked().connect( this, &RelActAutoGui::handleUseFixedSkewChanged );
-  tooltip = WString::tr("raag-tt-use-fixed-skew");
-  HelpSystem::attachToolTipOn( m_use_fixed_skew, tooltip, showToolTips );
-  handlePeakFitDetPrefsChanged();  // Set initial visibility based on current prefs
 
   WContainerWidget *addUncertDiv = generalOptionsDiv->addNew<WContainerWidget>();
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
@@ -950,6 +918,56 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   HelpSystem::attachToolTipOn( m_auto_profile_weak_mass_fractions,
                               WString::tr("raag-tt-auto-profile-mass-frac"), showToolTips );
   m_auto_profile_weak_mass_fractions->setHidden( !m_robust_solve->isChecked() );
+
+
+  // The peak skew: either from the peak-fit preferences, or custom values (and whether to fit them).
+  GroupBox *skewGroup = spectrumOptionsRow->addNew<GroupBox>( WString::tr("raag-peak-skew") );
+  skewGroup->addStyleClass( "RelActAutoSkewGroup" );
+
+  WContainerWidget *skewRow = skewGroup->addNew<WContainerWidget>();
+  skewRow->addStyleClass( "RelActAutoSkewDiv" );
+  label = skewRow->addNew<WLabel>( WString::tr("raag-skew-source") );
+  m_skew_source = skewRow->addNew<WComboBox>();
+  label->setBuddy( m_skew_source );
+  m_skew_source->addItem( WString::tr("raag-skew-source-prefs") );
+  m_skew_source->addItem( WString::tr("raag-skew-source-custom") );
+  m_skew_source->setCurrentIndex( 0 );
+  m_skew_source->activated().connect( this, &RelActAutoGui::handleSkewSourceChanged );
+  HelpSystem::attachToolTipOn( {label, m_skew_source}, WString::tr("raag-tt-skew-source"), showToolTips );
+
+  label = skewRow->addNew<WLabel>( WString::tr("raag-skew-type") );
+  m_skew_type = skewRow->addNew<WComboBox>();
+  label->setBuddy( m_skew_type );
+  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
+  HelpSystem::attachToolTipOn( {label, m_skew_type}, WString::tr("raag-tt-skew-type"), showToolTips );
+
+  // Use WStandardItemModel to store enum values with each item
+  m_skew_type->setModel( std::make_shared<WStandardItemModel>() );
+  populateSkewTypeComboBox( false ); // false = show all skew types
+
+  // Lorentzian X-rays checkbox - initially hidden, shown when x-rays present in ROIs
+  m_lorentzian_xrays = skewGroup->addNew<WCheckBox>( WString::tr("raag-lorentzian-xrays") );
+  m_lorentzian_xrays->addStyleClass( "LorentzianXraysCb CbNoLineBreak" );
+  m_lorentzian_xrays->setHidden( true );
+  m_lorentzian_xrays->checked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  m_lorentzian_xrays->unChecked().connect( this, &RelActAutoGui::handleLorentzianXraysChanged );
+  HelpSystem::attachToolTipOn( m_lorentzian_xrays, WString::tr("raag-tt-lorentzian-xrays"), showToolTips );
+
+  m_skew_note = skewGroup->addNew<WText>( WString::tr("raag-skew-roi-indep-note") );
+  m_skew_note->addStyleClass( "RelActAutoSkewNote" );
+  m_skew_note->setHidden( true );
+
+  m_skew_params = skewGroup->addNew<SkewParamsGrid>( true, false );
+  m_skew_params->addStyleClass( "RelActAutoSkewParams" );
+  m_skew_params->userChanged().connect( this, &RelActAutoGui::handleSkewParamsChanged );
+
+  m_skew_use_fit = skewGroup->addNew<WText>( WString::tr("raag-skew-use-fit") );
+  m_skew_use_fit->addStyleClass( "RelActAutoSkewUseFit" );
+  m_skew_use_fit->setHidden( true );
+  m_skew_use_fit->clicked().connect( this, &RelActAutoGui::handleUseFitSkewValues );
+  HelpSystem::attachToolTipOn( m_skew_use_fit, WString::tr("raag-tt-skew-use-fit"), showToolTips );
+
+  handlePeakFitDetPrefsChanged();  // Show the skew of the current prefs
 
 
   GroupBox *optionsDiv = addNew<GroupBox>( WString::tr("raag-rel-eff-curve-options") );
@@ -1185,7 +1203,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     auto optionsPanelOwner = std::make_unique<WContainerWidget>();
     WContainerWidget * const optionsPanel = optionsPanelOwner.get();
     optionsPanel->addStyleClass( "PhoneOptionsPanel" );
-    optionsPanel->addWidget( generalOptionsDiv->removeFromParent() );
+    optionsPanel->addWidget( spectrumOptionsRow->removeFromParent() );
     optionsPanel->addWidget( optionsDiv->removeFromParent() );
 
     auto nucsPanelOwner = std::make_unique<WContainerWidget>();
@@ -1611,16 +1629,29 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   }
   
   options.skew_type = currentSkewType();
-  options.lorentzian_xrays = (m_lorentzian_xrays_enabled && m_lorentzian_xrays->isChecked());
-  assert( !options.lorentzian_xrays
-         || (options.skew_type == PeakDef::SkewType::NoSkew)
-         || (options.skew_type == PeakDef::SkewType::GaussPlusBortel) );
+  options.lorentzian_xrays = (m_lorentzian_xrays_enabled && m_lorentzian_xrays->isChecked()
+                              && RelActCalcAuto::Options::lorentzian_xrays_compatible( options.skew_type ));
 
-  // Use the skew (type, and fixed values) of the peak-fit preferences if the checkbox is checked;
-  //  `RelActCalcAuto::solve(...)` applies them, from the preferences we give it.
-  options.skew_prefs_usage = (m_use_fixed_skew_enabled && m_use_fixed_skew->isChecked())
-                              ? RelActCalcAuto::Options::SkewPrefsUsage::AsPreferencesSpecify
-                              : RelActCalcAuto::Options::SkewPrefsUsage::Ignore;
+  // Skew from the peak-fit preferences is applied by `RelActCalcAuto::solve(...)`, from the
+  //  preferences we give it; custom skew values are given explicitly, as fit from (if checked) or
+  //  held at.
+  options.skew_from_peak_fit_prefs = skewFromPeakFitPrefs();
+  if( !options.skew_from_peak_fit_prefs )
+  {
+    const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      if( m_skew_params->isFit( i ) )
+      {
+        options.start_lower_skew[i] = m_skew_params->lowerValue( i );
+        options.start_upper_skew[i] = m_skew_params->upperValue( i );
+      }else
+      {
+        options.fixed_lower_skew[i] = m_skew_params->lowerValue( i );
+        options.fixed_upper_skew[i] = m_skew_params->upperValue( i );
+      }
+    }
+  }//if( custom skew )
 
   options.additional_br_uncert = -1.0;
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
@@ -2559,21 +2590,15 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
                             ? RelActCalcAuto::FwhmForm::Polynomial_2 : options.fwhm_form );
   }//if( !fixed_to_det_eff )
   
-  // First update lorentzian checkbox (before populating skew combo)
+  // The skew: the options' own (used if there are no peak-fit prefs), then that of the prefs, if wanted
   m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
-  populateSkewTypeComboBox( options.lorentzian_xrays );
-  setCurrentSkewType( options.skew_type );
-
-  // Update fixed skew checkbox state: checked if the options use the peak-fit preferences skew (or,
-  //  for states saved before `skew_prefs_usage` existed, have fixed skew values copied from them).
-  {
-    bool has_fixed = (options.skew_prefs_usage != RelActCalcAuto::Options::SkewPrefsUsage::Ignore);
-    for( size_t i = 0; i < 6; ++i )
-      has_fixed |= options.fixed_lower_skew[i].has_value();
-    m_use_fixed_skew->setChecked( has_fixed );
-    // Re-check prefs to see if checkbox should be visible, and disable/enable combo
-    handlePeakFitDetPrefsChanged();
-  }
+  m_skew_source->setCurrentIndex( options.skew_from_peak_fit_prefs ? 0 : 1 );
+  setSkewGuiFromOptions( options );
+  if( options.skew_from_peak_fit_prefs )
+    showInheritedSkew();
+  updateSkewControlsEnabled();
+  m_skew_params->setResults( {} );
+  m_skew_use_fit->setHidden( true );
 
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
@@ -3544,13 +3569,172 @@ void RelActAutoGui::handlePuByCorrelationChanged()
   scheduleRender();
 }
 
+namespace
+{
+  /** The peak-fit prefs of the foreground, and those of its detector (either may be null). */
+  pair<shared_ptr<const PeakFitDetPrefs>,shared_ptr<const PeakFitDetPrefs>> foreground_peak_fit_prefs( InterSpec *viewer )
+  {
+    const shared_ptr<const SpecMeas> meas = viewer ? viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+    const shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+    return { meas ? meas->peakFitDetPrefs() : nullptr, drf ? drf->peakFitDetPrefs() : nullptr };
+  }
+}//namespace
+
+
 void RelActAutoGui::handleSkewTypeChanged()
+{
+  // Start the new skew type from what the peak-fit prefs (or the detector) give for it, if anything.
+  const auto [prefs, drf_prefs] = foreground_peak_fit_prefs( m_interspec );
+  RelActCalcAuto::Options skew_opts;
+  skew_opts.set_skew_from_prefs( currentSkewType(), prefs.get(), drf_prefs.get() );
+  setSkewGuiFromOptions( skew_opts );
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleSkewTypeChanged()
+
+
+void RelActAutoGui::handleSkewSourceChanged()
+{
+  // Switching to custom keeps the skew shown, for the user to then change.
+  if( skewFromPeakFitPrefs() )
+    showInheritedSkew();
+  updateSkewControlsEnabled();
+  updateSkewFitResults();
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleSkewSourceChanged()
+
+
+void RelActAutoGui::handleSkewParamsChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
+}//void handleSkewParamsChanged()
+
+
+void RelActAutoGui::handleUseFitSkewValues()
+{
+  const vector<RelActCalcAuto::RelActAutoSolution::SkewParResult> results
+                                     = m_solution ? m_solution->skew_parameters() : vector<RelActCalcAuto::RelActAutoSolution::SkewParResult>{};
+  if( results.empty() || (m_solution->m_options.skew_type != currentSkewType()) )
+    return;
+
+  m_skew_source->setCurrentIndex( 1 );
+  for( size_t i = 0; i < results.size(); ++i )
+    m_skew_params->setValue( i, results[i].lower, results[i].upper );
+  updateSkewControlsEnabled();
+  updateSkewFitResults();
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handleUseFitSkewValues()
+
+
+bool RelActAutoGui::skewFromPeakFitPrefs() const
+{
+  return (m_skew_source->currentIndex() == 0);
 }
+
+
+void RelActAutoGui::showInheritedSkew()
+{
+  const auto [prefs, drf_prefs] = foreground_peak_fit_prefs( m_interspec );
+  if( !prefs )
+    return;  // `RelActCalcAuto::solve` will use the options' own skew
+
+  RelActCalcAuto::Options skew_opts;
+  skew_opts.skew_from_peak_fit_prefs = true;
+  skew_opts.apply_peak_fit_prefs( prefs.get(), drf_prefs.get() );
+  setSkewGuiFromOptions( skew_opts );
+
+  // ROI-independent prefs give only the skew type
+  m_skew_note->setHidden( (skew_opts.skew_type == PeakDef::SkewType::NoSkew) || !prefs->m_roi_independent_skew );
+}//void showInheritedSkew()
+
+
+void RelActAutoGui::setSkewGuiFromOptions( const RelActCalcAuto::Options &options )
+{
+  // The type list is limited for Lorentzian x-rays, but not if the prefs give an incompatible skew.
+  const bool lorentzian_types = m_lorentzian_xrays->isChecked()
+                    && RelActCalcAuto::Options::lorentzian_xrays_compatible( options.skew_type );
+  populateSkewTypeComboBox( lorentzian_types );
+  setCurrentSkewType( options.skew_type );
+
+  // A parameter is fit if it is given a starting value; without a value, its default is used.
+  m_skew_params->setSkewType( options.skew_type );
+  const size_t num_skew = PeakDef::num_skew_parameters( options.skew_type );
+  for( size_t i = 0; i < num_skew; ++i )
+  {
+    if( options.fixed_lower_skew[i].has_value() )
+    {
+      m_skew_params->setValue( i, options.fixed_lower_skew[i], options.fixed_upper_skew[i] );
+      m_skew_params->setFit( i, false );
+    }else if( options.start_lower_skew[i].has_value() )
+    {
+      m_skew_params->setValue( i, options.start_lower_skew[i], options.start_upper_skew[i] );
+      m_skew_params->setFit( i, true );
+    }
+  }//for( size_t i = 0; i < num_skew; ++i )
+
+  m_skew_note->setHidden( true );
+}//void setSkewGuiFromOptions( const RelActCalcAuto::Options &options )
+
+
+void RelActAutoGui::updateSkewControlsEnabled()
+{
+  const bool custom = !skewFromPeakFitPrefs();
+  m_skew_type->setEnabled( custom );
+  m_skew_params->setEditable( custom );
+
+  // Lorentzian x-rays can't be used with a skew from the prefs that is incompatible with them.
+  m_lorentzian_xrays->setEnabled( custom
+                     || RelActCalcAuto::Options::lorentzian_xrays_compatible( currentSkewType() ) );
+}//void updateSkewControlsEnabled()
+
+
+void RelActAutoGui::updateSkewFitResults()
+{
+  const bool have_results = m_solution
+                            && RelActCalcAuto::RelActAutoSolution::is_usable_status( m_solution->m_status )
+                            && (m_solution->m_options.skew_type == currentSkewType());
+  const vector<RelActCalcAuto::RelActAutoSolution::SkewParResult> results
+               = have_results ? m_solution->skew_parameters() : vector<RelActCalcAuto::RelActAutoSolution::SkewParResult>{};
+
+  // Values of parameters auto-simplify held (at their no-skew value) are in parentheses
+  vector<WString> txt, tooltips;
+  bool any_fit = false;
+  for( const RelActCalcAuto::RelActAutoSolution::SkewParResult &result : results )
+  {
+    any_fit |= (result.was_fit || result.simplified);
+    string value;
+    if( result.was_fit || result.simplified )
+    {
+      value = SpecUtils::printCompact( result.lower, 4 );
+      if( result.upper != result.lower )
+        value += " / " + SpecUtils::printCompact( result.upper, 4 );
+      if( result.simplified )
+        value = "(" + value + ")";
+    }
+    txt.push_back( WString::fromUTF8( value ) );
+    tooltips.push_back( result.simplified ? WString::tr("raag-tt-skew-simplified") : WString() );
+  }//for( loop over results )
+
+  if( !any_fit )
+    txt.clear();
+
+  m_skew_params->setResults( txt, tooltips );
+  m_skew_use_fit->setHidden( txt.empty() );
+}//void updateSkewFitResults()
 
 
 void RelActAutoGui::populateSkewTypeComboBox( const bool lorentzian_mode )
@@ -3631,8 +3815,17 @@ void RelActAutoGui::handleLorentzianXraysChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
 
-  const bool lorentzian_checked = m_lorentzian_xrays->isChecked();
-  populateSkewTypeComboBox( lorentzian_checked );
+  // Limit the skew types to those compatible with Lorentzian x-rays; if this changes the (custom) skew
+  //  type, start it from its defaults.  The checkbox is disabled if the prefs skew is incompatible.
+  const PeakDef::SkewType previous_type = currentSkewType();
+  populateSkewTypeComboBox( m_lorentzian_xrays->isChecked() );
+  if( currentSkewType() != previous_type )
+  {
+    const auto [prefs, drf_prefs] = foreground_peak_fit_prefs( m_interspec );
+    RelActCalcAuto::Options skew_opts;
+    skew_opts.set_skew_from_prefs( currentSkewType(), prefs.get(), drf_prefs.get() );
+    setSkewGuiFromOptions( skew_opts );
+  }
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
@@ -3640,74 +3833,18 @@ void RelActAutoGui::handleLorentzianXraysChanged()
 }//void RelActAutoGui::handleLorentzianXraysChanged()
 
 
-void RelActAutoGui::handleUseFixedSkewChanged()
-{
-  checkIfInUserConfigOrCreateOne( false );
-
-  if( m_use_fixed_skew->isChecked() )
-  {
-    // Sync skew type combo to prefs and disable it
-    shared_ptr<SpecMeas> meas = m_interspec
-      ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
-    shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-    if( prefs && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew) )
-      setCurrentSkewType( prefs->m_peak_skew_type );
-    m_skew_type->setDisabled( true );
-  }else
-  {
-    m_skew_type->setDisabled( false );
-  }
-
-  m_render_flags |= RenderActions::UpdateCalculations;
-  m_render_flags |= RenderActions::AddUndoRedoStep;
-  scheduleRender();
-}//void RelActAutoGui::handleUseFixedSkewChanged()
-
-
 void RelActAutoGui::handlePeakFitDetPrefsChanged()
 {
   // Note: deliberately no `AddUndoRedoStep` - the user changed the peak-fit preferences, not this
   //  tools configuration, and that change carries its own undo step.  The `scheduleRender()` below
   //  still re-baselines the undo state (see `captureGuiStateForUndo`), which matters because the
-  //  skew type we sync here is part of the serialized state.
-
-  // Check if current prefs specify a non-NoSkew skew type
-  shared_ptr<SpecMeas> meas = m_interspec
-    ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
-  shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
-
-  const bool prefs_have_skew = prefs
-    && (prefs->m_peak_skew_type != PeakDef::SkewType::NoSkew);
-
-  // Fixed skew values only apply when ROI-independent skew is off
-  bool has_fixed = false;
-  if( prefs_have_skew && !prefs->m_roi_independent_skew )
+  //  skew type we show here is part of the serialized state.
+  if( skewFromPeakFitPrefs() )
   {
-    const size_t n = PeakDef::num_skew_parameters( prefs->m_peak_skew_type );
-    for( size_t i = 0; i < n; ++i )
-    {
-      if( prefs->m_lower_energy_skew[i].has_value() )
-      {
-        has_fixed = true;
-        break;
-      }
-    }
-  }//if( prefs_have_skew && !roi_independent )
-
-  m_use_fixed_skew_enabled = has_fixed;
-  m_use_fixed_skew->setHidden( !has_fixed );
-
-  // Always sync the skew type combo to prefs when prefs specify a skew type
-  if( prefs_have_skew )
-    setCurrentSkewType( prefs->m_peak_skew_type );
-
-  if( has_fixed && m_use_fixed_skew->isChecked() )
-  {
-    m_skew_type->setDisabled( true );
+    showInheritedSkew();
+    updateSkewControlsEnabled();
+    updateSkewFitResults();
     m_render_flags |= RenderActions::UpdateCalculations;
-  }else
-  {
-    m_skew_type->setDisabled( false );
   }
 
   // The detector type sets the default extents of ROIs that are not fixed ranges (shown, and fit).
@@ -4094,6 +4231,9 @@ void RelActAutoGui::setOptionsForNoSolution()
   m_set_peaks_foreground->setDisabled( true );
   
   m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
+
+  m_skew_params->setResults( {} );
+  m_skew_use_fit->setHidden( true );
 }//void setOptionsForNoSolution()
 
 
@@ -4147,7 +4287,8 @@ void RelActAutoGui::setOptionsForValidSolution()
     roi->enableSplitToIndividualRanges( (num_sub_ranges > 1) );
     input_index += 1;
   }//for( WWidget *w : kids )
-  
+
+  updateSkewFitResults();
 }//void setOptionsForValidSolution()
 
 
@@ -5270,6 +5411,13 @@ void RelActAutoGui::handleDetectorChange()
 
   m_cached_drf = nullptr;
   m_cached_all_peaks.clear();
+
+  // The detector's prefs give the starting values of skew parameters the spectrum's prefs do not.
+  if( skewFromPeakFitPrefs() )
+  {
+    showInheritedSkew();
+    updateSkewControlsEnabled();
+  }
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateRefGammaLines;

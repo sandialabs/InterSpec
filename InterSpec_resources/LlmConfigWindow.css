@@ -325,6 +325,7 @@
 /* MCP card */
 .LcwMcpCard { display: flex; flex-direction: column; gap: 10px; }
 .LcwMcpDetail { display: flex; flex-direction: column; gap: 5px; }
+.LcwShowLogsBtn { align-self: flex-start; }
 
 /* XML preview - a deliberately dark "code" surface in any theme. */
 .LcwXmlPreview { margin: 0; }

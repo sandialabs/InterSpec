@@ -38,6 +38,13 @@
   color: var(--interspec-error-color);
 }
 
+/* Whether the uncertainties include the detector-efficiency uncertainty: informational. */
+.FluxDrfUncertNote {
+  font-size: smaller;
+  font-style: italic;
+  opacity: 0.8;
+}
+
 .FluxTable {
   border: 1px solid var(--interspec-outline-color);
   border-radius: 2px;

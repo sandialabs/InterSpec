@@ -792,6 +792,9 @@ public:
   /** Handler for the detector-efficiency-uncertainty method combo (None / ErrorPropagation /
    Likelihood); records undo/redo and refits the chart. */
   void drfUncertMethodChanged();
+  /** Handler for the "include assumed" efficiency-uncertainty checkbox; records undo/redo and refits
+   the chart. */
+  void drfUncertAssumedChanged();
   void correctForCascadeChanged();
 
   /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
@@ -806,10 +809,11 @@ public:
    "Imported efficiency grid" item first if needed (undo/redo and state restore). */
   void setVolEffMethodIndex( const int index );
 
-  /** Shows the detector-efficiency-uncertainty method row only when the current DRF carries
-   efficiency-uncertainty information (an attached CeeLo MC response or a #DetectorEfficiencyUncert).
-   On the first invocation, if the DRF has no such information, defaults the selection to `None`
-   (see #m_drfUncertMethodDefaultApplied).  Called on detector / geometry changes. */
+  /** Updates the detector-efficiency-uncertainty row against the current DRF and distance (via
+   DrfModifyCalc::uncertSummary): shows the "include assumed" checkbox only when what the DRF reports
+   is assumed, and sets the status text to what the fit will use.  On the first invocation, if the DRF has no uncertainty, defaults
+   the selection to `None` (see #m_drfUncertMethodDefaultApplied).  Called from #updateChi2Chart and
+   on state restore. */
   void updateDrfUncertMethodAvailability();
 
   /** "Create MC Eff" (link beside the "Shielding" caption): runs CeeLo over the current scene
@@ -974,11 +978,17 @@ protected:
 
   /** How the detector-efficiency uncertainty is used by the fit: None / ErrorPropagation (default) /
    Likelihood; index maps 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  Kept in its own row
-   (#m_drfUncertMethodRow) that is hidden when the current DRF carries no efficiency uncertainty. */
+   (#m_drfUncertMethodRow), always visible and enabled - #m_drfUncertStatus says what is used. */
   Wt::WComboBox *m_drfUncertMethodCombo = nullptr;
 
-  /** The row (label + #m_drfUncertMethodCombo) shown/hidden by #handleDetectorChanged so the control
-   only appears when the current DRF carries efficiency-uncertainty information. */
+  /** ShieldingSourceFitOptions::drf_uncert_include_assumed; only shown for a DRF that states no
+   efficiency uncertainty of its own, but reports an assumed one. */
+  Wt::WCheckBox *m_drfUncertAssumedCb = nullptr;
+
+  /** Says what efficiency uncertainty the fit will use - see #updateDrfUncertMethodAvailability. */
+  Wt::WText *m_drfUncertStatus = nullptr;
+
+  /** The row holding #m_drfUncertMethodCombo, #m_drfUncertAssumedCb and #m_drfUncertStatus. */
   Wt::WContainerWidget *m_drfUncertMethodRow = nullptr;
 
   /** The combo index before the most recent #drfUncertMethodChanged, for undo/redo. */

@@ -735,28 +735,41 @@ public:
 
     // ========== GADRAS peak-shape distributions ==========
 
-    /** GADRAS peak shape for "generic" detector materials (NaI, HPGe, CsI, LaBr3, ...).
+    /** GADRAS peak shape for "generic" detector materials (NaI, HPGe, CsI, LaBr3, TlBr, ...).
 
-     A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces the
-     Fortran shape).  The tails are described by low/high skew magnitudes whose energy dependence is
-     intrinsic to the distribution (via the skew "power" terms), so this type does NOT use InterSpec's
-     generic energy-dependent-skew machinery.
+     The continuous (analytic) limit of the GADRASw discrete-line peak shape: a Gaussian core mixed
+     with exponential tails convolved with that core (see PeakDists_imp.hpp, and
+     scratch/GADRAS_skew_par_audit_20261006.md).  The tails are described by low/high skew
+     magnitudes whose energy dependence is intrinsic to the distribution (via the skew "power"
+     terms), so this type does NOT use InterSpec's generic energy-dependent-skew machinery.
+     With `USE_GADRAS_TRUNCATION` (PeakDists.h) the tails stop where GADRAS's zeta grid ends.
 
      Uses 6 skew parameters:
-     - SkewPar0: `low_skew`         - low-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
-     - SkewPar1: `high_skew`        - high-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
-     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent.  Fixed detector characteristic.
-     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent.  Fixed detector characteristic.
-     - SkewPar4: `low_skew_extent`  - low-tail slope shaping.  Fixed detector characteristic.
-     - SkewPar5: `high_skew_extent` - high-tail slope shaping.  Fixed detector characteristic.
+     - SkewPar0: `low_skew`         - low-energy tail amplitude (GADRAS magnitude @ 661 keV); range
+                                      -100 to 100.  Fittable.  A negative value counts as |value|
+                                      toward the tail fraction but builds no low tail (as in GADRAS).
+     - SkewPar1: `high_skew`        - high-energy tail amplitude, same as SkewPar0.  Fittable.
+     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent (0 to 5; GADRAS treats a
+                                      negative power as 0).  Detector characteristic.
+     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent (0 to 5).  Detector characteristic.
+     - SkewPar4: `low_skew_extent`  - low-tail slope shaping (-100 to 30): the tail scale is multiplied
+                                      by 1+extent/3 when >= 0, or exp(extent/3) when < 0.  Detector characteristic.
+     - SkewPar5: `high_skew_extent` - high-tail slope shaping, same as SkewPar4.  Detector characteristic.
+     The detector characteristics are not fit by default (see #skew_parameter_fit_by_default); at a
+     single energy the powers are degenerate with the magnitudes.
      */
     GadrasGeneric,
 
-    /** GADRAS peak shape for CZT / CdTe detector materials.
+    /** GADRAS peak shape for CZT / CdTe detector materials (GADRAS uses this tail construction only
+     for exactly those two materials).
 
      Same parameterization as `GadrasGeneric`, but uses the CZT/CdTe tail construction internally.
 
      Uses 6 skew parameters, identical meaning to `GadrasGeneric` (see above).
+
+     Note: GADRAS's third tail construction, for PVT-like detectors ("low photopeak probability"),
+     is implemented in PeakDists (`GadrasMaterial::LowPhotopeakProbability`), but deliberately not
+     exposed as a skew type, as those detectors have no usable photopeaks.
      */
     GadrasCZT,
 
@@ -877,9 +890,20 @@ public:
    Most skew types fit all their parameters by default, so this returns true for any parameter within
    `num_skew_parameters(skew_type)`.  The GADRAS types are an exception: only the two amplitude parameters
    (SkewPar0=low_skew, SkewPar1=high_skew) are fit by default; the energy-dependence powers and tail extents
-   (SkewPar2..SkewPar5) are fixed detector characteristics.
+   (SkewPar2..SkewPar5) are detector characteristics, held fixed unless the user chooses to fit them.
    */
   static bool skew_parameter_fit_by_default( const SkewType skew_type, const CoefficientType coefficient );
+
+  /** Moves a fit's skew starting values off a point the fit could never leave.
+
+   For the GADRAS types, when both tail amplitudes (SkewPar0/1) are zero the shape is an exact
+   Gaussian, and the derivative w.r.t. every skew coefficient is zero there; so in that case each
+   amplitude being fit is set to its #skew_parameter_range starting value.  No-op for other types.
+
+   `values` and `is_fit` are indexed from SkewPar0, and are `num_skew_parameters(skew_type)` long.
+   */
+  static void avoid_stationary_skew_start( const SkewType skew_type, std::vector<double> &values,
+                                           const std::vector<bool> &is_fit );
 
 public:
   PeakDef();

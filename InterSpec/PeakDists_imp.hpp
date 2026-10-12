@@ -7,6 +7,7 @@
 #include <exception>
 
 #include <boost/math/constants/constants.hpp>
+#include <boost/math/special_functions/owens_t.hpp>
 
 #include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
 
@@ -1428,42 +1429,45 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 // ============================================================================
 //  GADRAS peak shape distribution
 // ----------------------------------------------------------------------------
-//  An analytic (closed-form) re-implementation of the GADRASw Fortran discrete-line
-//  peak shape.  The GADRAS skewed shape is, mathematically, a Gaussian core mixed
-//  with one-sided exponential tails *convolved* with that Gaussian; that convolution
-//  is an Exponentially-Modified Gaussian (EMG), which has a closed-form CDF:
+//  The continuous (analytic) limit of the GADRASw Fortran discrete-line peak shape.
+//  The GADRAS skewed shape is a Gaussian core mixed with one-sided exponential tails
+//  *convolved* with that Gaussian; that convolution is an Exponentially-Modified
+//  Gaussian (EMG), which has a closed-form CDF:
 //
-//      shape_cdf(z) = (1 - sum_skew)*Phi(z_shape)
-//                     + sum_skew * [ Sum_i w_low[i] *F_left (z_shape; s_low[i])
-//                                  + Sum_i w_high[i]*F_right(z_shape; s_high[i]) ]
+//      cdf(z) = (1 - sum_skew)*Phi(z)
+//               + sum_skew * [ Phi(z_s) + Sum_i w_low[i] *(F_left (z_s; s_low[i])  - Phi(z_s))
+//                                       + Sum_i w_high[i]*(F_right(z_s; s_high[i]) - Phi(z_s)) ]
 //
-//  where F_left/F_right are the exp*Gaussian tail CDFs (gadras_left/right_tail_cdf).
-//  Each tail side is a mixture of at most two exponentials, so the shape needs only
-//  a handful of transcendental calls per bin edge (no per-detector precompute).
+//  where z_s = z*(661/E)^power (per side), and F_left/F_right are the exp*Gaussian
+//  tail CDFs.  Each tail side is a mixture of at most two exponentials, so the shape
+//  needs only a handful of transcendental calls per bin edge.
 //
-//  Relationship to the old discrete form:  GADRAS (and the previous version of this
-//  code) instead laid the tail density on a fixed 128-point zeta grid and summed 128
-//  shifted Gaussians (a right-endpoint rectangle-rule quadrature of the exponential
-//  density).  The analytic EMG here is exactly the limit of that discrete sum as the
-//  grid is refined to infinity, so it is *more* accurate and ~4x faster.  It differs
-//  from the legacy Fortran output by ~1-2% in the far tails -- because the Fortran's
-//  coarse-grid quadrature is itself the approximation.  The discrete form (and the
-//  Fortran gold-standard comparison) is retained inline in
-//  target/testing/test_GadrasPeakDists.cpp, which also regression-tests the two forms
-//  against each other.
+//  Relationship to GADRAS's discrete form:  GADRAS lays the tail density on a
+//  128-point zeta grid, with a right-endpoint rectangle rule, and convolves each
+//  grid "impulse" with the Gaussian.  Refining that grid, the discrete form
+//  converges (with error ~1/N; ~1.5% of the CDF at GADRAS's N=128) to the analytic
+//  form here - BUT the GADRAS grid only reaches a finite distance from the peak (see
+//  `gadras_truncation_reach`), so its limit is a *truncated* exponential.  When
+//  `USE_GADRAS_TRUNCATION` is 1 the tails here are truncated the same way:
+//      F_tr(z) = [F(z) - e^{-R/s} F(z -/+ R)] / (1 - e^{-R/s})
+//  (the EMG of an exponential restricted to [0,R], normalized).  The discrete form,
+//  and the Fortran gold-standard comparison, are retained in
+//  target/testing/test_GadrasPeakDists.cpp.
 //
 //  The six skew parameters (SkewPar0..SkewPar5) are, in order:
 //    low_skew, high_skew, low_skew_power, high_skew_power, low_skew_extent, high_skew_extent.
-//  `material` selects the Generic vs CZT/CdTe tail construction.
+//  As in GADRAS: a negative power acts as zero; a negative magnitude counts as |value|
+//  toward `sum_skew` and the grid reach, but as zero when building that side's tail.
 //
-//  The PVT / "low photopeak probability" high tail has no clean closed form and is
-//  NOT implemented here (it is not an exposed skew type).  It survives only in the
-//  legacy discrete copy in the unit test.
+//  `material` selects the Generic, CZT/CdTe, or PVT-like ("low photopeak probability")
+//  tail construction.  For PVT-like detectors the high tail is GADRAS's half-Gaussian of
+//  width D = high_skew/9 (sigma units), which convolved with the core is a skew-normal:
+//      F_SN(z) = Phi(z/w) - 2*T(z/w, D),  w = sqrt(1+D^2),  T = Owen's T function.
+//  (GADRAS's tiny 3E-6 linear widening and log-extrapolation fudge on that tail change it
+//  by less than its own 128-point discretization error, so are not reproduced.)
 //
-//  NOTE (pending upgrade): the mixture (weights/scales/sum_skew/zeta factors) is built
-//  in `double`, so Ceres autodiff gradients flow through mean/sigma/amplitude (via the
-//  zeta argument) but NOT through the six skew parameters.  Making the skew amplitudes
-//  analytically fittable requires templating the shape build on T.
+//  The shape is built in `T`, so Ceres autodiff gradients flow through the six skew
+//  parameters (and the peak energy the shape is resolved at), not just mean/sigma/amplitude.
 // ============================================================================
 
 /** Extract the scalar (double) value from a scalar or ceres::Jet type. */
@@ -1523,7 +1527,7 @@ inline T gadras_erfcx_nonneg( const T x )
  would overflow (large exp_arg, which always coincides with erfc_arg > 0) we use the
  equivalent  0.5 * erfcx(erfc_arg) * exp(-0.5 z^2).  This is the same trick used by
  InterSpec's bortel_indefinite_integral, and keeps the function C-infinity smooth across
- the switch (important for future Jet gradients). */
+ the switch (important for Jet gradients). */
 template<typename T>
 inline T gadras_stable_tail_term( const T exp_arg, const T erfc_arg, const T z )
 {
@@ -1545,7 +1549,7 @@ inline T gadras_stable_tail_term( const T exp_arg, const T erfc_arg, const T z )
  *left* exponential tail of scale `s` (density (1/s) exp(z/s) for z<=0).  EMG, negative
  skew.  F_left(z) = Phi(z) + exp(z/s + 1/(2 s^2)) Phi(-z - 1/s). */
 template<typename T>
-inline T gadras_left_tail_cdf( const T z, const double s )
+inline T gadras_left_tail_cdf( const T z, const T s )
 {
   const double inv_sqrt2 = 0.70710678118654752440;
   const T exp_arg  = z / s + 1.0 / (2.0 * s * s);
@@ -1557,7 +1561,7 @@ inline T gadras_left_tail_cdf( const T z, const double s )
  of scale `s` (density (1/s) exp(-z/s) for z>=0).  EMG, positive skew.
  F_right(z) = Phi(z) - exp(-z/s + 1/(2 s^2)) Phi(z - 1/s). */
 template<typename T>
-inline T gadras_right_tail_cdf( const T z, const double s )
+inline T gadras_right_tail_cdf( const T z, const T s )
 {
   const double inv_sqrt2 = 0.70710678118654752440;
   const T exp_arg  = -z / s + 1.0 / (2.0 * s * s);
@@ -1566,22 +1570,103 @@ inline T gadras_right_tail_cdf( const T z, const double s )
 }
 
 
-/** A fully-resolved GADRAS peak shape at a given energy (built in double).  The skewed
- part is a mixture of up to two left-tail EMG components and up to two right-tail EMG
- components; all scales are in zeta (== sigma) units. */
+/** For a truncated tail (exponential of scale `s` restricted to [0, `reach`]), the weight
+ `e^{-reach/s}` of the shifted copy subtracted off; zero (no truncation) when that is
+ negligible, or when `USE_GADRAS_TRUNCATION` is 0 (signalled by a non-positive `reach`). */
+template<typename T>
+inline T gadras_trunc_weight( const T &s, const T &reach )
+{
+  if( (gadras_scalar(reach) <= 0.0) || (gadras_scalar(reach) > 40.0*gadras_scalar(s)) )
+    return T(0.0);
+  using std::exp;
+  return exp( -reach / s );
+}
+
+/** Left (low-energy) tail CDF, with the tail truncated at `-reach` when `trunc_wt > 0`.
+ `trunc_wt` must be `gadras_trunc_weight(s,reach)`. */
+template<typename T>
+inline T gadras_left_tail_cdf_tr( const T z, const T s, const T &reach, const T &trunc_wt )
+{
+  if( gadras_scalar(trunc_wt) <= 0.0 )
+    return gadras_left_tail_cdf( z, s );
+  return (gadras_left_tail_cdf( z, s ) - trunc_wt*gadras_left_tail_cdf( T(z + reach), s ))
+         / (1.0 - trunc_wt);
+}
+
+/** Right (high-energy) tail CDF, with the tail truncated at `+reach` when `trunc_wt > 0`. */
+template<typename T>
+inline T gadras_right_tail_cdf_tr( const T z, const T s, const T &reach, const T &trunc_wt )
+{
+  if( gadras_scalar(trunc_wt) <= 0.0 )
+    return gadras_right_tail_cdf( z, s );
+  return (gadras_right_tail_cdf( z, s ) - trunc_wt*gadras_right_tail_cdf( T(z - reach), s ))
+         / (1.0 - trunc_wt);
+}
+
+
+/** Owen's T function, T(h,a), with derivatives propagated for ceres::Jet.
+ dT/dh = -phi(h) erf(a h/sqrt2)/2,  dT/da = exp(-h^2 (1+a^2)/2) / (2 pi (1+a^2)). */
+template<typename T>
+inline T gadras_owens_t( const T &h, const T &a )
+{
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    return boost::math::owens_t( h, a );
+  }
+  else
+  {
+    const double hv = h.a, av = a.a;
+    const double val = boost::math::owens_t( hv, av );
+    const double inv_sqrt_2pi = 0.39894228040143267794;
+    const double dTdh = -0.5 * inv_sqrt_2pi * std::exp( -0.5*hv*hv ) * std::erf( av * hv * 0.70710678118654752440 );
+    const double dTda = std::exp( -0.5*hv*hv*(1.0 + av*av) ) / (6.28318530717958647693 * (1.0 + av*av));
+    T answer( val );
+    answer.v = dTdh * h.v + dTda * a.v;
+    return answer;
+  }
+}
+
+/** CDF (sigma==1) of a unit Gaussian convolved with a half-Gaussian (on z >= 0) of width `d`;
+ i.e., a skew-normal with shape parameter `d` and scale sqrt(1+d^2).  This is the continuous limit
+ of GADRAS's PVT ("low photopeak probability") high tail. */
+template<typename T>
+inline T gadras_half_gauss_tail_cdf( const T z, const T d )
+{
+  using std::sqrt;
+  const T omega = sqrt( 1.0 + d*d );
+  const T x = z / omega;
+  return gadras_std_normal_cdf( x ) - 2.0 * gadras_owens_t( x, d );
+}
+
+
+/** A fully-resolved GADRAS peak shape at a given energy.  The skewed part is a mixture of up
+ to two left-tail EMG components and up to two right-tail EMG components (or, for PVT-like
+ detectors, one half-Gaussian high tail); all scales are in zeta (== sigma) units. */
+template<typename T>
 struct GadrasPeakShape
 {
-  double sum_skew = 0.0;          // weight of the skewed shape (0 => pure Gaussian)
-  double low_zeta_factor = 1.0;   // energy rescale of shape zeta, z<0 side
-  double high_zeta_factor = 1.0;  // energy rescale of shape zeta, z>0 side
+  T sum_skew = T(0.0);          // weight of the skewed shape (0 => pure Gaussian)
+  T low_zeta_factor = T(1.0);   // energy rescale of shape zeta, z<0 side
+  T high_zeta_factor = T(1.0);  // energy rescale of shape zeta, z>0 side
 
-  int    n_low = 0;                    // number of active left-tail components (0..2)
-  double low_weight[2] = {0.0, 0.0};   // already includes SCN; sum == SCN
-  double low_scale[2]  = {1.0, 1.0};
+  int n_low = 0;                            // number of active left-tail components (0..2)
+  T low_weight[2] = { T(0.0), T(0.0) };     // already includes SCN; sum == SCN
+  T low_scale[2]  = { T(1.0), T(1.0) };
+  T low_trunc_wt[2] = { T(0.0), T(0.0) };   // e^{-R/s} of each component; 0 => not truncated
 
-  int    n_high = 0;                   // number of active right-tail components (0..2)
-  double high_weight[2] = {0.0, 0.0};  // already includes SCP; sum == SCP
-  double high_scale[2]  = {1.0, 1.0};
+  int n_high = 0;                           // number of active right-tail components (0..2)
+  T high_weight[2] = { T(0.0), T(0.0) };    // already includes SCP; sum == SCP
+  T high_scale[2]  = { T(1.0), T(1.0) };
+  T high_trunc_wt[2] = { T(0.0), T(0.0) };
+
+  // Where (in shape-zeta units) GADRAS's grid ends, and so its tails; 0 => no truncation.
+  T low_reach = T(0.0);
+  T high_reach = T(0.0);
+
+  // PVT-like detectors: the high tail is a half-Gaussian of width `pvt_width`, weight `pvt_weight`.
+  bool pvt_high_tail = false;
+  T pvt_weight = T(0.0);                    // == SCP
+  T pvt_width = T(1.0);
 
   // How far (in zeta units, on the *measured* axis) the tails reach; used to size the
   // integration/coverage window.  Includes the energy zeta rescale.
@@ -1589,155 +1674,226 @@ struct GadrasPeakShape
   double high_reach_zeta = 8.0;
 };
 
+
+/** The [low, high] reach (in shape-zeta units) of GADRAS's 128-point zeta grid (its ZetaRange),
+ for the given low/high skew magnitudes; see `PeakDists::gadras_truncation_reach`. */
+template<typename T>
+inline std::pair<T,T> gadras_grid_reach( const T &low_skew, const T &high_skew )
+{
+  using std::abs;
+  using std::pow;
+
+  // GADRAS:  GZ(I) = +-((I-64)/Divider)^2, I=1..128; I < 64 uses DividerLo, so the grid runs
+  //  from -(63/DividerLo)^2 to +(64/DividerHi)^2, with DividerLo = 12/max(1,|low|)^0.2 and
+  //  DividerHi = 18/max(1,|high|)^0.2 (|low| floored at 0.1 when there is a high skew).
+  const T one( 1.0 );
+  const T abs_high = abs( high_skew );
+  T abs_low = abs( low_skew );
+  if( (gadras_scalar(abs_high) > 0.0) && (gadras_scalar(abs_low) < 0.1) )
+    abs_low = T(0.1);
+  const T lo_mag = (gadras_scalar(abs_low) > 1.0) ? abs_low : one;
+  const T hi_mag = (gadras_scalar(abs_high) > 1.0) ? abs_high : one;
+  const T lo_end = (63.0/12.0) * pow( lo_mag, 0.2 );
+  const T hi_end = (64.0/18.0) * pow( hi_mag, 0.2 );
+  return { lo_end*lo_end, hi_end*hi_end };
+}//gadras_grid_reach(...)
+
+
 /** Build the resolved GADRAS peak shape (EMG tail mixture + sum_skew) for a peak at
  `energy` (keV).  The six skew parameters and material are as documented above.
- `low_photopeak_probability` (PVT) has no closed-form EMG and is ignored here (it is
- not an exposed skew type; see the section comment). */
-inline GadrasPeakShape gadras_build_peak_shape( const double energy,
-                                                const double low_skew, const double high_skew,
-                                                const double low_skew_power, const double high_skew_power,
-                                                const double low_skew_extent, const double high_skew_extent,
-                                                const GadrasMaterial material,
-                                                const bool low_photopeak_probability )
+
+ A negative power acts as zero (as in the Fortran); the power tests below use `>= 0` rather
+ than `> 0` so the gradient survives at power == 0 (the usual start and lower bound) - the
+ value is the same either way, since pow(x,0) == 1.
+ */
+template<typename T>
+inline GadrasPeakShape<T> gadras_build_peak_shape( const T energy,
+                                                   const T low_skew, const T high_skew,
+                                                   const T low_skew_power, const T high_skew_power,
+                                                   const T low_skew_extent, const T high_skew_extent,
+                                                   const GadrasMaterial material )
 {
-  // PVT is not representable as a closed-form EMG; the analytic path does not support it.
-  (void)low_photopeak_probability;
-  assert( !low_photopeak_probability );
+  using std::abs;
+  using std::exp;
+  using std::pow;
 
-  GadrasPeakShape s;
+  // max(0,v), but keeping v's derivative at v == 0
+  const auto non_neg = []( const T &v ) -> T { return (gadras_scalar(v) >= 0.0) ? v : T(0.0); };
 
-  // sum_skew (GetSumSkew): raw magnitudes, energy-scaled only when power > 0.
-  double skew_p = std::abs( high_skew );
-  if( (skew_p > 0.0) && (high_skew_power > 0.0) )
-    skew_p *= std::pow( energy / 661.0, high_skew_power );
-  double skew_n = std::abs( low_skew );
-  if( (skew_n > 0.0) && (low_skew_power > 0.0) )
-    skew_n *= std::pow( energy / 661.0, low_skew_power );
-  s.sum_skew = std::min( 1.0, (skew_p + skew_n) / 100.0 );
+  GadrasPeakShape<T> s;
 
-  if( s.sum_skew <= 0.0 )
+  // sum_skew (GetSumSkew): raw magnitudes, energy-scaled by a non-negative power.
+  T skew_p = abs( high_skew );
+  if( gadras_scalar(high_skew_power) >= 0.0 )
+    skew_p *= pow( energy / 661.0, high_skew_power );
+  T skew_n = abs( low_skew );
+  if( gadras_scalar(low_skew_power) >= 0.0 )
+    skew_n *= pow( energy / 661.0, low_skew_power );
+  s.sum_skew = std::min( T(1.0), (skew_p + skew_n) / 100.0 );
+
+  if( gadras_scalar(s.sum_skew) <= 0.0 )
     return s;   // pure Gaussian; no mixture needed
 
   // Effective magnitudes used to build the shape (note the 0.1 low floor with a high tail).
-  double low_val  = std::max( 0.0, low_skew );
-  double high_val = std::max( 0.0, high_skew );
-  if( high_val > 0.0 )
-    low_val = std::max( low_val, 0.1 );
+  T low_val  = non_neg( low_skew );
+  const T high_val = non_neg( high_skew );
+  if( gadras_scalar(high_val) > 0.0 )
+    low_val = std::max( low_val, T(0.1) );
 
-  if( (low_val <= 0.0) && (high_val <= 0.0) )
+  if( (gadras_scalar(low_val) <= 0.0) && (gadras_scalar(high_val) <= 0.0) )
   {
-    s.sum_skew = 0.0;
+    // Both magnitudes non-positive: GADRAS builds no tail (its shape spline is then just the
+    //  renormalized core), so this is a pure Gaussian.
+    s.sum_skew = T(0.0);
     return s;
   }
 
-  const double denom = low_val + high_val;
-  const double scn = (denom > 0.0) ? (low_val / denom) : 0.0;
-  const double scp = (denom > 0.0) ? (high_val / denom) : 0.0;
+  const T denom = low_val + high_val;
+  const T scn = low_val / denom;
+  const T scp = high_val / denom;
+
+#if( USE_GADRAS_TRUNCATION )
+  const std::pair<T,T> reach = gadras_grid_reach( low_skew, high_skew );
+  s.low_reach = reach.first;
+  s.high_reach = reach.second;
+#endif
 
   // extent -> slope scaling (same piecewise form for low and high)
-  auto slope_scale = []( const double extent ) -> double {
-    return (extent >= 0.0) ? (1.0 + extent / 3.0) : std::exp( extent / 3.0 );
+  const auto slope_scale = []( const T &extent ) -> T {
+    return (gadras_scalar(extent) >= 0.0) ? T(1.0 + extent / 3.0) : T(exp( extent / 3.0 ));
   };
 
   // Turn (coeff, scale) tail components into area-normalized weights.  For a one-sided
-  // exponential the area is coeff*scale, so component i's normalized weight is
-  // (coeff_i*scale_i) / sum_j(coeff_j*scale_j), scaled by the side weight (SCN or SCP).
-  auto fill_side = []( int &n, double *w, double *sc,
-                       const double *coeff, const double *scale, int count,
-                       const double side_weight )
+  // exponential the area is coeff*scale (or, truncated at R, coeff*scale*(1 - e^{-R/s})), so
+  // component i's normalized weight is its area over the sum of areas, times the side weight.
+  //  (GADRAS normalizes each side's discrete density to unit sum, i.e., over the truncated range.)
+  const auto fill_side = []( int &n, T *w, T *sc, T *tw,
+                             const T *coeff, const T *scale, const int count,
+                             const T &side_weight, const T &trunc_reach )
   {
-    double area = 0.0;
+    T area( 0.0 );
+    T comp_area[2] = { T(0.0), T(0.0) };
     for( int i = 0; i < count; ++i )
-      area += coeff[i] * scale[i];
+    {
+      tw[i] = gadras_trunc_weight( scale[i], trunc_reach );
+      comp_area[i] = coeff[i] * scale[i] * (1.0 - tw[i]);
+      area += comp_area[i];
+    }
     n = count;
     for( int i = 0; i < count; ++i )
     {
-      w[i]  = (area > 0.0) ? (side_weight * (coeff[i] * scale[i]) / area) : 0.0;
+      w[i]  = (gadras_scalar(area) > 0.0) ? T(side_weight * comp_area[i] / area) : T(0.0);
       sc[i] = scale[i];
     }
   };
 
-  if( low_val > 0.0 )
+  if( gadras_scalar(low_val) > 0.0 )
   {
-    const double lss = slope_scale( low_skew_extent );
+    const T lss = slope_scale( low_skew_extent );
     if( material == GadrasMaterial::CZT_CdTe )
     {
-      const double slopen = 0.1 * lss * low_val;
-      const double coeff[2] = { 0.8, 0.2 };
-      const double scale[2] = { slopen, slopen / 0.8 };
-      fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
+      const T slopen = 0.1 * lss * low_val;
+      const T coeff[2] = { T(0.8), T(0.2) };
+      const T scale[2] = { slopen, slopen / 0.8 };
+      fill_side( s.n_low, s.low_weight, s.low_scale, s.low_trunc_wt, coeff, scale, 2, scn, s.low_reach );
     }
     else
     {
-      const double slopen = 0.2 * lss * low_val;
-      const double fr = 0.04 * low_val;
-      const double coeff[2] = { 1.0 - fr, fr };
-      const double scale[2] = { slopen, slopen / 0.4 };
-      fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
+      // Generic (and PVT-like) low tail.  For low_val > 25 the FR > 1 makes the first
+      //  component's coefficient negative, but the summed density stays positive (the slower
+      //  e^{0.4 z/s} term always dominates for z < 0), exactly as in GADRAS.
+      const T slopen = 0.2 * lss * low_val;
+      const T fr = 0.04 * low_val;
+      const T coeff[2] = { 1.0 - fr, fr };
+      const T scale[2] = { slopen, slopen / 0.4 };
+      fill_side( s.n_low, s.low_weight, s.low_scale, s.low_trunc_wt, coeff, scale, 2, scn, s.low_reach );
     }
   }
 
-  if( high_val > 0.0 )
+  if( gadras_scalar(high_val) > 0.0 )
   {
-    const double hss = slope_scale( high_skew_extent );
+    const T hss = slope_scale( high_skew_extent );
     if( material == GadrasMaterial::CZT_CdTe )
     {
-      const double slopep = 0.1 * hss * high_val;
-      const double coeff[2] = { 0.8, 0.2 };
-      const double scale[2] = { slopep, slopep / 0.65 };
-      fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 2, scp );
+      const T slopep = 0.1 * hss * high_val;
+      const T coeff[2] = { T(0.8), T(0.2) };
+      const T scale[2] = { slopep, slopep / 0.65 };
+      fill_side( s.n_high, s.high_weight, s.high_scale, s.high_trunc_wt, coeff, scale, 2, scp, s.high_reach );
+    }
+    else if( material == GadrasMaterial::LowPhotopeakProbability )
+    {
+      // PVT-like: a half-Gaussian of width high/9 (the extent only enters GADRAS's negligible
+      //  3E-6 widening term); its reach of ~(64*high^0.2/18)^2 >= 12.6 is >= ~5 widths for any
+      //  plausible magnitude, so truncating it changes nothing worth the cost.
+      s.pvt_high_tail = true;
+      s.pvt_weight = scp;
+      s.pvt_width = high_val / 9.0;
     }
     else
     {
-      const double slopep = 0.2 * hss * high_val;
-      const double coeff[1] = { 1.0 };
-      const double scale[1] = { slopep };
-      fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 1, scp );
+      const T slopep = 0.2 * hss * high_val;
+      const T coeff[1] = { T(1.0) };
+      const T scale[1] = { slopep };
+      fill_side( s.n_high, s.high_weight, s.high_scale, s.high_trunc_wt, coeff, scale, 1, scp, s.high_reach );
     }
   }
 
-  // Energy-dependent zeta rescale for the shape (max(0,power) like the old code).
-  s.low_zeta_factor  = std::pow( 661.0 / energy, std::max( 0.0, low_skew_power ) );
-  s.high_zeta_factor = std::pow( 661.0 / energy, std::max( 0.0, high_skew_power ) );
+  // Energy-dependent zeta rescale for the shape (again, a negative power acts as zero).
+  if( gadras_scalar(low_skew_power) >= 0.0 )
+    s.low_zeta_factor = pow( 661.0 / energy, low_skew_power );
+  if( gadras_scalar(high_skew_power) >= 0.0 )
+    s.high_zeta_factor = pow( 661.0 / energy, high_skew_power );
 
   // Tail reach on the measured axis: a one-sided exponential of shape-zeta scale `s`
-  // has ~e^{-k} of its area beyond k*s, so k = ln(1/eps) covers all but eps.  The shape
-  // is evaluated at z_shape = zeta*zeta_factor, so the reach in measured-zeta is
-  // scale/zeta_factor.  Add the Gaussian core's ~8 sigma.
+  // has ~e^{-k} of its area beyond k*s, so k = ln(1/eps) covers all but eps - but no further
+  // than where a truncated tail stops.  The shape is evaluated at z_shape = zeta*zeta_factor,
+  // so the reach in measured-zeta is that over zeta_factor.  Add the Gaussian core's ~8 sigma.
   const double kreach = std::log( 1.0e9 );  // eps = 1e-9
   double low_scale_max = 0.0, high_scale_max = 0.0;
   for( int i = 0; i < s.n_low; ++i )
-    low_scale_max = std::max( low_scale_max, s.low_scale[i] );
+    low_scale_max = std::max( low_scale_max, gadras_scalar(s.low_scale[i]) );
   for( int i = 0; i < s.n_high; ++i )
-    high_scale_max = std::max( high_scale_max, s.high_scale[i] );
-  const double lf = (s.low_zeta_factor  > 0.0) ? s.low_zeta_factor  : 1.0;
-  const double hf = (s.high_zeta_factor > 0.0) ? s.high_zeta_factor : 1.0;
-  s.low_reach_zeta  = 8.0 + kreach * low_scale_max  / lf;
-  s.high_reach_zeta = 8.0 + kreach * high_scale_max / hf;
+    high_scale_max = std::max( high_scale_max, gadras_scalar(s.high_scale[i]) );
+  double low_extent = kreach * low_scale_max;
+  double high_extent = kreach * high_scale_max;
+  if( s.pvt_high_tail )
+    high_extent = 6.5 * gadras_scalar( s.pvt_width );   // half-Gaussian: 1-erf(6.5/sqrt2) ~ 8E-11
+#if( USE_GADRAS_TRUNCATION )
+  low_extent = std::min( low_extent, gadras_scalar(s.low_reach) );
+  if( !s.pvt_high_tail )
+    high_extent = std::min( high_extent, gadras_scalar(s.high_reach) );
+#endif
+  const double lzf = gadras_scalar( s.low_zeta_factor );
+  const double hzf = gadras_scalar( s.high_zeta_factor );
+  const double lf = (lzf > 0.0) ? lzf : 1.0;
+  const double hf = (hzf > 0.0) ? hzf : 1.0;
+  s.low_reach_zeta  = 8.0 + low_extent / lf;
+  s.high_reach_zeta = 8.0 + high_extent / hf;
 
   return s;
 }//gadras_build_peak_shape(...)
 
 
-/** Cumulative distribution of the full GADRAS peak shape at zeta.  `zeta` is templated so
- gradients flow through it (i.e. through mean/sigma); the shape mixture is a fixed `double`. */
+/** Cumulative distribution of the full GADRAS peak shape at zeta. */
 template<typename T>
-inline T gadras_peak_shape_cdf( const T zeta, const GadrasPeakShape &s )
+inline T gadras_peak_shape_cdf( const T zeta, const GadrasPeakShape<T> &s )
 {
   const T gauss = gadras_std_normal_cdf( zeta );
-  if( s.sum_skew <= 0.0 )
+  if( gadras_scalar(s.sum_skew) <= 0.0 )
     return gauss;
 
   // zeta used for the skewed shape, rescaled per side (sign-preserving).
-  const double factor = (gadras_scalar(zeta) > 0.0) ? s.high_zeta_factor : s.low_zeta_factor;
+  const T factor = (gadras_scalar(zeta) > 0.0) ? s.high_zeta_factor : s.low_zeta_factor;
   const T z_shape = zeta * factor;
   const T shape_gauss = gadras_std_normal_cdf( z_shape );
 
   T shape = shape_gauss;
   for( int i = 0; i < s.n_low; ++i )
-    shape += s.low_weight[i] * (gadras_left_tail_cdf( z_shape, s.low_scale[i] ) - shape_gauss);
+    shape += s.low_weight[i] * (gadras_left_tail_cdf_tr( z_shape, s.low_scale[i], s.low_reach, s.low_trunc_wt[i] ) - shape_gauss);
   for( int i = 0; i < s.n_high; ++i )
-    shape += s.high_weight[i] * (gadras_right_tail_cdf( z_shape, s.high_scale[i] ) - shape_gauss);
+    shape += s.high_weight[i] * (gadras_right_tail_cdf_tr( z_shape, s.high_scale[i], s.high_reach, s.high_trunc_wt[i] ) - shape_gauss);
+  if( s.pvt_high_tail )
+    shape += s.pvt_weight * (gadras_half_gauss_tail_cdf( z_shape, s.pvt_width ) - shape_gauss);
 
   T result = (1.0 - s.sum_skew) * gauss + s.sum_skew * shape;
 
@@ -1766,8 +1922,10 @@ inline double gadras_fwhm( const double energy_in, const double resolution_offse
   return 6.61 * resolution_661 * std::pow( std::max( 30.0, E ) / 661.0, pwr );
 }
 
-/** GADRAS Gaussian-core sigma for a peak at `energy`.  If `low_photopeak_probability` (PVT-like),
- sigma is widened as GADRAS does.  Provided mainly for tests/tools. */
+/** GADRAS Gaussian-core sigma for a discrete line at `energy`.  If `low_photopeak_probability`
+ (PVT-like), sigma is widened in quadrature by 10 keV, as GADRAS does for discrete lines (not for
+ continuum/energy-range sources) "to compensate intrinsic nonlinearity".  Provided mainly for
+ tests/tools - InterSpec normally gets sigma from the DRF or the fit. */
 inline double gadras_sigma( const double energy, const double resolution_offset,
                             const double resolution_661, const double resolution_power,
                             const double fwhm_adjustment, const bool low_photopeak_probability )
@@ -1795,17 +1953,14 @@ void gadras_integral( const T peak_mean, const T sigma, const T peak_amplitude,
       return;
   }
 
-  // Build the shape (in double) at the peak energy from the six skew parameters.
-  const double energy = gadras_scalar( peak_mean );
-  const GadrasPeakShape shape = gadras_build_peak_shape( energy,
-                                    gadras_scalar(skew[0]), gadras_scalar(skew[1]),
-                                    gadras_scalar(skew[2]), gadras_scalar(skew[3]),
-                                    gadras_scalar(skew[4]), gadras_scalar(skew[5]),
-                                    material, false );
+  // Build the shape at the peak energy from the six skew parameters.
+  const GadrasPeakShape<T> shape = gadras_build_peak_shape<T>( peak_mean,
+                                         skew[0], skew[1], skew[2], skew[3], skew[4], skew[5],
+                                         material );
 
   // Coverage window: the shape carries its own tail reach (Gaussian core + EMG tails).
   double zlo = -8.0, zhi = 8.0;
-  if( shape.sum_skew > 0.0 )
+  if( gadras_scalar(shape.sum_skew) > 0.0 )
   {
     zlo = std::min( zlo, -shape.low_reach_zeta );
     zhi = std::max( zhi,  shape.high_reach_zeta );

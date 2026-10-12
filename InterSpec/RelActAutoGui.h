@@ -41,6 +41,7 @@ class PeakModel;
 class AuxWindow;
 class InterSpec;
 class RelEffChart;
+class SkewParamsGrid;
 class PopupDivMenu;
 class PopupDivMenuItem;
 class RelActTxtResults;
@@ -143,12 +144,29 @@ public:
   void handleSameAgeChanged();
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
+  void handleSkewSourceChanged();
+  void handleSkewParamsChanged();
+  void handleUseFitSkewValues();
   void handleLorentzianXraysChanged();
-  void handleUseFixedSkewChanged();
   void handlePeakFitDetPrefsChanged();
   void populateSkewTypeComboBox( const bool lorentzian_mode );
   PeakDef::SkewType currentSkewType() const;
   void setCurrentSkewType( const PeakDef::SkewType skew_type );
+
+  /** If the skew comes from the peak-fit preferences (rather than being custom to this tool). */
+  bool skewFromPeakFitPrefs() const;
+
+  /** Shows, in the "Peak Skew" box, the skew the peak-fit preferences give (if there are preferences). */
+  void showInheritedSkew();
+
+  /** Sets the skew type and parameter grid from the skew of `options`. */
+  void setSkewGuiFromOptions( const RelActCalcAuto::Options &options );
+
+  /** Enables or disables the "Peak Skew" controls, for whether the skew is custom. */
+  void updateSkewControlsEnabled();
+
+  /** Shows the fit skew parameter values of `m_solution` (if it is for the shown skew type). */
+  void updateSkewFitResults();
   void handleNucDataSrcChanged();
   void handleAddNuclideForCurrentRelEffCurve();
   /** Will return nullptr of invalid `rel_eff_index` passed in; otherwise retuns created widget. */
@@ -547,16 +565,21 @@ protected:
   bool m_lorentzian_xrays_enabled;
   Wt::WCheckBox *m_lorentzian_xrays;
 
-  /** Tracks whether the "use fixed skew from prefs" checkbox should be visible.
-   True when PeakFitDetPrefs has fixed skew parameter values set.
-   */
-  bool m_use_fixed_skew_enabled;
-
   /** The `RelActCalcAuto::Options::roi_settings` of the loaded options, kept so they are not lost
    (they are not editable in this GUI). */
   RelActCalcAuto::Options::RoiSettings m_roi_settings;
 
-  Wt::WCheckBox *m_use_fixed_skew;
+  /** Whether the skew comes from the peak-fit preferences (index 0), or is custom (index 1). */
+  Wt::WComboBox *m_skew_source;
+
+  /** The skew parameter values, and whether to fit them; read-only when from the peak-fit prefs. */
+  SkewParamsGrid *m_skew_params;
+
+  /** Note shown when the peak-fit preferences only give the skew type (ROI-independent skew). */
+  Wt::WText *m_skew_note;
+
+  /** Link to make the skew custom, using the values from the last fit. */
+  Wt::WText *m_skew_use_fit;
 
   /** The detector type the ROI rows' default extents were last shown for; when it changes, the
    defaults (and the extents of ROIs that are not fixed ranges) change. */

@@ -1444,7 +1444,7 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
   if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
-      && !m_geometry && m_fixedGeomSetupXml.empty() )
+      && !m_geometry && m_fixedGeomSetupXml.empty() && !m_peakFitDetPrefs )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1484,6 +1484,11 @@ string DetectorPeakResponse::drfExtraToXmlString() const
     base_node->append_node( setup );
   }
 
+  // The DB has no other column for these, so without this a DRF read back from the DB (history,
+  //  uploaded, or the users default DRF) would lose them - e.g., a GADRAS detector's peak shape.
+  if( m_peakFitDetPrefs )
+    m_peakFitDetPrefs->toXml( base_node, &doc );
+
   string answer;
   rapidxml::print( std::back_inserter(answer), doc, rapidxml::print_no_indenting );
 
@@ -1507,6 +1512,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
   m_geometry.reset();
   m_geometryDisabled = false;
   m_fixedGeomSetupXml.clear();
+  m_peakFitDetPrefs.reset();
 
   // Cleared above, before this early-out: an extras column that no longer carries a geometry (or
   //  a response) must not leave the previous one in place - `persist()` calls this on every read
@@ -1577,6 +1583,23 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
     if( setup_node )
       m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
+
+    // Parsed on its own, so prefs this build cant read (e.g., a newer skew type) dont take the
+    //  other extras down with them - which a later write-back of the DB row would make permanent.
+    const rapidxml::xml_node<char> *prefs_node = base_node->first_node( "PeakFitDetPrefs" );
+    if( prefs_node )
+    {
+      try
+      {
+        auto prefs = make_shared<PeakFitDetPrefs>();
+        prefs->fromXml( prefs_node );
+        m_peakFitDetPrefs = prefs;
+      }catch( std::exception &e )
+      {
+        cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse peak-fit prefs ('"
+             << e.what() << "') - ignoring them." << endl;
+      }
+    }//if( prefs_node )
   }catch( std::exception &e )
   {
     m_totalEfficiency.reset();
@@ -1584,6 +1607,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_ceeloResponse.reset();
     m_geometry.reset();
     m_geometryDisabled = false;
+    m_peakFitDetPrefs.reset();
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -2103,25 +2127,37 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
     auto prefs = make_shared<PeakFitDetPrefs>();
     prefs->m_det_type = det_type;
 
-    // GADRAS builds the CZT/CdTe tail differently, so the skew family follows
-    //  the same classification rather than a second string match.
-    prefs->m_peak_skew_type = (det_type == PeakFitUtils::CoarseResolutionType::CZT)
-                                ? PeakDef::SkewType::GadrasCZT
-                                : PeakDef::SkewType::GadrasGeneric;
+    if( GadrasDetectorDat::hasLowPhotopeakProbability( gadrasMaterialName ) )
+    {
+      // PVT-like detectors: GADRAS's peak shape for these (a special high tail, a 10 keV
+      //  widening, and the photopeak folded into the continuum) is not something a peak fit can
+      //  use, and the PVT tail is not an exposed skew type, so dont seed one.
+      prefs->m_peak_skew_type = PeakDef::SkewType::NoSkew;
+    }else
+    {
+      // GADRAS builds the CZT/CdTe tail differently, but only for exactly those two materials;
+      //  the coarse classification (which also puts TlBr and HgI2 with CZT) is not used for this.
+      prefs->m_peak_skew_type = GadrasDetectorDat::usesCztPeakShape( gadrasMaterialName )
+                                  ? PeakDef::SkewType::GadrasCZT
+                                  : PeakDef::SkewType::GadrasGeneric;
 
-    // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
-    //
-    //  All six are given values, which in PeakFitDetPrefs means FIXED - a
-    //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
-    //  this shape against the real detector, so it is better information than
-    //  anything a per-ROI fit would recover, and re-fitting it would throw that
-    //  away.
-    prefs->m_lower_energy_skew[0] = gadrasLowSkew;
-    prefs->m_lower_energy_skew[1] = gadrasHighSkew;
-    prefs->m_lower_energy_skew[2] = gadrasLowSkewPower;
-    prefs->m_lower_energy_skew[3] = gadrasHighSkewPower;
-    prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
-    prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+      // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
+      //
+      //  All six are given values, which in PeakFitDetPrefs means FIXED - a
+      //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
+      //  this shape against the real detector, so it is better information than
+      //  anything a per-ROI fit would recover, and re-fitting it would throw that
+      //  away.
+      //  A negative power acts as zero in the shape (as in GADRAS), so is stored as zero - keeping it
+      //  within PeakDef::skew_parameter_range for every tool.  Negative magnitudes and extents are
+      //  kept as-is (GADRAS treats them differently from zero; see skew_parameter_range).
+      prefs->m_lower_energy_skew[0] = gadrasLowSkew;
+      prefs->m_lower_energy_skew[1] = gadrasHighSkew;
+      prefs->m_lower_energy_skew[2] = (std::max)( 0.0f, gadrasLowSkewPower );
+      prefs->m_lower_energy_skew[3] = (std::max)( 0.0f, gadrasHighSkewPower );
+      prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
+      prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+    }//if( PVT-like ) / else
 
     prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
 

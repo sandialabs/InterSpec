@@ -4608,6 +4608,11 @@ void DrfSelect::updateLastUsedTimeOrAddToDb( std::shared_ptr<DetectorPeakRespons
     int nupdated = 0;
     for( auto iter = result.begin(); iter != result.end(); ++iter )
     {
+      // The hash doesnt include the peak-fit prefs, and rows stored before they were saved to the DB
+      //  (see `DetectorPeakResponse::drfExtraToXmlString`) dont have them - so give them them now.
+      if( !(*iter)->peakFitDetPrefs() && drf->peakFitDetPrefs() )
+        (*iter).modify()->setPeakFitDetPrefs( drf->peakFitDetPrefs() );
+
       (*iter).modify()->updateLastUsedTimeToNow();
       ++nupdated;
     }//

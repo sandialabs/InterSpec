@@ -347,8 +347,8 @@ Further detail about each peak, including these statistics, is available in the 
    how uncertain their efficiency is, and that uncertainty is usually <em>correlated</em>
    across energy (if the detector is a few percent more efficient than the curve says, it
    tends to be so at every peak at once).  This control chooses whether, and how, that
-   efficiency uncertainty is used; it is shown only when the selected detector actually
-   carries one.
+   efficiency uncertainty is used, and the line beneath it always says what the fit will use
+   (including when the selected detector carries none).
    <br />
    <ul>
      <li><b>Don't use</b>: The fit uses only the counting (statistical) uncertainty of each
@@ -365,6 +365,17 @@ Further detail about each peak, including these statistics, is available in the 
        every peak, to better reconcile peaks that disagree under the band.  This can shift the
        best-fit activity slightly.</li>
    </ul>
+   <br />
+   <b>Stated versus assumed uncertainty.</b>  Many detector responses &mdash; every GADRAS
+   detector, for example &mdash; say nothing about how well their efficiency is known.  When
+   such a detector describes its geometry, InterSpec still gives it an efficiency uncertainty:
+   an <em>assumed</em> 5% for the efficiency curve (from comparing the GADRAS detectors'
+   efficiencies against Monte Carlo simulations of the geometries they describe), plus a
+   <em>geometry-model</em> part for how well the efficiency is carried to near-field or
+   off-axis source positions.  The assumed part says nothing about how well the curve describes
+   your particular detector, so it is only used when you check <b>Include assumed</b>, which
+   appears next to the control for such detectors; the geometry-model part is always used.
+   A detector response that states its own efficiency uncertainty is used in full.
    <br />
    <b>Why the &quot;Use in fit&quot; pulls sit off-zero.</b>  When the fit applies that one
    shared efficiency adjustment, and the adjustment is not zero, <em>every</em> residual on the

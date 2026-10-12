@@ -174,4 +174,14 @@
   <message id="dlt-estimating-spread">ばらつきを計算中…</message>
   <message id="dlt-spread-band">(通常この値の{1}&ndash;{2}&times;)</message>
   <message id="dlt-spread-unavailable">ばらつきを推定できませんでした。</message>
+  <message id="dlt-detector-eff-used">使用した検出器効率</message>
+  <message id="dlt-det-eff-uncert">検出器効率の不確かさ</message>
+  <message id="dlt-det-eff-uncert-none">記載なし</message>
+  <message id="dlt-det-eff-uncert-stated">{1}%（検出器に記載）</message>
+  <message id="dlt-det-eff-uncert-model">{1}%（幾何モデルのみ）</message>
+  <message id="dlt-systematic-uncert-used">使用した系統不確かさ</message>
+  <message id="dlt-tt-detector-eff-used">この距離で線源から放出されたガンマ線が全エネルギーピークで検出される確率。この計算で実際に使用される効率です。</message>
+  <message id="dlt-tt-det-eff-uncert">このエネルギーと距離における検出器効率の 1σ 相対不確かさ: 検出器応答自体が記載するものに加え、幾何モデル化された検出器では、検出器近傍や軸外でその幾何モデルが加える不確かさ。検出器応答に記載がなく仮定されただけの不確かさは含まれません。</message>
+  <message id="dlt-tt-systematic-uncert-used">上記の Currie 限界で使用した 1σ 相対系統不確かさ: 検出器効率の不確かさを、入力された効率または距離の不確かさと二乗和で合成したもの。</message>
+  <message id="dlt-drf-uncert-decon-excluded">これらの限界には検出器応答の効率の不確かさ（使用したラインで最大 {1}%）は含まれていません。ラインごとの Currie 限界には含まれます。</message>
 </messages>

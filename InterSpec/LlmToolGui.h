@@ -214,6 +214,11 @@ protected:
 
   /** Manually trigger context compaction (summarization of older conversation history) */
   void handleCompactConversation();
+
+  /** If conversation logging is enabled in the LLM config, (re)writes the whole current conversation
+   to `<writable data dir>/llm_logs/`.  Called at the end of each turn; never throws or shows a dialog.
+   */
+  void writeConversationLog();
   
 
 
@@ -244,6 +249,13 @@ private:
   Wt::WGridLayout *m_layout;              ///< Main layout manager
 
   bool m_isRequestPending;                 ///< Whether a request is currently pending
+
+  /** Full path of the log file for the current conversation; empty until first written, and reset
+   whenever the conversation is cleared or replaced, so the next write starts a new file. */
+  std::string m_logFilePath;
+
+  /** Set after the first log-write failure, so we dont spam stderr every turn. */
+  bool m_logWriteFailed;
 
   /** Stored connection for spectrum change signal, so it can be disconnected/reconnected. */
   Wt::Signals::connection m_spectrumChangedConnection;

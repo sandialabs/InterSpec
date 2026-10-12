@@ -313,10 +313,14 @@ namespace AnalystChecks
     std::optional<double> skewPar1;
     std::optional<double> skewPar2;
     std::optional<double> skewPar3;
+    std::optional<double> skewPar4;
+    std::optional<double> skewPar5;
     std::optional<bool> fitForSkewPar0;
     std::optional<bool> fitForSkewPar1;
     std::optional<bool> fitForSkewPar2;
     std::optional<bool> fitForSkewPar3;
+    std::optional<bool> fitForSkewPar4;
+    std::optional<bool> fitForSkewPar5;
 
     // --- Continuum ---
     std::optional<std::string> continuumType;

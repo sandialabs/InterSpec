@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <mutex>
 #include <atomic>
 #include <thread>
@@ -69,6 +70,7 @@
 #endif
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
@@ -265,9 +267,12 @@ protected:
             const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
             + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             
+            // A systematic uncertainty at or above 1/k_beta leaves no finite detection limit (-999)
             const double det_limit = result.detection_limit / gammas_per_bq;
-            const string det_limit_str = PhysicalUnits::printToBestActivityUnits( det_limit, 2, useCuries )
-            + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            const string det_limit_str = (result.detection_limit <= -999.0f)
+                        ? WString::tr("n/a").toUTF8()
+                        : (PhysicalUnits::printToBestActivityUnits( det_limit, 2, useCuries )
+                           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom ));
            
             const WString txt = WString("<table><tr><td style=\"padding-right: 5px\">{1}</td><td>{2}</td></tr>"
             "<tr><td style=\"padding-right: 5px\">{3}</td><td>{4}</td></tr></table>")
@@ -305,14 +310,44 @@ protected:
           if( activity <= 0.0 )
             throw runtime_error( "No activity specified" );
           
-          // Make a convenience lambda that returns the efficiency taking into account both the
-          //  geometric factor, and attenuation in the air.
-          const double intrinsic_eff = m_input.drf->farFieldIntrinsicEfficiency(m_input.energy);
-          
-          
-          auto counts_at_distance = [this,intrinsic_eff,activity]( const double dist ) -> double {
+          // The DRF's own efficiency at a distance, as the activity limit and the deconvolution
+          //  distance limit use.  For a geometry-modeled response each query is a ray trace (~ms),
+          //  and the searches below make dozens, so it is taken as the flat-disk efficiency times the
+          //  response's correction to it, k(d) = efficiency / flatDiskEfficiency - which varies
+          //  slowly with distance, and not at all far away - evaluated as needed at 5 nodes per
+          //  decade from 1 cm to 100 m, and interpolated in log-distance between them.
+          const bool interpolate_eff = drf->ceeloResponse() && !drf->isFixedGeometry();
+          map<int,double> k_at_node;  //node n is at 10^(n/5) cm
+          auto det_eff_at = [this, &drf, &k_at_node, interpolate_eff]( const double dist ) -> double {
+            const float energy = m_input.energy;
+            if( !interpolate_eff )
+              return drf->efficiency( energy, dist );
+
+            const auto k_node = [&]( const int n ) -> double {
+              map<int,double>::const_iterator pos = k_at_node.find( n );
+              if( pos == end(k_at_node) )
+              {
+                const double node_dist = std::pow( 10.0, n / 5.0 ) * PhysicalUnits::cm;
+                const double flat = drf->flatDiskEfficiency( energy, node_dist );
+                const double k = (flat > 0.0) ? (drf->efficiency( energy, node_dist ) / flat) : 1.0;
+                pos = k_at_node.emplace( n, k ).first;
+              }
+              return pos->second;
+            };//k_node
+
+            const double dist_cm = std::max( dist / PhysicalUnits::cm, 1.0E-9 );
+            const double x = std::min( std::max( 5.0*std::log10( dist_cm ), 0.0 ), 20.0 );
+            const int n = std::min( static_cast<int>( std::floor( x ) ), 19 );
+            const double frac = x - n;
+            const double k = (1.0 - frac)*k_node( n ) + frac*k_node( n + 1 );
+            return k * drf->flatDiskEfficiency( energy, dist );
+          };//det_eff_at
+
+          // Make a convenience lambda that returns the expected counts, taking into account both the
+          //  detector efficiency and attenuation in the air.
+          auto counts_at_distance = [this,activity,&det_eff_at]( const double dist ) -> double {
             const double counts_4pi_no_air = m_input.counts_per_bq_into_4pi__;
-            const double geom_eff = m_input.drf->fractionalSolidAngle(m_input.drf->detectorDiameter(), dist + m_input.drf->detectorSetback());
+            const double det_eff = det_eff_at( dist );
             double air_eff = 1.0;
             if( m_input.do_air_attenuation )
             {
@@ -324,8 +359,7 @@ protected:
             //  compared against (source_counts, lower/upper_limit) comes from the Currie result on
             //  the PROJECTED spectrum.  Exactly 1 unless a background reference is being projected.
             //  \sa MdaPeakRowInput::exposure_ratio
-            return activity * counts_4pi_no_air * geom_eff * intrinsic_eff * air_eff
-                   * m_input.exposure_ratio;
+            return activity * counts_4pi_no_air * det_eff * air_eff * m_input.exposure_ratio;
           };//counts_at_distance(...)
           
           if( result.source_counts > counts_at_distance(0.0) )
@@ -929,7 +963,23 @@ public:
     input.num_lower_side_channels = nsidebin;
     input.num_upper_side_channels = nsidebin;
     input.detection_probability = m_input.confidence_level;
-    input.additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
+
+    // The detector efficiency uncertainty it states (plus any geometry-model part; never an assumed
+    //  one) - at the entered distance for an activity limit; a distance limit has no distance yet,
+    //  so there the far-field value stands in.
+    input.additional_uncertainty = 0.0f;
+    const shared_ptr<const DetectorPeakResponse> &drf = m_input.drf;
+    if( drf && drf->isValid() )
+    {
+      const bool at_distance = (m_input.limit_type == DetectionLimitTool::LimitType::Activity)
+                               || drf->isFixedGeometry();
+      const DrfModifyCalc::UncertSummary drf_uncert
+                    = at_distance ? DrfModifyCalc::uncertSummary( *drf, m_input.energy, std::max( 0.0, m_input.distance ) )
+                                  : DrfModifyCalc::uncertSummary( *drf, m_input.energy );
+      // Kept below 1, which currie_mda_calc requires; at or above 1/k_beta (~61%) it reports no finite
+      //  detection limit, which the row and dialog show as such.
+      input.additional_uncertainty = static_cast<float>( std::min( 0.99, drf_uncert.usedFrac( false ) ) );
+    }//if( drf && drf->isValid() )
     
     return input;
   }//DetectionLimitCalc::CurrieMdaInput currieInput() const
@@ -1436,6 +1486,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_bandTxt->setInline( false );
   m_bandTxt->addStyleClass( "MdaResultTxt" );
   m_bandTxt->hide();
+
+  m_drfUncertTxt = m_results->addNew<WText>( "" );
+  m_drfUncertTxt->setInline( false );
+  m_drfUncertTxt->addStyleClass( "MdaDrfUncertTxt" );
+  m_drfUncertTxt->hide();
   
   m_errorMsg = this->addNew<WText>( "&nbsp;" );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
@@ -1830,9 +1885,12 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
           {
             if( assertedNoSignal )
             {
-              // We will provide minimum counts reliably detectable
+              // We will provide minimum counts reliably detectable - when there is a finite one
+              const double det_limit_counts = std::max( 0.0f, result->detection_limit );
               string mdastr;
-              if( gammas_per_bq > 0.0 )
+              if( result->detection_limit <= -999.0f )
+                mdastr = WString::tr("n/a").toUTF8();
+              else if( gammas_per_bq > 0.0 )
               {
                 const double simple_mda = result->detection_limit / gammas_per_bq;
                 mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
@@ -1844,10 +1902,10 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
               
               chart_title = WString::tr("dlt-chart-title-data-peak").arg(mdastr);
               
-              generic_peak.setPeakArea( result->detection_limit );
+              generic_peak.setPeakArea( det_limit_counts );
               for( size_t i = 0; i < peaks.size(); ++i )
               {
-                const double area = result->detection_limit * peaks[i].counts_4pi / sum_counts_4pi;
+                const double area = det_limit_counts * peaks[i].counts_4pi / sum_counts_4pi;
                 specific_peaks[i].setAmplitude( area );
               }
             }else
@@ -2259,7 +2317,10 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     cell = table->elementAt( table->rowCount(), 0 );
     cell->addNew<WText>( WString::tr("dlt-peak-detection-limit") );
 
-    if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+    if( result.detection_limit <= -999.0f )
+    {
+      val = WString::tr("n/a").toUTF8();  //systematic uncertainty at or above 1/k_beta
+    }else if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
     {
       const double detection_limit_act = result.detection_limit / gammas_per_bq;
       val = SpecUtils::printCompact( result.detection_limit, 4 )
@@ -2353,7 +2414,52 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         cell->addNew<WText>( val );
         addTooltipToRow( WString::tr("dlt-tt-solid-angle-fraction") );
       }//if( distance >= 0.0 )
+
+      // The efficiency actually used - which the two factors above need not multiply to.
+      if( !fixed_geom && (distance >= 0.0) )
+      {
+        cell = table->elementAt( table->rowCount(), 0 );
+        cell->addNew<WText>( WString::tr("dlt-detector-eff-used") );
+        val = SpecUtils::printCompact( det_eff, 5 );
+        cell = table->elementAt( table->rowCount() - 1, 1 );
+        cell->addNew<WText>( val );
+        addTooltipToRow( WString::tr("dlt-tt-detector-eff-used") );
+      }//if( !fixed_geom && (distance >= 0.0) )
+
+      // The efficiency uncertainty the detector response states (plus any geometry-model part).
+      if( fixed_geom || (distance >= 0.0) )
+      {
+        // A distance limit has no distance to evaluate at, so the far-field value - as MdaPeakRow::currieInput
+        const bool at_distance = fixed_geom || (limitType != DetectionLimitTool::LimitType::Distance);
+        const DrfModifyCalc::UncertSummary drf_uncert
+                    = at_distance ? DrfModifyCalc::uncertSummary( *drf, energy, std::max( 0.0, distance ) )
+                                  : DrfModifyCalc::uncertSummary( *drf, energy );
+        const double used = drf_uncert.usedFrac( false );
+        WString uncert_txt;
+        if( used <= 0.0 )
+          uncert_txt = WString::tr("dlt-det-eff-uncert-none");
+        else if( !drf_uncert.statesOwn )
+          uncert_txt = WString::tr("dlt-det-eff-uncert-model").arg( SpecUtils::printCompact( 100.0*used, 2 ) );
+        else
+          uncert_txt = WString::tr("dlt-det-eff-uncert-stated").arg( SpecUtils::printCompact( 100.0*used, 2 ) );
+
+        cell = table->elementAt( table->rowCount(), 0 );
+        cell->addNew<WText>( WString::tr("dlt-det-eff-uncert") );
+        cell = table->elementAt( table->rowCount() - 1, 1 );
+        cell->addNew<WText>( uncert_txt );
+        addTooltipToRow( WString::tr("dlt-tt-det-eff-uncert") );
+      }
     }//if( drf )
+
+    if( input.additional_uncertainty > 0.0f )
+    {
+      cell = table->elementAt( table->rowCount(), 0 );
+      cell->addNew<WText>( WString::tr("dlt-systematic-uncert-used") );
+      val = SpecUtils::printCompact( 100.0*input.additional_uncertainty, 3 ) + "%";
+      cell = table->elementAt( table->rowCount() - 1, 1 );
+      cell->addNew<WText>( val );
+      addTooltipToRow( WString::tr("dlt-tt-systematic-uncert-used") );
+    }//if( input.additional_uncertainty > 0.0f )
 
     if( shield_transmission != 1.0 )
     {
@@ -4538,6 +4644,28 @@ void DetectionLimitTool::doCalc()
     
     m_errorMsg->hide();
     m_warningMsg->hide();
+
+    // The deconvolution limit does not (yet) account for the detector efficiency uncertainty; say so
+    //  when there is one to leave out - the largest over the lines used.
+    {
+      double max_drf_uncert = 0.0;
+      for( auto w : m_peaks->children() )
+      {
+        const MdaPeakRow * const rw = dynamic_cast<const MdaPeakRow *>( w );
+        try
+        {
+          if( rw && rw->input().use_for_likelihood )
+            max_drf_uncert = std::max( max_drf_uncert, static_cast<double>(rw->currieInput().additional_uncertainty) );
+        }catch( std::exception & )
+        {
+          //No measurement - nothing to say
+        }
+      }//for( auto w : m_peaks->children() )
+
+      m_drfUncertTxt->setText( WString::tr("dlt-drf-uncert-decon-excluded")
+                                  .arg( SpecUtils::printCompact( 100.0*max_drf_uncert, 2 ) ) );
+      m_drfUncertTxt->setHidden( max_drf_uncert <= 0.0 );
+    }
 
     const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
     const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;

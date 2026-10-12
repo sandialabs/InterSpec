@@ -3618,6 +3618,11 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance( std::vector<d
   //  per-flag messages - do not add a second warning path here.
   using ShieldingSourceFitCalc::PointEffModel;
 
+  // The model part is always needed: it is all that is used when the assumed part is dropped.
+  std::vector<double> local_model;
+  if( !model_part )
+    model_part = &local_model;
+
   std::vector<double> cov;
   switch( pointSourceEffModel() )
   {
@@ -3647,11 +3652,19 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance( std::vector<d
   }//switch( pointSourceEffModel() )
 
   assert( cov.empty() || (cov.size() == (energies.size() * energies.size())) );
-  assert( !model_part || (model_part->size() == cov.size()) );
+  assert( model_part->size() == cov.size() );
+
+  // A DRF that states no uncertainty of its own reports an assumed anchor sigma alongside the
+  //  geometry-model envelope; unless asked for, only the envelope is used (see
+  //  ShieldingSourceFitOptions::drf_uncert_include_assumed).
+  const bool drop_assumed = dropsAssumedEffUncert();
+  if( drop_assumed )
+    cov = *model_part;
 
 #if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
-  // The invariant this function rests on: diagonal == per-query sigma.  The non-Response models
-  //  evaluate at float energy, hence the looser tolerance there.
+  // The invariant this function rests on: diagonal == per-query sigma (its model part, when the
+  //  assumed part is dropped).  The non-Response models evaluate at float energy, which the
+  //  covariance query above reproduces exactly.
   {
     const size_t n = energies.size();
     const double tol = 1.0e-9;
@@ -3660,14 +3673,30 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance( std::vector<d
       const DetectorPeakResponse::EffEval ev = pointSourceFepEff( energies[i] );
       if( ev.value <= 0.0 )
         continue;
-      const double frac2 = (ev.sigma / ev.value) * (ev.sigma / ev.value);
+      const double sigma = drop_assumed ? ev.sigmaModel : ev.sigma;
+      const double frac2 = (sigma / ev.value) * (sigma / ev.value);
       assert( std::fabs( cov[i*n + i] - frac2 ) <= tol * std::max( frac2, 1.0e-12 ) );
     }
   }
 #endif
 
+  // An all-zero covariance claims perfect knowledge and propagates nothing - report it as none, so
+  //  the "uncertainty requested but none available" warning and the fit's empty() checks agree.
+  if( std::all_of( begin(cov), end(cov), []( const double v ){ return v == 0.0; } ) )
+  {
+    model_part->clear();
+    return {};
+  }
+
   return cov;
 }//peakEffFracCovariance()
+
+
+bool ShieldingSourceChi2Fcn::dropsAssumedEffUncert() const
+{
+  return !m_options.drf_uncert_include_assumed && m_detector && m_detector->isValid()
+         && !m_detector->statesOwnEfficiencyUncert();
+}//dropsAssumedEffUncert()
 
 
 std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts( std::vector<double> *model_uncerts ) const

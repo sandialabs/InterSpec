@@ -250,6 +250,9 @@ protected:
   bool m_narrowLayout;
   
   Wt::WText *m_msg;
+
+  /** Says whether the uncertainties include the detector efficiency's, and what kind. */
+  Wt::WText *m_drfUncertNote;
   Wt::WLineEdit *m_distance;
   Wt::WString m_prevDistance; // For undo/redo
   RowStretchTreeView *m_table;
@@ -291,7 +294,7 @@ protected:
   Wt::JSignal<int> m_infoCopied;
 #endif
 
-  /** We will only update dm_data and m_uncertainties from peak model right
+  /** We will only update m_data and its uncertainties from peak model right
       before rendering happens to avoid duplicate work if multiple peaks are
       being added.
    */
@@ -313,7 +316,13 @@ protected:
   
   std::vector<std::string> m_nucNames;
   std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_data;
-  std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_uncertainties;
+
+  /** The uncertainties of #m_data, split into counting statistics and the systematic part (the
+   detector efficiency's).  The table shows them combined in quadrature, with the split in each cell's
+   tooltip; the exports give them separately - see FluxToolImp::print_stat_syst.
+   */
+  std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_statUncerts;
+  std::vector<std::array<double,FluxColumns::FluxNumColumns>> m_systUncerts;
   
   friend class FluxToolWindow;
   friend class FluxToolImp::FluxModel;

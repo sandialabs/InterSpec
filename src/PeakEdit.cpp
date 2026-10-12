@@ -2129,6 +2129,13 @@ void PeakEdit::skewTypeChanged()
       const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar5)
                                 - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
 
+      // Start from the spectrum's (or detector's) peak-fit prefs values for this skew type, if any
+      //  (e.g., a GADRAS detector's tail powers and extents).
+      const shared_ptr<const SpecMeas> meas = m_viewer ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+      const shared_ptr<const PeakFitDetPrefs> meas_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+      const shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+      const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+
       for( int i = 0; i <= num_skew_pars; ++i )
       {
         const auto index = static_cast<PeakEdit::PeakPars>( PeakEdit::PeakPars::SkewPar0 + i );
@@ -2139,6 +2146,7 @@ void PeakEdit::skewTypeChanged()
         {
           m_values[index]->setHidden( false );
           m_valueTable->rowAt(1+index)->setHidden( false );
+          starting_val = skew_starting_value( type, ct, meas_prefs.get(), drf_prefs.get() );
           m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
           m_fitFors[index]->setChecked( PeakDef::skew_parameter_fit_by_default( type, ct ) );
           auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[index]->validator() ).get();

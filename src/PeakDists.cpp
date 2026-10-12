@@ -1553,9 +1553,9 @@ double peak_cdf( const double x, const double mean, const double sigma,
       assert( skew_pars );
       const GadrasMaterial mat = (skew_type == PeakDef::SkewType::GadrasCZT)
                                  ? GadrasMaterial::CZT_CdTe : GadrasMaterial::Generic;
-      const GadrasPeakShape shape = gadras_build_peak_shape( mean,
+      const GadrasPeakShape<double> shape = gadras_build_peak_shape( mean,
                                         skew_pars[0], skew_pars[1], skew_pars[2],
-                                        skew_pars[3], skew_pars[4], skew_pars[5], mat, false );
+                                        skew_pars[3], skew_pars[4], skew_pars[5], mat );
       return gadras_peak_shape_cdf<double>( (x - mean) / sigma, shape );
     }
   }//switch( skew_type )
@@ -1867,6 +1867,13 @@ template void gadras_integral<double>( const double, const double, const double,
                                        const double * const, const GadrasMaterial,
                                        const float * const, double *, const size_t );
 
+std::pair<double,double> gadras_truncation_reach( const double * const skew )
+{
+  assert( skew );
+  return gadras_grid_reach<double>( skew[0], skew[1] );
+}
+
+
 double gadras_integral( const double mean, const double sigma,
                         const double * const skew, const GadrasMaterial material,
                         const double x0, const double x1 )
@@ -1874,8 +1881,8 @@ double gadras_integral( const double mean, const double sigma,
   if( sigma <= 0.0 )
     return 0.0;
 
-  const GadrasPeakShape shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
-                                                         skew[3], skew[4], skew[5], material, false );
+  const GadrasPeakShape<double> shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
+                                                         skew[3], skew[4], skew[5], material );
   const double c0 = gadras_peak_shape_cdf<double>( (x0 - mean)/sigma, shape );
   const double c1 = gadras_peak_shape_cdf<double>( (x1 - mean)/sigma, shape );
   return c1 - c0;
@@ -1889,8 +1896,8 @@ std::pair<double,double> gadras_coverage_limits( const double mean, const double
   if( (p <= 0.0) || (p >= 1.0) || (sigma <= 0.0) )
     throw runtime_error( "gadras_coverage_limits: invalid input" );
 
-  const GadrasPeakShape shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
-                                                         skew[3], skew[4], skew[5], material, false );
+  const GadrasPeakShape<double> shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
+                                                         skew[3], skew[4], skew[5], material );
 
   // Search window in zeta units (shape carries its own tail reach; the bisection below
   //  expands further if needed).

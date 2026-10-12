@@ -643,6 +643,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       if( llmApi.httpDisableCertCheck )
         cerr << "Warning: LLM config has HttpDisableCertCheck set - TLS certificates will NOT be"
                 " validated on native HTTP requests." << endl;
+
+      const rapidxml::xml_node<char> * const logConvosNode = XML_FIRST_NODE( llmApiNode, "LogConversations" );
+      value_str = SpecUtils::xml_value_str( logConvosNode );
+      SpecUtils::trim( value_str );
+      llmApi.logConversations = (value_str == "true") || (value_str == "1");
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -877,6 +882,14 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 
   if( config.llmApi.httpDisableCertCheck )
     XmlUtils::append_bool_node( llmApi, "HttpDisableCertCheck", true );
+
+  // Only written when enabled, so older configs round-trip unchanged.
+  if( config.llmApi.logConversations )
+  {
+    append_comment( llmApi, " <LogConversations> - \"true\" saves each conversation as XML to the"
+                            " \"llm_logs\" folder of the user data directory. " );
+    XmlUtils::append_bool_node( llmApi, "LogConversations", true );
+  }
 
   // NOTE: Agents and tools are saved separately in their own files, not in llm_config.xml.
 

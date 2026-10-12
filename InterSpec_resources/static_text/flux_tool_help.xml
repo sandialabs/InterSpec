@@ -44,10 +44,14 @@ efficiency, and flux on detector.  This option effects what information will be
 copied to the clipboard, but not what will be included in the <em>CSV</em>
 export.
 </p>
-<p>Uncertainties given by this tool are based on the statistical uncertainty of
-the peak amplitude only, and currently do not include uncertainties of the DRF
-(note: only DRFs fit within <b>InterSpec</b> have uncertainties), or anything
-else.
+<p>Uncertainties given by this tool combine the statistical uncertainty of the
+peak amplitude with the efficiency uncertainty the detector response states of its
+own (plus, for a geometry-modeled detector, the uncertainty its geometry model adds
+close to the detector).  An uncertainty that is only assumed for a detector response
+stating none (as for the GADRAS detectors) is not included.  A line under the
+distance says what was included.  The table shows the two combined; hover over a value
+to see them separately, and the CSV and copied tables give them separately, as in
+<code>0.401 (stat) +- 0.112 (syst)</code>.
 </p>
 </div>
 

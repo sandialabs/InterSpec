@@ -175,4 +175,14 @@
   <message id="dlt-estimating-spread">বিস্তার গণনা করা হচ্ছে…</message>
   <message id="dlt-spread-band">(সাধারণত এই মানের {1}&ndash;{2}&times;)</message>
   <message id="dlt-spread-unavailable">বিস্তার অনুমান করা যায়নি।</message>
+  <message id="dlt-detector-eff-used">ব্যবহৃত ডিটেক্টর দক্ষতা</message>
+  <message id="dlt-det-eff-uncert">ডিটেক্টর দক্ষতার অনিশ্চয়তা</message>
+  <message id="dlt-det-eff-uncert-none">উল্লেখ নেই</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (ডিটেক্টর দ্বারা উল্লিখিত)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (কেবল জ্যামিতিক মডেল)</message>
+  <message id="dlt-systematic-uncert-used">ব্যবহৃত পদ্ধতিগত অনিশ্চয়তা</message>
+  <message id="dlt-tt-detector-eff-used">এই দূরত্বে উৎস থেকে নির্গত একটি গামা পূর্ণ-শক্তি শিখরে শনাক্ত হওয়ার সম্ভাবনা: এই গণনা প্রকৃতপক্ষে যে দক্ষতা ব্যবহার করে।</message>
+  <message id="dlt-tt-det-eff-uncert">এই শক্তি ও দূরত্বে ডিটেক্টর দক্ষতার 1-সিগমা আপেক্ষিক অনিশ্চয়তা: ডিটেক্টর রেসপন্স নিজে যা উল্লেখ করে, এবং জ্যামিতিকভাবে মডেল করা ডিটেক্টরের ক্ষেত্রে ডিটেক্টরের কাছে বা অক্ষের বাইরে তার জ্যামিতিক মডেল যে অনিশ্চয়তা যোগ করে।  যে অনিশ্চয়তা ডিটেক্টর রেসপন্স উল্লেখ করে না কিন্তু তার জন্য ধরে নেওয়া হয়, তা অন্তর্ভুক্ত নয়।</message>
+  <message id="dlt-tt-systematic-uncert-used">উপরের Currie সীমাগুলিতে ব্যবহৃত 1-সিগমা আপেক্ষিক পদ্ধতিগত অনিশ্চয়তা: ডিটেক্টর দক্ষতার অনিশ্চয়তা, প্রবেশ করানো যেকোনো দক্ষতা বা দূরত্বের অনিশ্চয়তার সাথে বর্গমূল-যোগে মিলিত।</message>
+  <message id="dlt-drf-uncert-decon-excluded">এই সীমাগুলিতে ডিটেক্টর রেসপন্সের দক্ষতার অনিশ্চয়তা অন্তর্ভুক্ত নয় (ব্যবহৃত লাইনগুলির জন্য সর্বোচ্চ {1}%); প্রতি-লাইন Currie সীমাগুলিতে তা অন্তর্ভুক্ত।</message>
 </messages>

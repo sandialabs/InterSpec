@@ -577,7 +577,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         {
           const PeakDef::SkewType type = PeakDef::skew_from_string( strval );
           peak.setSkewType( type );
-          
+
+          // The CSV doesnt carry fit-for flags, so use the defaults (e.g., GADRAS powers/extents fixed)
+          for( size_t i = 0; i < PeakDef::num_skew_parameters(type); ++i )
+          {
+            const auto coef = PeakDef::CoefficientType(PeakDef::SkewPar0 + i);
+            peak.setFitFor( coef, PeakDef::skew_parameter_fit_by_default( type, coef ) );
+          }
+
           if( (skew_coef_index >= 0) && (skew_coef_index < nfields) )
           {
             const string &flt_list_str = fields[skew_coef_index];

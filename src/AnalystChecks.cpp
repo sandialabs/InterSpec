@@ -44,6 +44,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1639,6 +1640,10 @@ namespace AnalystChecks
         : PeakFitUtils::coarse_det_type( target_spectrum, meas );
       FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
 
+      // The skew type comes from the peak-fit prefs (e.g., a GADRAS detector's peak shape), as in the GUI
+      if( peak_fit_prefs )
+        fit_config.skew_type = peak_fit_prefs->m_peak_skew_type;
+
       // TODO: we will need to update `config` from default in the future
 
       const FitPeaksForNuclides::PeakFitResult fit_results = FitPeaksForNuclides::fit_peaks_for_nuclides(
@@ -1878,6 +1883,10 @@ namespace AnalystChecks
         ? peak_fit_prefs->m_det_type
         : PeakFitUtils::coarse_det_type( target_spectrum, meas );
       FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( det_type );
+
+      // The skew type comes from the peak-fit prefs (e.g., a GADRAS detector's peak shape), as in the GUI
+      if( peak_fit_prefs )
+        fit_config.skew_type = peak_fit_prefs->m_peak_skew_type;
 
       // Make copies of spectra for the background thread (same pattern as FitPeaksForNuclidesGui.cpp)
       shared_ptr<SpecUtils::Measurement> target_copy = make_shared<SpecUtils::Measurement>( *target_spectrum );
@@ -2806,43 +2815,49 @@ namespace AnalystChecks
       if( options.skewType.has_value() )
       {
         const PeakDef::SkewType skew_type = PeakDef::skew_from_string( *options.skewType );
+        const bool skew_type_changed = (skew_type != modifiedPeak.skewType());
         modifiedPeak.setSkewType( skew_type );
 
         // `setSkewType` doesnt touch the coefficients, so the peak keeps the previous skew types
-        //  values - which are often invalid for the new type (e.g. the 0 left over from a type with
-        //  no skew parameters is below GaussExp's 0.15 lower limit), giving a degenerate peak shape
-        //  that the fit and distribution code then have to cope with.  Keep a value thats valid for
-        //  the new type, otherwise seed the types default; this is what #PeakEdit does when the
-        //  user changes skew type.  An explicitly requested `skewParN`, below, overrides this.
-        const size_t num_skew_par = PeakDef::num_skew_parameters( skew_type );
-        for( size_t i = 0; i < num_skew_par; ++i )
+        //  values - which mean something else for the new type (e.g. a DoubleSidedCrystalBall `n`
+        //  would become a GADRAS power).  So when the type changes, seed the new types values from
+        //  the peak-fit prefs (e.g., a GADRAS detector's tail powers/extents) or else its defaults,
+        //  with its default fit-for flags; this is what #PeakEdit does when the user changes skew
+        //  type.  An explicitly requested `skewParN`, below, overrides this.
+        if( skew_type_changed )
         {
-          const PeakDef::CoefficientType ct
-                          = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+          const shared_ptr<const SpecMeas> skew_meas = interspec->measurment( options.specType );
+          const shared_ptr<const PeakFitDetPrefs> meas_prefs = skew_meas ? skew_meas->peakFitDetPrefs() : nullptr;
+          const shared_ptr<const DetectorPeakResponse> skew_drf = skew_meas ? skew_meas->detector() : nullptr;
+          const shared_ptr<const PeakFitDetPrefs> drf_prefs = skew_drf ? skew_drf->peakFitDetPrefs() : nullptr;
 
-          double lower, upper, starting_val, step_size;
-          if( PeakDef::skew_parameter_range( skew_type, ct, lower, upper, starting_val, step_size ) )
+          const size_t num_skew_par = PeakDef::num_skew_parameters( skew_type );
+          for( size_t i = 0; i < num_skew_par; ++i )
           {
-            const double val = modifiedPeak.coefficient( ct );
-            if( std::isnan(val) || std::isinf(val) || (val < lower) || (val > upper) )
-              modifiedPeak.set_coefficient( starting_val, ct );
-          }
-        }//for( each skew parameter of the new skew type )
+            const PeakDef::CoefficientType ct
+                            = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+            modifiedPeak.set_coefficient( skew_starting_value( skew_type, ct, meas_prefs.get(), drf_prefs.get() ), ct );
+            modifiedPeak.setFitFor( ct, PeakDef::skew_parameter_fit_by_default( skew_type, ct ) );
+          }//for( each skew parameter of the new skew type )
+        }//if( skew_type_changed )
 
         typeChanged = true;
       }
 
       // ---- Apply skew parameter values ----
       const std::optional<double> *skew_pars[] = {
-        &options.skewPar0, &options.skewPar1, &options.skewPar2, &options.skewPar3
+        &options.skewPar0, &options.skewPar1, &options.skewPar2,
+        &options.skewPar3, &options.skewPar4, &options.skewPar5
       };
       const PeakDef::CoefficientType skew_coef_types[] = {
         PeakDef::CoefficientType::SkewPar0, PeakDef::CoefficientType::SkewPar1,
-        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3
+        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3,
+        PeakDef::CoefficientType::SkewPar4, PeakDef::CoefficientType::SkewPar5
       };
+      static_assert( std::size(skew_pars) == std::size(skew_coef_types) );
       const size_t num_skew = PeakDef::num_skew_parameters( modifiedPeak.skewType() );
 
-      for( size_t i = 0; i < 4; ++i )
+      for( size_t i = 0; i < std::size(skew_pars); ++i )
       {
         if( skew_pars[i]->has_value() )
         {
@@ -2859,10 +2874,11 @@ namespace AnalystChecks
 
       // ---- Apply skew fit-for flags ----
       const std::optional<bool> *skew_fit_flags[] = {
-        &options.fitForSkewPar0, &options.fitForSkewPar1,
-        &options.fitForSkewPar2, &options.fitForSkewPar3
+        &options.fitForSkewPar0, &options.fitForSkewPar1, &options.fitForSkewPar2,
+        &options.fitForSkewPar3, &options.fitForSkewPar4, &options.fitForSkewPar5
       };
-      for( size_t i = 0; i < 4; ++i )
+      static_assert( std::size(skew_fit_flags) == std::size(skew_coef_types) );
+      for( size_t i = 0; i < std::size(skew_fit_flags); ++i )
       {
         if( skew_fit_flags[i]->has_value() )
         {

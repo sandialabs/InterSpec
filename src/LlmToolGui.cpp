@@ -15,6 +15,7 @@
 #include <Wt/WText.h>
 #include <Wt/WImage.h>
 #include <Wt/WAnchor.h>
+#include <Wt/WRandom.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
@@ -207,6 +208,8 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_menuIcon(nullptr),
     m_layout(nullptr),
     m_isRequestPending(false),
+    m_logFilePath(),
+    m_logWriteFailed(false),
     m_imagePreviewContainer(nullptr),
     m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
@@ -263,6 +266,9 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
 
 LlmToolGui::~LlmToolGui()
 {
+  // Final flush of the log, to capture anything since the last completed turn.
+  writeConversationLog();
+
   // Fail any outstanding MCP `assistant_submit_prompt` callbacks so a blocked MCP request thread
   //  doesn't hang forever waiting on a turn that can no longer complete.
   if( m_activeMcpCallback )
@@ -296,6 +302,7 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
   try
   {
     m_llmInterface = std::make_shared<LlmInterface>(m_viewer, config);
+    m_logFilePath.clear();
 
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
@@ -828,6 +835,8 @@ void LlmToolGui::clearHistory()
   shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( history )
     history->clear();
+
+  m_logFilePath.clear(); // The next conversation gets its own log file
 }
 
 
@@ -1257,6 +1266,8 @@ void LlmToolGui::handleConversationFinished()
 
   setInputEnabled( true );
 
+  writeConversationLog();
+
   // Resolve any in-flight MCP `assistant_submit_prompt` call, then start the next queued prompt.
   resolveActiveMcpPrompt( true );
 
@@ -1275,6 +1286,8 @@ void LlmToolGui::handleResponseError()
     cout << "Error response received, re-enabling input" << endl;
     setInputEnabled( true );
   }
+
+  writeConversationLog();
 
   // If this errored turn was an MCP-submitted prompt, resolve its callback with an error and keep
   //  draining the queue so automation doesn't get stuck on the human retry flow.
@@ -1497,6 +1510,77 @@ void LlmToolGui::handleCompactConversation()
 }
 
 
+void LlmToolGui::writeConversationLog()
+{
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+  try
+  {
+    if( !m_llmInterface )
+      return;
+
+    const shared_ptr<const LlmConfig> config = m_llmInterface->config();
+    if( !config || !config->llmApi.logConversations )
+      return;
+
+    const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+    if( !history || history->isEmpty() )
+      return;
+
+    const vector<shared_ptr<LlmInteraction>> &convos = history->getConversations();
+    assert( !convos.empty() && convos.front() );
+    // After compaction, front() is the summary placeholder, whose timestamp is that of the earliest
+    //  summarized message - so this is always when the conversation started.
+    const chrono::system_clock::time_point start_time = convos.front()->timestamp;
+
+    if( m_logFilePath.empty() )
+    {
+      const string base_dir = InterSpec::writableDataDirectory(); //throws if not set
+      const string log_dir = SpecUtils::append_path( base_dir, "llm_logs" );
+      if( SpecUtils::create_directory( log_dir ) == 0 ) //-1 already existed, 1 created
+        throw runtime_error( "could not create directory '" + log_dir + "'" );
+
+      // A random id, rather than the session id, as one session may have many conversations,
+      //  and we dont want session ids on disk.
+      string path;
+      for( size_t attempt = 0; path.empty() || SpecUtils::is_file( path ); ++attempt )
+      {
+        if( attempt > 10 )
+          throw runtime_error( "could not find unused log file name" );
+        path = SpecUtils::append_path( log_dir,
+                       LlmConversationHistory::logFileName( start_time, Wt::WRandom::generateId(6) ) );
+      }
+      m_logFilePath = path;
+    }//if( m_logFilePath.empty() )
+
+    vector<pair<string,string>> attribs;
+    const char * const iso_fmt = "%Y-%m-%dT%H:%M:%S%z"; //local time, with UTC offset
+    attribs.emplace_back( "started", LlmConversationHistory::formatLocalTime( start_time, iso_fmt ) );
+    attribs.emplace_back( "lastWritten",
+                          LlmConversationHistory::formatLocalTime( chrono::system_clock::now(), iso_fmt ) );
+#ifdef InterSpec_VERSION
+    attribs.emplace_back( "InterSpecVersion", InterSpec_VERSION );
+#endif
+    try
+    {
+      attribs.emplace_back( "model", config->llmApi.model() );
+      attribs.emplace_back( "apiFormat", LlmConfig::LlmApi::apiFormatToString( config->llmApi.apiFormat() ) );
+    }catch( std::exception & )
+    {
+      // No active provider/model - not important for the log
+    }
+
+    history->writeLogFile( m_logFilePath, attribs );
+    m_logWriteFailed = false;
+  }catch( std::exception &e )
+  {
+    if( !m_logWriteFailed )
+      cerr << "Failed to write LLM conversation log: " << e.what() << endl;
+    m_logWriteFailed = true;
+  }
+#endif
+}//void writeConversationLog()
+
+
 void LlmToolGui::setInputEnabled(bool enabled)
 {
   if( m_inputEdit )
@@ -1583,6 +1667,8 @@ void LlmToolGui::cancelCurrentRequest()
   // Re-enable the input
   setInputEnabled(true);
 
+  writeConversationLog();
+
   // If an MCP prompt was in flight, resolve it as failed so the SSE stream ends
   // and the queue can drain to the next entry.
   resolveActiveMcpPrompt( false );
@@ -1621,6 +1707,8 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
   if( !llmHistory )
     return;
 
+  m_logFilePath.clear(); // A restored history is logged to a new file at its next turn end
+
   // Clear current display
   clearConversationDisplays();
 
@@ -1657,6 +1745,8 @@ void LlmToolGui::clearConversationHistory()
   shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( history )
     history->clear();
+
+  m_logFilePath.clear();
 
   // Clear the display, then re-show the getting-started panel
   clearConversationDisplays();

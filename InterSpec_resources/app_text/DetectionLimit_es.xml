@@ -264,10 +264,7 @@
     <b>porcentaje</b>; por ejemplo <b>5</b> para un 5%.  Déjelo en blanco, o introduzca 0, para
     ninguna.
     <p>
-      Cubre todo lo que escala las cuentas esperadas y no es estadística de conteo: la curva de
-      eficiencia del detector y la relación de ramificación gamma, que entran de forma idéntica.
-      Introduzca ambas combinadas en cuadratura si las dos importan.  Las incertidumbres de
-      eficiencia del detector suelen ser del 3&#8211;10%.
+      Cubre todo lo que escala las cuentas esperadas y no es estadística de conteo, más allá de la incertidumbre de eficiencia que la respuesta del detector declara por sí misma: esa siempre se incluye, y esto se le suma en cuadratura.  Úselo para la relación de ramificación gamma, o para una respuesta de detector que no declara incertidumbre (las incertidumbres de eficiencia del detector suelen ser del 3&#8211;10%).
     </p>
     <p>
       Se combina en cuadratura con la incertidumbre de distancia, y el total debe mantenerse por

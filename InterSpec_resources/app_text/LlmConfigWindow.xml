@@ -46,6 +46,15 @@
   <message id="lcw-net-noverify-tip"><![CDATA[Turns off verification of the server&#8217;s identity, so the connection can no longer be trusted to reach the real provider.<br/><br/>Use only to confirm a certificate problem is the cause, then add the certificate above instead.]]></message>
   <message id="lcw-net-noverify-warn">Anyone on the network can read or alter these requests, including your API key.</message>
 
+  <!-- Conversation-log card -->
+  <message id="lcw-log-title">Conversation logs</message>
+  <message id="lcw-log-sub">Save each assistant conversation to an XML file.</message>
+  <message id="lcw-log-tip"><![CDATA[When checked, the full conversation &#8212; your messages, the assistant&#8217;s replies, tool calls and their results &#8212; is written to a file at the end of every turn. Clearing the conversation starts a new file.<br/><br/>Logs may contain spectrum details, file names, and analysis results, and are never deleted automatically.]]></message>
+  <message id="lcw-log-location">Saved to: {1}</message>
+  <message id="lcw-log-show-win">Show in Explorer</message>
+  <message id="lcw-log-show-mac">Show in Finder</message>
+  <message id="lcw-log-show-linux">Show in File Manager</message>
+
   <message id="lcw-bearer-token">Bearer token</message>
   <message id="lcw-token-ph">sk-&#8230;</message>
   <message id="lcw-show">Show</message>

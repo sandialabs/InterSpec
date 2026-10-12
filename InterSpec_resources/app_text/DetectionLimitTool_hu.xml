@@ -177,4 +177,14 @@
   <message id="dlt-estimating-spread">Szórás számítása…</message>
   <message id="dlt-spread-band">(jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
   <message id="dlt-spread-unavailable">A szórást nem sikerült megbecsülni.</message>
+  <message id="dlt-detector-eff-used">Használt detektorhatásfok</message>
+  <message id="dlt-det-eff-uncert">Det. hatásfok bizonyt.</message>
+  <message id="dlt-det-eff-uncert-none">nincs megadva</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (a detektor adja meg)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (csak geometriai modell)</message>
+  <message id="dlt-systematic-uncert-used">Használt szisztematikus bizonyt.</message>
+  <message id="dlt-tt-detector-eff-used">Annak valószínűsége, hogy a forrás által kibocsátott gamma ebben a távolságban a teljesenergia-csúcsban detektálódik: a számítás által ténylegesen használt hatásfok.</message>
+  <message id="dlt-tt-det-eff-uncert">A detektorhatásfok 1-szigma relatív bizonytalansága ezen az energián és távolságban: amit a detektorválasz maga megad, valamint geometriailag modellezett detektor esetén az a bizonytalanság, amelyet a geometriai modellje a detektor közelében vagy tengelyen kívül hozzáad.  Az a bizonytalanság, amelyet a detektorválasz nem ad meg, csak feltételezett, nincs benne.</message>
+  <message id="dlt-tt-systematic-uncert-used">A fenti Currie-határok által használt 1-szigma relatív szisztematikus bizonytalanság: a detektorhatásfok bizonytalansága négyzetesen összegezve bármely megadott hatásfok- vagy távolság-bizonytalansággal.</message>
+  <message id="dlt-drf-uncert-decon-excluded">Ezek a határok nem tartalmazzák a detektorválasz hatásfok-bizonytalanságát (a használt vonalakra legfeljebb {1}%); a vonalankénti Currie-határok igen.</message>
 </messages>

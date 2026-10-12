@@ -31,21 +31,12 @@
   <message id="pfdpg-no-fwhm-cancel">Cancel</message>
   <message id="pfdpg-no-fwhm-fit">Fit FWHM...</message>
 
-  <!-- Skew parameter labels -->
-  <message id="pfdpg-lower-header">Low E</message>
-  <message id="pfdpg-upper-header">High E</message>
-  <message id="pfdpg-param-label">Par {1}:</message>
-
   <!-- Loading source display strings -->
   <message id="pfdpg-src-default">Default</message>
   <message id="pfdpg-src-user">User set</message>
   <message id="pfdpg-src-drf">From DRF</message>
   <message id="pfdpg-src-det-type">From det. type</message>
   <message id="pfdpg-src-spectral">From spectrum</message>
-
-  <!-- Tooltip suffixes for energy dependence -->
-  <message id="pfdpg-tt-energy-dep"><br />Value varies with energy; specify at low and high energies.</message>
-  <message id="pfdpg-tt-not-energy-dep"><br />Value is constant across the energy range.</message>
 
   <!-- Fit skew params link -->
   <message id="pfdpg-fit-skew-link">fit skew pars</message>

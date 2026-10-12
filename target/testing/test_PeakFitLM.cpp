@@ -42,13 +42,16 @@
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitLM.h"
+#include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -160,9 +163,11 @@ static const vector<TestFileConfig> g_test_files = {
   //},
   { "AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42",
     PeakFitUtils::CoarseResolutionType::High, 5,
-    {}
-    //{ {44.0, 48.0},      // 2-peak ROI at ~45/46 keV: very close peaks
-    //  {1083.0, 1092.0} } // 2-peak ROI at ~1085/1089 keV
+    // The stored (2023) fits of these 2-peak ROIs are not at the current fitter's minimum - the
+    //  refit has lower chi2, with areas ~1 sigma of the stored uncertainties away; `check_roi_chi2`
+    //  still guards their fit quality.
+    { {44.0, 48.0},      // 2-peak ROI at ~45/46 keV
+      {1083.0, 1092.0} } // 2-peak ROI at ~1085/1089 keV
   },
 };
 
@@ -365,15 +370,7 @@ DeviationStats compute_deviations(
          << (excluded ? "  [EXCLUDED from stats]" : "")
          << endl;
 
-    if( excluded )
-    {
-      ++num_excluded;
-      continue;
-    }
-
-    stats.sorted_area_pcts.push_back( area_pct );
-    stats.sorted_fwhm_pcts.push_back( fwhm_pct );
-
+    // The maximums include excluded peaks, so the outlier limits still apply to them.
     if( area_pct > stats.max_area_pct )
     {
       stats.max_area_pct = area_pct;
@@ -386,6 +383,15 @@ DeviationStats compute_deviations(
     }
     if( mean_pct > stats.max_mean_pct )
       stats.max_mean_pct = mean_pct;
+
+    if( excluded )
+    {
+      ++num_excluded;
+      continue;
+    }
+
+    stats.sorted_area_pcts.push_back( area_pct );
+    stats.sorted_fwhm_pcts.push_back( fwhm_pct );
   }//for( const auto &m : matches )
 
   for( const size_t ui : unmatched )
@@ -416,6 +422,48 @@ DeviationStats compute_deviations(
 
   return stats;
 }
+
+
+/// Checks each ROI's refit chi2 is not much worse than the reference peaks' chi2 over the same
+///  channels, so a bad refit can't hide behind an excluded energy range.
+void check_roi_chi2( const vector<shared_ptr<const PeakDef>> &ref_peaks,
+                     const vector<shared_ptr<const PeakDef>> &fit_peaks,
+                     const shared_ptr<const SpecUtils::Measurement> &data,
+                     const string &prefix )
+{
+  typedef map<shared_ptr<const PeakContinuum>, vector<shared_ptr<const PeakDef>>> RoiMap;
+  const RoiMap ref_rois = group_peaks_by_roi( ref_peaks );
+  const RoiMap fit_rois = group_peaks_by_roi( fit_peaks );
+
+  for( const RoiMap::value_type &ref_roi : ref_rois )
+  {
+    const double lower = ref_roi.first->lowerEnergy();
+    const double upper = ref_roi.first->upperEnergy();
+
+    vector<shared_ptr<const PeakDef>> fit_roi;
+    for( const RoiMap::value_type &roi : fit_rois )
+    {
+      if( (fabs( roi.first->lowerEnergy() - lower ) < 1.0E-3)
+         && (fabs( roi.first->upperEnergy() - upper ) < 1.0E-3) )
+        fit_roi = roi.second;
+    }
+
+    BOOST_CHECK_MESSAGE( !fit_roi.empty(), prefix << "No refit ROI for [" << lower << ", " << upper << "]" );
+    if( fit_roi.empty() )
+      continue;
+
+    const double ref_chi2 = chi2_for_region( ref_roi.second, data, 0, 0 );
+    const double fit_chi2 = chi2_for_region( fit_roi, data, 0, 0 );
+    const double max_chi2 = ref_chi2 + (std::max)( 3.0, 0.25*ref_chi2 );
+
+    cout << prefix << "ROI [" << lower << ", " << upper << "] chi2 ref=" << ref_chi2
+         << ", fit=" << fit_chi2 << " (limit " << max_chi2 << ")" << endl;
+
+    BOOST_CHECK_MESSAGE( fit_chi2 <= max_chi2, prefix << "ROI [" << lower << ", " << upper
+                         << "] refit chi2 " << fit_chi2 << " exceeds limit " << max_chi2
+                         << " (reference chi2 " << ref_chi2 << ")" );
+  }//for( const RoiMap::value_type &ref_roi : ref_rois )
+}//check_roi_chi2(...)
 
 
 BOOST_AUTO_TEST_CASE( test_refit_all_peaks_no_skew )
@@ -449,6 +497,8 @@ BOOST_AUTO_TEST_CASE( test_refit_all_peaks_no_skew )
 
     const DeviationStats stats = compute_deviations( td.original_peaks, result.fit_peaks,
       prefix + "refit", config.exclude_energy_ranges );
+
+    check_roi_chi2( td.original_peaks, result.fit_peaks, td.foreground, prefix );
 
     // Peaks in multi-peak ROIs can shift significantly (esp. when one peak is borderline-significant),
     // so we check the 3rd-worst deviation against a tight tolerance, and the overall max against a
@@ -565,6 +615,8 @@ void test_skew_type_helper( const PeakDef::SkewType skew_type,
     const DeviationStats stats = compute_deviations( td.original_peaks, result.fit_peaks,
       prefix, config.exclude_energy_ranges );
 
+    check_roi_chi2( td.original_peaks, result.fit_peaks, td.foreground, prefix );
+
     // Multi-peak ROI peaks can shift significantly when changing skew type, so check 3rd-worst
     // deviation against the tight tolerance, and overall max against a wider one.
     BOOST_CHECK_MESSAGE( stats.nth_worst_area( 2 ) < area_tolerance_pct,
@@ -644,3 +696,195 @@ BOOST_AUTO_TEST_CASE( test_bortel_independent_skew )
     10.0, 20.0,
     Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::IndependentSkewValues ) );
 }
+
+
+
+namespace
+{
+  /** A noise-free synthetic HPGe-like spectrum of GADRAS-shaped peaks on a sloped background.
+   `skew` is the six GADRAS skew parameters the peaks are drawn with.
+   */
+  struct GadrasSyntheticSpectrum
+  {
+    shared_ptr<SpecUtils::Measurement> data;
+    vector<double> means, sigmas, amps;
+  };
+
+  GadrasSyntheticSpectrum make_gadras_spectrum( const double skew[6] )
+  {
+    GadrasSyntheticSpectrum answer;
+
+    const size_t num_channels = 8192;
+    const float gain = 3000.0f / num_channels;
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_polynomial( num_channels, {0.0f, gain}, {} );
+
+    const shared_ptr<const vector<float>> energies = cal->channel_energies();
+    vector<double> counts( num_channels, 0.0 );
+    for( size_t ch = 0; ch < num_channels; ++ch )
+      counts[ch] = 40.0 - 0.01*(*energies)[ch];
+
+    answer.means = { 186.21, 351.93, 661.66, 1173.23, 1764.49 };
+    for( const double mean : answer.means )
+    {
+      const double sigma = (1.0 + 0.0012*mean) / 2.35482;
+      const double amp = 4.0E4;
+      answer.sigmas.push_back( sigma );
+      answer.amps.push_back( amp );
+      PeakDists::gadras_integral<double>( mean, sigma, amp, skew, PeakDists::GadrasMaterial::Generic,
+                                          energies->data(), counts.data(), num_channels );
+    }
+
+    auto fcounts = make_shared<vector<float>>( counts.begin(), counts.end() );
+    answer.data = make_shared<SpecUtils::Measurement>();
+    answer.data->set_gamma_counts( fcounts, 600.0f, 600.0f );
+    answer.data->set_energy_calibration( cal );
+
+    return answer;
+  }//make_gadras_spectrum(...)
+
+
+  /** Starting peaks for `spec`: off the true amplitude/FWHM, GADRAS skew starting at `start_skew`,
+   with each skew parameter fit if `fit_skew[i]`. */
+  vector<shared_ptr<const PeakDef>> gadras_start_peaks( const GadrasSyntheticSpectrum &spec,
+                                                        const PeakDef::SkewType skew_type,
+                                                        const double start_skew[6],
+                                                        const bool fit_skew[6] )
+  {
+    vector<shared_ptr<const PeakDef>> peaks;
+    for( size_t i = 0; i < spec.means.size(); ++i )
+    {
+      const double mean = spec.means[i], sigma = spec.sigmas[i];
+      auto cont = make_shared<PeakContinuum>();
+      cont->setType( PeakContinuum::OffsetType::Linear );
+      cont->setRange( mean - 15.0*sigma, mean + 8.0*sigma );
+
+      auto peak = make_shared<PeakDef>( mean + 0.1*sigma, 1.05*sigma, 0.8*spec.amps[i] );
+      peak->setContinuum( cont );
+      peak->setSkewType( skew_type );
+      for( size_t k = 0; k < 6; ++k )
+      {
+        const auto ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + k );
+        peak->set_coefficient( start_skew[k], ct );
+        peak->setFitFor( ct, fit_skew[k] );
+      }
+      peaks.push_back( peak );
+    }
+    return peaks;
+  }//gadras_start_peaks(...)
+}//namespace
+
+
+// Fitting GADRAS skew across the spectrum (what the "Fit Skew Parameters" tool does) has to actually
+//  move the skew parameters: the shape used to be built in `double`, so the autodiff gradient w.r.t.
+//  every skew parameter was zero, the fit left them at their starting values, and reported a zero
+//  uncertainty.
+BOOST_AUTO_TEST_CASE( test_fit_gadras_skew_synthetic )
+{
+  const double truth[6] = { 8.0, 2.0, 0.3, 0.0, 0.0, 0.0 };
+  const GadrasSyntheticSpectrum spec = make_gadras_spectrum( truth );
+  const PeakFitUtils::CoarseResolutionType res_type = PeakFitUtils::CoarseResolutionType::High;
+  const PeakDef::SkewType skew_type = PeakDef::SkewType::GadrasGeneric;
+
+  // The tail amplitudes, from a wrong start, and from zero (where the shape has zero derivative)
+  for( const double start_amp : { 3.0, 0.0 } )
+  {
+    const double start[6] = { start_amp, 0.5*start_amp, truth[2], truth[3], truth[4], truth[5] };
+    const bool fit[6] = { true, true, false, false, false, false };
+
+    PeakFitLM::FitPeaksResults result;
+    BOOST_REQUIRE_NO_THROW( result = PeakFitLM::fit_peaks_in_spectrum_LM(
+                              gadras_start_peaks( spec, skew_type, start, fit ), spec.data,
+                              0.0, 0.0, res_type, skew_type ) );
+    BOOST_TEST_INFO( "start_amp=" << start_amp << " " << result.error_message );
+    BOOST_REQUIRE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+    BOOST_REQUIRE( result.skew_relation.has_value() );
+    BOOST_REQUIRE_EQUAL( result.fit_peaks.size(), spec.means.size() );
+
+    const PeakFitLM::FitPeaksResults::SkewRelation &sr = *result.skew_relation;
+    for( size_t k = 0; k < 6; ++k )
+    {
+      BOOST_TEST_INFO( "start_amp=" << start_amp << " k=" << k );
+      BOOST_REQUIRE( sr.non_energy_dependent_skew_pars[k].has_value() );
+      BOOST_CHECK( !sr.energy_dependent_skew_pars[k].has_value() );
+    }
+
+    BOOST_TEST_INFO( "start_amp=" << start_amp << " low=" << sr.non_energy_dependent_skew_pars[0]->first );
+    BOOST_CHECK_CLOSE( sr.non_energy_dependent_skew_pars[0]->first, truth[0], 2.0 );
+    BOOST_TEST_INFO( "start_amp=" << start_amp << " high=" << sr.non_energy_dependent_skew_pars[1]->first );
+    BOOST_CHECK_CLOSE( sr.non_energy_dependent_skew_pars[1]->first, truth[1], 5.0 );
+    BOOST_CHECK( sr.non_energy_dependent_skew_pars[0]->second > 0.0 );
+    BOOST_CHECK( sr.non_energy_dependent_skew_pars[1]->second > 0.0 );
+
+    // The fixed detector characteristics are untouched
+    for( size_t k = 2; k < 6; ++k )
+      BOOST_CHECK_EQUAL( sr.non_energy_dependent_skew_pars[k]->first, truth[k] );
+
+    for( size_t i = 0; i < result.fit_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = result.fit_peaks[i];
+      BOOST_CHECK( p->skewType() == skew_type );
+      BOOST_CHECK_CLOSE( p->peakArea(), spec.amps[i], 1.0 );
+    }
+  }//for( start amplitudes )
+
+  // Fitting the low-tail power (the GADRAS energy dependence) too, starting from zero
+  {
+    const double start[6] = { 3.0, 1.0, 0.0, truth[3], truth[4], truth[5] };
+    const bool fit[6] = { true, true, true, false, false, false };
+
+    PeakFitLM::FitPeaksResults result;
+    BOOST_REQUIRE_NO_THROW( result = PeakFitLM::fit_peaks_in_spectrum_LM(
+                              gadras_start_peaks( spec, skew_type, start, fit ), spec.data,
+                              0.0, 0.0, res_type, skew_type ) );
+    BOOST_REQUIRE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+    BOOST_REQUIRE( result.skew_relation.has_value() );
+    const PeakFitLM::FitPeaksResults::SkewRelation &sr = *result.skew_relation;
+    BOOST_REQUIRE( sr.non_energy_dependent_skew_pars[2].has_value() );
+    BOOST_TEST_INFO( "low power=" << sr.non_energy_dependent_skew_pars[2]->first );
+    BOOST_CHECK_SMALL( sr.non_energy_dependent_skew_pars[2]->first - truth[2], 0.03 );
+    BOOST_CHECK_CLOSE( sr.non_energy_dependent_skew_pars[0]->first, truth[0], 3.0 );
+  }
+
+  // The fit uses a fixed value as given, and one outside the allowed range moved to the nearest
+  //  limit (both used to be replaced by the default starting value, the Kromek GR1 Detector.dat's
+  //  11.5 extent included).  The skew relation carries the values the model used.
+  {
+    double lower, upper, starting, step;
+    BOOST_REQUIRE( PeakDef::skew_parameter_range( skew_type, PeakDef::SkewPar5, lower, upper, starting, step ) );
+
+    const double start[6] = { 8.0, 2.0, 0.3, 0.0, 11.5, upper + 10.0 };
+    const bool fit[6] = { true, true, false, false, false, false };
+
+    PeakFitLM::FitPeaksResults result;
+    BOOST_REQUIRE_NO_THROW( result = PeakFitLM::fit_peaks_in_spectrum_LM(
+                              gadras_start_peaks( spec, skew_type, start, fit ), spec.data,
+                              0.0, 0.0, res_type, skew_type ) );
+    BOOST_REQUIRE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+    BOOST_REQUIRE( result.skew_relation.has_value() );
+    const PeakFitLM::FitPeaksResults::SkewRelation &sr = *result.skew_relation;
+    BOOST_REQUIRE( sr.non_energy_dependent_skew_pars[4].has_value() && sr.non_energy_dependent_skew_pars[5].has_value() );
+    BOOST_CHECK_EQUAL( sr.non_energy_dependent_skew_pars[4]->first, 11.5 );
+    BOOST_CHECK_EQUAL( sr.non_energy_dependent_skew_pars[5]->first, upper );
+    for( const shared_ptr<const PeakDef> &p : result.fit_peaks )
+      BOOST_CHECK_EQUAL( p->coefficient( PeakDef::SkewPar4 ), 11.5 );
+  }
+
+  // A fitted negative extent with restricted refinement bounds, per-ROI, must give Ceres a feasible
+  //  start (the window was a multiple of the starting value, so inverted for negative values).
+  {
+    const double start[6] = { 8.0, 2.0, 0.3, 0.0, -4.0, 0.0 };
+    const bool fit[6] = { true, true, false, false, true, false };
+    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> options
+             = Wt::WFlags<PeakFitLM::PeakFitLMOptions>( PeakFitLM::PeakFitLMOptions::IndependentSkewValues )
+               | PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+
+    PeakFitLM::FitPeaksResults result;
+    BOOST_REQUIRE_NO_THROW( result = PeakFitLM::fit_peaks_in_spectrum_LM(
+                              gadras_start_peaks( spec, skew_type, start, fit ), spec.data,
+                              0.0, 0.0, res_type, skew_type, options ) );
+    BOOST_TEST_INFO( result.error_message );
+    BOOST_REQUIRE( result.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success );
+    BOOST_CHECK_EQUAL( result.fit_peaks.size(), spec.means.size() );
+  }
+}//test_fit_gadras_skew_synthetic

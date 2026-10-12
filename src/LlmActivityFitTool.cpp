@@ -1023,6 +1023,8 @@ nlohmann::json format_shielding_source_state_to_json(
   result["options"]["background_peak_subtract"] = config.options.background_peak_subtract;
   result["options"]["same_age_isotopes"] = config.options.same_age_isotopes;
   result["options"]["account_for_decay_during_meas"] = config.options.account_for_decay_during_meas;
+  result["options"]["drf_uncert_method"] = ShieldingSourceFitCalc::drfUncertMethodName( config.options.drf_uncert_method );
+  result["options"]["include_assumed_drf_uncert"] = config.options.drf_uncert_include_assumed;
 
   return result;
 }//format_shielding_source_state_to_json(...)
@@ -2026,8 +2028,31 @@ nlohmann::json executeModifyShieldingSourceConfig(
       options_changed = true;
     }
 
+    if( params.contains("drf_uncert_method") )
+    {
+      const string method = params.at( "drf_uncert_method" ).get<string>();
+      if( method == "None" )
+        modified_config.options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
+      else if( method == "ErrorPropagation" )
+        modified_config.options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation;
+      else if( method == "Likelihood" )
+        modified_config.options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::Likelihood;
+      else
+        throw runtime_error( "drf_uncert_method must be 'None', 'ErrorPropagation', or 'Likelihood'" );
+      result["drf_uncert_method"] = method;
+      options_changed = true;
+    }
+
+    if( params.contains("include_assumed_drf_uncert") )
+    {
+      const bool new_value = get_boolean( params, "include_assumed_drf_uncert" );
+      modified_config.options.drf_uncert_include_assumed = new_value;
+      result["include_assumed_drf_uncert"] = new_value;
+      options_changed = true;
+    }
+
     if( !options_changed )
-      throw runtime_error( "set_fit_options requires at least one option parameter (attenuate_for_air, multiple_nucs_contribute_to_peaks, background_peak_subtract, or same_age_isotopes)" );
+      throw runtime_error( "set_fit_options requires at least one option parameter (attenuate_for_air, multiple_nucs_contribute_to_peaks, background_peak_subtract, same_age_isotopes, drf_uncert_method, or include_assumed_drf_uncert)" );
   }
   else
   {
@@ -2450,6 +2475,13 @@ void add_fit_config_to_json(
   fit_options["photopeak_cluster_sigma"] = results.options.photopeak_cluster_sigma;
   fit_options["background_peak_subtract"] = results.options.background_peak_subtract;
   fit_options["element_nuclides_same_age"] = results.options.same_age_isotopes;
+
+  fit_options["drf_uncert_method"] = ShieldingSourceFitCalc::drfUncertMethodName( results.options.drf_uncert_method );
+  fit_options["include_assumed_drf_uncert"] = results.options.drf_uncert_include_assumed;
+
+  // What detector-efficiency uncertainty the fit actually used - "None", "Stated", "GeometryModelOnly",
+  //  or "IncludesAssumed" - so it is plain whether the activity uncertainties include one.
+  fit_options["drf_uncert_used"] = ShieldingSourceFitCalc::drfUncertUsedName( results.drf_uncert_used );
 }//add_fit_config_to_json(...)
 
 
@@ -2485,6 +2517,10 @@ nlohmann::json fit_results_to_comprehensive_json(
 
   // 2. Fit configuration
   add_fit_config_to_json( *fit_results, drf, result["fit_configuration"] );
+
+  // Anything that qualifies the fit (efficiency outside the detector's validated range, etc.).
+  if( !fit_results->warnings.empty() )
+    result["warnings"] = fit_results->warnings;
 
   // 3. Sources (using SourceDetails, not SourceFitDef)
   if( fit_results->source_calc_details )
