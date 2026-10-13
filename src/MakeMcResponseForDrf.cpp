@@ -49,6 +49,7 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WGroupBox.h>
+#include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WProgressBar.h>
@@ -63,11 +64,13 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfChart.h"
+#include "InterSpec/DrfImport.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DetectorEfficiency.h"
@@ -361,6 +364,7 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_formBaselineState(),
     m_gridGeomRow( nullptr ),
     m_revertGeomBtn( nullptr ),
+    m_importGeomRow( nullptr ),
     m_gridTotalInfo( nullptr ),
     m_gridTotalRow( nullptr ),
     m_cancelBtn( nullptr ),
@@ -436,6 +440,17 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_revertGeomBtn->clicked().connect( this, &MakeMcResponseForDrf::revertToImportedGeometry );
     m_gridGeomRow->hide();
   }//if( m_gridResponse )
+
+  // A detector with no recorded shape can borrow one from another detector file.
+  {
+    m_importGeomRow = geomBox->addNew<WContainerWidget>();
+    m_importGeomRow->addStyleClass( "McImportGeomRow" );
+    WPushButton *importBtn = m_importGeomRow->addNew<WPushButton>( WString::tr("mmr-import-geom-btn") );
+    importBtn->addStyleClass( "LinkBtn" );
+    importBtn->setToolTip( WString::tr("mmr-tt-import-geom") );
+    importBtn->clicked().connect( this, &MakeMcResponseForDrf::showImportGeometryDialog );
+    m_importGeomRow->hide();   //see updateImportGeometryLink
+  }
 
   //Characterization options - a label/input table, so the inputs line up with each other and with
   //  the geometry form above (see `DgiTable` in DetectorGeometryInput).
@@ -928,7 +943,103 @@ void MakeMcResponseForDrf::updateMethodRows()
     m_gridTotalRow->setHidden( !grid );
   if( m_gridGeomRow && !grid )
     m_gridGeomRow->hide();  //shown by syncGridResult, for an edited geometry
+
+  updateImportGeometryLink();
 }//updateMethodRows()
+
+
+void MakeMcResponseForDrf::updateImportGeometryLink()
+{
+  if( m_importGeomRow && m_geometry )
+    m_importGeomRow->setHidden( m_geometry->generationReady()
+                                || (selectedMethod() == Method::ImportedGrid) );
+}//updateImportGeometryLink()
+
+
+void MakeMcResponseForDrf::showImportGeometryDialog()
+{
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("mmr-import-geom-title"),
+                                                           WString::tr("mmr-import-geom-body") );
+  WFileUpload *upload = dialog->contents()->addNew<WFileUpload>();
+  upload->setInline( false );
+  upload->addStyleClass( "McImportGeomUpload" );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( this, [this, dialog, upload](){
+    // Read before closing: the spooled file goes with the upload widget.
+    importGeometryFromUpload( upload->spoolFileName(), upload->clientFileName().toUTF8() );
+    dialog->accept();
+  } );
+  upload->fileTooLarge().connect( this, [dialog]( ::int64_t ){
+    dialog->accept();
+    passMessage( WString::tr("mmr-import-geom-too-large"), WarningWidget::WarningMsgHigh );
+  } );
+}//showImportGeometryDialog()
+
+
+void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_file,
+                                                     const std::string &display_name )
+{
+  shared_ptr<const ceelo::GeometryDescriptor> geom;
+  string from_name;
+
+  try
+  {
+    const shared_ptr<const string> data = DrfImport::readFile( spool_file );
+    const shared_ptr<const DrfImport::ParsedFile> parsed = DrfImport::parseFile( display_name, data, false );
+
+    // A DRF that states its shape (a saved geometry, or an attached response's own descriptor).
+    for( const shared_ptr<const DetectorPeakResponse> &drf : parsed->drfs )
+    {
+      geom = drf ? drf->monteCarloGeometry() : nullptr;
+      if( geom )
+      {
+        from_name = drf->name();
+        break;
+      }
+    }//for( const auto &drf : parsed->drfs )
+
+    // A geometry-only file (ANGLE .detx/.outx, GADRAS Detector.dat) has its shape on the seed the
+    //  import would characterize.
+    if( !geom )
+    {
+      //  No companion file is passed, so this can never take the slow .par-grid build (which needs
+      //  its DETECTOR.txt) - hence no DrfImport::isSlow() check or worker thread.
+      const DrfImport::Source src = DrfImport::makeSource( parsed, nullptr, 0 );
+      for( const shared_ptr<const DetectorPeakResponse> &drf : { src.base, src.generic } )
+      {
+        geom = drf ? drf->monteCarloGeometry() : nullptr;
+        if( geom )
+        {
+          from_name = drf->name();
+          break;
+        }
+      }//for( base, generic )
+    }//if( !geom )
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("mmr-import-geom-error").arg( WString::fromUTF8(display_name) )
+                   .arg( WString::fromUTF8(e.what()) ), WarningWidget::WarningMsgHigh );
+    return;
+  }//try / catch
+
+  if( !geom )
+  {
+    passMessage( WString::tr("mmr-import-geom-none").arg( WString::fromUTF8(display_name) ),
+                 WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !geom )
+
+  string note = "Geometry imported from " + display_name;
+  if( !from_name.empty() && (from_name != display_name) )
+    note += " (" + from_name + ")";
+  note += ".";
+
+  // Emits userChanged (through the form's change, and handleGeometryChanged), so an owner records
+  //  this as one undo step.
+  setGeometryFromDescriptor( *geom, { note } );
+}//importGeometryFromUpload(...)
 
 
 void MakeMcResponseForDrf::handleMethodChanged()
@@ -986,6 +1097,7 @@ void MakeMcResponseForDrf::handleGeometryChanged()
   }
 
   m_generate->setEnabled( m_geometry->generationReady() );
+  updateImportGeometryLink();
   updateAnchorInfo();
   updateGroundingInfo();
   updateEstimate();

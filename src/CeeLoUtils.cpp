@@ -2036,6 +2036,27 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
 }//setLegacyEfficiencyFromResponse(...)
 
 
+bool responseHasMcBackbone( const ceelo::DetectorResponse &resp )
+{
+  return (resp.provenance.method == ceelo::ProductionMethod::FullMc)
+         || (resp.provenance.method == ceelo::ProductionMethod::QuickMcTransfer);
+}//responseHasMcBackbone(...)
+
+
+std::shared_ptr<const ceelo::DetectorResponse> withoutGrounding( const ceelo::DetectorResponse &resp )
+{
+  // DetectorResponse is not copyable (it owns the built geometry), so copy through its one codec;
+  //  `finalize()` (called by from_xml_string) does not read the grounding, so clearing it after is fine.
+  const shared_ptr<ceelo::DetectorResponse> copy
+                               = ceelo::DetectorResponse::from_xml_string( resp.to_xml_string() );
+  if( !copy )
+    throw runtime_error( "withoutGrounding: could not copy the response." );
+
+  copy->grounding = ceelo::GroundingBlock();
+  return copy;
+}//withoutGrounding(...)
+
+
 std::string genericAttenuatorName( const double atomic_number,
                                    const double areal_density_g_cm2 )
 {

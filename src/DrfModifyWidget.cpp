@@ -204,6 +204,11 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_geometryModeled( false ),
     m_anchorHelp( nullptr ),
     m_responseNote( nullptr ),
+    m_anchorRemoved( false ),
+    m_removeAnchorBtns(),
+    m_anchorRemovedRow( nullptr ),
+    m_ungroundedFrom( nullptr ),
+    m_ungrounded( nullptr ),
     m_uncertSummary( nullptr ),
     m_pointsEditor( nullptr ),
     m_coefEditor( nullptr ),
@@ -472,6 +477,31 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_responseNote->setInline( false );
     m_responseNote->addStyleClass( "DrfModifyNote" );
 
+    // While the anchor is removed the editors below say nothing about the detector, so they give
+    //  way to a note saying where the efficiency now comes from, and a way back.
+    {
+      m_anchorRemovedRow = panel->addNew<WContainerWidget>();
+      m_anchorRemovedRow->addStyleClass( "DrfModifyAnchorRemoved" );
+      WText *note = m_anchorRemovedRow->addNew<WText>( WString::tr("dmw-anchor-removed-note") );
+      note->setInline( false );
+      note->addStyleClass( "DrfModifyNote" );
+      WPushButton *restore = m_anchorRemovedRow->addNew<WPushButton>( WString::tr("dmw-anchor-restore-anchor") );
+      restore->addStyleClass( "LinkBtn" );
+      restore->clicked().connect( this, [this](){ setAnchorRemoved( false ); } );
+      m_anchorRemovedRow->hide();
+    }
+
+    // The "Remove anchor" link that leads each editor's button row, at its far left.
+    auto addRemoveAnchorBtn = [this]( WContainerWidget *row ){
+      row->addStyleClass( "DrfModifyAnchorBtnRow" );
+      WPushButton *btn = row->addNew<WPushButton>( WString::tr("dmw-anchor-remove-anchor") );
+      btn->addStyleClass( "LinkBtn DrfRemoveAnchorBtn" );
+      btn->setToolTip( WString::tr("dmw-tt-remove-anchor") );
+      btn->clicked().connect( this, &DrfModifyWidget::confirmRemoveAnchor );
+      btn->hide();
+      m_removeAnchorBtns.push_back( btn );
+    };//addRemoveAnchorBtn
+
     const shared_ptr<const DetectorEfficiencyUncert> orig_uncert
         = m_orig ? m_orig->efficiencyUncert() : nullptr;
 
@@ -510,6 +540,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       m_coefParams->addStyleClass( "DrfModifyCoefParams" );
 
       WContainerWidget *coefBtns = coefBox->addNew<WContainerWidget>();
+      addRemoveAnchorBtn( coefBtns );
       m_addCoef = coefBtns->addNew<WPushButton>( WString::tr("dmw-anchor-add-term") );
       m_addCoef->addStyleClass( "LinkBtn" );
       m_addCoef->clicked().connect( this, [this](){ addCoefficient(); markEdited(); } );
@@ -624,6 +655,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       }
 
       WContainerWidget *btns = m_pointsEditor->addNew<WContainerWidget>();
+      addRemoveAnchorBtn( btns );
       m_addAnchor = btns->addNew<WPushButton>( WString::tr("dmw-anchor-add") );
       m_addAnchor->addStyleClass( "LinkBtn" );
       m_addAnchor->clicked().connect( this, [this](){ addAnchorRow( 0.0f, 0.0f, 0.0f, 0.0f, string() ); markEdited(); } );
@@ -1214,6 +1246,7 @@ bool DrfModifyWidget::ToolState::operator==( const ToolState &rhs ) const
   if( (drfHash != rhs.drfHash)
      || (name != rhs.name) || (description != rhs.description) || (tabIndex != rhs.tabIndex)
      || (geometryModeled != rhs.geometryModeled)
+     || (anchorRemoved != rhs.anchorRemoved)
      || (coefSigmas != rhs.coefSigmas)
      || (coefRho != rhs.coefRho)
      || (coefficients != rhs.coefficients)
@@ -1245,6 +1278,7 @@ std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() cons
   state->description = m_description->text().toUTF8();
   state->tabIndex = m_tabMenu->currentIndex();
   state->geometryModeled = m_geometryModeled;
+  state->anchorRemoved = m_anchorRemoved;
 
   // The sigma/rho shadow is the authoritative numeric state (not the widgets).
   state->coefSigmas = m_coefSigmas;
@@ -1354,10 +1388,14 @@ void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
   if( m_uncertOptions )
     m_uncertOptions->setCorrelationLength( state->anchorCorrLength );
 
-  updateAnchorEditorVisibility();
+  m_anchorRemoved = state->anchorRemoved;
 
   if( m_mcTool )
     m_mcTool->setState( state->mc );
+
+  // After the MC tool: which response is attachable (and so whether the anchor can be removed)
+  //  follows the result it just restored.
+  updateAnchorEditorVisibility();
   if( m_fwhmTool && state->fwhm )
     m_fwhmTool->setState( state->fwhm );
 
@@ -1824,7 +1862,11 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   // Anchor tab: apply whichever editor this DRF gets - which follows how it represents its
   //  efficiency, not the mode toggle, so there is no longer an editor the user could have typed
   //  into that the apply skips.  Done before the MC step so a grounding sees the edited points.
-  applyAnchorTab( *working, problems );
+  //  Not while the anchor is removed: the editors are hidden, the curve is resampled from the bare
+  //  Monte Carlo below, and a half-typed hidden edit must neither block "Use" nor stale the response.
+  const bool anchor_removed = anchorRemovedEffective();
+  if( !anchor_removed )
+    applyAnchorTab( *working, problems );
 
   // FWHM: take whatever the FWHM tab is showing, without triggering the tool's own
   //  detector-changed emit.  The tab opens seeded from this DRF, so this is a no-op unless the user
@@ -1882,8 +1924,22 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
   //  DRF already carried when nothing new was generated); in Flat Disk, or as a regeneration seed,
   //  detach it - CRITICAL for a regeneration seed, since an attached CeeLo response overrides the
   //  manual points/covariance at query time (the very thing the regeneration is grounding on).
-  const shared_ptr<const ceelo::DetectorResponse> resp
+  shared_ptr<const ceelo::DetectorResponse> resp
       = (includeMcResponse && m_geometryModeled && m_mcTool) ? m_mcTool->generatedResponse() : nullptr;
+
+  // Anchor removed: attach the bare Monte Carlo - the one just generated, or the one the DRF came
+  //  with (which the "keep" branch below would otherwise leave grounded).
+  if( includeMcResponse && anchor_removed )
+  {
+    try
+    {
+      resp = ungroundedResponse( attachableResponse() );
+    }catch( std::exception &e )
+    {
+      resp = nullptr;
+      problems.push_back( DrfModifyCalc::Problem( "dmw-err-remove-anchor", e.what() ) );
+    }
+  }//if( includeMcResponse && anchor_removed )
 
   // What shape this detector knows, taken BEFORE any detach below.  `storedGeometry()` prefers an
   //  attached response's own descriptor, and the serializers write only one of the two - so for a
@@ -1905,7 +1961,10 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
     //  exported; a Detector.dat or .detx import with no measured efficiency lands here.  Done BEFORE
     //  setCeeloResponse: setEfficiencyPoints recomputes the hash and resets flags, and the response
     //  should be attached to the finished curve.
-    if( !working->isValid() )
+    //  With the anchor removed the old curve is what the response was pinned to, not what it now
+    //  gives, so it is resampled from the bare Monte Carlo too - Flat Disk and an export then agree
+    //  with the detector.
+    if( !working->isValid() || anchor_removed )
     {
       try
       {
@@ -1914,7 +1973,11 @@ std::shared_ptr<DetectorPeakResponse> DrfModifyWidget::buildWorkingDrf( const bo
       {
         problems.push_back( DrfModifyCalc::Problem( "dmw-err-no-backbone", e.what() ) );
       }
-    }//if( !working->isValid() )
+
+      // The measured points stay, as the record of the measurement they are.
+      if( anchor_removed && working->measuredPoints() && !working->measuredPoints()->points().empty() )
+        problems.push_back( DrfModifyCalc::Problem( "dmw-note-anchor-removed-points", string(), false ) );
+    }//if( !working->isValid() || anchor_removed )
 
     working->setCeeloResponse( resp );
   }else if( includeMcResponse && !m_geometryModeled )
@@ -1976,7 +2039,9 @@ void DrfModifyWidget::apply()
     std::string orig_why, why;
     const bool orig_ok = m_orig ? DrfModifyCalc::checkDrfSelfConsistent( *m_orig, orig_why ) : true;
 
-    if( orig_ok && !points_now_stale && working->isValid()
+    // A removed anchor resamples the curve from the bare Monte Carlo, which the kept measured points
+    //  are deliberately no longer a fit of.
+    if( orig_ok && !points_now_stale && !anchorRemovedEffective() && working->isValid()
         && !DrfModifyCalc::checkDrfSelfConsistent( *working, why ) )
     {
       log_developer_error( __func__,
@@ -2229,7 +2294,32 @@ void DrfModifyWidget::updateAnchorEditorVisibility()
   if( m_effUnitsRow )
     m_effUnitsRow->setHidden( !(show_coefs || show_formula) );
 
-  if( m_anchorHelp )
+  // With the anchor removed none of the editors describe the detector any more, so they make way
+  //  for the note saying so; the removal link is only offered where there is an anchor to remove.
+  const bool removed = anchorRemovedEffective();
+  if( removed )
+  {
+    if( m_pointsEditor )
+      m_pointsEditor->hide();
+    if( m_coefEditor )
+      m_coefEditor->hide();
+    if( m_formulaEditor )
+      m_formulaEditor->hide();
+    if( m_effUnitsRow )
+      m_effUnitsRow->hide();
+  }//if( removed )
+
+  if( m_anchorRemovedRow )
+    m_anchorRemovedRow->setHidden( !removed );
+
+  const bool can_remove = !m_anchorRemoved && canRemoveAnchor();
+  for( WPushButton * const btn : m_removeAnchorBtns )
+    btn->setHidden( !can_remove );
+
+  if( m_anchorHelp && removed )
+  {
+    m_anchorHelp->setText( WString::tr("dmw-anchor-help-removed") );
+  }else if( m_anchorHelp )
   {
     const char *help_id = "dmw-anchor-help-points-nosrc";
     switch( m_editor )
@@ -2248,14 +2338,85 @@ void DrfModifyWidget::updateAnchorEditorVisibility()
   //  grid, which is not rebuilt from what this tab shows.
   if( m_responseNote )
   {
-    const shared_ptr<const ceelo::DetectorResponse> resp
-                  = (m_mcTool && m_mcTool->generatedResponse()) ? m_mcTool->generatedResponse()
-                                                                : (m_orig ? m_orig->ceeloResponse() : nullptr);
-    m_responseNote->setHidden( !m_geometryModeled || !resp );
+    const shared_ptr<const ceelo::DetectorResponse> resp = attachableResponse();
+    m_responseNote->setHidden( !m_geometryModeled || !resp || removed );
     m_responseNote->setText( WString::tr( DetEffG2kPar::isGridResponse( resp ) ? "dmw-anchor-note-grid"
                                                                               : "dmw-anchor-note-response" ) );
   }
 }//updateAnchorEditorVisibility()
+
+
+std::shared_ptr<const ceelo::DetectorResponse> DrfModifyWidget::attachableResponse() const
+{
+  if( m_mcTool && m_mcTool->generatedResponse() )
+    return m_mcTool->generatedResponse();
+  return m_orig ? m_orig->ceeloResponse() : nullptr;
+}//attachableResponse()
+
+
+bool DrfModifyWidget::canRemoveAnchor() const
+{
+  if( !m_geometryModeled || !m_mcTool )
+    return false;
+
+  const shared_ptr<const ceelo::DetectorResponse> resp = attachableResponse();
+  return resp && !resp->grounding.empty() && CeeLoUtils::responseHasMcBackbone( *resp );
+}//canRemoveAnchor()
+
+
+bool DrfModifyWidget::anchorRemovedEffective() const
+{
+  if( !m_anchorRemoved || !m_geometryModeled || !m_mcTool )
+    return false;
+
+  // A response generated after the removal may come back grounded (the MC tool grounds by default);
+  //  it is stripped on attach, so only the backbone matters here, not whether there is grounding.
+  //  The choice is remembered while suspended (Flat Disk, or a curve-transfer method), so going back
+  //  re-applies it without asking again - the same way the mode toggle keeps a response.
+  const shared_ptr<const ceelo::DetectorResponse> resp = attachableResponse();
+  return resp && CeeLoUtils::responseHasMcBackbone( *resp );
+}//anchorRemovedEffective()
+
+
+std::shared_ptr<const ceelo::DetectorResponse> DrfModifyWidget::ungroundedResponse(
+                                const std::shared_ptr<const ceelo::DetectorResponse> &resp ) const
+{
+  if( !resp || resp->grounding.empty() )
+    return resp;
+
+  if( resp != m_ungroundedFrom )
+  {
+    m_ungrounded = CeeLoUtils::withoutGrounding( *resp );   //throws; leaves the cache as it was
+    m_ungroundedFrom = resp;
+  }
+
+  return m_ungrounded;
+}//ungroundedResponse(...)
+
+
+void DrfModifyWidget::confirmRemoveAnchor()
+{
+  if( !canRemoveAnchor() )
+    return;
+
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("dmw-remove-anchor-title"),
+                                                           WString::tr("dmw-remove-anchor-body") );
+  WPushButton *ok = dialog->addButton( WString::tr("dmw-remove-anchor-accept"),
+                                       WidgetUtils::ButtonRole::Affirm );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+  ok->clicked().connect( this, [this](){ setAnchorRemoved( true ); } );
+}//confirmRemoveAnchor()
+
+
+void DrfModifyWidget::setAnchorRemoved( const bool removed )
+{
+  if( m_anchorRemoved == removed )
+    return;
+
+  m_anchorRemoved = removed;
+  updateAnchorEditorVisibility();
+  markEdited();   //one undo step; refreshes the summary, the General tab and the Generate button
+}//setAnchorRemoved(...)
 
 
 void DrfModifyWidget::seedCoefCovFromUncert( const std::shared_ptr<const DetectorEfficiencyUncert> &uncert )
@@ -2599,9 +2760,7 @@ bool DrfModifyWidget::responseStale()
     return false;
 
   // Nothing to be stale unless a response would actually be attached and answer the queries.
-  const shared_ptr<const ceelo::DetectorResponse> resp = m_mcTool->generatedResponse()
-                          ? m_mcTool->generatedResponse()
-                          : (m_orig ? m_orig->ceeloResponse() : nullptr);
+  const shared_ptr<const ceelo::DetectorResponse> resp = attachableResponse();
   if( !resp )
     return false;
 

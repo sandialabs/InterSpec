@@ -127,6 +127,28 @@
   <message id="dmw-anchor-coefs">Coefficients</message>
   <message id="dmw-anchor-add-term">Add term</message>
   <message id="dmw-anchor-remove-term">Remove term</message>
+
+  <!-- Removing the anchor (grounding) from a Monte-Carlo response, so it stands on its own. -->
+  <message id="dmw-anchor-remove-anchor">Remove anchor</message>
+  <message id="dmw-tt-remove-anchor">Use the Monte-Carlo model on its own, without anchoring it to
+    this efficiency curve or points.</message>
+  <message id="dmw-remove-anchor-title">Remove the anchor?</message>
+  <message id="dmw-remove-anchor-body">The geometry-modeled response is currently anchored to this
+    detector's efficiency curve (or measured points), which scales the Monte-Carlo efficiency to match
+    it.  Removing the anchor makes the efficiency come from the Monte-Carlo model alone, and the
+    efficiency curve is replaced by one sampled from that model.  You can undo this, or restore the
+    anchor before pressing &quot;Use&quot;.  Continue?</message>
+  <message id="dmw-remove-anchor-accept">Remove anchor</message>
+  <message id="dmw-anchor-restore-anchor">Restore anchor</message>
+  <message id="dmw-anchor-removed-note">The anchor has been removed: this detector's efficiency now
+    comes from the Monte-Carlo model alone, and on &quot;Use&quot; its efficiency curve is replaced by
+    one sampled from that model.</message>
+  <message id="dmw-anchor-help-removed">Anchor removed - there is no efficiency curve to edit while
+    the Monte-Carlo model is used on its own.</message>
+  <message id="dmw-note-anchor-removed-points">The anchor was removed, so the measured points this
+    detector carries are kept only as a record of the measurement; the efficiency comes from the
+    Monte-Carlo model.</message>
+  <message id="dmw-err-remove-anchor">Could not remove the anchor from the response: {1}</message>
   <message id="dmw-cov-corner-coef">Coef \ Coef</message>
   <message id="dmw-coef-cov-assumed-note">This detector never stored a covariance for its
     coefficients, so the table starts from the per-coefficient uncertainties it does have, with every

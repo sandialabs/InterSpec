@@ -369,6 +369,17 @@ protected:
 
   void handleGeometryChanged();
   void handleMethodChanged();
+
+  /** Shows the import-geometry link only while there is no usable geometry, and not for an imported
+   grid (whose geometry comes with it). */
+  void updateImportGeometryLink();
+
+  /** A dialog to upload a detector file (DRF XML, ANGLE, Detector.dat) and take just its geometry. */
+  void showImportGeometryDialog();
+
+  /** Puts the geometry of an uploaded file in the form, or says why there is none; the form change
+   is a user edit (one undo step for an owner listening to #userChanged). */
+  void importGeometryFromUpload( const std::string &spool_file, const std::string &display_name );
   void handlePrecisionChanged();
 
   /** An option that only affects a future generation (profile, anchor angles, custom precision)
@@ -462,6 +473,10 @@ protected:
    and a way back to the imported geometry. */
   Wt::WContainerWidget *m_gridGeomRow;
   Wt::WPushButton *m_revertGeomBtn;
+
+  /** "Import geometry from file..." beneath the geometry form; only offered while the form holds no
+   usable geometry - see #updateImportGeometryLink. */
+  Wt::WContainerWidget *m_importGeomRow;
 
   /** Whether the imported grid has a (current) total efficiency. */
   Wt::WText *m_gridTotalInfo;

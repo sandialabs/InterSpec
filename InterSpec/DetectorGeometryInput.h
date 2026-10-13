@@ -151,6 +151,11 @@ public:
 
     std::vector<Layer> layers;
 
+    /** Whether the form is still the length==diameter guess (see #generationReady) - part of the
+     state so undoing an import blocks generation again - and the import notes shown with it. */
+    bool seededFromDiameterGuess = false;
+    std::string importNotes;
+
     bool operator==( const State &rhs ) const;
     bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
   };//struct State

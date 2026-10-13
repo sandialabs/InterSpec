@@ -51,6 +51,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <fstream>
+#include <sstream>
 #include <iostream>
 
 #include "rapidxml/rapidxml.hpp"
@@ -1592,3 +1594,98 @@ BOOST_AUTO_TEST_CASE( uncert_summary_splits_data_from_model )
   BOOST_CHECK( curve_only.total > 0.0 );
   BOOST_CHECK_SMALL( curve_only.model, 1.0E-12 );
 }//BOOST_AUTO_TEST_CASE( uncert_summary_splits_data_from_model )
+
+
+
+/** "Remove anchor" in the Modify dialog: stripping the grounding from a Monte-Carlo response leaves
+ the bare MC efficiency (the grounded one divided by k(E)), and the legacy curve resampled from it
+ then agrees with the response.  A curve transfer has no MC under its anchor, so is never offered. */
+BOOST_AUTO_TEST_CASE( remove_anchor_gives_bare_monte_carlo )
+{
+  set_data_dir();
+
+  // The test-file directory, for the grounded Monte-Carlo response.
+  string testfiledir;
+  {
+    const int argc = boost::unit_test::framework::master_test_suite().argc;
+    char ** const argv = boost::unit_test::framework::master_test_suite().argv;
+    for( int i = 1; i < argc; ++i )
+    {
+      const string arg = argv[i];
+      if( SpecUtils::istarts_with( arg, "--testfiledir=" ) )
+        testfiledir = arg.substr( 14 );
+    }
+    if( testfiledir.empty() )
+    {
+      for( const char * const d : { "test_data", "../test_data", "../../test_data",
+                                    "/projects/target/testing/test_data" } )
+      {
+        if( SpecUtils::is_directory( d ) ){ testfiledir = d; break; }
+      }
+    }
+  }//get testfiledir
+
+  const string path = SpecUtils::append_path( SpecUtils::append_path( testfiledir, "cascade_truth" ),
+                                              "detective_x_grounded_response.xml" );
+  ifstream input( path.c_str(), ios::in | ios::binary );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Could not open '" << path << "'; pass --testfiledir=" );
+  stringstream buffer;
+  buffer << input.rdbuf();
+
+  const shared_ptr<const ceelo::DetectorResponse> grounded
+                                         = ceelo::DetectorResponse::from_xml_string( buffer.str() );
+  BOOST_REQUIRE( grounded );
+  BOOST_REQUIRE( !grounded->grounding.empty() );
+  BOOST_CHECK( CeeLoUtils::responseHasMcBackbone( *grounded ) );
+
+  const shared_ptr<const ceelo::DetectorResponse> bare = CeeLoUtils::withoutGrounding( *grounded );
+  BOOST_REQUIRE( bare && (bare != grounded) );
+  BOOST_CHECK( bare->grounding.empty() );
+  BOOST_CHECK( !grounded->grounding.empty() );   //the original is untouched
+  BOOST_CHECK( bare->provenance.method == grounded->provenance.method );
+  BOOST_CHECK( bare->model_transfer.has_value() == grounded->model_transfer.has_value() );
+
+  // Grounded = bare x k(E), at a far-field on-axis position.
+  const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( grounded->descriptor );
+  for( const double energy : { 122.0, 344.0, 661.7, 1332.5 } )
+  {
+    bool clamped = false;
+    const double ln_k = grounded->grounding.eval_ln_k( energy, clamped );
+    const double with_k = grounded->eps_fep_at( energy, pos ).value;
+    const double without_k = bare->eps_fep_at( energy, pos ).value;
+    BOOST_REQUIRE( (with_k > 0.0) && (without_k > 0.0) );
+    BOOST_CHECK_CLOSE( with_k / without_k, std::exp( ln_k ), 1.0e-3 );
+  }
+
+  // The legacy curve sampled from the bare response reproduces it, as the Modify dialog's apply does.
+  {
+    DetectorPeakResponse drf( "bare", "anchor removed" );
+    CeeLoUtils::setLegacyEfficiencyFromResponse( drf, bare );
+    drf.setCeeloResponse( bare );
+    BOOST_REQUIRE( drf.isValid() );
+
+    const shared_ptr<const DetectorEfficiencyCurve> curve = drf.efficiencyCurve();
+    BOOST_REQUIRE( curve && curve->isValid() );
+    for( const double energy : { 200.0, 661.7, 1500.0 } )
+    {
+      const double from_curve = curve->efficiency( static_cast<float>(energy) );
+      const double from_resp = drf.intrinsicEfficiencyEval( static_cast<float>(energy) ).value;
+      BOOST_REQUIRE( from_resp > 0.0 );
+      BOOST_CHECK_CLOSE( from_curve, from_resp, 2.0 );  //percent; pairs are log-interpolated
+    }
+  }
+
+  // A curve transfer's efficiency IS its anchor curve - nothing to stand on without it.
+  {
+    const MakeDrfCalc::GeometryChoice geom = nai_geometry();
+    auto transfer = make_shared<DetectorPeakResponse>( "transfer", "curve transfer" );
+    transfer->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                             geom.diameter, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                             DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    transfer->setDetectorSetback( geom.setback );
+    transfer->setGeometry( geom.geometry );
+    BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( *transfer ) );
+    BOOST_REQUIRE( transfer->ceeloResponse() );
+    BOOST_CHECK( !CeeLoUtils::responseHasMcBackbone( *transfer->ceeloResponse() ) );
+  }
+}//BOOST_AUTO_TEST_CASE( remove_anchor_gives_bare_monte_carlo )
