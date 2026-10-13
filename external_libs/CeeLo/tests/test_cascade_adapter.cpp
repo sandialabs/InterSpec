@@ -653,8 +653,12 @@ BOOST_AUTO_TEST_CASE(whole_database_rejection_rate_is_stable) {
     //                now agrees with the shipped evaluated feed law to <= 6%
     // Each branch appears once per decay chain that reaches it, hence the
     // multiplicity. No other nuclide moved.
-    BOOST_CHECK_EQUAL(n_valid, 4558);
-    BOOST_CHECK_EQUAL(n_raw_only, 763);
+    // 2026-10-03, A=234 review (ENSDF NDS 207, 2026; JRC/IDB U spectra):
+    //   +9   Pa234m -> U234 now valid (raw feed 1.102 -> 0.015): its 43.5 and
+    //        41.82 keV records held transition flux as photon intensity
+    //        (43.5 keV: 7 transitions per decay). Pa234 -> U234 stays rejected.
+    BOOST_CHECK_EQUAL(n_valid, 4567);
+    BOOST_CHECK_EQUAL(n_raw_only, 754);
     BOOST_CHECK_EQUAL(n_partial_only, 1782);
     BOOST_CHECK_EQUAL(n_both, 1328);
     BOOST_CHECK_EQUAL(n_invalid_topology_edges, 0);
@@ -1240,13 +1244,20 @@ BOOST_AUTO_TEST_CASE(valid_partial_schemes_retain_categorical_residuals) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(u238_partial_graph_is_valid_and_residuals_coexist) {
+// Th234 -> Pa234m keeps four gamma records with no GEANT4 topology (87.02, 103.35,
+// 108.0 and 184.8 keV) beside a valid level graph. Until 2026-10-03 this test used
+// U238 -> Th234, whose residuals were ten U-234 transitions misfiled under the
+// alpha decay; they now belong to Pa234m -> U234.
+BOOST_AUTO_TEST_CASE(th234_partial_graph_is_valid_and_residuals_coexist) {
     CascadeOptions opts;
     opts.prompt_equilibrium = false;
     std::vector<BranchFeedingAudit> audit;
-    const auto cascades = build_cascades(db().nuclide("U238"), opts, &audit);
+    const auto cascades = build_cascades(db().nuclide("Th234"), opts, &audit);
     bool found = false;
     for (const DecayCascade& dc : cascades) {
+        // The Th234 build also carries short-lived progeny branches; keep the
+        // Th234 beta-minus branch (daughter Pa, unit branch weight).
+        if (dc.daughter_Z != 91 || dc.branch_weight < 0.5) continue;
         if (!dc.level_scheme.valid || dc.residual_transitions.empty()) continue;
         int matched = 0;
         for (const CascadeLevel& level : dc.level_scheme.levels)
@@ -1264,7 +1275,7 @@ BOOST_AUTO_TEST_CASE(u238_partial_graph_is_valid_and_residuals_coexist) {
     BOOST_CHECK(found);
     bool audited_partial = false;
     for (const BranchFeedingAudit& a : audit)
-        if (a.scheme_valid && a.n_residual_transitions >= 4) {
+        if (a.parent == "Th234" && a.scheme_valid && a.n_residual_transitions >= 4) {
             audited_partial = true;
             BOOST_CHECK_GT(a.residual_gamma_probability, 1e-4);
         }
@@ -1418,11 +1429,13 @@ BOOST_AUTO_TEST_CASE(partial_graph_occurrence_gate_uses_exact_feeds) {
 }
 
 BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
-    const SandiaDecay::Nuclide* parent = db().nuclide("U238");
+    // Needs a branch with a valid graph and an unmatched gamma record; see
+    // th234_partial_graph_is_valid_and_residuals_coexist for why it is Th234.
+    const SandiaDecay::Nuclide* parent = db().nuclide("Th234");
     BOOST_REQUIRE(parent != nullptr);
     SandiaDecay::Transition* transition = nullptr;
     for (const SandiaDecay::Transition* t : parent->decaysToChildren)
-        if (t && t->child && t->child->symbol == "Th234") {
+        if (t && t->child && t->child->symbol == "Pa234m") {
             transition = const_cast<SandiaDecay::Transition*>(t);
             break;
         }
@@ -1450,11 +1463,12 @@ BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
         std::vector<BranchFeedingAudit> audit;
         (void)build_cascades(parent, opts, &audit);
         for (const BranchFeedingAudit& a : audit)
-            if (a.parent == "U238" && a.child == "Th234")
+            if (a.parent == "Th234" && a.child == "Pa234m")
                 return a;
         return BranchFeedingAudit{};
     };
     const BranchFeedingAudit before = branch_audit();
+    BOOST_REQUIRE(before.scheme_valid);
 
     // A memberless E0 contributes no gamma intensity. Give the unmatched record
     // a 2% transition occurrence: occurrence-based coverage must nevertheless
@@ -1475,12 +1489,34 @@ BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
 // U235 was removed from this list on 2026-08-03: its flux inconsistency was
 // four specific unsupported gamma records (26.55, 38.90, 41.40 keV removed;
 // 64.35 keV corrected 0.0065 -> 1.7e-5), not an irrecoverable topology problem.
-// With those fixed the branch's feed sum closes to 1.0013. Pa234 and Pa234m
-// remain inconsistent and are still guarded here.
+// With those fixed the branch's feed sum closes to 1.0013. Pa234m was removed on
+// 2026-10-03 for the same kind of reason (43.5/41.82 keV held transition flux as
+// photons); see pa234m_graph_closes_after_flux_records_corrected. Pa234 remains
+// inconsistent (raw feed 1.25: GEANT4 has no levels for its 880.5/980.3 keV
+// doublets, and the evaluation itself leaves ~0.14 per decay unbalanced at
+// excited levels) and is still guarded here.
+BOOST_AUTO_TEST_CASE(pa234m_graph_closes_after_flux_records_corrected) {
+    CascadeOptions opts;
+    opts.prompt_equilibrium = false;
+    std::vector<BranchFeedingAudit> audit;
+    (void)build_cascades(db().nuclide("Pa234m"), opts, &audit);
+    bool found = false;
+    for (const BranchFeedingAudit& a : audit)
+        if (a.parent == "Pa234m" && a.child == "U234") {
+            found = true;
+            BOOST_CHECK(a.scheme_valid);
+            BOOST_CHECK(!a.rejected);
+            // ~98% of these decays go to the U-234 ground state, so the excited-level
+            // feed is ~1.5%; a value near 1 would mean flux records are back.
+            BOOST_CHECK_LT(a.raw_total_feed, 0.05);
+        }
+    BOOST_CHECK(found);
+}
+
 BOOST_AUTO_TEST_CASE(uranium_flux_inconsistent_graphs_remain_invalid) {
     CascadeOptions opts;
     opts.prompt_equilibrium = false;
-    for (const char* name : {"Pa234", "Pa234m"}) {
+    for (const char* name : {"Pa234"}) {
         std::vector<BranchFeedingAudit> audit;
         (void)build_cascades(db().nuclide(name), opts, &audit);
         bool rejected = false;

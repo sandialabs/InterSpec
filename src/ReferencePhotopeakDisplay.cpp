@@ -2605,8 +2605,8 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   {
     if( m_shieldingSelect->isGenericMaterial() )
     {
-      const float atomic_number = static_cast<float>(m_shieldingSelect->atomicNumber());
-      const float areal_density = static_cast<float>(m_shieldingSelect->arealDensity());
+      const double atomic_number = m_shieldingSelect->atomicNumber();
+      const double areal_density = m_shieldingSelect->arealDensity();
       
       if( areal_density > 0.0 )
       {
@@ -2616,7 +2616,7 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
         };
 
         // For the GADRAS shield-scatter augmentation used by cascade summing-out.
-        input.m_summing_shield_an = atomic_number;
+        input.m_summing_shield_an = static_cast<float>( atomic_number );
         input.m_summing_shield_ad = static_cast<float>( areal_density * PhysicalUnits::cm2 / PhysicalUnits::g );
         input.m_summing_shield_fracH = 0.0f;
 
@@ -2641,10 +2641,10 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
       if( material )
         input.m_shielding_name = material->name;
       
-      float thick = 0.0f;
+      double thick = 0.0;
       input.m_shielding_thickness = m_shieldingSelect->thicknessEdit()->text().toUTF8();
       if( !input.m_shielding_thickness.empty() )
-        thick = static_cast<float>( m_shieldingSelect->thickness() );
+        thick = m_shieldingSelect->thickness();
       
       if( material && (thick > 0.0) )
       {

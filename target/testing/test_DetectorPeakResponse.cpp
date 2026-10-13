@@ -98,7 +98,7 @@ namespace {
   double calc_air_transmission( const double energy_kev, const double distance_cm )
   {
     const double mu = GammaInteractionCalc::transmission_coefficient_air(
-      static_cast<float>(energy_kev * PhysicalUnits::keV),
+      energy_kev * PhysicalUnits::keV,
       distance_cm * PhysicalUnits::cm
     );
     return exp(-mu);

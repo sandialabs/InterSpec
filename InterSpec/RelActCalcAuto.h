@@ -1027,8 +1027,7 @@ struct Options
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *
    * When true, x-ray peaks will use VoigtPlusBortel skew type with the
-   * Lorentzian HWHM set to the natural x-ray linewidth (plus thermal/recoil
-   * Doppler broadening for decay x-rays).
+   * Lorentzian HWHM set to the natural x-ray linewidth.
    *
    * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel (see
    * #lorentzian_xrays_compatible).
@@ -1777,7 +1776,8 @@ struct RelActAutoSolution
    
    Throws exception if covariance matrix is invalid.
    */
-  std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
+  std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index,
+                                                            double *unfloored_uncert = nullptr ) const;
 
 
   /** A skew parameter's value from the fit, at the lower and upper energy of the spectrum (the same
@@ -1824,6 +1824,13 @@ struct RelActAutoSolution
   double reliability_floored_uncert( const double value, const double uncert,
                                      const std::vector<double> &jacobian,
                                      const double plausibility_scale = -1.0 ) const;
+
+
+  /** Adds one plain-language message per fit parameter that ended at a limit (see `m_param_at_bound`),
+   saying which limit, and how much that parameter matters to the main results' uncertainties - and one
+   message per main result whose uncertainty `reliability_floored_uncert` actually widened.  Called at
+   the end of the solve; idempotent (replaces the messages a previous call added). */
+  void compute_bound_limit_messages();
 
 
 
@@ -1993,11 +2000,19 @@ struct RelActAutoSolution
    it directly. */
   std::vector<char> m_param_at_bound;
 
+  /** For each parameter flagged in `m_param_at_bound`, the bound it is at: -1 lower, +1 upper, 0 when
+   it is flagged without being at a bound (a nuclide judged not present, a little above zero). */
+  std::vector<signed char> m_param_bound_side;
+
   /** Set true when any reported enrichment / derived uncertainty was floored because the quantity
    depends substantially on a dropped rank-deficient direction or a bound-pinned parameter,
    so its linearized uncertainty was under-stated.  Consumers should treat such uncertainties as a wide
    lower bound ("unreliable").  Mutable: set lazily by the const derived-uncertainty accessors. */
   mutable bool m_enrichment_uncert_unreliable = false;
+
+
+  /** The messages `compute_bound_limit_messages()` placed in `m_warnings`. */
+  std::vector<std::string> m_bound_limit_messages;
 
   /** The short names of the parameters. */
   std::vector<std::string> m_parameter_names;

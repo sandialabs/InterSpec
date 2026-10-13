@@ -108,7 +108,7 @@ int main( int argc, char **argv )
 #endif
    "\nThis value sets Wts 'docroot' and 'approot' variables."
    )
-  ("static-data-dir", "The static data directory (e.g., 'data' dir that holds cross-sections, "
+  ("static-data-dir", po::value<std::string>(), "The static data directory (e.g., 'data' dir that holds cross-sections, "
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
 #if( USE_BATCH_CLI_TOOLS )
