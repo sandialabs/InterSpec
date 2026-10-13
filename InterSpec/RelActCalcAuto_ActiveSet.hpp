@@ -182,6 +182,8 @@ struct PolishResult
 
  @param objective  The full objective at a parameter vector (e.g., the cost functor's chi2); used to
                    rank rounds, independent of what Ceres reports for its iterations.
+ @param solve      Runs one round's solve; empty means plain `ceres::Solve` (a caller may stop solves that
+                   only creep, so long as it reports them as `USER_SUCCESS`).
  */
 inline PolishResult polish_bound_blocked( ceres::Problem &problem,
                                           std::vector<double> &x,
@@ -190,7 +192,9 @@ inline PolishResult polish_bound_blocked( ceres::Problem &problem,
                                           const ceres::Solver::Options &options,
                                           const std::function<double(const std::vector<double> &)> &objective,
                                           const std::shared_ptr<std::atomic_bool> &cancel,
-                                          const PolishSettings &settings = PolishSettings() )
+                                          const PolishSettings &settings = PolishSettings(),
+                                          const std::function<void(const ceres::Solver::Options &,
+                                                         ceres::Problem &, ceres::Solver::Summary &)> &solve = {} )
 {
   PolishResult result;
 
@@ -291,7 +295,10 @@ inline PolishResult polish_bound_blocked( ceres::Problem &problem,
     }
 
     ceres::Solver::Summary summary;
-    ceres::Solve( options, &problem, &summary );
+    if( solve )
+      solve( options, problem, summary );
+    else
+      ceres::Solve( options, &problem, &summary );
     restorer.restore();
 
     result.rounds += 1;

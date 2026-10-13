@@ -9157,7 +9157,7 @@ struct RelActAutoCostFcn
       bound_polish = RelActCalcAutoImp::ActiveSet::polish_bound_blocked( problem, parameters,
                        constant_parameters, parameter_box, ceres_options,
                        [cost_functor]( const vector<double> &x ) -> double { return (*cost_functor)(x); },
-                       cancel_calc );
+                       cancel_calc, RelActCalcAutoImp::ActiveSet::PolishSettings(), &solve_stopping_creep );
 
       primary_solve_iterations += bound_polish.iterations;
       if( bound_polish.cancelled )
