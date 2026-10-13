@@ -367,6 +367,13 @@ add_test( NAME TRelActCalcAuto_Conditioning
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_ActiveSet test_RelActCalcAuto_ActiveSet.cpp )
+target_link_libraries( test_RelActCalcAuto_ActiveSet PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ActiveSet
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ActiveSet> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_CovarianceQuality test_RelActCalcAuto_CovarianceQuality.cpp )
 target_link_libraries( test_RelActCalcAuto_CovarianceQuality PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_CovarianceQuality
