@@ -554,159 +554,44 @@ BOOST_AUTO_TEST_CASE( MissingWidthHandling )
 }//BOOST_AUTO_TEST_CASE( MissingWidthHandling )
 
 
-BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
+BOOST_AUTO_TEST_CASE( DecayXrayWidthIsNatural )
 {
   set_data_dir();
 
-  // Test alpha recoil Doppler calculation via get_xray_total_width_for_decay()
-  // This test verifies that decay x-rays include both natural and recoil contributions
+  // Alpha-decay x-rays get the natural width, with no recoil Doppler term: LANL micro-calorimeter spectra of
+  //  U-235 standards give the Th K-alpha1 and K-beta1 Lorentzian HWHM as 48-51 eV, the natural 48 eV (adding the
+  //  full alpha recoil in quadrature would give 82-90 eV); the K vacancies come from internal conversion, after
+  //  the recoiling daughter has stopped.
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db != nullptr );
 
-  // Helper lambda to find alpha decay transition with x-ray near target energy
-  auto find_alpha_transition = []( const SandiaDecay::Nuclide *nuc, const double xray_energy_kev )
-    -> const SandiaDecay::Transition *
+  for( const auto &nuc_xray : vector<pair<string,double>>{ {"U235", 93.35}, {"U235", 105.60}, {"U238", 93.35}, {"Pu239", 98.43} } )
   {
-    if( !nuc || nuc->decaysToChildren.empty() )
-      return nullptr;
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( nuc_xray.first );
+    BOOST_REQUIRE( nuc );
 
-    for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+    const SandiaDecay::Transition *trans = nullptr;
+    for( const SandiaDecay::Transition *t : nuc->decaysToChildren )
     {
-      if( !trans )
+      if( !t || !t->child || (t->mode != SandiaDecay::AlphaDecay) )
         continue;
-
-      const bool is_alpha = (trans->mode == SandiaDecay::AlphaDecay
-                             || trans->mode == SandiaDecay::BetaAndAlphaDecay
-                             || trans->mode == SandiaDecay::ElectronCaptureAndAlphaDecay);
-      if( !is_alpha )
-        continue;
-
-      // Check if this transition has an x-ray near target energy
-      for( const SandiaDecay::RadParticle &particle : trans->products )
+      for( const SandiaDecay::RadParticle &particle : t->products )
       {
-        if( particle.type == SandiaDecay::XrayParticle
-            && fabs( particle.energy - xray_energy_kev ) < 0.5 )
-        {
-          return trans;
-        }
+        if( (particle.type == SandiaDecay::XrayParticle) && (fabs( particle.energy - nuc_xray.second ) < 0.1) )
+          trans = t;
       }
     }
-    return nullptr;
-  };
+    BOOST_REQUIRE_MESSAGE( trans, "No " << nuc_xray.first << " alpha transition with an x-ray at " << nuc_xray.second );
 
-  // Test U-238 → Th-234 alpha decay (E_alpha ≈ 4.2 MeV)
-  // Total width should include natural (~48 eV) + recoil (~68 eV) ≈ 83 eV HWHM
-  const SandiaDecay::Nuclide *u238 = db->nuclide( "U238" );
-  BOOST_REQUIRE( u238 != nullptr );
-  const SandiaDecay::Transition *u238_trans = find_alpha_transition( u238, 98.439 );
-  if( u238_trans )
-  {
-    const double u238_total = get_xray_total_width_for_decay( u238_trans, 98.439 );
-    BOOST_CHECK_GT( u238_total, 0.0 );
-
-    // Get natural width for comparison
-    const SandiaDecay::Element *u = db->element( 92 );
-    const double u238_natural = get_xray_lorentzian_width( u, 98.439, 0.5 );
-    BOOST_CHECK_GT( u238_natural, 0.0 );
-
-    // Total width should be greater than natural width (includes recoil)
-    BOOST_CHECK_GT( u238_total, u238_natural );
-
-    // Compute recoil contribution
-    const double u238_recoil = std::sqrt( u238_total * u238_total - u238_natural * u238_natural );
-    BOOST_CHECK_GT( u238_recoil, 0.0 );
-    BOOST_CHECK_CLOSE( u238_recoil, 0.0678, 20.0 );  // ~67.8 eV ± 20%
-
-    std::cout << "U-238 alpha decay x-ray widths (U Kα 98.4 keV):" << std::endl;
-    std::cout << "  Natural: " << (u238_natural * 1000.0) << " eV HWHM" << std::endl;
-    std::cout << "  Recoil:  " << (u238_recoil * 1000.0) << " eV HWHM" << std::endl;
-    std::cout << "  Total:   " << (u238_total * 1000.0) << " eV HWHM" << std::endl;
+    const SandiaDecay::Element * const el = db->element( trans->child->atomicNumber );
+    BOOST_REQUIRE( el );
+    const double natural = get_xray_lorentzian_width( el, nuc_xray.second, 0.5 );
+    const double decay = get_xray_total_width_for_decay( trans, nuc_xray.second );
+    BOOST_CHECK_GT( natural, 0.040 );
+    BOOST_CHECK_LT( natural, 0.060 );
+    BOOST_CHECK_CLOSE( decay, natural, 1.0E-9 );
   }
-  else
-  {
-    std::cout << "Warning: Could not find U-238 alpha transition with U Kα x-ray" << std::endl;
-  }
-
-  // Test Pu-239 → U-235 alpha decay (E_alpha ≈ 5.2 MeV)
-  // Total width should include natural (~51 eV) + recoil (~79 eV) ≈ 94 eV HWHM
-  const SandiaDecay::Nuclide *pu239 = db->nuclide( "Pu239" );
-  BOOST_REQUIRE( pu239 != nullptr );
-  const SandiaDecay::Transition *pu239_trans = find_alpha_transition( pu239, 103.734 );
-  if( pu239_trans )
-  {
-    const double pu239_total = get_xray_total_width_for_decay( pu239_trans, 103.734 );
-    BOOST_CHECK_GT( pu239_total, 0.0 );
-
-    const SandiaDecay::Element *pu = db->element( 94 );
-    const double pu239_natural = get_xray_lorentzian_width( pu, 103.734, 0.5 );
-    BOOST_CHECK_GT( pu239_natural, 0.0 );
-
-    BOOST_CHECK_GT( pu239_total, pu239_natural );
-
-    const double pu239_recoil = std::sqrt( pu239_total * pu239_total - pu239_natural * pu239_natural );
-    BOOST_CHECK_GT( pu239_recoil, 0.0 );
-    BOOST_CHECK_CLOSE( pu239_recoil, 0.0789, 20.0 );  // ~78.9 eV ± 20%
-
-    std::cout << "Pu-239 alpha decay recoil Doppler for Pu Kα (103.7 keV): "
-              << (pu239_recoil * 1000.0) << " eV HWHM" << std::endl;
-  }
-
-  // Test Am-241 → Np-237 alpha decay (E_alpha ≈ 5.5 MeV)
-  const SandiaDecay::Nuclide *am241 = db->nuclide( "Am241" );
-  BOOST_REQUIRE( am241 != nullptr );
-  const SandiaDecay::Transition *am241_trans = find_alpha_transition( am241, 106.470 );
-  if( am241_trans )
-  {
-    const double am241_total = get_xray_total_width_for_decay( am241_trans, 106.470 );
-    BOOST_CHECK_GT( am241_total, 0.0 );
-
-    const SandiaDecay::Element *am = db->element( 95 );
-    const double am241_natural = get_xray_lorentzian_width( am, 106.470, 0.5 );
-    BOOST_CHECK_GT( am241_natural, 0.0 );
-
-    BOOST_CHECK_GT( am241_total, am241_natural );
-
-    const double am241_recoil = std::sqrt( am241_total * am241_total - am241_natural * am241_natural );
-    BOOST_CHECK_GT( am241_recoil, 0.0 );
-    BOOST_CHECK_CLOSE( am241_recoil, 0.0828, 20.0 );  // ~82.8 eV ± 20%
-
-    std::cout << "Am-241 alpha decay recoil Doppler for Am Kα (106.5 keV): "
-              << (am241_recoil * 1000.0) << " eV HWHM" << std::endl;
-  }
-
-  // Test Th-232 → Ra-228 alpha decay (E_alpha ≈ 4.0 MeV)
-  const SandiaDecay::Nuclide *th232 = db->nuclide( "Th232" );
-  BOOST_REQUIRE( th232 != nullptr );
-  const SandiaDecay::Transition *th232_trans = find_alpha_transition( th232, 93.350 );
-  if( th232_trans )
-  {
-    const double th232_total = get_xray_total_width_for_decay( th232_trans, 93.350 );
-    BOOST_CHECK_GT( th232_total, 0.0 );
-
-    const SandiaDecay::Element *th = db->element( 90 );
-    const double th232_natural = get_xray_lorentzian_width( th, 93.350, 0.5 );
-    BOOST_CHECK_GT( th232_natural, 0.0 );
-
-    BOOST_CHECK_GT( th232_total, th232_natural );
-
-    const double th232_recoil = std::sqrt( th232_total * th232_total - th232_natural * th232_natural );
-    BOOST_CHECK_GT( th232_recoil, 0.0 );
-    BOOST_CHECK_CLOSE( th232_recoil, 0.0645, 20.0 );  // ~64.5 eV ± 20%
-
-    std::cout << "Th-232 alpha decay recoil Doppler for Th Kα (93.4 keV): "
-              << (th232_recoil * 1000.0) << " eV HWHM" << std::endl;
-  }
-
-  // Test error handling: non-alpha emitter (stable isotope)
-  const SandiaDecay::Nuclide *pb208 = db->nuclide( "Pb208" );
-  BOOST_REQUIRE( pb208 != nullptr );
-  const SandiaDecay::Transition *pb208_trans = find_alpha_transition( pb208, 74.969 );
-  BOOST_CHECK( pb208_trans == nullptr );  // Should have no alpha transition
-
-  // Test error handling: nullptr transition
-  const double null_width = get_xray_total_width_for_decay( nullptr, 98.439 );
-  BOOST_CHECK_EQUAL( null_width, -1.0 );
-}//BOOST_AUTO_TEST_CASE( AlphaRecoilDoppler )
+}//BOOST_AUTO_TEST_CASE( DecayXrayWidthIsNatural )
 
 
 BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
@@ -747,20 +632,14 @@ BOOST_AUTO_TEST_CASE( GetXRayTotalWidthForDecay )
 
   if( alpha_transition )
   {
-    // Test total width calculation (should include natural + recoil)
+    // The decay x-ray width is the natural width (no alpha-recoil term; see DecayXrayWidthIsNatural)
     const double total_width = get_xray_total_width_for_decay( alpha_transition, 98.439 );
     BOOST_CHECK_GT( total_width, 0.0 );
 
-    // Total width should be greater than natural width alone
     const SandiaDecay::Element *u = db->element( 92 );
     BOOST_REQUIRE( u != nullptr );
     const double natural_width = get_xray_lorentzian_width( u, 98.439, 0.5 );
-    BOOST_CHECK_GT( total_width, natural_width );
-
-    std::cout << "U-238 decay x-ray total width (natural + recoil): "
-              << (total_width * 1000.0) << " eV HWHM" << std::endl;
-    std::cout << "  Natural width: " << (natural_width * 1000.0) << " eV HWHM" << std::endl;
-    std::cout << "  Recoil contribution: " << ((total_width - natural_width) * 1000.0) << " eV HWHM" << std::endl;
+    BOOST_CHECK_CLOSE( total_width, natural_width, 1.0E-9 );
   }
 
   // Test error handling: nullptr transition
@@ -959,7 +838,7 @@ BOOST_AUTO_TEST_CASE( NaturalAndTotalWidthForMultipleNuclides )
         ++total_width_calculated;
         BOOST_CHECK_GT( total_width, 0.0 );
         
-        // Total width should be >= natural width (includes recoil for alpha decays)
+        // The decay width is the natural width
         if( natural_width > 0.0 )
         {
           BOOST_CHECK_GE( total_width, natural_width );

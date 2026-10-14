@@ -595,6 +595,8 @@ void fit_continuum( const float * const x,
  @param[out] peak_counts Optional array (at least of length `nbin`) to place the summed counts of the peaks plus continuum;
              the sums of each channel are added to each array element (i.e., the elements arent set equal to sum, so you should
              zero thier values, if you want that)
+ @param per_peak_skews Optional per-peak skew type and parameters (one entry per mean), overriding `skew_type` and
+        `skew_parameters`; for ROIs whose peaks do not all share a shape (e.g., Voigt x-rays among Gaussian gammas).
 
  @returns The chi2 of the ROI
 
@@ -619,7 +621,8 @@ ScalarType fit_amp_and_offset_imp( const float *x,
                           std::vector<ScalarType> &continuum_coeffs,
                           std::vector<ScalarType> &amplitudes_uncerts,
                           std::vector<ScalarType> &continuum_coeffs_uncerts,
-                          ScalarType * const peak_counts )
+                          ScalarType * const peak_counts,
+                          const std::vector<std::pair<PeakDef::SkewType,std::vector<ScalarType>>> *per_peak_skews = nullptr )
 {
   using namespace std;
 
@@ -632,6 +635,9 @@ ScalarType fit_amp_and_offset_imp( const float *x,
 
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset_imp: invalid input" );
+
+  if( per_peak_skews && (per_peak_skews->size() != means.size()) )
+    throw runtime_error( "fit_amp_and_offset_imp: per-peak skews do not match the peaks" );
 
   assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
   if( !skew_parameters && (skew_type != PeakDef::SkewType::NoSkew) )
@@ -855,8 +861,14 @@ ScalarType fit_amp_and_offset_imp( const float *x,
   for( size_t i = 0; i < npeaks; ++i )
   {
     ScalarType *peak_areas = &(unit_peak_counts[i][0]);
+    const PeakDef::SkewType this_skew = per_peak_skews ? (*per_peak_skews)[i].first : skew_type;
+    const ScalarType *this_skew_pars = !per_peak_skews ? skew_parameters
+                           : ((*per_peak_skews)[i].second.empty() ? nullptr : (*per_peak_skews)[i].second.data());
+    assert( (this_skew == PeakDef::SkewType::NoSkew)
+            || (this_skew_pars && (!per_peak_skews
+                                   || ((*per_peak_skews)[i].second.size() == PeakDef::num_skew_parameters(this_skew)))) );
     PeakDists::photopeak_function_integral( means[i], sigmas[i], ScalarType(1.0),
-                                             skew_type, skew_parameters,
+                                             this_skew, this_skew_pars,
                                              nbin, x, peak_areas );
 
     if( cdf_step )

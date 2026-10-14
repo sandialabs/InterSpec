@@ -117,8 +117,7 @@ namespace
   // Realistic total-shield attenuation fraction for a generic (Z, areal-density) shield.
   double atten_factor( const double z, const double ad_gcm2, const double energy )
   {
-    const double mu = MassAttenuation::massAttenuationCoefficientFracAN( static_cast<float>(z),
-                                                                         static_cast<float>(energy) );
+    const double mu = MassAttenuation::massAttenuationCoefficientFracAN( z, energy );
     const double ad = ad_gcm2 * PhysicalUnits::g / PhysicalUnits::cm2;
     return std::exp( -mu * ad );
   }

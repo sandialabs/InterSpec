@@ -5602,12 +5602,8 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       if( atomic_number <= 0.0 || atomic_number > 100.0 )
         throw runtime_error( "Atomic number (AN) must be between 1 and 100." );
       
-      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
-      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-        static_cast<float>(atomic_number),
-        static_cast<float>(areal_density),
-        energy_float
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density,
+                                                                               energy * PhysicalUnits::keV );
       shield_transmission = exp( -mu );
     }
     else if( has_material && has_thickness && !has_ad && !has_an )
@@ -5628,12 +5624,8 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       if( thickness < 0.0 )
         throw runtime_error( "Thickness must be non-negative for material '" + material_name + "', got '" + thickness_str + "'." );
       
-      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
-      const double mu = GammaInteractionCalc::transmition_coefficient_material(
-        material.get(),
-        energy_float,
-        static_cast<float>(thickness)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material( material.get(),
+                                                                                energy * PhysicalUnits::keV, thickness );
       shield_transmission = exp( -mu );
     }
     else
@@ -5720,7 +5712,7 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     
     const float live_time = spectrum->live_time();
     const double air_transmission = (distance > 0.0) 
-      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy_float, static_cast<float>(distance) ) )
+      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy, distance ) )
       : 1.0;
     
     const double counts_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
@@ -6467,11 +6459,7 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
 
     for( const double energy : energies )
     {
-      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-        static_cast<float>(atomic_number),
-        static_cast<float>(areal_density),
-        static_cast<float>(energy)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, energy );
       const double transmission_fraction = std::exp( -mu );
       result.push_back( transmission_fraction );
     }
@@ -6497,11 +6485,7 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
 
     for( const double energy : energies )
     {
-      const double mu = GammaInteractionCalc::transmition_coefficient_material(
-        material.get(),
-        static_cast<float>(energy),
-        static_cast<float>(thickness)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thickness );
       const double transmission_fraction = std::exp( -mu );
       result.push_back( transmission_fraction );
     }
@@ -6874,7 +6858,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
   for( const double energy_kev : energies )
   {
-    const float energy = static_cast<float>( energy_kev * PhysicalUnits::keV );
+    const double energy = energy_kev * PhysicalUnits::keV;
 
     json result;
     result["energy"] = round_to_decimal_places( energy_kev, 2 );
@@ -6889,20 +6873,14 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
       if( shield.is_generic )
       {
-        const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-          static_cast<float>(shield.atomic_number),
-          static_cast<float>(shield.areal_density),
-          energy
-        );
+        const double mu = GammaInteractionCalc::transmition_coefficient_generic( shield.atomic_number,
+                                                                                 shield.areal_density, energy );
         attenuation = exp( -mu );
       }
       else
       {
-        const double mu = GammaInteractionCalc::transmition_coefficient_material(
-          shield.material.get(),
-          energy,
-          static_cast<float>(shield.thickness)
-        );
+        const double mu = GammaInteractionCalc::transmition_coefficient_material( shield.material.get(),
+                                                                                  energy, shield.thickness );
         attenuation = exp( -mu );
       }
 
@@ -6916,7 +6894,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     // Calculate air attenuation
     if( include_air )
     {
-      const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, static_cast<float>(air_distance) );
+      const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, air_distance );
       const double air_attenuation = exp( -mu );
       result["airAttenuation"] = round_to_sig_figs( air_attenuation, 6 );
       final_efficiency *= air_attenuation;
@@ -6929,7 +6907,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     //  need not multiply to.
     if( detector && detector->isValid() )
     {
-      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( energy );
+      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
 
       if( has_distance )
