@@ -789,7 +789,9 @@ bool DetectorGeometryInput::State::operator==( const State &rhs ) const
          && (collimatorMaterial == rhs.collimatorMaterial)
          && (collimatorThickness == rhs.collimatorThickness)
          && (collimatorExtension == rhs.collimatorExtension)
-         && (layers == rhs.layers);
+         && (layers == rhs.layers)
+         && (seededFromDiameterGuess == rhs.seededFromDiameterGuess)
+         && (importNotes == rhs.importNotes);
 }//State::operator==
 
 
@@ -826,6 +828,9 @@ DetectorGeometryInput::State DetectorGeometryInput::currentState() const
     state.layers.push_back( std::move(layer) );
   }//for( const LayerRow &row : m_layers )
 
+  state.seededFromDiameterGuess = m_seededFromDiameterGuess;
+  state.importNotes = m_importNotes->isHidden() ? string() : m_importNotes->text().toUTF8();
+
   return state;
 }//DetectorGeometryInput::currentState()
 
@@ -861,6 +866,11 @@ void DetectorGeometryInput::setState( const State &state )
   for( size_t i = 0; (i < m_layers.size()) && (i < state.layers.size()); ++i )
     m_layers[i].seededName = state.layers[i].seededName;
   m_removeLayer->setEnabled( m_layers.size() > 1 );
+
+  // Before handleShapeChange, whose validity note reads the guess flag.
+  m_seededFromDiameterGuess = state.seededFromDiameterGuess;
+  m_importNotes->setText( WString::fromUTF8(state.importNotes) );
+  m_importNotes->setHidden( state.importNotes.empty() );
 
   // Sync the shape-dependent row visibility (and, through `handleUserInput`, the validity note and
   //  collimator row) to the restored values.
@@ -1227,6 +1237,9 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_importNotes->setText( WString::fromUTF8(html) );
     m_importNotes->show();
   }
+
+  // A real descriptor, so no longer the length==diameter guess a seeder may have left.
+  m_seededFromDiameterGuess = false;
 
   handleShapeChange();
 }//setFromDescriptor(...)

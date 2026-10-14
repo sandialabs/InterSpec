@@ -2890,7 +2890,7 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               subAgentSummary = sanitizeUtf8( subAgentSummary );
               subAgentThinkingContent = sanitizeUtf8( subAgentThinkingContent );
 
-              if( sub_agent_convo->agent_type == AgentType::DeepResearch )
+              if( sub_agent_convo->agent_type == AgentType::KnowledgeBase )
               {
                 std::string trimmed_summary = subAgentSummary;
                 SpecUtils::trim( trimmed_summary );

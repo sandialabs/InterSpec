@@ -69,7 +69,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/DetectorPeakResponse.h"
-#include "InterSpec/LlmDeepResearchAgent.h"
+#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -79,6 +79,7 @@
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/LlmIsotopicsTool.h"
 #include "InterSpec/LlmActivityFitTool.h"
 #include "InterSpec/LlmRelActManualTool.h"
@@ -2589,19 +2590,29 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       LlmPromptTemplate::buildContext( config, LlmPromptTemplate::Surface::Agent, a ) ).first->second;
   };
 
+  // The KnowledgeBase agent is only offered if it has something to work from: skills in a
+  //  `llm_knowledge` directory, or a RAG endpoint.  Its description then lists the topics it covers.
+  const vector<LlmKnowledgeBase::SkillInfo> knowledge_skills = LlmKnowledgeBase::loadSkills();
+  const bool have_rag_endpoint = !config.llmApi.rag_url.empty();
+
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
   {
     // Skip MainAgent - it doesn't get its own invoke tool
     if( agent.type == AgentType::MainAgent )
       continue;
-    
+
+    if( (agent.type == AgentType::KnowledgeBase) && knowledge_skills.empty() && !have_rag_endpoint )
+      continue;
+
     // Create invoke_<AgentName> tool
     const string toolName = "invoke_" + agent.name;
 
     SharedTool invokeTool;
     invokeTool.name = toolName;
     invokeTool.description = agent.description;
+    if( agent.type == AgentType::KnowledgeBase )
+      invokeTool.description += LlmKnowledgeBase::invokeDescriptionSuffix( knowledge_skills, have_rag_endpoint );
     
     // Schema for invoke tool
     invokeTool.parameters_schema = json::parse(R"({
@@ -2831,18 +2842,14 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     registerTool( agentTool );
   }//if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
 
-  bool loaded_deep_research_skills = false;
-  LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
-                                              config.llmApi.deep_research_model,
-                                              config.llmApi.deep_research_corpora,
-                                              [this]( const SharedTool &tool ){ registerTool(tool); },
-                                              loaded_deep_research_skills );
+  LlmKnowledgeBase::registerKnowledgeBaseTools( knowledge_skills,
+                                                config.llmApi.rag_url,
+                                                config.llmApi.rag_model,
+                                                config.llmApi.rag_corpora,
+                                                [this]( const SharedTool &tool ){ registerTool(tool); } );
 
-  if( m_tools.find("invoke_DeepResearch") == end(m_tools) )
-    cerr << "Warning: DeepResearch agent invoke tool was not registered. Check llm_agents.xml configuration." << endl;
-
-  if( !loaded_deep_research_skills )
-    cerr << "Info: No DeepResearch SKILL.md files were found under llm_knowledge directories." << endl;
+  if( m_tools.find("invoke_KnowledgeBase") == end(m_tools) )
+    cerr << "Info: KnowledgeBase agent not available (no llm_knowledge skills and no RAG URL configured)." << endl;
 
   // NOTE: Hard-coded fallback tool definitions have been removed.
   // If no tools are loaded from XML, we throw an exception above.
@@ -2936,8 +2943,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "run_javascript"
   };
 
-  if( !config.llmApi.deep_research_url.empty() )
-    expectedTools.push_back( "query_deep_research_endpoint" );
+  if( !config.llmApi.rag_url.empty() )
+    expectedTools.push_back( "query_rag_endpoint" );
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Registered programmatically above (dev/automation only); list it so the drift checks below
@@ -2971,7 +2978,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     if( toolName.find("invoke_") == 0 )
       continue;
 
-    if( toolName.find("deepresearch_skill_") == 0 )
+    if( toolName.find("knowledge_") == 0 )
       continue;
 
     bool found = false;
@@ -3058,10 +3065,10 @@ std::map<std::string, const SharedTool*> ToolRegistry::getToolsForAgent( AgentTy
     if( !m_supportsImages && ((toolName == "get_spectrum_image") || (toolName == "get_time_chart_image")) )
       continue;
 
-    if( (agentType == AgentType::DeepResearch) && (toolName.find("invoke_") == 0) )
+    if( (agentType == AgentType::KnowledgeBase) && (toolName.find("invoke_") == 0) )
       continue;
 
-    if( (agentType == AgentType::DeepResearch) && tool.availableForAgents.empty() )
+    if( (agentType == AgentType::KnowledgeBase) && tool.availableForAgents.empty() )
       continue;
 
     // If availableForAgents is empty, tool is available to all agents
@@ -3094,10 +3101,10 @@ std::map<std::string, const SharedTool*> ToolRegistry::getToolsForMcp() const
     if( toolName.find( "invoke_" ) == 0 && toolName != "invoke_agent" )
       continue;
 
-    // Skip deep research tools
-    if( toolName.find( "deepresearch_skill_" ) == 0 )
+    // Skip KnowledgeBase tools
+    if( toolName.find( "knowledge_" ) == 0 )
       continue;
-    if( toolName == "query_deep_research_endpoint" )
+    if( toolName == "query_rag_endpoint" )
       continue;
 
     // Skip agent-only tools, unless they explicitly include McpServer
@@ -5994,8 +6001,33 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
     }
   }//if( !nuc && !el )
 
-  if( !nuc && !el && !rctn )
-    throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, or reaction." );
+  // Fission-product sources, e.g. "Fission U235 Thermal, 1d buildup" or "Cf252 + Spontaneous Fission"
+  //  (same syntax as the Reference Photopeak tool).  Checked before the nuclide/element/reaction lookup
+  //  result is used, since "Fission U235 ..." can otherwise partially match.
+  const SandiaDecay::Nuclide *fission_nuc = nullptr;
+  FissionType fission_type = FissionType::Thermal;
+  double fission_buildup = 0.0;
+  bool default_fission_buildup = false;
+  if( SpecUtils::icontains( params[source_key].get<string>(), "fission" ) )
+  {
+    if( !parse_fission_source_text( params[source_key].get<string>(), fission_nuc, fission_type, fission_buildup ) )
+      throw runtime_error( "Could not interpret '" + params[source_key].get<string>() + "' as a fission source;"
+                           " use e.g. 'Fission U235 Thermal, 1d buildup', 'Fission U238 Fast, 1y buildup',"
+                           " 'Fission Pu239 14 MeV, 1h buildup', or 'Cf252 + Spontaneous Fission'." );
+
+    if( (fission_type != FissionType::Spontaneous) && (fission_buildup <= 0.0) )
+    {
+      fission_buildup = 24.0 * 3600.0 * PhysicalUnits::second;
+      default_fission_buildup = true;
+    }
+
+    nuc = nullptr;
+    el = nullptr;
+    rctn = nullptr;
+  }//if( fission source )
+
+  if( !nuc && !el && !rctn && !fission_nuc )
+    throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, reaction, or fission source." );
 
   const string age_key = find_case_insensitive_key( "age", params );
   
@@ -6007,10 +6039,10 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   {
     const string &age_str = params[age_key];
 
-    if( !nuc && !age_str.empty() )
-      throw runtime_error( "You can only specify 'age' for a nuclide source" );
+    if( !nuc && !fission_nuc && !age_str.empty() )
+      throw runtime_error( "You can only specify 'age' for a nuclide or fission source" );
 
-    if( nuc )
+    if( nuc || fission_nuc )
     {
       try
       {
@@ -6027,6 +6059,11 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
   if( nuc && !interpreted_age )
     age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
+
+  // Fission: 'age' is the cool-off time after irradiation (induced) or the source age (spontaneous);
+  //  default to 1 day, same as the Reference Photopeak tool.
+  if( fission_nuc && !interpreted_age )
+    age_in_seconds = 24.0 * 3600.0;
   
   const string max_results_key = find_case_insensitive_key( "maxResults", params );
   
@@ -6255,6 +6292,50 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
       if( static_cast<int>(nuc_gamma_coincidences.size()) > max_results )
         nuc_gamma_coincidences.resize( static_cast<size_t>(max_results) );
     }//if( cascade )
+  }else if( fission_nuc )
+  {
+    const bool spontaneous = (fission_type == FissionType::Spontaneous);
+    const shared_ptr<const vector<FissionLine>> lines = fission_photons( fission_nuc, fission_type,
+                                                    fission_buildup, age_in_seconds * PhysicalUnits::second );
+    if( !lines || lines->empty() )
+      throw runtime_error( "No fission-product photons computed for '" + params[source_key].get<string>() + "'." );
+
+    // Merge same-energy lines (from the same parent, if parents are requested); positrons become 511 keV.
+    map<pair<float,string>, double> merged;
+    for( const FissionLine &line : *lines )
+    {
+      if( !(line.relative_amplitude > 0.0) || IsInf(line.relative_amplitude) || IsNan(line.relative_amplitude) )
+        continue;
+
+      const bool is_positron = (line.particle_type == SandiaDecay::ProductType::PositronParticle);
+      const float energy = is_positron ? 510.9989f : static_cast<float>( line.energy );
+      string label;
+      if( include_parent && line.parent )
+        label = line.parent->symbol + ((line.particle_type == SandiaDecay::ProductType::XrayParticle) ? " xray" : "");
+      merged[ make_pair(energy, label) ] += line.relative_amplitude;
+    }//for( const FissionLine &line : *lines )
+
+    // For spontaneous fission, also include the parent nuclide's own decay photons (aged per 'age'),
+    //  on the same per-Bq-of-parent basis as the fission-product amplitudes.
+    if( spontaneous )
+    {
+      SandiaDecay::NuclideMixture mix;
+      mix.addAgedNuclideByActivity( fission_nuc, 1.0*SandiaDecay::Bq, age_in_seconds * SandiaDecay::second );
+      for( const SandiaDecay::EnergyRatePair &erp : mix.photons( 0.0 ) )
+        merged[ make_pair( static_cast<float>(erp.energy), include_parent ? (fission_nuc->symbol + " decay chain") : string() ) ] += erp.numPerSecond;
+    }//if( spontaneous )
+
+    double max_amp = 0.0;
+    for( const auto &entry : merged )
+      max_amp = std::max( max_amp, entry.second );
+
+    result.reserve( merged.size() );
+    for( const auto &entry : merged )
+    {
+      // Induced-fission amplitudes are only relative, so normalize to the strongest line.
+      const double intensity = spontaneous ? entry.second : ((max_amp > 0.0) ? (entry.second / max_amp) : 0.0);
+      result.push_back( { static_cast<double>(entry.first.first), intensity, entry.first.second } );
+    }
   }else if( el )
   {
     result.reserve( el->xrays.size() );
@@ -6326,8 +6407,9 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   // nuclides, or intensity relative to the strongest line (max = 1) for x-rays and reactions.
   nlohmann::json columns = nlohmann::json::array();
   columns.push_back( "energy_keV" );
-  columns.push_back( nuc ? "intensity_perBq" : "intensity_rel" );
-  if( include_parent && nuc )
+  const bool spontaneous_fission = (fission_nuc && (fission_type == FissionType::Spontaneous));
+  columns.push_back( (nuc || spontaneous_fission) ? "intensity_perBq" : "intensity_rel" );
+  if( include_parent && (nuc || fission_nuc) )
     columns.push_back( "parent" );
 
   nlohmann::json answer = nlohmann::json::object();
@@ -6341,20 +6423,63 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   }else if( rctn )
   {
     answer["source"] = rctn->name();
+  }else if( fission_nuc )
+  {
+    const char *type_str = "";
+    switch( fission_type )
+    {
+      case FissionType::Thermal:     type_str = "Thermal"; break;
+      case FissionType::Fast:        type_str = "Fast";    break;
+      case FissionType::FourteenMeV: type_str = "14 MeV";  break;
+      case FissionType::Spontaneous: type_str = "Spontaneous"; break;
+    }
+
+    if( spontaneous_fission )
+    {
+      answer["source"] = fission_nuc->symbol + " + Spontaneous Fission";
+      answer["age"] = PhysicalUnits::printToBestTimeUnits( age_in_seconds * PhysicalUnits::second, 4 );
+      answer["note"] = "Spontaneous fission: intensities are photons per Bq of current " + fission_nuc->symbol
+                       + " activity, including its own decay-chain photons plus the fission products accumulated"
+                         " over 'age' (time since source production).";
+    }else
+    {
+      answer["source"] = "Fission " + fission_nuc->symbol + " " + type_str + ", "
+                         + PhysicalUnits::printToBestTimeUnits( fission_buildup, 4 ) + " buildup";
+      answer["buildup"] = PhysicalUnits::printToBestTimeUnits( fission_buildup, 4 );
+      answer["coolOffTime"] = PhysicalUnits::printToBestTimeUnits( age_in_seconds * PhysicalUnits::second, 4 );
+      answer["note"] = string("Induced fission products: constant-rate irradiation for 'buildup', then decay for")
+                       + " 'coolOffTime' (the 'age' parameter); intensities are relative to the strongest line."
+                       + (default_fission_buildup ? " No buildup time was given, so 1 day was assumed." : "")
+                       + (interpreted_age ? "" : " No 'age' (cool-off time) was given, so 1 day was assumed.");
+    }
   }
 
   // The handful of energies an analyst would consider "characteristic" of this source - i.e., the
   // most prominent or unique peaks to look for first.  Nearly free to include, and it saves the
   // model a separate lookup (this replaces the old 'primary_gammas_for_source' tool).
-  try
+  if( fission_nuc )
   {
+    // For fission products, the "characteristic" energies are just the strongest lines at this age.
+    vector<PhotonEntry> by_intensity = result;
+    std::sort( begin(by_intensity), end(by_intensity), []( const PhotonEntry &lhs, const PhotonEntry &rhs ){
+      return lhs.intensity > rhs.intensity;
+    } );
     nlohmann::json prominent = nlohmann::json::array();
-    for( const float e : AnalystChecks::get_characteristic_gammas( answer["source"].get<string>() ) )
-      prominent.push_back( round_to_decimal_places(e, 2) );
+    for( size_t i = 0; (i < by_intensity.size()) && (i < 10); ++i )
+      prominent.push_back( round_to_decimal_places(by_intensity[i].energy, 2) );
     answer["prominent_energies_keV"] = std::move(prominent);
-  }catch( std::exception & )
+  }else
   {
-  }
+    try
+    {
+      nlohmann::json prominent = nlohmann::json::array();
+      for( const float e : AnalystChecks::get_characteristic_gammas( answer["source"].get<string>() ) )
+        prominent.push_back( round_to_decimal_places(e, 2) );
+      answer["prominent_energies_keV"] = std::move(prominent);
+    }catch( std::exception & )
+    {
+    }
+  }//if( fission_nuc ) / else
 
   answer["photons"] = nlohmann::json{ {"columns", std::move(columns)}, {"rows", std::move(rows)} };
 

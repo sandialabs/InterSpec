@@ -197,7 +197,7 @@ When done, use the "set_workflow_state" tool-call to transition to the WORK_ON_N
             <Tool>compton_scatter_peak_check</Tool>
             <Tool>get_loaded_spectra</Tool>
           </SuggestedTools>
-          <!-- TODO: Consider adding `invoke_DeepResearch` as a SuggestedTool for cases where no candidates are found via normal search. This may help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but can add latency. -->
+          <!-- TODO: Consider adding `invoke_KnowledgeBase` as a SuggestedTool for cases where no candidates are found via normal search. This may help identify unusual sources (uncommon industrial isotopes, activation products, etc.) but can add latency. -->
           <PromptGuidance>We are currently investigating possible sources for a peak; we want to assign the most likely ultimate parent source to this peak (e.g., if the Ra226 decay chain is present we will assign the peak to Ra226), considering the entire problem, other peaks (that may or may not be from the same source), other sources already identified, and sources associated with the other already identified sources.
 
           Assigning the correct source to a peak is extremely challenging, so put in maximum effort into this investigation and considering all factors.

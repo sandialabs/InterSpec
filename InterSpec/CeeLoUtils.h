@@ -539,6 +539,22 @@ namespace CeeLoUtils
                       const size_t num_points = 48 );
 
 
+  /** Whether @p resp carries a Monte-Carlo efficiency of its own (a full or quick-MC scan), and so
+   is still a valid detector with its grounding removed.  A curve transfer (which includes an
+   imported grid) builds its efficiency *from* the anchor curve, so there is nothing under it.
+   */
+  bool responseHasMcBackbone( const ceelo::DetectorResponse &resp );
+
+
+  /** A deep copy of @p resp with its grounding (the k(E) that pins it to measured or curve-derived
+   points) removed, so it answers with the bare Monte-Carlo efficiency.  The model-transfer, floor
+   and per-node sigma terms are kept: they describe the Monte Carlo's own uncertainty.
+
+   Only meaningful for a response with #responseHasMcBackbone.  Throws on a copy failure.
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> withoutGrounding( const ceelo::DetectorResponse &resp );
+
+
   /** A copy of @p drf whose ordinary efficiency curve reproduces the attached Monte-Carlo
    response's ABSOLUTE full-energy efficiency for an on-axis point source at @p distance -
    a "flat-disk equivalent" of the detector, valid at that one position.

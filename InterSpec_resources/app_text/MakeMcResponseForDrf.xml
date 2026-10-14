@@ -184,6 +184,17 @@
     grid.  The grid&apos;s full-energy-peak efficiencies are unchanged; this geometry is used for
     Monte-Carlo total efficiency, and fixed-geometry calculations.</message>
   <message id="mmr-grid-geom-revert">Revert to Imported Geometry</message>
+  <message id="mmr-import-geom-btn">Import geometry from file...</message>
+  <message id="mmr-tt-import-geom">Take the detector geometry from another detector file - an
+    InterSpec detector (.drf.xml) with a geometry, an ANGLE .outx/.detx, or a GADRAS Detector.dat.
+    Only the geometry is used; this detector's efficiency curve and other settings are kept.</message>
+  <message id="mmr-import-geom-title">Import Detector Geometry</message>
+  <message id="mmr-import-geom-body">Select a detector file that describes the detector's physical
+    geometry: an InterSpec detector (.drf.xml) with a geometry, an ANGLE .outx or .detx file, or a
+    GADRAS Detector.dat.  Only the geometry is imported.</message>
+  <message id="mmr-import-geom-none">&quot;{1}&quot; does not describe a detector geometry.</message>
+  <message id="mmr-import-geom-error">Could not read a detector geometry from &quot;{1}&quot;: {2}</message>
+  <message id="mmr-import-geom-too-large">The selected file is too large to upload.</message>
   <message id="mmr-grid-replaced-note">Building or generating another response replaces the
     efficiency grid imported from the .par file; select &quot;Imported efficiency grid&quot; to keep it.</message>
   <message id="mmr-status-existing">Showing the response already attached to this detector.</message>

@@ -112,7 +112,7 @@ nlohmann::json buildContext( const LlmConfig &config, const Surface surface, con
   if( !isMcp )
     ctx["agent"] = { { "name", agentTypeToString( agent ) } };
   ctx["mcp_enabled"] = config.mcpServer.enabled;
-  ctx["deep_research_enabled"] = !api.deep_research_url.empty();
+  ctx["rag_enabled"] = !api.rag_url.empty();
 
   return ctx;
 }//buildContext(...)

@@ -31,7 +31,7 @@ std::string agentTypeToString( AgentType type )
     case AgentType::NuclideId:       return "NuclideId";
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
-    case AgentType::DeepResearch:    return "DeepResearch";
+    case AgentType::KnowledgeBase:   return "KnowledgeBase";
     case AgentType::EnergyCalibration: return "EnergyCalibration";
     case AgentType::SpectrumTimeHistory: return "SpectrumTimeHistory";
     case AgentType::InSitu:          return "InSitu";
@@ -48,7 +48,7 @@ AgentType stringToAgentType( const std::string &name )
   if( name == "NuclideId" )       return AgentType::NuclideId;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
-  if( name == "DeepResearch" )    return AgentType::DeepResearch;
+  if( name == "KnowledgeBase" )   return AgentType::KnowledgeBase;
   if( name == "EnergyCalibration" ) return AgentType::EnergyCalibration;
   if( name == "SpectrumTimeHistory" ) return AgentType::SpectrumTimeHistory;
   if( name == "InSitu" )          return AgentType::InSitu;
@@ -184,7 +184,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
   //  so we will stub a dummy one in here - this must come before the early return below.
   config->llmApi.enabled = true;
-  config->llmApi.deep_research_url = "";
+  config->llmApi.rag_url = "";
   {
     LlmApi::ModelInfo stubModel;
     stubModel.name = "AnInvalidMdoel";
@@ -216,7 +216,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
       AgentType::NuclideId,
       AgentType::ActivityFit,
       AgentType::Isotopics,
-      AgentType::DeepResearch,
+      AgentType::KnowledgeBase,
       AgentType::EnergyCalibration,
       AgentType::SpectrumTimeHistory,
       AgentType::InSitu
@@ -252,7 +252,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     requireAgent( AgentType::MainAgent, *config );
     requireAgent( AgentType::NuclideId, *config );
     requireAgent( AgentType::ActivityFit, *config );
-    requireAgent( AgentType::DeepResearch, *config );
+    requireAgent( AgentType::KnowledgeBase, *config );
   }
    
   try
@@ -582,28 +582,28 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       // Load global optional fields
       string value_str;
 
-      const rapidxml::xml_node<char> * const deep_research_url = XML_FIRST_NODE( llmApiNode, "DeepResearchUrl" );
-      value_str = SpecUtils::xml_value_str( deep_research_url );
+      const rapidxml::xml_node<char> * const rag_url = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagUrl" );
+      value_str = SpecUtils::xml_value_str( rag_url );
       SpecUtils::trim( value_str );
-      llmApi.deep_research_url = value_str;
+      llmApi.rag_url = value_str;
 
-      // Optional model and corpora for the deep-research endpoint; absent means use the defaults
-      //  in LlmDeepResearchAgent.cpp, so configs predating these elements keep working.
-      const rapidxml::xml_node<char> * const deep_research_model = XML_FIRST_NODE( llmApiNode, "DeepResearchModel" );
-      value_str = SpecUtils::xml_value_str( deep_research_model );
+      // Optional model and corpora for the RAG endpoint; absent means use the defaults
+      //  in LlmKnowledgeBase.cpp, so configs predating these elements keep working.
+      const rapidxml::xml_node<char> * const rag_model = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagModel" );
+      value_str = SpecUtils::xml_value_str( rag_model );
       SpecUtils::trim( value_str );
-      llmApi.deep_research_model = value_str;
+      llmApi.rag_model = value_str;
 
-      llmApi.deep_research_corpora.clear();
-      const rapidxml::xml_node<char> * const deep_research_corpora = XML_FIRST_NODE( llmApiNode, "DeepResearchCorpora" );
-      value_str = SpecUtils::xml_value_str( deep_research_corpora );
+      llmApi.rag_corpora.clear();
+      const rapidxml::xml_node<char> * const rag_corpora = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagCorpora" );
+      value_str = SpecUtils::xml_value_str( rag_corpora );
       vector<string> corpora;
       SpecUtils::split( corpora, value_str, "," );
       for( string &corpus : corpora )
       {
         SpecUtils::trim( corpus );
         if( !corpus.empty() )
-          llmApi.deep_research_corpora.push_back( corpus );
+          llmApi.rag_corpora.push_back( corpus );
       }
 
       // Load optional CompactionSystemPrompt (if not present, remains empty - default used at runtime)
@@ -832,24 +832,24 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
   // round-tripping the config through "LLM Provider Settings" never drops them.
   append_comment( llmApi,
     " Optional <LlmApi> elements:\n"
-    "         <DeepResearchUrl>        - HTTP endpoint for the DeepResearch sub-agent's query tool; empty disables it.\n"
-    "         <DeepResearchModel>      - model the deep-research service should use; empty uses the built-in default.\n"
-    "         <DeepResearchCorpora>    - comma-separated corpora for it to search; empty uses the built-in default.\n"
+    "         <KnowledgeBaseRagUrl>    - HTTP RAG endpoint for the KnowledgeBase sub-agent's query tool; empty disables it.\n"
+    "         <KnowledgeBaseRagModel>  - model the RAG service should use; empty uses the built-in default.\n"
+    "         <KnowledgeBaseRagCorpora>    - comma-separated corpora for it to search; empty uses the built-in default.\n"
     "         <CompactionSystemPrompt> - overrides the default prompt used when summarizing old conversation history.\n"
     "         <DebugFile>              - \"stdout\", \"stderr\", or a file path for verbose LLM debug logging; empty disables it. " );
 
-  if( !config.llmApi.deep_research_url.empty() )
-    XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+  if( !config.llmApi.rag_url.empty() )
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagUrl", config.llmApi.rag_url );
 
-  if( !config.llmApi.deep_research_model.empty() )
-    XmlUtils::append_string_node( llmApi, "DeepResearchModel", config.llmApi.deep_research_model );
+  if( !config.llmApi.rag_model.empty() )
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagModel", config.llmApi.rag_model );
 
-  if( !config.llmApi.deep_research_corpora.empty() )
+  if( !config.llmApi.rag_corpora.empty() )
   {
     string corpora;
-    for( const string &corpus : config.llmApi.deep_research_corpora )
+    for( const string &corpus : config.llmApi.rag_corpora )
       corpora += (corpora.empty() ? "" : ",") + corpus;
-    XmlUtils::append_string_node( llmApi, "DeepResearchCorpora", corpora );
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagCorpora", corpora );
   }
 
   if( !config.llmApi.compactionSystemPrompt.empty() )

@@ -585,7 +585,7 @@ void LlmMcpResource::register_default_tools()
   if( !llm_config_ )
     throw std::logic_error( "LlmMcpResource: should not have null llm config" );
 
-  // Get tools filtered for MCP (excludes invoke_*, deep research, agent-only tools)
+  // Get tools filtered for MCP (excludes invoke_*, KnowledgeBase, agent-only tools)
   for( const auto &[name, sharedTool] : tool_registry_->getToolsForMcp() )
   {
     ToolInfo info;

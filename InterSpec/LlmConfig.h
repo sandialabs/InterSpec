@@ -49,7 +49,7 @@ enum class AgentType : int
   NuclideId,
   ActivityFit,
   Isotopics,
-  DeepResearch,
+  KnowledgeBase,   // Answers domain-knowledge questions from curated `llm_knowledge` skills
   EnergyCalibration,
   SpectrumTimeHistory,
   InSitu,          // Specialized agent for in-situ gamma spectrometry surface/soil contamination analysis
@@ -331,32 +331,32 @@ public:
      At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
 
      This field will be a value like: "http://localhost:8000/query", which if you fill it out, will cause the
-     DeepResearch sub-agent to have access to the `query_deep_research_endpoint` tool-call, and post a message
+     KnowledgeBase sub-agent to have access to the `query_rag_endpoint` tool-call, and post a message
      formatted like:
      ```
      {"query": "what is the primary use of Ba133?", "model": "openai/gpt-oss-120b", "corpora": ["example_corpra"]}
      ```
 
-     If you leave this field blank, the DeepResearch sub-agent still remains available, but without
+     If you leave this field blank, the KnowledgeBase sub-agent is still available if any skills are found, but without
      the remote endpoint query tool-call.
      */
-    std::string deep_research_url;
+    std::string rag_url;
 
-    /** Model identifier sent as the `model` field of the deep-research POST body.
+    /** Model identifier sent as the `model` field of the RAG endpoint POST body.
 
      This names a model the *remote* research service understands (e.g., "openai/gpt-oss-120b"); it is
      unrelated to the provider/model InterSpec itself talks to.  Empty means use the built-in default.
-     Only used when `deep_research_url` is non-empty.
+     Only used when `rag_url` is non-empty.
      */
-    std::string deep_research_model;
+    std::string rag_model;
 
-    /** Corpora for the deep-research service to search, sent as the `corpora` array.
+    /** Corpora for the RAG service to search, sent as the `corpora` array.
 
      The remote service validates these against a fixed list of corpus names, and has renamed its corpus
      before, so this is configurable to survive a rename without needing a rebuild.  Empty means use the
-     built-in default.  Only used when `deep_research_url` is non-empty.
+     built-in default.  Only used when `rag_url` is non-empty.
      */
-    std::vector<std::string> deep_research_corpora;
+    std::vector<std::string> rag_corpora;
 
     /** System prompt used for context compaction (summarization of older conversation history).
 

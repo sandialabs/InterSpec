@@ -889,7 +889,7 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
       <Agent>NuclideId</Agent>
       <Agent>ActivityFit</Agent>
       <Agent>Isotopics</Agent>
-      <Agent>DeepResearch</Agent>
+      <Agent>KnowledgeBase</Agent>
       <Agent>SpectrumTimeHistory</Agent>
       <Agent>InSitu</Agent>
     </AvailableFor>
@@ -897,7 +897,7 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
 
   <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
-    <Description>Returns the photon lines (energy in keV, and intensity) emitted by a nuclide, fluorescence x-ray element, or nuclear reaction.
+    <Description>Returns the photon lines (energy in keV, and intensity) emitted by a nuclide, fluorescence x-ray element, nuclear reaction, or a mixture of fission products.
 
 Use when: you know the source and need its gamma/x-ray line energies and intensities - e.g., to predict which peaks it produces, or compare expected vs observed peak amplitudes.
 Do not use to find what sources emit near an energy - use 'sources_with_gammas_near_energy' (catalog lookup) or 'search_sources_by_energy' (ranked against loaded spectrum) instead.
@@ -905,18 +905,19 @@ Do not use to find what sources emit near an energy - use 'sources_with_gammas_n
 Output notes:
 - 'photons' is a compact table: 'columns' names the fields, 'rows' has one entry per line. For nuclides, 'intensity_perBq' is photons per becquerel of parent activity (decay-chain progeny included, aged per 'age'); for x-ray elements and reactions, 'intensity_rel' is relative to the strongest line (max 1).
 - 'prominent_energies_keV' lists the few energies most characteristic of this source - check for these first. Not seeing a peak at these energies does not rule the source out, but seeing them makes it a stronger candidate.
+- Fission products: use a source like "Fission U235 Thermal, 1d buildup", "Fission U238 Fast, 1y buildup", "Fission Pu239 14 MeV, 1h buildup" (fission types: Thermal, Fast, 14 MeV), with 'age' as the cool-off time since irradiation ended; intensities are relative to the strongest line.  For a spontaneous-fission source use e.g. "Cf252 + Spontaneous Fission" with 'age' as the source age; intensities are then photons per Bq of the parent, including its own decay photons.  Useful to see which fission products dominate at a given time after fission, and their relative line intensities.
 - If cascade sums are requested: 'coincidenceIntensity' is how often the two photons are emitted simultaneously (NOT a detection rate); apply attenuation and detection efficiency to each photon individually, then multiply by it. Only relevant for sources closer than ~15 cm to the detector.</Description>
-    <Description role="NuclideId">Your candidate-validation tool: returns all photon lines (energy_keV, intensity) of a source, plus 'prominent_energies_keV' - the characteristic energies to check for first. Use e.g. {"source": "Co60", "sortOrder": "intensity", "maxResults": 25} when checking for corroborating peaks of a candidate. Absence of a prominent line does not rule a source out (attenuation, low BR, interference), but presence makes it a stronger candidate. For nuclides, intensities are photons per Bq of parent (progeny included, aged per 'age'); for x-ray elements/reactions, relative to the strongest line.</Description>
+    <Description role="NuclideId">Your candidate-validation tool: returns all photon lines (energy_keV, intensity) of a source, plus 'prominent_energies_keV' - the characteristic energies to check for first. Use e.g. {"source": "Co60", "sortOrder": "intensity", "maxResults": 25} when checking for corroborating peaks of a candidate. Absence of a prominent line does not rule a source out (attenuation, low BR, interference), but presence makes it a stronger candidate. For nuclides, intensities are photons per Bq of parent (progeny included, aged per 'age'); for x-ray elements/reactions, relative to the strongest line. For suspected fresh fission products, check the expected mixture with e.g. {"source": "Fission U235 Thermal, 1d buildup", "age": "7 days", "sortOrder": "intensity", "maxResults": 30} (relative intensities).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "source": {
           "type": "string",
-          "description": "The nuclide, element, or reaction for which to retrieve decay product data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction)."
+          "description": "The nuclide, element, reaction, or fission source for which to retrieve photon data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction), 'Fission U235 Thermal, 1d buildup' or 'Cf252 + Spontaneous Fission' (fission products)."
         },
         "age": {
           "type": "string",
-          "description":  "The age of the nuclide at which to return decay products. Applicable only for nuclides; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
+          "description":  "The age of the nuclide at which to return decay products; for an induced-fission source, the cool-off time after irradiation ended; for a spontaneous-fission source, the source age (defaults to 1 day for fission sources). Applicable only for nuclides and fission sources; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
         },
         "maxResults": {
           "type": "integer",
