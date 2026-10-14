@@ -55,7 +55,7 @@ namespace Wt
  The window edits a working copy of the full `LlmConfig` (seeded from the currently-loaded config, or
  the on-disk file, or a default template) and on "Accept" writes a documented `llm_config.xml` into
  `InterSpec::writableDataDirectory()`.  Only the GUI-exposed fields are edited; everything else in the
- working copy (e.g. DeepResearchUrl, CompactionSystemPrompt, DebugFile) is preserved so the config
+ working copy (e.g. KnowledgeBaseRagUrl, CompactionSystemPrompt, DebugFile) is preserved so the config
  round-trips without data loss.
 
  After a successful save the supplied `onSaved` callback is invoked so the caller can re-read the

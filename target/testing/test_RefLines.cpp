@@ -440,6 +440,66 @@ BOOST_AUTO_TEST_CASE( basicRefLineTest )
 }//BOOST_AUTO_TEST_CASE( basicRefLineTest )
 
 
+BOOST_AUTO_TEST_CASE( testFissionSourceParsing )
+{
+  SetDataDirs::set_data_dir();
+
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  FissionType type = FissionType::Thermal;
+  double buildup = -1.0;
+
+  BOOST_REQUIRE( parse_fission_source_text( "Fission U238 Fast, 1y buildup", nuc, type, buildup ) );
+  BOOST_REQUIRE( nuc );
+  BOOST_CHECK_EQUAL( nuc->symbol, "U238" );
+  BOOST_CHECK( type == FissionType::Fast );
+  BOOST_CHECK_CLOSE( buildup, PhysicalUnits::stringToTimeDuration("1y"), 1.0E-6 );
+
+  BOOST_REQUIRE( parse_fission_source_text( "Fission Pu239 14 MeV, 3 days buildup", nuc, type, buildup ) );
+  BOOST_CHECK_EQUAL( nuc->symbol, "Pu239" );
+  BOOST_CHECK( type == FissionType::FourteenMeV );
+  BOOST_CHECK_CLOSE( buildup, 3.0*24.0*3600.0*PhysicalUnits::second, 1.0E-6 );
+
+  BOOST_REQUIRE( parse_fission_source_text( "Cf252 + Spontaneous Fission", nuc, type, buildup ) );
+  BOOST_CHECK_EQUAL( nuc->symbol, "Cf252" );
+  BOOST_CHECK( type == FissionType::Spontaneous );
+  BOOST_CHECK_EQUAL( buildup, 0.0 );
+
+  BOOST_REQUIRE( parse_fission_source_text( "Fission U235 Thermal", nuc, type, buildup ) );
+  BOOST_CHECK( type == FissionType::Thermal );
+  BOOST_CHECK_EQUAL( buildup, 0.0 ); //caller picks a default
+
+  BOOST_CHECK( !parse_fission_source_text( "U235", nuc, type, buildup ) );
+  BOOST_CHECK( !parse_fission_source_text( "Fission U235", nuc, type, buildup ) );
+  BOOST_CHECK( !parse_fission_source_text( "Fission Thermal", nuc, type, buildup ) );
+
+  // The reference-line path should still produce fission lines, with normalized input text
+  RefLineInput input;
+  input.m_input_txt = "Fission U235 Thermal";
+  input.m_age = "1 day";
+  input.m_showGammas = true;
+  std::shared_ptr<ReferenceLineInfo> ref_lines;
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
+  BOOST_REQUIRE( ref_lines );
+  BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );
+  BOOST_CHECK( ref_lines->m_source_type == ReferenceLineInfo::SourceType::FissionRefLines );
+  BOOST_CHECK_EQUAL( ref_lines->m_input.m_input_txt, "Fission U235 Thermal 1d buildup" );
+  BOOST_CHECK( !ref_lines->m_ref_lines.empty() );
+
+  input.m_input_txt = "Fission U235 Sideways";
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
+  BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::InvalidSource );
+
+  // fission_photons directly
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  std::shared_ptr<const std::vector<FissionLine>> lines;
+  BOOST_REQUIRE_NO_THROW( lines = fission_photons( db->nuclide("U235"), FissionType::Thermal,
+                                                     3600.0*PhysicalUnits::second, 24.0*3600.0*PhysicalUnits::second ) );
+  BOOST_REQUIRE( lines && !lines->empty() );
+  for( size_t i = 1; i < lines->size(); ++i )
+    BOOST_CHECK_LE( (*lines)[i-1].energy, (*lines)[i].energy );
+}//BOOST_AUTO_TEST_CASE( testFissionSourceParsing )
+
+
 BOOST_AUTO_TEST_CASE( testReaction )
 {
   SetDataDirs::set_data_dir();

@@ -592,24 +592,8 @@ shared_ptr<const vector<NuclideYield>> fission_nuclide_info( const SandiaDecay::
 }//vector<NuclideYield> fission_nuclide_info( const SandiaDecay::Nuclide *nuclide )
 
 
-/** Holds information for a sinlge gamma/x-ray line, resulting from the fission decay chain. */
-struct FissionLine
-{
-  const SandiaDecay::Nuclide *parent = nullptr;
-  const SandiaDecay::Transition * transition = nullptr;
-  SandiaDecay::ProductType particle_type;
-  double energy;
-  double relative_amplitude;
-};//struct FissionLine
+}//namespace (closed temporarily so fission_photons(...) has external linkage)
 
-
-enum class FissionType
-{
-  Thermal,
-  FourteenMeV,
-  Fast,
-  Spontaneous
-};
 
 std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::Nuclide *nuc, const FissionType type,
                                                              const double irradiation_time_seconds, const double cool_off_time )
@@ -980,6 +964,125 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
   
   return keeper_lines;
 }//shared_ptr<vector<FissionLine>> fission_photons(...)
+
+
+bool parse_fission_source_text( const std::string &text, const SandiaDecay::Nuclide *&nuc_out,
+                                FissionType &type_out, double &buildup_out )
+{
+  // Input can be:
+  //   "Fission U238 Thermal, 1d buildup"    (induced-fission)
+  //   "Cf252 + Spontaneous Fission"          (spontaneous fission)
+  //   "Fission Cf252 Spontaneous"            (also supported)
+  if( !SpecUtils::icontains( text, "Fission" ) )
+    return false;
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    return false;
+
+  string input_txt = text;
+  SpecUtils::ireplace_all( input_txt, "Fission", " " );
+  SpecUtils::ireplace_all( input_txt, "+", " " );
+  SpecUtils::ireplace_all( input_txt, "  ", " " );
+  SpecUtils::trim( input_txt );
+
+  FissionType type = FissionType::Thermal;
+  if( SpecUtils::icontains(input_txt, "Thermal") )
+  {
+    type = FissionType::Thermal;
+    SpecUtils::ireplace_all( input_txt, "Thermal", "" );
+  }else if( SpecUtils::icontains(input_txt, "Fast") )
+  {
+    type = FissionType::Fast;
+    SpecUtils::ireplace_all( input_txt, "Fast", "" );
+  }else if( SpecUtils::icontains(input_txt, "14 MeV")
+           || SpecUtils::icontains(input_txt, "14MeV")
+           || SpecUtils::icontains(input_txt, "14-MeV") )
+  {
+    type = FissionType::FourteenMeV;
+    SpecUtils::ireplace_all( input_txt, "14MeV", "" );
+    SpecUtils::ireplace_all( input_txt, "14 MeV", "" );
+    SpecUtils::ireplace_all( input_txt, "14-MeV", "" );
+  }else if( SpecUtils::icontains(input_txt, "Spontaneous") )
+  {
+    type = FissionType::Spontaneous;
+    SpecUtils::ireplace_all( input_txt, "Spontaneous", "" );
+  }else
+  {
+    return false;
+  }
+
+  SpecUtils::ireplace_all( input_txt, "buildup", "" );
+  SpecUtils::ireplace_all( input_txt, "build-up", "" );
+  SpecUtils::ireplace_all( input_txt, "  ", " " );
+  SpecUtils::trim( input_txt );
+
+  // Find the fissioning nuclide; it may be the whole remaining text, or one or two of its fields
+  vector<string> fields;
+  SpecUtils::split( fields, input_txt, ", " );
+
+  const SandiaDecay::Nuclide *nuc = db->nuclide( input_txt );
+  size_t nuc_field_end = 0;  //index one past the field(s) that made up the nuclide
+  for( size_t i = 0; !nuc && (i < fields.size()); ++i )
+  {
+    nuc = db->nuclide( fields[i] );
+    nuc_field_end = i + 1;
+    if( !nuc && ((i + 1) < fields.size()) )
+    {
+      nuc = db->nuclide( fields[i] + fields[i+1] );
+      nuc_field_end = i + 2;
+    }
+  }//for( loop over fields to find nuclide )
+
+  if( !nuc || (nuc->isomerNumber > 0) )
+    return false;
+
+  // Look for a buildup time in the remaining fields (e.g., "1d", "1 y", "3 days")
+  double buildup = 0.0;
+  if( type != FissionType::Spontaneous )
+  {
+    bool found_buildup = false;
+    for( size_t i = 0; !found_buildup && (i < fields.size()); ++i )
+    {
+      if( i < nuc_field_end )  //skip the field(s) that made up the nuclide (e.g., "Pu", "239")
+        continue;
+
+      const string &field = fields[i];
+      const char c = field.empty() ? ' ' : field[0];
+      if( field.empty() || (((c < '0') || (c > '9')) && (c != '.')) )
+        continue;
+
+      // Try two fields first (e.g., "3", "days"), since a bare number would be interpreted as seconds
+      for( const size_t nfields : {size_t(2), size_t(1)} )
+      {
+        if( found_buildup || ((i + nfields) > fields.size()) )
+          continue;
+
+        const string candidate = (nfields == 1) ? field : (field + fields[i+1]);
+        try
+        {
+          const double t = PhysicalUnits::stringToTimeDuration( candidate );
+          if( t >= 1.0*PhysicalUnits::second )
+          {
+            buildup = t;
+            found_buildup = true;
+          }
+        }catch( std::exception & )
+        {
+        }
+      }//for( try one or two fields )
+    }//for( loop over fields )
+  }//if( not spontaneous )
+
+  nuc_out = nuc;
+  type_out = type;
+  buildup_out = buildup;
+  return true;
+}//bool parse_fission_source_text(...)
+
+
+namespace
+{
 
 
 // A pure coincidence-sum reference line.  `e_c` is 0 for a two-photon sum.
@@ -3484,8 +3587,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   
   // Check if Fission product spectrum, and if so, parse out all the information.
-  //  Should probably move all this information parsing to a seperate function (its
-  //  length has grown quite a bit over initial imp).
   bool fission_src = false;
   bool sf_parent_lines_added = false;  //true once a spontaneous-fission parent nuclide's lines are added
   FissionType fission_type = FissionType::Thermal;
@@ -3494,141 +3595,33 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy
      && SpecUtils::icontains( input.m_input_txt, "Fission" ) )
   {
-    // Input can be:
-    //   "Fission U238 Thermal, 1d buildup"    (legacy induced-fission)
-    //   "Cf252 + Spontaneous Fission"          (spontaneous fission)
-    //   "Fission Cf252 Spontaneous"           (also supported)
-    string input_txt = input.m_input_txt;
-    SpecUtils::ireplace_all( input_txt, "Fission", " " );
-    SpecUtils::ireplace_all( input_txt, "+", " " );
-    SpecUtils::ireplace_all( input_txt, "  ", " " );
-    SpecUtils::trim( input_txt );
-    
-    auto parse_fission_nuclide = [db]( const string &txt ) -> const SandiaDecay::Nuclide * {
-      const SandiaDecay::Nuclide *fission_nuc = db->nuclide( txt );
-      if( fission_nuc )
-        return fission_nuc;
-      
-      vector<string> remaining_fields;
-      SpecUtils::split( remaining_fields, txt, ", " );
-      for( size_t i = 0; !fission_nuc && (i < remaining_fields.size()); ++i )
-      {
-        fission_nuc = db->nuclide( remaining_fields[i] );
-        if( !fission_nuc && ((i + 1) < remaining_fields.size()) )
-          fission_nuc = db->nuclide( remaining_fields[i] + remaining_fields[i+1] );
-      }
-      
-      return fission_nuc;
-    };//parse_fission_nuclide(...)
-    
-    bool found_fission_type = true;
-    if( SpecUtils::icontains(input_txt, "Thermal") )
+    if( !parse_fission_source_text( input.m_input_txt, fission_nuclide, fission_type, fission_buildup_time ) )
     {
-      fission_type = FissionType::Thermal;
-      SpecUtils::ireplace_all( input_txt, "Thermal", "" );
-    }else if( SpecUtils::icontains(input_txt, "Fast") )
-    {
-      fission_type = FissionType::Fast;
-      SpecUtils::ireplace_all( input_txt, "Fast", "" );
-    }else if( SpecUtils::icontains(input_txt, "14 MeV")
-             || SpecUtils::icontains(input_txt, "14MeV")
-             || SpecUtils::icontains(input_txt, "14-MeV"))
-    {
-      fission_type = FissionType::FourteenMeV;
-      SpecUtils::ireplace_all( input_txt, "14MeV", "" );
-      SpecUtils::ireplace_all( input_txt, "14 MeV", "" );
-      SpecUtils::ireplace_all( input_txt, "14-MeV", "" );
-    }else if( SpecUtils::icontains(input_txt, "Spontaneous") )
-    {
-      fission_type = FissionType::Spontaneous;
-      SpecUtils::ireplace_all( input_txt, "Spontaneous", "" );
-    }else
-    {
-      found_fission_type = false;
-    }
-    
-    SpecUtils::ireplace_all( input_txt, "  ", " " );
-    SpecUtils::trim( input_txt );
-    
-    fission_nuclide = parse_fission_nuclide( input_txt );
-    if( fission_nuclide && (fission_nuclide->isomerNumber > 0) )
       fission_nuclide = nullptr;
-    
-    if( fission_nuclide && !found_fission_type )
+      answer.m_input_warnings.push_back( "Could not interpret fission source; expected input like"
+                                         " 'Fission U235 Thermal, 1d buildup' or 'Cf252 + Spontaneous Fission'." );
+    }else if( fission_type == FissionType::Spontaneous )
     {
-      answer.m_input_warnings.push_back( "Could not interpret fission type (Thermal, Fast, 14 MeV, or Spontaneous)." );
-      fission_nuclide = nullptr;
-    }//if( fission_nuclide && !found_fission_type )
-    
-    if( fission_nuclide && found_fission_type )
+      fission_buildup_time = 0.0;
+      input.m_input_txt = fission_nuclide->symbol + " + Spontaneous Fission";
+    }else if( fission_buildup_time <= 0.0 )
     {
-      if( fission_type == FissionType::Spontaneous )
+      cerr << "Failed to interpret buildup time in '" << input.m_input_txt << "', - using 1 day." << endl;
+
+      fission_buildup_time = 24*2600*PhysicalUnits::second;
+      input.m_input_txt = "Fission " + fission_nuclide->symbol + " ";
+      switch( fission_type )
       {
-        fission_buildup_time = 0.0;
-        input.m_input_txt = fission_nuclide->symbol + " + Spontaneous Fission";
-      }else
-      {
-        bool found_buildup = false;
-        vector<string> remaining_fields;
-        SpecUtils::split( remaining_fields, input_txt, ", " );
-        for( size_t i = 0; !found_buildup && (i < remaining_fields.size()); ++i )
-        {
-          const string &field = remaining_fields[i];
-          const char c = field.empty() ? ' ' : field[0];
-          if( field.empty() || (((c < '0') || (c > '9')) && (c != '.')) )
-            continue;
-          
-          try
-          {
-            fission_buildup_time = PhysicalUnits::stringToTimeDuration( field );
-            if( fission_buildup_time < 1*PhysicalUnits::second )
-              throw runtime_error( "Buildup must be 1 second or greator" );
-            found_buildup = true;
-            break;
-          }catch( std::exception & )
-          {
-          }
-          
-          if( ((i + 1) < remaining_fields.size()) )
-          {
-            try
-            {
-              fission_buildup_time = PhysicalUnits::stringToTimeDuration( field + remaining_fields[i+1] );
-              if( fission_buildup_time < 1*PhysicalUnits::second )
-                throw runtime_error( "Buildup must be 1 second or greator" );
-              found_buildup = true;
-              break;
-            }catch( std::exception & )
-            {
-            }
-          }//if( !found_buildup )
-        }//for( size_t i = 0; i < remaining_fields.size(); ++i )
-        
-        if( !found_buildup )
-        {
-          cerr << "Failed to interpret buildup time in '" << input.m_input_txt
-          << "', - using 1 day." << endl;
-          
-          fission_buildup_time = 24*2600*PhysicalUnits::second;
-          input.m_input_txt = "Fission " + fission_nuclide->symbol + " ";
-          switch( fission_type )
-          {
-            case FissionType::Thermal:     input.m_input_txt += "Thermal"; break;
-            case FissionType::FourteenMeV: input.m_input_txt += "14 MeV";  break;
-            case FissionType::Fast:        input.m_input_txt += "Fast";    break;
-            case FissionType::Spontaneous: input.m_input_txt += "Spontaneous"; break;
-          }//switch( fission_type )
-          
-          input.m_input_txt += " 1d buildup";
-          answer.m_input_warnings.push_back( "Could not interpret buildup time; using 1 day." );
-        }//if( !found_buildup )
-      }//if( spontaneous ) / else
-    }else if( fission_nuclide && !found_fission_type )
-    {
-      answer.m_input_warnings.push_back( "Could not interpret fission type (Thermal, Fast, 14 MeV, or Spontaneous)." );
-      fission_nuclide = nullptr;
-    }
-    
+        case FissionType::Thermal:     input.m_input_txt += "Thermal"; break;
+        case FissionType::FourteenMeV: input.m_input_txt += "14 MeV";  break;
+        case FissionType::Fast:        input.m_input_txt += "Fast";    break;
+        case FissionType::Spontaneous: input.m_input_txt += "Spontaneous"; break;
+      }//switch( fission_type )
+
+      input.m_input_txt += " 1d buildup";
+      answer.m_input_warnings.push_back( "Could not interpret buildup time; using 1 day." );
+    }//if( !parse ) / else if( spontaneous ) / else if( no buildup )
+
     if( fission_nuclide )
     {
       // We'll do a quick check that we have fission data file for this nuclide - we could still run

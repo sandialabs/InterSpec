@@ -153,7 +153,7 @@ public:
   std::map<std::string, const SharedTool*> getToolsForAgent( AgentType agentType ) const;
 
   /** Get tools suitable for the MCP server.
-   Excludes agent invocation tools (invoke_*), deep research tools,
+   Excludes agent invocation tools (invoke_*), KnowledgeBase tools,
    and agent-only tools (those with non-empty availableForAgents).
    @return Map of tool name to (non-owning) pointer into the registry's tools, filtered for MCP.
    */

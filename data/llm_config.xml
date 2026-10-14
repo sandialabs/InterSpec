@@ -163,12 +163,13 @@
 
 
 
-    <!--  A HTTP enpoint to post questions to, to do deeper research.
+    <!--  An optional HTTP retrieval-augmented-generation (RAG) endpoint, searched by the KnowledgeBase
+     sub-agent in addition to its curated `llm_knowledge` skills.
      At the moment, this is a seperate service that is not distributed, so it likely will not be of use to anyone besides the primary InterSpec developer.
 
      An example value you would fill in for this field is: "http://localhost:8000/query".
-     If this field is non-empty, then the DeepResearch sub-agent will additionally have access to the
-     `query_deep_research_endpoint` tool-call, which will make a shell command to have `curl` make a call like:
+     If this field is non-empty, then the KnowledgeBase sub-agent will additionally have access to the
+     `query_rag_endpoint` tool-call, which will make a shell command to have `curl` make a call like:
      ```
        curl -X 'POST' 'http://localhost:8000/query' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"query": "what is the primary use of Ba133?", "model": "openai/gpt-oss-120b", "corpora": ["my_gamma_spec_dataset"]}'
      ```
@@ -176,25 +177,25 @@
      a fixed list of names - it answers with a HTTP 422 if any of that does not match.  The answer is
      read out of the `response` field of the returned JSON.
 
-     If you leave this field blank, the DeepResearch sub-agent still remains available, but this remote
-     endpoint query tool-call will not be available.
+     If you leave this field blank, the KnowledgeBase sub-agent is still available if any knowledge skills
+     are installed (see `llm_knowledge/README.md`), but this remote endpoint query tool-call will not be.
      It is very recomended you do not put a value in this field.
     -->
-    <DeepResearchUrl></DeepResearchUrl>
+    <KnowledgeBaseRagUrl></KnowledgeBaseRagUrl>
 
-    <!-- The model the deep-research service should use to answer, sent as the `model` field of the
+    <!-- The model the RAG service should use to answer, sent as the `model` field of the
          request.  This is a model name that the *remote service* knows about - it has nothing to do with
          the provider/model InterSpec itself uses, above.
-         If empty or not present, "openai/gpt-oss-120b" is sent.  Only used if `DeepResearchUrl` is set.
+         If empty or not present, "openai/gpt-oss-120b" is sent.  Only used if `KnowledgeBaseRagUrl` is set.
     -->
-    <!-- <DeepResearchModel>openai/gpt-oss-120b</DeepResearchModel> -->
+    <!-- <KnowledgeBaseRagModel>openai/gpt-oss-120b</KnowledgeBaseRagModel> -->
 
-    <!-- Comma-separated list of corpora for the deep-research service to search, sent as the `corpora`
+    <!-- Comma-separated list of corpora for the RAG service to search, sent as the `corpora`
          field of the request.  The service only accepts corpus names it knows, and has renamed its
          corpus before, so this is settable here to avoid needing a new InterSpec build if it changes.
-         If empty or not present, "ldrd_llm_gamma_spec_labeled" is sent.  Only used if `DeepResearchUrl` is set.
+         If empty or not present, "ldrd_llm_gamma_spec_labeled" is sent.  Only used if `KnowledgeBaseRagUrl` is set.
     -->
-    <!-- <DeepResearchCorpora>ldrd_llm_gamma_spec_labeled</DeepResearchCorpora> -->
+    <!-- <KnowledgeBaseRagCorpora>ldrd_llm_gamma_spec_labeled</KnowledgeBaseRagCorpora> -->
 
     <!-- Optional debug logging configuration. If empty or not present, no debug logging will be done.
          Valid values:

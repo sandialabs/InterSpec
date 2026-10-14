@@ -403,6 +403,98 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons_fission )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  // Returns the intensity of the line nearest `energy` (within 1 keV), or -1 if none.
+  auto line_intensity = []( const json &result, const double energy ) -> double {
+    double best = -1.0, best_de = 1.0;
+    for( const json &row : result["photons"]["rows"] )
+    {
+      const double de = std::abs( row[0].get<double>() - energy );
+      if( de < best_de )
+      {
+        best_de = de;
+        best = row[1].get<double>();
+      }
+    }
+    return best;
+  };
+
+  // Fresh thermal U-235 fission products; I-131 (364.5), Ba-140/La-140 (537.3/1596.2), and
+  //  Te-132/I-132 (667.7/772.6) should all be present.
+  json params;
+  params["Source"] = "Fission U235 Thermal, 1d buildup";
+  params["Age"] = "7 days";
+  params["maxResults"] = 400;
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
+  BOOST_REQUIRE( result.is_object() && result.contains("photons") );
+  BOOST_CHECK_EQUAL( result["photons"]["columns"][1].get<std::string>(), "intensity_rel" );
+  BOOST_CHECK( result.contains("buildup") && result.contains("coolOffTime") );
+  BOOST_CHECK( result["source"].get<std::string>().find("U235") != std::string::npos );
+  BOOST_REQUIRE( result.contains("prominent_energies_keV") && !result["prominent_energies_keV"].empty() );
+  BOOST_CHECK_GT( result["photons"]["rows"].size(), 50 );
+
+  double max_rel = 0.0;
+  for( const json &row : result["photons"]["rows"] )
+    max_rel = std::max( max_rel, row[1].get<double>() );
+  BOOST_CHECK_CLOSE( max_rel, 1.0, 1.0E-3 );
+
+  BOOST_CHECK_GT( line_intensity( result, 364.49 ), 0.01 );
+  BOOST_CHECK_GT( line_intensity( result, 1596.2 ), 0.01 );
+  BOOST_CHECK_GT( line_intensity( result, 667.71 ), 0.01 );
+
+  // After 10 years of cool-off the short-lived products are gone, and Cs-137 (661.66) dominates.
+  params["Age"] = "10 years";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
+  BOOST_CHECK_LT( line_intensity( result, 364.49 ), 1.0E-6 );
+  BOOST_CHECK_GT( line_intensity( result, 661.66 ), 0.5 );
+
+  // No buildup given - defaults to 1 day, with a note saying so
+  params = json::object();
+  params["Source"] = "Fission Pu239 Fast";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
+  BOOST_CHECK( result["note"].get<std::string>().find("1 day was assumed") != std::string::npos );
+
+  // Spontaneous fission of Cf-252: per-Bq intensities, includes parent decay photons and FPs.
+  params = json::object();
+  params["Source"] = "Cf252 + Spontaneous Fission";
+  params["Age"] = "1 year";
+  params["maxResults"] = 600;
+  params["includePhotonParent"] = true;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_photons", params, fixture.m_interspec) );
+  BOOST_CHECK_EQUAL( result["photons"]["columns"][1].get<std::string>(), "intensity_perBq" );
+  BOOST_REQUIRE_EQUAL( result["photons"]["columns"].size(), 3 );
+  bool found_fp_parent = false;
+  for( const json &row : result["photons"]["rows"] )
+    found_fp_parent |= (row[2].get<std::string>().find("Cf252") == std::string::npos);
+  BOOST_CHECK_MESSAGE( found_fp_parent, "Expected fission-product parents (not just Cf252) in the lines" );
+
+  // Alternate spontaneous syntax gives same lines
+  params["Source"] = "Fission Cf252 Spontaneous";
+  json result2;
+  BOOST_REQUIRE_NO_THROW( result2 = registry.executeTool("source_photons", params, fixture.m_interspec) );
+  BOOST_CHECK_EQUAL( result2["photons"]["rows"].size(), result["photons"]["rows"].size() );
+
+  // Bad fission inputs
+  params = json::object();
+  params["Source"] = "Fission U235 Sideways, 1d buildup";
+  BOOST_CHECK_THROW( registry.executeTool("source_photons", params, fixture.m_interspec), std::runtime_error );
+  params["Source"] = "Fission Xx999 Thermal, 1d buildup";
+  BOOST_CHECK_THROW( registry.executeTool("source_photons", params, fixture.m_interspec), std::runtime_error );
+
+  // Cascade sums are only for nuclides
+  params["Source"] = "Fission U235 Thermal, 1d buildup";
+  params["includeCascadeSumEnergies"] = true;
+  BOOST_CHECK_THROW( registry.executeTool("source_photons", params, fixture.m_interspec), std::runtime_error );
+}
+
+
 BOOST_AUTO_TEST_CASE( test_executeAvailableDetectors )
 {
   InterSpecTestFixture fixture;
@@ -2308,7 +2400,7 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
 
   // Expected agents: one per data/llm_agent_*.xml file shipped with the app.
   const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit", "Isotopics",
-    "DeepResearch", "EnergyCalibration", "InSitu", "SpectrumTimeHistory" };
+    "KnowledgeBase", "EnergyCalibration", "InSitu", "SpectrumTimeHistory" };
 
   cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
 

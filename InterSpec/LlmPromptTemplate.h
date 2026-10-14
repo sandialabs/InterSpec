@@ -62,7 +62,7 @@ namespace LlmPromptTemplate
 
    Describes the active model (name, image support, reasoning, api-format, token limits), the
    author-selected `verbosity`, the `surface`, and a couple of feature flags (`mcp_enabled`,
-   `deep_research_enabled`).  Pure; performs no I/O.  For `Surface::Mcp` the `agent` argument is
+   `rag_enabled`).  Pure; performs no I/O.  For `Surface::Mcp` the `agent` argument is
    ignored and `model.*` are neutral defaults.
    */
   nlohmann::json buildContext( const LlmConfig &config, Surface surface, AgentType agent );
