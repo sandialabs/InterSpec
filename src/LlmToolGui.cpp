@@ -803,16 +803,21 @@ void LlmToolGui::updateSendButtonEnabled()
 
 void LlmToolGui::resetInputHeight()
 {
+  // Only call this after `m_inputEdit->setText("")`.
   if( !m_inputEdit )
     return;
 
+  // Queued on the textarea itself so it runs after Wt applies the cleared value; otherwise grow()
+  //  can measure the old (long) text and leave the area expanded.  Clearing `value` here too makes
+  //  this independent of Wt's update ordering.
   ostringstream js;
   js << "(function(){var ta=" << m_inputEdit->jsRef() << ";"
      << "if(!ta) return;"
-     << "ta.style.height='auto';"
+     << "ta.value='';"
+     << "ta.style.height='';"
      << "if(ta._llmGrow) ta._llmGrow();"
      << "})();";
-  doJavaScript( js.str() );
+  m_inputEdit->doJavaScript( js.str() );
 }//resetInputHeight()
 
 
