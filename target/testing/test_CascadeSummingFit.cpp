@@ -1279,7 +1279,7 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
 
     auto T = [&]( double e ){
       return std::exp( -transmition_coefficient_material( shield.get(),
-                              static_cast<float>(e), static_cast<float>(c.t_cm*PhysicalUnits::cm) ) );
+                              e, c.t_cm*PhysicalUnits::cm ) );
     };
     const double ad_gcm2 = shield->density * c.t_cm*PhysicalUnits::cm
                            * PhysicalUnits::cm2 / PhysicalUnits::g;
@@ -1389,7 +1389,7 @@ BOOST_AUTO_TEST_CASE( FixedGeomVolumeAveragedSummingGap )
       if( it != memo.end() )
         return it->second;
       const double t = std::exp( -GammaInteractionCalc::transmition_coefficient_material( mat,
-                                     static_cast<float>(e), static_cast<float>(path_cm*PhysicalUnits::cm) ) );
+                                     e, path_cm*PhysicalUnits::cm ) );
       const double f = std::max( 0.0, resp->eps_fep_at( e, pos, quad ).value ) * t;
       const double tot = std::max( 0.0, resp->eps_total_at( e, pos, quad ).value ) * t;
       return memo.emplace( e, std::make_pair( f, tot ) ).first->second;

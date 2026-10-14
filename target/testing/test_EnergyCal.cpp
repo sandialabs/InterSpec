@@ -1260,6 +1260,47 @@ BOOST_AUTO_TEST_CASE( test_propogate_energy_cal_change_lower_channel )
   }
 }
 
+
+// The displayed calibration changing type (e.g., "Guess Gain" always applies a polynomial, even to an
+//  FRF spectrum) must evaluate the new calibration with its own equation type.
+BOOST_AUTO_TEST_CASE( test_propogate_energy_cal_change_type_change )
+{
+  const size_t nchannel = 1024;
+
+  for( const bool orig_is_frf : { true, false } )
+  {
+    auto frf = std::make_shared<SpecUtils::EnergyCalibration>();
+    frf->set_full_range_fraction( nchannel, {0.0f, 3072.0f}, {} );
+    auto poly = std::make_shared<SpecUtils::EnergyCalibration>();
+    poly->set_polynomial( nchannel, {0.0f, 3.03f}, {} );
+
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> orig = orig_is_frf ? frf : poly;
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> updated = orig_is_frf ? poly : frf;
+
+    // `other` is offset 1 keV from `orig`, and of the same type
+    auto other = std::make_shared<SpecUtils::EnergyCalibration>();
+    if( orig_is_frf )
+      other->set_full_range_fraction( nchannel, {1.0f, 3072.0f}, {} );
+    else
+      other->set_polynomial( nchannel, {1.0f, 3.03f}, {} );
+
+    const auto new_other = EnergyCal::propogate_energy_cal_change( orig, updated, other );
+    BOOST_REQUIRE( new_other && new_other->valid() );
+    BOOST_REQUIRE( new_other->type() == other->type() );
+
+    for( const double other_channel : { 50.0, 300.0, 500.0, 900.0 } )
+    {
+      const double energy_before = other->energy_for_channel( other_channel );
+      const double orig_channel = orig->channel_for_energy( energy_before );
+      const double expected_energy = updated->energy_for_channel( orig_channel );
+      const double energy_after = new_other->energy_for_channel( other_channel );
+      BOOST_CHECK_MESSAGE( fabs( energy_after - expected_energy ) < 0.05,
+                           "orig_is_frf=" << orig_is_frf << ", channel " << other_channel
+                           << ": got " << energy_after << " keV, expected " << expected_energy );
+    }
+  }//for( const bool orig_is_frf : { true, false } )
+}//test_propogate_energy_cal_change_type_change
+
 // ---- fit_energy_cal_ceres tests ----
 
 namespace

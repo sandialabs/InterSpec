@@ -24,6 +24,7 @@
  */
 
 #include <cmath>
+#include <stdexcept>
 #include <algorithm>
 #include <type_traits>
 
@@ -58,11 +59,11 @@ namespace MassAttenuation
  notes in RelActCalcManual.cpp).
 
  Returns mass attenuation coefficient in PhysicalUnits (divide by
- PhysicalUnits::cm2/PhysicalUnits::g for cm2/g); throws the same as
- #massAttenuationCoefficientElement for invalid energies.
+ PhysicalUnits::cm2/PhysicalUnits::g for cm2/g); energies are clamped, and
+ non-finite energies throw, the same as #massAttenuationCoefficientElement.
  */
 template<typename T>
-T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
+T mass_atten_coef_frac_an( const T &atomic_number, const double energy )
 {
   using namespace std;
   using namespace ceres;
@@ -73,15 +74,18 @@ T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
   else
     an_scalar = atomic_number.a;
 
+  if( !std::isfinite(an_scalar) )
+    throw std::runtime_error( "Invalid atomic number for mass attenuation" );
+
   // Strict comparisons: at an == 1 or an == 98 the interpolation below reproduces the element
   //  value exactly (t == 0 or t == 1) while keeping a live Jet derivative.  Constructing the
   //  result from a scalar, as these clamps do, zeroes every derivative lane - and the AN
   //  parameter's Ceres bounds are exactly [1,98], so the optimizer sits on them.
   if( an_scalar < sm_min_xs_atomic_number )
-    return T( static_cast<double>( massAttenuationCoefficientElement( sm_min_xs_atomic_number, energy ) ) );
+    return T( massAttenuationCoefficientElement( sm_min_xs_atomic_number, energy ) );
 
   if( an_scalar > sm_max_xs_atomic_number )
-    return T( static_cast<double>( massAttenuationCoefficientElement( sm_max_xs_atomic_number, energy ) ) );
+    return T( massAttenuationCoefficientElement( sm_max_xs_atomic_number, energy ) );
 
   const int lower_an = std::clamp( static_cast<int>( std::floor(an_scalar) ),
                                    sm_min_xs_atomic_number, sm_max_xs_atomic_number - 1 );
@@ -89,18 +93,22 @@ T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
 
   // Interpolate in log(mu): mu varies roughly geometrically with Z, and log
   //  keeps the interpolation positive by construction.
-  const double log_mu_1 = std::log( massAttenuationCoefficientElement( lower_an, energy ) );
-  const double log_mu_2 = std::log( massAttenuationCoefficientElement( upper_an, energy ) );
+  const auto element_log_mu = [energy]( const int an ) -> double {
+    return std::log( massAttenuationCoefficientElement( an, energy ) );
+  };
+
+  const double log_mu_1 = element_log_mu( lower_an );
+  const double log_mu_2 = element_log_mu( upper_an );
 
   // Catmull-Rom tangents; one-sided at the table boundaries
   double m1, m2;
   if( lower_an > sm_min_xs_atomic_number )
-    m1 = 0.5*(log_mu_2 - std::log( massAttenuationCoefficientElement( lower_an - 1, energy ) ));
+    m1 = 0.5*(log_mu_2 - element_log_mu( lower_an - 1 ));
   else
     m1 = log_mu_2 - log_mu_1;
 
   if( upper_an < sm_max_xs_atomic_number )
-    m2 = 0.5*(std::log( massAttenuationCoefficientElement( upper_an + 1, energy ) ) - log_mu_1);
+    m2 = 0.5*(element_log_mu( upper_an + 1 ) - log_mu_1);
   else
     m2 = log_mu_2 - log_mu_1;
 
@@ -117,7 +125,7 @@ T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
   const T log_mu = h00*log_mu_1 + h10*m1 + h01*log_mu_2 + h11*m2;
 
   return exp( log_mu );
-}//T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
+}//T mass_atten_coef_frac_an( const T &atomic_number, const double energy )
 
 }//namespace MassAttenuation
 

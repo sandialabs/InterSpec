@@ -1585,7 +1585,20 @@ void EnergyCalGainGuess::applyChanges()
     newcal->set_polynomial( nchan, { static_cast<float>(guess.offset),
                                      static_cast<float>(guess.gain) }, {} );
 
-    const shared_ptr<const EnergyCalibration> orig = m_foreground->energy_calibration();
+    // The new calibration is for the displayed foreground, so it must be getting the change
+    if( !m_calibrator->scopeIncludesDisplayedForeground( *m_measToChange ) )
+    {
+      m_interspec->logMessage( WString::tr("ect-fore-not-selected"), 2 );
+      return;
+    }
+
+    // Propagate relative to the foregrounds *current* displayed calibration, in case the
+    //  calibration was changed since this tool was opened.
+    const shared_ptr<const SpecUtils::Measurement> disp_fore
+                         = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const EnergyCalibration> orig = disp_fore ? disp_fore->energy_calibration() : nullptr;
+    if( !orig || !orig->valid() || (orig->num_channels() != nchan) )
+      orig = m_foreground->energy_calibration();
 
     // applyCalChange() translates peaks, refreshes the GUI and charts, and registers the
     //  undo/redo step (through its EnergyCalUndoRedoSentry).

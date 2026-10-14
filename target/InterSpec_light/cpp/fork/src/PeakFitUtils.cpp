@@ -78,6 +78,14 @@ float hpge_fwhm_fcn( const float energy )
 }//float hpge_fwhm_fcn( const float energy )
 
 
+double ge_fano_limited_fwhm( const double energy )
+{
+  const double fano_factor = 0.05;
+  const double pair_energy = 2.96E-3;  //keV per electron-hole pair in Ge
+  return 2.35482 * std::sqrt( fano_factor * pair_energy * std::max( energy, 0.0 ) );
+}//double ge_fano_limited_fwhm( const double energy )
+
+
 CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 {
   size_t num_peaks = 0;

@@ -745,7 +745,7 @@
     このすべての情報は<code>SandiaDecay</code>
     （<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>）
     ライブラリを介してアクセスされます。
-    ガンマ線/X線の断面積もENSDFから来ています。<br />
+    ガンマ線/X線の減衰断面積は、CeeLoライブラリを介してEPICS2023 Evaluated Photon Data Library (EPDL) から得ています。<br />
     反応データは、
     「<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>」（A.M. Demidov <i>et al.</i>）、
     および「<em>IAEA Prompt Gamma Activation Analysis (PGAA) database</em>」を含むさまざまな場所から来ています。

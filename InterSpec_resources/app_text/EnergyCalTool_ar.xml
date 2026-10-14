@@ -31,7 +31,7 @@
     ثم يُنشر أثر التغيير إلى جميع الأطياف والعينات والكواشف المحددة ضمن "تطبيق التغييرات على": تُعدَّل معايرات الطاقة الخاصة بها بمقدار مكافئ، بحيث تبقى البيانات المتحاذية في الطاقة قبل التغيير متحاذية (عند الطاقات الجديدة) بعده - حتى لو اختلفت معاملات أو أنواع المعايرة.
     إذا كان هذا الزر معطلاً، يُعرض السبب على يساره.
   </message>
-  <message id="ect-fit-hint-fore-deselected">الملاءمة معطلة: "المقدمة" غير محددة ضمن "تطبيق التغييرات على"</message>
+  <message id="ect-fit-hint-fore-deselected">الملاءمة معطلة: المقدمة غير محددة</message>
   <message id="ect-fit-hint-no-peaks">لا توجد قمم محددة لاستخدامها في معايرة الطاقة</message>
   <message id="ect-fit-hint-not-fore-cal">تستخدم الملاءمة معايرة المقدمة</message>
   <message id="ect-fit-hint-no-coefs">لم يتم اختيار أي معامل للملاءمة</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">تطبيق التغييرات على</message>
   <message id="ect-disp-dets">الكاشفات المعروضة</message>
   <message id="ect-all-dets">جميع الكاشفات</message>
+  <message id="ect-selected-det-only">كاشفات مستقلة</message>
+  <message id="ect-tt-selected-det-only">عند التحديد، تُطبَّق تغييرات معايرة الطاقة (تعديل المعاملات أو ملاءمتها، وسحب الطيف، وأدوات &quot;المزيد من الإجراءات&quot;) على الكاشف المحدد في عمود &quot;الكاشف&quot; فقط، بدلاً من نشرها إلى الكاشفات الأخرى.
+    تتم مطابقة الكاشف بالاسم في الأطياف الأخرى المحددة (المقدمة، الخلفية، الثانوي)، وتظل اختيارات العينات سارية.
+    تُطبَّق تعديلات أزواج الانحراف دائماً على الكاشف المعدَّل فقط.
+    لا يؤثر على Gain Match أو معايرة متعددة الملفات.</message>
   <message id="ect-disp-samples">العينات المعروضة</message>
   <message id="ect-all-samples">جميع العينات</message>
   <message id="ect-calib-coeffs">معاملات المعايرة</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">خطأ غير متوقع في استرداد معاملات المعايرة السابقة - لا يتم تطبيق التغييرات</message>
   <message id="ect-changed-cal-not-selected">يبدو أن معايرة الطاقة التي غيرتها غير محددة لتطبيق التغييرات عليها؛ يرجى تصحيح ذلك.</message>
   <message id="ect-dev-pair-change-invalid">تغيير زوج الانحراف جعل معايرة الطاقة غير صالحة. خطأ: {1}</message>
-  <message id="ect-set-dev-pair-err">حدث خطأ في تعيين أزواج الانحراف لهذا الكاشف.</message>
   <message id="ect-dev-applied-dets-samples">تم تطبيق أزواج الانحراف فقط على الكاشف '{1}'، ولكن على جميع أرقام العينات{2}.</message>
   <message id="ect-dev-applied-to-samples">تم تطبيق أزواج الانحراف على جميع أرقام العينات{1}.</message>
   <message id="ect-of-the-fore"> من المقدمة.</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">إذا أعدت المعايرة مرة أخرى بالضغط على ALT+CTRL+DRAG على جزء آخر من الطيف، سيتم منحك خيار الحفاظ على تأثيرات هذه المعايرة أيضًا.</message>
   <message id="ect-lc-disp-dets">الكاشفات المعروضة</message>
   <message id="ect-lc-all-dets">جميع الكاشفات</message>
+  <message id="ect-lc-selected-det-only">الكاشف '{1}' فقط</message>
+  <message id="ect-fore-not-selected">لم يُطبَّق التغيير: مع اختيارات &quot;تطبيق التغييرات على&quot; الحالية، لن يُطبَّق على المقدمة المعروضة.</message>
   <message id="ect-lc-all-samples">جميع العينات</message>
   <message id="ect-lc-disp-samples">العينات المعروضة</message>
   <message id="ect-short-fore">المقدمة</message>

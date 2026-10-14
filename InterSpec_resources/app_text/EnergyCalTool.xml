@@ -48,7 +48,7 @@
     the new energies) afterwards - even if their calibration coefficients or types differ.
     If this button is disabled, the reason is shown to its left.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Fit disabled: &quot;Foreground&quot; de-selected under &quot;Apply Changes To&quot;</message>
+  <message id="ect-fit-hint-fore-deselected">Fit disabled: Foreground not selected</message>
   <message id="ect-fit-hint-no-peaks">No peaks marked to use for energy calibration</message>
   <message id="ect-fit-hint-not-fore-cal">Fitting uses the foreground calibration</message>
   <message id="ect-fit-hint-no-coefs">No coefficient selected to fit</message>
@@ -57,6 +57,11 @@
   <message id="ect-apply-changes-to">Apply Changes To</message>
   <message id="ect-disp-dets">Displayed Detectors</message>
   <message id="ect-all-dets">All Detectors</message>
+  <message id="ect-selected-det-only">Indep. Dets.</message>
+  <message id="ect-tt-selected-det-only">When checked, energy calibration changes (editing or fitting coefficients, dragging the spectrum, and the &quot;More Actions&quot; tools) are applied only to the detector selected in the &quot;Detector&quot; column, instead of being propagated to the other detectors.
+    The detector is matched by name in the other spectra (foreground, background, secondary) selected, and the sample selections still apply.
+    Deviation pair edits are always applied only to the edited detector.
+    It does not affect Gain Match or Multi File Cal.</message>
   <message id="ect-disp-samples">Displayed Samples</message>
   <message id="ect-all-samples">All Samples</message>
   <message id="ect-calib-coeffs">Calibration Coefficients</message>
@@ -87,10 +92,10 @@
   <message id="ect-unexpected-error-prev-coefs">Unexpected error retrieving previous calibration coefficients - not applying changes</message>
   <message id="ect-changed-cal-not-selected">It looks like the energy calibration you changed isn't marked for changes to be applied to; please correct that.</message>
   <message id="ect-dev-pair-change-invalid">Changing the deviation pair made energy calibration become invalid.  Error: {1}</message>
-  <message id="ect-set-dev-pair-err">There was an error setting deviation pairs for this detector.</message>
   <message id="ect-dev-applied-dets-samples">Deviation pairs applied only to the '{1}' detector, but to all sample numbers{2}.</message>
   <message id="ect-dev-applied-to-samples">Deviation pairs applied to all sample numbers{1}.</message>
-  <message id="ect-dev-pairs-applied-scope">Deviation pairs were applied to the spectra, detectors, and samples selected under "Apply Changes To".</message>
+  <message id="ect-dev-pairs-applied-scope">Deviation pairs were applied to detector '{1}', of the spectra and samples selected under "Apply Changes To".</message>
+  <message id="ect-fore-not-selected">Change not applied: with the current &quot;Apply Changes To&quot; selections, it would not be applied to the displayed foreground.</message>
   <message id="ect-lce-gain-label">Gain</message>
   <message id="ect-tt-lce-offset">Energy, in keV, added to every channel edge (E_new = offset + gain&#215;E_orig), relative to the file's original channel energies.&#10;Adjustments are always made relative to the original channel energies of this session, so repeated edits do not compound.</message>
   <message id="ect-tt-lce-gain">Dimensionless multiplicative scaling of the energy axis, nominal value 1.0 (e.g., 2.0 doubles every channel's energy): E_new = offset + gain&#215;E_orig, relative to the file's original channel energies.&#10;Adjustments are always made relative to the original channel energies of this session, so repeated edits do not compound.</message>
@@ -110,6 +115,7 @@
   <message id="ect-del-graphical-msg">If you recalibrate again by ALT+CTRL+DRAG on another portion of the spectrum, you will be given the option of preserving the effects of this calibration as well.</message>
   <message id="ect-lc-disp-dets">displayed detectors</message>
   <message id="ect-lc-all-dets">all detectors</message>
+  <message id="ect-lc-selected-det-only">only detector '{1}'</message>
   <message id="ect-lc-all-samples">all samples</message>
   <message id="ect-lc-disp-samples">displayed samples</message>
   <message id="ect-short-fore">For.</message>

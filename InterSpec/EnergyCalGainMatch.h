@@ -216,6 +216,8 @@ namespace GainMatchCalc
    with the overall normalization of the test spectrum solved for analytically.
    Reference channels in the energy range that the transformed test spectrum does not cover
    count as zeros (i.e., are penalized, not dropped), so shrinking the overlap cant lower chi2.
+   Test counts outside the reference energy range are dropped, rather than lumped into the
+   reference end channels.
    Exposed primarily for unit tests.
    */
   double chi2_for_gain_offset( const std::shared_ptr<const SpecUtils::Measurement> &test,

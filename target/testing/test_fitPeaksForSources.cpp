@@ -2083,8 +2083,8 @@ BOOST_AUTO_TEST_CASE( test_sibling_absence_check )
 
   // The attenuation tables come back in PhysicalUnits units; the check converts to cm2/g.
   const double mu_units = PhysicalUnits::cm2 / PhysicalUnits::g;
-  const double mu_pb_60 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 59.5f ) / mu_units;
-  const double mu_pb_662 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0f, 662.0f ) / mu_units;
+  const double mu_pb_60 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0, 59.5 ) / mu_units;
+  const double mu_pb_662 = MassAttenuation::massAttenuationCoefficientFracAN( 82.0, 662.0 ) / mu_units;
   BOOST_CHECK_MESSAGE( (mu_pb_60 > 3.0) && (mu_pb_60 < 8.0), "mu/rho(Pb, 59.5 keV) = " << mu_pb_60 << " cm2/g" );
   BOOST_CHECK_MESSAGE( (mu_pb_662 > 0.08) && (mu_pb_662 < 0.14), "mu/rho(Pb, 662 keV) = " << mu_pb_662 << " cm2/g" );
 
@@ -3141,3 +3141,82 @@ BOOST_AUTO_TEST_CASE( test_quadratic_null_power )
 }//test_quadratic_null_power
 
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers
+
+
+BOOST_AUTO_TEST_SUITE( DesperationFallback )
+
+BOOST_AUTO_TEST_CASE( desperation_shielding_starts_within_its_fit_bounds )
+{
+  using FitPeaksForNuclides::detail::create_desperation_shielding;
+  using FitPeaksForNuclides::PeakFitForNuclideConfig;
+  using PeakFitUtils::CoarseResolutionType;
+
+  // Every detector class's default config must give a shield the physical model accepts; the non-HPGe
+  //  default (13.75 g/cm2) once started outside the fit range, so the re-solve threw on setup.
+  for( const CoarseResolutionType det_type : { CoarseResolutionType::Low, CoarseResolutionType::LaBr,
+                                               CoarseResolutionType::CZT, CoarseResolutionType::High } )
+  {
+    const PeakFitForNuclideConfig &config = PeakFitForNuclideConfig::default_config( det_type );
+    const std::shared_ptr<RelActCalc::PhysicalModelShieldInput> shield
+      = create_desperation_shielding( config.desperation_phys_model_atomic_number,
+                                      config.desperation_phys_model_areal_density_g_per_cm2 );
+    BOOST_REQUIRE( shield );
+    BOOST_CHECK_NO_THROW( shield->check_valid() );
+    BOOST_CHECK( shield->areal_density >= shield->lower_fit_areal_density );
+    BOOST_CHECK( shield->areal_density <= shield->upper_fit_areal_density );
+  }
+
+  const double g_per_cm2 = PhysicalUnits::g_per_cm2;
+  BOOST_CHECK_CLOSE( create_desperation_shielding( 41.2, 13.75 )->areal_density, 10.0*g_per_cm2, 1.0E-9 );
+  BOOST_CHECK_CLOSE( create_desperation_shielding( 41.2, 0.01 )->areal_density, 0.1*g_per_cm2, 1.0E-9 );
+  BOOST_CHECK_CLOSE( create_desperation_shielding( 26.0, 2.5 )->areal_density, 2.5*g_per_cm2, 1.0E-9 );
+  BOOST_CHECK_THROW( create_desperation_shielding( 0.5, 1.0 ), std::invalid_argument );
+}//desperation_shielding_starts_within_its_fit_bounds
+
+
+BOOST_AUTO_TEST_CASE( requested_nuclides_kept_counts_described_sources )
+{
+  using FitPeaksForNuclides::detail::num_requested_nuclides_kept;
+
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const tl201 = db->nuclide( "Tl201" );
+  const SandiaDecay::Nuclide * const tl202 = db->nuclide( "Tl202" );
+  const SandiaDecay::Element * const pb = db->element( "Pb" );
+  BOOST_REQUIRE( tl201 && tl202 && pb );
+
+  const auto rel_act = []( const RelActCalcAuto::SrcVariant &src, const double activity ){
+    RelActCalcAuto::NuclideRelAct act;
+    act.source = src;
+    act.rel_activity = activity;
+    return act;
+  };
+  const auto peak_from = []( const SandiaDecay::Nuclide *nuc, const double mean, const double area ){
+    PeakDef peak( mean, 5.0, area );
+    peak.setNuclearTransition( nuc, nullptr, -1, PeakDef::NormalGamma );
+    return peak;
+  };
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  sol.m_rel_activities = { { rel_act( tl201, 1830.0 ), rel_act( tl202, 2330.0 ), rel_act( pb, 17.0 ) } };
+  sol.m_fit_peaks = { peak_from( tl201, 167.4, 4000.0 ), peak_from( tl202, 439.5, 900.0 ) };
+  BOOST_CHECK_EQUAL( num_requested_nuclides_kept( sol ), 2u );  // elements are not counted
+
+  // A requested nuclide that is absent may be zeroed; the solve still describes the other.
+  sol.m_rel_activities = { { rel_act( tl201, 1830.0 ), rel_act( tl202, 0.0 ), rel_act( pb, 17.0 ) } };
+  sol.m_fit_peaks = { peak_from( tl201, 167.4, 4000.0 ) };
+  BOOST_CHECK_EQUAL( num_requested_nuclides_kept( sol ), 1u );
+
+  // Activity without peaks that explain a count is not a described source.
+  sol.m_rel_activities = { { rel_act( tl201, 1830.0 ), rel_act( tl202, 0.0 ) } };
+  sol.m_fit_peaks = { peak_from( tl201, 167.4, 0.5 ) };
+  BOOST_CHECK_EQUAL( num_requested_nuclides_kept( sol ), 0u );
+
+  // A continuum-only solve: everything zeroed.
+  sol.m_rel_activities = { { rel_act( tl201, 0.0 ), rel_act( tl202, 0.0 ) } };
+  sol.m_fit_peaks.clear();
+  BOOST_CHECK_EQUAL( num_requested_nuclides_kept( sol ), 0u );
+}//requested_nuclides_kept_counts_described_sources
+
+BOOST_AUTO_TEST_SUITE_END() // DesperationFallback

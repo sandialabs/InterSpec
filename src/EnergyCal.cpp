@@ -1242,7 +1242,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   const vector<float> &other_coeffs = other_cal->coefficients();
   
   const size_t orig_num_channel = orig_cal->num_channels();
-  const size_t new_num_channel = orig_cal->num_channels();
+  const size_t new_num_channel = new_cal->num_channels();
   const size_t other_num_channel = other_cal->num_channels();
   
   // \TODO: we currently arent using deviation pairs when converting between channel number and
@@ -1302,40 +1302,36 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   {
     const size_t display_channel = ((order - i - 1) * orig_num_channel) / (order - 1);
      
-    double old_disp_energy = std::numeric_limits<double>::quiet_NaN(),
-           new_disp_energy = std::numeric_limits<double>::quiet_NaN(),
-           other_channel = std::numeric_limits<double>::quiet_NaN();
+    // Each displayed calibration is evaluated with its own equation type - they can differ (e.g.,
+    //  a polynomial calibration applied to an FRF spectrum).
+    const auto disp_energy = [display_channel]( const SpecUtils::EnergyCalibration &cal,
+                                                const vector<float> &coefs, const size_t nchannel,
+                                                const vector<pair<float,float>> &devs ) -> double {
+      switch( cal.type() )
+      {
+        case EnergyCalType::FullRangeFraction:
+          return fullrangefraction_energy( display_channel, coefs, nchannel, devs );
+          
+        case EnergyCalType::Polynomial:
+        case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+          return polynomial_energy( display_channel, coefs, devs );
+          
+        case EnergyCalType::LowerChannelEdge:
+          // Lower channel energy calibrations dont have deviation pairs, so using the member
+          //  function here is consistent with the dev-pair-ignoring convention above
+          return cal.energy_for_channel( static_cast<double>(display_channel) );
+          
+        case EnergyCalType::InvalidEquationType:
+          assert( 0 );
+          break;
+      }//switch( cal.type() )
+      
+      return std::numeric_limits<double>::quiet_NaN();
+    };//disp_energy lambda
     
-    switch( orig_cal->type() )
-    {
-      case EnergyCalType::FullRangeFraction:
-      {
-        old_disp_energy = fullrangefraction_energy( display_channel, prev_disp_coefs, orig_num_channel, prev_disp_devs );
-        new_disp_energy = fullrangefraction_energy( display_channel, new_disp_coefs, new_num_channel, new_disp_devs );
-        break;
-      }//case orig_cal was FRF
-        
-      case EnergyCalType::Polynomial:
-      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      {
-        old_disp_energy = polynomial_energy( display_channel, prev_disp_coefs, prev_disp_devs );
-        new_disp_energy = polynomial_energy( display_channel, new_disp_coefs, new_disp_devs );
-        break;
-      }//case: orig_cal was Poly
-
-      case EnergyCalType::LowerChannelEdge:
-      {
-        // Lower channel energy calibrations dont have deviation pairs, so using the member
-        //  functions here is consistent with the dev-pair-ignoring convention above
-        old_disp_energy = orig_cal->energy_for_channel( static_cast<double>(display_channel) );
-        new_disp_energy = new_cal->energy_for_channel( static_cast<double>(display_channel) );
-        break;
-      }//case: orig_cal was LowerChannelEdge
-
-      case EnergyCalType::InvalidEquationType:
-        assert( 0 );
-        break;
-    }//switch( orig_cal->type() )
+    const double old_disp_energy = disp_energy( *orig_cal, prev_disp_coefs, orig_num_channel, prev_disp_devs );
+    const double new_disp_energy = disp_energy( *new_cal, new_disp_coefs, new_num_channel, new_disp_devs );
+    double other_channel = std::numeric_limits<double>::quiet_NaN();
     
     assert( !IsNan(old_disp_energy) && !IsNan(new_disp_energy) );
     

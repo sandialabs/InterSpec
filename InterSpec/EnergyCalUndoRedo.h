@@ -67,7 +67,7 @@ typedef std::vector<std::tuple<std::set<int>,
 /** Aggregates the energy calibration (and associated peak) changes of a single user operation
  into one undo/redo step.
 
- We may make multiple calls to #EnergyCalTool::setEnergyCal and/or #EnergyCalTool::addDeviationPair,
+ We may make multiple calls to #EnergyCalTool::applyNewCalibrations (e.g., via #EnergyCalTool::applyCalChange),
  or other functions, for a single user-instigated change; we want to combine multiple of these
  calls into a single user undo/redo operation, so thread-local storage is used to aggregate all
  the changes (you may construct as many, possibly nested, sentries during the operation as is

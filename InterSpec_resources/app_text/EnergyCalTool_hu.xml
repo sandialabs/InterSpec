@@ -31,7 +31,7 @@
     A változtatás hatása ezután a "Változtatások alkalmazása" alatt kijelölt összes spektrumra, mintára és detektorra átterjed: energiakalibrációik egyenértékű módon igazodnak, így a változtatás előtt energiában egybeeső adatok utána is (az új energiákon) egybeesnek - akkor is, ha kalibrációs együtthatóik vagy típusaik eltérnek.
     Ha ez a gomb inaktív, az ok a gombtól balra jelenik meg.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Illesztés letiltva: az "Előtér" nincs kijelölve a "Változtatások alkalmazása" alatt</message>
+  <message id="ect-fit-hint-fore-deselected">Illesztés letiltva: az előtér nincs kijelölve</message>
   <message id="ect-fit-hint-no-peaks">Nincs energiakalibrációhoz megjelölt csúcs</message>
   <message id="ect-fit-hint-not-fore-cal">Az illesztés az előtér kalibrációját használja</message>
   <message id="ect-fit-hint-no-coefs">Nincs illesztésre kijelölt együttható</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">Változtatások alkalmazása</message>
   <message id="ect-disp-dets">Megjelenített detektorok</message>
   <message id="ect-all-dets">Összes detektor</message>
+  <message id="ect-selected-det-only">Független det.</message>
+  <message id="ect-tt-selected-det-only">Bejelölve az energiakalibráció változtatásai (együtthatók szerkesztése vagy illesztése, a spektrum húzása és a &quot;További műveletek&quot; eszközök) csak a &quot;Detektor&quot; oszlopban kijelölt detektorra érvényesek, ahelyett, hogy a többi detektorra is átvinnénk őket.
+    A detektort név szerint azonosítjuk a többi kijelölt spektrumban (előtér, háttér, másodlagos), és a minták kiválasztása továbbra is érvényes.
+    Az eltéréspárok szerkesztése mindig csak a szerkesztett detektorra vonatkozik.
+    Nem érinti a(z) Gain Match és Többfájlos kal. eszközöket.</message>
   <message id="ect-disp-samples">Megjelenített minták</message>
   <message id="ect-all-samples">Összes minta</message>
   <message id="ect-calib-coeffs">Kalibrációs együtthatók</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">Váratlan hiba a korábbi kalibrációs együtthatók lekérésekor - a változtatások nem kerülnek alkalmazásra</message>
   <message id="ect-changed-cal-not-selected">Úgy tűnik, hogy a módosított energiakalibráció nincs megjelölve a változtatások alkalmazásához; kérjük, javítsa ki.</message>
   <message id="ect-dev-pair-change-invalid">Az eltéréspár módosítása érvénytelenné tette az energiakalibrációt. Hiba: {1}</message>
-  <message id="ect-set-dev-pair-err">Hiba történt az eltéréspárok beállításakor ehhez a detektorhoz.</message>
   <message id="ect-dev-applied-dets-samples">Az eltéréspárok csak a '{1}' detektorra lettek alkalmazva, de az összes mintaszámra{2}.</message>
   <message id="ect-dev-applied-to-samples">Az eltéréspárok az összes mintaszámra lettek alkalmazva{1}.</message>
   <message id="ect-of-the-fore"> az előtérből.</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">Ha újrakalibrál ALT+CTRL+húzással a spektrum egy másik részén, lehetősége lesz ennek a kalibrációnak a hatásait is megőrizni.</message>
   <message id="ect-lc-disp-dets">megjelenített detektorok</message>
   <message id="ect-lc-all-dets">összes detektor</message>
+  <message id="ect-lc-selected-det-only">csak a(z) '{1}' detektor</message>
+  <message id="ect-fore-not-selected">A változtatás nincs alkalmazva: a jelenlegi &quot;Változtatások alkalmazása&quot; beállításokkal nem vonatkozna a megjelenített előtérre.</message>
   <message id="ect-lc-all-samples">összes minta</message>
   <message id="ect-lc-disp-samples">megjelenített minták</message>
   <message id="ect-short-fore">Előt.</message>

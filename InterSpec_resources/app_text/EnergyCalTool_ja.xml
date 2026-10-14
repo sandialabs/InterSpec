@@ -30,7 +30,7 @@
     変更の効果は「変更を適用」で選択されたすべてのスペクトル・サンプル・検出器に伝播されます。それぞれのエネルギー校正が等価に調整されるため、変更前にエネルギーで揃っていたデータは、係数や校正タイプが異なっていても、変更後も（新しいエネルギーで）揃ったままになります。
     このボタンが無効な場合、理由が左側に表示されます。
   </message>
-  <message id="ect-fit-hint-fore-deselected">フィット無効：「変更を適用」で「フォアグラウンド」が選択されていません</message>
+  <message id="ect-fit-hint-fore-deselected">フィット無効：フォアグラウンド未選択</message>
   <message id="ect-fit-hint-no-peaks">エネルギー校正に使用するピークがありません</message>
   <message id="ect-fit-hint-not-fore-cal">フィットはフォアグラウンドの校正を使用します</message>
   <message id="ect-fit-hint-no-coefs">フィットする係数が選択されていません</message>
@@ -39,6 +39,11 @@
   <message id="ect-apply-changes-to">変更を適用</message>
   <message id="ect-disp-dets">表示された検出器</message>
   <message id="ect-all-dets">全ての検出器</message>
+  <message id="ect-selected-det-only">独立検出器</message>
+  <message id="ect-tt-selected-det-only">チェックすると、エネルギー校正の変更（係数の編集やフィット、スペクトルのドラッグ、「その他のアクション」ツール）は、他の検出器に伝播せず、「検出器」列で選択した検出器にのみ適用されます。
+    選択された他のスペクトル（フォアグラウンド、バックグラウンド、セカンダリ）では検出器を名前で照合し、サンプルの選択は引き続き適用されます。
+    偏差ペアの編集は常に編集した検出器にのみ適用されます。
+    Gain Matchとマルチファイル校正には影響しません。</message>
   <message id="ect-disp-samples">表示されたサンプル</message>
   <message id="ect-all-samples">全てのサンプル</message>
   <message id="ect-calib-coeffs">校正係数</message>
@@ -69,7 +74,6 @@
   <message id="ect-unexpected-error-prev-coefs">以前の校正係数の取得中に予期しないエラー - 変更を適用しません</message>
   <message id="ect-changed-cal-not-selected">変更したエネルギー校正が変更適用対象としてマークされていないようです。修正してください。</message>
   <message id="ect-dev-pair-change-invalid">偏差ペアの変更によりエネルギー校正が無効になりました。エラー: {1}</message>
-  <message id="ect-set-dev-pair-err">この検出器の偏差ペア設定中にエラーが発生しました。</message>
   <message id="ect-dev-applied-dets-samples">偏差ペアは '{1}' 検出器のみに適用されましたが、全てのサンプル番号{2}に適用されました。</message>
   <message id="ect-dev-applied-to-samples">偏差ペアは全てのサンプル番号{1}に適用されました。</message>
   <message id="ect-of-the-fore"> フォアグラウンドの。</message>
@@ -87,6 +91,8 @@
   <message id="ect-del-graphical-msg">スペクトルの別の部分でALT+CTRL+ドラッグにより再校正する場合、この校正の効果も保持するオプションが提供されます。</message>
   <message id="ect-lc-disp-dets">表示された検出器</message>
   <message id="ect-lc-all-dets">全ての検出器</message>
+  <message id="ect-lc-selected-det-only">検出器「{1}」のみ</message>
+  <message id="ect-fore-not-selected">変更は適用されませんでした：現在の「変更を適用」の選択では、表示中のフォアグラウンドに適用されません。</message>
   <message id="ect-lc-all-samples">全てのサンプル</message>
   <message id="ect-lc-disp-samples">表示されたサンプル</message>
   <message id="ect-short-fore">フォア</message>

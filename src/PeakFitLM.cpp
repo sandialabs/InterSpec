@@ -3542,7 +3542,8 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     }
 
 
-    results = fit_peaks_in_roi_LM( near_peaks, data, det_type, fit_options );
+    bool by_likelihood = false;  //whether the ROI was fit by Poisson likelihood; its significance test then uses deviances
+    results = fit_peaks_in_roi_imp( near_peaks, data, det_type, fit_options, nullptr, by_likelihood );
 
     // I'm pretty sure things have been sorted, but lets check
     assert( std::is_sorted(begin(results), end(results), &PeakDef::lessThanByMeanShrdPtr ) );
@@ -3578,7 +3579,7 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
       const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
 
       const double dummy_stat_thresh = 0.0;
-      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data );
+      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data, by_likelihood );
       if( !is_sig || !significant )
       {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
@@ -4740,6 +4741,9 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
 
     vector<shared_ptr<const PeakDef>> all_fit_peaks;
 
+    // The ROIs fit by Poisson likelihood, whose peaks' significance tests use deviances.
+    set<const PeakContinuum *> likelihood_rois;
+
     if( !skew_type.has_value() )
     {
       // Mode A: skew_type is nullopt - fit each ROI independently
@@ -4752,8 +4756,11 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       {
         try
         {
+          bool by_likelihood = false;
           const vector<shared_ptr<const PeakDef>> roi_result
-            = fit_peaks_in_roi_LM( kv.second, data, res_type, fit_options );
+            = fit_peaks_in_roi_imp( kv.second, data, res_type, fit_options, nullptr, by_likelihood );
+          if( by_likelihood && !roi_result.empty() )
+            likelihood_rois.insert( roi_result.front()->continuum().get() );
           all_fit_peaks.insert( end(all_fit_peaks), begin(roi_result), end(roi_result) );
         }
         catch( std::exception &e )
@@ -4929,8 +4936,22 @@ FitPeaksResults fit_peaks_in_spectrum_LM( const vector<shared_ptr<const PeakDef>
       const double num_sigma = num_sigmas[i];
       const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
 
+      // A joint (Mode B) fit does not report which ROIs its IRLS refit; they are the sparse ones.
+      bool by_likelihood = likelihood_rois.count( peak->continuum().get() ) > 0;
+      if( skew_type.has_value() && (hypothesis_threshold > 0.0)
+         && !fit_options.test( PeakFitLMOptions::NoSparseDataLikelihood ) )
+      {
+        vector<shared_ptr<const PeakDef>> roi_peaks;
+        for( const shared_ptr<const PeakDef> &p : all_fit_peaks )
+        {
+          if( p->continuum() == peak->continuum() )
+            roi_peaks.push_back( p );
+        }
+        by_likelihood = is_sparse_roi( roi_peaks, data );
+      }//if( Mode B )
+
       const double dummy_stat_thresh = 0.0;
-      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data );
+      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data, by_likelihood );
 
       if( !is_sig || !significant )
       {

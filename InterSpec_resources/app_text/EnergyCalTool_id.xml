@@ -31,7 +31,7 @@
     Efek perubahan kemudian disebarkan ke semua spektrum, sampel, dan detektor yang dipilih di "Terapkan Perubahan Ke": kalibrasi energi masing-masing disesuaikan secara setara, sehingga data yang sejajar dalam energi sebelum perubahan tetap sejajar (pada energi baru) sesudahnya - meskipun koefisien atau jenis kalibrasinya berbeda.
     Jika tombol ini nonaktif, alasannya ditampilkan di sebelah kirinya.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Fit dinonaktifkan: "Latar Depan" tidak dipilih di "Terapkan Perubahan Ke"</message>
+  <message id="ect-fit-hint-fore-deselected">Fit dinonaktifkan: Latar Depan tidak dipilih</message>
   <message id="ect-fit-hint-no-peaks">Tidak ada puncak yang ditandai untuk kalibrasi energi</message>
   <message id="ect-fit-hint-not-fore-cal">Fitting menggunakan kalibrasi latar depan</message>
   <message id="ect-fit-hint-no-coefs">Tidak ada koefisien yang dipilih untuk difit</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">Terapkan Perubahan Ke</message>
   <message id="ect-disp-dets">Detektor yang Ditampilkan</message>
   <message id="ect-all-dets">Semua Detektor</message>
+  <message id="ect-selected-det-only">Det. Indep.</message>
+  <message id="ect-tt-selected-det-only">Jika dicentang, perubahan kalibrasi energi (mengedit atau mem-fit koefisien, menyeret spektrum, dan alat &quot;Aksi Lainnya&quot;) hanya diterapkan ke detektor yang dipilih di kolom &quot;Detektor&quot;, alih-alih disebarkan ke detektor lain.
+    Detektor dicocokkan berdasarkan nama pada spektrum lain yang dipilih (latar depan, latar belakang, sekunder), dan pilihan sampel tetap berlaku.
+    Pengeditan pasangan deviasi selalu hanya diterapkan ke detektor yang diedit.
+    Tidak memengaruhi Gain Match atau Kal. Multi File.</message>
   <message id="ect-disp-samples">Sampel yang Ditampilkan</message>
   <message id="ect-all-samples">Semua Sampel</message>
   <message id="ect-calib-coeffs">Koefisien Kalibrasi</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">Kesalahan tak terduga mengambil koefisien kalibrasi sebelumnya - tidak menerapkan perubahan</message>
   <message id="ect-changed-cal-not-selected">Tampaknya kalibrasi energi yang Anda ubah tidak ditandai untuk perubahan yang akan diterapkan; harap perbaiki itu.</message>
   <message id="ect-dev-pair-change-invalid">Mengubah pasangan deviasi membuat kalibrasi energi menjadi tidak valid. Kesalahan: {1}</message>
-  <message id="ect-set-dev-pair-err">Terjadi kesalahan mengatur pasangan deviasi untuk detektor ini.</message>
   <message id="ect-dev-applied-dets-samples">Pasangan deviasi diterapkan hanya pada detektor '{1}', tetapi untuk semua nomor sampel{2}.</message>
   <message id="ect-dev-applied-to-samples">Pasangan deviasi diterapkan untuk semua nomor sampel{1}.</message>
   <message id="ect-of-the-fore"> dari latar depan.</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">Jika Anda mengkalibrasi ulang lagi dengan ALT+CTRL+DRAG pada bagian lain dari spektrum, Anda akan diberi opsi untuk mempertahankan efek kalibrasi ini juga.</message>
   <message id="ect-lc-disp-dets">detektor yang ditampilkan</message>
   <message id="ect-lc-all-dets">semua detektor</message>
+  <message id="ect-lc-selected-det-only">hanya detektor '{1}'</message>
+  <message id="ect-fore-not-selected">Perubahan tidak diterapkan: dengan pilihan &quot;Terapkan Perubahan Ke&quot; saat ini, perubahan tidak akan diterapkan ke latar depan yang ditampilkan.</message>
   <message id="ect-lc-all-samples">semua sampel</message>
   <message id="ect-lc-disp-samples">sampel yang ditampilkan</message>
   <message id="ect-short-fore">Lat. Depan</message>

@@ -20,7 +20,7 @@ detection of the gamma rays inside the full energy peak will also be given.
 
 <span style="float:right; width: 79%">
 <ul>
-<li><b>Energy</b>: Values entered must be in keV and inside the range of 10 to 10000 keV.</li>
+<li><b>Energy</b>: Values entered must be in keV and inside the range of 10 to 20000 keV.</li>
 <li><b>Material/mass-formula</b>: Here you can enter any material or element in
 the <b>InterSpec</b> database (e.x. Polyethylene, Air, Fe, etc.) and you will be
 assisted with a suggestion popup as you type to let you know what is in the

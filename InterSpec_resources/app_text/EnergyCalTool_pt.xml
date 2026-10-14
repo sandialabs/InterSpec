@@ -31,7 +31,7 @@
     O efeito da alteração é então propagado a todos os espectros, amostras e detectores selecionados em "Aplicar Alterações Para": as suas calibrações de energia são ajustadas de forma equivalente, de modo que os dados alinhados em energia antes da alteração continuam alinhados (nas novas energias) depois - mesmo que os seus coeficientes ou tipos de calibração sejam diferentes.
     Se este botão estiver desativado, o motivo é mostrado à sua esquerda.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Ajuste desativado: "Primeiro Plano" desmarcado em "Aplicar Alterações Para"</message>
+  <message id="ect-fit-hint-fore-deselected">Ajuste desativado: Primeiro Plano não selecionado</message>
   <message id="ect-fit-hint-no-peaks">Nenhum pico marcado para a calibração de energia</message>
   <message id="ect-fit-hint-not-fore-cal">O ajuste usa a calibração do primeiro plano</message>
   <message id="ect-fit-hint-no-coefs">Nenhum coeficiente selecionado para ajustar</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">Aplicar Alterações Para</message>
   <message id="ect-disp-dets">Detectores Exibidos</message>
   <message id="ect-all-dets">Todos os Detectores</message>
+  <message id="ect-selected-det-only">Dets. Indep.</message>
+  <message id="ect-tt-selected-det-only">Quando marcado, as alterações na calibração de energia (editar ou ajustar coeficientes, arrastar o espectro e as ferramentas de &quot;Mais Ações&quot;) são aplicadas apenas ao detector selecionado na coluna &quot;Detector&quot;, em vez de serem propagadas aos demais detectores.
+    O detector é identificado pelo nome nos outros espectros selecionados (primeiro plano, fundo, secundário), e a seleção de amostras continua valendo.
+    Edições dos pares de desvio são sempre aplicadas apenas ao detector editado.
+    Não afeta Gain Match nem Cal. Multi-Arquivo.</message>
   <message id="ect-disp-samples">Amostras Exibidas</message>
   <message id="ect-all-samples">Todas as Amostras</message>
   <message id="ect-calib-coeffs">Coeficientes de Calibração</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">Erro inesperado ao recuperar coeficientes de calibração anteriores - não aplicando alterações</message>
   <message id="ect-changed-cal-not-selected">Parece que a calibração de energia que você alterou não está marcada para que as alterações sejam aplicadas; por favor, corrija isso.</message>
   <message id="ect-dev-pair-change-invalid">Alterar o par de desvio tornou a calibração de energia inválida. Erro: {1}</message>
-  <message id="ect-set-dev-pair-err">Houve um erro ao definir pares de desvio para este detector.</message>
   <message id="ect-dev-applied-dets-samples">Pares de desvio aplicados apenas ao detector '{1}', mas para todos os números de amostra{2}.</message>
   <message id="ect-dev-applied-to-samples">Pares de desvio aplicados a todos os números de amostra{1}.</message>
   <message id="ect-of-the-fore"> do primeiro plano.</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">Se você recalibrar novamente com ALT+CTRL+ARRASTAR em outra porção do espectro, terá a opção de preservar os efeitos desta calibração também.</message>
   <message id="ect-lc-disp-dets">detectores exibidos</message>
   <message id="ect-lc-all-dets">todos os detectores</message>
+  <message id="ect-lc-selected-det-only">somente o detector '{1}'</message>
+  <message id="ect-fore-not-selected">Alteração não aplicada: com a seleção atual de &quot;Aplicar Alterações Para&quot;, ela não seria aplicada ao primeiro plano exibido.</message>
   <message id="ect-lc-all-samples">todas as amostras</message>
   <message id="ect-lc-disp-samples">amostras exibidas</message>
   <message id="ect-short-fore">Prim.</message>

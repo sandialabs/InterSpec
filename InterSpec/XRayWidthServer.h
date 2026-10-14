@@ -285,10 +285,8 @@ private:
  represents the Lorentzian broadening due to the finite lifetime of the atomic state
  (Heisenberg uncertainty principle).
 
- **This function is specifically for fluorescent x-rays** (e.g., XRF analysis, synchrotron-induced,
- or electron beam-induced x-rays) where Doppler broadening from nuclear motion is negligible.
- For decay x-rays from radioactive sources, use `get_xray_total_width_for_decay()` instead, which
- accounts for both natural linewidth and nuclear recoil Doppler broadening.
+ Used for fluorescent x-rays (e.g., XRF, or x-rays a source induces in itself or its shielding).  For decay
+ x-rays, `get_xray_total_width_for_decay()` finds the emitting element from the transition.
 
  Data is loaded from the external XML file `data/xray_widths.xml`, which contains
  comprehensive coverage of K-shell and L-shell x-ray transitions. Users can override
@@ -320,36 +318,20 @@ double get_xray_lorentzian_width( const SandiaDecay::Element *element, const dou
                                   const double tolerance_kev = 0.5 );
 
 
-/** Returns total x-ray linewidth (natural + alpha recoil Doppler) for decay x-rays.
+/** Returns the Lorentzian linewidth (HWHM, keV) for an x-ray emitted in a decay.
 
- This function computes the total Lorentzian HWHM for characteristic x-rays emitted during
- radioactive decay, accounting for both:
- 1. Natural linewidth (atomic physics, Heisenberg uncertainty)
- 2. Nuclear recoil Doppler broadening from alpha decay (if applicable)
-
- For alpha-emitting nuclides (U-238, Pu-239, etc.), the daughter nucleus recoils after
- alpha emission, causing Doppler broadening of characteristic x-rays. This recoil contribution
- is typically ~70-100 eV HWHM for K-shell x-rays from heavy elements.
-
- The total width is computed by adding natural and recoil widths in quadrature:
-   Total HWHM = sqrt(natural² + recoil²)
-
- **Use this function for decay x-rays** from radioactive sources. For fluorescent x-rays
- (XRF, synchrotron, electron beam), use `get_xray_lorentzian_width()` instead.
+ This is the natural linewidth of the x-ray of the emitting atom (the daughter, or the parent for an isomeric
+ transition), as `get_xray_lorentzian_width()` gives it.  No alpha-recoil Doppler term is added: the K vacancies
+ of alpha decays come almost entirely from internal conversion in the daughter, whose recoil (v/c ~ 1E-3) has
+ stopped (~0.1 ps) before most levels de-excite.  LANL micro-calorimeter spectra of U-235 standards give the
+ Th K-alpha1 and K-beta1 HWHM as 48-51 eV (natural 48 eV); adding the full recoil in quadrature gave 82-90 eV.
 
  @param transition Pointer to the SandiaDecay::Transition that produces the x-ray
                   (must not be nullptr and must contain an x-ray particle)
  @param xray_energy_kev The x-ray energy in keV (should match one of the x-rays in the transition)
 
- @returns Total Lorentzian HWHM in keV (natural + recoil in quadrature), or -1.0 if:
-          - transition is nullptr
-          - transition does not contain an x-ray particle at the specified energy
-          - natural width lookup fails
-          - recoil calculation fails (for non-alpha decays, only natural width is returned)
-
- Note: For non-alpha decays, this function returns only the natural linewidth (same as
-       `get_xray_lorentzian_width()`). The recoil contribution is only significant for
-       alpha-emitting nuclides.
+ @returns Lorentzian HWHM in keV, or -1.0 if the transition is nullptr, has no x-ray at the specified energy,
+          or the natural width lookup fails.
  */
 double get_xray_total_width_for_decay( const SandiaDecay::Transition *transition,
                                        const double xray_energy_kev );

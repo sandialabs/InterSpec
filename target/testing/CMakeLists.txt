@@ -367,6 +367,13 @@ add_test( NAME TRelActCalcAuto_Conditioning
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_ActiveSet test_RelActCalcAuto_ActiveSet.cpp )
+target_link_libraries( test_RelActCalcAuto_ActiveSet PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ActiveSet
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ActiveSet> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_CovarianceQuality test_RelActCalcAuto_CovarianceQuality.cpp )
 target_link_libraries( test_RelActCalcAuto_CovarianceQuality PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_CovarianceQuality
@@ -392,6 +399,27 @@ add_executable( test_RelActCalcAuto_FloatingPeakFwhm test_RelActCalcAuto_Floatin
 target_link_libraries( test_RelActCalcAuto_FloatingPeakFwhm PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_FloatingPeakFwhm
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_FloatingPeakFwhm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_MicroCalFwhm test_RelActCalcAuto_MicroCalFwhm.cpp )
+target_link_libraries( test_RelActCalcAuto_MicroCalFwhm PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_MicroCalFwhm
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_MicroCalFwhm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalc_FluorescenceDepth test_RelActCalc_FluorescenceDepth.cpp )
+target_link_libraries( test_RelActCalc_FluorescenceDepth PRIVATE InterSpecLib )
+add_test( NAME TRelActCalc_FluorescenceDepth
+  COMMAND $<TARGET_FILE:test_RelActCalc_FluorescenceDepth> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_XrayObsEff test_RelActCalcAuto_XrayObsEff.cpp )
+target_link_libraries( test_RelActCalcAuto_XrayObsEff PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_XrayObsEff
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_XrayObsEff> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -943,6 +971,13 @@ add_executable( test_ExportSpecFile test_ExportSpecFile.cpp )
 target_link_libraries( test_ExportSpecFile PRIVATE InterSpecLib )
 add_test( NAME TExportSpecFile
   COMMAND $<TARGET_FILE:test_ExportSpecFile> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCalTool test_EnergyCalTool.cpp )
+target_link_libraries( test_EnergyCalTool PRIVATE InterSpecLib )
+add_test( NAME TEnergyCalTool
+  COMMAND $<TARGET_FILE:test_EnergyCalTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

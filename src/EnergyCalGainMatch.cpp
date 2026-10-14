@@ -106,9 +106,39 @@ namespace
   const double sm_invalid_chi2 = 1.0E30;
 
 
+  /** Rebins `counts` (whose channel `energies` include the upper edge of the last channel) onto
+   `edges` (which also include the upper edge), returning (edges.size()-1) values.  Counts outside
+   [edges.front(), edges.back()) are dropped, whereas rebin_by_lower_edge alone would lump them
+   into the end bins (it conserves the total) - which inflates those bins, and when comparing
+   spectra, makes the end bins depend strongly on the energy calibrations being tested.
+   */
+  vector<float> rebin_dropping_out_of_range( const vector<float> &energies,
+                                             const vector<float> &counts,
+                                             const vector<float> &edges )
+  {
+    if( (energies.size() != (counts.size() + 1)) || (edges.size() < 2) )
+      throw runtime_error( "rebin_dropping_out_of_range: invalid input sizes" );
+
+    // Pad with an extra bin at each end to catch the out-of-range counts; rebin_by_lower_edge
+    //  treats its end bins as unbounded, so the widths of these pad bins dont matter.
+    vector<float> padded_edges;
+    padded_edges.reserve( edges.size() + 2 );
+    padded_edges.push_back( edges.front() - (edges[1] - edges[0]) );
+    padded_edges.insert( end(padded_edges), begin(edges), end(edges) );
+    padded_edges.push_back( edges.back() + (edges.back() - edges[edges.size() - 2]) );
+
+    vector<float> rebinned;
+    SpecUtils::rebin_by_lower_edge( energies, counts, padded_edges, rebinned );
+    assert( rebinned.size() == (edges.size() + 1) );
+
+    return vector<float>( begin(rebinned) + 1, end(rebinned) - 1 );
+  }//rebin_dropping_out_of_range(...)
+
+
   /** Rebins the spectrum onto the given (ascending) energy edges, returning
    sqrt( counts-per-keV ) for each of the (edges.size()-1) resulting bins.
-   Bins outside the spectrums energy range come back as zero.
+   Bins outside the spectrums energy range come back as zero, and spectrum counts outside the
+   edges are dropped (see rebin_dropping_out_of_range).
    */
   vector<float> sqrt_density_on_edges( const SpecUtils::Measurement &spec,
                                        const vector<float> &edges )
@@ -117,8 +147,8 @@ namespace
     const shared_ptr<const vector<float>> &counts = spec.gamma_counts();
     assert( cal && cal->valid() && counts );
 
-    vector<float> rebinned;
-    SpecUtils::rebin_by_lower_edge( *cal->channel_energies(), *counts, edges, rebinned );
+    const vector<float> rebinned = rebin_dropping_out_of_range( *cal->channel_energies(),
+                                                                *counts, edges );
 
     vector<float> density( edges.size() - 1, 0.0f );
     const size_t nbin = std::min( density.size(), rebinned.size() );
@@ -467,9 +497,12 @@ double chi2_for_gain_offset( const std::shared_ptr<const SpecUtils::Measurement>
   vector<float> scaled;  //test counts rebinned onto the reference grid
   try
   {
+    // Test counts beyond the references energy range must be dropped, not lumped into the
+    //  references end channels - those channels can be in the comparison window, and their
+    //  lumped content grows with gain, biasing the fit.
     trans_cal = transform_calibration( test->energy_calibration(), gain, offset );
-    SpecUtils::rebin_by_lower_edge( *trans_cal->channel_energies(), *test_counts,
-                                    *ref_cal->channel_energies(), scaled );
+    scaled = rebin_dropping_out_of_range( *trans_cal->channel_energies(), *test_counts,
+                                          *ref_cal->channel_energies() );
   }catch( std::exception & )
   {
     return sm_invalid_chi2;

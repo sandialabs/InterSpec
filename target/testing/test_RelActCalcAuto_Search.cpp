@@ -182,6 +182,76 @@ BOOST_AUTO_TEST_CASE( objective_order_is_strict_at_large_scale )
   BOOST_CHECK_EQUAL( removals[*selected].semantic_key, "z-lower" );
 }
 
+BOOST_AUTO_TEST_CASE( exact_tie_keeps_the_default_candidate )
+{
+  // A flat objective (e.g., zero source activity) lets every seed "converge" where it started, so the
+  //  perturbed seeds tie the default exactly; the alphabetically-first perturbation must not win.
+  const std::string default_name = search_seed_variant_name( SearchSeedVariant::Default );
+  const std::string calibration_name = search_seed_variant_name( SearchSeedVariant::CalibrationLowerQuartile );
+  BOOST_REQUIRE( calibration_name < default_name );
+
+  std::vector<DeterministicSearchScore> scores{
+    { calibration_name, 15423.6, {0.95,0.90,3.0}, true },
+    { default_name,     15423.6, {1.00,1.00,3.0}, true },
+    { "activity-semantic-split-a", 15437.0, {0.96,1.20,4.0}, true }
+  };
+
+  for( size_t rotation = 0; rotation < scores.size(); ++rotation )
+  {
+    const std::vector<size_t> order = deterministic_search_order(scores);
+    BOOST_REQUIRE_EQUAL( order.size(), 3U );
+    BOOST_CHECK_EQUAL( scores[order[0]].semantic_name, default_name );
+    BOOST_CHECK_EQUAL( scores[order[1]].semantic_name, calibration_name );
+    std::rotate( scores.begin(), scores.begin() + 1, scores.end() );
+  }
+
+  // A strictly lower objective still beats the default.
+  scores[0].full_objective = 15423.5;
+  const std::vector<size_t> order = deterministic_search_order(scores);
+  BOOST_REQUIRE( !order.empty() );
+  BOOST_CHECK_EQUAL( scores[order.front()].semantic_name, scores[0].semantic_name );
+  BOOST_CHECK( scores[order.front()].semantic_name != default_name );
+}
+
+BOOST_AUTO_TEST_CASE( stall_detector_flags_only_a_creeping_solve )
+{
+  // A solve converging normally: big early drops, never `window` steps gaining less than `min_drop`.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 1000.0;
+    for( int step = 0; step < 20; ++step )
+    {
+      objective *= 0.5;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+  }
+
+  // A creep: each step gains 1E-4, so five steps together gain 5E-4 < 0.01.  It is flagged only once
+  //  more than `window` steps are recorded, and not before.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 383.195;
+    for( int step = 0; step < 5; ++step )
+    {
+      objective -= 1.0E-4;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+    objective -= 1.0E-4;
+    BOOST_CHECK( detector.successful_step( objective ) );
+  }
+
+  // Slow but paying steps (0.003 each, 0.015 over the window) are not a stall.
+  {
+    StallDetector detector( 5, 0.01 );
+    double objective = 500.0;
+    for( int step = 0; step < 30; ++step )
+    {
+      objective -= 0.003;
+      BOOST_CHECK( !detector.successful_step( objective ) );
+    }
+  }
+}
+
 BOOST_AUTO_TEST_CASE( duplicate_basins_are_collapsed_after_ranking )
 {
   const std::vector<DeterministicSearchScore> scores{

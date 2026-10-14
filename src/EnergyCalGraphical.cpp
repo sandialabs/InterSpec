@@ -262,6 +262,16 @@ void EnergyCalGraphicalConfirm::apply()
     return;
   }
 
+  // The change is relative to the displayed foreground, so only makes sense if it gets applied to
+  //  the foreground
+  const vector<MeasToApplyCoefChangeTo> scope = m_calibrator->measurementsToApplyCoeffChangeTo();
+  if( !m_calibrator->scopeIncludesDisplayedForeground( scope ) )
+  {
+    viewer->logMessage( WString::tr("ect-fore-not-selected"), 2 );
+    finished().emit(Wt::DialogCode::Accepted);
+    return;
+  }
+
 
   const float shift = finalE - startE;
 

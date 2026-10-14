@@ -31,7 +31,7 @@
     परिवर्तन का प्रभाव फिर "परिवर्तन लागू करें" में चयनित सभी स्पेक्ट्रा, नमूनों और डिटेक्टरों में फैलाया जाता है: उनके ऊर्जा अंशांकन समतुल्य रूप से समायोजित किए जाते हैं, ताकि परिवर्तन से पहले ऊर्जा में संरेखित डेटा बाद में भी (नई ऊर्जाओं पर) संरेखित रहे - भले ही उनके अंशांकन गुणांक या प्रकार भिन्न हों।
     यदि यह बटन निष्क्रिय है, तो कारण इसके बाईं ओर दिखाया जाता है।
   </message>
-  <message id="ect-fit-hint-fore-deselected">फिट निष्क्रिय: "परिवर्तन लागू करें" में "अग्रभूमि" चयनित नहीं है</message>
+  <message id="ect-fit-hint-fore-deselected">फिट निष्क्रिय: अग्रभूमि चयनित नहीं</message>
   <message id="ect-fit-hint-no-peaks">ऊर्जा अंशांकन के लिए कोई पीक चिह्नित नहीं है</message>
   <message id="ect-fit-hint-not-fore-cal">फिट अग्रभूमि के अंशांकन का उपयोग करता है</message>
   <message id="ect-fit-hint-no-coefs">फिट करने के लिए कोई गुणांक चयनित नहीं है</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">परिवर्तन लागू करें</message>
   <message id="ect-disp-dets">प्रदर्शित डिटेक्टर</message>
   <message id="ect-all-dets">सभी डिटेक्टर</message>
+  <message id="ect-selected-det-only">स्वतंत्र डिटे.</message>
+  <message id="ect-tt-selected-det-only">चेक होने पर, ऊर्जा अंशांकन परिवर्तन (गुणांक संपादित या फिट करना, स्पेक्ट्रम खींचना, और &quot;अधिक क्रियाएं&quot; उपकरण) अन्य डिटेक्टरों में फैलाने के बजाय केवल &quot;डिटेक्टर&quot; स्तंभ में चयनित डिटेक्टर पर लागू होते हैं।
+    अन्य चयनित स्पेक्ट्रा (अग्रभूमि, पृष्ठभूमि, द्वितीयक) में डिटेक्टर का मिलान नाम से किया जाता है, और नमूना चयन लागू रहते हैं।
+    विचलन युग्म संपादन हमेशा केवल संपादित डिटेक्टर पर लागू होते हैं।
+    यह Gain Match या बहु फ़ाइल अंशांकन को प्रभावित नहीं करता।</message>
   <message id="ect-disp-samples">प्रदर्शित नमूने</message>
   <message id="ect-all-samples">सभी नमूने</message>
   <message id="ect-calib-coeffs">अंशांकन गुणांक</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">पिछले अंशांकन गुणांक पुनर्प्राप्त करने में अप्रत्याशित त्रुटि - परिवर्तन लागू नहीं कर रहे</message>
   <message id="ect-changed-cal-not-selected">ऐसा लगता है कि आपने जो ऊर्जा अंशांकन बदला है वह परिवर्तन लागू करने के लिए चिह्नित नहीं है; कृपया इसे ठीक करें।</message>
   <message id="ect-dev-pair-change-invalid">विचलन जोड़ी बदलने से ऊर्जा अंशांकन अमान्य हो गया। त्रुटि: {1}</message>
-  <message id="ect-set-dev-pair-err">इस डिटेक्टर के लिए विचलन जोड़ी सेट करने में त्रुटि थी।</message>
   <message id="ect-dev-applied-dets-samples">विचलन जोड़ी केवल '{1}' डिटेक्टर पर लागू की गई, लेकिन सभी नमूना संख्याओं पर{2}।</message>
   <message id="ect-dev-applied-to-samples">विचलन जोड़ी सभी नमूना संख्याओं पर लागू की गई{1}।</message>
   <message id="ect-of-the-fore"> अग्रभूमि के।</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">यदि आप स्पेक्ट्रम के किसी अन्य भाग पर ALT+CTRL+DRAG द्वारा फिर से अंशांकित करते हैं, तो आपको इस अंशांकन के प्रभावों को भी संरक्षित करने का विकल्प दिया जाएगा।</message>
   <message id="ect-lc-disp-dets">प्रदर्शित डिटेक्टर</message>
   <message id="ect-lc-all-dets">सभी डिटेक्टर</message>
+  <message id="ect-lc-selected-det-only">केवल डिटेक्टर '{1}'</message>
+  <message id="ect-fore-not-selected">परिवर्तन लागू नहीं हुआ: वर्तमान &quot;परिवर्तन लागू करें&quot; चयन के साथ यह प्रदर्शित अग्रभूमि पर लागू नहीं होगा।</message>
   <message id="ect-lc-all-samples">सभी नमूने</message>
   <message id="ect-lc-disp-samples">प्रदर्शित नमूने</message>
   <message id="ect-short-fore">अग्र.</message>
