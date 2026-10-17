@@ -332,6 +332,13 @@ void LlmConfigWindow::buildUi()
   body->addStyleClass( "LlmConfigBody" );
   body->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
 
+  // Phones get a narrow layout (see LlmConfigWindow.css), and leave out the developer-oriented
+  //  parts (MCP server, conversation logs, XML preview).  Those parts are hidden rather than not
+  //  created, as their settings live in m_working regardless, and so are saved unchanged.
+  const bool phone = m_interspec->isPhone();
+  if( phone )
+    addStyleClass( "LcwPhone" );
+
   // --- Enable LLM row ---
   WContainerWidget *enableRow = body->addNew<WContainerWidget>();
   enableRow->addStyleClass( "LcwCard LcwEnableRow" );
@@ -371,6 +378,7 @@ void LlmConfigWindow::buildUi()
   // --- MCP card ---
   WContainerWidget *mcpCard = body->addNew<WContainerWidget>();
   mcpCard->addStyleClass( "LcwCard LcwMcpCard" );
+  mcpCard->setHidden( phone || !USE_MCP_SERVER );  // There is no MCP server in mobile builds
 
   WContainerWidget *mcpTop = mcpCard->addNew<WContainerWidget>();
   mcpTop->addStyleClass( "LcwEnableRow" );
@@ -551,6 +559,7 @@ void LlmConfigWindow::buildUi()
 
     WContainerWidget *logCard = body->addNew<WContainerWidget>();
     logCard->addStyleClass( "LcwCard LcwMcpCard" );
+    logCard->setHidden( phone );
 
     WContainerWidget *logTop = logCard->addNew<WContainerWidget>();
     logTop->addStyleClass( "LcwEnableRow" );
@@ -609,20 +618,31 @@ void LlmConfigWindow::buildUi()
   // --- Footer ---
   WContainerWidget *foot = footer();
 
-  WContainerWidget *footLeft = foot->addNew<WContainerWidget>();
+  // On phones the footer is squeezed into the (35px) title bar, so the validation summary goes at
+  //  the bottom of the body instead, and Cancel becomes the floated-left "back" button.
+  WContainerWidget *footLeft = (phone ? body : foot)->addNew<WContainerWidget>();
   footLeft->addStyleClass( "LcwFooterLeft" );
   m_validationSummary = footLeft->addNew<WText>();
   m_validationSummary->addStyleClass( "LcwValidation" );
   m_previewToggle = footLeft->addNew<WPushButton>( WString::tr("lcw-preview-xml") );
   m_previewToggle->addStyleClass( "LinkBtn" );
   m_previewToggle->clicked().connect( this, &LlmConfigWindow::togglePreviewXml );
+  m_previewToggle->setHidden( phone );
+
+  // Phone footers float the close button left, so it must be added before Accept.
+  WPushButton *cancelBtn = nullptr;
+  if( phone )
+    cancelBtn = addCloseButtonToFooter( WString::tr("lcw-cancel"), WidgetUtils::ButtonRole::Dismiss );
 
   m_acceptBtn = foot->addNew<WPushButton>( WString::tr("lcw-accept") );
   WidgetUtils::applyButtonRole( m_acceptBtn, WidgetUtils::ButtonRole::Affirm );
   m_acceptBtn->clicked().connect( this, &LlmConfigWindow::handleAccept );
 
-  WPushButton *cancelBtn = foot->addNew<WPushButton>( WString::tr("lcw-cancel") );
-  WidgetUtils::applyButtonRole( cancelBtn, WidgetUtils::ButtonRole::Dismiss );
+  if( !phone )
+  {
+    cancelBtn = foot->addNew<WPushButton>( WString::tr("lcw-cancel") );
+    WidgetUtils::applyButtonRole( cancelBtn, WidgetUtils::ButtonRole::Dismiss );
+  }
   cancelBtn->clicked().connect( this, &AuxWindow::hide );
 
   if( m_writableDir.empty() )

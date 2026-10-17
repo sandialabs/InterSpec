@@ -36,3 +36,56 @@
   padding-right: 5px;
 }
 
+
+
+/* Phones: the topic list and a topic's contents are each shown full-window, one at a time (see
+   HelpWindow::showPhoneTopics). */
+.HelpWindowPhone .searchBox {
+  width: auto;
+  box-sizing: border-box;
+  margin: 8px !important;
+  min-height: 34px;
+  font-size: 16px;  /* iOS zooms the page in when an input with a smaller font gets focus */
+}
+
+/* Roomier rows, as they are tapped rather than clicked. */
+.HelpWindowPhone .HelpPhoneTopics .helpTree {
+  padding: 0 8px 8px 4px;
+}
+
+.HelpWindowPhone .HelpPhoneTopics .Wt-label {
+  font-size: 16px;
+  line-height: 2.1;
+}
+
+.HelpWindowPhone .HelpPhoneWelcomeLink {
+  margin: 6px 12px 10px 12px;
+  align-self: flex-start;
+}
+
+/* The phone header's link-styled buttons (see InterSpecMobile*.css) need a little room to the right. */
+.PhoneAuxWindowFooter > .HelpAllTopicsBtn {
+  margin-right: 8px;
+}
+
+/* The contents page is sized to fill the window, including its padding. */
+.HelpWindowPhone .HelpContent {
+  box-sizing: border-box;
+}
+
+/* Keep the contents within the screen width; anything still too wide scrolls on its own. */
+.HelpWindowPhone .HelpContent img {
+  max-width: 100%;
+  height: auto;
+}
+
+.HelpWindowPhone .HelpContent table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.HelpWindowPhone .HelpContent pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

@@ -8,4 +8,5 @@
   <message id="hw-err-opening-json">Nem sikerült megnyitni a súgó JSON fájlt: '{1}'.</message>
   <message id="hw-err-no-help-entry">A súgóban nincs bejegyzés a(z) '{1}' elemhez.</message>
   <message id="hw-search-empty-text">Keresés</message>
+  <message id="hw-all-topics">Minden téma</message>
 </messages>

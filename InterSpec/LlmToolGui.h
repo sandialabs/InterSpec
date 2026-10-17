@@ -63,7 +63,7 @@ namespace Wt
 {
   class WTextArea;
   class WPushButton;
-  class WGridLayout;
+  class WVBoxLayout;
 }
 
 /** Widget for interacting with Large Language Models.
@@ -97,6 +97,26 @@ public:
 
   /** Focus the input text field */
   void focusInput();
+
+  /** Re-fits any full-screen phone window this tool has open (i.e., the provider settings window)
+   to the screen; called when a phone is rotated.  See AuxWindow::refitPhoneFullScreen().
+   */
+  void refitPhoneWindows();
+
+  /** Phones only: tells the tool where it is being shown.
+
+   When in a full-screen window, `header` is that windows header bar (otherwise empty on the right),
+   and the tool puts its "dock" button (see InterSpec::setLlmToolDocked) and its conversation menu
+   icon there, rather than floating the menu icon over the conversation, where it would cover the
+   first interactions title.  When docked in the tools tab strip, `header` is null, and the tool
+   instead shows an "expand to full-screen" button next to its text input.
+   */
+  void setPhoneWindowHeader( Wt::WContainerWidget *header );
+
+  /** Phones only: whether the "dock" button in the window header is shown - i.e., whether there is a
+   tool-tab strip to dock into (only in portrait).
+   */
+  void setPhoneCanDock( const bool canDock );
 
   /** Clear the conversation history display */
   void clearHistory();
@@ -246,7 +266,30 @@ private:
   Wt::WTextArea *m_inputEdit;             ///< Auto-growing input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Icon button to submit (arrow) / cancel (stop) messages
   Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
-  Wt::WGridLayout *m_layout;              ///< Main layout manager
+
+  /** Where m_menuIcon lives, other than in m_phoneHeaderTools (i.e., the conversation area). */
+  Wt::WContainerWidget *m_menuIconHome;
+
+  /** Phones only: the dock button and conversation menu icon, placed in the header bar of the
+   full-screen window holding us (so owned by that header); see setPhoneWindowHeader().
+   */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_phoneHeaderTools;
+
+  /** The dock button in m_phoneHeaderTools; only valid while m_phoneHeaderTools is. */
+  Wt::WPushButton *m_phoneDockButton;
+
+  /** See setPhoneCanDock(). */
+  bool m_phoneCanDock;
+
+  /** Moves m_menuIcon into m_phoneHeaderTools, if both exist and it is not already there. */
+  void movePhoneMenuIcon();
+
+  /** Deletes m_menuIcon if it lives in m_phoneHeaderTools (i.e., not under m_root). */
+  void removePhoneMenuIcon();
+
+  /** Adds a phone "expand to full-screen" button to `parent`; only visible while docked (CSS). */
+  void addPhoneExpandButton( Wt::WContainerWidget *parent );
+  Wt::WVBoxLayout *m_layout;              ///< Main layout manager
 
   bool m_isRequestPending;                 ///< Whether a request is currently pending
 

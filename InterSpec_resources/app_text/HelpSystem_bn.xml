@@ -8,4 +8,5 @@
   <message id="hw-err-opening-json">'{1}'-এ সাহায্য JSON ফাইল খুলতে পারেনি।</message>
   <message id="hw-err-no-help-entry">'{1}'-এর জন্য কোনো সাহায্য এন্ট্রি নেই।</message>
   <message id="hw-search-empty-text">অনুসন্ধান</message>
+  <message id="hw-all-topics">সব বিষয়</message>
 </messages>

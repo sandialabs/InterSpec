@@ -8,4 +8,5 @@
   <message id="hw-err-opening-json">Não foi possível abrir arquivo JSON de ajuda em '{1}'.</message>
   <message id="hw-err-no-help-entry">A ajuda não possui uma entrada para '{1}'.</message>
   <message id="hw-search-empty-text">Pesquisar</message>
+  <message id="hw-all-topics">Todos os tópicos</message>
 </messages>

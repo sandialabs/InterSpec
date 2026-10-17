@@ -993,6 +993,16 @@ public:
    so it will be included when the file is next saved.
    */
   void syncLlmHistoryToSpecMeas();
+
+  /** Phones only: moves the LLM assistant between its full-screen window (`docked == false`) and
+   the tools tab strip below the spectrum (`docked == true` - only possible in portrait, when the
+   strip is showing), so the user can watch the spectrum while the conversation carries on; the
+   tool widget is moved, not recreated, so any request in flight is unaffected.
+
+   The move is made on the next pass of the event loop, since it is asked for by buttons inside the
+   containers being swapped.
+   */
+  void setLlmToolDocked( const bool docked );
 #endif
 
   /** Will show the disclaimer, license, and statment window, setting
@@ -1881,9 +1891,16 @@ protected:
   Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
 
   /** Holds m_llmTool when there is no tool-tab strip to dock it into (same role
-   #m_terminalWindow plays for m_terminal).  Null while the tool is docked in the tab strip.
+   #m_terminalWindow plays for m_terminal), or on phones unless the user docked it (see
+   #setLlmToolDocked).  Null while the tool is docked in the tab strip.
    */
   Wt::Core::observing_ptr<AuxWindow> m_llmToolWindow;
+
+  /** Adds `tool` (i.e., m_llmTool) to the tools tab strip as a closeable tab; icon-only on phones. */
+  void addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent );
+
+  /** Puts `tool` (i.e., m_llmTool) into a new m_llmToolWindow - full-screen on phones. */
+  void showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

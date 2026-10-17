@@ -77,6 +77,9 @@
 
 #if( USE_LLM_INTERFACE )
 #include "InterSpec/LlmConfig.h"
+#endif
+
+#if( USE_MCP_SERVER )
 #include "InterSpec/LlmMcpResource.h"
 #endif
 
@@ -145,7 +148,9 @@ namespace InterSpecServer
 #if( USE_LLM_INTERFACE )
   std::mutex ns_llm_config_mutex;
   std::shared_ptr<const LlmConfig> ns_llm_config;
-  
+#endif
+
+#if( USE_MCP_SERVER )
   std::mutex ns_mcp_mutex;
   std::unique_ptr<LlmMcpResource> ns_mcp_resource;
 #endif
@@ -522,7 +527,7 @@ void startWebServer( string name,
       
   cout << "Started server at " << this_url << endl;
       
-#if( USE_LLM_INTERFACE )
+#if( USE_MCP_SERVER )
   static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
       
   try
@@ -570,7 +575,7 @@ void startWebServer( string name,
     // TODO: maybe should shutdown server, etc?
 #endif
   }//try / catch
-#endif //USE_LLM_INTERFACE
+#endif //USE_MCP_SERVER
 }//startWebServer(...)
 
 
@@ -1363,7 +1368,7 @@ std::shared_ptr<const LlmConfig> llm_config()
   return ns_llm_config;
 }
 
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE )
 /** Bring the running MCP server resource into line with `config`.
 
  The MCP resource captures its enabled/token/registry state at construction, so a change is applied
@@ -1424,7 +1429,7 @@ static void reconcile_mcp_resource( const std::shared_ptr<const LlmConfig> &conf
     ns_mcp_resource.reset();
   }
 }//reconcile_mcp_resource(...)
-#endif // !BUILD_AS_UNIT_TEST_SUITE
+#endif // USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE
 
 
 void set_llm_config( std::shared_ptr<const LlmConfig> config )
@@ -1436,7 +1441,7 @@ void set_llm_config( std::shared_ptr<const LlmConfig> config )
     ns_llm_config = config;
   }
 
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE )
   // Apply MCP server changes live (the LLM assistant already reads the swapped pointer above).
   bool tokenChanged = false;
 #if( MCP_ENABLE_AUTH )

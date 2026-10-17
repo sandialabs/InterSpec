@@ -31,6 +31,7 @@
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WPanel.h>
+#include <Wt/WTheme.h>
 #include <Wt/WAnchor.h>
 #include <Wt/WServer.h>
 #include <Wt/WTextArea.h>
@@ -59,6 +60,16 @@
 
 using namespace Wt;
 using namespace std;
+
+namespace
+{
+  /** Phones get a pared-down conversation display; see LlmInteractionDisplay::m_phoneLayout. */
+  bool is_phone_layout()
+  {
+    const InterSpec * const viewer = InterSpec::instance();
+    return viewer && viewer->isPhone();
+  }
+}//namespace
 
 namespace
 {
@@ -309,6 +320,37 @@ namespace
 }//namespace
 
 
+void LlmJsRenderedDiv::setRenderJs( const std::string &js )
+{
+  m_renderJs = js;
+  if( isRendered() && !js.empty() )
+    doJavaScript( js );
+}//setRenderJs(...)
+
+
+void LlmJsRenderedDiv::setStateJs( const std::string &js )
+{
+  m_stateJs = js;
+  if( isRendered() && !js.empty() )
+    doJavaScript( js );
+}//setStateJs(...)
+
+
+void LlmJsRenderedDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  // A full render means the DOM element is being (re-)created, empty.
+  if( flags.test( RenderFlag::Full ) )
+  {
+    if( !m_renderJs.empty() )
+      doJavaScript( m_renderJs );
+    if( !m_stateJs.empty() )
+      doJavaScript( m_stateJs );
+  }
+
+  WContainerWidget::render( flags );
+}//render(...)
+
+
 namespace LlmMarkdown
 {
 void load_resources( WApplication *app )
@@ -335,7 +377,7 @@ WContainerWidget *add_text( WContainerWidget *parent, const string &markdown,
 
   load_resources( wApp );
 
-  WContainerWidget *div = parent->addNew<WContainerWidget>();
+  LlmJsRenderedDiv *div = parent->addNew<LlmJsRenderedDiv>();
   div->addStyleClass( "LlmMarkdownBody" );
   if( !style_class.empty() )
     div->addStyleClass( style_class );
@@ -343,8 +385,8 @@ WContainerWidget *add_text( WContainerWidget *parent, const string &markdown,
   // LlmRenderMarkdown waits for LlmMarkdown.js, which in turn waits for marked/KaTeX, and either one
   //  falls back to showing the plain text - so the content can not be lost here.
   LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmRenderMarkdown );
-  div->doJavaScript( "Wt.WT.LlmRenderMarkdown('" + div->id() + "',"
-                     + WString(markdown).jsStringLiteral() + ");" );
+  div->setRenderJs( "Wt.WT.LlmRenderMarkdown('" + div->id() + "',"
+                    + WString(markdown).jsStringLiteral() + ");" );
 
   return div;
 }//add_text(...)
@@ -356,11 +398,17 @@ void set_raw_mode( WWidget *widget, const bool raw )
   if( !widget )
     return;
 
-  // This only ever runs from a user click, long after the scripts have loaded, but guard anyway so a
-  //  failed load leaves the (already plain) text alone rather than throwing.
-  widget->doJavaScript( "if(typeof LlmMarkdown!=='undefined')"
-                        " LlmMarkdown.setRawMode('" + widget->id() + "',"
-                        + string(raw ? "true" : "false") + ");" );
+  // Guarded so a failed script load leaves the (already plain) text alone rather than throwing.
+  const string js = "if(typeof LlmMarkdown!=='undefined')"
+                    " LlmMarkdown.setRawMode('" + widget->id() + "',"
+                    + string(raw ? "true" : "false") + ");";
+
+  // Remembered on the widget (made by add_text), so a re-created element gets the same mode.
+  LlmJsRenderedDiv * const div = dynamic_cast<LlmJsRenderedDiv *>( widget );
+  if( div )
+    div->setStateJs( js );
+  else
+    widget->doJavaScript( js );
 }//set_raw_mode(...)
 }//namespace LlmMarkdown
 
@@ -376,7 +424,8 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
     m_menuIcon( nullptr ),
     m_menu( nullptr ),
     m_bodyContainer( nullptr ),
-    m_bodyCreated( false )
+    m_bodyCreated( false ),
+    m_phoneLayout( is_phone_layout() )
 {
   addStyleClass( "LlmInteractionTurnDisplay" );
 
@@ -587,8 +636,11 @@ LlmInteractionFinalResponseDisplay::~LlmInteractionFinalResponseDisplay()
 void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
 {
   // Base items (Request/Response JSON) first, then a convenience "Copy Response Text" that puts the
-  // human-readable assistant text (not the raw JSON) on the clipboard.
-  LlmInteractionTurnDisplay::addMenuItems( menu );
+  // human-readable assistant text (not the raw JSON) on the clipboard.  Phones get only the latter.
+  if( m_phoneLayout )
+    menu->addPhoneBackItem( nullptr );
+  else
+    LlmInteractionTurnDisplay::addMenuItems( menu );
 
   PopupDivMenuItem *copyText = menu->addMenuItem( "Copy Response Text" );
   copyText->triggered().connect( std::bind( [this]() {
@@ -599,6 +651,9 @@ void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
                       + WString(m_response->content()).jsStringLiteral() + ");";
     wApp->doJavaScript( js );
   }));
+
+  if( m_phoneLayout )
+    return;
 
   // Escape hatch to see the Markdown/LaTeX the model actually wrote (and for when rendering it
   //  obscures something).  "Copy Response Text" above always copies the raw source, either way.
@@ -699,7 +754,8 @@ LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request
   setCollapsed( true );
 
   // Create title bar with menu icon (we have to do this AFTER calling setTitle, or the button will disapear)
-  createMenuIcon();
+  if( !m_phoneLayout )
+    createMenuIcon();
   
   // Create content immediately (lazy loading to be added later)
   createBodyContent();
@@ -783,13 +839,25 @@ void LlmToolRequestDisplay::createBodyContent()
 
 LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results,
                                               std::weak_ptr<LlmInterface> llmInterface,
-                                              int nestingLevel )
+                                              int nestingLevel,
+                                              WContainerWidget *phoneVisuals )
   : LlmInteractionTurnDisplay( results ),
     m_results( results ),
     m_llmInterface( llmInterface ),
-    m_nestingLevel( nestingLevel )
+    m_nestingLevel( nestingLevel ),
+    m_phoneVisuals( phoneVisuals )
 {
   addStyleClass( "LlmToolResultsDisplay" );
+
+  if( m_phoneVisuals )
+  {
+    // Compact phone entry in the interactions tool-summary row: no title bar (so no collapsing or
+    //  menu), just the per-tool lines.
+    addStyleClass( "LlmPhoneCompact" );
+    createBodyContent();
+    m_bodyCreated = true;
+    return;
+  }//if( m_phoneVisuals )
 
   // Set title
   setTitle( getTitleText() );
@@ -881,8 +949,11 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   nameText->addStyleClass( "LlmToolName" );
 
   // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
-  WText *idText = resultDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
-  idText->addStyleClass( "LlmInvocationId" );
+  if( !m_phoneVisuals )
+  {
+    WText *idText = resultDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
+    idText->addStyleClass( "LlmInvocationId" );
+  }
 
   // Execution duration
   if( call.executionDuration.has_value() )
@@ -892,8 +963,10 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
     durationText->addStyleClass( "LlmDuration" );
   }
 
-  // Result content - show if not pending, available, and (no sub-agent OR sub-agent completed)
-  if( !call.content.empty()
+  // Result content - show if not pending, available, and (no sub-agent OR sub-agent completed).
+  //  The raw result is for developing the tools, so phones skip it.
+  if( !m_phoneVisuals
+      && !call.content.empty()
       && call.status != LlmToolCall::CallStatus::Pending
       && (!call.sub_agent_conversation || call.sub_agent_conversation->finishTime.has_value()) )
   {
@@ -922,7 +995,7 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
 
   // Render visual content (display-only, not sent to LLM)
   for( const LlmToolCall::VisualContent &visual : call.visualContent )
-    renderVisualContent( visual, resultDiv );
+    renderVisualContent( visual, m_phoneVisuals ? m_phoneVisuals : resultDiv );
 }//renderToolCallResult(...)
 
 
@@ -945,7 +1018,8 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
     descText->addStyleClass( "LlmToolVisualDesc" );
   }
 
-  WContainerWidget *chartDiv = vizDiv->addNew<WContainerWidget>();
+  // Charts are drawn client-side, so must be redrawn if the element is re-created.
+  LlmJsRenderedDiv *chartDiv = vizDiv->addNew<LlmJsRenderedDiv>();
   chartDiv->addStyleClass( "LlmToolVisualChart" );
 
   const int defaultHeight = [&visual]() -> int {
@@ -985,7 +1059,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
             "if(el._chartObj) el._chartObj.handleResize();"
           "}).observe(el);"
         "}";
-      chartDiv->doJavaScript( js );
+      chartDiv->setRenderJs( js );
       break;
     }
 
@@ -993,8 +1067,15 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
     {
       wApp->require( "InterSpec_resources/Shielding2DView.js" );
       const string chartId = chartDiv->id();
-      chartDiv->doJavaScript(
-        "new Shielding2DView('" + chartId + "', " + visual.data + ");" );
+      // Redrawn on resize (e.g., when its element is re-created before it has its final width)
+      chartDiv->setRenderJs(
+        "var el=document.getElementById('" + chartId + "');"
+        "if(el){"
+          "el._chartObj=new Shielding2DView('" + chartId + "', " + visual.data + ");"
+          "new ResizeObserver(function(){"
+            "if(el._chartObj) el._chartObj.handleResize();"
+          "}).observe(el);"
+        "}" );
       break;
     }
 
@@ -1029,7 +1110,8 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
         InterSpec *viewer = InterSpec::instance();
         const int dlgWidth = viewer ? static_cast<int>( 0.8 * viewer->renderedWidth() ) : 700;
         const int dlgHeight = viewer ? static_cast<int>( 0.8 * viewer->renderedHeight() ) : 500;
-        window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
+        if( !window->isPhone() )  // full-screen on phones
+          window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
 
         WContainerWidget *contents = window->contents();
         contents->setOverflow( Overflow::Hidden );
@@ -1084,11 +1166,12 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
         window->rejectWhenEscapePressed();
         window->setClosable( true );
 
-        // Size to 80% of InterSpec rendered area
+        // Size to 80% of InterSpec rendered area (it is full-screen on phones)
         InterSpec *viewer = InterSpec::instance();
         const int dlgWidth = viewer ? static_cast<int>( 0.8 * viewer->renderedWidth() ) : 700;
         const int dlgHeight = viewer ? static_cast<int>( 0.8 * viewer->renderedHeight() ) : 500;
-        window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
+        if( !window->isPhone() )
+          window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
 
         WContainerWidget *contents = window->contents();
         contents->setOverflow( Overflow::Hidden );
@@ -1207,7 +1290,7 @@ void LlmToolResultsDisplay::createBodyContent()
 
         // Create nested LlmInteractionDisplay for sub-agent
         LlmInteractionDisplay *subAgentDisplay = resultDiv->addNew<LlmInteractionDisplay>(
-                    call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1 );
+                    call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1, m_phoneVisuals );
         subAgentDisplay->addStyleClass( "LlmSubAgentNesting" );
 
         m_subAgentDisplays.push_back( subAgentDisplay );
@@ -1302,6 +1385,10 @@ void LlmToolResultsDisplay::addMenuItems( PopupDivMenu *menu )
 void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTurn> turn,
                                                     shared_ptr<LlmInteraction> subAgent )
 {
+  // The compact phone display does not show raw tool results.
+  if( m_phoneVisuals )
+    return;
+
   // Sub-agent finished - create the result text area if content is available
   // Find the corresponding tool call in m_results
   for( const LlmToolCall &call : m_results->toolCalls() )
@@ -1385,8 +1472,10 @@ LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractio
   setCollapsible( true );
   setCollapsed( false );
 
-  // Create title bar with menu icon (we have to do this AFTER calling setTitle, or the button will disapear)
-  createMenuIcon();
+  // Create title bar with menu icon (we have to do this AFTER calling setTitle, or the button will
+  //  disapear).  Phones dont get the menu, as it only has the raw request/response JSON.
+  if( !m_phoneLayout )
+    createMenuIcon();
   
   // Create content immediately
   createBodyContent();
@@ -1649,7 +1738,8 @@ int LlmInteractionDisplay::s_nextTimerId = 0;
 
 LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interaction,
                                               std::weak_ptr<LlmInterface> llmInterface,
-                                              int nestingLevel )
+                                              int nestingLevel,
+                                              WContainerWidget *phoneVisuals )
   : WPanel(),
     m_interaction( interaction ),
     m_llmInterface( llmInterface ),
@@ -1659,7 +1749,13 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_menuIcon( nullptr ),
     m_menu( nullptr ),
     m_nestingLevel( nestingLevel ),
-    m_isFinished( false )
+    m_isFinished( false ),
+    m_phoneLayout( is_phone_layout() ),
+    m_phoneToolSummary( nullptr ),
+    m_phoneToolList( nullptr ),
+    m_phoneVisuals( m_phoneLayout ? phoneVisuals : nullptr ),
+    m_phoneOpenToolRequests( 0 ),
+    m_phoneToolErrors( false )
 {
   assert( m_interaction );
 
@@ -1671,6 +1767,10 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   // Set collapsible to create title bar
   setCollapsible( true );
   setCollapsed( false );
+
+  // Wt4's WPanel only applies the themes title-bar style (".titlebar") from setTitle(), which we
+  //  dont call - our title is made of our own status and timer texts - so apply it ourselves.
+  scheduleThemeStyleApply( wApp->theme(), titleBarWidget(), Wt::PanelTitleBar );
 
   // Set title with status - create status text widget
   m_statusText = titleBarWidget()->addNew<WText>();
@@ -1686,8 +1786,9 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
   updateStatus();
 
-  // Create menu icon in title bar
-  createMenuIcon();
+  // Create menu icon in title bar; phones dont get it, as it only has developer-oriented items.
+  if( !m_phoneLayout )
+    createMenuIcon();
 
   // Create main body container
   WContainerWidget *bodyContainer = setCentralWidget( std::make_unique<WContainerWidget>() );
@@ -1784,6 +1885,11 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   if( m_nestingLevel > 0 )
   {
     addStyleClass( "LlmSubAgentNesting LlmNestLevel" + to_string(m_nestingLevel) );
+
+    // On phones, a sub-agent is already inside its parents (collapsed) tool-summary row; start it
+    //  collapsed too, as its "question" is the full task prompt the sub-agent was given.
+    if( m_phoneLayout )
+      setCollapsed( true );
   }
 }//LlmInteractionDisplay constructor
 
@@ -1844,6 +1950,24 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmToolRequest> request =
         dynamic_pointer_cast<LlmToolRequest>( turn );
+
+      if( m_phoneLayout )
+      {
+        // No request panel on phones; just note what is running in the summary row title.
+        ensurePhoneToolSummary();
+        m_phoneOpenToolRequests += 1;
+        if( request )
+        {
+          for( const LlmToolCall &call : request->toolCalls() )
+          {
+            if( std::find( begin(m_phoneToolNames), end(m_phoneToolNames), call.toolName ) == end(m_phoneToolNames) )
+              m_phoneToolNames.push_back( call.toolName );
+          }
+        }//if( request )
+        updatePhoneToolSummaryTitle();
+        break;
+      }//if( m_phoneLayout )
+
       turnDisplay = m_turnContainer->addNew<LlmToolRequestDisplay>( request );
       break;
     }
@@ -1852,6 +1976,28 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmToolResults> results =
         dynamic_pointer_cast<LlmToolResults>( turn );
+
+      if( m_phoneLayout )
+      {
+        ensurePhoneToolSummary();
+        m_phoneOpenToolRequests = std::max( 0, m_phoneOpenToolRequests - 1 );
+        if( results )
+        {
+          for( const LlmToolCall &call : results->toolCalls() )
+          {
+            if( call.status == LlmToolCall::CallStatus::Error )
+              m_phoneToolErrors = true;
+            if( std::find( begin(m_phoneToolNames), end(m_phoneToolNames), call.toolName ) == end(m_phoneToolNames) )
+              m_phoneToolNames.push_back( call.toolName );
+          }
+        }//if( results )
+
+        turnDisplay = m_phoneToolList->addNew<LlmToolResultsDisplay>( results, m_llmInterface,
+                                                                     m_nestingLevel, m_phoneVisuals );
+        updatePhoneToolSummaryTitle();
+        break;
+      }//if( m_phoneLayout )
+
       turnDisplay = m_turnContainer->addNew<LlmToolResultsDisplay>( results, m_llmInterface, m_nestingLevel );
       break;
     }
@@ -1881,6 +2027,15 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       // We'll display it similar to a final response, showing the prompt message
       shared_ptr<LlmInteractionAutoReply> autoReply =
         dynamic_pointer_cast<LlmInteractionAutoReply>( turn );
+
+      if( m_phoneLayout )
+      {
+        // The auto-reply is an internal nudge to the LLM, so on phones just note it in the summary.
+        ensurePhoneToolSummary();
+        WText *note = m_phoneToolList->addNew<WText>( WString::tr("lcw-phone-auto-reply") );
+        note->addStyleClass( "LlmPhoneAutoReply" );
+        break;
+      }//if( m_phoneLayout )
 
       // Reuse the FinalResponse display class since AutoReply also has content
       // We create a temporary FinalResponse wrapper to use the existing display code
@@ -1921,6 +2076,49 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 }//handleResponseAdded(...)
 
 
+void LlmInteractionDisplay::ensurePhoneToolSummary()
+{
+  assert( m_phoneLayout );
+  if( m_phoneToolSummary )
+    return;
+
+  m_phoneToolSummary = m_turnContainer->addNew<WPanel>();
+  m_phoneToolSummary->addStyleClass( "LlmPhoneToolSummary" );
+  m_phoneToolSummary->setTitle( WString() );
+  m_phoneToolSummary->setCollapsible( true );
+  m_phoneToolSummary->setCollapsed( true );
+  m_phoneToolList = m_phoneToolSummary->setCentralWidget( std::make_unique<WContainerWidget>() );
+  m_phoneToolList->addStyleClass( "LlmPhoneToolList" );
+
+  // Visuals go right after the summary row (and so before the final response).  Sub-agents were
+  //  handed their top-level interactions container instead, so their visuals are not hidden inside
+  //  this (collapsed) row.
+  if( !m_phoneVisuals )
+  {
+    m_phoneVisuals = m_turnContainer->addNew<WContainerWidget>();
+    m_phoneVisuals->addStyleClass( "LlmPhoneVisuals" );
+  }
+}//ensurePhoneToolSummary()
+
+
+void LlmInteractionDisplay::updatePhoneToolSummaryTitle()
+{
+  if( !m_phoneToolSummary )
+    return;
+
+  string names;
+  for( const string &name : m_phoneToolNames )
+    names += (names.empty() ? "" : ", ") + name;
+
+  const char * const key = (m_phoneOpenToolRequests > 0) ? "lcw-phone-tools-running"
+                          : (m_phoneToolErrors ? "lcw-phone-tools-used-errors" : "lcw-phone-tools-used");
+  const WString title = WString::tr( key ).arg( WString::fromUTF8( names ) );
+
+  // The panel title is XHTML, so escape the model-derived tool names.
+  m_phoneToolSummary->setTitle( WString::fromUTF8( Wt::Utils::htmlEncode( title.toUTF8() ) ) );
+}//updatePhoneToolSummaryTitle()
+
+
 void LlmInteractionDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTurn> turn,
                                                     shared_ptr<LlmInteraction> subAgent )
 {
@@ -1942,7 +2140,18 @@ void LlmInteractionDisplay::handleConversationFinished()
 
 void LlmInteractionDisplay::updateStatus()
 {
-  const WString titleWithStatus = getTitleWithStatus();
+  WString titleWithStatus = getTitleWithStatus();
+
+  // On phones the title bar is a single line, so dont let newlines in the question (which a plain-
+  //  text WText renders as <br/>) break it up - e.g., a sub-agents "Context: ...\nTask: ..." prompt.
+  if( m_phoneLayout )
+  {
+    string title = titleWithStatus.toUTF8();
+    std::replace( begin(title), end(title), '\n', ' ' );
+    std::replace( begin(title), end(title), '\r', ' ' );
+    titleWithStatus = WString::fromUTF8( title );
+  }
+
   //cerr << "LlmInteractionDisplay::updateStatus(): Setting title to: '"
   //     << titleWithStatus.toUTF8() << "', m_isFinished=" << m_isFinished << endl;
   m_statusText->setText( titleWithStatus );

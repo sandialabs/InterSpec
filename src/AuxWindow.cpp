@@ -1102,27 +1102,52 @@ void AuxWindow::resizeWindow( int width, int height )
 } // void AuxWindow::resizeWindow( int width, int height )
 
 
+namespace
+{
+  /** JavaScript to size the element `elJsRef` as a fraction of the browser window size. */
+  std::string scaled_window_size_js( const std::string &elJsRef, const double xRatio, const double yRatio )
+  {
+    if( xRatio <= 0.0 && yRatio <= 0.0 )
+      return "";
+
+    stringstream sizeJs;
+    sizeJs << "var el = " << elJsRef << ";"
+           << "var olddispl = el.style.display; el.style.display='';";
+    sizeJs << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
+
+    if( xRatio > 0.0 )
+      sizeJs << "if(ws.x>2) el.style.width = Math.round(" << xRatio << "*ws.x - 2) + 'px';";
+    if( yRatio > 0.0 )
+      sizeJs << "if(ws.y>2) el.style.height = Math.round(" << yRatio << "*ws.y - 2) + 'px';";
+    sizeJs << "el.style.display = olddispl;";
+
+    return sizeJs.str();
+  }//scaled_window_size_js(...)
+}//namespace
+
+
 std::string AuxWindow::resizeScaledWindowJs( double xRatio, double yRatio ) const
 {
   if( m_isPhone )
     return ""; //disable running calls after AuxWindow initialized to be mobile
   
-  if( xRatio <= 0.0 && yRatio <= 0.0 )
-    return "";
-  
-  stringstream sizeJs;
-  sizeJs << "var el = " << this->jsRef() << ";"
-         << "var olddispl = el.style.display; el.style.display='';";
-  sizeJs << "var ws = " << wApp->javaScriptClass() << ".WT.windowSize();";
-
-  if( xRatio > 0.0 )
-    sizeJs << "if(ws.x>2) el.style.width = Math.round(" << xRatio << "*ws.x - 2) + 'px';";
-  if( yRatio > 0.0 )
-    sizeJs << "if(ws.y>2) el.style.height = Math.round(" << yRatio << "*ws.y - 2) + 'px';";
-  sizeJs << "el.style.display = olddispl;";
-
-  return sizeJs.str();
+  return scaled_window_size_js( jsRef(), xRatio, yRatio );
 }//std::string resizeScaledWindowJs( double xRatio, double yRatio ) const
+
+
+void AuxWindow::refitPhoneFullScreen()
+{
+  if( !m_isPhone )
+    return;
+
+  // The same sizing the constructor applied (which `m_isPhone` otherwise blocks from re-running),
+  //  plus the WDialogs inner ".dialog-layout" container, which WDialog.js only sizes from the outer
+  //  element when the dialog is created.
+  doJavaScript( scaled_window_size_js( jsRef(), 1.0, 1.0 )
+                + "var lc = el.querySelector('.dialog-layout');"
+                  "if( lc ){ lc.style.width = el.style.width; lc.style.height = el.style.height; }"
+                  "if( el.wtObj && el.wtObj.centerDialog ) el.wtObj.centerDialog();" );
+}//void refitPhoneFullScreen()
 
 void AuxWindow::resizeScaledWindow( double xRatio, double yRatio )
 {

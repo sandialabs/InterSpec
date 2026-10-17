@@ -41,6 +41,7 @@ namespace Wt
   class WTemplate;
   class WTreeNode;
   class WLineEdit;
+  class WPushButton;
   class WPopupWidget;
   class WContainerWidget;
   class WMessageResourceBundle;
@@ -71,6 +72,24 @@ namespace HelpSystem
     Wt::WLineEdit *m_searchText;
     std::string m_displayedTopicName;
 
+    /** Phones show the topic list (with the search box) and a topic's contents one at a time, each
+     filling the window, rather than side-by-side; see showPhoneTopics().
+     */
+    bool m_phoneLayout;
+
+    /** True while code, rather than the user, changes the tree's selection (e.g., rebuilding it as
+     the user types a search), so phones dont switch from the topic list to the contents then.
+     */
+    bool m_selectingInCode;
+
+    /** Phones only: holds the search box and topic tree; null otherwise. */
+    Wt::WContainerWidget *m_phoneTopicsPage;
+
+    /** Phones only: the "All Topics" button in the window header, shown along with a topics
+     contents; null otherwise.
+     */
+    Wt::WPushButton *m_phoneAllTopicsButton;
+
     std::string m_helpLookupTable;
 
     void setPathVisible( Wt::WTreeNode *parent );
@@ -92,6 +111,9 @@ namespace HelpSystem
     
     void setTopic( const std::string &preselect );
     const std::string &currentTopic() const;
+
+    /** Phones only: shows the topic list (`showTopics == true`), or the selected topics contents. */
+    void showPhoneTopics( const bool showTopics );
   }; //class HelpWindow
   
   //createHelpWindow(...): just a convience function that creates a new

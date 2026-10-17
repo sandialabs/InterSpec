@@ -8,5 +8,6 @@
   <message id="hw-err-opening-json">Tidak dapat membuka file JSON bantuan di '{1}'.</message>
   <message id="hw-err-no-help-entry">Bantuan tidak memiliki entri untuk '{1}'.</message>
   <message id="hw-search-empty-text">Cari</message>
+  <message id="hw-all-topics">Semua Topik</message>
 </messages>
 

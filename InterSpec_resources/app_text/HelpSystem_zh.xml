@@ -8,5 +8,6 @@
   <message id="hw-err-opening-json">无法在'{1}'打开帮助JSON文件。</message>
   <message id="hw-err-no-help-entry">帮助中没有'{1}'的条目。</message>
   <message id="hw-search-empty-text">搜索</message>
+  <message id="hw-all-topics">所有主题</message>
 </messages>
 
