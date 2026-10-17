@@ -159,6 +159,15 @@ option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
+# The MCP server exposes this process to outside clients, so it is only built for desktop-style
+#  builds; on iOS/Android the LLM assistant itself is still available, just without MCP.  Web
+#  deployments get neither, since the LLM config (API keys included) is shared process-wide.
+if( USE_LLM_INTERFACE AND NOT (IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT) )
+  set( USE_MCP_SERVER ON )
+else()
+  set( USE_MCP_SERVER OFF )
+endif()
+
 # LLM API calls are normally made by the browser via fetch(), which gets us the system trust
 #  store, proxy configuration, PAC/WPAD and often SSO for free.  That only works for providers
 #  sending permissive CORS headers though; for one that does not, we need to make the HTTPS
@@ -167,8 +176,8 @@ option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 #  Which backend is used is decided by platform, not by the user.
 #  Defaulted ON where we ship a platform-native backend (Apple and Windows), but only for builds
 #  that actually have the LLM interface to use it - see the consistency check further down.  The
-#  NSURLSession backend is iOS-clean, so iOS is included here; it resolves to OFF today only
-#  because the iOS project builds with USE_LLM_INTERFACE off.
+#  NSURLSession backend is iOS-clean, so iOS is included here (the iOS Xcode project links the
+#  Security and CFNetwork frameworks it needs).
 if( USE_LLM_INTERFACE AND (NOT BUILD_FOR_WEB_DEPLOYMENT) AND (APPLE OR WIN32) )
   set( DEFAULT_USE_NATIVE_HTTP_CLIENT ON )
 else()
@@ -779,8 +788,13 @@ elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
 endif()
 
 if( USE_LLM_INTERFACE )
-  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmKnowledgeBase.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
-  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmKnowledgeBase.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
+  if( USE_MCP_SERVER )
+    list( APPEND sources src/LlmMcpResource.cpp )
+    list( APPEND headers InterSpec/LlmMcpResource.h )
+  endif( USE_MCP_SERVER )
+
+  list( APPEND sources src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmKnowledgeBase.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
+  list( APPEND headers InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmKnowledgeBase.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LlmJsSandbox.js )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml
     data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
@@ -833,9 +847,9 @@ if( USE_LLM_INTERFACE )
     endif( NATIVE_HTTP_HAVE_BACKEND )
   endif( USE_NATIVE_HTTP_CLIENT )
 
-  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
-    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
-  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+  if( BUILD_FOR_WEB_DEPLOYMENT )
+    MESSAGE(FATAL_ERROR "The LLM interface can not be enabled for web deployment builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT )
 endif( USE_LLM_INTERFACE )
 
 # A native HTTP client with no LLM interface to use it would be a silent no-op, so say so.

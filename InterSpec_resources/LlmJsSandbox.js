@@ -196,7 +196,9 @@
 
       const safeTimeout = Math.min( Math.max( parseInt(timeoutMs, 10) || 5000, 1 ), 30000 );
 
-      if( !iframe )
+      // The iframe goes with the bridges DOM element if Wt re-creates it (e.g., when the assistant is
+      //  moved between the tool tabs and a window), so make a new one if needed.
+      if( !iframe || !iframe.isConnected )
         iframe = buildIframe();
 
       console.log( "Built iframe run" );

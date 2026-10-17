@@ -38,6 +38,7 @@
 #include <Wt/Json/Array.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/Json/Object.h>
 #include <Wt/Json/Parser.h>
 #include <Wt/WContainerWidget.h>
@@ -150,9 +151,17 @@ namespace HelpSystem
                  | AuxWindowProperties::SetCloseable) ),
      m_helpWindowContent( nullptr ),
      m_tree( nullptr ),
-     m_searchText( nullptr )
+     m_searchText( nullptr ),
+     m_phoneLayout( false ),
+     m_selectingInCode( false ),
+     m_phoneTopicsPage( nullptr ),
+     m_phoneAllTopicsButton( nullptr )
   {
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
+    InterSpec * const viewer = (app ? app->viewer() : nullptr);
+    m_phoneLayout = (viewer && viewer->isPhone());
     
     wApp->useStyleSheet( "InterSpec_resources/HelpWindow.css" );
     InterSpec::instance()->useMessageResourceBundle( "HelpSystem" );
@@ -185,8 +194,8 @@ namespace HelpSystem
 
       auto contentOwner = std::make_unique<WContainerWidget>();
       m_helpWindowContent = contentOwner.get();
-      m_helpWindowContent->setPadding( WLength(10,WLength::Unit::Pixel) );
-      m_helpWindowContent->addStyleClass( "helpTree" );
+      m_helpWindowContent->setPadding( WLength(m_phoneLayout ? 8 : 10,WLength::Unit::Pixel) );
+      m_helpWindowContent->addStyleClass( "helpTree HelpContent" );
 
       auto searchOwner = std::make_unique<Wt::WLineEdit>();
       m_searchText = searchOwner.get();
@@ -203,20 +212,64 @@ namespace HelpSystem
       setTopic( preselect );
 
       WGridLayout *layout = stretcher();
-      layout->addWidget( std::move(searchOwner), 0, 0 );
-      layout->addWidget( std::move(treeOwner), 1, 0 );
-      layout->addWidget( std::move(contentOwner), 0, 1, 2, 1 );
       layout->setContentsMargins( 0, 0, 0, 0 );
-      layout->setRowStretch( 1, 1 );
-      layout->setColumnResizable( 0, true, WLength(25,WLength::Unit::FontEx) );
+
+      if( m_phoneLayout )
+      {
+        // There is not room for the topic list and a topics contents side-by-side, so each fills the
+        //  window, one at a time: the "All Topics" header button (added below) shows the list, and
+        //  choosing a topic shows its contents - see showPhoneTopics().
+        addStyleClass( "HelpWindowPhone" );
+
+        auto topicsOwner = std::make_unique<WContainerWidget>();
+        m_phoneTopicsPage = topicsOwner.get();
+        m_phoneTopicsPage->addStyleClass( "HelpPhoneTopics" );
+        WVBoxLayout *topicsLayout = m_phoneTopicsPage->setLayout( std::make_unique<WVBoxLayout>() );
+        topicsLayout->setContentsMargins( 0, 0, 0, 0 );
+        topicsLayout->setSpacing( 0 );
+        topicsLayout->addWidget( std::move(searchOwner) );
+        topicsLayout->addWidget( std::move(treeOwner), 1 );
+
+        // The link to the welcome screen goes at the bottom of the list, rather than crowding the header.
+        if( viewer )
+        {
+          auto welcome = std::make_unique<WPushButton>( WString::tr("hw-welcome-link") );
+          welcome->setStyleClass( "LinkBtn HelpPhoneWelcomeLink" );
+          welcome->clicked().connect( viewer, [viewer](){ viewer->showWelcomeDialog( true ); } );
+          topicsLayout->addWidget( std::move(welcome) );
+        }
+
+        // The two pages each fill the window, and are shown one at a time.  (Not in a box layout, as
+        //  that keeps space for a hidden item.)
+        m_phoneTopicsPage->setHeight( WLength(100, WLength::Unit::Percentage) );
+        m_helpWindowContent->setHeight( WLength(100, WLength::Unit::Percentage) );
+        WContainerWidget *pages = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
+        pages->addWidget( std::move(topicsOwner) );
+        pages->addWidget( std::move(contentOwner) );
+        layout->setRowStretch( 0, 1 );
+        layout->setColumnStretch( 0, 1 );
+      }else
+      {
+        layout->addWidget( std::move(searchOwner), 0, 0 );
+        layout->addWidget( std::move(treeOwner), 1, 0 );
+        layout->addWidget( std::move(contentOwner), 0, 1, 2, 1 );
+        layout->setRowStretch( 1, 1 );
+        layout->setColumnResizable( 0, true, WLength(25,WLength::Unit::FontEx) );
+      }//if( m_phoneLayout ) / else
     }
 
     WContainerWidget *bottom = footer();
   //  bottom->setStyleClass("modal-footer");
     //bottom->resize( WLength::Auto, 50 );
 
-    InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
-    if( app && app->viewer() )
+    if( m_phoneLayout )
+    {
+      // Floated right in the phone header, opposite the close button.
+      m_phoneAllTopicsButton = bottom->addNew<WPushButton>( WString::tr("hw-all-topics") );
+      m_phoneAllTopicsButton->addStyleClass( "HelpAllTopicsBtn" );
+      m_phoneAllTopicsButton->setFloatSide( Wt::Side::Right );
+      m_phoneAllTopicsButton->clicked().connect( this, [this](){ showPhoneTopics( true ); } );
+    }else if( app && app->viewer() )
     {
       if( app->viewer()->isMobile() )
       {
@@ -245,10 +298,15 @@ namespace HelpSystem
     rejectWhenEscapePressed();
     
     show();
-    setMinimumSize(500,400);
+    if( !m_phoneLayout )  // (full-screen on phones)
+      setMinimumSize(500,400);
     resizeScaledWindow(0.85, 0.85);
     resizeToFitOnScreen();
     centerWindow();
+
+    // Phones start on the requested topic, or the topic list if none was requested.
+    if( m_phoneLayout )
+      showPhoneTopics( m_displayedTopicName.empty() );
     //centerWindowHeavyHanded();  //why not?
   } //void HelpSystem::showHelpDialog()
   
@@ -264,10 +322,34 @@ namespace HelpSystem
     
     const auto pos = m_treeLookup.find(preselect);
     if( pos != end(m_treeLookup) )
+    {
       m_tree->select( pos->second ); // This will trigger the call to #HelpWindow::selectHelpToShow
-    else
+      if( m_phoneLayout )
+        showPhoneTopics( false );
+    }else
+    {
       passMessage( WString::tr("hw-err-no-help-entry").arg(preselect), 2 );
+    }
   }//void setTopic( const std::string &preselect )
+
+
+  void HelpWindow::showPhoneTopics( const bool showTopics )
+  {
+    if( !m_phoneTopicsPage || !m_helpWindowContent )
+      return;
+
+    m_phoneTopicsPage->setHidden( !showTopics );
+    m_helpWindowContent->setHidden( showTopics );
+    if( m_phoneAllTopicsButton )
+      m_phoneAllTopicsButton->setHidden( showTopics );
+
+    // The list is long, so bring the current topic into view.
+    if( showTopics )
+      m_tree->doJavaScript( "setTimeout(function(){"
+                              "var t=" + m_tree->jsRef() + ", s=(t ? t.querySelector('.Wt-selected') : null);"
+                              "if(s) s.scrollIntoView({block:'center'});"
+                            "},0);" );
+  }//void showPhoneTopics( const bool showTopics )
   
   
   const std::string &HelpWindow::currentTopic() const
@@ -294,6 +376,9 @@ namespace HelpSystem
   
   void HelpWindow::initialize()
   {
+    // The selections we make while (re)building the tree are not the user choosing a topic.
+    m_selectingInCode = true;
+
     auto nodeOwner = std::make_unique<Wt::WTreeNode>("Help");
     Wt::WTreeNode *node = nodeOwner.get();
     node->label()->setTextFormat( Wt::TextFormat::Plain );
@@ -321,6 +406,8 @@ namespace HelpSystem
     node->setNodeVisible( false ); //hide the root note, not necessary
     
     m_tree->refresh();
+
+    m_selectingInCode = false;
   }//void initialize()
   
   
@@ -331,6 +418,10 @@ namespace HelpSystem
     
     if( m_tree->selectedNodes().empty() )
       return;
+
+    // On phones, the user choosing a topic in the list goes to its contents.
+    if( m_phoneLayout && !m_selectingInCode )
+      showPhoneTopics( false );
     
     WTreeNode * node = *(m_tree->selectedNodes().begin());
     
@@ -362,6 +453,7 @@ namespace HelpSystem
     
     //Note: this keeps the new pages scrolled to the top.
     doJavaScript("document.body.scrollTop = document.documentElement.scrollTop = 0;");
+    m_helpWindowContent->doJavaScript( "var c=" + m_helpWindowContent->jsRef() + "; if(c) c.scrollTop=0;" );
     
     const string prevTopic = m_displayedTopicName;
     m_displayedTopicName = topic_name;
@@ -502,6 +594,12 @@ namespace HelpSystem
       auto insertNodeOwner = std::make_unique<Wt::WTreeNode>( titlestr.toUTF8() );
       WTreeNode *insertNode = parent->addChildNode( std::move(insertNodeOwner) );
       parent->expand();
+
+      // Phones show the topic list and a topics contents one at a time; choosing a topic goes to
+      //  its contents (see selectHelpToShow()), and tapping the topic that is already selected (so
+      //  no selection change) goes back to it.
+      if( m_phoneLayout )
+        insertNode->label()->clicked().connect( this, [this](){ showPhoneTopics( false ); } );
 
       if( searching )
         insertNode->setHidden(true); //by default hidden, and just show nodes that need to be visible

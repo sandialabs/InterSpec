@@ -498,6 +498,10 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/atomic/libboost_atomic.a",
 					"-lz",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/libInterSpecAppLib.a",
+					"-framework",
+					Security,
+					"-framework",
+					CFNetwork,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = gov.Sandia.InterSpec;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -669,6 +673,10 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/boost-build/libs/atomic/libboost_atomic.a",
 					"-lz",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/libInterSpecAppLib.a",
+					"-framework",
+					Security,
+					"-framework",
+					CFNetwork,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = gov.Sandia.InterSpec;
 				PRODUCT_NAME = "$(TARGET_NAME)";

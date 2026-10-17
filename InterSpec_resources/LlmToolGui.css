@@ -167,6 +167,11 @@
   flex-shrink: 1;
 }
 
+/* The timer (the second status text) sits at the right, next to the menu icon. */
+.LlmInteractionDisplay.Wt-panel > .titlebar .LlmStatusIndicator + .LlmStatusIndicator {
+  flex: 0 0 auto;
+}
+
 .LlmInteractionDisplay.Wt-panel > .titlebar .RoundMenuIcon {
   margin-left: auto;
   flex-shrink: 0;
@@ -846,3 +851,193 @@
 .LlmMarkdownBody .katex-error {
   color: var(--interspec-error-color) !important;
 }
+
+
+/* ============================================ */
+/* Phones (LlmToolGui adds .LlmPhone to itself)  */
+/* ============================================ */
+
+/* On phones, when full-screen, the dock button and conversation menu sit at the right of the windows
+   header bar (see LlmToolGui::setPhoneWindowHeader).  The generic phone-header button rules would
+   otherwise strip their icons (background:none), and the .LlmMenuIcon rule would float the menu
+   icon over the conversation. */
+.PhoneAuxWindowFooter > .LlmHeaderTools {
+  float: right;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-right: 6px;
+}
+
+.LlmHeaderTools > button.LlmHeaderMenuIcon,
+.LlmHeaderTools > button.LlmHeaderMenuIcon:hover,
+.LlmHeaderTools > button.LlmDockBtn,
+.LlmHeaderTools > button.LlmDockBtn:hover {
+  position: static;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  background-repeat: no-repeat;
+}
+
+.LlmHeaderTools > button.LlmHeaderMenuIcon,
+.LlmHeaderTools > button.LlmHeaderMenuIcon:hover {
+  background-image: url('images/more_menu_icon.svg');
+  background-position: 0.25px;
+}
+
+.LlmHeaderTools > button.LlmDockBtn,
+.LlmHeaderTools > button.LlmDockBtn:hover {
+  background-image: url('images/llm_shrink.svg');
+  background-position: center;
+  background-size: 20px 20px;
+  opacity: 0.7;
+}
+
+/* Phones, docked in the tools tab strip: an "expand to full-screen" button leads the input row (and
+   sits under the "not configured" message), and the menu icon is hidden (it is in the full-screen
+   windows header). */
+.LlmExpandBtn,
+.LlmExpandBtn:hover {
+  display: none;
+}
+
+.LlmDocked .LlmExpandBtn,
+.LlmDocked .LlmExpandBtn:hover {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.LlmExpandBtn img {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.LlmDocked .LlmMenuIcon { display: none; }
+
+.LlmPhone .LlmConversationContainer {
+  padding: 4px;
+  padding-bottom: 56px;
+}
+
+.LlmPhone .LlmInputArea {
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+}
+
+/* iOS zooms the page in when a text input with a font smaller than 16px gets focus. */
+.LlmPhone .llm-input-edit { font-size: 16px; }
+
+.LlmPhone .LlmWelcome { margin: 12px auto; }
+
+.LlmPhone .LlmInteractionDisplay { margin-bottom: 10px; }
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar,
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
+  padding: 6px 8px;
+}
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .body,
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .body {
+  padding: 6px;
+}
+
+.LlmPhone .LlmInteractionSummary { padding: 6px 8px; }
+
+/* Panel title bars have a fixed height, so on a narrow screen long titles must be cut short, rather
+   than wrapping out of the bar.  For a question, the timer stays visible and the status text gives. */
+.LlmPhone .LlmInteractionTurnDisplay.Wt-panel > .titlebar > span:not(.Wt-collapse-button),
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar > .LlmStatusIndicator {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LlmPhone .LlmInteractionDisplay.Wt-panel > .titlebar > .LlmStatusIndicator + .LlmStatusIndicator {
+  flex: 0 0 auto;
+}
+
+/* Sub-agents are already nested inside their parents' padding, so only a small extra indent. */
+.LlmPhone .LlmSubAgentNesting,
+.LlmPhone .LlmNestLevel1,
+.LlmPhone .LlmNestLevel2,
+.LlmPhone .LlmNestLevel3 {
+  margin-left: 4px;
+}
+
+/* The inline width a tool may suggest is capped to the screen. */
+.LlmPhone .LlmToolVisualChart {
+  width: 100%;
+  max-width: 100%;
+}
+
+.LlmPhone .LlmToolResultImageThumb { max-width: 100%; }
+
+/* The single row the tool-call/-result turns of a question are folded into. */
+.LlmPhoneToolSummary {
+  margin-bottom: 8px;
+  border: 1px solid var(--interspec-border-color);
+  border-radius: 4px;
+  background-color: var(--interspec-background-color);
+}
+
+.LlmPhoneToolSummary.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color) !important;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--interspec-label-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LlmPhoneToolSummary.Wt-panel > .body {
+  padding: 4px 6px;
+  border-top: 1px solid var(--interspec-border-color);
+}
+
+/* A tool-results turn inside the summary row: just its per-tool lines. */
+.LlmPhoneCompact.LlmInteractionTurnDisplay {
+  margin-bottom: 0;
+  border: none;
+  background: transparent;
+}
+
+.LlmPhoneCompact.LlmInteractionTurnDisplay.Wt-panel > .body { padding: 0; }
+
+.LlmPhoneCompact .LlmToolResultItem {
+  margin-bottom: 4px;
+  padding: 4px 6px;
+}
+
+.LlmPhoneCompact .LlmToolName { font-size: 13px; }
+
+.LlmPhoneAutoReply {
+  display: block;
+  padding: 2px 6px 4px 6px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--interspec-label-color);
+}
+
+.LlmPhoneVisuals > .LlmToolVisual { margin: 0 0 8px 0; }

@@ -1744,8 +1744,9 @@ void InterSpec::layoutSizeChanged( int w, int h )
         if( m_detectionLimitWindow )
           handleDetectionLimitWindowClose();
 #endif
+        // The help window is kept open (it is often read alongside the app), just re-fit to the screen.
         if( m_helpWindow )
-          closeHelpWindow();
+          m_helpWindow->refitPhoneFullScreen();
         if( m_licenseWindow )
           deleteLicenseAndDisclaimersWindow();
         if( m_useInfoWindow )
@@ -1768,6 +1769,15 @@ void InterSpec::layoutSizeChanged( int w, int h )
           programmaticallyCloseRiidResults();
         if( m_drfSelectWindow )
           closeDrfSelectWindow();
+
+#if( USE_LLM_INTERFACE )
+        // The assistant is deliberately kept open across rotation (closing it would drop any
+        //  request in flight); its full-screen windows just need re-fitting to the new screen.
+        if( m_llmToolWindow )
+          m_llmToolWindow->refitPhoneFullScreen();
+        if( m_llmTool )
+          m_llmTool->refitPhoneWindows();
+#endif
       }//if( we are changing orientation )
       
       setToolTabsVisible( isVertical );
@@ -7388,8 +7398,10 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
     
 #if( USE_LLM_INTERFACE )
-    // If the assistant was showing in its own window (no tab strip), dock it back into the strip.
-    if( m_llmTool )
+    // If the assistant was showing in its own window (no tab strip), dock it back into the strip;
+    //  except on phones, where the tab strip is too short for a conversation, so it stays a
+    //  full-screen window.
+    if( m_llmTool && !isPhone() )
     {
       std::unique_ptr<WWidget> llm_widget;
       if( m_llmToolWindow )
@@ -7402,11 +7414,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       }
       assert( llm_widget );
       if( llm_widget )
-      {
-        WMenuItem *llmTab = m_toolsTabs->addTab( std::move(llm_widget),
-                                                 WString::tr(LlmAssistantTabTitleKey), TabLoadPolicy );
-        llmTab->setCloseable( true );
-      }
+        addLlmToolTab( std::move(llm_widget), false );
     }//if( m_llmTool )
 #endif
 
@@ -7475,16 +7483,24 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 #endif
 
 #if( USE_LLM_INTERFACE )
-    if( m_llmTool )
+    if( m_llmTool && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
     {
-      // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
-      //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout() calls
-      //  clear() first - handleLlmToolClose() never runs, and the whole in-tool conversation is
-      //  silently discarded instead of being written back to the SpecMeas.
-      syncLlmHistoryToSpecMeas();
-      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
-      if( m_llmToolMenuItem )
-        m_llmToolMenuItem->enable();
+      if( isPhone() )
+      {
+        // The user docked the assistant, and has now rotated to landscape (no tab strip); keep the
+        //  conversation going, back in its full-screen window.
+        showLlmToolInWindow( safeRemoveTab( m_toolsTabs, m_llmTool.get(), false ) );
+      }else
+      {
+        // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
+        //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout()
+        //  calls clear() first - handleLlmToolClose() never runs, and the whole in-tool
+        //  conversation is silently discarded instead of being written back to the SpecMeas.
+        syncLlmHistoryToSpecMeas();
+        safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+        if( m_llmToolMenuItem )
+          m_llmToolMenuItem->enable();
+      }
     }//if( m_llmTool )
 #endif
 
@@ -7594,6 +7610,12 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_spectrum->scheduleUpdateSecondData();
   
   m_timeSeries->scheduleRenderAll();
+
+#if( USE_LLM_INTERFACE )
+  // A phones full-screen assistant can only be docked while there is a tab strip to dock into.
+  if( m_llmTool && isPhone() )
+    m_llmTool->setPhoneCanDock( m_toolsTabs != nullptr );
+#endif
   
   // If we call `displayFeatureMarkerWindow(true);`, we'll get a JS exception - rather than
   //  figure this out, we'll just not re-open it.
@@ -14950,7 +14972,10 @@ void InterSpec::createLlmTool()
   {
     std::unique_ptr<LlmToolGui> llmTool = std::make_unique<LlmToolGui>( this );
     m_llmTool = llmTool.get();
-    m_llmTool->focusInput();
+
+    // On phones, focusing the input would pop the on-screen keyboard up over the window.
+    if( !isPhone() )
+      m_llmTool->focusInput();
 
     // Load any existing LLM conversation history from the foreground SpecMeas
     std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
@@ -14967,41 +14992,15 @@ void InterSpec::createLlmTool()
         m_llmTool->setConversationHistory( history );
     }
 
-    if( m_toolsTabs )
-    {
-      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::tr(LlmAssistantTabTitleKey) );
-      item->setCloseable( true );
-      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
-      const int index = m_toolsTabs->currentIndex();
-      m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-llm-assistant") );
-
-      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
-      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
-    }else
-    {
-      // No tool-tab strip to dock into, so show the tool in its own window - otherwise the widget
-      //  would be parked with addChild(), which gives it no widget parent and hence no DOM element,
-      //  leaving the tool invisible *and* (since we disable the menu item below) unreachable.
-      m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
-                                        (AuxWindowProperties::SetCloseable
-                                         | AuxWindowProperties::EnableResize
-                                         | AuxWindowProperties::TabletNotFullScreen) );
-
-      WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
-      closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
-
-      m_llmToolWindow->rejectWhenEscapePressed();
-      m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
-
-      m_llmToolWindow->show();
-      if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
-      {
-        m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
-        m_llmToolWindow->centerWindow();
-      }
-
-      m_llmToolWindow->stretcher()->addWidget( std::move(llmTool), 0, 0 );
-    }//if( m_toolsTabs ) / else
+    // On phones the (portrait-only) tool-tab strip is far too short to start a conversation in,
+    //  so the assistant starts as a full-screen window there (the user can dock it after).
+    //  Otherwise, with no tool-tab strip to dock into, the tool gets its own window - parking it
+    //  with addChild() would give it no DOM element, leaving the tool invisible *and* (since we
+    //  disable the menu item below) unreachable.
+    if( m_toolsTabs && !isPhone() )
+      addLlmToolTab( std::move(llmTool), true );
+    else
+      showLlmToolInWindow( std::move(llmTool) );
 
     m_llmToolMenuItem->disable();
   }catch( const std::exception &e )
@@ -15013,6 +15012,111 @@ void InterSpec::createLlmTool()
       safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
   }//try / catch
 }//void createLlmTool()
+
+void InterSpec::addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent )
+{
+  assert( m_toolsTabs && tool && (tool.get() == m_llmTool.get()) );
+  if( !m_toolsTabs || !tool )
+    return;
+
+  // Phone tabs are icon-only (see setToolTabsVisible())
+  const bool phone = isPhone();
+  const WString title = phone ? WString() : WString::tr(LlmAssistantTabTitleKey);
+  WMenuItem *item = m_toolsTabs->addTab( std::move(tool), title, TabLoadPolicy );
+  item->setCloseable( true );
+  if( phone )
+    item->setIcon( "InterSpec_resources/images/llm_assistant.svg" );
+
+  // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+  //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+  m_toolsTabs->setTabToolTip( m_toolsTabs->indexOf( m_llmTool.get() ),
+                              WString::tr("app-tab-tt-llm-assistant") );
+  if( makeCurrent )
+    m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+
+  if( phone )
+    m_llmTool->setPhoneWindowHeader( nullptr );
+}//void addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent )
+
+
+void InterSpec::showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
+{
+  assert( !m_llmToolWindow && tool && (tool.get() == m_llmTool.get()) );
+  if( m_llmToolWindow || !tool )
+    return;
+
+  m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
+                                    (AuxWindowProperties::SetCloseable
+                                     | AuxWindowProperties::EnableResize
+                                     | AuxWindowProperties::TabletNotFullScreen) );
+  m_llmToolWindow->addStyleClass( "LlmToolWindow" );
+
+  WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
+  closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
+
+  // On phones the footer is the windows header bar, which has room on the right for the tools
+  //  dock button and conversation menu; and the screen is narrow enough we dont want the default
+  //  margins.
+  if( isPhone() )
+  {
+    m_llmTool->setPhoneWindowHeader( m_llmToolWindow->footer() );
+    m_llmTool->setPhoneCanDock( m_toolsTabs != nullptr );
+    m_llmToolWindow->stretcher()->setContentsMargins( 0, 0, 0, 0 );
+  }
+
+  m_llmToolWindow->rejectWhenEscapePressed();
+  m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
+
+  m_llmToolWindow->show();
+  if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+  {
+    m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
+    m_llmToolWindow->centerWindow();
+  }
+
+  // A widget taken out of the tool-tab strip comes out still hidden by the tabs' internal stack.
+  tool->setHidden( false );
+  m_llmToolWindow->stretcher()->addWidget( std::move(tool), 0, 0 );
+}//void showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool )
+
+
+void InterSpec::setLlmToolDocked( const bool docked )
+{
+  // Deferred, as the buttons asking for this live in the window (or tab) being swapped out.  Only
+  //  the session id crosses into the posted function; we look ourselves up again when it runs.
+  const string sessionId = wApp->sessionId();
+  WServer::instance()->post( sessionId, [sessionId, docked](){
+    WApplication * const app = WApplication::instance();
+    InterSpec * const viewer = InterSpec::instance();
+    if( !app || (app->sessionId() != sessionId) || !viewer || !viewer->isPhone() || !viewer->m_llmTool )
+      return;
+
+    const bool inTabs = viewer->m_toolsTabs
+                        && (viewer->m_toolsTabs->indexOf( viewer->m_llmTool.get() ) >= 0);
+    if( docked == inTabs )
+      return;
+
+    if( docked )
+    {
+      if( !viewer->m_toolsTabs || !viewer->m_llmToolWindow )
+        return;  // No tab strip to dock into (i.e., landscape)
+
+      // Bring the tools header controls back from the window before the window goes.
+      viewer->m_llmTool->setPhoneWindowHeader( nullptr );
+      std::unique_ptr<WWidget> tool
+                  = viewer->m_llmToolWindow->stretcher()->removeWidget( viewer->m_llmTool.get() );
+      AuxWindow::deleteAuxWindow( viewer->m_llmToolWindow.get() );
+      assert( !viewer->m_llmToolWindow );
+      viewer->addLlmToolTab( std::move(tool), true );
+    }else
+    {
+      viewer->showLlmToolInWindow( safeRemoveTab( viewer->m_toolsTabs, viewer->m_llmTool.get(), false ) );
+    }
+
+    app->triggerUpdate();
+  } );
+}//void setLlmToolDocked( const bool docked )
+
 
 LlmToolGui *InterSpec::currentLlmTool()
 {
@@ -15029,8 +15133,10 @@ void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
     return;
 
   // If the tool already existed, the user may be on a different tab - bring the assistant forward.
-  if( m_toolsTabs )
+  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
     m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+  else if( m_llmToolWindow )
+    m_llmToolWindow->show();
 
   m_llmTool->openConfigWindowToImport( configFilePath );
 }//void openLlmConfigForImport( const std::string &configFilePath )

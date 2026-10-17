@@ -19,7 +19,7 @@
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
-#include <Wt/WGridLayout.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WApplication.h>
 #include <Wt/WStringUtil.h>
 #include <Wt/Utils.h>
@@ -79,10 +79,12 @@ WT_DECLARE_WT_MEMBER
    inputArea   - the floating input area (its height sets the container's bottom padding)
    acceptImages- whether pasted images should be captured
    pasteCb     - function(base64, mimeType, widthPx, heightPx) to stage a pasted image
+   enterNewline- if true, Enter just inserts a newline (phones, whose on-screen keyboards have no
+                 Shift+Enter); the submit button is then the only way to send.
  */
 WT_DECLARE_WT_MEMBER
 (LlmSetupInput, Wt::JavaScriptFunction, "LlmSetupInput",
- function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb )
+ function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb, enterNewline )
 {
   if( !ta )
     return;
@@ -112,7 +114,7 @@ WT_DECLARE_WT_MEMBER
   } );
 
   ta.addEventListener( 'keydown', function( e ){
-    if( e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
+    if( !enterNewline && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
       e.preventDefault();
       if( btn && !btn.disabled )
         btn.click();
@@ -213,10 +215,18 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_imagePreviewContainer(nullptr),
     m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
-    m_jsSandboxBridge( nullptr )
+    m_jsSandboxBridge( nullptr ),
+    m_menuIconHome( nullptr ),
+    m_phoneHeaderTools(),
+    m_phoneDockButton( nullptr ),
+    m_phoneCanDock( false )
 {
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
+
+  // Phone styling is keyed off this class (on us, rather than m_root, so it survives UI rebuilds).
+  if( m_viewer->isPhone() )
+    addStyleClass( "LlmPhone" );
 
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   // The "not configured" panel and the settings window share styles + strings from these bundles.
@@ -226,15 +236,15 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   // Get marked/KaTeX loading now, so they are ready before the first response comes back.
   LlmMarkdown::load_resources( wApp );
 
-  // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
-  // the "not configured" panel.
-  WGridLayout *outer = setLayout( std::make_unique<WGridLayout>() );
+  // A single-item outer layout holds m_root, which we swap between the configured chat UI and
+  // the "not configured" panel.  A box layout, rather than a WGridLayout, as Wt4 implements box
+  // layouts with CSS flex, while grid layouts use its JavaScript layout engine - whose bookkeeping
+  // is left with stale entries when we are moved out of the tool-tab strip on phones (see
+  // InterSpec::setLlmToolDocked), causing a client-side exception.
+  WVBoxLayout *outer = setLayout( std::make_unique<WVBoxLayout>() );
   outer->setContentsMargins( 0, 0, 0, 0 );
-  outer->setVerticalSpacing( 0 );
-  outer->setHorizontalSpacing( 0 );
-  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-  outer->setRowStretch( 0, 1 );
-  outer->setColumnStretch( 0, 1 );
+  outer->setSpacing( 0 );
+  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
 
   // Connect the clipboard-image paste signal once; it persists across UI rebuilds (the input widgets
   // that emit it are recreated by initializeUI(), but this JSignal belongs to the tool).
@@ -268,6 +278,13 @@ LlmToolGui::~LlmToolGui()
 {
   // Final flush of the log, to capture anything since the last completed turn.
   writeConversationLog();
+
+  // On phones our dock button and menu icon live in our windows header; don't leave them there
+  //  (they would call back into this destroyed widget).  A no-op if the header is already gone.
+  if( m_phoneHeaderTools )
+  {
+    const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
+  }
 
   // Fail any outstanding MCP `assistant_submit_prompt` callbacks so a blocked MCP request thread
   //  doesn't hang forever waiting on a turn that can no longer complete.
@@ -333,6 +350,9 @@ void LlmToolGui::buildUnconfiguredUi()
 
   WPushButton *btn = panel->addNew<WPushButton>( WString::tr("lcw-configure-btn") );
   btn->clicked().connect( this, &LlmToolGui::openConfigWindow );
+
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( panel );
 }
 
 
@@ -347,7 +367,8 @@ void LlmToolGui::showWelcomeMessage()
   WText *title = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-title") );
   title->addStyleClass( "LlmWelcomeTitle" );
 
-  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-summary") );
+  const char * const summaryKey = m_viewer->isPhone() ? "lcw-welcome-summary-phone" : "lcw-welcome-summary";
+  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr(summaryKey) );
   summary->addStyleClass( "LlmWelcomeSummary" );
 
   // Empty WLink => an <a> with no href, so the browser does nothing on click while the
@@ -389,7 +410,7 @@ void LlmToolGui::clearConversationDisplays()
 
 void LlmToolGui::resetRoot()
 {
-  WGridLayout *outer = dynamic_cast<WGridLayout *>( layout() );
+  WVBoxLayout *outer = dynamic_cast<WVBoxLayout *>( layout() );
 
   // Tear down the configured-UI state.  The spectrum-changed slot must be disconnected here (not
   // just reassigned in buildConfiguredUi) - boost::signals2 reassignment drops the handle without
@@ -399,6 +420,9 @@ void LlmToolGui::resetRoot()
   // Staged images live in this object (not under m_root); drop them so they don't leak into the
   // next conversation after a reconfigure.
   m_stagedImages.clear();
+
+  // On phones the menu icon lives in the window header, so would not go away with m_root.
+  removePhoneMenuIcon();
 
   if( m_root )
   {
@@ -411,6 +435,7 @@ void LlmToolGui::resetRoot()
 
   // Child widgets owned by the old root are now gone; clear dangling pointers.
   m_layout = nullptr;
+  m_menuIconHome = nullptr;
   m_conversationContainer = nullptr;
   m_welcomeMessage = nullptr;
   m_inputEdit = nullptr;
@@ -420,11 +445,7 @@ void LlmToolGui::resetRoot()
   m_jsSandboxBridge = nullptr;
 
   if( outer )
-  {
-    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-    outer->setRowStretch( 0, 1 );
-    outer->setColumnStretch( 0, 1 );
-  }
+    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
 }
 
 
@@ -438,6 +459,89 @@ void LlmToolGui::openConfigWindow()
                                         std::bind( &LlmToolGui::hasConversationHistory, this ) );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
 }
+
+
+void LlmToolGui::refitPhoneWindows()
+{
+  if( m_configWindow )
+    m_configWindow->refitPhoneFullScreen();
+}//void refitPhoneWindows()
+
+
+void LlmToolGui::setPhoneWindowHeader( WContainerWidget *header )
+{
+  // Take down the controls in any previous windows header, bringing the menu icon back to the
+  //  conversation area.
+  if( m_phoneHeaderTools )
+  {
+    if( m_menuIcon && m_menuIconHome && (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+    {
+      m_menuIcon->removeStyleClass( "LlmHeaderMenuIcon" );
+      m_menuIconHome->addWidget( m_menuIcon->removeFromParent() );
+    }
+
+    const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
+    m_phoneDockButton = nullptr;
+  }//if( m_phoneHeaderTools )
+
+  // While docked, CSS hides the menu icon, and shows the expand button.
+  toggleStyleClass( "LlmDocked", !header );
+
+  if( !header )
+    return;
+
+  // Floated right, as a unit, so the dock button stays left of the menu icon even when the icon is
+  //  recreated (see initializeUI()).
+  m_phoneHeaderTools = header->addNew<WContainerWidget>();
+  m_phoneHeaderTools->addStyleClass( "LlmHeaderTools" );
+
+  m_phoneDockButton = m_phoneHeaderTools->addNew<WPushButton>();
+  m_phoneDockButton->addStyleClass( "LlmDockBtn InvertInDark" );
+  m_phoneDockButton->setToolTip( WString::tr("lcw-phone-dock-tt") );
+  m_phoneDockButton->setHidden( !m_phoneCanDock );
+  m_phoneDockButton->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( true ); } );
+
+  movePhoneMenuIcon();
+}//void setPhoneWindowHeader( WContainerWidget *header )
+
+
+void LlmToolGui::setPhoneCanDock( const bool canDock )
+{
+  m_phoneCanDock = canDock;
+  if( m_phoneHeaderTools && m_phoneDockButton )
+    m_phoneDockButton->setHidden( !canDock );
+}//void setPhoneCanDock( const bool canDock )
+
+
+void LlmToolGui::addPhoneExpandButton( WContainerWidget *parent )
+{
+  WPushButton *expand = parent->addNew<WPushButton>();
+  expand->addStyleClass( "LlmExpandBtn InvertInDark" );
+  expand->setIcon( "InterSpec_resources/images/llm_expand.svg" );
+  expand->setToolTip( WString::tr("lcw-phone-expand-tt") );
+  expand->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( false ); } );
+}//void addPhoneExpandButton( WContainerWidget *parent )
+
+
+void LlmToolGui::movePhoneMenuIcon()
+{
+  if( !m_phoneHeaderTools || !m_menuIcon || (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+    return;
+
+  // The icons popup menu is owned by, and connected to, the button itself, so it comes along.
+  m_menuIcon->addStyleClass( "LlmHeaderMenuIcon" );
+  m_phoneHeaderTools->addWidget( m_menuIcon->removeFromParent() );
+}//void movePhoneMenuIcon()
+
+
+void LlmToolGui::removePhoneMenuIcon()
+{
+  if( m_menuIcon && m_phoneHeaderTools && (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+  {
+    const std::unique_ptr<WWidget> doomed = m_menuIcon->removeFromParent();
+    m_menuIcon = nullptr;
+  }
+}//void removePhoneMenuIcon()
 
 
 void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
@@ -567,11 +671,11 @@ void LlmToolGui::initializeUI()
 {
   m_root->addStyleClass("LlmToolGui");
 
-  // Create the main layout
-  m_layout = m_root->setLayout( std::make_unique<WGridLayout>() );
-  m_layout->setContentsMargins(5, 5, 5, 5);
-  m_layout->setVerticalSpacing(5);
-  m_layout->setHorizontalSpacing(5);
+  // Create the main layout (phones are narrow enough that we keep the margins small)
+  m_layout = m_root->setLayout( std::make_unique<WVBoxLayout>() );  // flex; see note in constructor
+  const int margin = m_viewer->isPhone() ? 2 : 5;
+  m_layout->setContentsMargins( margin, margin, margin, margin );
+  m_layout->setSpacing( 5 );
 
   // Create wrapper container for scroll area and menu icon
   auto scrollWrapperOwned = std::make_unique<WContainerWidget>();
@@ -592,15 +696,25 @@ void LlmToolGui::initializeUI()
 
   // Create menu icon for conversation-level actions (positioned in upper-right via CSS)
   m_menuIcon = scrollWrapper->addNew<WPushButton>();
+  m_menuIconHome = scrollWrapper;
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
   // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
 
   // Create popup menu
   PopupDivMenu *menu = makePopupMenu( m_menuIcon );
 
+  // On phones we leave out the items that are only of use when developing the LLM tools (raw JSON,
+  //  re-reading the config XML files, and benchmarks).
+  const bool phone = m_viewer->isPhone();
+  if( phone )
+    menu->addPhoneBackItem( nullptr );
+
   // Add "Export Conversation as JSON" option
-  PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
-  exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
+  if( !phone )
+  {
+    PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
+    exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
+  }
 
   // Add "Clear Conversation" option
   PopupDivMenuItem *clearItem = menu->addMenuItem( "Clear Conversation" );
@@ -615,14 +729,18 @@ void LlmToolGui::initializeUI()
   configItem->triggered().connect( this, &LlmToolGui::openConfigWindow );
 
   // Add "Reset LLM Config" option - re-reads config files and creates a new LlmInterface
-  PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
-  resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+  if( !phone )
+  {
+    PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
+    resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+  }
 
   // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
   PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
   helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
 
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
+  if( !phone )
   {
     // Collect candidate test_datasets directories.  We take the union of benchmarks
     //  found across all of them (a benchmark may legitimately appear in more than one).
@@ -686,6 +804,9 @@ void LlmToolGui::initializeUI()
     }
   }
 
+  // On phones, the icon goes in the windows header bar, if we have been given it.
+  movePhoneMenuIcon();
+
   // Create scrollable container for conversation displays.  Wt4 removed WScrollArea; the
   //  replacement is a plain container with overflow:auto.
   WContainerWidget *scrollArea = scrollWrapper->addNew<WContainerWidget>();
@@ -696,15 +817,18 @@ void LlmToolGui::initializeUI()
   m_conversationContainer->addStyleClass("LlmConversationContainer");
 
   // Add scroll wrapper to layout (fills the whole tool; the input area floats over it)
-  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0);
-  m_layout->setRowStretch(0, 1);    // Make conversation display expand
-  m_layout->setColumnStretch(0, 1);
+  m_layout->addWidget( std::move(scrollWrapperOwned), 1 );  // Make conversation display expand
 
   // Floating input area, laid over the bottom of the scroll wrapper (CSS position:absolute).  It is
   // a horizontal flex row: the input column (image previews + growing text area) on the left, and
   // the icon submit/stop button pinned to the right.
-  WContainerWidget *inputArea = scrollWrapper->addNew<WContainerWidget>();
+  // Its client-side behaviour (see setupInputJavaScript()) is set up whenever its element is created.
+  LlmJsRenderedDiv *inputArea = scrollWrapper->addNew<LlmJsRenderedDiv>();
   inputArea->addStyleClass( "LlmInputArea" );
+
+  // Phones: while docked in the tools tab strip, an "expand to full-screen" button leads the row.
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( inputArea );
 
   WContainerWidget *inputColumn = inputArea->addNew<WContainerWidget>();
   inputColumn->addStyleClass( "LlmInputColumn" );
@@ -777,10 +901,18 @@ void LlmToolGui::setupInputJavaScript()
      << "var inputArea=btn.parentElement;"
      << "Wt.WT.LlmSetupAutoScroll(scrollArea, container);"
      << "Wt.WT.LlmSetupInput(ta, btn, scrollArea, container, wrapper, inputArea, "
-     << (acceptImages ? "true" : "false") << ", " << pasteCb << ");"
+     << (acceptImages ? "true" : "false") << ", " << pasteCb << ", "
+     << (m_viewer->isPhone() ? "true" : "false") << ");"
      << "})();";
 
-  doJavaScript( js.str() );
+  // Run by the input area whenever its element is (re-)created - the event listeners set up here
+  //  go with the old elements when the tool is moved between the tool tabs and a window.
+  LlmJsRenderedDiv * const inputArea = dynamic_cast<LlmJsRenderedDiv *>( m_sendButton->parent() );
+  assert( inputArea );
+  if( inputArea )
+    inputArea->setRenderJs( js.str() );
+  else
+    doJavaScript( js.str() );
 }//setupInputJavaScript()
 
 
