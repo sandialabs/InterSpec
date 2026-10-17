@@ -13,7 +13,7 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 # CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
 #  sub-projects still declare less than that - the fetched zlib 1.2.12, plus
-#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  vendored/submoduled muparserx and SandiaDecay - so configuring with CMake 4 fails
 #  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
 #  and lets us fix it in one place rather than patching each dependency (some are submodules we
 #  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
@@ -404,7 +404,6 @@ set(sources
     src/RowStretchTreeView.cpp
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
-    src/Integrate.cpp
     src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
@@ -558,7 +557,6 @@ set(headers
     InterSpec/RowStretchTreeView.h
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
-    InterSpec/Integrate.h
     InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
@@ -926,7 +924,6 @@ set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
-add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
@@ -1018,7 +1015,6 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    Cuba-3.0
     muparserx
     Boost::thread
     Boost::date_time

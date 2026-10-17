@@ -43,7 +43,6 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"

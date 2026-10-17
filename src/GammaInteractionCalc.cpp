@@ -709,7 +709,7 @@ double exit_point_of_sphere_z( const double source_point[3],
                                double observation_dist,
                                bool postiveSolution )
 {
-  // Thin forwarder to the shared templated implementation, so the double (Minuit/Cuhre) path and the
+  // Thin forwarder to the shared templated implementation, so the double (Minuit) path and the
   //  Ceres autodiff path cannot drift apart.  The templated form factors the radius out of the
   //  intersection discriminant (see #sphere_exit_distance_scaled), which is what keeps the
   //  ceres::Jet derivative finite as the radius -> 0; it also carries the offending values in its
@@ -5197,7 +5197,7 @@ vector<PeakResultPlotInfo>
 
   // Same detector placement and same chord helper the templated driver uses
   //  (#expected_peak_counts_imp, and the double instantiation in #compute_effective_shielding), so
-  //  the Minuit/Cuhre and Ceres paths cannot drift.  detector_geom_from_config reproduces exactly the
+  //  the Minuit and Ceres paths cannot drift.  detector_geom_from_config reproduces exactly the
   //  {-offset_x,-offset_y,distance} (side-on: {distance,-offset_x,-offset_y}) position this used to
   //  build by hand.  The radius/setback are unused by #center_ray_exit_distance - passed only so the
   //  call sites read identically.
