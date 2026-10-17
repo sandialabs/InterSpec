@@ -800,7 +800,9 @@ ul.Wt-popupmenu > li.Wt-disabled > a > span > span {
 /* Item views (tables and trees): rows, zebra striping, selection, and headers - including the
    top-right header corner that Wt styles inline.  Wt paints alternating rows with an inline,
    light-only stripe image; for tree views (whose rows are elements) that image is dropped and the
-   rows stripe themselves from the tokens instead. */
+   rows stripe themselves from the tokens instead.  Only views with alternating rows enabled carry
+   that image, so the striping is scoped to them - a top-level <li> holds its entire subtree, so
+   striping a hierarchical tree (e.g., Reference Spectra) would tint whole branches. */
 .Wt-treeview div[style*="stripes/"] {
   background-image: none !important;
 }
@@ -810,7 +812,7 @@ ul.Wt-tv-root > li {
   background: var(--interspec-background-color);
 }
 
-ul.Wt-tv-root > li:nth-child(odd) {
+.Wt-treeview div[style*="stripes/"] ul.Wt-tv-root > li:nth-child(odd) {
   background: var(--interspec-alt-row-background);
 }
 
