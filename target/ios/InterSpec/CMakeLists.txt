@@ -47,8 +47,8 @@ project( InterSpecIOS VERSION 1.14 )
 
 add_definitions( -DIOS )
 
-# Ceres' iOS version check reads IOS_DEPLOYMENT_TARGET (a variable of the old ios-cmake
-#  toolchain), rather than CMake's native CMAKE_OSX_DEPLOYMENT_TARGET.
+# Ceres' iOS version check reads IOS_DEPLOYMENT_TARGET, rather than CMake's native
+#  CMAKE_OSX_DEPLOYMENT_TARGET.
 if( NOT IOS_DEPLOYMENT_TARGET )
   set( IOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}" CACHE INTERNAL "" )
 endif()

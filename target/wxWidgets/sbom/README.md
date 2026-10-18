@@ -65,8 +65,8 @@ from the SBOM by design:
 - **QR-Code-generator non-C++ variants** — `c/`, `java/`, `java-fast/`, `python/`, `rust/`,
   `rust-no-heap/`, `typescript-javascript/`: only `cpp/qrcodegen.cpp` is compiled.
 - **Other platform targets** — `target/ios`, `target/android`, `target/electron`,
-  `target/osx`, `target/macOsQuickLook`, `target/docker`, `target/sharedlib` (and the
-  `ios-cmake` submodule): not used by the wxWidgets Windows app.
+  `target/osx`, `target/macOsQuickLook`, `target/docker`, `target/sharedlib`: not used by the
+  wxWidgets Windows app.
 - **Dev/test tooling** — `target/testing`, `target/fuzzing`, `target/peak_fit_improve`,
   `target/example_code`, `target/idb_enrichment_check`; per-library `test`/`examples`/`tools`
   dirs; the `.venv_fission` Python virtualenv (incl. its PowerShell `Activate.ps1`).
