@@ -32,7 +32,6 @@
 #define PERFORM_DEVELOPER_CHECKS 0
 #define USE_REL_ACT_TOOL 1
 #define SpecUtils_ENABLE_D3_CHART 1
-#define INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE 0
 
 #ifndef IsInf
 #define IsInf(x) (std::isinf)(x)
