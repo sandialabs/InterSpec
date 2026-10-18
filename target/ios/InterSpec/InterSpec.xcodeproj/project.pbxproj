@@ -18,7 +18,6 @@
 		9B026CF018075B1D00314635 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9B026CEF18075B1D00314635 /* AppDelegate.mm */; };
 		9B026CF918075B1D00314635 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 9B026CF818075B1D00314635 /* ViewController.mm */; };
 		9B20B8E32251881900E56E93 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B20B8E22251881900E56E93 /* WebKit.framework */; };
-		9B6A620B28B1361300443442 /* WtsRsrcs in Resources */ = {isa = PBXBuildFile; fileRef = 9B6A620A28B1361300443442 /* WtsRsrcs */; };
 		9BB621D02C6FD6ED004E7388 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */; };
 		9BB621D42C6FE3BD004E7388 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621D32C6FE3BD004E7388 /* Assets.xcassets */; };
 		9BB621D62C6FFD99004E7388 /* LoadScreenImages.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9BB621D52C6FFD99004E7388 /* LoadScreenImages.xcassets */; };
@@ -41,7 +40,6 @@
 		9B026CF718075B1D00314635 /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
 		9B026CF818075B1D00314635 /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
 		9B20B8E22251881900E56E93 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
-		9B6A620A28B1361300443442 /* WtsRsrcs */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WtsRsrcs; path = "build-iphoneos/WtsRsrcs"; sourceTree = "<group>"; };
 		9B6A620C28B139B400443442 /* libInterSpecAppLib.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libInterSpecAppLib.a; path = "build-iphoneos/libInterSpecAppLib.a"; sourceTree = "<group>"; };
 		9B6A620E28B139BC00443442 /* InterSpec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = InterSpec.a; path = "build-iphoneos/LibInterSpec/InterSpec.a"; sourceTree = "<group>"; };
 		9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = "Launch Screen.storyboard"; path = "InterSpec/Launch Screen.storyboard"; sourceTree = "<group>"; };
@@ -70,7 +68,6 @@
 				9BB621D52C6FFD99004E7388 /* LoadScreenImages.xcassets */,
 				9BB621D32C6FE3BD004E7388 /* Assets.xcassets */,
 				9BB621CF2C6FD6ED004E7388 /* Launch Screen.storyboard */,
-				9B6A620A28B1361300443442 /* WtsRsrcs */,
 				3D4D11BA18F85F720043773C /* InterSpec_resources */,
 				3D4D11B818F85F610043773C /* example_spectra */,
 				3D4D11B618F85F550043773C /* data */,
@@ -135,6 +132,7 @@
 				9B026CD818075B1D00314635 /* Sources */,
 				9B026CD918075B1D00314635 /* Frameworks */,
 				9B026CDA18075B1D00314635 /* Resources */,
+				9B6D93CA3084863C0091FB1B /* Copy Wt resources (WtRsrcs) */,
 			);
 			buildRules = (
 			);
@@ -192,7 +190,6 @@
 				3D4D11B718F85F550043773C /* data in Resources */,
 				9BB621D62C6FFD99004E7388 /* LoadScreenImages.xcassets in Resources */,
 				3D4D11BB18F85F720043773C /* InterSpec_resources in Resources */,
-				9B6A620B28B1361300443442 /* WtsRsrcs in Resources */,
 				9BB621D42C6FE3BD004E7388 /* Assets.xcassets in Resources */,
 				9BB621D02C6FD6ED004E7388 /* Launch Screen.storyboard in Resources */,
 			);
@@ -217,6 +214,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nexport PATH=$PATH:/opt/homebrew/bin/\necho \"PROJECT_DIR=${PROJECT_DIR}\"\necho \"EFFECTIVE_PLATFORM_NAME=${EFFECTIVE_PLATFORM_NAME}\"\ncd \"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}\"\ncmake --build . --config ${CONFIGURATION} -j8\n";
+		};
+		9B6D93CA3084863C0091FB1B /* Copy Wt resources (WtRsrcs) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Wt resources (WtRsrcs)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Copy Wt's web assets into the app bundle as \"WtsRsrcs\" (tree preserved).\n# A classic blue folder reference is gone from Xcode 26's add-files dialog, and\n# both \"Create groups\"/\"Create folders\" FLATTEN resources into the bundle root\n# (duplicate basenames like themes/.../generate.sh collide; files wouldn't live\n# under WtsRsrcs/ as resourcesURL=WtsRsrcs/ requires).  So copy it ourselves.\nset -eu\nSRC=\"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/WtsRsrcs\"\nDST=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/WtsRsrcs\"\nrm -rf \"${DST}\"\nmkdir -p \"${DST}\"\nrsync -a \"${SRC}/\" \"${DST}/\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -345,7 +360,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = "";
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
@@ -412,6 +427,8 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/InterSpec.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/CeeLo/src/libCeeLo.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/CeeLo/src/libCeeLoCascade.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libabsl_log_internal_check_op.a",
@@ -509,7 +526,7 @@
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USER_HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.. ../../../external_libs/SpecUtils ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME} ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils";
-				VALID_ARCHS = "arm64 x86_64";
+				VALID_ARCHS = arm64;
 				WRAPPER_EXTENSION = app;
 			};
 			name = Debug;
@@ -519,7 +536,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = "";
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
@@ -586,6 +603,8 @@
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/InterSpec.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils/libSpecUtils.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SandiaDecay/libSandiaDecay.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/CeeLo/src/libCeeLo.a",
+					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/CeeLo/src/libCeeLoCascade.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/muparserx-4.0.7/libmuparserx.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libceres.a",
 					"${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/_deps/ceres-solver-build/lib/libabsl_log_internal_check_op.a",
@@ -683,7 +702,7 @@
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USER_HEADER_SEARCH_PATHS = "${PROJECT_DIR}/../../.. ../../../external_libs/SpecUtils ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME} ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs ${PROJECT_DIR}/build${EFFECTIVE_PLATFORM_NAME}/LibInterSpec/external_libs/SpecUtils";
-				VALID_ARCHS = "arm64 x86_64";
+				VALID_ARCHS = arm64;
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
