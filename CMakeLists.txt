@@ -45,6 +45,10 @@ if( CONTAINER_LIBC OR CONTAINER_MUSL)
   endif()
 endif()
 
+# The multi-session MCP analysis server is built from target/mcp_http, which sets this and the other
+#  options it needs before adding this directory; see target/mcp_http/README.md.
+option( BUILD_AS_MCP_HTTP_SERVER "Set by target/mcp_http: build the multi-session MCP HTTP analysis server" OFF )
+
 if( InterSpec_FETCH_DEPENDENCIES )
   include( cmake/FetchInterSpecDeps.cmake )
 endif( InterSpec_FETCH_DEPENDENCIES )
@@ -77,6 +81,15 @@ if( hasParent )
 else( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" ON )
 endif( hasParent )
+
+if( BUILD_AS_MCP_HTTP_SERVER )
+  if( NOT hasParent )
+    message( FATAL_ERROR "The MCP HTTP server is built from target/mcp_http, not the top-level directory." )
+  endif()
+  if( BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_ELECTRON_APP OR BUILD_AS_WX_WIDGETS_APP OR NOT BUILD_AS_LOCAL_SERVER )
+    message( FATAL_ERROR "BUILD_AS_MCP_HTTP_SERVER is a local-server build, and can not be combined with other app types." )
+  endif()
+endif( BUILD_AS_MCP_HTTP_SERVER )
 
 
 option(
@@ -256,10 +269,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_AS_LOCAL_SERVER)
+if(BUILD_AS_LOCAL_SERVER AND NOT BUILD_AS_MCP_HTTP_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_LOCAL_SERVER)
+endif(BUILD_AS_LOCAL_SERVER AND NOT BUILD_AS_MCP_HTTP_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
@@ -812,7 +825,7 @@ if( USE_LLM_INTERFACE )
 
     # Testing knob: build the Wt::Http::Client backend even where a platform-native one exists, so
     #  the Linux/Android path can be exercised on a development machine.  Needs a dependency
-    #  prefix built with BUILD_OPENSSL=ON, or Wt cannot do https at all.
+    #  prefix built with WT_ENABLE_SSL=ON (target/dep_build/dep_build_linux.sh), or Wt cannot do https.
     option( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND
             "Use the Wt::Http::Client HTTP backend even on platforms with a native one (testing)"
             OFF )
@@ -973,7 +986,7 @@ endif()
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
 
-if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) )           # $ORIGIN is a Linux/BSD feature
+if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) AND TARGET InterSpecExe )           # $ORIGIN is a Linux/BSD feature
   set_target_properties(InterSpecExe PROPERTIES
       BUILD_RPATH  "$ORIGIN/../lib"
       INSTALL_RPATH "$ORIGIN/../lib")
@@ -1139,7 +1152,7 @@ endif( USE_NATIVE_HTTP_CLIENT )
 # If the Wt we are linking against was built with SSL, we have to supply OpenSSL at this final
 #  link, whatever else is enabled: Wt links it PRIVATE into a static libwt.a, and InterSpecServer
 #  already pulls in Wt/Http/Client, so Client.o - and its OpenSSL references - is always present.
-#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with BUILD_OPENSSL=ON would
+#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with WT_ENABLE_SSL=ON would
 #  otherwise fail to link any build that has the native transport switched off.
 #
 #  WConfig.h is the authoritative signal; the presence of libssl.a in the prefix is not, since a
@@ -1190,12 +1203,12 @@ endif( BUILD_AS_OSX_APP )
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     # Setting Xcode working directory requires cmake 3.17
-    if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    if( (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0") AND TARGET InterSpecExe )
         set_target_properties(InterSpecExe PROPERTIES
             XCODE_GENERATE_SCHEME TRUE
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
-    endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    endif()
     
     set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
@@ -1412,9 +1425,12 @@ configure_file(
     COPYONLY
 )
 
-# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
-if( NOT hasParent )
-  INSTALL(TARGETS InterSpecExe DESTINATION bin)
+# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc);
+#  target/mcp_http installs its own executable, but these same resources.
+if( NOT hasParent OR BUILD_AS_MCP_HTTP_SERVER )
+  if( NOT hasParent )
+    INSTALL(TARGETS InterSpecExe DESTINATION bin)
+  endif()
   
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     INSTALL(TARGETS InterSpecLib DESTINATION lib)
@@ -1422,4 +1438,4 @@ if( NOT hasParent )
   
   INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
   INSTALL(DIRECTORY ${WT_RESOURCES_DIRECTORY}/ DESTINATION share/interspec/resources)
-endif( NOT hasParent )
+endif( NOT hasParent OR BUILD_AS_MCP_HTTP_SERVER )

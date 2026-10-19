@@ -1,3 +1,8 @@
+# InterSpec as a multi-session MCP analysis server
+The container that runs InterSpec as a multi-session MCP server is now built from
+[target/mcp_http](../mcp_http/README.md) (`docker build -t interspec-mcp-agent -f target/mcp_http/Containerfile .`).
+
+
 # Instructions 20250422 for building InterSpec using FetchContent for serving over the web
 Please note that security is not consided at all (e.g., InterSpec is currently running as root in container), and no testing has been done for the web-deployment build.
 

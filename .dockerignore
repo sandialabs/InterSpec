@@ -8,6 +8,9 @@ build_vscode/
 build_xcode/
 build_wtssl/
 build_d4check/
+build_wt4/
+build_mcp_http/
+target/rel_act_bench/
 scratch/
 test_results/
 .git/

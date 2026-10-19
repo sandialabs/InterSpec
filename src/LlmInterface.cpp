@@ -3280,7 +3280,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 Wt::WServer * const server = Wt::WServer::instance();
                 if( !server )
                   return;
-                server->post( sessionId,
+                // A delayed schedule() rather than post(): post() goes through one strand shared by
+                //  the whole server, where the conversation's next tool calls (run from this
+                //  callback) would hold up posted work in every other session.
+                server->schedule( std::chrono::milliseconds(1), sessionId,
                   [rawCallback, result_or_error]()
                   {
                     rawCallback( result_or_error );
@@ -5075,6 +5078,12 @@ bool LlmInterface::useNativeHttpBackend() const
 
   if( NativeHttp::available() )
     return true;
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // An MCP agent server must never hand API keys to the browser; its request then fails with
+  //  the native backend's error, instead of falling back (startWebServer also checks at startup).
+  return true;
+#endif
 
   // Asked for, but not built in (or built without TLS support).  Falling back to the browser is
   //  better than failing outright - it is what the user had before - but say so, because for a

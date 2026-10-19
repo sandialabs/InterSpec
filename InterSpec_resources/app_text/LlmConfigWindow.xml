@@ -117,6 +117,9 @@
   <message id="lcw-ok">OK</message>
   <message id="lcw-blocking-tip">Every provider needs at least one model before saving.</message>
   <message id="lcw-save-unavailable">Saving is unavailable: InterSpec has no writable data directory on this platform.</message>
+  <message id="lcw-save-env-refs">Saving is disabled: this configuration takes values from environment variables (env(...) references), and saving would write those values into the file.  Edit the file directly instead.</message>
+  <message id="lcw-save-config-dir">Saving is disabled: the configuration in the LLM config directory ({1}) is used in preference to a saved one.  Edit the file there instead.</message>
+  <message id="lcw-save-agent-mode">Saving is disabled when InterSpec runs as an MCP agent server; its configuration comes from the LLM config directory.</message>
   <message id="lcw-save-failed-title">Save failed</message>
   <message id="lcw-save-failed">Could not write the configuration file to the writable data directory.</message>
 

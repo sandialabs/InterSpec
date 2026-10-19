@@ -56,6 +56,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
@@ -95,26 +96,13 @@ namespace
    */
   string image_mime_type( const vector<char> &data, const string &path )
   {
-    const size_t n = data.size();
-    const unsigned char * const d = reinterpret_cast<const unsigned char *>( data.data() );
+    // PNG, JPEG, GIF, and WebP: the types the LLM APIs take.
+    LlmToolCall::ImageContent img;
+    if( img.setTypeFromContent( std::string_view( data.data(), data.size() ) ) )
+      return img.mimeType;
 
-    if( (n >= 8) && (d[0]==0x89) && (d[1]=='P') && (d[2]=='N') && (d[3]=='G')
-        && (d[4]==0x0D) && (d[5]==0x0A) && (d[6]==0x1A) && (d[7]==0x0A) )
-      return "image/png";
-
-    if( (n >= 3) && (d[0]==0xFF) && (d[1]==0xD8) && (d[2]==0xFF) )
-      return "image/jpeg";
-
-    if( (n >= 6) && (d[0]=='G') && (d[1]=='I') && (d[2]=='F') && (d[3]=='8') )
-      return "image/gif";
-
-    if( (n >= 2) && (d[0]=='B') && (d[1]=='M') )
+    if( (data.size() >= 2) && (data[0] == 'B') && (data[1] == 'M') )
       return "image/bmp";
-
-    // "RIFF" ... "WEBP"
-    if( (n >= 12) && (d[0]=='R') && (d[1]=='I') && (d[2]=='F') && (d[3]=='F')
-        && (d[8]=='W') && (d[9]=='E') && (d[10]=='B') && (d[11]=='P') )
-      return "image/webp";
 
     const string ext = SpecUtils::file_extension( path );  // includes the leading '.'
     if( SpecUtils::iequals_ascii( ext, ".png" ) )  return "image/png";

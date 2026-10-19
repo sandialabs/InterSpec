@@ -488,20 +488,85 @@ public:
      an MCP client directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
      */
     bool allowAgentInvocation = false;
+
+    /** Settings used only by the multi-session MCP HTTP server (target/mcp_http; see
+     `McpSessionManager`).  Read from the optional
+     `<AgentServer>` child of `<McpServer>`; absent elements keep these defaults.
+     */
+    struct AgentServer
+    {
+      size_t maxSessions = 8;
+      int sessionIdleTimeoutSeconds = 1800;
+      int sessionMaxLifetimeSeconds = 14400;
+
+      /** Root that holds one `<YYYY-MM-DD>_<session>/{input,output,logs}` directory per session. */
+      std::string exchangeDirectory = "/exchange";
+
+      /** If false, a session's directory is deleted when the session ends. */
+      bool keepSessionFiles = false;
+
+      uint64_t maxUploadBytes = 256ull * 1024 * 1024;
+      uint64_t maxSessionBytes = 1024ull * 1024 * 1024;
+      uint64_t maxImageBytes = 5ull * 1024 * 1024;
+
+      /** Base of the upload/download URLs handed to clients (e.g., "https://host/interspec");
+       if empty, they are built from the request's Host header.
+       */
+      std::string publicBaseUrl;
+
+      /** Chromium/Chrome executable that hosts the sessions; if empty, a list of usual locations
+       is searched.
+       */
+      std::string browserPath;
+    };//struct AgentServer
+
+    /** Present only if the config file has an `<AgentServer>` element (so saving a desktop config
+     never adds one).
+     */
+    std::optional<AgentServer> agentServer;
   };//struct McpServer
-  
+
 public:
   LlmApi llmApi;
   McpServer mcpServer;
 
   std::vector<AgentConfig> agents;  // Agent-specific configurations
   std::vector<ToolConfig> tools;    // Tool configurations with role-specific descriptions
-  
+
+  /** True if any value in the loaded `llm_config.xml` came from an `env(...)` reference; such a
+   config must not be saved back, as that would write the (secret) values into the file.
+   */
+  bool usesEnvReferences = false;
+
+  /** Set the directory that is searched before the writable and static data directories for
+   `llm_config.xml`, `llm_tools_config.xml`, `llm_agent_*.xml`, and the `llm_knowledge/` directory.
+   Intended for deployments that mount their configuration (`--llm-config-dir`).  Empty to unset.
+   */
+  static void setConfigDirectory( const std::string &dir );
+
+  /** The directory set by `setConfigDirectory()`, or empty if none. */
+  static std::string configDirectory();
+
+  /** Resolves an `env(NAME)` or `env(NAME,default)` reference.
+
+   Only a value that is entirely such a reference (ignoring surrounding whitespace) is resolved; any
+   other value is returned unchanged, with `wasReference` set false.  NAME must start with
+   "INTERSPEC_" (so a shared config file can not read unrelated secrets from the environment).
+
+   @throws std::runtime_error if the reference names a disallowed variable, or the variable is unset
+           and no default is given.
+   */
+  static std::string resolveEnvReference( const std::string &value, bool &wasReference );
+
   /** Load configuration from XML files with fallback logic.
 
    Tries to load from:
+   0. LlmConfig::configDirectory() + "/" + {filename}, if a config directory is set
    1. InterSpec::writableDataDirectory() + "/" + {filename}
    2. InterSpec::staticDataDirectory() + "/" + {filename}
+
+   When InterSpec runs as an MCP agent server, `llm_config.xml` must be in the config directory (no
+   fallback), and the native HTTP backend is forced, so API keys never reach a browser.
 
    Config files loaded:
    - "llm_config.xml" - API and MCP server settings
@@ -519,11 +584,15 @@ public:
   
   /** Load LLM API and MCP server configuration from XML file.
 
+   Values that are entirely an `env(...)` reference are resolved first (see `resolveEnvReference`).
+
    @param llmConfigPath Path to the llm_config.xml file
+   @param usesEnvReferences If non-null, set to whether any `env(...)` reference was resolved.
    @return pair of LlmApi and McpServer settings loaded from XML
    @throws std::runtime_error if file cannot be parsed
    */
-  static std::pair<LlmApi, McpServer> loadApiAndMcpConfigs( const std::string &llmConfigPath );
+  static std::pair<LlmApi, McpServer> loadApiAndMcpConfigs( const std::string &llmConfigPath,
+                                                            bool *usesEnvReferences = nullptr );
   
   /** Serialize a configuration to an XML string.
 

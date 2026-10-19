@@ -27,6 +27,7 @@
 #cmakedefine01 BUILD_AS_OSX_APP
 #cmakedefine01 BUILD_AS_ELECTRON_APP
 #cmakedefine01 BUILD_AS_WX_WIDGETS_APP
+#cmakedefine01 BUILD_AS_MCP_HTTP_SERVER
 #cmakedefine01 BUILD_FOR_WEB_DEPLOYMENT
 #cmakedefine01 BUILD_LibInterSpec_SHARED
 

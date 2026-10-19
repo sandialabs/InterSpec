@@ -16,6 +16,8 @@ metadata:
 
 InterSpec is a nuclear radiation spectral analysis application. The MCP server exposes tools for programmatic spectrum analysis, nuclide identification, activity fitting, isotopics, and nuclear data queries.
 
+If the server has a `create_session` tool, it is a multi-session analysis server: see the [interspec-mcp-agent](../interspec-mcp-agent/SKILL.md) skill for sessions, file exchange, and working with its built-in assistant.
+
 ## Core Principles
 
 1. **Tool-first**: Always use tools to access spectrum data and nuclear information. Tool calls are cheap; assumptions are expensive.
@@ -40,7 +42,7 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 ### Spectrum Management
 - `get_loaded_spectra` - List currently loaded spectrum types (Foreground, Background, Secondary)
 - `get_spectrum_info` - Detailed metadata: live time, energy range, calibration, detector type. Pass `fileInfo: true` for full file details.
-- `load_spectrum_file` - Load a spectrum file from the filesystem. Load foreground first if loading a pair (background may be cleared when foreground changes).
+- `load_spectrum_file` - Load a spectrum file from the filesystem (on a multi-session server, a path like `input/<file>` in the session directory), the way the GUI opens it: for a file with several samples it picks one (and may also load the file's background sample as the background); the result's `summary` and `displayed` say which samples and detectors are shown, and `samplesNotDisplayed` lists the others. Choose with `sampleNumbers` (and `detectors` for a foreground). Load foreground first if loading a pair (background may be cleared when foreground changes). `conversation` (`keep`/`resume`/`new`) controls what happens to the assistant conversation on a foreground load.
 - `get_counts_in_energy_range` - Photon counts in an energy range with statistical foreground/background comparison.
 
 ### Peak Detection and Management

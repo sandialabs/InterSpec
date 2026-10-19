@@ -83,6 +83,14 @@
 #include "InterSpec/LlmMcpResource.h"
 #endif
 
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
+
+#if( USE_NATIVE_HTTP_CLIENT )
+#include "InterSpec/NativeHttpClient.h"
+#endif
+
 using namespace std;
 
 // Namespace to track allowed sessions and not
@@ -153,6 +161,14 @@ namespace InterSpecServer
 #if( USE_MCP_SERVER )
   std::mutex ns_mcp_mutex;
   std::unique_ptr<LlmMcpResource> ns_mcp_resource;
+#endif
+
+#if( USE_MCP_SERVER && MCP_ENABLE_AUTH && !BUILD_AS_MCP_HTTP_SERVER )
+  /** Bearer tokens are not printed in full; just enough to tell which one is in use. */
+  std::string masked_token( const std::string &token )
+  {
+    return (token.size() <= 8) ? std::string( "****" ) : (token.substr(0,4) + "..." + token.substr(token.size()-2));
+  }
 #endif
   
   
@@ -401,7 +417,7 @@ void startWebServer( string name,
                      std::string basedir,
                      const std::string xml_config_path,
                      unsigned short int server_port_num
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
                      , string http_address
 #endif
                              )
@@ -421,15 +437,43 @@ void startWebServer( string name,
   // Wt 4: WString is always UTF-8, setDefaultEncoding removed
     
     
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // A multi-session agent server is useless, and potentially unsafe, without a valid MCP config;
+  //  so check before the server starts accepting connections.
+  {
+    const shared_ptr<const LlmConfig> config = llm_config(); //throws if config is invalid
+    if( !config || !config->mcpServer.enabled )
+      throw runtime_error( "Running as an MCP agent server requires <McpServer><Enabled>true</Enabled> in llm_config.xml." );
+#if( MCP_ENABLE_AUTH )
+    const string &token = config->mcpServer.bearerToken;
+    if( token.empty() || (token == LlmConfig::McpServer::sm_invalid_bearer_token) )
+      throw runtime_error( "Running as an MCP agent server requires a <McpServer><BearerToken>." );
+    if( token.size() < 16 )
+      throw runtime_error( "The MCP <BearerToken> must be at least 16 characters when running as an agent server." );
+#else
+    throw runtime_error( "Running as an MCP agent server requires MCP_ENABLE_AUTH." );
+#endif
+    if( !config->mcpServer.agentServer.has_value() )
+      cerr << "No <AgentServer> element in the <McpServer> config; using default agent-server settings." << endl;
+
+    // Only sessions we open (with a token we issued) may load.
+    set_require_tokened_sessions( true );
+  }
+#endif //BUILD_AS_MCP_HTTP_SERVER
+
   ns_server = new Wt::WServer( name, xml_config_path );
   char *exe_param_name  = &(name[0]);
   char httpaddr_param_name[]  = "--http-addr";
   
-#if( BUILD_FOR_WEB_DEPLOYMENT )
-  char *httpaddr_param_value  = &(http_address[0]);
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
+  // An MCP agent server is reached by its clients over the network (it has bearer-token
+  //  authentication, and serves only sessions it created).
+  string http_addr_str = http_address;
 #else
-  char httpaddr_param_value[] = "127.0.0.1";
+  // Single-user builds only ever serve localhost.
+  string http_addr_str = "127.0.0.1";
 #endif
+  char *httpaddr_param_value = &(http_addr_str[0]);
     
     
   char httpport_param_name[]  = "--http-port";
@@ -466,12 +510,12 @@ void startWebServer( string name,
     wthttp_args.push_back( &max_mem_req_bytes[0] );
   }
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT && !defined(ThreadPool_USING_GCD) )
+#if( !BUILD_FOR_WEB_DEPLOYMENT && !BUILD_AS_MCP_HTTP_SERVER && !defined(ThreadPool_USING_GCD) )
   // Override the XML's <num-threads> with max(4, hardware_concurrency()) so
   // single-user builds get enough Wt worker threads for parallel peak fits,
   // shielding/source fits, etc. on modern multi-core CPUs.
-  //   - BUILD_FOR_WEB_DEPLOYMENT keeps the XML value so deployers can
-  //     over-provision threads for concurrent request load.
+  //   - BUILD_FOR_WEB_DEPLOYMENT and BUILD_AS_MCP_HTTP_SERVER keep the XML value
+  //     so deployers can over-provision threads for concurrent request load.
   //   - Builds where SpecUtilsAsync::ThreadPool is backed by GCD (Apple +
   //     clang, see SpecUtilsAsync.h) dispatch heavy work via Grand Central
   //     Dispatch, so extra Wt threads aren't useful. This currently covers
@@ -517,7 +561,7 @@ void startWebServer( string name,
       
   const int port = ns_server->httpPort();
   assert( !server_port_num || (server_port_num == port) );
-  std::string this_url = "http://" + string(httpaddr_param_value) + ":" + std::to_string(port);
+  std::string this_url = "http://" + http_addr_str + ":" + std::to_string(port);
       
   {
     std::lock_guard<std::mutex> lock( sm_servedOnMutex );
@@ -548,6 +592,30 @@ void startWebServer( string name,
           std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
 #endif
         
+#if( BUILD_AS_MCP_HTTP_SERVER )
+        // The session manager must exist before the resource can be reached.
+        {
+          // LLM calls must be made from C++ (see LlmConfig::load), so refuse to run without a
+          //  usable native HTTPS client, rather than fail every assistant turn later.
+#if( USE_NATIVE_HTTP_CLIENT )
+          if( config->llmApi.enabled && !NativeHttp::available() )
+            throw runtime_error( string("Running as an MCP agent server needs a native HTTPS client"
+                                        " for LLM calls, but none is usable (")
+                                 + NativeHttp::backendName() + ")." );
+#else
+          if( config->llmApi.enabled )
+            throw runtime_error( "Running as an MCP agent server needs a build with USE_NATIVE_HTTP_CLIENT." );
+#endif
+
+          // Sessions are opened by a browser on this machine; use loopback when bound to all
+          //  interfaces, as the browser can reach nothing else (see CdpBrowser).
+          const bool any_addr = (http_addr_str == "0.0.0.0") || (http_addr_str == "::") || http_addr_str.empty();
+          const string browser_host = any_addr ? string("127.0.0.1") : http_addr_str;
+          McpSessionManager::start( config->mcpServer.agentServer.value_or( LlmConfig::McpServer::AgentServer{} ),
+                                    browser_host, port ); //throws on error
+        }
+#endif //BUILD_AS_MCP_HTTP_SERVER
+
         ns_mcp_resource = std::make_unique<LlmMcpResource>( config ); //Throws exception if there is trouble setting up the tool calls
           
         // Add the resource to the existing server at /mcp-api
@@ -556,10 +624,18 @@ void startWebServer( string name,
         
       std::cout << "\n=== MCP Interface Enabled ===" << std::endl;
       std::cout << "MCP Server URL: " << InterSpecServer::urlBeingServedOn() << "/mcp-api" << std::endl;
+#if( !BUILD_AS_MCP_HTTP_SERVER )
       std::cout << "In your tool, set MCP Host to: http://127.0.0.1:" << port << "/mcp-api" << std::endl;
+#endif
 #if( MCP_ENABLE_AUTH )
       if( !config->mcpServer.bearerToken.empty() )
-        std::cout << "Bearer Token Required: " << config->mcpServer.bearerToken << std::endl;
+        std::cout << "Bearer Token Required: "
+#if( BUILD_AS_MCP_HTTP_SERVER )
+                  << "(as configured)"
+#else
+                  << masked_token( config->mcpServer.bearerToken )
+#endif
+                  << std::endl;
       else
         std::cout << "Authentication: None required" << std::endl;
       
@@ -571,6 +647,11 @@ void startWebServer( string name,
   }catch( std::exception &e )
   {
     std::cerr << "Exception setting up LLM/MCP interface: " << e.what() << std::endl;
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+    // An agent server has no purpose without its MCP interface.
+    throw;
+#endif
 #if( BUILD_AS_LOCAL_SERVER )
     // TODO: maybe should shutdown server, etc?
 #endif
@@ -584,7 +665,7 @@ int start_server( const char *process_name,
                   const char *basedir,
                   const char *xml_config_path,
                   unsigned short int server_port
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
                   , const char *http_address
 #endif
                   )
@@ -734,14 +815,14 @@ int start_server( const char *process_name,
     //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
     //}
 
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
   const string server_http_address = http_address ? http_address : "127.0.0.1";
 #endif
 
   try
   {
     InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
                              , server_http_address
 #endif
                                     );
@@ -757,6 +838,11 @@ int start_server( const char *process_name,
   
 void killServer()
 {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // Ends the agent sessions (and removes their directories), and stops the browser.
+  McpSessionManager::stop();
+#endif
+
   std::lock_guard<std::mutex> serverlock( ns_servermutex );
     
   if( ns_server )
@@ -820,9 +906,12 @@ void killServer()
     if( ns_sessions.size() > 500 )
     {
       vector<string> to_remove;
+      // (A token that is no longer authorized is refused whether or not it is still in the map; an
+      //  ended app's token goes from Dead to NoLongerAuthorized, when its token is then removed.)
       for( auto &keyval : ns_sessions )
       {
-        if( keyval.second.current_state == SessionState::State::Dead )
+        if( (keyval.second.current_state == SessionState::State::Dead)
+           || (keyval.second.current_state == SessionState::State::NoLongerAuthorized) )
           to_remove.push_back( keyval.first );
       }
       

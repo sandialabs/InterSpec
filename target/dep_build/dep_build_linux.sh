@@ -125,49 +125,36 @@ export MY_WT_PREFIX="$install_directory"
 #  before that.  The top-level InterSpec CMakeLists.txt does the same thing for its own build.
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
-# TODO(Wt4): upstream (feature/PeakFitImprove) grew a `BUILD_OPENSSL` block here that builds a static
-#  OpenSSL into the prefix and turns on Wt's ENABLE_SSL, so `Wt::Http::Client` can do https:// - which
-#  is what the USE_NATIVE_HTTP_CLIENT Wt backend needs on Linux.  That block was written against
-#  Wt 3.7.1: it patches `wt-3.7.1/...` and `cmake/WtFindSsl.txt`, neither of which exists here.
-#  It was therefore NOT carried across.  To restore https for the Wt HTTP backend on this branch,
-#  build OpenSSL into the prefix and flip `ENABLE_SSL` (currently forced OFF in
-#  cmake/FetchInterSpecDeps.cmake) - no source patching should be needed with Wt 4.
-#  Not currently blocking: USE_NATIVE_HTTP_CLIENT defaults OFF, and on macOS the native backend is
-#  NSURLSession, which needs none of this.
+# HTTPS for Wt::Http::Client, which is the USE_NATIVE_HTTP_CLIENT transport on Linux (the MCP agent
+#  server container uses it for all LLM calls).  With WT_ENABLE_SSL=ON, Wt is built against the
+#  OpenSSL development files of the build system (e.g. Debian's libssl-dev), and InterSpec's
+#  CMakeLists.txt links that OpenSSL when it sees WT_WITH_SSL in Wt's WConfig.h.  The resulting
+#  binary needs the same OpenSSL at run time - fine for a container image, which pins its
+#  distribution.  Default OFF so no existing build changes behaviour.
+#
+# TODO: for a portable binary (e.g., the manylinux build), build a static OpenSSL into the prefix
+#  instead; Wt 4 needs no source patching for that, just OPENSSL_ROOT_DIR pointed at the prefix.
+WT_ENABLE_SSL=${WT_ENABLE_SSL:-OFF}
+echo "WT_ENABLE_SSL: ${WT_ENABLE_SSL}"
 
-# Build a static OpenSSL into the prefix and enable Wt's SSL support, so Wt::Http::Client can do
-#  https:// - which is what the USE_NATIVE_HTTP_CLIENT backend needs on Linux, where the native
-#  transport IS Wt::Http::Client.
-#
-# Default OFF so no existing build changes behaviour, and nobody pays the OpenSSL build cost
-#  until they ask for it.  Turn on with `BUILD_OPENSSL=ON ./dep_build_linux.sh ...`.
-#
-# Must be OpenSSL from the prefix, never the distribution's: linking the system one would tie the
-#  resulting binary to that distribution's exact OpenSSL soname.
-BUILD_OPENSSL=${BUILD_OPENSSL:-OFF}
-OPENSSL_VERSION=3.5.4
-echo "BUILD_OPENSSL: ${BUILD_OPENSSL}"
+# Wt looks for OpenSSL only under its SSL_PREFIX, which defaults to CMAKE_PREFIX_PATH (this prefix);
+#  an empty SSL_PREFIX lets CMake's FindOpenSSL search the system (including Debian's multiarch
+#  library directories).  Set WT_SSL_PREFIX to use an OpenSSL installed somewhere else.
+_wt_ssl_args=""
+if [ "${WT_ENABLE_SSL}" = "ON" ]; then
+  _wt_ssl_args="-DSSL_PREFIX=${WT_SSL_PREFIX:-}"
+fi
 
-# Guard against two stale-sentinel traps that would silently produce a broken prefix:
-#
-#  - `wt.installed` from an earlier BUILD_OPENSSL=OFF run makes the Wt block below a no-op, so Wt
-#    keeps ENABLE_SSL=OFF while the prefix now *does* contain libssl.a - which looks like success
-#    to InterSpec's cmake, but leaves https dead at runtime.
-#  - `wt-3.7.1/wt.patched` from before this script gained the WtFindSsl.txt hunk means that hunk is
-#    never applied, so Wt links a bare "-lcrypto" (the system one) against our static libssl.a.
-#
-# Both are silent, so refuse rather than guess.
-if [ "${BUILD_OPENSSL}" = "ON" ] && [ -f "${working_directory}/wt.installed" ]; then
+# A `wt.installed` sentinel from an earlier run without SSL makes the Wt block below a no-op, so the
+#  prefix would silently keep a Wt without https; refuse rather than guess.
+if [ "${WT_ENABLE_SSL}" = "ON" ] && [ -f "${working_directory}/wt.installed" ]; then
   if [ ! -f "${MY_WT_PREFIX}/include/Wt/WConfig.h" ] \
      || ! grep -q "^#define WT_WITH_SSL" "${MY_WT_PREFIX}/include/Wt/WConfig.h"; then
     echo ""
-    echo "ERROR: BUILD_OPENSSL=ON, but this working directory already has a Wt built WITHOUT SSL."
-    echo "       Wt will not be rebuilt while its sentinel exists, so the result would silently"
-    echo "       have no https support.  Remove these and re-run:"
+    echo "ERROR: WT_ENABLE_SSL=ON, but this working directory already has a Wt built WITHOUT SSL."
+    echo "       Wt will not be rebuilt while its sentinel exists.  Remove these and re-run:"
     echo "         rm ${working_directory}/wt.installed"
-    echo "         rm -rf ${working_directory}/wt-3.7.1"
-    echo "       (deleting the extracted Wt source also drops its 'wt.patched' marker, so the"
-    echo "        WtFindSsl.txt fix gets applied)"
+    echo "         rm -rf ${working_directory}/wt-4.13.2"
     echo ""
     exit 1
   fi
@@ -351,8 +338,14 @@ else
   # Force Wt to use its bundled Howard Hinnant date library for time-zone support;
   # std::chrono tzdb availability varies across libstdc++/libc++ versions and host tzdata,
   # so we standardize on the bundled implementation across all platforms.
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DENABLE_HARU=OFF -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=20 -DWT_CPP20_DATE_TZ_IMPLEMENTATION=date -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DENABLE_HARU=OFF -DENABLE_SSL=${WT_ENABLE_SSL} ${_wt_ssl_args} -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DENABLE_FIREBIRD=OFF -DENABLE_MSSQLSERVER=OFF -DENABLE_OPENGL=ON -DENABLE_QT4=OFF -DENABLE_QT5=OFF -DENABLE_QT6=OFF -DENABLE_LIBWTTEST=ON -DENABLE_SAML=OFF -DENABLE_UNWIND=OFF -DHTTP_WITH_ZLIB=OFF -DCMAKE_CXX_STANDARD=20 -DWT_CPP20_DATE_TZ_IMPLEMENTATION=date -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
   cmake --build . --config Release --target install --parallel ${_ncore}
+
+  # Wt quietly builds without SSL if it can not find OpenSSL; that must not pass unnoticed.
+  if [ "${WT_ENABLE_SSL}" = "ON" ] && ! grep -q "^#define WT_WITH_SSL" "${MY_WT_PREFIX}/include/Wt/WConfig.h"; then
+    echo "ERROR: WT_ENABLE_SSL=ON, but Wt was built without SSL (OpenSSL not found; see WT_SSL_PREFIX)."
+    exit 1
+  fi
 
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else

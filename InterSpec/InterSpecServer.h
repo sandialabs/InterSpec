@@ -70,7 +70,7 @@ namespace InterSpecServer
                              std::string basedir,
                              const std::string configpath,
                              unsigned short int server_port_num
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
                              , std::string http_address
 #endif
                               );
@@ -91,7 +91,7 @@ namespace InterSpecServer
    @param server_port_num The port to start the server on.  
           If zero, then a random port above 1024 will be chosen.  
           Ports below 1024 usually require admin privledges.
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
    @param http_address The network adapter address to bind the web-server to.  "127.0.0.1" is
           localhost, while "0.0.0.0" will bind so it is visible on the external network
 #endif
@@ -102,7 +102,7 @@ namespace InterSpecServer
   InterSpec_API int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
                     unsigned short int server_port_num
-#if( BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_FOR_WEB_DEPLOYMENT || BUILD_AS_MCP_HTTP_SERVER )
                     , const char *http_address
 #endif
                    );

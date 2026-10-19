@@ -632,6 +632,12 @@ nlohmann::json executeAskUserQuestion(
 
   json result;
 
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // Not registered for an MCP HTTP server (no one could answer, and the modal dialog would block
+  //  the session forever); see ToolRegistry::registerDefaultTools().
+  throw runtime_error( "ask_user_question is not available: there is no interactive user." );
+#else
+
   // Create a modal dialog
   // Wt4 has no owner-taking WDialog ctor; hold it locally so it is destroyed when this function
   //  returns (exec() blocks until the user is done, so the scope outlives the dialog's use).
@@ -677,6 +683,7 @@ nlohmann::json executeAskUserQuestion(
   result["success"] = true;
 
   return result;
+#endif //BUILD_AS_MCP_HTTP_SERVER / else
 }//executeAskUserQuestion(...)
 
 

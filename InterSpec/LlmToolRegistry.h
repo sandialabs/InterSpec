@@ -28,6 +28,8 @@
 #include <map>
 #include <string>
 #include <memory>
+#include <vector>
+#include <cstdint>
 #include <variant>
 
 // Forward declarations
@@ -38,6 +40,7 @@ struct LlmInteraction;
 class LlmConversationHistory;
 
 #include "InterSpec/LlmConfig.h"  // For AgentType enum
+#include "InterSpec/LlmConversationHistory.h"  // For LlmToolCall::ImageContent
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
@@ -118,6 +121,26 @@ int effective_async_timeout_ms( const SharedTool &tool );
  may still land and leave the model believing state it can see.
  */
 std::string async_timeout_error_message( const std::string &toolName, const int timeoutMs );
+
+/** Resolves a file path given by a client (an MCP client, or the LLM) for a tool to read.
+
+ When InterSpec runs as an MCP agent server, the path must be relative to the calling session's
+ directory (e.g., "input/spectrum.n42"), and is resolved inside it (see
+ `McpSessionManager::resolveSessionPath`); otherwise the path is returned unchanged.
+ Must be called from the session's thread.
+
+ @throws std::runtime_error, with a generic message, if the path is not allowed.
+ */
+std::string resolve_client_file_path( const std::string &path );
+
+/** Reads the `images` parameter of an MCP prompt: an array of `{path | base64Data, mimeType,
+ caption}`, where `path` is resolved with `resolve_client_file_path`.  Images must be PNG, JPEG, GIF,
+ or WebP (checked from their content), and at most `max_bytes` each.
+
+ @throws std::runtime_error describing the first problem found.
+ */
+std::vector<LlmToolCall::ImageContent> images_from_mcp_param( const nlohmann::json &images,
+                                                             const uint64_t max_bytes );
 
 
 /** Central registry for LLM tools that can be shared between LlmInterface and LlmMcpResource.

@@ -143,6 +143,14 @@ private:
   std::function<void()> m_onApply;
   std::function<bool()> m_hasConversation;
   std::string m_writableDir; // empty => saving unavailable on this platform
+
+  /** Non-empty if saving is not allowed: the config uses env(...) references (saving would write
+   their secret values into the file), or InterSpec runs as an MCP agent server.
+   */
+  Wt::WString m_saveBlockedReason;
+
+  /** Whether the config `seedWorkingCopy()` loaded used env(...) references. */
+  bool m_seededFromEnvReferences = false;
   std::string m_importConfigPath; // non-empty => seed from this file and warn before overwriting
 
   LlmConfig m_working;                       // authoritative working state (llmApi + mcpServer used)

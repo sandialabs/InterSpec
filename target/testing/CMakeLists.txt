@@ -864,6 +864,18 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  # The MCP agent server (env() config references, path confinement, analysis N42 round trip);
+  #  the MCP server is only built for desktop-style platforms.  The session manager is built into the
+  #  test, as it is part of target/mcp_http rather than InterSpecLib.
+  if( NOT (IOS OR ANDROID) )
+    add_executable( test_McpAgentServer test_McpAgentServer.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_http/McpSessionManager.cpp )
+    target_link_libraries( test_McpAgentServer PRIVATE InterSpecLib )
+    add_test( NAME TMcpAgentServer
+      COMMAND $<TARGET_FILE:test_McpAgentServer> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+  endif( NOT (IOS OR ANDROID) )
+
   add_executable( test_LlmInterface test_LlmInterface.cpp )
   target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TLlmInterface

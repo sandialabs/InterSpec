@@ -19,6 +19,8 @@ InterSpec looks for skills in these directories, in increasing order of preceden
 3. `<writable data dir>/llm_knowledge` (recommended for your own skills)
 4. `<writable data dir>/gamma_spec_skills/llm_knowledge` (e.g., a `gamma_spec_skills` knowledge repository
    cloned directly into the writable data directory)
+5. `<LLM config dir>/llm_knowledge`, and `<LLM config dir>/gamma_spec_skills/llm_knowledge`, if InterSpec
+   was started with `--llm-config-dir` (as the MCP agent-server container is)
 
 A skill with the same `name` as one in an earlier directory replaces it (including its `references/`).
 

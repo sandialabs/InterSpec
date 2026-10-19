@@ -162,8 +162,8 @@ Compile and return a complete summary to the caller:
 * **activity_fit_one_off** — Exploratory one-off fits (not saved to app-state)
 * **close_activity_shielding_display** — Close the fit GUI before returning
 * **create_peak_checkpoint**, **restore_peaks_to_checkpoint** — Save/restore peak state if needed
-* **ask_user_question** — Ask user for critical ambiguous information (use sparingly)
-* **set_workflow_state** — Advance state machine; call before each state's work begins
+{% if interactive_user %}* **ask_user_question** — Ask user for critical ambiguous information (use sparingly)
+{% endif %}* **set_workflow_state** — Advance state machine; call before each state's work begins
 
 Be quantitative and precise. The user needs defensible activity measurements, not qualitative assessments.]]></SystemPrompt>
 

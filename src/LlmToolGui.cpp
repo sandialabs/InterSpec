@@ -47,6 +47,10 @@
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmConversationHistory.h"
 
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -1666,8 +1670,18 @@ void LlmToolGui::writeConversationLog()
 
     if( m_logFilePath.empty() )
     {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+      // A session of an MCP agent server logs into its own directory, which goes away with it.
+      const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+      const std::optional<McpSessionManager::SessionInfo> session
+                    = manager ? manager->session( McpSessionManager::currentHandle() ) : std::nullopt;
+      if( !session.has_value() || session->dir.empty() )
+        throw runtime_error( "no session directory to log to" );
+      const string log_dir = SpecUtils::append_path( session->dir, "logs" );
+#else
       const string base_dir = InterSpec::writableDataDirectory(); //throws if not set
       const string log_dir = SpecUtils::append_path( base_dir, "llm_logs" );
+#endif
       if( SpecUtils::create_directory( log_dir ) == 0 ) //-1 already existed, 1 created
         throw runtime_error( "could not create directory '" + log_dir + "'" );
 
@@ -1793,20 +1807,25 @@ void LlmToolGui::cancelCurrentRequest()
 
   cout << "Cancelling LLM request" << endl;
 
-  // Clear the pending request state
+  if( m_activeMcpCallback )
+    m_activeMcpCancelled = true;
+
+  // Stop the turn itself (in-flight requests and deferred tool rounds), or it would keep calling
+  //  tools and share the history with the next turn; cancelAll() emits conversationFinished, so
+  //  handleConversationFinished() re-enables input and resolves any MCP prompt (as cancelled).
+  if( m_llmInterface && m_llmInterface->hasActiveRequests() )
+  {
+    m_llmInterface->cancelAll();
+    return;
+  }
+
   m_isRequestPending = false;
-
-  // Re-enable the input
   setInputEnabled(true);
-
   writeConversationLog();
 
-  // If an MCP prompt was in flight, resolve it as failed so the SSE stream ends
-  // and the queue can drain to the next entry.
+  // If an MCP prompt was in flight, resolve it so the SSE stream ends and the queue can drain to
+  //  the next entry.
   resolveActiveMcpPrompt( false );
-
-  // Note: We can't actually cancel the HTTP request from C++, but the response will be ignored
-  // when it comes back since we've cleared the pending request state
 }
 
 std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> LlmToolGui::getConversationHistory() const
@@ -1904,7 +1923,9 @@ void LlmToolGui::submitMessageAsUser( const string &message )
 
 
 void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback,
-                                    McpProgressCallback progressCallback )
+                                    McpProgressCallback progressCallback,
+                                    vector<LlmToolCall::ImageContent> images,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -1927,8 +1948,53 @@ void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback call
     return;
   }
 
-  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ) } );
+  if( !images.empty() && !canAcceptImages() )
+  {
+    callback( string( "The configured model does not accept images." ) );
+    return;
+  }
+
+  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ),
+                                                std::move( images ), id } );
   drainMcpPromptQueue();
+}
+
+
+bool LlmToolGui::cancelMcpPrompt( const string &id )
+{
+  if( id.empty() )
+    return false;
+
+  for( auto iter = begin(m_mcpPromptQueue); iter != end(m_mcpPromptQueue); ++iter )
+  {
+    if( iter->id == id )
+    {
+      McpPromptCallback cb = std::move( iter->callback );
+      m_mcpPromptQueue.erase( iter );
+      if( cb )
+        cb( string( "The prompt was cancelled before it ran." ) );
+      return true;
+    }
+  }//for( loop over queued prompts )
+
+  if( m_activeMcpCallback && (m_activeMcpId == id) )
+  {
+    m_activeMcpCancelled = true;
+    cancelCurrentRequest();  //resolves the active prompt, then drains the queue
+
+    // (The queue may have started the next prompt, so check the id.)
+    if( m_activeMcpCallback && (m_activeMcpId == id) )
+      resolveActiveMcpPrompt( false );
+    return true;
+  }
+
+  return false;
+}//bool cancelMcpPrompt( const string &id )
+
+
+bool LlmToolGui::isTurnInProgress() const
+{
+  return m_isRequestPending || static_cast<bool>(m_activeMcpCallback) || !m_mcpPromptQueue.empty();
 }
 
 
@@ -1955,6 +2021,13 @@ void LlmToolGui::drainMcpPromptQueue()
   m_mcpPromptQueue.pop_front();
   m_activeMcpCallback = std::move( next.callback );
   m_activeProgressCallback = std::move( next.progressCallback );
+  m_activeMcpId = next.id;
+  m_activeMcpCancelled = false;
+
+  // Staged right before sending, since sending takes every staged image along.
+  for( const LlmToolCall::ImageContent &img : next.images )
+    stageImage( img.base64Data, img.mimeType, img.caption.empty() ? string("image") : img.caption,
+                img.widthPx, img.heightPx, img.caption );
 
   submitMessageAsUser( next.prompt );
 
@@ -1985,8 +2058,14 @@ void LlmToolGui::resolveActiveMcpPrompt( bool success )
   {
     McpPromptCallback cb = std::move( m_activeMcpCallback );
     m_activeMcpCallback = McpPromptCallback();
+    const bool cancelled = m_activeMcpCancelled;
+    m_activeMcpId.clear();
+    m_activeMcpCancelled = false;
 
-    if( success )
+    // (A cancelled turn ends through conversationFinished, i.e. "success", so check cancelled first.)
+    if( cancelled )
+      cb( string( "The assistant's turn was cancelled." ) );
+    else if( success )
       cb( buildMcpPromptResult() );
     else
       cb( string( "The assistant's turn ended with an error before producing a final response." ) );
@@ -2046,6 +2125,32 @@ nlohmann::json LlmToolGui::buildMcpPromptResult() const
     for( const LlmToolCall &call : req->toolCalls() )
       result["tool_calls"].push_back( call.toolName );
   }
+
+  // Questions the assistant asked the GUI's user (ask_user_question), with their answers, so an
+  //  MCP client can surface them.  (An MCP HTTP server has no such user, nor the tool.)
+  nlohmann::json questions = nlohmann::json::array();
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    if( !turn || (turn->type() != LlmInteractionTurn::Type::ToolResult) )
+      continue;
+
+    const LlmToolResults *results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    if( !results )
+      continue;
+
+    for( const LlmToolCall &call : results->toolCalls() )
+    {
+      if( call.toolName != "ask_user_question" )
+        continue;
+      nlohmann::json entry;
+      entry["question"] = call.toolParameters.value( "question", nlohmann::json("") );
+      entry["answer"] = call.content;
+      questions.push_back( std::move(entry) );
+    }
+  }//for( loop over turns )
+
+  if( !questions.empty() )
+    result["questions_asked"] = std::move( questions );
 
   return result;
 }
@@ -2208,7 +2313,8 @@ void LlmToolGui::disconnectMcpProgress()
 
 
 void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
-                                    McpPromptCallback callback, McpProgressCallback progressCallback )
+                                    McpPromptCallback callback, McpProgressCallback progressCallback,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -2243,7 +2349,7 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
   const string wrappedPrompt = "Please use the invoke_" + agentName
     + " tool to handle the following request:\n\n" + prompt;
 
-  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ) );
+  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ), {}, id );
 }
 
 
