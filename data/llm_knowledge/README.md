@@ -83,6 +83,25 @@ The skill's tool returns the `SKILL.md` body plus a list of `available_reference
 
 Keep `SKILL.md` short (a few KB): when to use the skill, the most important decision rules, and an index of what each reference covers.  Keep each reference self-contained and reasonably small (under ~10 KB); this matters for smaller LLMs.
 
+## Benchmark question sets (optional)
+
+A skill may carry its own LLM benchmark, so it can be evaluated wherever it is installed:
+
+```text
+llm_knowledge/
+  detector-models/
+    SKILL.md
+    references/
+    test_datasets/
+      detector-models/
+        detector_models_llm_benchmark.xml
+        spectra/...            (spectrum files the XML references, by relative path)
+```
+
+The LLM Assistant's "Benchmarks / Quizzes" menu lists every `*_llm_benchmark.xml` found under the knowledge
+directories (as well as under `test_datasets/` next to the data directories).  `SpectrumFile` paths in the XML
+are relative to the XML file.  Do not put a `SKILL.md` under `test_datasets/` (it would be loaded as a skill).
+
 ## Current implementation limits
 
 - Only `name` and `description` frontmatter fields are read (best effort).

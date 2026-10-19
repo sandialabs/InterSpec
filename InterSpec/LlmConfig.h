@@ -257,6 +257,11 @@ public:
     /** The canonical attribute string for a HttpBackend (returns a static literal). */
     static const char *httpBackendToString( HttpBackend backend );
 
+    /** Parse a `reasoning` attribute value: "true"/"1"/"yes", "false"/"0"/"no", or an effort level
+     "low"/"medium"/"high" (case-insensitive).  Returns an empty optional if not recognized.
+     */
+    static std::optional<std::variant<bool,ReasoningEffort>> parseReasoning( std::string str );
+
     /** Per-model configuration within an ApiProvider. */
     struct ModelInfo
     {
@@ -416,6 +421,14 @@ public:
     std::vector<ApiProvider> providers;
     size_t activeProviderIndex = 0;  // Index of the active provider; resolved at parse time
 
+    /** True if the assistant is enabled, and the active provider has an endpoint set.
+     Safe to call when there are no providers (e.g., when the user has not yet created a config).
+     */
+    bool isConfigured() const
+    {
+      return enabled && (activeProviderIndex < providers.size()) && !apiEndpoint().empty();
+    }
+
     // Convenience accessors for the active provider and model
     const ApiProvider &activeProvider() const { return providers.at( activeProviderIndex ); }
     const ModelInfo &activeModel() const { return activeProvider().models.at( activeProvider().activeModelIndex ); }
@@ -497,6 +510,12 @@ public:
   std::vector<AgentConfig> agents;  // Agent-specific configurations
   std::vector<ToolConfig> tools;    // Tool configurations with role-specific descriptions
   
+  /** Returns the path to use for an LLM-related config/data file: the copy in
+   InterSpec::writableDataDirectory() if one exists there (for builds that have one), otherwise the
+   path in InterSpec::staticDataDirectory() (which may or may not exist).
+   */
+  static std::string configFilePath( const std::string &filename );
+
   /** Load configuration from XML files with fallback logic.
 
    Tries to load from:
@@ -504,14 +523,17 @@ public:
    2. InterSpec::staticDataDirectory() + "/" + {filename}
 
    Config files loaded:
-   - "llm_config.xml" - API and MCP server settings
+   - "llm_config.xml" - API and MCP server settings.  This file is not distributed with InterSpec; it
+     is written to the writable data directory by the "LLM Provider Settings" window.  If it does not
+     exist, a default config is returned, with the LLM assistant and MCP server both disabled (and no
+     providers), so the assistant will prompt the user to configure a provider.
    - "llm_tools_config.xml" - Tool definitions
    - "llm_agent_{AgentName}.xml" - Per-agent configuration files (e.g., llm_agent_NuclideId.xml)
 
    Each agent is loaded from its own file, allowing users to override individual agents
    by placing a modified copy in the writable data directory.
 
-   If a user config file exists, but is invalid, throws exception.
+   If a config file exists, but is invalid, throws exception.
 
    @return LlmConfig instance with loaded settings.
    */

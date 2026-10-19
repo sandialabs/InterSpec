@@ -42,6 +42,7 @@
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmConfigWindow.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
 #include "InterSpec/LlmInteractionDisplay.h"
@@ -195,6 +196,16 @@ WT_DECLARE_WT_MEMBER
   obs.observe( container, { childList:true, subtree:true, characterData:true } );
 }
 );
+
+  /** When the settings window is opened from within a (non-modal) window, the click that got us there
+   raises that window to the front after the settings window is shown - which on phones (where both
+   are full-screen) completely hides the settings window.  So, like SimpleDialog does, raise the
+   settings window again on a delay.
+   */
+  void bring_to_front_after_click( AuxWindow *window )
+  {
+    window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},5);" );
+  }
 }//namespace
 
 
@@ -236,15 +247,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   // Get marked/KaTeX loading now, so they are ready before the first response comes back.
   LlmMarkdown::load_resources( wApp );
 
-  // A single-item outer layout holds m_root, which we swap between the configured chat UI and
-  // the "not configured" panel.  A box layout, rather than a WGridLayout, as Wt4 implements box
-  // layouts with CSS flex, while grid layouts use its JavaScript layout engine - whose bookkeeping
-  // is left with stale entries when we are moved out of the tool-tab strip on phones (see
-  // InterSpec::setLlmToolDocked), causing a client-side exception.
-  WVBoxLayout *outer = setLayout( std::make_unique<WVBoxLayout>() );
-  outer->setContentsMargins( 0, 0, 0, 0 );
-  outer->setSpacing( 0 );
-  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
+  createRoot();
 
   // Connect the clipboard-image paste signal once; it persists across UI rebuilds (the input widgets
   // that emit it are recreated by initializeUI(), but this JSignal belongs to the tool).
@@ -262,7 +265,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false; // e.g. a config with no providers
@@ -408,10 +411,30 @@ void LlmToolGui::clearConversationDisplays()
 }//clearConversationDisplays()
 
 
+void LlmToolGui::createRoot()
+{
+  // A single-item outer layout holds m_root, which we swap between the configured chat UI and
+  // the "not configured" panel.  A box layout, rather than a WGridLayout, as Wt4 implements box
+  // layouts with CSS flex, while grid layouts use its JavaScript layout engine - whose bookkeeping
+  // is left with stale entries when we are moved out of the tool-tab strip on phones (see
+  // InterSpec::setLlmToolDocked), causing a client-side exception.
+  //
+  // When swapping UIs, the whole outer layout is replaced, rather than just m_root or m_root's
+  // contents: Wt's flex layout only sizes things right when a layout and its contents are rendered
+  // together.  Adding m_root to an already-rendered layout left its item without `overflow: hidden`
+  // (so the chat UI grew past the tab), and setting a layout on an already-rendered m_root made it
+  // `height: fit-content` (so it did not fill the tab) - either way the input field was not at the
+  // bottom of the tab after the user first configured a provider.
+  m_root = nullptr;
+  WVBoxLayout *outer = setLayout( std::make_unique<WVBoxLayout>() );  // deletes any previous layout
+  outer->setContentsMargins( 0, 0, 0, 0 );
+  outer->setSpacing( 0 );
+  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
+}//void createRoot()
+
+
 void LlmToolGui::resetRoot()
 {
-  WVBoxLayout *outer = dynamic_cast<WVBoxLayout *>( layout() );
-
   // Tear down the configured-UI state.  The spectrum-changed slot must be disconnected here (not
   // just reassigned in buildConfiguredUi) - boost::signals2 reassignment drops the handle without
   // disconnecting, which would leave an orphaned slot firing into a rebuilt widget.
@@ -424,14 +447,8 @@ void LlmToolGui::resetRoot()
   // On phones the menu icon lives in the window header, so would not go away with m_root.
   removePhoneMenuIcon();
 
-  if( m_root )
-  {
-    // m_root is layout-managed, so its owning unique_ptr lives in the layouts WWidgetItem;
-    //  removeWidget() hands it back and destroying it here takes all child widgets with it.
-    //  (`delete m_root` would be a double-free.)
-    const std::unique_ptr<WWidget> doomed = m_root->removeFromParent();
-    m_root = nullptr;
-  }
+  // Replace the whole outer layout (which deletes m_root and all its children).
+  createRoot();
 
   // Child widgets owned by the old root are now gone; clear dangling pointers.
   m_layout = nullptr;
@@ -443,9 +460,6 @@ void LlmToolGui::resetRoot()
   m_menuIcon = nullptr;
   m_imagePreviewContainer = nullptr;
   m_jsSandboxBridge = nullptr;
-
-  if( outer )
-    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
 }
 
 
@@ -458,6 +472,7 @@ void LlmToolGui::openConfigWindow()
                                         std::bind( &LlmToolGui::handleConfigSaved, this ),
                                         std::bind( &LlmToolGui::hasConversationHistory, this ) );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
 
 
@@ -558,6 +573,7 @@ void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
                                         std::bind( &LlmToolGui::hasConversationHistory, this ),
                                         configFilePath );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
 
 
@@ -591,7 +607,7 @@ void LlmToolGui::handleConfigSaved()
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false;
@@ -651,7 +667,7 @@ bool LlmToolGui::llmToolIsConfigured()
   try
   {
     shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
-    return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty());
+    return (config && config->llmApi.isConfigured());
   }catch( std::exception &e )
   {
     cerr << "LLM config invalid: " << e.what() << endl;
@@ -672,7 +688,7 @@ void LlmToolGui::initializeUI()
   m_root->addStyleClass("LlmToolGui");
 
   // Create the main layout (phones are narrow enough that we keep the margins small)
-  m_layout = m_root->setLayout( std::make_unique<WVBoxLayout>() );  // flex; see note in constructor
+  m_layout = m_root->setLayout( std::make_unique<WVBoxLayout>() );  // flex; see createRoot()
   const int margin = m_viewer->isPhone() ? 2 : 5;
   m_layout->setContentsMargins( margin, margin, margin, margin );
   m_layout->setSpacing( 5 );
@@ -763,6 +779,12 @@ void LlmToolGui::initializeUI()
       // writableDataDirectory not set - nothing to add
     }
 #endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
+
+    // Knowledge skills can carry their own question sets (by convention in
+    //  `<llm_knowledge>/<skill>/test_datasets/<skill>/`, with any spectra next to the XML), so a
+    //  skill distributed on its own brings its benchmark with it.
+    for( const string &knowledgeDir : LlmKnowledgeBase::knowledgeDirectories() )
+      testDirs.push_back( knowledgeDir );
 
     vector<pair<string,string>> benchmarkFiles;
     for( string testDir : testDirs )
@@ -1561,7 +1583,7 @@ void LlmToolGui::handleResetLlmConfig()
       return;
     }
 
-    if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint().empty() )
+    if( !config || !config->llmApi.isConfigured() )
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( "LLM API is not enabled in the configuration." );

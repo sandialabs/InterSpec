@@ -274,7 +274,16 @@
         "id":"llm-assistant",
         "title":"AI Assistant",
         "help-xml":"llm_assistant_help.xml",
-        "keywords":"LLM AI assistant chat model provider API key question analyze automate"
+        "keywords":"LLM AI assistant chat model provider API key question analyze automate",
+        "children" :
+        [
+          {
+            "id":"llm-provider-config",
+            "title":"Configuring an LLM Provider",
+            "help-xml":"llm_provider_config_help.xml",
+            "keywords":"LLM provider endpoint API key bearer token model OpenAI Anthropic Claude Gemini OpenRouter Grok Ask Sage Ollama LM Studio reasoning context tokens MCP proxy llm_config.xml"
+          }
+        ]
       }
     ]
   },

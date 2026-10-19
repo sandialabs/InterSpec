@@ -46,6 +46,8 @@ test_datasets/
 .devcontainer*/
 .opencode*/
 
+data/llm_knowledge/*/
+
 IDB*
 
 *OUO*

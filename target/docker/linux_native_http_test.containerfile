@@ -14,7 +14,8 @@
 #   docker run --rm -p 8078:8078 interspec_native_http
 #
 # To reach a proxy or an LLM endpoint running on the macOS host, use host.docker.internal.
-# To supply a real llm_config.xml:
+# InterSpec does not ship a llm_config.xml; configure a provider from the LLM Assistant's
+#  "LLM Provider Settings" window, or supply a user-data dir that already has a llm_config.xml in it:
 #   docker run --rm -p 8078:8078 -v /path/to/userdata:/data interspec_native_http
 
 FROM debian:trixie-slim AS build

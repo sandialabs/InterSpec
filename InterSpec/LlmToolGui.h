@@ -82,8 +82,8 @@ public:
   LlmToolGui(InterSpec *viewer);
   ~LlmToolGui();
   
-  /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
-   InterSpec server was started.
+  /** Returns if the currently loaded LLM config (from the user's `llm_config.xml`, which is written by the
+   "LLM Provider Settings" window) has the `LlmApi` enabled, with an endpoint set for the active provider.
    */
   static bool llmToolIsConfigured();
   
@@ -375,7 +375,11 @@ private:
    m_welcomeMessage (which ->clear() just freed) so it can't dangle. */
   void clearConversationDisplays();
 
-  /** Tear down m_root and recreate an empty one in the outer layout; nulls child pointers. */
+  /** Create a new outer layout, with an empty m_root in it (deleting any previous ones). */
+  void createRoot();
+
+  /** Replace m_root with a new empty one (see createRoot()), so a different UI can be built in it;
+   nulls child pointers. */
   void resetRoot();
 
   /** Open (or focus) the LLM provider settings window. */

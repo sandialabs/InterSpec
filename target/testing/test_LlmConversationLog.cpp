@@ -85,9 +85,10 @@ BOOST_AUTO_TEST_CASE( LogConversationsConfigRoundTrip )
   SpecUtils::remove_file( orig_path );
   BOOST_CHECK( !config.llmApi.logConversations );
 
-  // When off, the element is not written at all, so older configs round-trip unchanged.
+  // When off, the element is not written at all (it is only mentioned in the documentation comment).
   const string off_xml = LlmConfig::toXmlString( config );
-  BOOST_CHECK( off_xml.find( "<LogConversations>" ) == string::npos );
+  BOOST_CHECK( off_xml.find( "<LogConversations>true" ) == string::npos );
+  BOOST_CHECK( off_xml.find( "<LogConversations>false" ) == string::npos );
 
   // When on, it is written and read back.
   config.llmApi.logConversations = true;
@@ -99,6 +100,32 @@ BOOST_AUTO_TEST_CASE( LogConversationsConfigRoundTrip )
   SpecUtils::remove_file( on_path );
   BOOST_CHECK( reloaded.first.logConversations );
 }//LogConversationsConfigRoundTrip
+
+
+BOOST_AUTO_TEST_CASE( WrittenConfigIsDocumented )
+{
+  // InterSpec does not ship a llm_config.xml, so the file the settings window writes carries the
+  //  format documentation; make sure it is there, and that the documented file still loads.
+  const string orig_path = write_temp_file( sm_minimal_config );
+  LlmConfig config;
+  std::tie( config.llmApi, config.mcpServer ) = LlmConfig::loadApiAndMcpConfigs( orig_path );
+  SpecUtils::remove_file( orig_path );
+
+  const string xml = LlmConfig::toXmlString( config );
+  for( const char *phrase : { "apiFormat", "supportsImages", "reasoning", "<ContextLengthLimit>",
+                              "<ModelTemperature>", "<KnowledgeBaseRagUrl>", "<DebugFile>",
+                              "<LogConversations>", "<HttpProxy>", "<AllowAssistantPrompt>",
+                              "<AllowAgentInvocation>", "INVALID-BEARER-TOKEN" } )
+  {
+    BOOST_CHECK_MESSAGE( xml.find( phrase ) != string::npos, "Written config does not document '" << phrase << "'" );
+  }
+
+  const string path = write_temp_file( xml );
+  const pair<LlmConfig::LlmApi, LlmConfig::McpServer> reloaded = LlmConfig::loadApiAndMcpConfigs( path );
+  SpecUtils::remove_file( path );
+  BOOST_REQUIRE_EQUAL( reloaded.first.providers.size(), 1 );
+  BOOST_CHECK_EQUAL( reloaded.first.model(), "test-model" );
+}//WrittenConfigIsDocumented
 
 
 BOOST_AUTO_TEST_CASE( LogFileNameFormat )

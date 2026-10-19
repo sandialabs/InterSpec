@@ -1,0 +1,234 @@
+    <div align="center">
+      <h1 id="llm-provider-config">
+            <b>Configuring an LLM Provider</b>
+      </h1>
+      <hr />
+    </div>
+
+<div style="padding-top: 10px">
+The <b>AI Assistant</b> needs to know which large-language-model (LLM) service to talk to, how to
+authenticate with it, and which model to use.  These settings are made in the
+&quot;<b>LLM Provider Settings</b>&quot; window.  Until a provider is set up, the assistant shows a
+<b>Configure LLM Provider</b> button that opens this window; afterwards it is available from the
+menu in the upper-right corner of the assistant (&quot;<b>Configure LLM Provider&#8230;</b>&quot;).
+</div>
+
+<div style="padding-top: 10px">
+A <em>provider</em> is an API endpoint plus its API key; each provider has one or more
+<em>models</em>.  You can set up several providers, and several models per provider, and mark the
+one to use as <b>Active</b>.  When you press <b>Accept</b>, the settings are saved to a file named
+<code>llm_config.xml</code> in InterSpec's user data directory (see <b>Help</b> &gt;
+<b>About InterSpec</b> &gt; <b>Data</b> for its location).
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>Quick Start</b></h2>
+</div>
+<div>
+<ol>
+  <li>Choose your provider from the &quot;<b>Known providers&#8230;</b>&quot; drop-down to the right of
+      the <b>API endpoint</b> field; this fills in the endpoint (and a suggested model).</li>
+  <li>Paste your API key into the <b>Bearer token</b> field.</li>
+  <li>Optionally press <b>Fetch models</b> to get the list of models your key can use, and pick one.
+      When you pick or type a model name InterSpec knows about, its settings (image support,
+      token limits, reasoning) are filled in for you.</li>
+  <li>Press <b>Accept</b>.</li>
+</ol>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>API Endpoint</b></h2>
+</div>
+<div>
+<p>
+The endpoint is the <b>full URL</b> that chat requests are sent to, <em>including the path</em> -
+not just the server name.  For example, for OpenAI it is
+<code>https://api.openai.com/v1/chat/completions</code>, not just <code>api.openai.com</code>.
+The path also tells InterSpec which <em>wire format</em> (protocol) to use:
+</p>
+<table style="text-align: left; margin-left: 10px;">
+  <tr><th style="padding-right: 15px;">Path ends in</th><th style="padding-right: 15px;">Wire format</th><th>Used by</th></tr>
+  <tr><td style="padding-right: 15px;"><code>/chat/completions</code></td><td style="padding-right: 15px;">OpenAI Chat Completions</td><td>OpenAI, and nearly every &quot;OpenAI-compatible&quot; service (Google Gemini, OpenRouter, xAI, Ask Sage, local servers, ...)</td></tr>
+  <tr><td style="padding-right: 15px;"><code>/responses</code></td><td style="padding-right: 15px;">OpenAI Responses (newer)</td><td>OpenAI's newer API; only needed for some of OpenAI's newest models</td></tr>
+  <tr><td style="padding-right: 15px;"><code>/messages</code></td><td style="padding-right: 15px;">Anthropic Messages</td><td>Anthropic (Claude) - also detected from <code>api.anthropic.com</code></td></tr>
+</table>
+<p>
+The detected format is shown next to the endpoint; if detection gets it wrong (e.g., a proxy with an
+unusual path), use the <b>Override</b> drop-down.
+</p>
+<p>
+The endpoints of some well-known providers are:
+</p>
+<table style="text-align: left; margin-left: 10px;">
+  <tr><th style="padding-right: 15px;">Provider</th><th style="padding-right: 15px;">Endpoint</th><th>API keys</th></tr>
+  <tr><td style="padding-right: 15px;">OpenAI</td><td style="padding-right: 15px;"><code>https://api.openai.com/v1/chat/completions</code><br/><code>or https://api.openai.com/v1/responses</code></td><td><a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></td></tr>
+  <tr><td style="padding-right: 15px;">Anthropic (Claude)</td><td style="padding-right: 15px;"><code>https://api.anthropic.com/v1/messages</code></td><td><a href="https://platform.claude.com/settings/keys" target="_blank">platform.claude.com/settings/keys</a></td></tr>
+  <tr><td style="padding-right: 15px;">Google Gemini</td><td style="padding-right: 15px;"><code>https://generativelanguage.googleapis.com/v1beta/openai/chat/completions</code></td><td><a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></td></tr>
+  <tr><td style="padding-right: 15px;">OpenRouter</td><td style="padding-right: 15px;"><code>https://openrouter.ai/api/v1/chat/completions</code></td><td><a href="https://openrouter.ai/settings/keys" target="_blank">openrouter.ai/settings/keys</a></td></tr>
+  <tr><td style="padding-right: 15px;">xAI (Grok)</td><td style="padding-right: 15px;"><code>https://api.x.ai/v1/chat/completions</code></td><td><a href="https://console.x.ai" target="_blank">console.x.ai</a></td></tr>
+  <tr><td style="padding-right: 15px;">Ask Sage</td><td style="padding-right: 15px;"><code>https://api.asksage.com/server/openai/v1/chat/completions (commercial)</code><br/><code>https://api.asksage.ai/server/openai/v1/chat/completions (Gov)</code><br/><code>https://api.nnsa.asksage.ai/server/openai/v1/chat/completions (NNSA)</code></td><td>Your Ask Sage account settings</td></tr>
+  <tr><td style="padding-right: 15px;">Ollama (local)</td><td style="padding-right: 15px;"><code>http://localhost:11434/v1/chat/completions</code></td><td>Not needed</td></tr>
+  <tr><td style="padding-right: 15px;">LM Studio (local)</td><td style="padding-right: 15px;"><code>http://localhost:1234/v1/chat/completions</code></td><td>Not needed</td></tr>
+  <tr><td style="padding-right: 15px;">vLLM (local)</td><td style="padding-right: 15px;"><code>http://localhost:8000/v1/chat/completions</code></td><td>Not needed, unless the server was started with one</td></tr>
+</table>
+<p>
+Some notes on particular providers:
+</p>
+<ul>
+  <li><b>OpenAI</b>: some of the newest models (for example <code>gpt-6-astra</code> and
+      <code>gpt-6.1-sol</code>) can only use tools - which the assistant relies on - through the
+      Responses endpoint (<code>/v1/responses</code>).</li>
+  <li><b>Anthropic</b>: use the native <code>/v1/messages</code> endpoint above, rather than
+      Anthropic's OpenAI-compatible endpoint, which ignores the reasoning setting.</li>
+  <li><b>OpenRouter</b> gives access to models from many vendors with one key; its model names
+      include the vendor, e.g. <code>anthropic/claude-sonnet-5.5</code>.</li>
+  <li><b>Ask Sage</b> uses its own model names (e.g. <code>google-gemini-2.5-pro</code>), so use
+      <b>Fetch models</b> to see the available ones.  Use the host for your Ask Sage instance; your
+      organization can tell you which that is.  Ask Sage does not allow requests from web browsers, so
+      check <b>CORS fix</b> if it is shown.</li>
+  <li><b>Local servers</b> (Ollama, LM Studio, vLLM, llama.cpp, ...): start the server, and use its
+      OpenAI-compatible endpoint, with the address and port the server reports when it starts.
+      Local servers usually do not need an API key, so any text (or none) can be used for the token.
+      Make sure the server's context size (e.g., Ollama's <code>num_ctx</code>) is at least as large as
+      the <b>Context limit</b> you enter here.  Small local models may struggle with the assistant's
+      many tools; models with at least tens of billions of parameters, and good tool-calling support,
+      work best.</li>
+</ul>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>API Key (Bearer Token)</b></h2>
+</div>
+<div>
+<p>
+Create an API key in your provider's web console (see the table above), and paste it into the
+<b>Bearer token</b> field.  For most providers it is sent as an <code>Authorization: Bearer</code>
+header; for Anthropic's own API it is sent as the <code>x-api-key</code> header.  The key is stored,
+unencrypted, in <code>llm_config.xml</code> in your user data directory.  Use of most hosted
+providers is billed per token, so keep your key private.
+</p>
+<p>
+<b>Fetch models</b> asks the provider for the list of models your key can use (from the endpoint's
+<code>/models</code> URL), so you can pick one rather than typing its name.  Some providers (for
+example, OpenRouter) also report each model's context length, maximum output, and image support,
+which InterSpec then uses when you pick that model.  Since these are the model's technical maximums,
+which can be far larger than is useful (or than your account allows to be requested), the suggested
+max tokens is limited to 64,000, and the context limit to 200,000; you can enter larger values
+yourself.
+</p>
+<p>
+<b>CORS fix</b> (only in some builds): requests normally go out through the web browser engine
+InterSpec uses for its display, which some providers (for example, Ask Sage) refuse to answer
+because of their cross-origin (CORS) policy.  Checking this sends that provider's requests from
+InterSpec itself instead.
+</p>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>Model Settings</b></h2>
+</div>
+<div>
+<p>
+When you pick, or type, a model name that InterSpec knows about, the settings below are filled in
+with reasonable values; a note under the model name says when this happened.  You can change them
+afterwards.  The known models are listed in <code>llm_model_presets.xml</code> in InterSpec's data
+directory; to add or change entries, copy that file to your user data directory and edit it.
+</p>
+<p>
+For a model InterSpec does not know, a note says so, and the settings are left as they are - check
+your provider's documentation for them (&quot;Fetch models&quot; can fill some in).  A warning is shown
+under the model when a setting is known not to work with it - for example, reasoning turned on for a
+model without reasoning, a max tokens or context limit above what the provider reports, or an
+OpenAI model that needs the newer Responses endpoint.  These warnings do not stop you from saving.
+</p>
+<ul>
+  <li><b>Model name</b>: the provider's identifier for the model, e.g. <code>gpt-5-mini</code>,
+      <code>claude-sonnet-5-5</code>, or <code>gemini-3.8-flash</code>.</li>
+  <li><b>Max tokens</b>: the maximum length of each response, in tokens (a token is roughly
+      three-quarters of a word).  Blank uses the provider's default; <b>required</b> for Anthropic.
+      For reasoning models this limit includes the reasoning, so do not set it too low.</li>
+  <li><b>Context limit</b>: the size of the model's context window, in tokens.  When a conversation
+      reaches about 85% of this, older parts of it are summarized to make room.  This can be set
+      below the model's true limit to keep long conversations from becoming slow and expensive.
+      Blank means the conversation is never summarized.</li>
+  <li><b>Temperature</b>: 0.0 to 2.0; lower values give more consistent answers.  0.2 - 0.5 is a good
+      range; blank uses the provider's default.  Not all models accept it (many reasoning models
+      do not).  It is not sent to Anthropic models while thinking is enabled, nor to the Claude
+      models that do not accept it at all (Opus 4.7 and later, Sonnet and Haiku 5 and later, and
+      Fable).</li>
+  <li><b>Supports images</b>: check if the model accepts images; the assistant can then look at
+      pictures of the spectrum, and you can attach photos to your questions.</li>
+  <li><b>Force tool use</b>: forces the model to call a tool at steps of a workflow where one is
+      expected.  Helps some models (often open-weight ones) that stop calling tools part-way through
+      a task.</li>
+  <li><b>Reasoning</b>: whether, and how hard, the model &quot;thinks&quot; before answering.
+      <em>Off</em> sends nothing.  <em>Low</em>, <em>Medium</em>, and <em>High</em> set the reasoning
+      effort; more effort is slower and uses more tokens, but usually gives better analysis.
+      <em>On</em> turns reasoning on without an effort level (for OpenRouter-style APIs).
+      For the OpenAI Chat format the effort is sent as <code>reasoning_effort</code>; for the
+      OpenAI Responses format as <code>reasoning.effort</code>; for Anthropic, any setting other
+      than Off turns on Claude's thinking - for Claude 4.6 and later the effort is sent as
+      <code>output_config.effort</code> (with <em>On</em> using the model's default effort), and for
+      older models it sets the thinking budget.  Only use this for models that support reasoning, or
+      the provider may reject the request.</li>
+  <li><b>Instructions</b>: how detailed the instructions InterSpec gives the model are.
+      <em>Verbose</em> can help smaller models; <em>Terse</em> is enough for the most capable
+      ones.</li>
+</ul>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>Other Settings</b></h2>
+</div>
+<div>
+<ul>
+  <li><b>MCP server</b> (desktop versions): lets other AI applications use InterSpec's tools via the
+      Model Context Protocol, at <code>http://127.0.0.1:&lt;port&gt;/mcp-api</code>.  Set a bearer
+      token that clients must supply.  You can separately allow clients to submit prompts to the
+      assistant, and to directly run the assistant's specialized agents; both of those require an LLM
+      provider to be configured.</li>
+  <li><b>Network</b> (some builds): a proxy URL, an extra certificate bundle to trust (for networks
+      that inspect HTTPS traffic), and, as a last resort, turning off certificate checks.  These only
+      apply to providers using the <b>CORS fix</b>.</li>
+  <li><b>Conversation logs</b>: saves each conversation as an XML file in the <code>llm_logs</code>
+      folder of the user data directory.</li>
+</ul>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>The llm_config.xml File</b></h2>
+</div>
+<div>
+<p>
+The saved <code>llm_config.xml</code> contains comments describing each setting.  You can share it,
+or drag it onto InterSpec (on another computer, say) to import it; you will be asked before an
+existing configuration is replaced.  Hand-made comments are not kept when the settings window
+saves the file again.  A few advanced settings can only be set by editing the file:
+</p>
+<ul>
+  <li><code>&lt;KnowledgeBaseRagUrl&gt;</code>, <code>&lt;KnowledgeBaseRagModel&gt;</code>,
+      <code>&lt;KnowledgeBaseRagCorpora&gt;</code>: an optional retrieval-augmented-generation
+      service for the KnowledgeBase sub-agent to search.  This is a separate service that is not
+      distributed with InterSpec, so these should normally be left out.</li>
+  <li><code>&lt;CompactionSystemPrompt&gt;</code>: replaces the instructions used when summarizing
+      older parts of a long conversation.</li>
+  <li><code>&lt;DebugFile&gt;</code>: <code>stdout</code>, <code>stderr</code>, or a file path, to
+      write detailed debugging information about the assistant's requests and tool calls.</li>
+  <li><code>&lt;HttpBackend&gt;</code> (and the <code>httpBackend</code> attribute of an
+      <code>&lt;ApiProvider&gt;</code>): <code>auto</code> (the default: use the provider's setting,
+      otherwise the browser), <code>browser</code>, or <code>native</code>, to choose how requests are
+      sent (the <b>CORS fix</b> sets this per provider).</li>
+</ul>
+</div>
+
+<div align="center" style="padding-top: 15px">
+<h2><b>Privacy</b></h2>
+</div>
+<div>
+<p>
+When you use the assistant, your questions, information about the loaded spectra and analysis
+results, and (for models that support images) pictures of the spectrum are sent to the provider you
+configure.  Follow your organization's rules about which providers may be used for your data; a
+locally running model keeps everything on your computer.
+</p>
+</div>

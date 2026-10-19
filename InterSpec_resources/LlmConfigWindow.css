@@ -231,6 +231,16 @@
   color: var(--interspec-text-color);
 }
 
+/* Endpoint field, with the drop-down of known providers at its far right */
+.LcwEndpointRow
+{
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.LcwEndpointRow .LcwInput { flex: 1; min-width: 0; }
+.LcwPresetSelect { flex: 0 0 auto; max-width: 45%; }
+
 .LcwTokenRow
 {
   display: flex;
@@ -278,6 +288,8 @@
 }
 
 .LcwModelRow1 { display: flex; align-items: flex-start; gap: 9px; }
+.LcwDefaultsHint { font-size: 11px; font-style: italic; color: var(--interspec-label-color); opacity: 0.85; }
+.LcwModelWarnings { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
 .LcwModelNameWrap
 {
   flex: 1; min-width: 0;
@@ -382,6 +394,9 @@
 
 /* Token row: the input gets its own line, with its buttons below it. */
 .LcwPhone .LcwTokenRow { flex-wrap: wrap; }
+.LcwPhone .LcwEndpointRow { flex-wrap: wrap; }
+.LcwPhone .LcwEndpointRow .LcwInput { flex: 1 1 100%; }
+.LcwPhone .LcwPresetSelect { max-width: 100%; }
 .LcwPhone .LcwTokenRow .LcwInput { flex: 1 1 100%; }
 
 .LcwPhone .LcwNumGrid { grid-template-columns: 1fr 1fr; }
