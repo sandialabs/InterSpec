@@ -70,11 +70,19 @@ nlohmann::json buildContext( const LlmConfig &config, const Surface surface, con
   const LlmConfig::LlmApi &api = config.llmApi;
   const bool isMcp = (surface == Surface::Mcp);
 
+  // A config may have no provider (InterSpec does not ship a llm_config.xml), yet still need the
+  //  tool descriptions rendered - e.g., the stdio MCP server - so fall back to a default model.
+  const bool have_provider = (api.activeProviderIndex < api.providers.size());
+  const bool have_model = have_provider
+                          && (api.activeProvider().activeModelIndex < api.activeProvider().models.size());
+  const LlmConfig::LlmApi::ModelInfo default_model;
+  const LlmConfig::LlmApi::ModelInfo &active_model = have_model ? api.activeModel() : default_model;
+
   // Flatten reasoning (variant<bool, ReasoningEffort>) into (enabled, effort-string) so templates can
   // branch on a single string.
   bool reasoning_enabled = false;
   string reasoning_effort = "off";
-  const std::variant<bool, LlmConfig::LlmApi::ReasoningEffort> &reasoning = api.reasoning();
+  const std::variant<bool, LlmConfig::LlmApi::ReasoningEffort> &reasoning = active_model.reasoning;
   if( std::holds_alternative<bool>( reasoning ) )
   {
     reasoning_enabled = std::get<bool>( reasoning );
@@ -91,28 +99,31 @@ nlohmann::json buildContext( const LlmConfig &config, const Surface surface, con
   }
 
   nlohmann::json model;
-  model["name"] = api.model();
+  model["name"] = active_model.name;
   // The MCP consuming model is remote/unknown: expose neutral defaults and always allow image tools
   // (the MCP server exposes them unconditionally); authors branch on `surface`, not these.
-  model["supports_images"] = isMcp ? true : api.supportsImages();
+  model["supports_images"] = isMcp ? true : active_model.supportsImages;
   model["reasoning_enabled"] = isMcp ? false : reasoning_enabled;
   model["reasoning_effort"] = isMcp ? string("off") : reasoning_effort;
-  model["api_format"] = apiFormatToJsonString( api.apiFormat() );
-  model["max_tokens"] = api.maxTokens();
-  model["context_length_limit"] = api.contextLengthLimit();
-  if( api.temperature().has_value() )
-    model["temperature"] = api.temperature().value();
+  model["api_format"] = apiFormatToJsonString( have_provider ? api.apiFormat()
+                                                             : LlmConfig::LlmApi::ApiFormat::OpenAiChat );
+  model["max_tokens"] = active_model.maxTokens;
+  model["context_length_limit"] = active_model.contextLengthLimit;
+  if( active_model.temperature.has_value() )
+    model["temperature"] = active_model.temperature.value();
   else
     model["temperature"] = nullptr;
 
   nlohmann::json ctx;
   ctx["model"] = std::move( model );
-  ctx["verbosity"] = isMcp ? string("normal") : string( verbosityToString( api.instructionVerbosity() ) );
+  ctx["verbosity"] = isMcp ? string("normal") : string( verbosityToString( active_model.instructionVerbosity ) );
   ctx["surface"] = isMcp ? "mcp" : "agent";
   if( !isMcp )
     ctx["agent"] = { { "name", agentTypeToString( agent ) } };
   ctx["mcp_enabled"] = config.mcpServer.enabled;
   ctx["rag_enabled"] = !api.rag_url.empty();
+  // An MCP server's sessions have no user to answer `ask_user_question` (it is not registered).
+  ctx["interactive_user"] = !NO_INTERACTIVE_GUI_USER;
 
   return ctx;
 }//buildContext(...)

@@ -1002,12 +1002,13 @@ BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
   BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
   cout << "Added Br82 peak at 554.35 keV" << endl;
 
-  // Test single peak mode - provide peak_energies to tell it which peaks to use
+  // activity_fit uses the peaks marked for fitting; it refuses a peak selection rather than
+  //  quietly fitting other peaks.
+  json select_params;
+  select_params["peak_energies"] = json::array({ 554.35 });
+  BOOST_CHECK_THROW( registry->executeTool( "activity_fit", select_params, interspec ), std::exception );
+
   json fit_params;
-  fit_params["mode"] = "custom";
-  fit_params["nuclide"] = "Br82";
-  fit_params["peak_energies"] = json::array({ 554.35 });  // Br82 peak at 554.35 keV
-  fit_params["distance"] = "1 m";  // Required for non-fixed-geometry detectors
 
   json result;
   try

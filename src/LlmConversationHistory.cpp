@@ -1,6 +1,7 @@
 #include "InterSpec_config.h"
 
 #include <ctime>
+#include <atomic>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -9,6 +10,8 @@
 
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
+
+#include <Wt/Utils.h>
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
@@ -60,6 +63,77 @@ namespace
     }
   }//parse_ull_or(...)
 }//namespace
+
+
+namespace
+{
+  std::atomic<bool> ns_save_user_images( BUILD_AS_MCP_HTTP_SERVER );
+}
+
+
+bool LlmToolCall::ImageContent::setTypeFromContent( const std::string_view bytes )
+{
+  if( bytes.size() < 12 )
+    return false;
+
+  const auto u8 = [&bytes]( const size_t i ) -> unsigned int {
+    return (i < bytes.size()) ? static_cast<unsigned char>( bytes[i] ) : 0u;
+  };
+
+  widthPx = heightPx = 0;
+  if( (u8(0) == 0x89) && (bytes.compare( 1, 3, "PNG" ) == 0) )
+  {
+    mimeType = "image/png";
+    widthPx = static_cast<int>( (u8(16) << 24) | (u8(17) << 16) | (u8(18) << 8) | u8(19) );
+    heightPx = static_cast<int>( (u8(20) << 24) | (u8(21) << 16) | (u8(22) << 8) | u8(23) );
+  }else if( (u8(0) == 0xFF) && (u8(1) == 0xD8) && (u8(2) == 0xFF) )
+  {
+    mimeType = "image/jpeg";
+    // Dimensions are in the first start-of-frame segment.
+    for( size_t pos = 2; (pos + 9) < bytes.size(); )
+    {
+      if( u8(pos) != 0xFF )
+        break;
+      const unsigned int marker = u8(pos + 1);
+      const size_t length = (u8(pos + 2) << 8) | u8(pos + 3);
+      if( (marker >= 0xC0) && (marker <= 0xCF) && (marker != 0xC4) && (marker != 0xC8) && (marker != 0xCC) )
+      {
+        heightPx = static_cast<int>( (u8(pos + 5) << 8) | u8(pos + 6) );
+        widthPx = static_cast<int>( (u8(pos + 7) << 8) | u8(pos + 8) );
+        break;
+      }
+      pos += 2 + length;
+    }//for( loop over JPEG segments )
+  }else if( bytes.compare( 0, 4, "GIF8" ) == 0 )
+  {
+    mimeType = "image/gif";
+    widthPx = static_cast<int>( u8(6) | (u8(7) << 8) );
+    heightPx = static_cast<int>( u8(8) | (u8(9) << 8) );
+  }else if( (bytes.compare( 0, 4, "RIFF" ) == 0) && (bytes.compare( 8, 4, "WEBP" ) == 0) )
+  {
+    mimeType = "image/webp";
+  }else
+  {
+    return false;
+  }
+
+  if( (widthPx <= 0) || (heightPx <= 0) || (widthPx > 100000) || (heightPx > 100000) )
+    widthPx = heightPx = 0;
+
+  return true;
+}//bool LlmToolCall::ImageContent::setTypeFromContent(...)
+
+
+void LlmConversationHistory::setSaveUserImages( const bool save )
+{
+  ns_save_user_images.store( save );
+}
+
+
+bool LlmConversationHistory::saveUserImages()
+{
+  return ns_save_user_images.load();
+}
 
 
 LlmConversationHistory::LlmConversationHistory()
@@ -752,7 +826,8 @@ void LlmConversationHistory::toXml(rapidxml::xml_node<char>* parent, rapidxml::x
 }
 
 void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &conversations,
-                                   rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc)
+                                   rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc,
+                                   const bool include_raw_content )
 {
   rapidxml::xml_node<char>* historyNode = doc->allocate_node(rapidxml::node_element, "LlmHistory");
   parent->append_node(historyNode);
@@ -843,7 +918,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
         XmlUtils::append_string_node( responseNode, "ReasoningDetails", response->reasoningDetails() );
 
       // Add raw content (JSON sent to LLM or received from LLM)
-      if( !response->rawContent().empty() )
+      if( include_raw_content && !response->rawContent().empty() )
         XmlUtils::append_string_node( responseNode, "RawContent", response->rawContent() );
 
       // Add call duration if available
@@ -863,6 +938,25 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
             // Add request type attribute (system or user)
             const string reqTypeStr = (initialReq->requestType() == LlmInteractionInitialRequest::RequestType::System) ? "system" : "user";
             XmlUtils::append_attrib( responseNode, "requestType", reqTypeStr );
+
+            // Images the user sent along with the message; see `setSaveUserImages(...)`.
+            if( saveUserImages() && !initialReq->imageContent().empty() )
+            {
+              rapidxml::xml_node<char> *imagesNode = doc->allocate_node( rapidxml::node_element, "Images" );
+              responseNode->append_node( imagesNode );
+              for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
+              {
+                rapidxml::xml_node<char> *imageNode = XmlUtils::append_string_node( imagesNode, "Image", img.base64Data );
+                XmlUtils::append_attrib( imageNode, "mimeType", img.mimeType );
+                if( !img.caption.empty() )
+                  XmlUtils::append_attrib( imageNode, "caption", img.caption );
+                if( (img.widthPx > 0) && (img.heightPx > 0) )
+                {
+                  XmlUtils::append_attrib( imageNode, "width", std::to_string(img.widthPx) );
+                  XmlUtils::append_attrib( imageNode, "height", std::to_string(img.heightPx) );
+                }
+              }//for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
+            }//if( write images )
           }
           break;
         }
@@ -937,7 +1031,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
               // Recursively serialize the sub-agent conversation (for invoke_* tool calls) so it
               // survives a save/reload round-trip, mirroring ConversationSummary::originalConversations.
               if( toolCall.sub_agent_conversation )
-                toXml( { toolCall.sub_agent_conversation }, toolCallNode, doc );
+                toXml( { toolCall.sub_agent_conversation }, toolCallNode, doc, include_raw_content );
             }//for( loop over toolCalls )
           }//if( toolCalls && numToolCalls > 0 )
           break;
@@ -976,7 +1070,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
 
             // Recursively serialize the archived original conversations
             if( !summary->originalConversations().empty() )
-              toXml( summary->originalConversations(), responseNode, doc );
+              toXml( summary->originalConversations(), responseNode, doc, include_raw_content );
           }
           break;
         }
@@ -1251,6 +1345,25 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
             {
               if( rapidxml::xml_node<char>* contentNode = XML_FIRST_NODE(responseNode,"Content") )
                 initialReq->setContent( SpecUtils::xml_value_str(contentNode) );
+
+              vector<LlmToolCall::ImageContent> images;
+              const rapidxml::xml_node<char> * const imagesNode = XML_FIRST_NODE( responseNode, "Images" );
+              for( const rapidxml::xml_node<char> *imageNode = imagesNode ? XML_FIRST_NODE(imagesNode, "Image") : nullptr;
+                   imageNode; imageNode = XML_NEXT_TWIN(imageNode) )
+              {
+                // The file may not be one InterSpec wrote, so the type (which the GUI serves the
+                //  image as) and size come from the content, and the data is re-encoded.
+                const string bytes = Wt::Utils::base64Decode( SpecUtils::xml_value_str( imageNode ) );
+                LlmToolCall::ImageContent img;
+                if( !img.setTypeFromContent( bytes ) )
+                  continue;
+                img.base64Data = Wt::Utils::base64Encode( bytes, false );
+                img.caption = SpecUtils::xml_value_str( XML_FIRST_ATTRIB(imageNode, "caption") );
+                images.push_back( std::move(img) );
+              }//for( loop over <Image> nodes )
+
+              if( !images.empty() )
+                initialReq->setImageContent( std::move(images) );
             }
             break;
           }

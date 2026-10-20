@@ -31,6 +31,7 @@
 #include <string>
 #include <chrono>
 #include <optional>
+#include <string_view>
 
 #include <Wt/WSignal.h>
 
@@ -88,6 +89,12 @@ struct LlmToolCall
 
     int widthPx = 0;
     int heightPx = 0;
+
+    /** Sets `mimeType`, and the size when it can be found, from the image's content `bytes` (never
+     from what a client or file says it is).
+     @returns false if `bytes` is not a PNG, JPEG, GIF, or WebP image.
+     */
+    bool setTypeFromContent( std::string_view bytes );
   };//struct ImageContent
 
   std::optional<ImageContent> imageContent;
@@ -618,6 +625,13 @@ class LlmConversationHistory {
 public:
   /** Construct empty conversation history */
   LlmConversationHistory();
+
+  /** Whether the XML written for a history includes the images a user sent with their messages
+   (they are always read, if present).  On by default only for the MCP agent server, so an exported
+   analysis resumes with its photos; other builds' files are unchanged.
+   */
+  static void setSaveUserImages( const bool save );
+  static bool saveUserImages();
   
   /** Add a user message - this is a message that the user typed in, and will cause a new `LlmInteraction` to be created, with all the
    LLM responses, and tool-call results being stored in that newly created object.  The newly created object will be added to `m_conversations` and returned.
@@ -712,9 +726,15 @@ public:
   /** Load from XML when loading SpecMeas */
   void fromXml(const rapidxml::xml_node<char>* node);
   
-  /** Static function to serialize conversations to XML */
+  /** Static function to serialize conversations to XML.
+
+   @param include_raw_content Whether to include each turn's raw JSON (the requests sent to, and
+          responses from, the LLM API - each request repeating the system prompt and conversation so
+          far); used only by the assistant's raw-JSON view, not to continue a conversation.
+   */
   static void toXml(const std::vector<std::shared_ptr<LlmInteraction>>& conversations,
-                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc);
+                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc,
+                    const bool include_raw_content = true);
 
   /** Static function to deserialize conversations from XML */
   static void fromXml(const rapidxml::xml_node<char>* node,

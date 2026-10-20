@@ -25,10 +25,12 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <mutex>
 #include <atomic>
 #include <memory>
 #include <string>
+#include <functional>
 
 #include "InterSpec/NativeHttpClient.h"
 
@@ -103,8 +105,17 @@ namespace Detail
     bool shouldStop() const;
 
     /** Run `fcn` on the session thread (or inline when there is no session), dropping it if the
-     `Call` has been detached or the session has died. */
+     `Call` has been detached or the session has died.  Callbacks run in the order dispatched. */
     void dispatch( std::function<void()> fcn );
+
+    /** Session callbacks waiting to run, in order; drained by one session event at a time (see
+     `dispatch`).  Guarded by `pendingMutex`. */
+    std::deque<std::function<void()>> pendingCallbacks;
+    bool drainScheduled = false;
+    std::mutex pendingMutex;
+
+    /** Runs the queued callbacks, in the session. */
+    void drainPending();
 
     void deliverHeaders( int status, HeaderList headers );
 
