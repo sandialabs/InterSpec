@@ -58,18 +58,27 @@
 // `EfficiencyProvider` / `AnalyticPeakResult` / the double overload keep every
 // pre-templating call site source-compatible.
 
+#include "cascade/LevelDag.h"
 #include "cascade/CascadeTypes.h"
 #include "efficiency/EfficiencyCalculator.h"   // EfficiencyResult (for the cache provider)
 
 #include <map>
+#include <mutex>
+#include <memory>
 #include <vector>
+#include <cstdint>
+#include <unordered_map>
+#include <initializer_list>
 
 namespace ceelo {
 
 /// Injectable source of detector efficiency at an arbitrary energy, templated on
 /// the efficiency scalar type T (see the header comment). InterSpec plugs its
 /// DRF here; the default CachedEfficiencyProvider reads a per-energy MC
-/// efficiency cache. Implementations should be cheap and thread-safe for reads.
+/// efficiency cache. Implementations should be cheap and thread-safe for reads,
+/// and must be deterministic and side-effect free: compute_cascade_analytic
+/// memoizes has()/fep()/total() per energy within a call, and may query
+/// energies (and in an order) that a given window does not end up using.
 template <class T>
 struct EfficiencyProviderT {
     virtual ~EfficiencyProviderT() = default;
@@ -171,14 +180,126 @@ struct AnalyticPeakResultT {
 /// The plain-double result (the pre-templating API).
 using AnalyticPeakResult = AnalyticPeakResultT<double>;
 
+namespace detail {
+
+/// A single relaxation x-ray line: energy and its per-vacancy emission weight
+/// (omega * line-branch), so a vacancy of probability p emits this line with
+/// probability p*weight.
+struct XrayLine { double energy; double weight; };
+
+/// K fluorescence lines for element Z, each weight = omega_K * line_branch.
+/// Defined in AnalyticCascade.cpp (needs the cross-section data tables).
+std::vector<XrayLine> k_lines(int Z);
+
+/// L fluorescence lines for element Z and subshell s (0=L1,1=L2,2=L3); each
+/// weight = omega_Ls * line_branch. Coster-Kronig transfer is a second-order
+/// redistribution ignored here (the analytic model uses the direct subshell
+/// yield; FR samples the transfer, a <~0.1% effect on summing).
+/// Defined in AnalyticCascade.cpp.
+std::vector<XrayLine> l_lines(int Z, int s);
+
+/// Absolute per-branch EC shell mass by daughter start level for a legacy
+/// LevelScheme which has no explicit WeakOutcomeLaw. LevelDag::feed is
+/// normalized conditional on entering the graph, so recover absolute starts
+/// with entry_probability and restore the direct-to-ground terminal mass.
+struct LegacyEcShellStarts {
+    std::vector<double> k, l;
+    double total_k = 0.0, total_l = 0.0;
+};
+
+/// One emission occurrence of a branch, for summing-in pair enumeration.
+/// Kinds: gamma / IC-K / IC-L / EC-K / EC-L / annih-511. `src` keys the source
+/// vacancy for exclusivity.
+struct Occ {
+    int trans;      // level-scheme transition, or -1 for EC / annih
+    double energy;
+    double factor;  // per-occurrence line/emit factor (applied after the joint)
+    int src;        // exclusivity key within the branch
+    bool is_ec;
+    bool ec_isL;
+    bool is_annih;
+    int member;     // gamma/annih member index (for angular links); else -1
+    int residual = -1;  // categorical unmatched transition, else -1
+};
+
+/// Everything about one decay branch that compute_cascade_analytic needs and
+/// that does not depend on the efficiencies or the peak windows.
+struct PreparedBranch {
+    const DecayCascade* dc = nullptr;
+    LevelDag dag;
+    int Z = 0;
+    std::vector<XrayLine> kl;            ///< k_lines(Z)
+    std::vector<XrayLine> ll[3];         ///< l_lines(Z, s)
+    std::vector<double> start_w;         ///< weak_unknown_start_weights(*dc, dag)
+    LegacyEcShellStarts legacy_ec;       ///< empty when the weak outcome law is usable
+    std::vector<int> member_residual;    ///< residual_transition_of(*dc, m) per member
+    std::vector<Occ> occ;                ///< summing-in emission occurrences
+    std::vector<int> ord;                ///< `occ` indices sorted by energy
+    std::vector<double> es;              ///< `occ` energies, in `ord` order
+
+    explicit PreparedBranch(const DecayCascade& c);
+};
+
+}  // namespace detail
+
+/// The efficiency- and window-independent preparation of a set of decay
+/// cascades for compute_cascade_analytic: level-scheme DAGs, x-ray line tables,
+/// summing-in occurrence lists, and so on.  Build it once per cascade set and
+/// reuse it across evaluations - it is logically immutable (its only mutable
+/// state is an internally locked memo of pure functions), so it may be shared
+/// between threads.  The lvalue constructor references `cascades`, which must
+/// then outlive the model and not be modified; the other two keep the cascades
+/// alive themselves.  Copies share the cascades and the memo.  Throws
+/// std::invalid_argument for malformed member references.
+class AnalyticCascadeModel {
+public:
+    explicit AnalyticCascadeModel(const std::vector<DecayCascade>& cascades);
+    explicit AnalyticCascadeModel(std::vector<DecayCascade>&& cascades);
+    explicit AnalyticCascadeModel(std::shared_ptr<const std::vector<DecayCascade>> cascades);
+
+    const std::vector<DecayCascade>& cascades() const { return *cascades_; }
+    const std::vector<detail::PreparedBranch>& branches() const { return branches_; }
+
+    /// detail::weak_subset_probability() for branch `b`.  A pure function of
+    /// the model, so it is memoized across evaluations (subsets of up to three
+    /// transitions; larger ones are computed directly); thread-safe.
+    double weak_subset_probability(int b, std::initializer_list<int> subset,
+                                   const WeakOutcomeKind* kind = nullptr,
+                                   int shell = 0) const;
+
+private:
+    void prepare();
+
+    struct SharedMemo {
+        explicit SharedMemo(std::size_t nbranch) : mutex(nbranch), wsp(nbranch) {}
+        std::vector<std::mutex> mutex;                               ///< per branch
+        std::vector<std::unordered_map<std::uint64_t, double>> wsp;  ///< per branch
+    };
+
+    std::shared_ptr<const std::vector<DecayCascade>> owned_;
+    const std::vector<DecayCascade>* cascades_ = nullptr;
+    std::vector<detail::PreparedBranch> branches_;
+    std::shared_ptr<SharedMemo> memo_;
+};
+
 /// Analytic per-peak cascade-summing factors. `cascades` are the correlated
 /// decay branches (from the SandiaDecay adapter or hand-built); `peaks` the
 /// photopeaks to report; `provider` supplies eps_FEP/eps_tot at any energy.
 /// Defined in AnalyticCascade_imp.hpp (included below); T is deduced from the
 /// provider, including through classes derived from EfficiencyProviderT<T>.
+/// Prepares a temporary AnalyticCascadeModel; callers evaluating the same
+/// cascades repeatedly should build the model once and use the overload below.
 template <class T>
 std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
     const std::vector<DecayCascade>& cascades,
+    const std::vector<PeakWindow>& peaks,
+    const EfficiencyProviderT<T>& provider,
+    const AnalyticCascadeOptions& options = {});
+
+/// The same, for a prepared model - identical results, without re-preparing.
+template <class T>
+std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
+    const AnalyticCascadeModel& model,
     const std::vector<PeakWindow>& peaks,
     const EfficiencyProviderT<T>& provider,
     const AnalyticCascadeOptions& options = {});

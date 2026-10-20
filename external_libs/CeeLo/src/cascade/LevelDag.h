@@ -41,6 +41,7 @@
 
 #include "cascade/CascadeTypes.h"
 
+#include <cassert>
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
@@ -145,12 +146,24 @@ struct LevelDag {
     int n = 0;
     bool valid = false;
 
+    // Adjacency.  `ts` is built level by level, so the transitions leaving
+    // level l are the contiguous, ascending range [out_begin[l], out_begin[l+1]).
+    // The transitions arriving at level l are in_tr[in_begin[l] .. in_begin[l+1]),
+    // also ascending.  Every loop below visits transitions in the same ascending
+    // order a full scan filtered on from/to would, so sums accumulate identically.
+    std::vector<int> out_begin;            ///< size n+1
+    std::vector<int> in_begin;             ///< size n+1
+    std::vector<int> in_tr;
+    std::vector<int> member_tr;            ///< first transition emitting gamma member m, or -1
+
     explicit LevelDag(const LevelScheme& ls) {
         if (!ls.valid) return;
         n = static_cast<int>(ls.levels.size());
 
         // Flatten into transitions (to_level < from_level), normalized branching b.
+        out_begin.assign(static_cast<std::size_t>(n) + 1, 0);
         for (int l = 0; l < n; ++l) {
+            out_begin[static_cast<std::size_t>(l)] = static_cast<int>(ts.size());
             double wsum = 0.0;
             for (const auto& t : ls.levels[l].out) wsum += t.weight;
             if (wsum <= 0.0) continue;
@@ -161,6 +174,25 @@ struct LevelDag {
                                   {t.p_icL1, t.p_icL2, t.p_icL3}, t.gamma_keV,
                                   t.p_icUnresolved, t.p_unmodeled});
         }
+        out_begin[static_cast<std::size_t>(n)] = static_cast<int>(ts.size());
+
+        in_begin.assign(static_cast<std::size_t>(n) + 1, 0);
+        for (const Tr& t : ts) ++in_begin[static_cast<std::size_t>(t.to) + 1];
+        for (int l = 0; l < n; ++l)
+            in_begin[static_cast<std::size_t>(l) + 1] += in_begin[static_cast<std::size_t>(l)];
+        in_tr.assign(ts.size(), 0);
+        {
+            std::vector<int> fill(in_begin.begin(), in_begin.end() - 1);
+            for (int i = 0; i < static_cast<int>(ts.size()); ++i)
+                in_tr[static_cast<std::size_t>(fill[static_cast<std::size_t>(ts[i].to)]++)] = i;
+        }
+
+        int max_member = -1;
+        for (const Tr& t : ts) max_member = std::max(max_member, t.gamma_member);
+        member_tr.assign(static_cast<std::size_t>(max_member + 1), -1);
+        for (int i = 0; i < static_cast<int>(ts.size()); ++i)
+            if (ts[i].gamma_member >= 0 && member_tr[static_cast<std::size_t>(ts[i].gamma_member)] < 0)
+                member_tr[static_cast<std::size_t>(ts[i].gamma_member)] = i;
 
         // feed[l], then V[l] by propagating high -> low along the DAG.
         double fsum = 0.0;
@@ -170,16 +202,15 @@ struct LevelDag {
             feed[l] = (fsum > 0.0) ? ls.levels[l].feeding / fsum : 0.0;
         V = feed;
         for (int l = n - 1; l >= 0; --l)
-            for (const auto& t : ts)
-                if (t.from == l) V[t.to] += V[l] * t.b;
+            for (int i = out_begin[l]; i < out_begin[l + 1]; ++i)
+                V[ts[i].to] += V[l] * ts[i].b;
 
         // R[i][l] = reach(i)[l], the same low->high recurrence per target.
         R.assign(ts.size(), std::vector<double>(n, 0.0));
         for (int i = 0; i < static_cast<int>(ts.size()); ++i)
             for (int l = 1; l < n; ++l)
-                for (int j = 0; j < static_cast<int>(ts.size()); ++j)
-                    if (ts[j].from == l)
-                        R[i][l] += ts[j].b * ((j == i) ? 1.0 : R[i][ts[j].to]);
+                for (int j = out_begin[l]; j < out_begin[l + 1]; ++j)
+                    R[i][l] += ts[j].b * ((j == i) ? 1.0 : R[i][ts[j].to]);
         valid = true;
     }
 
@@ -203,10 +234,25 @@ struct LevelDag {
     double subset_from_level(int level, std::vector<int> subset) const {
         if (level < 0 || level >= n) return 0.0;
         if (subset.empty()) return 1.0;
+        if (!sort_subset(subset)) return 0.0;
+        return sorted_subset_from_level(level, subset);
+    }
+
+    /// Validates `subset` and sorts it into the descending from-level order
+    /// subset_from_level() walks; false if an index is out of range.
+    bool sort_subset(std::vector<int>& subset) const {
         for (int t : subset)
-            if (t < 0 || t >= static_cast<int>(ts.size())) return 0.0;
+            if (t < 0 || t >= static_cast<int>(ts.size())) return false;
         std::sort(subset.begin(), subset.end(),
                   [this](int x, int y) { return ts[x].from > ts[y].from; });
+        return true;
+    }
+
+    /// subset_from_level() for a non-empty subset already put through
+    /// sort_subset(), so a caller evaluating many start levels sorts once.
+    double sorted_subset_from_level(int level, const std::vector<int>& subset) const {
+        assert(!subset.empty());
+        if (level < 0 || level >= n) return 0.0;
         double p = R[subset[0]][level];
         for (std::size_t k = 1; k < subset.size() && p > 0.0; ++k)
             p *= R[subset[k]][ts[subset[k - 1]].to];
@@ -226,43 +272,59 @@ struct LevelDag {
     template <class T>
     T constrained_survival_from_level(int level, std::vector<int> required,
                                       const std::vector<T>& f_t) const {
-        if (level < 0 || level >= n || f_t.size() != ts.size()) return T(0.0);
+        if (level < 0 || level >= n) return T(0.0);
+        std::vector<T> q0;
+        if (!constrained_survival_table(std::move(required), f_t, q0)) return T(0.0);
+        return q0[static_cast<std::size_t>(level)];
+    }
+
+    /// constrained_survival_from_level() for every start level at once: on
+    /// success `q0[level]` holds what that call returns for `level` (the DP
+    /// table does not depend on the start level, so computing it once and
+    /// reading every level is exact).  Returns false - where each per-level call
+    /// would return 0 - if `f_t` has the wrong size or a required index is out
+    /// of range.
+    template <class T>
+    bool constrained_survival_table(std::vector<int> required,
+                                    const std::vector<T>& f_t,
+                                    std::vector<T>& q0) const {
+        if (f_t.size() != ts.size()) return false;
         for (int t : required)
-            if (t < 0 || t >= static_cast<int>(ts.size())) return T(0.0);
+            if (t < 0 || t >= static_cast<int>(ts.size())) return false;
         std::sort(required.begin(), required.end(),
                   [this](int x, int y) { return ts[x].from > ts[y].from; });
         const int nr = static_cast<int>(required.size());
-        std::vector<std::vector<T>> q(
-            static_cast<std::size_t>(nr) + 1,
-            std::vector<T>(static_cast<std::size_t>(n), T(0.0)));
+        const std::size_t nl = static_cast<std::size_t>(n);
+        // q[k*n + l]: flattened (nr+1) x n table.
+        std::vector<T> q((static_cast<std::size_t>(nr) + 1) * nl, T(0.0));
         for (int l = 0; l < n; ++l) {
-            bool any = false;
-            for (const Tr& tr : ts)
-                if (tr.from == l) { any = true; break; }
-            if (!any) {
-                q[static_cast<std::size_t>(nr)][static_cast<std::size_t>(l)] = T(1.0);
+            const int jb = out_begin[static_cast<std::size_t>(l)];
+            const int je = out_begin[static_cast<std::size_t>(l) + 1];
+            if (jb == je) {
+                q[static_cast<std::size_t>(nr) * nl + static_cast<std::size_t>(l)] = T(1.0);
                 continue;
             }
             for (int k = nr; k >= 0; --k) {
                 T s(0.0);
-                for (int j = 0; j < static_cast<int>(ts.size()); ++j) {
-                    if (ts[j].from != l) continue;
-                    const auto it = std::find(required.begin(), required.end(), j);
-                    if (it != required.end()) {
-                        const int rj = static_cast<int>(it - required.begin());
+                for (int j = jb; j < je; ++j) {
+                    int rj = -1;
+                    for (int r = 0; r < nr; ++r)
+                        if (required[static_cast<std::size_t>(r)] == j) { rj = r; break; }
+                    const std::size_t to = static_cast<std::size_t>(ts[j].to);
+                    if (rj >= 0) {
                         if (rj == k)
-                            s += ts[j].b * q[static_cast<std::size_t>(k + 1)]
-                                              [static_cast<std::size_t>(ts[j].to)];
+                            s += ts[j].b * q[static_cast<std::size_t>(k + 1) * nl + to];
                     } else {
                         s += ts[j].b * f_t[static_cast<std::size_t>(j)] *
-                             q[static_cast<std::size_t>(k)]
-                              [static_cast<std::size_t>(ts[j].to)];
+                             q[static_cast<std::size_t>(k) * nl + to];
                     }
                 }
-                q[static_cast<std::size_t>(k)][static_cast<std::size_t>(l)] = s;
+                q[static_cast<std::size_t>(k) * nl + static_cast<std::size_t>(l)] = s;
             }
         }
-        return q[0][static_cast<std::size_t>(level)];
+        q.resize(nl);  // row k = 0
+        q0 = std::move(q);
+        return true;
     }
 
     /// Conditional survival of every transition other than primary `p`, for a
@@ -277,20 +339,36 @@ struct LevelDag {
         if (p < 0 || p >= static_cast<int>(ts.size()) ||
             level < 0 || level >= n || R[p][level] <= 0.0)
             return T(1.0);
+        const std::vector<T> q = survival_out_table(p, f_t, Dw);
+        return survival_out_from_table(p, level, q, start_factor);
+    }
+
+    /// The start-level-independent table behind survival_out_from_level(); pass
+    /// it to survival_out_from_table() for each level of interest.
+    template <class T>
+    std::vector<T> survival_out_table(int p, const std::vector<T>& f_t,
+                                      const std::vector<T>& Dw) const {
         std::vector<T> q(n, T(0.0));
         for (int l = 1; l < n; ++l)
-            for (int j = 0; j < static_cast<int>(ts.size()); ++j)
-                if (ts[j].from == l)
-                    q[l] += ts[j].b * ((j == p) ? Dw[ts[j].to]
-                                                   : f_t[j] * q[ts[j].to]);
+            for (int j = out_begin[l]; j < out_begin[l + 1]; ++j)
+                q[l] += ts[j].b * ((j == p) ? Dw[ts[j].to]
+                                               : f_t[j] * q[ts[j].to]);
+        return q;
+    }
+
+    template <class T>
+    T survival_out_from_table(int p, int level, const std::vector<T>& q,
+                              const T& start_factor) const {
+        if (p < 0 || p >= static_cast<int>(ts.size()) ||
+            level < 0 || level >= n || R[p][level] <= 0.0)
+            return T(1.0);
         return start_factor * q[level] / R[p][level];
     }
 
     /// First transition emitting gamma member `m`, or -1 (each gamma maps to one).
     int transition_of(int m) const {
-        for (int i = 0; i < static_cast<int>(ts.size()); ++i)
-            if (ts[i].gamma_member == m) return i;
-        return -1;
+        if (m < 0 || m >= static_cast<int>(member_tr.size())) return -1;
+        return member_tr[static_cast<std::size_t>(m)];
     }
 
     /// P(both transitions i and j are passed). 0 when they leave the same level
@@ -362,11 +440,11 @@ struct LevelDag {
     std::vector<T> survival_down(const std::vector<T>& f_t) const {
         std::vector<T> Dw(n, T(1.0));
         for (int l = 1; l < n; ++l) {   // low -> high: children first
+            if (out_begin[l] == out_begin[l + 1]) continue;  // terminal -> keep 1
             T s(0.0);
-            bool any = false;
-            for (int i = 0; i < static_cast<int>(ts.size()); ++i)
-                if (ts[i].from == l) { any = true; s += ts[i].b * f_t[i] * Dw[ts[i].to]; }
-            if (any) Dw[l] = s;         // else terminal -> keep 1
+            for (int i = out_begin[l]; i < out_begin[l + 1]; ++i)
+                s += ts[i].b * f_t[i] * Dw[ts[i].to];
+            Dw[l] = s;
         }
         return Dw;
     }
@@ -380,8 +458,10 @@ struct LevelDag {
         std::vector<T> Uw(n, T(0.0));
         for (int l = n - 1; l >= 0; --l) {  // high -> low: parents first
             T s = feed[l] * f_EC[l];
-            for (int i = 0; i < static_cast<int>(ts.size()); ++i)
-                if (ts[i].to == l) s += Uw[ts[i].from] * ts[i].b * f_t[i];
+            for (int k = in_begin[l]; k < in_begin[l + 1]; ++k) {
+                const int i = in_tr[static_cast<std::size_t>(k)];
+                s += Uw[ts[i].from] * ts[i].b * f_t[i];
+            }
             Uw[l] = s;
         }
         return Uw;

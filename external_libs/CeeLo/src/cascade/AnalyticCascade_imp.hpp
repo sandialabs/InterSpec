@@ -33,14 +33,29 @@
 // non-template x-ray line tables (detail::k_lines / detail::l_lines) are defined
 // in AnalyticCascade.cpp so this header stays free of the cross-section data
 // dependency.
+//
+// Cost structure.  Almost everything the per-window loop needs depends only on
+// the branch (AnalyticCascadeModel, built once per cascade set) or on the branch
+// and the efficiencies (BranchEval, built once per call and shared by every
+// window): the per-transition survival factors and their level-scheme DPs, the
+// summing-out factor of each primary, and the coincident survival of each
+// summing-in pair key (the ~25 vacancy x-ray LINES of one transition share one
+// key).  Each of those is computed with exactly the operations, in exactly the
+// order, the per-window form used, so results are bit-identical to it - only
+// the redundant recomputation is gone.
 
 #include "cascade/CascadeTypes.h"
 #include "cascade/LevelDag.h"
 
 #include <set>
 #include <cmath>
+#include <cassert>
+#include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+#include <unordered_map>
+#include <initializer_list>
 
 namespace ceelo {
 
@@ -62,50 +77,72 @@ inline constexpr double kAnnih511 = 510.998950;  // annihilation photon energy (
 /// on-axis-weighted) and x-ray partners (isotropic) get g = 1.
 inline double angular_g_w0(double a2, double a4) { return 1.0 + a2 + a4; }
 
-/// A single relaxation x-ray line: energy and its per-vacancy emission weight
-/// (omega * line-branch), so a vacancy of probability p emits this line with
-/// probability p*weight.
-struct XrayLine { double energy; double weight; };
-
-/// K fluorescence lines for element Z, each weight = omega_K * line_branch.
-/// Defined in AnalyticCascade.cpp (needs the cross-section data tables).
-std::vector<XrayLine> k_lines(int Z);
-
-/// L fluorescence lines for element Z and subshell s (0=L1,1=L2,2=L3); each
-/// weight = omega_Ls * line_branch. Coster-Kronig transfer is a second-order
-/// redistribution ignored here (the analytic model uses the direct subshell
-/// yield; FR samples the transfer, a <~0.1% effect on summing).
-/// Defined in AnalyticCascade.cpp.
-std::vector<XrayLine> l_lines(int Z, int s);
-
-/// Efficiency lookups that record misses (energies the provider cannot supply)
-/// for the caller to surface. Missing x-ray/low energies contribute 0.
+/// Memoized efficiency lookups for one compute_cascade_analytic call.
+/// Providers are pure in the energy, so a repeated query returns exactly what
+/// the provider would.  A miss (has()==false) returns 0 and is appended to
+/// `sink`: the miss log of whichever unit of work (a branch's survival factors,
+/// one primary's summing-out factor, a window's own lookups, ...) is running.
+/// Each window merges the logs of the units it uses, so it reports exactly the
+/// energies the per-window engine queried for it.
 template <class T>
-struct EffLookup {
+struct EffCache {
+    explicit EffCache(const EfficiencyProviderT<T>& prov) : p(prov) {}
+
     const EfficiencyProviderT<T>& p;
-    std::set<double>& unmatched;
-    T tot(double E) const {
-        if (p.has(E)) return p.total(E);
-        unmatched.insert(E);
-        return T(0.0);
+    std::vector<double>* sink = nullptr;
+
+    struct Entry {
+        signed char has = -1;
+        bool have_tot = false;
+        bool have_fep = false;
+        T tot = T(0.0);
+        T fep = T(0.0);
+    };
+    std::unordered_map<double, Entry> memo;
+
+    Entry& entry(double E) {
+        Entry& e = memo[E];
+        if (e.has < 0) e.has = p.has(E) ? 1 : 0;
+        return e;
     }
-    T fep(double E) const {
-        if (p.has(E)) return p.fep(E);
-        unmatched.insert(E);
-        return T(0.0);
+    T tot(double E) {
+        Entry& e = entry(E);
+        if (!e.has) {
+            if (sink) sink->push_back(E);
+            return T(0.0);
+        }
+        if (!e.have_tot) { e.tot = p.total(E); e.have_tot = true; }
+        return e.tot;
+    }
+    T fep(double E) {
+        Entry& e = entry(E);
+        if (!e.has) {
+            if (sink) sink->push_back(E);
+            return T(0.0);
+        }
+        if (!e.have_fep) { e.fep = p.fep(E); e.have_fep = true; }
+        return e.fep;
     }
 };
 
-// ---- Per-branch precompute -------------------------------------------------
-
-struct AnalyticBranch {
-    const DecayCascade* dc = nullptr;
-    LevelDag dag;
-    int Z = 0;
-    explicit AnalyticBranch(const DecayCascade& c)
-        : dc(&c), dag(c.level_scheme),
-          Z(c.daughter_Z ? c.daughter_Z : c.level_scheme.daughter_Z) {}
+/// Points an EffCache's miss log at `log` for the life of this object.
+template <class T>
+struct MissScope {
+    EffCache<T>& c;
+    std::vector<double>* prev;
+    MissScope(EffCache<T>& cache, std::vector<double>* log) : c(cache), prev(cache.sink) {
+        c.sink = log;
+    }
+    ~MissScope() { c.sink = prev; }
+    MissScope(const MissScope&) = delete;
+    MissScope& operator=(const MissScope&) = delete;
 };
+
+inline void append_misses(std::vector<double>& to, const std::vector<double>& from) {
+    to.insert(to.end(), from.begin(), from.end());
+}
+
+// ---- Weak-outcome probabilities ---------------------------------------------
 
 inline std::vector<double> weak_unknown_start_weights(const DecayCascade& dc,
                                                       const LevelDag& dag) {
@@ -128,17 +165,43 @@ inline std::vector<double> weak_unknown_start_weights(const DecayCascade& dc,
     return w;
 }
 
-inline double weak_outcome_reach(const DecayCascade& dc, const LevelDag& dag,
-                                 const WeakOutcome& o,
-                                 const std::vector<int>& subset) {
+/// P(every transition in `subset` passes | weak outcome `o`), with the branch's
+/// weak_unknown_start_weights() given for an outcome whose fed level is unknown.
+inline double weak_outcome_reach_sw(const LevelDag& dag, const WeakOutcome& o,
+                                    const std::vector<int>& subset,
+                                    const std::vector<double>& w) {
     if (subset.empty()) return 1.0;
     if (o.fed_level >= 0 && o.fed_level < dag.n)
         return dag.subset_from_level(o.fed_level, subset);
-    const std::vector<double> w = weak_unknown_start_weights(dc, dag);
+    // dag.subset_from_level(l, subset) for each l, sorting the subset once.
+    std::vector<int> sorted = subset;
+    const bool ok = dag.sort_subset(sorted);
     double p = 0.0;
     for (int l = 0; l < dag.n; ++l)
-        if (w[l] > 0.0) p += w[l] * dag.subset_from_level(l, subset);
+        if (w[l] > 0.0) p += w[l] * (ok ? dag.sorted_subset_from_level(l, sorted) : 0.0);
     return p;
+}
+
+/// weak_subset_probability() with the branch's weak_unknown_start_weights() given.
+inline double weak_subset_probability_sw(const DecayCascade& dc,
+                                         const LevelDag& dag,
+                                         const std::vector<int>& subset,
+                                         const std::vector<double>& start_w,
+                                         const WeakOutcomeKind* only_kind = nullptr,
+                                         int ec_shell = 0) {
+    if (!dag.valid) return 0.0;
+    if (!dc.weak_outcome_law.usable())
+        return dc.level_scheme.entry_probability * dag.n_subset_joint(subset);
+    double p = 0.0;
+    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
+        if (only_kind && o.kind != *only_kind) continue;
+        double shell = 1.0;
+        if (ec_shell == 1) shell = o.ec_K;
+        else if (ec_shell == 2) shell = o.ec_L;
+        const double reach = weak_outcome_reach_sw(dag, o, subset, start_w);
+        p += o.selected_mass * shell * reach;
+    }
+    return std::clamp(p, 0.0, 1.0);
 }
 
 inline double weak_subset_probability(const DecayCascade& dc,
@@ -149,16 +212,9 @@ inline double weak_subset_probability(const DecayCascade& dc,
     if (!dag.valid) return 0.0;
     if (!dc.weak_outcome_law.usable())
         return dc.level_scheme.entry_probability * dag.n_subset_joint(subset);
-    double p = 0.0;
-    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
-        if (only_kind && o.kind != *only_kind) continue;
-        double shell = 1.0;
-        if (ec_shell == 1) shell = o.ec_K;
-        else if (ec_shell == 2) shell = o.ec_L;
-        const double reach = weak_outcome_reach(dc, dag, o, subset);
-        p += o.selected_mass * shell * reach;
-    }
-    return std::clamp(p, 0.0, 1.0);
+    return weak_subset_probability_sw(dc, dag, subset,
+                                      weak_unknown_start_weights(dc, dag),
+                                      only_kind, ec_shell);
 }
 
 inline double weak_kind_mass(const DecayCascade& dc, WeakOutcomeKind kind) {
@@ -167,15 +223,6 @@ inline double weak_kind_mass(const DecayCascade& dc, WeakOutcomeKind kind) {
         if (o.kind == kind) p += o.selected_mass;
     return std::clamp(p, 0.0, 1.0);
 }
-
-/// Absolute per-branch EC shell mass by daughter start level for a legacy
-/// LevelScheme which has no explicit WeakOutcomeLaw. LevelDag::feed is
-/// normalized conditional on entering the graph, so recover absolute starts
-/// with entry_probability and restore the direct-to-ground terminal mass.
-struct LegacyEcShellStarts {
-    std::vector<double> k, l;
-    double total_k = 0.0, total_l = 0.0;
-};
 
 inline LegacyEcShellStarts legacy_ec_shell_starts(const DecayCascade& dc,
                                                    const LevelDag& dag) {
@@ -209,14 +256,234 @@ inline int residual_transition_of(const DecayCascade& dc, int member) {
 /// per-transition IC yields; caller supplies the K/L line tables.
 template <class T>
 T xray_deposit_sum(double vac_prob, const std::vector<XrayLine>& lines,
-                   const EffLookup<T>& eff) {
+                   EffCache<T>& eff) {
     if (vac_prob <= 0.0) return T(0.0);
     T s(0.0);
     for (const XrayLine& ln : lines) s += ln.weight * eff.tot(ln.energy);
     return vac_prob * s;
 }
 
+// ---- Per-branch preparation (efficiency independent) -----------------------
+
+inline PreparedBranch::PreparedBranch(const DecayCascade& c)
+    : dc(&c), dag(c.level_scheme),
+      Z(c.daughter_Z ? c.daughter_Z : c.level_scheme.daughter_Z) {
+    kl = k_lines(Z);
+    for (int s = 0; s < 3; ++s) ll[s] = l_lines(Z, s);
+    start_w = weak_unknown_start_weights(c, dag);
+    if (!c.weak_outcome_law.usable()) legacy_ec = legacy_ec_shell_starts(c, dag);
+
+    member_residual.resize(c.members.size());
+    for (int m = 0; m < static_cast<int>(c.members.size()); ++m)
+        member_residual[static_cast<std::size_t>(m)] = residual_transition_of(c, m);
+
+    // Unified emission-occurrence list for summing-in.
+    const int nts = dag.valid ? (int)dag.ts.size() : 0;
+    const int ec_src = nts;  // shared EC exclusivity key (one capture/decay)
+    if (dag.valid) {
+        for (int i = 0; i < nts; ++i) {
+            const LevelDag::Tr& tr = dag.ts[i];
+            if (tr.p_gamma > 0.0 && tr.gamma_member >= 0
+                && static_cast<std::size_t>(tr.gamma_member) < c.members.size())
+                occ.push_back({i, c.members[tr.gamma_member].energy_keV,
+                               tr.p_gamma, i, false, false, false,
+                               tr.gamma_member});
+            if (tr.p_icK > 0.0)
+                for (const XrayLine& ln : kl)
+                    occ.push_back({i, ln.energy, tr.p_icK * ln.weight, i,
+                                   false, false, false, -1});
+            for (int s = 0; s < 3; ++s)
+                if (tr.p_icL[s] > 0.0)
+                    for (const XrayLine& ln : ll[s])
+                        occ.push_back({i, ln.energy, tr.p_icL[s] * ln.weight,
+                                       i, false, false, false, -1});
+        }
+        // EC-feed vacancies (upstream of the whole cascade). Represented
+        // once per branch; the joint uses up_reach_ec against the partner.
+        double ecK_tot = 0.0, ecL_tot = 0.0;
+        if (c.weak_outcome_law.usable()) {
+            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
+            ecK_tot = weak_subset_probability_sw(c, dag, {}, start_w, &ec, 1);
+            ecL_tot = weak_subset_probability_sw(c, dag, {}, start_w, &ec, 2);
+        } else {
+            ecK_tot = legacy_ec.total_k;
+            ecL_tot = legacy_ec.total_l;
+        }
+        if (ecK_tot > 0.0)
+            for (const XrayLine& ln : kl)
+                occ.push_back({-1, ln.energy, ln.weight, ec_src, true, false,
+                               false, -1});
+        if (ecL_tot > 0.0)
+            for (int s = 0; s < 3; ++s)
+                for (const XrayLine& ln : ll[s])
+                    occ.push_back({-1, ln.energy, kLOcc[s] * ln.weight, ec_src,
+                                   true, true, false, -1});
+    }
+    // Categorical unmatched transitions coexist independently with the
+    // matched graph. Their occurrence factors are already absolute per
+    // branch firing (including the transition occurrence probability).
+    for (int rix = 0;
+         rix < static_cast<int>(c.residual_transitions.size()); ++rix) {
+        const ResidualTransition& r = c.residual_transitions[
+            static_cast<std::size_t>(rix)];
+        const int src = nts + 1 + rix;
+        if (r.p_gamma > 0.0 && r.gamma_member >= 0
+            && static_cast<std::size_t>(r.gamma_member) < c.members.size())
+            occ.push_back({-1,
+                c.members[static_cast<std::size_t>(r.gamma_member)].energy_keV,
+                r.p_gamma, src, false, false, false, r.gamma_member, rix});
+        if (r.p_icK > 0.0)
+            for (const XrayLine& ln : kl)
+                occ.push_back({-1, ln.energy, r.p_icK * ln.weight, src,
+                               false, false, false, -1, rix});
+        const double pL[3] = {r.p_icL1, r.p_icL2, r.p_icL3};
+        for (int s = 0; s < 3; ++s)
+            if (pL[s] > 0.0)
+                for (const XrayLine& ln : ll[s])
+                    occ.push_back({-1, ln.energy, pL[s] * ln.weight, src,
+                                   false, false, false, -1, rix});
+    }
+    // Annihilation 511 members (independent of the gamma path).
+    for (int m = 0; m < (int)c.members.size(); ++m) {
+        if (c.members[m].type != CascadeParticleType::Annih511) continue;
+        occ.push_back({-1, c.members[m].energy_keV,
+                       2.0 * (c.weak_outcome_law.usable() ? 1.0
+                              : c.members[m].intensity),
+                       nts + 1 + static_cast<int>(c.residual_transitions.size()) + m,
+                       false, false, true, m});
+    }
+
+    // Sorted by energy, so each window can sweep its partner range.
+    ord.resize(occ.size());
+    for (int i = 0; i < (int)occ.size(); ++i) ord[i] = i;
+    std::sort(ord.begin(), ord.end(),
+              [this](int p, int q) { return occ[p].energy < occ[q].energy; });
+    es.resize(ord.size());
+    for (int k = 0; k < (int)ord.size(); ++k) es[k] = occ[ord[k]].energy;
+}
+
+// ---- Per-call, per-branch efficiency-dependent state -----------------------
+
+template <class T>
+struct BranchEval {
+    // Summing-OUT state (see cout_state in compute_cascade_analytic).
+    bool cout_ready = false;
+    std::vector<T> f_t, f_EC, Dw, Uw;
+    bool uw_ready = false;
+    T depK = T(0.0), depLmix = T(0.0);
+    std::vector<double> cout_miss;
+    std::vector<T> res_cout;                       ///< per residual: 1 - deposit
+    std::vector<std::vector<double>> res_cout_miss;
+
+    // Summing-out factor per primary member (memo).
+    std::vector<signed char> cout_done;
+    std::vector<T> cout_val;
+    std::vector<std::vector<double>> cout_val_miss;
+
+    // Summing-IN state.
+    bool in_ready = false;
+    T sumK = T(0.0), sumL[3] = {T(0.0), T(0.0), T(0.0)}, sumLmix = T(0.0), et511 = T(0.0);
+    std::vector<double> in_miss;
+    bool pair_ft_ready = false;
+    std::vector<T> pair_f_t;
+    std::vector<double> pair_f_t_miss;
+    std::vector<T> res_pair;                       ///< per residual: 1 - deposit
+    std::vector<std::vector<double>> res_pair_miss;
+    bool pair_down_ready = false;
+    std::vector<T> pair_down;
+
+    struct Surv { T value; std::vector<double> miss; };
+    std::unordered_map<std::uint64_t, Surv> surv_memo;      ///< pair survival by key
+    std::unordered_map<std::uint64_t, double> wsp_memo;     ///< weak_subset_probability
+};
+
+/// Memo key for a summing-in pair's coincident survival: everything
+/// pair_coincident_survival reads from the two occurrences.  Returns false if a
+/// field does not fit (the caller then computes without the memo).
+inline bool pair_survival_key(const Occ& x, const Occ& y, std::uint64_t& key) {
+    const std::uint64_t tx = static_cast<std::uint64_t>(x.trans + 1);
+    const std::uint64_t ty = static_cast<std::uint64_t>(y.trans + 1);
+    const std::uint64_t rx = static_cast<std::uint64_t>(x.residual + 1);
+    const std::uint64_t ry = static_cast<std::uint64_t>(y.residual + 1);
+    if (x.trans < -1 || y.trans < -1 || x.residual < -1 || y.residual < -1
+        || tx >= (1u << 16) || ty >= (1u << 16) || rx >= (1u << 12) || ry >= (1u << 12))
+        return false;
+    const std::uint64_t flags = (x.is_ec ? 1u : 0u) | (x.ec_isL ? 2u : 0u)
+                              | (x.is_annih ? 4u : 0u) | (y.is_ec ? 8u : 0u)
+                              | (y.ec_isL ? 16u : 0u) | (y.is_annih ? 32u : 0u);
+    key = tx | (ty << 16) | (rx << 32) | (ry << 44) | (flags << 56);
+    return true;
+}
+
+/// Memo key for weak_subset_probability(subset (<= 3 entries), kind, shell).
+inline bool wsp_key(std::initializer_list<int> subset, const WeakOutcomeKind* kind,
+                    int shell, std::uint64_t& key) {
+    if (subset.size() > 3 || shell < 0 || shell > 2) return false;
+    key = 0;
+    std::size_t i = 0;
+    for (const int t : subset) {
+        if (t < 0 || t >= 0xFFFF) return false;
+        key |= static_cast<std::uint64_t>(t + 1) << (16 * i++);
+    }
+    const std::uint64_t k = kind ? static_cast<std::uint64_t>(*kind) + 1 : 0;
+    if (k >= 16) return false;
+    key |= (k << 48) | (static_cast<std::uint64_t>(shell) << 52);
+    return true;
+}
+
 }  // namespace detail
+
+// ===================== AnalyticCascadeModel ================================
+
+inline AnalyticCascadeModel::AnalyticCascadeModel(
+    const std::vector<DecayCascade>& cascades)
+    : cascades_(&cascades) {
+    prepare();
+}
+
+inline AnalyticCascadeModel::AnalyticCascadeModel(std::vector<DecayCascade>&& cascades)
+    : owned_(std::make_shared<const std::vector<DecayCascade>>(std::move(cascades))) {
+    cascades_ = owned_.get();
+    prepare();
+}
+
+inline AnalyticCascadeModel::AnalyticCascadeModel(
+    std::shared_ptr<const std::vector<DecayCascade>> cascades)
+    : owned_(std::move(cascades)) {
+    if (!owned_) throw std::invalid_argument("AnalyticCascadeModel: null cascades");
+    cascades_ = owned_.get();
+    prepare();
+}
+
+inline void AnalyticCascadeModel::prepare() {
+    validate_cascade_member_references(*cascades_, "compute_cascade_analytic");
+    branches_.reserve(cascades_->size());
+    for (const DecayCascade& dc : *cascades_) branches_.emplace_back(dc);
+    memo_ = std::make_shared<SharedMemo>(branches_.size());
+}
+
+inline double AnalyticCascadeModel::weak_subset_probability(
+    int b, std::initializer_list<int> subset, const WeakOutcomeKind* kind,
+    int shell) const {
+    assert(b >= 0 && static_cast<std::size_t>(b) < branches_.size());
+    const detail::PreparedBranch& pb = branches_[static_cast<std::size_t>(b)];
+    std::uint64_t key = 0;
+    if (!detail::wsp_key(subset, kind, shell, key))
+        return detail::weak_subset_probability_sw(*pb.dc, pb.dag, std::vector<int>(subset),
+                                                  pb.start_w, kind, shell);
+    std::unordered_map<std::uint64_t, double>& memo = memo_->wsp[static_cast<std::size_t>(b)];
+    std::mutex& mutex = memo_->mutex[static_cast<std::size_t>(b)];
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto pos = memo.find(key);
+        if (pos != memo.end()) return pos->second;
+    }
+    const double v = detail::weak_subset_probability_sw(*pb.dc, pb.dag, std::vector<int>(subset),
+                                                        pb.start_w, kind, shell);
+    std::lock_guard<std::mutex> lock(mutex);
+    memo.emplace(key, v);
+    return v;
+}
 
 // ===================== compute_cascade_analytic ==========================
 
@@ -226,18 +493,34 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
     const std::vector<PeakWindow>& peaks,
     const EfficiencyProviderT<T>& provider,
     const AnalyticCascadeOptions& options) {
+    const AnalyticCascadeModel model(cascades);
+    return compute_cascade_analytic(model, peaks, provider, options);
+}
+
+
+template <class T>
+std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
+    const AnalyticCascadeModel& model,
+    const std::vector<PeakWindow>& peaks,
+    const EfficiencyProviderT<T>& provider,
+    const AnalyticCascadeOptions& options) {
 
     using detail::XrayLine;
+    using detail::Occ;
     using detail::kLOcc;
     using detail::kAnnih511;
+    using detail::append_misses;
+    using MissScope = detail::MissScope<T>;
 
-    validate_cascade_member_references(cascades, "compute_cascade_analytic");
-
-    std::vector<detail::AnalyticBranch> branches;
-    branches.reserve(cascades.size());
-    for (const auto& dc : cascades) branches.emplace_back(dc);
+    const std::vector<detail::PreparedBranch>& branches = model.branches();
 
     const bool angular = options.apply_angular_correlation;
+
+    detail::EffCache<T> eff(provider);
+    std::vector<detail::BranchEval<T>> bev(branches.size());
+
+    // The current window's miss log (merged into its unmatched_energies).
+    std::vector<double> window_miss;
 
     // Angular a2/a4 for the coincidence link member_a -> member_b within branch b
     // (searched both directions); {0,0} if no correlated link.
@@ -254,6 +537,634 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
         return r;
     };
 
+    // Memoized weak_subset_probability for branch b: a lock-free memo for this call, backed by
+    //  the model's own (shared, cross-evaluation) memo.
+    auto wsp = [&](int b, std::initializer_list<int> subset,
+                   const WeakOutcomeKind* kind = nullptr, int shell = 0) -> double {
+        std::uint64_t key = 0;
+        if (!detail::wsp_key(subset, kind, shell, key))
+            return model.weak_subset_probability(b, subset, kind, shell);
+        std::unordered_map<std::uint64_t, double>& memo = bev[b].wsp_memo;
+        const auto pos = memo.find(key);
+        if (pos != memo.end()) return pos->second;
+        const double v = model.weak_subset_probability(b, subset, kind, shell);
+        memo.emplace(key, v);
+        return v;
+    };
+
+    // ---------------- Summing-OUT building blocks ----------------
+    // Per-transition survival factors f_t[i] = P(transition i contributes no
+    // deposit), per-level EC survival f_EC[l], and their DPs: depend only on
+    // the branch and the efficiencies.
+    auto cout_state = [&](int b) {
+        detail::BranchEval<T>& be = bev[b];
+        if (be.cout_ready) return;
+        be.cout_ready = true;
+        const detail::PreparedBranch& pb = branches[b];
+        const DecayCascade& dc = *pb.dc;
+        const LevelDag& dag = pb.dag;
+        if (!dag.valid) return;
+        const std::vector<XrayLine>& kl = pb.kl;
+        const std::vector<XrayLine>* ll = pb.ll;
+
+        MissScope scope(eff, &be.cout_miss);
+        const int nts = (int)dag.ts.size();
+        be.f_t.assign(nts, T(1.0));
+        for (int i = 0; i < nts; ++i) {
+            const LevelDag::Tr& tr = dag.ts[i];
+            // gamma_member is -1 for an E0 transition, which has no photon
+            // member; only its conversion x-rays can deposit. Skip the
+            // efficiency lookup entirely rather than calling it at 0 keV --
+            // a provider records every miss, so a 0.0 would show up in
+            // AnalyticPeakResult::unmatched_energies and read as an
+            // incomplete provider.
+            const bool has_photon = tr.gamma_member >= 0
+                && static_cast<std::size_t>(tr.gamma_member)
+                       < dc.members.size();
+            // Summing-OUT: the coincident gamma only needs ANY deposit
+            // (eps_tot, not on-axis-weighted), so its mutual angle with the
+            // FEP primary is loosely constrained and the W(theta) average is
+            // near 1 (measured negligible on Co-60). g = 1 here.
+            T dep = has_photon
+                ? tr.p_gamma * eff.tot(dc.members[tr.gamma_member].energy_keV)
+                : T(0.0);
+            dep += detail::xray_deposit_sum(tr.p_icK, kl, eff);
+            for (int s = 0; s < 3; ++s)
+                dep += detail::xray_deposit_sum(tr.p_icL[s], ll[s], eff);
+            be.f_t[i] = 1.0 - dep;
+        }
+        be.f_EC.assign(dag.n, T(1.0));
+        T depK(0.0), depLmix(0.0);
+        for (const XrayLine& ln : kl) depK += ln.weight * eff.tot(ln.energy);
+        for (int s = 0; s < 3; ++s) {
+            T sL(0.0);
+            for (const XrayLine& ln : ll[s])
+                sL += ln.weight * eff.tot(ln.energy);
+            depLmix += kLOcc[s] * sL;
+        }
+        for (int l = 0; l < dag.n; ++l) {
+            const CascadeLevel& lv = dc.level_scheme.levels[l];
+            T dep = detail::xray_deposit_sum(lv.feed_ecK, kl, eff);
+            for (int s = 0; s < 3; ++s) {
+                T sL(0.0);
+                for (const XrayLine& ln : ll[s]) sL += ln.weight * eff.tot(ln.energy);
+                dep += lv.feed_ecL * kLOcc[s] * sL;
+            }
+            be.f_EC[l] = 1.0 - dep;
+        }
+        be.depK = depK;
+        be.depLmix = depLmix;
+        be.Dw = dag.survival_down(be.f_t);
+
+        // Unmatched transitions are independent categorical residuals; each
+        // contributes its absolute gamma/x-ray deposit survival.
+        const std::size_t nres = dc.residual_transitions.size();
+        be.res_cout.assign(nres, T(1.0));
+        be.res_cout_miss.assign(nres, {});
+        for (std::size_t rix = 0; rix < nres; ++rix) {
+            MissScope rscope(eff, &be.res_cout_miss[rix]);
+            const ResidualTransition& r = dc.residual_transitions[rix];
+            T dep = (r.gamma_member >= 0
+                     && static_cast<std::size_t>(r.gamma_member)
+                            < dc.members.size())
+                ? r.p_gamma * eff.tot(
+                      dc.members[static_cast<std::size_t>(r.gamma_member)].energy_keV)
+                : T(0.0);
+            dep += detail::xray_deposit_sum(r.p_icK, kl, eff);
+            dep += detail::xray_deposit_sum(r.p_icL1, ll[0], eff);
+            dep += detail::xray_deposit_sum(r.p_icL2, ll[1], eff);
+            dep += detail::xray_deposit_sum(r.p_icL3, ll[2], eff);
+            be.res_cout[rix] = T(1.0) - dep;
+        }
+    };
+
+    // C_out for one primary (member m, transition t) in branch b: the exact
+    // level-scheme survival DP (or whole-scheme survival S_full for a
+    // non-scheme primary) times the coincident annihilation-511 pair survival
+    // times any flat coincident members.  Averaged over branches by the caller.
+    auto compute_cout = [&](int b, int m, int t, std::vector<double>& miss) -> T {
+        const detail::PreparedBranch& pb = branches[b];
+        const DecayCascade& dc = *pb.dc;
+        const LevelDag& dag = pb.dag;
+        detail::BranchEval<T>& be = bev[b];
+        T c(1.0);
+        if (dag.valid) {
+            cout_state(b);
+            const std::vector<T>& f_t = be.f_t;
+            const std::vector<T>& f_EC = be.f_EC;
+            const std::vector<T>& Dw = be.Dw;
+            const T& depK = be.depK;
+            const T& depLmix = be.depLmix;
+            if (t >= 0) {
+                if (dc.weak_outcome_law.usable()) {
+                    const double den = wsp(b, {t});
+                    T num(0.0);
+                    T pos_pair_survival = 1.0 - 2.0 * eff.tot(kAnnih511);
+                    if (pos_pair_survival < 0.0) pos_pair_survival = T(0.0);
+                    // survival_out_from_level's DP does not depend on the start
+                    // level: build it once for this primary.
+                    std::vector<T> q;
+                    bool have_q = false;
+                    auto qtab = [&]() -> const std::vector<T>& {
+                        if (!have_q) { q = dag.survival_out_table(t, f_t, Dw); have_q = true; }
+                        return q;
+                    };
+                    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
+                        if (o.fed_level >= 0 && o.fed_level < dag.n) {
+                            const double reach = dag.pass_from_level(t, o.fed_level);
+                            if (reach <= 0.0) continue;
+                            T fs(1.0);
+                            if (o.kind == WeakOutcomeKind::ElectronCapture)
+                                fs = fs - o.ec_K * depK - o.ec_L * depLmix;
+                            else if (o.kind == WeakOutcomeKind::Positron)
+                                fs = fs * pos_pair_survival;
+                            num += o.selected_mass * reach *
+                                dag.survival_out_from_table(t, o.fed_level,
+                                                            qtab(), fs);
+                        } else {
+                            T fs(1.0);
+                            if (o.kind == WeakOutcomeKind::ElectronCapture)
+                                fs = fs - o.ec_K * depK - o.ec_L * depLmix;
+                            else if (o.kind == WeakOutcomeKind::Positron)
+                                fs = fs * pos_pair_survival;
+                            const std::vector<double>& sw = pb.start_w;
+                            for (int l = 0; l < dag.n; ++l) {
+                                const double reach = dag.pass_from_level(t, l);
+                                if (sw[l] <= 0.0 || reach <= 0.0) continue;
+                                num += o.selected_mass * sw[l] * reach *
+                                    dag.survival_out_from_table(t, l, qtab(), fs);
+                            }
+                        }
+                    }
+                    c *= (den > 0.0) ? T(num / den) : T(1.0);
+                } else {
+                    if (!be.uw_ready) {
+                        be.Uw = dag.survival_up(f_t, f_EC);
+                        be.uw_ready = true;
+                    }
+                    c *= dag.survival_out(t, Dw, be.Uw);
+                }
+            } else {
+                T s_full(0.0);  // whole-scheme survival (non-scheme primary)
+                for (int l = 0; l < dag.n; ++l)
+                    s_full += dag.feed[l] * f_EC[l] * Dw[l];
+                if (dc.weak_outcome_law.usable()) {
+                    T num(0.0);
+                    double den = 0.0;
+                    const bool primary_ann =
+                        dc.members[m].type == CascadeParticleType::Annih511;
+                    T pos_pair_survival = primary_ann
+                        ? T(1.0)  // conditioned photon points at detector;
+                                  // its back-to-back partner points away
+                        : T(1.0) - 2.0 * eff.tot(kAnnih511);
+                    if (pos_pair_survival < 0.0) pos_pair_survival = T(0.0);
+                    const std::vector<double>& sw = pb.start_w;
+                    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
+                        if (primary_ann && o.kind != WeakOutcomeKind::Positron)
+                            continue;
+                        den += o.selected_mass;
+                        T so(0.0);
+                        if (o.fed_level >= 0 && o.fed_level < dag.n) {
+                            so = Dw[o.fed_level];
+                        } else {
+                            double assigned = 0.0;
+                            for (int l = 0; l < dag.n; ++l) {
+                                so += sw[l] * Dw[l];
+                                assigned += sw[l];
+                            }
+                            so += std::max(0.0, 1.0 - assigned);
+                        }
+                        T fs(1.0);
+                        if (o.kind == WeakOutcomeKind::ElectronCapture)
+                            fs = fs - o.ec_K * depK - o.ec_L * depLmix;
+                        else if (o.kind == WeakOutcomeKind::Positron)
+                            fs = fs * pos_pair_survival;
+                        num += o.selected_mass * so * fs;
+                    }
+                    c *= den > 0.0 ? T(num / den) : T(1.0);
+                } else {
+                // dag.feed is normalized, so s_full is the survival CONDITIONAL
+                // on the decay having entered the level scheme. A primary that
+                // is not itself a scheme transition (a 511, an x-ray, or a gamma
+                // with no level topology) is also emitted by decays that fed the
+                // daughter's ground state directly, and those have no scheme
+                // partner to sum with at all -- hence the (1 - ep) term. Without
+                // it this over-predicts summing-out by up to 1/ep and disagrees
+                // with the FullRealization walk, which does condition on entry.
+                //
+                // They are not partner-free, though: an electron capture makes
+                // its vacancy wherever it lands, so a ground-state-fed decay
+                // still carries the level-0 EC x-ray, and the walk fires it.
+                // f_EC[0] is that survival. dag.feed[0] is identically 0 (the
+                // ground state has no net out-flow), so s_full cannot carry it.
+                // Omitting it over-predicts C_out by up to (1-ep)*dep_EC0 --
+                // measured +6.7% (z = 9.2) on a synthetic Fe-daughter branch,
+                // and 614 of the database's schemes have (1-ep)*ec0 > 0.05.
+                const double ep = dc.level_scheme.entry_probability;
+                c *= (ep * s_full + (1.0 - ep) * f_EC[0]);
+                }
+            }
+
+            // Unmatched transitions are independent categorical residuals.
+            // A residual primary is conditioned on its gamma alternative, so
+            // its own conversion alternatives are impossible; every other
+            // residual contributes its absolute gamma/x-ray deposit survival.
+            const int primary_residual = pb.member_residual[static_cast<std::size_t>(m)];
+            for (int rix = 0;
+                 rix < static_cast<int>(dc.residual_transitions.size()); ++rix) {
+                if (rix == primary_residual) continue;
+                c *= be.res_cout[static_cast<std::size_t>(rix)];
+                append_misses(miss, be.res_cout_miss[static_cast<std::size_t>(rix)]);
+            }
+        }
+        // Coincident annihilation 511 pairs (each fired member = TWO photons).
+        // The two photons are BACK-TO-BACK, so for a single-sided detector at
+        // most one can deposit: P(>=1 of the pair deposits) = eps_a + eps_b -
+        // P(both) = 2*eps_tot(511), since P(both) = 0 (the partner points ~180
+        // deg away from any convex detector subtending < 2pi). The independent
+        // form 1-(1-eps)^2 = 2eps-eps^2 under-counts the removal by eps^2 (the
+        // Na-22 1274 residual). For a 4pi/well detector both can deposit; that
+        // regime would need the independent form, but the DRF is single-sided.
+        const T et511 = eff.tot(kAnnih511);
+        T surv_pair = 2.0 * et511;
+        if (surv_pair > 1.0) surv_pair = T(1.0);
+        for (int mm = 0; mm < (int)dc.members.size(); ++mm) {
+            if (dc.members[mm].type != CascadeParticleType::Annih511) continue;
+            if (dc.weak_outcome_law.usable())
+                continue;  // folded into the exact outcome mixture above
+            if (mm == m)
+                c *= T(1.0);  // detected primary's partner points away
+            else {
+                const double pm = std::min(1.0, dc.members[mm].intensity);
+                c *= (1.0 - pm * surv_pair);
+            }
+        }
+        // Flat coincident members when there is no level scheme (pairwise model).
+        if (!dag.valid) {
+            for (int mm = 0; mm < (int)dc.members.size(); ++mm) {
+                if (mm == m ||
+                    dc.members[mm].type == CascadeParticleType::Annih511)
+                    continue;
+                double pmate = dc.members[mm].intensity;
+                for (const CoincidenceLink& lk : dc.members[m].coincident)
+                    if (lk.partner == mm) { pmate = lk.prob; break; }
+                c *= (1.0 - pmate * eff.tot(dc.members[mm].energy_keV));
+            }
+        }
+        return c;
+    };
+
+    // Memoized C_out per (branch, primary member); merges the queries it made
+    // into the current window's miss log.
+    auto cout_for_primary = [&](int b, int m, int t) -> T {
+        detail::BranchEval<T>& be = bev[b];
+        const detail::PreparedBranch& pb = branches[b];
+        const std::size_t nm = pb.dc->members.size();
+        if (be.cout_done.empty()) {
+            be.cout_done.assign(nm, 0);
+            be.cout_val.assign(nm, T(1.0));
+            be.cout_val_miss.assign(nm, {});
+        }
+        const std::size_t um = static_cast<std::size_t>(m);
+        if (!be.cout_done[um]) {
+            std::vector<double>& miss = be.cout_val_miss[um];
+            {
+                MissScope scope(eff, &miss);
+                be.cout_val[um] = compute_cout(b, m, t, miss);
+            }
+            be.cout_done[um] = 1;
+        }
+        append_misses(window_miss, be.cout_val_miss[um]);
+        if (pb.dag.valid) append_misses(window_miss, be.cout_miss);
+        return be.cout_val[um];
+    };
+
+    // ---------------- Summing-IN building blocks ----------------
+    // Per-shell "any-deposit" sums for the coincident-survival factor:
+    // Σ_lines (omega·branch)·eps_tot(line), constant per branch.
+    auto in_state = [&](int b) {
+        detail::BranchEval<T>& be = bev[b];
+        if (!be.in_ready) {
+            const detail::PreparedBranch& pb = branches[b];
+            MissScope scope(eff, &be.in_miss);
+            T sumK(0.0);
+            for (const XrayLine& ln : pb.kl) sumK += ln.weight * eff.tot(ln.energy);
+            T sumL[3] = {T(0.0), T(0.0), T(0.0)};
+            T sumLmix(0.0);
+            for (int s = 0; s < 3; ++s) {
+                for (const XrayLine& ln : pb.ll[s]) sumL[s] += ln.weight * eff.tot(ln.energy);
+                sumLmix += kLOcc[s] * sumL[s];
+            }
+            be.sumK = sumK;
+            for (int s = 0; s < 3; ++s) be.sumL[s] = sumL[s];
+            be.sumLmix = sumLmix;
+            be.et511 = eff.tot(kAnnih511);
+            be.in_ready = true;
+        }
+        append_misses(window_miss, be.in_miss);
+    };
+
+    // Per-transition and per-residual deposit survivals used by the pair
+    // survival (after in_state, whose x-ray sums they use).
+    auto pair_ft_state = [&](int b) {
+        detail::BranchEval<T>& be = bev[b];
+        if (be.pair_ft_ready) return;
+        be.pair_ft_ready = true;
+        const detail::PreparedBranch& pb = branches[b];
+        const DecayCascade& dc = *pb.dc;
+        const LevelDag& dag = pb.dag;
+        const int nts = dag.valid ? (int)dag.ts.size() : 0;
+
+        const std::size_t nres = dc.residual_transitions.size();
+        be.res_pair.assign(nres, T(1.0));
+        be.res_pair_miss.assign(nres, {});
+        for (std::size_t rix = 0; rix < nres; ++rix) {
+            MissScope scope(eff, &be.res_pair_miss[rix]);
+            const ResidualTransition& r = dc.residual_transitions[rix];
+            T dep = (r.gamma_member >= 0
+                     && static_cast<std::size_t>(r.gamma_member)
+                            < dc.members.size())
+                ? r.p_gamma * eff.tot(dc.members[
+                      static_cast<std::size_t>(r.gamma_member)].energy_keV)
+                : T(0.0);
+            dep += r.p_icK * be.sumK;
+            dep += r.p_icL1 * be.sumL[0] + r.p_icL2 * be.sumL[1]
+                 + r.p_icL3 * be.sumL[2];
+            be.res_pair[rix] = T(1.0) - dep;
+        }
+
+        MissScope scope(eff, &be.pair_f_t_miss);
+        be.pair_f_t.assign(static_cast<std::size_t>(nts), T(1.0));
+        for (int m = 0; m < nts; ++m) {
+            const LevelDag::Tr& tr = dag.ts[m];
+            T dep = (tr.gamma_member >= 0
+                     && static_cast<std::size_t>(tr.gamma_member)
+                            < dc.members.size())
+                ? tr.p_gamma * eff.tot(
+                      dc.members[tr.gamma_member].energy_keV)
+                : T(0.0);
+            dep += tr.p_icK * be.sumK;
+            for (int s = 0; s < 3; ++s)
+                dep += tr.p_icL[s] * be.sumL[s];
+            be.pair_f_t[static_cast<std::size_t>(m)] = T(1.0) - dep;
+        }
+    };
+
+    // Coincident-survival factor for a summing-in pair (x,y): the pair
+    // already deposits E_x+E_y ≈ peak, so ANY OTHER coincident emission
+    // depositing shifts the sum out of the window (summing-out applied to
+    // the sum-fed channel). Product over the members co-emitted with the
+    // pair, each conditioned on the pair via the level-scheme joint. This
+    // is the near-field term the bare eps_FEP(x)·eps_FEP(y) misses (e.g.
+    // Co-57 122+14→136 co-emits an EC Fe Kα that knocks the event out).
+    auto compute_pair_survival = [&](int b, const Occ& x, const Occ& y,
+                                     std::vector<double>& miss) -> T {
+        const detail::PreparedBranch& pb = branches[b];
+        const DecayCascade& dc = *pb.dc;
+        const LevelDag& dag = pb.dag;
+        detail::BranchEval<T>& be = bev[b];
+        pair_ft_state(b);
+
+        std::vector<int> defs;
+        if (x.trans >= 0) defs.push_back(x.trans);
+        if (y.trans >= 0) defs.push_back(y.trans);
+
+        T residual_survival(1.0);
+        for (int rix = 0;
+             rix < static_cast<int>(dc.residual_transitions.size()); ++rix) {
+            if (rix == x.residual || rix == y.residual) continue;
+            residual_survival *= be.res_pair[static_cast<std::size_t>(rix)];
+            append_misses(miss, be.res_pair_miss[static_cast<std::size_t>(rix)]);
+        }
+        const std::vector<T>& pair_f_t = be.pair_f_t;
+        const T& sumK = be.sumK;
+        const T* sumL = be.sumL;
+        const T& sumLmix = be.sumLmix;
+        const T& et511 = be.et511;
+        const std::vector<double>& sw = pb.start_w;
+        const std::vector<XrayLine>& kl = pb.kl;
+        const detail::LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
+
+        if (defs.empty()) {
+            if (!be.pair_down_ready) {
+                be.pair_down = dag.survival_down(pair_f_t);
+                be.pair_down_ready = true;
+            }
+            const std::vector<T>& down = be.pair_down;
+            T depK(0.0), depL(0.0);
+            for (const XrayLine& ln : kl)
+                depK += ln.weight * eff.tot(ln.energy);
+            for (int s = 0; s < 3; ++s)
+                depL += kLOcc[s] * sumL[s];
+            T graph_survival(0.0);
+            const bool constrained_ec = x.is_ec || y.is_ec;
+            const bool constrained_pos = x.is_annih || y.is_annih;
+            const bool constrained_ecL = x.is_ec ? x.ec_isL : y.ec_isL;
+            if (dc.weak_outcome_law.usable()) {
+                double den = 0.0;
+                for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
+                    if (constrained_ec
+                        && o.kind != WeakOutcomeKind::ElectronCapture)
+                        continue;
+                    if (constrained_pos
+                        && o.kind != WeakOutcomeKind::Positron)
+                        continue;
+                    const double mode_weight = constrained_ec
+                        ? (constrained_ecL ? o.ec_L : o.ec_K) : 1.0;
+                    const double outcome_weight =
+                        o.selected_mass * mode_weight;
+                    if (!(outcome_weight > 0.0)) continue;
+                    T so(0.0);
+                    if (o.fed_level >= 0 && o.fed_level < dag.n) {
+                        so = down[o.fed_level];
+                    } else {
+                        double assigned = 0.0;
+                        for (int l = 0; l < dag.n; ++l) {
+                            so += sw[l] * down[l];
+                            assigned += sw[l];
+                        }
+                        so += std::max(0.0, 1.0 - assigned);
+                    }
+                    if (!constrained_ec
+                        && o.kind == WeakOutcomeKind::ElectronCapture)
+                        so *= T(1.0) - o.ec_K * depK - o.ec_L * depL;
+                    else if (!constrained_pos
+                             && o.kind == WeakOutcomeKind::Positron) {
+                        T pair_dep = 2.0 * et511;
+                        if (pair_dep > 1.0) pair_dep = T(1.0);
+                        so *= T(1.0) - pair_dep;
+                    }
+                    graph_survival += outcome_weight * so;
+                    den += outcome_weight;
+                }
+                if (den > 0.0) graph_survival *= 1.0 / den;
+            } else {
+                const double ep = dc.level_scheme.entry_probability;
+                if (constrained_ec) {
+                    const std::vector<double>& starts = constrained_ecL
+                        ? legacy_ec.l : legacy_ec.k;
+                    const double den = constrained_ecL
+                        ? legacy_ec.total_l : legacy_ec.total_k;
+                    if (den > 0.0) {
+                        for (int l = 0; l < dag.n; ++l)
+                            graph_survival += starts[
+                                static_cast<std::size_t>(l)] * down[l];
+                        graph_survival *= 1.0 / den;
+                    } else {
+                        graph_survival = T(1.0);
+                    }
+                } else {
+                    for (int l = 0; l < dag.n; ++l) {
+                        const CascadeLevel& lv = dc.level_scheme.levels[l];
+                        const T fec = T(1.0) - lv.feed_ecK * depK
+                            - lv.feed_ecL * depL;
+                        graph_survival += ep * dag.feed[l] * fec * down[l];
+                    }
+                    if (dag.n > 0) {
+                        const CascadeLevel& g = dc.level_scheme.levels[0];
+                        const T fec0 = T(1.0) - g.feed_ecK * depK
+                            - g.feed_ecL * depL;
+                        graph_survival += (1.0 - ep) * fec0;
+                    }
+                }
+            }
+            return residual_survival * graph_survival;
+        }
+
+        // The constrained-survival DP does not depend on the start level:
+        // build its table once for this pair and read each level from it.
+        std::vector<T> q0;
+        bool q_built = false, q_ok = false;
+        auto qat = [&](int level) -> T {
+            if (!q_built) {
+                q_ok = dag.constrained_survival_table(defs, pair_f_t, q0);
+                q_built = true;
+            }
+            if (!q_ok || level < 0 || level >= dag.n) return T(0.0);
+            return q0[static_cast<std::size_t>(level)];
+        };
+
+        auto transition_survival = [&](const WeakOutcome* outcome,
+                                       double base) -> T {
+            if (!(base > 0.0)) return T(1.0);
+            T joint_survival(0.0);
+            if (outcome && outcome->fed_level >= 0 &&
+                outcome->fed_level < dag.n) {
+                joint_survival = qat(outcome->fed_level);
+            } else if (outcome) {
+                for (int l = 0; l < dag.n; ++l)
+                    if (sw[l] > 0.0)
+                        joint_survival += sw[l] * qat(l);
+            } else {
+                for (int l = 0; l < dag.n; ++l)
+                    if (dag.feed[l] > 0.0)
+                        joint_survival += dag.feed[l] * qat(l);
+            }
+            return joint_survival / base;
+        };
+
+        if (dc.weak_outcome_law.usable()) {
+            T num(0.0);
+            double den = 0.0;
+            const bool constrained_ec = x.is_ec || y.is_ec;
+            const bool constrained_pos = x.is_annih || y.is_annih;
+            const bool ecL = x.is_ec ? x.ec_isL : y.ec_isL;
+            for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
+                if (constrained_ec && o.kind != WeakOutcomeKind::ElectronCapture)
+                    continue;
+                if (constrained_pos && o.kind != WeakOutcomeKind::Positron)
+                    continue;
+                const double base =
+                    detail::weak_outcome_reach_sw(dag, o, defs, sw);
+                double mode_weight = 1.0;
+                if (constrained_ec) mode_weight = ecL ? o.ec_L : o.ec_K;
+                const double w = o.selected_mass * base * mode_weight;
+                if (!(w > 0.0)) continue;
+                T so = transition_survival(&o, base);
+                if (!constrained_ec && !constrained_pos) {
+                    if (o.kind == WeakOutcomeKind::ElectronCapture)
+                        so *= 1.0 - o.ec_K * sumK - o.ec_L * sumLmix;
+                    else if (o.kind == WeakOutcomeKind::Positron) {
+                        T pair_dep = 2.0 * et511;
+                        if (pair_dep > 1.0) pair_dep = T(1.0);
+                        so *= 1.0 - pair_dep;
+                    }
+                }
+                num += w * so;
+                den += w;
+            }
+            return residual_survival
+                 * (den > 0.0 ? T(num / den) : T(1.0));
+        }
+
+        const double base = dag.n_subset_joint(defs);
+        if (!(base > 0.0)) return T(1.0);
+        const bool constrained_ec = x.is_ec || y.is_ec;
+        const bool constrained_ecL = x.is_ec ? x.ec_isL : y.ec_isL;
+        T surv(1.0);
+        if (constrained_ec) {
+            const std::vector<double>& starts = constrained_ecL
+                ? legacy_ec.l : legacy_ec.k;
+            T num(0.0);
+            double den = 0.0;
+            for (int l = 0; l < dag.n; ++l) {
+                const double w = starts[static_cast<std::size_t>(l)];
+                if (!(w > 0.0)) continue;
+                const double reach = dag.subset_from_level(l, defs);
+                den += w * reach;
+                num += w * qat(l);
+            }
+            if (den > 0.0) surv = num / den;
+        } else {
+            surv = transition_survival(nullptr, base);
+        }
+        // For a detected annihilation photon the back-to-back partner
+        // points away in the single-sided geometry assumed here.
+        if (!(x.is_ec || y.is_ec || x.is_annih || y.is_annih)) {
+            int a_hi = defs[0];
+            for (int t : defs)
+                if (dag.ts[t].from > dag.ts[a_hi].from) a_hi = t;
+            const double pass_hi = dag.pass(a_hi);
+            if (pass_hi > 0.0) {
+                const double pecK = dag.up_reach_ec(
+                    a_hi, dc.level_scheme, false) / pass_hi;
+                const double pecL = dag.up_reach_ec(
+                    a_hi, dc.level_scheme, true) / pass_hi;
+                surv *= (1.0 - pecK * sumK - pecL * sumLmix);
+            }
+        }
+        return residual_survival * surv;
+    };
+
+    // Memoized pair survival; merges its queries into the window's miss log.
+    auto pair_coincident_survival = [&](int b, const Occ& x, const Occ& y) -> T {
+        detail::BranchEval<T>& be = bev[b];
+        std::uint64_t key = 0;
+        if (!detail::pair_survival_key(x, y, key)) {
+            std::vector<double> miss;
+            T v(1.0);
+            {
+                MissScope scope(eff, &miss);
+                v = compute_pair_survival(b, x, y, miss);
+            }
+            append_misses(window_miss, miss);
+            append_misses(window_miss, be.pair_f_t_miss);
+            return v;
+        }
+        auto pos = be.surv_memo.find(key);
+        if (pos == be.surv_memo.end()) {
+            typename detail::BranchEval<T>::Surv entry{T(1.0), {}};
+            {
+                MissScope scope(eff, &entry.miss);
+                entry.value = compute_pair_survival(b, x, y, entry.miss);
+            }
+            pos = be.surv_memo.emplace(key, std::move(entry)).first;
+        }
+        append_misses(window_miss, pos->second.miss);
+        append_misses(window_miss, be.pair_f_t_miss);
+        return pos->second.value;
+    };
+
     std::vector<AnalyticPeakResultT<T>> results;
     results.reserve(peaks.size());
 
@@ -262,8 +1173,8 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
         res.energy_keV = pk.energy_keV;
         const double win = pk.tolerance_keV > 0.0 ? pk.tolerance_keV
                                                   : options.window_tol_keV;
-        std::set<double> unmatched;
-        detail::EffLookup<T> eff{provider, unmatched};
+        window_miss.clear();
+        MissScope window_scope(eff, &window_miss);
 
         // --- Locate the window's emitted LINES (fitted-peak-area SF) ---
         // A window may contain more than one emitted line (e.g. Ba-133 79.6+81);
@@ -293,7 +1204,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                 // (measured: 0.000% on 16 nuclides except Ag-108 511 keV, -1.19%).
                 double member_prob = dc.members[m].intensity;
                 const int residual = t < 0
-                    ? detail::residual_transition_of(dc, m) : -1;
+                    ? branches[b].member_residual[static_cast<std::size_t>(m)] : -1;
                 if (residual >= 0)
                     member_prob = dc.residual_transitions[
                         static_cast<std::size_t>(residual)].p_gamma;
@@ -306,7 +1217,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                     member_prob *= 2.0;
                 const double p_emit =
                     (t >= 0) ? dc.branch_weight *
-                                   detail::weak_subset_probability(dc, dag, {t}) *
+                                   wsp(b, {t}) *
                                    dag.ts[t].p_gamma
                              : dc.branch_weight * member_prob;
                 if (p_emit <= 0.0) continue;
@@ -353,241 +1264,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
         res.eff_no_summing_unc = provider.fep_unc(pk.energy_keV);
 
         // ---------------- Summing-OUT (C_out) ----------------
-        // C_out for one primary in branch b: the exact level-scheme survival DP
-        // (or whole-scheme survival S_full for a non-scheme primary) times the
-        // coincident annihilation-511 pair survival times any flat coincident
-        // members. Averaged over branches below.
-        auto cout_for_primary = [&](int b, int m, int t) -> T {
-            const DecayCascade& dc = *branches[b].dc;
-            const LevelDag& dag = branches[b].dag;
-            const int Z = branches[b].Z;
-            T c(1.0);
-            if (dag.valid) {
-                const std::vector<XrayLine> kl = detail::k_lines(Z);
-                std::vector<std::vector<XrayLine>> ll = {detail::l_lines(Z, 0),
-                                                         detail::l_lines(Z, 1),
-                                                         detail::l_lines(Z, 2)};
-                const int nts = (int)dag.ts.size();
-                std::vector<T> f_t(nts, T(1.0));
-                for (int i = 0; i < nts; ++i) {
-                    const LevelDag::Tr& tr = dag.ts[i];
-                    // gamma_member is -1 for an E0 transition, which has no photon
-                    // member; only its conversion x-rays can deposit. Skip the
-                    // efficiency lookup entirely rather than calling it at 0 keV --
-                    // a provider records every miss, so a 0.0 would show up in
-                    // AnalyticPeakResult::unmatched_energies and read as an
-                    // incomplete provider.
-                    const bool has_photon = tr.gamma_member >= 0
-                        && static_cast<std::size_t>(tr.gamma_member)
-                               < dc.members.size();
-                    // Summing-OUT: the coincident gamma only needs ANY deposit
-                    // (eps_tot, not on-axis-weighted), so its mutual angle with the
-                    // FEP primary is loosely constrained and the W(theta) average is
-                    // near 1 (measured negligible on Co-60). g = 1 here.
-                    T dep = has_photon
-                        ? tr.p_gamma * eff.tot(dc.members[tr.gamma_member].energy_keV)
-                        : T(0.0);
-                    dep += detail::xray_deposit_sum(tr.p_icK, kl, eff);
-                    for (int s = 0; s < 3; ++s)
-                        dep += detail::xray_deposit_sum(tr.p_icL[s], ll[s], eff);
-                    f_t[i] = 1.0 - dep;
-                }
-                std::vector<T> f_EC(dag.n, T(1.0));
-                T depK(0.0), depLmix(0.0);
-                for (const XrayLine& ln : kl) depK += ln.weight * eff.tot(ln.energy);
-                for (int s = 0; s < 3; ++s) {
-                    T sL(0.0);
-                    for (const XrayLine& ln : ll[s])
-                        sL += ln.weight * eff.tot(ln.energy);
-                    depLmix += kLOcc[s] * sL;
-                }
-                for (int l = 0; l < dag.n; ++l) {
-                    const CascadeLevel& lv = dc.level_scheme.levels[l];
-                    T dep = detail::xray_deposit_sum(lv.feed_ecK, kl, eff);
-                    for (int s = 0; s < 3; ++s) {
-                        T sL(0.0);
-                        for (const XrayLine& ln : ll[s]) sL += ln.weight * eff.tot(ln.energy);
-                        dep += lv.feed_ecL * kLOcc[s] * sL;
-                    }
-                    f_EC[l] = 1.0 - dep;
-                }
-                const std::vector<T> Dw = dag.survival_down(f_t);
-                if (t >= 0) {
-                    if (dc.weak_outcome_law.usable()) {
-                        const double den = detail::weak_subset_probability(dc, dag, {t});
-                        T num(0.0);
-                        T pos_pair_survival = 1.0 - 2.0 * eff.tot(kAnnih511);
-                        if (pos_pair_survival < 0.0) pos_pair_survival = T(0.0);
-                        for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
-                            if (o.fed_level >= 0 && o.fed_level < dag.n) {
-                                const double reach = dag.pass_from_level(t, o.fed_level);
-                                if (reach <= 0.0) continue;
-                                T fs(1.0);
-                                if (o.kind == WeakOutcomeKind::ElectronCapture)
-                                    fs = fs - o.ec_K * depK - o.ec_L * depLmix;
-                                else if (o.kind == WeakOutcomeKind::Positron)
-                                    fs = fs * pos_pair_survival;
-                                num += o.selected_mass * reach *
-                                    dag.survival_out_from_level(t, o.fed_level,
-                                                               f_t, Dw, fs);
-                            } else {
-                                T fs(1.0);
-                                if (o.kind == WeakOutcomeKind::ElectronCapture)
-                                    fs = fs - o.ec_K * depK - o.ec_L * depLmix;
-                                else if (o.kind == WeakOutcomeKind::Positron)
-                                    fs = fs * pos_pair_survival;
-                                const std::vector<double> sw =
-                                    detail::weak_unknown_start_weights(dc, dag);
-                                for (int l = 0; l < dag.n; ++l) {
-                                    const double reach = dag.pass_from_level(t, l);
-                                    if (sw[l] <= 0.0 || reach <= 0.0) continue;
-                                    num += o.selected_mass * sw[l] * reach *
-                                        dag.survival_out_from_level(
-                                            t, l, f_t, Dw, fs);
-                                }
-                            }
-                        }
-                        c *= (den > 0.0) ? T(num / den) : T(1.0);
-                    } else {
-                        const std::vector<T> Uw = dag.survival_up(f_t, f_EC);
-                        c *= dag.survival_out(t, Dw, Uw);
-                    }
-                } else {
-                    T s_full(0.0);  // whole-scheme survival (non-scheme primary)
-                    for (int l = 0; l < dag.n; ++l)
-                        s_full += dag.feed[l] * f_EC[l] * Dw[l];
-                    if (dc.weak_outcome_law.usable()) {
-                        T num(0.0);
-                        double den = 0.0;
-                        const bool primary_ann =
-                            dc.members[m].type == CascadeParticleType::Annih511;
-                        T pos_pair_survival = primary_ann
-                            ? T(1.0)  // conditioned photon points at detector;
-                                      // its back-to-back partner points away
-                            : T(1.0) - 2.0 * eff.tot(kAnnih511);
-                        if (pos_pair_survival < 0.0) pos_pair_survival = T(0.0);
-                        const std::vector<double> sw =
-                            detail::weak_unknown_start_weights(dc, dag);
-                        for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
-                            if (primary_ann && o.kind != WeakOutcomeKind::Positron)
-                                continue;
-                            den += o.selected_mass;
-                            T so(0.0);
-                            if (o.fed_level >= 0 && o.fed_level < dag.n) {
-                                so = Dw[o.fed_level];
-                            } else {
-                                double assigned = 0.0;
-                                for (int l = 0; l < dag.n; ++l) {
-                                    so += sw[l] * Dw[l];
-                                    assigned += sw[l];
-                                }
-                                so += std::max(0.0, 1.0 - assigned);
-                            }
-                            T fs(1.0);
-                            if (o.kind == WeakOutcomeKind::ElectronCapture)
-                                fs = fs - o.ec_K * depK - o.ec_L * depLmix;
-                            else if (o.kind == WeakOutcomeKind::Positron)
-                                fs = fs * pos_pair_survival;
-                            num += o.selected_mass * so * fs;
-                        }
-                        c *= den > 0.0 ? T(num / den) : T(1.0);
-                    } else {
-                    // dag.feed is normalized, so s_full is the survival CONDITIONAL
-                    // on the decay having entered the level scheme. A primary that
-                    // is not itself a scheme transition (a 511, an x-ray, or a gamma
-                    // with no level topology) is also emitted by decays that fed the
-                    // daughter's ground state directly, and those have no scheme
-                    // partner to sum with at all -- hence the (1 - ep) term. Without
-                    // it this over-predicts summing-out by up to 1/ep and disagrees
-                    // with the FullRealization walk, which does condition on entry.
-                    //
-                    // They are not partner-free, though: an electron capture makes
-                    // its vacancy wherever it lands, so a ground-state-fed decay
-                    // still carries the level-0 EC x-ray, and the walk fires it.
-                    // f_EC[0] is that survival. dag.feed[0] is identically 0 (the
-                    // ground state has no net out-flow), so s_full cannot carry it.
-                    // Omitting it over-predicts C_out by up to (1-ep)*dep_EC0 --
-                    // measured +6.7% (z = 9.2) on a synthetic Fe-daughter branch,
-                    // and 614 of the database's schemes have (1-ep)*ec0 > 0.05.
-                    const double ep = dc.level_scheme.entry_probability;
-                    c *= (ep * s_full + (1.0 - ep) * f_EC[0]);
-                    }
-                }
-
-                // Unmatched transitions are independent categorical residuals.
-                // A residual primary is conditioned on its gamma alternative, so
-                // its own conversion alternatives are impossible; every other
-                // residual contributes its absolute gamma/x-ray deposit survival.
-                const int primary_residual =
-                    detail::residual_transition_of(dc, m);
-                for (int rix = 0;
-                     rix < static_cast<int>(dc.residual_transitions.size()); ++rix) {
-                    if (rix == primary_residual) continue;
-                    const ResidualTransition& r = dc.residual_transitions[
-                        static_cast<std::size_t>(rix)];
-                    T dep = (r.gamma_member >= 0
-                             && static_cast<std::size_t>(r.gamma_member)
-                                    < dc.members.size())
-                        ? r.p_gamma * eff.tot(
-                              dc.members[static_cast<std::size_t>(r.gamma_member)].energy_keV)
-                        : T(0.0);
-                    dep += detail::xray_deposit_sum(r.p_icK, kl, eff);
-                    dep += detail::xray_deposit_sum(r.p_icL1, ll[0], eff);
-                    dep += detail::xray_deposit_sum(r.p_icL2, ll[1], eff);
-                    dep += detail::xray_deposit_sum(r.p_icL3, ll[2], eff);
-                    c *= T(1.0) - dep;
-                }
-            }
-            // Coincident annihilation 511 pairs (each fired member = TWO photons).
-            // The two photons are BACK-TO-BACK, so for a single-sided detector at
-            // most one can deposit: P(>=1 of the pair deposits) = eps_a + eps_b -
-            // P(both) = 2*eps_tot(511), since P(both) = 0 (the partner points ~180
-            // deg away from any convex detector subtending < 2pi). The independent
-            // form 1-(1-eps)^2 = 2eps-eps^2 under-counts the removal by eps^2 (the
-            // Na-22 1274 residual). For a 4pi/well detector both can deposit; that
-            // regime would need the independent form, but the DRF is single-sided.
-            const T et511 = eff.tot(kAnnih511);
-            T surv_pair = 2.0 * et511;
-            if (surv_pair > 1.0) surv_pair = T(1.0);
-            for (int mm = 0; mm < (int)dc.members.size(); ++mm) {
-                if (dc.members[mm].type != CascadeParticleType::Annih511) continue;
-                if (dc.weak_outcome_law.usable())
-                    continue;  // folded into the exact outcome mixture above
-                if (mm == m)
-                    c *= T(1.0);  // detected primary's partner points away
-                else {
-                    double pm = std::min(1.0, dc.members[mm].intensity);
-                    if (dc.weak_outcome_law.usable()) {
-                        if (t >= 0) {
-                            const double den = detail::weak_subset_probability(
-                                dc, dag, {t});
-                            const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
-                            pm = den > 0.0 ? detail::weak_subset_probability(
-                                dc, dag, {t}, &pos) / den : 0.0;
-                        } else {
-                            pm = detail::weak_kind_mass(
-                                dc, WeakOutcomeKind::Positron);
-                        }
-                    }
-                    c *= (1.0 - pm * surv_pair);
-                }
-            }
-            // Flat coincident members when there is no level scheme (pairwise model).
-            if (!dag.valid) {
-                for (int mm = 0; mm < (int)dc.members.size(); ++mm) {
-                    if (mm == m ||
-                        dc.members[mm].type == CascadeParticleType::Annih511)
-                        continue;
-                    double pmate = dc.members[mm].intensity;
-                    for (const CoincidenceLink& lk : dc.members[m].coincident)
-                        if (lk.partner == mm) { pmate = lk.prob; break; }
-                    c *= (1.0 - pmate * eff.tot(dc.members[mm].energy_keV));
-                }
-            }
-            return c;
-        };
-
-        // Per-component summing-OUT, branch-averaged, then area-weighted into the
+        // Per-component summing-out, branch-averaged, then area-weighted into the
         // window rate R_out = Σ_comp A·eps_FEP(E_comp)·C_out_comp.
         T R_out(0.0);
         for (const auto& c : comps) {
@@ -609,111 +1286,13 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
         // pairs are mutually exclusive and skipped.
         T gain(0.0);
 
-        // Unified emission-occurrence list per branch (built lazily per branch in
-        // the pair loop). Occurrence kinds: gamma / IC-K / IC-L / EC-K / EC-L /
-        // annih-511. `src` keys the source vacancy for exclusivity.
-        struct Occ {
-            int trans;      // level-scheme transition, or -1 for EC / annih
-            double energy;
-            double factor;  // per-occurrence line/emit factor (applied after the joint)
-            int src;        // exclusivity key within the branch
-            bool is_ec;
-            bool ec_isL;
-            bool is_annih;
-            int member;     // gamma/annih member index (for angular links); else -1
-            int residual = -1;  // categorical unmatched transition, else -1
-        };
-
         for (int b = 0; b < (int)branches.size(); ++b) {
-            const DecayCascade& dc = *branches[b].dc;
-            const LevelDag& dag = branches[b].dag;
-            const int Z = branches[b].Z;
-            const int nts = dag.valid ? (int)dag.ts.size() : 0;
-            const int ec_src = nts;  // shared EC exclusivity key (one capture/decay)
-            const std::vector<XrayLine> kl = detail::k_lines(Z);
-            const std::vector<std::vector<XrayLine>> ll = {detail::l_lines(Z, 0),
-                                                           detail::l_lines(Z, 1),
-                                                           detail::l_lines(Z, 2)};
-            const detail::LegacyEcShellStarts legacy_ec =
-                dc.weak_outcome_law.usable()
-                    ? detail::LegacyEcShellStarts{}
-                    : detail::legacy_ec_shell_starts(dc, dag);
+            const detail::PreparedBranch& pb = branches[b];
+            const DecayCascade& dc = *pb.dc;
+            const LevelDag& dag = pb.dag;
+            const std::vector<Occ>& occ = pb.occ;
+            const detail::LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
 
-            std::vector<Occ> occ;
-            if (dag.valid) {
-                for (int i = 0; i < nts; ++i) {
-                    const LevelDag::Tr& tr = dag.ts[i];
-                    if (tr.p_gamma > 0.0 && tr.gamma_member >= 0
-                        && static_cast<std::size_t>(tr.gamma_member)
-                               < dc.members.size())
-                        occ.push_back({i, dc.members[tr.gamma_member].energy_keV,
-                                       tr.p_gamma, i, false, false, false,
-                                       tr.gamma_member});
-                    if (tr.p_icK > 0.0)
-                        for (const XrayLine& ln : kl)
-                            occ.push_back({i, ln.energy, tr.p_icK * ln.weight, i,
-                                           false, false, false, -1});
-                    for (int s = 0; s < 3; ++s)
-                        if (tr.p_icL[s] > 0.0)
-                            for (const XrayLine& ln : ll[s])
-                                occ.push_back({i, ln.energy, tr.p_icL[s] * ln.weight,
-                                               i, false, false, false, -1});
-                }
-                // EC-feed vacancies (upstream of the whole cascade). Represented
-                // once per branch; the joint uses up_reach_ec against the partner.
-                double ecK_tot = 0.0, ecL_tot = 0.0;
-                if (dc.weak_outcome_law.usable()) {
-                    const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                    ecK_tot = detail::weak_subset_probability(dc, dag, {}, &ec, 1);
-                    ecL_tot = detail::weak_subset_probability(dc, dag, {}, &ec, 2);
-                } else {
-                    ecK_tot = legacy_ec.total_k;
-                    ecL_tot = legacy_ec.total_l;
-                }
-                if (ecK_tot > 0.0)
-                    for (const XrayLine& ln : kl)
-                        occ.push_back({-1, ln.energy, ln.weight, ec_src, true, false,
-                                       false, -1});
-                if (ecL_tot > 0.0)
-                    for (int s = 0; s < 3; ++s)
-                        for (const XrayLine& ln : ll[s])
-                            occ.push_back({-1, ln.energy, kLOcc[s] * ln.weight, ec_src,
-                                           true, true, false, -1});
-            }
-            // Categorical unmatched transitions coexist independently with the
-            // matched graph. Their occurrence factors are already absolute per
-            // branch firing (including the transition occurrence probability).
-            for (int rix = 0;
-                 rix < static_cast<int>(dc.residual_transitions.size()); ++rix) {
-                const ResidualTransition& r = dc.residual_transitions[
-                    static_cast<std::size_t>(rix)];
-                const int src = nts + 1 + rix;
-                if (r.p_gamma > 0.0 && r.gamma_member >= 0
-                    && static_cast<std::size_t>(r.gamma_member)
-                           < dc.members.size())
-                    occ.push_back({-1,
-                        dc.members[static_cast<std::size_t>(r.gamma_member)].energy_keV,
-                        r.p_gamma, src, false, false, false, r.gamma_member, rix});
-                if (r.p_icK > 0.0)
-                    for (const XrayLine& ln : kl)
-                        occ.push_back({-1, ln.energy, r.p_icK * ln.weight, src,
-                                       false, false, false, -1, rix});
-                const double pL[3] = {r.p_icL1, r.p_icL2, r.p_icL3};
-                for (int s = 0; s < 3; ++s)
-                    if (pL[s] > 0.0)
-                        for (const XrayLine& ln : ll[s])
-                            occ.push_back({-1, ln.energy, pL[s] * ln.weight, src,
-                                           false, false, false, -1, rix});
-            }
-            // Annihilation 511 members (independent of the gamma path).
-            for (int m = 0; m < (int)dc.members.size(); ++m) {
-                if (dc.members[m].type != CascadeParticleType::Annih511) continue;
-                occ.push_back({-1, dc.members[m].energy_keV,
-                               2.0 * (dc.weak_outcome_law.usable() ? 1.0
-                                      : dc.members[m].intensity),
-                               nts + 1 + static_cast<int>(dc.residual_transitions.size()) + m,
-                               false, false, true, m});
-            }
             // A sum-in partner cannot be the primary line itself (an occurrence at
             // any component line is a peak line itself, already in R_no).
             auto is_peak_line = [&](const Occ& o) {
@@ -732,8 +1311,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                 auto ecmarg = [&](bool isL) {
                     if (dc.weak_outcome_law.usable()) {
                         const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                        return detail::weak_subset_probability(
-                            dc, dag, {}, &ec, isL ? 2 : 1);
+                        return wsp(b, {}, &ec, isL ? 2 : 1);
                     }
                     return isL ? legacy_ec.total_l : legacy_ec.total_k;
                 };
@@ -746,7 +1324,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                     if (o.residual >= 0)
                         return r.factor * o.factor;
                     if (o.trans >= 0)
-                        return detail::weak_subset_probability(dc, dag, {o.trans})
+                        return wsp(b, {o.trans})
                              * r.factor * o.factor;
                     if (o.is_ec)
                         return ecmarg(o.ec_isL) * r.factor * o.factor;
@@ -770,13 +1348,11 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                     return 0.0;
                 }
                 if (o.trans >= 0)            // gamma/IC × gamma/IC
-                    return detail::weak_subset_probability(
-                               dc, dag, {t.trans, o.trans}) * t.factor * o.factor;
+                    return wsp(b, {t.trans, o.trans}) * t.factor * o.factor;
                 if (o.is_ec) {               // gamma/IC × EC-feed vacancy
                     if (dc.weak_outcome_law.usable()) {
                         const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                        return detail::weak_subset_probability(
-                                   dc, dag, {t.trans}, &ec, o.ec_isL ? 2 : 1) *
+                        return wsp(b, {t.trans}, &ec, o.ec_isL ? 2 : 1) *
                                t.factor * o.factor;
                     }
                     return dc.level_scheme.entry_probability *
@@ -786,272 +1362,37 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                 // gamma/IC × annih-511: exact beta+ mode joint when available.
                 if (dc.weak_outcome_law.usable()) {
                     const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
-                    return detail::weak_subset_probability(
-                               dc, dag, {t.trans}, &pos) * t.factor * o.factor;
+                    return wsp(b, {t.trans}, &pos) * t.factor * o.factor;
                 }
                 return dc.level_scheme.entry_probability * dag.pass(t.trans) *
                        t.factor * o.factor;
             };
 
-            // Per-shell "any-deposit" sums for the coincident-survival factor
-            // below: Σ_lines (omega·branch)·eps_tot(line), constant per branch.
-            T sumK(0.0);
-            for (const XrayLine& ln : kl) sumK += ln.weight * eff.tot(ln.energy);
-            T sumL[3] = {T(0.0), T(0.0), T(0.0)};
-            T sumLmix(0.0);
-            for (int s = 0; s < 3; ++s) {
-                for (const XrayLine& ln : ll[s]) sumL[s] += ln.weight * eff.tot(ln.energy);
-                sumLmix += kLOcc[s] * sumL[s];
-            }
-            const T et511 = eff.tot(kAnnih511);
+            in_state(b);
 
-            // Coincident-survival factor for a summing-in pair (x,y): the pair
-            // already deposits E_x+E_y ≈ peak, so ANY OTHER coincident emission
-            // depositing shifts the sum out of the window (summing-out applied to
-            // the sum-fed channel). Product over the members co-emitted with the
-            // pair, each conditioned on the pair via the level-scheme joint. This
-            // is the near-field term the bare eps_FEP(x)·eps_FEP(y) misses (e.g.
-            // Co-57 122+14→136 co-emits an EC Fe Kα that knocks the event out).
-            auto pair_coincident_survival = [&](const Occ& x, const Occ& y) -> T {
-                std::vector<int> defs;
-                if (x.trans >= 0) defs.push_back(x.trans);
-                if (y.trans >= 0) defs.push_back(y.trans);
-
-                T residual_survival(1.0);
-                for (int rix = 0;
-                     rix < static_cast<int>(dc.residual_transitions.size()); ++rix) {
-                    if (rix == x.residual || rix == y.residual) continue;
-                    const ResidualTransition& r = dc.residual_transitions[
-                        static_cast<std::size_t>(rix)];
-                    T dep = (r.gamma_member >= 0
-                             && static_cast<std::size_t>(r.gamma_member)
-                                    < dc.members.size())
-                        ? r.p_gamma * eff.tot(dc.members[
-                              static_cast<std::size_t>(r.gamma_member)].energy_keV)
-                        : T(0.0);
-                    dep += r.p_icK * sumK;
-                    dep += r.p_icL1 * sumL[0] + r.p_icL2 * sumL[1]
-                         + r.p_icL3 * sumL[2];
-                    residual_survival *= T(1.0) - dep;
-                }
-                std::vector<T> pair_f_t(static_cast<std::size_t>(nts), T(1.0));
-                for (int m = 0; m < nts; ++m) {
-                    const LevelDag::Tr& tr = dag.ts[m];
-                    T dep = (tr.gamma_member >= 0
-                             && static_cast<std::size_t>(tr.gamma_member)
-                                    < dc.members.size())
-                        ? tr.p_gamma * eff.tot(
-                              dc.members[tr.gamma_member].energy_keV)
-                        : T(0.0);
-                    dep += tr.p_icK * sumK;
-                    for (int s = 0; s < 3; ++s)
-                        dep += tr.p_icL[s] * sumL[s];
-                    pair_f_t[static_cast<std::size_t>(m)] = T(1.0) - dep;
-                }
-                if (defs.empty()) {
-                    const std::vector<T> down = dag.survival_down(pair_f_t);
-                    T depK(0.0), depL(0.0);
-                    for (const XrayLine& ln : kl)
-                        depK += ln.weight * eff.tot(ln.energy);
-                    for (int s = 0; s < 3; ++s)
-                        depL += kLOcc[s] * sumL[s];
-                    T graph_survival(0.0);
-                    const bool constrained_ec = x.is_ec || y.is_ec;
-                    const bool constrained_pos = x.is_annih || y.is_annih;
-                    const bool constrained_ecL = x.is_ec ? x.ec_isL : y.ec_isL;
-                    if (dc.weak_outcome_law.usable()) {
-                        const std::vector<double> sw =
-                            detail::weak_unknown_start_weights(dc, dag);
-                        double den = 0.0;
-                        for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
-                            if (constrained_ec
-                                && o.kind != WeakOutcomeKind::ElectronCapture)
-                                continue;
-                            if (constrained_pos
-                                && o.kind != WeakOutcomeKind::Positron)
-                                continue;
-                            const double mode_weight = constrained_ec
-                                ? (constrained_ecL ? o.ec_L : o.ec_K) : 1.0;
-                            const double outcome_weight =
-                                o.selected_mass * mode_weight;
-                            if (!(outcome_weight > 0.0)) continue;
-                            T so(0.0);
-                            if (o.fed_level >= 0 && o.fed_level < dag.n) {
-                                so = down[o.fed_level];
-                            } else {
-                                double assigned = 0.0;
-                                for (int l = 0; l < dag.n; ++l) {
-                                    so += sw[l] * down[l];
-                                    assigned += sw[l];
-                                }
-                                so += std::max(0.0, 1.0 - assigned);
-                            }
-                            if (!constrained_ec
-                                && o.kind == WeakOutcomeKind::ElectronCapture)
-                                so *= T(1.0) - o.ec_K * depK - o.ec_L * depL;
-                            else if (!constrained_pos
-                                     && o.kind == WeakOutcomeKind::Positron) {
-                                T pair_dep = 2.0 * et511;
-                                if (pair_dep > 1.0) pair_dep = T(1.0);
-                                so *= T(1.0) - pair_dep;
-                            }
-                            graph_survival += outcome_weight * so;
-                            den += outcome_weight;
-                        }
-                        if (den > 0.0) graph_survival *= 1.0 / den;
-                    } else {
-                        const double ep = dc.level_scheme.entry_probability;
-                        if (constrained_ec) {
-                            const std::vector<double>& starts = constrained_ecL
-                                ? legacy_ec.l : legacy_ec.k;
-                            const double den = constrained_ecL
-                                ? legacy_ec.total_l : legacy_ec.total_k;
-                            if (den > 0.0) {
-                                for (int l = 0; l < dag.n; ++l)
-                                    graph_survival += starts[
-                                        static_cast<std::size_t>(l)] * down[l];
-                                graph_survival *= 1.0 / den;
-                            } else {
-                                graph_survival = T(1.0);
-                            }
-                        } else {
-                            for (int l = 0; l < dag.n; ++l) {
-                                const CascadeLevel& lv = dc.level_scheme.levels[l];
-                                const T fec = T(1.0) - lv.feed_ecK * depK
-                                    - lv.feed_ecL * depL;
-                                graph_survival += ep * dag.feed[l] * fec * down[l];
-                            }
-                            if (dag.n > 0) {
-                                const CascadeLevel& g = dc.level_scheme.levels[0];
-                                const T fec0 = T(1.0) - g.feed_ecK * depK
-                                    - g.feed_ecL * depL;
-                                graph_survival += (1.0 - ep) * fec0;
-                            }
-                        }
-                    }
-                    return residual_survival * graph_survival;
-                }
-                auto transition_survival = [&](const WeakOutcome* outcome,
-                                               double base) -> T {
-                    if (!(base > 0.0)) return T(1.0);
-                    T joint_survival(0.0);
-                    if (outcome && outcome->fed_level >= 0 &&
-                        outcome->fed_level < dag.n) {
-                        joint_survival = dag.constrained_survival_from_level(
-                            outcome->fed_level, defs, pair_f_t);
-                    } else if (outcome) {
-                        const std::vector<double> sw =
-                            detail::weak_unknown_start_weights(dc, dag);
-                        for (int l = 0; l < dag.n; ++l)
-                            if (sw[l] > 0.0)
-                                joint_survival += sw[l] *
-                                    dag.constrained_survival_from_level(
-                                        l, defs, pair_f_t);
-                    } else {
-                        for (int l = 0; l < dag.n; ++l)
-                            if (dag.feed[l] > 0.0)
-                                joint_survival += dag.feed[l] *
-                                    dag.constrained_survival_from_level(
-                                        l, defs, pair_f_t);
-                    }
-                    return joint_survival / base;
-                };
-
-                if (dc.weak_outcome_law.usable()) {
-                    T num(0.0);
-                    double den = 0.0;
-                    const bool constrained_ec = x.is_ec || y.is_ec;
-                    const bool constrained_pos = x.is_annih || y.is_annih;
-                    const bool ecL = x.is_ec ? x.ec_isL : y.ec_isL;
-                    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes) {
-                        if (constrained_ec && o.kind != WeakOutcomeKind::ElectronCapture)
-                            continue;
-                        if (constrained_pos && o.kind != WeakOutcomeKind::Positron)
-                            continue;
-                        const double base =
-                            detail::weak_outcome_reach(dc, dag, o, defs);
-                        double mode_weight = 1.0;
-                        if (constrained_ec) mode_weight = ecL ? o.ec_L : o.ec_K;
-                        const double w = o.selected_mass * base * mode_weight;
-                        if (!(w > 0.0)) continue;
-                        T so = transition_survival(&o, base);
-                        if (!constrained_ec && !constrained_pos) {
-                            if (o.kind == WeakOutcomeKind::ElectronCapture)
-                                so *= 1.0 - o.ec_K * sumK - o.ec_L * sumLmix;
-                            else if (o.kind == WeakOutcomeKind::Positron) {
-                                T pair_dep = 2.0 * et511;
-                                if (pair_dep > 1.0) pair_dep = T(1.0);
-                                so *= 1.0 - pair_dep;
-                            }
-                        }
-                        num += w * so;
-                        den += w;
-                    }
-                    return residual_survival
-                         * (den > 0.0 ? T(num / den) : T(1.0));
-                }
-
-                const double base = dag.n_subset_joint(defs);
-                if (!(base > 0.0)) return T(1.0);
-                const bool constrained_ec = x.is_ec || y.is_ec;
-                const bool constrained_ecL = x.is_ec ? x.ec_isL : y.ec_isL;
-                T surv(1.0);
-                if (constrained_ec) {
-                    const std::vector<double>& starts = constrained_ecL
-                        ? legacy_ec.l : legacy_ec.k;
-                    T num(0.0);
-                    double den = 0.0;
-                    for (int l = 0; l < dag.n; ++l) {
-                        const double w = starts[static_cast<std::size_t>(l)];
-                        if (!(w > 0.0)) continue;
-                        const double reach = dag.subset_from_level(l, defs);
-                        den += w * reach;
-                        num += w * dag.constrained_survival_from_level(
-                            l, defs, pair_f_t);
-                    }
-                    if (den > 0.0) surv = num / den;
-                } else {
-                    surv = transition_survival(nullptr, base);
-                }
-                // For a detected annihilation photon the back-to-back partner
-                // points away in the single-sided geometry assumed here.
-                if (!(x.is_ec || y.is_ec || x.is_annih || y.is_annih)) {
-                    int a_hi = defs[0];
-                    for (int t : defs)
-                        if (dag.ts[t].from > dag.ts[a_hi].from) a_hi = t;
-                    const double pass_hi = dag.pass(a_hi);
-                    if (pass_hi > 0.0) {
-                        const double pecK = dag.up_reach_ec(
-                            a_hi, dc.level_scheme, false) / pass_hi;
-                        const double pecL = dag.up_reach_ec(
-                            a_hi, dc.level_scheme, true) / pass_hi;
-                        surv *= (1.0 - pecK * sumK - pecL * sumLmix);
-                    }
-                }
-                return residual_survival * surv;
-            };
-
-            // Pairs. Sort occurrences by energy; for each x, binary-search the
-            // partner-energy window [peak-win - E_x, peak+win - E_x] so only pairs
-            // that actually sum into the window are visited — O(n log n) instead
-            // of O(n^2). Matters for dense schemes (Eu-152/Am-241) whose occurrence
-            // lists include the ~25 expanded vacancy x-ray lines per transition.
-            std::vector<int> ord(occ.size());
-            for (int i = 0; i < (int)occ.size(); ++i) ord[i] = i;
-            std::sort(ord.begin(), ord.end(),
-                      [&](int p, int q) { return occ[p].energy < occ[q].energy; });
-            std::vector<double> es(ord.size());
-            for (int k = 0; k < (int)ord.size(); ++k) es[k] = occ[ord[k]].energy;
+            // Pairs. Occurrences are sorted by energy; for each x, the partners are
+            // those after x whose energy lies in [peak-win - E_x, peak+win - E_x],
+            // so only pairs that actually sum into the window are visited. Matters
+            // for dense schemes (Eu-152/Am-241) whose occurrence lists include the
+            // ~25 expanded vacancy x-ray lines per transition. As E_x increases both
+            // bounds decrease, so the unrestricted lower/upper bounds are tracked by
+            // two pointers that only move down (the restriction to indices after x
+            // is a max with ia+1); and once E_x > peak+win - E_x no later x can have
+            // a partner.
+            const std::vector<int>& ord = pb.ord;
+            const std::vector<double>& es = pb.es;
             const double plo = pk.energy_keV - win, phi = pk.energy_keV + win;
-            for (int ia = 0; ia < (int)ord.size(); ++ia) {
+            const int nocc = static_cast<int>(ord.size());
+            int lo_ptr = nocc, hi_ptr = nocc;
+            for (int ia = 0; ia < nocc; ++ia) {
                 const Occ& x = occ[ord[ia]];
-                if (is_peak_line(x)) continue;
-                int jb = static_cast<int>(
-                    std::lower_bound(es.begin() + ia + 1, es.end(), plo - x.energy)
-                    - es.begin());
-                const int je = static_cast<int>(
-                    std::upper_bound(es.begin() + ia + 1, es.end(), phi - x.energy)
-                    - es.begin());
+                const double lo_val = plo - x.energy, hi_val = phi - x.energy;
+                if (es[static_cast<std::size_t>(ia)] > hi_val) break;
+                while (hi_ptr > 0 && es[static_cast<std::size_t>(hi_ptr - 1)] > hi_val) --hi_ptr;
+                while (lo_ptr > 0 && !(es[static_cast<std::size_t>(lo_ptr - 1)] < lo_val)) --lo_ptr;
+                int jb = std::max(lo_ptr, ia + 1);
+                const int je = std::max(hi_ptr, ia + 1);
+                if (jb >= je || is_peak_line(x)) continue;
                 for (; jb < je; ++jb) {
                     const Occ& y = occ[ord[jb]];
                     if (is_peak_line(y)) continue;
@@ -1064,7 +1405,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                         if (a.first != 0.0 || a.second != 0.0)
                             g = detail::angular_g_w0(a.first, a.second);
                     }
-                    const T surv = pair_coincident_survival(x, y);
+                    const T surv = pair_coincident_survival(b, x, y);
                     gain += dc.branch_weight *
                             J * eff.fep(x.energy) *
                             eff.fep(y.energy) * g * surv;
@@ -1106,7 +1447,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                             if (s < tlo) continue;
                             if (X.src == Y.src || X.src == Z2.src || Y.src == Z2.src)
                                 continue;
-                            const double J = detail::weak_subset_probability(dc, dag,
+                            const double J = wsp(b,
                                 {X.trans, Y.trans, Z2.trans}) *
                                 X.factor * Y.factor * Z2.factor;
                             if (J <= 0.0) continue;
@@ -1140,6 +1481,7 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
         res.summing_factor_unc =
             (eff_no > 1e-15) ? T(res.eff_with_summing_unc / eff_no) : T(0.0);
 
+        const std::set<double> unmatched(window_miss.begin(), window_miss.end());
         res.unmatched_energies.assign(unmatched.begin(), unmatched.end());
         results.push_back(std::move(res));
     }
