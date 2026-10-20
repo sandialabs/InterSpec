@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cassert>
 #include <cstring>
 #include <algorithm>
 #include <functional>
@@ -216,6 +217,9 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
   m_fetchModelsResult.reset( new JSignal<std::string>( this, "llmFetchModelsResult" ) );
   m_fetchModelsResult->connect( this, &LlmConfigWindow::onFetchModelsResult );
 
+  m_presets = LlmModelPresets::load();
+  assert( m_presets );
+
   seedWorkingCopy();
 
 #if( BUILD_AS_MCP_HTTP_SERVER )
@@ -280,11 +284,12 @@ void LlmConfigWindow::seedWorkingCopy()
     }
   }//if( import mode )
 
-  // 1) The in-memory (cached) config is the truth that the assistant uses; prefer it.
+  // 1) The in-memory (cached) config is the truth that the assistant uses; prefer it - unless it is
+  //    the default (no providers) config used when the user has not created a llm_config.xml yet.
   try
   {
     shared_ptr<const LlmConfig> cached = InterSpecServer::llm_config();
-    if( cached )
+    if( cached && !cached->llmApi.providers.empty() )
     {
       m_working.llmApi = cached->llmApi;
       m_working.mcpServer = cached->mcpServer;
@@ -334,6 +339,7 @@ void LlmConfigWindow::seedWorkingCopy()
   m_working.llmApi.activeProviderIndex = 0;
   m_working.mcpServer = LlmConfig::McpServer();
   m_uiState.assign( 1, ProviderUiState() );
+  m_uiState[0].expanded = true;  // a new user should see the fields to fill in right away
 }//seedWorkingCopy()
 
 
@@ -630,6 +636,7 @@ void LlmConfigWindow::buildUi()
 
   // --- Footer ---
   WContainerWidget *foot = footer();
+  AuxWindow::addHelpInFooter( foot, "llm-provider-config" );
 
   // On phones the footer is squeezed into the (35px) title bar, so the validation summary goes at
   //  the bottom of the body instead, and Cancel becomes the floated-left "back" button.
@@ -674,6 +681,7 @@ void LlmConfigWindow::rebuildProviders()
   if( !m_providersArea )
     return;
 
+  m_modelWarnAreas.clear();  // the cards they are in are about to be deleted
   m_providersArea->clear();
 
   // Keep the UI-state vector in lock-step with the providers.
@@ -753,14 +761,40 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
   // Endpoint
   WLabel *epLbl = bodyc->addNew<WLabel>( WString::tr("lcw-api-endpoint") );
   epLbl->addStyleClass( "LcwFieldLabel" );
-  WLineEdit *epEdit = bodyc->addNew<WLineEdit>();
+  WContainerWidget *epRow = bodyc->addNew<WContainerWidget>();
+  epRow->addStyleClass( "LcwEndpointRow" );
+  WLineEdit *epEdit = epRow->addNew<WLineEdit>();
   epEdit->addStyleClass( "LcwInput" );
   epEdit->setText( WString::fromUTF8(prov.apiEndpoint) );
   epEdit->setPlaceholderText( WString::tr("lcw-endpoint-ph") );
+  epLbl->setBuddy( epEdit );
+
+  // Drop-down of well-known providers (from llm_model_presets.xml) to fill in the endpoint.
+  if( !m_presets->providerPresets.empty() )
+  {
+    WComboBox *presetSelect = epRow->addNew<WComboBox>();
+    presetSelect->addStyleClass( "LcwSelect LcwPresetSelect" );
+    presetSelect->addItem( WString::tr("lcw-preset-ph") );
+    for( const LlmModelPresets::ProviderPreset &preset : m_presets->providerPresets )
+      presetSelect->addItem( WString::fromUTF8(preset.label) );
+    presetSelect->setCurrentIndex( 0 );
+    HelpSystem::attachToolTipOn( presetSelect, WString::tr("lcw-preset-tip"), showToolTips );
+    presetSelect->activated().connect( std::bind( [this,pi,presetSelect](){
+      const int idx = presetSelect->currentIndex();
+      if( idx > 0 )
+        applyProviderPreset( pi, static_cast<size_t>(idx - 1) );
+    } ) );
+  }//if( !m_presets->providerPresets.empty() )
   epEdit->changed().connect( std::bind( [this,pi,epEdit](){
     if( pi >= m_working.llmApi.providers.size() )
       return;
-    m_working.llmApi.providers[pi].apiEndpoint = epEdit->text().toUTF8();
+    ApiProvider &p = m_working.llmApi.providers[pi];
+    const string newEndpoint = epEdit->text().toUTF8();
+    if( newEndpoint != p.apiEndpoint )
+    {
+      p.apiEndpoint = newEndpoint;
+      endpointChanged( pi );
+    }
     rebuildProviders();  // refresh format badge / host / anthropic warnings
     updateSummary();
     updateValidation();
@@ -978,6 +1012,7 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
       if( mi >= p.models.size() || (idx-1) >= static_cast<int>(m_uiState[pi].discoveredModelIds.size()) )
         return;
       p.models[mi].name = m_uiState[pi].discoveredModelIds[idx-1];
+      applyModelDefaults( pi, mi );
       rebuildProviders();
       updateSummary();
       updateValidation();
@@ -992,8 +1027,14 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
   nameEdit->changed().connect( std::bind( [this,pi,mi,nameEdit](){
     if( pi >= m_working.llmApi.providers.size() || mi >= m_working.llmApi.providers[pi].models.size() )
       return;
-    m_working.llmApi.providers[pi].models[mi].name = nameEdit->text().toUTF8();
-    rebuildProviders();  // refresh subtitle / summary
+    ModelInfo &model = m_working.llmApi.providers[pi].models[mi];
+    string newName = nameEdit->text().toUTF8();
+    SpecUtils::trim( newName );
+    const bool nameChanged = (newName != model.name);
+    model.name = newName;
+    if( nameChanged )
+      applyModelDefaults( pi, mi );
+    rebuildProviders();  // refresh subtitle / summary, and any filled-in defaults
     updateSummary();
     updateValidation();
     refreshPreview();
@@ -1004,6 +1045,27 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
   removeBtn->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
   HelpSystem::attachToolTipOn( removeBtn, WString::tr("lcw-remove-model"), showToolTips );
   removeBtn->clicked().connect( std::bind( [this,pi,mi](){ removeModel(pi,mi); } ) );
+
+  // A note that the capability fields were just filled in from known defaults; removed once the
+  //  user edits one of those fields.
+  WText *defaultsHint = nullptr;
+  if( ui.defaultsAppliedFor.count( mi ) )
+  {
+    defaultsHint = card->addNew<WText>( WString::tr("lcw-defaults-applied").arg( WString::fromUTF8(m.name) ) );
+    defaultsHint->addStyleClass( "LcwHint LcwDefaultsHint" );
+  }else if( !m.name.empty() && !ui.discoveredCaps.count( m.name )
+            && !m_presets->defaultsFor( m.name, prov.apiEndpoint ).has_value() )
+  {
+    WText *unknownHint = card->addNew<WText>( WString::tr("lcw-model-unknown") );
+    unknownHint->addStyleClass( "LcwHint LcwDefaultsHint" );
+  }
+
+  const auto clearDefaultsHint = [this,pi,mi,defaultsHint](){
+    if( pi < m_uiState.size() )
+      m_uiState[pi].defaultsAppliedFor.erase( mi );
+    if( defaultsHint )
+      defaultsHint->setHidden( true );
+  };
 
   // Row 2: max tokens / context limit / temperature
   WContainerWidget *grid = card->addNew<WContainerWidget>();
@@ -1025,9 +1087,10 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
 
   makeNumField( WString::tr("lcw-max-tokens"), WString::tr("lcw-api-default"),
     (m.maxTokens > 0 ? std::to_string(m.maxTokens) : string()),
-    [this,pi,mi]( WLineEdit *e ){
+    [this,pi,mi,clearDefaultsHint]( WLineEdit *e ){
       if( pi >= m_working.llmApi.providers.size() || mi >= m_working.llmApi.providers[pi].models.size() )
         return;
+      clearDefaultsHint();
       ModelInfo &mm = m_working.llmApi.providers[pi].models[mi];
       const bool wasAnthroErr = (resolvedFormat(pi) == ApiFormat::Anthropic) && (mm.maxTokens <= 0);
       string s = e->text().toUTF8(); SpecUtils::trim(s);
@@ -1044,13 +1107,15 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
 
   makeNumField( WString::tr("lcw-context-limit"), WString::tr("lcw-api-default"),
     (m.contextLengthLimit > 0 ? std::to_string(m.contextLengthLimit) : string()),
-    [this,pi,mi]( WLineEdit *e ){
+    [this,pi,mi,clearDefaultsHint]( WLineEdit *e ){
       if( pi >= m_working.llmApi.providers.size() || mi >= m_working.llmApi.providers[pi].models.size() )
         return;
+      clearDefaultsHint();
       string s = e->text().toUTF8(); SpecUtils::trim(s);
       int v = 0;
       m_working.llmApi.providers[pi].models[mi].contextLengthLimit
         = (!s.empty() && SpecUtils::parse_int(s.c_str(), s.size(), v) && v > 0) ? v : 0;
+      updateValidation();
       refreshPreview();
     } );
 
@@ -1074,10 +1139,12 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
 
   WCheckBox *imgCb = row3->addNew<WCheckBox>( WString::tr("lcw-supports-images") );
   imgCb->setChecked( m.supportsImages );
-  imgCb->changed().connect( std::bind( [this,pi,mi,imgCb](){
+  imgCb->changed().connect( std::bind( [this,pi,mi,imgCb,clearDefaultsHint](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
+      clearDefaultsHint();
       m_working.llmApi.providers[pi].models[mi].supportsImages = imgCb->isChecked();
+      updateValidation();
       refreshPreview();
     }
   } ) );
@@ -1085,9 +1152,10 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
   WCheckBox *toolCb = row3->addNew<WCheckBox>( WString::tr("lcw-force-tool") );
   toolCb->setChecked( m.requireToolInStateMachine );
   HelpSystem::attachToolTipOn( toolCb, WString::tr("lcw-force-tool-tip"), showToolTips );
-  toolCb->changed().connect( std::bind( [this,pi,mi,toolCb](){
+  toolCb->changed().connect( std::bind( [this,pi,mi,toolCb,clearDefaultsHint](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
+      clearDefaultsHint();
       m_working.llmApi.providers[pi].models[mi].requireToolInStateMachine = toolCb->isChecked();
       refreshPreview();
     }
@@ -1104,10 +1172,12 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
   reason->addItem( WString::tr("lcw-reasoning-medium") );
   reason->addItem( WString::tr("lcw-reasoning-high") );
   reason->setCurrentIndex( reasoning_to_index( m.reasoning ) );
-  reason->activated().connect( std::bind( [this,pi,mi,reason](){
+  reason->activated().connect( std::bind( [this,pi,mi,reason,clearDefaultsHint](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
+      clearDefaultsHint();
       m_working.llmApi.providers[pi].models[mi].reasoning = index_to_reasoning( reason->currentIndex() );
+      updateValidation();
       refreshPreview();
     }
   } ) );
@@ -1136,7 +1206,72 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     WText *needMax = card->addNew<WText>( WString::tr("lcw-anthropic-needs-max") );
     needMax->addStyleClass( "LcwError LcwModelError" );
   }
+
+  // Settings known not to work with this model; kept current by updateValidation().
+  WContainerWidget *warnArea = card->addNew<WContainerWidget>();
+  warnArea->addStyleClass( "LcwModelWarnings" );
+  m_modelWarnAreas[{pi, mi}] = warnArea;
+  fillModelWarnings( warnArea, pi, mi );
 }//buildModelEditor()
+
+
+std::vector<WString> LlmConfigWindow::modelCompatibilityIssues( const size_t pi, const size_t mi ) const
+{
+  vector<WString> issues;
+  if( (pi >= m_working.llmApi.providers.size()) || (mi >= m_working.llmApi.providers[pi].models.size()) )
+    return issues;
+
+  const ApiProvider &p = m_working.llmApi.providers[pi];
+  const ModelInfo &m = p.models[mi];
+  if( m.name.empty() )
+    return issues;
+
+  const std::optional<LlmModelPresets::ModelDefaults> table = m_presets->defaultsFor( m.name, p.apiEndpoint );
+  const LlmModelPresets::ModelDefaults *fetched = nullptr;
+  if( pi < m_uiState.size() )
+  {
+    const auto iter = m_uiState[pi].discoveredCaps.find( m.name );
+    if( iter != end(m_uiState[pi].discoveredCaps) )
+      fetched = &iter->second;
+  }
+
+  const LlmModelPresets::ModelDefaults known
+                 = LlmModelPresets::ModelDefaults::combine( table ? &table.value() : nullptr, fetched );
+
+  const std::variant<bool,LlmConfig::LlmApi::ReasoningEffort> noReasoning = false;
+  if( (known.reasoning == noReasoning) && (m.reasoning != noReasoning) )
+    issues.push_back( WString::tr("lcw-compat-reasoning") );
+
+  if( (known.supportsImages == false) && m.supportsImages )
+    issues.push_back( WString::tr("lcw-compat-images") );
+
+  // The table's token counts are only suggestions, so only the provider's reported limits count.
+  if( fetched && fetched->maxTokens.has_value() && (m.maxTokens > fetched->maxTokens.value()) )
+    issues.push_back( WString::tr("lcw-compat-max-tokens").arg( fetched->maxTokens.value() ) );
+
+  if( fetched && fetched->contextLengthLimit.has_value() && (m.contextLengthLimit > fetched->contextLengthLimit.value()) )
+    issues.push_back( WString::tr("lcw-compat-context").arg( fetched->contextLengthLimit.value() ) );
+
+  if( known.requiredFormat.has_value() && (known.requiredFormat.value() != resolvedFormat( pi )) )
+    issues.push_back( WString::tr("lcw-compat-format").arg( format_label( known.requiredFormat.value() ) ) );
+
+  return issues;
+}//modelCompatibilityIssues(...)
+
+
+void LlmConfigWindow::fillModelWarnings( WContainerWidget *area, const size_t pi, const size_t mi ) const
+{
+  if( !area )
+    return;
+
+  area->clear();
+  for( const WString &issue : modelCompatibilityIssues( pi, mi ) )
+  {
+    WText *txt = area->addNew<WText>( issue );
+    txt->addStyleClass( "LcwWarn LcwModelWarn" );
+  }
+  area->setHidden( !area->count() );
+}//fillModelWarnings(...)
 
 
 LlmConfig::LlmApi::ApiFormat LlmConfigWindow::resolvedFormat( const size_t pi ) const
@@ -1232,6 +1367,8 @@ void LlmConfigWindow::removeModel( const size_t pi, const size_t mi )
   if( mi >= p.models.size() )
     return;
   p.models.erase( p.models.begin() + mi );
+  if( pi < m_uiState.size() )
+    m_uiState[pi].defaultsAppliedFor.clear();  // indices have shifted; just drop the hints
   if( p.models.empty() )
     p.activeModelIndex = 0;
   else if( p.activeModelIndex >= p.models.size() )
@@ -1244,6 +1381,100 @@ void LlmConfigWindow::removeModel( const size_t pi, const size_t mi )
   updateValidation();
   refreshPreview();
 }//removeModel()
+
+
+void LlmConfigWindow::applyProviderPreset( const size_t pi, const size_t presetIndex )
+{
+  if( (pi >= m_working.llmApi.providers.size()) || (presetIndex >= m_presets->providerPresets.size()) )
+    return;
+
+  const LlmModelPresets::ProviderPreset &preset = m_presets->providerPresets[presetIndex];
+  ApiProvider &p = m_working.llmApi.providers[pi];
+
+  // The preset fully describes the endpoint, so also reset any wire-format/transport override left
+  //  from a previous endpoint.
+  p.apiEndpoint = preset.endpoint;
+  p.apiFormat = preset.apiFormat;
+#if( USE_NATIVE_HTTP_CLIENT )
+  p.httpBackend = preset.httpBackend;
+#endif
+
+  endpointChanged( pi );
+
+  // Fill in the suggested model only if the user has not named any model yet.
+  const bool noModelNames = std::all_of( begin(p.models), end(p.models),
+                                         []( const ModelInfo &m ){ return m.name.empty(); } );
+  if( noModelNames && !preset.suggestedModel.empty() )
+  {
+    if( p.models.empty() )
+      p.models.push_back( ModelInfo() );
+    p.models[0].name = preset.suggestedModel;
+    applyModelDefaults( pi, 0 );
+  }
+
+  rebuildProviders();
+  updateSummary();
+  updateValidation();
+  refreshPreview();
+}//applyProviderPreset(...)
+
+
+void LlmConfigWindow::endpointChanged( const size_t pi )
+{
+  if( (pi >= m_working.llmApi.providers.size()) || (pi >= m_uiState.size()) )
+    return;
+
+  // Models fetched from the previous endpoint no longer apply.
+  ProviderUiState &ui = m_uiState[pi];
+  ui.discoveredModelIds.clear();
+  ui.discoveredCaps.clear();
+  ui.fetchStatusMsg = WString();
+
+  // Defaults can depend on the endpoint (e.g., Ask Sage's lower output limits), so refresh them for
+  //  models whose settings came from defaults - but not ones the user has since edited.
+  const std::set<size_t> fromDefaults = ui.defaultsAppliedFor;
+  for( const size_t mi : fromDefaults )
+    applyModelDefaults( pi, mi );
+}//endpointChanged(...)
+
+
+bool LlmConfigWindow::applyModelDefaults( const size_t pi, const size_t mi )
+{
+  if( (pi >= m_working.llmApi.providers.size()) || (pi >= m_uiState.size())
+      || (mi >= m_working.llmApi.providers[pi].models.size()) )
+    return false;
+
+  ProviderUiState &ui = m_uiState[pi];
+  ModelInfo &model = m_working.llmApi.providers[pi].models[mi];
+
+  const string &endpoint = m_working.llmApi.providers[pi].apiEndpoint;
+  const std::optional<LlmModelPresets::ModelDefaults> table = m_presets->defaultsFor( model.name, endpoint );
+  const auto fetchedIter = ui.discoveredCaps.find( model.name );
+  const LlmModelPresets::ModelDefaults *fetched
+                           = (fetchedIter == end(ui.discoveredCaps)) ? nullptr : &fetchedIter->second;
+
+  const LlmModelPresets::ModelDefaults defaults
+                 = LlmModelPresets::ModelDefaults::combine( table ? &table.value() : nullptr, fetched );
+  if( defaults.empty() )
+  {
+    // Settings filled in for the previous name do not apply to an unknown model; go back to the
+    //  plain defaults, rather than, e.g., sending reasoning settings the model may reject.
+    if( ui.defaultsAppliedFor.erase( mi ) )
+    {
+      const ModelInfo blank;
+      model.supportsImages = blank.supportsImages;
+      model.reasoning = blank.reasoning;
+      model.maxTokens = blank.maxTokens;
+      model.contextLengthLimit = blank.contextLengthLimit;
+      model.requireToolInStateMachine = blank.requireToolInStateMachine;
+    }
+    return false;
+  }
+
+  defaults.applyTo( model );
+  ui.defaultsAppliedFor.insert( mi );
+  return true;
+}//applyModelDefaults(...)
 
 
 void LlmConfigWindow::setActiveModel( const size_t pi, const size_t mi )
@@ -1317,6 +1548,10 @@ void LlmConfigWindow::updateValidation()
      && (m_working.mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token) )
   {
     warnings.push_back( WString::tr("lcw-warn-mcp-token") );
+  }
+  if( m_mcpTokenWarn )
+    m_mcpTokenWarn->setHidden( m_working.mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
+#endif
 
 #if( USE_NATIVE_HTTP_CLIENT )
   // A bad path here otherwise surfaces only as a TLS failure at request time, with nothing
@@ -1329,10 +1564,21 @@ void LlmConfigWindow::updateValidation()
   if( !m_working.llmApi.httpProxyUrl.empty() && !NativeHttp::supportsProxyOverride() )
     warnings.push_back( WString::tr("lcw-warn-proxy-unsupported") );
 #endif
-  }
-  if( m_mcpTokenWarn )
-    m_mcpTokenWarn->setHidden( m_working.mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
-#endif
+
+  // Settings known not to work with a model, for every model (switching models is a click away).
+  for( size_t pi = 0; pi < m_working.llmApi.providers.size(); ++pi )
+  {
+    const ApiProvider &p = m_working.llmApi.providers[pi];
+    for( size_t mi = 0; mi < p.models.size(); ++mi )
+    {
+      for( const WString &issue : modelCompatibilityIssues( pi, mi ) )
+        warnings.push_back( WString::tr("lcw-warn-model-compat").arg( WString::fromUTF8(p.models[mi].name) ).arg( issue ) );
+
+      const auto areaIter = m_modelWarnAreas.find( {pi, mi} );
+      if( areaIter != end(m_modelWarnAreas) )
+        fillModelWarnings( areaIter->second, pi, mi );
+    }
+  }//for( loop over providers )
 
   m_validationSummary->removeStyleClass( "LcwValidOk" );
   m_validationSummary->removeStyleClass( "LcwValidWarn" );
@@ -1510,9 +1756,11 @@ void LlmConfigWindow::onFetchModelsResult( std::string payload )
     return;
   }
 
-  // Collect model ids from a few common shapes: {data:[{id|name}]}, [..], {models:[{id|name}]}.
+  // Collect model ids from a few common shapes: {data:[{id|name}]}, [..], {models:[{id|name}]},
+  //  along with any capability info the provider gives for each (context length, image input, ...).
   vector<string> ids;
-  auto add_id = [&ids]( const nlohmann::json &el ){
+  std::map<string,LlmModelPresets::ModelDefaults> caps;
+  auto add_id = [&ids,&caps]( const nlohmann::json &el ){
     string id;
     if( el.is_string() )
       id = el.get<string>();
@@ -1522,8 +1770,16 @@ void LlmConfigWindow::onFetchModelsResult( std::string payload )
       else if( el.contains("name") && el["name"].is_string() ) id = el["name"].get<string>();
     }
     SpecUtils::trim( id );
+    // Google's native listing gives names like "models/gemini-2.5-flash"; the API wants the bare name.
+    if( SpecUtils::istarts_with( id, "models/" ) )
+      id = id.substr( 7 );
     if( !id.empty() && (std::find(ids.begin(), ids.end(), id) == ids.end()) )
+    {
       ids.push_back( id );
+      const LlmModelPresets::ModelDefaults modelCaps = LlmModelPresets::defaultsFromModelsListEntry( el );
+      if( !modelCaps.empty() )
+        caps[id] = modelCaps;
+    }
   };
 
   try
@@ -1549,6 +1805,7 @@ void LlmConfigWindow::onFetchModelsResult( std::string payload )
 
   std::sort( ids.begin(), ids.end() );
   m_uiState[pi].discoveredModelIds = ids;
+  m_uiState[pi].discoveredCaps = std::move( caps );
   m_uiState[pi].fetchOk = !ids.empty();
   m_uiState[pi].fetchStatusMsg = ids.empty() ? WString::tr("lcw-fetch-none")
                                              : WString::tr("lcw-fetch-found").arg(static_cast<int>(ids.size()));

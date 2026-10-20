@@ -34,6 +34,7 @@
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/LlmKnowledgeBase.h"
@@ -75,6 +76,37 @@ string make_knowledge_dir()
 
   return base;
 }//make_knowledge_dir()
+
+
+// The static data directory, from the `--datadir=` argument, or else searched for relative to the CWD.
+string find_data_dir()
+{
+  const int argc = boost::unit_test::framework::master_test_suite().argc;
+  char ** const argv = boost::unit_test::framework::master_test_suite().argv;
+
+  string datadir;
+  for( int i = 1; i < argc; ++i )
+  {
+    const string arg = argv[i];
+    if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+      datadir = arg.substr( 10 );
+  }
+  SpecUtils::ireplace_all( datadir, "%20", " " );
+
+  if( datadir.empty() )
+  {
+    for( const char *d : { "data", "../data", "../../data", "../../../data" } )
+    {
+      if( SpecUtils::is_file( SpecUtils::append_path( d, "sandia.decay.xml" ) ) )
+      {
+        datadir = d;
+        break;
+      }
+    }
+  }//if( datadir.empty() )
+
+  return datadir;
+}//find_data_dir()
 }//namespace
 
 
@@ -142,3 +174,55 @@ BOOST_AUTO_TEST_CASE( skill_references )
 
   SpecUtils::remove_file( SpecUtils::append_path( SpecUtils::append_path( base, "detector-models" ), "references/notes.txt" ) );
 }//BOOST_AUTO_TEST_CASE( skill_references )
+
+
+// Checks every skill shipped in `<datadir>/llm_knowledge` against the loader's limits, so a
+// mis-authored skill (multi-line frontmatter, oversized reference, ...) fails here, not silently in use.
+BOOST_AUTO_TEST_CASE( shipped_skills_well_formed )
+{
+  const string datadir = find_data_dir();
+  BOOST_REQUIRE_MESSAGE( !datadir.empty(), "Could not find the static data directory; pass --datadir=..." );
+
+  const string knowledge_dir = SpecUtils::append_path( datadir, "llm_knowledge" );
+  const vector<LlmKnowledgeBase::SkillInfo> skills = LlmKnowledgeBase::loadSkillsFromKnowledgeDir( knowledge_dir );
+  if( skills.empty() )
+  {
+    BOOST_TEST_MESSAGE( "No skills found in '" << knowledge_dir << "'." );
+    return;
+  }
+
+  for( const LlmKnowledgeBase::SkillInfo &skill : skills )
+  {
+    BOOST_TEST_CONTEXT( "Skill '" << skill.canonical_name << "' (" << skill.file_path << ")" )
+    {
+      // Descriptions must be a single frontmatter line; YAML block scalars (e.g., ">-") are not parsed.
+      BOOST_CHECK( !skill.description.empty() );
+      BOOST_CHECK( skill.description.find( "Loaded from " ) != 0 );
+      BOOST_CHECK( skill.description != ">-" && skill.description != ">" && skill.description != "|" );
+      BOOST_CHECK_LE( skill.description.size(), 400 );
+      BOOST_CHECK( !skill.body.empty() );
+
+      // LLM APIs commonly limit tool names to 64 characters
+      BOOST_CHECK_LE( LlmKnowledgeBase::skillToolNameFromCanonical( skill.canonical_name ).size(), 64 );
+
+      // The overview call is made for every question, so keep it small (body + reference index)
+      const json index = LlmKnowledgeBase::executeSkillTool( skill, json::object() );
+      BOOST_CHECK_LE( index.dump().size(), 16*1024 );
+
+      for( const LlmKnowledgeBase::SkillReference &ref : skill.references )
+      {
+        BOOST_TEST_CONTEXT( "Reference '" << ref.name << "'" )
+        {
+          // An empty or overly long summary usually means a malformed frontmatter block
+          BOOST_CHECK( !ref.summary.empty() );
+          BOOST_CHECK_LE( ref.summary.size(), 150 );
+
+          const json content = LlmKnowledgeBase::executeSkillTool( skill, json{ {"reference", ref.name} } );
+          const string body = content["body"].get<string>();
+          BOOST_CHECK( !body.empty() );
+          BOOST_CHECK( body.find( "[... reference truncated ...]" ) == string::npos );
+        }
+      }//for( const SkillReference &ref : skill.references )
+    }
+  }//for( const SkillInfo &skill : skills )
+}//BOOST_AUTO_TEST_CASE( shipped_skills_well_formed )

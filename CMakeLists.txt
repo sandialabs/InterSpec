@@ -13,7 +13,7 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 # CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
 #  sub-projects still declare less than that - the fetched zlib 1.2.12, plus
-#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  vendored/submoduled muparserx and SandiaDecay - so configuring with CMake 4 fails
 #  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
 #  and lets us fix it in one place rather than patching each dependency (some are submodules we
 #  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
@@ -330,28 +330,6 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set( Wt_INCLUDE_DIR "${_wt_inc}" CACHE PATH "Wt include directory" FORCE )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
-# Ceres releases before their Eigen Jet traits supplied non-finite helpers need
-# a small compatibility specialization used by the relative-activity fit.
-# Probe the capability instead of keying this on a Ceres version: downstream
-# packages occasionally backport the trait independently.
-include(CheckCXXSourceCompiles)
-include(CMakePushCheckState)
-cmake_push_check_state(RESET)
-set(CMAKE_REQUIRED_LIBRARIES Ceres::ceres Eigen3::Eigen)
-check_cxx_source_compiles([[
-  #include <Eigen/Core>
-  #include <ceres/jet.h>
-  int main()
-  {
-    using Jet = ceres::Jet<double, 1>;
-    const Jet inf = Eigen::NumTraits<Jet>::infinity();
-    const Jet nan = Eigen::NumTraits<Jet>::quiet_NaN();
-    (void)inf;
-    (void)nan;
-    return 0;
-  }
-]] INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE)
-cmake_pop_check_state()
 
 
 
@@ -434,7 +412,6 @@ set(sources
     src/RowStretchTreeView.cpp
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
-    src/Integrate.cpp
     src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
@@ -589,7 +566,6 @@ set(headers
     InterSpec/RowStretchTreeView.h
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
-    InterSpec/Integrate.h
     InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
@@ -824,13 +800,13 @@ if( USE_LLM_INTERFACE )
     list( APPEND headers InterSpec/LlmMcpDispatcher.h InterSpec/LlmMcpResource.h )
   endif( USE_MCP_SERVER )
 
-  list( APPEND sources src/LlmSessionTimer.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmKnowledgeBase.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
-  list( APPEND headers InterSpec/LlmSessionTimer.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmKnowledgeBase.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
+  list( APPEND sources src/LlmSessionTimer.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmKnowledgeBase.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmModelPresets.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
+  list( APPEND headers InterSpec/LlmSessionTimer.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmKnowledgeBase.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmModelPresets.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LlmJsSandbox.js )
-  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_model_presets.xml data/llm_tools_config.xml
     data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
     data/llm_agent_Isotopics.xml data/llm_agent_KnowledgeBase.xml data/llm_agent_EnergyCalibration.xml
-    data/llm_agent_SpectrumTimeHistory.xml
+    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml
   )
 
   # The native HTTPS transport: one platform-independent file, plus (once written) exactly one
@@ -982,7 +958,6 @@ set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
-add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
@@ -1074,7 +1049,6 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    Cuba-3.0
     muparserx
     Boost::thread
     Boost::date_time

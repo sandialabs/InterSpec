@@ -2085,7 +2085,7 @@ std::vector<LlmToolCall::ImageContent> images_from_mcp_param( const nlohmann::js
 
 
 ToolRegistry::ToolRegistry( const LlmConfig &config )
-  : m_supportsImages( config.llmApi.supportsImages() )
+  : m_supportsImages( !config.llmApi.providers.empty() && config.llmApi.supportsImages() )
 {
   registerDefaultTools( config );
 }
@@ -2825,7 +2825,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // MCP tool: submit a prompt into the assistant conversation as if the user typed it, with
   // streaming intermediate results.  Gated by config.mcpServer.allowAssistantPrompt and a valid
   // LLM provider; marked MCP-only via AgentType::McpServer so no in-app agent can call it.
-  if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
   {
     SharedTool submitTool;
     submitTool.name = "assistant_submit_prompt";
@@ -2921,11 +2921,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     };
 
     registerTool( submitTool );
-  }//if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+  }//if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
 
   // MCP tool: directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
   // Gated by config.mcpServer.allowAgentInvocation and a valid LLM provider.
-  if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
+  if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
   {
     // Build the enum list of available agent types for the schema
     json agentEnum = json::array();
@@ -3012,7 +3012,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     };
 
     registerTool( agentTool );
-  }//if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
+  }//if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
 
   LlmKnowledgeBase::registerKnowledgeBaseTools( knowledge_skills,
                                                 config.llmApi.rag_url,

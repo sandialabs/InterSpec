@@ -853,3 +853,133 @@ BOOST_AUTO_TEST_CASE( detection_significance )
                        fixed_amp.amplitude() / fixed_amp.amplitudeUncert() );
   }
 }//detection_significance
+
+
+BOOST_AUTO_TEST_CASE( significance_test_by_deviance )
+{
+  // `chi2_significance_test(..., by_likelihood)`: over +-2.5 sigma of the peak, the Poisson deviance of the
+  //  fit with the peak, and of the null - the continuum alone, refit there by Poisson maximum likelihood -
+  //  checked against an independent Newton solve of that null.
+  set_data_dir();
+  const PeakFitUtils::CoarseResolutionType det = PeakFitUtils::CoarseResolutionType::High;
+
+  // The window and the deviances, computed here from the definitions.
+  const auto check = []( const PeakDef &peak, const shared_ptr<const SpecUtils::Measurement> &data, const string &label ){
+    const shared_ptr<const PeakContinuum> cont = peak.continuum();
+    BOOST_REQUIRE( cont->type() == PeakContinuum::OffsetType::Linear );
+    const shared_ptr<const SpecUtils::EnergyCalibration> cal = data->energy_calibration();
+    const double xmin = std::max( cont->lowerEnergy(), peak.mean() - 2.5*peak.sigma() );
+    const double xmax = std::min( cont->upperEnergy(), peak.mean() + 2.5*peak.sigma() );
+    const size_t ch0 = static_cast<size_t>( std::max( cal->channel_for_energy( xmin ), 0.0 ) );
+    const size_t ch1 = static_cast<size_t>( std::ceil( cal->channel_for_energy( xmax ) ) );  //one past the end
+    const double ref = cont->referenceEnergy();
+
+    vector<double> n, a, b, with_peak;
+    for( size_t ch = ch0; ch < ch1; ++ch )
+    {
+      const double x0 = data->gamma_channel_lower( ch ), x1 = data->gamma_channel_upper( ch );
+      n.push_back( std::max( 0.0f, (*data->gamma_counts())[ch] ) );
+      a.push_back( x1 - x0 );
+      b.push_back( 0.5*((x1 - ref)*(x1 - ref) - (x0 - ref)*(x0 - ref)) );
+      const PeakDef *peak_ptr = &peak;
+      with_peak.push_back( cont->offset_integral( x0, x1, data, &peak_ptr, 1 ) + peak.gauss_integral( x0, x1 ) );
+    }
+
+    double dev_with = 0.0;
+    for( size_t i = 0; i < n.size(); ++i )
+      dev_with += deviance_term( n[i], with_peak[i] );
+
+    // Null: maximize SUM( n log(m) - m ), m = c0*a + c1*b, by Newton from the fitted continuum.
+    double c[2] = { cont->parameters()[0], cont->parameters()[1] };
+    for( int iter = 0; iter < 100; ++iter )
+    {
+      double g[2] = { 0.0, 0.0 }, H[2][2] = { {0.0, 0.0}, {0.0, 0.0} };
+      for( size_t i = 0; i < n.size(); ++i )
+      {
+        const double m = c[0]*a[i] + c[1]*b[i];
+        const double v[2] = { a[i], b[i] };
+        for( int j = 0; j < 2; ++j )
+        {
+          g[j] += (n[i]/m - 1.0) * v[j];
+          for( int k = 0; k < 2; ++k )
+            H[j][k] += n[i]/(m*m) * v[j]*v[k];
+        }
+      }
+      const double detH = H[0][0]*H[1][1] - H[0][1]*H[1][0];
+      double step[2] = { (H[1][1]*g[0] - H[0][1]*g[1])/detH, (H[0][0]*g[1] - H[1][0]*g[0])/detH };
+      // Halve the step while it would make a channel's model non-positive.
+      for( int halving = 0; halving < 60; ++halving )
+      {
+        bool positive = true;
+        for( size_t i = 0; positive && (i < n.size()); ++i )
+          positive = ((c[0] + step[0])*a[i] + (c[1] + step[1])*b[i]) > 0.0;
+        if( positive )
+          break;
+        step[0] *= 0.5;
+        step[1] *= 0.5;
+      }
+      c[0] += step[0];
+      c[1] += step[1];
+      if( (fabs( step[0] ) < 1.0E-12*fabs( c[0] )) && (fabs( step[1] ) < 1.0E-12*std::max( fabs( c[1] ), 1.0E-9 )) )
+        break;
+    }//for( Newton iterations )
+
+    double dev_without = 0.0;
+    for( size_t i = 0; i < n.size(); ++i )
+      dev_without += deviance_term( n[i], c[0]*a[i] + c[1]*b[i] );
+
+    SignificanceTestStatistics stats;
+    chi2_significance_test( peak, 0.0, 1.0, {}, data, true, &stats );
+    BOOST_CHECK_MESSAGE( fabs( stats.with_peak - dev_with ) < 1.0E-6*std::max( 1.0, dev_with ),
+                         label << ": with-peak deviance " << stats.with_peak << " vs " << dev_with );
+    BOOST_CHECK_MESSAGE( fabs( stats.without_peak - dev_without ) < 1.0E-4*std::max( 1.0, dev_without ),
+                         label << ": null deviance " << stats.without_peak << " vs " << dev_without );
+    BOOST_CHECK_MESSAGE( stats.without_peak > stats.with_peak,
+                         label << ": the null fits worse (" << stats.without_peak << " vs " << stats.with_peak << ")" );
+  };
+
+  // A sparse ROI with a little continuum, fit by likelihood.
+  {
+    SyntheticPeak sparse;
+    sparse.area = 60.0;
+    sparse.continuum_per_channel = 0.5;
+    mt19937 rng( 11 );
+    const shared_ptr<const SpecUtils::Measurement> data = sparse.sample( sparse.expected(), rng );
+    const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( { sparse.start_peak( 0.1, 1.05 ) }, data, det, {} );
+    BOOST_REQUIRE( fit.size() == 1 );
+    BOOST_REQUIRE( PeakFitLM::is_sparse_roi( fit, data ) );
+    check( *fit[0], data, "sparse" );
+  }
+
+  // Nearly background free: the null continuum must stay positive (an unconstrained fit can dip below zero in
+  //  empty channels and understate the null's deviance).
+  {
+    SyntheticPeak sparse;
+    sparse.area = 40.0;
+    sparse.continuum_per_channel = 0.05;
+    mt19937 rng( 5 );
+    const shared_ptr<const SpecUtils::Measurement> data = sparse.sample( sparse.expected(), rng );
+    const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( { sparse.start_peak( 0.1, 1.05 ) }, data, det, {} );
+    BOOST_REQUIRE( fit.size() == 1 );
+    check( *fit[0], data, "background-free" );
+  }
+
+  // The chi2 version is what a caller gets by default: its statistics are the modified-Neyman chi2 values.
+  {
+    SyntheticPeak dense;
+    dense.area = 3000.0;
+    dense.continuum_per_channel = 60.0;
+    mt19937 rng( 3 );
+    const shared_ptr<const SpecUtils::Measurement> data = dense.sample( dense.expected(), rng );
+    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> chi2( PeakFitLM::NoSparseDataLikelihood );
+    const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( { dense.start_peak( 0.1, 1.05 ) }, data, det, chi2 );
+    BOOST_REQUIRE( fit.size() == 1 );
+    SignificanceTestStatistics by_default, by_chi2;
+    const bool pass_default = chi2_significance_test( *fit[0], 0.0, 1.0, {}, data, false, &by_default );
+    const bool pass_chi2 = chi2_significance_test( *fit[0], 0.0, 1.0, {}, data );
+    chi2_significance_test( *fit[0], 0.0, 1.0, {}, data, false, &by_chi2 );
+    BOOST_CHECK( pass_default && pass_chi2 );
+    BOOST_CHECK_EQUAL( by_default.with_peak, by_chi2.with_peak );
+    BOOST_CHECK( by_chi2.without_peak > by_chi2.with_peak );
+  }
+}//significance_test_by_deviance

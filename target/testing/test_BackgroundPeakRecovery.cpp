@@ -556,3 +556,53 @@ BOOST_AUTO_TEST_CASE( RecoveryReducesLeakAtLowStats )
   // remove-and-recover cases above carry the positive proof that recovery re-finds real lines.
   BOOST_CHECK_MESSAGE( leak_after <= leak_before, "Recovery increased the NORM leak" );
 }//BOOST_AUTO_TEST_CASE( RecoveryReducesLeakAtLowStats )
+
+
+// -----------------------------------------------------------------------------
+// PART C: the search's <=5-peak width rule (filter_anomolous_width_peaks_highres).
+// -----------------------------------------------------------------------------
+
+// A weak high-energy line can fit far narrower than the detector's resolution; it must not become the
+//  reference width that removes the real peaks below it (planar HPGe 30 s Mn56: 2113 keV fit at FWHM
+//  0.88 keV removed the real 1811 and 847 keV lines).  A peak really wider than the reference is still removed.
+BOOST_AUTO_TEST_CASE( WidthRuleIgnoresImpossiblyNarrowReference )
+{
+  set_data_dir();
+
+  // The rule only needs a spectrum to exist.
+  auto meas = make_shared<SpecUtils::Measurement>();
+  meas->set_gamma_counts( make_shared<vector<float>>( 4096, 10.0f ), 300.0f, 300.0f );
+
+  const auto make_peak = []( const double mean, const double fwhm ) -> shared_ptr<const PeakDef> {
+    auto p = make_shared<PeakDef>( mean, fwhm/2.35482, 100.0 );
+    p->setSigmaUncert( 0.05*p->sigma() );
+    return p;
+  };
+
+  const shared_ptr<const PeakFitDetPrefs> prefs = prefs_for( true );
+  BOOST_REQUIRE_GT( PeakFitUtils::ge_fano_limited_fwhm( 2112.8 ), 1.2 );
+
+  // Mn56 at 30 s: the 2113 keV fit is below the Fano limit, so 1811 keV (a little wide, at low counts) is the
+  //  reference, and nothing is removed.
+  {
+    const vector<shared_ptr<const PeakDef>> input{ make_peak( 846.7, 1.80 ), make_peak( 1810.7, 2.68 ),
+                                                   make_peak( 2112.8, 0.88 ) };
+    const vector<shared_ptr<const PeakDef>> answer
+      = ExperimentalAutomatedPeakSearch::filter_anomolous_width_peaks_highres( meas, input, prefs, nullptr );
+    BOOST_CHECK_EQUAL( answer.size(), input.size() );
+    BOOST_CHECK( has_peak_near( answer, 846.7, 0.1 ) );
+    BOOST_CHECK( has_peak_near( answer, 1810.7, 0.1 ) );
+    BOOST_CHECK( has_peak_near( answer, 2112.8, 0.1 ) );
+  }
+
+  // A plausible reference still removes a lower-energy peak more than twice its width.
+  {
+    const vector<shared_ptr<const PeakDef>> input{ make_peak( 400.0, 6.0 ), make_peak( 846.7, 1.80 ),
+                                                   make_peak( 2112.8, 2.10 ) };
+    const vector<shared_ptr<const PeakDef>> answer
+      = ExperimentalAutomatedPeakSearch::filter_anomolous_width_peaks_highres( meas, input, prefs, nullptr );
+    BOOST_CHECK_EQUAL( answer.size(), 2 );
+    BOOST_CHECK( !has_peak_near( answer, 400.0, 0.1 ) );
+    BOOST_CHECK( has_peak_near( answer, 846.7, 0.1 ) );
+  }
+}//BOOST_AUTO_TEST_CASE( WidthRuleIgnoresImpossiblyNarrowReference )

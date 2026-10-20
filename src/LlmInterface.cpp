@@ -1198,7 +1198,7 @@ std::shared_ptr<const LlmConfig> LlmInterface::config() const
 
 
 bool LlmInterface::isConfigured() const {
-  return (m_config && m_config->llmApi.enabled && !m_config->llmApi.apiEndpoint().empty());
+  return (m_config && m_config->llmApi.isConfigured());
 }
 
 

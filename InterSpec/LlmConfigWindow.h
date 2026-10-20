@@ -27,15 +27,19 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <map>
+#include <set>
 #include <string>
 #include <memory>
 #include <vector>
+#include <utility>
 #include <functional>
 
 #include <Wt/WString.h>
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmModelPresets.h"
 
 class InterSpec;
 
@@ -85,6 +89,10 @@ private:
   struct ProviderUiState
   {
     std::vector<std::string> discoveredModelIds; // model ids returned by the last "Fetch models"
+    /** Whatever capability info the last "Fetch models" listing gave, keyed by model id. */
+    std::map<std::string,LlmModelPresets::ModelDefaults> discoveredCaps;
+    /** Indices of models whose settings were just filled in from known defaults (shows a hint). */
+    std::set<size_t> defaultsAppliedFor;
     bool expanded = false;
     bool tokenRevealed = false;
     bool fetchInProgress = false;
@@ -108,6 +116,30 @@ private:
   void addModel( size_t providerIndex );
   void removeModel( size_t providerIndex, size_t modelIndex );
   void setActiveModel( size_t providerIndex, size_t modelIndex );
+
+  /** Apply the selected provider preset (endpoint, wire format, transport, and possibly a model). */
+  void applyProviderPreset( size_t providerIndex, size_t presetIndex );
+
+  /** Bookkeeping after a provider's endpoint changes: drops the fetched model list, and refreshes
+   the endpoint-dependent defaults of models whose settings came from defaults.
+   */
+  void endpointChanged( size_t providerIndex );
+
+  /** Fill in a model's capability fields from what "Fetch models" reported for it, and/or the
+   defaults in llm_model_presets.xml.  Returns true if anything was known about the model name.
+   If nothing is known, and the fields had been filled in from defaults for a previous name, they
+   are reset to blank values.
+   */
+  bool applyModelDefaults( size_t providerIndex, size_t modelIndex );
+
+  /** Settings of a model that are known not to work with it, as messages for the user: e.g.,
+   reasoning on for a model without reasoning, or a max tokens above what the provider reported.
+   Only definite problems are reported - not settings that merely differ from the defaults.
+   */
+  std::vector<Wt::WString> modelCompatibilityIssues( size_t providerIndex, size_t modelIndex ) const;
+
+  /** Fills a model card's warnings area with the model's compatibility issues. */
+  void fillModelWarnings( Wt::WContainerWidget *area, size_t providerIndex, size_t modelIndex ) const;
 
   // Lightweight refreshes (no rebuild -> no focus loss while typing)
   void updateSummary();
@@ -154,7 +186,11 @@ private:
   std::string m_importConfigPath; // non-empty => seed from this file and warn before overwriting
 
   LlmConfig m_working;                       // authoritative working state (llmApi + mcpServer used)
+  std::shared_ptr<const LlmModelPresets> m_presets; // provider presets + model defaults; never null
   std::vector<ProviderUiState> m_uiState;    // parallel to m_working.llmApi.providers
+  /** Each model card's area for compatibility warnings, keyed by {provider, model} index; refilled
+   by updateValidation(), and cleared when the cards are rebuilt. */
+  std::map<std::pair<size_t,size_t>,Wt::WContainerWidget *> m_modelWarnAreas;
 
   // Top row
   Wt::WCheckBox *m_enableLlm;

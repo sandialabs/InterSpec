@@ -1191,7 +1191,7 @@ public:
    #expected_observed_chis would include (i.e., peaks with a decay particle or
    annihilation gamma), in that same order, with derivative information
    propagated through shielding transmission, volumetric-source integration
-   (via #DistributedSrcCalcT and #self_shielding_integration_imp - NOT Cuhre),
+   (via #DistributedSrcCalcT and #self_shielding_integration_imp),
    and - by numeric differencing re-seeded into the Jet - nuclide age.
 
    No logging; unlike #DoEval, exceptions (including CancelException) propagate.

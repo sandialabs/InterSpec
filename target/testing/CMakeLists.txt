@@ -864,6 +864,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmModelPresets test_LlmModelPresets.cpp )
+  target_link_libraries( test_LlmModelPresets PRIVATE InterSpecLib )
+  add_test( NAME TLlmModelPresets
+    COMMAND $<TARGET_FILE:test_LlmModelPresets> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   # The MCP agent server (env() config references, path confinement, analysis N42 round trip);
   #  the MCP server is only built for desktop-style platforms.  The session manager is built into the
   #  test, as it is part of target/mcp_http rather than InterSpecLib.

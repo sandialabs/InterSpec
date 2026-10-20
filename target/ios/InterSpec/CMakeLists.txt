@@ -15,9 +15,8 @@ set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
 # Minimum iOS deployment target is 13.0 (required because SpecUtils' bundled
 # inja templating header pulls in <filesystem>, which Apple's libc++ marks
 # unavailable for iOS < 13.0). The actual setting that takes effect comes from
-# either the cmake invocation (-DIOS_DEPLOYMENT_TARGET=13.0 / -DDEPLOYMENT_TARGET=13.0
-# via the ios.toolchain.cmake) and the IPHONEOS_DEPLOYMENT_TARGET in the
-# InterSpec.xcodeproj. If you bump one, bump all of them.
+# the cmake invocation (-DCMAKE_OSX_DEPLOYMENT_TARGET=...) and the
+# IPHONEOS_DEPLOYMENT_TARGET in the InterSpec.xcodeproj. If you bump one, bump both.
 #set( CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "13.0"
 #        CACHE STRING "Set the minimum deployment target value."
 #        FORCE
@@ -48,7 +47,26 @@ project( InterSpecIOS VERSION 1.14 )
 
 add_definitions( -DIOS )
 
+# Ceres' iOS version check reads IOS_DEPLOYMENT_TARGET, rather than CMake's native
+#  CMAKE_OSX_DEPLOYMENT_TARGET.
+if( NOT IOS_DEPLOYMENT_TARGET )
+  set( IOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}" CACHE INTERNAL "" )
+endif()
+
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
+
+# Wt's built-in web assets (left by the root project at <LibInterSpec>/resources)
+# must be bundled into the .app under a folder NOT named "resources": that name
+# collides case-insensitively with a bundle's reserved "Resources" directory,
+# which makes codesign treat the whole .app as a plain directory and fail with
+# "bundle format unrecognized, invalid, or unsuitable".  Mirror them into
+# "WtsRsrcs"; the Xcode project bundles this folder and wt_config_ios.xml's
+# resourcesURL points at the same name.  (Android keeps "resources/".)
+execute_process(
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          "${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/resources"
+          "${CMAKE_CURRENT_BINARY_DIR}/WtsRsrcs"
+)
 
 add_library( InterSpecAppLib STATIC FileHandling.mm FileHandling.h )
 target_link_libraries( InterSpecAppLib PUBLIC Boost::filesystem wt InterSpecLib )

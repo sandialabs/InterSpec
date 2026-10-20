@@ -34,7 +34,7 @@
  generic-shield AN/AD, source activity) come out of the integration
  automatically.
 
- The Cuba/Cuhre integrator only works on doubles, so integration here is a
+ Integration here is a
  self-contained h-adaptive tensor-product Gauss-Legendre scheme over the unit
  cube (#adaptive_unit_cube_integrate), with subdivision driven by the scalar
  part of T.
@@ -2830,8 +2830,8 @@ namespace QuadDetail
   /** Degree-4 divided-difference weights for the fixed GL5 abscissas:
    c4[i] = 1 / prod_{j!=i}( gl5_x[i] - gl5_x[j] ).  |sum_i c4[i]*v[i]| is the magnitude of the top
    (degree-4) 1-D mode of the 5 values v[] sampled at the GL5 nodes along an axis - large only where
-   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of Cuhre's per-axis
-   "fourth difference" (Cuba: src/cuhre/Rule.c).  Computed once (thread-safe magic static).
+   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of the per-axis
+   "fourth difference" of Genz-Malik adaptive cubature.  Computed once (thread-safe magic static).
    */
   inline const double *gl5_divdiff4()
   {
@@ -2918,7 +2918,7 @@ namespace QuadDetail
   {
     double err;
     int nsplit[3];        // times each axis has been halved (per-axis subdivision depth)
-    double axis_err[3];   // per-axis non-smoothness indicator (Cuhre-style fourth difference)
+    double axis_err[3];   // per-axis non-smoothness indicator (fourth difference)
     double lower[3];
     double width[3];
     T fine;
@@ -2960,12 +2960,12 @@ namespace QuadDetail
  phase): a per-axis fourth-difference indicator computed from the GL5 grid
  selects which dimension(s) to split, so a thin non-axis-aligned feature (e.g.
  a nested core's silhouette) is resolved without paying to refine the smooth
- axes too - cf. Cuhre (Cuba, src/cuhre/Rule.c).  Subdivision decisions use only
+ axes too - cf. Genz-Malik adaptive cubature.  Subdivision decisions use only
  the scalar part of T, so T may be a ceres::Jet<> and the derivative
  components are integrated alongside the value.
 
  `f` is called as f(const double xx[3]) and must return T (the Jacobian onto
- [0,1]^ndim included, exactly like the Cuhre integrands).
+ [0,1]^ndim included).
 
  The error control is relative to the integral magnitude, so wildly
  near-cancelling integrands should not use this; the volumetric-source
@@ -3016,7 +3016,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
   };
 
   // While true, every cell splits isotropically (every dimension) - bit-identical to the original
-  //  integrator.  False enables Cuhre-style single roughest-axis refinement above min_depth (the
+  //  integrator.  False enables Genz-Malik-style single roughest-axis refinement above min_depth (the
   //  anisotropic optimization); the priming phase (below min_depth) stays isotropic either way, which
   //  preserves the symmetric-void defense.
   const bool force_isotropic_split = false;
@@ -3099,7 +3099,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
         }
       }//if( max_axis > 0.0 )
 
-      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis (Cuhre)
+      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis
       {
         double widest = -1.0;
         int best = -1;
@@ -3259,7 +3259,7 @@ std::vector<DistributedSrcCalcT<T>> split_source_subdomains( const DistributedSr
  integrates `calculator` over its source volume, filling
  `calculator.integral` (plus m_num_evals / m_est_rel_error).
 
- Unlike the Cuhre version, exceptions from the integrand (e.g., inconsistent
+ Exceptions from the integrand (e.g., inconsistent
  geometry) propagate to the caller, which decides the failure policy.
  */
 template<typename T>
