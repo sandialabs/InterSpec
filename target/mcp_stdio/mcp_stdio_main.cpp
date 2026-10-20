@@ -366,14 +366,15 @@ int main( int argc, char **argv )
             << "User data directory: " << (user_data_dir.empty() ? std::string("(none)") : user_data_dir)
             << std::endl;
 
-  // Launching this program is the opt-in to MCP, so <McpServer><Enabled> is not required; the
-  //  config is still needed for the tool definitions, and the assistant settings.
+  // Launching this program is the opt-in to MCP, so <McpServer><Enabled> is not required (see
+  //  LlmConfig::load); the config is still needed for the tool definitions, and the assistant
+  //  settings, if the user has a llm_config.xml.
   std::shared_ptr<const LlmConfig> llm_config;
   try
   {
     llm_config = LlmConfig::load();
     if( !llm_config )
-      throw std::runtime_error( "no llm_config.xml was found." );
+      throw std::runtime_error( "it could not be loaded." );
   }catch( std::exception &e )
   {
     std::cerr << "Error loading the LLM configuration: " << e.what() << std::endl;
@@ -381,8 +382,8 @@ int main( int argc, char **argv )
   }
 
   // The assistant (when the config allows MCP clients to use it) makes its LLM requests from here.
-  if( llm_config->llmApi.enabled && (llm_config->mcpServer.allowAssistantPrompt
-                                     || llm_config->mcpServer.allowAgentInvocation) )
+  if( llm_config->llmApi.isConfigured() && (llm_config->mcpServer.allowAssistantPrompt
+                                            || llm_config->mcpServer.allowAgentInvocation) )
   {
     if( NativeHttp::available() )
       std::cerr << "The assistant will make LLM requests with " << NativeHttp::backendName() << "." << std::endl;

@@ -334,6 +334,12 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     provider.httpBackend = LlmApi::HttpBackend::Native;
 #endif
 
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // Launching the stdio server is the opt-in to MCP, so <McpServer><Enabled> is not needed - nor is
+  //  a llm_config.xml at all; but without this, the early return below would skip loading the tools.
+  config->mcpServer.enabled = true;
+#endif
+
 #if( BUILD_AS_UNIT_TEST_SUITE )
   // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
   //  so we will stub a dummy one in here - this must come before the early return below.

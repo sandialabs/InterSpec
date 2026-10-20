@@ -80,7 +80,8 @@ InterSpec-mcp-stdio [--datadir <dir>] [--userdatadir <dir>] [--llm-config-dir <d
 - `--log-file`: append the log here, rather than to stderr.
 
 `<McpServer><Enabled>` in `llm_config.xml` does not need to be set: launching the program is the
-opt-in.  The configuration is still read for the tool definitions.
+opt-in.  The analysis tools do not need a `llm_config.xml` at all (InterSpec does not ship one); the
+assistant tools need one with an LLM provider configured, as above.
 
 Stdout carries only the MCP protocol; everything else InterSpec writes goes to stderr (or the log
 file).  The server exits when its stdin is closed.

@@ -3122,7 +3122,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 
   // Registered programmatically above, when configured; list it so the drift checks below don't
   //  flag it as an "unexpected" tool (or as missing, when it is not configured).
-  if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
     expectedTools.push_back( "assistant_submit_prompt" );
 
   std::vector<std::string> missingTools;

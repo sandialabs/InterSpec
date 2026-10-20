@@ -586,7 +586,8 @@ public:
    2. InterSpec::staticDataDirectory() + "/" + {filename}
 
    When InterSpec runs as an MCP agent server, `llm_config.xml` must be in the config directory (no
-   fallback), and the native HTTP backend is forced, so API keys never reach a browser.
+   fallback), and the native HTTP backend is forced, so API keys never reach a browser.  The stdio
+   MCP server also forces the native backend, and always has the MCP server enabled.
 
    Config files loaded:
    - "llm_config.xml" - API and MCP server settings.  This file is not distributed with InterSpec; it

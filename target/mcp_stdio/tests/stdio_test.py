@@ -175,9 +175,9 @@ def main():
         c.check('tools/list', len(tools) > 20, '%d tools' % len(tools))
         with_session = [n for n, t in tools.items() if 'userSession' in t['inputSchema'].get('properties', {})]
         c.check('no userSession argument', not with_session, ', '.join(with_session))
-        # The default llm_config.xml does not let MCP clients use the assistant.
+        # With no llm_config.xml (InterSpec does not ship one), MCP clients can not use the assistant.
         assistant_tools = [n for n in ('assistant_submit_prompt', 'invoke_agent') if n in tools]
-        c.check('no assistant tools with the default config', not assistant_tools, ', '.join(assistant_tools))
+        c.check('no assistant tools without a llm_config.xml', not assistant_tools, ', '.join(assistant_tools))
         c.check('image tools offered', 'get_spectrum_image' in tools and 'get_time_chart_image' in tools)
 
         reply = client.call('load_spectrum_file', {'path': spectrum, 'specType': 'Foreground'})
