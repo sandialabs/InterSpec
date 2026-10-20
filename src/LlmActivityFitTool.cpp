@@ -632,9 +632,9 @@ nlohmann::json executeAskUserQuestion(
 
   json result;
 
-#if( BUILD_AS_MCP_HTTP_SERVER )
-  // Not registered for an MCP HTTP server (no one could answer, and the modal dialog would block
-  //  the session forever); see ToolRegistry::registerDefaultTools().
+#if( NO_INTERACTIVE_GUI_USER )
+  // Not registered for the MCP servers (no one could answer, and the modal dialog would block the
+  //  session forever); see ToolRegistry::registerDefaultTools().
   throw runtime_error( "ask_user_question is not available: there is no interactive user." );
 #else
 
@@ -683,7 +683,7 @@ nlohmann::json executeAskUserQuestion(
   result["success"] = true;
 
   return result;
-#endif //BUILD_AS_MCP_HTTP_SERVER / else
+#endif //NO_INTERACTIVE_GUI_USER / else
 }//executeAskUserQuestion(...)
 
 
@@ -2830,6 +2830,11 @@ nlohmann::json executeActivityFit(
                        "Please open it manually from the Tools menu, or use 'activity_fit_one_off' for direct fitting without the GUI." );
   }
 
+  // The fit uses the peaks marked for it, so do not quietly fit other peaks than were asked for.
+  if( params.contains( "peak_energies" ) )
+    throw runtime_error( "activity_fit uses the peaks marked for fitting, and does not take 'peak_energies';"
+                         " choose them with mark_peaks_for_activity_fit, or use activity_fit_one_off." );
+
   // TODO: Apply any parameter overrides from params (distance, add shielding, etc.)
   // For now, just trigger the fit with existing configuration
 
@@ -2976,16 +2981,30 @@ nlohmann::json executeActivityFitOneOff(
   if( params.contains("peak_energies") && params["peak_energies"].is_array() )
   {
     // Use specified peaks
+    std::set<std::shared_ptr<const PeakDef>> requested;
     for( const auto &energy_json : params["peak_energies"] )
     {
       const double energy = energy_json.get<double>();
-      auto peak = find_peak_by_energy( energy, all_peaks, "activity_fit" );
+      std::shared_ptr<const PeakDef> peak = find_peak_by_energy( energy, all_peaks, "activity_fit" );
       if( !peak )
         throw runtime_error( "No peak found near " + std::to_string(energy) + " keV" );
 
       if( !peak->parentNuclide() )
         throw runtime_error( "Peak at " + std::to_string(peak->mean())
                            + " keV does not have a nuclide assigned" );
+
+      // Two energies matching the same peak must not count it twice.
+      if( !requested.insert( peak ).second )
+        continue;
+
+      // A requested peak is used whether or not it is marked for the activity fit (the fit
+      //  otherwise drops unmarked peaks, without saying so); a copy, so the session is unchanged.
+      if( !peak->useForShieldingSourceFit() )
+      {
+        auto marked = std::make_shared<PeakDef>( *peak );
+        marked->useForShieldingSourceFit( true );
+        peak = marked;
+      }
 
       fitting_peaks.push_back( peak );
     }

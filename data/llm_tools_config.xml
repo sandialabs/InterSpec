@@ -862,9 +862,9 @@ Each returned source includes its characteristic energies (keV) that fall inside
   </Tool>
 
   <Tool name="run_javascript">
-    <Description>Executes a snippet of JavaScript inside a sandboxed iframe in the user's browser, returning the value of the last expression (assuming there is an explicit `return` for the last line) along with anything written to `console`.  Use this any time you need a deterministic numerical or string-manipulation calculation - propagating uncertainties, weighted averages, isotopic ratios, unit conversions (e.g. surface vs. volumetric activity), tabulating results, etc. - rather than performing arithmetic in your head.
+    <Description>Executes a snippet of JavaScript in a sandbox, returning the value of the last expression (assuming there is an explicit `return` for the last line) along with anything written to `console`.  Use this any time you need a deterministic numerical or string-manipulation calculation - propagating uncertainties, weighted averages, isotopic ratios, unit conversions (e.g. surface vs. volumetric activity), tabulating results, etc. - rather than performing arithmetic in your head.
 
-The snippet runs in an isolated, opaque-origin iframe with no access to InterSpec, the parent page, network, storage, or any DOM beyond its own.  State does NOT persist across calls; treat every call as a fresh JS context.  Pass any data you need via the `data` parameter (exposed inside the snippet as the `data` variable) instead of hard-coding large arrays into `code`.
+The snippet runs in an isolated sandbox (a sandboxed iframe in the user's browser, or an embedded JavaScript engine when InterSpec runs without a browser) with no access to InterSpec, network, files, storage, or a DOM.  State does NOT persist across calls; treat every call as a fresh JS context.  Pass any data you need via the `data` parameter (exposed inside the snippet as the `data` variable) instead of hard-coding large arrays into `code`.
 
 Mechanics:
 - The snippet body is wrapped in a function and called with `data`; have the last line of your script `return` the value you would like given back.
@@ -1327,16 +1327,10 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
-      "properties": {
-        "peak_energies": {
-          "type": "array",
-          "items": {"type": "number"},
-          "description": "Optional: Peak energies in keV to filter which peaks are used for fitting. If not specified, uses all peaks marked for fitting in the GUI. Tolerance is max(peak FWHM, 1 keV). Peaks must already be assigned to nuclides."
-        }
-      }
+      "properties": {}
     }</ParametersSchema>
     <AvailableFor>
       <Agent>ActivityFit</Agent>
@@ -1353,7 +1347,7 @@ Further investigation of top returned candidates is required to make sure they m
         "peak_energies": {
           "type": "array",
           "items": {"type": "number"},
-          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides."
+          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides; they are used whether or not they are marked for fitting."
         },
         "distance": {
           "type": "string",
@@ -1541,7 +1535,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="get_shielding_source_config">
-    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., if "from_app_state" is used with the `activity_fit` tool). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
+    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., what the `activity_fit` tool fits). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {},

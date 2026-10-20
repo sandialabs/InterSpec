@@ -966,7 +966,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
   };//auto showWelcomeCallback
   
-#if( !BUILD_AS_MCP_HTTP_SERVER )  // An MCP agent session has no one to welcome
+#if( !NO_INTERACTIVE_GUI_USER )  // An MCP session has no one to welcome
   if( !loadedSpecFile )
   {
     showWelcomeCallback();

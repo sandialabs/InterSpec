@@ -302,8 +302,9 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   }
 
   // With a browser-side transport, API keys are handed to page JavaScript - which, in a server
-  //  running LLM-written code for untrusted users, is not a place secrets may go.
-#if( BUILD_AS_MCP_HTTP_SERVER )
+  //  running LLM-written code for untrusted users, is not a place secrets may go; and the stdio
+  //  server has no browser at all.
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
   config->llmApi.httpBackend = LlmApi::HttpBackend::Native;
   for( LlmApi::ApiProvider &provider : config->llmApi.providers )
     provider.httpBackend = LlmApi::HttpBackend::Native;

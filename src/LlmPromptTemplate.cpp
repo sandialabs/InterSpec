@@ -113,8 +113,8 @@ nlohmann::json buildContext( const LlmConfig &config, const Surface surface, con
     ctx["agent"] = { { "name", agentTypeToString( agent ) } };
   ctx["mcp_enabled"] = config.mcpServer.enabled;
   ctx["rag_enabled"] = !api.rag_url.empty();
-  // An MCP HTTP server's sessions have no user to answer `ask_user_question` (it is not registered).
-  ctx["interactive_user"] = !BUILD_AS_MCP_HTTP_SERVER;
+  // An MCP server's sessions have no user to answer `ask_user_question` (it is not registered).
+  ctx["interactive_user"] = !NO_INTERACTIVE_GUI_USER;
 
   return ctx;
 }//buildContext(...)

@@ -38,7 +38,6 @@
 #include <mutex>
 #endif
 
-#include <Wt/WTimer.h>
 #include <Wt/WServer.h>
 #include <Wt/WApplication.h>
 #include <Wt/WResource.h>
@@ -56,6 +55,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmPromptTemplate.h"
 #include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmSessionTimer.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmApiProtocol.h"
 #include "InterSpec/LlmToolRegistry.h"
@@ -255,21 +255,17 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
 
   setupJavaScriptBridge();
 
-  // Watchdog backstop against a hung conversation (see m_watchdogTimer / onWatchdogTimeout).  No
-  // WObject parent (the unique_ptr owns it; a parent would double-delete); the WTimer only needs the
-  // active WApplication session, which is present here.  Left stopped until work is outstanding.
-  m_watchdogTimer.reset( new Wt::WTimer() );
+  // Watchdog backstop against a hung conversation (see m_watchdogTimer / onWatchdogTimeout).  The
+  //  timers run on the server, so also work with no browser attached.  Left stopped until work is
+  //  outstanding.
+  m_watchdogTimer = std::make_unique<LlmSessionTimer>( std::bind( &LlmInterface::onWatchdogTimeout, this ) );
   m_watchdogTimer->setSingleShot( true );
   m_watchdogTimer->setInterval( std::chrono::milliseconds(sm_watchdog_timeout_ms) );
-  // LlmInterface is a Wt::Core::observable (not a WObject), so connect a functor rather than the
-  // (target,method) overload, which would pick the WObject fast-path and fail to compile.
-  m_watchdogTimer->timeout().connect( std::bind( &LlmInterface::onWatchdogTimeout, this ) );
 
   // Repeating sweep that force-fails async tool calls past their deadline; only runs while a tool round
   // is outstanding (see updateDeferredSweepTimer()).
-  m_deferredSweepTimer.reset( new Wt::WTimer() );
+  m_deferredSweepTimer = std::make_unique<LlmSessionTimer>( std::bind( &LlmInterface::onDeferredSweep, this ) );
   m_deferredSweepTimer->setInterval( std::chrono::milliseconds(sm_deferred_sweep_interval_ms) );
-  m_deferredSweepTimer->timeout().connect( std::bind( &LlmInterface::onDeferredSweep, this ) );
 }
 
 LlmInterface::~LlmInterface()
@@ -5079,9 +5075,10 @@ bool LlmInterface::useNativeHttpBackend() const
   if( NativeHttp::available() )
     return true;
 
-#if( BUILD_AS_MCP_HTTP_SERVER )
-  // An MCP agent server must never hand API keys to the browser; its request then fails with
-  //  the native backend's error, instead of falling back (startWebServer also checks at startup).
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
+  // An MCP agent server must never hand API keys to the browser, and the stdio server has none; the
+  //  request then fails with the native backend's error, instead of falling back (both servers also
+  //  check at startup).
   return true;
 #endif
 
@@ -5237,22 +5234,18 @@ void LlmInterface::scheduleNativeRetry( const std::string &endpoint,
                                        const int rateLimitRetry,
                                        const int delayMs )
 {
-  std::unique_ptr<Wt::WTimer> timer( new Wt::WTimer() );
-  timer->setSingleShot( true );
-  timer->setInterval( std::chrono::milliseconds(delayMs) );
-  timer->timeout().connect( std::bind( [this, endpoint, headers, requestStr, requestId, attempt,
-                                        rateLimitRetry](){
-    // Deliberately NOT erasing the timer here: it would destroy this WTimer from inside its own
-    //  timeout signal, while that signal is still being emitted.  The entry is reaped instead by
-    //  the next onComplete for this request id, or by cancelNativeRequests().
+  std::unique_ptr<LlmSessionTimer> timer = std::make_unique<LlmSessionTimer>( [this, endpoint, headers, requestStr,
+                                                                        requestId, attempt, rateLimitRetry](){
+    // The entry is reaped by the next onComplete for this request id, or by cancelNativeRequests().
 
     // The request may have been cancelled or cleared while the retry was pending.
     if( m_pendingRequests.find(requestId) == m_pendingRequests.end() )
       return;
 
     startNativeRequest( endpoint, headers, requestStr, requestId, attempt, rateLimitRetry );
-  } ) );
-
+  } );
+  timer->setSingleShot( true );
+  timer->setInterval( std::chrono::milliseconds(delayMs) );
   timer->start();
   m_nativeRetryTimers[requestId] = std::move( timer );
 }//LlmInterface::scheduleNativeRetry(...)

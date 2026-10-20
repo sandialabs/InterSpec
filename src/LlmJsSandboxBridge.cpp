@@ -173,6 +173,20 @@ void LlmJsSandboxBridge::handleJsResult( std::string payload )
   AsyncCallback cb = std::move( it->second );
   m_pending.erase( it );
 
+  const json response = toolResult( incoming );
+
+  try
+  {
+    cb( response );
+  }catch( std::exception &e )
+  {
+    cerr << "LlmJsSandboxBridge: result callback threw: " << e.what() << endl;
+  }
+}//void LlmJsSandboxBridge::handleJsResult( ... )
+
+
+json LlmJsSandboxBridge::toolResult( const json &incoming )
+{
   // Reshape the JS-side payload into the documented tool result schema.
   json response = json::object();
 
@@ -218,13 +232,7 @@ void LlmJsSandboxBridge::handleJsResult( std::string payload )
     }
   }//if( error or timeout ) / else
 
-  try
-  {
-    cb( response );
-  }catch( std::exception &e )
-  {
-    cerr << "LlmJsSandboxBridge: result callback threw: " << e.what() << endl;
-  }
-}//void LlmJsSandboxBridge::handleJsResult( ... )
+  return response;
+}//json toolResult( const json &incoming )
 
 #endif // USE_LLM_INTERFACE

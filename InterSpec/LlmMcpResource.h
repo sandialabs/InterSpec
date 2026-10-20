@@ -25,14 +25,15 @@
 
 #include "InterSpec_config.h"
 
-#include <map>
-#include <mutex>
 #include <memory>
 #include <string>
+#include <optional>
 
 #include <Wt/WResource.h>
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
+
+#include "InterSpec/LlmMcpDispatcher.h"
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 #if( BUILD_FOR_WEB_DEPLOYMENT || defined(IOS) || defined(ANDROID) )
@@ -41,11 +42,6 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 
 // Forward declarations
 class LlmConfig;
-
-namespace LlmTools
-{
-  class ToolRegistry;
-}
 
 namespace Wt
 {
@@ -57,18 +53,15 @@ namespace Wt
 }
 
 
-/** The MCP server: JSON-RPC 2.0 over HTTP at `/mcp-api`, exposing the tools of
- `LlmTools::ToolRegistry` that are available to MCP clients.
+/** The MCP server over HTTP: JSON-RPC 2.0 at `/mcp-api`, with the messages themselves handled by
+ `LlmMcpDispatcher`; this class adds the bearer-token check, CORS, and the waiting.
 
- Each tool call runs in one InterSpec session (named by the `userSession` argument), scheduled into
- it with a delayed `WServer::schedule` (not `WServer::post`, whose server-wide strand would let one
- session's long tool call hold up every other session).  The HTTP request waits for the result with a
- `ResponseContinuation`, so no HTTP worker thread is blocked while a tool (or a whole assistant turn)
- runs.  Clients that accept `text/event-stream` get async tools' progress streamed as SSE events.
+ A reply that is not ready (a tool still running in its session, or an assistant turn) is waited for
+ with a `ResponseContinuation`, so no HTTP worker thread is blocked meanwhile.  Clients that accept
+ `text/event-stream` get async tools' progress streamed as SSE events.
 
- Assistant prompts (`assistant_submit_prompt`, `invoke_agent`) become "turns" with an id; the call
- waits up to `wait_seconds` (streaming MCP progress meanwhile, if the client asked for it), and the
- client then polls `assistant_get_result`, or cancels with `assistant_cancel`.
+ Each tool call runs in one InterSpec session, named by the `userSession` argument (by default, the
+ most recently started session).
 
  Built as the multi-session agent server (`BUILD_AS_MCP_HTTP_SERVER`; see target/mcp_http), this
  also serves:
@@ -88,33 +81,10 @@ public:
 
   virtual ~LlmMcpResource();
 
-  /** Shared state of the assistant turns started through MCP; see the .cpp. */
-  class TurnStore;
-
-  /** Whats being waited on by a suspended request; see the .cpp. */
-  struct DeferredCall;
-
-  /** Per-session conversation histories for tools that keep state (checkpoints) when the session
-   has no LLM assistant to share one with; see the .cpp. */
-  class HistoryStore;
-
 protected:
   void handleRequest( const Wt::Http::Request &request, Wt::Http::Response &response ) override;
 
 private:
-  /** Tool metadata registered for MCP clients (name, description, schema). */
-  struct ToolInfo
-  {
-    std::string name;
-    std::string description;
-    nlohmann::json parameters_schema;  // Includes the added "userSession" field
-  };
-
-  /** Populates `registered_tools_` from the shared tool registry, filtered for MCP, plus (for an
-   agent server) the `McpAgentTools`.
-   */
-  void register_default_tools();
-
 #if( MCP_ENABLE_AUTH )
   /** Validates the bearer token in the request (compared in constant time).
    If invalid, sets response status to 401 and writes a JSON error body.
@@ -126,28 +96,17 @@ private:
   /** Returns auth type info for MCP discovery (GET on root). */
   void handle_get_auth( const Wt::Http::Request &request, Wt::Http::Response &response );
 
-  /** Handles all JSON-RPC 2.0 MCP methods (initialize, tools/list, tools/call, etc). */
+  /** Handles a POSTed JSON-RPC message. */
   void handle_jsonrpc( const Wt::Http::Request &request, Wt::Http::Response &response );
 
-  /** Handles a `tools/call`; writes the response, or suspends the request until it is ready.
-   `progress_token` is the request's `_meta.progressToken` (null if none).
-   */
-  void handle_tool_call( const nlohmann::json &id, const std::string &tool_name, nlohmann::json arguments,
-                         const nlohmann::json &progress_token,
-                         const Wt::Http::Request &request, Wt::Http::Response &response );
-
-  /** Handles `assistant_get_result`: waits for the turn (of the session `session_key`) to finish,
-   up to `wait_seconds`.
-   */
-  void handle_turn_result( const nlohmann::json &id, const std::string &session_key,
-                           const nlohmann::json &arguments, const nlohmann::json &progress_token,
-                           const Wt::Http::Request &request, Wt::Http::Response &response );
-
 #if( BUILD_AS_MCP_HTTP_SERVER )
-  /** Handles the agent-server tools that are not run inside a session. */
-  void handle_agent_tool( const nlohmann::json &id, const std::string &tool_name,
-                          const std::string &user_session, nlohmann::json arguments,
-                          const Wt::Http::Request &request, Wt::Http::Response &response );
+  /** The agent-server tools that are not run inside a session (the dispatcher's tool interceptor);
+   returns nullopt for other tools.
+   */
+  std::optional<LlmMcpDispatcher::Outcome> handle_agent_tool( const nlohmann::json &id, const std::string &tool_name,
+                                                           const std::string &user_session,
+                                                           const nlohmann::json &arguments,
+                                                           const std::string &base_url );
 
   /** Agent server: `/files/...` uploads and downloads. */
   void handle_file_request( const std::string &path_info, const Wt::Http::Request &request,
@@ -166,44 +125,25 @@ private:
 
    @throws std::runtime_error with a message for the client.
    */
-  std::string resolve_target_session( const std::string &user_session ) const;
+  static std::string resolve_target_session( const std::string &user_session );
 
   /** Writes the response now, if `call` is ready; otherwise suspends the request until it is. */
-  void start_deferred( Wt::Http::Response &response, const std::shared_ptr<DeferredCall> &call );
+  void start_deferred( Wt::Http::Response &response, const std::shared_ptr<LlmMcpDispatcher::PendingReply> &call );
 
   /** Re-entry of a suspended request. */
-  void continue_deferred( Wt::Http::Response &response, const std::shared_ptr<DeferredCall> &call );
-  void continue_deferred_impl( Wt::Http::Response &response, const std::shared_ptr<DeferredCall> &call );
+  void continue_deferred( Wt::Http::Response &response, const std::shared_ptr<LlmMcpDispatcher::PendingReply> &call );
+  void continue_deferred_impl( Wt::Http::Response &response,
+                               const std::shared_ptr<LlmMcpDispatcher::PendingReply> &call );
 
   /** Suspends the request, to be woken when `call` changes, at its deadline, or (for SSE) to send a
    keepalive.
    */
-  void suspend( Wt::Http::Response &response, const std::shared_ptr<DeferredCall> &call,
+  void suspend( Wt::Http::Response &response, const std::shared_ptr<LlmMcpDispatcher::PendingReply> &call,
                 const uint64_t seen_version );
-
-  /** Interval between `:keepalive` comments written to a waiting SSE stream; short enough to keep
-   clients and intermediaries from timing the connection out.
-   */
-  static constexpr int sm_sse_keepalive_ms = 10000;
-
-  /** Default, and maximum, of the `wait_seconds` argument of assistant turns. */
-  static constexpr int sm_default_turn_wait_s = 30;
-  static constexpr int sm_max_turn_wait_s = 50;
 
   const std::shared_ptr<const LlmConfig> llm_config_;
 
-  /** Shared with the work posted to sessions, which may outlive this resource. */
-  const std::shared_ptr<const LlmTools::ToolRegistry> tool_registry_;
-
-  const std::shared_ptr<TurnStore> turns_;
-
-  const std::shared_ptr<HistoryStore> histories_;
-
-  /** Tool metadata map, keyed by tool name. Schema has "userSession" field added. */
-  std::map<std::string, ToolInfo> registered_tools_;
-
-  /** For the agent server, the `instructions` returned by `initialize`. */
-  std::string server_instructions_;
+  std::unique_ptr<LlmMcpDispatcher> dispatcher_;
 
 #if( MCP_ENABLE_AUTH )
   /** Bearer token required to use the MCP server. If empty, no authorization is required. */

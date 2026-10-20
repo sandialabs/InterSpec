@@ -142,6 +142,12 @@ namespace AppUtils
    Returns if it looks like things where successful.
    */
   InterSpec_API bool showFileInOsFileBrowser( const std::string &filepath );
+
+  /** The directories the desktop builds of InterSpec keep per-user data in (preferences, detectors,
+   LLM configuration, ...), most common first; for programs that share them with an installed
+   InterSpec (the batch tool, the stdio MCP server).  Whether they exist is not checked.
+   */
+  InterSpec_API std::vector<std::string> candidate_user_data_dirs();
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   InterSpec_API std::string file_contents( const std::string &filename );

@@ -28,6 +28,7 @@
 #cmakedefine01 BUILD_AS_ELECTRON_APP
 #cmakedefine01 BUILD_AS_WX_WIDGETS_APP
 #cmakedefine01 BUILD_AS_MCP_HTTP_SERVER
+#cmakedefine01 BUILD_AS_MCP_STDIO_SERVER
 #cmakedefine01 BUILD_FOR_WEB_DEPLOYMENT
 #cmakedefine01 BUILD_LibInterSpec_SHARED
 
@@ -49,6 +50,15 @@
 
 
 #cmakedefine01 BUILD_AS_UNIT_TEST_SUITE
+
+// No Wt HTTP connector (libwthttp) is linked in: the unit tests and the stdio MCP server host their
+//  single session in a Wt::Test::WTestEnvironment (libwttest) instead, so the web-server code
+//  (InterSpecServer::startWebServer and friends) can not be compiled.
+#define NO_WT_HTTP_SERVER (BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_MCP_STDIO_SERVER)
+
+// Sessions are driven by an MCP client, with no person at the GUI to answer questions or dismiss
+//  dialogs: the multi-session MCP server, and the stdio MCP server.
+#define NO_INTERACTIVE_GUI_USER (BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER)
 #cmakedefine01 INCLUDE_ANALYSIS_TEST_SUITE
 #cmakedefine TEST_SUITE_BASE_DIR "@TEST_SUITE_BASE_DIR@"
 

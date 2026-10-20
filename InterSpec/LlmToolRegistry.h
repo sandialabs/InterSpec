@@ -88,6 +88,11 @@ struct SharedTool {
      */
     int asyncTimeoutMs = 0;
 
+    /** True if the tool only works with a browser attached to the session (e.g., it captures a chart
+     drawn by the browser); such tools are not offered by a server with no browser (stdio MCP).
+     */
+    bool requiresBrowser = false;
+
     bool isAsync() const { return static_cast<bool>( asyncExecutor ) || static_cast<bool>( asyncStreamingExecutor ); }
     bool isStreaming() const { return static_cast<bool>( asyncStreamingExecutor ); }
 
@@ -95,6 +100,14 @@ struct SharedTool {
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
     std::map<AgentType, std::string> roleDescriptions;  // Role-specific descriptions (AgentType -> description)
 };
+
+
+/** Runs a `run_javascript` call where there is no browser sandbox; the stdio MCP server sets one,
+ using QuickJS.  Called in the session, and must call `callback` exactly once, in the session.
+ */
+using JavaScriptRunner = std::function<void( const nlohmann::json &params, SharedTool::AsyncCallback callback )>;
+
+InterSpec_API void setJavaScriptRunner( JavaScriptRunner runner );
 
 
 /** Deadline applied to an async tool call whose `SharedTool::asyncTimeoutMs` is 0.

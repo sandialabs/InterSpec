@@ -125,8 +125,10 @@ export MY_WT_PREFIX="$install_directory"
 #  before that.  The top-level InterSpec CMakeLists.txt does the same thing for its own build.
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
-# HTTPS for Wt::Http::Client, which is the USE_NATIVE_HTTP_CLIENT transport on Linux (the MCP agent
-#  server container uses it for all LLM calls).  With WT_ENABLE_SSL=ON, Wt is built against the
+# HTTPS for Wt::Http::Client, which is the USE_NATIVE_HTTP_CLIENT transport of the MCP agent server
+#  container (it uses it for all LLM calls).  Other Linux builds use libcurl instead, loaded at run
+#  time, so they need only libcurl's headers to build (e.g., libcurl-devel or libcurl4-openssl-dev)
+#  and not this; without those headers they fall back to Wt::Http::Client.  With WT_ENABLE_SSL=ON, Wt is built against the
 #  OpenSSL development files of the build system (e.g. Debian's libssl-dev), and InterSpec's
 #  CMakeLists.txt links that OpenSSL when it sees WT_WITH_SSL in Wt's WConfig.h.  The resulting
 #  binary needs the same OpenSSL at run time - fine for a container image, which pins its

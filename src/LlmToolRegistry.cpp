@@ -4,6 +4,7 @@
 #if( USE_LLM_INTERFACE )
 
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <fstream>
 #include <optional>
@@ -1969,6 +1970,26 @@ namespace {
 namespace LlmTools
 {
 
+namespace
+{
+  std::mutex ns_js_runner_mutex;
+  JavaScriptRunner ns_js_runner;
+
+  JavaScriptRunner java_script_runner()
+  {
+    std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+    return ns_js_runner;
+  }
+}//namespace
+
+
+void setJavaScriptRunner( JavaScriptRunner runner )
+{
+  std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+  ns_js_runner = std::move( runner );
+}
+
+
 int effective_async_timeout_ms( const SharedTool &tool )
 {
   return (tool.asyncTimeoutMs > 0) ? tool.asyncTimeoutMs : sm_default_async_timeout_ms;
@@ -2595,8 +2616,21 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction>, LlmConversationHistory*,
           SharedTool::AsyncCallback callback) {
-        LlmToolGui *gui = interspec ? interspec->currentLlmTool() : nullptr;
-        LlmJsSandboxBridge *bridge = gui ? gui->jsSandboxBridge() : nullptr;
+        // The stdio server has no browser for the iframe sandbox (whose timeout is enforced in the
+        //  browser, so a call there would never return); it runs the code with its own engine.
+        const JavaScriptRunner runner = java_script_runner();
+#if( BUILD_AS_MCP_STDIO_SERVER )
+        LlmJsSandboxBridge * const bridge = nullptr;
+#else
+        LlmToolGui * const gui = interspec ? interspec->currentLlmTool() : nullptr;
+        LlmJsSandboxBridge * const bridge = gui ? gui->jsSandboxBridge() : nullptr;
+#endif
+        if( !bridge && runner )
+        {
+          runner( params, std::move(callback) );
+          return;
+        }
+
         if( !bridge )
         {
           callback( std::string("No active LLM GUI session - JS sandbox unavailable") );
@@ -2615,6 +2649,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       // Captures are serialized behind at most sm_max_queued_captures others, and each of those is
       // itself bounded by the chart's own capture timer, so this covers the worst-case queued wait.
       tool.asyncTimeoutMs = sm_spectrum_image_tool_timeout_ms;
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2638,6 +2673,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     }else if( toolName == "get_time_chart_image" )
     {
       tool.asyncTimeoutMs = sm_time_chart_image_tool_timeout_ms;  // browser round-trip, never queued
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2746,7 +2782,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // Register tools from configs
   for( const LlmConfig::ToolConfig &toolConfig : config.tools )
   {
-#if( BUILD_AS_MCP_HTTP_SERVER )
+#if( NO_INTERACTIVE_GUI_USER )
     // No one is at the session's GUI to answer; the assistant states its assumptions, or asks in its
     //  reply - which the MCP client relays to its user.
     if( toolConfig.name == "ask_user_question" )
@@ -2833,6 +2869,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
     submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    // The stdio server runs the assistant itself, with native LLM requests; otherwise the
+    //  assistant needs a session's browser.
+    submitTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;
 
     const uint64_t max_image_bytes = config.mcpServer.agentServer.has_value()
                                        ? config.mcpServer.agentServer->maxImageBytes
@@ -2925,6 +2964,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     agentTool.parameters_schema = std::move( schema );
     agentTool.availableForAgents = { AgentType::McpServer };
     agentTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    agentTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // as for assistant_submit_prompt
 
     agentTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
@@ -3044,7 +3084,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "search_sources_by_energy",
     "activity_fit",
     "activity_fit_one_off",
-#if( !BUILD_AS_MCP_HTTP_SERVER )
+#if( !NO_INTERACTIVE_GUI_USER )
     "ask_user_question",
 #endif
     "close_activity_shielding_display",
@@ -5071,6 +5111,17 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   // Get the current visible range for the description text
   double curMinE = 0, curMaxE = 0, curMinY = 0, curMaxY = 0;
   interspec->displayedSpectrumRange( curMinE, curMaxE, curMinY, curMaxY );
+  if( curMaxE <= curMinE )
+  {
+    // No range from a browser (e.g., the stdio server); the whole spectrum is shown.
+    const shared_ptr<const SpecUtils::Measurement> fore
+                                  = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    if( fore && (fore->num_gamma_channels() > 1) )
+    {
+      curMinE = fore->gamma_energy_min();
+      curMaxE = fore->gamma_energy_max();
+    }
+  }//if( no displayed range )
   const double descMinE = energyRange ? energyRange->first : curMinE;
   const double descMaxE = energyRange ? energyRange->second : curMaxE;
 

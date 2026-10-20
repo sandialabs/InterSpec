@@ -18,6 +18,8 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 
 If the server has a `create_session` tool, it is a multi-session analysis server: see the [interspec-mcp-agent](../interspec-mcp-agent/SKILL.md) skill for sessions, file exchange, and working with its built-in assistant.
 
+If the server is `InterSpec-mcp-stdio` (launched by your MCP client, rather than reached over HTTP), it has a single session of its own, with no window and no browser: load spectra with `load_spectrum_file` and an absolute `path`, and there is no `userSession` argument. The spectrum and time-chart images are drawn by the server itself (labels are always in English), and the built-in assistant is not offered.
+
 ## Core Principles
 
 1. **Tool-first**: Always use tools to access spectrum data and nuclear information. Tool calls are cheap; assumptions are expensive.
@@ -86,7 +88,7 @@ If the server has a `create_session` tool, it is a multi-session analysis server
 - `get_material_info` - Material properties (density, atomic number, composition).
 
 ### Activity and Shielding Fitting
-- `activity_fit` - Fit activities using current GUI configuration (`from_app_state` mode).
+- `activity_fit` - Fit activities using the current GUI configuration, and the peaks marked for fitting (no arguments).
 - `activity_fit_one_off` - Custom fit with full specification (distance, geometry, shielding, peaks). Does not modify GUI state.
 - `get_shielding_source_config` - Current fit configuration from app state.
 - `modify_shielding_source_config` - Modify fit configuration (add/remove shielding, set distance/geometry, source ages).

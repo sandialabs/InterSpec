@@ -24,6 +24,8 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <vector>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -593,6 +595,56 @@ bool showFileInOsFileBrowser( const std::string &filepath )
   
   return (rval == 0);
 }//bool showFileInOsFileBrowser( const std::string &filepath )
+
+
+std::vector<std::string> candidate_user_data_dirs()
+{
+  std::vector<std::string> dirs;
+
+#if( defined(_WIN32) )
+  // Electron's app.getPath('userData'), and wxWidgets' GetUserDataDir().
+  try
+  {
+    dirs.push_back( SpecUtils::append_path( user_data_dir(), "InterSpec" ) );
+  }catch( std::exception & )
+  {
+  }
+#else
+  const char * const home = std::getenv( "HOME" );
+  const std::string home_dir = (home && home[0]) ? std::string( home ) : std::string();
+
+#if( defined(__APPLE__) )
+  if( !home_dir.empty() )
+  {
+    const std::string app_support = SpecUtils::append_path( home_dir, "Library/Application Support" );
+    dirs.push_back( SpecUtils::append_path( app_support, "InterSpec" ) );        // Electron
+    dirs.push_back( SpecUtils::append_path( app_support, "sandia.InterSpec" ) ); // native app, unsandboxed
+  }
+#else
+  const char * const xdg_data = std::getenv( "XDG_DATA_HOME" );
+  const char * const xdg_config = std::getenv( "XDG_CONFIG_HOME" );
+
+  const std::string data_base = (xdg_data && xdg_data[0])
+    ? std::string( xdg_data )
+    : (home_dir.empty() ? std::string() : SpecUtils::append_path( home_dir, ".local/share" ));
+  const std::string config_base = (xdg_config && xdg_config[0])
+    ? std::string( xdg_config )
+    : (home_dir.empty() ? std::string() : SpecUtils::append_path( home_dir, ".config" ));
+
+  if( !data_base.empty() )
+    dirs.push_back( SpecUtils::append_path( data_base, "InterSpec" ) );        // wxWidgets (XDG)
+  if( !config_base.empty() )
+  {
+    dirs.push_back( SpecUtils::append_path( config_base, "InterSpec" ) );      // Electron, packaged
+    dirs.push_back( SpecUtils::append_path( config_base, "InterSpecAddOn" ) ); // Electron, development
+  }
+  if( !data_base.empty() )
+    dirs.push_back( SpecUtils::append_path( data_base, "sandia.InterSpec" ) );
+#endif
+#endif
+
+  return dirs;
+}//std::vector<std::string> candidate_user_data_dirs()
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   

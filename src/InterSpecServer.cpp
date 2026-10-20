@@ -148,7 +148,7 @@ namespace InterSpecServer
   std::string sm_urlServedOn = "";
   std::mutex sm_servedOnMutex;
   
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( !NO_WT_HTTP_SERVER )
   Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
 #endif
@@ -184,7 +184,7 @@ namespace InterSpecServer
     return sm_urlServedOn;
   }
 
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( !NO_WT_HTTP_SERVER )
   Wt::WServer *get_wt_server()
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
@@ -300,7 +300,7 @@ namespace InterSpecServer
     return appCreator( env );
   }//unique_ptr<WApplication> createAppForServer(...)
   
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( !NO_WT_HTTP_SERVER )
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
@@ -410,9 +410,9 @@ namespace InterSpecServer
       throw std::runtime_error( "Failed to start Wt server" );
     }//if( server.start() )
   }//void startServer()
-#endif //if( BUILD_AS_UNIT_TEST_SUITE )
+#endif //if( !NO_WT_HTTP_SERVER )
 
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( !NO_WT_HTTP_SERVER )
 void startWebServer( string name,
                      std::string basedir,
                      const std::string xml_config_path,
@@ -874,7 +874,7 @@ void killServer()
     
     return Wt::WServer::waitForShutdown();
   }//int wait_for_shutdown()
-#endif //if( !BUILD_AS_UNIT_TEST_SUITE )
+#endif //if( !NO_WT_HTTP_SERVER )
   
   int add_allowed_session_token( const char *session_id, const SessionType session_type )
   {
@@ -1231,7 +1231,7 @@ void clear_file_to_open_on_load( const std::string &session_token )
 }//void clear_file_to_open_on_load( const std::string &session_token )
 
 
-#if( !BUILD_AS_UNIT_TEST_SUITE )
+#if( !NO_WT_HTTP_SERVER )
 void download_to_native_save( const std::string &url )
 {
   Wt::WServer * const server = get_wt_server();
@@ -1299,7 +1299,7 @@ void download_to_native_save( const std::string &url )
     delete client;
   }
 }//void download_to_native_save( const std::string &url )
-#endif // !BUILD_AS_UNIT_TEST_SUITE
+#endif // !NO_WT_HTTP_SERVER
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
   
   
@@ -1457,7 +1457,7 @@ std::shared_ptr<const LlmConfig> llm_config()
   return ns_llm_config;
 }
 
-#if( USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE )
+#if( USE_MCP_SERVER && !NO_WT_HTTP_SERVER )
 /** Bring the running MCP server resource into line with `config`.
 
  The MCP resource captures its enabled/token/registry state at construction, so a change is applied
@@ -1518,7 +1518,7 @@ static void reconcile_mcp_resource( const std::shared_ptr<const LlmConfig> &conf
     ns_mcp_resource.reset();
   }
 }//reconcile_mcp_resource(...)
-#endif // USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE
+#endif // USE_MCP_SERVER && !NO_WT_HTTP_SERVER
 
 
 void set_llm_config( std::shared_ptr<const LlmConfig> config )
@@ -1530,7 +1530,7 @@ void set_llm_config( std::shared_ptr<const LlmConfig> config )
     ns_llm_config = config;
   }
 
-#if( USE_MCP_SERVER && !BUILD_AS_UNIT_TEST_SUITE )
+#if( USE_MCP_SERVER && !NO_WT_HTTP_SERVER )
   // Apply MCP server changes live (the LLM assistant already reads the swapped pointer above).
   bool tokenChanged = false;
 #if( MCP_ENABLE_AUTH )

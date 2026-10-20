@@ -61,10 +61,12 @@ namespace
 #if( USE_SQLITE3_DB )
   std::mutex PreferenceDbMutex;
   int PreferenceDatabaseFileSetCount = 0;
-#if( BUILD_AS_UNIT_TEST_SUITE )
+#if( BUILD_AS_UNIT_TEST_SUITE || BUILD_AS_MCP_STDIO_SERVER )
   // Each unit-test process gets its own in-memory database, so tests run in parallel do not contend
   //  for a file, and nothing carries over between runs.  This relies on the single pooled connection
   //  (see DbPoolManager) - every connection to ":memory:" is a separate, empty database.
+  //  The stdio MCP server does the same, so it never contends with (or upgrades the schema of) the
+  //  database of a desktop InterSpec that may be running at the same time.
   std::string PreferenceDatabaseFile = ":memory:";
 #else
   std::string PreferenceDatabaseFile = "InterSpecUserData.db";
