@@ -4379,24 +4379,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     cascade_block = std::make_shared<typename DistributedSrcCalcT<T>::CascadeBlock>();
     cascade_block->calc = m_cascadeCalc.get();
     cascade_block->partner_energies = m_cascadeCalc->allPartnerEnergies();
-    for( const double energy : cascade_block->partner_energies )
-    {
-      double fep_int = 0.0, tot_int = 0.0;
-      try
-      {
-        fep_int = m_detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
-        // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no
-        //  total-efficiency info - the CeeLo-response case, where the total
-        //  lives in the response, not a separate curve.
-        tot_int = m_detector->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
-      }catch( std::exception & )
-      {
-      }
-      cascade_block->partner_fep_int.push_back( std::max(0.0, fep_int) );
-      cascade_block->partner_tot_int.push_back( std::max(0.0, tot_int) );
-      cascade_block->air_mu.push_back(
-              transmission_length_coefficient_air( energy ) );
-    }//for( partner energies )
+    cascade_block->partner_fep_int = m_cascadeCalc->partnerFepIntrinsic();
+    cascade_block->partner_tot_int = m_cascadeCalc->partnerTotIntrinsic();
+    cascade_block->air_mu = m_cascadePartnerAirMu;
+    const size_t npartner = cascade_block->partner_energies.size();
+    if( (cascade_block->partner_fep_int.size() != npartner)
+       || (cascade_block->partner_tot_int.size() != npartner)
+       || (cascade_block->air_mu.size() != npartner) )
+      throw std::logic_error( "build_volumetric_calculators: cascade partner tables out of step" );
   }//if( m_cascadeCalc )
 
   const auto cascade_mu_for_material = [&]( const Material * const mat ) -> const std::vector<double> & {

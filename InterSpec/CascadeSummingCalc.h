@@ -26,10 +26,12 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <cmath>
 #include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <stdexcept>
 #include <functional>
 
@@ -101,9 +103,12 @@ public:
     if( m_energies.empty() )
       return T(0.0);
 
-    // Exact-set energy lookup (the partner energies are known up front).
+    // Exact-set energy lookup (the partner energies are known up front): the first sorted entry
+    //  within 0.25 keV.  Bisect to a start safely below any match, then scan forward with that test.
     size_t ei = m_energies.size();
-    for( size_t i = 0; i < m_energies.size(); ++i )
+    const size_t start = static_cast<size_t>( std::lower_bound( m_energies.begin(), m_energies.end(),
+                                                                energy - 0.5 ) - m_energies.begin() );
+    for( size_t i = start; (i < m_energies.size()) && (m_energies[i] <= (energy + 0.5)); ++i )
     {
       if( std::fabs(m_energies[i] - energy) < 0.25 )
       {
@@ -186,6 +191,9 @@ public:
    @param shield_fracH  AD-weighted hydrogen mass fraction of the shield stack.
    @param shields_present  Whether to build the scatter-augmentation table.
    @param data_directory  InterSpec static data dir (sandia.shieldscatter.db).
+   @param age_fit_nuclides  Those of the nuclides whose age may change during the fit; their
+          partner energies cover every member of their decay chain (see #partnerEnergies), the
+          others' only what their cascades at the given age emit.
 
    Throws std::runtime_error on missing DRF info or scatter-db load failure.
    */
@@ -195,14 +203,16 @@ public:
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const double shield_fracH,
                       const bool shields_present,
-                      const std::string &data_directory );
+                      const std::string &data_directory,
+                      const std::vector<const SandiaDecay::Nuclide *> &age_fit_nuclides = {} );
 
   /** Re-windowing copy: same physics as `other` (cascade enumeration, partner energies and the
    shield-scatter table are all peak-independent), but for a different set of fit peaks.
 
    Every expensive part of the primary constructor - `cascades(...)` per nuclide, the daughter
-   x-ray line enumeration, and `ShieldScatterAugment::build(...)` - is reused, including `other`s
-   memoized cascade cache.  Only the peak windows are rebuilt.
+   x-ray line enumeration, the partner-energy detector constants, and
+   `ShieldScatterAugment::build(...)` - is reused, including `other`s memoized cascade cache.
+   Only the peak windows are rebuilt.
 
    Use this rather than the shared_ptr when the peak list differs: #evaluate returns one result
    per *stored* window, so a calculator built for a smaller peak set silently applies no
@@ -212,10 +222,11 @@ public:
                       const std::vector<std::pair<double,double>> &peak_energy_widths,
                       const double photopeak_cluster_sigma );
 
-  /** Every emission energy (keV, sorted) a correction for these nuclides (at these ages,
-   PhysicalUnits) can query efficiencies at - cascade gammas, daughter K/L x-rays, and 511; the
-   same set #allPartnerEnergies holds for a calculator built for them.  Enumerates the cascades
-   (not cached), so call it once, off the per-evaluation path.
+  /** Every emission energy (keV, sorted) a correction for these nuclides can query efficiencies
+   at, at ANY age - cascade gammas, daughter K/L x-rays, and 511 of every member of each nuclide's
+   decay chain; a superset of #allPartnerEnergies for a calculator built for them.  The ages are
+   ignored (kept for the call sites).  Enumerates the cascades (not cached), so call it once, off
+   the per-evaluation path.
    */
   static std::vector<double> partnerEnergies(
               const std::vector<std::pair<const SandiaDecay::Nuclide *,double>> &nuclide_ages );
@@ -248,6 +259,14 @@ public:
    query the efficiency functors / scatter table at.
    */
   const std::vector<double> &allPartnerEnergies() const { return m_partner_energies; }
+
+  /** The detector's far-field intrinsic FEP and total efficiencies at each #allPartnerEnergies
+   energy (same order), tabulated once at construction from the DRF given to it: each total-
+   efficiency query of a CeeLo response ray-traces a fresh aperture quadrature, and these are
+   needed for every partner on every volumetric evaluation.
+   */
+  const std::vector<double> &partnerFepIntrinsic() const { return m_partner_fep_int; }
+  const std::vector<double> &partnerTotIntrinsic() const { return m_partner_tot_int; }
 
   const ShieldScatterAugment &scatterAugment() const { return m_scatter; }
 
@@ -288,6 +307,12 @@ public:
   std::shared_ptr<const std::vector<ceelo::DecayCascade>> cascades(
                     const SandiaDecay::Nuclide *nuc, const double age ) const;
 
+  /** The prepared engine model of #cascades (level-scheme DAGs, occurrence lists, ...), cached
+   alongside them, so evaluations do not re-prepare it.
+   */
+  std::shared_ptr<const ceelo::AnalyticCascadeModel> cascadeModel(
+                    const SandiaDecay::Nuclide *nuc, const double age ) const;
+
   /** Per-window summing results for one nuclide, given the absolute
    efficiencies at the fit geometry.  T = double, or ceres::Jet on the Ceres
    path (the functors then carry the parameter derivatives).
@@ -326,8 +351,7 @@ public:
       bool has( double ) const override { return true; }
     };
 
-    const std::shared_ptr<const std::vector<ceelo::DecayCascade>> casc
-                                                        = cascades( nuc, age );
+    const std::shared_ptr<const ceelo::AnalyticCascadeModel> model = cascadeModel( nuc, age );
 
     FunctorProv prov;
     prov.fep_f = &eps_fep_abs;
@@ -336,7 +360,7 @@ public:
     ceelo::AnalyticCascadeOptions opts;  //defaults: triples + W(0) angular on
 
     std::vector<ceelo::AnalyticPeakResultT<T>> results
-              = ceelo::compute_cascade_analytic( *casc, windows, prov, opts );
+              = ceelo::compute_cascade_analytic( *model, windows, prov, opts );
 
     for( const ceelo::AnalyticPeakResultT<T> &r : results )
     {
@@ -351,15 +375,26 @@ public:
 private:
   std::vector<ceelo::PeakWindow> m_windows;
   std::vector<double> m_partner_energies;
+  std::vector<double> m_partner_fep_int, m_partner_tot_int;
   ShieldScatterAugment m_scatter;
 
   //Cascade cache: keyed by (nuclide, age bucket).  Age enters the branch
-  // weights only through progeny in-growth, which varies slowly, so ages are
-  // bucketed (~2% steps in log age) to avoid re-enumerating per fit iteration
-  // when the age is being fit.
+  // weights only through progeny in-growth, so ages are bucketed (~2% steps in
+  // log age) to avoid re-enumerating per fit iteration when the age is being
+  // fit.  The first age to reach a bucket defines its entry (short-lived
+  // progeny grow in proportion to age, so weights can vary by ~2% within a
+  // bucket); every evaluation in the bucket then uses that one entry.
+  struct CachedCascades
+  {
+    std::shared_ptr<const std::vector<ceelo::DecayCascade>> cascades;
+    std::shared_ptr<const ceelo::AnalyticCascadeModel> model;  //owns a reference to `cascades`
+  };
+
+  /** The cache entry for (nuc, bucket of age), enumerating and preparing it on first use. */
+  CachedCascades cachedCascades( const SandiaDecay::Nuclide *nuc, const double age ) const;
+
   mutable std::mutex m_cascade_mutex;
-  mutable std::map<std::pair<const SandiaDecay::Nuclide *,int>,
-                   std::shared_ptr<const std::vector<ceelo::DecayCascade>>> m_cascades;
+  mutable std::map<std::pair<const SandiaDecay::Nuclide *,int>, CachedCascades> m_cascades;
 };//class CascadeSummingCalc
 
 }//namespace GammaInteractionCalc
