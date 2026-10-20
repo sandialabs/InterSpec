@@ -45,6 +45,13 @@ if( MSVC )
   set( CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )
 endif()
 
+if( UNIX AND NOT APPLE )
+  # glibc stays dynamic (see below), and so must its libm: the static libm.a needs glibc's static
+  #  libc.  TRY_TO_STATIC_LINK makes find_library() prefer `.a` files, so name libm up front for
+  #  muparserx's find_library( M_LIBRARY m ).
+  set( M_LIBRARY "m" CACHE STRING "The C math library; linked dynamically, as glibc is" FORCE )
+endif()
+
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec )
 
 # Raster images of the charts (PNG/JPEG, for the image tools) are drawn with plutovg (MIT; plain C,
