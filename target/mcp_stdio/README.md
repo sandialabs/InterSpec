@@ -65,6 +65,11 @@ cmake --build target/mcp_stdio/build
 or with `-DInterSpec_FETCH_DEPENDENCIES=ON` to have CMake fetch and build them (which builds
 `libwttest` for this target; not yet tested).
 
+On Windows this needs Visual Studio 2022 17.5 or newer (QuickJS uses C11 atomics), and the static-runtime
+(`/MT`) prefix from `target/dep_build/dep_build_msvc2022.bat`.  The Visual Studio generator builds several
+configurations, so pass `--config Release` to `cmake --build` (a Debug build needs Debug, `/MTd`,
+dependencies).
+
 ## Running
 ```
 InterSpec-mcp-stdio [--datadir <dir>] [--userdatadir <dir>] [--llm-config-dir <dir>] [--log-file <file>]

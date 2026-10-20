@@ -830,6 +830,10 @@ if( USE_LLM_INTERFACE )
             "Use the libcurl HTTP backend even on platforms with a native one (testing)"
             OFF )
     mark_as_advanced( USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND )
+    if( WIN32 AND USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND )
+      message( FATAL_ERROR "USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND is not supported on Windows (the libcurl"
+               " backend loads libcurl with dlopen); Windows builds use WinHTTP." )
+    endif()
 
     # libcurl on Linux; it is loaded at run time, so only its headers are needed here.  The
     #  multi-session MCP server keeps Wt::Http::Client, as its container does not ship libcurl.

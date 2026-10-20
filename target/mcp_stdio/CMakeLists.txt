@@ -40,6 +40,11 @@ if( NOT CMAKE_BUILD_TYPE )
 endif()
 
 if( MSVC )
+  # QuickJS (quickjs-ng) uses C11 atomics, which MSVC has from Visual Studio 2022 17.5.
+  if( MSVC_VERSION LESS 1935 )
+    message( FATAL_ERROR "The stdio MCP server needs Visual Studio 2022 17.5 or newer, for QuickJS." )
+  endif()
+
   # Static MSVC runtime, so the executable needs no redistributable.
   set( Boost_USE_STATIC_RUNTIME ON )
   set( CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" )

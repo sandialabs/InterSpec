@@ -42,6 +42,7 @@
 #include <memory>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <variant>
 #include <iostream>
 #include <stdexcept>
@@ -66,6 +67,7 @@
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 
 #include "InterSpec/AppUtils.h"
@@ -81,6 +83,14 @@
 
 #include "QuickJsSandbox.h"
 #include "PlutoPaintDevice.h"
+
+#ifdef _WIN32
+// After the Boost.Asio (via Wt) headers, which need <winsock2.h> before <windows.h>.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>  // for TerminateProcess
+#endif
 
 static_assert( BUILD_AS_MCP_STDIO_SERVER, "This file is only for the stdio MCP server build" );
 
@@ -99,11 +109,22 @@ namespace
     ProtocolWriter()
     {
 #ifdef _WIN32
+      // A stream the process was started without has _fileno() -2; passing that to _setmode, _dup
+      //  or _dup2 would end the process from the CRT's invalid-parameter handler.
+      if( (_fileno(stdin) < 0) || (_fileno(stdout) < 0) )
+        throw std::runtime_error( "stdin and stdout must be connected to the MCP client." );
       _setmode( _fileno(stdin), _O_BINARY );
       _setmode( _fileno(stdout), _O_BINARY );
       fflush( stdout );
       m_fd = _dup( _fileno(stdout) );
-      if( (m_fd < 0) || (_dup2( _fileno(stderr), _fileno(stdout) ) != 0) )
+
+      // With no stderr, stray output goes nowhere.
+      const int nul_fd = (_fileno(stderr) < 0) ? _open( "NUL", _O_WRONLY ) : -1;
+      const int sink_fd = (_fileno(stderr) < 0) ? nul_fd : _fileno(stderr);
+      const bool redirected = (sink_fd >= 0) && (_dup2( sink_fd, _fileno(stdout) ) == 0);
+      if( nul_fd >= 0 )
+        _close( nul_fd );
+      if( (m_fd < 0) || !redirected )
         throw std::runtime_error( "Could not redirect stdout." );
 #else
       fflush( stdout );
@@ -307,7 +328,12 @@ int main( int argc, char **argv )
     return 0;
   }
 
+#ifdef _WIN32
+  // The path is UTF-8 (see getUtf8Args), which narrow-path functions would read as the ANSI code page.
+  if( !log_file.empty() && !_wfreopen( SpecUtils::convert_from_utf8_to_utf16( log_file ).c_str(), L"a", stderr ) )
+#else
   if( !log_file.empty() && !std::freopen( log_file.c_str(), "a", stderr ) )
+#endif
   {
     std::cerr << "Could not open log file '" << log_file << "'" << std::endl;
     return 2;
@@ -480,6 +506,11 @@ int main( int argc, char **argv )
   std::thread( [](){
     std::this_thread::sleep_for( std::chrono::seconds( 5 ) );
     std::cerr << "Still busy; exiting without waiting for the running calculation." << std::endl;
+#ifdef _WIN32
+    // _Exit() ends in ExitProcess(), whose DLL detach notifications could wait on threads it has
+    //  already killed (e.g., one holding the loader lock); TerminateProcess skips them.
+    ::TerminateProcess( ::GetCurrentProcess(), 0 );
+#endif
     std::_Exit( 0 );
   } ).detach();
   LlmMcpDispatcher::cancelDeliveries();

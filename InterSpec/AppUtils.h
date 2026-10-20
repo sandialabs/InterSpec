@@ -213,8 +213,11 @@ InterSpec_API void getUtf8Args( int &argc, wchar_t **argvw, char **&argv );
 /** Frees the memory allopcated by #getUtf8Args */
 InterSpec_API void cleanupUtf8Args( int &argc, char **&argv );
 
-/** Returns the standard user data directory from the OS
-C:\Users\username\AppData\Roaming\InterSpec
+/** Returns the user's roaming application-data directory (%APPDATA%), e.g.
+ C:\Users\username\AppData\Roaming - InterSpec's own directory is the "InterSpec" directory in it
+ (see `candidate_user_data_dirs()`).
+
+ @throws std::runtime_error if it can not be determined.
 */
 InterSpec_API std::string user_data_dir();
 #endif

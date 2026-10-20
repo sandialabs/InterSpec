@@ -283,7 +283,8 @@ void PlutoPaintDevice::addPath( const WPainterPath &path )
   if( segments.empty() )
     return;
 
-  if( segments[0].type() != MoveTo )
+  // (Segment types are qualified, as <windows.h> declares a LineTo() function.)
+  if( segments[0].type() != Wt::MoveTo )
     plutovg_canvas_move_to( m_canvas, 0.0f, 0.0f );
 
   for( size_t i = 0; i < segments.size(); ++i )
@@ -292,15 +293,15 @@ void PlutoPaintDevice::addPath( const WPainterPath &path )
 
     switch( s.type() )
     {
-      case MoveTo:
+      case Wt::MoveTo:
         plutovg_canvas_move_to( m_canvas, static_cast<float>( s.x() ), static_cast<float>( s.y() ) );
         break;
 
-      case LineTo:
+      case Wt::LineTo:
         plutovg_canvas_line_to( m_canvas, static_cast<float>( s.x() ), static_cast<float>( s.y() ) );
         break;
 
-      case CubicC1:
+      case Wt::CubicC1:
         assert( (i + 2) < segments.size() );
         plutovg_canvas_cubic_to( m_canvas,
                                  static_cast<float>( s.x() ), static_cast<float>( s.y() ),
@@ -309,7 +310,7 @@ void PlutoPaintDevice::addPath( const WPainterPath &path )
         i += 2;
         break;
 
-      case QuadC:
+      case Wt::QuadC:
         assert( (i + 1) < segments.size() );
         plutovg_canvas_quad_to( m_canvas,
                                 static_cast<float>( s.x() ), static_cast<float>( s.y() ),
@@ -317,18 +318,18 @@ void PlutoPaintDevice::addPath( const WPainterPath &path )
         i += 1;
         break;
 
-      case ArcC:
+      case Wt::ArcC:
         assert( (i + 2) < segments.size() );
         add_elliptic_arc( m_canvas, s.x(), s.y(), segments[i+1].x(), segments[i+1].y(),
                           segments[i+2].x(), segments[i+2].y() );
         i += 2;
         break;
 
-      case CubicC2:
-      case CubicEnd:
-      case QuadEnd:
-      case ArcR:
-      case ArcAngleSweep:
+      case Wt::CubicC2:
+      case Wt::CubicEnd:
+      case Wt::QuadEnd:
+      case Wt::ArcR:
+      case Wt::ArcAngleSweep:
         assert( 0 );  // consumed with the segment that starts them
         break;
     }//switch( s.type() )

@@ -205,12 +205,10 @@ int main( int argc, char *argv[] )
       " uses - use the '--userdatadir' option to set this if you would like to share detectors,"
       " or other files." << std::endl;
     }
-#elif defined(_WIN32)
-    user_data_dir = AppUtils::user_data_dir();
 #else
-    // Linux: the first of the directories the GUI builds use that exists (wxWidgets, Electron
-    //  packaged, Electron development, plain XDG); the --userdatadir flag overrides this when
-    //  sharing with a specific install.
+    // Windows and Linux: the first of the directories the GUI builds use that exists (on Windows,
+    //  %APPDATA%\InterSpec; on Linux wxWidgets, Electron packaged, Electron development, plain XDG);
+    //  the --userdatadir flag overrides this when sharing with a specific install.
     {
       const std::vector<std::string> candidates = AppUtils::candidate_user_data_dirs();
 

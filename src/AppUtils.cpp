@@ -734,26 +734,25 @@ void cleanupUtf8Args( int &argc, char **&argv )
 
 
 std::string user_data_dir()
-{ 
-  //  Should we use SHGetKnownFolderPath with FOLDERID_RoamingAppData instead?
-  TCHAR ppszPath[MAX_PATH];
-  HRESULT hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, ppszPath );
-  if( hr == E_FAIL ) // Folder doesnt exist, get default value?  
-    hr = ::SHGetFolderPath( nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_DEFAULT, ppszPath );
- 
-  if( hr != S_OK )
+{
+  // The wide-character API, so user names outside the ANSI code page survive.  The returned path
+  //  must be freed with CoTaskMemFree, whether or not the call succeeded.
+  PWSTR path = nullptr;
+  HRESULT hr = ::SHGetKnownFolderPath( FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, nullptr, &path );
+  if( FAILED(hr) ) // e.g., the folder does not exist; get where it should be.
+  {
+    ::CoTaskMemFree( path );
+    path = nullptr;
+    hr = ::SHGetKnownFolderPath( FOLDERID_RoamingAppData, KF_FLAG_DONT_VERIFY, nullptr, &path );
+  }
+
+  const std::string answer = (SUCCEEDED(hr) && path) ? SpecUtils::convert_from_utf16_to_utf8( path ) : std::string();
+  ::CoTaskMemFree( path );
+
+  if( answer.empty() )
     throw runtime_error( "Couldnt get APP data directory" );
 
-  int len = MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, NULL, 0 );
-  std::wstring wstr( len, 0 );
-  MultiByteToWideChar( CP_ACP, 0, ppszPath, -1, &wstr[0], len );
-
-
-  int utf8Len = WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, NULL, 0, NULL, NULL );
-  std::string utf8Str( utf8Len, 0 );
-  WideCharToMultiByte( CP_UTF8, 0, &wstr[0], -1, &utf8Str[0], utf8Len, NULL, NULL );
-  
-  return utf8Str;
+  return answer;
 }//std::string AppUtils::user_data_dir()
 #endif
 
