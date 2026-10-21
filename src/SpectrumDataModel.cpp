@@ -488,6 +488,9 @@ void SpectrumDataModel::yRangeInXRange( const double xMin, const double xMax,
     // Make sure that column is active.
     if( !columnHasData( column ) ) continue;
 
+    // A subtracted background is not shown.
+    if( m_backgroundSubtract && (column == backgroundColumn()) ) continue;
+
     for( int row = lowRow; row <= highRow; ++row )
     {
       try

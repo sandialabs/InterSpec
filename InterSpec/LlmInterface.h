@@ -59,11 +59,11 @@ namespace LlmTools {
   class ToolRegistry;
 }
 
+class LlmSessionTimer;
 class LlmToolRequest;
 class LlmToolResults;
 
 namespace Wt {
-  class WTimer;
   class WResource;
 
   template <typename... A> class JSignal;
@@ -303,7 +303,7 @@ private:
    disarm it.  Must exceed the JS-side fetch timeout (300 s) so normal stalls report through the
    existing error path first.
    */
-  std::unique_ptr<Wt::WTimer> m_watchdogTimer;
+  std::unique_ptr<LlmSessionTimer> m_watchdogTimer;
   static constexpr int sm_watchdog_timeout_ms = 600000; // 10 minutes
 
   const std::string m_instanceId; // Unique ID for JavaScript bridge routing of responses to this instance
@@ -375,7 +375,7 @@ private:
 
   /** Timers backing the native path's retry delays.  Kept per request id so a retry that is
    pending when the interface is torn down does not fire into a destroyed object. */
-  std::map<int, std::unique_ptr<Wt::WTimer>> m_nativeRetryTimers;
+  std::map<int, std::unique_ptr<LlmSessionTimer>> m_nativeRetryTimers;
 #endif //USE_NATIVE_HTTP_CLIENT
 
   // Track current conversation being processed (for tool execution context)
@@ -433,7 +433,7 @@ private:
    ends in an API error therefore still pins its parent's round, since the error path pauses that
    conversation for the user to retry rather than completing it.
    */
-  std::unique_ptr<Wt::WTimer> m_deferredSweepTimer;
+  std::unique_ptr<LlmSessionTimer> m_deferredSweepTimer;
 
   /** True if `callId` is still an outstanding async call of the tool round `parentRequestId`.
 

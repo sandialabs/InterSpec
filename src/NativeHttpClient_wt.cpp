@@ -27,8 +27,8 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+#include <functional>
 
-#include <boost/bind/bind.hpp>
 
 // WConfig.h has to come first: it is what defines WT_WITH_SSL, which everything below keys off.
 #include <Wt/WConfig.h>
@@ -40,6 +40,7 @@
 #ifdef WT_WITH_SSL
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <boost/asio/post.hpp>
 #include <boost/asio/ssl/error.hpp>
 #endif
 
@@ -65,7 +66,9 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
    body, and the "is the response complete" test is `response_.body().size() >= contentLength_`.
    With a `Content-Length` response - which is what a non-streaming LLM POST returns - that test
    never becomes true and the request hangs until the idle timeout.  So the cap is left non-zero.
- - `abort()` and destruction are not thread-safe, and must happen on the io_service thread.
+ - `abort()` and destruction are not thread-safe, and must happen on an io_service thread.
+ - `done()` is emitted while the client holds its implementation mutex, which `abort()` and
+   `~Client()` also take - so the `done()` handler must not take any mutex held around those calls.
  - `request()` can return false or throw without ever emitting `done()`.
  - Signals must be connected before the request is started, or they silently never fire.
  */
@@ -246,6 +249,20 @@ Wt::WIOService *request_io_service()
   return server ? &server->ioService() : nullptr;
 }//request_io_service()
 
+
+/** Runs `fcn` on an io_service thread, posted to the io_service itself rather than through
+ `WIOService::post()`: that goes through one strand shared by the whole server, so it waits behind
+ any long-running posted work (in any session).  Returns false if there is no server.
+ */
+bool post_to_io( std::function<void()> fcn )
+{
+  Wt::WIOService * const ios = request_io_service();
+  if( !ios )
+    return false;
+  boost::asio::post( *ios, std::move(fcn) );
+  return true;
+}//post_to_io(...)
+
 }//namespace
 
 
@@ -276,7 +293,7 @@ const char *backendName()
 #ifdef WT_WITH_SSL
   return "Wt::Http::Client";
 #else
-  return "Wt::Http::Client (built without SSL - rebuild the prefix with BUILD_OPENSSL=ON)";
+  return "Wt::Http::Client (built without SSL - rebuild the prefix with WT_ENABLE_SSL=ON)";
 #endif
 }
 
@@ -352,23 +369,20 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
 
   // Signals must be connected before request() is called: Wt only wires headersReceived and
   //  bodyDataReceived through to its internals `if (...isConnected())` at request time.
-  client->headersReceived().connect(
-    boost::bind<void>( [state]( const Wt::Http::Message &response ){
+  client->headersReceived().connect( [state]( const Wt::Http::Message &response ){
       HeaderList headers;
       const std::vector<Wt::Http::Message::Header> &hdrs = response.headers();
       for( const Wt::Http::Message::Header &h : hdrs )
         headers.emplace_back( h.name(), h.value() );
       state->deliverHeaders( response.status(), std::move(headers) );
-    }, boost::placeholders::_1 ) );
+    } );
 
-  client->bodyDataReceived().connect(
-    boost::bind<void>( [state]( const std::string &text ){
+  client->bodyDataReceived().connect( [state]( const std::string &text ){
       state->deliverChunk( text );
-    }, boost::placeholders::_1 ) );
+    } );
 
-  client->done().connect(
-    boost::bind<void>( [state, data]( const boost::system::error_code &err,
-                                      const Wt::Http::Message & ){
+  client->done().connect( [state, data]( const Wt::AsioWrapper::error_code &err,
+                                         const Wt::Http::Message & ){
       // Wt documents that done() may still arrive with a successful response after abort(), so
       //  trust our own flag over the error code for cancellation.
       if( state->stopRequested.load() )
@@ -384,28 +398,26 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
         state->deliverComplete( Error::Ok, std::string() );
       }
 
-      // Hand the client over for deletion, under the same mutex cancelBackendRequest() takes.
-      //  Wt's io_service is a thread pool (10 threads by default), so a concurrent cancel could
-      //  otherwise read data->client here while this thread is clearing and freeing it.
-      Wt::Http::Client *toDelete = nullptr;
-      {
-        std::lock_guard<std::mutex> lock( state->backendMutex );
-        toDelete = data->client;
-        data->client = nullptr;
-      }
+      // Clear and delete the client from a separate io_service task, not here: this runs inside
+      //  Client::emitDone(), which holds the client's implementation mutex, and
+      //  cancelBackendRequest() holds `backendMutex` while calling abort(), which takes that
+      //  mutex - so taking `backendMutex` here would deadlock against a concurrent cancel.  The
+      //  lock order is always `backendMutex`, then the client's mutex.  (~Client() takes the
+      //  client's mutex too, so it waits for this emission to finish unwinding.)
+      const bool posted = post_to_io( [state, data](){
+        Wt::Http::Client *toDelete = nullptr;
+        {
+          std::lock_guard<std::mutex> lock( state->backendMutex );
+          toDelete = data->client;
+          data->client = nullptr;
+        }
+        delete toDelete;   // Once cleared under the mutex, no cancel can be using it
+      } );
 
-      // Do NOT delete inline: this runs inside the Client's own done_ signal emission, and
-      //  ~Client() destroys that signal.  Deferring to the next io_service turn lets the
-      //  emission unwind first.
-      if( toDelete )
-      {
-        Wt::WIOService * const ios = request_io_service();
-        if( ios )
-          ios->post( [toDelete](){ delete toDelete; } );
-        else
-          delete toDelete;   // no server left to post to; nothing can still be emitting
-      }
-    }, boost::placeholders::_1, boost::placeholders::_2 ) );
+      // With no server left there is nothing to post to; leaking the client at shutdown is safer
+      //  than deleting it inside its own signal emission.
+      (void)posted;
+    } );
 
   {
     std::lock_guard<std::mutex> lock( state->backendMutex );
@@ -451,14 +463,17 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
 #ifndef WT_WITH_SSL
       err = Error::BackendUnavailable;
       detail = "Wt was built without SSL support, so it cannot make https requests.  Rebuild the"
-               " dependency prefix with BUILD_OPENSSL=ON.";
+               " dependency prefix with WT_ENABLE_SSL=ON.";
 #else
       detail = "Could not start the request; the endpoint URL may be malformed";
 #endif
     }
 
-    delete client;
-    data->client = nullptr;
+    {
+      std::lock_guard<std::mutex> lock( state->backendMutex );
+      data->client = nullptr;
+    }
+    delete client;   // A cancel takes the mutex to use the client, so it is now done with it
 
     state->deliverComplete( err, detail );
   }//if( the request never started )
@@ -477,18 +492,14 @@ void cancelBackendRequest( const std::shared_ptr<RequestState> &state )
   if( !data )
     return;
 
-  Wt::WIOService * const ioService = request_io_service();
-  if( !ioService )
-    return;
-
-  // Client::abort() is not thread-safe when the client was constructed with an explicit
-  //  io_service (which is our case): it hands a boost::shared_ptr member to Impl::stop(), which
-  //  writes it from the strand while abort() reads it here.  Posting keeps all of that on the
-  //  one thread.  `data` is captured so the client cannot be deleted from under the post.
+  // Abort from an io_service thread, not the caller's.  `data` is captured so the client cannot be
+  //  deleted from under the post.
   const std::shared_ptr<RequestState> keepAlive = state;
-  ioService->post( [data, keepAlive](){
-    // Re-read under the mutex: the done() handler may be clearing and deleting the client
-    //  concurrently on another pool thread.
+  post_to_io( [data, keepAlive](){
+    // Hold the mutex across abort(): the client is only deleted after being cleared under it (see
+    //  the done() handler), so it cannot be freed while we use it.  abort() takes the client's own
+    //  mutex, which may briefly wait for a done() emission in progress - that handler does not
+    //  take `backendMutex`, so this cannot deadlock.
     std::lock_guard<std::mutex> lock( keepAlive->backendMutex );
     if( data->client )
       data->client->abort();

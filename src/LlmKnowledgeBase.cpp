@@ -482,6 +482,11 @@ std::vector<std::string> knowledgeDirectories()
     // Writable directory not set (e.g., batch mode or some unit tests)
   }
 
+  // A deployment's mounted config directory (--llm-config-dir) comes last, so it takes precedence.
+  const std::string config_dir = LlmConfig::configDirectory();
+  if( !config_dir.empty() )
+    data_dirs.push_back( config_dir );
+
   std::vector<std::string> answer;
   for( const std::string &data_dir : data_dirs )
   {

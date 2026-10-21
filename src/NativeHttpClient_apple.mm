@@ -425,9 +425,22 @@ didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
          || [method isEqualToString:NSURLAuthenticationMethodClientCertificate]);
 
     if( canSucceedSilently && ([challenge previousFailureCount] == 0) )
+    {
       completionHandler( NSURLSessionAuthChallengePerformDefaultHandling, nil );
-    else
+    }else if( [[challenge protectionSpace] isProxy] && _state )
+    {
+      // Rejecting a proxy's challenge leaves the request waiting until its idle timeout (and then
+      //  reported as a timeout); so report it now, and cancel (the cancellation's own completion
+      //  is then ignored).
+      _state->deliverComplete( NativeHttp::Error::ProxyAuthRequired,
+                               "The network proxy asked for a user name and password, which InterSpec"
+                               " does not collect.  Ask IT whether this machine is expected to"
+                               " authenticate to the proxy." );
+      completionHandler( NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil );
+    }else
+    {
       completionHandler( NSURLSessionAuthChallengeRejectProtectionSpace, nil );
+    }
     return;
   }
 
