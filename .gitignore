@@ -47,6 +47,7 @@ test_datasets/
 .opencode*/
 
 data/llm_knowledge/*/
+data/gamma_spec_skills/
 
 IDB*
 
