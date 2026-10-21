@@ -54,12 +54,21 @@
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 #include <initializer_list>
 
 namespace ceelo {
 
 namespace detail {
+
+/// The plain value of a double or a ceres::Jet (for weights needing no
+/// derivatives).
+template <class T>
+inline double scalar_part(const T& v) {
+    if constexpr (std::is_arithmetic_v<T>) return static_cast<double>(v);
+    else return v.a;
+}
 
 // EC leaves one vacancy; when the L-subshell is unresolved FullRealization
 // samples it by occupancy (L1:L2:L3 = 2:2:4). Match that mixture.
@@ -1229,8 +1238,12 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                 c->A += p_emit;
             }
         }
-        if (comps.empty()) { res.found = false; results.push_back(res); continue; }
-        res.found = true;
+        // A window with no emitted line has nothing to correct; with
+        // report_pure_sums it still gets its pure coincidence-sum rate (below),
+        // from the same summing-in enumeration a line's window uses.
+        const bool pure_sum = comps.empty();
+        if (pure_sum && !options.report_pure_sums) { res.found = false; results.push_back(res); continue; }
+        res.found = !pure_sum;
         // Rejected branches retain the legacy pairwise member fallback.  Its
         // coincidence links are not a coherent joint law database-wide, and
         // this analytic estimator does not enumerate their sum-fed pairs.  Keep
@@ -1254,6 +1267,222 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
                 res.summing_model_complete = false;
         }
 
+        // ---------------- Summing-IN (C_in) ----------------
+        // Absolute per-decay summing-in rate into the window
+        //   R_in = Σ_pairs branch_weight_B · P_B(a ∧ b) · eps_FEP(a)·eps_FEP(b)·surv
+        // (NO triple subtraction:
+        // unlike the MC direct stream, the analytic estimator has none, so the
+        // full joint P(a∧b) is used). Pairs are within one branch B (two members
+        // from different branches are different decays and never coincide); B
+        // ranges over all branches. Same-source (same transition / same vacancy)
+        // pairs are mutually exclusive and skipped.
+        // A lambda so a pure-sum window (no line) can use it too; e_num/e_den,
+        // when given, accumulate the rate-weighted sum energy.
+        auto summing_in_gain = [&](double* e_num, double* e_den) -> T {
+            T gain(0.0);
+
+            for (int b = 0; b < (int)branches.size(); ++b) {
+                const detail::PreparedBranch& pb = branches[b];
+                const DecayCascade& dc = *pb.dc;
+                const LevelDag& dag = pb.dag;
+                const std::vector<Occ>& occ = pb.occ;
+                const detail::LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
+
+                // A sum-in partner cannot be the primary line itself (an occurrence at
+                // any component line is a peak line itself, already in R_no).
+                auto is_peak_line = [&](const Occ& o) {
+                    for (const auto& c : comps)
+                        if (std::abs(o.energy - c.energy) <= options.match_tol_keV) return true;
+                    return false;
+                };
+
+                // Unnormalised joint P_B(x ∧ y) for two occurrences of this branch.
+                auto joint = [&](const Occ& x, const Occ& y) -> double {
+                    if (x.src == y.src) return 0.0;  // same transition / same vacancy
+                    // annih vs annih: two 511s of one positron are one physical event
+                    // (handled specially below); different-member 511s are rare -> skip.
+                    if (x.is_annih && y.is_annih) return 0.0;
+                    if (x.is_ec && y.is_ec) return 0.0;  // one capture => one vacancy
+                    auto ecmarg = [&](bool isL) {
+                        if (dc.weak_outcome_law.usable()) {
+                            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
+                            return wsp(b, {}, &ec, isL ? 2 : 1);
+                        }
+                        return isL ? legacy_ec.total_l : legacy_ec.total_k;
+                    };
+                    // Residual transition outcomes are independent of the matched
+                    // topology and weak mode. Their factors are absolute, whereas
+                    // DAG gamma/IC factors remain conditional on reaching `trans`.
+                    if (x.residual >= 0 || y.residual >= 0) {
+                        const Occ& r = x.residual >= 0 ? x : y;
+                        const Occ& o = x.residual >= 0 ? y : x;
+                        if (o.residual >= 0)
+                            return r.factor * o.factor;
+                        if (o.trans >= 0)
+                            return wsp(b, {o.trans})
+                                 * r.factor * o.factor;
+                        if (o.is_ec)
+                            return ecmarg(o.ec_isL) * r.factor * o.factor;
+                        if (o.is_annih) {
+                            const double pm = dc.weak_outcome_law.usable()
+                                ? detail::weak_kind_mass(dc, WeakOutcomeKind::Positron)
+                                : 1.0;  // legacy annihilation intensity is in factor
+                            return pm * r.factor * o.factor;
+                        }
+                        return 0.0;
+                    }
+                    // Order so `a` is the transition-attached one when possible.
+                    const Occ& t = (x.trans >= 0) ? x : y;
+                    const Occ& o = (x.trans >= 0) ? y : x;
+                    if (t.trans < 0) {
+                        // neither is a real transition: (ec/annih) x (ec/annih)
+                        if ((x.is_ec && y.is_annih) || (x.is_annih && y.is_ec)) {
+                            if (dc.weak_outcome_law.usable()) return 0.0;
+                            return ecmarg(x.is_ec ? x.ec_isL : y.ec_isL) * x.factor * y.factor;
+                        }
+                        return 0.0;
+                    }
+                    if (o.trans >= 0)            // gamma/IC × gamma/IC
+                        return wsp(b, {t.trans, o.trans}) * t.factor * o.factor;
+                    if (o.is_ec) {               // gamma/IC × EC-feed vacancy
+                        if (dc.weak_outcome_law.usable()) {
+                            const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
+                            return wsp(b, {t.trans}, &ec, o.ec_isL ? 2 : 1) *
+                                   t.factor * o.factor;
+                        }
+                        return dc.level_scheme.entry_probability *
+                               dag.up_reach_ec(t.trans, dc.level_scheme, o.ec_isL) *
+                               t.factor * o.factor;
+                    }
+                    // gamma/IC × annih-511: exact beta+ mode joint when available.
+                    if (dc.weak_outcome_law.usable()) {
+                        const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
+                        return wsp(b, {t.trans}, &pos) * t.factor * o.factor;
+                    }
+                    return dc.level_scheme.entry_probability * dag.pass(t.trans) *
+                           t.factor * o.factor;
+                };
+
+                in_state(b);
+
+                // Pairs. Occurrences are sorted by energy; for each x, the partners are
+                // those after x whose energy lies in [peak-win - E_x, peak+win - E_x],
+                // so only pairs that actually sum into the window are visited. Matters
+                // for dense schemes (Eu-152/Am-241) whose occurrence lists include the
+                // ~25 expanded vacancy x-ray lines per transition. As E_x increases both
+                // bounds decrease, so the unrestricted lower/upper bounds are tracked by
+                // two pointers that only move down (the restriction to indices after x
+                // is a max with ia+1); and once E_x > peak+win - E_x no later x can have
+                // a partner.
+                const std::vector<int>& ord = pb.ord;
+                const std::vector<double>& es = pb.es;
+                const double plo = pk.energy_keV - win, phi = pk.energy_keV + win;
+                const int nocc = static_cast<int>(ord.size());
+                int lo_ptr = nocc, hi_ptr = nocc;
+                for (int ia = 0; ia < nocc; ++ia) {
+                    const Occ& x = occ[ord[ia]];
+                    const double lo_val = plo - x.energy, hi_val = phi - x.energy;
+                    if (es[static_cast<std::size_t>(ia)] > hi_val) break;
+                    while (hi_ptr > 0 && es[static_cast<std::size_t>(hi_ptr - 1)] > hi_val) --hi_ptr;
+                    while (lo_ptr > 0 && !(es[static_cast<std::size_t>(lo_ptr - 1)] < lo_val)) --lo_ptr;
+                    int jb = std::max(lo_ptr, ia + 1);
+                    const int je = std::max(hi_ptr, ia + 1);
+                    if (jb >= je || is_peak_line(x)) continue;
+                    for (; jb < je; ++jb) {
+                        const Occ& y = occ[ord[jb]];
+                        if (is_peak_line(y)) continue;
+                        const double J = joint(x, y);
+                        if (J <= 0.0) continue;
+                        double g = 1.0;
+                        if (angular && x.member >= 0 && y.member >= 0 &&
+                            !x.is_annih && !y.is_annih) {
+                            auto a = link_a2a4(b, x.member, y.member);
+                            if (a.first != 0.0 || a.second != 0.0)
+                                g = detail::angular_g_w0(a.first, a.second);
+                        }
+                        const T surv = pair_coincident_survival(b, x, y);
+                        // One expression: the compiler may fuse its last
+                        // multiply-add, and existing results depend on that.
+                        gain += dc.branch_weight *
+                                J * eff.fep(x.energy) *
+                                eff.fep(y.energy) * g * surv;
+                        if (e_num) {
+                            const double w = detail::scalar_part(
+                                dc.branch_weight * J * eff.fep(x.energy) *
+                                eff.fep(y.energy) * g * surv);
+                            *e_num += w * (x.energy + y.energy);
+                            *e_den += w;
+                        }
+                    }
+                }
+
+                // No 511+511 -> 1022 term: this analytic path explicitly assumes a
+                // convex, single-sided detector subtending <2pi.  The photons are
+                // back-to-back, so if one enters that detector the other points away.
+                // A well/4pi geometry requires an angular-response provider and is
+                // outside this scalar-efficiency model's contract.
+
+                // Triples (optional): three GAMMA lines on distinct transitions whose
+                // energies sum into the window. Restricted to gammas (member >= 0):
+                // triples involving expanded vacancy x-ray LINES (or EC/annih) are
+                // eps^3-and-branch-small AND would make this O(n^3) over the ~25
+                // x-ray lines per converting transition — seconds on dense schemes
+                // (Eu-152, Am-241). Sorted + early-pruned on the running partial sum
+                // so the inner loops collapse once the sum passes the window.
+                if (options.enumerate_triples) {
+                    std::vector<int> real;
+                    for (int i = 0; i < (int)occ.size(); ++i)
+                        if (occ[i].trans >= 0 && occ[i].member >= 0 && !is_peak_line(occ[i]))
+                            real.push_back(i);
+                    std::sort(real.begin(), real.end(),
+                              [&](int p, int q) { return occ[p].energy < occ[q].energy; });
+                    const double thi = pk.energy_keV + win, tlo = pk.energy_keV - win;
+                    for (int a = 0; a < (int)real.size(); ++a) {
+                        const Occ& X = occ[real[a]];
+                        if (X.energy >= thi) break;                    // sorted: rest larger
+                        for (int b2 = a + 1; b2 < (int)real.size(); ++b2) {
+                            const Occ& Y = occ[real[b2]];
+                            const double xy = X.energy + Y.energy;
+                            if (xy >= thi) break;                      // Z2 > 0 -> can't return
+                            for (int c = b2 + 1; c < (int)real.size(); ++c) {
+                                const Occ& Z2 = occ[real[c]];
+                                const double s = xy + Z2.energy;
+                                if (s > thi) break;                    // sorted in c: rest larger
+                                if (s < tlo) continue;
+                                if (X.src == Y.src || X.src == Z2.src || Y.src == Z2.src)
+                                    continue;
+                                const double J = wsp(b,
+                                    {X.trans, Y.trans, Z2.trans}) *
+                                    X.factor * Y.factor * Z2.factor;
+                                if (J <= 0.0) continue;
+                                gain += dc.branch_weight * J *
+                                        eff.fep(X.energy) *
+                                        eff.fep(Y.energy) * eff.fep(Z2.energy);
+                                if (e_num) {
+                                    const double w = detail::scalar_part(
+                                        dc.branch_weight * J * eff.fep(X.energy) *
+                                        eff.fep(Y.energy) * eff.fep(Z2.energy));
+                                    *e_num += w * s;
+                                    *e_den += w;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return gain;
+        };
+
+        if (pure_sum) {
+            double e_num = 0.0, e_den = 0.0;
+            res.pure_sum_rate = summing_in_gain(&e_num, &e_den);
+            res.pure_sum_energy_keV = (e_den > 0.0) ? (e_num / e_den) : 0.0;
+            const std::set<double> unmatched(window_miss.begin(), window_miss.end());
+            res.unmatched_energies.assign(unmatched.begin(), unmatched.end());
+            results.push_back(std::move(res));
+            continue;
+        }
+
         // No-summing window rate and its emission-weighted mean FEP efficiency
         // (reduces to eps_FEP(peak) for a single line).
         T R_no(0.0);
@@ -1275,195 +1504,10 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
             R_out += c.A * eff.fep(c.energy) * c_out_c;
         }
 
-        // ---------------- Summing-IN (C_in) ----------------
-        // Absolute per-decay summing-in rate into the window
-        //   R_in = Σ_pairs branch_weight_B · P_B(a ∧ b) · eps_FEP(a)·eps_FEP(b)·surv
-        // (NO triple subtraction:
-        // unlike the MC direct stream, the analytic estimator has none, so the
-        // full joint P(a∧b) is used). Pairs are within one branch B (two members
-        // from different branches are different decays and never coincide); B
-        // ranges over all branches. Same-source (same transition / same vacancy)
-        // pairs are mutually exclusive and skipped.
-        T gain(0.0);
-
-        for (int b = 0; b < (int)branches.size(); ++b) {
-            const detail::PreparedBranch& pb = branches[b];
-            const DecayCascade& dc = *pb.dc;
-            const LevelDag& dag = pb.dag;
-            const std::vector<Occ>& occ = pb.occ;
-            const detail::LegacyEcShellStarts& legacy_ec = pb.legacy_ec;
-
-            // A sum-in partner cannot be the primary line itself (an occurrence at
-            // any component line is a peak line itself, already in R_no).
-            auto is_peak_line = [&](const Occ& o) {
-                for (const auto& c : comps)
-                    if (std::abs(o.energy - c.energy) <= options.match_tol_keV) return true;
-                return false;
-            };
-
-            // Unnormalised joint P_B(x ∧ y) for two occurrences of this branch.
-            auto joint = [&](const Occ& x, const Occ& y) -> double {
-                if (x.src == y.src) return 0.0;  // same transition / same vacancy
-                // annih vs annih: two 511s of one positron are one physical event
-                // (handled specially below); different-member 511s are rare -> skip.
-                if (x.is_annih && y.is_annih) return 0.0;
-                if (x.is_ec && y.is_ec) return 0.0;  // one capture => one vacancy
-                auto ecmarg = [&](bool isL) {
-                    if (dc.weak_outcome_law.usable()) {
-                        const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                        return wsp(b, {}, &ec, isL ? 2 : 1);
-                    }
-                    return isL ? legacy_ec.total_l : legacy_ec.total_k;
-                };
-                // Residual transition outcomes are independent of the matched
-                // topology and weak mode. Their factors are absolute, whereas
-                // DAG gamma/IC factors remain conditional on reaching `trans`.
-                if (x.residual >= 0 || y.residual >= 0) {
-                    const Occ& r = x.residual >= 0 ? x : y;
-                    const Occ& o = x.residual >= 0 ? y : x;
-                    if (o.residual >= 0)
-                        return r.factor * o.factor;
-                    if (o.trans >= 0)
-                        return wsp(b, {o.trans})
-                             * r.factor * o.factor;
-                    if (o.is_ec)
-                        return ecmarg(o.ec_isL) * r.factor * o.factor;
-                    if (o.is_annih) {
-                        const double pm = dc.weak_outcome_law.usable()
-                            ? detail::weak_kind_mass(dc, WeakOutcomeKind::Positron)
-                            : 1.0;  // legacy annihilation intensity is in factor
-                        return pm * r.factor * o.factor;
-                    }
-                    return 0.0;
-                }
-                // Order so `a` is the transition-attached one when possible.
-                const Occ& t = (x.trans >= 0) ? x : y;
-                const Occ& o = (x.trans >= 0) ? y : x;
-                if (t.trans < 0) {
-                    // neither is a real transition: (ec/annih) x (ec/annih)
-                    if ((x.is_ec && y.is_annih) || (x.is_annih && y.is_ec)) {
-                        if (dc.weak_outcome_law.usable()) return 0.0;
-                        return ecmarg(x.is_ec ? x.ec_isL : y.ec_isL) * x.factor * y.factor;
-                    }
-                    return 0.0;
-                }
-                if (o.trans >= 0)            // gamma/IC × gamma/IC
-                    return wsp(b, {t.trans, o.trans}) * t.factor * o.factor;
-                if (o.is_ec) {               // gamma/IC × EC-feed vacancy
-                    if (dc.weak_outcome_law.usable()) {
-                        const WeakOutcomeKind ec = WeakOutcomeKind::ElectronCapture;
-                        return wsp(b, {t.trans}, &ec, o.ec_isL ? 2 : 1) *
-                               t.factor * o.factor;
-                    }
-                    return dc.level_scheme.entry_probability *
-                           dag.up_reach_ec(t.trans, dc.level_scheme, o.ec_isL) *
-                           t.factor * o.factor;
-                }
-                // gamma/IC × annih-511: exact beta+ mode joint when available.
-                if (dc.weak_outcome_law.usable()) {
-                    const WeakOutcomeKind pos = WeakOutcomeKind::Positron;
-                    return wsp(b, {t.trans}, &pos) * t.factor * o.factor;
-                }
-                return dc.level_scheme.entry_probability * dag.pass(t.trans) *
-                       t.factor * o.factor;
-            };
-
-            in_state(b);
-
-            // Pairs. Occurrences are sorted by energy; for each x, the partners are
-            // those after x whose energy lies in [peak-win - E_x, peak+win - E_x],
-            // so only pairs that actually sum into the window are visited. Matters
-            // for dense schemes (Eu-152/Am-241) whose occurrence lists include the
-            // ~25 expanded vacancy x-ray lines per transition. As E_x increases both
-            // bounds decrease, so the unrestricted lower/upper bounds are tracked by
-            // two pointers that only move down (the restriction to indices after x
-            // is a max with ia+1); and once E_x > peak+win - E_x no later x can have
-            // a partner.
-            const std::vector<int>& ord = pb.ord;
-            const std::vector<double>& es = pb.es;
-            const double plo = pk.energy_keV - win, phi = pk.energy_keV + win;
-            const int nocc = static_cast<int>(ord.size());
-            int lo_ptr = nocc, hi_ptr = nocc;
-            for (int ia = 0; ia < nocc; ++ia) {
-                const Occ& x = occ[ord[ia]];
-                const double lo_val = plo - x.energy, hi_val = phi - x.energy;
-                if (es[static_cast<std::size_t>(ia)] > hi_val) break;
-                while (hi_ptr > 0 && es[static_cast<std::size_t>(hi_ptr - 1)] > hi_val) --hi_ptr;
-                while (lo_ptr > 0 && !(es[static_cast<std::size_t>(lo_ptr - 1)] < lo_val)) --lo_ptr;
-                int jb = std::max(lo_ptr, ia + 1);
-                const int je = std::max(hi_ptr, ia + 1);
-                if (jb >= je || is_peak_line(x)) continue;
-                for (; jb < je; ++jb) {
-                    const Occ& y = occ[ord[jb]];
-                    if (is_peak_line(y)) continue;
-                    const double J = joint(x, y);
-                    if (J <= 0.0) continue;
-                    double g = 1.0;
-                    if (angular && x.member >= 0 && y.member >= 0 &&
-                        !x.is_annih && !y.is_annih) {
-                        auto a = link_a2a4(b, x.member, y.member);
-                        if (a.first != 0.0 || a.second != 0.0)
-                            g = detail::angular_g_w0(a.first, a.second);
-                    }
-                    const T surv = pair_coincident_survival(b, x, y);
-                    gain += dc.branch_weight *
-                            J * eff.fep(x.energy) *
-                            eff.fep(y.energy) * g * surv;
-                }
-            }
-
-            // No 511+511 -> 1022 term: this analytic path explicitly assumes a
-            // convex, single-sided detector subtending <2pi.  The photons are
-            // back-to-back, so if one enters that detector the other points away.
-            // A well/4pi geometry requires an angular-response provider and is
-            // outside this scalar-efficiency model's contract.
-
-            // Triples (optional): three GAMMA lines on distinct transitions whose
-            // energies sum into the window. Restricted to gammas (member >= 0):
-            // triples involving expanded vacancy x-ray LINES (or EC/annih) are
-            // eps^3-and-branch-small AND would make this O(n^3) over the ~25
-            // x-ray lines per converting transition — seconds on dense schemes
-            // (Eu-152, Am-241). Sorted + early-pruned on the running partial sum
-            // so the inner loops collapse once the sum passes the window.
-            if (options.enumerate_triples) {
-                std::vector<int> real;
-                for (int i = 0; i < (int)occ.size(); ++i)
-                    if (occ[i].trans >= 0 && occ[i].member >= 0 && !is_peak_line(occ[i]))
-                        real.push_back(i);
-                std::sort(real.begin(), real.end(),
-                          [&](int p, int q) { return occ[p].energy < occ[q].energy; });
-                const double thi = pk.energy_keV + win, tlo = pk.energy_keV - win;
-                for (int a = 0; a < (int)real.size(); ++a) {
-                    const Occ& X = occ[real[a]];
-                    if (X.energy >= thi) break;                    // sorted: rest larger
-                    for (int b2 = a + 1; b2 < (int)real.size(); ++b2) {
-                        const Occ& Y = occ[real[b2]];
-                        const double xy = X.energy + Y.energy;
-                        if (xy >= thi) break;                      // Z2 > 0 -> can't return
-                        for (int c = b2 + 1; c < (int)real.size(); ++c) {
-                            const Occ& Z2 = occ[real[c]];
-                            const double s = xy + Z2.energy;
-                            if (s > thi) break;                    // sorted in c: rest larger
-                            if (s < tlo) continue;
-                            if (X.src == Y.src || X.src == Z2.src || Y.src == Z2.src)
-                                continue;
-                            const double J = wsp(b,
-                                {X.trans, Y.trans, Z2.trans}) *
-                                X.factor * Y.factor * Z2.factor;
-                            if (J <= 0.0) continue;
-                            gain += dc.branch_weight * J *
-                                    eff.fep(X.energy) *
-                                    eff.fep(Y.energy) * eff.fep(Z2.energy);
-                        }
-                    }
-                }
-            }
-        }
-
         // Fitted-peak-area summing factor: SF = (R_out + R_in) / R_no. c_out /
         // c_in are the window-rate-normalised summing-out / summing-in fractions
         // (for a single line these reduce to the per-line C_out and C_in).
-        const T R_in = gain;  // absolute per-decay summing-in rate into window
+        const T R_in = summing_in_gain(nullptr, nullptr);  // absolute per-decay summing-in rate into window
         const bool has_rate = (R_no > 1e-30);
         const T sf = has_rate ? T((R_out + R_in) / R_no) : T(1.0);
         res.c_out = has_rate ? T(R_out / R_no) : T(1.0);
@@ -1487,6 +1531,42 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
     }
 
     return results;
+}
+
+inline std::vector<double> coincidence_sum_energies(
+    const AnalyticCascadeModel& model, const double lo_keV, const double hi_keV,
+    const double merge_keV) {
+    std::vector<double> sums;
+    for (const detail::PreparedBranch& pb : model.branches()) {
+        const std::vector<detail::Occ>& occ = pb.occ;
+        const std::vector<int>& ord = pb.ord;
+        const std::vector<double>& es = pb.es;
+        const std::size_t nocc = ord.size();
+        for (std::size_t ia = 0; ia < nocc; ++ia) {
+            const detail::Occ& x = occ[static_cast<std::size_t>(ord[ia])];
+            if (2.0 * es[ia] > hi_keV) break;  // sorted: every later pair is above
+            const auto jb = std::lower_bound(es.begin() + static_cast<std::ptrdiff_t>(ia) + 1,
+                                             es.end(), lo_keV - x.energy);
+            for (auto it = jb; (it != es.end()) && (*it <= hi_keV - x.energy); ++it) {
+                const detail::Occ& y =
+                    occ[static_cast<std::size_t>(ord[static_cast<std::size_t>(it - es.begin())])];
+                if (x.src == y.src) continue;              // mutually exclusive
+                if (x.is_annih && y.is_annih) continue;    // one positron's pair
+                if (x.is_ec && y.is_ec) continue;          // one capture, one vacancy
+                sums.push_back(x.energy + y.energy);
+            }
+        }
+    }
+    std::sort(sums.begin(), sums.end());
+    std::vector<double> merged;
+    for (std::size_t i = 0; i < sums.size();) {
+        std::size_t j = i;
+        double total = 0.0;
+        while ((j < sums.size()) && (sums[j] - sums[i] <= merge_keV)) total += sums[j++];
+        merged.push_back(total / static_cast<double>(j - i));
+        i = j;
+    }
+    return merged;
 }
 
 }  // namespace ceelo

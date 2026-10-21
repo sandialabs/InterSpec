@@ -147,6 +147,14 @@ struct AnalyticCascadeOptions {
     /// mutual angle is loosely constrained and the effect is negligible — Co-60
     /// summing-out agrees to <0.5% with g=1). No detector geometry is required.
     bool apply_angular_correlation = true;
+    /// Also report pure coincidence-sum peaks. A window containing no emitted
+    /// line normally comes back found == false with nothing computed; with this
+    /// set it also gets `pure_sum_rate` - the absolute per-decay rate of photon
+    /// pairs (and triples) summing into it, from exactly the joints, angular
+    /// factor and coincident survival a line's summing-in uses - and the rate-
+    /// weighted mean energy of those sums. Off by default; windows with a line
+    /// are unaffected either way.
+    bool report_pure_sums = false;
 };
 
 /// Per-peak analytic summing result. Mirrors PeakCascadeResult where they
@@ -175,6 +183,12 @@ struct AnalyticPeakResultT {
     /// analytic summing-in.  Use FullRealization for a numeric cross-check, while
     /// noting its invalid-branch sampler is itself only an approximate model.
     bool summing_model_complete = true;
+    /// With AnalyticCascadeOptions::report_pure_sums, for a window holding no
+    /// emitted line (found == false): the absolute per-decay rate of coincidence
+    /// sums into it (counts per parent decay, the efficiencies included), and
+    /// their rate-weighted mean energy (0 when there are none).
+    T pure_sum_rate = T(0.0);
+    double pure_sum_energy_keV = 0.0;
 };
 
 /// The plain-double result (the pre-templating API).
@@ -303,6 +317,16 @@ std::vector<AnalyticPeakResultT<T>> compute_cascade_analytic(
     const std::vector<PeakWindow>& peaks,
     const EfficiencyProviderT<T>& provider,
     const AnalyticCascadeOptions& options = {});
+
+/// Every energy (keV, ascending) in [lo_keV, hi_keV] at which two emissions of
+/// one decay branch can sum: each pair of summing-in occurrences (gamma lines
+/// and the expanded vacancy x-ray lines) not from the same transition or
+/// vacancy. Energies within `merge_keV` of each other are merged (keeping their
+/// mean). No probabilities - a candidate list for pure-sum windows
+/// (AnalyticCascadeOptions::report_pure_sums), whose rates say which matter.
+inline std::vector<double> coincidence_sum_energies(const AnalyticCascadeModel& model,
+                                             double lo_keV, double hi_keV,
+                                             double merge_keV = 0.05);
 
 }  // namespace ceelo
 
