@@ -268,6 +268,28 @@ public:
   const std::vector<double> &partnerFepIntrinsic() const { return m_partner_fep_int; }
   const std::vector<double> &partnerTotIntrinsic() const { return m_partner_tot_int; }
 
+  /** Index of the entry of the sorted `energies` (e.g. #allPartnerEnergies) nearest `energy`, or -1 if none is
+   within 0.25 keV.
+
+   It must be the nearest entry: another source's line can sit just 0.25 keV away (U-238's 221.15 keV below
+   U-235's 221.40 keV), so taking the first entry at or above `energy - 0.25` can land on that line, fail the
+   tolerance, and report no efficiency at all for the exact match just after it.
+   */
+  static int nearestEnergyIndex( const std::vector<double> &energies, const double energy )
+  {
+    const std::vector<double>::const_iterator pos = std::lower_bound( energies.begin(), energies.end(), energy );
+    int index = -1;
+    double diff = 0.25;
+    if( (pos != energies.end()) && (std::fabs(*pos - energy) < diff) )
+    {
+      index = static_cast<int>( pos - energies.begin() );
+      diff = std::fabs(*pos - energy);
+    }
+    if( (pos != energies.begin()) && (std::fabs(*(pos - 1) - energy) < diff) )
+      index = static_cast<int>( (pos - 1) - energies.begin() );
+    return index;
+  }
+
   const ShieldScatterAugment &scatterAugment() const { return m_scatter; }
 
   /** Detector absolute FEP / total efficiency at (energy, theta, phi,
