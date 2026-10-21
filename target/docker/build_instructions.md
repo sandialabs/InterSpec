@@ -77,6 +77,20 @@ cmake --install ./build_alpine --prefix ./InterSpec
 ```
 
 
+## Dev containers
+[alpine_devcontainer.dockerfile](alpine_devcontainer.dockerfile) and [debian_devcontainer.dockerfile](debian_devcontainer.dockerfile) are starting points for a VS Code dev container.  The repository does not ship a `.devcontainer/` (it is gitignored), so each developer can keep their own; to use one of these, create `.devcontainer/devcontainer.json` at the repository root along the lines of:
+```json
+{
+  "name": "InterSpec (Alpine)",
+  "build": {
+    "dockerfile": "../target/docker/alpine_devcontainer.dockerfile",
+    "context": ".."
+  },
+  "forwardPorts": [8078]
+}
+```
+
+
 ## If you want to rebuild from scatch
 ```bash
 docker build --no-cache -t interspec -f alpine_web_container.dockerfile .
