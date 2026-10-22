@@ -494,6 +494,15 @@ add_test( NAME TCascadeSummingFit
 #  reports as a slow test rather than as a bare ctest timeout, which is how it read before them.
 set_tests_properties( TCascadeSummingFit PROPERTIES TIMEOUT 1800 )
 
+# Isotopics-by-nuclides cascade-summing correction (RelEffCurveInput::correct_for_cascade_summing):
+#  synthetic and CeeLo-MC-truth spectra; fixtures in test_data/rel_act_cascade/ (committed).
+add_executable( test_RelActCascadeSum test_RelActCascadeSum.cpp )
+target_link_libraries( test_RelActCascadeSum PRIVATE InterSpecLib )
+add_test( NAME TRelActCascadeSum
+  COMMAND $<TARGET_FILE:test_RelActCascadeSum> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # CeeLo MC-parameterized detector-response validation: golden response XMLs +
 # fresh MC probe banks live in test_data/ceelo_drf/ (committed fixtures); the
 # test never runs Monte Carlo.
