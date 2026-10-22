@@ -52,6 +52,8 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
 
+#include "cross_sections/CrossSectionData.h"
+
 using namespace std;
 
 // Data directory globals (set from command line).
@@ -425,12 +427,12 @@ BOOST_AUTO_TEST_CASE( test_generic_attenuator_material )
     for( const double energy : { 60.0, 122.0, 662.0, 1332.0 } )
     {
       const double lo = MassAttenuation::massAttenuationCoefficientElement(
-                                        z_lo, static_cast<float>(energy) );
+                                        z_lo, energy );
       const double hi = MassAttenuation::massAttenuationCoefficientElement(
-                                        z_hi, static_cast<float>(energy) );
+                                        z_hi, energy );
       const double mix = (1.0 - f_hi)*lo + f_hi*hi;
       const double ref = MassAttenuation::massAttenuationCoefficientFracAN(
-                                        static_cast<float>(an), static_cast<float>(energy) );
+                                        an, energy );
       BOOST_REQUIRE( ref > 0.0 );
       BOOST_CHECK_MESSAGE( std::fabs(mix - ref) <= 0.05*ref,
                           "AN=" + std::to_string(an) + " at " + std::to_string(energy)
@@ -456,6 +458,77 @@ BOOST_AUTO_TEST_CASE( test_generic_attenuator_material )
   BOOST_CHECK_THROW( CeeLoUtils::genericAttenuatorMaterial( 13.0, 1.0, 0.0 ), std::exception );
   BOOST_CHECK_THROW( CeeLoUtils::genericAttenuatorMaterial( 99.0, 1.0, 0.1 ), std::exception );
 }
+
+
+BOOST_AUTO_TEST_CASE( test_actinide_materials )
+{
+  // CeeLo's photon data reaches californium (ceelo::kMaxZ), so plutonium and
+  //  americium shields and sources convert instead of throwing.
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const ceelo::CrossSectionData &xs = ceelo::CrossSectionData::instance();
+
+  // A formula keeps its stoichiometry: above uranium its atom counts become mass
+  //  fractions through CeeLo's own atomic weight, which CeeLo then uses to turn
+  //  them back into atom densities.  SandiaDecay's Pu mass (244) would give
+  //  PuO(1.96); what is left is the 4e-5 by which SandiaDecay's natural oxygen
+  //  (15.9994) differs from CeeLo's (16.00).
+  const ceelo::MaterialSpec puo2 = CeeLoUtils::materialFromGadrasFormula( "PuO2", 11.46, "PuO2" );
+  BOOST_REQUIRE_EQUAL( puo2.composition.size(), 2u );
+  double w_pu = 0.0, w_o = 0.0;
+  for( const ceelo::MaterialComponent &c : puo2.composition )
+  {
+    if( c.Z == 94 )
+      w_pu += c.mass_fraction;
+    else
+      w_o += c.mass_fraction;
+  }
+  const double o_per_pu = (w_o / xs.atomic_weight(8)) / (w_pu / xs.atomic_weight(94));
+  BOOST_CHECK_MESSAGE( close_enough( o_per_pu, 2.0, 2.0e-4 ),
+                      "PuO2 converts to O/Pu = " + std::to_string(o_per_pu) );
+
+  // MaterialDB's plutonium materials, given by element and by nuclide, convert.
+  const std::shared_ptr<const MaterialDB> db = MaterialDB::instance();
+  for( const char *name : { "Plutonium dioxide", "PuO2 - 4.5% Pu240 Plutonium dioxide" } )
+  {
+    const std::shared_ptr<const Material> m = db->material( name );
+    BOOST_REQUIRE_MESSAGE( m, string("No '") + name + "' in MaterialDB" );
+    ceelo::MaterialSpec spec;
+    BOOST_REQUIRE_NO_THROW( spec = CeeLoUtils::to_ceelo_material( *m ) );
+    bool has_pu = false;
+    for( const ceelo::MaterialComponent &c : spec.composition )
+      has_pu = has_pu || (c.Z == 94);
+    BOOST_CHECK_MESSAGE( has_pu, string(name) + " lost its plutonium" );
+  }
+
+  // Generic attenuators span the actinides; above californium still throws.
+  const ceelo::MaterialSpec pu_am = CeeLoUtils::genericAttenuatorMaterial( 94.5, 10.0, 0.5 );
+  BOOST_REQUIRE_EQUAL( pu_am.composition.size(), 2u );
+  for( const ceelo::MaterialComponent &c : pu_am.composition )
+    BOOST_CHECK( close_enough( c.mass_fraction, 0.5, 1.0e-6 ) );
+  BOOST_CHECK_NO_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.0, 10.0, 0.5 ) );
+  BOOST_CHECK_THROW( CeeLoUtils::genericAttenuatorMaterial( 98.5, 10.0, 0.5 ), std::exception );
+
+  // MassAttenuation forwards to these same CeeLo cross sections and atomic weights,
+  //  so the two agree per gram to rounding.  Coherent scattering is left out because
+  //  MassAttenuation does not include it.
+  const double avogadro = 6.02214076e23, barn_cm2 = 1.0e-24;
+  for( const int Z : { 92, 93, 94, 95, 96, 97, 98 } )
+  {
+    for( const double energy : { 60.0, 200.0, 662.0, 1332.0, 3000.0 } )
+    {
+      const auto p = xs.all_cross_sections( Z, 1.0e-3 * energy );
+      const double ceelo_mu = (p.sigma_pe + p.sigma_cs + p.sigma_pp)
+                              * barn_cm2 * avogadro / xs.atomic_weight( Z );
+      const double interspec_mu = MassAttenuation::massAttenuationCoefficientElement(
+                                                        Z, energy )
+                                  / (PhysicalUnits::cm2 / PhysicalUnits::g);
+      BOOST_CHECK_MESSAGE( std::fabs( interspec_mu / ceelo_mu - 1.0 ) < 1.0e-9,
+                          "Z=" + std::to_string(Z) + " at " + std::to_string(energy)
+                          + " keV: InterSpec mu/rho=" + std::to_string(interspec_mu)
+                          + " vs CeeLo " + std::to_string(ceelo_mu) + " cm2/g" );
+    }
+  }
+}//test_actinide_materials
 
 
 BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
@@ -707,7 +780,17 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
 
-  // name -> hash, re-recorded 2026-09-06 (--record-gadras-hashes), for the FEP-window narrowing in
+  // name -> hash, re-recorded 2026-09-23 (--record-gadras-hashes), for the CeeLo re-vendor that
+  //  regenerated its photon tables (CeeLo a032bc5: Z <= 98, 10 keV - 20 MeV).  The response each of
+  //  these DRFs carries stores CeeLo's photon mu tables, and regenerating them moved every tabulated
+  //  mu by at most 0.094% (max |d ln| = 9.4e-4 over MuPE/MuCS/MuRS/MuPP); through the kernel, LnEta
+  //  moved by at most 4.3e-4 and LnB by at most 9.6e-4.  Nothing else in the serialized response
+  //  changed - energies, cos-theta nodes, FracSigma, geometry and provenance are identical - verified
+  //  by replaying each DRF's make_transfer_response() inputs against the previously vendored CeeLo
+  //  (69bc080) and the new one and diffing the XML; the new replay reproduces the attached response
+  //  byte for byte.
+  //
+  //  Previously re-recorded 2026-09-06, for the FEP-window narrowing in
   //  "Work bringing CeeLo det response into Act/Shield fit": the MC/kernel full-energy-peak window
   //  went from a hard-coded 1.5 keV to `kDefaultFepWindowKeV` = 0.75 keV.  A narrower window credits
   //  less in-window Compton, so the curve-transfer response each of these DRFs carries has slightly
@@ -730,19 +813,19 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   //  (parameter 10), so no geometry can be built for it, it carries no CeeLo response, and it keeps
   //  the flat-disk treatment.  If that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 7372553335873334779ull },
-    { "HPGe 20%", 16196536323127818931ull },
+    { "HPGe 10%", 11105849555574549990ull },
+    { "HPGe 20%", 12699365125597787390ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 234978438008986273ull },
-    { "LaBr 5%", 17974260579841392545ull },
-    { "NaI 10%", 10907454414227762381ull },
-    { "NaI 12%", 15349155559717898211ull },
-    { "NaI 1x1", 12632028037909424196ull },
-    { "NaI 25%", 234010201361425340ull },
-    { "NaI 2x2", 6561580901340824291ull },
-    { "NaI 30%", 11940533889697376263ull },
-    { "NaI 3x3", 18345639359501764784ull },
-    { "NaI 5%", 14935417445942686416ull }
+    { "LaBr 10%", 10603061785403644759ull },
+    { "LaBr 5%", 14639350877560941553ull },
+    { "NaI 10%", 1936410060157356732ull },
+    { "NaI 12%", 9885823345380394963ull },
+    { "NaI 1x1", 9525623812407942701ull },
+    { "NaI 25%", 16754079468361279556ull },
+    { "NaI 2x2", 2545616606137210441ull },
+    { "NaI 30%", 16341185075972576269ull },
+    { "NaI 3x3", 5750198296142389519ull },
+    { "NaI 5%", 10923877891009050372ull }
   };
 
   bool record = false;
@@ -860,6 +943,149 @@ BOOST_AUTO_TEST_CASE( test_gadras_dat_only_import )
   }//for( const string &det : dat_only )
 }
 
+
+
+/** Every fixture's peak-shape preferences must be usable by every tool: within
+ `PeakDef::skew_parameter_range` (Fit Peaks for Nuclides used to reject the
+ negative powers outright, and PeakFitLM replaced Kromek's 11.5 extent with 0),
+ the same shape as the file (a negative power acts as zero, so is stored as
+ zero), and kept when the DRF goes through the database's `m_drfExtra` column.
+ */
+BOOST_AUTO_TEST_CASE( test_gadras_skew_prefs_usable )
+{
+  const vector<string> fixtures = { "CZT_1.5x2x2_text", "CZT_1cm_text", "Detective_X_xml",
+    "HPGe_Planar50_text", "IdentiFINDER_LaBr3_xml", "IdentiFINDER_NGH_xml",
+    "Kromek_GR1_CZT_text", "MikesCzt_xml", "NaI_2x2_text", "NaI_3x3_text" };
+
+  for( const string &det : fixtures )
+  {
+    const string dir = SpecUtils::append_path( gadras_dir(), det );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(dir), "Missing fixture " + dir );
+
+    DetectorPeakResponse drf;
+    BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( dir, true ) );
+    const shared_ptr<const PeakFitDetPrefs> prefs = drf.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!prefs, det + ": no peak-shape preferences" );
+
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile( dat_path(det) );
+    const double file_values[6] = { dat.lowSkew(), dat.highSkew(),
+                                    (std::max)( 0.0f, dat.lowSkewPower() ),
+                                    (std::max)( 0.0f, dat.highSkewPower() ),
+                                    dat.lowSkewExtent(), dat.highSkewExtent() };
+
+    for( int i = 0; i < 6; ++i )
+    {
+      const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+      double lower, upper, starting, step;
+      BOOST_REQUIRE( PeakDef::skew_parameter_range( prefs->m_peak_skew_type, ct, lower, upper, starting, step ) );
+      BOOST_REQUIRE( prefs->m_lower_energy_skew[i].has_value() );
+
+      const double value = prefs->m_lower_energy_skew[i].value();
+      BOOST_CHECK_MESSAGE( (value >= lower) && (value <= upper),
+                           det + ": skew parameter " + std::to_string(i) + " = " + std::to_string(value)
+                           + " is outside [" + std::to_string(lower) + ", " + std::to_string(upper) + "]" );
+      BOOST_CHECK_MESSAGE( fabs( value - file_values[i] ) < 1.0e-6,
+                           det + ": skew parameter " + std::to_string(i) + " = " + std::to_string(value)
+                           + ", but file gives " + std::to_string(file_values[i]) );
+    }//for( int i = 0; i < 6; ++i )
+
+    // Through the database's extras column, and back (the XML keeps 9 significant figures).
+    DetectorPeakResponse restored;
+    restored.setDrfExtraFromXmlString( drf.drfExtraToXmlString() );
+    const shared_ptr<const PeakFitDetPrefs> restored_prefs = restored.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!restored_prefs, det + ": prefs lost through m_drfExtra" );
+    BOOST_CHECK( restored_prefs->m_peak_skew_type == prefs->m_peak_skew_type );
+    BOOST_CHECK( restored_prefs->m_det_type == prefs->m_det_type );
+    BOOST_CHECK( restored_prefs->m_source == prefs->m_source );
+    BOOST_CHECK( restored_prefs->m_roi_independent_skew == prefs->m_roi_independent_skew );
+    for( int i = 0; i < 6; ++i )
+    {
+      BOOST_REQUIRE( restored_prefs->m_lower_energy_skew[i].has_value() );
+      BOOST_CHECK_SMALL( restored_prefs->m_lower_energy_skew[i].value() - prefs->m_lower_energy_skew[i].value(),
+                         1.0e-7*(std::max)( 1.0, fabs( prefs->m_lower_energy_skew[i].value() ) ) );
+    }
+
+    restored.setDrfExtraFromXmlString( "" );
+    BOOST_CHECK( !restored.peakFitDetPrefs() );
+  }//for( const string &det : fixtures )
+
+  // The two out-of-range fixtures this was about
+  {
+    DetectorPeakResponse kromek;
+    BOOST_REQUIRE_NO_THROW( kromek.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "Kromek_GR1_CZT_text" ), true ) );
+    BOOST_REQUIRE( kromek.peakFitDetPrefs() );
+    BOOST_CHECK_CLOSE( kromek.peakFitDetPrefs()->m_lower_energy_skew[5].value(), 11.5, 1.0e-4 );
+    BOOST_CHECK_EQUAL( kromek.peakFitDetPrefs()->m_lower_energy_skew[2].value(), 0.0 );  // file: -0.613
+
+    DetectorPeakResponse planar;
+    BOOST_REQUIRE_NO_THROW( planar.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "HPGe_Planar50_text" ), true ) );
+    BOOST_REQUIRE( planar.peakFitDetPrefs() );
+    BOOST_CHECK_EQUAL( planar.peakFitDetPrefs()->m_lower_energy_skew[2].value(), 0.0 );  // file: -0.193
+    BOOST_CHECK_EQUAL( planar.peakFitDetPrefs()->m_lower_energy_skew[3].value(), 0.0 );  // file: -0.5
+  }
+}//test_gadras_skew_prefs_usable
+
+
+/** A GADRAS detector's own tail powers/extents are what a peak or tool switched to its skew type
+ starts from (`skew_starting_value`), and what a peak is held at when the peak-fit prefs dont give
+ them (`apply_prefs_skew_to_peak`) - not the generic defaults.
+ */
+BOOST_AUTO_TEST_CASE( test_gadras_skew_seeding_from_detector )
+{
+  DetectorPeakResponse drf;
+  BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( SpecUtils::append_path( gadras_dir(), "CZT_1.5x2x2_text" ) ) );
+  const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf.peakFitDetPrefs();
+  BOOST_REQUIRE( drf_prefs && (drf_prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) );
+
+  const PeakDef::SkewType type = PeakDef::SkewType::GadrasCZT;
+  for( int i = 0; i < 6; ++i )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+    BOOST_REQUIRE( drf_prefs->fixed_skew_value( type, ct ).has_value() );
+    BOOST_CHECK_EQUAL( skew_starting_value( type, ct, nullptr, drf_prefs.get() ),
+                       drf_prefs->m_lower_energy_skew[i].value() );
+
+    // Another skew type's prefs give no value for this type
+    BOOST_CHECK( !drf_prefs->fixed_skew_value( PeakDef::SkewType::GadrasGeneric, ct ).has_value() );
+  }
+
+  // The spectrum's prefs, when for this type, are used before the detector's
+  PeakFitDetPrefs meas_prefs;
+  meas_prefs.m_peak_skew_type = type;
+  meas_prefs.m_lower_energy_skew[0] = 12.5;
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar0, &meas_prefs, drf_prefs.get() ), 12.5 );
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar2, &meas_prefs, drf_prefs.get() ),
+                     drf_prefs->m_lower_energy_skew[2].value() );
+
+  // Neither gives a value: the generic starting value
+  double lower, upper, starting, step;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( type, PeakDef::SkewPar4, lower, upper, starting, step ) );
+  BOOST_CHECK_EQUAL( skew_starting_value( type, PeakDef::SkewPar4, &meas_prefs, nullptr ), starting );
+
+  // Prefs with only the amplitudes: the amplitudes are fixed at them, and the powers/extents (not
+  //  fit by default) held at the detector's values; without the detector's prefs, at the defaults.
+  meas_prefs.m_lower_energy_skew[1] = 3.5;
+  PeakDef peak( 661.66, 4.0, 1000.0 );
+  apply_prefs_skew_to_peak( peak, meas_prefs, nullptr, drf_prefs.get() );
+  BOOST_CHECK( peak.skewType() == type );
+  BOOST_CHECK_EQUAL( peak.coefficient( PeakDef::SkewPar0 ), 12.5 );
+  BOOST_CHECK_EQUAL( peak.coefficient( PeakDef::SkewPar1 ), 3.5 );
+  for( int i = 0; i < 6; ++i )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::SkewPar0 + i );
+    BOOST_CHECK( !peak.fitFor( ct ) );
+    if( i >= 2 )
+      BOOST_CHECK_EQUAL( peak.coefficient( ct ), drf_prefs->m_lower_energy_skew[i].value() );
+  }
+
+  PeakDef no_drf_peak( 661.66, 4.0, 1000.0 );
+  meas_prefs.m_lower_energy_skew[0].reset();
+  apply_prefs_skew_to_peak( no_drf_peak, meas_prefs, nullptr, nullptr );
+  BOOST_CHECK( no_drf_peak.fitFor( PeakDef::SkewPar0 ) );   // no value: fit
+  BOOST_CHECK( !no_drf_peak.fitFor( PeakDef::SkewPar1 ) );
+  BOOST_CHECK( !no_drf_peak.fitFor( PeakDef::SkewPar4 ) );  // not fit by default: held
+  BOOST_CHECK_EQUAL( no_drf_peak.coefficient( PeakDef::SkewPar4 ), starting );
+}//test_gadras_skew_seeding_from_detector
 
 
 /** The sniffer must not call a spectrum or an efficiency CSV a Detector.dat -
@@ -1058,15 +1284,56 @@ BOOST_AUTO_TEST_CASE( test_coarse_type_for_every_gadras_material )
                           << " (nominal " << info.resolution661 << "% FWHM)" );
     }
 
-    // A semiconductor gets the CZT tail construction; nothing else does.
-    const bool want_czt = (prefs->m_det_type == PeakFitUtils::CoarseResolutionType::CZT);
-    BOOST_CHECK_MESSAGE( (prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) == want_czt,
-                        string(info.name) + ": peak-shape family does not follow its class" );
+    // GADRAS builds the CZT tail for exactly CZT and CdTe (not TlBr or HgI2, even though they
+    //  share the coarse CZT class); PVT-like plastics get no GADRAS skew at all.
+    const string name = info.name;
+    const bool want_czt = ((name == "CZT") || (name == "CdTe"));
+    const bool want_none = GadrasDetectorDat::hasLowPhotopeakProbability( name );
+    const PeakDef::SkewType want_type = want_none ? PeakDef::SkewType::NoSkew
+                                      : (want_czt ? PeakDef::SkewType::GadrasCZT
+                                                  : PeakDef::SkewType::GadrasGeneric);
+    BOOST_CHECK_MESSAGE( prefs->m_peak_skew_type == want_type,
+                        string(info.name) + ": peak-shape family is " + PeakDef::to_string(prefs->m_peak_skew_type) );
+    BOOST_CHECK_EQUAL( GadrasDetectorDat::usesCztPeakShape( name ), want_czt );
   }//for( every material )
 
   BOOST_CHECK_MESSAGE( unknown == 0, std::to_string(unknown)
                        + " GADRAS materials could not be classified" );
 }
+
+
+/** `GadrasDetectorDat::hasLowPhotopeakProbability` runtime test for HasLowPhotopeakProbability): 
+ * photoelectric/Compton at 661.7 keV below 0.001.  Check that list against the cross-sections, for every material in the table. */
+BOOST_AUTO_TEST_CASE( test_low_photopeak_probability_materials )
+{
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Need --datadir" );
+
+  const float energy = 661.7f;
+  size_t num_low = 0;
+  for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
+  {
+    ceelo::MaterialSpec spec;
+    BOOST_REQUIRE_NO_THROW( spec = CeeLoUtils::gadrasCrystalMaterial( info.name ) );
+
+    double photo = 0.0, compton = 0.0;
+    for( const ceelo::MaterialComponent &c : spec.composition )
+    {
+      photo += c.mass_fraction * MassAttenuation::massAttenuationCoefficientElement( c.Z, energy,
+                                              MassAttenuation::GammaEmProcces::PhotoElectric );
+      compton += c.mass_fraction * MassAttenuation::massAttenuationCoefficientElement( c.Z, energy,
+                                              MassAttenuation::GammaEmProcces::ComptonScatter );
+    }
+    BOOST_REQUIRE( compton > 0.0 );
+
+    const double ratio = photo / compton;
+    const bool is_low = (ratio < 0.001);
+    num_low += is_low;
+    BOOST_CHECK_MESSAGE( GadrasDetectorDat::hasLowPhotopeakProbability( info.name ) == is_low,
+                         string(info.name) + ": photo/Compton at 661.7 keV = " + std::to_string(ratio) );
+  }//for( every material )
+
+  BOOST_CHECK_EQUAL( num_low, 5 );   //PVT, Stilbene, Deuterated Stilbene, EJ301, EJ301D
+}//test_low_photopeak_probability_materials
 
 
 /** Every crystal a Detector.dat can name has to be one the geometry form offers,

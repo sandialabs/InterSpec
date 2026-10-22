@@ -28,6 +28,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 #include <iostream>
 
 #define BOOST_TEST_MODULE RelActCalcAuto_FloatingPeakFwhm_suite
@@ -291,3 +292,148 @@ BOOST_AUTO_TEST_CASE( floating_peak_fwhm_reported_in_kev )
                        "Released floating-peak FWHM " << T << " keV gives T/F = " << ratio << "; the pre-fix"
                        " bug reports the bare FWHM multiplier (T/F = M*/F < 1), i.e. divided down by fwhm(E)." );
 }//BOOST_AUTO_TEST_CASE( floating_peak_fwhm_reported_in_kev )
+
+
+// GADRAS skew in RelActAuto: the tail amplitudes must actually be fit (the shape used to give a zero
+//  autodiff gradient for every skew parameter, so they stayed at their starting values, with zero
+//  uncertainty, and made the fit rank-deficient), and the detector characteristics (powers/extents),
+//  which are not fit by default, must be held - not fit - when no value is given for them.
+BOOST_AUTO_TEST_CASE( gadras_skew_amplitudes_fit_and_characteristics_held )
+{
+  set_data_dir();
+
+  const string spec_path = SpecUtils::append_path(
+      SpecUtils::append_path( g_test_file_dir, "RelActAutoReport" ), "U235_Unshielded_6000.n42" );
+  auto meas = make_shared<SpecMeas>();
+  BOOST_REQUIRE( meas->load_file( spec_path, SpecUtils::ParserType::Auto ) );
+
+  shared_ptr<const SpecUtils::Measurement> foreground, background;
+  for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+  {
+    if( m && (m->source_type() == SpecUtils::SourceType::Background) )
+      background = m;
+    else if( m && !foreground )
+      foreground = m;
+  }
+  BOOST_REQUIRE( foreground && meas->detector() );
+
+  const unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = meas->getRelActAutoGuiState();
+  BOOST_REQUIRE( state && !state->options.rel_eff_curves.empty() );
+
+  // The same compact U-235/U-238 problem as `floating_peak_fwhm_reported_in_kev`
+  const auto solve_with_skew = [&]( const PeakDef::SkewType skew_type,
+                                    const std::optional<double> low_power_start = std::nullopt ) -> RelActCalcAuto::RelActAutoSolution {
+    RelActCalcAuto::Options opts = state->options;
+    opts.auto_profile_weak_mass_fractions = false;
+    opts.auto_simplify_model = false;
+    opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+    opts.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+    opts.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+    opts.skew_type = skew_type;
+    opts.lorentzian_xrays = false;
+    opts.skew_from_peak_fit_prefs = false;
+    for( size_t i = 0; i < 6; ++i )
+    {
+      opts.fixed_lower_skew[i].reset();
+      opts.fixed_upper_skew[i].reset();
+      opts.start_lower_skew[i].reset();
+      opts.start_upper_skew[i].reset();
+    }
+    opts.start_lower_skew[2] = low_power_start;
+    opts.additional_br_uncert = 0.0;
+    opts.floating_peaks.clear();
+
+    opts.rel_eff_curves.resize(1);
+    opts.same_corr_fcn_for_all_rel_eff_curves = false;
+    opts.same_external_shielding_for_all_rel_eff_curves = false;
+    RelActCalcAuto::RelEffCurveInput &curve = opts.rel_eff_curves.front();
+    curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnY;
+    curve.rel_eff_eqn_order = 1;
+    curve.phys_model_self_atten.reset();
+    curve.phys_model_external_atten.clear();
+    curve.mass_fraction_constraints.clear();
+    curve.act_ratio_constraints.clear();
+    curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+        []( const RelActCalcAuto::NucInputInfo &input ) {
+          const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(input.source);
+          return !nuclide || ((nuclide->massNumber != 235) && (nuclide->massNumber != 238));
+        }),curve.nuclides.end() );
+    BOOST_REQUIRE_EQUAL( curve.nuclides.size(), 2U );
+    for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+    {
+      input.fit_age = false;
+      input.fit_age_min.reset();
+      input.fit_age_max.reset();
+      input.force_profile_mass_fraction = false;
+    }
+
+    for( RelActCalcAuto::RoiRange &roi : opts.rois )
+      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    opts.rois.erase( std::remove_if(opts.rois.begin(),opts.rois.end(),
+        []( const RelActCalcAuto::RoiRange &roi ) {
+          const bool u235_region = (roi.lower_energy >= 140.0) && (roi.upper_energy <= 210.0);
+          const bool u238_region = (roi.lower_energy >= 990.0) && (roi.upper_energy <= 1010.0);
+          return !u235_region && !u238_region;
+        }),opts.rois.end() );
+
+    RelActCalcAuto::RelActAutoSolution sol;
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( opts, foreground, background, meas->detector(), {},
+                                            PeakFitUtils::coarse_det_type( foreground, nullptr ), nullptr ) );
+    BOOST_REQUIRE_MESSAGE( (sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+                           || (sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings),
+                           "solve failed: " << sol.m_error_message );
+    return sol;
+  };//solve_with_skew
+
+  const RelActCalcAuto::RelActAutoSolution no_skew = solve_with_skew( PeakDef::SkewType::NoSkew );
+  const RelActCalcAuto::RelActAutoSolution gadras = solve_with_skew( PeakDef::SkewType::GadrasGeneric );
+
+  // The GADRAS skew adds no rank-deficient directions to the problem
+  BOOST_CHECK_EQUAL( gadras.m_num_rank_deficient_dirs, no_skew.m_num_rank_deficient_dirs );
+
+  double lower, upper, start_amp, step;
+  BOOST_REQUIRE( PeakDef::skew_parameter_range( PeakDef::SkewType::GadrasGeneric, PeakDef::SkewPar0,
+                                                lower, upper, start_amp, step ) );
+
+  BOOST_REQUIRE( !gadras.m_fit_peaks.empty() );
+  for( const PeakDef &peak : gadras.m_fit_peaks )
+  {
+    BOOST_TEST_INFO( "peak at " << peak.mean() << " keV" );
+    BOOST_REQUIRE( peak.skewType() == PeakDef::SkewType::GadrasGeneric );
+
+    // The amplitudes are fit: moved off their starting value, with an uncertainty
+    BOOST_CHECK( peak.fitFor( PeakDef::SkewPar0 ) && peak.fitFor( PeakDef::SkewPar1 ) );
+    BOOST_CHECK( fabs( peak.coefficient( PeakDef::SkewPar0 ) - start_amp ) > 1.0E-3 );
+    BOOST_CHECK( peak.uncertainty( PeakDef::SkewPar0 ) > 0.0 );
+
+    // The powers and extents are held at their defaults
+    for( const PeakDef::CoefficientType ct : { PeakDef::SkewPar2, PeakDef::SkewPar3, PeakDef::SkewPar4, PeakDef::SkewPar5 } )
+    {
+      BOOST_CHECK( !peak.fitFor( ct ) );
+      BOOST_CHECK_EQUAL( peak.coefficient( ct ), 0.0 );
+    }
+  }//for( const PeakDef &peak : gadras.m_fit_peaks )
+
+  // The solution reports the skew it fit (the same at both energies, as GADRAS has no energy dependence)
+  typedef RelActCalcAuto::RelActAutoSolution::SkewParResult SkewParResult;
+  BOOST_CHECK( no_skew.skew_parameters().empty() );
+  const vector<SkewParResult> skew_results = gadras.skew_parameters();
+  BOOST_REQUIRE_EQUAL( skew_results.size(), 6U );
+  BOOST_CHECK( skew_results[0].was_fit && skew_results[1].was_fit );
+  BOOST_CHECK_CLOSE( skew_results[0].lower, gadras.m_fit_peaks.front().coefficient( PeakDef::SkewPar0 ), 1.0E-6 );
+  for( size_t i = 0; i < skew_results.size(); ++i )
+  {
+    BOOST_CHECK( !skew_results[i].simplified );  // auto-simplify is off
+    BOOST_CHECK_EQUAL( skew_results[i].lower, skew_results[i].upper );
+    if( i >= 2 )
+      BOOST_CHECK( !skew_results[i].was_fit && (skew_results[i].lower == 0.0) );
+  }
+
+  // A starting value for a parameter not fit by default (here, the low-side power) has it fit.
+  const RelActCalcAuto::RelActAutoSolution fit_power = solve_with_skew( PeakDef::SkewType::GadrasGeneric, 0.5 );
+  const vector<SkewParResult> fit_power_results = fit_power.skew_parameters();
+  BOOST_REQUIRE_EQUAL( fit_power_results.size(), 6U );
+  BOOST_CHECK( fit_power_results[2].was_fit && !fit_power_results[3].was_fit );
+  for( const PeakDef &peak : fit_power.m_fit_peaks )
+    BOOST_CHECK( peak.fitFor( PeakDef::SkewPar2 ) && !peak.fitFor( PeakDef::SkewPar3 ) );
+}//BOOST_AUTO_TEST_CASE( gadras_skew_amplitudes_fit_and_characteristics_held )

@@ -174,4 +174,14 @@
   <message id="dlt-estimating-spread">प्रसार की गणना…</message>
   <message id="dlt-spread-band">(आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
   <message id="dlt-spread-unavailable">प्रसार का अनुमान नहीं लगाया जा सका।</message>
+  <message id="dlt-detector-eff-used">प्रयुक्त डिटेक्टर दक्षता</message>
+  <message id="dlt-det-eff-uncert">डिटेक्टर दक्षता अनिश्चितता</message>
+  <message id="dlt-det-eff-uncert-none">नहीं बताई गई</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (डिटेक्टर द्वारा बताई गई)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (केवल ज्यामितीय मॉडल)</message>
+  <message id="dlt-systematic-uncert-used">प्रयुक्त व्यवस्थित अनिश्चितता</message>
+  <message id="dlt-tt-detector-eff-used">इस दूरी पर स्रोत द्वारा उत्सर्जित गामा के पूर्ण-ऊर्जा शिखर में संसूचित होने की प्रायिकता: वह दक्षता जिसे यह गणना वास्तव में उपयोग करती है।</message>
+  <message id="dlt-tt-det-eff-uncert">इस ऊर्जा और दूरी पर डिटेक्टर दक्षता की 1-सिग्मा सापेक्ष अनिश्चितता: जो डिटेक्टर प्रतिक्रिया स्वयं बताती है, और ज्यामितीय रूप से मॉडल किए गए डिटेक्टर के लिए, डिटेक्टर के पास या अक्ष से बाहर उसका ज्यामितीय मॉडल जो अनिश्चितता जोड़ता है।  वह अनिश्चितता जिसे डिटेक्टर प्रतिक्रिया नहीं बताती बल्कि उसके लिए मानी जाती है, शामिल नहीं है।</message>
+  <message id="dlt-tt-systematic-uncert-used">ऊपर की Currie सीमाओं द्वारा प्रयुक्त 1-सिग्मा सापेक्ष व्यवस्थित अनिश्चितता: डिटेक्टर दक्षता अनिश्चितता, किसी भी दर्ज दक्षता या दूरी अनिश्चितता के साथ वर्ग-योग में संयोजित।</message>
+  <message id="dlt-drf-uncert-decon-excluded">इन सीमाओं में डिटेक्टर प्रतिक्रिया की दक्षता अनिश्चितता शामिल नहीं है (प्रयुक्त रेखाओं के लिए अधिकतम {1}%); प्रति-रेखा Currie सीमाओं में यह शामिल है।</message>
 </messages>

@@ -294,3 +294,12 @@
   height: 200px;
   margin-bottom: 15px;
 }
+
+/* Whether a limit includes the detector-efficiency uncertainty: informational, so de-emphasized. */
+.MdaDrfUncertTxt
+{
+  display: block;
+  font-size: smaller;
+  font-style: italic;
+  opacity: 0.8;
+}

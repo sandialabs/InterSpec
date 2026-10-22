@@ -28,7 +28,6 @@
 #include <chrono>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 #include <iostream>
 #include <stdexcept>
@@ -40,6 +39,7 @@
 #include <Wt/WLabel.h>
 #include <Wt/WTable.h>
 #include <Wt/WTimer.h>
+#include <Wt/WLogger.h>
 #include <Wt/WServer.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WTableRow.h>
@@ -49,6 +49,7 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WGroupBox.h>
+#include <Wt/WFileUpload.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WProgressBar.h>
@@ -63,14 +64,17 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/DrfChart.h"
+#include "InterSpec/DrfImport.h"
 #include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/DetectorGeometryInput.h"
@@ -83,11 +87,14 @@ using namespace std;
  extrapolated: the events a node needs for a fractional precision p are `rel_var_per_event / p^2`
  (the probe's own (sigma/eps)^2 x N, which folds in CeeLo's variance-reduction biasing - the analog
  (1 - eps)/eps rule would not), and they run at `events_per_cpu_s` across `parallelism` threads.
+ Nodes that stop on the total's precision (ceelo::GenerationOptions::scans_stop_on_total) use the
+ total's `tot_rel_var_per_event` instead.
  */
 struct McTimeCalibration
 {
   std::string geometry_key;        //ceelo::GeometryDescriptor::to_xml_string() it was measured for
   double rel_var_per_event = 0.0;
+  double tot_rel_var_per_event = 0.0;
   double events_per_cpu_s = 0.0;
   double parallelism = 1.0;        //cpu_s / wall_s
   bool from_full_run = false;      //derived from a real generation's per-node costs, not the probe
@@ -120,24 +127,28 @@ namespace
   }//node_precision_map(...)
 
 
-  /** Predicted wall-seconds for one node at fractional precision `prec`: from the measured
-   throughput when there is one, else the historical ballpark (an M1-class laptop, capped like the
-   per-node budget); either way the per-node event/CPU caps apply as in CeeLo's apply_node_budget.
+  /** Predicted wall-seconds for one node at fractional precision `prec` - of the total efficiency
+   when `on_total`, else of the FEP: from the measured throughput when there is one, else the
+   historical ballpark (an M1-class laptop, capped like the per-node budget); either way the
+   per-node event/CPU caps apply as in CeeLo's apply_node_budget.
    */
-  double node_cost_s( const double prec, const ceelo::GenerationOptions &opts,
+  double node_cost_s( const double prec, const bool on_total, const ceelo::GenerationOptions &opts,
                       const McTimeCalibration *calib )
   {
-    if( !calib || !calib->valid() )
+    if( !calib || !calib->valid() || (on_total && !(calib->tot_rel_var_per_event > 0.0)) )
     {
       // Measured, not guessed: a full 814-node run of a 3x3 NaI + 1 mm Al can on a 10-thread M1
       //  took 351 s, i.e. 0.431 s/node at the default 0.3% precision.  The 1/p^2 shape is right
       //  (node cost is dominated by the events needed to reach `prec`), the old 0.05 coefficient
       //  was not: it predicted 0.100 s/node, so the estimate read 1.4 min for a 5.9 min run and
-      //  6.8 min for a 43 min one.  Better to be honest before the probe refines it.
-      return std::min( 8.0, 0.22 * std::pow( 0.003/prec, 2.0 ) + 0.21 );
+      //  6.8 min for a 43 min one.  Better to be honest before the probe refines it.  Stopping on
+      //  the total took 0.13x the CPU of stopping on the FEP (35 scan nodes of a 5x5 cm HPGe).
+      const double precision_part = (on_total ? 0.13 : 1.0) * 0.22 * std::pow( 0.003/prec, 2.0 );
+      return std::min( 8.0, precision_part + 0.21 );
     }
 
-    const double needed = calib->rel_var_per_event / (prec * prec);
+    const double rel_var = on_total ? calib->tot_rel_var_per_event : calib->rel_var_per_event;
+    const double needed = rel_var / (prec * prec);
     const double events = std::min( std::max( needed, double(opts.min_events_per_node) ),
                                     double(opts.max_events_per_node) );
     double cpu = events / calib->events_per_cpu_s;
@@ -162,7 +173,8 @@ namespace
     cum.push_back( 0.0 );
 
     auto push = [&]( const uint32_t stage, const double energy ){
-      cum.push_back( cum.back() + node_cost_s( prec(stage, energy), opts, calib ) );
+      const bool on_total = opts.scans_stop_on_total && (stage != 1);
+      cum.push_back( cum.back() + node_cost_s( prec(stage, energy), on_total, opts, calib ) );
     };
 
     for( const double energy : plan.backbone_energies_keV )
@@ -218,6 +230,14 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
 
     if( !drf || !drf->isValid() )
       return answer;
+
+    // An imported grid is the detector's efficiency at any position - far better than its legacy
+    //  curve, which is only a far-field sample of it.
+    if( drf->hasImportedGrid() )
+    {
+      curve_derived = true;  //sampled from the grid, not measured
+      return DetEffG2kPar::groundingPoints( *drf->ceeloResponse() );
+    }
 
     const shared_ptr<const MeasuredDrfPoints> raw = drf->measuredPoints();
     if( raw && !raw->empty() )
@@ -335,6 +355,18 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
     m_hideGenerateButton( false ),
+    m_gridResponse{},
+    m_gridNote( nullptr ),
+    m_gridFepOnly{},
+    m_gridWithTotal{},
+    m_totalGeometryKey(),
+    m_formBaseline{},
+    m_formBaselineState(),
+    m_gridGeomRow( nullptr ),
+    m_revertGeomBtn( nullptr ),
+    m_importGeomRow( nullptr ),
+    m_gridTotalInfo( nullptr ),
+    m_gridTotalRow( nullptr ),
     m_cancelBtn( nullptr ),
     m_progress( nullptr ),
     m_status( nullptr ),
@@ -373,12 +405,52 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
 
   addStyleClass( "MakeMcResponseForDrf" );
 
+  const shared_ptr<const ceelo::DetectorResponse> seed_resp
+                             = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
+  if( DetEffG2kPar::isGridResponse( seed_resp ) )
+  {
+    m_gridResponse = seed_resp;
+
+    // A total it already carries was generated for the DRF's Monte-Carlo geometry.
+    if( seed_resp->tot_eff.characterized() )
+    {
+      m_gridWithTotal = seed_resp;
+      const shared_ptr<const ceelo::GeometryDescriptor> mc_geom = m_seedDrf->monteCarloGeometry();
+      m_totalGeometryKey = (mc_geom ? *mc_geom : seed_resp->descriptor).to_xml_string();
+    }
+  }//if( the seed carries an imported grid )
+
   //Geometry
   WGroupBox *geomBox = addNew<WGroupBox>( WString::tr("mmr-geometry-title") );
   geomBox->addStyleClass( "McGeomBox" );
   m_geometry = geomBox->addNew<DetectorGeometryInput>( m_interspec );
-  m_geometry->seedFromDrf( m_seedDrf );  //uses the DRFs own geometry when it has one
+  setFormBaseline( m_geometry->seedFromDrf( m_seedDrf ) );  //the DRFs own geometry, when it has one
   m_geometry->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
+
+  if( m_gridResponse )
+  {
+    // The geometry stays editable for a grid - it is what a Monte Carlo of the detector uses - so
+    //  say what an edit does and does not change, and offer the way back.
+    m_gridGeomRow = geomBox->addNew<WContainerWidget>();
+    m_gridGeomRow->addStyleClass( "McGridGeomRow" );
+    WText *geomNote = m_gridGeomRow->addNew<WText>( WString::tr("mmr-grid-geom-edited") );
+    geomNote->addStyleClass( "McUpgradeNote" );
+    geomNote->setInline( false );
+    m_revertGeomBtn = m_gridGeomRow->addNew<WPushButton>( WString::tr("mmr-grid-geom-revert") );
+    m_revertGeomBtn->clicked().connect( this, &MakeMcResponseForDrf::revertToImportedGeometry );
+    m_gridGeomRow->hide();
+  }//if( m_gridResponse )
+
+  // A detector with no recorded shape can borrow one from another detector file.
+  {
+    m_importGeomRow = geomBox->addNew<WContainerWidget>();
+    m_importGeomRow->addStyleClass( "McImportGeomRow" );
+    WPushButton *importBtn = m_importGeomRow->addNew<WPushButton>( WString::tr("mmr-import-geom-btn") );
+    importBtn->addStyleClass( "LinkBtn" );
+    importBtn->setToolTip( WString::tr("mmr-tt-import-geom") );
+    importBtn->clicked().connect( this, &MakeMcResponseForDrf::showImportGeometryDialog );
+    m_importGeomRow->hide();   //see updateImportGeometryLink
+  }
 
   //Characterization options - a label/input table, so the inputs line up with each other and with
   //  the geometry form above (see `DgiTable` in DetectorGeometryInput).
@@ -408,17 +480,29 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     WTableCell *cell = add_row( WString::tr("mmr-method") );
     m_method = cell->addNew<WComboBox>();
   }
+
   m_method->addItem( WString::tr("mmr-method-full-mc") );        //Method::FullMc
   m_method->addItem( WString::tr("mmr-method-quick-mc") );       //Method::QuickMc
   m_method->addItem( WString::tr("mmr-method-curve-transfer") ); //Method::CurveTransfer
+  if( m_gridResponse )
+    m_method->addItem( WString::tr("mmr-method-imported-grid") ); //Method::ImportedGrid
   m_method->setCurrentIndex( 0 );
   m_method->activated().connect( this, &MakeMcResponseForDrf::handleMethodChanged );
   HelpSystem::attachToolTipOn( m_method, WString::tr("mmr-tt-method"), true );
 
+  if( m_gridResponse )
+  {
+    m_gridNote = add_wide_row()->addNew<WText>( WString::tr("mmr-grid-replaced-note") );
+    m_gridNote->addStyleClass( "McUpgradeNote" );
+    m_gridNote->setInline( false );
+
+    m_gridTotalInfo = add_wide_row()->addNew<WText>( "" );
+    m_gridTotalRow = optsTable->rowAt( opt_row - 1 );
+    m_gridTotalInfo->addStyleClass( "McAnchorInfo" );
+    m_gridTotalInfo->setInline( false );
+  }
   // When the DRF already carries a quick/transfer response, nudge toward the
   //  full characterization as the accuracy upgrade.
-  const shared_ptr<const ceelo::DetectorResponse> seed_resp
-                             = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
   if( seed_resp && seed_resp->model_transfer.has_value() )
   {
     WText *upgradeNote = add_wide_row()->addNew<WText>( WString::tr("mmr-upgrade-note") );
@@ -557,7 +641,9 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   //
   // Deliberately NOT for a DRF whose geometry is only the cylinder guessed from its diameter: a
   //  transfer built on a guessed shape would be attached, silently, by the next "Use".
-  if( seed_resp )
+  if( m_gridResponse )
+    m_method->setCurrentIndex( static_cast<int>(Method::ImportedGrid) );
+  else if( seed_resp )
     m_method->setCurrentIndex( static_cast<int>(seed_resp->provenance.method) );
   else if( m_seedDrf && m_seedDrf->isValid() && m_seedDrf->geometry() )
     m_method->setCurrentIndex( static_cast<int>(Method::CurveTransfer) );
@@ -566,7 +652,11 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   handleMethodChanged();   //row visibility for the selected method; clears m_result
   m_seedingFromDrf = false;
 
-  if( seed_resp )
+  if( m_gridResponse )
+  {
+    syncGridResult();  //the grid, with the total it carries (current for the seeded geometry)
+    m_status->setText( WString::tr("mmr-status-grid") );
+  }else if( seed_resp )
   {
     // The response the DRF already carries; showing it is the point of opening on its method.
     m_result = seed_resp;
@@ -597,6 +687,7 @@ void MakeMcResponseForDrf::setGeometryFromDescriptor( const ceelo::GeometryDescr
                                                       const std::vector<std::string> &notes )
 {
   m_geometry->setFromDescriptor( geometry, notes );
+  setFormBaseline( make_shared<const ceelo::GeometryDescriptor>( geometry ) );
   handleGeometryChanged();   //refresh estimate / anchor / any generated result
 }//setGeometryFromDescriptor(...)
 
@@ -722,7 +813,9 @@ bool MakeMcResponseForDrf::State::operator==( const State &rhs ) const
          && (chartDistance == rhs.chartDistance)
          && (result == rhs.result)
          && (status == rhs.status)
-         && (geometry == rhs.geometry);
+         && (geometry == rhs.geometry)
+         && (gridWithTotal == rhs.gridWithTotal)
+         && (totalGeometryKey == rhs.totalGeometryKey);
 }//State::operator==
 
 
@@ -742,6 +835,8 @@ MakeMcResponseForDrf::State MakeMcResponseForDrf::currentState() const
   state.result = m_result;
   state.status = m_status->text().toUTF8();
   state.geometry = m_geometry->currentState();
+  state.gridWithTotal = m_gridWithTotal;
+  state.totalGeometryKey = m_totalGeometryKey;
 
   return state;
 }//MakeMcResponseForDrf::currentState()
@@ -781,16 +876,12 @@ void MakeMcResponseForDrf::setState( const State &state )
 
   const bool had_result = !!m_result;
   m_result = state.result;
+  m_gridWithTotal = state.gridWithTotal;
+  m_totalGeometryKey = state.totalGeometryKey;
 
   // Re-sync the per-method row visibility and the estimate/anchor text without going through
   //  `handleMethodChanged`, which exists to *invalidate* a result on a user edit.
-  const Method method = selectedMethod();
-  m_profileRow->setHidden( method != Method::FullMc );
-  m_precRow->setHidden( method == Method::CurveTransfer );
-  m_anchorAnglesRow->setHidden( method != Method::QuickMc );
-  m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
-  m_anchorRow->setHidden( method != Method::CurveTransfer );
-  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
+  updateMethodRows();
   m_generate->setEnabled( m_geometry->generationReady() );
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
 
@@ -799,6 +890,7 @@ void MakeMcResponseForDrf::setState( const State &state )
   updateGroundingInfo();
   updateEstimate();
   updateResponseChart();
+  syncGridResult();   //the grid's rows; its result is the one just restored
 
   if( had_result != !!m_result )
     m_validationChanged.emit( !!m_result );
@@ -819,17 +911,21 @@ MakeMcResponseForDrf::Method MakeMcResponseForDrf::selectedMethod() const
   {
     case 1: return Method::QuickMc;
     case 2: return Method::CurveTransfer;
+    case 3: return m_gridResponse ? Method::ImportedGrid : Method::FullMc;
     default: return Method::FullMc;
   }
 }//selectedMethod()
 
 
-void MakeMcResponseForDrf::handleMethodChanged()
+void MakeMcResponseForDrf::updateMethodRows()
 {
   const Method method = selectedMethod();
+  const bool grid = (method == Method::ImportedGrid);
+  const bool no_mc = (method == Method::CurveTransfer);
 
-  m_profileRow->setHidden( method != Method::FullMc );
-  m_precRow->setHidden( method == Method::CurveTransfer );
+  // The profile matters for an imported grid's total too: only General / Contact measure it close in.
+  m_profileRow->setHidden( (method != Method::FullMc) && !grid );
+  m_precRow->setHidden( no_mc );
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
   m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
@@ -837,8 +933,120 @@ void MakeMcResponseForDrf::handleMethodChanged()
   // The measured-curve transfer is instant and rebuilds automatically - no
   //  explicit "Generate" step (this is what guarantees that entering geometry
   //  and accepting the dialog always yields an attached, distance-aware
-  //  response).
-  m_generate->setHidden( m_hideGenerateButton || (method == Method::CurveTransfer) );
+  //  response).  For an imported grid, generating makes its total efficiency.
+  m_generate->setHidden( m_hideGenerateButton || no_mc );
+  m_generate->setText( WString::tr( grid ? "mmr-generate-total-btn" : "mmr-generate-btn" ) );
+
+  if( m_gridNote )
+    m_gridNote->setHidden( grid );
+  if( m_gridTotalRow )
+    m_gridTotalRow->setHidden( !grid );
+  if( m_gridGeomRow && !grid )
+    m_gridGeomRow->hide();  //shown by syncGridResult, for an edited geometry
+
+  updateImportGeometryLink();
+}//updateMethodRows()
+
+
+void MakeMcResponseForDrf::updateImportGeometryLink()
+{
+  if( m_importGeomRow && m_geometry )
+    m_importGeomRow->setHidden( m_geometry->generationReady()
+                                || (selectedMethod() == Method::ImportedGrid) );
+}//updateImportGeometryLink()
+
+
+void MakeMcResponseForDrf::showImportGeometryDialog()
+{
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("mmr-import-geom-title"),
+                                                           WString::tr("mmr-import-geom-body") );
+  WFileUpload *upload = dialog->contents()->addNew<WFileUpload>();
+  upload->setInline( false );
+  upload->addStyleClass( "McImportGeomUpload" );
+  dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
+
+  upload->changed().connect( upload, &WFileUpload::upload );
+  upload->uploaded().connect( this, [this, dialog, upload](){
+    // Read before closing: the spooled file goes with the upload widget.
+    importGeometryFromUpload( upload->spoolFileName(), upload->clientFileName().toUTF8() );
+    dialog->accept();
+  } );
+  upload->fileTooLarge().connect( this, [dialog]( ::int64_t ){
+    dialog->accept();
+    passMessage( WString::tr("mmr-import-geom-too-large"), WarningWidget::WarningMsgHigh );
+  } );
+}//showImportGeometryDialog()
+
+
+void MakeMcResponseForDrf::importGeometryFromUpload( const std::string &spool_file,
+                                                     const std::string &display_name )
+{
+  shared_ptr<const ceelo::GeometryDescriptor> geom;
+  string from_name;
+
+  try
+  {
+    const shared_ptr<const string> data = DrfImport::readFile( spool_file );
+    const shared_ptr<const DrfImport::ParsedFile> parsed = DrfImport::parseFile( display_name, data, false );
+
+    // A DRF that states its shape (a saved geometry, or an attached response's own descriptor).
+    for( const shared_ptr<const DetectorPeakResponse> &drf : parsed->drfs )
+    {
+      geom = drf ? drf->monteCarloGeometry() : nullptr;
+      if( geom )
+      {
+        from_name = drf->name();
+        break;
+      }
+    }//for( const auto &drf : parsed->drfs )
+
+    // A geometry-only file (ANGLE .detx/.outx, GADRAS Detector.dat) has its shape on the seed the
+    //  import would characterize.
+    if( !geom )
+    {
+      //  No companion file is passed, so this can never take the slow .par-grid build (which needs
+      //  its DETECTOR.txt) - hence no DrfImport::isSlow() check or worker thread.
+      const DrfImport::Source src = DrfImport::makeSource( parsed, nullptr, 0 );
+      for( const shared_ptr<const DetectorPeakResponse> &drf : { src.base, src.generic } )
+      {
+        geom = drf ? drf->monteCarloGeometry() : nullptr;
+        if( geom )
+        {
+          from_name = drf->name();
+          break;
+        }
+      }//for( base, generic )
+    }//if( !geom )
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("mmr-import-geom-error").arg( WString::fromUTF8(display_name) )
+                   .arg( WString::fromUTF8(e.what()) ), WarningWidget::WarningMsgHigh );
+    return;
+  }//try / catch
+
+  if( !geom )
+  {
+    passMessage( WString::tr("mmr-import-geom-none").arg( WString::fromUTF8(display_name) ),
+                 WarningWidget::WarningMsgHigh );
+    return;
+  }//if( !geom )
+
+  string note = "Geometry imported from " + display_name;
+  if( !from_name.empty() && (from_name != display_name) )
+    note += " (" + from_name + ")";
+  note += ".";
+
+  // Emits userChanged (through the form's change, and handleGeometryChanged), so an owner records
+  //  this as one undo step.
+  setGeometryFromDescriptor( *geom, { note } );
+}//importGeometryFromUpload(...)
+
+
+void MakeMcResponseForDrf::handleMethodChanged()
+{
+  const Method method = selectedMethod();
+
+  updateMethodRows();
 
   // A result from a different method is not what the user is configuring;
   //  abandon any in-flight generation too (its finish handler is stale-guarded
@@ -861,6 +1069,12 @@ void MakeMcResponseForDrf::handleMethodChanged()
 
   handleGeometryChanged();
 
+  if( method == Method::ImportedGrid )
+  {
+    syncGridResult();
+    m_status->setText( WString::tr("mmr-status-grid") );
+  }
+
   if( !m_restoringState )
     m_userChanged.emit();
 }//handleMethodChanged()
@@ -868,8 +1082,13 @@ void MakeMcResponseForDrf::handleMethodChanged()
 
 void MakeMcResponseForDrf::handleGeometryChanged()
 {
-  //Any geometry change invalidates a previously generated response.
-  if( m_result )
+  //Any geometry change invalidates a previously generated response - except the imported grid,
+  //  whose FEP is tied to the imported geometry whatever the form says; only a total efficiency
+  //  generated for some other geometry goes (and comes back if the edit is undone).
+  if( selectedMethod() == Method::ImportedGrid )
+  {
+    syncGridResult();
+  }else if( m_result )
   {
     m_result.reset();
     m_validationChanged.emit( false );
@@ -878,6 +1097,7 @@ void MakeMcResponseForDrf::handleGeometryChanged()
   }
 
   m_generate->setEnabled( m_geometry->generationReady() );
+  updateImportGeometryLink();
   updateAnchorInfo();
   updateGroundingInfo();
   updateEstimate();
@@ -897,6 +1117,10 @@ void MakeMcResponseForDrf::handleGeometryChanged()
 
 CeeLoUtils::TransferAnchor MakeMcResponseForDrf::transferAnchor( const ceelo::GeometryDescriptor &gd ) const
 {
+  // The seed has its response detached (see #setSeedProvider), so the grid is not on it.
+  if( m_gridResponse )
+    return CeeLoUtils::gridTransferAnchor( *m_gridResponse, refDistanceOverrideCm() );
+
   // A DRF whose curve carries a covariance (a fitted equation's coefficient covariance, or per-point
   //  node covariance) is anchored on that curve with the covariance, so correlations between
   //  energies survive into the response; otherwise the raw-point / sampled-curve anchor.
@@ -910,6 +1134,8 @@ CeeLoUtils::TransferAnchor MakeMcResponseForDrf::transferAnchor( const ceelo::Ge
 
 void MakeMcResponseForDrf::setMethod( const Method method )
 {
+  if( (method == Method::ImportedGrid) && !m_gridResponse )
+    return;
   m_method->setCurrentIndex( static_cast<int>(method) );
   handleMethodChanged();
 }//setMethod(...)
@@ -943,6 +1169,8 @@ void MakeMcResponseForDrf::setEditingEnabled( const bool enabled )
   //  cancel, and Wt's isEnabled() reports an ancestor's state as the child's.
   if( m_geometry )
     m_geometry->setDisabled( !enabled );
+  if( m_revertGeomBtn )
+    m_revertGeomBtn->setEnabled( enabled );
   
   if( m_method )
     m_method->setEnabled( enabled );
@@ -1004,6 +1232,99 @@ DetectorGeometryInput *MakeMcResponseForDrf::geometryInput()
 }
 
 
+std::shared_ptr<const ceelo::GeometryDescriptor> MakeMcResponseForDrf::effectiveGeometry() const
+{
+  if( m_formBaseline && (m_geometry->currentState() == m_formBaselineState) )
+    return m_formBaseline;
+  return make_shared<const ceelo::GeometryDescriptor>( m_geometry->toDescriptor() );
+}//effectiveGeometry()
+
+
+void MakeMcResponseForDrf::setFormBaseline( std::shared_ptr<const ceelo::GeometryDescriptor> seeded_from )
+{
+  m_formBaseline = std::move( seeded_from );
+  m_formBaselineState = m_geometry->currentState();
+}//setFormBaseline(...)
+
+
+std::shared_ptr<const ceelo::DetectorResponse> MakeMcResponseForDrf::gridFepOnly()
+{
+  if( !m_gridFepOnly && m_gridResponse )
+  {
+    m_gridFepOnly = m_gridResponse;
+
+    // Only a grid that already carries a total needs re-making without it - an XML round trip of a
+    //  multi-MB response, so not until a geometry edit actually makes that total stale.
+    if( m_gridResponse->tot_eff.characterized() )
+    {
+      try
+      {
+        m_gridFepOnly = DetEffG2kPar::attachTotalEfficiency( *m_gridResponse, nullptr );
+      }catch( std::exception &e )
+      {
+        cerr << "MakeMcResponseForDrf: failed to remove a stale total efficiency: " << e.what() << endl;
+        assert( 0 );
+      }
+    }
+  }//if( not made yet )
+
+  return m_gridFepOnly;
+}//gridFepOnly()
+
+
+void MakeMcResponseForDrf::syncGridResult()
+{
+  if( !m_gridResponse || (selectedMethod() != Method::ImportedGrid) )
+    return;
+
+  string key;
+  try
+  {
+    key = effectiveGeometry()->to_xml_string();
+  }catch( std::exception & )
+  {
+    //an incomplete form: no total is current for it
+  }
+
+  const bool total_current = (m_gridWithTotal && !key.empty() && (key == m_totalGeometryKey));
+  const shared_ptr<const ceelo::DetectorResponse> want = total_current ? m_gridWithTotal : gridFepOnly();
+  if( want != m_result )
+  {
+    const bool had_result = !!m_result;
+    m_result = want;
+    if( !had_result )
+      m_validationChanged.emit( true );
+    updateResponseChart();
+  }//if( want != m_result )
+
+  if( m_gridGeomRow )
+    m_gridGeomRow->setHidden( !key.empty() && (key == m_gridResponse->descriptor.to_xml_string()) );
+
+  if( m_gridTotalInfo )
+  {
+    const char *msg = "mmr-grid-total-none";
+    if( total_current )
+      msg = "mmr-grid-total-current";
+    else if( m_gridWithTotal )
+      msg = "mmr-grid-total-stale";
+    m_gridTotalInfo->setText( WString::tr(msg) );
+  }//if( m_gridTotalInfo )
+}//syncGridResult()
+
+
+void MakeMcResponseForDrf::revertToImportedGeometry()
+{
+  if( !m_gridResponse )
+    return;
+
+  const shared_ptr<const ceelo::GeometryDescriptor> imported
+                  = make_shared<const ceelo::GeometryDescriptor>( m_gridResponse->descriptor );
+  m_geometry->setFromDescriptor( *imported );
+  setFormBaseline( imported );
+  handleGeometryChanged();
+}//revertToImportedGeometry()
+
+
 void MakeMcResponseForDrf::updateAnchorInfo()
 {
   if( selectedMethod() != Method::CurveTransfer )
@@ -1030,7 +1351,7 @@ void MakeMcResponseForDrf::updateAnchorInfo()
       m_refDistance->setEnabled( true );
       if( m_refDistance->text().empty() )
         m_refDistance->setText( WString::fromUTF8(dist_str) );
-      m_anchorInfo->setText( WString::tr("mmr-anchor-src-curve")
+      m_anchorInfo->setText( WString::tr( m_gridResponse ? "mmr-anchor-src-grid" : "mmr-anchor-src-curve" )
                               .arg( npoints ).arg( dist_str ) );
     }else
     {
@@ -1062,7 +1383,7 @@ void MakeMcResponseForDrf::updateGroundingInfo()
 
   // The measured-curve transfer IS anchored on the measured efficiency by construction, so a
   //  separate grounding choice would be meaningless there - it has its own anchor row.
-  const bool applies = (selectedMethod() != Method::CurveTransfer);
+  const bool applies = (selectedMethod() == Method::FullMc) || (selectedMethod() == Method::QuickMc);
   m_groundRow->setHidden( !applies );
   m_groundInfoRow->setHidden( !applies );
   if( !applies )
@@ -1073,7 +1394,17 @@ void MakeMcResponseForDrf::updateGroundingInfo()
 
   size_t npoints = 0;
   bool curve_derived = false;
-  if( m_geometry->isValid() )
+  if( m_gridResponse )
+  {
+    // The seed has its response detached, so ground to the grid itself (as startGeneration does).
+    try
+    {
+      npoints = DetEffG2kPar::groundingPoints( *m_gridResponse ).size();
+      curve_derived = true;
+    }catch( std::exception & )
+    {
+    }
+  }else if( m_geometry->isValid() )
   {
     try
     {
@@ -1082,7 +1413,7 @@ void MakeMcResponseForDrf::updateGroundingInfo()
     }catch( std::exception & )
     {
     }
-  }//if( m_geometry->isValid() )
+  }//if( m_gridResponse ) / else
 
   m_groundCb->setEnabled( npoints > 0 );
 
@@ -1091,8 +1422,8 @@ void MakeMcResponseForDrf::updateGroundingInfo()
   else if( !groundToMeasured() )
     m_groundInfo->setText( WString::tr("mmr-ground-off") );
   else
-    m_groundInfo->setText( WString::tr( curve_derived ? "mmr-ground-curve"
-                                                      : "mmr-ground-points" )
+    m_groundInfo->setText( WString::tr( m_gridResponse ? "mmr-ground-grid"
+                                        : (curve_derived ? "mmr-ground-curve" : "mmr-ground-points") )
                             .arg( static_cast<int>(npoints) ) );
 }//void updateGroundingInfo()
 
@@ -1210,7 +1541,9 @@ void MakeMcResponseForDrf::invalidateResultForOptionChange()
   //  so an owner's staleness test cannot see them, and a held result would read as still current.
   //  Drop it, the same way a method or geometry change does, so the owner's "Generate Response"
   //  offers the re-run the user just asked for instead of staying greyed over the old answer.
-  if( !m_result )
+  //  Not for an imported grid: its result is the grid, which no option changes (a total it carries
+  //  stays until regenerated).
+  if( !m_result || (selectedMethod() == Method::ImportedGrid) )
     return;
 
   m_result.reset();
@@ -1394,10 +1727,13 @@ bool MakeMcResponseForDrf::startGeneration()
   // Whatever the owner's edits currently say - see #setSeedProvider.
   refreshSeedFromProvider();
 
+  const Method method = selectedMethod();
+
   ceelo::GeometryDescriptor gd;
   try
   {
-    gd = m_geometry->toDescriptor();
+    // An imported grid's total is generated for exactly the geometry the DRF will record.
+    gd = (method == Method::ImportedGrid) ? *effectiveGeometry() : m_geometry->toDescriptor();
   }catch( std::exception &e )
   {
     m_status->setText( WString::fromUTF8( e.what() ) );
@@ -1421,10 +1757,12 @@ bool MakeMcResponseForDrf::startGeneration()
   if( m_calibTimer )
     m_calibTimer->stop();
 
-  m_result.reset();
-  m_validationChanged.emit( false );
-
-  const Method method = selectedMethod();
+  // An imported grid stays the result while its total is generated; anything else is replaced.
+  if( method != Method::ImportedGrid )
+  {
+    m_result.reset();
+    m_validationChanged.emit( false );
+  }
 
   if( method == Method::CurveTransfer )
   {
@@ -1491,11 +1829,30 @@ bool MakeMcResponseForDrf::startGeneration()
   opts.cancel = m_cancelFlag;
 
   // Grounding anchors are captured NOW (value copies) - nothing from the
-  //  widget tree crosses into the worker thread.
+  //  widget tree crosses into the worker thread.  An imported grid is what the detector measures, so
+  //  a total for it is always grounded to it; the seed has its response detached, so the grid is
+  //  sampled from here rather than through the seed.
   bool curve_derived = false;
-  const vector<ceelo::GroundingPoint> ground_pts = groundToMeasured()
-                      ? groundingPointsForDrf( m_seedDrf, gd, curve_derived )
-                      : vector<ceelo::GroundingPoint>{};
+  vector<ceelo::GroundingPoint> ground_pts;
+  try
+  {
+    if( m_gridResponse && ((method == Method::ImportedGrid) || groundToMeasured()) )
+    {
+      curve_derived = true;
+      ground_pts = DetEffG2kPar::groundingPoints( *m_gridResponse );
+    }else if( groundToMeasured() )
+    {
+      ground_pts = groundingPointsForDrf( m_seedDrf, gd, curve_derived );
+    }
+  }catch( std::exception &e )
+  {
+    m_status->setText( WString::tr("mmr-status-error").arg( WString::fromUTF8(e.what()) ) );
+    return false;
+  }
+
+  // The grid a generated total is attached to (DetEffG2kPar::attachTotalEfficiency).
+  const shared_ptr<const ceelo::DetectorResponse> grid
+                       = (method == Method::ImportedGrid) ? m_gridResponse : nullptr;
 
   const string sessionId = wApp->sessionId();
   const string widgetId = id();
@@ -1550,7 +1907,7 @@ bool MakeMcResponseForDrf::startGeneration()
     } );
   };
 
-  auto worker = [gd,opts,ground_pts,curve_derived,sessionId,widgetId,generation_id](){
+  auto worker = [gd,opts,ground_pts,curve_derived,grid,sessionId,widgetId,generation_id](){
     shared_ptr<ceelo::DetectorResponse> response;
     string errmsg;
 
@@ -1576,6 +1933,21 @@ bool MakeMcResponseForDrf::startGeneration()
           p.model_eff = response->eps_fep_at( p.energy_keV, pos ).value;
         }
         ceelo::ResponseGenerator::ground_to_points( *response, pts, curve_derived );
+      }
+
+      // Keep only its total, re-expressed onto the grid, whose FEP stays the file's.
+      if( response && grid )
+      {
+        // How well this geometry's Monte Carlo reproduces the grid's FEP close in - logged only,
+        //  for now.
+        const DetEffG2kPar::GridFepConsistency c = DetEffG2kPar::gridFepConsistency( *grid, *response );
+        if( c.num_nodes )
+          Wt::log("info") << "Imported-grid total: Monte-Carlo FEP vs grid FEP over " << c.num_nodes
+                          << " near-field nodes: mean " << 100.0*c.mean_ln << "%, RMS " << 100.0*c.rms_ln
+                          << "%, worst " << 100.0*c.worst_ln << "% (" << c.worst_energy_keV << " keV, "
+                          << c.worst_dist_cm << " cm, cos " << c.worst_cos_theta << ")";
+
+        response = DetEffG2kPar::attachTotalEfficiency( *grid, response.get() );
       }
     }catch( ceelo::GenerationCancelled & )
     {
@@ -1740,13 +2112,32 @@ ceelo::GenerationOptions MakeMcResponseForDrf::generationOptions() const
     opts.n_anchor_angles = (m_anchorAngles->currentIndex() == 0) ? 1 : 3;
   }
 
+  if( (selectedMethod() == Method::ImportedGrid) && m_gridResponse )
+  {
+    // Only the total efficiency is wanted - the grid is the FEP.  The profile still matters: the
+    //  General / Contact near-field scan is what measures the total close in (Far-field leaves it
+    //  carried inward by geometry alone - 1-4% off at grazing angles a few cm out).  The scans stop
+    //  on the total's precision - a 5x5 cm HPGe took 10 minutes instead of about an hour on 4
+    //  threads; only the on-axis backbone, which the grounding to the grid reads, stops on the FEP.
+    //  Cover the grid's own energy range, not the default.
+    opts.scans_stop_on_total = true;
+    const ceelo::ResponseProvenance &prov = m_gridResponse->provenance;
+    if( (prov.valid_e_min_keV > 0.0) && (prov.valid_e_max_keV > prov.valid_e_min_keV) )
+    {
+      opts.e_min_keV = prov.valid_e_min_keV;
+      opts.e_max_keV = prov.valid_e_max_keV;
+    }
+  }//if( a total efficiency for an imported grid )
+
+  opts.num_threads = CeeLoUtils::monteCarloThreadCount();
+
   return opts;
 }//generationOptions()
 
 
 void MakeMcResponseForDrf::scheduleTimeCalibration()
 {
-  // m_calibrating: a probe already running is a full-core Monte Carlo on the shared server thread
+  // m_calibrating: a probe already running is a multi-core Monte Carlo on the shared server thread
   //  pool; queueing more of them behind a burst of edits would just take cores from the session.
   if( !m_calibTimer || !m_shown || m_generating || m_calibrating || !isEnabled()
       || (selectedMethod() == Method::CurveTransfer) || !m_geometry->isValid() )
@@ -1820,7 +2211,9 @@ void MakeMcResponseForDrf::startTimeCalibration()
       cfg.termination.max_cpu_seconds = 3.0;
       cfg.termination.max_wall_seconds = 6.0;
       cfg.seed = 7;
-      const unsigned threads = std::max( 1u, std::thread::hardware_concurrency() );
+      // The run's thread count, so the parallelism measured here is the run's.
+      const unsigned threads = CeeLoUtils::monteCarloThreadCount();
+      cfg.num_threads = threads;
       cfg.batch_size = std::max<uint64_t>( 2000, 20000 / threads );
 
       const ceelo::EfficiencyResult r = calc.compute( cfg );
@@ -1830,6 +2223,11 @@ void MakeMcResponseForDrf::startTimeCalibration()
       {
         const double rel = r.fep_uncertainty / eps;
         calib.rel_var_per_event = rel * rel * double(r.num_events_simulated);
+        if( r.total_efficiency > 0.0 )
+        {
+          const double tot_rel = r.total_uncertainty / r.total_efficiency;
+          calib.tot_rel_var_per_event = tot_rel * tot_rel * double(r.num_events_simulated);
+        }
         calib.events_per_cpu_s = double(r.num_events_simulated) / r.cpu_time_seconds;
         calib.parallelism = std::max( 1.0, r.cpu_time_seconds / r.wall_time_seconds );
       }
@@ -1893,14 +2291,19 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   //  cancelled run, once a few nodes are in.
   if( stats && (stats->nodes.size() >= 3) && (stats->total_cpu_s > 0.0) && (stats->total_wall_s > 0.0) )
   {
-    double sum_var = 0.0;
-    int n_var = 0;
+    double sum_var = 0.0, sum_tot_var = 0.0;
+    int n_var = 0, n_tot_var = 0;
     for( const ceelo::NodeStat &ns : stats->nodes )
     {
       if( (ns.fep_rel_prec > 0.0) && (ns.events > 0) )
       {
         sum_var += ns.fep_rel_prec * ns.fep_rel_prec * double(ns.events);
         ++n_var;
+      }
+      if( (ns.tot_rel_prec > 0.0) && (ns.events > 0) )
+      {
+        sum_tot_var += ns.tot_rel_prec * ns.tot_rel_prec * double(ns.events);
+        ++n_tot_var;
       }
     }//for( each node )
 
@@ -1909,6 +2312,7 @@ void MakeMcResponseForDrf::handleGenerationFinished(
       auto calib = make_shared<McTimeCalibration>();
       calib->geometry_key = m_runGeometryKey;
       calib->rel_var_per_event = sum_var / n_var;
+      calib->tot_rel_var_per_event = (n_tot_var > 0) ? (sum_tot_var / n_tot_var) : 0.0;
       calib->events_per_cpu_s = double(stats->total_events) / stats->total_cpu_s;
       calib->parallelism = std::max( 1.0, stats->total_cpu_s / stats->total_wall_s );
       calib->from_full_run = true;
@@ -1925,11 +2329,19 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   m_cancelBtn->hide();
   m_progress->hide();
 
+  const bool grid_mode = (selectedMethod() == Method::ImportedGrid);
+
   if( !result || !errmsg.empty() )
   {
-    m_result.reset();
-    m_validationChanged.emit( false );
-    updateResponseChart();
+    if( grid_mode )
+    {
+      syncGridResult();  //the grid itself is still there
+    }else
+    {
+      m_result.reset();
+      m_validationChanged.emit( false );
+      updateResponseChart();
+    }
     if( errmsg == "cancelled" )
       m_status->setText( WString::tr("mmr-status-cancelled") );
     else
@@ -1940,12 +2352,24 @@ void MakeMcResponseForDrf::handleGenerationFinished(
     return;
   }//if( failed )
 
-  m_result = result;
-  m_validationChanged.emit( true );
-  updateResponseChart();
+  if( grid_mode )
+  {
+    // The geometry was held still for the run (setEditingEnabled), so the total is current for it.
+    m_gridWithTotal = result;
+    m_totalGeometryKey = m_runGeometryKey;
+    syncGridResult();
+  }else
+  {
+    m_result = result;
+    m_validationChanged.emit( true );
+    updateResponseChart();
+  }
 
   const bool grounded = !result->grounding.empty();
-  if( result->model_transfer.has_value() )
+  if( grid_mode )
+  {
+    m_status->setText( WString::tr("mmr-status-grid-total-done") );
+  }else if( result->model_transfer.has_value() )
   {
     // A transfer (quick-MC or measured-curve) response: state the validity
     //  floor - off-axis/near queries carry an honest, inflated uncertainty.
@@ -2022,9 +2446,13 @@ void MakeMcResponseForDrf::acceptResponse()
   // Record the geometry the user described, as well as the response built from it.  The response
   //  carries its own descriptor, but detaching it later (Modify Detector Response -> Flat Disk) must
   //  not leave the detector with no statement of what it physically is.
+  //  For an imported grid this is the user's own description of the detector, which the grid's
+  //  descriptor (the imported geometry) does not shadow - see DetectorPeakResponse::monteCarloGeometry.
   try
   {
-    if( m_geometry && m_geometry->generationReady() )
+    if( selectedMethod() == Method::ImportedGrid )
+      new_det->setGeometry( effectiveGeometry() );
+    else if( m_geometry && m_geometry->generationReady() )
       new_det->setGeometry( make_shared<const ceelo::GeometryDescriptor>( m_geometry->toDescriptor() ) );
   }catch( std::exception & )
   {
@@ -2107,6 +2535,7 @@ MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
   closeButton->clicked().connect( this, &AuxWindow::hide );
 
   WPushButton *useBtn = footer()->addNew<WPushButton>( WString::tr("mmr-use-response-btn") );
+  WidgetUtils::applyButtonRole( useBtn, WidgetUtils::ButtonRole::Affirm );
   useBtn->clicked().connect( m_tool, &MakeMcResponseForDrf::acceptResponse );
   m_tool->validationChanged().connect( useBtn, [useBtn]( bool valid ){
     useBtn->setEnabled( valid );

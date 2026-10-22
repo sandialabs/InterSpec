@@ -270,6 +270,18 @@ You can click on the items in the &quot;<b>Detector</b>&quot; column on this too
 the coefficients used for each detector.
 </p>
 <p>
+Alternatively, when the files you are viewing have more than one detector, you can check
+&quot;<b>Indep. Dets.</b>&quot; (independent detectors) so that changes are applied only to the detector selected in the
+&quot;<b>Detector</b>&quot; column, instead of being propagated to the other detectors; this applies to
+editing or fitting coefficients, graphically dragging the spectrum, and the &quot;<b>More Actions</b>&quot;
+tools other than <em>Gain Match</em> and <em>Multi File Cal</em> (note that <em>Truncate Energy</em> and
+<em>Combine Channels</em> will then change the number of channels of only that detector).
+The detector is matched by name in the other spectra selected (e.g., the same detector of a
+background file from the same system), and the sample selections still apply.
+If several detectors are summed together for display, but only some of them are changed, the
+fit peaks are not moved, as they no longer correspond to a single energy calibration.
+</p>
+<p>
 If you manually edit the coefficients for one detector, <b>InterSpec</b> does the math and applies the
 effective changes to all the other energy calibrations you have selected for changes to be applied to;
 that is, it calculates the changes necessary to the other calibrations so that the relative locations
@@ -281,6 +293,8 @@ calibrations.  A similar thing happens when fitting coefficients or graphically 
 However, if you add, remove, or change deviation pairs for a particular detector, those changes are
 not propagated to the other detectors; this is because the deviation pairs are often-times unique
 to a specific detector, so it would not make sense to propagate changes between detectors.
+The changed deviation pairs are applied to that detector in the spectra (foreground, background,
+secondary) and samples selected under &quot;<b>Apply Changes To</b>&quot;.
 </p>
 </div>
 

@@ -1,0 +1,42 @@
+# Peak sources: typed as InterSpec's peak table reads them (but from the reference-line library), and
+#  suggested from the shown reference lines (the right-click menu's "Assign as ...").
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42","name":"hpge.n42","type":"FOREGROUND"}}
+{"method":"clearPeaks","params":{}}
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Ba133","color":"#006600"}]}}
+{"method":"fitPeakAt","params":{"energy":302.85,"pixPerKeV":7.8},"expectSources":["Ba133 302.85 keV"],"expectColors":["#006600"]}
+{"method":"setShownRefLines","params":{"sources":[]}}
+{"method":"fitPeakAt","params":{"energy":356.0,"pixPerKeV":7.8}}
+{"method":"fitPeakAt","params":{"energy":661.7,"pixPerKeV":8.5}}
+{"method":"fitPeakAt","params":{"energy":1460.8,"pixPerKeV":8.5}}
+{"method":"fitPeakAt","params":{"energy":2103.5,"pixPerKeV":8.5}}
+{"method":"fitPeakAt","params":{"energy":2614.5,"pixPerKeV":8.5},"expectSources":["Ba133 302.85 keV","","","","",""]}
+# No reference lines shown: no suggestions, but sources can be typed; a nuclide other peaks have takes their color
+{"method":"peakInfoAt","params":{"energy":661.7},"expectCandidates":[]}
+{"method":"setPeakProperty","params":{"energy":661.7,"source":"cs-137"},"expectSources":["Ba133 302.85 keV","","Cs137 661.66 keV","","",""],"expectColors":["#006600","","","","",""]}
+{"method":"setPeakProperty","params":{"energy":356.0,"source":"Ba133"},"expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","","",""],"expectColors":["#006600","#006600","","","",""]}
+{"method":"setPeakProperty","params":{"energy":2103.5,"source":"Th232 S.E."}}
+{"method":"setPeakProperty","params":{"energy":2614.5,"source":"th232 2614.5"},"expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","","S.E. Th232 2614.53 keV","Th232 2614.53 keV"]}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"Pb 75"},"expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","Pb 75.00 keV x-ray","S.E. Th232 2614.53 keV","Th232 2614.53 keV"]}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"Cs137 5000"},"expectMessage":"Cs137 has no line within","expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","Cs137 661.66 keV","S.E. Th232 2614.53 keV","Th232 2614.53 keV"]}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"none"},"expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","","S.E. Th232 2614.53 keV","Th232 2614.53 keV"]}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"Xx123"},"expectError":"is not a source in the reference-line library"}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"Ba133 S.E."},"expectError":"no lines above 1022 keV"}
+# Reference lines shown: suggestions leave out the peak's own nuclide; an assigned peak takes the lines' color
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Cs137","color":"#00b9ff"},{"parent":"Background","color":"#967f55"}]}}
+{"method":"peakInfoAt","params":{"energy":1460.8},"expectCandidates":["K40 1460.75 keV","Th232 1459.14 keV"]}
+{"method":"peakInfoAt","params":{"energy":2103.5},"expectCandidates":[]}
+{"method":"setPeakProperty","params":{"energy":1460.8,"source":"K40 1460.75 keV"},"expectSources":["Ba133 302.85 keV","Ba133 356.02 keV","Cs137 661.66 keV","K40 1460.75 keV","S.E. Th232 2614.53 keV","Th232 2614.53 keV"],"expectColors":["#006600","#006600","","#967f55","",""]}
+{"method":"peakInfoAt","params":{"energy":1460.8},"expectCandidates":["Th232 1459.14 keV"]}
+{"method":"clearPeaks","params":{}}
+{"method":"fitPeakAt","params":{"energy":2103.5,"pixPerKeV":8.5},"expectSources":["S.E. Th232 2614.53 keV"],"expectColors":["#967f55"]}
+{"method":"setPeakProperty","params":{"energy":2103.5,"source":""},"expectSources":[""],"expectColors":[""]}
+{"method":"peakInfoAt","params":{"energy":2103.5},"expectCandidates":["S.E. Th232 2614.53 keV"]}
+{"method":"setPeakProperty","params":{"energy":2103.5,"source":"S.E. Th232 2614.53 keV"},"expectSources":["S.E. Th232 2614.53 keV"],"expectColors":["#967f55"]}
+# NaI: suggestions from lines within 4 sigma of the wide peak, one per nuclide
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/PeakFitLM/Ba133_Unshielded.n42","name":"nai.n42","type":"FOREGROUND"}}
+{"method":"clearPeaks","params":{}}
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Ba133","color":"#006600"},{"parent":"Background","color":"#967f55"}]}}
+{"method":"fitPeakAt","params":{"energy":356.0,"pixPerKeV":2},"expectSources":["Ba133 356.02 keV"]}
+{"method":"peakInfoAt","params":{"energy":356.0},"expectCandidates":["Ra226 351.93 keV","Th232 338.32 keV"]}
+{"method":"setPeakProperty","params":{"energy":356.0,"source":"Ba133 383.85 keV"},"expectSources":["Ba133 383.85 keV"]}
+{"method":"setPeakProperty","params":{"energy":356.0,"source":"Ba133"},"expectSources":["Ba133 356.02 keV"]}

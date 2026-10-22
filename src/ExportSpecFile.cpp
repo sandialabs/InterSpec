@@ -187,7 +187,7 @@ std::string clean_uuid( string uuid )
     
     if( (index + 1) < urls.size() )
     {
-      WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code") );
+      WPushButton *btn = dialog->addButton( WString::tr("esf-next-qr-code"), WidgetUtils::ButtonRole::Neutral );
       btn->clicked().connect( btn, [=](){
         displayQrDialog( urls, index + 1, successfullyDone, as_emailto, toogleEmailVsUri );
       } );
@@ -215,7 +215,7 @@ std::string clean_uuid( string uuid )
     if( toogleEmailVsUri )
     {
       WString btn_txt = as_emailto ? WString::tr("esf-url-link") : WString::tr("esf-email-link");
-      WPushButton *btn = dialog->addButton( btn_txt );
+      WPushButton *btn = dialog->addButton( btn_txt, WidgetUtils::ButtonRole::Neutral );
       // Wt4: removeWidget returns unique_ptr; capture it to keep the widget alive, then reinsert
       auto btn_owner = dialog->footer()->removeWidget( btn );
       dialog->footer()->insertWidget( 0, std::move(btn_owner) );
@@ -285,7 +285,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
       
       auto dialog = SimpleDialog::make( WString::tr("esf-error-title"),
                                      "<p>Spectrum could not be encoded to a QR code.</p>" + msg );
-      dialog->addButton( WString::tr("Okay") );
+      dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
       return;
     }//if( urls.empty() )
     
@@ -298,7 +298,7 @@ void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   }catch( std::exception &e )
   {
     auto dialog = SimpleDialog::make( WString::tr("esf-error-title"), WString::tr("esf-qr-encode-failed").arg(e.what()) );
-    dialog->addButton( WString::tr("Okay") );
+    dialog->addButton( WString::tr("Okay"), WidgetUtils::ButtonRole::Affirm );
   }//try catch
 }//void displayQrCode( const vector<SpecUtils::UrlSpectrum> urlspec, const bool as_emailto )
 
@@ -364,7 +364,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
-    dialog->addButton( WString::tr("Ok") );
+    dialog->addButton( WString::tr("Ok"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -372,7 +372,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
   {
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("esf-error-title"),
       WString::tr("esf-qr-lossy-err") );
-    dialog->addButton( WString::tr("Ok") );
+    dialog->addButton( WString::tr("Ok"), WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -406,7 +406,7 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
   SimpleDialog *window = SimpleDialog::make( WString::tr("esf-lossy-qr-title"), "" );
   window->rejectWhenEscapePressed();
-  window->addButton( "Close" );
+  window->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
 
   if( is_phone )
     window->setMaxWidth( WLength(95, WLength::Unit::ViewportWidth) );
@@ -606,6 +606,73 @@ void displayLossyQrCode( const vector<SpecUtils::UrlSpectrum> urlspec,
 
 }//namespace
 #endif //USE_QR_CODES
+
+
+#if( SpecUtils_ENABLE_D3_CHART )
+void write_displayed_spectra_d3_html( std::ostream &output, InterSpec *viewer )
+{
+  //For purposes of development, lets cheat and export everything as it is now
+  if( !viewer )
+    return;
+
+  const SpecUtils::SpectrumType types[] = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background };
+
+  std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+
+  for( SpecUtils::SpectrumType type : types )
+  {
+    std::shared_ptr<const SpecUtils::Measurement> histogram = viewer->displayedHistogram( type );
+    std::shared_ptr<const SpecMeas> data = viewer->measurment( type );
+
+    if( !histogram || !data )
+      continue;
+
+    //string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
+    //if( title != data->title() )
+    //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
+
+    int alpha = 255;
+    D3SpectrumExport::D3SpectrumOptions options;
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        alpha = 255;
+        options.line_color = "black";
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        alpha = 125;
+        options.line_color = "steelblue";
+        break;
+      case SpecUtils::SpectrumType::Background:
+        alpha = 125;
+        options.line_color = "green";
+        break;
+    }
+
+    options.display_scale_factor = viewer->displayScaleFactor( type );
+    options.spectrum_type = type;
+    const std::set<int> samples = viewer->displayedSamples( type );
+
+    std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > peaks = data->peaks(samples);
+    if( peaks )
+    {
+      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+      std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      options.peaks_json = PeakDef::peak_json( inpeaks, foreground, Wt::WColor(0,51,255), alpha );
+    }
+
+    measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
+  }//for( SpecUtils::SpectrumType type : types )
+
+#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
+  D3SpectrumExport::write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
+#else
+  const string ds_js_css_base_dir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
+
+  D3SpectrumExport::write_d3_html( output, measurements, viewer->getD3SpectrumOptions(), ds_js_css_base_dir );
+#endif
+}//void write_displayed_spectra_d3_html(...)
+#endif //#if( SpecUtils_ENABLE_D3_CHART )
 
 
 namespace ExportSpecFileTool_imp
@@ -888,69 +955,7 @@ namespace ExportSpecFileTool_imp
         
   #if( SpecUtils_ENABLE_D3_CHART )
       case SpecUtils::SaveSpectrumAsType::HtmlD3:
-      {
-        InterSpec *viewer = InterSpec::instance();
-        //For purposes of development, lets cheat and export everything as it is now
-        if( viewer )
-        {
-          const SpecUtils::SpectrumType types[] = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::SecondForeground, SpecUtils::SpectrumType::Background };
-          
-          std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
-          
-          for( SpecUtils::SpectrumType type : types )
-          {
-            std::shared_ptr<const SpecUtils::Measurement> histogram = viewer->displayedHistogram( type );
-            std::shared_ptr<const SpecMeas> data = viewer->measurment( type );
-            
-            if( !histogram || !data )
-              continue;
-            
-            //string title = Wt::WWebWidget::escapeText(data->title()).toUTF8();
-            //if( title != data->title() )
-            //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
-            
-            int alpha = 255;
-            D3SpectrumExport::D3SpectrumOptions options;
-            switch( type )
-            {
-              case SpecUtils::SpectrumType::Foreground:
-                alpha = 255;
-                options.line_color = "black";
-                break;
-              case SpecUtils::SpectrumType::SecondForeground:
-                alpha = 125;
-                options.line_color = "steelblue";
-                break;
-              case SpecUtils::SpectrumType::Background:
-                alpha = 125;
-                options.line_color = "green";
-                break;
-            }
-            
-            options.display_scale_factor = viewer->displayScaleFactor( type );
-            options.spectrum_type = type;
-            const std::set<int> samples = viewer->displayedSamples( type );
-            
-            std::shared_ptr<const deque< std::shared_ptr<const PeakDef> > > peaks = data->peaks(samples);
-            if( peaks )
-            {
-              vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-              std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-              options.peaks_json = PeakDef::peak_json( inpeaks, foreground, Wt::WColor(0,51,255), alpha );
-            }
-            
-            measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
-          }//for( SpecUtils::SpectrumType type : types )
-
-#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
-          write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
-#else
-          const string ds_js_css_base_dir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
-
-          write_d3_html( output, measurements, viewer->getD3SpectrumOptions(), ds_js_css_base_dir );
-#endif
-        }//if( viewer )
-      }
+        write_displayed_spectra_d3_html( output, InterSpec::instance() );
         break;
   #endif //#if( USE_D3_EXPORTING )
         
@@ -1080,14 +1085,7 @@ void ExportSpecFileTool::init()
   
   // Store Act/Shield fit and Rel Eff fit into file - if these tools are open, so the
   //   tools current states will be available in the foreground N42 files.
-  m_interspec->saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-  m_interspec->saveRelActAutoStateToForegroundSpecMeas();
-  m_interspec->saveRelActManualStateToForegroundSpecMeas();
-#endif
-#if( USE_LLM_INTERFACE )
-  m_interspec->syncLlmHistoryToSpecMeas();
-#endif
+  m_interspec->syncAllToolStateToForegroundSpecMeas();
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   const bool isMobile = m_interspec && m_interspec->isMobile();
@@ -3758,7 +3756,7 @@ void ExportSpecFileTool::handleGenerateQrCode()
   }catch( std::exception &e )
   {
     auto dialog = SimpleDialog::make( "Error", "Failed to encoded spectrum to a URI: " + string(e.what()) );
-    dialog->addButton( "Ok" );
+    dialog->addButton( "Ok", WidgetUtils::ButtonRole::Affirm );
   }//try catch
 }//void handleGenerateQrCode()
 #endif

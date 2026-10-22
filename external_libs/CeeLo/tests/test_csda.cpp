@@ -36,6 +36,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "physics/ElectronCsda.h"
+#include "cross_sections/CrossSectionData.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 #include "efficiency/EfficiencyCalculator.h"
@@ -370,13 +371,89 @@ BOOST_AUTO_TEST_CASE(radiation_length_NaI_compound)
 
 BOOST_AUTO_TEST_CASE(radiation_length_all_elements_positive)
 {
-    // X₀ must be finite and positive for all elements Z = 1..92.
-    for (int Z = 1; Z <= 92; ++Z) {
+    // X₀ must be finite and positive for every element a Material accepts.
+    for (int Z = 1; Z <= kMaxZ; ++Z) {
         double A  = ElectronCsda::atomic_weight(Z);
         double X0 = ElectronCsda::radiation_length_gcm2_element(Z, A);
         BOOST_CHECK_GT(X0, 0.0);
         BOOST_CHECK(std::isfinite(X0));
     }
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+
+// ============================================================
+// Suite 5b: Z 93-98 reuse the uranium electron tables
+// ============================================================
+// Electron-side data (ESTAR, ICRU-49 I, Seltzer-Berger) stops at Z=92; every
+// heavier element is treated as uranium throughout the electron physics, so the
+// per-element and material-level quantities must match uranium bit for bit.
+BOOST_AUTO_TEST_SUITE(ActinideElectronReuse)
+
+BOOST_AUTO_TEST_CASE(per_element_quantities_equal_uranium)
+{
+    const auto& csda = ElectronCsda::instance();
+    const double A_U = ElectronCsda::atomic_weight(kMaxElectronTableZ);
+    for (int Z = kMaxElectronTableZ + 1; Z <= kMaxZ; ++Z) {
+        BOOST_TEST_CONTEXT("Z=" << Z) {
+            BOOST_CHECK_EQUAL(ElectronCsda::mean_excitation_eV(Z),
+                              ElectronCsda::mean_excitation_eV(kMaxElectronTableZ));
+            BOOST_CHECK_EQUAL(ElectronCsda::atomic_weight(Z), A_U);
+            BOOST_CHECK_EQUAL(ElectronCsda::radiation_length_gcm2_element(Z, ElectronCsda::atomic_weight(Z)),
+                              ElectronCsda::radiation_length_gcm2_element(kMaxElectronTableZ, A_U));
+            for (double E : {5.0, 50.0, 662.0, 3000.0, 19000.0}) {
+                for (bool positron : {false, true})
+                    BOOST_CHECK_EQUAL(
+                        ElectronCsda::stopping_power_MeV_cm2_g(Z, ElectronCsda::atomic_weight(Z), E, positron),
+                        ElectronCsda::stopping_power_MeV_cm2_g(kMaxElectronTableZ, A_U, E, positron));
+                BOOST_CHECK_EQUAL(csda.range_gcm2(Z, E), csda.range_gcm2(kMaxElectronTableZ, E));
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(material_level_electron_physics_treats_plutonium_as_uranium)
+{
+    const auto& csda = ElectronCsda::instance();
+    const Material pu("Pu metal", 19.84, {{94, 1.0}});
+    const Material u("U metal", 19.84, {{92, 1.0}});
+    // Same mass fractions, so the oxide comparison isolates the element swap.
+    const Material puo2("PuO2", 11.46, {{94, 0.882}, {8, 0.118}});
+    const Material uo2("UO2-like", 11.46, {{92, 0.882}, {8, 0.118}});
+    const std::pair<const Material*, const Material*> pairs[] = {{&pu, &u}, {&puo2, &uo2}};
+    for (const auto& pr : pairs) {
+        for (double E : {100.0, 662.0, 2000.0, 15000.0}) {
+            BOOST_CHECK_EQUAL(csda.range_gcm2_material(*pr.first, E),
+                              csda.range_gcm2_material(*pr.second, E));
+            BOOST_CHECK_EQUAL(csda.range_gcm2_material(*pr.first, E, /*is_positron=*/true),
+                              csda.range_gcm2_material(*pr.second, E, /*is_positron=*/true));
+            BOOST_CHECK_EQUAL(csda.residual_energy_keV(*pr.first, E, 0.05),
+                              csda.residual_energy_keV(*pr.second, E, 0.05));
+            BOOST_CHECK_EQUAL(csda.brems_pemit_corr(*pr.first, E),
+                              csda.brems_pemit_corr(*pr.second, E));
+            BOOST_CHECK_EQUAL(csda.extrapolated_range_gcm2_material(*pr.first, E),
+                              csda.extrapolated_range_gcm2_material(*pr.second, E));
+        }
+        BOOST_CHECK_EQUAL(ElectronCsda::radiation_length_gcm2(*pr.first),
+                          ElectronCsda::radiation_length_gcm2(*pr.second));
+        BOOST_CHECK_EQUAL(ElectronCsda::effective_Z(*pr.first),
+                          ElectronCsda::effective_Z(*pr.second));
+    }
+    BOOST_CHECK_EQUAL(ElectronCsda::effective_Z(pu), static_cast<double>(kMaxElectronTableZ));
+}
+
+BOOST_AUTO_TEST_CASE(out_of_domain_Z_throws_instead_of_falling_back)
+{
+    // These used to return I=200 eV, A=2Z, a 1e30 stopping power or a zero range.
+    BOOST_CHECK_THROW(ElectronCsda::atomic_weight(0), std::out_of_range);
+    BOOST_CHECK_THROW(ElectronCsda::atomic_weight(kMaxZ + 1), std::out_of_range);
+    BOOST_CHECK_THROW(ElectronCsda::mean_excitation_eV(kMaxZ + 1), std::out_of_range);
+    BOOST_CHECK_THROW(ElectronCsda::stopping_power_MeV_cm2_g(kMaxZ + 1, 250.0, 100.0),
+                      std::out_of_range);
+    BOOST_CHECK_THROW(ElectronCsda::instance().range_gcm2(kMaxZ + 1, 100.0), std::out_of_range);
+    BOOST_CHECK_THROW(ElectronCsda::radiation_length_gcm2_element(kMaxZ + 1, 250.0),
+                      std::out_of_range);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

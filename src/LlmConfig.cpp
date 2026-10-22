@@ -1,8 +1,12 @@
 #include "InterSpec_config.h"
 #include "InterSpec/LlmConfig.h"
 
-#include <iostream>
+#include <mutex>
+#include <cctype>
+#include <algorithm>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 #include <rapidxml/rapidxml.hpp>
@@ -31,7 +35,7 @@ std::string agentTypeToString( AgentType type )
     case AgentType::NuclideId:       return "NuclideId";
     case AgentType::ActivityFit:     return "ActivityFit";
     case AgentType::Isotopics:       return "Isotopics";
-    case AgentType::DeepResearch:    return "DeepResearch";
+    case AgentType::KnowledgeBase:   return "KnowledgeBase";
     case AgentType::EnergyCalibration: return "EnergyCalibration";
     case AgentType::SpectrumTimeHistory: return "SpectrumTimeHistory";
     case AgentType::InSitu:          return "InSitu";
@@ -48,7 +52,7 @@ AgentType stringToAgentType( const std::string &name )
   if( name == "NuclideId" )       return AgentType::NuclideId;
   if( name == "ActivityFit" )     return AgentType::ActivityFit;
   if( name == "Isotopics" )       return AgentType::Isotopics;
-  if( name == "DeepResearch" )    return AgentType::DeepResearch;
+  if( name == "KnowledgeBase" )   return AgentType::KnowledgeBase;
   if( name == "EnergyCalibration" ) return AgentType::EnergyCalibration;
   if( name == "SpectrumTimeHistory" ) return AgentType::SpectrumTimeHistory;
   if( name == "InSitu" )          return AgentType::InSitu;
@@ -58,6 +62,107 @@ AgentType stringToAgentType( const std::string &name )
 }//stringToAgentType(...)
 
 const std::string LlmConfig::McpServer::sm_invalid_bearer_token = "INVALID-BEARER-TOKEN";
+
+
+namespace
+{
+  std::mutex ns_config_dir_mutex;
+  std::string ns_config_dir;
+
+  /** Replaces, in place, every attribute, element, and data value of `node` and its descendants
+   that is entirely an `env(...)` reference.  Returns true if any value was replaced.
+   */
+  bool resolve_env_references( rapidxml::xml_node<char> *node, rapidxml::xml_document<char> &doc )
+  {
+    bool any = false;
+
+    const auto resolve = [&doc,&any]( auto *item ){
+      bool was_reference = false;
+      const string resolved = LlmConfig::resolveEnvReference( string(item->value(), item->value_size()),
+                                                              was_reference );
+      if( was_reference )
+      {
+        item->value( doc.allocate_string( resolved.c_str(), resolved.size() + 1 ), resolved.size() );
+        any = true;
+      }
+    };
+
+    for( rapidxml::xml_attribute<char> *attrib = node->first_attribute(); attrib; attrib = attrib->next_attribute() )
+      resolve( attrib );
+
+    const rapidxml::node_type type = node->type();
+    if( (type == rapidxml::node_element) || (type == rapidxml::node_data) || (type == rapidxml::node_cdata) )
+      resolve( node );
+
+    for( rapidxml::xml_node<char> *child = node->first_node(); child; child = child->next_sibling() )
+    {
+      if( resolve_env_references( child, doc ) )
+        any = true;
+    }
+
+    return any;
+  }//resolve_env_references(...)
+}//namespace
+
+
+void LlmConfig::setConfigDirectory( const std::string &dir )
+{
+  std::lock_guard<std::mutex> lock( ns_config_dir_mutex );
+  ns_config_dir = dir;
+}
+
+
+std::string LlmConfig::configDirectory()
+{
+  std::lock_guard<std::mutex> lock( ns_config_dir_mutex );
+  return ns_config_dir;
+}
+
+
+std::string LlmConfig::resolveEnvReference( const std::string &value, bool &wasReference )
+{
+  wasReference = false;
+
+  string trimmed = value;
+  SpecUtils::trim( trimmed );
+  if( (trimmed.size() < 5) || !SpecUtils::starts_with( trimmed, "env(" ) || (trimmed.back() != ')') )
+    return value;
+
+  const string inner = trimmed.substr( 4, trimmed.size() - 5 );
+  const size_t comma_pos = inner.find( ',' );
+
+  string name = inner.substr( 0, comma_pos );
+  SpecUtils::trim( name );
+
+  std::optional<string> default_value;
+  if( comma_pos != string::npos )
+  {
+    default_value = inner.substr( comma_pos + 1 );
+    SpecUtils::trim( *default_value );
+  }
+
+  const bool valid_name = !name.empty()
+                          && std::all_of( begin(name), end(name), []( const char c ){
+                            return std::isalnum( static_cast<unsigned char>(c) ) || (c == '_');
+                          } );
+  if( !valid_name )
+    throw runtime_error( "Invalid env() reference '" + trimmed + "'." );
+
+  if( !SpecUtils::starts_with( name, "INTERSPEC_" ) )
+    throw runtime_error( "env() reference to '" + name + "' is not allowed; only environment"
+                         " variables whose names start with INTERSPEC_ may be used." );
+
+  wasReference = true;
+
+  const char * const env_value = std::getenv( name.c_str() );
+  if( env_value )
+    return env_value;
+
+  if( default_value.has_value() )
+    return default_value.value();
+
+  throw runtime_error( "Environment variable '" + name + "', referenced by the LLM config, is not set." );
+}//LlmConfig::resolveEnvReference(...)
 
 
 LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::parseApiFormat( const std::string &str )
@@ -145,46 +250,101 @@ LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::detectApiFormat( const std::stri
 }//LlmConfig::LlmApi::detectApiFormat(...)
 
 
-std::shared_ptr<LlmConfig> LlmConfig::load()
+std::optional<std::variant<bool,LlmConfig::LlmApi::ReasoningEffort>> LlmConfig::LlmApi::parseReasoning( std::string str )
 {
-  // Determine which path to use for config files.
-  // User files in writableDataDirectory() override default files in staticDataDirectory().
+  SpecUtils::trim( str );
+  SpecUtils::to_lower_ascii( str );
 
-  auto get_config_file_path = []( const string &filename ){
+  if( (str == "true") || (str == "1") || (str == "yes") )
+    return true;
+  if( (str == "false") || (str == "0") || (str == "no") )
+    return false;
+  if( str == "low" )
+    return ReasoningEffort::low;
+  if( str == "medium" )
+    return ReasoningEffort::medium;
+  if( str == "high" )
+    return ReasoningEffort::high;
+
+  return std::nullopt;
+}//LlmApi::parseReasoning(...)
+
+
+std::string LlmConfig::configFilePath( const std::string &filename )
+{
+  // A deployment's config directory (--llm-config-dir) comes first; then user files in
+  //  writableDataDirectory() override default files in staticDataDirectory().
+  const string config_dir = LlmConfig::configDirectory();
+  if( !config_dir.empty() && SpecUtils::is_file( SpecUtils::append_path(config_dir, filename) ) )
+    return SpecUtils::append_path( config_dir, filename );
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    const string user_data_dir = ([](){ try{ return InterSpec::writableDataDirectory(); }catch(...){ return ""s; } })();
-    if( !user_data_dir.empty() && SpecUtils::is_file(SpecUtils::append_path(user_data_dir,filename)) )
-      return SpecUtils::append_path(user_data_dir,filename);
+  const string user_data_dir = ([](){ try{ return InterSpec::writableDataDirectory(); }catch(...){ return ""s; } })();
+  if( !user_data_dir.empty() && SpecUtils::is_file(SpecUtils::append_path(user_data_dir,filename)) )
+    return SpecUtils::append_path(user_data_dir,filename);
 #endif
 
-    const string static_data_dir = InterSpec::staticDataDirectory();
-    return SpecUtils::append_path(static_data_dir,filename);
-  };
+  const string static_data_dir = InterSpec::staticDataDirectory();
+  return SpecUtils::append_path(static_data_dir,filename);
+}//std::string LlmConfig::configFilePath( const std::string &filename )
 
-  const string configPath = get_config_file_path( "llm_config.xml" );
-  const string toolsPath = get_config_file_path( "llm_tools_config.xml" );
+
+std::shared_ptr<LlmConfig> LlmConfig::load()
+{
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // A multi-session server must run with the configuration it was deployed with, never one found in
+  //  a user or static data directory.
+  const string config_dir = LlmConfig::configDirectory();
+  if( config_dir.empty() )
+    throw runtime_error( "An LLM config directory (--llm-config-dir) must be specified for the MCP"
+                         " agent server." );
+
+  if( !SpecUtils::is_file( SpecUtils::append_path(config_dir, "llm_config.xml") ) )
+    throw runtime_error( "No 'llm_config.xml' in the LLM config directory '" + config_dir + "'." );
+#endif
+
+  const string configPath = configFilePath( "llm_config.xml" );
+  const string toolsPath = configFilePath( "llm_tools_config.xml" );
   
-  // If we have config file, try to load it
   std::shared_ptr<LlmConfig> config = make_shared<LlmConfig>();
   
-  try
+  // No `llm_config.xml` is distributed with InterSpec; it is created by the "LLM Provider Settings"
+  //  window.  If there isnt one, leave the default config (LLM and MCP disabled, no providers), so the
+  //  assistant prompts the user to configure a provider.
+  if( SpecUtils::is_file( configPath ) )
   {
-    std::pair<LlmApi, McpServer> apiAndMcp = loadApiAndMcpConfigs(configPath);
-    config->llmApi = std::move(apiAndMcp.first);
-    config->mcpServer = std::move(apiAndMcp.second);
-  }catch( const std::exception &e )
-  {
-    // If user provided any override file and it failed to parse, return nullptr
-    cerr << "Failed to load LLM config from '" << configPath << "': " << e.what() << endl;
-    throw; // rethrow
-  }
+    try
+    {
+      std::pair<LlmApi, McpServer> apiAndMcp = loadApiAndMcpConfigs( configPath, &config->usesEnvReferences );
+      config->llmApi = std::move(apiAndMcp.first);
+      config->mcpServer = std::move(apiAndMcp.second);
+    }catch( const std::exception &e )
+    {
+      cerr << "Failed to load LLM config from '" << configPath << "': " << e.what() << endl;
+      throw; // rethrow
+    }
+  }//if( SpecUtils::is_file( configPath ) )
+
+  // With a browser-side transport, API keys are handed to page JavaScript - which, in a server
+  //  running LLM-written code for untrusted users, is not a place secrets may go; and the stdio
+  //  server has no browser at all.
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
+  config->llmApi.httpBackend = LlmApi::HttpBackend::Native;
+  for( LlmApi::ApiProvider &provider : config->llmApi.providers )
+    provider.httpBackend = LlmApi::HttpBackend::Native;
+#endif
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // Launching the stdio server is the opt-in to MCP, so <McpServer><Enabled> is not needed - nor is
+  //  a llm_config.xml at all; but without this, the early return below would skip loading the tools.
+  config->mcpServer.enabled = true;
+#endif
 
 #if( BUILD_AS_UNIT_TEST_SUITE )
   // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
   //  so we will stub a dummy one in here - this must come before the early return below.
   config->llmApi.enabled = true;
-  config->llmApi.deep_research_url = "";
+  config->llmApi.rag_url = "";
   {
     LlmApi::ModelInfo stubModel;
     stubModel.name = "AnInvalidMdoel";
@@ -216,7 +376,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
       AgentType::NuclideId,
       AgentType::ActivityFit,
       AgentType::Isotopics,
-      AgentType::DeepResearch,
+      AgentType::KnowledgeBase,
       AgentType::EnergyCalibration,
       AgentType::SpectrumTimeHistory,
       AgentType::InSitu
@@ -225,7 +385,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     for( const AgentType agentType : agentTypes )
     {
       const string filename = "llm_agent_" + agentTypeToString( agentType ) + ".xml";
-      const string agentPath = get_config_file_path( filename );
+      const string agentPath = configFilePath( filename );
 
       try
       {
@@ -252,7 +412,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
     requireAgent( AgentType::MainAgent, *config );
     requireAgent( AgentType::NuclideId, *config );
     requireAgent( AgentType::ActivityFit, *config );
-    requireAgent( AgentType::DeepResearch, *config );
+    requireAgent( AgentType::KnowledgeBase, *config );
   }
    
   try
@@ -269,7 +429,8 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
 }//LlmConfig LlmConfig::load()
 
 
-std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfigs( const std::string &llmConfigPath )
+std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfigs( const std::string &llmConfigPath,
+                                                                                    bool *usesEnvReferences )
 {
   try
   {
@@ -280,6 +441,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
     const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
+
+    // Resolve env(...) references up front, so every value read below sees the final value.
+    const bool used_env_refs = resolve_env_references( &doc, doc );
+    if( usesEnvReferences )
+      *usesEnvReferences = used_env_refs;
 
     const rapidxml::xml_node<char> * const root = XML_FIRST_NODE(&doc, "LlmConfig");
     if( !root )
@@ -326,20 +492,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
         if( !reasoningAttr )
           return false;
 
-        string reasoning_str = SpecUtils::xml_value_str( reasoningAttr );
-        SpecUtils::trim( reasoning_str );
-        SpecUtils::to_lower_ascii( reasoning_str );
-
-        if( (reasoning_str == "true") || (reasoning_str == "1") || (reasoning_str == "yes") )
-          return true;
-        if( (reasoning_str == "false") || (reasoning_str == "0") || (reasoning_str == "no") )
-          return false;
-        if( reasoning_str == "low" )
-          return LlmApi::ReasoningEffort::low;
-        if( reasoning_str == "medium" )
-          return LlmApi::ReasoningEffort::medium;
-        if( reasoning_str == "high" )
-          return LlmApi::ReasoningEffort::high;
+        const string reasoning_str = SpecUtils::xml_value_str( reasoningAttr );
+        const std::optional<std::variant<bool, LlmApi::ReasoningEffort>> reasoning
+                                                              = LlmApi::parseReasoning( reasoning_str );
+        if( reasoning.has_value() )
+          return reasoning.value();
 
         cerr << "Warning: Invalid reasoning value '" << reasoning_str << "', ignoring. "
              << "Valid values are: true, false, low, medium, high" << endl;
@@ -582,10 +739,29 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       // Load global optional fields
       string value_str;
 
-      const rapidxml::xml_node<char> * const deep_research_url = XML_FIRST_NODE( llmApiNode, "DeepResearchUrl" );
-      value_str = SpecUtils::xml_value_str( deep_research_url );
+      const rapidxml::xml_node<char> * const rag_url = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagUrl" );
+      value_str = SpecUtils::xml_value_str( rag_url );
       SpecUtils::trim( value_str );
-      llmApi.deep_research_url = value_str;
+      llmApi.rag_url = value_str;
+
+      // Optional model and corpora for the RAG endpoint; absent means use the defaults
+      //  in LlmKnowledgeBase.cpp, so configs predating these elements keep working.
+      const rapidxml::xml_node<char> * const rag_model = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagModel" );
+      value_str = SpecUtils::xml_value_str( rag_model );
+      SpecUtils::trim( value_str );
+      llmApi.rag_model = value_str;
+
+      llmApi.rag_corpora.clear();
+      const rapidxml::xml_node<char> * const rag_corpora = XML_FIRST_NODE( llmApiNode, "KnowledgeBaseRagCorpora" );
+      value_str = SpecUtils::xml_value_str( rag_corpora );
+      vector<string> corpora;
+      SpecUtils::split( corpora, value_str, "," );
+      for( string &corpus : corpora )
+      {
+        SpecUtils::trim( corpus );
+        if( !corpus.empty() )
+          llmApi.rag_corpora.push_back( corpus );
+      }
 
       // Load optional CompactionSystemPrompt (if not present, remains empty - default used at runtime)
       const rapidxml::xml_node<char> * const compactionPromptNode = XML_FIRST_NODE( llmApiNode, "CompactionSystemPrompt" );
@@ -624,6 +800,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       if( llmApi.httpDisableCertCheck )
         cerr << "Warning: LLM config has HttpDisableCertCheck set - TLS certificates will NOT be"
                 " validated on native HTTP requests." << endl;
+
+      const rapidxml::xml_node<char> * const logConvosNode = XML_FIRST_NODE( llmApiNode, "LogConversations" );
+      value_str = SpecUtils::xml_value_str( logConvosNode );
+      SpecUtils::trim( value_str );
+      llmApi.logConversations = (value_str == "true") || (value_str == "1");
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -648,6 +829,60 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       const rapidxml::xml_node<char> *allowAgentNode = XML_FIRST_NODE( mcpServerNode, "AllowAgentInvocation" );
       if( allowAgentNode )
         mcpServer.allowAgentInvocation = XmlUtils::get_bool_node_value( mcpServerNode, "AllowAgentInvocation" );
+
+      // Optional multi-session server settings; each absent element keeps its default.
+      const rapidxml::xml_node<char> * const agentNode = XML_FIRST_NODE( mcpServerNode, "AgentServer" );
+      if( agentNode )
+      {
+        McpServer::AgentServer agent;
+
+        const auto text_of = [agentNode]( const char *name ) -> std::optional<string> {
+          const rapidxml::xml_node<char> * const node = agentNode->first_node( name );
+          if( !node )
+            return std::nullopt;
+          string value = SpecUtils::xml_value_str( node );
+          SpecUtils::trim( value );
+          return value;
+        };
+
+        const auto read_number = [&text_of]( const char *name, auto &value ){
+          const std::optional<string> txt = text_of( name );
+          if( !txt.has_value() || txt->empty() )
+            return;
+          long long parsed = 0;
+          size_t num_used = 0;
+          try
+          {
+            parsed = std::stoll( *txt, &num_used );
+          }catch( std::exception & )
+          {
+            num_used = 0;
+          }
+          if( (num_used != txt->size()) || (parsed < 0) )
+            throw runtime_error( "Invalid <" + string(name) + "> value '" + *txt + "'." );
+          value = static_cast<std::remove_reference_t<decltype(value)>>( parsed );
+        };
+
+        read_number( "MaxSessions", agent.maxSessions );
+        read_number( "SessionIdleTimeoutSeconds", agent.sessionIdleTimeoutSeconds );
+        read_number( "SessionMaxLifetimeSeconds", agent.sessionMaxLifetimeSeconds );
+        read_number( "MaxUploadBytes", agent.maxUploadBytes );
+        read_number( "MaxSessionBytes", agent.maxSessionBytes );
+        read_number( "MaxImageBytes", agent.maxImageBytes );
+
+        const std::optional<string> exchange_dir = text_of( "ExchangeDirectory" );
+        if( exchange_dir.has_value() && !exchange_dir->empty() )
+          agent.exchangeDirectory = *exchange_dir;
+
+        const std::optional<string> keep_files = text_of( "KeepSessionFiles" );
+        if( keep_files.has_value() && !keep_files->empty() )
+          agent.keepSessionFiles = (*keep_files == "true") || (*keep_files == "1");
+
+        agent.publicBaseUrl = text_of( "PublicBaseUrl" ).value_or( "" );
+        agent.browserPath = text_of( "BrowserPath" ).value_or( "" );
+
+        mcpServer.agentServer = agent;
+      }//if( agentNode )
     }// End load MCP server settings
 
     return std::make_pair( llmApi, mcpServer );
@@ -677,9 +912,11 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
   // Document-scope header explaining the file is GUI-managed.
   append_comment( &doc,
     " InterSpec LLM configuration.\n\n"
-    "     This file is read from InterSpec's writable user-data directory if present, otherwise from\n"
-    "     the static data directory.  It is rewritten by the \"LLM Provider Settings\" GUI; any\n"
-    "     hand-written comments or unrecognized elements you add will NOT be preserved the next time\n"
+    "     This file lives in InterSpec's writable user-data directory (see \"Help\" > \"About InterSpec\"\n"
+    "     > \"Data\" for its location); InterSpec does not ship one.  It is written by the \"LLM Provider\n"
+    "     Settings\" window (opened from the LLM Assistant), and is documented in the \"Configuring an LLM\n"
+    "     Provider\" help topic.  You can also drag a llm_config.xml onto InterSpec to import it.\n"
+    "     Any hand-written comments or unrecognized elements you add will NOT be preserved the next time\n"
     "     the GUI saves it.\n\n" );
 
   // Create root node
@@ -711,14 +948,24 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
     " <Model> attributes (all optional unless noted):\n"
     "         active                    - \"true\" for the model to use within its provider.\n"
     "         supportsImages            - \"true\" if the model accepts image input (enables get_spectrum_image).\n"
-    "         reasoning                 - \"true\"/\"false\" (OpenRouter-style) or \"low\"/\"medium\"/\"high\" (OpenAI effort).\n"
+    "         reasoning                 - \"false\" (default), \"true\", or an effort level \"low\"/\"medium\"/\"high\".\n"
+    "                                     openai_chat sends `reasoning_effort` for an effort level, or the\n"
+    "                                     OpenRouter-style `reasoning: {enabled: true}` for \"true\";\n"
+    "                                     openai_responses sends `reasoning.effort` (\"true\" = medium);\n"
+    "                                     anthropic turns on thinking for any non-false value: Claude 4.6+\n"
+    "                                     get adaptive thinking, with an effort level sent as\n"
+    "                                     `output_config.effort`; for Haiku 4.5 and older models, the effort\n"
+    "                                     level sets the thinking budget.\n"
     "         requireToolInStateMachine - \"true\" forces tool_choice=\"required\" in non-final state-machine states.\n"
     "         instructionVerbosity      - \"terse\"/\"normal\"/\"verbose\"; how explicit the rendered instructions are (default normal).\n"
     "       <Model> child elements:\n"
     "         <Name>               - required model identifier (e.g. gpt-5-mini).\n"
     "         <MaxTokens>          - max output tokens (omit/0 = API default; REQUIRED by Anthropic).\n"
     "         <ContextLengthLimit> - context window size (omit/0 = API default).\n"
-    "         <ModelTemperature>   - 0.0-2.0 (omit = API default); not supported by all models. " );
+    "         <ModelTemperature>   - 0.0-2.0 (omit = API default); not supported by all models.\n"
+    "                                0.0 = deterministic, 0.2-0.5 = balanced (recommended), 0.7+ = creative but riskier.\n"
+    "                                Not sent to Anthropic models while thinking is enabled, nor to\n"
+    "                                Claude models that reject it (Opus 4.7+, Sonnet/Haiku 5+, Fable). " );
 
   // Write ApiProvider elements
   for( size_t pi = 0; pi < config.llmApi.providers.size(); ++pi )
@@ -808,12 +1055,41 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
   // round-tripping the config through "LLM Provider Settings" never drops them.
   append_comment( llmApi,
     " Optional <LlmApi> elements:\n"
-    "         <DeepResearchUrl>        - HTTP endpoint for the DeepResearch sub-agent's query tool; empty disables it.\n"
-    "         <CompactionSystemPrompt> - overrides the default prompt used when summarizing old conversation history.\n"
-    "         <DebugFile>              - \"stdout\", \"stderr\", or a file path for verbose LLM debug logging; empty disables it. " );
+    "         <KnowledgeBaseRagUrl>     - an optional HTTP retrieval-augmented-generation (RAG) endpoint (e.g.\n"
+    "                                     \"http://localhost:8000/query\") that the KnowledgeBase sub-agent can\n"
+    "                                     search (via its `query_rag_endpoint` tool) in addition to its curated\n"
+    "                                     `llm_knowledge` skills; empty disables the tool.  This is a separate,\n"
+    "                                     non-distributed service, so it is very recommended you leave this empty.\n"
+    "                                     The tool POSTs JSON like {\"query\": \"...\", \"model\": \"...\",\n"
+    "                                     \"corpora\": [\"...\"]} - all three fields are required, and the service\n"
+    "                                     answers HTTP 422 if they do not match what it knows - and reads the\n"
+    "                                     answer from the `response` field of the returned JSON.\n"
+    "         <KnowledgeBaseRagModel>   - the `model` the RAG service should answer with (a model the remote\n"
+    "                                     service knows, unrelated to the providers above); empty sends\n"
+    "                                     \"openai/gpt-oss-120b\".\n"
+    "         <KnowledgeBaseRagCorpora> - comma-separated `corpora` for the RAG service to search; empty sends\n"
+    "                                     \"ldrd_llm_gamma_spec_labeled\".\n"
+    "         <CompactionSystemPrompt>  - overrides the default prompt used when summarizing old conversation\n"
+    "                                     history (done when a conversation reaches ~85% of <ContextLengthLimit>).\n"
+    "         <DebugFile>               - \"stdout\", \"stderr\", or a file path (created/overwritten) for verbose\n"
+    "                                     debug logging of LLM interactions, state transitions and tool calls;\n"
+    "                                     empty disables it.\n"
+    "         <LogConversations>        - \"true\" saves each conversation as XML to the \"llm_logs\" folder of\n"
+    "                                     the user data directory (rewritten at the end of every turn). " );
 
-  if( !config.llmApi.deep_research_url.empty() )
-    XmlUtils::append_string_node( llmApi, "DeepResearchUrl", config.llmApi.deep_research_url );
+  if( !config.llmApi.rag_url.empty() )
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagUrl", config.llmApi.rag_url );
+
+  if( !config.llmApi.rag_model.empty() )
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagModel", config.llmApi.rag_model );
+
+  if( !config.llmApi.rag_corpora.empty() )
+  {
+    string corpora;
+    for( const string &corpus : config.llmApi.rag_corpora )
+      corpora += (corpora.empty() ? "" : ",") + corpus;
+    XmlUtils::append_string_node( llmApi, "KnowledgeBaseRagCorpora", corpora );
+  }
 
   if( !config.llmApi.compactionSystemPrompt.empty() )
     XmlUtils::append_string_node( llmApi, "CompactionSystemPrompt", config.llmApi.compactionSystemPrompt );
@@ -846,6 +1122,10 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
   if( config.llmApi.httpDisableCertCheck )
     XmlUtils::append_bool_node( llmApi, "HttpDisableCertCheck", true );
 
+  // Only written when enabled (documented with the other optional elements, above).
+  if( config.llmApi.logConversations )
+    XmlUtils::append_bool_node( llmApi, "LogConversations", true );
+
   // NOTE: Agents and tools are saved separately in their own files, not in llm_config.xml.
 
   // MCP server settings
@@ -855,7 +1135,12 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
     "       can use InterSpec's tools.\n"
     "         <Enabled>     - \"true\" to start the MCP server.\n"
     "         <BearerToken> - token clients must supply; if empty, no auth is required.  You MUST change\n"
-    "                         it from \"INVALID-BEARER-TOKEN\" before enabling. " );
+    "                         it from \"INVALID-BEARER-TOKEN\" before enabling.\n"
+    "         <AllowAssistantPrompt> - \"true\" lets MCP clients submit prompts to the LLM assistant (requires a\n"
+    "                                  configured LLM provider); intermediate results (tool calls, sub-agent\n"
+    "                                  responses) are streamed as SSE progress events.\n"
+    "         <AllowAgentInvocation> - \"true\" lets MCP clients directly invoke the specialized agents\n"
+    "                                  (NuclideId, ActivityFit, etc.); requires a configured LLM provider. " );
 
   rapidxml::xml_node<char> *mcpServer = doc.allocate_node(rapidxml::node_element, "McpServer");
   root->append_node(mcpServer);
@@ -866,6 +1151,26 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 #endif
   XmlUtils::append_bool_node( mcpServer, "AllowAssistantPrompt", config.mcpServer.allowAssistantPrompt );
   XmlUtils::append_bool_node( mcpServer, "AllowAgentInvocation", config.mcpServer.allowAgentInvocation );
+
+  if( config.mcpServer.agentServer.has_value() )
+  {
+    const McpServer::AgentServer &agent = config.mcpServer.agentServer.value();
+
+    append_comment( mcpServer,
+      " Settings used only by the multi-session MCP HTTP server (target/mcp_http). " );
+    rapidxml::xml_node<char> *agentNode = doc.allocate_node( rapidxml::node_element, "AgentServer" );
+    mcpServer->append_node( agentNode );
+    XmlUtils::append_int_node( agentNode, "MaxSessions", agent.maxSessions );
+    XmlUtils::append_int_node( agentNode, "SessionIdleTimeoutSeconds", agent.sessionIdleTimeoutSeconds );
+    XmlUtils::append_int_node( agentNode, "SessionMaxLifetimeSeconds", agent.sessionMaxLifetimeSeconds );
+    XmlUtils::append_string_node( agentNode, "ExchangeDirectory", agent.exchangeDirectory );
+    XmlUtils::append_bool_node( agentNode, "KeepSessionFiles", agent.keepSessionFiles );
+    XmlUtils::append_int_node( agentNode, "MaxUploadBytes", agent.maxUploadBytes );
+    XmlUtils::append_int_node( agentNode, "MaxSessionBytes", agent.maxSessionBytes );
+    XmlUtils::append_int_node( agentNode, "MaxImageBytes", agent.maxImageBytes );
+    XmlUtils::append_string_node( agentNode, "PublicBaseUrl", agent.publicBaseUrl );
+    XmlUtils::append_string_node( agentNode, "BrowserPath", agent.browserPath );
+  }//if( config.mcpServer.agentServer.has_value() )
 
   std::string out;
   rapidxml::print( std::back_inserter(out), doc, 0 );

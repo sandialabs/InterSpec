@@ -8,4 +8,5 @@
   <message id="hw-err-opening-json">Не удалось открыть JSON-файл справки по адресу '{1}'.</message>
   <message id="hw-err-no-help-entry">В справке нет записи для '{1}'.</message>
   <message id="hw-search-empty-text">Поиск</message>
+  <message id="hw-all-topics">Все темы</message>
 </messages>

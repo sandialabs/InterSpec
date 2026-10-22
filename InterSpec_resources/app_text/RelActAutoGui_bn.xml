@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <messages>
   
-  <message id="raag-window-title">Relative Act. Isotopics</message>
+  <message id="raag-window-title">নিউক্লাইড দ্বারা আইসোটোপিক্স</message>
   
   
   <message id="raag-presets">Presets</message>
@@ -137,7 +137,7 @@
   <message id="raag-and-background-period"> and background</message>
 
   
-  <message id="raag-error-creating-tool">ত্রুটি creating Relative Act. Isotopics tool: {1}</message>
+  <message id="raag-error-creating-tool">ত্রুটি creating Isotopics by nuclides tool: {1}</message>
   <message id="raag-handle-double-click-error">handleDoubleLeftClick error: {1}</message>
   <message id="raag-expected-state-info">Expected state information for '{1}' is not available - this is not expected - sorry!</message>
   <message id="raag-state-info-not-saved">State information was not previously able to be saved for '{1}' - this is not expected - sorry!</message>

@@ -131,13 +131,13 @@ BOOST_AUTO_TEST_CASE( ShellWalkMatchesElementCentreRay )
     DistributedSrcCalcT<double>::ShellInfo sh;
     for( int i = 0; i < 3; ++i )
       sh.dims[i] = dims[i]*cm;
-    sh.trans_len_coef = transmition_length_coefficient( mat.get(), static_cast<float>(energy) );
+    sh.trans_len_coef = transmition_length_coefficient( mat.get(), energy );
     sh.type = ShellType::Material;
     sh.density = mat->density;
     sh.effective_an = material_mass_weighted_atomic_number( *mat );
     sh.hydrogen_mass_frac = material_hydrogen_mass_fraction( *mat );
     for( const double pe : partners )
-      sh.cascade_mu.push_back( transmition_length_coefficient( mat.get(), static_cast<float>(pe) ) );
+      sh.cascade_mu.push_back( transmition_length_coefficient( mat.get(), pe ) );
     return sh;
   };
   const auto generic_shell = [&]( const std::array<double,3> &dims, const double ad_gcm2, const double an ) {
@@ -479,7 +479,7 @@ BOOST_AUTO_TEST_CASE( CollimatedResponseLinePath )
                                                          response->transverse_half_extent()*cm, 0.0 );
     DistributedSrcCalcT<double>::ShellInfo shell;
     shell.dims = { c.radius_cm*cm, c.half_len_cm*cm, 0.0 };
-    shell.trans_len_coef = transmition_length_coefficient( water.get(), static_cast<float>(energy) );
+    shell.trans_len_coef = transmition_length_coefficient( water.get(), energy );
     shell.type = ShellType::Material;
     calc.m_shells.push_back( shell );
 
@@ -590,7 +590,7 @@ BOOST_AUTO_TEST_CASE( LineVsElementSphericalSource )
       {
         DistributedSrcCalcT<double>::ShellInfo info;
         info.dims = { sh.second*cm, 0.0, 0.0 };
-        info.trans_len_coef = transmition_length_coefficient( sh.first.get(), static_cast<float>(e) );
+        info.trans_len_coef = transmition_length_coefficient( sh.first.get(), e );
         info.type = ShellType::Material;
         calc.m_shells.push_back( info );
       }
@@ -803,7 +803,7 @@ BOOST_AUTO_TEST_CASE( GenericShellLineVsElement )
         DistributedSrcCalcT<double>::ShellInfo sh;
         for( int i = 0; i < 3; ++i )
           sh.dims[i] = dims[i]*cm;
-        sh.trans_len_coef = transmition_length_coefficient( mat.get(), static_cast<float>(energy) );
+        sh.trans_len_coef = transmition_length_coefficient( mat.get(), energy );
         sh.type = ShellType::Material;
         sh.density = mat->density;
         sh.effective_an = material_mass_weighted_atomic_number( *mat );
@@ -963,7 +963,7 @@ BOOST_AUTO_TEST_CASE( OffAxisHollowLineVsElement )
         for( int k = 0; k < 3; ++k )
           sh.dims[k] = dims[i][k]*cm;
         sh.trans_len_coef = transmition_length_coefficient( mats[i].get(),
-                                                            static_cast<float>(energy) );
+                                                            energy );
         sh.type = ShellType::Material;
         calc.m_shells.push_back( sh );
       }
@@ -1088,7 +1088,7 @@ BOOST_AUTO_TEST_CASE( InSituExponentialAreaConvention )
     DistributedSrcCalcT<double>::ShellInfo sh;
     for( int i = 0; i < 3; ++i )
       sh.dims[i] = c.dims[i]*cm;
-    sh.trans_len_coef = transmition_length_coefficient( water.get(), static_cast<float>(energy) );
+    sh.trans_len_coef = transmition_length_coefficient( water.get(), energy );
     sh.type = ShellType::Material;
     calc.m_shells.push_back( sh );
     return calc;
@@ -1191,7 +1191,7 @@ BOOST_AUTO_TEST_CASE( OffAxisSphereResponseRotationProbe, * boost::unit_test::di
         DistributedSrcCalcT<double>::ShellInfo sh;
         sh.dims = { radius*cm, 0.0, 0.0 };
         sh.trans_len_coef = transmition_length_coefficient( water.get(),
-                                                    static_cast<float>(energy) );
+                                                    energy );
         sh.type = ShellType::Material;
         calc.m_shells.push_back( sh );
         return calc;
@@ -1339,7 +1339,7 @@ BOOST_AUTO_TEST_CASE( LinePathGradientVsFiniteDifference )
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { ScalarT(radius), ScalarT(src_hz*cm), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( matrix.get(),
-                                                       static_cast<float>(energy_keV) ) );
+                                                       energy_keV ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
 
@@ -1347,7 +1347,7 @@ BOOST_AUTO_TEST_CASE( LinePathGradientVsFiniteDifference )
     shield.dims = { ScalarT(radius) + ScalarT(thickness), ScalarT(src_hz*cm) + ScalarT(thickness),
                     ScalarT(0.0) };
     shield.trans_len_coef = ScalarT( transmition_length_coefficient( iron.get(),
-                                                          static_cast<float>(energy_keV) ) );
+                                                          energy_keV ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
 
@@ -1695,12 +1695,12 @@ BOOST_AUTO_TEST_CASE( HollowSourceInnerSurfaceLimit )
                                     det.gd.transverse_half_extent()*cm, 0.0 );
     DistributedSrcCalcT<double>::ShellInfo core;
     core.dims = { core_frac*0.8*outer_r*cm, core_frac*0.6*outer_hz*cm, 0.0 };
-    core.trans_len_coef = transmition_length_coefficient( steel.get(), static_cast<float>(energy) );
+    core.trans_len_coef = transmition_length_coefficient( steel.get(), energy );
     core.type = ShellType::Material;
     calc.m_shells.push_back( core );
     DistributedSrcCalcT<double>::ShellInfo src;
     src.dims = { outer_r*cm, outer_hz*cm, 0.0 };
-    src.trans_len_coef = transmition_length_coefficient( water.get(), static_cast<float>(energy) );
+    src.trans_len_coef = transmition_length_coefficient( water.get(), energy );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
     return calc;
@@ -1817,7 +1817,7 @@ BOOST_AUTO_TEST_CASE( RealisticSourceGeometries, * boost::unit_test::disabled() 
       calc.m_geometry = c.geom;
       calc.m_materialIndex = 0;
       calc.m_attenuateForAir = c.air;
-      calc.m_airTransLenCoef = c.air ? transmission_length_coefficient_air( static_cast<float>(energy) ) : 0.0;
+      calc.m_airTransLenCoef = c.air ? transmission_length_coefficient_air( energy ) : 0.0;
       calc.m_isInSituExponential = c.in_situ;
       calc.m_inSituRelaxationLength = c.in_situ ? (c.relax_cm*cm) : -1.0;
       calc.m_srcVolumetricActivity = ScalarT(1.0);
@@ -1832,7 +1832,7 @@ BOOST_AUTO_TEST_CASE( RealisticSourceGeometries, * boost::unit_test::disabled() 
         src.dims[i] = ScalarT( c.dims[i]*cm );
       src.dims[c.swept] = swept_val;
       src.trans_len_coef = ScalarT( transmition_length_coefficient( c.mat.get(),
-                                                static_cast<float>(energy) ) );
+                                                energy ) );
       src.type = ShellType::Material;
       calc.m_shells.push_back( src );
       return calc;
@@ -1993,12 +1993,12 @@ BOOST_AUTO_TEST_CASE( HollowSourceGradientLimit )
                                     ScalarT(dist*cm), det.gd.transverse_half_extent()*cm, 0.0 );
     typename DistributedSrcCalcT<ScalarT>::ShellInfo core;
     core.dims = { ScalarT(core_r*cm), ScalarT(core_hz*cm), ScalarT(0.0) };
-    core.trans_len_coef = ScalarT( transmition_length_coefficient( steel.get(), static_cast<float>(energy) ) );
+    core.trans_len_coef = ScalarT( transmition_length_coefficient( steel.get(), energy ) );
     core.type = ShellType::Material;
     calc.m_shells.push_back( core );
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { outer_r, ScalarT(out_hz*cm), ScalarT(0.0) };
-    src.trans_len_coef = ScalarT( transmition_length_coefficient( water.get(), static_cast<float>(energy) ) );
+    src.trans_len_coef = ScalarT( transmition_length_coefficient( water.get(), energy ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
     return calc;
@@ -2106,7 +2106,7 @@ BOOST_AUTO_TEST_CASE( InSituLargeDiskLineCountProbe, * boost::unit_test::disable
       calc.m_geometry = GeometryType::CylinderEndOn;
       calc.m_materialIndex = 0;
       calc.m_attenuateForAir = true;
-      calc.m_airTransLenCoef = transmission_length_coefficient_air( static_cast<float>(energy) );
+      calc.m_airTransLenCoef = transmission_length_coefficient_air( energy );
       calc.m_isInSituExponential = true;
       calc.m_inSituRelaxationLength = relax*cm;
       calc.m_srcVolumetricActivity = 1.0;
@@ -2118,7 +2118,7 @@ BOOST_AUTO_TEST_CASE( InSituLargeDiskLineCountProbe, * boost::unit_test::disable
                                       det.gd.transverse_half_extent()*cm, 0.0 );
       DistributedSrcCalcT<double>::ShellInfo src;
       src.dims = { c.radius_cm*cm, half_z*cm, 0.0 };
-      src.trans_len_coef = transmition_length_coefficient( soil.get(), static_cast<float>(energy) );
+      src.trans_len_coef = transmition_length_coefficient( soil.get(), energy );
       src.type = ShellType::Material;
       calc.m_shells.push_back( src );
       return calc;
@@ -2220,7 +2220,7 @@ BOOST_AUTO_TEST_CASE( LinePathCostProbe, * boost::unit_test::disabled() )
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { radius, ScalarT(outer[1]), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( water.get(),
-                                              static_cast<float>(energy) ) );
+                                              energy ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
     return calc;
@@ -2402,7 +2402,7 @@ BOOST_AUTO_TEST_CASE( LinePathGradientLineCountSweep, * boost::unit_test::disabl
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { ScalarT(radius), ScalarT(src_hz*cm), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( matrix.get(),
-                                                       static_cast<float>(energy_keV) ) );
+                                                       energy_keV ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
 
@@ -2410,7 +2410,7 @@ BOOST_AUTO_TEST_CASE( LinePathGradientLineCountSweep, * boost::unit_test::disabl
     shield.dims = { ScalarT(radius) + ScalarT(t0), ScalarT(src_hz*cm) + ScalarT(t0),
                     ScalarT(0.0) };
     shield.trans_len_coef = ScalarT( transmition_length_coefficient( iron.get(),
-                                                          static_cast<float>(energy_keV) ) );
+                                                          energy_keV ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
     return calc;
@@ -2550,13 +2550,13 @@ BOOST_AUTO_TEST_CASE( LineProposalSurfaceFractionSweep, * boost::unit_test::disa
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { radius, ScalarT(src_hz*cm), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( water.get(),
-                                              static_cast<float>(energy) ) );
+                                              energy ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
     typename DistributedSrcCalcT<ScalarT>::ShellInfo shield;
     shield.dims = { radius + ScalarT(t0), ScalarT(src_hz*cm) + ScalarT(t0), ScalarT(0.0) };
     shield.trans_len_coef = ScalarT( transmition_length_coefficient( iron.get(),
-                                              static_cast<float>(energy) ) );
+                                              energy ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
     return calc;
@@ -2733,13 +2733,13 @@ BOOST_AUTO_TEST_CASE( LinePathGradientAcrossHeldWindow, * boost::unit_test::disa
     typename DistributedSrcCalcT<ScalarT>::ShellInfo src;
     src.dims = { ScalarT(radius), ScalarT(src_hz*cm), ScalarT(0.0) };
     src.trans_len_coef = ScalarT( transmition_length_coefficient( water.get(),
-                                                       static_cast<float>(energy) ) );
+                                                       energy ) );
     src.type = ShellType::Material;
     calc.m_shells.push_back( src );
     typename DistributedSrcCalcT<ScalarT>::ShellInfo shield;
     shield.dims = { ScalarT(radius) + ScalarT(t0), ScalarT(src_hz*cm) + ScalarT(t0), ScalarT(0.0) };
     shield.trans_len_coef = ScalarT( transmition_length_coefficient( iron.get(),
-                                                          static_cast<float>(energy) ) );
+                                                          energy ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
     return calc;
@@ -2991,7 +2991,7 @@ BOOST_AUTO_TEST_CASE( LineProposalWeightDistribution, * boost::unit_test::disabl
           for( int k = 0; k < 3; ++k )
             core.dims[k] = g.core[k]*cm;
           core.trans_len_coef = transmition_length_coefficient( steel.get(),
-                                                        static_cast<float>(energy) );
+                                                        energy );
           core.type = ShellType::Material;
           calc.m_shells.push_back( core );
         }
@@ -2999,7 +2999,7 @@ BOOST_AUTO_TEST_CASE( LineProposalWeightDistribution, * boost::unit_test::disabl
         for( int k = 0; k < 3; ++k )
           src.dims[k] = g.outer[k]*cm;
         src.trans_len_coef = transmition_length_coefficient( water.get(),
-                                                      static_cast<float>(energy) );
+                                                      energy );
         src.type = ShellType::Material;
         calc.m_shells.push_back( src );
 
@@ -3059,8 +3059,8 @@ BOOST_AUTO_TEST_CASE( OpaqueSphereSelfAttenConvergence, * boost::unit_test::disa
   {
     for( const Row &r : rows )
     {
-      const double mu = transmition_length_coefficient( mat.get(), static_cast<float>(r.energy) );
-      const double mu_fep = fep_survival_removal_coefficient( mat.get(), static_cast<float>(r.energy),
+      const double mu = transmition_length_coefficient( mat.get(), r.energy );
+      const double mu_fep = fep_survival_removal_coefficient( mat.get(), r.energy,
                                                               0.5*r.fwhm, 0.0 );
       DistributedSrcCalcT<double> calc;
       calc.m_geometry = GeometryType::Spherical;
@@ -3143,7 +3143,7 @@ GammaInteractionCalc::DistributedSrcCalcT<double> make_soil_disk_calc( const Ang
   calc.m_geometry = GeometryType::CylinderEndOn;
   calc.m_materialIndex = 0;
   calc.m_attenuateForAir = air;
-  calc.m_airTransLenCoef = air ? transmission_length_coefficient_air( static_cast<float>(energy) ) : 0.0;
+  calc.m_airTransLenCoef = air ? transmission_length_coefficient_air( energy ) : 0.0;
   calc.m_isInSituExponential = true;
   calc.m_inSituRelaxationLength = relax_cm*cm;
   calc.m_srcVolumetricActivity = 1.0;
@@ -3156,7 +3156,7 @@ GammaInteractionCalc::DistributedSrcCalcT<double> make_soil_disk_calc( const Ang
                                                        det.gd.transverse_half_extent()*cm, 0.0 );
   DistributedSrcCalcT<double>::ShellInfo src;
   src.dims = { radius_cm*cm, half_thick_cm*cm, 0.0 };
-  src.trans_len_coef = transmition_length_coefficient( soil.get(), static_cast<float>(energy) );
+  src.trans_len_coef = transmition_length_coefficient( soil.get(), energy );
   src.type = ShellType::Material;
   calc.m_shells.push_back( src );
   return calc;

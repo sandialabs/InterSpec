@@ -410,6 +410,24 @@ DetectorDef selectDetectorDef( const std::vector<DetectorDef> &defs,
 }//selectDetectorDef(...)
 
 
+bool isCandidateDetectorTxt( const std::string &headerText )
+{
+  // Guards against feeding the line parser a binary file.
+  if( headerText.find( '\0' ) != std::string::npos )
+    return false;
+
+  std::istringstream strm( headerText );
+  const std::vector<DetectorDef> defs = parseDetectorTxt( strm );
+  for( const DetectorDef &def : defs )
+  {
+    if( (def.d1_crystal_diam_mm > 0.0) && (def.d2_crystal_len_mm > 0.0) )
+      return true;  //NaN compares false, so both were present and positive
+  }
+
+  return false;
+}//isCandidateDetectorTxt(...)
+
+
 //=============================================================================
 //  .PAR  (binary spatial-efficiency grid)   - a port of par_decode.py
 //=============================================================================
@@ -423,7 +441,7 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   // Bounds-checked accessors into the byte buffer.
   auto need = [&]( size_t off, size_t n )
   {
-    if( off + n > len )
+    if( (off > len) || (n > (len - off)) )  //not `off + n > len`, which can wrap around
       throw std::runtime_error( "parseParFile: read past end of file (corrupt or truncated)." );
   };
   auto u16 = [&]( size_t o ){ need(o,2); return read_u16le( &bytes[o] ); };
@@ -442,6 +460,11 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   if( markers.empty() )
     throw std::runtime_error( "parseParFile: no record markers found (not a recognized grid file)." );
 
+  // A marker any earlier would put its record's start before the file's; the framing arithmetic
+  //  below would wrap around.  (Real files have the energy table first, so it is far later.)
+  if( markers[0] < (0x12 + sm_marker_in_record) )
+    throw std::runtime_error( "parseParFile: record marker inside the header (not a recognized grid file)." );
+
   const size_t header_bytes = markers[0] - sm_marker_in_record;
   const size_t record_bytes = (markers.size() > 1)
                                 ? (markers[1] - markers[0])
@@ -453,6 +476,8 @@ ParFile parseParFile( const std::vector<uint8_t> &bytes )
   const uint16_t n = u16( 0x10 );
   if( n == 0 )
     throw std::runtime_error( "parseParFile: zero energies in header." );
+  if( header_bytes < (0x12 + 8*static_cast<size_t>(n)) )
+    throw std::runtime_error( "parseParFile: header too short for its energy table." );
 
   out.energies_keV.resize( n );
   for( uint16_t e = 0; e < n; ++e )
@@ -512,7 +537,12 @@ ParFile parseParFile( const std::string &path )
 {
   // Read the exact bytes (SpecUtils::load_file_data appends a trailing NUL,
   //  which would break the strict file-size identity check).
+#ifdef _WIN32
+  const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16( path );
+  std::ifstream input( wpath.c_str(), std::ios::binary | std::ios::ate );
+#else
   std::ifstream input( path.c_str(), std::ios::binary | std::ios::ate );
+#endif
   if( !input.is_open() )
     throw std::runtime_error( "parseParFile: could not open '" + path + "'." );
 
@@ -527,6 +557,36 @@ ParFile parseParFile( const std::string &path )
 
   return parseParFile( bytes );
 }//parseParFile( path )
+
+
+bool isCandidateParFile( const uint8_t *header, const size_t headerLen, const size_t fileSize )
+{
+  if( !header || (headerLen < 0x12) || (fileSize < 32) )
+    return false;
+
+  // The limits are loose on purpose; they only need to reject text and other binary formats.  The
+  //  lower energy bound matters for text: ASCII digits read as a double give a tiny positive value.
+  const double emin = read_f64le( header + 0x00 );
+  const double emax = read_f64le( header + 0x08 );
+  if( !std::isfinite(emin) || !std::isfinite(emax)
+      || (emin < 0.1) || (emax <= emin) || (emax > 1.0E5) )
+    return false;
+
+  const uint16_t n = read_u16le( header + 0x10 );
+  if( (n < 1) || (n > 1000) || ((0x12 + 8*static_cast<size_t>(n)) >= fileSize) )
+    return false;
+
+  double prev = 0.0;
+  for( size_t e = 0; (e < n) && ((0x12 + 8*(e + 1)) <= headerLen); ++e )
+  {
+    const double energy = read_f64le( header + 0x12 + 8*e );
+    if( !std::isfinite(energy) || (energy <= prev) || (energy > 1.0E5) )
+      return false;
+    prev = energy;
+  }
+
+  return true;
+}//isCandidateParFile(...)
 
 
 //=============================================================================
@@ -1129,16 +1189,17 @@ std::vector<double> distance_ladder( const double d_min_cm, const double d_ref_c
 }//distance_ladder(...)
 
 
-/** Builds a CeeLo GeometryDescriptor from a parsed DetectorDef.  Reuses only
- the field->CeeLo structure of the research prototype; every number comes from
- `def`.  Bore + fillet are not in DETECTOR.txt, so conservative defaults are
- used (and dropped by sanitize_geometry if they don't fit).
+}//anonymous namespace
 
- Appends to `warnings` for any housing layer that could not be modeled, so the
- omission reaches the user instead of vanishing (see makeDrf, which folds these
- into the DRF description). */
-ceelo::GeometryDescriptor build_geometry( const DetectorDef &def,
-                                         std::vector<std::string> &warnings )
+
+/** Reuses only the field->CeeLo structure of the research prototype; every number comes from
+ `def`.  Bore + fillet are not in DETECTOR.txt, so conservative defaults are used (and dropped by
+ sanitize_geometry if they don't fit).
+
+ Appends to `warnings` for any housing layer that could not be modeled, so the omission reaches the
+ user instead of vanishing (see makeDrf, which folds these into the DRF description). */
+ceelo::GeometryDescriptor geometryFromDetectorDef( const DetectorDef &def,
+                                                   std::vector<std::string> &warnings )
 {
   using namespace ceelo;
 
@@ -1245,8 +1306,7 @@ ceelo::GeometryDescriptor build_geometry( const DetectorDef &def,
 
   sanitize_geometry( gd );
   return gd;
-}//build_geometry(...)
-}//anonymous namespace
+}//geometryFromDetectorDef(...)
 
 
 std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const DetectorDef &def )
@@ -1260,7 +1320,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
 
   // ---- 1) Geometry from the parsed record ---------------------------------
   std::vector<std::string> geom_warnings;
-  GeometryDescriptor gd = build_geometry( def, geom_warnings );
+  GeometryDescriptor gd = geometryFromDetectorDef( def, geom_warnings );
 
   // ---- 2) Response shell + stored mu tables (self-contained) --------------
   // The mu tables are sampled BEFORE the energy axis is built, because the axis
@@ -1364,9 +1424,12 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   // Angular nodes: cosines of the grid's polar columns on [0, 90 deg], stored
   //  ascending in cos(theta) (theta=90 -> 0 first ... theta=0 -> 1 last).  The
   //  same node set is shared by eta_fep and near_field so the far term cancels.
+  //  The file stores the step as a float, so 90 deg is a few 1e-8 rad off a multiple of it: the
+  //  tolerance keeps the 90 deg column, and its cosine is snapped to exactly 0 - else a query in
+  //  the face plane (cos = 0) lies outside the nodes and is flagged as clamped.
   const double theta_step = par.grids.front().theta_step_rad;
   const double half_pi = 0.5 * 3.14159265358979323846;
-  size_t nhalf = static_cast<size_t>( std::floor( half_pi / theta_step ) ) + 1;
+  size_t nhalf = static_cast<size_t>( std::floor( half_pi / theta_step + 1.0e-4 ) ) + 1;
   nhalf = std::min<size_t>( nhalf, par.grids.front().ncols );
   if( nhalf < 2 )
     throw std::runtime_error( "makeDrf: too few angular columns to build a response." );
@@ -1375,7 +1438,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   for( size_t j = 0; j < nhalf; ++j )
   {
     const double angle = static_cast<double>( nhalf - 1 - j ) * theta_step;
-    cos_thetas[j] = std::cos( angle );
+    cos_thetas[j] = (std::fabs( angle - half_pi ) < 1.0e-4*theta_step) ? 0.0 : std::cos( angle );
   }
   const size_t nc = cos_thetas.size();
 
@@ -1527,7 +1590,7 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //  sentinel instead of a number.  Converting the zone's boundary from the
   //  grid's (radial, theta) into cylindrical coords recovers the can: lateral
   //  extent 42.5 mm vs the 43.8 mm endcap radius, depth 81.0 mm vs the 83.8 mm
-  //  endcap length (LAB06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
+  //  endcap length (DET06: 31.9 vs 38.1 mm, and 111.3 vs 133.4 mm).  It
   //  therefore only exists behind the face plane - zero such cells at
   //  theta <= 90 deg, onset at 92.5 deg.
   //
@@ -1628,11 +1691,11 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   //
   // Also note d_min_cm is a floor on the ON-AXIS reach only, not a validity
   //  radius: it is measured along the axis from the endcap FACE, whereas the
-  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on 18211381).
+  //  no-data region is the endcap CAN (~42 mm lateral, ~81 mm deep on DET1381).
   //  A point further than d_min_cm from the face centre can therefore still be
   //  inside the housing once it is past 90 deg - validity off-axis is bounded by
   //  the can's envelope, not by a sphere of radius d_min_cm.  Measured first
-  //  valid radial range versus face-frame polar angle (18211381): 1 mm at
+  //  valid radial range versus face-frame polar angle (DET1381): 1 mm at
   //  0-90 deg, then 42 mm at 95-100 deg, 50 mm at 120 deg, 84 mm at 150 deg.
   resp->provenance.min_distance_cm = d_min_cm;
 
@@ -1654,17 +1717,23 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
   std::string name = def.name;
   if( name.empty() )
     name = SpecUtils::filename( def.parFile );
+  // Whether a total efficiency is available is NOT stated here: one can be attached later
+  //  (attachTotalEfficiency), and the DRF displays say so from the response itself.
   std::string descrip = "Imported from a detector-characterization parameter file";
   if( !def.serial.empty() )
     descrip += " (S/N " + def.serial + ")";
-  descrip += ".  Full-energy-peak efficiency only; total efficiency is not"
-             " characterized, so cascade-summing corrections are unavailable.";
+  descrip += ".";
   for( const std::string &w : geom_warnings )
     descrip += "  Note: " + w + ".";
 
   drf->setName( name );
   drf->setDescription( descrip );
   drf->setDrfSource( DetectorPeakResponse::DrfSource::CharacterizationParFile );
+
+  // The crystal sits the endcap-front offset behind the face - the GADRAS setback convention.  Only
+  //  flat-disk paths read it (the response places the crystal itself); without it they put the
+  //  crystal AT the endcap face.  setLegacyEfficiencyFromResponse carries it across.
+  drf->setDetectorSetback( gd.endcap_front_offset_cm() * PhysicalUnits::cm );
 
   // Sample an on-axis far-field legacy curve so the DRF is valid/serializable
   //  even without the CeeLo response (setEfficiencyPoints sets the energy range
@@ -1681,12 +1750,405 @@ std::shared_ptr<DetectorPeakResponse> makeDrf( const ParFile &par, const Detecto
 }//makeDrf(...)
 
 
+bool isGridResponse( const std::shared_ptr<const ceelo::DetectorResponse> &resp )
+{
+  return resp
+         && (resp->provenance.method == ceelo::ProductionMethod::CurveTransfer)
+         && !resp->model_transfer.has_value()
+         && !resp->near_field.empty();
+}//isGridResponse(...)
+
+
+double gridReferenceDistanceCm( const ceelo::GeometryDescriptor &gd )
+{
+  return std::max( 50.0, 10.0 * gd.transverse_half_extent() );
+}//gridReferenceDistanceCm(...)
+
+
+std::vector<ceelo::GroundingPoint> groundingPoints( const ceelo::DetectorResponse &grid,
+                                                    double dist_from_face_cm )
+{
+  if( dist_from_face_cm <= 0.0 )
+    dist_from_face_cm = gridReferenceDistanceCm( grid.descriptor );
+
+  double e_lo = grid.provenance.valid_e_min_keV, e_hi = grid.provenance.valid_e_max_keV;
+  if( !(e_lo > 0.0) || !(e_hi > e_lo) )
+    throw std::runtime_error( "groundingPoints: the response has no validated energy range." );
+
+  // Log-spaced, plus flanks either side of each crystal K-edge - a transfer anchored on these
+  //  segments its eta at the edges but gets nodes only at anchor energies (as CeeLoUtils'
+  //  curve anchors do).
+  const int n_samples = 24;
+  std::vector<double> energies;
+  for( int i = 0; i < n_samples; ++i )
+    energies.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_samples - 1) ) );
+
+  for( const double edge : grid.descriptor.crystal_k_edges( e_lo, e_hi ) )
+  {
+    const double below = edge * (1.0 - 1.0e-3), above = edge * (1.0 + 1.0e-3);
+    if( (below > e_lo) && (above < e_hi) )
+    {
+      energies.push_back( below );
+      energies.push_back( above );
+    }
+  }
+
+  std::sort( begin(energies), end(energies) );
+  energies.erase( std::unique( begin(energies), end(energies) ), end(energies) );
+
+  const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( grid.descriptor, 0.0, 0.0,
+                                                                  dist_from_face_cm );
+  const ceelo::ApertureQuadrature quad = grid.make_quadrature( pos );
+
+  std::vector<ceelo::GroundingPoint> answer;
+  for( const double energy : energies )
+  {
+    const ceelo::EffResult res = grid.eps_fep_at( energy, pos, quad );
+    if( !(res.value > 0.0) || !std::isfinite( res.value ) )
+      continue;
+
+    ceelo::GroundingPoint gp;
+    gp.energy_keV = energy;
+    gp.measured_eff = res.value;
+    gp.frac_stat_sigma = std::max( CeeLoUtils::sm_min_anchor_frac_sigma, res.sigma / res.value );
+    gp.frac_cert_sigma = 0.0;
+    gp.source_key = "imported-grid";
+    gp.distance_cm = dist_from_face_cm;
+    gp.cos_theta = 1.0;
+    answer.push_back( std::move(gp) );
+  }//for( const double energy : energies )
+
+  return answer;
+}//groundingPoints(...)
+
+
+std::shared_ptr<ceelo::DetectorResponse> attachTotalEfficiency( const ceelo::DetectorResponse &grid,
+                                                                const ceelo::DetectorResponse *donor )
+{
+  using namespace ceelo;
+
+  if( donor && !donor->tot_eff.characterized() )
+    throw std::runtime_error( "attachTotalEfficiency: the donor response has no total efficiency." );
+
+  // The grounding k(E) multiplies the FEP as well, so a grid - whose FEP must stay the file's -
+  //  never carries one; the donor's own k(E) reaches the total through its eps_total_at below.
+  if( !grid.grounding.empty() )
+    throw std::runtime_error( "attachTotalEfficiency: the grid response carries a grounding." );
+
+  // DetectorResponse is non-copyable; its XML codec round trips exactly.
+  const std::shared_ptr<DetectorResponse> resp = DetectorResponse::from_xml_string( grid.to_xml_string() );
+
+  resp->tot_eff = TotEffPayload{};
+  if( !donor )
+  {
+    resp->tot_eff.tier = TotEffTier::NotCharacterized;
+    resp->tot_eff.finalize();
+    return resp;
+  }
+
+  // eps_tot = exp(eta_tot) * K_grid (the EtaTotTable form, with no grounding), on the grid's own
+  //  eta_fep nodes - known-valid for this crystal, K-edge flanks included.  Pinned to the donor in
+  //  the true far field, where any two geometries' kernels agree in shape; everywhere closer, the
+  //  distance table below reproduces the donor.
+  const EtaTable &fep = resp->eta_fep;
+  EtaTable &eta = resp->tot_eff.eta_tot;
+  resp->tot_eff.tier = TotEffTier::EtaTotTable;
+  eta.energies_keV = fep.energies_keV;
+  eta.cos_thetas = fep.cos_thetas;
+  eta.phis_deg.clear();
+  eta.edges_keV = fep.edges_keV;
+
+  const size_t ne = eta.energies_keV.size(), nc = eta.cos_thetas.size();
+  eta.ln_eta.assign( ne * nc, 0.0 );
+  eta.frac_sigma.assign( ne * nc, 0.0 );
+  std::vector<bool> valid( ne * nc, false );
+
+  // Nodes are keyed in the grid's crystal frame (what a query is reduced to), on a sphere about the
+  //  crystal-face origin; the donor is asked about the same physical point - the same place relative
+  //  to the endcap face, whatever its own crystal offset.
+  const double off_grid = resp->descriptor.endcap_front_offset_cm();
+  const double off_donor = donor->descriptor.endcap_front_offset_cm();
+  const double a_cm = resp->descriptor.transverse_half_extent();
+  const double d_ref_cm = std::max( 1000.0 * a_cm, 100.0 );
+
+  const auto donor_position = [off_grid,off_donor]( const Eigen::Vector3d &grid_pos ) -> Eigen::Vector3d {
+    Eigen::Vector3d donor_pos = grid_pos;
+    donor_pos.z() -= (off_donor - off_grid);
+    return donor_pos;
+  };
+
+  const auto node_positions = [&]( const size_t c, Eigen::Vector3d &grid_pos, Eigen::Vector3d &donor_pos ){
+    grid_pos = source_position( d_ref_cm, eta.cos_thetas[c], 0.0 );
+    donor_pos = donor_position( grid_pos );
+  };
+
+  for( size_t c = 0; c < nc; ++c )
+  {
+    Eigen::Vector3d grid_pos, donor_pos;
+    node_positions( c, grid_pos, donor_pos );
+    const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
+    const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+
+    for( size_t e = 0; e < ne; ++e )
+    {
+      const double energy = eta.energies_keV[e];
+      const double K = resp->kernel_K( energy, q_grid, MuChoice::Total );
+      const EffResult tot = donor->eps_total_at( energy, donor_pos, q_donor );
+      if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
+          || !(K > 0.0) || !std::isfinite( K ) )
+        continue;
+
+      const size_t idx = eta.index( e, c, 0 );
+      eta.ln_eta[idx] = std::log( tot.value / K );
+      // Only the data-derived part (MC node statistics, grounding covariance): the model floors are
+      //  re-applied at eval time from `floors`, copied below.
+      const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
+      eta.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+      valid[idx] = true;
+    }//for( size_t e = 0; e < ne; ++e )
+  }//for( size_t c = 0; c < nc; ++c )
+
+  // A donor whose crystal sits further forward sees the grazing column behind its own face plane,
+  //  which it refuses; hold the nearest usable column there instead.
+  for( size_t e = 0; e < ne; ++e )
+  {
+    for( size_t c = 0; c < nc; ++c )
+    {
+      if( valid[eta.index( e, c, 0 )] )
+        continue;
+
+      size_t src = nc;
+      for( size_t dc = 1; (dc < nc) && (src == nc); ++dc )
+      {
+        if( ((c + dc) < nc) && valid[eta.index( e, c + dc, 0 )] )
+          src = c + dc;
+        else if( (c >= dc) && valid[eta.index( e, c - dc, 0 )] )
+          src = c - dc;
+      }
+
+      if( src == nc )
+        throw std::runtime_error( "attachTotalEfficiency: the donor has no usable total efficiency at "
+                                  + SpecUtils::printCompact( eta.energies_keV[e], 5 ) + " keV." );
+
+      eta.ln_eta[eta.index( e, c, 0 )] = eta.ln_eta[eta.index( e, src, 0 )];
+      eta.frac_sigma[eta.index( e, c, 0 )] = 1.0;   //not characterized by the donor
+    }//for( size_t c = 0; c < nc; ++c )
+  }//for( size_t e = 0; e < ne; ++e )
+
+  resp->floors.tot_far = donor->floors.tot_far;
+  resp->floors.tot_near = donor->floors.tot_near;
+  resp->tot_eff.finalize();
+
+  // Inside the pin, CeeLo's near-field total table (ceelo::TotEffPayload::near_field) holds the
+  //  donor's total at the same physical points, ln N = ln(donor / the pinned far-field total above).
+  //  Without it the GRID's kernel - the imported geometry's - would carry the total inward, which
+  //  after a geometry edit is wrong by up to ~10% a few cm out at grazing angles (and still ~1.5% at
+  //  1-3 m when pinned at 30 cm), and a donor's own measured near-field total would be lost.  The
+  //  close-in lattice is like CeeLo's own, but measured from the endcap face, so all but the grazing
+  //  nodes are places a source can be; it continues geometrically out to the pin.  The far-field
+  //  values are taken before the table is installed - an unfinalized table would otherwise apply.
+  {
+    NearFieldModel tn;
+
+    double e_lo = resp->provenance.valid_e_min_keV, e_hi = resp->provenance.valid_e_max_keV;
+    if( !(e_lo > 0.0) || !(e_hi > e_lo) )
+    {
+      e_lo = eta.energies_keV.front();
+      e_hi = eta.energies_keV.back();
+    }
+    const int n_energies = 16;
+    for( int i = 0; i < n_energies; ++i )
+      tn.energies_keV.push_back( e_lo * std::pow( e_hi/e_lo, double(i)/(n_energies - 1) ) );
+    for( const double edge : resp->descriptor.crystal_k_edges( e_lo, e_hi ) )  //ln N is linear in ln E
+    {
+      tn.energies_keV.push_back( edge * (1.0 - 1.0e-3) );
+      tn.energies_keV.push_back( edge * (1.0 + 1.0e-3) );
+    }
+    std::sort( begin(tn.energies_keV), end(tn.energies_keV) );
+    tn.energies_keV.erase( std::unique( begin(tn.energies_keV), end(tn.energies_keV) ), end(tn.energies_keV) );
+
+    tn.cos_thetas = { 0.02, 0.06, 0.105, 0.208, 0.342, 0.53, 0.766, 0.94, 1.0 };
+    for( const double f : { 0.05, 0.2, 0.45, 0.8, 1.2, 1.7, 2.4, 3.3, 4.5, 6.5, 10.0, 25.0, 60.0, 150.0, 400.0 } )
+    {
+      const double d = off_grid + f * a_cm;
+      if( d < 0.9 * d_ref_cm )
+        tn.dists_cm.push_back( d );
+    }
+    tn.dists_cm.push_back( d_ref_cm );   //the ln N = 0 anchor, at the pin
+
+    const size_t tne = tn.energies_keV.size(), tnc = tn.cos_thetas.size(), tnd = tn.dists_cm.size();
+    tn.ln_n.assign( tne * tnc * tnd, 0.0 );
+    tn.frac_sigma.assign( tn.ln_n.size(), 0.0 );
+    tn.break_cos_thetas = { tn.cos_thetas.front(), 1.0 };
+    tn.break_d_cm.assign( tne * tn.break_cos_thetas.size(), d_ref_cm );
+
+    for( size_t c = 0; c < tnc; ++c )
+    {
+      for( size_t d = 0; (d + 1) < tnd; ++d )
+      {
+        const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[d], tn.cos_thetas[c], 0.0 );
+        const Eigen::Vector3d donor_pos = donor_position( grid_pos );
+        const ApertureQuadrature q_grid = resp->make_quadrature( grid_pos );
+        const ApertureQuadrature q_donor = donor->make_quadrature( donor_pos );
+
+        for( size_t e = 0; e < tne; ++e )
+        {
+          const size_t idx = tn.index( e, c, d );
+          const double far = resp->eps_total_at( tn.energies_keV[e], grid_pos, q_grid ).value;
+          const EffResult tot = donor->eps_total_at( tn.energies_keV[e], donor_pos, q_donor );
+          if( (tot.flag == ResponseFlag::NeedsMc) || !(tot.value > 0.0) || !std::isfinite( tot.value )
+              || !(far > 0.0) || !std::isfinite( far ) )
+          {
+            // As CeeLo's own tables do: hold the closer node rather than kink the interpolation.
+            tn.ln_n[idx] = (d > 0) ? tn.ln_n[tn.index( e, c, d - 1 )] : 0.0;
+            tn.frac_sigma[idx] = 1.0;   //not characterized by the donor
+            continue;
+          }
+
+          tn.ln_n[idx] = std::log( tot.value / far );
+          const double data2 = tot.sigma*tot.sigma - tot.sigma_model*tot.sigma_model;
+          tn.frac_sigma[idx] = std::sqrt( std::max( 0.0, data2 ) ) / tot.value;
+        }//for( each energy )
+      }//for( each distance, but the anchor )
+    }//for( each cos-theta )
+
+    resp->tot_eff.near_field = std::move( tn );
+    resp->tot_eff.finalize();
+  }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // At the lattice nodes the copy must answer exactly the donor's total, and the FEP must be the
+  //  grid's to the bit.
+  for( const size_t c : { size_t(0), nc / 2, nc - 1 } )
+  {
+    Eigen::Vector3d grid_pos, donor_pos;
+    node_positions( c, grid_pos, donor_pos );
+    for( const size_t e : { size_t(0), ne / 2, ne - 1 } )
+    {
+      if( !valid[eta.index( e, c, 0 )] )
+        continue;
+
+      const double energy = eta.energies_keV[e];
+      const double ours = resp->eps_total_at( energy, grid_pos ).value;
+      const double theirs = donor->eps_total_at( energy, donor_pos ).value;
+      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
+      {
+        log_developer_error( __func__, ("attachTotalEfficiency: total at " + std::to_string(energy)
+                             + " keV, cos " + std::to_string(eta.cos_thetas[c]) + " is "
+                             + std::to_string(ours) + " vs the donor's " + std::to_string(theirs)).c_str() );
+        assert( 0 );
+      }
+
+      if( resp->eps_fep_at( energy, grid_pos ).value != grid.eps_fep_at( energy, grid_pos ).value )
+      {
+        log_developer_error( __func__, "attachTotalEfficiency: the grid's FEP changed." );
+        assert( 0 );
+      }
+    }//for( three energies )
+  }//for( three angles )
+
+  // And at near-field nodes, where the table must reproduce the donor too.
+  {
+    const NearFieldModel &tn = resp->tot_eff.near_field;
+    for( const size_t c : { size_t(1), tn.cos_thetas.size() - 1 } )
+    {
+      const Eigen::Vector3d grid_pos = source_position( tn.dists_cm[2], tn.cos_thetas[c], 0.0 );
+      const double energy = tn.energies_keV[tn.energies_keV.size() / 2];
+      if( tn.frac_sigma[tn.index( tn.energies_keV.size() / 2, c, 2 )] >= 1.0 )
+        continue;   //a held node: the donor had nothing there
+      const double ours = resp->eps_total_at( energy, grid_pos ).value;
+      const double theirs = donor->eps_total_at( energy, donor_position( grid_pos ) ).value;
+      if( std::fabs( ours - theirs ) > 1.0e-6 * theirs )
+      {
+        log_developer_error( __func__, ("attachTotalEfficiency: near-field total at " + std::to_string(energy)
+                             + " keV, cos " + std::to_string(tn.cos_thetas[c]) + " is " + std::to_string(ours)
+                             + " vs the donor's " + std::to_string(theirs)).c_str() );
+        assert( 0 );
+      }
+    }//for( two angles )
+  }
+#endif
+
+  return resp;
+}//attachTotalEfficiency(...)
+
+
+GridFepConsistency gridFepConsistency( const ceelo::DetectorResponse &grid,
+                                       const ceelo::DetectorResponse &donor )
+{
+  using namespace ceelo;
+
+  GridFepConsistency answer;
+  const NearFieldModel &nf = donor.near_field;
+  if( nf.empty() )
+    return answer;
+
+  const double off_grid = grid.descriptor.endcap_front_offset_cm();
+  const double off_donor = donor.descriptor.endcap_front_offset_cm();
+  const double e_lo = grid.provenance.valid_e_min_keV, e_hi = grid.provenance.valid_e_max_keV;
+
+  double sum = 0.0, sum2 = 0.0;
+  for( size_t c = 0; c < nf.cos_thetas.size(); ++c )
+  {
+    for( size_t d = 0; (d + 1) < nf.dists_cm.size(); ++d )   //the last row is a no-MC anchor
+    {
+      const Eigen::Vector3d donor_pos = source_position( nf.dists_cm[d], nf.cos_thetas[c], 0.0 );
+      if( -donor_pos.z() <= off_donor )
+        continue;   //not in front of the endcap face
+
+      // The same place relative to the endcap face, in the grid's crystal frame.
+      Eigen::Vector3d grid_pos = donor_pos;
+      grid_pos.z() += (off_donor - off_grid);
+      const Eigen::Vector3d from_face = grid_pos + Eigen::Vector3d( 0.0, 0.0, off_grid );
+
+      for( size_t e = 0; e < nf.energies_keV.size(); ++e )
+      {
+        const double energy = nf.energies_keV[e];
+        if( (energy < e_lo) || (energy > e_hi) || (nf.frac_sigma[nf.index( e, c, d )] >= 0.75) )
+          continue;   //outside the grid's range, or a node the MC held rather than measured
+
+        const EffResult mc = donor.eps_fep_at( energy, donor_pos );
+        const EffResult imported = grid.eps_fep_at( energy, grid_pos );
+        if( (imported.flag == ResponseFlag::NeedsMc) || !(mc.value > 0.0) || !(imported.value > 0.0)
+            || !std::isfinite( mc.value ) || !std::isfinite( imported.value ) )
+          continue;
+
+        const double ln_ratio = std::log( mc.value / imported.value );
+        sum += ln_ratio;
+        sum2 += ln_ratio * ln_ratio;
+        answer.num_nodes += 1;
+        if( std::fabs( ln_ratio ) > std::fabs( answer.worst_ln ) )
+        {
+          answer.worst_ln = ln_ratio;
+          answer.worst_energy_keV = energy;
+          answer.worst_dist_cm = from_face.norm();
+          answer.worst_cos_theta = -from_face.z() / from_face.norm();
+        }
+      }//for( each energy )
+    }//for( each distance )
+  }//for( each cos-theta )
+
+  if( answer.num_nodes )
+  {
+    answer.mean_ln = sum / answer.num_nodes;
+    answer.rms_ln = std::sqrt( sum2 / answer.num_nodes );
+  }
+
+  return answer;
+}//gridFepConsistency(...)
+
+
 std::shared_ptr<DetectorPeakResponse> makeDrfFromFiles( const std::string &parPath,
                                                         const std::string &detectorTxtPath )
 {
   const ParFile par = parseParFile( parPath );
 
+#ifdef _WIN32
+  const std::wstring wtxtpath = SpecUtils::convert_from_utf8_to_utf16( detectorTxtPath );
+  std::ifstream txt( wtxtpath.c_str(), std::ios::binary );
+#else
   std::ifstream txt( detectorTxtPath.c_str(), std::ios::binary );
+#endif
   if( !txt.is_open() )
     throw std::runtime_error( "makeDrfFromFiles: could not open '" + detectorTxtPath + "'." );
   const std::vector<DetectorDef> defs = parseDetectorTxt( txt );

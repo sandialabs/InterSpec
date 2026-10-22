@@ -1,0 +1,4 @@
+# Load an HPGe spectrum and fit the Cs137 peak
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42","name":"Ba133_Cs137_RandomSummingOnly.n42","type":"FOREGROUND"}}
+{"method":"fitPeakAt","params":{"energy":661.7,"pixPerKeV":2.0}}
+{"method":"fitPeakAt","params":{"energy":356.0,"pixPerKeV":2.0}}

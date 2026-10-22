@@ -61,7 +61,8 @@ inputs only and are not committed.
 ### 2.1 Photon cross-sections — `src/cross_sections/photon_epics_data.cpp`
 
 Photoelectric, incoherent (Compton), coherent (Rayleigh) and pair-conversion
-cross-sections for Z = 1–92, on per-element adaptive energy grids.
+cross-sections for Z = 1–98 (H–Cf) from 10 keV to 20 MeV, on per-element
+adaptive energy grids.
 
 - **Magnitudes and angular factors**: direct **EPICS2023 EPDL** records:
   MF=23/MT=502 Rayleigh, MT=504 Compton, MT=516 total pair production,
@@ -74,13 +75,16 @@ cross-sections for Z = 1–92, on per-element adaptive energy grids.
 - Source nodes, thresholds, and both sides of discontinuities are retained on
   process-specific grids. Adaptive probes enforce the committed representation
   and integrated-error gates; see `reports/photon_epics.*`.
-- **Compton subshell profiles** (occupancy, binding energy, per-electron J(0)):
-  Biggs Compton profiles, via BSD-licensed xraylib 4.2.1/EPDL.
+- **Compton subshell profiles** (occupancy, binding energy, per-electron J(0))
+  and atomic weights, Z = 1–98: Biggs Compton profiles, via BSD-licensed
+  xraylib 4.2.1/EPDL. Above Z = 92 the atomic weights are xraylib's
+  conventional long-lived-isotope masses.
 
 ### 2.2 Bremsstrahlung — Seltzer-Berger tables in `element_data.cpp`
 
 χ(Z, T, κ) on a 32 κ × 27 native electron-energy grid from 10 keV to 20 MeV,
-Z=1–92. The source is the **NIST EPQ Berger–Seltzer table set** pinned at commit
+Z=1–92 (the complete EPQ set; Np–Cf reuse the uranium table at runtime). The
+source is the **NIST EPQ Berger–Seltzer table set** pinned at commit
 `ce1e5895892b17854d857e596250e4ae70d6b274`. NIST-authored EPQ is a U.S.
 Government work; its full public-domain notice and disclaimer are retained at
 [`source_notices/NIST_EPQ_LicenseFile.txt`](tools/prepare_cross_sections/source_notices/NIST_EPQ_LicenseFile.txt).
@@ -103,8 +107,8 @@ extraction from G4EMLOW. No G4EMLOW coefficient payload is present.
 
 K-shell fluorescence yields and line energies/intensities; per-subshell L1/L2/L3
 yields, lines, and Coster-Kronig transfer yields. The relaxation-only table
-extends through Z=99 to cover radioactive-decay daughters such as Np-237;
-photon/electron transport remains limited to Z=92.
+extends through Z=99 to cover radioactive-decay daughters such as Np-237, one
+beyond the Z=98 photon tables; electron tables stop at Z=92.
 
 - Direct **EPICS2023 EADL** MF=28/MT=533, the Evaluated Atomic Data Library —
   S.T. Perkins et al., UCRL-50400 Vol. 30 Rev. 1 (LLNL, 1997), distributed by
@@ -118,7 +122,7 @@ photon/electron transport remains limited to Z=92.
 - Collision and radiative mass stopping powers: **NIST ESTAR** (M.J. Berger et
   al., NIST Standard Reference Database 124; M.J. Berger and S.M. Seltzer,
   NBSIR 82-2550), generated for every Z=1–92 at all 53 standard nodes from
-  10 keV through 20 MeV. Runtime interpolation is linear in log energy/log
+  10 keV through 20 MeV; Np–Cf reuse the uranium values at runtime. Runtime interpolation is linear in log energy/log
   stopping power. There is no representative-element correction surface.
 - The downloadable NIST STAR program/database establishes algorithm and
   database provenance. NIST's download page permits redistribution and

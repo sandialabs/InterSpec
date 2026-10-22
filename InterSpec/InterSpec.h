@@ -104,6 +104,7 @@ class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
 namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
+namespace WidgetUtils{ class WidgetHandle; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
 #if( USE_TERMINAL_WIDGET )
@@ -331,13 +332,22 @@ public:
    
    The modified() and modified_since_decode() statuses of meas will not be changed by loading of a
    DRF.
+
+   Runs on a worker thread, so it takes no `InterSpec *`: the caller resolves the database session,
+   user id and GADRAS search paths (DrfSelect::gadrasDrfSearchPaths) on the session thread.  The DRF
+   found is posted back to the `InterSpec` that `viewerHandle` names, and dropped if that instance
+   is gone by then (e.g., "Clear Session...").
    */
-  void loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
+  static void loadDetectorResponseFunction( std::shared_ptr<SpecMeas> meas,
                                      const SpecUtils::DetectorType type,
                                      const std::string serial_number,
                                      const std::string manufacturer,
                                      const std::string model,
                                      const bool tryDefaultDrf,
+                                     std::shared_ptr<DataBaseUtils::DbSession> sql,
+                                     const long long db_user_id,
+                                     const std::string gadras_search_paths,
+                                     const WidgetUtils::WidgetHandle &viewerHandle,
                                      const std::string sessionId );
 
   /** Determines and sets the PeakFitDetPrefs for a foreground SpecMeas.
@@ -429,9 +439,29 @@ public:
    */
   std::set<int> validForegroundSamples() const;
   
+  /** The detectors summed for display of `type`: the foreground's are checked in the "Detectors"
+   menu; a background or secondary uses that choice if it has exactly the foreground's detectors,
+   and otherwise all of its own.
+
+   TODO(displayed-detectors): the choice is only kept for the foreground, and is not restored from
+   a file's saved <DisplayedDetectors> (SpecMeas::m_displayedDetectors).  When this is reworked,
+   also update the LLM assistant/MCP code that relies on the current rule (grep for the tag).
+   */
   std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
 
-  
+  /** Sets which of the foreground's detectors are summed for display, as checking boxes in the
+   "Detectors" menu does (no undo step is added); empty means all.  The background and secondary
+   follow this choice when they have the same detectors as the foreground.
+
+   @throws std::runtime_error if no foreground is loaded, a name is not one of its detectors, or no
+           gamma detector would be displayed.
+
+   TODO(displayed-detectors): foreground only, as the GUI's menu; take a SpectrumType once the
+   background and secondary can have choices of their own.
+   */
+  void setDetectorsToDisplay( const std::vector<std::string> &detectors );
+
+
   std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type );
   std::shared_ptr<const SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type ) const;
 
@@ -732,6 +762,12 @@ public:
   ShieldingSourceDisplay *shieldingSourceFit( const bool create_window = true );
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
+
+  /** Copies into the foreground SpecMeas the state that open tools keep outside of it - the
+   Activity/Shielding fit, Isotopics (by nuclides, and from peaks), and the LLM assistant
+   conversation - so a save or export of the foreground includes all of the user's work.
+   */
+  void syncAllToolStateToForegroundSpecMeas();
   
   /** Shows the help window; if a preselect (ex., "energy-calibration", or "getting-started"), then that topic will be set to be selected.
    */
@@ -925,7 +961,7 @@ public:
    just returns the existing window.
    @param seed_drf The DRF to seed the geometry from and attach the response
           to; pass nullptr to use the current foreground detector.  Its
-          `DetectorPeakResponse::geometry()` pre-populates the geometry form
+          `DetectorPeakResponse::storedGeometry()` pre-populates the geometry form
           when it has one, overriding the cylinder guess; if the tool window is
           already open, its form is re-seeded from it.
    */
@@ -983,6 +1019,16 @@ public:
    so it will be included when the file is next saved.
    */
   void syncLlmHistoryToSpecMeas();
+
+  /** Phones only: moves the LLM assistant between its full-screen window (`docked == false`) and
+   the tools tab strip below the spectrum (`docked == true` - only possible in portrait, when the
+   strip is showing), so the user can watch the spectrum while the conversation carries on; the
+   tool widget is moved, not recreated, so any request in flight is unaffected.
+
+   The move is made on the next pass of the event loop, since it is asked for by buttons inside the
+   containers being swapped.
+   */
+  void setLlmToolDocked( const bool docked );
 #endif
 
   /** Will show the disclaimer, license, and statment window, setting
@@ -1109,7 +1155,7 @@ protected:
   //  Note that the WApplication::UpdateLock is not taken while the workers are
   //  doing their thing, so you should explicitly do this if necassarry, or call
   //  this function from within the main loop.
-  void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
+  static void doFinishupSetSpectrumWork( std::shared_ptr<SpecMeas> meas,
                             std::vector<std::function<void(void)> > workers );
   
   // Available in the chart's right-click menu regardless of USE_DETECTION_LIMIT_TOOL,
@@ -1792,6 +1838,8 @@ protected:
   PopupDivMenuItem *m_remoteRidMenuItem;
   Wt::Core::observing_ptr<RemoteRid> m_remoteRid;
   Wt::Core::observing_ptr<AuxWindow> m_remoteRidWindow;
+  /** The "your data will be sent..." warning shown before the tool opens; null once answered. */
+  Wt::Core::observing_ptr<SimpleDialog> m_remoteRidWarning;
 #endif
 
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -1869,9 +1917,16 @@ protected:
   Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
 
   /** Holds m_llmTool when there is no tool-tab strip to dock it into (same role
-   #m_terminalWindow plays for m_terminal).  Null while the tool is docked in the tab strip.
+   #m_terminalWindow plays for m_terminal), or on phones unless the user docked it (see
+   #setLlmToolDocked).  Null while the tool is docked in the tab strip.
    */
   Wt::Core::observing_ptr<AuxWindow> m_llmToolWindow;
+
+  /** Adds `tool` (i.e., m_llmTool) to the tools tab strip as a closeable tab; icon-only on phones. */
+  void addLlmToolTab( std::unique_ptr<Wt::WWidget> tool, const bool makeCurrent );
+
+  /** Puts `tool` (i.e., m_llmTool) into a new m_llmToolWindow - full-screen on phones. */
+  void showLlmToolInWindow( std::unique_ptr<Wt::WWidget> tool );
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

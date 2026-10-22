@@ -22,14 +22,18 @@
  */
 #include "InterSpec_config.h"
 
+#include <cmath>
+#include <cstdio>
 #include <sstream>
 #include <iomanip>
 
+#include <Wt/WText.h>
 #include <Wt/WString.h>
 #include <Wt/WLogger.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
-#include <Wt/WGridLayout.h>
 #include <Wt/WLayoutItem.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WApplication.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WWidget.h>
@@ -38,12 +42,16 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "io/DetectorResponse.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
+#include "InterSpec/DetectorGeometryDiagram.h"
 
 using namespace Wt;
 using namespace std;
@@ -373,28 +381,32 @@ Shielding3DView::Shielding3DView( const std::vector<ShieldingSourceFitCalc::Shie
                                   double detectorDistance,
                                   double detectorDiameter,
                                   double sourceOffset0,
-                                  double sourceOffset1 )
+                                  double sourceOffset1,
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
   : Wt::WContainerWidget(),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
     m_detectorDistance( detectorDistance ),
     m_detectorDiameter( detectorDiameter ),
-    m_sourceOffsets{ sourceOffset0, sourceOffset1 }
+    m_sourceOffsets{ sourceOffset0, sourceOffset1 },
+    m_drf( drf )
 {
   setStyleClass("Shielding3DView");
-  
+
   Wt::WApplication *app = Wt::WApplication::instance();
-  app->require("InterSpec_resources/Shielding3DView.js?v=5");
+  app->require("InterSpec_resources/Shielding3DView.js?v=7");
   app->useStyleSheet("InterSpec_resources/Shielding3DView.css");
-  
+
   defineJavaScript();
 }
 
 void Shielding3DView::defineJavaScript()
 {
-  string jsonData = createJsonData();
-  string js = "var c=" + jsRef() + ";if(c){c.chart=new Shielding3DView('" + id() + "', " + jsonData + ");}";
+  const string jsonData = createJsonData();
+  const string detJson = createDetectorJson( m_drf );
+  const string js = "var c=" + jsRef() + ";if(c){c.chart=new Shielding3DView('" + id() + "', "
+                    + jsonData + ", " + detJson + ");}";
   doJavaScript( js );
 }
 
@@ -404,13 +416,61 @@ std::string Shielding3DView::createJsonData() const
                                      m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
 }
 
+
+std::string Shielding3DView::createDetectorJson( const std::shared_ptr<const DetectorPeakResponse> &drf )
+{
+  const shared_ptr<const ceelo::GeometryDescriptor> gd = drf ? drf->geometry() : nullptr;
+  if( !gd )
+    return "null";
+
+  // buildModel writes (unused here) tooltip text through WString::tr
+  InterSpec *viewer = InterSpec::instance();
+  if( viewer )
+    viewer->useMessageResourceBundle( "DetectorGeometryDiagram" );
+
+  const DetectorGeometryDiagram::Model model = DetectorGeometryDiagram::buildModel( *gd );
+
+  nlohmann::json regions = nlohmann::json::array();
+  for( const DetectorGeometryDiagram::Region &region : model.regions )
+  {
+    if( region.kind == "void" )  //vacuum gaps and the bore are left empty
+      continue;
+
+    nlohmann::json profile = nlohmann::json::array();
+    for( const DetectorGeometryDiagram::Plane &p : region.profile )
+      profile.push_back( { p.z, p.rmin, p.rmax } );
+
+    nlohmann::json r;
+    r["kind"] = region.kind;
+    r["profile"] = profile;
+    regions.push_back( r );
+  }//for( each region )
+
+  if( regions.empty() )
+    return "null";
+
+  const vector<double> &dims = gd->dimensions_cm;
+
+  nlohmann::json j;
+  j["box"] = model.box;
+  // A box crystal's y half-extent exceeds its x half-extent (the profiles' "radius") by the same
+  //  amount for the crystal and every layer, since each layer grows both by its side thickness.
+  j["boxDy"] = (model.box && (dims.size() >= 2)) ? (dims[1] - dims[0]) : 0.0;
+  j["endcapOffset"] = gd->endcap_front_offset_cm();
+  j["regions"] = regions;
+
+  return j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
+}//createDetectorJson(...)
+
+
 void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                   GammaInteractionCalc::GeometryType geometry,
                                   double detectorDistance,
                                   double detectorDiameter,
                                   double sourceOffset0,
-                                  double sourceOffset1 )
+                                  double sourceOffset1,
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
 {
   m_shieldings = shieldings;
   m_sources = sources;
@@ -419,15 +479,36 @@ void Shielding3DView::updateData( const std::vector<ShieldingSourceFitCalc::Shie
   m_detectorDiameter = detectorDiameter;
   m_sourceOffsets[0] = sourceOffset0;
   m_sourceOffsets[1] = sourceOffset1;
+  m_drf = drf;
 
   // Update JavaScript 3D view with new data
   if( isRendered() )
   {
-    string jsonData = createJsonData();
-    string js = "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setData === 'function'){c.chart.setData(" + jsonData + ");}";
+    const string jsonData = createJsonData();
+    const string detJson = createDetectorJson( m_drf );
+    const string js = "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setData === 'function'){"
+                      "c.chart.setData(" + jsonData + ", " + detJson + ");}";
     doJavaScript( js );
   }
 }//void Shielding3DView::updateData(...)
+
+
+void Shielding3DView::setVolumetricLines( const std::string &json )
+{
+  doJavaScript( "var c=" + jsRef() + ";if(c && c.chart && typeof c.chart.setLines === 'function'){"
+                "c.chart.setLines(" + json + ");}" );
+}//setVolumetricLines(...)
+
+namespace
+{
+  /** Sizes a diagram view to exactly the dialog's view cell. */
+  void fill_view_holder( Wt::WWidget *view )
+  {
+    view->setPositionScheme( Wt::PositionScheme::Absolute );
+    view->setOffsets( WLength( 0.0, WLength::Unit::Pixel ) );
+  }
+}//namespace
+
 
 // ShieldingDiagramDialog implementation
 ShieldingDiagramDialog::ShieldingDiagramDialog(
@@ -437,19 +518,26 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   double detectorDistance,
   double detectorDiameter,
   double sourceOffset0,
-  double sourceOffset1
+  double sourceOffset1,
+  std::shared_ptr<const DetectorPeakResponse> drf
 )
   : SimpleDialog( Wt::WString::tr("ssd-shield-source-diagram") ),
     m_2DView( nullptr ),
     m_3DView( nullptr ),
     m_select( nullptr ),
     m_layout( nullptr ),
+    m_viewHolder( nullptr ),
+    m_linesControls( nullptr ),
+    m_showLines( nullptr ),
+    m_lineEnergy( nullptr ),
+    m_linesMsg( nullptr ),
     m_shieldings( shieldings ),
     m_sources( sources ),
     m_geometry( geometry ),
     m_detectorDistance( detectorDistance ),
     m_detectorDiameter( detectorDiameter ),
-    m_sourceOffsets{ sourceOffset0, sourceOffset1 }
+    m_sourceOffsets{ sourceOffset0, sourceOffset1 },
+    m_drf( drf )
 {
   InterSpec *viewer = InterSpec::instance();
   if( viewer )
@@ -457,27 +545,54 @@ ShieldingDiagramDialog::ShieldingDiagramDialog(
   
   resize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
   
-  m_layout = contents()->setLayout( std::make_unique<WGridLayout>() );
-  m_layout->setColumnStretch( 0, 1 );
-  m_layout->setRowStretch( 0, 1 );
+  // A box layout is laid out with CSS flex, so the view's stretch follows the dialog body's
+  //  flex-computed height (a JavaScript-implemented grid layout only sees the body's `height: auto`).
+  m_layout = contents()->setLayout( std::make_unique<WVBoxLayout>() );
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   contents()->setOverflow( Wt::Overflow::Hidden );
 
-  // Create initial 2D view
-  m_2DView = m_layout->addWidget( std::make_unique<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] ), 0, 0 );
+  // The views are swapped inside one stretching cell (removing a widget from the layout leaves its
+  //  empty cell behind, still stretching), and fill it absolutely, so they never size it.
+  m_viewHolder = m_layout->addWidget( std::make_unique<WContainerWidget>(), 1 );
+  m_viewHolder->setPositionScheme( Wt::PositionScheme::Relative );
 
-  WContainerWidget *type_row = m_layout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
+  // Create initial 2D view
+  m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
+  fill_view_holder( m_2DView );
+
+  WContainerWidget *type_row = m_layout->addWidget( std::make_unique<WContainerWidget>() );
   m_select = type_row->addNew<WComboBox>();
   m_select->setFloatSide( Wt::Side::Right );
   m_select->addItem( "2D View" );
   m_select->addItem( "3D View" );
   m_select->setCurrentIndex( 0 );
   m_select->activated().connect( this, &ShieldingDiagramDialog::handleViewTypeToggle );
-  
+
+  // The 3D view's integration lines: off until asked for, since they cost a fit-function build.
+  m_linesControls = type_row->addNew<WContainerWidget>();
+  m_linesControls->addStyleClass( "ShieldingDiagramLines" );
+  m_showLines = m_linesControls->addNew<WCheckBox>( WString::tr("ssd-diag-show-lines") );
+  m_showLines->setToolTip( WString::tr("ssd-diag-tt-show-lines") );
+  m_showLines->changed().connect( this, &ShieldingDiagramDialog::handleShowLinesToggled );
+  m_lineEnergy = m_linesControls->addNew<WComboBox>();
+  m_lineEnergy->setToolTip( WString::tr("ssd-diag-tt-line-energy") );
+  m_lineEnergy->activated().connect( this, &ShieldingDiagramDialog::handleLineEnergyChanged );
+  m_lineEnergy->hide();
+  m_linesMsg = m_linesControls->addNew<WText>();
+  m_linesMsg->setTextFormat( Wt::TextFormat::Plain );   //may carry an exception's text
+  m_linesMsg->addStyleClass( "ShieldingDiagramLinesMsg" );
+  m_linesControls->hide();
+
   // Cap the dialog at 95% of the viewport; setMaximumSize keeps the scrollable body in sync.
   setMaximumSize( WLength(95,WLength::Unit::ViewportWidth), WLength(95,WLength::Unit::ViewportHeight) );
 
-  addButton( WString::tr("Close") );
+  // The views stretch to fill the body, so it needs a definite height - otherwise SimpleDialog sizes
+  //  it to content, and the 3D view (which has no minimum height) collapses to nothing.  Asking for
+  //  more than any window allows gets the whole dialog, re-clamped as the window resizes.
+  const int windowHeight = viewer ? viewer->renderedHeight() : 0;
+  setBodyPreferredHeight( (windowHeight > 100) ? 1.0E4 : 600.0 );
+
+  addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 }
 
 
@@ -493,7 +608,8 @@ void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCal
                                          double detectorDistance,
                                          double detectorDiameter,
                                          double sourceOffset0,
-                                         double sourceOffset1 )
+                                         double sourceOffset1,
+                                         std::shared_ptr<const DetectorPeakResponse> drf )
 {
   // Update stored data
   m_shieldings = shieldings;
@@ -503,14 +619,32 @@ void ShieldingDiagramDialog::updateData( const std::vector<ShieldingSourceFitCal
   m_detectorDiameter = detectorDiameter;
   m_sourceOffsets[0] = sourceOffset0;
   m_sourceOffsets[1] = sourceOffset1;
+  m_drf = drf;
 
   // Update whichever view(s) exist, so switching views shows updated data.
   if( m_2DView )
     m_2DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1 );
 
   if( m_3DView )
-    m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1 );
+    m_3DView->updateData( shieldings, sources, geometry, detectorDistance, detectorDiameter, sourceOffset0, sourceOffset1, drf );
+
+  // Lines drawn for the old model would be wrong now (the 3D view has already dropped them); new ones
+  //  are computed now if the 3D view is showing, else when it next is.
+  m_linesJson.clear();
+  m_linesControls->setHidden( !m_3DView || !linesPossible() );
+  if( m_3DView && m_showLines->isChecked() && linesPossible() )
+    requestLines();
 }//void ShieldingDiagramDialog::updateData(...)
+
+
+bool ShieldingDiagramDialog::linesPossible() const
+{
+  // Lines need a volumetric source, and a detector geometry for the fit to integrate them through.
+  bool any_volumetric = false;
+  for( const ShieldingSourceFitCalc::SourceFitDef &src : m_sources )
+    any_volumetric = (any_volumetric || (src.sourceType != ShieldingSourceFitCalc::ModelSourceType::Point));
+  return any_volumetric && m_drf && m_drf->geometry();
+}//linesPossible()
 
 
 void ShieldingDiagramDialog::switchView( bool show3D )
@@ -520,24 +654,169 @@ void ShieldingDiagramDialog::switchView( bool show3D )
     if( m_2DView )
     {
       // removeWidget returns unique_ptr; letting it go out of scope destroys it
-      m_layout->removeWidget( m_2DView );
+      m_viewHolder->removeWidget( m_2DView );
       m_2DView = nullptr;
     }
 
-    m_3DView = m_layout->addWidget( std::make_unique<Shielding3DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] ), 0, 0 );
+    m_3DView = m_viewHolder->addNew<Shielding3DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1], m_drf );
+    fill_view_holder( m_3DView );
+    if( m_showLines->isChecked() && !m_linesJson.empty() )
+      m_3DView->setVolumetricLines( m_linesJson );
+    else if( m_showLines->isChecked() && linesPossible() )
+      requestLines();   //the model changed while the 2D view was showing
   }//if( show3D && !m_3DView )
+
+  m_linesControls->setHidden( !show3D || !linesPossible() );
 
   if( !show3D && !m_2DView )
   {
     if( m_3DView )
     {
-      m_layout->removeWidget( m_3DView );
+      m_viewHolder->removeWidget( m_3DView );
       m_3DView = nullptr;
     }
 
-    m_2DView = m_layout->addWidget( std::make_unique<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] ), 0, 0 );
+    m_2DView = m_viewHolder->addNew<Shielding2DView>( m_shieldings, m_sources, m_geometry, m_detectorDistance, m_detectorDiameter, m_sourceOffsets[0], m_sourceOffsets[1] );
+    fill_view_holder( m_2DView );
   }//if( !show3D && !m_2DView )
 }
+
+Wt::Signal<double> &ShieldingDiagramDialog::volumetricLinesRequested()
+{
+  return m_linesRequested;
+}
+
+
+void ShieldingDiagramDialog::requestLines()
+{
+  const int index = m_lineEnergy->currentIndex();
+  const double energy = ((index >= 0) && (static_cast<size_t>(index) < m_lineEnergies.size()))
+                          ? m_lineEnergies[static_cast<size_t>(index)] : -1.0;
+  m_linesMsg->setText( "" );
+  m_linesRequested.emit( energy );
+}//requestLines()
+
+
+void ShieldingDiagramDialog::handleShowLinesToggled()
+{
+  if( m_showLines->isChecked() )
+  {
+    requestLines();
+    return;
+  }
+
+  m_linesJson.clear();
+  m_lineEnergy->hide();
+  m_linesMsg->setText( "" );
+  if( m_3DView )
+    m_3DView->setVolumetricLines( "null" );
+}//handleShowLinesToggled()
+
+
+void ShieldingDiagramDialog::handleLineEnergyChanged()
+{
+  if( m_showLines->isChecked() )
+    requestLines();
+}//handleLineEnergyChanged()
+
+
+void ShieldingDiagramDialog::setVolumetricLinesError( const Wt::WString &message )
+{
+  m_showLines->setChecked( false );
+  m_linesJson.clear();
+  m_lineEnergies.clear();
+  m_lineEnergy->clear();
+  m_lineEnergy->hide();
+  m_linesMsg->setText( message );
+  if( m_3DView )
+    m_3DView->setVolumetricLines( "null" );
+}//setVolumetricLinesError(...)
+
+
+void ShieldingDiagramDialog::setVolumetricLines( const GammaInteractionCalc::VolumetricLineSample &sample )
+{
+  using GammaInteractionCalc::VolumetricLineSample;
+
+  if( sample.energies.empty() )
+  {
+    setVolumetricLinesError( WString::tr("ssd-diag-lines-none") );
+    return;
+  }
+
+  const auto energy_str = []( const double energy ) -> string {
+    char buffer[32];
+    snprintf( buffer, sizeof(buffer), "%.2f", energy );
+    return buffer;
+  };
+
+  // The energies to pick from: every gamma integrated along lines, the drawn one selected.
+  m_lineEnergies = sample.energies;
+  m_lineEnergy->clear();
+  for( size_t i = 0; i < m_lineEnergies.size(); ++i )
+  {
+    m_lineEnergy->addItem( WString::tr("ssd-diag-line-energy").arg( energy_str(m_lineEnergies[i]) ) );
+    if( m_lineEnergies[i] == sample.energy )
+      m_lineEnergy->setCurrentIndex( static_cast<int>( i ) );
+  }
+  m_lineEnergy->setHidden( m_lineEnergies.size() < 2 );
+
+  if( sample.lines.empty() )
+  {
+    // Nothing reaches the crystal at this energy; the option stays on, so another can be picked.
+    m_linesJson.clear();
+    m_linesMsg->setText( WString::tr("ssd-diag-lines-none-at").arg( energy_str(sample.energy) ) );
+    if( m_3DView )
+      m_3DView->setVolumetricLines( "null" );
+    return;
+  }
+
+  // Assembly frame (PhysicalUnits) -> the 3D view's scene (mm, detector along +z at +offsets): a
+  //  half turn about z, or for a side-on cylinder the rotation taking the detector's x axis to +z
+  //  (the same maps the detector drawing implies; see detector_geom_from_config).
+  const bool side_on = (m_geometry == GammaInteractionCalc::GeometryType::CylinderSideOn);
+  const auto add_point = [side_on]( const double *p, nlohmann::json &out ) {
+    const double x = p[0]/PhysicalUnits::mm, y = p[1]/PhysicalUnits::mm, z = p[2]/PhysicalUnits::mm;
+    const double scene[3] = { side_on ? -y : -x, side_on ? -z : -y, side_on ? x : z };
+    for( const double v : scene )
+      out.push_back( std::round( 100.0*v ) / 100.0 );   //0.01 mm is plenty for a drawing
+  };
+  const auto segment_json = [&add_point]( const std::array<double,6> &seg ) -> nlohmann::json {
+    nlohmann::json arr = nlohmann::json::array();
+    add_point( &seg[0], arr );
+    add_point( &seg[3], arr );
+    return arr;
+  };
+
+  nlohmann::json lines = nlohmann::json::array();
+  for( const VolumetricLineSample::Line &line : sample.lines )
+  {
+    nlohmann::json src = nlohmann::json::array(), cry = nlohmann::json::array();
+    for( const std::array<double,6> &seg : line.source_segments )
+      src.push_back( segment_json( seg ) );
+    for( const std::array<double,6> &seg : line.crystal_segments )
+      cry.push_back( segment_json( seg ) );
+
+    nlohmann::json l;
+    l["e"] = segment_json( line.extent );
+    l["s"] = src;
+    l["c"] = cry;
+    lines.push_back( l );
+  }//for( lines )
+
+  nlohmann::json j;
+  j["lines"] = lines;
+  j["caption"] = WString::tr("ssd-diag-lines-caption").arg( static_cast<int>(sample.lines.size()) )
+                    .arg( static_cast<int>(sample.num_lines_in_set) ).arg( energy_str(sample.energy) ).toUTF8();
+  j["labels"]["src"] = WString::tr("ssd-diag-lines-src").toUTF8();
+  j["labels"]["crystal"] = WString::tr("ssd-diag-lines-crystal").toUTF8();
+  j["labels"]["path"] = WString::tr("ssd-diag-lines-path").toUTF8();
+  m_linesJson = j.dump( -1, ' ', false, nlohmann::json::error_handler_t::replace );
+  m_linesMsg->setText( "" );
+
+  if( m_3DView )
+    m_3DView->setVolumetricLines( m_linesJson );
+}//setVolumetricLines(...)
+
 
 // Static factory method
 ShieldingDiagramDialog *ShieldingDiagramDialog::createShieldingDiagram(
@@ -547,10 +826,11 @@ ShieldingDiagramDialog *ShieldingDiagramDialog::createShieldingDiagram(
   double detectorDistance,
   double detectorDiameter,
   double sourceOffset0,
-  double sourceOffset1
+  double sourceOffset1,
+  std::shared_ptr<const DetectorPeakResponse> drf
 )
 {
   return SimpleDialog::make<ShieldingDiagramDialog>( shieldings, sources, geometry, detectorDistance,
-                                                    detectorDiameter, sourceOffset0, sourceOffset1 );
+                                                    detectorDiameter, sourceOffset0, sourceOffset1, drf );
 }
 

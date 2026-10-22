@@ -323,6 +323,58 @@ padding-bottom: 1px;
 }
 
 
+/* "Spectrum and Peak Options", with the "Peak Skew" box to its right */
+.RelActAutoGui .RelActAutoSpectrumOptionsRow
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 5px;
+}
+
+/* Keep the option rows together at the top, when the skew box makes this one taller */
+.RelActAutoGui .RelActAutoSpectrumOptionsRow > .RelActAutoGeneralOptionsRow
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  align-content: flex-start;
+}
+
+.RelActAutoGui .RelActAutoSkewGroup
+{
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  border: 1px solid var(--interspec-border-color);
+  padding: 5px;
+}
+
+.RelActAutoGui .RelActAutoSkewNote
+{
+  font-size: 10px;
+  font-style: italic;
+  max-width: 260px;
+  opacity: 0.8;
+}
+
+.RelActAutoGui .RelActAutoSkewUseFit
+{
+  align-self: flex-end;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--interspec-link-color);
+  text-decoration: underline;
+}
+
+.RelActAutoGui .RelActAutoSkewUseFit:hover
+{
+  opacity: 0.7;
+}
+
+
 .RelActAutoGui .RelActAutoEnergyCalDiv,
 .RelActAutoGui .RelActAutoFwhmEstDiv,
 .RelActAutoGui .RelActAutoFwhmFormDiv,
@@ -693,6 +745,29 @@ padding-bottom: 1px;
   width: 9ex;
 }
 
+/* How far a non-fixed ROI extends past its lines, below and above; and the range it was fit over. */
+.RelActAutoGuiEnergyRange .RoiEdges
+{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+
+.RelActAutoGuiEnergyRange .RoiEdge
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 3px;
+}
+
+.RelActAutoGuiEnergyRange .RoiEdge > input
+{
+  width: 6ex;
+}
+
 
 .RelActAutoGui .RelActAutoGuiNuclide
 {
@@ -1044,6 +1119,11 @@ a.DownloadLink.RelActDownload > span
   flex-direction: column;
   gap: 6px;
   padding: 6px;
+}
+
+.RelActAutoGui.Phone .RelActAutoSpectrumOptionsRow
+{
+  flex-direction: column;
 }
 
 .RelActAutoGui.Phone .RelActAutoGeneralOptionsRow

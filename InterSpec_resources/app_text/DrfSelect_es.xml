@@ -35,21 +35,9 @@
   <message id="reds-invalid-dir">directorio inválido</message>
   <message id="reds-no-drf-in-dir">sin respuestas en directorio</message>
   <message id="reds-recursive-no-drfs-in-dir">Sin DRF válidos en directorio, o sus subdirectorios.</message>
-  <message id="ds-csv-upload-desc">
-    <div style="white-space:nowrap;">
-      Carga de archivo de eficiencia:
-    </div>
-    <div>
-      Para CSV de eficiencia, la primera columna es energía en keV; la segunda es % eficiencia (0 a 100).
-    </div>
-    <div>
-      Intrínseca es eficiencia para gammas que golpean la superficie del detector, mientras que Absoluta es a una distancia dada.
-    </div>
-  </message>
   <message id="ds-det-diam">Diám. det.:</message>
   <message id="ds-det-setback">Retroceso det.:</message>
   <message id="ds-fixed-geom">Geometría fija</message>
-  <message id="ds-gad-det-file-label">O Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">Ejemplo: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     O equivalentemente: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Eficiencia del detector definida por una fórmula matemática, dada la energía x;
@@ -128,9 +116,4 @@
   <message id="ds-err-det-dist-pos">La distancia debe ser positiva para eficiencias absolutas</message>
   <message id="ds-warn-min-max-energy-swapped">La energía mín. del detector era mayor que la energía máx.; ignorando rango de energía.</message>
   <message id="ds-need-det-diam">Se necesita el diámetro del detector</message>
-  <message id="ds-err-invalid-csv-format">CSV de archivo no reconocido. Suba un archivo CSV de eficiencia válido (formato MakeDrf o formato simple con columnas de energía y eficiencia).</message>
-  <message id="ds-err-parsing-gadras">Error analizando detector GADRAS: {1}</message>
-  <message id="ds-eff-type-intrinsic">Eficiencia intrínseca</message>
-  <message id="ds-eff-type-farfield">Eficiencia de campo lejano</message>
-  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

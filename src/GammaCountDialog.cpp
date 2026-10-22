@@ -279,11 +279,6 @@ void GammaCountDialog::init()
  
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &GammaCountDialog::emitFinished );
-  
-  //Keep the keyboard form popping up
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
-  if( app && app->isMobile() )
-    closeButton->setFocus();
 }//GammaCountDialog::init()
 
 

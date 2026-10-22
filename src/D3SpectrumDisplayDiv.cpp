@@ -82,6 +82,24 @@ namespace
     
     return val ? t : f;
   };
+
+  /** Guards a chart statement so it is skipped when the chart object is not built yet.
+
+   `m_jsgraph` is a property that #defineJavaScript hangs off this widget's DOM element, so it only
+   exists between that call and the element being replaced.  A Full re-render builds a NEW element -
+   which is what a re-parent causes, and the phone layout re-parents the chart while starting up -
+   so in the response that carries the re-render, statements queued before #defineJavaScript find no
+   chart and throw "Cannot read properties of undefined", which Wt escalates to a fatal client error
+   and the session never finishes loading.
+
+   Skipping is safe for anything the chart also takes as a construction option (peak label size and
+   rotation, log-y minimum): #defineJavaScript passes those from the very members the setters just
+   assigned, so the value still lands, just via the constructor rather than a setter call.
+   */
+  std::string chart_js_if_built( const std::string &jsgraph, const std::string &statement )
+  {
+    return "if(" + jsgraph + "){" + jsgraph + statement + "}";
+  }//std::string chart_js_if_built(...)
   
   /** A right-click popup menu that is owned by the widget that pops it up.
 
@@ -2738,7 +2756,7 @@ void D3SpectrumDisplayDiv::setPeakLabelSize( const std::string &fontSize )
   if( isRendered() )
   {
     string str = fontSize.empty() ? string("null") : Wt::WWebWidget::jsStringLiteral(fontSize,'\'');
-    doJavaScript( m_jsgraph + ".setPeakLabelSize(" + str + ");" );
+    doJavaScript( chart_js_if_built( m_jsgraph, ".setPeakLabelSize(" + str + ");" ) );
   }
   
   scheduleUpdateForeground(); //JIC, the JS setPeakLabelSize(...) wont cause a re-draw
@@ -2750,7 +2768,8 @@ void D3SpectrumDisplayDiv::setPeakLabelRotation( const double rotation )
   m_peakLabelRotationDegrees = rotation;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setPeakLabelRotation(" + std::to_string(rotation) + ");" );
+    doJavaScript( chart_js_if_built( m_jsgraph,
+                                    ".setPeakLabelRotation(" + std::to_string(rotation) + ");" ) );
   
   scheduleUpdateForeground(); //JIC, the JS setPeakLabelRotation(...) wont cause a re-draw
 }//void setPeakLabelRotation( const double rotation )
@@ -2766,8 +2785,9 @@ void D3SpectrumDisplayDiv::setLogYAxisMin( const double ymin )
   m_logYAxisMin = ymin;
   
   if( isRendered() )
-    doJavaScript( m_jsgraph + ".setLogYAxisMin(" + std::to_string(ymin) + "); "
-                 + m_jsgraph + ".redraw()();" );
+    doJavaScript( chart_js_if_built( m_jsgraph,
+                                    ".setLogYAxisMin(" + std::to_string(ymin) + ");" )
+                 + chart_js_if_built( m_jsgraph, ".redraw();" ) );
 }//void setLogYAxisMin( const double ymin )
 
 

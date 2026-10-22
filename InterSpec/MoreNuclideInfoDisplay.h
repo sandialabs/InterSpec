@@ -85,7 +85,6 @@ protected:
   void setTemplateTxt();
   void showDecayChainChart();
   void showDecayThroughChart();
-  void handleDecayChartClose( AuxWindow *window );
   void programmaticallyCloseDecayChart();
   void implementShowDecayCharts( const bool through );
 

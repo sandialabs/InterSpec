@@ -368,7 +368,7 @@ SimpleDialog *displayMultimedia( const std::shared_ptr<const SpecMeas> &spec )
   
   auto dialog = SimpleDialog::make();
   //dialog->setModal( false ); //doesnt seem to have any effect
-  dialog->addButton( WString::tr("Close") );
+  dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
   
   WContainerWidget *contents = dialog->contents();
   const bool multiple_images = (spec && (spec->multimedia_data().size() > 1));

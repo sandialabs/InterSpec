@@ -425,11 +425,11 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_components_sum_to_eval) {
             for (const double E : {45.0, 100.0, 662.0}) {
                 const SigmaTransferModel::Components c = m.components(d_over_a, ct, E);
                 const double sum = std::sqrt(c.far_onaxis * c.far_onaxis + c.offaxis * c.offaxis +
-                                             c.near * c.near);
+                                             c.near_field * c.near_field);
                 BOOST_CHECK_CLOSE(m.eval(d_over_a, ct, E), sum, 1e-12);
                 BOOST_CHECK_EQUAL(c.far_onaxis, m.far_onaxis);
                 if (ct == 1.0) BOOST_CHECK_EQUAL(c.offaxis, 0.0);
-                if (d_over_a >= m.near_gate_a) BOOST_CHECK_EQUAL(c.near, 0.0);
+                if (d_over_a >= m.near_gate_a) BOOST_CHECK_EQUAL(c.near_field, 0.0);
             }
         }
     }
@@ -655,7 +655,7 @@ BOOST_AUTO_TEST_CASE(frac_covariance_common_modes_are_rank_one) {
         const double floor = r->floors.fep_far;
         const double expected = floor * floor + model_sigma::behind_plane * model_sigma::behind_plane +
                                 c0.far_onaxis * c1.far_onaxis + c0.offaxis * c1.offaxis +
-                                c0.near * c1.near;
+                                c0.near_field * c1.near_field;
         BOOST_CHECK_CLOSE(C[1], expected, 1e-9);
         BOOST_CHECK_LT(C[1], std::sqrt(C[0] * C[3]));   // not one combined block
     }
@@ -1165,6 +1165,49 @@ BOOST_AUTO_TEST_CASE(near_field_table_eval) {
     // (d) node_frac_sigma exact at a node.
     BOOST_CHECK_CLOSE(nf.node_frac_sigma(60.0, nf.cos_thetas[2], nf.dists_cm[1]),
                       0.001 * 3.0 * 2.0, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(near_field_total_applies_and_round_trips) {
+    // Without a near-field total the XML has no such block, and the total is the far-field tier
+    //  carried by the kernel - what every pre-existing response serves.
+    auto r = make_synthetic_nai(0.5);
+    add_near_field_table(*r);   // the FEP's own table, to share a layout with
+    const std::string xml_without = r->to_xml_string();
+    BOOST_CHECK_EQUAL(xml_without.find("<NearField", xml_without.find("<TotalEfficiency")),
+                      std::string::npos);
+
+    const double ct_node = 0.5, d_node = 5.0;
+    const Eigen::Vector3d src = source_position(d_node, ct_node);
+    const EffResult far = r->eps_total_at(662.0, src);
+    const EffResult far_beyond = r->eps_total_at(662.0, source_position(30.0, ct_node));
+
+    NearFieldModel& tn = r->tot_eff.near_field;
+    tn = r->near_field;   // same lattice and breakpoints (2 x 3 x 4, breaking at 5-8 cm)
+    for (size_t i = 0; i < tn.ln_n.size(); ++i)
+        tn.ln_n[i] = -0.04 + 0.005 * double(i);
+    tn.frac_sigma.assign(tn.ln_n.size(), 0.01);
+    r->tot_eff.finalize();
+
+    // At a node it is the far-field total times exp(ln N_tot), with the node sigma added ...
+    const size_t idx = tn.index(1, 1, 1);   // 662 keV, cos 0.5, 5 cm
+    const EffResult near = r->eps_total_at(662.0, src);
+    BOOST_CHECK_CLOSE(near.value, far.value * std::exp(tn.ln_n[idx]), 1e-9);
+    BOOST_CHECK_GT(near.sigma / near.value, far.sigma / far.value);
+    // ... and past its breakpoint it does nothing.
+    BOOST_CHECK_CLOSE(r->eps_total_at(662.0, source_position(30.0, ct_node)).value,
+                      far_beyond.value, 1e-12);
+    // The FEP is untouched.
+    BOOST_CHECK_EQUAL(r->eps_fep_at(662.0, src).value,
+                      DetectorResponse::from_xml_string(xml_without)->eps_fep_at(662.0, src).value);
+
+    // It round trips, and the reloaded response answers the same.
+    const std::string xml1 = r->to_xml_string();
+    BOOST_CHECK_NE(xml1.find("<NearField", xml1.find("<TotalEfficiency")), std::string::npos);
+    const std::shared_ptr<DetectorResponse> r2 = DetectorResponse::from_xml_string(xml1);
+    BOOST_CHECK_EQUAL(xml1, r2->to_xml_string());
+    BOOST_CHECK_EQUAL(r->content_hash(), r2->content_hash());
+    BOOST_CHECK_CLOSE(r2->eps_total_at(662.0, src).value, near.value, 1e-12);
+    BOOST_CHECK_NE(r->content_hash(), DetectorResponse::from_xml_string(xml_without)->content_hash());
 }
 
 BOOST_AUTO_TEST_CASE(xml_rejects_future_version) {

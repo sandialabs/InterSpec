@@ -83,6 +83,34 @@ namespace LlmMarkdown
 }//namespace LlmMarkdown
 
 
+/** A container whose contents are made client-side, by JavaScript (rendered Markdown, charts, event
+ listeners, ...).
+
+ Wt re-creates a widget's DOM element whenever the widget is moved to a new parent - as the LLM
+ assistant is when moved between the tool-tab strip and a window - and anything a one-off
+ doJavaScript() call put into the old element is lost.  So instead the JavaScript given here is
+ re-run every time the element is (re-)created.
+ */
+class LlmJsRenderedDiv : public Wt::WContainerWidget
+{
+public:
+  /** Sets the JavaScript that creates the contents; also runs it now, if already rendered. */
+  void setRenderJs( const std::string &js );
+
+  /** Sets JavaScript that re-applies client-side state to the contents (e.g., raw vs rendered
+   Markdown); it runs after the #setRenderJs script, and now, if already rendered.
+   */
+  void setStateJs( const std::string &js );
+
+protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
+
+private:
+  std::string m_renderJs;
+  std::string m_stateJs;
+};//class LlmJsRenderedDiv
+
+
 /** Base class for displaying a single LLM interaction turn (response, tool call, result, or error).
  *
  * Each turn is displayed as a WPanel with:
@@ -140,6 +168,11 @@ protected:
   PopupDivMenu *m_menu;
   Wt::WContainerWidget *m_bodyContainer;
   bool m_bodyCreated;
+
+  /** If the user is on a phone; phones get a pared-down display, without the developer-oriented
+   menus (raw request/response JSON, etc).
+   */
+  const bool m_phoneLayout;
 };//class LlmInteractionTurnDisplay
 
 
@@ -188,9 +221,15 @@ private:
 class LlmToolResultsDisplay : public LlmInteractionTurnDisplay
 {
 public:
+  /** @param phoneVisuals If non-null (phones only), this display is a compact entry in its
+   interaction's tool-summary row: no title bar, menu, invocation IDs, or raw tool results; and any
+   visuals (charts, spectra, reports) are placed into `phoneVisuals` instead, so they stay visible
+   while the summary row is collapsed.  See LlmInteractionDisplay::m_phoneToolSummary.
+   */
   LlmToolResultsDisplay( std::shared_ptr<LlmToolResults> results,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0 );
+                        int nestingLevel = 0,
+                        Wt::WContainerWidget *phoneVisuals = nullptr );
 
   virtual ~LlmToolResultsDisplay();
 
@@ -221,6 +260,9 @@ private:
   std::weak_ptr<class LlmInterface> m_llmInterface;
   std::vector<class LlmInteractionDisplay*> m_subAgentDisplays;
   int m_nestingLevel;  // For passing to nested sub-agent displays
+
+  /** Where visuals go for the compact phone display; null otherwise.  See constructor. */
+  Wt::WContainerWidget *m_phoneVisuals;
 
   // Map from sub-agent conversation to its result container div
   std::map<std::shared_ptr<LlmInteraction>, Wt::WContainerWidget*> m_subAgentResultDivs;
@@ -271,9 +313,14 @@ private:
 class LlmInteractionDisplay : public Wt::WPanel
 {
 public:
+  /** @param phoneVisuals For a sub-agent display on a phone, the container its tool visuals should
+   go into (i.e., the top-level interaction's), so they are not hidden away in a collapsed summary
+   row.  If null, the display makes its own when needed.  Unused when not on a phone.
+   */
   LlmInteractionDisplay( std::shared_ptr<LlmInteraction> interaction,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0 );
+                        int nestingLevel = 0,
+                        Wt::WContainerWidget *phoneVisuals = nullptr );
 
   virtual ~LlmInteractionDisplay();
 
@@ -326,6 +373,13 @@ protected:
                       const std::string &jsonStr,
                       bool allowDownload = true );
 
+  /** Creates `m_phoneToolSummary` (and `m_phoneVisuals`, if needed) the first time a tool or
+   auto-reply turn shows up; phones only. */
+  void ensurePhoneToolSummary();
+
+  /** Sets the title of `m_phoneToolSummary` from the tools used so far. */
+  void updatePhoneToolSummaryTitle();
+
 private:
   std::shared_ptr<LlmInteraction> m_interaction;
   std::weak_ptr<class LlmInterface> m_llmInterface;
@@ -339,6 +393,18 @@ private:
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;
   std::string m_timerId;  // Unique ID for JavaScript timer
+
+  /** On phones, the tool-call, tool-result, and auto-reply turns of the interaction are folded into
+   a single collapsed row (`m_phoneToolSummary`, whose body is `m_phoneToolList`), titled with the
+   tools used; any tool visuals are shown just after it, in `m_phoneVisuals`.  Not used otherwise.
+   */
+  const bool m_phoneLayout;
+  Wt::WPanel *m_phoneToolSummary;
+  Wt::WContainerWidget *m_phoneToolList;
+  Wt::WContainerWidget *m_phoneVisuals;
+  std::vector<std::string> m_phoneToolNames;  // Unique, in order of first use
+  int m_phoneOpenToolRequests;                // Tool-call turns still awaiting their results
+  bool m_phoneToolErrors;
 
   static int s_nextTimerId;
 };//class LlmInteractionDisplay

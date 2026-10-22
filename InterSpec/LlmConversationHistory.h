@@ -31,6 +31,7 @@
 #include <string>
 #include <chrono>
 #include <optional>
+#include <string_view>
 
 #include <Wt/WSignal.h>
 
@@ -78,8 +79,22 @@ struct LlmToolCall
   {
     std::string base64Data;   // Base64-encoded image data (no data-URL prefix)
     std::string mimeType;     // e.g., "image/png", "image/jpeg", "image/svg+xml"
+
+    /** Optional label sent to the LLM as a text block immediately before the image, so a prompt
+     can refer to several images unambiguously (e.g. "Item A", "Item B").  Left empty for images
+     the user pastes or uploads, and for tool-result images, in which case no extra text block is
+     emitted and the wire format is unchanged.
+     */
+    std::string caption;
+
     int widthPx = 0;
     int heightPx = 0;
+
+    /** Sets `mimeType`, and the size when it can be found, from the image's content `bytes` (never
+     from what a client or file says it is).
+     @returns false if `bytes` is not a PNG, JPEG, GIF, or WebP image.
+     */
+    bool setTypeFromContent( std::string_view bytes );
   };//struct ImageContent
 
   std::optional<ImageContent> imageContent;
@@ -610,6 +625,13 @@ class LlmConversationHistory {
 public:
   /** Construct empty conversation history */
   LlmConversationHistory();
+
+  /** Whether the XML written for a history includes the images a user sent with their messages
+   (they are always read, if present).  On by default only for the MCP agent server, so an exported
+   analysis resumes with its photos; other builds' files are unchanged.
+   */
+  static void setSaveUserImages( const bool save );
+  static bool saveUserImages();
   
   /** Add a user message - this is a message that the user typed in, and will cause a new `LlmInteraction` to be created, with all the
    LLM responses, and tool-call results being stored in that newly created object.  The newly created object will be added to `m_conversations` and returned.
@@ -704,13 +726,42 @@ public:
   /** Load from XML when loading SpecMeas */
   void fromXml(const rapidxml::xml_node<char>* node);
   
-  /** Static function to serialize conversations to XML */
+  /** Static function to serialize conversations to XML.
+
+   @param include_raw_content Whether to include each turn's raw JSON (the requests sent to, and
+          responses from, the LLM API - each request repeating the system prompt and conversation so
+          far); used only by the assistant's raw-JSON view, not to continue a conversation.
+   */
   static void toXml(const std::vector<std::shared_ptr<LlmInteraction>>& conversations,
-                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc);
+                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc,
+                    const bool include_raw_content = true);
 
   /** Static function to deserialize conversations from XML */
   static void fromXml(const rapidxml::xml_node<char>* node,
                       std::vector<std::shared_ptr<LlmInteraction>>& conversations);
+
+  /** Formats `t` in local time using `strftime` format codes, ex. "%Y-%m-%dT%H:%M:%S%z". */
+  static std::string formatLocalTime( const std::chrono::system_clock::time_point &t, const char *format );
+
+  /** Returns the file name used for a conversation log, ex. "20261008T1232_a1B2c3_llm_log.xml".
+
+   @param start Time the conversation started; formatted in local time to minute precision.
+   @param uniqueId Short string to distinguish conversations started in the same minute.
+   */
+  static std::string logFileName( const std::chrono::system_clock::time_point &start,
+                                  const std::string &uniqueId );
+
+  /** Writes the full history as a stand-alone XML file, replacing any existing file at `path`.
+
+   The root element is `<LlmConversationLog version="0">`, with `rootAttribs` added as attributes,
+   containing the same `<LlmHistory>` element that toXml() produces (so fromXml() can read it).
+   The file is written to a temporary file first and then renamed into place, so a failure mid-write
+   does not leave a truncated log.
+
+   Throws std::exception on failure.
+   */
+  void writeLogFile( const std::string &path,
+                     const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const;
 
   /** Build the messages array for a MainAgent conversation, including all prior
    history and the system prompt.

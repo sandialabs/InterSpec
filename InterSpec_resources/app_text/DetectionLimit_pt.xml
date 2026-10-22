@@ -263,10 +263,7 @@
     <b>percentagem</b> - por exemplo <b>5</b> para 5%.  Deixe em branco, ou introduza 0, para
     nenhuma.
     <p>
-      Cobre tudo o que escala as contagens esperadas e não é estatística de contagem: a curva de
-      eficiência do detector e a razão de ramificação gama, que entram de forma idêntica.  Introduza
-      as duas combinadas em quadratura se ambas importarem.  As incertezas de eficiência de detector
-      são tipicamente de 3&#8211;10%.
+      Cobre tudo o que escala as contagens esperadas e não é estatística de contagem, além da incerteza de eficiência que a resposta do detector declara por si: essa é sempre incluída, e isto soma-se a ela em quadratura.  Use-o para a razão de ramificação gama, ou para uma resposta de detector que não declara incerteza (as incertezas de eficiência do detector costumam ser de 3&#8211;10%).
     </p>
     <p>
       É combinada em quadratura com a incerteza de distância, e o total tem de se manter abaixo de

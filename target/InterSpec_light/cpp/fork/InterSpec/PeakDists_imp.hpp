@@ -1,0 +1,2538 @@
+#ifndef PeakDists_imp_h
+#define PeakDists_imp_h
+
+#include <vector>
+#include <numeric>
+#include <algorithm>
+#include <exception>
+
+#include "InterSpec/LightMath.h"
+
+#include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
+
+
+#include "VoigtDistribution/pseudo_voigt_exp_tail.hpp" //Pseudo-Voigt with exponential tail distribution - we always need for `voigt_exp_coverage_limits`
+#include "VoigtDistribution/Faddeeva.hpp" //`FaddeevaT::erfcx_real` for the A23 Bortel tail; not pulled in by pseudo_voigt when USE_PSEUDO_VOIGT_DISTRIBUTION=1
+#if( !USE_PSEUDO_VOIGT_DISTRIBUTION )
+#include "VoigtDistribution/voigt_exp_tail.hpp" //True-Voigt with exponential tail distribution
+#endif
+
+// Had a little trouble with the auto-derivative when using Jet - so will define some functions
+//  here to help find the issues - but make them be no-ops for non-debug builds
+#if( !defined(NDEBUG) && PERFORM_DEVELOPER_CHECKS && defined(CERES_PUBLIC_JET_H_) )
+inline void check_jet_for_NaN( const double &jet )
+{
+  //no-op
+}
+
+inline void check_jet_array_for_NaN( const double * const jet, const size_t nelements )
+{
+  //no-op
+}
+
+template<typename T, int N>
+inline void check_jet_for_NaN( const ceres::Jet<T,N> &jet )
+{
+  using namespace std;
+
+  const Eigen::Matrix<double, N, 1> &matrix = jet.v;
+  for( size_t par = 0; par < matrix.size(); ++par )
+  {
+    const double *vals = matrix.data();
+    const double &val = vals[par];
+    if( isnan(val) || isinf(val) )
+    {
+      cerr << "For par " << par << " val=" << val << endl;
+      // Non-fatal: a Levenberg-Marquardt trial step can transiently produce an
+      //  inf/NaN jet (e.g. an over-large step that the trust region then rejects)
+      //  even when the fit ultimately converges.  Aborting here kills otherwise
+      //  valid fits (and any benchmark run), so just log and continue.
+      //assert( !isnan(val) );
+      //assert( !isinf(val) );
+      //val = 0.0;
+    }
+  }
+}//void check_jet_for_NaN( ceres::Jet<T,N> &jet )
+
+template<typename T, int N>
+inline void check_jet_array_for_NaN( const ceres::Jet<T,N> * const jets, const size_t nelements )
+{
+  for( size_t i = 0; i < nelements; ++i )
+    check_jet_for_NaN( jets[i] );
+}
+#else
+
+#define check_jet_for_NaN(a){}
+#define check_jet_array_for_NaN(a,b){}
+
+#endif
+
+
+
+/** Templating the peak distributions on calculation type is for `RelActAuto`, so they can be computed with
+ `ceres::Jet<>` instead of `double`, to allow automatic differentiation.
+ */
+namespace PeakDists
+{
+    
+template<typename T>
+void gaussian_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const float * const energies,
+                              T *channels,
+                              const size_t nchannel )
+{
+  if( peak_sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  const double zero_amp_point_nsigma = 8.0;
+  const T start_energy = peak_mean - zero_amp_point_nsigma*peak_sigma;
+  const T stop_energy = peak_mean + zero_amp_point_nsigma*peak_sigma;
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+  {
+    channel += 1;
+  }
+    
+  if( channel == nchannel )
+    return;
+    
+  const double sqrt2 = LightMath::root_two;
+  const T sqrt2sigma = sqrt2 * peak_sigma;
+  const T amp_mult = 0.5 * peak_amplitude;
+
+
+  // TODO: it looks like Eigen might support vectorized `erf`; should update to take advantage of.
+  //       In which case we could maybe vectorize this function.  However, on Apple NEON there is
+  //       apparently a bug (although maybe I'm mis-reading the Eigen source code), so it isnt
+  //       supported there.  But for for x64, should try and see if this could speed things up.
+
+  // We will keep track of the channels lower value of erf, so we dont have to re-compute
+  //  it for each channel (this is the who advantage of )
+  T erfarg = (static_cast<double>(energies[channel]) - peak_mean) / sqrt2sigma;
+
+
+  // We keep the channel's lower erf value so we dont have to re-compute it each channel.
+  // Note: we use double-precision erf - we previously used float-preceision when I didnt
+  //  think it mattered because it was ~4x faster evaluation.  But it turns out the Ceres
+  //  convergence was slower, so using the double precision is net-effect faster.
+  T erflow;
+  if constexpr ( !std::is_same_v<T, double> )
+    erflow = erf( erfarg );
+  else
+    erflow = boost_erf_imp( erfarg );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    erfarg = (static_cast<double>(energies[channel+1]) - peak_mean)/(sqrt2*peak_sigma);
+
+    T erfhigh;
+    if constexpr ( !std::is_same_v<T, double> )
+      erfhigh = erf( erfarg );
+    else
+      erfhigh = boost_erf_imp( erfarg );
+
+    channels[channel] += amp_mult * (erfhigh - erflow);
+    channel += 1;
+    erflow = erfhigh;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+}//gaus_integral(...)
+
+
+/** Returns the normalization so the GaussExp distribution has unit area. */
+template<typename T>
+T gauss_exp_norm( const T sigma, const T skew )
+{
+  static const double sqrt_pi = LightMath::root_pi; //1.7724538509055160272981
+  static const double one_div_root_two = LightMath::one_div_root_two; //0.707106781186547524400
+    
+  if constexpr ( !std::is_same_v<T, double> )
+  {
+    return 1.0 / ((sigma/skew)*exp(-0.5*skew*skew)
+                  + (sqrt_pi*one_div_root_two*(erf(skew*one_div_root_two)+1.0)*sigma));
+  }else
+  {
+    return 1.0 / ((sigma/skew)*std::exp(-0.5*skew*skew)
+                  + (sqrt_pi*one_div_root_two*(boost_erf_imp(skew*one_div_root_two)+1)*sigma));
+  }
+}
+  
+  
+template<typename T>
+void gauss_exp_integral( const T peak_mean,
+                          const T peak_sigma,
+                          const T peak_amplitude,
+                          const T skew,
+                          const float * const energies,
+                          T *channels,
+                          const size_t nchannel )
+{
+  using namespace std;
+  
+#define USE_SIMPLE_GAUSS_EXP_IMP 0
+    
+#if( USE_SIMPLE_GAUSS_EXP_IMP )
+    //compiled in debug mode, this implementation takes about 5 times as long as the more optimized version.
+    
+#ifdef _MSC_VER
+#pragma message( "PeakDef::gauss_exp_integral is not properly coded" )
+#else
+#warning "PeakDef::gauss_exp_integral is not properly coded"
+#endif
+    
+#if( PERFORM_DEVELOPER_CHECKS )
+  T dist_sum = 0.0;
+#endif
+    
+    for( size_t i = 0; i < nchannel; ++i )
+    {
+      const float x0 = energies[i];
+      const float x1 = energies[i+1];
+      const double val = peak_amplitude*PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, x0, x1 );
+      channels[i] += val;
+      
+#if( PERFORM_DEVELOPER_CHECKS )
+      dist_sum += val;
+      
+      if( isinf(channels[i]) || isnan(channels[i]) )
+      {
+        cerr << "Found GausExp invalid counts, " << channels[i] << " from [" << x0 << ", " << x1 << "]:\n"
+        << "\t" << setw(14) << "range:" << "[" << energies[0] << ", " << energies[nchannel] << "]\n"
+        << "\t" << setw(14) << "min_energy =" << energies[0] << "\n"
+        << "\t" << setw(14) << "max_energy =" << energies[nchannel] << "\n"
+        << "\t" << setw(14) << "nchannel =" << nchannel << "\n";
+        if constexpr ( std::is_same_v<T, double> )
+          cerr << "\t" << setw(14) << "mean =" << peak_mean << "\n"
+          << "\t" << setw(14) << "sigma =" << peak_sigma << "\n"
+          << "\t" << setw(14) << "amp =" << peak_amplitude << "\n"
+          << "\t" << setw(14) << "skew =" << skew << "\n";
+        
+        cerr << endl << endl;
+      }//if( skew_type_t != PeakDef::NoSkew )
+      
+      //log_developer_error( __func__, "Invalid CSS color called back " );
+#endif //PERFORM_DEVELOPER_CHECKS
+    }
+    
+#else  //USE_SIMPLE_GAUSS_EXP_IMP
+    
+  if( peak_sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+
+  // TODO: estimate where we should actually start and stop computing values for, using `gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
+  const double zero_amp_point_nsigma = 8.0;
+  const T start_energy( static_cast<double>(energies[0]) ); //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+  const T stop_energy = peak_mean + zero_amp_point_nsigma*peak_sigma;
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+  {
+    channel += 1;
+  }
+    
+  if( channel == nchannel )
+    return;
+    
+    
+  const auto tail_indefinite_non_norm = [&peak_mean,&peak_sigma,&skew]( const T x ) -> T {
+      const T t = (x - peak_mean) / peak_sigma;
+      assert( (t - 1.0E-8) <= -skew );
+      return (peak_sigma/skew)*exp((skew/peak_sigma)*(0.5*skew*peak_sigma - peak_mean + x));
+  };
+    
+  const auto gaus_indefinite_non_norm = [&peak_mean,&peak_sigma,&skew]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    assert( (t + 1.0E-6) >= -skew );
+      
+    const double root_half_pi = LightMath::root_half_pi;
+    static const double one_div_root_two = LightMath::one_div_root_two; //0.707106781186547524400
+      
+    if constexpr ( !std::is_same_v<T, double> )
+      return peak_sigma*root_half_pi * erf(t*one_div_root_two);
+    else
+      return peak_sigma*root_half_pi * boost_erf_imp(t*one_div_root_two);
+  };
+    
+  const T norm = peak_amplitude * gauss_exp_norm( peak_sigma, skew );
+  const T tail_end = peak_mean - peak_sigma*skew;
+    
+  T lower_energy;
+  
+  if( energies[channel] < tail_end )
+  {
+    lower_energy = T( static_cast<double>(energies[channel]) );
+    T indefinite_low = tail_indefinite_non_norm( lower_energy );
+      
+    while( (channel < nchannel) && (energies[channel] < tail_end) )
+    {
+      const T upper_energy( static_cast<double>(energies[channel+1]) );
+        
+      T indefinite_high;
+      if( upper_energy > tail_end )
+      {
+        indefinite_high = tail_indefinite_non_norm( tail_end );
+        const T val = norm * (indefinite_high - indefinite_low);
+        channels[channel] += val;
+          
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, tail_end );
+          const double diff = fabs(val - simple_answer);
+          const double frac_diff = diff / std::max(val, simple_answer);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+            cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << tail_end
+                 << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+        }
+#endif
+
+        lower_energy = tail_end;
+        break;
+      }else
+      {
+        indefinite_high = tail_indefinite_non_norm( upper_energy );
+        const T val = norm * (indefinite_high - indefinite_low);
+        channels[channel] += val;
+        
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
+          const double diff = fabs(val - simple_answer);
+          const double frac_diff = diff / std::max(val, simple_answer);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+            cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+        }
+#endif
+
+        lower_energy = upper_energy;
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+  }//if( energies[channel] < tail_end )
+    
+  if( channel >= nchannel )
+    return;
+    
+  assert( energies[channel+1] >= tail_end );
+  lower_energy = max( T( static_cast<double>(energies[channel]) ), tail_end );
+  T indefinite_low = gaus_indefinite_non_norm( lower_energy );
+    
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < stop_energy) )
+  {
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+    const T indefinite_high = gaus_indefinite_non_norm( upper_energy );
+    const T val = norm * (indefinite_high - indefinite_low);
+    channels[channel] += val;
+    
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
+      const double diff = fabs(val - simple_answer);
+      const double frac_diff = diff / std::max(val, simple_answer);
+      if( !((frac_diff < 1.0E-5) || (diff < 1.0E-7) || (fabs(peak_mean - 0.5*(lower_energy + upper_energy)) > (5.0*peak_sigma))) )
+        cerr << "gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+             << " skew=" << skew << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+             << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+      assert( (frac_diff < 1.0E-5) || (diff < 1.0E-7) || (fabs(peak_mean - 0.5*(lower_energy + upper_energy)) > (5.0*peak_sigma)) );
+    }
+#endif
+    
+    lower_energy = upper_energy;
+    indefinite_low = indefinite_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+#endif  //USE_SIMPLE_GAUSS_EXP_IMP
+}//void gauss_exp_integral(...)
+  
+  
+template<typename T>
+T bortel_indefinite_integral( const double x, const T mean, const T sigma, const T skew )
+{
+  const double one_div_root_two = LightMath::one_div_root_two;
+
+  const T t = (x - mean) / sigma;
+  const T erf_arg = one_div_root_two*t;
+  const T exp_arg = sigma*(2.0*skew*t + sigma) / (2.0*skew*skew);
+  const T erfc_arg = one_div_root_two*(t + (sigma/skew));
+
+  if( skew <= 0.0 )   // degenerate Bortel == pure Gaussian
+  {
+    if constexpr ( !std::is_same_v<T, double> )
+      return 0.5 * erf(erf_arg);
+    else
+      return 0.5 * boost_erf_imp(erf_arg);
+  }
+
+  // Tail term exp(exp_arg)*erfc(erfc_arg).  Before 20260615 we dropped this term
+  //  (returned just 0.5*erf) when exp_arg>87 || erfc_arg>10 -- a value+Jacobian discontinuity worth
+  //  up to ~0.6 counts - messing up our auto-gradients.  In that region (which always has erfc_arg>0) the direct product
+  //  overflows/underflows, so evaluate it with the identity  exp_arg - erfc_arg^2 == -t^2/2  as the
+  //  overflow-free  erfcx(erfc_arg)*exp(-t^2/2)   (erfcx(>0) in (0,1]) instead.  Elsewhere -- the
+  //  common case, and every erfc_arg<0 (where exp_arg<0 is provable, so no overflow) -- keep the
+  //  fast direct product.  The two forms are equal and C-infinity smooth at the switch (no
+  //  discontinuity), and erfcx never sees the very-negative args that would overflow it.
+  T tail;
+  if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+  {
+    if constexpr ( !std::is_same_v<T, double> )
+      tail = FaddeevaT::erfcx_real(erfc_arg) * exp(-0.5*t*t);
+    else
+      tail = FaddeevaT::erfcx_real(erfc_arg) * std::exp(-0.5*t*t);
+  }else
+  {
+    if constexpr ( !std::is_same_v<T, double> )
+      tail = exp(exp_arg) * erfc(erfc_arg);
+    else
+      tail = std::exp(exp_arg) * boost_erfc_imp(erfc_arg);
+  }
+
+  if constexpr ( !std::is_same_v<T, double> )
+    return 0.5*(erf(erf_arg) + tail);
+  else
+    return 0.5*(boost_erf_imp(erf_arg) + tail);
+}//double bortel_indefinite
+  
+  
+template<typename T>
+void bortel_integral( const T mean, const T sigma, const T amp, const T skew,
+                       const float * const energies, T *channels, const size_t nchannel )
+{
+  assert( sigma > 0.0 );
+  if( (sigma <= 0.0) || !nchannel )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // Guard zero/negative amplitude only for the double path; for a Ceres::Jet we must keep
+    //  computing so the d(channel)/d(amp)=shape derivative at amp==0 survives (matches every
+    //  sibling distribution, e.g. gaussian_integral / crystal_ball_integral).
+    if( amp <= 0.0 )
+      return;
+  }
+
+  // `skew` is the Bortel tau, in keV (it enters bortel_indefinite_integral as sigma/skew and
+  //  (x-mean)/skew), so the exponential left tail has decay length `skew` keV.  Extend the lower
+  //  bound by 12*sigma for the Gaussian core plus 20*tau (keV) for the tail (exp(-20) ~ 2e-9).
+  const double zero_amp_point_nsigma_lower = 12.0;
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const double tau_tail_factor = 20.0;
+  const T start_energy = mean - (zero_amp_point_nsigma_lower*sigma + tau_tail_factor*skew);
+  const T stop_energy = mean + zero_amp_point_nsigma_upper*sigma;
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+  {
+    channel += 1;
+  }
+  
+  if( channel == nchannel )
+    return;
+  
+  // We will keep track of the channels lower value indefinite integral, so we dont have to
+  //  re-compute it for each channel
+  T val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), mean, sigma, skew );
+  
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T val_high = bortel_indefinite_integral( static_cast<double>(energies[channel+1]), mean, sigma, skew );
+    const T val = amp*(val_high - val_low);
+    
+    channels[channel] += val;
+    val_low = val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+}//bortel_integral( to array values)
+  
+  
+template<typename T>
+void crystal_ball_integral( const T peak_mean,
+                             const T peak_sigma,
+                             const T peak_amplitude,
+                             const T alpha,
+                             const T power_law,
+                             const float * const energies,
+                             T *channels,
+                             const size_t nchannel )
+{
+  using namespace std;
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  T dist_sum( 0.0 );
+#endif
+  
+  if( peak_sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  
+  // TODO: estimate where we should actually start and stop computing values for, using `crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
+  const double zero_amp_point_nsigma = 8.0;
+  const T start_energy( energies[0] ); //static_cast<float>( peak_mean - zero_amp_point_nsigma*peak_sigma );
+  const T stop_energy = peak_mean + zero_amp_point_nsigma*peak_sigma;
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+  {
+    channel += 1;
+  }
+  
+  if( channel == nchannel )
+    return;
+  
+  
+  const T exp_aa = exp(-0.5*alpha*alpha);
+  const double one_div_root_two = LightMath::one_div_root_two; //0.70710678118654752440
+  const double root_half_pi = LightMath::root_half_pi;
+  const double sqrt_2pi = LightMath::root_two_pi;
+  
+  // The power-law tail is evaluated in the cancellation-free form that never builds the
+  //  (n/alpha)^n constant (which overflows for large n / small alpha).  Writing B - t = (n/alpha)*t_1
+  //  with t_1 = 1 - (alpha+t)*alpha/n, the un-normalized tail A*(B-t)^(1-n) equals
+  //  (n/alpha)*exp(-alpha^2/2)*t_1^(1-n), so the full tail prefactor N*A*sigma/(n-1) collapses
+  //  exactly to C/(C+D).  (See PeakDef::crystal_ball_tail_indefinite_t for the same rewrite.)
+  const T C = (power_law / alpha) * (1.0/(power_law - 1.0)) * exp_aa;
+  T D;
+  if constexpr ( !std::is_same_v<T, double> )
+    D = root_half_pi * (1.0 + erf( one_div_root_two * alpha ));
+  else
+    D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+  const T tail_amp = peak_amplitude * C / (C + D);
+  const T gauss_indef_amp = 0.5 * peak_amplitude * sqrt_2pi / (C + D);
+
+  check_jet_for_NaN( tail_amp );
+  check_jet_for_NaN( gauss_indef_amp );
+  check_jet_for_NaN( C );
+  check_jet_for_NaN( D );
+  check_jet_for_NaN( exp_aa );
+  check_jet_for_NaN( start_energy );
+  check_jet_for_NaN( stop_energy );
+
+  // Brief implementation of crystal_ball_tail_indefinite_t
+  auto tail_indefinite = [peak_mean,peak_sigma,alpha,power_law,tail_amp]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    assert( ((t - 1.0E-6) <= -alpha) && (alpha > 0.0) && (power_law > 1.0) );
+
+    // t_1 = (B - t)/(n/alpha) >= 1 for t <= -alpha; using it instead of (B - t) keeps the
+    //  (n/alpha)^n factor from ever forming.
+    const T t_1 = 1.0 - ((alpha + t) * alpha / power_law);
+    T answer = tail_amp * pow( t_1, 1.0 - power_law );
+
+    check_jet_for_NaN( t );
+    check_jet_for_NaN( t_1 );
+    check_jet_for_NaN( answer );
+
+    return answer;
+  };
+  
+  auto gauss_indefinite = [peak_mean,peak_sigma,gauss_indef_amp,one_div_root_two]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    
+    if constexpr ( !std::is_same_v<T, double> )
+      return gauss_indef_amp * erf( one_div_root_two * t );
+    else
+      return gauss_indef_amp * boost_erf_imp( one_div_root_two * t );
+  };
+  
+  
+  const T tail_end = peak_mean - peak_sigma*alpha;
+  
+  T lower_energy;
+  if( static_cast<double>(energies[channel]) < tail_end )
+  {
+    lower_energy = T(static_cast<double>(energies[channel]));
+    T indefinite_low = tail_indefinite( lower_energy );
+    
+    while( (channel < nchannel) && (energies[channel] < tail_end) )
+    {
+      assert( energies[channel] < energies[channel+1] );
+      
+      const T upper_energy( static_cast<double>(energies[channel+1]) );
+      
+      if( upper_energy > tail_end )
+      {
+        const T indefinite_high = tail_indefinite( tail_end );
+        const T val = (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
+        channels[channel] += val;
+
+        check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+        dist_sum += val;
+#endif
+        lower_energy = upper_energy;
+        break;
+      }else
+      {
+        const T indefinite_high = tail_indefinite( T(upper_energy) );
+        const T val = (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
+        channels[channel] += val;
+
+        check_jet_for_NaN( channels[channel] );
+
+        indefinite_low = indefinite_high;
+        channel += 1;
+        lower_energy = upper_energy;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+  }//if( energies[channel] < tail_end )
+  
+  if( channel >= nchannel )
+    return;
+  
+  assert( static_cast<double>(energies[channel+1]) >= tail_end );
+  lower_energy = max( T( static_cast<double>(energies[channel]) ), tail_end );
+  T indefinite_low = gauss_indefinite( lower_energy );
+
+  check_jet_for_NaN( lower_energy );
+  check_jet_for_NaN( indefinite_low );
+
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < stop_energy) )
+  {
+    assert( energies[channel] < energies[channel+1] );
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+    
+    const T indefinite_high = gauss_indefinite( upper_energy );
+    const T val = (indefinite_high - indefinite_low);
+
+    check_jet_for_NaN( indefinite_high );
+    check_jet_for_NaN( val );
+    check_jet_for_NaN( upper_energy );
+    check_jet_for_NaN( channels[channel] );
+
+    channels[channel] += val;
+
+    check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      const double simple_answer = peak_amplitude * PeakDists::crystal_ball_integral( peak_mean,
+                                    peak_sigma, alpha, power_law, lower_energy, upper_energy );
+      const double diff = fabs(val - simple_answer);
+      const double frac_diff = diff / std::max(val, simple_answer);
+
+      // Post the cancellation-free rewrite the templated and scalar forms are algebraically
+      //  identical (both via crystal_ball_tail_indefinite_t), so they agree to ~1e-12.  Keep the
+      //  absolute `diff` escape hatch for the near-cancelling alpha=0.5 / n->1.05 tail corner, and
+      //  for channels far enough out in the tail that the relative measure is meaningless - e.g. a
+      //  6.6 sigma channel of a 17400 count peak integrates to 3.4e-7, where the two routes differ
+      //  by 1.3e-12 (4 ppm relative), which is just double-precision noise, not a real mismatch.
+      if( !((frac_diff < 1.0E-6) || (diff < 1.0E-10)) )
+        cerr << "crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+             << " alpha=" << alpha << " power_law=" << power_law
+             << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+             << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+      assert( (frac_diff < 1.0E-6) || (diff < 1.0E-10) );
+    }
+#endif //PERFORM_DEVELOPER_CHECKS
+    
+    lower_energy = upper_energy;
+    indefinite_low = indefinite_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+  /*
+   const double frac = dist_sum / peak_amplitude;
+   cerr << "Crystal Ball sum over [" << energies[0] << "," << energies[nchannel] << "] is "
+   << frac << " (should be near 1)" << endl;
+   
+   if( fabs(1 - frac) > 0.01 )
+   {
+   cerr << "alpha(x) -> " << (peak_mean - alpha*peak_sigma) << endl;
+   for( size_t i = 0; i < nchannel; ++i )
+   cout << setw(5) << i << setw(12) << std::fixed << setprecision(2) << energies[i]
+   << setw(12) << std::scientific << (channels[i]/peak_amplitude) << endl;
+   
+   cerr << "Single step integral is "
+   << PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, energies[0], energies[nchannel] )
+   << " and over all area: "
+   << PeakDef::crystal_ball_integral( peak_mean, peak_sigma, 1.0, alpha, power_law, peak_mean - 50*peak_sigma, peak_mean + 20*peak_sigma )
+   << endl;
+   }//if( fabs(1 - frac) > 0.01 )
+   */
+#endif
+}//crystal_ball_integral(...)
+  
+  
+template<typename T>
+T exp_gauss_exp_norm( const T sigma, const T skew_left, const T skew_right )
+{
+  using namespace std;
+  static const double sqrt_pi = LightMath::root_pi; //1.7724538509055160272981
+  static const double one_div_root_two = LightMath::one_div_root_two; //0.707106781186547524400
+  
+  if constexpr ( !std::is_same_v<T, double> )
+    return 1.0 / ((sigma/skew_left)*exp(-0.5*skew_left*skew_left)
+                  + (one_div_root_two*sqrt_pi*sigma*(erf(one_div_root_two*skew_right)+erf(one_div_root_two*skew_left)))
+                  + (sigma/skew_right)*exp(-0.5*skew_right*skew_right) );
+  else
+    return 1.0 / ((sigma/skew_left)*exp(-0.5*skew_left*skew_left)
+                  + (one_div_root_two*sqrt_pi*sigma*(boost_erf_imp(one_div_root_two*skew_right)+boost_erf_imp(one_div_root_two*skew_left)))
+                  + (sigma/skew_right)*std::exp(-0.5*skew_right*skew_right) );
+}//exp_gauss_exp_norm(...)
+  
+  
+template<typename T>
+void exp_gauss_exp_integral( const T peak_mean,
+                              const T peak_sigma,
+                              const T peak_amplitude,
+                              const T skew_left,
+                              const T skew_right,
+                              const float * const energies,
+                              T *channels,
+                              const size_t nchannel )
+{
+  using namespace std;
+  
+  if( peak_sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+
+  // TODO: estimate where we should actually start and stop computing values for, using `exp_gauss_exp_coverage_limits(...)`, but need to check if it actually saves time
+  //const double zero_amp_point_nsigma = 8.0;
+  const T start_energy( static_cast<double>(energies[0]) ); //peak_mean - zero_amp_point_nsigma*peak_sigma;
+  const T stop_energy( static_cast<double>(energies[nchannel]) ); //peak_mean + zero_amp_point_nsigma*peak_sigma;
+  
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+  {
+    channel += 1;
+  }
+  
+  if( channel == nchannel )
+    return;
+  
+  
+  auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,skew_left]( const T x ) -> T {
+    return (peak_sigma/skew_left)*exp((skew_left/peak_sigma)*(0.5*skew_left*peak_sigma - peak_mean + x));
+  };
+  
+  // r_const is the additive integration constant of the right-tail antiderivative.  It CANCELS in
+  //  every `indefinite_high - indefinite_low` difference used below, so its value does not affect
+  //  any result here -- and, for that same reason, the difference-based developer checks below can
+  //  NOT validate it.  We set it to the junction-anchored value exp(-k^2/2)*sigma/k (k=skew_right)
+  //  to match the scalar twin exp_gauss_exp_right_tail_indefinite (PeakDists.cpp), where the
+  //  bracket must vanish at the junction x = mean + k*sigma because it is consumed as an absolute
+  //  CDF; that makes this lambda reusable as a CDF too.
+  const T r_const = (exp(-0.5*skew_right*skew_right)*peak_sigma)/skew_right;
+  auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,skew_right,r_const]( const T x ) -> T {
+    return (r_const-(peak_sigma*exp((skew_right*peak_mean)/peak_sigma-(x*skew_right)/peak_sigma+0.5*skew_right*skew_right))/skew_right);
+  };
+  
+  auto gauss_indefinite_non_norm = [peak_mean,peak_sigma]( const T x ) -> T {
+    static const double root_half_pi = LightMath::root_half_pi; //1.2533141373155002512078826424
+    static const double one_div_root_two = LightMath::one_div_root_two; //0.707106781186547524400
+    
+    const T t = (x - peak_mean) / peak_sigma;
+    
+    if constexpr ( !std::is_same_v<T, double> )
+      return peak_sigma * root_half_pi * erf( one_div_root_two*t );
+    else
+      return peak_sigma * root_half_pi * boost_erf_imp( one_div_root_two*t );
+  };
+  
+  const T norm = peak_amplitude * exp_gauss_exp_norm( peak_sigma, skew_left, skew_right );
+  
+  const T left_tail_end = peak_mean - peak_sigma*skew_left;
+  const T right_tail_start = peak_mean + peak_sigma*skew_right;
+  
+  T lower_energy;
+  if( static_cast<double>(energies[channel]) < left_tail_end )
+  {
+    lower_energy = T(static_cast<double>(energies[channel]));
+    
+    T indefinite_low = left_tail_indefinite_non_norm( lower_energy );
+    
+    while( (channel < nchannel) && (static_cast<double>(energies[channel]) < left_tail_end) )
+    {
+      const T upper_energy( static_cast<double>(energies[channel+1]) ) ;
+      
+      if( upper_energy > left_tail_end )
+      {
+        const T indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
+        const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
+        channels[channel] += val;
+        
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, left_tail_end );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << left_tail_end
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      }
+#endif
+
+        lower_energy = left_tail_end;
+        break;
+      }else
+      {
+        const T indefinite_high = left_tail_indefinite_non_norm( upper_energy );
+        const T val = norm * (indefinite_high - indefinite_low);;
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+        check_jet_for_NaN( channels[channel] );
+
+        channels[channel] += val;
+        
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      }
+#endif
+        lower_energy = upper_energy;
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+  }//if( energies[channel] < tail_end )
+  
+  if( channel >= nchannel )
+    return;
+  
+  assert( static_cast<double>(energies[channel+1]) >= left_tail_end );
+  lower_energy = max( T(static_cast<double>(energies[channel])), left_tail_end );
+  T indefinite_low = gauss_indefinite_non_norm( lower_energy );
+  
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < right_tail_start) )
+  {
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+    
+    if( upper_energy > right_tail_start )
+    {
+      const T indefinite_high = gauss_indefinite_non_norm( right_tail_start );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
+      channels[channel] += val;
+      
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, right_tail_start );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      }
+#endif
+
+      lower_energy = right_tail_start;
+      break;
+    }else
+    {
+      const T indefinite_high = gauss_indefinite_non_norm( upper_energy );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
+      channels[channel] += val;
+      
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      }
+#endif
+
+      lower_energy = upper_energy;
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+
+  if( channel >= nchannel )
+    return;
+
+  assert( static_cast<double>(energies[channel+1]) >= right_tail_start );
+  
+  lower_energy = max( T(static_cast<double>(energies[channel])), right_tail_start);
+  indefinite_low = right_tail_indefinite_non_norm( lower_energy );
+  
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < stop_energy) )
+  {
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+    
+    if( upper_energy > stop_energy )
+    {
+      const T indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
+      channels[channel] += val;
+      
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, right_tail_start );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      }
+#endif
+
+      lower_energy = right_tail_start;
+      break;
+    }else
+    {
+      const T indefinite_high = right_tail_indefinite_non_norm( upper_energy );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+      check_jet_for_NaN( channels[channel] );
+
+      channels[channel] += val;
+      
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        const double simple_answer = peak_amplitude * PeakDists::exp_gauss_exp_integral( peak_mean, peak_sigma, skew_left, skew_right, lower_energy, upper_energy );
+        const double diff = fabs(val - simple_answer);
+        const double frac_diff = diff / std::max(val, simple_answer);
+        if( !((frac_diff < 1.0E-4) || (diff < 1.0E-5)) )
+          cerr << "exp_gauss_exp_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+               << " skew_left=" << skew_left << " skew_right=" << skew_right
+               << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+               << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+        assert( (frac_diff < 1.0E-4) || (diff < 1.0E-5) );
+      }
+#endif
+
+      lower_energy = upper_energy;
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }//if( upper_energy > stop_energy ) / else
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+}//exp_gauss_exp_integral(...)
+  
+  
+template<typename T>
+T DSCB_norm( const T alpha_low, const T n_low, const T alpha_high, const T n_high )
+{
+  using namespace std;
+  assert( alpha_low > 0.0 );
+  assert( alpha_high > 0.0 );
+  assert( n_low > 1.0 );
+  assert( n_high > 1.0 );
+  
+  const double one_div_root_two = LightMath::one_div_root_two; //0.70710678118654752440
+  const double root_pi = LightMath::root_pi;
+  
+  
+  T a = alpha_low;
+  T n = n_low;
+  // -(e^(-a*a/2)*n*((a*(-t+n/a-a))/n)^(1-n))/(a*(1-n))
+  // -(e^(-a^2/2)*n^n*(-t+n/a-a)^(1-n))/((1-n)*a^n)
+  //const double ltail = -(std::exp(-a*a/2)*n*std::pow((a*(a +n/a -a))/n,1-n))/(a*(1-n)); //From Integrating with Maxima
+  const T ltail = -exp(-0.5*a*a) * n / (a * (1.0 - n)); //Simplifying, and making more numerically stable, using https://herbie.uwplse.org/demo/
+  
+  // L = alpha_low
+  // R = alpha_high
+  // (sqrt(pi)*(erf(R/sqrt(2))-erf(L/sqrt(2))))/sqrt(2)
+  T mid;
+  if constexpr ( !std::is_same_v<T, double> )
+    mid = (root_pi*one_div_root_two*(erf(alpha_high*one_div_root_two)
+                                                - erf(-alpha_low*one_div_root_two)));
+  else
+    mid = (root_pi*one_div_root_two*(boost_erf_imp(alpha_high*one_div_root_two)
+                                                - boost_erf_imp(-alpha_low*one_div_root_two)));
+  
+  a = alpha_high;
+  n = n_high;
+  // Integrate [e^(-a^2/2)* (((a/n)*((n/a)-a+t))^(-n)] dt, from a to inifit
+  // (e^(-a^2/2)*n*((a*(t+n/a-a))/n)^(1-n))/(a*(1-n))
+  // (e^(-a^2/2)*n^n*(x+n/a-a)^(1-n))/((1-n)*a^n)
+  //const double rtail = -(std::exp(-a*a/2)*n*std::pow((a*(a + n/a -a))/n,1-n))/(a*(1-n)); //From Integrating with Maxima
+  const T rtail = -exp(-0.5*a*a) * n / (a * (1.0 - n));  //Simplifying, and making more numerically stable, using https://herbie.uwplse.org/demo/
+  
+  return 1.0 / (ltail + mid + rtail);
+}//DSCB_norm( ... )
+  
+  
+template<typename T>
+void double_sided_crystal_ball_integral( const T peak_mean,
+                                        const T peak_sigma,
+                                        const T peak_amplitude,
+                                        const T lower_alpha,
+                                        const T lower_power_law,
+                                        const T upper_alpha,
+                                        const T upper_power_law,
+                                        const float * const energies,
+                                        T *channels,
+                                          const size_t nchannel )
+{
+  using namespace std;
+  
+  if( peak_sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are usign a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  check_jet_for_NaN( peak_mean );
+  check_jet_for_NaN( peak_sigma );
+  check_jet_for_NaN( peak_amplitude );
+  check_jet_for_NaN( lower_alpha );
+  check_jet_for_NaN( lower_power_law );
+  check_jet_for_NaN( upper_alpha );
+  check_jet_for_NaN( upper_power_law );
+  check_jet_array_for_NaN( channels, nchannel );
+
+
+  // TODO: estimate where we should actually start and stop computing values for, using `double_sided_crystal_ball_coverage_limits(...)`, but need to check if it actually saves time
+  //const double zero_amp_point_nsigma = 8.0;
+  const T start_energy( static_cast<double>(energies[0]) ); // peak_mean - zero_amp_point_nsigma*peak_sigma );
+  const T stop_energy( static_cast<double>(energies[nchannel]) ); // peak_mean + zero_amp_point_nsigma*peak_sigma );
+
+  check_jet_for_NaN( start_energy );
+  check_jet_for_NaN( stop_energy );
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (energies[channel+1] < start_energy) )
+  {
+    channel += 1;
+  }
+  
+  if( channel == nchannel )
+    return;
+  
+  const T exp_lower_aa = exp(-0.5*lower_alpha*lower_alpha);
+  const T exp_upper_aa = exp(-0.5*upper_alpha*upper_alpha);
+
+  check_jet_for_NaN( exp_lower_aa );
+  check_jet_for_NaN( exp_upper_aa );
+
+  auto left_tail_indefinite_non_norm = [peak_mean,peak_sigma,lower_alpha,lower_power_law, exp_lower_aa]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    assert( (t - 1.0E-7) <= -lower_alpha );
+
+    const T &a = lower_alpha;
+    const T &n = lower_power_law;
+    const T t_1 = 1.0 - ((a + t)*a / n);
+
+    T answer = -exp_lower_aa*(t_1 / pow(t_1, n)) / ((a / n) - a); //slightly more stable
+
+    check_jet_for_NaN( t );
+    check_jet_for_NaN( t_1 );
+    check_jet_for_NaN( answer );
+
+    return answer;
+  };
+  
+  auto right_tail_indefinite_non_norm = [peak_mean,peak_sigma,upper_alpha,upper_power_law,exp_upper_aa]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    assert( (t + 1.0E-7) >= upper_alpha );
+    
+    const T &a = upper_alpha;
+    const T &n = upper_power_law;
+    
+    return exp_upper_aa*(1.0 / ((a / n) - a)) * pow((1.0 + ((a * (t - a)) / n)), (1.0 - n));
+  };
+  
+  
+  auto gauss_indefinite_non_norm = [peak_mean,peak_sigma]( const T x ) -> T {
+    const T t = (x - peak_mean) / peak_sigma;
+    const double root_half_pi = LightMath::root_half_pi;
+    const double one_div_root_two = LightMath::one_div_root_two; //0.70710678118654752440
+    
+    if constexpr ( !std::is_same_v<T, double> )
+      return root_half_pi * erf( one_div_root_two * t );
+    else
+      return root_half_pi * boost_erf_imp( one_div_root_two * t );
+  };
+  
+  
+  const T norm = peak_amplitude * DSCB_norm( lower_alpha, lower_power_law, upper_alpha, upper_power_law);
+  
+  const T left_tail_end = peak_mean - peak_sigma*lower_alpha;
+  const T right_tail_start = peak_mean + peak_sigma*upper_alpha;
+
+  check_jet_for_NaN( left_tail_end );
+  check_jet_for_NaN( right_tail_start );
+  check_jet_for_NaN( norm );
+
+  T lower_energy;
+  
+  if( energies[channel] < left_tail_end )
+  {
+    lower_energy = T( static_cast<double>(energies[channel]) );
+    T indefinite_low = left_tail_indefinite_non_norm( lower_energy );
+
+    check_jet_for_NaN( lower_energy );
+    check_jet_for_NaN( indefinite_low );
+
+    while( (channel < nchannel) && (energies[channel] < left_tail_end) )
+    {
+      const T upper_energy( static_cast<T>(energies[channel+1]) );
+
+      check_jet_for_NaN( upper_energy );
+
+      if( upper_energy > left_tail_end )
+      {
+        const T indefinite_high = left_tail_indefinite_non_norm( left_tail_end );
+        const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+
+        channels[channel] += val;
+        
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, left_tail_end );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-5)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << left_tail_end
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-5) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+        lower_energy = left_tail_end;
+        
+        break;
+      }else
+      {
+        const T indefinite_high = left_tail_indefinite_non_norm( upper_energy );
+        const T val = norm * (indefinite_high - indefinite_low);
+
+        check_jet_for_NaN( indefinite_high );
+        check_jet_for_NaN( val );
+
+        channels[channel] += val;
+
+        check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, upper_energy );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
+        lower_energy = upper_energy;
+        indefinite_low = indefinite_high;
+        channel += 1;
+      }
+    }//while( (channel < nchannel) && (energies[channel] < tail_end) )
+  }//if( energies[channel] < tail_end )
+  
+  if( channel >= nchannel )
+    return;
+  
+  assert( static_cast<double>(energies[channel+1]) >= left_tail_end );
+  
+  lower_energy = max( T(static_cast<double>(energies[channel])), left_tail_end );
+  T indefinite_low = gauss_indefinite_non_norm( lower_energy );
+
+  check_jet_for_NaN( lower_energy );
+  check_jet_for_NaN( indefinite_low );
+
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < right_tail_start) )
+  {
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+
+    check_jet_for_NaN( upper_energy );
+
+    if( upper_energy > right_tail_start )
+    {
+      const T indefinite_high = gauss_indefinite_non_norm( right_tail_start );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
+      channels[channel] += val;
+
+      check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, right_tail_start );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-5)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-5) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
+      lower_energy = right_tail_start;
+      break;
+    }else
+    {
+      const T indefinite_high = gauss_indefinite_non_norm( upper_energy );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
+      channels[channel] += val;
+
+      check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, upper_energy );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
+      lower_energy = upper_energy;
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+
+  if( channel >= nchannel )
+    return;
+
+  assert( energies[channel+1] >= right_tail_start );
+  lower_energy = max( T(static_cast<double>(energies[channel])), right_tail_start );
+  indefinite_low = right_tail_indefinite_non_norm( lower_energy );
+
+  check_jet_for_NaN( indefinite_low );
+  check_jet_for_NaN( lower_energy );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T upper_energy( static_cast<double>(energies[channel+1]) );
+
+    check_jet_for_NaN( upper_energy );
+
+    if( upper_energy > stop_energy )
+    {
+      const T indefinite_high = right_tail_indefinite_non_norm( right_tail_start );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
+      channels[channel] += val;
+
+      check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, right_tail_start );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << right_tail_start
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
+      lower_energy = right_tail_start;
+      break;
+    }else
+    {
+      const T indefinite_high = right_tail_indefinite_non_norm( upper_energy );
+      const T val = norm * (indefinite_high - indefinite_low);
+
+      check_jet_for_NaN( indefinite_high );
+      check_jet_for_NaN( val );
+
+      channels[channel] += val;
+
+      check_jet_for_NaN( channels[channel] );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          const double alt_val = peak_amplitude * PeakDists::double_sided_crystal_ball_integral( peak_mean, peak_sigma,
+                                                                                              lower_alpha, lower_power_law,
+                                                                                              upper_alpha, upper_power_law,
+                                                                                              lower_energy, upper_energy );
+
+          const double diff = fabs(val - alt_val);
+          const double frac_diff = diff / std::max(val, alt_val);
+          if( !((frac_diff < 1.0E-6) || (diff < 1.0E-9)) )
+            cerr << "double_sided_crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
+                 << " lower_alpha=" << lower_alpha << " lower_power_law=" << lower_power_law
+                 << " upper_alpha=" << upper_alpha << " upper_power_law=" << upper_power_law
+                 << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
+                 << " val=" << val << " alt_val=" << alt_val << " diff=" << diff << " frac_diff=" << frac_diff << endl;
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-9) );
+        }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
+      lower_energy = upper_energy;
+      indefinite_low = indefinite_high;
+      channel += 1;
+    }
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//double_sided_crystal_ball_integral(...)
+
+
+// ============================================================================
+//  GADRAS peak shape distribution
+// ----------------------------------------------------------------------------
+//  An analytic (closed-form) re-implementation of the GADRASw Fortran discrete-line
+//  peak shape.  The GADRAS skewed shape is, mathematically, a Gaussian core mixed
+//  with one-sided exponential tails *convolved* with that Gaussian; that convolution
+//  is an Exponentially-Modified Gaussian (EMG), which has a closed-form CDF:
+//
+//      shape_cdf(z) = (1 - sum_skew)*Phi(z_shape)
+//                     + sum_skew * [ Sum_i w_low[i] *F_left (z_shape; s_low[i])
+//                                  + Sum_i w_high[i]*F_right(z_shape; s_high[i]) ]
+//
+//  where F_left/F_right are the exp*Gaussian tail CDFs (gadras_left/right_tail_cdf).
+//  Each tail side is a mixture of at most two exponentials, so the shape needs only
+//  a handful of transcendental calls per bin edge (no per-detector precompute).
+//
+//  Relationship to the old discrete form:  GADRAS (and the previous version of this
+//  code) instead laid the tail density on a fixed 128-point zeta grid and summed 128
+//  shifted Gaussians (a right-endpoint rectangle-rule quadrature of the exponential
+//  density).  The analytic EMG here is exactly the limit of that discrete sum as the
+//  grid is refined to infinity, so it is *more* accurate and ~4x faster.  It differs
+//  from the legacy Fortran output by ~1-2% in the far tails -- because the Fortran's
+//  coarse-grid quadrature is itself the approximation.  The discrete form (and the
+//  Fortran gold-standard comparison) is retained inline in
+//  target/testing/test_GadrasPeakDists.cpp, which also regression-tests the two forms
+//  against each other.
+//
+//  The six skew parameters (SkewPar0..SkewPar5) are, in order:
+//    low_skew, high_skew, low_skew_power, high_skew_power, low_skew_extent, high_skew_extent.
+//  `material` selects the Generic vs CZT/CdTe tail construction.
+//
+//  The PVT / "low photopeak probability" high tail has no clean closed form and is
+//  NOT implemented here (it is not an exposed skew type).  It survives only in the
+//  legacy discrete copy in the unit test.
+//
+//  NOTE (pending upgrade): the mixture (weights/scales/sum_skew/zeta factors) is built
+//  in `double`, so Ceres autodiff gradients flow through mean/sigma/amplitude (via the
+//  zeta argument) but NOT through the six skew parameters.  Making the skew amplitudes
+//  analytically fittable requires templating the shape build on T.
+// ============================================================================
+
+/** Extract the scalar (double) value from a scalar or ceres::Jet type. */
+template<typename T>
+inline double gadras_scalar( const T &v )
+{
+  if constexpr ( std::is_same_v<T, double> )
+    return v;
+  else
+    return v.a;  //ceres::Jet scalar part
+}
+
+/** Standard normal CDF (== GADRAS's GINT), templated so gradients flow through `z`. */
+template<typename T>
+inline T gadras_std_normal_cdf( const T z )
+{
+  const double inv_sqrt2 = 0.70710678118654752440;
+  if constexpr ( std::is_same_v<T, double> )
+    return 0.5 * (1.0 + boost_erf_imp( z * inv_sqrt2 ));
+  else
+    return 0.5 * (1.0 + erf( z * inv_sqrt2 ));
+}
+
+/** Scaled complementary error function erfcx(x) = exp(x*x)*erfc(x), valid for x >= 0.
+ Used to evaluate the EMG tail terms without overflow.  For x in [0,25) we form it
+ directly; beyond that we use the asymptotic series (erfcx(x) ~ 1/(x*sqrt(pi))). */
+template<typename T>
+inline T gadras_erfcx_nonneg( const T x )
+{
+  const double inv_sqrt_pi = 0.56418958354775628695;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    if( x < 25.0 )
+      return std::exp( x * x ) * std::erfc( x );
+  }
+  else
+  {
+    if( x < 25.0 )
+      return exp( x * x ) * erfc( x );
+  }
+
+  // Asymptotic expansion: erfcx(x) = 1/(x*sqrt(pi)) * sum_k (-1)^k (2k-1)!! / (2 x^2)^k
+  const T inv_2x2 = 1.0 / (2.0 * x * x);
+  T term( 1.0 );
+  T sum( 1.0 );
+  for( int k = 1; k <= 6; ++k )
+  {
+    term *= -static_cast<double>(2 * k - 1) * inv_2x2;
+    sum += term;
+  }
+  return (inv_sqrt_pi / x) * sum;
+}
+
+/** Computes exp(exp_arg) * 0.5 * erfc(erfc_arg) in an overflow-free way, given the
+ caller-guaranteed identity  exp_arg - erfc_arg^2 == -0.5*z*z.  When the direct product
+ would overflow (large exp_arg, which always coincides with erfc_arg > 0) we use the
+ equivalent  0.5 * erfcx(erfc_arg) * exp(-0.5 z^2).  This is the same trick used by
+ InterSpec's bortel_indefinite_integral, and keeps the function C-infinity smooth across
+ the switch (important for future Jet gradients). */
+template<typename T>
+inline T gadras_stable_tail_term( const T exp_arg, const T erfc_arg, const T z )
+{
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+      return 0.5 * gadras_erfcx_nonneg( erfc_arg ) * std::exp( -0.5 * z * z );
+    return 0.5 * std::exp( exp_arg ) * std::erfc( erfc_arg );
+  }
+  else
+  {
+    if( (exp_arg > 87.0) || (erfc_arg > 10.0) )
+      return 0.5 * gadras_erfcx_nonneg( erfc_arg ) * exp( -0.5 * z * z );
+    return 0.5 * exp( exp_arg ) * erfc( erfc_arg );
+  }
+}
+
+/** CDF (in standard zeta units, sigma==1) of a unit-Gaussian convolved with a one-sided
+ *left* exponential tail of scale `s` (density (1/s) exp(z/s) for z<=0).  EMG, negative
+ skew.  F_left(z) = Phi(z) + exp(z/s + 1/(2 s^2)) Phi(-z - 1/s). */
+template<typename T>
+inline T gadras_left_tail_cdf( const T z, const double s )
+{
+  const double inv_sqrt2 = 0.70710678118654752440;
+  const T exp_arg  = z / s + 1.0 / (2.0 * s * s);
+  const T erfc_arg = (z + 1.0 / s) * inv_sqrt2;
+  return gadras_std_normal_cdf( z ) + gadras_stable_tail_term( exp_arg, erfc_arg, z );
+}
+
+/** CDF (sigma==1) of a unit-Gaussian convolved with a one-sided *right* exponential tail
+ of scale `s` (density (1/s) exp(-z/s) for z>=0).  EMG, positive skew.
+ F_right(z) = Phi(z) - exp(-z/s + 1/(2 s^2)) Phi(z - 1/s). */
+template<typename T>
+inline T gadras_right_tail_cdf( const T z, const double s )
+{
+  const double inv_sqrt2 = 0.70710678118654752440;
+  const T exp_arg  = -z / s + 1.0 / (2.0 * s * s);
+  const T erfc_arg = (1.0 / s - z) * inv_sqrt2;
+  return gadras_std_normal_cdf( z ) - gadras_stable_tail_term( exp_arg, erfc_arg, z );
+}
+
+
+/** A fully-resolved GADRAS peak shape at a given energy (built in double).  The skewed
+ part is a mixture of up to two left-tail EMG components and up to two right-tail EMG
+ components; all scales are in zeta (== sigma) units. */
+struct GadrasPeakShape
+{
+  double sum_skew = 0.0;          // weight of the skewed shape (0 => pure Gaussian)
+  double low_zeta_factor = 1.0;   // energy rescale of shape zeta, z<0 side
+  double high_zeta_factor = 1.0;  // energy rescale of shape zeta, z>0 side
+
+  int    n_low = 0;                    // number of active left-tail components (0..2)
+  double low_weight[2] = {0.0, 0.0};   // already includes SCN; sum == SCN
+  double low_scale[2]  = {1.0, 1.0};
+
+  int    n_high = 0;                   // number of active right-tail components (0..2)
+  double high_weight[2] = {0.0, 0.0};  // already includes SCP; sum == SCP
+  double high_scale[2]  = {1.0, 1.0};
+
+  // How far (in zeta units, on the *measured* axis) the tails reach; used to size the
+  // integration/coverage window.  Includes the energy zeta rescale.
+  double low_reach_zeta = 8.0;
+  double high_reach_zeta = 8.0;
+};
+
+/** Build the resolved GADRAS peak shape (EMG tail mixture + sum_skew) for a peak at
+ `energy` (keV).  The six skew parameters and material are as documented above.
+ `low_photopeak_probability` (PVT) has no closed-form EMG and is ignored here (it is
+ not an exposed skew type; see the section comment). */
+inline GadrasPeakShape gadras_build_peak_shape( const double energy,
+                                                const double low_skew, const double high_skew,
+                                                const double low_skew_power, const double high_skew_power,
+                                                const double low_skew_extent, const double high_skew_extent,
+                                                const GadrasMaterial material,
+                                                const bool low_photopeak_probability )
+{
+  // PVT is not representable as a closed-form EMG; the analytic path does not support it.
+  (void)low_photopeak_probability;
+  assert( !low_photopeak_probability );
+
+  GadrasPeakShape s;
+
+  // sum_skew (GetSumSkew): raw magnitudes, energy-scaled only when power > 0.
+  double skew_p = std::abs( high_skew );
+  if( (skew_p > 0.0) && (high_skew_power > 0.0) )
+    skew_p *= std::pow( energy / 661.0, high_skew_power );
+  double skew_n = std::abs( low_skew );
+  if( (skew_n > 0.0) && (low_skew_power > 0.0) )
+    skew_n *= std::pow( energy / 661.0, low_skew_power );
+  s.sum_skew = std::min( 1.0, (skew_p + skew_n) / 100.0 );
+
+  if( s.sum_skew <= 0.0 )
+    return s;   // pure Gaussian; no mixture needed
+
+  // Effective magnitudes used to build the shape (note the 0.1 low floor with a high tail).
+  double low_val  = std::max( 0.0, low_skew );
+  double high_val = std::max( 0.0, high_skew );
+  if( high_val > 0.0 )
+    low_val = std::max( low_val, 0.1 );
+
+  if( (low_val <= 0.0) && (high_val <= 0.0) )
+  {
+    s.sum_skew = 0.0;
+    return s;
+  }
+
+  const double denom = low_val + high_val;
+  const double scn = (denom > 0.0) ? (low_val / denom) : 0.0;
+  const double scp = (denom > 0.0) ? (high_val / denom) : 0.0;
+
+  // extent -> slope scaling (same piecewise form for low and high)
+  auto slope_scale = []( const double extent ) -> double {
+    return (extent >= 0.0) ? (1.0 + extent / 3.0) : std::exp( extent / 3.0 );
+  };
+
+  // Turn (coeff, scale) tail components into area-normalized weights.  For a one-sided
+  // exponential the area is coeff*scale, so component i's normalized weight is
+  // (coeff_i*scale_i) / sum_j(coeff_j*scale_j), scaled by the side weight (SCN or SCP).
+  auto fill_side = []( int &n, double *w, double *sc,
+                       const double *coeff, const double *scale, int count,
+                       const double side_weight )
+  {
+    double area = 0.0;
+    for( int i = 0; i < count; ++i )
+      area += coeff[i] * scale[i];
+    n = count;
+    for( int i = 0; i < count; ++i )
+    {
+      w[i]  = (area > 0.0) ? (side_weight * (coeff[i] * scale[i]) / area) : 0.0;
+      sc[i] = scale[i];
+    }
+  };
+
+  if( low_val > 0.0 )
+  {
+    const double lss = slope_scale( low_skew_extent );
+    if( material == GadrasMaterial::CZT_CdTe )
+    {
+      const double slopen = 0.1 * lss * low_val;
+      const double coeff[2] = { 0.8, 0.2 };
+      const double scale[2] = { slopen, slopen / 0.8 };
+      fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
+    }
+    else
+    {
+      const double slopen = 0.2 * lss * low_val;
+      const double fr = 0.04 * low_val;
+      const double coeff[2] = { 1.0 - fr, fr };
+      const double scale[2] = { slopen, slopen / 0.4 };
+      fill_side( s.n_low, s.low_weight, s.low_scale, coeff, scale, 2, scn );
+    }
+  }
+
+  if( high_val > 0.0 )
+  {
+    const double hss = slope_scale( high_skew_extent );
+    if( material == GadrasMaterial::CZT_CdTe )
+    {
+      const double slopep = 0.1 * hss * high_val;
+      const double coeff[2] = { 0.8, 0.2 };
+      const double scale[2] = { slopep, slopep / 0.65 };
+      fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 2, scp );
+    }
+    else
+    {
+      const double slopep = 0.2 * hss * high_val;
+      const double coeff[1] = { 1.0 };
+      const double scale[1] = { slopep };
+      fill_side( s.n_high, s.high_weight, s.high_scale, coeff, scale, 1, scp );
+    }
+  }
+
+  // Energy-dependent zeta rescale for the shape (max(0,power) like the old code).
+  s.low_zeta_factor  = std::pow( 661.0 / energy, std::max( 0.0, low_skew_power ) );
+  s.high_zeta_factor = std::pow( 661.0 / energy, std::max( 0.0, high_skew_power ) );
+
+  // Tail reach on the measured axis: a one-sided exponential of shape-zeta scale `s`
+  // has ~e^{-k} of its area beyond k*s, so k = ln(1/eps) covers all but eps.  The shape
+  // is evaluated at z_shape = zeta*zeta_factor, so the reach in measured-zeta is
+  // scale/zeta_factor.  Add the Gaussian core's ~8 sigma.
+  const double kreach = std::log( 1.0e9 );  // eps = 1e-9
+  double low_scale_max = 0.0, high_scale_max = 0.0;
+  for( int i = 0; i < s.n_low; ++i )
+    low_scale_max = std::max( low_scale_max, s.low_scale[i] );
+  for( int i = 0; i < s.n_high; ++i )
+    high_scale_max = std::max( high_scale_max, s.high_scale[i] );
+  const double lf = (s.low_zeta_factor  > 0.0) ? s.low_zeta_factor  : 1.0;
+  const double hf = (s.high_zeta_factor > 0.0) ? s.high_zeta_factor : 1.0;
+  s.low_reach_zeta  = 8.0 + kreach * low_scale_max  / lf;
+  s.high_reach_zeta = 8.0 + kreach * high_scale_max / hf;
+
+  return s;
+}//gadras_build_peak_shape(...)
+
+
+/** Cumulative distribution of the full GADRAS peak shape at zeta.  `zeta` is templated so
+ gradients flow through it (i.e. through mean/sigma); the shape mixture is a fixed `double`. */
+template<typename T>
+inline T gadras_peak_shape_cdf( const T zeta, const GadrasPeakShape &s )
+{
+  const T gauss = gadras_std_normal_cdf( zeta );
+  if( s.sum_skew <= 0.0 )
+    return gauss;
+
+  // zeta used for the skewed shape, rescaled per side (sign-preserving).
+  const double factor = (gadras_scalar(zeta) > 0.0) ? s.high_zeta_factor : s.low_zeta_factor;
+  const T z_shape = zeta * factor;
+  const T shape_gauss = gadras_std_normal_cdf( z_shape );
+
+  T shape = shape_gauss;
+  for( int i = 0; i < s.n_low; ++i )
+    shape += s.low_weight[i] * (gadras_left_tail_cdf( z_shape, s.low_scale[i] ) - shape_gauss);
+  for( int i = 0; i < s.n_high; ++i )
+    shape += s.high_weight[i] * (gadras_right_tail_cdf( z_shape, s.high_scale[i] ) - shape_gauss);
+
+  T result = (1.0 - s.sum_skew) * gauss + s.sum_skew * shape;
+
+  // Clamp to [0,1]; std::min/std::max work for both double and ceres::Jet (which defines operator<).
+  return std::min( T(1.0), std::max( T(0.0), result ) );
+}//gadras_peak_shape_cdf(...)
+
+
+/** GADRAS FWHM model (a direct port of GADRAS's GetFWHM).  InterSpec normally derives sigma from
+ the DRF, so this is provided mainly for reproducing GADRAS resolution in tests/tools. */
+inline double gadras_fwhm( const double energy_in, const double resolution_offset,
+                           const double resolution_661, const double resolution_power )
+{
+  const double E = std::max( 1.0, energy_in );
+  if( E > 661.0 )
+    return 6.61 * resolution_661 * std::pow( E / 661.0, resolution_power );
+
+  if( resolution_offset >= 0.0 )
+  {
+    const double zero_limit = std::max( 0.0, std::abs(resolution_offset) * (661.0 - E) / 661.0 );
+    const double fwhm = 6.61 * resolution_661 * std::pow( E / 661.0, resolution_power );
+    return std::sqrt( zero_limit*zero_limit + fwhm*fwhm );
+  }
+
+  const double pwr = std::pow( resolution_power, 1.0 / std::log( 1.0 - resolution_offset ) );
+  return 6.61 * resolution_661 * std::pow( std::max( 30.0, E ) / 661.0, pwr );
+}
+
+/** GADRAS Gaussian-core sigma for a peak at `energy`.  If `low_photopeak_probability` (PVT-like),
+ sigma is widened as GADRAS does.  Provided mainly for tests/tools. */
+inline double gadras_sigma( const double energy, const double resolution_offset,
+                            const double resolution_661, const double resolution_power,
+                            const double fwhm_adjustment, const bool low_photopeak_probability )
+{
+  double sigma = gadras_fwhm( energy, resolution_offset, resolution_661, resolution_power )
+                 * fwhm_adjustment / 2.355;
+  if( low_photopeak_probability )
+    sigma = std::sqrt( sigma*sigma + 100.0 );
+  return sigma;
+}
+
+
+template<typename T>
+void gadras_integral( const T peak_mean, const T sigma, const T peak_amplitude,
+                      const T * const skew, const GadrasMaterial material,
+                      const float * const energies, T *channels, const size_t nchannel )
+{
+  assert( sigma > 0.0 );
+  if( (sigma <= 0.0) || !nchannel )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    if( peak_amplitude == 0.0 )
+      return;
+  }
+
+  // Build the shape (in double) at the peak energy from the six skew parameters.
+  const double energy = gadras_scalar( peak_mean );
+  const GadrasPeakShape shape = gadras_build_peak_shape( energy,
+                                    gadras_scalar(skew[0]), gadras_scalar(skew[1]),
+                                    gadras_scalar(skew[2]), gadras_scalar(skew[3]),
+                                    gadras_scalar(skew[4]), gadras_scalar(skew[5]),
+                                    material, false );
+
+  // Coverage window: the shape carries its own tail reach (Gaussian core + EMG tails).
+  double zlo = -8.0, zhi = 8.0;
+  if( shape.sum_skew > 0.0 )
+  {
+    zlo = std::min( zlo, -shape.low_reach_zeta );
+    zhi = std::max( zhi,  shape.high_reach_zeta );
+  }
+  const T start_energy = peak_mean + zlo*sigma;
+  const T stop_energy  = peak_mean + zhi*sigma;
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel+1]) < start_energy) )
+    ++channel;
+  if( channel >= nchannel )
+    return;
+
+  const T inv_sigma = 1.0 / sigma;
+  T cdf_low = gadras_peak_shape_cdf( (static_cast<double>(energies[channel]) - peak_mean) * inv_sigma, shape );
+
+  while( (channel < nchannel) && (static_cast<double>(energies[channel]) < stop_energy) )
+  {
+    const T zeta_high = (static_cast<double>(energies[channel+1]) - peak_mean) * inv_sigma;
+    const T cdf_high = gadras_peak_shape_cdf( zeta_high, shape );
+
+    channels[channel] += peak_amplitude * (cdf_high - cdf_low);
+
+    cdf_low = cdf_high;
+    ++channel;
+  }
+}//gadras_integral( to array values )
+
+// ============================================================================
+//  End GADRAS peak shape distribution
+// ============================================================================
+
+
+template<typename T>
+void photopeak_function_integral( const T mean,
+                                  const T sigma,
+                                  const T amp,
+                                  const PeakDef::SkewType skew_type,
+                                  const T * const skew_parameters,
+                                  const size_t nchannel,
+                                  const float * const energies,
+                                  T *channels )
+{
+  assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
+
+  switch( skew_type )
+  {
+    case PeakDef::NumSkewType:
+      assert( 0 );
+      //throw runtime_error( "PeakDists photopeak_function_integral: NumSkewType is not a valid skew type" );
+      // Fall through to NoSkew for non-debug builds
+
+    case PeakDef::SkewType::NoSkew:
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::Bortel:
+      bortel_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::CrystalBall:
+      crystal_ball_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      double_sided_crystal_ball_integral( mean, sigma, amp,
+                                         skew_parameters[0], skew_parameters[1],
+                                         skew_parameters[2], skew_parameters[3],
+                                         energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GaussExp:
+      gauss_exp_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::ExpGaussExp:
+      exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::VoigtPlusBortel:
+      voigt_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                          skew_parameters[2], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GaussPlusBortel:
+      gauss_plus_bortel_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                                  energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::DoubleBortel:
+      double_bortel_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1],
+                              skew_parameters[2], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GadrasGeneric:
+      gadras_integral( mean, sigma, amp, skew_parameters, GadrasMaterial::Generic,
+                       energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GadrasCZT:
+      gadras_integral( mean, sigma, amp, skew_parameters, GadrasMaterial::CZT_CdTe,
+                       energies, channels, nchannel );
+      break;
+  }//switch( skew_type )
+}//void photopeak_function_integral(...)
+
+
+
+/** Converts unit-area peak PDF-per-channel integrals to CDF values at channel centers.
+
+ Given the integral of a unit-area peak distribution in each channel (as produced by
+ photopeak_function_integral with amp=1), computes the CDF at each channel center via
+ cumulative summation: CDF(center_i) = sum(pdf[0..i-1]) + 0.5*pdf[i].
+
+ The sum starts at the first channel's lower edge and saturates at the last channel's upper edge,
+ so over a ROI's channels this is exactly the ROI-anchored CDF the peak-CDF step continua are
+ defined in terms of - see `PeakContinuum::cdf_step_anchor_energies(...)`.
+
+ This is analogous to how data-step types compute frac_data using
+ (cumulative_data - 0.5*data[row]) / total.
+ */
+template<typename T>
+inline void unit_pdf_to_cdf( const T *unit_area_pdf_integrals, T *cdf_at_centers, const size_t nchannel )
+{
+  T cumsum = T(0.0);
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    cdf_at_centers[i] = cumsum + T(0.5) * unit_area_pdf_integrals[i];
+    cumsum += unit_area_pdf_integrals[i];
+  }
+}//void unit_pdf_to_cdf(...)
+
+
+#if( __cplusplus >= 202002L )
+template <typename ContType, typename T>
+void offset_integral( const ContType &cont,
+                     const float *energies,
+                     T *channels,
+                     const size_t nchannel,
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,T>
+#else
+template <typename ContType, typename T>
+typename std::enable_if<ContinuumTypeConcept<ContType, T>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                T* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data)
+#endif
+{
+  // This function should give the same answer as
+  //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
+  //  basis, just be a little faster computationally, especially for stepped continua.
+
+  using namespace std;
+
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+
+  const T reference_energy = cont.referenceEnergy();
+
+  const auto &pars = cont.parameters();
+
+  const PeakContinuum::OffsetType cont_type = cont.type();
+
+  switch( cont_type )
+  {
+    case PeakContinuum::OffsetType::NoOffset:
+      return;
+
+    case PeakContinuum::OffsetType::Constant:
+    case PeakContinuum::OffsetType::Linear:
+    case PeakContinuum::OffsetType::Quadratic:
+    case PeakContinuum::OffsetType::Cubic:
+    {
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const T x0 = static_cast<double>(energies[i]) - reference_energy;
+        const T x1 = static_cast<double>(energies[i+1]) - reference_energy;
+
+        T answer(0.0);
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::External:
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          case PeakContinuum::OffsetType::BiLinearStep:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
+            assert( 0 );
+
+          case PeakContinuum::OffsetType::Cubic:
+            assert( pars.size() >= 4 );
+            answer += 0.25*pars[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Quadratic:
+            assert( pars.size() >= 3 );
+            answer += 0.333333333333333*pars[2]*(x1*x1*x1 - x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Linear:
+            assert( pars.size() >= 2 );
+            answer += 0.5*pars[1]*(x1*x1 - x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Constant:
+            assert( pars.size() >= 1 );
+            answer += pars[0]*(x1 - x0);
+            break;
+        };//switch( type )
+
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          assert( std::max(answer,0.0) == cont.offset_eqn_integral( &(pars[0]), cont_type, energies[i], energies[i+1], reference_energy ) );
+        }
+
+        // Continuum counts are physical (>= 0): clamp negative continuum to 0.  This is an
+        //  intentional ReLU, applied identically on the double and Jet paths (no value/Jacobian
+        //  mismatch), but it deliberately zeroes the Jet gradient w.r.t. the continuum coefficients
+        //  on any channel where the continuum dips below 0 (a kink there).
+        channels[i] += max( answer, T(0.0) );
+      }//for( size_t i = 0; i < nchannel; ++i )
+
+      break;
+    }//case Constant: case Linear: case Quadratic: case Cubic:
+
+
+    case PeakContinuum::OffsetType::FlatStepCDF:
+    case PeakContinuum::OffsetType::LinearStepCDF:
+    case PeakContinuum::OffsetType::BiLinearStepCDF:
+      throw std::runtime_error( "PeakContinuum::offset_integral: CDF step types require peaks; use the overload that accepts peaks" );
+
+    case PeakContinuum::OffsetType::FlatStep:
+    case PeakContinuum::OffsetType::LinearStep:
+    case PeakContinuum::OffsetType::BiLinearStep:
+    {
+      if( !data || !data->num_gamma_channels() )
+        throw std::runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+
+      // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+      //  summing here, rather than calling Measurement::gamma_integral.
+      double lowerEnergy, upperEnergy;
+
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        lowerEnergy = cont.lowerEnergy();
+        upperEnergy = cont.upperEnergy();
+      }else
+      {
+        lowerEnergy = cont.lowerEnergy().a;
+        upperEnergy = cont.upperEnergy().a;
+      }
+
+      const size_t roi_lower_channel = data->find_gamma_channel( lowerEnergy );
+      const size_t roi_upper_channel = data->find_gamma_channel( upperEnergy );
+
+      //const double roi_lower = data->gamma_channel_lower(roi_lower_channel);
+      //const double roi_upper = data->gamma_channel_upper(roi_upper_channel);
+
+      const std::vector<float> &counts = *data->gamma_counts();
+
+      assert( roi_lower_channel < counts.size() );
+      assert( roi_upper_channel < counts.size() );
+
+
+#if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
+      float min_count = counts[roi_lower_channel];
+      for( size_t i = roi_lower_channel + 1; i <= roi_upper_channel; ++i )
+        min_count = std::min( min_count, counts[i] );
+      min_count = std::max( min_count, 0.0f );
+#else
+      const float min_count = 0.0f;
+#endif
+      // Compute roi_data_sum by per-element subtraction of min_count to match the
+      //  single-channel offset_integral_non_cdf computation (avoid floating-point
+      //  discrepancy from subtracting min_count*N at the end).
+      double roi_data_sum = 0.0;
+      for( size_t i = roi_lower_channel; i <= roi_upper_channel; ++i )
+        roi_data_sum += (counts[i] - min_count);
+
+      const size_t begin_channel = data->find_gamma_channel( energies[0] );
+      assert( energies[0] == data->gamma_channel_lower(begin_channel) );
+      const size_t end_channel = begin_channel + nchannel; //one past last channel we want
+
+      // Lets check that `energies` points into the lower channel energies of `data`.
+      //  We actually only care that the values of the array are the same, but we'll be
+      //  a little tighter for development.
+      const std::vector<float> &data_energies = *data->channel_energies();
+
+      if( (energies[0] != data->gamma_channel_lower(begin_channel))
+         || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
+        throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
+
+      double cumulative_data = 0.0;
+
+      // In case we are starting part-way into the ROI
+      if( begin_channel > roi_lower_channel )
+      {
+        for( size_t i = roi_lower_channel; i < begin_channel; ++i )
+          cumulative_data += (counts[i] - min_count);
+      }//if( begin_channel > roi_lower_channel )
+
+
+      for( size_t i = begin_channel; i < end_channel; ++i )
+      {
+        const size_t input_index = i - begin_channel;
+        assert( data_energies[i] == energies[input_index] );
+
+        const T x0_rel = static_cast<double>(data_energies[i]) - reference_energy;
+        const T x1_rel = static_cast<double>(data_energies[i+1]) - reference_energy;
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5 * (counts[i] - min_count);
+
+        const double frac_data = (roi_data_sum > 0.0) ? (cumulative_data / roi_data_sum) : 0.5;
+
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          {
+            const T offset = pars[0]*(x1_rel - x0_rel);
+            const T linear = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? T(0.0) :  0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+            const size_t step_index = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? 1 : 2);
+            const T step_contribution = pars[step_index] * frac_data * (x1_rel - x0_rel);
+
+            // Continuum counts are physical (>= 0): intentional ReLU clamp, applied identically on
+            //  the double and Jet paths (no value/Jacobian mismatch); it deliberately zeroes the Jet
+            //  gradient w.r.t. the continuum coefficients on channels where the continuum dips < 0.
+            const T answer = max( T(0.0), offset + linear + step_contribution );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
+            }
+
+            channels[input_index] += answer;
+            break;
+          }//case FlatStep: case LinearStep:
+
+          case PeakContinuum::OffsetType::BiLinearStep:
+          {
+            assert( pars.size() == 4 );
+            const T left_poly = pars[0]*(x1_rel - x0_rel) + 0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const T right_poly = pars[2]*(x1_rel - x0_rel) + 0.5*pars[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            // Intentional ReLU clamp (continuum counts >= 0); same gradient-kink note as above.
+            const T contrib = std::max( T(0.0), ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data, nullptr, 0 ) );
+            }
+
+            channels[input_index] += contrib;
+            break;
+          }//case BiLinearStep:
+
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::Constant:
+          case PeakContinuum::OffsetType::Linear:
+          case PeakContinuum::OffsetType::Quadratic:
+          case PeakContinuum::OffsetType::Cubic:
+          case PeakContinuum::OffsetType::FlatStepCDF:
+          case PeakContinuum::OffsetType::LinearStepCDF:
+          case PeakContinuum::OffsetType::BiLinearStepCDF:
+          case PeakContinuum::OffsetType::External:
+            assert( 0 );
+            break;
+        }//switch( cont_type )
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5 * (counts[i] - min_count);
+      }//for( size_t i = 0; i < channels; ++i )
+
+      break;
+    }//case FlatStep/LinearStep/BiLinearStep
+
+    case PeakContinuum::OffsetType::External:
+    {
+      std::shared_ptr<const SpecUtils::Measurement> ext_cont = cont.externalContinuum();
+      assert( ext_cont );
+      if( !ext_cont )
+        break;
+
+      for( size_t i = 0; i < nchannel; ++i )
+        channels[i] += ext_cont ? ext_cont->gamma_integral( energies[i], energies[i+1] ) : 0.0;
+      break;
+    }//case PeakContinuum::OffsetType::External:
+  }//switch( cont_type )
+}//void PeakContinuum::offset_integral( ... ) const
+
+
+// ========== GaussExp Templated Helper Functions ==========
+
+// Templated version of gauss_exp_tail_indefinite for use with both double and ceres::Jet types
+template<typename T>
+T gauss_exp_tail_indefinite_template( const T mean, const T sigma, const T skew, const T x )
+{
+  const T t = (x - mean) / sigma;
+  // Note: caller should ensure t <= -skew for this tail region
+
+  return gauss_exp_norm(sigma, skew) * (sigma / skew) * exp( (skew / sigma) * (T(0.5) * skew * sigma - mean + x) );
+}
+
+
+// Templated version of gauss_exp_indefinite for use with both double and ceres::Jet types
+template<typename T>
+T gauss_exp_indefinite_template( const T mean, const T sigma, const T skew, const T x )
+{
+  const T t = (x - mean) / sigma;
+
+  const T root_half_pi = T(LightMath::root_half_pi);
+  const T one_div_root_two = T(LightMath::one_div_root_two);
+
+  // Tail contribution (for x <= mean - skew*sigma)
+  const T tail_upper_limit = -skew * sigma + mean;
+  T answer = gauss_exp_tail_indefinite_template( mean, sigma, skew, (x < tail_upper_limit) ? x : tail_upper_limit );
+
+  // Gaussian contribution (for x > mean - skew*sigma)
+  if( t >= -skew )
+  {
+    T erf_at_t, erf_at_minus_skew;
+
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      erf_at_t = T(boost_erf_imp( t * one_div_root_two ));
+      erf_at_minus_skew = T(boost_erf_imp( -skew * one_div_root_two ));
+    }
+    else
+    {
+      // For Jet types, use ceres-provided erf
+      erf_at_t = erf( t * one_div_root_two );
+      erf_at_minus_skew = erf( -skew * one_div_root_two );
+    }
+
+    answer += gauss_exp_norm(sigma, skew) * sigma * root_half_pi * (erf_at_t - erf_at_minus_skew);
+  }
+
+  return answer;
+}
+
+
+// ========== Voigt with Exponential Tail Functions ==========
+// Using external VoigtDistribution library (included at top of file)
+
+// Wrapper functions that call the external library implementations
+
+// Wrap the external voigt_exp_integral to add check_jet_for_NaN calls
+template<typename T>
+void voigt_exp_integral( const T peak_mean, const T sigma_gauss,
+                         const T peak_amplitude, const T gamma_lor,
+                         const T tail_ratio, const T tail_slope,
+                         const float * const energies, T *channels,
+                         const size_t nchannel )
+{
+  if( sigma_gauss == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+#if( USE_PSEUDO_VOIGT_DISTRIBUTION )
+  // Use pseudo-Voigt with CDF-based integration (fast)
+  pseudo_voigt::voigt_exp_integral( peak_mean, sigma_gauss, peak_amplitude, gamma_lor,
+                                    tail_ratio, tail_slope, energies, channels, nchannel );
+#else
+  voigt_exp_tail::voigt_exp_integral( peak_mean, sigma_gauss, peak_amplitude, gamma_lor, 
+                                      tail_ratio, tail_slope, energies, channels, nchannel );
+#endif
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//voigt_exp_integral(...)
+
+
+// ========== Gauss Plus Bortel Functions ==========
+
+template<typename T>
+void gauss_plus_bortel_integral( const T peak_mean, const T sigma,
+                                 const T peak_amplitude, const T R, const T tau,
+                                 const float * const energies, T *channels,
+                                 const size_t nchannel )
+{
+  if( sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  // For GaussPlusBortel: PDF(x) = (1-R)*Gaussian(x) + R*Bortel(x)
+
+  // Determine energy range to process.  The Bortel component has an exponential left tail with
+  //  decay length `tau` keV.  Extend the lower bound by 12*sigma for the Gaussian core plus
+  //  20*tau (keV) for the tail (exp(-20) ~ 2e-9).  Note tau is in keV, so it is NOT multiplied
+  //  by sigma (the old `(12 + 20*tau)*sigma` form was dimensionally keV^2).
+  const double zero_amp_point_nsigma_lower = 12.0;
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const double tau_tail_factor = 20.0;
+  const T start_energy = peak_mean - (zero_amp_point_nsigma_lower*sigma + tau_tail_factor*tau);
+  const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel + 1]) < start_energy) )
+    channel += 1;
+
+  if( channel == nchannel )
+    return;
+
+  // For Gaussian: integral from -inf to x is 0.5*(1 + erf((x-mean)/(sigma*sqrt(2))))
+  // So integral from x0 to x1 is 0.5*(erf((x1-mean)/(sigma*sqrt2)) - erf((x0-mean)/(sigma*sqrt2)))
+  const double sqrt2 = LightMath::root_two;
+  const T sqrt2sigma = sqrt2 * sigma;
+  const T one_minus_R = T(1.0) - R;
+  const T half_one_minus_R = T(0.5) * one_minus_R;
+
+  // Use boost_erf_imp for the Gaussian part on the double path (matching bortel_indefinite_integral
+  //  and the scalar peak_cdf GaussPlusBortel case), so the Gaussian and Bortel parts share one erf
+  //  implementation here; the Jet path uses ceres::erf.
+  auto erf_T = []( const T &a ) -> T {
+    if constexpr ( !std::is_same_v<T, double> )
+      return erf( a );
+    else
+      return boost_erf_imp( a );
+  };
+
+  // Cache the lower energy indefinite integrals
+  T erfarg_low = ( static_cast<double>(energies[channel]) - peak_mean ) / sqrt2sigma;
+  T erf_low = erf_T( erfarg_low );
+  T bortel_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T erfarg_high = ( static_cast<double>(energies[channel + 1]) - peak_mean ) / sqrt2sigma;
+    const T erf_high = erf_T( erfarg_high );
+    const T bortel_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau );
+
+    // Gaussian integral: 0.5 * (erf_high - erf_low)
+    const T gauss_part = half_one_minus_R * ( erf_high - erf_low );
+    // Bortel integral: bortel_val_high - bortel_val_low (bortel_indefinite_integral is already normalized)
+    const T bortel_part = R * ( bortel_val_high - bortel_val_low );
+    const T val = peak_amplitude * ( gauss_part + bortel_part );
+
+    channels[channel] += val;
+
+    erf_low = erf_high;
+    bortel_val_low = bortel_val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//gauss_plus_bortel_integral(...)
+
+
+// ========== Double Bortel Functions ==========
+
+template<typename T>
+void double_bortel_integral( const T peak_mean, const T sigma,
+                             const T peak_amplitude,
+                             const T tau1, const T tau2_delta, const T eta,
+                             const float * const energies, T *channels,
+                             const size_t nchannel )
+{
+  if( sigma == 0.0 )
+    return;
+
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We dont want to return for zero-amplitude peaks if we are using a Ceres::Jet,
+    //  as we may need to take into account the derivatives at zero
+    if( peak_amplitude == 0.0 )
+      return;
+  }//if constexpr ( std::is_same_v<T, double> )
+
+  // DoubleBortel from Bortels & Collaers 1987:
+  // PDF(x) = (1-eta)*Bortel(tau1) + eta*Bortel(tau2)
+  const T tau2 = tau1 + tau2_delta;
+
+  // Determine energy range to process.  tau1/tau2 are Bortel decay lengths in keV; the longer
+  //  one sets the tail extent.  Extend the lower bound by 12*sigma for the Gaussian core plus
+  //  20*max_tau (keV) for the tail (exp(-20) ~ 2e-9).  tau is in keV, so it is NOT multiplied by
+  //  sigma (the old `(12 + 20*max_tau)*sigma` form was dimensionally keV^2).
+  const double zero_amp_point_nsigma_base = 12.0;
+  const double zero_amp_point_nsigma_upper = 8.0;
+  const double tau_tail_factor = 20.0;
+  const T max_tau = (tau2 > tau1) ? tau2 : tau1;
+  const T start_energy = peak_mean - ( zero_amp_point_nsigma_base*sigma + tau_tail_factor*max_tau );
+  const T stop_energy = peak_mean + zero_amp_point_nsigma_upper * sigma;
+
+  size_t channel = 0;
+  while( (channel < nchannel) && (static_cast<double>(energies[channel + 1]) < start_energy) )
+    channel += 1;
+
+  if( channel == nchannel )
+    return;
+
+  const T one_minus_eta = T(1.0) - eta;
+
+  // Cache the lower energy indefinite integrals
+  T bortel1_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau1 );
+  T bortel2_val_low = bortel_indefinite_integral( static_cast<double>(energies[channel]), peak_mean, sigma, tau2 );
+
+  while( (channel < nchannel) && (energies[channel] < stop_energy) )
+  {
+    const T bortel1_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau1 );
+    const T bortel2_val_high = bortel_indefinite_integral( static_cast<double>(energies[channel + 1]), peak_mean, sigma, tau2 );
+
+    const T bortel1_part = one_minus_eta * ( bortel1_val_high - bortel1_val_low );
+    const T bortel2_part = eta * ( bortel2_val_high - bortel2_val_low );
+    const T val = peak_amplitude * ( bortel1_part + bortel2_part );
+
+    channels[channel] += val;
+
+    bortel1_val_low = bortel1_val_high;
+    bortel2_val_low = bortel2_val_high;
+    channel += 1;
+  }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//double_bortel_integral(...)
+
+
+template<typename ContType, typename PeakType, typename T>
+void offset_integral( const ContType &cont,
+                      const float *energies,
+                      T *channels,
+                      const size_t nchannel,
+                      const std::shared_ptr<const SpecUtils::Measurement> &data,
+                      const PeakType * const *roi_peaks,
+                      const size_t num_peaks )
+{
+  const PeakContinuum::OffsetType type = cont.type();
+
+  // Everything that does not need the peaks is already handled, once, by the other overload.
+  if( !PeakContinuum::is_peak_cdf_step_continuum( type ) )
+  {
+    offset_integral( cont, energies, channels, nchannel, data );
+    return;
+  }
+
+  if( !nchannel )
+    return;
+
+  const size_t num_poly = PeakContinuum::num_linear_fit_pars( type );
+  const size_t num_step = PeakContinuum::num_cdf_step_pars( type );
+  const T ref_energy = cont.referenceEnergy();
+
+  // Amplitude-weighted, ROI-anchored peak CDF per channel.  `energies` must be the ROI's own
+  //  channel range, since the cumulative sum below anchors to `energies[0]` - the caller in
+  //  PeakFitLM passes exactly that.
+  std::vector<T> cdf_amp_sum( nchannel, T(0.0) );
+  std::vector<T> pdf_per_channel( nchannel );
+  std::vector<T> cdf_per_channel( nchannel );
+
+  for( size_t j = 0; j < num_peaks; ++j )
+  {
+    const PeakType * const peak = roi_peaks[j];
+    if( !peak )
+      continue;
+
+    const PeakDef::SkewType skew = peak->skewType();
+
+    const T *skew_pars = nullptr;
+    if( skew != PeakDef::SkewType::NoSkew )
+    {
+      if constexpr ( std::is_same_v<PeakType, PeakDef> )
+        skew_pars = peak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+      else
+        skew_pars = peak->skew_parameters();
+    }
+
+    std::fill( pdf_per_channel.begin(), pdf_per_channel.end(), T(0.0) );
+    PeakDists::photopeak_function_integral( peak->mean(), peak->sigma(), T(1.0), skew, skew_pars,
+                                            nchannel, energies, pdf_per_channel.data() );
+    unit_pdf_to_cdf( pdf_per_channel.data(), cdf_per_channel.data(), nchannel );
+
+    for( size_t i = 0; i < nchannel; ++i )
+      cdf_amp_sum[i] += peak->amplitude() * cdf_per_channel[i];
+  }//for( size_t j = 0; j < num_peaks; ++j )
+
+  // std::vector<T> for PeakContinuum, std::array<T,N> for the fitters' internal continuum types
+  const auto &pars = cont.parameters();
+
+  for( size_t i = 0; i < nchannel; ++i )
+  {
+    const T x0_rel = T(energies[i]) - ref_energy;
+    const T x1_rel = T(energies[i+1]) - ref_energy;
+    const T dx = x1_rel - x0_rel;
+    const T center_rel = T(0.5)*(x0_rel + x1_rel);
+
+    T value = pars[0] * dx;
+    if( num_poly > 1 )
+      value += T(0.5) * pars[1] * ((x1_rel*x1_rel) - (x0_rel*x0_rel));
+
+    T step_coeff = pars[num_poly];
+    T energy_pow = center_rel;
+    for( size_t k = 1; k < num_step; ++k )
+    {
+      step_coeff += pars[num_poly + k] * energy_pow;
+      energy_pow *= center_rel;
+    }
+
+    value += step_coeff * cdf_amp_sum[i] * dx;
+
+    // Match `PeakContinuum::offset_integral(...)`, which clamps polynomial plus step together.
+    if( value < T(0.0) )
+      value = T(0.0);
+
+    channels[i] += value;
+  }//for( size_t i = 0; i < nchannel; ++i )
+
+  check_jet_array_for_NaN( channels, nchannel );
+}//offset_integral( cont, energies, channels, nchannel, data, roi_peaks, num_peaks )
+
+
+}//namespace PeakDists
+
+#endif //PeakDists_imp_h

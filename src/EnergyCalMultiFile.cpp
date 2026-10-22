@@ -772,7 +772,7 @@ void EnergyCalMultiFile::applyCurrentFit()
               newcals.insert( newcal );
             }else
             {
-              auto pos = updated_cals.find( dispcal );
+              auto pos = updated_cals.find( cal );
               if( pos == end(updated_cals) )
               {
                 auto thisnewcal = with_fitted_dev_pairs(
@@ -826,7 +826,7 @@ void EnergyCalMultiFile::applyCurrentFit()
               newcals.insert( newcal );
             }else
             {
-              auto pos = updated_cals.find( dispcal );
+              auto pos = updated_cals.find( cal );
               if( pos == end(updated_cals) )
               {
                 auto thisnewcal = with_fitted_dev_pairs(

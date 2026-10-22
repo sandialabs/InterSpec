@@ -908,6 +908,7 @@ void TotEffPayload::finalize() {
     }
     if (tier == TotEffTier::EtaTotTable)
         eta_tot.finalize();
+    near_field.finalize();  // tolerates empty (no near-field total)
 }
 
 double TotEffPayload::ln_b_at(double energy_keV) const {
@@ -1390,6 +1391,17 @@ void DetectorResponse::fep_budget(double energy_keV, EvalCommon& ec,
     b.model[SigmaBudget::Floor] = ec.near_regime ? floors.fep_near : floors.fep_far;
 }
 
+double DetectorResponse::total_near_ln(double energy_keV, EvalCommon& ec) const {
+    // Gated on the table's own breakpoint, as the FEP's is; the outermost distance node is an
+    // ln N = 0 anchor, so the correction fades to nothing there.
+    const NearFieldModel& nf = tot_eff.near_field;
+    if (nf.empty() || (ec.d_cm >= nf.breakpoint_d_cm(energy_keV, ec.cos_theta)))
+        return 0.0;
+    const double sig = nf.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+    ec.budget.node2 += sig * sig;
+    return nf.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+}
+
 EffResult DetectorResponse::fep_prefactor(
     double energy_keV, const Eigen::Vector3d& src_cm,
     const ApertureQuadrature& q) const {
@@ -1457,8 +1469,8 @@ EffResult DetectorResponse::total_prefactor(
     }
 
     EffResult res;
-    res.value = value;
     ec.budget.node2 = node_sig * node_sig;
+    res.value = value * std::exp(total_near_ln(energy_keV, ec));
     ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
     const double model2 = ec.budget.model2();
     res.sigma = res.value * std::sqrt(ec.budget.data2() + model2);
@@ -1529,9 +1541,11 @@ EffResult DetectorResponse::eps_total_impl(
         }
     }
 
+    ec.budget.node2 = node_sig * node_sig;
+    value *= std::exp(total_near_ln(energy_keV, ec));
+
     EffResult res;
     res.value = value;
-    ec.budget.node2 = node_sig * node_sig;
     ec.budget.model[SigmaBudget::Floor] = ec.near_regime ? floors.tot_near : floors.tot_far;
 
     // Build-up seam (Stage E3 A1): only when a ShieldContext is supplied AND a
@@ -1672,6 +1686,34 @@ void eta_to_xml(XmlDoc& doc, XmlNode* parent, const char* name,
         append_value_node(doc, n, "Edges", join_doubles(t.edges_keV));
     append_value_node(doc, n, "LnEta", join_doubles(t.ln_eta));
     append_value_node(doc, n, "FracSigma", join_doubles(t.frac_sigma));
+}
+
+// The FEP's near-field table and the total's share one layout.
+void near_field_to_xml(XmlDoc& doc, XmlNode* parent, const NearFieldModel& m) {
+    XmlNode* nf = append_node(doc, parent, "NearField");
+    append_value_node(doc, nf, "Energies", join_doubles(m.energies_keV));
+    append_value_node(doc, nf, "CosThetas", join_doubles(m.cos_thetas));
+    append_value_node(doc, nf, "DistsCm", join_doubles(m.dists_cm));
+    // ln N flattened [e][c][d] energy-major: index = (e*nc + c)*nd + d.
+    append_value_node(doc, nf, "LnN", join_doubles(m.ln_n));
+    append_value_node(doc, nf, "FracSigma", join_doubles(m.frac_sigma));
+    append_value_node(doc, nf, "BreakCosThetas", join_doubles(m.break_cos_thetas));
+    append_value_node(doc, nf, "BreakDistCm", join_doubles(m.break_d_cm));
+}
+
+void near_field_from_xml(const XmlNode* nf, NearFieldModel& m) {
+    m.energies_keV = parse_doubles(child_value(nf, "Energies"));
+    m.cos_thetas = parse_doubles(child_value(nf, "CosThetas"));
+    m.dists_cm = parse_doubles(child_value(nf, "DistsCm"));
+    m.ln_n = parse_doubles(child_value(nf, "LnN"));
+    m.frac_sigma = parse_doubles(child_value(nf, "FracSigma"));
+    if (m.ln_n.size() !=
+        m.energies_keV.size() * m.cos_thetas.size() * m.dists_cm.size())
+        throw std::runtime_error("CeeLoResponse: NearField LnN size");
+    if (m.frac_sigma.size() != m.ln_n.size())
+        throw std::runtime_error("CeeLoResponse: NearField FracSigma size");
+    m.break_cos_thetas = parse_doubles(child_value(nf, "BreakCosThetas"));
+    m.break_d_cm = parse_doubles(child_value(nf, "BreakDistCm"));
 }
 
 void eta_from_xml(const XmlNode* n, EtaTable& t) {
@@ -1928,23 +1970,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
     if (!eta_fep.empty())
         eta_to_xml(doc, root, "EtaFep", eta_fep);
 
-    if (!near_field.empty()) {
-        XmlNode* nf = append_node(doc, root, "NearField");
-        append_value_node(doc, nf, "Energies",
-                          join_doubles(near_field.energies_keV));
-        append_value_node(doc, nf, "CosThetas",
-                          join_doubles(near_field.cos_thetas));
-        append_value_node(doc, nf, "DistsCm",
-                          join_doubles(near_field.dists_cm));
-        // ln N flattened [e][c][d] energy-major: index = (e*nc + c)*nd + d.
-        append_value_node(doc, nf, "LnN", join_doubles(near_field.ln_n));
-        append_value_node(doc, nf, "FracSigma",
-                          join_doubles(near_field.frac_sigma));
-        append_value_node(doc, nf, "BreakCosThetas",
-                          join_doubles(near_field.break_cos_thetas));
-        append_value_node(doc, nf, "BreakDistCm",
-                          join_doubles(near_field.break_d_cm));
-    }
+    if (!near_field.empty())
+        near_field_to_xml(doc, root, near_field);
 
     {
         XmlNode* te = append_node(doc, root, "TotalEfficiency");
@@ -1963,6 +1990,9 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         }
         if (tot_eff.tier == TotEffTier::EtaTotTable)
             eta_to_xml(doc, te, "EtaTot", tot_eff.eta_tot);
+        // Only when present, so every response without one keeps its bytes and content_hash.
+        if (!tot_eff.near_field.empty())
+            near_field_to_xml(doc, te, tot_eff.near_field);
     }
 
     if (!grounding.empty()) {
@@ -2139,21 +2169,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
     if (const XmlNode* n = root->first_node("EtaFep"))
         eta_from_xml(n, resp->eta_fep);
 
-    if (const XmlNode* nf = root->first_node("NearField")) {
-        NearFieldModel& m = resp->near_field;
-        m.energies_keV = parse_doubles(child_value(nf, "Energies"));
-        m.cos_thetas = parse_doubles(child_value(nf, "CosThetas"));
-        m.dists_cm = parse_doubles(child_value(nf, "DistsCm"));
-        m.ln_n = parse_doubles(child_value(nf, "LnN"));
-        m.frac_sigma = parse_doubles(child_value(nf, "FracSigma"));
-        if (m.ln_n.size() !=
-            m.energies_keV.size() * m.cos_thetas.size() * m.dists_cm.size())
-            throw std::runtime_error("CeeLoResponse: NearField LnN size");
-        if (m.frac_sigma.size() != m.ln_n.size())
-            throw std::runtime_error("CeeLoResponse: NearField FracSigma size");
-        m.break_cos_thetas = parse_doubles(child_value(nf, "BreakCosThetas"));
-        m.break_d_cm = parse_doubles(child_value(nf, "BreakDistCm"));
-    }
+    if (const XmlNode* nf = root->first_node("NearField"))
+        near_field_from_xml(nf, resp->near_field);
 
     if (const XmlNode* te = root->first_node("TotalEfficiency")) {
         const char* tier = attrib_value(te, "tier");
@@ -2170,6 +2187,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         resp->tot_eff.ln_b = parse_doubles(child_value(te, "LnB"));
         if (const XmlNode* et = te->first_node("EtaTot"))
             eta_from_xml(et, resp->tot_eff.eta_tot);
+        if (const XmlNode* nf = te->first_node("NearField"))
+            near_field_from_xml(nf, resp->tot_eff.near_field);
     }
 
     if (const XmlNode* g = root->first_node("Grounding")) {

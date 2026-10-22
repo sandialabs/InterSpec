@@ -577,7 +577,14 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         {
           const PeakDef::SkewType type = PeakDef::skew_from_string( strval );
           peak.setSkewType( type );
-          
+
+          // The CSV doesnt carry fit-for flags, so use the defaults (e.g., GADRAS powers/extents fixed)
+          for( size_t i = 0; i < PeakDef::num_skew_parameters(type); ++i )
+          {
+            const auto coef = PeakDef::CoefficientType(PeakDef::SkewPar0 + i);
+            peak.setFitFor( coef, PeakDef::skew_parameter_fit_by_default( type, coef ) );
+          }
+
           if( (skew_coef_index >= 0) && (skew_coef_index < nfields) )
           {
             const string &flt_list_str = fields[skew_coef_index];
@@ -618,7 +625,38 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
          && nuc_index < nfields && nuc_energy_index < nfields
          && !fields[nuc_index].empty() && !fields[nuc_energy_index].empty() )
       {
-        const string nuctxt = fields[nuc_index] + " " + fields[nuc_energy_index] + " keV";
+        // Undo how `write_peak_csv` encodes the source, so `setNuclideXrayReaction` can read it.
+        string nuc = fields[nuc_index];
+        string energy = fields[nuc_energy_index];
+
+        // Element x-rays are written like "Pb-xray"
+        SpecUtils::ireplace_all( nuc, "-xray", " xray" );
+
+        // A reaction's comma is written as a space, e.g., "H(n g)"
+        const size_t open_pos = nuc.find( '(' );
+        const size_t close_pos = nuc.find( ')', open_pos );
+        const size_t space_pos = nuc.find( ' ', open_pos );
+        if( (close_pos != string::npos) && (space_pos < close_pos)
+           && (nuc.find( ',', open_pos ) > close_pos) )
+        {
+          nuc[space_pos] = ',';
+        }
+
+        // Escape peaks are written at the escape-peak energy (i.e., `gammaParticleEnergy()`),
+        //  but `setNuclideXrayReaction` wants the photon energy.
+        const bool single_escape = SpecUtils::iends_with( nuc, " (s.e.)" );
+        const bool double_escape = SpecUtils::iends_with( nuc, " (d.e.)" );
+        double escape_energy = 0.0;
+        if( (single_escape || double_escape)
+           && SpecUtils::parse_double( energy.c_str(), energy.size(), escape_energy ) )
+        {
+          char buffer[64];
+          snprintf( buffer, sizeof(buffer), "%.4f",
+                   escape_energy + (single_escape ? 1.0 : 2.0) * 510.9989 );
+          energy = buffer;
+        }
+
+        const string nuctxt = nuc + " " + energy + " keV";
         const SetGammaSource result = setNuclideXrayReaction( peak, nuctxt, 4.0 );
         if( result == SetGammaSource::FailedSourceChange )
           cerr << "csv_to_candidate_fit_peaks: could not assign src txt '"
@@ -2843,6 +2881,10 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   if( nuclide )
     return setNuclide( peak, srcType, nuclide, ref_energy, nsigma_window );
   
+  // The annihilation reaction is named just "Annihilation", without a "(...)"
+  if( SpecUtils::istarts_with( label, "annih" ) )
+    return PeakModel::setReaction( peak, "annihilation", srcType, ref_energy, nsigma_window );
+
   //lets check for a reaction
   const size_t paren_pos = label.find_first_of( ')' );
   if( paren_pos != string::npos )

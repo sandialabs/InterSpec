@@ -1,0 +1,11 @@
+# MOCK - NOT VENDOR DATA - written by InterSpec test_DetectorEffG2kPar WriteMockParFiles with CeeLo; dimensions from Angle-detector-only.detx
+MockAngleCoax,50.0,50.0,0,63.0,100.0,4.0,5.0,26,mock.par,4, #
+ge,0.5,5.32, #
+,,, #
+al,1.5,2.70, #
+ge,0.5,5.32, #
+,,, #
+al,1.5,2.70, #
+,,, #
+,,, #
+,,

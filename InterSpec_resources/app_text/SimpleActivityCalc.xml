@@ -37,6 +37,10 @@
   </message>
   
   
+  <message id="sac-drf-uncert-none">Uncertainty is from counting statistics only; the detector response states no efficiency uncertainty.</message>
+  <message id="sac-drf-uncert-stated">Uncertainty includes the {1}% efficiency uncertainty stated by the detector response.</message>
+  <message id="sac-drf-uncert-model-only">Uncertainty includes {1}% efficiency uncertainty from the geometry model only; the detector response states none of its own.</message>
+  <message id="sac-drf-uncert-assumed">Uncertainty includes an assumed {1}% efficiency uncertainty; the detector response states none of its own.</message>
   <message id="sac-qr-tool-state-title">Simple Activity Calc Tool State</message>
   <message id="sac-qr-tool-state-txt">Current state of simple activity calc tool.</message>
 </messages>

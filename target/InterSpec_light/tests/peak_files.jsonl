@@ -1,0 +1,42 @@
+# requires: peakFileIo
+# Peaks in N42-2012 and IAEA SPE files.  Files InterSpec wrote load with their peaks (and sources);
+#  files this page writes load back the same - exactly from N42, and to the peak CSV's precision from
+#  SPE.  (tests/interspec_compat/ checks InterSpec itself reads what this page writes.)
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Ba133","color":"#006600"},{"parent":"Cs137","color":"#00b9ff"}]}}
+# InterSpec-written HPGe file: nuclide gammas and x-rays, stepped continua, skew, multi-peak ROIs
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42","name":"hpge.n42","type":"FOREGROUND"},"save":"hpge","expectPeakCount":19,"expectMessage":"Loaded 19 peaks"}
+# ... plus a peak fit here, with its source from the shown reference lines
+{"method":"fitPeakAt","params":{"energy":1460.8,"pixPerKeV":3.0}}
+{"method":"getState","params":{},"save":"hpge_fit","expectPeakCount":20}
+{"method":"exportFile","params":{"format":"N42-2012","path":"pf_hpge.n42"}}
+{"method":"exportFile","params":{"format":"SPE","path":"pf_hpge.spe"}}
+{"method":"loadFile","params":{"path":"pf_hpge.n42","name":"pf_hpge.n42","type":"FOREGROUND"},"expectPeaks":"hpge_fit","match":"exact","expectSamples":[1]}
+{"method":"loadFile","params":{"path":"pf_hpge.spe","name":"pf_hpge.spe","type":"FOREGROUND"},"expectPeaks":"hpge_fit","match":"csv"}
+# InterSpec-written (see tests/interspec_compat/run.sh --make-fixtures): a NaI spectrum's peaks, plus
+#  reaction, element x-ray, single and double escape, and annihilation peaks; and an SPE InterSpec
+#  wrote of it
+{"method":"loadFile","params":{"path":"@REPO@/target/InterSpec_light/tests/data/interspec_sources.n42","name":"sources.n42","type":"FOREGROUND"},"save":"sources","expectPeakCount":13}
+{"method":"exportFile","params":{"format":"N42-2012","path":"pf_sources.n42"}}
+{"method":"loadFile","params":{"path":"pf_sources.n42","name":"pf_sources.n42","type":"FOREGROUND"},"expectPeaks":"sources","match":"exact"}
+{"method":"loadFile","params":{"path":"@REPO@/target/InterSpec_light/tests/data/interspec_sources.spe","name":"sources.spe","type":"FOREGROUND"},"expectPeaks":"sources","match":"csv"}
+# Element x-rays (Pb, W, ...) among 287 peaks
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/findCharacteristics/202204_example_problem_1.n42","name":"xrays.n42","type":"FOREGROUND"},"save":"xrays"}
+{"method":"exportFile","params":{"format":"N42-2012","path":"pf_xrays.n42"}}
+{"method":"loadFile","params":{"path":"pf_xrays.n42","name":"pf_xrays.n42","type":"FOREGROUND"},"expectPeaks":"xrays","match":"exact"}
+# U with nuclide x-rays
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/manual_rel_eff/spec184_235U_12.9543.n42","name":"u.n42","type":"FOREGROUND"},"save":"u"}
+{"method":"exportFile","params":{"format":"N42-2012","path":"pf_u.n42"}}
+{"method":"loadFile","params":{"path":"pf_u.n42","name":"pf_u.n42","type":"FOREGROUND"},"expectPeaks":"u","match":"exact"}
+{"method":"exportFile","params":{"format":"SPE","path":"pf_u.spe"}}
+{"method":"loadFile","params":{"path":"pf_u.spe","name":"pf_u.spe","type":"FOREGROUND"},"expectPeaks":"u","match":"csv"}
+# Escape peaks (Co56)
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/escape_peak_check_Co56_Shielded_Fulcrum40h.n42","name":"co56.n42","type":"FOREGROUND"},"save":"co56"}
+{"method":"exportFile","params":{"format":"SPE","path":"pf_co56.spe"}}
+{"method":"loadFile","params":{"path":"pf_co56.spe","name":"pf_co56.spe","type":"FOREGROUND"},"expectPeaks":"co56","match":"csv"}
+# Peaks on one sample of a multi-sample file, with gapped sample numbers (2, 3, 7, 9, 15), which must
+#  be kept as-is for the peaks to stay with their sample
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/ExportSpecFile/gapped_samples_peaks_on_9.n42","name":"gapped.n42","type":"FOREGROUND"}}
+{"method":"setSamples","params":{"type":"FOREGROUND","samples":[9]},"save":"gapped","expectPeakCount":1,"expectSamples":[9]}
+{"method":"exportFile","params":{"format":"N42-2012","path":"pf_gapped.n42"}}
+# ... which now open showing sample 9 (the displayed samples are saved)
+{"method":"loadFile","params":{"path":"pf_gapped.n42","name":"pf_gapped.n42","type":"FOREGROUND"},"expectPeaks":"gapped","match":"exact","expectSamples":[9]}

@@ -69,6 +69,11 @@ namespace SpecUtils
 }
 
 
+namespace DrfModifyCalc
+{
+  struct UncertSummary;
+}
+
 namespace DetectionLimitCalc
 {
   struct CurrieMdaInput;
@@ -163,11 +168,17 @@ protected:
   void handleBetaChanged();
   void handleSystematicUncertChanged();
 
-  /** The combined relative systematic uncertainty to hand to
-   `DetectionLimitCalc::CurrieMdaInput::additional_uncertainty`.
+  /** The detector efficiency uncertainty at `energy` (keV) and the entered distance - what the DRF
+   states, plus any geometry-model part (never an assumed one; see DrfModifyCalc::UncertSummary::usedFrac).
+   Not valid when the limit will not be in activity (no gamma line, DRF, or distance). */
+  DrfModifyCalc::UncertSummary currentDrfUncert( const double energy ) const;
 
-   Zero when "Advanced" is unchecked or both fields are empty, so that with the section off the tool
-   computes exactly what it computed before the section existed.
+  /** The combined relative systematic uncertainty to hand to
+   `DetectionLimitCalc::CurrieMdaInput::additional_uncertainty`, for the gamma at `energy` (keV).
+
+   The detector response's own efficiency uncertainty (#currentDrfUncert) always applies; the
+   "Advanced" fields add to it, and count only when that section is checked.  With neither, the tool
+   computes exactly what it computed before either existed.
 
    @param [out] note Set to a user-facing note when the combination had to be qualified - a distance
           uncertainty dropped because the detector response is fixed-geometry.  Left untouched
@@ -179,7 +190,7 @@ protected:
    an unparseable field, a distance uncertainty with no distance to divide by, or a combination at or
    above 100% (which `currie_mda_calc` rejects).
    */
-  float currentSystematicUncertainty( Wt::WString &note ) const;
+  float currentSystematicUncertainty( const double energy, Wt::WString &note ) const;
 
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf );
   
@@ -353,9 +364,9 @@ protected:
    efficiency curve and the gamma branching ratio, which enter identically and so cannot be usefully
    separated here.
 
-   TODO: `DetectorPeakResponse` carries no uncertainty on its efficiency today.  When it does,
-         pre-fill this field from the DRF (combined in quadrature with the branching ratio's own
-         uncertainty, if `SandiaDecay` ever carries one), leaving the user able to override. */
+   This is IN ADDITION to the detector response's own stated efficiency uncertainty, which is always
+   combined in quadrature (see #currentSystematicUncertainty) - so it covers the branching ratio, or
+   anything else the response does not state. */
   Wt::WLineEdit *m_effUncert;
 
   /** Note under the advanced inputs saying they apply to the Currie method; shown only while the
@@ -405,6 +416,9 @@ protected:
    page of `m_chartErrMsgStack`, which is either-or: an error page OR the chart, with nowhere to
    put a warning beside a successful result.  These were dropped entirely before Increment C. */
   Wt::WText            *m_warningTxt;
+
+  /** Says whether the limit includes the detector efficiency's uncertainty, and what kind. */
+  Wt::WText            *m_drfUncertTxt;
   
   Wt::Core::observing_ptr<SimpleDialog> m_moreInfoWindow;
   

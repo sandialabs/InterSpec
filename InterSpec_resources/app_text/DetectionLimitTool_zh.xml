@@ -170,4 +170,14 @@
   <message id="dlt-estimating-spread">正在计算离散度…</message>
   <message id="dlt-spread-band">(通常为该值的 {1}&ndash;{2}&times;)</message>
   <message id="dlt-spread-unavailable">无法估计离散度。</message>
+  <message id="dlt-detector-eff-used">所用探测器效率</message>
+  <message id="dlt-det-eff-uncert">探测器效率不确定度</message>
+  <message id="dlt-det-eff-uncert-none">未给出</message>
+  <message id="dlt-det-eff-uncert-stated">{1}%（探测器给出）</message>
+  <message id="dlt-det-eff-uncert-model">{1}%（仅几何模型）</message>
+  <message id="dlt-systematic-uncert-used">所用系统不确定度</message>
+  <message id="dlt-tt-detector-eff-used">源在此距离发射的伽马射线在全能峰中被探测到的概率：即本计算实际使用的效率。</message>
+  <message id="dlt-tt-det-eff-uncert">探测器效率在此能量和距离下的 1σ 相对不确定度：探测器响应本身给出的部分，加上（对几何建模的探测器）其几何模型在探测器附近或偏轴位置增加的不确定度。探测器响应未给出、仅为其假定的不确定度不包含在内。</message>
+  <message id="dlt-tt-systematic-uncert-used">上述 Currie 限值所用的 1σ 相对系统不确定度：探测器效率不确定度与输入的任何效率或距离不确定度按平方和合成。</message>
+  <message id="dlt-drf-uncert-decon-excluded">这些限值未包含探测器响应的效率不确定度（所用谱线最高 {1}%）；逐线 Currie 限值包含了它。</message>
 </messages>

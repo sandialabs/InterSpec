@@ -27,7 +27,7 @@
 > Pass a custom-template filename or absolute path on either flag/uploader and InterSpec will
 > resolve it the same way it resolves the built-in shorthands (see §2).
 >
-> **Last updated:** 2026-04-27
+> **Last updated:** 2026-09-29
 
 ## 1. What this is
 
@@ -239,7 +239,8 @@ with the heaviest blobs elided for readability.
 | `pu_corrections` | array | Same Pu rows as `relative_activities[i].pu`; convenience for templates that iterate Pu data without nesting through `relative_activities` |
 | `ratios` | array | Same ratio rows as `relative_activities[i].ratios`; convenience |
 | `peaks` | array | Per-peak rows (see §3.4) |
-| `rois` | array | ROI ranges (see §3.7) |
+| `rois` | array | ROI ranges the fit used (see §3.7) |
+| `input_rois` | array | ROI ranges as specified, before being resolved into `rois` (see §3.7) |
 | `energy_calibration` | object | Adjustments + deviation pairs (see §3.5) |
 | `options` | object | Top-level fit options (`fwhm_form`, `energy_cal_type`, `skew_type`, etc.) |
 | `curve_options` | array | Per-curve fit options (`rel_eff_eqn_type`, `rel_eff_eqn_order`, `nucs_of_el_same_age`) |
@@ -541,12 +542,19 @@ In every other case `sample_numbers` lists the samples actually used. Templates 
 unconditionally show the samples can iterate `sample_numbers` themselves; templates that want
 the default "only show when non-trivial" behaviour can just use `display_filename`.
 
-### 3.7 `rois[i]`
+### 3.7 `rois[i]` and `input_rois[i]`
 
-A "Region of Interest" is a contiguous energy range the user marked for fitting. Each ROI
-contains one or more peaks; the solver fits the Gaussian peak parameters on top of a continuum
-of the chosen form. ROIs are user-supplied (typically by selecting peaks on the spectrum); the
-fit does not invent ROIs.
+A "Region of Interest" is a contiguous energy range fit for peaks. Each ROI contains one or more
+peaks; the solver fits the Gaussian peak parameters on top of a continuum of the chosen form.
+
+`input_rois` are the ROIs as the user specified them.  A `"Fixed"` input ROI is fit exactly as given;
+the other range types say which gamma lines to cover, and the solver sizes the ROI from the
+detector's peak shape (merging ones whose peaks are close together, and stopping each ROI's continuum
+short of other peaks; a `"CanBeBrokenUp"` range may be split up).  `rois`
+are the resulting ROIs the fit actually used - all `"Fixed"`.  Input ROIs additionally have
+`auto_continuum` (whether the continuum type is chosen from the data, starting from
+`continuum_type`), and, when overridden, `lower_edge_tail_fraction`, `lower_edge_sideband_fwhm`,
+`upper_edge_tail_fraction`, and `upper_edge_sideband_fwhm`.
 
 ```json
 {
@@ -559,7 +567,7 @@ fit does not invent ROIs.
 
 | Field | Meaning |
 |---|---|
-| `lower_energy`, `upper_energy` | ROI energy bounds (keV) as configured by the user, *before* any FWHM-based expansion the solver may have applied |
+| `lower_energy`, `upper_energy` | ROI energy bounds (keV); for a `"LineAnchored"` input ROI, the energies of its lowest and highest gamma lines |
 | `continuum_type` | Continuum form fit beneath the peaks in this ROI. See the table below |
 | `range_limits_type` | How the solver treats the ROI bounds during the fit — see below |
 
@@ -578,6 +586,7 @@ strings appear in `peaks[i].continuum.type`.
 | `"FlatStep"`     | Flat with a step at peak mean — for high-statistics peaks where the continuum drops across each peak |
 | `"LinearStep"`   | Linear with a step |
 | `"BiLinearStep"` | Two linear segments meeting at the peak mean |
+| `"FlatStepCDF"`, `"LinearStepCDF"`, `"BiLinearStepCDF"` | As the step forms above, but with the step proportional to the cumulative area of the peaks (fit along with the continuum) |
 | `"External"`     | Continuum determined by an external fit (rare) |
 
 The string `"pct-linear"` and similar dashed/lower-case forms appear when the spectrum file's
@@ -589,8 +598,9 @@ synonymous with the canonical capitalised form for that continuum type.
 | Value | What it means |
 |---|---|
 | `"Fixed"`            | Bounds are strictly enforced — the solver will not move them |
-| `"CanExpandForFwhm"` | Bounds may expand outward by a fraction of the FWHM at the edge if a peak's tail leaks past them |
-| `"CanBeBrokenUp"`    | The ROI may be subdivided into multiple smaller ROIs based on where peaks actually fall |
+| `"LineAnchored"`     | The bounds are the lowest and highest gamma lines to include; the ROI extends past them until only a small fraction of each line's peak lies outside, plus some continuum |
+| `"CanBeBrokenUp"`    | An ROI is made around each significant gamma line in the range (ones whose peaks are close together are merged) |
+| `"CanExpandForFwhm"` | Deprecated: like `"CanBeBrokenUp"`, but the ROIs may extend past the range |
 
 ### 3.8 `pu_corrections[i]` (only when Pu nuclides present)
 
@@ -723,6 +733,10 @@ or non-identifiable local Gaussian is never rendered as a giant symmetric `±` v
       "ratios": { "curve_index": 0, "pairs": [] }
     }
   ],
+  "input_rois": [
+    { "auto_continuum": false, "continuum_type": "pct-linear", "lower_energy": 836.4,
+      "range_limits_type": "Fixed", "upper_energy": 855.0 }
+  ],
   "rois": [
     { "continuum_type": "pct-linear", "lower_energy": 836.4, "range_limits_type": "Fixed",
       "upper_energy": 855.0 }
@@ -843,6 +857,9 @@ InterSpec-specific.
 | `at(array, index)` | `array, int` | element | `at(Files, loop.index).Filename` (variable indexing — see §5.1) |
 | `printFixed(value, decimals)` | `number, int` | string | `printFixed(p.energy, 2)` -> `"846.75"` |
 | `printCompact(value, sigfigs)` | `number, int` | string | `printCompact(amp, 6)` -> `"26178.9"` |
+| `printExp(value, decimals)` | `number, int` | string | `printExp(18910.0, 3)` -> `"1.891E+04"` |
+| `nuclideUpper(name)` | `string` | string | `nuclideUpper(nuc.name)` -> `"U-235"`; `nuclideUpper("Tc-99m")` -> `"TC-99M"`; `nuclideUpper("Pb")` -> `"PB"` |
+| `removeExtension(name)` | `string` | string | `removeExtension("some_file.n42")` -> `"some_file"` |
 | `pct(value)` or `pct(value, sigfigs)` | `number [, int]` | string | `pct(nuc.enrichment, 4)` -> `"99.33"` |
 | `safe_html(str)` | `string` | string | `safe_html(warnings.0)` |
 | `scientific(value, prec)` | `number, int` | string | `scientific(rel_act, 6)` -> `"1.43692e+01"` |
@@ -867,6 +884,19 @@ InterSpec-specific.
   notation automatically. The general-purpose numeric formatter. `printCompact(26178.91, 6)`
   → `"26178.9"`; `printCompact(6.67e-10, 4)` → `"6.67E-10"`. For null / NaN / infinite returns
   `"--"`. **Almost always the right choice when displaying a fitted value.**
+
+- **`printExp(x, n)`** — scientific notation with exactly `n` decimals, always `d.dddE±NN`
+  (never falls back to fixed-point, so columns stay aligned). `printExp(18910.0, 3)` →
+  `"1.891E+04"`. For null / NaN / infinite returns `"--"`.
+
+- **`nuclideUpper(s)`** — upper-case, dashed nuclide name, or upper-case element symbol. Accepts
+  any nuclide spelling InterSpec does (`"U235"`, `"Tc-99m"`, `"tc99m"`, `"238U"`) and any element
+  symbol or name (`"Pb"`, `"u"`, `"uranium"`, `"lead x-ray"`). `nuclideUpper("Pu239")` →
+  `"PU-239"`; `nuclideUpper("uranium")` → `"U"`. Anything else is returned unchanged.
+
+- **`removeExtension(s)`** — removes the last file extension, keeping any directory part.
+  `removeExtension("some_file.n42")` → `"some_file"`; `removeExtension("a.b.n42")` → `"a.b"`.
+  A name without an extension, or a dot-file like `".profile"`, is returned unchanged.
 
 - **`pct(x)` / `pct(x, n)`** — multiplies by 100 and formats with `printCompact` at `n`
   significant figures (default 4). Used because expression-side multiplication (`x * 100`)
@@ -901,7 +931,7 @@ InterSpec-specific.
   (`{% if length(warnings) > 0 %}`); inja's truthiness rules around empty arrays are
   unreliable, so this explicit form is recommended.
 
-For null / NaN / infinite inputs, all numeric formatters (`printFixed`, `printCompact`, `pct`)
+For null / NaN / infinite inputs, all numeric formatters (`printFixed`, `printCompact`, `printExp`, `pct`)
 return the string `"--"` rather than throwing — this lets templates assume the call always
 produces a printable string.
 
@@ -1088,7 +1118,8 @@ When using this README to generate a new template, an LLM should be told:
 > *You are writing a single Inja template (Inja 3.x) that consumes the JSON described in the
 > README of `InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts/`. Use only the
 > features listed in §4. Do not use any feature listed in §5 ("does not work"). Prefer the
-> custom callbacks (`printFixed`, `printCompact`, `pct`, `safe_html`, `existsIn`, `length`) over
+> custom callbacks (`printFixed`, `printCompact`, `printExp`, `pct`, `safe_html`, `nuclideUpper`,
+> `removeExtension`, `existsIn`, `length`) over
 > Inja's expression arithmetic. Output only the template body — no explanatory prose.*
 
 Then provide:
@@ -1103,7 +1134,7 @@ Then provide:
 | [`InterSpec/RelActAutoReport.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/RelActAutoReport.h) | Public API |
 | [`src/RelActAutoReport.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/RelActAutoReport.cpp) | `solution_to_json` + Inja env + render dispatch |
 | [`InterSpec/BatchRelActAuto.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchRelActAuto.h) / [`src/BatchRelActAuto.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchRelActAuto.cpp) | Batch driver — builds the multi-file `summary_json` consumed by §11 |
-| [`src/BatchInfoLog.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchInfoLog.cpp) | Sibling module for shielding/source and peak-fit reports; `printFixed`/`printCompact` live here |
+| [`src/BatchInfoLog.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchInfoLog.cpp) | Sibling module for shielding/source and peak-fit reports; the shared callbacks (`printFixed`, `printCompact`, `printExp`, `nuclideUpper`, `removeExtension`) live here |
 
 To regenerate the JSON example for any solution, pass `tmplt = "json"` to `render_template`
 (or call `solution_to_json(sol).dump(2)` directly). The dump always contains the heavy JS/CSS

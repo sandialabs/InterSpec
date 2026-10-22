@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
-  <message id="raag-window-title">Relatív akt. izotópösszetétel</message>
+  <message id="raag-window-title">Izotóp-összetétel nuklidok szerint</message>
 
   <!-- Presets section -->
   <message id="raag-presets">Előbeállítások</message>

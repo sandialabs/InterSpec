@@ -746,12 +746,24 @@ void DetectorGeometryInput::removeLayerRow()
   if( m_layers.size() <= 1 )
     return;
 
-  m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.pop_back();
+  popLayerRow();
   m_removeLayer->setEnabled( m_layers.size() > 1 );
 
   handleUserInput();
 }//removeLayerRow()
+
+
+void DetectorGeometryInput::popLayerRow()
+{
+  assert( !m_layers.empty() );
+  assert( m_layersTable->rowCount() == static_cast<int>(m_layers.size() + 1) );  //header + layers
+  if( m_layers.empty() )
+    return;
+
+  m_materialSuggestion->removeEdit( m_layers.back().material );
+  m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
+  m_layers.pop_back();
+}//popLayerRow()
 
 
 bool DetectorGeometryInput::State::Layer::operator==( const Layer &rhs ) const
@@ -777,7 +789,9 @@ bool DetectorGeometryInput::State::operator==( const State &rhs ) const
          && (collimatorMaterial == rhs.collimatorMaterial)
          && (collimatorThickness == rhs.collimatorThickness)
          && (collimatorExtension == rhs.collimatorExtension)
-         && (layers == rhs.layers);
+         && (layers == rhs.layers)
+         && (seededFromDiameterGuess == rhs.seededFromDiameterGuess)
+         && (importNotes == rhs.importNotes);
 }//State::operator==
 
 
@@ -814,6 +828,9 @@ DetectorGeometryInput::State DetectorGeometryInput::currentState() const
     state.layers.push_back( std::move(layer) );
   }//for( const LayerRow &row : m_layers )
 
+  state.seededFromDiameterGuess = m_seededFromDiameterGuess;
+  state.importNotes = m_importNotes->isHidden() ? string() : m_importNotes->text().toUTF8();
+
   return state;
 }//DetectorGeometryInput::currentState()
 
@@ -841,15 +858,19 @@ void DetectorGeometryInput::setState( const State &state )
   m_collimatorExtension->setText( WString::fromUTF8(state.collimatorExtension) );
 
   // Rebuild the layer rows; `addLayerRow` is the only place that wires their signals up.
-  while( m_layersTable->rowCount() > 1 )
-    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.clear();
+  while( !m_layers.empty() )
+    popLayerRow();
   for( const State::Layer &layer : state.layers )
     addLayerRow( WString::fromUTF8(layer.material), WString::fromUTF8(layer.frontThickness),
                  WString::fromUTF8(layer.sideThickness), layer.seeded );
   for( size_t i = 0; (i < m_layers.size()) && (i < state.layers.size()); ++i )
     m_layers[i].seededName = state.layers[i].seededName;
   m_removeLayer->setEnabled( m_layers.size() > 1 );
+
+  // Before handleShapeChange, whose validity note reads the guess flag.
+  m_seededFromDiameterGuess = state.seededFromDiameterGuess;
+  m_importNotes->setText( WString::fromUTF8(state.importNotes) );
+  m_importNotes->setHidden( state.importNotes.empty() );
 
   // Sync the shape-dependent row visibility (and, through `handleUserInput`, the validity note and
   //  collimator row) to the restored values.
@@ -1140,6 +1161,8 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
 
   while( m_layers.size() > 1 )
     removeLayerRow();
+  if( m_layers.empty() )  //seedFromDiameter() without a setback, or setState(), can leave none
+    addLayerRow( "", "", "" );
 
   bool first = true;
   for( const ceelo::LayerSpec &layer : gd.layers )
@@ -1215,25 +1238,31 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_importNotes->show();
   }
 
+  // A real descriptor, so no longer the length==diameter guess a seeder may have left.
+  m_seededFromDiameterGuess = false;
+
   handleShapeChange();
 }//setFromDescriptor(...)
 
 
-void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf )
+std::shared_ptr<const ceelo::GeometryDescriptor> DetectorGeometryInput::seedFromDrf(
+                                                std::shared_ptr<const DetectorPeakResponse> drf )
 {
   // Real geometry (descriptor branch) or nothing to seed leaves this false; only the fabricated
   //  length==diameter guess below sets it.
   m_seededFromDiameterGuess = false;
 
   if( !drf || !drf->isValid() || (drf->detectorDiameter() <= 0.0f) )
-    return;
+    return nullptr;
 
   // The DRFs own geometry, when it has one - from a generated response, or set by an importer
-  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.
-  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->geometry() )
+  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.  Stored, so a Flat
+  //  Disk detector's switched-off shape is still here to edit, or to switch back on.  For an
+  //  imported efficiency grid, the user's (possibly edited) geometry rather than the imported one.
+  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->monteCarloGeometry() )
   {
     setFromDescriptor( *gd );
-    return;
+    return gd;
   }
 
   const double diam_cm = drf->detectorDiameter() / PhysicalUnits::cm;
@@ -1258,6 +1287,8 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   //  (handleCrystalDimensionInput); set after handleShapeChange() so the note it draws sees it.
   m_seededFromDiameterGuess = true;
   updateFromForm();
+
+  return nullptr;
 }//seedFromDrf(...)
 
 
@@ -1292,11 +1323,11 @@ void DetectorGeometryInput::seedFromDiameter( const double diameter, const doubl
 
   // A flat-disk setback is the gap between the detector face and the crystal: a front-only layer
   //  of (near) vacuum, the same spacer the ANGLE import uses (see CeeLoUtils::buildAngleGeometry).
-  while( m_layersTable->rowCount() > 1 )
-    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
-  m_layers.clear();
+  while( !m_layers.empty() )
+    popLayerRow();
   if( setback > 0.0 )
     addLayerRow( "galactic vacuum", cm_to_str( setback / PhysicalUnits::cm ), "" );
+  m_removeLayer->setEnabled( m_layers.size() > 1 );
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();

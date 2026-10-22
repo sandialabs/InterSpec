@@ -259,29 +259,36 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       sources.push_back( db->nuclide("I126"));
     }else if( src_name == "U233" )
     {
+      // Uranium and plutonium items are isotope MIXTURES, and the metal fluoresces its own K x-rays,
+      // so the element goes in beside the isotopes.  Ages need no handling here:
+      // PeakDef::defaultDecayTime already gives every U/Pu isotope over a two-year half-life the
+      // 20 years these assume.  Lines carry the ultimate parent's label, so U238 owns 1001 keV.
       sources.push_back( db->element( "U" ) );
       sources.push_back( db->nuclide("U232"));
       sources.push_back( db->nuclide("U233"));
-    }else if( src_name == "Pu238" )
+      sources.push_back( db->nuclide("U234"));
+      sources.push_back( db->nuclide("U235"));
+      sources.push_back( db->nuclide("U238"));
+    }else if( (src_name == "Pu238") || (src_name == "Pu239") )
     {
       sources.push_back( db->element( "Pu" ) );
       sources.push_back( db->nuclide("Pu238"));
       sources.push_back( db->nuclide("Pu239"));
-      sources.push_back( db->nuclide("Pu241"));
-    }else if( src_name == "Pu239" )
-    {
-      sources.push_back( db->element( "Pu" ) );
-      sources.push_back( db->nuclide("Pu239"));
+      sources.push_back( db->nuclide("Pu240"));
       sources.push_back( db->nuclide("Pu241"));
     }else if( src_name == "Uore" )
     {
       sources.push_back( db->element( "U" ) );
+      sources.push_back( db->nuclide("U232") );
+      sources.push_back( db->nuclide("U234") );
       sources.push_back( db->nuclide("U235") );
       sources.push_back( db->nuclide("U238") );
       sources.push_back( db->nuclide("Ra226") );
-    }else if( src_name == "U235" )
+    }else if( (src_name == "U235") || (src_name == "U238") )
     {
       sources.push_back( db->element( "U" ) );
+      sources.push_back( db->nuclide("U232") );
+      sources.push_back( db->nuclide("U234") );
       sources.push_back( db->nuclide("U235") );
       sources.push_back( db->nuclide("U238") );
     }else if( src_name == "Np237" )
@@ -305,6 +312,12 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       }
       sources.push_back( nuc );
     }
+
+    // The shielded configurations are lead, and it fluoresces: the Pb K series (72.8/75.0/84.9/87.4
+    // keV) shows up in these spectra at up to z=39 and no requested nuclide can produce it.
+    // Requested as an ELEMENT, so only its characteristic x-rays are modelled.
+    if( !sources.empty() && (src.src_name.find("_Sh") != string::npos) )
+      sources.push_back( db->element( "Pb" ) );
 
     if( sources.empty() || RelActCalcAuto::is_null( sources.front() ) )
       continue;

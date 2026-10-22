@@ -335,8 +335,7 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
 #endif
 
   // BatchInfoLog callbacks (delegated to its tested implementations).
-  env.add_callback( "printFixed",   2, &BatchInfoLog::printFixed );
-  env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+  BatchInfoLog::add_inja_callbacks( env );
 
   // RelActAutoReport-specific callbacks.
   env.add_callback( "pct",       1, &pct_callback );
@@ -370,8 +369,7 @@ inja::Environment get_default_inja_env( const string &tmplt_dir )
   try
   {
     inja::Environment sub_env;
-    sub_env.add_callback( "printFixed",   2, &BatchInfoLog::printFixed );
-    sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+    BatchInfoLog::add_inja_callbacks( sub_env );
     sub_env.add_callback( "pct",          1, &pct_callback );
     sub_env.add_callback( "pct",          2, &pct_callback );
     sub_env.add_callback( "safe_html",    1, &safe_html_callback );
@@ -1672,6 +1670,8 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
   }
 
   // ---- ROIs ----
+  // `rois` are the ROIs the fit used; `input_rois` are the ROIs as specified, which for ROIs sized
+  //  from the peak shape (or broken up by lines) differ from those fit.
   data["rois"] = json::array();
   for( const RelActCalcAuto::RoiRange &r : sol.m_options.rois )
   {
@@ -1681,6 +1681,27 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       { "continuum_type",   PeakContinuum::offset_type_label_tr( r.continuum_type ) },
       { "range_limits_type", RelActCalcAuto::RoiRange::to_str( r.range_limits_type ) }
     } );
+  }
+
+  data["input_rois"] = json::array();
+  for( const RelActCalcAuto::RoiRange &r : sol.m_input_rois )
+  {
+    json input_roi = {
+      { "lower_energy",     r.lower_energy },
+      { "upper_energy",     r.upper_energy },
+      { "continuum_type",   PeakContinuum::offset_type_label_tr( r.continuum_type ) },
+      { "auto_continuum",   r.auto_continuum },
+      { "range_limits_type", RelActCalcAuto::RoiRange::to_str( r.range_limits_type ) }
+    };
+    if( r.lower_edge.tail_fraction.has_value() )
+      input_roi["lower_edge_tail_fraction"] = r.lower_edge.tail_fraction.value();
+    if( r.lower_edge.sideband_fwhm.has_value() )
+      input_roi["lower_edge_sideband_fwhm"] = r.lower_edge.sideband_fwhm.value();
+    if( r.upper_edge.tail_fraction.has_value() )
+      input_roi["upper_edge_tail_fraction"] = r.upper_edge.tail_fraction.value();
+    if( r.upper_edge.sideband_fwhm.has_value() )
+      input_roi["upper_edge_sideband_fwhm"] = r.upper_edge.sideband_fwhm.value();
+    data["input_rois"].push_back( input_roi );
   }
 
   return data;

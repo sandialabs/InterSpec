@@ -46,6 +46,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmConversationHistory.h"
 
 //Forward declarations
 class SpecMeas;
@@ -63,7 +64,7 @@ namespace Wt
 {
   class WTextArea;
   class WPushButton;
-  class WGridLayout;
+  class WVBoxLayout;
 }
 
 /** Widget for interacting with Large Language Models.
@@ -82,8 +83,8 @@ public:
   LlmToolGui(InterSpec *viewer);
   ~LlmToolGui();
   
-  /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
-   InterSpec server was started.
+  /** Returns if the currently loaded LLM config (from the user's `llm_config.xml`, which is written by the
+   "LLM Provider Settings" window) has the `LlmApi` enabled, with an endpoint set for the active provider.
    */
   static bool llmToolIsConfigured();
   
@@ -97,6 +98,26 @@ public:
 
   /** Focus the input text field */
   void focusInput();
+
+  /** Re-fits any full-screen phone window this tool has open (i.e., the provider settings window)
+   to the screen; called when a phone is rotated.  See AuxWindow::refitPhoneFullScreen().
+   */
+  void refitPhoneWindows();
+
+  /** Phones only: tells the tool where it is being shown.
+
+   When in a full-screen window, `header` is that windows header bar (otherwise empty on the right),
+   and the tool puts its "dock" button (see InterSpec::setLlmToolDocked) and its conversation menu
+   icon there, rather than floating the menu icon over the conversation, where it would cover the
+   first interactions title.  When docked in the tools tab strip, `header` is null, and the tool
+   instead shows an "expand to full-screen" button next to its text input.
+   */
+  void setPhoneWindowHeader( Wt::WContainerWidget *header );
+
+  /** Phones only: whether the "dock" button in the window header is shown - i.e., whether there is a
+   tool-tab strip to dock into (only in portrait).
+   */
+  void setPhoneCanDock( const bool canDock );
 
   /** Clear the conversation history display */
   void clearHistory();
@@ -139,16 +160,30 @@ public:
    under the session UpdateLock).
    If `progressCallback` is provided, it will be called with intermediate results as the assistant
    works (tool calls, tool results, sub-agent responses).
+   `images` are sent with the prompt (refused if the model does not accept images); `id`, if not
+   empty, identifies the prompt to `cancelMcpPrompt`.
    */
   void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback,
-                          McpProgressCallback progressCallback = {} );
+                          McpProgressCallback progressCallback = {},
+                          std::vector<LlmToolCall::ImageContent> images = {},
+                          const std::string &id = {} );
+
+  /** Cancels the MCP prompt queued with `id`: dropped if it has not started, or its turn cancelled
+   if it is running; its callback then reports the cancellation.  Returns false if no such prompt
+   is queued or running.
+   */
+  bool cancelMcpPrompt( const std::string &id );
+
+  /** True if an assistant turn is running, or MCP prompts are queued. */
+  bool isTurnInProgress() const;
 
   /** Directly invoke a specialized agent (e.g. NuclideId, ActivityFit) with a prompt, streaming
    intermediate results via `progressCallback` and resolving `callback` when the agent finishes.
    Shows the assistant widget if it is not already visible.
    */
   void invokeAgentForMcp( AgentType agentType, const std::string &prompt,
-                          McpPromptCallback callback, McpProgressCallback progressCallback );
+                          McpPromptCallback callback, McpProgressCallback progressCallback,
+                          const std::string &id = {} );
 
   /** Disconnect the spectrum-changed handler (used by LlmBenchmarkRunner during SpectrumSequence). */
   void disconnectSpectrumChangedForBenchmark();
@@ -159,12 +194,23 @@ public:
   /** Stage an image to be sent with the next user message.
    Called from UploadedImgDisplay when user clicks "Send to AI assistant".
    Shows a thumbnail preview near the input area.
+
+   `displayName` labels the thumbnail in the GUI only.  `caption`, if non-empty, is additionally
+   sent to the LLM as a text block immediately before the image, so a prompt can refer to
+   several images unambiguously - used by LlmBenchmarkRunner for image questions.
    */
   void stageImage( const std::string &base64Data, const std::string &mimeType,
-                   const std::string &displayName, int widthPx, int heightPx );
+                   const std::string &displayName, int widthPx, int heightPx,
+                   const std::string &caption = {} );
 
   /** Returns true if the LLM model supports images and the GUI is available. */
   bool canAcceptImages() const;
+
+  /** Remove all staged images and hide the preview strip.
+   Public so LlmBenchmarkRunner can guarantee a question's message carries exactly its own
+   images, even if a previous attempt errored out before sendMessage() drained them.
+   */
+  void clearStagedImages();
 
   /** Returns true if a benchmark is currently running. */
   bool isBenchmarkRunning() const;
@@ -203,6 +249,11 @@ protected:
 
   /** Manually trigger context compaction (summarization of older conversation history) */
   void handleCompactConversation();
+
+  /** If conversation logging is enabled in the LLM config, (re)writes the whole current conversation
+   to `<writable data dir>/llm_logs/`.  Called at the end of each turn; never throws or shows a dialog.
+   */
+  void writeConversationLog();
   
 
 
@@ -230,9 +281,39 @@ private:
   Wt::WTextArea *m_inputEdit;             ///< Auto-growing input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Icon button to submit (arrow) / cancel (stop) messages
   Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
-  Wt::WGridLayout *m_layout;              ///< Main layout manager
+
+  /** Where m_menuIcon lives, other than in m_phoneHeaderTools (i.e., the conversation area). */
+  Wt::WContainerWidget *m_menuIconHome;
+
+  /** Phones only: the dock button and conversation menu icon, placed in the header bar of the
+   full-screen window holding us (so owned by that header); see setPhoneWindowHeader().
+   */
+  Wt::Core::observing_ptr<Wt::WContainerWidget> m_phoneHeaderTools;
+
+  /** The dock button in m_phoneHeaderTools; only valid while m_phoneHeaderTools is. */
+  Wt::WPushButton *m_phoneDockButton;
+
+  /** See setPhoneCanDock(). */
+  bool m_phoneCanDock;
+
+  /** Moves m_menuIcon into m_phoneHeaderTools, if both exist and it is not already there. */
+  void movePhoneMenuIcon();
+
+  /** Deletes m_menuIcon if it lives in m_phoneHeaderTools (i.e., not under m_root). */
+  void removePhoneMenuIcon();
+
+  /** Adds a phone "expand to full-screen" button to `parent`; only visible while docked (CSS). */
+  void addPhoneExpandButton( Wt::WContainerWidget *parent );
+  Wt::WVBoxLayout *m_layout;              ///< Main layout manager
 
   bool m_isRequestPending;                 ///< Whether a request is currently pending
+
+  /** Full path of the log file for the current conversation; empty until first written, and reset
+   whenever the conversation is cleared or replaced, so the next write starts a new file. */
+  std::string m_logFilePath;
+
+  /** Set after the first log-write failure, so we dont spam stderr every turn. */
+  bool m_logWriteFailed;
 
   /** Stored connection for spectrum change signal, so it can be disconnected/reconnected. */
   Wt::Signals::connection m_spectrumChangedConnection;
@@ -255,7 +336,8 @@ private:
   {
     std::string base64Data;
     std::string mimeType;
-    std::string displayName;
+    std::string displayName;  ///< GUI thumbnail label only; never sent to the LLM
+    std::string caption;      ///< Sent to the LLM before the image, when non-empty
     int widthPx = 0;
     int heightPx = 0;
   };//struct StagedImage
@@ -271,9 +353,6 @@ private:
 
   /** Remove a staged image by index and update the preview strip. */
   void removeStagedImage( size_t index );
-
-  /** Remove all staged images and hide the preview strip. */
-  void clearStagedImages();
 
   /** Stage an image pasted from the clipboard (connected to m_pasteImageSignal). */
   void handlePastedImage( const std::string &base64Data, const std::string &mimeType,
@@ -311,7 +390,11 @@ private:
    m_welcomeMessage (which ->clear() just freed) so it can't dangle. */
   void clearConversationDisplays();
 
-  /** Tear down m_root and recreate an empty one in the outer layout; nulls child pointers. */
+  /** Create a new outer layout, with an empty m_root in it (deleting any previous ones). */
+  void createRoot();
+
+  /** Replace m_root with a new empty one (see createRoot()), so a different UI can be built in it;
+   nulls child pointers. */
   void resetRoot();
 
   /** Open (or focus) the LLM provider settings window. */
@@ -350,6 +433,8 @@ private:
     std::string prompt;
     McpPromptCallback callback;
     McpProgressCallback progressCallback;
+    std::vector<LlmToolCall::ImageContent> images;
+    std::string id;
   };//struct PendingMcpPrompt
 
   /** FIFO of MCP-submitted prompts awaiting their turn (front = next to run). */
@@ -361,6 +446,10 @@ private:
 
   /** Progress callback for the in-flight MCP prompt (streams intermediate results). */
   McpProgressCallback m_activeProgressCallback;
+
+  /** The `id` of the in-flight MCP prompt, and whether `cancelMcpPrompt` cancelled it. */
+  std::string m_activeMcpId;
+  bool m_activeMcpCancelled = false;
 
   /** Connection to the current conversation's `responseAdded` signal for streaming MCP progress. */
   Wt::Signals::connection m_mcpResponseAddedConn;

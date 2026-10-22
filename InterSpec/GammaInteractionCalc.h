@@ -160,7 +160,7 @@ const char *to_str( const GeometryType type );
 //  gives you the probability a gamma of given energy will go through the
 //  material of given thickness.
 //Energy units should be in SandiaDecay/PhysicalUnits units.
-double transmition_length_coefficient( const Material *material, float energy );
+double transmition_length_coefficient( const Material *material, double energy );
 
 
 /** The FULL-ENERGY-PEAK survival-removal coefficient (plan 3.4, Rayleigh term 2026-09-04):
@@ -174,7 +174,7 @@ double transmition_length_coefficient( const Material *material, float energy );
 
  Rayleigh scattering is elastic, so it cannot move a photon out of the peak window BY ENERGY - and
  InterSpec's mu already excludes it (`massAttenuationCoefficientElement` returns
- compton+photoelectric+pair; the SNL path returns 0.0 for RayleighScatter), i.e. the model treats
+ compton+photoelectric+pair), i.e. the model treats
  a coherently scattered photon as continuing undeflected.  That is right for a THIN layer and wrong
  for a thick one: in Fe at 60 keV half the coherent scatters exceed 20 degrees, the deflection
  lengthens the photon's remaining path through the layer, and a fraction h of those photons is
@@ -201,10 +201,10 @@ double transmition_length_coefficient( const Material *material, float energy );
  steel versus 3.1% for water, under 0.3% for both above 344 keV - and the Rayleigh term by
  mu_Rayleigh/mu_total, about 10-13% in Fe from 60 to 150 keV, 4% at 344 keV.
  */
-double fep_survival_removal_coefficient( const Material *material, float energy,
+double fep_survival_removal_coefficient( const Material *material, double energy,
                                          double window_keV, double normal_thickness = 0.0 );
-double transmition_coefficient_material( const Material *material, float energy,
-                                float length );
+double transmition_coefficient_material( const Material *material, double energy,
+                                double length );
 
 
 /** The value of a quantity that is either a plain `double` or a `ceres::Jet` - i.e. its scalar part.
@@ -230,7 +230,7 @@ inline bool has_active_lanes( const T &val );
  double transmission_fraction = exp( -mu );
  \endcode
  */
-double transmission_coefficient_air( float energy, float length );
+double transmission_coefficient_air( double energy, double length );
 
 /** Similar to #transmission_coefficient_air, but not including length.
  
@@ -242,7 +242,7 @@ double transmission_coefficient_air( float energy, float length );
  double transmission_fraction = exp( - mu * distance );
  \endcode
  */
-double transmission_length_coefficient_air( float energy );
+double transmission_length_coefficient_air( double energy );
 
 
 //Returned in units of [Length]^2/[mass], so that
@@ -251,9 +251,9 @@ double transmission_length_coefficient_air( float energy );
 //  material with given atomic number and areal_density.
 //  The quantity retuned by this function is commonly labeled μ
 //Energy units should be in SandiaDecay/PhysicalUnits units.
-double mass_attenuation_coef( float atomic_number, float energy );
-double transmition_coefficient_generic( float atomic_number, float areal_density,
-                                float energy );
+double mass_attenuation_coef( double atomic_number, double energy );
+double transmition_coefficient_generic( double atomic_number, double areal_density,
+                                double energy );
 
 /** Returns the average gammas per second during a measurement, when the decay of the input nuclides is accounted for.
  @param mixture The nuclide mixture - currently may only have a single parent nuclide.
@@ -754,6 +754,44 @@ struct EffectiveShieldingInfo
 };//struct EffectiveShieldingInfo
 
 
+/** A sample of the detector-side lines the volumetric sources are integrated along (see
+ VolumetricLineIntegration_imp.hpp), for display.  Everything is in the assembly frame, in
+ PhysicalUnits, as `std::array{x0, y0, z0, x1, y1, z1}` segments, each starting at its end nearer
+ the source's detector side.
+ */
+struct VolumetricLineSample
+{
+  struct Line
+  {
+    /** The whole line: from where it leaves the outermost layer it crosses, through the detector
+     to where it leaves the active crystal. */
+    std::array<double,6> extent;
+
+    /** Where 90% of the counts it carries are emitted, the most emitting part first: the
+     detector-side part of the source crossing, since emission from deeper is absorbed on its way
+     out, and for a hollow or in-situ source possibly also a stretch on the far side. */
+    std::vector<std::array<double,6>> source_segments;
+
+    /** Where 90% of its photons interact in the active crystal: the entry part of the chord. */
+    std::vector<std::array<double,6>> crystal_segments;
+  };//struct Line
+
+  /** Gamma energy (keV) the lines were drawn in proportion to their contribution at. */
+  double energy = 0.0;
+
+  /** Every gamma energy (keV, ascending) integrated along lines; empty when none is. */
+  std::vector<double> energies;
+
+  /** Lines in the sets of the sources emitting at `energy`, and how many of them contribute. */
+  size_t num_lines_in_set = 0;
+  size_t num_contributing = 0;
+
+  /** Drawn in proportion to their contribution, so where they bunch is where the counts come from;
+   a line drawn twice is listed once. */
+  std::vector<Line> lines;
+};//struct VolumetricLineSample
+
+
 /** This is the setup of the problem - distances, shielding, how to calculate. */
 struct ShieldSourceConfig
 {
@@ -1153,7 +1191,7 @@ public:
    #expected_observed_chis would include (i.e., peaks with a decay particle or
    annihilation gamma), in that same order, with derivative information
    propagated through shielding transmission, volumetric-source integration
-   (via #DistributedSrcCalcT and #self_shielding_integration_imp - NOT Cuhre),
+   (via #DistributedSrcCalcT and #self_shielding_integration_imp),
    and - by numeric differencing re-seeded into the Jet - nuclide age.
 
    No logging; unlike #DoEval, exceptions (including CancelException) propagate.
@@ -1204,6 +1242,17 @@ public:
   std::vector<EffectiveShieldingInfo> computeEffectiveShielding( const std::vector<double> &params,
                                                      NucMixtureCache &mixturecache,
                                                      std::vector<std::string> *warnings = nullptr ) const;
+
+  /** For display: up to `max_lines` of the lines the volumetric sources are integrated along, drawn
+   in proportion to the counts each contributes at the gamma nearest `energy` (keV), or at the one
+   contributing the most counts when `energy <= 0` - pooled over every source emitting it.  No
+   energies when no source is integrated on the line path (e.g. the flat-disk efficiency is used).
+
+   A diagnostic like #computeEffectiveShielding; call with the parameters to show.
+   */
+  VolumetricLineSample sampleVolumetricLines( const std::vector<double> &params,
+                                              const double energy,
+                                              const size_t max_lines ) const;
 
   /** Templated equivalents of the same-named double-valued accessors below;
    defined in GammaInteractionCalc_imp.hpp.
@@ -1412,7 +1461,11 @@ public:
    near-field penalty) are fully correlated common modes in it, a fitted
    curve's coefficient covariance is strongly correlated between nearby
    energies; `model_part`, when given, receives the envelope-only matrix.
-   Empty if the detector has no uncertainty information.
+   When #dropsAssumedEffUncert, the returned matrix IS the envelope-only one.
+   Empty if the detector has no uncertainty information, or it is all zero.
+
+   TODO: volumetric sources use the point-source position's covariance; the per-element sigma of
+   the line integral is discarded, so close-in extended sources are likely under-covered.
 
    Consumed by #peakEffFracUncerts (displayed marginal pulls) and by
    ShieldingSourceFitCalc's GLS whitening of the fit residuals, so a
@@ -1420,6 +1473,13 @@ public:
    averaged down by sqrt(num-peaks).
    */
   std::vector<double> peakEffFracCovariance( std::vector<double> *model_part = nullptr ) const;
+
+  /** Whether #peakEffFracCovariance leaves out an assumed efficiency uncertainty: the DRF states
+   none of its own (DetectorPeakResponse::statesOwnEfficiencyUncert) and
+   `ShieldingSourceFitOptions::drf_uncert_include_assumed` is false, so only the geometry-model
+   envelope is used.
+   */
+  bool dropsAssumedEffUncert() const;
 
   /** Square root of the diagonal of #peakEffFracCovariance - the per-peak
    1-sigma fractional efficiency uncertainty envelope; `model_uncerts`, when
@@ -1505,7 +1565,7 @@ public:
    */
   const std::string &volumetricEffResolveNote() const;
 
-  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran) could not be
+  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran / ImportedGrid) could not be
    honored and the fit fell back to the best model the DRF still offers (its attached response, else
    flat-disk).  Distinct from #volumetricEffResolveNote: a note is informational (including every
    `Auto` resolution), whereas this says the user asked for something specific and did not get it,
@@ -1528,7 +1588,8 @@ public:
    through the DRF's geometry, else flat-disk.  There is no far-field step-down to flat-disk: the
    line quadrature makes the response cheap at any distance, and a far-field transfer reproduces the
    measured curve to within its anchor, so stepping down would only buy a second model in the same
-   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.
+   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.  A DRF
+   carrying an imported .par efficiency grid resolves to #VolumetricEffMethod::ImportedGrid.
    */
   static ShieldingSourceFitCalc::VolumetricEffMethod resolveVolumetricEffMethodForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
@@ -1686,6 +1747,12 @@ protected:
    safe for the fit worker threads.
    */
   std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
+
+  /** What the DRF's FEP curve must be divided by for the per-decay efficiency the cascade engine
+   needs: 1, except for a per-gram / per-area fixed-geometry DRF (see
+   MakeFixedGeomResponse::perDecayFepScale).  Set in #create when #m_cascadeCalc is.
+   */
+  double m_cascadeFepScale = 1.0;
 
   /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
   struct CascadeCorrEntry
@@ -1866,7 +1933,7 @@ public:
   template <typename T>
   struct PointSrcAttenContext
   {
-    std::vector<std::function<T(float)>> att_fcns;
+    std::vector<std::function<T(double)>> att_fcns;
     T air_dist = T(0.0);        //length units
     T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
     T eff_an = T(0.0);          //AD-weighted effective atomic number

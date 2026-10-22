@@ -35,6 +35,11 @@ import re
 import subprocess
 from pathlib import Path
 
+from generation_utils import ELECTRON_Z_MAX
+
+# Every pinned historical baseline commit tabulated Z=1..92.
+HISTORICAL_Z_MAX = 92
+
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORTS = Path(__file__).resolve().parent / "reports"
@@ -66,7 +71,7 @@ def git_text(ref: str, path: str) -> str:
 
 def array_counts(text: str, stem: str) -> list[int]:
     counts = []
-    for z in range(1, 93):
+    for z in range(1, HISTORICAL_Z_MAX + 1):
         match = re.search(
             rf"static const (?:float|uint16_t) Z{z}_{stem}(?:\[[^]]*\])?\s*=\s*\{{(.*?)\}};",
             text, re.DOTALL,
@@ -217,7 +222,7 @@ def main() -> int:
     for baseline, ref in BASELINES.items():
         historical = git_text(ref, "src/cross_sections/element_data.cpp")
         energy_nodes = array_counts(historical, "log_energy")
-        angular_nodes = [18] * 92
+        angular_nodes = [18] * HISTORICAL_Z_MAX
         for process in PHOTON_NAMES:
             after = direct[process]
             before_nodes = angular_nodes if process in ("form_factor", "scattering_function") else energy_nodes
@@ -243,7 +248,7 @@ def main() -> int:
         before_scalar = "uint16" if quantized else "float32"
         before_bytes = before_coeff * (2 if quantized else 4)
         before_grid = (32 + len(sb_nodes[0:1]) * 0 + (26 if quantized else 27)) * 4
-        before_metadata = 92 * 4 + 4 if quantized else 4
+        before_metadata = HISTORICAL_Z_MAX * 4 + 4 if quantized else 4
         storage = brems["storage"]
         packing = brems["validation"]["uint16_packing"]
         packing_p95 = max(
@@ -264,18 +269,19 @@ def main() -> int:
             storage["retained_coefficients"], storage["native_coefficients_in_runtime_range"],
             storage["scalar_encoding"], storage["coefficient_bytes"],
             storage["energy_grid_bytes"] + storage["kappa_grid_bytes"], storage["metadata_bytes"],
-            node_stats([27] * 92), packing_p95, packing_max,
+            node_stats([27] * ELECTRON_Z_MAX), packing_p95, packing_max,
         ))
 
         # The former stopping representation was one shared 12x15 correction
-        # surface per process; the new representation retains all 92x53 values.
+        # surface per process; the new representation retains all 92x53 values
+        # (ELECTRON_Z_MAX elements; heavier elements reuse Z=92 at runtime).
         for process in ("collision_stopping", "radiative_stopping"):
             after = stopping["processes"][process]
             rows.append(row(
                 baseline, process, 180, "float32 correction ratio", 720, 0, 0,
                 node_stats([15] * 12), after["retained_coefficients"],
                 after["native_coefficients"], stopping["encoding"],
-                after["coefficient_bytes"], 0, after["metadata_bytes"], node_stats([53] * 92),
+                after["coefficient_bytes"], 0, after["metadata_bytes"], node_stats([53] * ELECTRON_Z_MAX),
                 after["p95_native_representation_error_percent"],
                 after["maximum_native_representation_error_percent"],
             ))
@@ -295,8 +301,8 @@ def main() -> int:
             relaxation["maximum_float32_mean_emitted_energy_error_percent"],
         )
         rows.append(row(
-            baseline, "K_relaxation", 92 * 14, "float32", 92 * 14 * 4,
-            0, 92 * 4, node_stats([6] * 92),
+            baseline, "K_relaxation", HISTORICAL_Z_MAX * 14, "float32", HISTORICAL_Z_MAX * 14 * 4,
+            0, HISTORICAL_Z_MAX * 4, node_stats([6] * HISTORICAL_Z_MAX),
             k_relaxation["retained_coefficients"], k_relaxation["native_coefficients"],
             "float32 variable-length", k_relaxation["coefficient_bytes"], 0,
             k_relaxation["metadata_bytes"],

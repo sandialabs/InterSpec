@@ -266,10 +266,7 @@
     Ketidakpastian 1&#963; <b>relatif</b> dari cacahan yang diharapkan per satuan aktivitas, dalam
     <b>persen</b> - misalnya <b>5</b> untuk 5%.  Kosongkan, atau isi 0, bila tidak ada.
     <p>
-      Ini mencakup segala sesuatu yang menskalakan cacahan yang diharapkan dan yang bukan statistik
-      pencacahan: kurva efisiensi detektor dan rasio percabangan gamma, yang masuk secara identik.
-      Masukkan keduanya digabung secara kuadratur bila keduanya penting.  Ketidakpastian efisiensi
-      detektor biasanya berkisar 3&#8211;10%.
+      Mencakup semua yang menskalakan cacah yang diharapkan dan bukan statistik pencacahan, di luar ketidakpastian efisiensi yang dinyatakan respons detektor sendiri: yang itu selalu disertakan, dan ini ditambahkan secara kuadratur.  Gunakan untuk rasio percabangan gamma, atau untuk respons detektor yang tidak menyatakan ketidakpastian (ketidakpastian efisiensi detektor biasanya 3&#8211;10%).
     </p>
     <p>
       Ia digabungkan secara kuadratur dengan ketidakpastian jarak, dan totalnya harus tetap di bawah

@@ -167,59 +167,29 @@
 
 
 /* ==================== Skew parameters section ==================== */
-.PfdpgSkewParams
+/* The skew parameter grid (see SkewParamsGrid.css) fills the panel width here; selectors are
+   qualified so they win over that stylesheet, which may load later. */
+.PeakFitDetPrefsGui .PfdpgSkewParams
 {
   grid-column: 1 / -1;
-}
-
-/* 3-column grid: name | lower | upper */
-.PfdpgParamTable
-{
-  display: grid;
-  grid-template-columns: auto 1fr 1fr;
-  row-gap: 2px;
-  column-gap: 3px;
-  align-items: center;
   border-top: 1px solid var(--interspec-border-color);
   padding-top: 2px;
+  column-gap: 3px;
 }
 
-/* For non-energy-dependent params: name | value (spanning 2 cols) */
-.PfdpgParamTable.PfdpgSingleCol
+.PeakFitDetPrefsGui .PfdpgSkewParams.SpgV1
 {
   grid-template-columns: auto 1fr;
 }
 
-/* Column headers in the param table */
-.PfdpgColHeader
+.PeakFitDetPrefsGui .PfdpgSkewParams.SpgV2
 {
-  font-size: 9px;
-  font-weight: bold;
-  opacity: 0.5;
-  text-align: center;
-  white-space: nowrap;
+  grid-template-columns: auto 1fr 1fr;
 }
 
-.PfdpgParamName
-{
-  font-size: 10px;
-  font-weight: bold;
-  opacity: 0.7;
-  white-space: nowrap;
-}
-
-.PfdpgSpin
+.PeakFitDetPrefsGui .PfdpgSkewParams .SpgSpin
 {
   width: 100%;
-  min-width: 40px;
-  font-size: 11px;
-  box-sizing: border-box;
-}
-
-/* Non-energy-dependent spin in a 3-column grid: span both value columns */
-.PfdpgSpinWide
-{
-  grid-column: span 2;
 }
 
 

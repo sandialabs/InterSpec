@@ -36,10 +36,41 @@
 #include <stdexcept>
 #include <random>
 #include <cstdlib>
+#include <string>
 
 namespace ceelo {
 
+static_assert(estar_data::kElementCount == static_cast<std::size_t>(kMaxElectronTableZ),
+              "ESTAR tables must cover exactly the electron-table domain");
+
 namespace {
+
+// ============================================================
+// Electron-side element domain
+//
+// The electron tables (ESTAR stopping, ICRU-49 I, Seltzer-Berger brems, and the
+// range / brems-integral tables built from them) stop at uranium. Every element
+// Z > kMaxElectronTableZ is treated as uranium throughout the electron physics:
+// its tables AND the atomic weight, Z/A, Z(Z+1)/A weights, radiation length and
+// effective Z used with them, so the per-material electron view stays
+// self-consistent. electron_table_z() documents the size of the approximation.
+// ============================================================
+
+/// Map a photon-domain Z to the electron tables; throws for a Z no table covers
+/// (this replaces the former silent I=200 eV / A=2Z / 0 / 1e30 fallbacks).
+int checked_electron_z(int Z) {
+    if (Z < 1 || Z > kMaxZ)
+        throw std::out_of_range("ElectronCsda: Z=" + std::to_string(Z)
+                                + " is outside 1.." + std::to_string(kMaxZ));
+    return electron_table_z(Z);
+}
+
+/// Row index into a per-element electron table. Ze must already be mapped
+/// through electron_table_z(); an unmapped Z fails here in Debug builds.
+inline std::size_t electron_row(int Ze) {
+    assert(Ze >= 1 && Ze <= kMaxElectronTableZ);
+    return static_cast<std::size_t>(Ze - 1);
+}
 
 // ============================================================
 // Physical constants
@@ -74,8 +105,10 @@ double electron_number_density(const Material& mat) {
     constexpr double NA = 6.02214076e23;
     const double rho = mat.density();
     double ne = 0.0;
-    for (const auto& c : mat.composition())
-        ne += rho * NA * c.mass_fraction * c.Z / ElectronCsda::atomic_weight(c.Z);
+    for (const auto& c : mat.composition()) {
+        const int Ze = electron_table_z(c.Z);
+        ne += rho * NA * c.mass_fraction * Ze / ElectronCsda::atomic_weight(Ze);
+    }
     return ne;
 }
 
@@ -101,7 +134,7 @@ public:
         ncomp_ = comps.size();
         assert(ncomp_ <= kMaxComp);
         for (size_t i = 0; i < ncomp_; ++i) {
-            const int Z = comps[i].Z;
+            const int Z = electron_table_z(comps[i].Z);
             z_[i]     = Z;
             w_rad_[i] = comps[i].mass_fraction * Z * (Z + 1.0)
                         / ElectronCsda::atomic_weight(Z);
@@ -132,7 +165,7 @@ private:
 // Used in the Bethe-Bloch collision stopping power formula.
 // Source: ICRU 49 / NIST PSTAR database.
 // ============================================================
-static const double kICRU49_I_eV[92] = {
+static const double kICRU49_I_eV[kMaxElectronTableZ] = {
     /* Z=1  H  */   19.2,
     /* Z=2  He */   41.8,
     /* Z=3  Li */   40.0,
@@ -227,9 +260,9 @@ static const double kICRU49_I_eV[92] = {
     /* Z=92 U  */  890.0,
 };
 
-// Standard atomic weights (g/mol) for Z = 1..92.
+// Standard atomic weights (g/mol) for Z = 1..92, the electron-table domain.
 // Values from IUPAC 2021 Table of Atomic Weights (rounded).
-static const double kAtomicWeight[92] = {
+static const double kAtomicWeight[kMaxElectronTableZ] = {
     /* Z=1  H  */   1.008,
     /* Z=2  He */   4.003,
     /* Z=3  Li */   6.941,
@@ -357,11 +390,12 @@ void build_perp_basis(const Eigen::Vector3d& d,
 /// Multiply KE_MeV/X0 by this to get S_rad consistent with NIST ESTAR.
 static double radiative_correction_factor(int Z, double KE_keV)
 {
-    if (Z < 1 || Z > 92 || KE_keV <= 0.0) return 0.0;
-    const double stopping = estar_data::radiative_stopping(Z, KE_keV);
+    if (KE_keV <= 0.0) return 0.0;
+    const int Ze = checked_electron_z(Z);
+    const double stopping = estar_data::radiative_stopping(Ze, KE_keV);
     const double energy_MeV = KE_keV * 1.0e-3;
-    const double A = ElectronCsda::atomic_weight(Z);
-    const double X0 = ElectronCsda::radiation_length_gcm2_element(Z, A);
+    const double A = ElectronCsda::atomic_weight(Ze);
+    const double X0 = ElectronCsda::radiation_length_gcm2_element(Ze, A);
     return (energy_MeV > 0.0 && X0 > 0.0) ? stopping * X0 / energy_MeV : 0.0;
 }
 
@@ -374,10 +408,11 @@ static double radiative_correction_compound(const Material& mat, double KE_keV)
     double sum_wf = 0.0;
     double sum_corr = 0.0;
     for (const auto& comp : mat.composition()) {
-        double A  = ElectronCsda::atomic_weight(comp.Z);
-        double X0_i = ElectronCsda::radiation_length_gcm2_element(comp.Z, A);
+        const int Ze = electron_table_z(comp.Z);
+        double A  = ElectronCsda::atomic_weight(Ze);
+        double X0_i = ElectronCsda::radiation_length_gcm2_element(Ze, A);
         double weight = comp.mass_fraction / X0_i;  // contribution to 1/X0
-        double corr_i = radiative_correction_factor(comp.Z, KE_keV);
+        double corr_i = radiative_correction_factor(Ze, KE_keV);
         sum_wf   += weight;
         sum_corr += weight * corr_i;
     }
@@ -393,14 +428,12 @@ static double radiative_correction_compound(const Material& mat, double KE_keV)
 
 double ElectronCsda::mean_excitation_eV(int Z)
 {
-    if (Z < 1 || Z > 92) return 200.0; // fallback
-    return kICRU49_I_eV[Z - 1];
+    return kICRU49_I_eV[electron_row(checked_electron_z(Z))];
 }
 
 double ElectronCsda::atomic_weight(int Z)
 {
-    if (Z < 1 || Z > 92) return static_cast<double>(Z) * 2.0; // rough fallback
-    return kAtomicWeight[Z - 1];
+    return kAtomicWeight[electron_row(checked_electron_z(Z))];
 }
 
 /// Direct NIST ESTAR collision stopping power for electrons.
@@ -412,7 +445,8 @@ double ElectronCsda::atomic_weight(int Z)
 double ElectronCsda::stopping_power_MeV_cm2_g(int Z, double A_g_mol, double KE_keV,
                                               bool is_positron)
 {
-    if (KE_keV <= 0.0 || A_g_mol <= 0.0 || Z < 1 || Z > 92) return 1e30;
+    if (KE_keV <= 0.0 || A_g_mol <= 0.0) return 1e30;
+    Z = checked_electron_z(Z);  // Z 93-98 use uranium's ESTAR row and I
 
     // Direct all-element ESTAR collision values replace the former 12-element,
     // 15-energy correction surface. ESTAR's supported migration range begins at
@@ -470,7 +504,8 @@ ElectronCsda::ElectronCsda()
         energy_grid_keV_[i] = std::exp(lE);
     }
 
-    // For each element Z = 1..92, build the CSDA range table via trapezoid integration
+    // For each element Z = 1..92 (the electron-table domain), build the CSDA range
+    // table via trapezoid integration
     // of 1/S(T) over the energy grid.
     //
     // R(T_i) = ∫₀^{T_i} dT' / S(T')
@@ -484,7 +519,7 @@ ElectronCsda::ElectronCsda()
     for (int pass = 0; pass < 2; ++pass) {
         const bool is_pos = (pass == 1);
         auto& Rtab = is_pos ? range_table_pos_ : range_table_;
-        for (int Zm1 = 0; Zm1 < 92; ++Zm1) {
+        for (int Zm1 = 0; Zm1 < kMaxElectronTableZ; ++Zm1) {
             int Z = Zm1 + 1;
             double A = kAtomicWeight[Zm1];
 
@@ -514,7 +549,7 @@ ElectronCsda::ElectronCsda()
     constexpr double kBremsThreshold_keV = 10.0;  // matches deposited_in_scoring
     constexpr int    N_int = 64;
     const auto& xs_data = CrossSectionData::instance();
-    for (int Zm1 = 0; Zm1 < 92; ++Zm1) {
+    for (int Zm1 = 0; Zm1 < kMaxElectronTableZ; ++Zm1) {
         int Z = Zm1 + 1;
         for (int i = 0; i < kNGrid; ++i) {
             double E = energy_grid_keV_[i];
@@ -557,8 +592,7 @@ const ElectronCsda& ElectronCsda::instance()
 
 double ElectronCsda::interpolate_range(int Z, double KE_keV) const
 {
-    if (Z < 1 || Z > 92) return 0.0;
-    int Zm1 = Z - 1;
+    const std::size_t Zm1 = electron_row(checked_electron_z(Z));
 
     if (KE_keV <= kEMin_keV) return range_table_[Zm1][0];
     if (KE_keV >= kEMax_keV) return range_table_[Zm1][kNGrid - 1];
@@ -608,11 +642,12 @@ double ElectronCsda::brems_pemit_corr(const Material& mat, double KE_keV) const
     // w_rad = mass_fraction × Z(Z+1)/A  (same weighting as the old compound_chi).
     double I_chi = 0.0, I_chiok = 0.0, w_sum = 0.0;
     for (const auto& comp : mat.composition()) {
-        double A_i = atomic_weight(comp.Z);
+        const int Ze = electron_table_z(comp.Z);
+        double A_i = atomic_weight(Ze);
         if (A_i <= 0.0) continue;
-        double w_rad = comp.mass_fraction * comp.Z * (comp.Z + 1.0) / A_i;
-        I_chi   += w_rad * interpolate_log_grid(sb_Jchi_[comp.Z - 1], KE_keV);
-        I_chiok += w_rad * interpolate_log_grid(sb_Jchiok_[comp.Z - 1], KE_keV);
+        double w_rad = comp.mass_fraction * Ze * (Ze + 1.0) / A_i;
+        I_chi   += w_rad * interpolate_log_grid(sb_Jchi_[electron_row(Ze)], KE_keV);
+        I_chiok += w_rad * interpolate_log_grid(sb_Jchiok_[electron_row(Ze)], KE_keV);
         w_sum   += w_rad;
     }
     if (w_sum <= 0.0 || I_chiok <= 0.0) return 1.0;
@@ -667,7 +702,7 @@ ElectronCsda::compound_range_table(const Material& mat, bool is_positron) const
     for (int i = 0; i < kNGrid; ++i) {
         double inv_range_sum = 0.0;
         for (const auto& c : comp) {
-            double Ri = src_table[c.Z - 1][i];
+            double Ri = src_table[electron_row(electron_table_z(c.Z))][i];
             if (Ri > 1e-30) inv_range_sum += c.mass_fraction / Ri;
         }
         e.R[i] = (inv_range_sum > 0.0) ? 1.0 / inv_range_sum : 1e30;
@@ -757,7 +792,10 @@ double ElectronCsda::radiation_length_gcm2_element(int Z, double A_g_mol)
 {
     // Tsai formula (PDG Eq. 34.26):
     //   X₀ = 716.4 × A / (Z × (Z+1) × ln(287 / √Z))  [g/cm²]
-    if (Z < 1 || A_g_mol <= 0.0) return 1e30;
+    // Z is taken on the electron side (Z 93-98 -> U), matching the atomic weight
+    // callers pass (ElectronCsda::atomic_weight is the uranium proxy there too).
+    if (A_g_mol <= 0.0) return 1e30;
+    Z = checked_electron_z(Z);
     double ln_term = std::log(287.0 / std::sqrt(static_cast<double>(Z)));
     if (ln_term <= 0.0) return 1e30;
     return 716.4 * A_g_mol
@@ -769,8 +807,9 @@ double ElectronCsda::radiation_length_gcm2(const Material& mat)
     // Bragg additivity: 1/X₀_compound = Σᵢ wᵢ / X₀ᵢ
     double inv_sum = 0.0;
     for (const auto& comp : mat.composition()) {
-        double A  = atomic_weight(comp.Z);
-        double X0 = radiation_length_gcm2_element(comp.Z, A);
+        const int Ze = electron_table_z(comp.Z);
+        double A  = atomic_weight(Ze);
+        double X0 = radiation_length_gcm2_element(Ze, A);
         if (X0 > 0.0) {
             inv_sum += comp.mass_fraction / X0;
         }
@@ -938,8 +977,9 @@ double hard_elastic_mean_per_gcm2(const Material& mat, double pc_keV,
                      / (pc_keV * pc_keV * pc_keV * pc_keV);
     double sum = 0.0;
     for (const auto& c : mat.composition()) {
-        double Z = static_cast<double>(c.Z);
-        double A = ElectronCsda::atomic_weight(c.Z);
+        const int Ze = electron_table_z(c.Z);
+        double Z = static_cast<double>(Ze);
+        double A = ElectronCsda::atomic_weight(Ze);
         if (A <= 0.0) continue;
         double eta   = moliere_screening_eta(Z, pc_keV);
         double tail  = 1.0 / (1.0 - mu_c + 2.0 * eta) - 1.0 / (2.0 + 2.0 * eta);
@@ -970,8 +1010,9 @@ double soft_transport_per_gcm2(const Material& mat, double pc_keV,
                      / (pc_keV * pc_keV * pc_keV * pc_keV);
     double sum = 0.0;
     for (const auto& c : mat.composition()) {
-        double Z = static_cast<double>(c.Z);
-        double A = ElectronCsda::atomic_weight(c.Z);
+        const int Ze = electron_table_z(c.Z);
+        double Z = static_cast<double>(Ze);
+        double A = ElectronCsda::atomic_weight(Ze);
         if (A <= 0.0) continue;
         double eta    = moliere_screening_eta(Z, pc_keV);
         double denom  = 1.0 - mu_c + 2.0 * eta;
@@ -1001,7 +1042,7 @@ double ElectronCsda::effective_Z(const Material& mat)
 {
     double num = 0.0, den = 0.0;
     for (const auto& c : mat.composition()) {
-        num += c.mass_fraction * static_cast<double>(c.Z);
+        num += c.mass_fraction * static_cast<double>(electron_table_z(c.Z));
         den += c.mass_fraction;
     }
     return (den > 0.0) ? num / den : 7.0;
@@ -1323,8 +1364,10 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
             double beta2  = KE * (KE + 2.0 * m_e) / ((KE + m_e) * (KE + m_e));
             if (&mat != straggle_mat) {   // per-walk cache: material rarely changes
                 straggle_ZoverA = 0.0;
-                for (const auto& c : mat.composition())
-                    straggle_ZoverA += c.mass_fraction * c.Z / atomic_weight(c.Z);
+                for (const auto& c : mat.composition()) {
+                    const int Ze = electron_table_z(c.Z);
+                    straggle_ZoverA += c.mass_fraction * Ze / atomic_weight(Ze);
+                }
                 straggle_mat = &mat;
             }
             double sigma2 = kBohrXi_MeV2cm2g * straggle_ZoverA * step_gcm2
@@ -1591,7 +1634,7 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
     {
         source.trace_source_segments(pos, dir, KE, seg_buf);
         for (const auto& seg : seg_buf) {
-            if (!seg.material || seg.length <= 0.0) continue;
+            if (!seg.material || seg.length <= 0.0) continue;  // cavity adds no tau
             double path_gcm2 = seg.length * seg.material->density();
             double Rex = extrapolated_range_gcm2_material(*seg.material, KE);
             if (Rex > 1e-12) tau += path_gcm2 / Rex;
@@ -1631,7 +1674,12 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
         double dist = 0.0;
         const Material* exit_mat = &birth_material;  // exit-Z source for the gate
         for (const auto& seg : seg_buf) {
-            if (!seg.material || seg.length <= 0.0) continue;
+            if (!seg.material || seg.length <= 0.0) {
+                // An unfilled cavity: no energy loss, but it still has to be
+                //  travelled, or exit_position lands short by the cavity chord.
+                if (seg.length > 0.0) dist += seg.length;
+                continue;
+            }
             double path_gcm2 = seg.length * seg.material->density();
             double range_g = range_gcm2_material(*seg.material, KE);
             if (path_gcm2 >= range_g) return result;  // stopped inside
@@ -1669,10 +1717,27 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
     // log term (B2) — the per-step ln(x/X0) under-scatters the cumulative angle.
     double sum_x_X0 = 0.0;
 
+    // A cored source has at most one cavity, but a ray can cross it once per
+    //  direction change; this only has to bound the loop.
+    int void_crossings = 64;
+
     while (steps_remaining > 0 && KE > 0.01) {
         // Only the first (current) segment is needed here -- max_segments=1 stops
         // the trace after it, avoiding a full multi-shell re-trace every substep.
         source.trace_source_segments(pos, dir, KE, seg_buf, /*max_segments=*/1);
+
+        // A null-material segment is an unfilled cavity INSIDE a cored source,
+        //  not the world outside it.  Cross it - vacuum costs no energy and
+        //  scatters nothing - and pick the walk up at the far wall.  Treating it
+        //  as an exit declared electrons "escaped" at a point deep inside the
+        //  source, with full residual KE, skipping the far shell wall and every
+        //  shield beyond it.
+        if (!seg_buf.empty() && !seg_buf[0].material && seg_buf[0].length > 1e-10) {
+            pos += dir * (seg_buf[0].length + 1e-7);
+            if (--void_crossings < 0) return result;   // cannot loop forever
+            continue;
+        }
+
         if (seg_buf.empty() || !seg_buf[0].material || seg_buf[0].length <= 1e-10) {
             // Outside the source geometry — escaped (subject to the skin-escape
             // gate; brems already emitted along the walk is retained in result).
@@ -1754,8 +1819,10 @@ ElectronSourceWalkResult ElectronCsda::walk_in_source_geometry(
         if (principled && !dbg_no_straggle && step_gcm2 > 1e-12) {
             double beta2  = KE * (KE + 2.0 * m_e) / ((KE + m_e) * (KE + m_e));
             double ZoverA = 0.0;
-            for (const auto& c : mat.composition())
-                ZoverA += c.mass_fraction * c.Z / atomic_weight(c.Z);
+            for (const auto& c : mat.composition()) {
+                const int Ze = electron_table_z(c.Z);
+                ZoverA += c.mass_fraction * Ze / atomic_weight(Ze);
+            }
             double sigma2 = kBohrXi_MeV2cm2g * ZoverA * step_gcm2
                           * (1.0 - 0.5 * beta2);                 // MeV²
             if (sigma2 > 0.0) {

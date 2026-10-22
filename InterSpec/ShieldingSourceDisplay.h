@@ -574,6 +574,10 @@ public:
   void showShieldSourceDiagram();
   void closeShieldSourceDiagram();
   void handleShieldSourceDiagramClosed();
+
+  /** Answers the diagram's request for integration lines at `energy` (keV; <= 0 for the default),
+   from a fit function built for the current model. */
+  void handleDiagramLinesRequested( const double energy );
   
   /** Returns the inner ShieldingSelect of the one passed in; e.g., returns the ShieldingSelect that is contained by the one passed in.
    
@@ -788,6 +792,9 @@ public:
   /** Handler for the detector-efficiency-uncertainty method combo (None / ErrorPropagation /
    Likelihood); records undo/redo and refits the chart. */
   void drfUncertMethodChanged();
+  /** Handler for the "include assumed" efficiency-uncertainty checkbox; records undo/redo and refits
+   the chart. */
+  void drfUncertAssumedChanged();
   void correctForCascadeChanged();
 
   /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
@@ -798,19 +805,28 @@ public:
    the status text to the resolved active method.  Called on detector / geometry / source changes. */
   void updateVolEffMethodAvailability();
 
-  /** Shows the detector-efficiency-uncertainty method row only when the current DRF carries
-   efficiency-uncertainty information (an attached CeeLo MC response or a #DetectorEfficiencyUncert).
-   On the first invocation, if the DRF has no such information, defaults the selection to `None`
-   (see #m_drfUncertMethodDefaultApplied).  Called on detector / geometry changes. */
+  /** Sets #m_volEffMethodCombo to a VolumetricEffMethod index, listing the on-demand
+   "Imported efficiency grid" item first if needed (undo/redo and state restore). */
+  void setVolEffMethodIndex( const int index );
+
+  /** Updates the detector-efficiency-uncertainty row against the current DRF and distance (via
+   DrfModifyCalc::uncertSummary): shows the "include assumed" checkbox only when what the DRF reports
+   is assumed, and sets the status text to what the fit will use.  On the first invocation, if the DRF has no uncertainty, defaults
+   the selection to `None` (see #m_drfUncertMethodDefaultApplied).  Called from #updateChi2Chart and
+   on state restore. */
   void updateDrfUncertMethodAvailability();
 
-  /** "Compute DRF for this geometry (MC)": runs CeeLo over the current scene
+  /** "Create MC Eff" (link beside the "Shielding" caption): runs CeeLo over the current scene
    (worker thread) and switches to the resulting fixed-geometry DRF, which
    embeds the scene (displayed read-only afterwards).  Only available when no
    shielding dimension is being fit and the DRF has a CeeLo detector model.
    */
   void computeFixedGeomDrfRequested();
   void updateFixedGeomMcAvailability();
+
+  /** Why "Create MC Eff" can't run right now (the link is then hidden), as an i18n key; empty if it can.
+   The single rule both #updateFixedGeomMcAvailability and #computeFixedGeomDrfRequested use. */
+  std::string fixedGeomMcBlockReason() const;
 
   /** Enables/disables the cascade-summing checkbox: enabled when the DRF has
    usable total-efficiency info AND the predicted maximum summing magnitude
@@ -958,15 +974,21 @@ protected:
   Wt::WCheckBox  *m_backgroundPeakSub;
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
-  Wt::WCheckBox  *m_correctForCascade;
+  Wt::WCheckBox  *m_correctForCascade = nullptr;
 
   /** How the detector-efficiency uncertainty is used by the fit: None / ErrorPropagation (default) /
    Likelihood; index maps 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  Kept in its own row
-   (#m_drfUncertMethodRow) that is hidden when the current DRF carries no efficiency uncertainty. */
+   (#m_drfUncertMethodRow), always visible and enabled - #m_drfUncertStatus says what is used. */
   Wt::WComboBox *m_drfUncertMethodCombo = nullptr;
 
-  /** The row (label + #m_drfUncertMethodCombo) shown/hidden by #handleDetectorChanged so the control
-   only appears when the current DRF carries efficiency-uncertainty information. */
+  /** ShieldingSourceFitOptions::drf_uncert_include_assumed; only shown for a DRF that states no
+   efficiency uncertainty of its own, but reports an assumed one. */
+  Wt::WCheckBox *m_drfUncertAssumedCb = nullptr;
+
+  /** Says what efficiency uncertainty the fit will use - see #updateDrfUncertMethodAvailability. */
+  Wt::WText *m_drfUncertStatus = nullptr;
+
+  /** The row holding #m_drfUncertMethodCombo, #m_drfUncertAssumedCb and #m_drfUncertStatus. */
   Wt::WContainerWidget *m_drfUncertMethodRow = nullptr;
 
   /** The combo index before the most recent #drfUncertMethodChanged, for undo/redo. */
@@ -978,7 +1000,7 @@ protected:
   bool m_drfUncertMethodDefaultApplied = false;
 
   /** Volumetric-source detector-efficiency method override (Auto / Monte Carlo / EFFTRAN /
-   Flat-disk); items are enabled per-DRF by #updateVolEffMethodAvailability.  Maps to
+   Flat-disk / Imported efficiency grid); the last is listed per-DRF by #updateVolEffMethodAvailability.  Maps to
    ShieldingSourceFitOptions::volumetric_eff_method. */
   Wt::WComboBox *m_volEffMethodCombo = nullptr;
 
@@ -989,8 +1011,15 @@ protected:
   /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
   int m_lastVolEffMethodIndex = 0;
 
-  Wt::WPushButton *m_fixedGeomMcBtn;
+  Wt::WPushButton *m_fixedGeomMcBtn = nullptr;
   Wt::WText *m_fixedGeomLockedNote;
+
+  /** The scene (MakeFixedGeomResponse::Setup XML) embedded in the current fixed-geometry DRF, or
+   empty.  While set, no shielding layers are in #m_shieldingSelects (the scene is already in the
+   DRF's curves; it is only summarized in #m_fixedGeomLockedNote), and switching to a non-fixed DRF
+   restores the scene from it.
+   */
+  std::string m_embeddedSetupXml;
   SwitchCheckbox *m_showChiOnChart;
   GroupBox *m_optionsDiv;
   /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */

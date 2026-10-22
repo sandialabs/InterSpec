@@ -95,4 +95,9 @@
   <!-- A haladó bemenetek alatt jelenik meg, amikor a Dekonvolúció módszer van kiválasztva, ahol
        azok le vannak tiltva.  A magyarázat nélkül letiltott vezérlő hibának tűnik. -->
   <message id="dls-advanced-decon-note">Ezek a Currie-módszerre vonatkoznak; a dekonvolúciós határérték egyelőre nem használja őket.</message>
+  <message id="dls-drf-uncert-none">Nincs benne detektorhatásfok-bizonytalanság: a detektorválasz nem ad meg ilyet.</message>
+  <message id="dls-drf-uncert-stated">Tartalmazza a detektorválasz által megadott {1}%-os detektorhatásfok-bizonytalanságot.</message>
+  <message id="dls-drf-uncert-model-only">Csak a geometriai modellből származó {1}%-os detektorhatásfok-bizonytalanságot tartalmazza; a detektorválasz maga nem ad meg ilyet.</message>
+  <message id="dls-drf-uncert-decon-excluded">A detektorválasz {1}%-os hatásfok-bizonytalansága nincs benne a dekonvolúciós határban.</message>
+  <message id="dls-det-eff-used">Használt detektorhatásfok</message>
 </messages>

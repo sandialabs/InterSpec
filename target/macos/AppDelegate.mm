@@ -134,7 +134,7 @@
   {
     //Probably got file promise(s) here - we'll just fall-back to normal file upload, and
     //  let WkWebView take care of getting the files.
-    NSString *js = @"(function(){$(document).data('dragOverFilePaths',null);})()";
+    NSString *js = @"(function(){if(window._IS) window._IS.dragOverFilePaths = null;})()";
     [self evaluateJavaScript: js completionHandler:nil];
   }else
   {
@@ -148,7 +148,8 @@
     "let fns = {};\n\t"
     "fns.time = new Date();\n\t"
     "fns.filenames = " + json_data + ";\n\t"
-    "$(document).data('dragOverFilePaths',fns);\n\t"
+    "window._IS = window._IS || {};\n\t"
+    "window._IS.dragOverFilePaths = fns;\n\t"
     "console.log(\"Set file paths\",fns);\n"
     "})();";
     

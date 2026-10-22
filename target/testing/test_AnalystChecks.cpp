@@ -51,6 +51,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -172,7 +173,7 @@ public:
     m_interspec = m_app->viewer();
     BOOST_REQUIRE( m_interspec );
 
-    // Each session auto-saves its state into `InterSpecUserData.db` in the CWD and the next
+    // Each session auto-saves its state into the user database (one per test process) and the next
     //  restores it, so without this a fixture can start with a previous session's spectrum
     //  already displayed - which makes `InterSpec::userOpenFile` treat the file we want as a
     //  possible background and only show a dialog no headless test answers.
@@ -199,6 +200,50 @@ public:
     m_interspec = nullptr;
   }
 };
+
+
+// A DRF the user picks once the spectrum is loaded brings its peak-fit prefs (e.g., a GADRAS
+//  detector's peak shape) - unless the user set the spectrum's prefs in the GUI.
+BOOST_FIXTURE_TEST_CASE( test_drf_change_adopts_peak_fit_prefs, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  BOOST_REQUIRE( meas );
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  BOOST_REQUIRE_NO_THROW( drf->fromGadrasDirectory(
+                            SpecUtils::append_path( g_test_file_dir, "gadras_detectors/CZT_1.5x2x2_text" ) ) );
+  BOOST_REQUIRE( drf->peakFitDetPrefs() );
+
+  m_interspec->detectorChanged().emit( drf );
+  BOOST_REQUIRE( meas->peakFitDetPrefs() );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_peak_skew_type == PeakDef::SkewType::GadrasCZT );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_source == PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse );
+  for( size_t i = 0; i < 6; ++i )
+    BOOST_CHECK( meas->peakFitDetPrefs()->m_lower_energy_skew[i] == drf->peakFitDetPrefs()->m_lower_energy_skew[i] );
+
+  // A DRF without prefs (or no DRF) doesnt leave the previous DRF's peak shape with the spectrum
+  auto plain_drf = make_shared<DetectorPeakResponse>( *drf );
+  plain_drf->setPeakFitDetPrefs( nullptr );
+  m_interspec->detectorChanged().emit( plain_drf );
+  BOOST_REQUIRE( meas->peakFitDetPrefs() );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_source != PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_peak_skew_type != PeakDef::SkewType::GadrasCZT );
+
+  m_interspec->detectorChanged().emit( drf );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_peak_skew_type == PeakDef::SkewType::GadrasCZT );
+  m_interspec->detectorChanged().emit( nullptr );
+  BOOST_CHECK( meas->peakFitDetPrefs()->m_peak_skew_type != PeakDef::SkewType::GadrasCZT );
+
+  // Prefs the user set themselves are kept
+  auto user_prefs = make_shared<PeakFitDetPrefs>();
+  user_prefs->m_peak_skew_type = PeakDef::SkewType::Bortel;
+  user_prefs->m_source = PeakFitDetPrefs::LoadingSource::UserInputInGui;
+  meas->setPeakFitDetPrefs( user_prefs );
+  m_interspec->detectorChanged().emit( drf );
+  BOOST_CHECK( meas->peakFitDetPrefs() == user_prefs );
+  m_interspec->detectorChanged().emit( plain_drf );
+  BOOST_CHECK( meas->peakFitDetPrefs() == user_prefs );
+}//test_drf_change_adopts_peak_fit_prefs
 
 
 BOOST_FIXTURE_TEST_CASE( test_escape_peak_check_in_range_peaks, InterSpecTestFixture )

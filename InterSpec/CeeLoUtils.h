@@ -74,7 +74,8 @@ namespace CeeLoUtils
 
   /** Converts an InterSpec MaterialDB material to a self-contained CeeLo
    material spec (per-element mass fractions; nuclide fractions folded into
-   their element).  Throws for elements CeeLo has no data for (Z > 92).
+   their element).  Throws for elements CeeLo has no data for (Z > ceelo::kMaxZ,
+   i.e. above californium).
    */
   ceelo::MaterialSpec to_ceelo_material( const Material &mat );
 
@@ -84,10 +85,11 @@ namespace CeeLoUtils
    those definitions are more authoritative than any name lookup.
 
    `<compound>` atom counts are converted to mass fractions using SandiaDecay's
-   natural atomic masses, and `<compounds>` are merged mass-weighted.
+   natural atomic masses (CeeLo's own weights above uranium, where the masses are
+   conventions), and `<compounds>` are merged mass-weighted.
 
    Throws std::runtime_error if `mat` has no usable composition or density, or
-   names an element outside Z in [1,92] (which the Monte Carlo has no
+   names an element outside Z in [1,ceelo::kMaxZ] (which the Monte Carlo has no
    cross-sections for). */
   ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
                                        const SandiaDecay::SandiaDecayDataBase *db );
@@ -129,16 +131,34 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for fixed-geometry DRFs, or when fewer than two
    usable anchor points can be constructed.
+
+   TODO: only per-point sigmas are kept - the curve covariance's diagonal, or a per-node
+   #sm_default_anchor_frac_sigma when the DRF states none - so a common-mode efficiency error
+   averages down over a multi-peak fit.  Carry the full covariance, as
+   #curveAnchorWithCovarianceForDrf does (the assumed part needs a measured correlation first).
    */
   TransferAnchor transferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const ceelo::GeometryDescriptor &geom,
                       const double override_ref_distance_cm );
 
+  /** The transfer anchor for an imported efficiency grid (DetEffG2kPar::isGridResponse): the
+   grid's own absolute efficiency, on-axis at `ref_distance_cm` (<= 0 for
+   DetEffG2kPar::gridReferenceDistanceCm, i.e. 50 cm or more) - see DetEffG2kPar::groundingPoints.
+
+   #transferAnchorForDrf and #curveAnchorWithCovarianceForDrf use this for a DRF carrying a grid:
+   its legacy curve is sampled tens of metres out, and reconstructing an absolute efficiency from
+   it discards everything the grid knows about the near field.  `curve_derived` is true.
+   */
+  TransferAnchor gridTransferAnchor( const ceelo::DetectorResponse &grid,
+                                     const double ref_distance_cm );
+
   /** Samples the DRF's total-efficiency curve (when it has one) at the FEP
    anchor's energies and reference distance, for use as the transfer's
    total-efficiency anchor - transferred measured totals (endcap/dead-layer
    effects included) beat the bare-crystal fallback tier for cascade-summing.
+   Without a curve, a total the attached response characterizes (e.g., a Monte-Carlo total on an
+   imported grid) is sampled instead.
    Returns an empty curve when the DRF has no total-efficiency information.
    */
   ceelo::AnchorCurve totalTransferAnchorForDrf(
@@ -291,6 +311,11 @@ namespace CeeLoUtils
   double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd );
   Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd );
 
+  /** Worker threads for a detector Monte Carlo run from the GUI: all but two cores with 8 or more,
+   all but one with 2-7, so the session and the rest of the machine stay responsive.
+   */
+  unsigned monteCarloThreadCount();
+
   /** The detector face (endcap front) in the crystal-face frame, (0, 0, -endcap_front_offset_cm):
    the point InterSpec's distances are measured to, and the point a source-side ray aims at.
    */
@@ -378,7 +403,8 @@ namespace CeeLoUtils
    "Bi4Ge3O12", "CsI", "Cd0.96Zn0.04Te", "C14[H2]12".
 
    The subscripts are ATOM COUNTS (fractional counts allowed; a missing count
-   means 1), converted to mass fractions through the natural atomic masses.
+   means 1), converted to mass fractions through the natural atomic masses
+   (CeeLo's own weights above uranium, where the masses are conventions).
    `[H2]`-style isotope brackets are folded onto their element.
 
    Deliberately NOT `MaterialDB::materialFromChemicalFormula`, whose
@@ -387,7 +413,8 @@ namespace CeeLoUtils
    masses 4:3:12 and would throw outright on "CsI".
 
    Throws std::runtime_error on an unparseable formula, an unknown element, a
-   non-positive density, or an element the Monte Carlo has no data for (Z > 92).
+   non-positive density, or an element the Monte Carlo has no data for
+   (Z > ceelo::kMaxZ).
    */
   ceelo::MaterialSpec materialFromGadrasFormula( const std::string &formula,
                                                  const double density_g_per_cm3,
@@ -420,7 +447,7 @@ namespace CeeLoUtils
    interpolates across atomic number.
 
    Throws std::runtime_error unless `areal_density_g_cm2` and `thickness_cm` are
-   both positive and `atomic_number` is within [1,92].
+   both positive and `atomic_number` is within [1,ceelo::kMaxZ].
    */
   ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
                                                  const double areal_density_g_cm2,
@@ -503,10 +530,29 @@ namespace CeeLoUtils
 
    Throws std::runtime_error for a null response, or if fewer than two positive
    points can be sampled.
+
+   TODO: the carried sigma is the response's total, so the DRF then "states" an uncertainty even
+   when it was only assumed - see DetectorPeakResponse::statesOwnEfficiencyUncert.
    */
   void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
                       const std::shared_ptr<const ceelo::DetectorResponse> &response,
                       const size_t num_points = 48 );
+
+
+  /** Whether @p resp carries a Monte-Carlo efficiency of its own (a full or quick-MC scan), and so
+   is still a valid detector with its grounding removed.  A curve transfer (which includes an
+   imported grid) builds its efficiency *from* the anchor curve, so there is nothing under it.
+   */
+  bool responseHasMcBackbone( const ceelo::DetectorResponse &resp );
+
+
+  /** A deep copy of @p resp with its grounding (the k(E) that pins it to measured or curve-derived
+   points) removed, so it answers with the bare Monte-Carlo efficiency.  The model-transfer, floor
+   and per-node sigma terms are kept: they describe the Monte Carlo's own uncertainty.
+
+   Only meaningful for a response with #responseHasMcBackbone.  Throws on a copy failure.
+   */
+  std::shared_ptr<const ceelo::DetectorResponse> withoutGrounding( const ceelo::DetectorResponse &resp );
 
 
   /** A copy of @p drf whose ordinary efficiency curve reproduces the attached Monte-Carlo
@@ -541,6 +587,8 @@ namespace CeeLoUtils
     - It is a transient.  It has its own hash and is NOT the user's detector: never store
       one in a SpecMeas, hand it to a setter, or let it reach the "Previous" DRF database.
       Its name is suffixed so one that escapes is recognizable.
+    - TODO: its curve carries the response's total sigma, so `statesOwnEfficiencyUncert()` is
+      true on it even when the original DRF states none - classify on the original.
 
    Interpolation between the sampled points makes it an approximation to the response of
    order a percent - the same grid, K-edge flanking and per-point Monte-Carlo sigma that

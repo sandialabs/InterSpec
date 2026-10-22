@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1
+#
+# InterSpec as a multi-session MCP analysis server (see README.md in this directory).
+#
+# Build (from the root of the InterSpec source tree; the dependency stage takes a while the first time):
+#   docker build -t interspec-mcp-agent -f target/mcp_http/Containerfile .
+#
+# Run (the LLM configuration is not in the image - mount a directory holding your llm_config.xml,
+#  e.g. a copy of target/mcp_http/config.example):
+#   docker run --rm -p 8078:8078 \
+#     -v /srv/interspec/config:/config:ro \
+#     -v /srv/interspec/exchange:/exchange \
+#     -e INTERSPEC_MCP_BEARER_TOKEN=... \
+#     -e INTERSPEC_LLM_ENDPOINT=https://... -e INTERSPEC_LLM_BEARER_TOKEN=... -e INTERSPEC_LLM_MODEL=... \
+#     interspec-mcp-agent
+#
+# The MCP endpoint is then http://<host>:8078/mcp-api, and an unauthenticated health check is at
+#  http://<host>:8078/mcp-api/healthz.
+
+## Dependencies (boost, Wt with SSL, Eigen, Ceres, ...), in their own stage so they are rebuilt only
+##  when the dependency script changes.
+FROM debian:trixie-slim AS deps
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential cmake git curl ca-certificates libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+COPY target/dep_build /src/target/dep_build
+RUN WT_ENABLE_SSL=ON sh /src/target/dep_build/dep_build_linux.sh /src /work/deps /opt/deps \
+ && rm -rf /work/deps
+
+
+## InterSpec itself.
+FROM deps AS build
+COPY . /src
+RUN cmake -S /src/target/mcp_http -B /work/build -DInterSpec_FETCH_DEPENDENCIES=OFF \
+          -DCMAKE_PREFIX_PATH=/opt/deps -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build /work/build -j"$(nproc)" \
+ && cmake --install /work/build --prefix /opt/interspec \
+ && rm -rf /opt/interspec/share/interspec/example_spectra \
+ && ldd /opt/interspec/bin/InterSpecMcpServer
+
+
+## Runtime: the server, a headless Chromium (one tab per session), fonts for the chart images, and
+##  CA certificates for https calls to the LLM.  No curl or other network tools.
+FROM debian:trixie-slim
+LABEL org.opencontainers.image.title="InterSpec MCP analysis server" \
+      org.opencontainers.image.source="https://github.com/sandialabs/InterSpec"
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium-headless-shell ca-certificates fonts-dejavu-core \
+                                               libssl3t64 tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --home-dir /var/lib/interspec --create-home --shell /usr/sbin/nologin interspec \
+ && mkdir -p /exchange /config \
+ && chown interspec:interspec /exchange
+COPY --from=build /opt/interspec /opt/interspec
+
+USER interspec
+WORKDIR /var/lib/interspec
+
+# Chromium's own sandbox needs user namespaces, which Docker's default seccomp profile does not
+#  allow; set to 0 if you run with a profile that does (see README.md).
+ENV INTERSPEC_BROWSER_NO_SANDBOX=1
+
+VOLUME ["/exchange"]
+EXPOSE 8078
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8078 && printf 'GET /mcp-api/healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"ok\"' <&3"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/interspec/bin/InterSpecMcpServer", \
+            "--llm-config-dir", "/config", \
+            "--docroot", "/opt/interspec/share/interspec", \
+            "--userdatadir", "/var/lib/interspec", \
+            "--http-address", "0.0.0.0", "--http-port", "8078"]

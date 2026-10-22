@@ -93,6 +93,7 @@
 
 #include "io/ResponseKernel.h"
 #include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -104,6 +105,8 @@
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "ParTestUtils.h"
+
 using namespace std;
 
 namespace
@@ -111,6 +114,7 @@ namespace
   string g_data_dir;       ///< --datadir=   (nuclear data; for InterSpec statics)
   string g_test_data_dir;  ///< --testfiledir=
   string g_par_dir;        ///< --pardir=    (root of the uncommitted corpus)
+  string g_write_mock_dir; ///< --write-mock-par=  (where WriteMockParFiles writes the mock pair)
 
   const double pi = 3.14159265358979323846;
 
@@ -232,7 +236,7 @@ namespace
 
     // Reference runs: recurse for .ecc, pair with a like-named .gis in the same
     //  directory.  Matching is case-insensitive on the stem, because the sample
-    //  corpus has case-mismatched pairs (e.g. Lab06_*.ecc vs lab06_*.gis) that a
+    //  corpus has case-mismatched pairs (e.g. Det06_*.ecc vs det06_*.gis) that a
     //  literal path build would miss on a case-sensitive filesystem.
     auto stem_lower = []( const string &path ) -> string
     {
@@ -373,6 +377,8 @@ namespace
           g_test_data_dir = arg.substr( 14 );
         else if( arg.find("--pardir=") == 0 )
           g_par_dir = arg.substr( 9 );
+        else if( arg.find("--write-mock-par=") == 0 )
+          g_write_mock_dir = arg.substr( 17 );
       }
 
       if( !g_data_dir.empty() )
@@ -414,6 +420,25 @@ BOOST_AUTO_TEST_CASE( DiscoveryAndParse )
   {
     BOOST_TEST_MESSAGE( "Detector case: " + c.dir + "  (" + std::to_string(c.runs.size())
                         + " reference runs)" );
+
+    // The cheap checks that decide whether a dropped file is tried as one of these must accept
+    //  every real one - they only see the start of the file.
+    for( const string &path : { c.parPath, c.detectorTxtPath } )
+    {
+      ifstream strm( path.c_str(), ios::in | ios::binary );
+      BOOST_REQUIRE( strm.is_open() );
+      strm.seekg( 0, ios::end );
+      const size_t file_size = static_cast<size_t>( strm.tellg() );
+      strm.seekg( 0, ios::beg );
+      string header( (std::min)( file_size, size_t(1024) ), '\0' );
+      strm.read( &header[0], header.size() );
+      const bool is_par = (path == c.parPath);
+      BOOST_CHECK_MESSAGE( is_par == DetEffG2kPar::isCandidateParFile(
+                                reinterpret_cast<const uint8_t *>( header.data() ), header.size(), file_size ),
+                           "isCandidateParFile wrong for " << path );
+      BOOST_CHECK_MESSAGE( !is_par == DetEffG2kPar::isCandidateDetectorTxt( header ),
+                           "isCandidateDetectorTxt wrong for " << path );
+    }//for( both files )
 
     // Parse both files and assemble a DRF.
     shared_ptr<DetectorPeakResponse> drf;
@@ -592,7 +617,7 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
   // A germanium detector with a dead layer, so the Ge K-edge at 11.107 keV is in
   //  play, and a grid whose range STRADDLES it: crystal_k_edges keeps an edge only
   //  when it is inside the range by its 1.02/0.98 margins, which 11.107 is for a
-  //  10 keV first node.  This is the geometry LAB06 does not have (its grid starts
+  //  10 keV first node.  This is the geometry DET06 does not have (its grid starts
   //  at 45 keV, so no edge is retained and it never showed the bug).
   const string detector_txt =
     "# 99999 - SYNTHETIC-KEDGE - S/N-TEST-2\n"
@@ -734,8 +759,8 @@ BOOST_AUTO_TEST_CASE( KEdgeSegmentsHaveBothFlanks )
     //  `K`'s attenuation is exp(-tau) off the mu table's own log-log grid.  The
     //  measured residue is a ~10% bump over ~0.09 keV that recovers to 1.0002 the
     //  moment `K` clears the transition.  On a REAL detector that window is deep
-    //  in the sub-16 keV region whose peak efficiency is ~2e-09 (see the band
-    //  table in "DetectorEffG2kPar.h"), which is why that band is gated on
+    //  in the sub-16 keV region whose peak efficiency is ~8 decades below the
+    //  crystal's (see the band table in "DetectorEffG2kPar.h"), which is why that band is gated on
     //  ABSOLUTE error and passes; on this synthetic fixture the efficiency there
     //  is much larger (~8e-04) because the fixture's grid is not a real detector's,
     //  so do not read a magnitude off this case.  Fixing the residue means putting
@@ -992,15 +1017,15 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
   //  is an ABSOLUTE bound in efficiency units.  Below 22 keV the absolute bound is
   //  the one that carries the argument, but BOTH are applied there: an absolute
   //  gate alone leaves the relative error completely unpoliced, so a regression
-  //  that multiplied it while staying under a floor of ~1e-9 would pass silently.
+  //  that multiplied it while staying under the absolute floor would pass silently.
   //  The sub-22 relative gates are therefore set loosely (~1.5x measured), to
   //  catch a change in kind rather than to assert a tolerance.
   //
   // Why the two lowest bands are gated absolutely.  A relative bound is only
   //  meaningful next to the efficiency it sits on, and below 22 keV this crystal's
-  //  stored efficiency is 1e-11 to 1e-9 - seven to ten decades below its ~3e-1
-  //  peak.  The worst 10-16 keV locus is a 49% error on eps = 2.2e-09, i.e. an
-  //  absolute error of 6e-10, which cannot move any spectrum.  That residual is
+  //  stored efficiency is seven to ten decades below its peak.  The worst
+  //  10-16 keV locus is a 49% error on an efficiency ~8 decades down, an absolute
+  //  error that cannot move any spectrum.  That residual is
   //  also not reachable by node density: it is the crystal-frame lattice reading a
   //  face-frame grid, whose origins differ by `endcap_front_offset_cm`, so the
   //  angular skew grows from +0.08 deg at 300 cm to +3 deg at 8 cm against the
@@ -1257,7 +1282,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
       for( size_t b = 0; b < nbands; ++b )
       {
         if( !n_a[rg][b] && !n_b[rg][b] )
-          continue;   // LAB06 starts at 45 keV: its four low bands are legitimately empty
+          continue;   // DET06 starts at 45 keV: its four low bands are legitimately empty
         const double rms_a = n_a[rg][b]
             ? std::sqrt( sum2_a[rg][b]/static_cast<double>(n_a[rg][b]) ) : 0.0;
         char line[320];
@@ -1282,7 +1307,7 @@ BOOST_AUTO_TEST_CASE( GridReproductionByBand )
               "%s keV, %s: worst ON-LATTICE ABSOLUTE error %.3e over %zu probes"
               " exceeds %.3e.  This band is gated absolutely because its stored"
               " efficiency (peak %.2e here) is many decades below the crystal's"
-              " ~3e-1 peak, where a relative bound polices nothing; the worst"
+              " peak, where a relative bound polices nothing; the worst"
               " relative error was %.5f on eps %.2e.  The limit is the crystal-frame"
               " lattice reading a face-frame grid, not node density",
               bands[b].name, (rg == kMain) ? "MAIN" : "CORNER", absw_a[rg][b],
@@ -1468,7 +1493,7 @@ BOOST_AUTO_TEST_CASE( EccMatch )
       //  The off-axis runs say so themselves (~Geometry=SPHERE); see the
       //  DetectorEffG2kPar.h header for the full evidence.  With this reading
       //  every off-axis reference run reproduces to <0.08% at node energies
-      //  (worst over the corpus: 0.0785%, LAB06 at sd1=200/sd4=350 mm); the
+      //  (worst over the corpus: 0.0785%, DET06 at sd1=200/sd4=350 mm); the
       //  axial reading misses by tens of percent to 84x.
       const double sd1 = gis.sd1_mm;
       const double sd4 = std::isnan( gis.sd4_mm ) ? 0.0 : gis.sd4_mm;
@@ -1613,19 +1638,19 @@ BOOST_AUTO_TEST_CASE( EccMatch )
                       static_cast<float>(E_node), theta, 0.0, (dist_mm/10.0)*PhysicalUnits::cm );
 
           // Relative OR absolute, whichever is looser.  A purely relative bound
-          //  is not meaningful where the file's own efficiency is ~1e-9 (10 keV at
+          //  is not meaningful where the file's own efficiency is tiny (10 keV at
           //  a grazing angle is eight decades below this crystal's peak), and that
           //  is exactly the regime `GridReproductionByBand` shows is limited by
           //  the crystal/face frame skew rather than by anything this check can
           //  police.  The absolute floor is still far below the defects this check
           //  exists to catch: the pre-fix slant-sampling bug was 92% at 45 deg and
           //  8427% at 84 deg, and the fabricated K-edge discontinuity - the reason
-          //  a LOW probe is here at all - was ~95x, i.e. ~1e-7 absolute at this
-          //  locus.
+          //  a LOW probe is here at all - was ~95x, roughly a thousand times this
+          //  floor at this locus.
           //
           //  The floor is 1e-10 rather than a rounder 1e-8 because of how little
           //  the low probe is worth otherwise: at 10 keV and a grazing angle
-          //  `eff_eval` is itself ~1e-9, so a 1e-8 floor would tolerate an absolute
+          //  `eff_eval` is so small that a 1e-8 floor would tolerate an absolute
           //  error TEN TIMES the entire efficiency at that point, and a recurrence
           //  of the K-edge defect merely 5x smaller than the original would pass.
           //  1e-10 keeps the floor below the value being checked while staying far
@@ -1832,3 +1857,161 @@ BOOST_AUTO_TEST_CASE( SerializationRoundTrip )
     }
   }//for( each case )
 }//BOOST_AUTO_TEST_CASE( SerializationRoundTrip )
+
+
+/** Writes the mock pair committed as test_data/det_eff/mock_DETECTOR.txt and mock.par into the
+ directory `--write-mock-par=<dir>` names (with `--datadir=` and `--testfiledir=`); skipped otherwise.
+
+ NOT VENDOR DATA, and that is the point of the "mock_" names: the repository can carry no real
+ .par files (see the header), but the import, its geometry editing and the Monte-Carlo total
+ efficiency (test_ImportedGridDrf) need a pair that exercises them.
+   * mock_DETECTOR.txt describes the ANGLE test detector Angle-detector-only.detx - a 50 x 50 mm
+     closed-end coax with 0.5 mm inactive Ge, a 1.5 mm Al endcap and 4 / 5 mm front / side vacuum
+     gaps - in the record format the reader decodes.  It cannot state the .detx's 5 mm radius,
+     35 mm deep core or 5 mm bulletizing, so the importer guesses those.
+   * mock.par is CeeLo's: a full Monte-Carlo characterization (ResponseGenerator, fixed seed) of
+     ParTestUtils::mock_truth_geometry - the record's geometry with the .detx core and
+     bulletizing - sampled at every cell the format stores, as V = round(-1000 log10(eff)).  Cells
+     inside the endcap can, behind the face plane, hold the format's V = 0 no-data sentinel; the
+     other cells past 90 deg are the response's own behind-the-face-plane values, which CeeLo flags
+     as a guess (only the importer's grazing near-field rungs read any of them).
+ The response itself is written alongside as mock_truth_response.xml, for comparisons; it is not
+ committed.  The Monte Carlo takes many minutes, so run this from a Release build.
+ */
+BOOST_AUTO_TEST_CASE( WriteMockParFiles )
+{
+  if( g_write_mock_dir.empty() || g_data_dir.empty() || g_test_data_dir.empty() )
+  {
+    BOOST_TEST_MESSAGE( "WriteMockParFiles: skipped (pass --write-mock-par=<dir>, --datadir= and --testfiledir=)." );
+    return;
+  }
+
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory( g_write_mock_dir ),
+                         "--write-mock-par directory '" << g_write_mock_dir << "' does not exist" );
+
+  const char * const detector_txt =
+    "# MOCK - NOT VENDOR DATA - written by InterSpec test_DetectorEffG2kPar WriteMockParFiles with"
+    " CeeLo; dimensions from Angle-detector-only.detx\r\n"
+    "MockAngleCoax,50.0,50.0,0,63.0,100.0,4.0,5.0,26,mock.par,4, #\r\n"
+    "ge,0.5,5.32, #\r\n"     // front: dead layer, (empty) window, endcap
+    ",,, #\r\n"
+    "al,1.5,2.70, #\r\n"
+    "ge,0.5,5.32, #\r\n"     // side: dead layer, (empty) liner, endcap
+    ",,, #\r\n"
+    "al,1.5,2.70, #\r\n"
+    ",,, #\r\n"              // back: nothing
+    ",,, #\r\n"
+    ",,\r\n";
+
+  istringstream txt( detector_txt );
+  const vector<DetEffG2kPar::DetectorDef> defs = DetEffG2kPar::parseDetectorTxt( txt );
+  BOOST_REQUIRE_EQUAL( defs.size(), 1 );
+  const DetEffG2kPar::DetectorDef &def = defs.front();
+  BOOST_REQUIRE( def.kind == DetEffG2kPar::DetectorDef::Kind::NCoax );  //so the importer guesses a bore
+
+  const string detx_path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-detector-only.detx" );
+  const ceelo::GeometryDescriptor truth = ParTestUtils::mock_truth_geometry( def, detx_path );
+  BOOST_REQUIRE( truth.problems().empty() );
+
+  const vector<double> energies = { 40.0, 50.0, 60.0, 80.0, 100.0, 122.0, 150.0, 200.0, 300.0,
+                                    500.0, 662.0, 1000.0, 1400.0, 2000.0, 3000.0 };
+
+  ceelo::GenerationOptions opts;
+  opts.profile = ceelo::ResponseProfile::General;   //the grid has near-field rows
+  opts.e_min_keV = 0.9 * energies.front();
+  opts.e_max_keV = 1.05 * energies.back();
+  opts.base_seed = 1;
+  opts.num_threads = 4;   //a run of many minutes need not take the whole machine
+  opts.detector_name = "MOCK (Angle-detector-only.detx)";
+  opts.node_progress = []( const ceelo::NodeProgress &p ){
+    if( (p.nodes_done % 25) == 0 || (p.nodes_done >= p.nodes_total) )
+      cerr << "WriteMockParFiles: node " << p.nodes_done << " of ~" << p.nodes_total << endl;
+  };
+
+  shared_ptr<ceelo::DetectorResponse> resp;
+  BOOST_REQUIRE_NO_THROW( resp = ceelo::ResponseGenerator::generate( truth, opts ) );
+  BOOST_REQUIRE( !!resp );
+
+  // The grid, as the file stores it: rows are ln(radial range from the endcap-face centre, mm),
+  //  columns the polar angle - both steps stored as floats.
+  const float theta_step = static_cast<float>( 5.0 * pi / 180.0 );
+  const float r_step = 0.1f;
+  const uint16_t ncols = 37, nrows = 117;    // 0-180 deg; 1 mm to ~115 m
+
+  DetEffG2kPar::ParFile par;
+  par.emin_keV = energies.front();
+  par.emax_keV = energies.back();
+  par.energies_keV = energies;
+  par.grids.resize( energies.size() );
+  for( DetEffG2kPar::ParGrid &g : par.grids )
+  {
+    g.ncols = ncols;
+    g.nrows = nrows;
+    g.theta_step_rad = theta_step;
+    g.r_step = r_step;
+    g.V.assign( static_cast<size_t>(nrows) * ncols, 0 );
+  }
+
+  // The endcap can, which no source can be inside: behind the face plane, within the endcap's
+  //  outer diameter and length.
+  const Eigen::Vector3d face = CeeLoUtils::detectorFacePosition( truth );
+  const double can_radius_cm = 0.05 * def.d4_endcap_od_mm, can_length_cm = 0.1 * def.d5_endcap_len_mm;
+
+  for( uint16_t r = 0; r < nrows; ++r )
+  {
+    const double d_cm = 0.1 * std::exp( r * static_cast<double>(r_step) );
+    for( uint16_t c = 0; c < ncols; ++c )
+    {
+      const double theta = c * static_cast<double>(theta_step);
+      const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( truth, theta, 0.0, d_cm );
+      const Eigen::Vector3d v = pos - face;
+      const bool in_can = (v.z() > 1.0e-6) && (v.z() <= can_length_cm)
+                          && (std::hypot( v.x(), v.y() ) <= can_radius_cm);
+      if( in_can )
+        continue;  //V stays 0, the no-data sentinel
+
+      const ceelo::ApertureQuadrature quad = resp->make_quadrature( pos );
+      for( size_t e = 0; e < energies.size(); ++e )
+      {
+        const double eff = resp->eps_fep_at( energies[e], pos, quad ).value;
+        const double v_raw = (eff > 0.0 && std::isfinite( eff )) ? std::round( -1000.0 * std::log10( eff ) ) : 65535.0;
+        par.grids[e].V[static_cast<size_t>(r)*ncols + c] = static_cast<uint16_t>( std::min( 65535.0, std::max( 1.0, v_raw ) ) );
+      }
+    }//for( each column )
+  }//for( each row )
+
+  const string par_bytes = ParTestUtils::par_file_bytes( par );
+  const string par_path = SpecUtils::append_path( g_write_mock_dir, "mock.par" );
+  const string txt_path = SpecUtils::append_path( g_write_mock_dir, "mock_DETECTOR.txt" );
+  const string resp_path = SpecUtils::append_path( g_write_mock_dir, "mock_truth_response.xml" );
+  {
+    ofstream out( par_path.c_str(), ios::out | ios::binary );
+    out.write( par_bytes.data(), par_bytes.size() );
+    BOOST_REQUIRE( out.good() );
+  }
+  {
+    ofstream out( txt_path.c_str(), ios::out | ios::binary );
+    out << detector_txt;
+    BOOST_REQUIRE( out.good() );
+  }
+  {
+    ofstream out( resp_path.c_str(), ios::out | ios::binary );
+    out << resp->to_xml_string();
+    BOOST_REQUIRE( out.good() );
+  }
+
+  // What was written reads back as what was meant.
+  const DetEffG2kPar::ParFile reread = DetEffG2kPar::parseParFile( par_path );
+  BOOST_REQUIRE_EQUAL( reread.energies_keV.size(), energies.size() );
+  for( size_t e = 0; e < energies.size(); ++e )
+    BOOST_CHECK( reread.grids[e].V == par.grids[e].V );
+
+  const DetEffG2kPar::ParEfficiency par_eff( reread );
+  for( const double energy : { 122.0, 662.0 } )
+  {
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( truth, 0.0, 0.0, 25.0 );
+    BOOST_TEST_MESSAGE( "WriteMockParFiles: " << energy << " keV on-axis at 25 cm: grid "
+                        << par_eff.efficiency( energy, 250.0, 0.0 ) << ", CeeLo "
+                        << resp->eps_fep_at( energy, pos ).value );
+  }
+}//BOOST_AUTO_TEST_CASE( WriteMockParFiles )

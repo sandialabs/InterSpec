@@ -5,7 +5,12 @@
 }
 
 .SrcInputTable > tbody > tr > td:nth-child(1) {
-  /* Select first colum */
+  /* The label column.  The min-width keeps the column from resizing as the activity label
+     changes between e.g. "Activity", "Total Act." and "Act./cm2", or as rows are shown/hidden;
+     the padding separates the labels from their inputs in the second column. */
+  min-width: 12ex;
+  padding-right: 5px;
+  white-space: nowrap;
 }
 
 .SrcNuclideTitle {

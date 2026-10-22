@@ -40,7 +40,7 @@
 class PeakDef;
 class InterSpec;
 class PeakModel;
-class NativeFloatSpinBox;
+class SkewParamsGrid;
 class D3SpectrumDisplayDiv;
 
 namespace Wt
@@ -133,11 +133,7 @@ protected:
 
   // Controls
   Wt::WComboBox *m_skewTypeCombo;
-  Wt::WContainerWidget *m_paramsDiv;
-  // GADRAS skew types use 6 parameters; other types use 4 or fewer.
-  NativeFloatSpinBox *m_lowerSpin[6];
-  NativeFloatSpinBox *m_upperSpin[6];
-  Wt::WCheckBox *m_fitCb[6];
+  SkewParamsGrid *m_paramsGrid;
   Wt::WCheckBox *m_updatePeaksCb;
   Wt::WPushButton *m_fitBtn;
   Wt::WText *m_statusText;

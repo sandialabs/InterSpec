@@ -167,6 +167,11 @@ struct Runner {
         cfg.energy_keV = energy_keV;
         apply_node_budget(cfg, opts,
                           resolve_node_precision(opts, stage, energy_keV));
+        if (opts.scans_stop_on_total && (stage == 2 || stage == 3)) {
+            cfg.termination.target_total_rel_precision =
+                cfg.termination.target_fep_rel_precision;
+            cfg.termination.target_fep_rel_precision = 0.0;
+        }
         cfg.seed = node_seed(opts.base_seed, stage, node);
         EfficiencyResult r = calc.compute(cfg);
         NodeStat ns;
@@ -181,6 +186,9 @@ struct Runner {
         ns.stop = static_cast<uint8_t>(r.stop_reason);
         ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
             ? r.fep_uncertainty / r.full_energy_peak_efficiency
+            : 0.0;
+        ns.tot_rel_prec = (r.total_efficiency > 0.0)
+            ? r.total_uncertainty / r.total_efficiency
             : 0.0;
         last = ns;  // what tick() reports
         if (opts.stats_out)
@@ -227,6 +235,8 @@ ProbePoint run_probe_point(Runner& run, const GenerationOptions& opts, double E,
         ns.stop = static_cast<uint8_t>(r.stop_reason);
         ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
             ? r.fep_uncertainty / r.full_energy_peak_efficiency : 0.0;
+        ns.tot_rel_prec = (r.total_efficiency > 0.0)
+            ? r.total_uncertainty / r.total_efficiency : 0.0;
         opts.stats_out->add(ns);
     }
     return row;
@@ -1093,6 +1103,10 @@ ResponseGenerator::NodePlan ResponseGenerator::plan_nodes(
 
 std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     const GeometryDescriptor& gd, const GenerationOptions& opts_in) {
+    if (opts_in.scans_stop_on_total && (opts_in.transfer_mode || opts_in.closed_loop))
+        throw std::runtime_error("ResponseGenerator: scans_stop_on_total needs the fixed-grid"
+                                 " full characterization (not transfer_mode or closed_loop)");
+
     // D-b: opt-in closed-loop refinement. FALSE (default) falls through to the
     // fixed-grid path below VERBATIM (goldens bit-identical); the loop only runs
     // when explicitly enabled.
@@ -1336,6 +1350,19 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         ct_curves.push_back(std::move(c));
         ct_sig_curves.push_back(std::move(s));
     }
+    // Scans stopped on total precision make the total the product: resolve its angular shape too,
+    //  not only the (now noisier) FEP's.
+    if (opts.scans_stop_on_total) {
+        for (size_t ie = 0; ie < nE_s; ++ie) {
+            std::vector<double> c(scan_ct.size()), s(scan_ct.size());
+            for (size_t ic = 0; ic < scan_ct.size(); ++ic) {
+                c[ic] = ang_ln_tot[ie][ic * np + 0];
+                s[ic] = ang_tot_sig[ie][ic * np + 0];
+            }
+            ct_curves.push_back(std::move(c));
+            ct_sig_curves.push_back(std::move(s));
+        }
+    }
     const std::vector<size_t> ct_nodes = greedy_ct_nodes(
         scan_ct, ct_curves, ct_sig_curves, static_cast<size_t>(opts.n_cos_theta_nodes),
         opts.node_interp_tol, opts.node_noise_k);
@@ -1383,6 +1410,9 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     }
 
     // ---- 3. near-field model ------------------------------------------------
+    // Each node's MC total, for the near-field TOTAL table built once the total's far-field tier
+    // exists (step 5): the same nodes, the same histories - no extra MC.
+    std::vector<double> near_tot, near_tot_sig;
     if (opts.profile != ResponseProfile::FarField) {
         // Tabulated ln N on a direct (cos_theta x distance) tensor grid per
         // shape energy (PCHIP-interpolated at eval). The prior (z_over_a,theta)
@@ -1412,6 +1442,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         const size_t nnd = nf.dists_cm.size();
         nf.ln_n.assign(nE_s * nnc * nnd, 0.0);      // anchor row stays 0
         nf.frac_sigma.assign(nf.ln_n.size(), 0.002);  // anchor sigma
+        near_tot.assign(nf.ln_n.size(), 0.0);         // 0 = no usable MC total
+        near_tot_sig.assign(nf.ln_n.size(), 0.0);
 
         uint32_t near_id = 0;
         for (size_t ie = 0; ie < nE_s; ++ie) {
@@ -1421,9 +1453,9 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                 for (size_t id = 0; id + 1 < nnd; ++id) {  // skip anchor row
                     const double d = nf.dists_cm[id];
                     const Eigen::Vector3d src = source_position(d, ct);
-                    // Stage-3 nodes consume ONLY eps_fep (eps_tot below is
-                    // never read), so fep_only transport would be free CPU --
-                    // but it is DISABLED: bench_fep_only_stage3 (2026-07)
+                    // fep_only transport would skip the eps_tot tally this node's total
+                    // feeds (the near-field total table, step 5) -- and it is DISABLED
+                    // regardless: bench_fep_only_stage3 (2026-07)
                     // measured a -5..-11% eps_fep bias on bore-hole detectors
                     // (kill-on-scoring-exit kills photons crossing the vacuum
                     // bore that re-enter with full energy). Re-enable per
@@ -1435,6 +1467,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
                     const ApertureQuadrature q = resp->make_quadrature(src);
                     const double K = resp->kernel_K(E, q, MuChoice::Total);
                     const size_t idx = nf.index(ie, ic, id);
+                    near_tot[idx] = r.total_efficiency;
+                    near_tot_sig[idx] = r.total_uncertainty;
                     if (r.full_energy_peak_efficiency <= 0.0 || K <= 0.0) {
                         // A table cannot skip a node: hold the previous
                         // (smaller-d) value so PCHIP is not kinked; inflate its
@@ -1536,6 +1570,43 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
         resp->model_transfer = SigmaTransferModel{};
         resp->scatter_in_recapture = kTotalScatterInRecapture;
     }
+
+    // ---- 5. near-field total -------------------------------------------------
+    // The kernel alone carries the far-field total inward only to 1-4% at grazing angles (HPGe,
+    // vs direct MC), while the near-field nodes above measured the total at every position.  Keep
+    // that: ln N_tot = ln(MC total / the far-field model) on the FEP table's own lattice and
+    // breakpoints, the far-field model being eps_total_at with no table yet - exactly what would
+    // otherwise be served there.  Built last, so the tier and everything it reads are final.
+    if (!near_tot.empty() && resp->tot_eff.characterized()) {
+        NearFieldModel tn = resp->near_field;   // axes + breakpoints; values replaced below
+        resp->tot_eff.near_field = NearFieldModel{};
+        resp->tot_eff.finalize();
+
+        const size_t nnc = tn.cos_thetas.size();
+        const size_t nnd = tn.dists_cm.size();
+        for (size_t ic = 0; ic < nnc; ++ic) {
+            for (size_t id = 0; id + 1 < nnd; ++id) {  // the anchor row stays ln N = 0
+                const Eigen::Vector3d src = source_position(tn.dists_cm[id], tn.cos_thetas[ic]);
+                const ApertureQuadrature q = resp->make_quadrature(src);
+                for (size_t ie = 0; ie < tn.energies_keV.size(); ++ie) {
+                    const size_t idx = tn.index(ie, ic, id);
+                    const double mc = near_tot[idx];
+                    const double far = resp->eps_total_at(tn.energies_keV[ie], src, q).value;
+                    if (mc > 0.0 && far > 0.0) {
+                        tn.ln_n[idx] = std::log(mc / far);
+                        tn.frac_sigma[idx] = near_tot_sig[idx] / mc;
+                    } else {
+                        // As for the FEP table: hold the smaller-d value rather than kink the
+                        // PCHIP, with an honestly inflated sigma.
+                        tn.ln_n[idx] = (id > 0) ? tn.ln_n[tn.index(ie, ic, id - 1)] : 0.0;
+                        tn.frac_sigma[idx] = 0.75;
+                    }
+                }
+            }
+        }
+
+        resp->tot_eff.near_field = std::move(tn);
+    }//if( a near-field scan ran )
 
     apply_measured_floors(*resp, gd);
     resp->finalize();
@@ -1749,6 +1820,8 @@ std::vector<ProbePoint> ResponseGenerator::probe_bank(
             ns.stop = static_cast<uint8_t>(r.stop_reason);
             ns.fep_rel_prec = (r.full_energy_peak_efficiency > 0.0)
                 ? r.fep_uncertainty / r.full_energy_peak_efficiency : 0.0;
+            ns.tot_rel_prec = (r.total_efficiency > 0.0)
+                ? r.total_uncertainty / r.total_efficiency : 0.0;
             opts.stats_out->add(ns);
         }
         run.tick("Probe bank");

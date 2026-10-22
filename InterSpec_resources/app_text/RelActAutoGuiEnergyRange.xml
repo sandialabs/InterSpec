@@ -10,10 +10,29 @@
   <!-- Phone uses an empty continuum-type label since space is tight. -->
   <message id="raager-continuum-type-short"></message>
   
+  <message id="raager-lower-line">Lower line</message>
+  <message id="raager-upper-line">Upper line</message>
+  <message id="raager-continuum-auto">Auto</message>
+  <message id="raager-range-type">Range:</message>
+  <message id="raager-range-fixed">Fixed range</message>
+  <message id="raager-range-line-anchored">Lines + peak width</message>
+  <message id="raager-range-broken-up">Split by lines</message>
+  <message id="raager-edge-below">Below:</message>
+  <message id="raager-edge-above">Above:</message>
+  <message id="raager-edge-coverage-units">% of peak +</message>
+  <message id="raager-edge-sideband-units">FWHM</message>
+  <message id="raager-fit-range">Fit {1} to {2} keV</message>
+
   <!-- Checkboxes -->
   <message id="raager-force-full-range">Force full-range</message>
   
   <!-- Tooltips -->
+  <message id="raager-continuum-type-tt">The continuum the peaks in this ROI sit on.  "Auto" chooses it after an initial fit, from how well each candidate describes the data.</message>
+  <message id="raager-range-type-tt"><![CDATA[How the lower and upper energies are used:<br/>
+<b>Fixed range</b>: they are the ROI's limits.<br/>
+<b>Lines + peak width</b>: they are the energies of the lowest and highest gamma lines to include (they may be equal, for a single line); the ROI extends past each line based on the detector's peak width and shape, so it adapts to the detector's resolution.<br/>
+<b>Split by lines</b>: an ROI is made around each significant gamma line in the range, with overlapping ones merged.]]></message>
+  <message id="raager-edges-tt"><![CDATA[How far the ROI extends below its lowest line and above its highest line (for <em>Split by lines</em>, below and above each line it is split around): until that line's peak is covered to the given percent (more than 50 and less than 100), plus the given number of FWHM of continuum.  Leave a field empty to use the default for the detector type, shown in grey.]]></message>
   <message id="raager-split-to-individual-rois-tt">Converts this energy range into individual ROIs, based on which gammas should be grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas are far apart, they will be split into seperate ROIs.</message>
   
 </messages>

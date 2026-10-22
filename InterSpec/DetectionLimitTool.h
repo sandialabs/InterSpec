@@ -549,6 +549,10 @@ protected:
    */
   Wt::WText *m_bandTxt;
 
+  /** Says the deconvolution limit does not include the detector efficiency uncertainty (when the
+   detector states one) - so it is plain either way. */
+  Wt::WText *m_drfUncertTxt = nullptr;
+
   /** Everything `DetectionLimitCalc::decon_projected_limit` needs, captured on the GUI thread the
    moment the limit is computed.
 

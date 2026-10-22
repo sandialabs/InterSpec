@@ -104,6 +104,9 @@ PeakEditWindow::PeakEditWindow( const double energy,
   {
     setMaximumSize( WLength::Auto, viewer->renderedHeight()-25 );
     contents()->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    // On narrow phones the footer buttons wrap to a second row (see PeakEdit.css); let the
+    //  footer size to its content instead of AuxWindow's fixed 45px, which would clip that row.
+    footer()->setHeight( WLength::Auto );
   }else
   {
     resizeToFitOnScreen();
@@ -575,16 +578,19 @@ void PeakEdit::init()
   
   
   
-  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss, m_footer );
   m_refit  = m_footer->addNew<WSplitButton>( WString::tr("pe-btn-refit") );
   m_apply  = m_footer->addNew<WPushButton>( WString::tr("Apply") );
+  WidgetUtils::applyButtonRole( m_apply, WidgetUtils::ButtonRole::Neutral );
   m_accept = m_footer->addNew<WPushButton>( WString::tr("Accept") );
+  WidgetUtils::applyButtonRole( m_accept, WidgetUtils::ButtonRole::Affirm );
   //if( m_viewer && !m_viewer->isMobile() )
   //  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
 
   //Add class to give padding on left side (or modify current style class)
 
   WPushButton *deleteButton = m_footer->addNew<WPushButton>( WString::tr("Delete") );
+  WidgetUtils::applyButtonRole( deleteButton, WidgetUtils::ButtonRole::Destructive );
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
@@ -2123,6 +2129,13 @@ void PeakEdit::skewTypeChanged()
       const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar5)
                                 - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
 
+      // Start from the spectrum's (or detector's) peak-fit prefs values for this skew type, if any
+      //  (e.g., a GADRAS detector's tail powers and extents).
+      const shared_ptr<const SpecMeas> meas = m_viewer ? m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
+      const shared_ptr<const PeakFitDetPrefs> meas_prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+      const shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
+      const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+
       for( int i = 0; i <= num_skew_pars; ++i )
       {
         const auto index = static_cast<PeakEdit::PeakPars>( PeakEdit::PeakPars::SkewPar0 + i );
@@ -2133,6 +2146,7 @@ void PeakEdit::skewTypeChanged()
         {
           m_values[index]->setHidden( false );
           m_valueTable->rowAt(1+index)->setHidden( false );
+          starting_val = skew_starting_value( type, ct, meas_prefs.get(), drf_prefs.get() );
           m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
           m_fitFors[index]->setChecked( PeakDef::skew_parameter_fit_by_default( type, ct ) );
           auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[index]->validator() ).get();

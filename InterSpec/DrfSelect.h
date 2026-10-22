@@ -44,13 +44,12 @@ namespace Wt
 {
   class WText;
   class WMenu;
+  class WMenuItem;
   class WLabel;
   class WCheckBox;
   class WLineEdit;
   class WComboBox;
-  class WTabWidget;
   class WPushButton;
-  class WFileUpload;
   class WPushButton;
   class WTextArea;
   class WStandardItemModel;
@@ -60,12 +59,12 @@ class DrfChart;
 class InterSpec;
 class InterSpecUser;
 class DrfModifyWindow;
+class DrfImportWidget;
 
 namespace ceelo{ struct GeometryDescriptor; }
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
-class EccUncertOptions;
 class NativeFloatSpinBox;
 class DetectorPeakResponse;
 namespace DataBaseUtils
@@ -182,10 +181,13 @@ public:
   /** Checks the database to see if the measurement serial number or measurement
       model cooresponds to a user preference in the database for  a DRF to use.
       If found, returns the DRF, if not, returns null.
+
+      Takes the user's database id rather than a `Wt::Dbo::ptr`, so it can be called from a worker
+      thread (a `Dbo::ptr` copy touches a non-atomic reference count).
    */
   static std::shared_ptr<DetectorPeakResponse> getUserPreferredDetector(
                                             std::shared_ptr<DataBaseUtils::DbSession> sql,
-                                            Wt::Dbo::ptr<InterSpecUser> user,
+                                            long long db_user_id,
                                             const std::string &serial_number,
                                             SpecUtils::DetectorType detType,
                                             const std::string &detector_model );
@@ -208,16 +210,27 @@ public:
   //  reasonable display name.
   static std::vector< std::pair<std::string,std::string> > avaliableGadrasDetectors( InterSpec *viewer );
 
+  /** The directories #initAGadrasDetector searches, separated by semicolons or newlines: the user
+   preference "GadrasDRFPath", or the fixed data-directory locations on web deployments.
+
+   Reads a user preference, so call it on the session thread and pass the result to any worker.
+   */
+  static std::string gadrasDrfSearchPaths( InterSpec *interspec );
+
   //Will init detector in the data/detector_responses folder, and return result.
   //  throws exception if there is an error.
   //Type should be a DetectorType enum (just not including that header to save
   //   on deplandcies)
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const SpecUtils::DetectorType type, InterSpec *interspec );
-  
-  /** Looks to path in user prefernce "GadrasDRFPath" for a detector matching specified name.
+  //  `searchPaths` is from #gadrasDrfSearchPaths; taking it as a value lets this run off the
+  //  session thread.
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const SpecUtils::DetectorType type,
+                                                                     const std::string &searchPaths );
+
+  /** Looks in `searchPaths` (see #gadrasDrfSearchPaths) for a detector matching specified name.
    Throws exception in error; returned detector should always be valid.
    */
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name, InterSpec *interspec );
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name,
+                                                                     const std::string &searchPaths );
   
   /** Inits adetector from a directory that has a Detector.dat and Efficiency.csv file in it
       Throws exception in error; returned detector should always be valid.
@@ -230,23 +243,11 @@ public:
    installs `seedDrf` and opens the Modify dialog with the geometry parsed from
    the `Detector.dat`, so the user can review it and generate a response.
 
-   Used both for a directory holding only a `Detector.dat` (where there is no
-   efficiency and this is the only way forward) and for the Mode-A branch of
-   #offerGadrasImportModeChoice.  Any parse warnings are shown first.
+   Used for a GADRAS directory holding only a `Detector.dat`, where there is no
+   efficiency and this is the only way forward.  Any parse warnings are shown first.
    */
   void startGadrasGeometryImport( const std::string &directory,
                                   std::shared_ptr<DetectorPeakResponse> seedDrf );
-
-  /** After a GADRAS Efficiency.csv + Detector.dat pair has been imported the
-   normal way (Mode B, already applied), offers the "generic detector" mode:
-   take the crystal geometry from the Detector.dat and let the measured curve
-   anchor an efficiency transfer, which gives off-axis and near-field answers the
-   fixed curve cannot.  No-op when the geometry cannot be modeled.
-
-   The counterpart of #offerAngleImportModeChoice.
-   */
-  void offerGadrasImportModeChoice( const std::string &datFilename,
-                                    const std::string &csvFilename );
 
   //Will init detector in the static and user data folders, and return the first DRF that matches
   //  DetectorType, or the manufacturer/model.
@@ -333,28 +334,11 @@ public:
   void relEffDetectorSelectCallback();
   
   
-  void handleUploadTabSelected();
-  
-  void handleDetectorDiameterOrDistanceChanged();
-  
-  void showWidgetsForCurrentEfficiencyType();
-  void updateUserNameFromCurrentDetEff();
-  
-  void handleEfficiencyCsvUpload();
-  void handleGadrasDetectorDotDatUpload();
-  void handleEfficiencyTypeChange();
+  /** The "Import" tab's detector changed (a file, or the user's edit of its options): makes it this
+   dialog's detector, and applies it app-wide once it is complete.
+   */
+  void handleImportChanged();
 
-  /** For an uploaded ANGLE `.outx`/`.xml` file that carries a full physical
-   detector model and a measured reference curve, offers the user a choice:
-   import as a "generic detector" (Mode A: map the geometry + reference onto a
-   CeeLo geometry and seed the Make MC Response tool) or keep this
-   measurement's fixed-geometry curve (Mode B: the current default, already
-   applied).  No-op when `filename` is not a geometry-bearing ANGLE file. */
-  void offerAngleImportModeChoice( const std::string &filename );
-  
-  /** Returns a detector from the currently selected upload - returns nullptr if not fully specified (e.g., no diameter, or wahtever)*/
-  std::shared_ptr<DetectorPeakResponse> detectorFromEffUpload() const;
-  
   //updates energy efficient chart
   void updateChart();
   
@@ -392,14 +376,15 @@ public:
    */
   void handleModifyRequested();
 
-  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF.  The geometry form
+  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF - or, on the "Import"
+   tab with a geometry-only file, with that file's detector, to characterize.  The geometry form
    and the measured-anchor editor come from the DRF's own `geometry()`, which an importer
    (an ANGLE model, a GADRAS Detector.dat) sets when it knows the detector's shape.
    */
   void openModifyWindow();
 
-  /** Receives the modified DRF from the Modify dialog and makes it this
-   dialog's current detector (the user still Accepts to apply app-wide).
+  /** Receives the modified DRF from the Modify dialog, makes it this dialog's current detector,
+   and accepts it (as if the user had pressed Accept), closing this dialog.
    */
   void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf );
 
@@ -419,10 +404,7 @@ public:
   void updateDrfContentSummary();
 protected:
   void setAcceptButtonEnabled( const bool enable );
-  
-  /** Called when user changes value in m_uploadedDetName; sets m_detector name. */
-  void handleUserChangedUploadedDrfName();
-  
+
 protected:
   WContainerWidget *m_footer;
   InterSpec *m_interspec;
@@ -467,34 +449,9 @@ protected:
   Wt::Signal<> m_doneSignal;
 
 
-  Wt::WTabWidget *m_tabs;
-
-  Wt::WLineEdit *m_detectorDiameter;
-  Wt::WLineEdit *m_detectorSetback;
-  Wt::WContainerWidget *m_uploadedDetNameDiv;
-  Wt::WLineEdit *m_uploadedDetName;
-  Wt::WContainerWidget *m_detectrDiameterDiv;
-  Wt::WFileUpload *m_efficiencyCsvUpload;
-  Wt::WLabel *m_detectrDotDatLabel;
-  Wt::WFileUpload *m_detectorDotDatUpload;
-  Wt::WComboBox *m_efficiencyType;
-  Wt::WLabel *m_detectorDistanceLabel;
-  Wt::WLineEdit *m_detectorDistance;
-
-  /** Holds the EccUncertOptions widget for uploaded ISOCS .ecc files; empty
-   (and hidden) for other upload types. */
-  Wt::WContainerWidget *m_eccUncertContainer;
-  EccUncertOptions *m_eccUncertWidget;
-  std::vector<float> m_eccUncertEnergies;
-  std::vector<float> m_eccBaselineFrac;
-  std::vector<float> m_eccConvergenceFrac;
-
-  /** The DRF parsed from an uploaded `<DetectorPeakResponse>` XML file, when that is what the
-   Import tab holds; null for every other upload.  Such a file is a complete detector (geometry
-   type, diameter, distance, uncertainties, and any Monte-Carlo response or geometry included), so
-   it is used exactly as read: none of the interpretation controls apply to it, and
-   #detectorFromEffUpload hands back a copy of this rather than re-deriving anything. */
-  std::shared_ptr<DetectorPeakResponse> m_uploadedXmlDrf;
+  /** The "Import" tab. */
+  DrfImportWidget *m_importWidget;
+  Wt::WMenuItem *m_importMenuItem;
 
   Wt::WPushButton *m_acceptButton;
   Wt::WPushButton *m_cancelButton;

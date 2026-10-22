@@ -143,7 +143,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     snprintf(msg, sizeof(msg), "Preserve %.1f keV Cal.", m_lastEnergy );
     m_preserveLastCal = contents()->addNew<WCheckBox>( msg );
     m_preserveLastCal->setInline( false );
-    m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
+    m_preserveLastCal->setStyleClass( "PreserveLastCalCb DialogOptions" );
     
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
 
@@ -206,9 +206,11 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   
   
   WPushButton *button = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Dismiss );
   button->clicked().connect( this, &AuxWindow::hide );
 
   button = footer()->addNew<WPushButton>( WString::tr("Accept") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Affirm );
   button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &EnergyCalGraphicalConfirm::apply );
   
@@ -256,6 +258,16 @@ void EnergyCalGraphicalConfirm::apply()
   if( !energycal || !energycal->valid()
       || (energycal->type() == SpecUtils::EnergyCalType::InvalidEquationType) )
   {
+    finished().emit(Wt::DialogCode::Accepted);
+    return;
+  }
+
+  // The change is relative to the displayed foreground, so only makes sense if it gets applied to
+  //  the foreground
+  const vector<MeasToApplyCoefChangeTo> scope = m_calibrator->measurementsToApplyCoeffChangeTo();
+  if( !m_calibrator->scopeIncludesDisplayedForeground( scope ) )
+  {
+    viewer->logMessage( WString::tr("ect-fore-not-selected"), 2 );
     finished().emit(Wt::DialogCode::Accepted);
     return;
   }

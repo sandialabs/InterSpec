@@ -72,6 +72,13 @@ public:
    */
   void run( const nlohmann::json &params, AsyncCallback callback );
 
+  /** The `run_javascript` tool result for a run's `payload`, as the sandbox reports it: `resultJson`
+   (the JSON-serialized result) or `resultString`, `resultType`, `stdout`, `stderr`, `errorMessage`,
+   `errorName`, `errorLine`, `timedOut`, and `executionTimeMs`.  Shared with the QuickJS sandbox of
+   the stdio MCP server, so both engines give the same results.
+   */
+  static nlohmann::json toolResult( const nlohmann::json &payload );
+
 private:
   /** Slot connected to the `jsSandboxResult` JSignal.  Parses the JSON
    payload, looks up the matching pending callback, and dispatches. */

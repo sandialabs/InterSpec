@@ -4,7 +4,9 @@
 #if( USE_LLM_INTERFACE )
 
 #include <map>
+#include <mutex>
 #include <sstream>
+#include <fstream>
 #include <optional>
 #include <iostream>
 #include <algorithm>
@@ -12,6 +14,7 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <Wt/Utils.h>
 #include <Wt/WDialog.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WLineEdit.h>
@@ -23,6 +26,8 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "io/DetectorResponse.h"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -33,6 +38,7 @@
 
 
 #include "InterSpec/EnergyCal.h"
+#include "InterSpec/EnergyCalTool.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
@@ -47,7 +53,11 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PeakFitUtils.h"
@@ -65,7 +75,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/DetectorPeakResponse.h"
-#include "InterSpec/LlmDeepResearchAgent.h"
+#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -75,9 +85,14 @@
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/LlmIsotopicsTool.h"
 #include "InterSpec/LlmActivityFitTool.h"
 #include "InterSpec/LlmRelActManualTool.h"
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
 
 
 
@@ -828,10 +843,14 @@ namespace {
     p.skewPar1              = get_opt_double( j, "skewPar1" );
     p.skewPar2              = get_opt_double( j, "skewPar2" );
     p.skewPar3              = get_opt_double( j, "skewPar3" );
+    p.skewPar4              = get_opt_double( j, "skewPar4" );
+    p.skewPar5              = get_opt_double( j, "skewPar5" );
     p.fitForSkewPar0        = get_opt_bool( j, "fitForSkewPar0" );
     p.fitForSkewPar1        = get_opt_bool( j, "fitForSkewPar1" );
     p.fitForSkewPar2        = get_opt_bool( j, "fitForSkewPar2" );
     p.fitForSkewPar3        = get_opt_bool( j, "fitForSkewPar3" );
+    p.fitForSkewPar4        = get_opt_bool( j, "fitForSkewPar4" );
+    p.fitForSkewPar5        = get_opt_bool( j, "fitForSkewPar5" );
 
     // Continuum
     p.continuumType         = get_opt_string( j, "continuumType" );
@@ -886,8 +905,10 @@ namespace {
       json skew_params = json::object();
       const PeakDef::CoefficientType skew_coefs[] = {
         PeakDef::CoefficientType::SkewPar0, PeakDef::CoefficientType::SkewPar1,
-        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3
+        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3,
+        PeakDef::CoefficientType::SkewPar4, PeakDef::CoefficientType::SkewPar5
       };
+      static_assert( static_cast<int>(PeakDef::CoefficientType::Chi2DOF - PeakDef::CoefficientType::SkewPar0) == 6 );
 
       for( size_t i = 0; i < num_skew; ++i )
       {
@@ -1949,6 +1970,26 @@ namespace {
 namespace LlmTools
 {
 
+namespace
+{
+  std::mutex ns_js_runner_mutex;
+  JavaScriptRunner ns_js_runner;
+
+  JavaScriptRunner java_script_runner()
+  {
+    std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+    return ns_js_runner;
+  }
+}//namespace
+
+
+void setJavaScriptRunner( JavaScriptRunner runner )
+{
+  std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+  ns_js_runner = std::move( runner );
+}
+
+
 int effective_async_timeout_ms( const SharedTool &tool )
 {
   return (tool.asyncTimeoutMs > 0) ? tool.asyncTimeoutMs : sm_default_async_timeout_ms;
@@ -1965,8 +2006,86 @@ std::string async_timeout_error_message( const std::string &toolName, const int 
 }//async_timeout_error_message(...)
 
 
+std::string resolve_client_file_path( const std::string &path )
+{
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+  const string handle = McpSessionManager::currentHandle();
+  if( !manager || handle.empty() )
+    throw runtime_error( "File access is only available within an MCP session." );
+  return manager->resolveSessionPath( handle, path );
+#else
+  return path;
+#endif
+}//resolve_client_file_path(...)
+
+
+std::vector<LlmToolCall::ImageContent> images_from_mcp_param( const nlohmann::json &images,
+                                                             const uint64_t max_bytes )
+{
+  vector<LlmToolCall::ImageContent> answer;
+  if( images.is_null() )
+    return answer;
+
+  if( !images.is_array() )
+    throw runtime_error( "'images' must be an array of {path or base64Data, mimeType, caption}." );
+
+  const size_t max_images = 8;
+  if( images.size() > max_images )
+    throw runtime_error( "At most " + std::to_string(max_images) + " images may be sent with a prompt." );
+
+  for( const json &item : images )
+  {
+    if( !item.is_object() )
+      throw runtime_error( "Each entry of 'images' must be an object." );
+
+    string bytes;
+    const string path = item.value( "path", string() );
+    const string base64_in = item.value( "base64Data", string() );
+    if( !path.empty() )
+    {
+      const string full_path = resolve_client_file_path( path );
+      if( !SpecUtils::is_file( full_path ) )
+        throw runtime_error( "Image not found: " + path );
+      if( SpecUtils::file_size( full_path ) > max_bytes )
+        throw runtime_error( "Image '" + path + "' is larger than the " + std::to_string(max_bytes)
+                             + " byte limit; please downsize it." );
+#ifdef _WIN32
+      std::ifstream input( SpecUtils::convert_from_utf8_to_utf16(full_path).c_str(), ios::binary | ios::in );
+#else
+      std::ifstream input( full_path.c_str(), ios::binary | ios::in );
+#endif
+      bytes.assign( std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() );
+    }else if( !base64_in.empty() )
+    {
+      if( ((base64_in.size() / 4) * 3) > (max_bytes + 3) )
+        throw runtime_error( "An image is larger than the " + std::to_string(max_bytes)
+                             + " byte limit; please downsize it." );
+      bytes = Wt::Utils::base64Decode( base64_in );
+    }else
+    {
+      throw runtime_error( "Each image needs a 'path' or 'base64Data'." );
+    }
+
+    if( bytes.empty() || (bytes.size() > max_bytes) )
+      throw runtime_error( "An image was empty, or larger than the " + std::to_string(max_bytes) + " byte limit." );
+
+    LlmToolCall::ImageContent img;
+    if( !img.setTypeFromContent( bytes ) )
+      throw runtime_error( "Unsupported image type; images must be PNG, JPEG, GIF, or WebP." );
+
+    img.caption = item.value( "caption", string() );
+    // Re-encoded, as the decoder skips characters (e.g., line breaks) that LLM APIs reject.
+    img.base64Data = Wt::Utils::base64Encode( bytes, false );
+    answer.push_back( std::move(img) );
+  }//for( const json &item : images )
+
+  return answer;
+}//images_from_mcp_param(...)
+
+
 ToolRegistry::ToolRegistry( const LlmConfig &config )
-  : m_supportsImages( config.llmApi.supportsImages() )
+  : m_supportsImages( !config.llmApi.providers.empty() && config.llmApi.supportsImages() )
 {
   registerDefaultTools( config );
 }
@@ -2497,8 +2616,21 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction>, LlmConversationHistory*,
           SharedTool::AsyncCallback callback) {
-        LlmToolGui *gui = interspec ? interspec->currentLlmTool() : nullptr;
-        LlmJsSandboxBridge *bridge = gui ? gui->jsSandboxBridge() : nullptr;
+        // The stdio server has no browser for the iframe sandbox (whose timeout is enforced in the
+        //  browser, so a call there would never return); it runs the code with its own engine.
+        const JavaScriptRunner runner = java_script_runner();
+#if( BUILD_AS_MCP_STDIO_SERVER )
+        LlmJsSandboxBridge * const bridge = nullptr;
+#else
+        LlmToolGui * const gui = interspec ? interspec->currentLlmTool() : nullptr;
+        LlmJsSandboxBridge * const bridge = gui ? gui->jsSandboxBridge() : nullptr;
+#endif
+        if( !bridge && runner )
+        {
+          runner( params, std::move(callback) );
+          return;
+        }
+
         if( !bridge )
         {
           callback( std::string("No active LLM GUI session - JS sandbox unavailable") );
@@ -2517,6 +2649,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       // Captures are serialized behind at most sm_max_queued_captures others, and each of those is
       // itself bounded by the chart's own capture timer, so this covers the worst-case queued wait.
       tool.asyncTimeoutMs = sm_spectrum_image_tool_timeout_ms;
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2540,6 +2673,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     }else if( toolName == "get_time_chart_image" )
     {
       tool.asyncTimeoutMs = sm_time_chart_image_tool_timeout_ms;  // browser round-trip, never queued
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2579,19 +2713,29 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       LlmPromptTemplate::buildContext( config, LlmPromptTemplate::Surface::Agent, a ) ).first->second;
   };
 
+  // The KnowledgeBase agent is only offered if it has something to work from: skills in a
+  //  `llm_knowledge` directory, or a RAG endpoint.  Its description then lists the topics it covers.
+  const vector<LlmKnowledgeBase::SkillInfo> knowledge_skills = LlmKnowledgeBase::loadSkills();
+  const bool have_rag_endpoint = !config.llmApi.rag_url.empty();
+
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
   {
     // Skip MainAgent - it doesn't get its own invoke tool
     if( agent.type == AgentType::MainAgent )
       continue;
-    
+
+    if( (agent.type == AgentType::KnowledgeBase) && knowledge_skills.empty() && !have_rag_endpoint )
+      continue;
+
     // Create invoke_<AgentName> tool
     const string toolName = "invoke_" + agent.name;
 
     SharedTool invokeTool;
     invokeTool.name = toolName;
     invokeTool.description = agent.description;
+    if( agent.type == AgentType::KnowledgeBase )
+      invokeTool.description += LlmKnowledgeBase::invokeDescriptionSuffix( knowledge_skills, have_rag_endpoint );
     
     // Schema for invoke tool
     invokeTool.parameters_schema = json::parse(R"({
@@ -2638,6 +2782,13 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // Register tools from configs
   for( const LlmConfig::ToolConfig &toolConfig : config.tools )
   {
+#if( NO_INTERACTIVE_GUI_USER )
+    // No one is at the session's GUI to answer; the assistant states its assumptions, or asks in its
+    //  reply - which the MCP client relays to its user.
+    if( toolConfig.name == "ask_user_question" )
+      continue;
+#endif
+
     try
     {
       // Create tool with executor
@@ -2674,17 +2825,20 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // MCP tool: submit a prompt into the assistant conversation as if the user typed it, with
   // streaming intermediate results.  Gated by config.mcpServer.allowAssistantPrompt and a valid
   // LLM provider; marked MCP-only via AgentType::McpServer so no in-app agent can call it.
-  if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
   {
     SharedTool submitTool;
     submitTool.name = "assistant_submit_prompt";
     submitTool.description =
-      "Submit a prompt into the InterSpec assistant conversation as if the user typed it, then wait"
-      " until the assistant's turn (including all tool calls and sub-agents) finishes.  Returns the"
-      " assistant's final response text plus a compact list of the tools it called.  Intermediate"
-      " results (tool calls, results, sub-agent responses) are streamed as progress events."
-      "  Prompts submitted while a turn is already in progress are queued and run in order."
-      " Refused while a benchmark is running.";
+      "Submit a prompt into the InterSpec assistant conversation as if the user typed it.  The"
+      " assistant analyzes the loaded spectra with its own tools (and sub-agents), and answers."
+      "  Returns {status, turn_id}: with status \"done\" the result has the assistant's final"
+      " response text, the tools it called, and any questions it asked (answered with a stated"
+      " assumption, as there is no interactive user); with status \"running\" the turn is still"
+      " going - call assistant_get_result with the turn_id to wait for it, or assistant_cancel."
+      "  Clients that accept text/event-stream, and send a progressToken, also get progress"
+      " notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
+      " run in order.";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
         "type": "object",
@@ -2692,14 +2846,38 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
           "prompt": {
             "type": "string",
             "description": "The message to submit to the assistant, exactly as if the user typed it."
+          },
+          "images": {
+            "type": "array",
+            "description": "Optional images (PNG, JPEG, GIF, or WebP) to send with the prompt, e.g. photos of the source or detector; only if the model accepts images.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string", "description": "Path of an image file, relative to the session directory (e.g. \"input/photo.jpg\")."},
+                "base64Data": {"type": "string", "description": "The image, base64 encoded; instead of 'path'."},
+                "mimeType": {"type": "string", "description": "Optional; the type is detected from the content."},
+                "caption": {"type": "string", "description": "Optional label sent with the image, so the prompt can refer to it."}
+              }
+            }
+          },
+          "wait_seconds": {
+            "type": "number",
+            "description": "How long to wait for the turn to finish before returning status \"running\" (default 30, at most 50)."
           }
         },
         "required": ["prompt"]
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
     submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    // The stdio server runs the assistant itself, with native LLM requests; otherwise the
+    //  assistant needs a session's browser.
+    submitTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;
 
-    submitTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
+    const uint64_t max_image_bytes = config.mcpServer.agentServer.has_value()
+                                       ? config.mcpServer.agentServer->maxImageBytes
+                                       : LlmConfig::McpServer::AgentServer{}.maxImageBytes;
+
+    submitTool.asyncStreamingExecutor = [max_image_bytes]( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
         SharedTool::AsyncCallback callback, SharedTool::AsyncProgressFn progressFn )
     {
@@ -2726,15 +2904,28 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       if( params.contains("prompt") && params["prompt"].is_string() )
         prompt = params["prompt"].get<std::string>();
 
-      gui->queuePromptForMcp( prompt, std::move( callback ), std::move( progressFn ) );
+      vector<LlmToolCall::ImageContent> images;
+      try
+      {
+        images = images_from_mcp_param( params.value( "images", json() ), max_image_bytes );
+      }catch( std::exception &e )
+      {
+        callback( std::string( e.what() ) );
+        return;
+      }
+
+      // Set by LlmMcpResource (not the client), so the turn can be found by assistant_cancel.
+      const std::string turn_id = params.value( "_mcp_turn_id", std::string() );
+
+      gui->queuePromptForMcp( prompt, std::move( callback ), std::move( progressFn ), std::move( images ), turn_id );
     };
 
     registerTool( submitTool );
-  }//if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+  }//if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
 
   // MCP tool: directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
   // Gated by config.mcpServer.allowAgentInvocation and a valid LLM provider.
-  if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
+  if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
   {
     // Build the enum list of available agent types for the schema
     json agentEnum = json::array();
@@ -2773,6 +2964,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     agentTool.parameters_schema = std::move( schema );
     agentTool.availableForAgents = { AgentType::McpServer };
     agentTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    agentTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // as for assistant_submit_prompt
 
     agentTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
@@ -2815,22 +3007,21 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         return;
       }
 
-      gui->invokeAgentForMcp( agentType, prompt, std::move( callback ), std::move( progressFn ) );
+      const std::string turn_id = params.value( "_mcp_turn_id", std::string() );
+      gui->invokeAgentForMcp( agentType, prompt, std::move( callback ), std::move( progressFn ), turn_id );
     };
 
     registerTool( agentTool );
-  }//if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
+  }//if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
 
-  bool loaded_deep_research_skills = false;
-  LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
-                                              [this]( const SharedTool &tool ){ registerTool(tool); },
-                                              loaded_deep_research_skills );
+  LlmKnowledgeBase::registerKnowledgeBaseTools( knowledge_skills,
+                                                config.llmApi.rag_url,
+                                                config.llmApi.rag_model,
+                                                config.llmApi.rag_corpora,
+                                                [this]( const SharedTool &tool ){ registerTool(tool); } );
 
-  if( m_tools.find("invoke_DeepResearch") == end(m_tools) )
-    cerr << "Warning: DeepResearch agent invoke tool was not registered. Check llm_agents.xml configuration." << endl;
-
-  if( !loaded_deep_research_skills )
-    cerr << "Info: No DeepResearch SKILL.md files were found under llm_knowledge directories." << endl;
+  if( m_tools.find("invoke_KnowledgeBase") == end(m_tools) )
+    cerr << "Info: KnowledgeBase agent not available (no llm_knowledge skills and no RAG URL configured)." << endl;
 
   // NOTE: Hard-coded fallback tool definitions have been removed.
   // If no tools are loaded from XML, we throw an exception above.
@@ -2893,7 +3084,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "search_sources_by_energy",
     "activity_fit",
     "activity_fit_one_off",
+#if( !NO_INTERACTIVE_GUI_USER )
     "ask_user_question",
+#endif
     "close_activity_shielding_display",
     "get_shielding_source_config",
     "mark_peaks_for_activity_fit",
@@ -2924,14 +3117,13 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "run_javascript"
   };
 
-  if( !config.llmApi.deep_research_url.empty() )
-    expectedTools.push_back( "query_deep_research_endpoint" );
+  if( !config.llmApi.rag_url.empty() )
+    expectedTools.push_back( "query_rag_endpoint" );
 
-#if( PERFORM_DEVELOPER_CHECKS )
-  // Registered programmatically above (dev/automation only); list it so the drift checks below
-  // don't flag it as an "unexpected" tool.
-  expectedTools.push_back( "assistant_submit_prompt" );
-#endif
+  // Registered programmatically above, when configured; list it so the drift checks below don't
+  //  flag it as an "unexpected" tool (or as missing, when it is not configured).
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
+    expectedTools.push_back( "assistant_submit_prompt" );
 
   std::vector<std::string> missingTools;
   for( const std::string &toolName : expectedTools )
@@ -2959,7 +3151,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     if( toolName.find("invoke_") == 0 )
       continue;
 
-    if( toolName.find("deepresearch_skill_") == 0 )
+    if( toolName.find("knowledge_") == 0 )
       continue;
 
     bool found = false;
@@ -3046,10 +3238,10 @@ std::map<std::string, const SharedTool*> ToolRegistry::getToolsForAgent( AgentTy
     if( !m_supportsImages && ((toolName == "get_spectrum_image") || (toolName == "get_time_chart_image")) )
       continue;
 
-    if( (agentType == AgentType::DeepResearch) && (toolName.find("invoke_") == 0) )
+    if( (agentType == AgentType::KnowledgeBase) && (toolName.find("invoke_") == 0) )
       continue;
 
-    if( (agentType == AgentType::DeepResearch) && tool.availableForAgents.empty() )
+    if( (agentType == AgentType::KnowledgeBase) && tool.availableForAgents.empty() )
       continue;
 
     // If availableForAgents is empty, tool is available to all agents
@@ -3082,10 +3274,10 @@ std::map<std::string, const SharedTool*> ToolRegistry::getToolsForMcp() const
     if( toolName.find( "invoke_" ) == 0 && toolName != "invoke_agent" )
       continue;
 
-    // Skip deep research tools
-    if( toolName.find( "deepresearch_skill_" ) == 0 )
+    // Skip KnowledgeBase tools
+    if( toolName.find( "knowledge_" ) == 0 )
       continue;
-    if( toolName == "query_deep_research_endpoint" )
+    if( toolName == "query_rag_endpoint" )
       continue;
 
     // Skip agent-only tools, unless they explicitly include McpServer
@@ -3517,10 +3709,12 @@ nlohmann::json ToolRegistry::executeGetUnidentifiedDetectedPeaks( const nlohmann
           // Calculate percent elevation: ((fg_cps / bg_cps) - 1.0) * 100.0
           const double percent_elevation = ((fg_cps / bg_cps) - 1.0) * 100.0;
           
-          // Calculate sigma elevation if uncertainties are available
+          // Calculate sigma elevation if uncertainties are available; with the uncertainties
+          //  detected_peaks(...) judges elevation by (its ROI context is the reported peaks).
           double sigma_elevation = 0.0;
-          const double fg_amp_uncert = fg_peak->amplitudeUncert();
-          const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+          const double fg_amp_uncert = AnalystChecks::elevation_test_uncert( *fg_peak, result.peaks, meas );
+          const vector<shared_ptr<const PeakDef>> bg_peak_vec( bg_peaks->begin(), bg_peaks->end() );
+          const double bg_amp_uncert = AnalystChecks::elevation_test_uncert( *closest_bg_peak, bg_peak_vec, background );
           
           if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
           {
@@ -3957,6 +4151,277 @@ nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& para
 }
 
 
+namespace
+{
+  const char *spec_type_label( const SpecUtils::SpectrumType type )
+  {
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:       return "Foreground";
+      case SpecUtils::SpectrumType::Background:       return "Background";
+      case SpecUtils::SpectrumType::SecondForeground: return "Secondary";
+    }
+    return "";
+  }//spec_type_label(...)
+
+
+  const char *source_type_label( const SpecUtils::SourceType type )
+  {
+    switch( type )
+    {
+      case SpecUtils::SourceType::IntrinsicActivity: return "IntrinsicActivity";
+      case SpecUtils::SourceType::Calibration:       return "Calibration";
+      case SpecUtils::SourceType::Background:        return "Background";
+      case SpecUtils::SourceType::Foreground:        return "Foreground";
+      case SpecUtils::SourceType::Unknown:           return "Unknown";
+    }
+    return "Unknown";
+  }//source_type_label(...)
+
+
+  /** Samples grouped by their source type (as the "Spectrum Files" tab gives it: that of the samples
+   last record), in the order Foreground, Background, Unknown, IntrinsicActivity, Calibration.
+   */
+  vector<pair<string,set<int>>> samples_by_source_type( const SpecMeas &meas, const set<int> &samples )
+  {
+    const SpecUtils::SourceType order[] = { SpecUtils::SourceType::Foreground, SpecUtils::SourceType::Background,
+      SpecUtils::SourceType::Unknown, SpecUtils::SourceType::IntrinsicActivity, SpecUtils::SourceType::Calibration };
+
+    map<SpecUtils::SourceType,set<int>> by_type;
+    for( const int sample : samples )
+    {
+      const vector<shared_ptr<const SpecUtils::Measurement>> records = meas.sample_measurements( sample );
+      by_type[records.empty() ? SpecUtils::SourceType::Unknown : records.back()->source_type()].insert( sample );
+    }
+
+    vector<pair<string,set<int>>> answer;
+    for( const SpecUtils::SourceType type : order )
+    {
+      if( by_type.count( type ) )
+        answer.emplace_back( source_type_label( type ), by_type[type] );
+    }
+    return answer;
+  }//samples_by_source_type(...)
+
+
+  /** E.g., {"Foreground": {"samples": "2-10", "count": 9}, "Background": {"samples": "1", "count": 1}}. */
+  json samples_by_source_type_json( const vector<pair<string,set<int>>> &by_type )
+  {
+    json answer = json::object();
+    for( const pair<string,set<int>> &type_samples : by_type )
+      answer[type_samples.first] = json{ {"samples", SpecUtils::sequencesToBriefString( type_samples.second )},
+                                         {"count", type_samples.second.size()} };
+    return answer;
+  }//samples_by_source_type_json(...)
+
+
+  /** E.g., "sample 5 (Foreground)", or "samples 2-10 (Foreground) and 1 (Background)". */
+  string describe_samples( const vector<pair<string,set<int>>> &by_type )
+  {
+    size_t nsamples = 0;
+    for( const pair<string,set<int>> &type_samples : by_type )
+      nsamples += type_samples.second.size();
+
+    string answer = (nsamples == 1) ? "sample " : "samples ";
+    for( size_t i = 0; i < by_type.size(); ++i )
+    {
+      if( i )
+        answer += (i + 1 == by_type.size()) ? " and " : ", ";
+      const string &type = by_type[i].first;
+      answer += SpecUtils::sequencesToBriefString( by_type[i].second )
+                + " (" + ((type == "Unknown") ? string("source type not given") : type) + ")";
+    }
+    return answer;
+  }//describe_samples(...)
+
+
+  /** E.g., "Aa1", "Aa1 and Aa2", or "Aa1, Aa2 and Ba1". */
+  string join_names( const vector<string> &names )
+  {
+    string answer;
+    for( size_t i = 0; i < names.size(); ++i )
+    {
+      if( i )
+        answer += (i + 1 == names.size()) ? " and " : ", ";
+      answer += names[i].empty() ? string("(unnamed)") : names[i];
+    }
+    return answer;
+  }//join_names(...)
+
+
+  /** Plain text of a GUI notice, which may be XHTML. */
+  string notice_to_text( string msg )
+  {
+    // Tags become spaces, and a line break ends a sentence.
+    string text, tag;
+    bool in_tag = false;
+    for( const char c : msg )
+    {
+      if( c == '<' )
+      {
+        in_tag = true;
+        tag.clear();
+      }else if( c == '>' )
+      {
+        in_tag = false;
+        const size_t last = text.find_last_not_of( " \t\n" );
+        const bool line_break = SpecUtils::istarts_with( tag, "br" ) || SpecUtils::istarts_with( tag, "p" )
+                                || SpecUtils::istarts_with( tag, "/p" ) || SpecUtils::istarts_with( tag, "div" );
+        if( line_break && (last != string::npos) && (string( ".!?:;" ).find( text[last] ) == string::npos) )
+          text.insert( last + 1, "." );
+        text += ' ';
+      }else if( in_tag )
+        tag += c;
+      else
+        text += c;
+    }//for( const char c : msg )
+
+    const pair<const char *,const char *> entities[] = { {"&nbsp;", " "}, {"&lt;", "<"}, {"&gt;", ">"},
+      {"&quot;", "\""}, {"&#39;", "'"}, {"&apos;", "'"}, {"&amp;", "&"} };
+    for( const pair<const char *,const char *> &entity : entities )
+      SpecUtils::ireplace_all( text, entity.first, entity.second );
+
+    // Collapse whitespace, and the space a tag left before punctuation.
+    string answer;
+    for( const char c : text )
+    {
+      const bool space = std::isspace( static_cast<unsigned char>(c) );
+      if( space && (answer.empty() || (answer.back() == ' ')) )
+        continue;
+      if( !space && answer.size() && (answer.back() == ' ') && ((c == '.') || (c == ',')) )
+        answer.pop_back();
+      answer += (space ? ' ' : c);
+    }
+    SpecUtils::trim( answer );
+    return answer;
+  }//notice_to_text(...)
+
+
+  /** What is displayed for one spectrum type; compared before and after a load. */
+  struct DisplayedState
+  {
+    shared_ptr<SpecMeas> meas;
+    set<int> samples;
+    vector<string> detectors;
+
+    bool operator==( const DisplayedState &rhs ) const
+    {
+      return (meas == rhs.meas) && (samples == rhs.samples) && (detectors == rhs.detectors);
+    }
+  };//struct DisplayedState
+
+
+  DisplayedState displayed_state( InterSpec *interspec, const SpecUtils::SpectrumType type )
+  {
+    DisplayedState state;
+    state.meas = interspec->measurment( type );
+    if( state.meas )
+    {
+      state.samples = interspec->displayedSamples( type );
+      state.detectors = interspec->detectorsToDisplay( type );
+    }
+    return state;
+  }//displayed_state(...)
+
+
+  /** The `detectors` of `state` that are gamma (or, if `gamma` is false, neutron) detectors. */
+  vector<string> displayed_detectors( const DisplayedState &state, const bool gamma )
+  {
+    vector<string> answer;
+    if( !state.meas )
+      return answer;
+
+    const vector<string> &kind = gamma ? state.meas->gamma_detector_names() : state.meas->neutron_detector_names();
+    for( const string &name : state.detectors )
+    {
+      if( std::find( begin(kind), end(kind), name ) != end(kind) )
+        answer.push_back( name );
+    }
+    return answer;
+  }//displayed_detectors(...)
+
+
+  /** How long the displayed samples took to measure: each sample's real time (the longest of its
+   records), summed over samples - unlike a summed spectrum's live and real times, which are also
+   summed over its detectors.
+   */
+  double measurement_duration( const DisplayedState &state )
+  {
+    double duration = 0.0;
+    if( !state.meas )
+      return duration;
+
+    for( const int sample : state.samples )
+    {
+      float sample_real_time = 0.0f;
+      for( const shared_ptr<const SpecUtils::Measurement> &m : state.meas->sample_measurements( sample ) )
+      {
+        if( m && (m->num_gamma_channels() > 0) )
+          sample_real_time = std::max( sample_real_time, m->real_time() );
+      }
+      duration += sample_real_time;
+    }
+
+    return duration;
+  }//measurement_duration(...)
+
+
+  json displayed_state_json( InterSpec *interspec, const SpecUtils::SpectrumType type,
+                             const DisplayedState &state, const DisplayedState &before,
+                             const shared_ptr<const SpecMeas> &loaded )
+  {
+    if( !state.meas )
+      return json{ {"loaded", false}, {"changed", (before.meas != nullptr)} };
+
+    json answer;
+    answer["loaded"] = true;
+    answer["changed"] = !(state == before);
+    answer["fileName"] = state.meas->filename();
+    if( loaded && (state.meas == loaded) )
+      answer["fileJustLoaded"] = true;
+    answer["samples"] = SpecUtils::sequencesToBriefString( state.samples );
+    answer["samplesBySourceType"] = samples_by_source_type_json( samples_by_source_type( *state.meas, state.samples ) );
+    answer["gammaDetectors"] = displayed_detectors( state, true );
+    const vector<string> neutron_dets = displayed_detectors( state, false );
+    if( !neutron_dets.empty() )
+      answer["neutronDetectors"] = neutron_dets;
+
+    const double duration = measurement_duration( state );
+    if( duration > 0.0 )
+      answer["durationSeconds"] = duration;
+
+    const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( type );
+    if( hist )
+    {
+      // InterSpec sums the displayed detectors' spectra, live times, and real times.
+      if( displayed_detectors( state, true ).size() > 1 )
+        answer["timesSummedOverDetectors"] = true;
+      if( hist->live_time() > 0.0f )
+        answer["liveTime"] = hist->live_time();
+      if( hist->real_time() > 0.0f )
+        answer["realTime"] = hist->real_time();
+      if( !SpecUtils::is_special( hist->start_time() ) )
+        answer["startTime"] = SpecUtils::to_iso_string( hist->start_time() );
+      answer["numChannels"] = hist->num_gamma_channels();
+      answer["minimumGammaEnergy"] = hist->gamma_energy_min();
+      answer["maximumGammaEnergy"] = hist->gamma_energy_max();
+      if( hist->gamma_counts() && !hist->gamma_counts()->empty() )
+        answer["totalCounts"] = hist->gamma_count_sum();
+      if( hist->contained_neutron() )
+      {
+        answer["neutronCounts"] = hist->neutron_counts_sum();
+        if( hist->neutron_live_time() > 0.0f )
+          answer["neutronCPS"] = hist->neutron_counts_sum() / hist->neutron_live_time();
+      }
+      if( !hist->title().empty() )
+        answer["title"] = hist->title();
+    }//if( hist )
+
+    return answer;
+  }//displayed_state_json(...)
+}//namespace
+
+
 nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &params, InterSpec *interspec )
 {
   if( !interspec )
@@ -3978,6 +4443,13 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
   else
     throw std::runtime_error( "Invalid specType: '" + specTypeStr + "'; must be Foreground, Background, or Secondary." );
 
+  const SpecUtils::SpectrumType all_types[] = { SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background, SpecUtils::SpectrumType::SecondForeground };
+
+  map<SpecUtils::SpectrumType,DisplayedState> before, after;
+  for( const SpecUtils::SpectrumType type : all_types )
+    before[type] = displayed_state( interspec, type );
+
   // Parse path - empty/null means unload the spectrum
   const string path_key = find_case_insensitive_key( "path", params );
   const bool hasPath = params.contains( path_key ) && params[path_key].is_string()
@@ -3992,110 +4464,552 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
     result["success"] = true;
     result["specType"] = specTypeStr;
     result["action"] = "unloaded";
+    const string label = SpecUtils::to_lower_ascii_copy( specTypeStr );
+    result["summary"] = before[specType].meas ? ("Unloaded the " + label + " (" + before[specType].meas->filename() + ").")
+                                              : ("No " + label + " was loaded.");
+    json displayed;
+    for( const SpecUtils::SpectrumType type : all_types )
+      displayed[spec_type_label(type)] = displayed_state_json( interspec, type, displayed_state( interspec, type ),
+                                                               before[type], nullptr );
+    result["displayed"] = std::move( displayed );
     return result;
-  }
+  }//if( !hasPath )
 
-  const string path = params[path_key].get<string>();
+  // `client_path` is what the client gave (and what error messages show); `path` is what we open.
+  const string client_path = params[path_key].get<string>();
+  const string path = resolve_client_file_path( client_path );
 
   if( !SpecUtils::is_file( path ) )
-    throw std::runtime_error( "File not found: " + path );
+    throw std::runtime_error( "File not found: " + client_path );
 
-  // Load the spectrum file
-  shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
-  if( !meas->load_file( path, SpecUtils::ParserType::Auto, SpecUtils::filename( path ) ) )
-    throw std::runtime_error( "Failed to parse spectrum file: " + path );
+  // What happens to the assistant conversation when a new foreground is loaded: by default the
+  //  file's saved conversation (if any) replaces the current one, except for an MCP agent server,
+  //  which keeps the current conversation - an uploaded file may carry a made-up "conversation", so
+  //  the client must ask for it with "resume" (for files it exported itself).
+  const string convo_key = find_case_insensitive_key( "conversation", params );
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  string conversation_mode = "keep";
+#else
+  string conversation_mode = "resume";
+#endif
+  if( params.contains( convo_key ) && params[convo_key].is_string() )
+    conversation_mode = params[convo_key].get<string>();
+  if( (conversation_mode != "keep") && (conversation_mode != "resume") && (conversation_mode != "new") )
+    throw std::runtime_error( "Invalid 'conversation' value '" + conversation_mode + "'; must be keep, resume, or new." );
+
+  // Optional detectors to sum, for a foreground.
+  vector<string> requestedDetectors;
+  const string detectors_key = find_case_insensitive_key( "detectors", params );
+  if( params.contains( detectors_key ) && !params[detectors_key].is_null() )
+  {
+    if( !params[detectors_key].is_array() )
+      throw std::runtime_error( "detectors must be an array of detector names." );
+    for( const json &name : params[detectors_key] )
+    {
+      if( !name.is_string() )
+        throw std::runtime_error( "detectors must be an array of detector names." );
+      requestedDetectors.push_back( name.get<string>() );
+    }
+    // TODO(displayed-detectors): only the foreground has a choice of detectors (see
+    //  InterSpec::detectorsToDisplay()); allow it for any specType once the app does, and update
+    //  this tool's 'detectors' docs (data/llm_tools_config.xml, data/skills/interspec-mcp-agent).
+    if( !requestedDetectors.empty() && (specType != SpecUtils::SpectrumType::Foreground) )
+      throw std::runtime_error( "detectors can only be given for a Foreground; a background or secondary uses the"
+                                " foreground's choice when it has the same detectors, and otherwise all of its own." );
+  }//if( detectors given )
+
+  SpecMeasManager * const manager = interspec->fileManager();
+  if( !manager )
+    throw std::runtime_error( "No spectrum file manager available." );
+
+  // Keep the notices the GUI shows while opening the file (e.g., which sample of several it shows).
+  vector<string> notices;
+  struct ConnectionGuard
+  {
+    Wt::Signals::connection connection;
+    ~ConnectionGuard(){ connection.disconnect(); }
+  } notice_guard{ interspec->messageLogged().connect( [&notices]( const Wt::WString &msg, int ){
+    notices.push_back( msg.toUTF8() );
+  } ) };
+
+  // Open the file into the "Spectrum Files" list, as dropping it onto the GUI does.
+  const string display_name = SpecUtils::filename( path );
+  shared_ptr<SpectraFileHeader> header;
+  shared_ptr<SpecMeas> meas;
+  int row = -1;
+  try
+  {
+    row = manager->setFile( display_name, path, header, meas, SpecUtils::ParserType::Auto );
+  }catch( std::exception & )
+  {
+    throw std::runtime_error( "Not a spectrum file InterSpec can read (none of its file-format parsers"
+                              " accepted it): " + client_path );
+  }
+
+  if( !meas || (row < 0) )
+    throw std::runtime_error( "Not a spectrum file InterSpec can read: " + client_path );
+
+  // Takes a file just opened back out of the "Spectrum Files" list (and the memory cache).
+  const auto discard_opened_file = [manager]( const shared_ptr<SpecMeas> &opened ){
+    manager->removeSpecMeas( opened, false );
+    manager->removeFromSpectrumInfoCache( opened, false );
+  };
 
   if( meas->num_measurements() == 0 )
-    throw std::runtime_error( "Spectrum file contained no measurements: " + path );
-
-  // Parse optional sample numbers
-  set<int> requestedSamples;
-  const string samples_key = find_case_insensitive_key( "sampleNumbers", params );
-  if( params.contains( samples_key ) )
   {
-    const json &samplesJson = params[samples_key];
-    if( samplesJson.is_array() )
+    discard_opened_file( meas );
+    throw std::runtime_error( "Spectrum file contained no measurements: " + client_path );
+  }
+
+  // If this same file is already displayed (e.g., the client now wants its background sample, after
+  //  loading it as the foreground), use that copy, as picking samples in the "Spectrum Files" tab
+  //  does: the GUI then treats it as the same file, and its peaks and other work are kept.
+  const char *reused_from = nullptr;
+  for( const SpecUtils::SpectrumType type : all_types )
+  {
+    const shared_ptr<SpecMeas> &displayed = before[type].meas;
+    if( !displayed || (displayed->uuid() != meas->uuid()) || (displayed->filename() != meas->filename()) )
+      continue;
+
+    discard_opened_file( meas );
+    meas = displayed;
+    Wt::WModelIndex index = manager->model()->index( std::shared_ptr<const SpecUtils::SpecFile>( meas ) );
+    if( !index.isValid() )
+      index = manager->model()->index( manager->addFile( meas->filename(), meas ) );
+    row = index.row();
+    reused_from = spec_type_label( type );
+    break;
+  }//for( const SpecUtils::SpectrumType type : all_types )
+
+  if( row < 0 )
+    throw std::runtime_error( "Failed to add the spectrum file to the file manager." );
+
+  // Optional sample numbers (otherwise they are chosen as the GUI does for a newly opened file), and
+  //  detectors; checked before anything is displayed, and a newly opened file is taken back out of
+  //  the "Spectrum Files" list if they are not valid.
+  const set<int> &allSamples = meas->sample_numbers();
+  set<int> requestedSamples;
+  try
+  {
+    const string samples_key = find_case_insensitive_key( "sampleNumbers", params );
+    if( params.contains( samples_key ) && !params[samples_key].is_null() )
     {
-      const set<int> &allSamples = meas->sample_numbers();
-      for( const auto &s : samplesJson )
+      if( !params[samples_key].is_array() )
+        throw std::runtime_error( "sampleNumbers must be an array of integers." );
+
+      for( const json &s : params[samples_key] )
       {
+        if( !s.is_number_integer() )
+          throw std::runtime_error( "sampleNumbers must be an array of integers." );
         const int sampleNum = s.get<int>();
-        if( allSamples.find( sampleNum ) == allSamples.end() )
-        {
-          throw std::runtime_error( "Sample number " + to_string( sampleNum )
-            + " not found in file. Available: " + SpecUtils::sequencesToBriefString( allSamples ) );
-        }
+        if( !allSamples.count( sampleNum ) )
+          throw std::runtime_error( "Sample number " + to_string( sampleNum ) + " not found in file. Available: "
+                                    + SpecUtils::sequencesToBriefString( allSamples ) );
         requestedSamples.insert( sampleNum );
       }//for( loop over requested sample numbers )
-    }else if( samplesJson.is_string() )
+
+      if( requestedSamples.empty() )
+        throw std::runtime_error( "sampleNumbers is empty; leave it out to have the samples chosen as"
+                                  " the GUI chooses them." );
+    }//if( sampleNumbers provided )
+
+    const vector<string> &det_names = meas->detector_names();
+    const vector<string> &gamma_det_names = meas->gamma_detector_names();
+    bool any_gamma = requestedDetectors.empty();
+    for( const string &name : requestedDetectors )
     {
-      // Accept a brief string like "1-5,10" as well
-      // For now, just require the array form
-      throw std::runtime_error( "sampleNumbers must be an array of integers." );
-    }
-  }//if( sampleNumbers provided )
+      if( std::find( begin(det_names), end(det_names), name ) == end(det_names) )
+        throw std::runtime_error( "'" + name + "' is not a detector in the file; its detectors are: "
+                                  + join_names( det_names ) + "." );
+      any_gamma = (any_gamma
+                   || (std::find( begin(gamma_det_names), end(gamma_det_names), name ) != end(gamma_det_names)));
+    }//for( const string &name : requestedDetectors )
 
-  // TODO (needs testing): Using interspec->setSpectrum() directly, bypassing SpecMeasManager.
-  //  This avoids UI coupling (tree view, file model), but may miss necessary setup.
-  //  If testing reveals issues (e.g., file not appearing in CompactFileManager, or display
-  //  problems), we may need to switch to using SpecMeasManager::setFile() followed by
-  //  SpecMeasManager::displayFile() instead.
-  interspec->setSpectrum( meas, requestedSamples, specType,
-    InterSpec::SetSpectrumOptions::SkipParseWarnings );
+    if( gamma_det_names.empty() )
+      throw std::runtime_error( "The file has no gamma spectra (its detectors are: " + join_names( det_names )
+                                + "), so there is nothing to display or analyze: " + client_path );
 
-  // Verify the spectrum loaded
-  const shared_ptr<const SpecUtils::Measurement> displayed = interspec->displayedHistogram( specType );
-  if( !displayed )
-    throw std::runtime_error( "Spectrum file loaded but failed to display." );
+    if( !any_gamma )
+      throw std::runtime_error( "detectors must include at least one gamma detector; the file's gamma detectors are: "
+                                + join_names( gamma_det_names ) + "." );
 
-  // Build response
+    // The chosen samples and detectors must have some gamma data, or nothing could be displayed.
+    if( !requestedSamples.empty() || !requestedDetectors.empty() )
+    {
+      bool have_gamma_data = false;
+      for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+      {
+        have_gamma_data = (m && (m->num_gamma_channels() > 0)
+          && (requestedSamples.empty() || requestedSamples.count( m->sample_number() ))
+          && (requestedDetectors.empty() || (std::find( begin(requestedDetectors), end(requestedDetectors),
+                                                        m->detector_name() ) != end(requestedDetectors))));
+        if( have_gamma_data )
+          break;
+      }
+
+      if( !have_gamma_data )
+      {
+        set<int> gamma_samples;
+        for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+        {
+          if( m && (m->num_gamma_channels() > 0) )
+            gamma_samples.insert( m->sample_number() );
+        }
+
+        throw std::runtime_error( "The requested sampleNumbers and detectors have no gamma data; the file's samples"
+                                  " with gamma data are: " + SpecUtils::sequencesToBriefString( gamma_samples )
+                                  + ", and its gamma detectors: " + join_names( gamma_det_names ) + "." );
+      }//if( !have_gamma_data )
+    }//if( samples or detectors were given )
+  }catch( std::exception & )
+  {
+    if( !reused_from )
+      discard_opened_file( meas );
+    throw;
+  }//try / catch
+
+  LlmToolGui * const llm_tool = interspec->currentLlmTool();
+  const bool is_foreground = (specType == SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> prev_conversation
+         = (is_foreground && llm_tool && (conversation_mode == "keep")) ? llm_tool->getConversationHistory() : nullptr;
+
+  if( requestedSamples.empty() )
+  {
+    // As the GUI does, but without dialogs: derived data, energy calibration variants and virtual
+    //  detectors are all kept (the GUI's default choices), no offer to keep the previous energy
+    //  calibration or to propagate peaks, and no database lookup.
+    manager->displayFile( row, meas, specType, false, false, SpecMeasManager::VariantChecksToDo::None );
+  }else
+  {
+    interspec->setSpectrum( meas, requestedSamples, specType, InterSpec::SetSpectrumOptions::SkipParseWarnings );
+
+    // The file may say which samples to show (an N42 InterSpec saved), which `setSpectrum` prefers.
+    if( interspec->displayedSamples( specType ) != requestedSamples )
+    {
+      interspec->changeDisplayedSampleNums( requestedSamples, specType );
+
+      // `setSpectrum` restored the conversation of the file's samples; use the requested ones'.
+      if( is_foreground && llm_tool && (conversation_mode == "resume") && !meas->passthrough() )
+      {
+        const shared_ptr<vector<shared_ptr<LlmInteraction>>> history = meas->llmConversationHistory( requestedSamples );
+        llm_tool->setConversationHistory( history ? history : make_shared<vector<shared_ptr<LlmInteraction>>>() );
+      }
+    }//if( setSpectrum chose other samples )
+  }//if( requestedSamples.empty() ) / else
+
+  if( !requestedDetectors.empty() )
+    interspec->setDetectorsToDisplay( requestedDetectors );
+
+  // setSpectrum() swapped in the files conversation ("resume"); undo that, if asked to.
+  if( is_foreground && llm_tool && (llm_tool == interspec->currentLlmTool()) )
+  {
+    if( conversation_mode == "keep" )
+      llm_tool->setConversationHistory( prev_conversation ? prev_conversation
+                                          : make_shared<vector<shared_ptr<LlmInteraction>>>() );
+    else if( conversation_mode == "new" )
+      llm_tool->clearConversationHistory();
+  }//if( foreground was loaded )
+
+  notice_guard.connection.disconnect();
+
+  // The GUI's notices, without its pointers to the GUI.
+  const auto notices_json = [&notices]() -> json {
+    const string gui_pointers[] = { Wt::WString::tr("smm-warn-upload-use-spec-manager").toUTF8(),
+                                    Wt::WString::tr("smm-warn-upload-use-file-manager").toUTF8() };
+    json notice_texts = json::array();
+    set<string> seen;
+    for( string msg : notices )
+    {
+      for( const string &pointer : gui_pointers )
+      {
+        const size_t pos = pointer.empty() ? string::npos : msg.find( pointer );
+        if( pos != string::npos )
+          msg.erase( pos, pointer.size() );
+      }
+      const string text = notice_to_text( msg );
+      if( !text.empty() && seen.insert( text ).second )
+        notice_texts.push_back( text );
+    }//for( string msg : notices )
+    return notice_texts;
+  };//notices_json lambda
+
+  for( const SpecUtils::SpectrumType type : all_types )
+    after[type] = displayed_state( interspec, type );
+
+  // (A background or secondary is not drawn while there is no foreground, but is still loaded.)
+  const DisplayedState &now = after[specType];
+  if( (now.meas != meas)
+     || (!interspec->displayedHistogram( specType ) && after[SpecUtils::SpectrumType::Foreground].meas) )
+  {
+    // The GUI may have changed state on the way (e.g., replaced the foreground), so say what is
+    //  displayed now, along with the GUI's explanation.
+    json result;
+    result["success"] = false;
+    result["specType"] = specTypeStr;
+    result["error"] = "The spectrum file was opened, but could not be displayed as the "
+                      + SpecUtils::to_lower_ascii_copy( specTypeStr ) + "; see notices.";
+    const json notice_texts = notices_json();
+    if( !notice_texts.empty() )
+      result["notices"] = notice_texts;
+    json displayed;
+    for( const SpecUtils::SpectrumType type : all_types )
+      displayed[spec_type_label(type)] = displayed_state_json( interspec, type, after[type], before[type], meas );
+    result["displayed"] = std::move( displayed );
+    return result;
+  }//if( the file is not displayed )
+
   json result;
   result["success"] = true;
   result["specType"] = specTypeStr;
-  result["fileName"] = SpecUtils::filename( path );
+  result["fileName"] = meas->filename();
+  if( reused_from )
+    result["reusedLoadedFile"] = reused_from;
 
-  // All sample numbers in file (compact form)
-  const set<int> &allSamples = meas->sample_numbers();
-  result["allSampleNumbers"] = SpecUtils::sequencesToBriefString( allSamples );
-
-  // Displayed sample numbers
-  const set<int> &displayedSamples = interspec->displayedSamples( specType );
-  result["displayedSamples"] = SpecUtils::sequencesToBriefString( displayedSamples );
-
-  // Detector names
-  result["gammaDetectorNames"] = meas->gamma_detector_names();
-  result["neutronDetectorNames"] = meas->neutron_detector_names();
-
-  // Basic spectrum info from displayed histogram
-  result["numChannels"] = displayed->num_gamma_channels();
-  if( displayed->live_time() > 0.0f )
-    result["liveTime"] = displayed->live_time();
-  if( displayed->real_time() > 0.0f )
-    result["realTime"] = displayed->real_time();
-  result["minimumGammaEnergy"] = displayed->gamma_energy_min();
-  result["maximumGammaEnergy"] = displayed->gamma_energy_max();
-  if( displayed->gamma_counts() && !displayed->gamma_counts()->empty() )
-    result["totalCounts"] = displayed->gamma_count_sum();
-
-  // File-level metadata
-  if( !meas->manufacturer().empty() )
-    result["manufacturer"] = meas->manufacturer();
-  if( !meas->instrument_model().empty() )
-    result["instrumentModel"] = meas->instrument_model();
-  if( !meas->instrument_id().empty() )
-    result["serialNumber"] = meas->instrument_id();
-  if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
-    result["detectorType"] = SpecUtils::detectorTypeToString( meas->detector_type() );
-
-  if( displayed->contained_neutron() )
+  // The file as a whole.
+  const vector<pair<string,set<int>>> all_by_type = samples_by_source_type( *meas, allSamples );
   {
-    result["neutronCounts"] = displayed->neutron_counts_sum();
-    if( displayed->neutron_live_time() > 0.0f )
-      result["neutronCPS"] = displayed->neutron_counts_sum() / displayed->neutron_live_time();
+    json file;
+    file["numSamples"] = allSamples.size();
+    file["samplesBySourceType"] = samples_by_source_type_json( all_by_type );
+    file["gammaDetectors"] = meas->gamma_detector_names();
+    if( !meas->neutron_detector_names().empty() )
+      file["neutronDetectors"] = meas->neutron_detector_names();
+    file["numRecords"] = meas->num_measurements();
+    if( meas->passthrough() )
+      file["searchModeOrPassthrough"] = true;
+    if( meas->contains_derived_data() )
+      file["containsDerivedData"] = true;
+    const set<string> cal_variants = meas->energy_cal_variants();
+    if( cal_variants.size() > 1 )
+      file["energyCalibrationVariants"] = cal_variants;
+    if( !meas->manufacturer().empty() )
+      file["manufacturer"] = meas->manufacturer();
+    if( !meas->instrument_model().empty() )
+      file["instrumentModel"] = meas->instrument_model();
+    if( !meas->instrument_id().empty() )
+      file["serialNumber"] = meas->instrument_id();
+    if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
+      file["detectorType"] = SpecUtils::detectorTypeToString( meas->detector_type() );
+    const shared_ptr<const SpecUtils::DetectorAnalysis> riid = meas->detectors_analysis();
+    if( riid && !riid->is_empty() )
+    {
+      const string riid_summary = notice_to_text( riidAnaSummary( meas ) );
+      file["instrumentRiidResults"] = riid_summary.empty() ? string("present") : riid_summary;
+    }
+    result["file"] = std::move( file );
   }
 
-  if( !displayed->title().empty() )
-    result["title"] = displayed->title();
+  // Samples of this file not displayed in any slot.
+  set<int> not_displayed = allSamples;
+  for( const SpecUtils::SpectrumType type : all_types )
+  {
+    if( after[type].meas == meas )
+    {
+      for( const int sample : after[type].samples )
+        not_displayed.erase( sample );
+    }
+  }//for( const SpecUtils::SpectrumType type : all_types )
+  const vector<pair<string,set<int>>> not_displayed_by_type = samples_by_source_type( *meas, not_displayed );
+  result["samplesNotDisplayed"] = samples_by_source_type_json( not_displayed_by_type );
+
+  json displayed;
+  for( const SpecUtils::SpectrumType type : all_types )
+    displayed[spec_type_label(type)] = displayed_state_json( interspec, type, after[type], before[type], meas );
+  result["displayed"] = std::move( displayed );
+
+  // A short account of what happened, for the client.
+  {
+    string summary = meas->filename() + " has " + to_string( allSamples.size() )
+                     + ((allSamples.size() == 1) ? " sample" : " samples");
+    if( allSamples.size() > 1 )
+      summary += " (" + describe_samples( all_by_type ) + ")";
+    const vector<string> &gamma_dets = meas->gamma_detector_names();
+    summary += ", with " + to_string( gamma_dets.size() ) + " gamma detector" + ((gamma_dets.size() == 1) ? "" : "s");
+    if( (gamma_dets.size() > 1) && (gamma_dets.size() <= 8) )
+      summary += " (" + join_names( gamma_dets ) + ")";
+    if( meas->passthrough() )
+      summary += "; it is search-mode/passthrough data";
+    summary += ". ";
+
+    if( reused_from )
+      summary += "It was already loaded as the " + SpecUtils::to_lower_ascii_copy( reused_from )
+                 + ", so that copy (with any analysis work) was used. ";
+
+    summary += "Displayed " + describe_samples( samples_by_source_type( *meas, now.samples ) ) + " as the "
+               + SpecUtils::to_lower_ascii_copy( specTypeStr );
+    const vector<string> now_gamma = displayed_detectors( now, true );
+    if( now_gamma.size() > 1 )
+      summary += ", summing " + ((now_gamma.size() == gamma_dets.size()) ? string("all ") : string(""))
+                 + to_string( now_gamma.size() ) + " gamma detectors"
+                 + ((now_gamma.size() < gamma_dets.size()) ? " (" + join_names( now_gamma ) + ")" : string(""));
+    else if( (now_gamma.size() == 1) && (gamma_dets.size() > 1) )
+      summary += ", using only gamma detector " + now_gamma.front();
+    if( !meas->neutron_detector_names().empty() && displayed_detectors( now, false ).empty() )
+      summary += ", without the neutron detectors";
+    summary += ". ";
+
+    {
+      const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( specType );
+      const double duration = measurement_duration( now );
+      if( hist && (now_gamma.size() > 1) && (hist->live_time() > 0.0f) && (duration > 0.0) )
+      {
+        char buffer[256];
+        snprintf( buffer, sizeof(buffer), "Its live time (%.1f s) is summed over the %i detectors; the"
+                  " measurement took %.1f s. ", hist->live_time(), static_cast<int>(now_gamma.size()), duration );
+        summary += buffer;
+      }
+    }
+
+    // Peaks are kept for each set of samples, so ones fit on other samples are not shown now.
+    {
+      vector<string> other_peak_sets;
+      for( const set<int> &samples : meas->sampleNumsWithPeaks() )
+      {
+        const shared_ptr<const std::deque<shared_ptr<const PeakDef>>> peaks
+                                  = std::const_pointer_cast<const SpecMeas>(meas)->peaks( samples );
+        if( (samples != now.samples) && peaks && !peaks->empty() && (other_peak_sets.size() < 3) )
+          other_peak_sets.push_back( to_string( peaks->size() ) + " on " + describe_samples(
+                                       samples_by_source_type( *meas, samples ) ) );
+      }
+      if( !other_peak_sets.empty() )
+        summary += "Peaks are kept for each set of samples; this file also has peaks fit for other"
+                   " samples (" + join_names( other_peak_sets ) + "), not shown with the current ones. ";
+    }
+
+    if( !not_displayed.empty() )
+      summary += "Not displayed: " + describe_samples( not_displayed_by_type )
+                 + "; use sampleNumbers to choose other samples. ";
+
+    // What happened to the other slots.
+    for( const SpecUtils::SpectrumType type : all_types )
+    {
+      if( type == specType )
+        continue;
+
+      const DisplayedState &was = before[type], &is = after[type];
+      const string label = SpecUtils::to_lower_ascii_copy( string( spec_type_label( type ) ) );
+      if( is == was )
+      {
+        // A file with an unambiguous background sample, whose background was not loaded because one
+        //  is already loaded - the GUI keeps it if it is from this detector and closer in time.
+        const auto back_pos = std::find_if( begin(not_displayed_by_type), end(not_displayed_by_type),
+                                [](const pair<string,set<int>> &v){ return v.first == "Background"; } );
+        if( is_foreground && (type == SpecUtils::SpectrumType::Background) && is.meas && (is.meas != meas)
+            && (back_pos != end(not_displayed_by_type)) )
+        {
+          summary += "The file's background " + describe_samples( {*back_pos} ) + " was not loaded, keeping the"
+                     " current background (" + is.meas->filename() + "); load this file with specType"
+                     " Background to use it. ";
+        }else if( is.meas )
+        {
+          summary += "The " + label + " (" + is.meas->filename() + ", "
+                     + describe_samples( samples_by_source_type( *is.meas, is.samples ) ) + ") is unchanged. ";
+        }
+        continue;
+      }//if( is == was )
+
+      if( is.meas && (is.meas == was.meas) && (is.samples == was.samples) )
+      {
+        // Only its detectors changed: it follows the foreground's choice of detectors.
+        //  TODO(displayed-detectors): not so once each spectrum has its own choice.
+        const vector<string> is_gamma = displayed_detectors( is, true );
+        summary += "The " + label + " now " + ((is_gamma.size() == 1) ? "uses gamma detector " : "sums gamma detectors ")
+                   + join_names( is_gamma ) + ", like the foreground. ";
+      }else if( is.meas == meas )
+      {
+        summary += "Also loaded " + describe_samples( samples_by_source_type( *meas, is.samples ) )
+                   + " of this file as the " + label;
+        if( was.meas && (was.meas != meas) )
+          summary += ", replacing " + was.meas->filename();
+        summary += ". ";
+      }else if( !is.meas && was.meas )
+      {
+        summary += "The " + label + " (" + was.meas->filename() + ") was unloaded, as its number of"
+                   " channels differs from the new foreground. ";
+      }else if( is.meas )
+      {
+        summary += "The " + label + " (" + is.meas->filename() + ") now displays "
+                   + describe_samples( samples_by_source_type( *is.meas, is.samples ) ) + ". ";
+      }
+    }//for( const SpecUtils::SpectrumType type : all_types )
+
+    if( !is_foreground && !after[SpecUtils::SpectrumType::Foreground].meas )
+      summary += "No foreground is loaded; load one for analysis. ";
+
+    // A background (or secondary) with a different number of channels is likely from another
+    //  detector; it is rebinned to the foreground for display and comparisons.
+    {
+      const shared_ptr<const SpecUtils::Measurement> fore_hist
+                                    = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      for( const SpecUtils::SpectrumType type : { SpecUtils::SpectrumType::Background, SpecUtils::SpectrumType::SecondForeground } )
+      {
+        const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( type );
+        if( fore_hist && hist && (hist->num_gamma_channels() != fore_hist->num_gamma_channels()) )
+          summary += "Note: the " + SpecUtils::to_lower_ascii_copy( string( spec_type_label( type ) ) )
+                     + " has " + to_string( hist->num_gamma_channels() ) + " channels and the foreground "
+                     + to_string( fore_hist->num_gamma_channels() ) + ", so it is likely from a different"
+                     " detector; it is rebinned to the foreground's energy calibration for display and"
+                     " comparisons. ";
+      }
+    }
+
+    if( result["file"].contains( "instrumentRiidResults" ) )
+      summary += "The file includes the instrument's own nuclide ID results (see get_automated_id_results). ";
+
+    SpecUtils::trim( summary );
+    result["summary"] = summary;
+  }
+
+  // The GUI's notices.
+  const json notice_texts = notices_json();
+  if( !notice_texts.empty() )
+    result["notices"] = notice_texts;
+
+  // Problems the parser noted, for the file and the displayed records.
+  {
+    set<string> warnings( begin(meas->parse_warnings()), end(meas->parse_warnings()) );
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+    {
+      if( m && now.samples.count( m->sample_number() ) )
+        warnings.insert( begin(m->parse_warnings()), end(m->parse_warnings()) );
+    }
+    if( !warnings.empty() )
+    {
+      json list = json::array();
+      for( const string &w : warnings )
+      {
+        if( list.size() >= 10 )
+          break;
+        list.push_back( w );
+      }
+      result["parseWarnings"] = std::move( list );
+    }
+  }
+
+  // What analysis work the file brought with it (e.g., when resuming from an exported N42).
+  //  TODO(displayed-detectors): the file's saved choice of detectors is not restored (all of them
+  //  are shown), so a resumed analysis made with only some detectors needs `detectors` again.
+  {
+    // (Through a const SpecMeas, as the non-const peaks() adds an empty entry for the samples.)
+    const shared_ptr<const SpecMeas> const_meas = meas;
+    const shared_ptr<const std::deque<shared_ptr<const PeakDef>>> peaks = const_meas->peaks( now.samples );
+    json restored;
+    restored["peaks"] = peaks ? peaks->size() : size_t(0);
+    restored["activity_model"] = (meas->shieldingSourceModel() != nullptr);
+#if( USE_REL_ACT_TOOL )
+    restored["isotopics_config"] = (meas->relActAutoGuiState() != nullptr);
+#endif
+    if( is_foreground )
+    {
+      // Without an assistant open yet, the file's conversation is restored when one is.
+      const set<int> history_key = meas->passthrough() ? set<int>{} : now.samples;
+      const shared_ptr<vector<shared_ptr<LlmInteraction>>> convo = llm_tool ? llm_tool->getConversationHistory()
+                                                                 : meas->llmConversationHistory( history_key );
+      restored["conversation_turns"] = convo ? convo->size() : size_t(0);
+      restored["conversation"] = conversation_mode;
+    }
+    result["restored"] = std::move( restored );
+  }
 
   return result;
 }//executeLoadSpectrumFile(...)
@@ -4197,6 +5111,17 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   // Get the current visible range for the description text
   double curMinE = 0, curMaxE = 0, curMinY = 0, curMaxY = 0;
   interspec->displayedSpectrumRange( curMinE, curMaxE, curMinY, curMaxY );
+  if( curMaxE <= curMinE )
+  {
+    // No range from a browser (e.g., the stdio server); the whole spectrum is shown.
+    const shared_ptr<const SpecUtils::Measurement> fore
+                                  = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    if( fore && (fore->num_gamma_channels() > 1) )
+    {
+      curMinE = fore->gamma_energy_min();
+      curMaxE = fore->gamma_energy_max();
+    }
+  }//if( no displayed range )
   const double descMinE = energyRange ? energyRange->first : curMinE;
   const double descMaxE = energyRange ? energyRange->second : curMaxE;
 
@@ -4206,9 +5131,12 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
     [callback, format, descMinE, descMaxE, didBgSub]( std::string base64Data, std::string mimeType,
                                              int widthPx, int heightPx )
     {
-      if( base64Data.empty() )
+      // A chart with no size (e.g., never laid out) gives an "image" with no content; so does a
+      //  capture refused because others are already queued (see D3SpectrumDisplayDiv).
+      if( base64Data.empty() || (widthPx <= 0) || (heightPx <= 0) )
       {
-        callback( string( "Error: Failed to capture spectrum image." ) );
+        callback( string( "Error: Failed to capture spectrum image (other image captures may still"
+                          " be running; try again once they finish)." ) );
         return;
       }
 
@@ -4645,7 +5573,8 @@ void ToolRegistry::executeGetTimeChartImageAsync( const nlohmann::json &params, 
     [callback, format, fgHighlightColor, bgHighlightColor]( std::string base64Data, std::string mimeType,
                          int widthPx, int heightPx )
     {
-      if( base64Data.empty() )
+      // A chart with no size (e.g., never laid out) gives an "image" with no content.
+      if( base64Data.empty() || (widthPx <= 0) || (heightPx <= 0) )
       {
         callback( string( "Error: Failed to capture time chart image." ) );
         return;
@@ -5588,12 +6517,8 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       if( atomic_number <= 0.0 || atomic_number > 100.0 )
         throw runtime_error( "Atomic number (AN) must be between 1 and 100." );
       
-      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
-      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-        static_cast<float>(atomic_number),
-        static_cast<float>(areal_density),
-        energy_float
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density,
+                                                                               energy * PhysicalUnits::keV );
       shield_transmission = exp( -mu );
     }
     else if( has_material && has_thickness && !has_ad && !has_an )
@@ -5614,12 +6539,8 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       if( thickness < 0.0 )
         throw runtime_error( "Thickness must be non-negative for material '" + material_name + "', got '" + thickness_str + "'." );
       
-      const float energy_float = static_cast<float>( energy * PhysicalUnits::keV );
-      const double mu = GammaInteractionCalc::transmition_coefficient_material(
-        material.get(),
-        energy_float,
-        static_cast<float>(thickness)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material( material.get(),
+                                                                                energy * PhysicalUnits::keV, thickness );
       shield_transmission = exp( -mu );
     }
     else
@@ -5651,9 +6572,32 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     input.num_upper_side_channels = 4;
   }
   
+  // The detector, when the result is to be given in activity.
+  shared_ptr<const DetectorPeakResponse> drf;
+  DrfModifyCalc::UncertSummary drf_uncert;
+  if( has_nuclide && has_distance )
+  {
+    drf = meas ? meas->detector() : nullptr;
+    if( drf && !drf->isValid() )
+      drf.reset();
+
+    if( !drf )
+      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
+
+    if( drf->isFixedGeometry() )
+      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
+
+    // What the DRF states (plus any geometry-model part; never an assumed one) - it scales the
+    //  expected counts like any other systematic, so it joins `additionalUncertainty` in quadrature.
+    drf_uncert = DrfModifyCalc::uncertSummary( *drf, static_cast<float>(energy), distance );
+  }//if( has_nuclide && has_distance )
+
+  const double drf_used_uncert = std::min( 0.99, drf_uncert.usedFrac( false ) );  //Currie needs < 1
+
   // Use the parsed parameters
   input.detection_probability = detection_probability;
-  input.additional_uncertainty = additional_uncertainty;
+  input.additional_uncertainty = static_cast<float>( std::sqrt( additional_uncertainty*additional_uncertainty
+                                                                + drf_used_uncert*drf_used_uncert ) );
 
   // Call the DetectionLimitCalc function to perform the calculation
   const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc(input);
@@ -5662,27 +6606,28 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
   json result_json;
   to_json(result_json, result);
 
+  // Echo the caller's own value under its own name - the calculation used it combined with the DRF's
+  //  (`drfEffFracUncert`), and feeding that combination back in would count the DRF's twice.
+  result_json["additionalUncertainty"] = additional_uncertainty;
+  result_json["totalSystematicUncertainty"] = input.additional_uncertainty;
+
   // If nuclide and distance are provided, calculate and add activity information
-  if( has_nuclide && has_distance )
+  if( drf )
   {
-    shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
-    if( drf && !drf->isValid() )
-      drf.reset();
-    
-    if( !drf )
-      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded." );
-    
+    // So it is plain whether, and what, efficiency uncertainty went into the limits.
+    result_json["drfEffFracUncert"] = round_to_sig_figs( drf_used_uncert, 3 );
+    result_json["drfEffFracUncertModel"] = round_to_sig_figs( drf_uncert.model, 3 );
+    result_json["drfStatesOwnUncert"] = drf->statesOwnEfficiencyUncert();
+    if( drf_uncert.dataIsAssumed )
+      result_json["drfAssumedFracUncertNotUsed"] = round_to_sig_figs( drf_uncert.data, 3 );
+
     const bool fixed_geom = drf->isFixedGeometry();
-    if( fixed_geom && has_distance )
-      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry." );
-    
     const float energy_float = static_cast<float>(energy);
-    const double det_eff = fixed_geom ? drf->farFieldIntrinsicEfficiency(energy_float)
-                                      : drf->efficiency(energy_float, distance);
+    const double det_eff = drf->efficiency( energy_float, distance );
     
     const float live_time = spectrum->live_time();
     const double air_transmission = (distance > 0.0) 
-      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy_float, static_cast<float>(distance) ) )
+      ? exp( -GammaInteractionCalc::transmission_coefficient_air( energy, distance ) )
       : 1.0;
     
     const double counts_per_bq_into_4pi = branch_ratio * live_time * shield_transmission;
@@ -5708,8 +6653,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
         if( distance >= 0.0 && !fixed_geom )
         {
-          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(), distance );
+          const double geom_eff = DetectorPeakResponse::fractionalSolidAngle( drf->detectorDiameter(),
+                                                                    distance + drf->detectorSetback() );
           result_json["solidAngleFraction"] = round_to_sig_figs( geom_eff, 6 );
+          result_json["detectorAbsoluteEfficiency"] = round_to_sig_figs( det_eff, 6 );
         }
       }
 
@@ -5962,8 +6909,33 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
     }
   }//if( !nuc && !el )
 
-  if( !nuc && !el && !rctn )
-    throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, or reaction." );
+  // Fission-product sources, e.g. "Fission U235 Thermal, 1d buildup" or "Cf252 + Spontaneous Fission"
+  //  (same syntax as the Reference Photopeak tool).  Checked before the nuclide/element/reaction lookup
+  //  result is used, since "Fission U235 ..." can otherwise partially match.
+  const SandiaDecay::Nuclide *fission_nuc = nullptr;
+  FissionType fission_type = FissionType::Thermal;
+  double fission_buildup = 0.0;
+  bool default_fission_buildup = false;
+  if( SpecUtils::icontains( params[source_key].get<string>(), "fission" ) )
+  {
+    if( !parse_fission_source_text( params[source_key].get<string>(), fission_nuc, fission_type, fission_buildup ) )
+      throw runtime_error( "Could not interpret '" + params[source_key].get<string>() + "' as a fission source;"
+                           " use e.g. 'Fission U235 Thermal, 1d buildup', 'Fission U238 Fast, 1y buildup',"
+                           " 'Fission Pu239 14 MeV, 1h buildup', or 'Cf252 + Spontaneous Fission'." );
+
+    if( (fission_type != FissionType::Spontaneous) && (fission_buildup <= 0.0) )
+    {
+      fission_buildup = 24.0 * 3600.0 * PhysicalUnits::second;
+      default_fission_buildup = true;
+    }
+
+    nuc = nullptr;
+    el = nullptr;
+    rctn = nullptr;
+  }//if( fission source )
+
+  if( !nuc && !el && !rctn && !fission_nuc )
+    throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, reaction, or fission source." );
 
   const string age_key = find_case_insensitive_key( "age", params );
   
@@ -5975,10 +6947,10 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   {
     const string &age_str = params[age_key];
 
-    if( !nuc && !age_str.empty() )
-      throw runtime_error( "You can only specify 'age' for a nuclide source" );
+    if( !nuc && !fission_nuc && !age_str.empty() )
+      throw runtime_error( "You can only specify 'age' for a nuclide or fission source" );
 
-    if( nuc )
+    if( nuc || fission_nuc )
     {
       try
       {
@@ -5995,6 +6967,11 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
   if( nuc && !interpreted_age )
     age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
+
+  // Fission: 'age' is the cool-off time after irradiation (induced) or the source age (spontaneous);
+  //  default to 1 day, same as the Reference Photopeak tool.
+  if( fission_nuc && !interpreted_age )
+    age_in_seconds = 24.0 * 3600.0;
   
   const string max_results_key = find_case_insensitive_key( "maxResults", params );
   
@@ -6223,6 +7200,50 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
       if( static_cast<int>(nuc_gamma_coincidences.size()) > max_results )
         nuc_gamma_coincidences.resize( static_cast<size_t>(max_results) );
     }//if( cascade )
+  }else if( fission_nuc )
+  {
+    const bool spontaneous = (fission_type == FissionType::Spontaneous);
+    const shared_ptr<const vector<FissionLine>> lines = fission_photons( fission_nuc, fission_type,
+                                                    fission_buildup, age_in_seconds * PhysicalUnits::second );
+    if( !lines || lines->empty() )
+      throw runtime_error( "No fission-product photons computed for '" + params[source_key].get<string>() + "'." );
+
+    // Merge same-energy lines (from the same parent, if parents are requested); positrons become 511 keV.
+    map<pair<float,string>, double> merged;
+    for( const FissionLine &line : *lines )
+    {
+      if( !(line.relative_amplitude > 0.0) || IsInf(line.relative_amplitude) || IsNan(line.relative_amplitude) )
+        continue;
+
+      const bool is_positron = (line.particle_type == SandiaDecay::ProductType::PositronParticle);
+      const float energy = is_positron ? 510.9989f : static_cast<float>( line.energy );
+      string label;
+      if( include_parent && line.parent )
+        label = line.parent->symbol + ((line.particle_type == SandiaDecay::ProductType::XrayParticle) ? " xray" : "");
+      merged[ make_pair(energy, label) ] += line.relative_amplitude;
+    }//for( const FissionLine &line : *lines )
+
+    // For spontaneous fission, also include the parent nuclide's own decay photons (aged per 'age'),
+    //  on the same per-Bq-of-parent basis as the fission-product amplitudes.
+    if( spontaneous )
+    {
+      SandiaDecay::NuclideMixture mix;
+      mix.addAgedNuclideByActivity( fission_nuc, 1.0*SandiaDecay::Bq, age_in_seconds * SandiaDecay::second );
+      for( const SandiaDecay::EnergyRatePair &erp : mix.photons( 0.0 ) )
+        merged[ make_pair( static_cast<float>(erp.energy), include_parent ? (fission_nuc->symbol + " decay chain") : string() ) ] += erp.numPerSecond;
+    }//if( spontaneous )
+
+    double max_amp = 0.0;
+    for( const auto &entry : merged )
+      max_amp = std::max( max_amp, entry.second );
+
+    result.reserve( merged.size() );
+    for( const auto &entry : merged )
+    {
+      // Induced-fission amplitudes are only relative, so normalize to the strongest line.
+      const double intensity = spontaneous ? entry.second : ((max_amp > 0.0) ? (entry.second / max_amp) : 0.0);
+      result.push_back( { static_cast<double>(entry.first.first), intensity, entry.first.second } );
+    }
   }else if( el )
   {
     result.reserve( el->xrays.size() );
@@ -6294,8 +7315,9 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   // nuclides, or intensity relative to the strongest line (max = 1) for x-rays and reactions.
   nlohmann::json columns = nlohmann::json::array();
   columns.push_back( "energy_keV" );
-  columns.push_back( nuc ? "intensity_perBq" : "intensity_rel" );
-  if( include_parent && nuc )
+  const bool spontaneous_fission = (fission_nuc && (fission_type == FissionType::Spontaneous));
+  columns.push_back( (nuc || spontaneous_fission) ? "intensity_perBq" : "intensity_rel" );
+  if( include_parent && (nuc || fission_nuc) )
     columns.push_back( "parent" );
 
   nlohmann::json answer = nlohmann::json::object();
@@ -6309,20 +7331,63 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   }else if( rctn )
   {
     answer["source"] = rctn->name();
+  }else if( fission_nuc )
+  {
+    const char *type_str = "";
+    switch( fission_type )
+    {
+      case FissionType::Thermal:     type_str = "Thermal"; break;
+      case FissionType::Fast:        type_str = "Fast";    break;
+      case FissionType::FourteenMeV: type_str = "14 MeV";  break;
+      case FissionType::Spontaneous: type_str = "Spontaneous"; break;
+    }
+
+    if( spontaneous_fission )
+    {
+      answer["source"] = fission_nuc->symbol + " + Spontaneous Fission";
+      answer["age"] = PhysicalUnits::printToBestTimeUnits( age_in_seconds * PhysicalUnits::second, 4 );
+      answer["note"] = "Spontaneous fission: intensities are photons per Bq of current " + fission_nuc->symbol
+                       + " activity, including its own decay-chain photons plus the fission products accumulated"
+                         " over 'age' (time since source production).";
+    }else
+    {
+      answer["source"] = "Fission " + fission_nuc->symbol + " " + type_str + ", "
+                         + PhysicalUnits::printToBestTimeUnits( fission_buildup, 4 ) + " buildup";
+      answer["buildup"] = PhysicalUnits::printToBestTimeUnits( fission_buildup, 4 );
+      answer["coolOffTime"] = PhysicalUnits::printToBestTimeUnits( age_in_seconds * PhysicalUnits::second, 4 );
+      answer["note"] = string("Induced fission products: constant-rate irradiation for 'buildup', then decay for")
+                       + " 'coolOffTime' (the 'age' parameter); intensities are relative to the strongest line."
+                       + (default_fission_buildup ? " No buildup time was given, so 1 day was assumed." : "")
+                       + (interpreted_age ? "" : " No 'age' (cool-off time) was given, so 1 day was assumed.");
+    }
   }
 
   // The handful of energies an analyst would consider "characteristic" of this source - i.e., the
   // most prominent or unique peaks to look for first.  Nearly free to include, and it saves the
   // model a separate lookup (this replaces the old 'primary_gammas_for_source' tool).
-  try
+  if( fission_nuc )
   {
+    // For fission products, the "characteristic" energies are just the strongest lines at this age.
+    vector<PhotonEntry> by_intensity = result;
+    std::sort( begin(by_intensity), end(by_intensity), []( const PhotonEntry &lhs, const PhotonEntry &rhs ){
+      return lhs.intensity > rhs.intensity;
+    } );
     nlohmann::json prominent = nlohmann::json::array();
-    for( const float e : AnalystChecks::get_characteristic_gammas( answer["source"].get<string>() ) )
-      prominent.push_back( round_to_decimal_places(e, 2) );
+    for( size_t i = 0; (i < by_intensity.size()) && (i < 10); ++i )
+      prominent.push_back( round_to_decimal_places(by_intensity[i].energy, 2) );
     answer["prominent_energies_keV"] = std::move(prominent);
-  }catch( std::exception & )
+  }else
   {
-  }
+    try
+    {
+      nlohmann::json prominent = nlohmann::json::array();
+      for( const float e : AnalystChecks::get_characteristic_gammas( answer["source"].get<string>() ) )
+        prominent.push_back( round_to_decimal_places(e, 2) );
+      answer["prominent_energies_keV"] = std::move(prominent);
+    }catch( std::exception & )
+    {
+    }
+  }//if( fission_nuc ) / else
 
   answer["photons"] = nlohmann::json{ {"columns", std::move(columns)}, {"rows", std::move(rows)} };
 
@@ -6427,11 +7492,7 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
 
     for( const double energy : energies )
     {
-      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-        static_cast<float>(atomic_number),
-        static_cast<float>(areal_density),
-        static_cast<float>(energy)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, energy );
       const double transmission_fraction = std::exp( -mu );
       result.push_back( transmission_fraction );
     }
@@ -6457,11 +7518,7 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json pa
 
     for( const double energy : energies )
     {
-      const double mu = GammaInteractionCalc::transmition_coefficient_material(
-        material.get(),
-        static_cast<float>(energy),
-        static_cast<float>(thickness)
-      );
+      const double mu = GammaInteractionCalc::transmition_coefficient_material( material.get(), energy, thickness );
       const double transmission_fraction = std::exp( -mu );
       result.push_back( transmission_fraction );
     }
@@ -6834,7 +7891,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
   for( const double energy_kev : energies )
   {
-    const float energy = static_cast<float>( energy_kev * PhysicalUnits::keV );
+    const double energy = energy_kev * PhysicalUnits::keV;
 
     json result;
     result["energy"] = round_to_decimal_places( energy_kev, 2 );
@@ -6849,20 +7906,14 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
 
       if( shield.is_generic )
       {
-        const double mu = GammaInteractionCalc::transmition_coefficient_generic(
-          static_cast<float>(shield.atomic_number),
-          static_cast<float>(shield.areal_density),
-          energy
-        );
+        const double mu = GammaInteractionCalc::transmition_coefficient_generic( shield.atomic_number,
+                                                                                 shield.areal_density, energy );
         attenuation = exp( -mu );
       }
       else
       {
-        const double mu = GammaInteractionCalc::transmition_coefficient_material(
-          shield.material.get(),
-          energy,
-          static_cast<float>(shield.thickness)
-        );
+        const double mu = GammaInteractionCalc::transmition_coefficient_material( shield.material.get(),
+                                                                                  energy, shield.thickness );
         attenuation = exp( -mu );
       }
 
@@ -6876,28 +7927,46 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
     // Calculate air attenuation
     if( include_air )
     {
-      const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, static_cast<float>(air_distance) );
+      const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, air_distance );
       const double air_attenuation = exp( -mu );
       result["airAttenuation"] = round_to_sig_figs( air_attenuation, 6 );
       final_efficiency *= air_attenuation;
     }
 
-    // Calculate distance geometry factor
-    if( has_distance && detector )
-    {
-      const double detector_diameter = detector->detectorDiameter();
-      const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector_diameter, distance );
-      result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
-      final_efficiency *= solid_angle;
-    }
-
-    // Calculate detector intrinsic efficiency
+    // With a distance, the detector's absolute efficiency there - `efficiency()` is the DRF's own
+    //  answer: the flat-disk model, or a geometry-modeled detector's (a Monte-Carlo response, an
+    //  efficiency transfer, an imported efficiency grid), near field included.  The solid angle and
+    //  far-field intrinsic efficiency are then only a breakdown, which a geometry-modeled detector
+    //  need not multiply to.
     if( detector && detector->isValid() )
     {
-      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( energy );
+      const float intrinsic_eff = detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
       result["detectorIntrinsicEfficiency"] = round_to_sig_figs( intrinsic_eff, 6 );
-      final_efficiency *= intrinsic_eff;
-    }
+
+      if( has_distance )
+      {
+        const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector->detectorDiameter(),
+                                                                   distance + detector->detectorSetback() );
+        result["distanceGeometryFactor"] = round_to_sig_figs( solid_angle, 6 );
+
+        const double abs_eff = detector->efficiency( energy, distance );
+        result["detectorAbsoluteEfficiency"] = round_to_sig_figs( abs_eff, 6 );
+        final_efficiency *= abs_eff;
+      }else
+      {
+        final_efficiency *= intrinsic_eff;
+      }//if( has_distance ) / else
+
+      // The detector efficiency's relative uncertainty: what the DRF states, plus any geometry-model
+      //  part.  An uncertainty assumed for a DRF that states none is reported separately, not used.
+      const DrfModifyCalc::UncertSummary drf_uncert
+                              = has_distance ? DrfModifyCalc::uncertSummary( *detector, energy, distance )
+                                             : DrfModifyCalc::uncertSummary( *detector, energy );
+      result["detectorEffFracUncert"] = round_to_sig_figs( drf_uncert.usedFrac( false ), 3 );
+      result["detectorEffFracUncertModel"] = round_to_sig_figs( drf_uncert.model, 3 );
+      if( drf_uncert.dataIsAssumed )
+        result["detectorAssumedFracUncertNotUsed"] = round_to_sig_figs( drf_uncert.data, 3 );
+    }//if( detector && detector->isValid() )
 
     result["finalEfficiency"] = round_to_sig_figs( final_efficiency, 6 );
     results.push_back( result );
@@ -7121,7 +8190,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
         shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
         if( sql )
         {
-          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user(),
+          suggested = DrfSelect::getUserPreferredDetector( sql, interspec->user().id(),
                                                            serial, detType, model );
         }
       }catch( std::exception & )
@@ -7144,7 +8213,7 @@ nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& par
       {
         try
         {
-          suggested = DrfSelect::initAGadrasDetector( detType, interspec );
+          suggested = DrfSelect::initAGadrasDetector( detType, DrfSelect::gadrasDrfSearchPaths( interspec ) );
         }catch( std::exception & )
         {
         }
@@ -7171,7 +8240,17 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
   loadedFrom.clear();
 
   // Helper lambda to try loading from a file path
-  auto tryLoadFromFilePath = [&](const std::string& path) -> std::shared_ptr<DetectorPeakResponse> {
+  auto tryLoadFromFilePath = [&](const std::string& client_path) -> std::shared_ptr<DetectorPeakResponse> {
+    // An MCP agent server only reads from the calling session's directory.
+    std::string path;
+    try
+    {
+      path = resolve_client_file_path( client_path );
+    }catch( std::exception & )
+    {
+      return nullptr;
+    }
+
     if( !SpecUtils::is_file(path) && !SpecUtils::is_directory(path) )
       return nullptr;
 
@@ -7879,10 +8958,39 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
     case DetectorPeakResponse::DrfSource::FromSpectrumFileDrf:           drfSourceStr = "FromSpectrumFileDrf";           break;
     case DetectorPeakResponse::DrfSource::UserCreatedDrf:                drfSourceStr = "UserCreatedDrf";                break;
     case DetectorPeakResponse::DrfSource::IsocsEcc:                      drfSourceStr = "IsocsEcc";                      break;
+    case DetectorPeakResponse::DrfSource::UserImportedIntrisicEfficiencyDrf: drfSourceStr = "UserImportedIntrisicEfficiencyDrf"; break;
+    case DetectorPeakResponse::DrfSource::UserImportedGadrasDrf:         drfSourceStr = "UserImportedGadrasDrf";         break;
+    case DetectorPeakResponse::DrfSource::DefaultRelativeEfficiencyDrf:  drfSourceStr = "DefaultRelativeEfficiencyDrf";  break;
+    case DetectorPeakResponse::DrfSource::AngleOutx:                     drfSourceStr = "AngleOutx";                     break;
+    case DetectorPeakResponse::DrfSource::UserImportedEfficiencyCsvDrf:  drfSourceStr = "UserImportedEfficiencyCsvDrf";  break;
+    case DetectorPeakResponse::DrfSource::GadrasDetectorDatOnly:         drfSourceStr = "GadrasDetectorDatOnly";         break;
+    case DetectorPeakResponse::DrfSource::CharacterizationParFile:       drfSourceStr = "CharacterizationParFile";       break;
     case DetectorPeakResponse::DrfSource::UnknownDrfSource:
     default:                                                              drfSourceStr = "UnknownDrfSource";              break;
   }
   result["drfSource"] = drfSourceStr;
+
+  // Whether the efficiency uncertainty reported below is one the DRF states; when it is not, a
+  //  geometry-modeled detector's uncertainty includes an assumed part that calculations leave out.
+  result["statesOwnEfficiencyUncert"] = drf->statesOwnEfficiencyUncert();
+
+  // How efficiency away from the far field is modeled - which the 1/r^2 description above does not
+  //  hold for once a response is attached.
+  const std::shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+  if( drf->hasImportedGrid() )
+    result["efficiencyModel"] = "ImportedEfficiencyGrid";
+  else if( resp )
+    result["efficiencyModel"] = (resp->provenance.method == ceelo::ProductionMethod::CurveTransfer)
+                                ? "EfficiencyTransfer" : "MonteCarloResponse";
+  else
+    result["efficiencyModel"] = "FlatDisk";
+
+  if( resp )
+    result["efficiencyModelDescription"] = "Geometry-modeled: near-field and off-axis efficiencies"
+                                           " come from the detector response, not ~1/r\xC2\xB2 scaling";
+  result["hasTotalEfficiency"] = drf->hasAnyTotalEfficiencyInfo();
+  if( drf->hasImportedGrid() )
+    result["geometryModifiedFromImport"] = drf->geometryModifiedFromImport();
 
   // Calculate efficiencies and FWHM at standard energies if valid
   if( drf->isValid() )
@@ -7900,6 +9008,15 @@ nlohmann::json ToolRegistry::buildDrfInfoJson( const std::shared_ptr<DetectorPea
       {
         const float eff = drf->farFieldIntrinsicEfficiency( energy );
         effData["intrinsicEfficiency"] = round_to_sig_figs( eff, 6 );
+
+        // Far-field relative 1-sigma uncertainty calculations use: stated, plus any geometry-model part.
+        const DrfModifyCalc::UncertSummary uncert = DrfModifyCalc::uncertSummary( *drf, energy );
+        if( uncert.valid )
+        {
+          effData["intrinsicEfficiencyFracUncert"] = round_to_sig_figs( uncert.usedFrac( false ), 3 );
+          if( uncert.dataIsAssumed )
+            effData["assumedFracUncertNotUsed"] = round_to_sig_figs( uncert.data, 3 );
+        }
       }catch( std::exception &e )
       {
         effData["intrinsicEfficiency"] = nullptr;
@@ -8989,6 +10106,8 @@ json ToolRegistry::executeRestoreEnergyCalCheckpoint( const json& params,
   }//for( const SpecUtils::SpectrumType type : spec_types )
 
   interspec->refreshDisplayedCharts();
+  if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+    caltool->refreshGuiFromFiles();
 
   json result = json::object();
   result["checkpoint_name"] = checkpoint_name;
@@ -9315,6 +10434,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   for( const ApplyEntry &entry : apply_entries )
   {
     // Determine which detector names are used for the "display" calibration for this SpecMeas
+    //  TODO(displayed-detectors): a file shown in two slots takes the first slot's detectors; check
+    //  this once the slots' detector choices can differ.
     vector<string> display_detectors;
     if( entry.meas == fore_meas )
       display_detectors = interspec->detectorsToDisplay( SpectrumType::Foreground );
@@ -9488,6 +10609,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   }//for( const ApplyEntry &entry : apply_entries )
 
   interspec->refreshDisplayedCharts();
+  if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+    caltool->refreshGuiFromFiles();  //so it shows the new coefficients
 
   // Register a single undo/redo step for the whole calibration change (+ translated peaks), so the
   // user can revert an agent-driven energy-cal fit just like a manual one.
@@ -9527,6 +10650,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
           pm->setPeakFromSpecMeas( sm, interspec->displayedSamples( t ), t );
       }
       interspec->refreshDisplayedCharts();
+      if( EnergyCalTool * const caltool = interspec->energyCalTool() )
+        caltool->refreshGuiFromFiles();
     };//applyState lambda
 
     undoManager->addUndoRedoStep( [applyState](){ applyState( false ); },  // undo -> restore old

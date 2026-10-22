@@ -95,6 +95,24 @@ BOOST_AUTO_TEST_CASE(all_builtin_materials_construct) {
     BOOST_CHECK_NO_THROW(make_StainlessSteel304());
 }
 
+BOOST_AUTO_TEST_CASE(actinide_materials_construct) {
+    // Photon data now reaches Z = kMaxZ (Cf), so Pu/Am shields and sources work.
+    const auto& xs = CrossSectionData::instance();
+    const double a_pu = xs.atomic_weight(94), a_o = xs.atomic_weight(8);
+    const double w_pu = a_pu / (a_pu + 2.0 * a_o);
+    const Material puo2("PuO2", 11.46, {{94, w_pu}, {8, 1.0 - w_pu}});
+    BOOST_CHECK_GT(puo2.mu_total(0.662), 0.0);
+    BOOST_CHECK_GT(puo2.mu_total(15.0), 0.0);
+    for (int Z = 93; Z <= kMaxZ; ++Z)
+        BOOST_CHECK_NO_THROW(Material("actinide", 10.0, {{static_cast<uint8_t>(Z), 1.0}}));
+}
+
+BOOST_AUTO_TEST_CASE(elements_without_photon_data_throw) {
+    BOOST_CHECK_THROW(Material("Es", 8.84, {{static_cast<uint8_t>(kMaxZ + 1), 1.0}}),
+                      std::invalid_argument);
+    BOOST_CHECK_THROW(Material("none", 1.0, {{0, 1.0}}), std::invalid_argument);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

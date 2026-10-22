@@ -19,13 +19,15 @@
   <message id="lcw-provider-subtitle">{1} &#183; {2} models &#183; active: {3}</message>
   <message id="lcw-api-endpoint">API endpoint</message>
   <message id="lcw-endpoint-ph">https://&#8230;/v1/chat/completions</message>
+  <message id="lcw-preset-ph">Known providers&#8230;</message>
+  <message id="lcw-preset-tip">Fill in the endpoint for a well-known provider.  The endpoint is the full URL, including the path (e.g. /v1/chat/completions); see the help page for details.  For OpenAI, Chat Completions works with almost every model; the newer Responses API is only needed for some of OpenAI's newest models.</message>
   <message id="lcw-wire-format">Wire format</message>
   <message id="lcw-fmt-source-auto">(auto-detected from URL)</message>
   <message id="lcw-fmt-source-manual">(manual override)</message>
   <message id="lcw-override">Override</message>
   <message id="lcw-fmt-auto">Auto-detect</message>
   <message id="lcw-fmt-openai-chat">OpenAI Chat</message>
-  <message id="lcw-fmt-openai-responses">OpenAI Responses</message>
+  <message id="lcw-fmt-openai-responses">OpenAI Responses (newer)</message>
   <message id="lcw-fmt-anthropic">Anthropic</message>
   <message id="lcw-cors-fix">CORS fix</message>
   <message id="lcw-cors-fix-tip"><![CDATA[Tick this if the assistant cannot reach this provider even though the endpoint and key are correct.<br/><br/>Requests normally go out through your browser, which is usually the better choice &#8212; it already knows your proxy settings, your organization&#8217;s certificates, and your sign-in. But some providers refuse requests made that way (a browser rule called CORS), and the only symptom is a network error.<br/><br/>With this ticked, InterSpec makes the request itself instead, using {1}. Leave it off for providers that work.]]></message>
@@ -45,6 +47,15 @@
   <message id="lcw-net-noverify">Do not check certificates</message>
   <message id="lcw-net-noverify-tip"><![CDATA[Turns off verification of the server&#8217;s identity, so the connection can no longer be trusted to reach the real provider.<br/><br/>Use only to confirm a certificate problem is the cause, then add the certificate above instead.]]></message>
   <message id="lcw-net-noverify-warn">Anyone on the network can read or alter these requests, including your API key.</message>
+
+  <!-- Conversation-log card -->
+  <message id="lcw-log-title">Conversation logs</message>
+  <message id="lcw-log-sub">Save each assistant conversation to an XML file.</message>
+  <message id="lcw-log-tip"><![CDATA[When checked, the full conversation &#8212; your messages, the assistant&#8217;s replies, tool calls and their results &#8212; is written to a file at the end of every turn. Clearing the conversation starts a new file.<br/><br/>Logs may contain spectrum details, file names, and analysis results, and are never deleted automatically.]]></message>
+  <message id="lcw-log-location">Saved to: {1}</message>
+  <message id="lcw-log-show-win">Show in Explorer</message>
+  <message id="lcw-log-show-mac">Show in Finder</message>
+  <message id="lcw-log-show-linux">Show in File Manager</message>
 
   <message id="lcw-bearer-token">Bearer token</message>
   <message id="lcw-token-ph">sk-&#8230;</message>
@@ -69,6 +80,13 @@
   <message id="lcw-remove-model">Remove model</message>
   <message id="lcw-select-model">Pick a fetched model&#8230;</message>
   <message id="lcw-model-name-ph">model identifier (e.g. gpt-5-mini)</message>
+  <message id="lcw-defaults-applied">Filled in known settings for {1}; adjust them if needed.</message>
+  <message id="lcw-model-unknown">InterSpec does not have settings for this model; check your provider&#8217;s documentation for image support, reasoning, and token limits (&quot;Fetch models&quot; can fill some of these in).</message>
+  <message id="lcw-compat-reasoning">Reasoning is on, but this model does not accept reasoning settings; the provider may reject requests.  Set Reasoning to Off.</message>
+  <message id="lcw-compat-images">Supports images is checked, but this model only accepts text; the provider may reject requests that include images.</message>
+  <message id="lcw-compat-max-tokens">Max tokens is above this model&#8217;s output limit of {1}, as reported by the provider.</message>
+  <message id="lcw-compat-context">Context limit is above this model&#8217;s context window of {1}, as reported by the provider.</message>
+  <message id="lcw-compat-format">This model only works with the {1} wire format here, so the assistant cannot use it with this endpoint; choose the matching entry under Known providers, or change the endpoint.</message>
   <message id="lcw-max-tokens">Max tokens</message>
   <message id="lcw-context-limit">Context limit</message>
   <message id="lcw-temperature">Temperature</message>
@@ -108,6 +126,9 @@
   <message id="lcw-ok">OK</message>
   <message id="lcw-blocking-tip">Every provider needs at least one model before saving.</message>
   <message id="lcw-save-unavailable">Saving is unavailable: InterSpec has no writable data directory on this platform.</message>
+  <message id="lcw-save-env-refs">Saving is disabled: this configuration takes values from environment variables (env(...) references), and saving would write those values into the file.  Edit the file directly instead.</message>
+  <message id="lcw-save-config-dir">Saving is disabled: the configuration in the LLM config directory ({1}) is used in preference to a saved one.  Edit the file there instead.</message>
+  <message id="lcw-save-agent-mode">Saving is disabled when InterSpec runs as an MCP agent server; its configuration comes from the LLM config directory.</message>
   <message id="lcw-save-failed-title">Save failed</message>
   <message id="lcw-save-failed">Could not write the configuration file to the writable data directory.</message>
 
@@ -128,6 +149,7 @@
   <message id="lcw-warn-token-placeholder">Active provider: bearer token looks unset.</message>
   <message id="lcw-warn-model-empty">Active model name is empty.</message>
   <message id="lcw-warn-anthropic-max">Active model: Anthropic requires Max tokens.</message>
+  <message id="lcw-warn-model-compat">{1}: {2}</message>
   <message id="lcw-warn-mcp-token">MCP is enabled with the default bearer token.</message>
   <message id="lcw-warn-ca-missing">Network settings: the extra-certificates path does not exist.</message>
   <message id="lcw-warn-proxy-unsupported">Network settings: a proxy is set, but this platform&#8217;s HTTP client cannot use one.</message>
@@ -140,6 +162,15 @@
   <!-- Getting-started / welcome panel shown in the empty conversation area (LlmToolGui) -->
   <message id="lcw-welcome-title">InterSpec AI Assistant</message>
   <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu in the upper&#8209;right to clear, compact, export, or reconfigure the conversation.]]></message>
+  <message id="lcw-welcome-summary-phone"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below, then tap the arrow to send it. Use the menu in the upper&#8209;right to clear, compact, or reconfigure the conversation.]]></message>
+  <!-- Phone-only: the tool calls of a question are folded into a single summary row with these titles
+       ({1} is a comma-separated list of tool names); the titles are HTML-escaped, so use plain text. -->
+  <message id="lcw-phone-tools-running">Running: {1}</message>
+  <message id="lcw-phone-tools-used">Used: {1}</message>
+  <message id="lcw-phone-tools-used-errors">Used (some failed): {1}</message>
+  <message id="lcw-phone-auto-reply">Prompted the assistant to continue.</message>
+  <message id="lcw-phone-dock-tt">Shrink the assistant into the tools tab, to see the spectrum</message>
+  <message id="lcw-phone-expand-tt">Make the assistant full-screen</message>
   <message id="lcw-welcome-learn-more">Learn more about the AI Assistant</message>
   <message id="lcw-help-menu">Help</message>
 </messages>

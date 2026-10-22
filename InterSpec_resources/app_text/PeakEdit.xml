@@ -124,16 +124,16 @@
   <message id="pe-tt-skew-voigtplusbortel-tau">Exponential decay constant for the Exp*Gauss component, representing incomplete charge collection tail. Valid range: 0.01-10 σ.</message>
 
   <!-- Tooltips for GADRAS skew parameters (generic and CZT/CdTe) -->
-  <message id="pe-tt-skew-gadras-0">Low-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced low-energy tail. Fittable parameter.</message>
+  <message id="pe-tt-skew-gadras-0">Low-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced low-energy tail; a negative value (as in some GADRAS detector files) adds to the tail fraction but makes no low-energy tail. Fittable parameter.</message>
 
-  <message id="pe-tt-skew-gadras-1">High-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced high-energy tail. Fittable parameter.</message>
+  <message id="pe-tt-skew-gadras-1">High-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced high-energy tail; a negative value adds to the tail fraction but makes no high-energy tail. Fittable parameter.</message>
 
-  <message id="pe-tt-skew-gadras-2">Energy-dependence exponent for the low-energy tail amplitude. Fixed detector characteristic.</message>
+  <message id="pe-tt-skew-gadras-2">Energy-dependence exponent for the low-energy tail amplitude (0 to 5; GADRAS treats negative values as 0). Fixed detector characteristic.</message>
 
-  <message id="pe-tt-skew-gadras-3">Energy-dependence exponent for the high-energy tail amplitude. Fixed detector characteristic.</message>
+  <message id="pe-tt-skew-gadras-3">Energy-dependence exponent for the high-energy tail amplitude (0 to 5; GADRAS treats negative values as 0). Fixed detector characteristic.</message>
 
-  <message id="pe-tt-skew-gadras-4">Low-energy tail slope/extent shaping. Fixed detector characteristic.</message>
+  <message id="pe-tt-skew-gadras-4">Low-energy tail slope/extent shaping (-100 to 30): positive values lengthen the tail, negative values shorten it. Fixed detector characteristic.</message>
 
-  <message id="pe-tt-skew-gadras-5">High-energy tail slope/extent shaping. Fixed detector characteristic.</message>
+  <message id="pe-tt-skew-gadras-5">High-energy tail slope/extent shaping (-100 to 30): positive values lengthen the tail, negative values shorten it. Fixed detector characteristic.</message>
 
 </messages>

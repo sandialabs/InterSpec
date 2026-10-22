@@ -1529,23 +1529,24 @@ std::string printValueWithUncertainty( double value, double uncert, size_t unsig
     return buffer;
   }
 
-  //Get the exponent
-  double valorder = std::floor( std::log10(value) );  //1.2345E-06 will give value -6
+  //Get the exponent; work with the magnitude so negative values (e.g., a fit peak with a negative
+  //  amplitude) do not give "-nan"
+  double valorder = std::floor( std::log10(std::fabs(value)) );  //1.2345E-06 will give value -6
   //cout << "\tvalorder=" << valorder << endl;
   double normalizer = std::pow( 10.0, -valorder );
   //cout << "\tnormalizer=" << normalizer << endl;
-  double roundedval = value * normalizer;  //value will now be like 1.2345
+  double roundedval = std::fabs(value) * normalizer;  //value will now be like 1.2345
   //cout << "\troundedval_0=" << roundedval << endl;
   roundedval = std::floor(roundedval * std::pow(10.0,nsigfig-1) + 0.5) / std::pow(10.0,nsigfig-1);
   //cout << "\troundedval_1=" << roundedval << endl;
-  roundedval /= normalizer;
+  roundedval = std::copysign( roundedval / normalizer, value );
   //cout << "\troundedval_2=" << roundedval << endl;
   
   // \TODO: Currently, if value uncertainty and uncerainty "overlap" with more than one digit, then
   //        we will only print uncertainty out to the same decimal order as the value; if they only
   //        "overlap" by one digit, or not at all, then we will print out one more decimal point
   //        than value
-  double uncertorder = std::floor( std::log10(uncert) );
+  double uncertorder = std::floor( std::log10(std::fabs(uncert)) );
   const double numoverlap = nsigfig - (valorder - uncertorder);
   //cout << "\tnumoverlap=" << numoverlap << endl;
   //cout << "\t(valorder - uncertorder)=" << (valorder - uncertorder) << ", (nsigfig - 1)=" << (nsigfig - 1) << endl;

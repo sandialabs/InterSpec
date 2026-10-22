@@ -1,6 +1,9 @@
 .PeakEdit
 {
 overflow-y: auto;
+/* Containing block for the absolutely positioned prev/next-peak arrows; under Wt3 the dialog body
+   (a JS-layout item, so position:absolute) provided this, but Wt4's flex layout leaves it static. */
+position: relative;
 }
 
 .PeakEditTable
@@ -24,6 +27,33 @@ overflow-y: auto;
 
 .PeakEditWindow
 {
+}
+
+/* On phones the help icon + Refit + four decision buttons overflow the footer, cutting off "Delete";
+   drop the shared 72px button floor (InterSpec.css) and tighten spacing so the row fits (>=360px),
+   and wrap to a second row rather than squeeze the labels on narrower screens (PeakEditWindow sets
+   the footer to auto height on phones so that row is not clipped). */
+.IsPhone .PeakEditWindow.Wt-dialog .DialogFooter
+{
+  gap: 5px;
+  padding-left: 4px;
+  padding-right: 4px;
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.IsPhone .PeakEditWindow.Wt-dialog .DialogFooter .Wt-btn.with-label
+{
+  min-width: 0;
+  flex-shrink: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.IsPhone .PeakEditWindow.Wt-dialog .DialogFooter > img.FooterHelpBtn
+{
+  padding-left: 2px;
+  padding-right: 2px;
 }
 
 .PeakEditOtherPeaks

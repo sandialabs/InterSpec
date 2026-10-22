@@ -1,0 +1,41 @@
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/peakeasy_dev_pairs.CALp","name":"peakeasy.CALp"},"expectError":"Load a foreground"}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42","name":"hpge.n42","type":"FOREGROUND"},"expectCal":{"coefs":[-0.32,0.4888275],"numDevPairs":7,"changed":false}}
+{"method":"setEnergyCal","params":{"type":"Polynomial","coefs":[-0.32,0.4937158]},"save":"moved"}
+{"method":"exportCALp","params":{"path":"light_test.CALp"}}
+{"method":"revertEnergyCal","params":{},"expectCal":{"coefs":[-0.32,0.4888275],"changed":false}}
+{"method":"importCALp","params":{"path":"light_test.CALp","name":"light_test.CALp"},"expectCal":{"coefs":[-0.32,0.4937158],"numDevPairs":7,"changed":true},"expectPeaks":"moved","match":"csv","expectMessage":"Applied the energy calibration from light_test.CALp to the foreground."}
+{"method":"importCALp","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42"},"expectError":"Not a valid CALp file"}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/bad_second_entry.CALp"},"expectError":"Not a valid CALp file (calibration 2)"}
+{"method":"getState","params":{},"expectCal":{"coefs":[-0.32,0.4937158],"numDevPairs":7}}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/trailing_junk.CALp"},"expectCal":{"coefs":[1.5,3],"numDevPairs":5}}
+{"method":"revertEnergyCal","params":{}}
+{"method":"loadFile","params":{"path":"@REPO@/example_spectra/background_20100317.n42","name":"back.n42","type":"BACKGROUND"},"expectDifferentEnergies":["FOREGROUND","BACKGROUND"]}
+{"method":"importCALp","params":{"path":"light_test.CALp","name":"light_test.CALp","types":["FOREGROUND","BACKGROUND"]},"expectSameEnergies":["FOREGROUND","BACKGROUND"],"expectCal":{"coefs":[-0.32,0.4937158]},"expectMessage":"to the foreground and background."}
+{"method":"revertEnergyCal","params":{},"expectDifferentEnergies":["FOREGROUND","BACKGROUND"],"expectCal":{"coefs":[-0.32,0.4888275],"changed":false}}
+{"method":"importCALp","params":{"path":"light_test.CALp","name":"light_test.CALp","types":["BACKGROUND"]},"expectDifferentEnergies":["FOREGROUND","BACKGROUND"],"expectCal":{"coefs":[-0.32,0.4888275],"changed":true},"expectMessage":"to the background."}
+{"method":"importCALp","params":{"path":"light_test.CALp","name":"light_test.CALp","types":["FOREGROUND"]},"expectSameEnergies":["FOREGROUND","BACKGROUND"]}
+{"method":"revertEnergyCal","params":{},"expectCal":{"changed":false}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/PeakFitLM/Ba133_Unshielded.n42","name":"nai.n42","type":"FOREGROUND"},"expectCal":{"numChannels":1024}}
+{"method":"importCALp","params":{"path":"light_test.CALp","name":"light_test.CALp","types":["FOREGROUND","BACKGROUND"]},"expectError":"can only be applied to spectra with the same number of channels"}
+{"method":"getState","params":{},"expectCal":{"changed":false}}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/exact_energies_1024.CALp"},"expectCal":{"type":"LowerChannelEdge","editable":false,"changed":true}}
+{"method":"revertEnergyCal","params":{},"expectCal":{"type":"Polynomial","editable":true,"changed":false}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/ExportSpecFile/5samples_2dets_peaks_on_3.n42","name":"two_dets.n42","type":"FOREGROUND"},"expectCal":{"coefs":[0,3]}}
+{"method":"setDetectors","params":{"shown":["Aa1"]}}
+{"method":"setEnergyCal","params":{"type":"Polynomial","coefs":[1,3.01]},"expectCal":{"coefs":[1,3.01]}}
+{"method":"exportCALp","params":{"path":"two_dets.CALp"}}
+{"method":"revertEnergyCal","params":{},"expectCal":{"coefs":[0,3]}}
+{"method":"setDetectors","params":{"shown":["Aa1","Ba2"]}}
+{"method":"importCALp","params":{"path":"two_dets.CALp","name":"two_dets.CALp"},"expectCal":{"coefs":[1,3.01]}}
+{"method":"setDetectors","params":{"shown":["Ba2"]},"expectCal":{"coefs":[0,3]}}
+{"method":"setDetectors","params":{"shown":["Aa1","Ba2"]}}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/unknown_det.CALp"},"expectError":"no calibration for detector(s) 'Ba2' of the foreground"}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/named_DetA.CALp"},"expectError":"only has a calibration for detector 'DetA', but the shown detectors of the foreground have different calibrations; show one detector at a time"}
+{"method":"getState","params":{},"expectCal":{"coefs":[1,3.01]}}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/peakeasy_dev_pairs.CALp","name":"peakeasy.CALp"},"expectCal":{"coefs":[1.5,3],"numDevPairs":5},"expectMessage":"got the CALp file's deviation pairs"}
+{"method":"loadFile","params":{"path":"@REPO@/target/InterSpec_light/tests/data/mixed_channels_2dets.n42","name":"mixed.n42","type":"FOREGROUND"},"expectCal":{"coefs":[0,0.75],"numChannels":4096}}
+{"method":"fitPeakAt","params":{"energy":662,"pixPerKeV":2},"expectPeakCount":1,"save":"mixed"}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/named_DetA.CALp"},"expectError":"is for 1024 channels, but the displayed foreground has 4096; show only detector 'DetA'"}
+{"method":"getState","params":{},"expectCal":{"coefs":[0,0.75],"changed":false},"expectPeaks":"mixed"}
+{"method":"setDetectors","params":{"shown":["DetA"]},"expectCal":{"coefs":[0,3]}}
+{"method":"importCALp","params":{"path":"@REPO@/target/InterSpec_light/tests/data/named_DetA.CALp"},"expectCal":{"coefs":[0,3.03],"changed":true}}

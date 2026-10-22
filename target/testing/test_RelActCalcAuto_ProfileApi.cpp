@@ -313,6 +313,50 @@ BOOST_AUTO_TEST_CASE( robust_solve_round_trips_and_does_not_disturb_older_versio
 }
 
 
+BOOST_AUTO_TEST_CASE( scintillator_solve_options_round_trip_and_default_to_absent )
+{
+  using RelActCalcAuto::Options;
+
+  // The defaults are the historical behavior, so they write no element.
+  Options defaults;
+  BOOST_CHECK( !defaults.iodine_escape_peaks );
+  BOOST_CHECK( defaults.model_lines_outside_roi_span );
+  BOOST_CHECK_EQUAL( defaults.additional_br_min_yield_fraction, 0.0 );
+  rapidxml::xml_document<char> default_doc;
+  const rapidxml::xml_node<char> * const default_node = defaults.toXml( new_root(default_doc) );
+  BOOST_REQUIRE( default_node );
+  BOOST_CHECK( !default_node->first_node("IodineEscapePeaks") );
+  BOOST_CHECK( !default_node->first_node("ModelLinesOutsideRoiSpan") );
+  BOOST_CHECK( !default_node->first_node("AddUncertMinYieldFraction") );
+
+  Options nai;
+  nai.iodine_escape_peaks = true;
+  nai.model_lines_outside_roi_span = false;
+  nai.additional_br_uncert = 0.19;
+  nai.additional_br_min_yield_fraction = 0.3;
+  rapidxml::xml_document<char> nai_doc;
+  const rapidxml::xml_node<char> * const nai_node = nai.toXml( new_root(nai_doc) );
+  BOOST_REQUIRE( nai_node );
+
+  Options restored;
+  BOOST_REQUIRE_NO_THROW( restored.fromXml(nai_node) );
+  BOOST_CHECK( restored.iodine_escape_peaks );
+  BOOST_CHECK( !restored.model_lines_outside_roi_span );
+  BOOST_CHECK_CLOSE( restored.additional_br_min_yield_fraction, 0.3, 1.0E-3 );
+  BOOST_CHECK( restored == nai );
+#if( PERFORM_DEVELOPER_CHECKS )
+  BOOST_CHECK_NO_THROW( Options::equalEnough( nai, restored ) );
+#endif
+
+  // Reading a document without the elements restores the defaults over non-default values.
+  BOOST_REQUIRE_NO_THROW( restored.fromXml(default_node) );
+  BOOST_CHECK( !restored.iodine_escape_peaks );
+  BOOST_CHECK( restored.model_lines_outside_roi_span );
+  BOOST_CHECK_EQUAL( restored.additional_br_min_yield_fraction, 0.0 );
+  BOOST_CHECK( !(nai == defaults) );
+}
+
+
 BOOST_AUTO_TEST_CASE( forced_nuclide_promotes_containing_options_to_v4 )
 {
   RelActCalcAuto::Options options;

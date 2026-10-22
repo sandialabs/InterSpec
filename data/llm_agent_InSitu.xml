@@ -118,7 +118,7 @@ After configuring, call `get_shielding_source_config` to confirm the geometry is
 ### State 7: FIT_ACTIVITY
 
 Run the activity fit using the app-state configuration:
-- Call `activity_fit` with `mode: from_app_state`.
+- Call `activity_fit` (it fits the app-state configuration, with the peaks marked for fitting; it takes no arguments).
 - Inspect fit results:
   - **Chi²/DOF:** Should be ~1.0 (0.5–3.0 good, 3.0-6.0 non-ideal, 6.0-8.0 indicates poor fit to either the model or the original peak fits are poor or unaccounted interferences or bad nuclide assignments, >8 problematic and shouldnt be used).
   - **Uncertainties:** Flag activities with relative uncertainty >50%.
@@ -158,12 +158,12 @@ Compile and return a complete summary to the caller:
 * **get_peaks** — Retrieve peak/source assignments (use filter 'analysis' or 'unidentified')
 * **mark_peaks_for_activity_fit**, **edit_analysis_peak** — Manage which peaks are used for fitting
 * **get_shielding_source_config**, **modify_shielding_source_config** — Configure and inspect geometry
-* **activity_fit** — Run activity fit using app-state geometry (prefer `from_app_state` mode)
+* **activity_fit** — Run activity fit using the app-state geometry and marked peaks (preferred)
 * **activity_fit_one_off** — Exploratory one-off fits (not saved to app-state)
 * **close_activity_shielding_display** — Close the fit GUI before returning
 * **create_peak_checkpoint**, **restore_peaks_to_checkpoint** — Save/restore peak state if needed
-* **ask_user_question** — Ask user for critical ambiguous information (use sparingly)
-* **set_workflow_state** — Advance state machine; call before each state's work begins
+{% if interactive_user %}* **ask_user_question** — Ask user for critical ambiguous information (use sparingly)
+{% endif %}* **set_workflow_state** — Advance state machine; call before each state's work begins
 
 Be quantitative and precise. The user needs defensible activity measurements, not qualitative assessments.]]></SystemPrompt>
 
@@ -262,7 +262,7 @@ After fixing any issues with geometry setup found, and re-verifying everythign i
       </State>
 
       <State name="FIT_ACTIVITY">
-        <Description>Run activity fit (from_app_state mode), review chi²/DOF and peak residuals, remove outlier peaks if needed, and re-fit</Description>
+        <Description>Run activity fit (the app-state configuration), review chi²/DOF and peak residuals, remove outlier peaks if needed, and re-fit</Description>
         <AllowedTransitions>
           <Transition>FINALIZE_REPORT</Transition>
           <Transition>FIT_ACTIVITY</Transition>
@@ -273,7 +273,7 @@ After fixing any issues with geometry setup found, and re-verifying everythign i
           <Tool>get_shielding_source_config</Tool>
           <Tool>modify_shielding_source_config</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call activity_fit with mode: from_app_state. Inspect chi²/DOF (target ~1.0; flag if &gt;3.0). Check per-peak residuals — low-energy peaks may be over-attenuated or from an interfering source; remove clear outliers with mark_peaks_for_activity_fit (use_for_fit: false) and re-fit (self-transition back to FIT_ACTIVITY). Document removed peaks. When fit quality is acceptable, transition to FINALIZE_REPORT.</PromptGuidance>
+        <PromptGuidance>Call activity_fit (no arguments; it fits the app-state configuration with the marked peaks). Inspect chi²/DOF (target ~1.0; flag if &gt;3.0). Check per-peak residuals — low-energy peaks may be over-attenuated or from an interfering source; remove clear outliers with mark_peaks_for_activity_fit (use_for_fit: false) and re-fit (self-transition back to FIT_ACTIVITY). Document removed peaks. When fit quality is acceptable, transition to FINALIZE_REPORT.</PromptGuidance>
         <EphemeralMessageTxt>Fitting source activities...</EphemeralMessageTxt>
       </State>
 

@@ -30,7 +30,7 @@
     L'effet du changement est ensuite propagé à tous les spectres, échantillons et détecteurs sélectionnés sous "Appliquer les modifications à" : leurs étalonnages en énergie sont chacun ajustés de manière équivalente, de sorte que les données alignées en énergie avant le changement restent alignées (aux nouvelles énergies) après - même si leurs coefficients ou types d'étalonnage diffèrent.
     Si ce bouton est désactivé, la raison est affichée à sa gauche.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Ajustement désactivé : "Premier plan" désélectionné sous "Appliquer les modifications à"</message>
+  <message id="ect-fit-hint-fore-deselected">Ajustement désactivé : premier plan non sélectionné</message>
   <message id="ect-fit-hint-no-peaks">Aucun pic marqué pour l'étalonnage en énergie</message>
   <message id="ect-fit-hint-not-fore-cal">L'ajustement utilise l'étalonnage du premier plan</message>
   <message id="ect-fit-hint-no-coefs">Aucun coefficient sélectionné pour l'ajustement</message>
@@ -39,6 +39,11 @@
   <message id="ect-apply-changes-to">Appliquer les modifications à</message>
   <message id="ect-disp-dets">Détecteurs affichés</message>
   <message id="ect-all-dets">Tous les détecteurs</message>
+  <message id="ect-selected-det-only">Dét. indép.</message>
+  <message id="ect-tt-selected-det-only">Si coché, les modifications de l'étalonnage en énergie (modification ou ajustement des coefficients, glissement du spectre et outils &quot;Plus d'actions&quot;) ne sont appliquées qu'au détecteur sélectionné dans la colonne &quot;Détecteur&quot;, au lieu d'être propagées aux autres détecteurs.
+    Le détecteur est identifié par son nom dans les autres spectres sélectionnés (premier plan, fond, secondaire), et la sélection des échantillons s'applique toujours.
+    Les modifications des paires de déviation ne sont toujours appliquées qu'au détecteur modifié.
+    N'affecte pas Gain Match ni Étal. multi-fichier.</message>
   <message id="ect-disp-samples">Échantillons affichés</message>
   <message id="ect-all-samples">Tous les échantillons</message>
   <message id="ect-calib-coeffs">Coefficients d'étalonnage</message>
@@ -69,7 +74,6 @@
   <message id="ect-unexpected-error-prev-coefs">Erreur inattendue lors de la récupération des coefficients d'étalonnage précédents - les modifications ne sont pas appliquées</message>
   <message id="ect-changed-cal-not-selected">Il semble que l'étalonnage en énergie que vous avez modifié n'est pas marqué pour que les modifications soient appliquées ; veuillez corriger cela.</message>
   <message id="ect-dev-pair-change-invalid">La modification de la paire d'écarts a rendu l'étalonnage en énergie invalide.  Erreur : {1}</message>
-  <message id="ect-set-dev-pair-err">Une erreur s'est produite lors de la définition des paires d'écarts pour ce détecteur.</message>
   <message id="ect-dev-applied-dets-samples">Paires d'écarts appliquées uniquement au détecteur '{1}', mais à tous les numéros d'échantillon{2}.</message>
   <message id="ect-dev-applied-to-samples">Paires d'écarts appliquées à tous les numéros d'échantillon{1}.</message>
   <message id="ect-err-not-enough-peaks">Impossible d'ajuster les coefficients d'étalonnage pour le moment.  Vous devez sélectionner au moins autant de pics pour l'ajustement que de coefficients que vous avez sélectionnés pour l'ajustement.</message>
@@ -84,6 +88,8 @@
   <message id="ect-del-graphical-msg">Si vous recalibrez à nouveau par ALT+CTRL+GLISSER sur une autre partie du spectre, vous aurez également la possibilité de conserver les effets de cet étalonnage.</message>
   <message id="ect-lc-disp-dets">détecteurs affichés</message>
   <message id="ect-lc-all-dets">tous les détecteurs</message>
+  <message id="ect-lc-selected-det-only">uniquement le détecteur '{1}'</message>
+  <message id="ect-fore-not-selected">Modification non appliquée : avec la sélection actuelle de &quot;Appliquer les modifications à&quot;, elle ne serait pas appliquée au premier plan affiché.</message>
   <message id="ect-lc-all-samples">tous les échantillons</message>
   <message id="ect-lc-disp-samples">échantillons affichés</message>
   <message id="ect-short-fore">Prem. pl.</message>

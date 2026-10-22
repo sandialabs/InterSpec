@@ -28,6 +28,7 @@
 
 #include <Wt/WServer.h>
 #include <Wt/WWidget.h>
+#include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
 #include <Wt/WContainerWidget.h>
 
@@ -159,5 +160,20 @@ void trackSessionDialog( Wt::WDialog *dialog )
   if( viewer && dialog )
     viewer->trackToolDialog( dialog );
 }//void trackSessionDialog( Wt::WDialog *dialog )
+
+
+void applyButtonRole( Wt::WPushButton *button, ButtonRole role )
+{
+  if( !button )
+    return;
+
+  switch( role )
+  {
+    case ButtonRole::Affirm:      button->addStyleClass( "DialogBtnAffirm" );      break;
+    case ButtonRole::Dismiss:     button->addStyleClass( "DialogBtnDismiss" );     break;
+    case ButtonRole::Neutral:     button->addStyleClass( "DialogBtnNeutral" );     break;
+    case ButtonRole::Destructive: button->addStyleClass( "DialogBtnDestructive" ); break;
+  }//switch( role )
+}//void applyButtonRole( Wt::WPushButton *button, ButtonRole role )
 
 }//namespace WidgetUtils

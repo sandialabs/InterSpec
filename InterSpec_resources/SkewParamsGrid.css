@@ -1,0 +1,60 @@
+/* Grid of skew parameters: name | value (or low E | high E) | [fit checkbox] | [fit result] */
+.SkewParamsGrid
+{
+  display: grid;
+  row-gap: 2px;
+  column-gap: 4px;
+  align-items: center;
+  justify-content: start;
+}
+
+.SkewParamsGrid.SpgV1 { grid-template-columns: auto auto; }
+.SkewParamsGrid.SpgV2 { grid-template-columns: auto auto auto; }
+.SkewParamsGrid.SpgFit.SpgV1 { grid-template-columns: auto auto auto; }
+.SkewParamsGrid.SpgFit.SpgV2 { grid-template-columns: auto auto auto auto; }
+.SkewParamsGrid.SpgFit.SpgRes.SpgV1 { grid-template-columns: auto auto auto auto; }
+.SkewParamsGrid.SpgFit.SpgRes.SpgV2 { grid-template-columns: auto auto auto auto auto; }
+
+.SkewParamsGrid .SpgColHeader
+{
+  font-size: 9px;
+  font-weight: bold;
+  opacity: 0.5;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.SkewParamsGrid .SpgParamName
+{
+  font-size: 10px;
+  font-weight: bold;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.SkewParamsGrid .SpgSpin
+{
+  width: 70px;
+  min-width: 40px;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+/* A value that does not vary with energy, in a grid with low/high energy columns */
+.SkewParamsGrid .SpgSpinWide
+{
+  grid-column: span 2;
+  width: 100%;
+}
+
+.SkewParamsGrid .SpgFitCb
+{
+  justify-self: center;
+}
+
+.SkewParamsGrid .SpgResult
+{
+  font-size: 10px;
+  opacity: 0.7;
+  white-space: nowrap;
+}

@@ -21,7 +21,7 @@
     "version": "git-ce1e5895892b17854d857e596250e4ae70d6b274"
   },
   "source_derived_payload_sha256_float32_little_endian": "cb05e6145dd641df4d841fbd108e0a3fa34f900f821330322abd19e5c2618039",
-  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "source_lock_sha256": "3efabdacdc1e88e33a82ce69e4e6734cbaa482287db8a586760f2d04fdc7ce9a",
   "storage": {
     "coefficient_bytes": 158976,
     "energy_grid_bytes": 108,

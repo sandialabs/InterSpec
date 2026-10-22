@@ -1,0 +1,16 @@
+# Default sample selection for multi-sample / multi-detector files, and loading as background
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/ExportSpecFile/5samples_2dets_peaks_on_3.n42","name":"5samples_2dets_peaks_on_3.n42","type":"FOREGROUND"}}
+{"method":"stepSample","params":{"type":"FOREGROUND","delta":1}}
+{"method":"setDetectors","params":{"shown":[]}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/ExportSpecFile/fore_plus_back_peaks_on_1_2.n42","name":"fore_plus_back_peaks_on_1_2.n42","type":"FOREGROUND"}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/ExportSpecFile/13samples_1det_peaks_on_8.n42","name":"13samples_1det_peaks_on_8.n42","type":"FOREGROUND"}}
+{"method":"loadFile","params":{"path":"@REPO@/example_spectra/passthrough.n42","name":"passthrough.n42","type":"FOREGROUND"}}
+{"method":"timeDrag","params":{"first":20,"last":30,"mods":8}}
+{"method":"timeDrag","params":{"first":40,"last":45,"mods":1}}
+{"method":"timeDrag","params":{"first":1,"last":133,"mods":2}}
+{"method":"loadFile","params":{"path":"@REPO@/example_spectra/ba133_source_640s_20100317.n42","name":"ba133_source_640s_20100317.n42","type":"BACKGROUND"}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/CamLibrary/cs137.CNF","name":"cs137.CNF","type":"FOREGROUND"}}
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Cs137","color":"#00b9ff"},{"parent":"Background","color":"#967f55"}]}}
+{"method":"fitPeakAt","params":{"energy":661.7,"pixPerKeV":3.0}}
+{"method":"fitPeakAt","params":{"energy":1460.8,"pixPerKeV":3.0}}
+{"method":"exportFile","params":{"format":"SPE","path":"light_test_export.spe"}}

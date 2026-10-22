@@ -545,7 +545,15 @@ public:
                                           std::vector<std::shared_ptr<DetectorPeakResponse>> &drfs,
                                           std::vector<std::string> &credits,
                                           std::vector<std::string> &warnings );
-  
+
+  /** Parses the CSV the "Make Detector Response" tool exports: the "c0,c1,...,Radius (cm)"
+   coefficient line, its "# 1 sigma Uncertainties" line, the geometry type, FWHM, and valid
+   energy range.
+
+   Returns nullptr if the stream is not in this format.
+   */
+  static std::shared_ptr<DetectorPeakResponse> parseInterSpecRelEffCsv( std::istream &input );
+
   
   /** Creates a DetectorPeakResponse from "App URL" data.
    Takes in just the "query" portion of the URL (i.e., the data after the '?' character), that
@@ -785,7 +793,8 @@ public:
    see #flatDiskEfficiency.
 
    For a fixed-geometry DRF, `distance` is ignored and this returns
-   #farFieldIntrinsicEfficiency.
+   `intrinsicEfficiencyEval( energy ).value` - i.e. #farFieldIntrinsicEfficiency, unless a response
+   is attached, in which case it is that response's far-field view (as is its uncertainty).
 
    Energy and distance should be in units of SandiaDecay (e.g. keV=1.0).
 
@@ -869,7 +878,7 @@ public:
    |---|---|---|
    | efficiency value | an attached #ceeloResponse, else #efficiencyCurve | #measuredPoints are re-fit input and provenance, never a value source |
    | efficiency uncertainty | an attached #ceeloResponse, else - for a `kExpOfLogPowerSeries` curve - the coefficient covariance, else the node covariance (`DetectorEfficiencyCurve::fracCovariance` applies exactly this order) | the node covariance kept beside an equation is provenance / the fallback for the other representations |
-   | geometry | an attached #ceeloResponse's descriptor, else #setGeometry's | - |
+   | geometry | an attached #ceeloResponse's descriptor, else #setGeometry's - none while #geometryDisabled | - |
 
    So **ask #efficiencyFracCovariance or the #EffEval queries for an uncertainty**; they honor the
    order above.  Reading this object directly gives you the node covariance only, which for an
@@ -1048,6 +1057,7 @@ public:
 
    Clearing one adopts its descriptor as #geometry when no geometry was stated separately, so
    putting a detector back on the flat-disk model does not make it forget what it physically is.
+   Neither clearing nor attaching one changes #geometryDisabled.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
 
@@ -1064,8 +1074,33 @@ public:
    When a #ceeloResponse is attached, ITS descriptor is authoritative and is
    what this returns: a generated response cannot be re-pointed at a different
    geometry than the one it was ray-traced for.
+
+   nullptr while switched off (#geometryDisabled), so nothing models the efficiency through a
+   geometry the user turned off - without having to know the flag exists.  #storedGeometry has it
+   regardless.
    */
   std::shared_ptr<const ceelo::GeometryDescriptor> geometry() const;
+
+  /** The geometry whether or not it is switched off - what #geometry returns when it is not.  Only
+   for code that shows or edits the shape itself (the Modify editor's geometry form); anything that
+   uses it for an efficiency asks #geometry.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> storedGeometry() const;
+
+  /** Whether the stated geometry is switched off - what choosing "Flat Disk" in "Modify Detector
+   Response" records.  The geometry is kept (and serialized), so the detector can be switched back
+   without re-entering it, but #geometry returns nullptr: the detector is a flat disk everywhere.
+   Only in effect while a geometry is stored and no #ceeloResponse is attached (a response IS the
+   geometry being modeled).
+   */
+  bool geometryDisabled() const;
+
+  /** Switches the stated geometry off (true) or back on; see #geometryDisabled.
+
+   Serialized and hashed only while it is in effect, so every existing DRF keeps both its bytes and
+   its hash.  Recomputes hash value.
+   */
+  void setGeometryDisabled( const bool disabled );
 
   /** Sets (or clears, with nullptr) the physical geometry.  Always stored (and serialized), but
    shadowed by an attached #ceeloResponse's own descriptor for as long as one is attached - so this
@@ -1077,8 +1112,30 @@ public:
    keyed on it, and only a new hash gets a new row, so a detector that gains a geometry must not
    collapse onto its geometry-less ancestor's row and silently keep the old contents.  Legacy DRFs
    with no geometry keep their historical hash values.
+
+   The one exception to the shadowing is an imported efficiency grid (#hasImportedGrid): its response
+   stays on the geometry it was imported with, while this may be the user's fuller description of
+   the detector (e.g., with the bore a DETECTOR.txt cannot state) - see #monteCarloGeometry.  It is
+   then hashed whenever it differs from the imported geometry.
    */
   void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
+
+  /** Whether the attached response is an imported efficiency grid (DetEffG2kPar::isGridResponse): a
+   detector-characterization file's tabulated full-energy-peak efficiency, tied to the geometry it
+   was imported with.  It may additionally carry a Monte-Carlo total efficiency.
+   */
+  bool hasImportedGrid() const;
+
+  /** The geometry Monte-Carlo runs (total efficiency, fixed-geometry scenes) use, and that the
+   geometry editor shows: #storedGeometry, except for an #hasImportedGrid DRF with a geometry set
+   through #setGeometry, which may have been edited away from the imported one.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> monteCarloGeometry() const;
+
+  /** Whether an #hasImportedGrid DRF's #monteCarloGeometry differs from the geometry it was imported
+   with (the grid response's own descriptor, which never changes).
+   */
+  bool geometryModifiedFromImport() const;
 
   /** The (optional) raw measured efficiency points this DRF was
    characterized from; may be nullptr.  Kept for provenance and for grounding
@@ -1248,6 +1305,11 @@ public:
    response's budget, so it is indistinguishable there from a measurement - and every surface that
    splits "from its own data" from "model envelope" has to say which it is looking at.  An all-zero
    covariance counts as stating nothing: it is a claim of perfect knowledge that nothing propagates.
+
+   TODO: two misclassifications.  A curve sampled from a response (CeeLoUtils::flatDiskSnapshotAt,
+   setLegacyEfficiencyFromResponse) carries the response's total sigma, so it "states" even an
+   assumed 5% - ask the original DRF instead.  And a Monte-Carlo response generated from a DRF that
+   states none leaves this false, so its real MC statistics (~0.3%) are treated as assumed.
    */
   bool statesOwnEfficiencyUncert() const;
 
@@ -1421,9 +1483,9 @@ public:
               ::rapidxml::xml_document<char> *doc ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
-  /** Serializes the full-energy efficiency uncertainty and #m_totalEfficiency
-   into a compact `<DrfExtra>` XML string, for database persistence (the
-   `m_drfExtra` column); returns an empty string when neither is set.
+  /** Serializes the full-energy efficiency uncertainty, #m_totalEfficiency, geometry, and
+   #m_peakFitDetPrefs (among others) into a compact `<DrfExtra>` XML string, for database
+   persistence (the `m_drfExtra` column); returns an empty string when none are set.
    Future optional additions (detector geometry, angular response) should go
    into this same column, avoiding further schema changes.
    */
@@ -1654,8 +1716,12 @@ protected:
    */
   double m_flatDiskSnapshotDistance = -1.0;
 
-  /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
+  /** The physical geometry when no #m_ceeloResponse carries one; see #geometry.  For an imported
+   grid, the user's (possibly edited) geometry; see #monteCarloGeometry. */
   std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
+
+  /** See #setGeometryDisabled. */
+  bool m_geometryDisabled = false;
 
   /** Opaque source/shielding-setup XML for fixed-geometry DRFs computed for a
    specific scene; see #fixedGeometrySetupXml.  Serialized as the optional

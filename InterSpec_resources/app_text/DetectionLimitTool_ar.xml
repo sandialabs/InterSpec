@@ -174,4 +174,14 @@
   <message id="dlt-estimating-spread">جارٍ حساب التشتت…</message>
   <message id="dlt-spread-band">(عادةً {1}&ndash;{2}&times; من هذه القيمة)</message>
   <message id="dlt-spread-unavailable">تعذّر تقدير التشتت.</message>
+  <message id="dlt-detector-eff-used">كفاءة الكاشف المستخدمة</message>
+  <message id="dlt-det-eff-uncert">عدم يقين كفاءة الكاشف</message>
+  <message id="dlt-det-eff-uncert-none">غير مذكور</message>
+  <message id="dlt-det-eff-uncert-stated">{1}% (يذكره الكاشف)</message>
+  <message id="dlt-det-eff-uncert-model">{1}% (النموذج الهندسي فقط)</message>
+  <message id="dlt-systematic-uncert-used">عدم اليقين المنهجي المستخدم</message>
+  <message id="dlt-tt-detector-eff-used">احتمال أن تُكشف أشعة غاما المنبعثة من المصدر، عند هذه المسافة، في قمة الطاقة الكاملة: الكفاءة التي يستخدمها هذا الحساب فعليًا.</message>
+  <message id="dlt-tt-det-eff-uncert">عدم اليقين النسبي (1 سيغما) في كفاءة الكاشف عند هذه الطاقة والمسافة: ما تذكره استجابة الكاشف بنفسها، مضافًا إليه، للكاشف المنمذج هندسيًا، عدم اليقين الذي يضيفه نموذجه الهندسي قرب الكاشف أو خارج المحور.  لا يُضمَّن عدم يقين لا تذكره استجابة الكاشف بل يُفترض لها.</message>
+  <message id="dlt-tt-systematic-uncert-used">عدم اليقين المنهجي النسبي (1 سيغما) الذي استخدمته حدود كوري أعلاه: عدم اليقين في كفاءة الكاشف، مجمّعًا تربيعيًا مع أي عدم يقين مُدخل في الكفاءة أو المسافة.</message>
+  <message id="dlt-drf-uncert-decon-excluded">لا تتضمن هذه الحدود عدم اليقين في كفاءة استجابة الكاشف (حتى {1}% للخطوط المستخدمة)؛ أما حدود كوري لكل خط فتتضمنه.</message>
 </messages>

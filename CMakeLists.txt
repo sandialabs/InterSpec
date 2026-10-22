@@ -13,7 +13,7 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
 endif()
 # CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
 #  sub-projects still declare less than that - the fetched zlib 1.2.12, plus
-#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  vendored/submoduled muparserx and SandiaDecay - so configuring with CMake 4 fails
 #  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
 #  and lets us fix it in one place rather than patching each dependency (some are submodules we
 #  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
@@ -44,6 +44,15 @@ if( CONTAINER_LIBC OR CONTAINER_MUSL)
     set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
   endif()
 endif()
+
+# The multi-session MCP analysis server is built from target/mcp_http, which sets this and the other
+#  options it needs before adding this directory; see target/mcp_http/README.md.
+option( BUILD_AS_MCP_HTTP_SERVER "Set by target/mcp_http: build the multi-session MCP HTTP analysis server" OFF )
+
+# The browserless, single-session MCP server that clients launch and talk to over stdin/stdout is
+#  built from target/mcp_stdio; it hosts its session with Wt's libwttest instead of libwthttp, so
+#  it builds its own (static) InterSpecLib.  See target/mcp_stdio/README.md.
+option( BUILD_AS_MCP_STDIO_SERVER "Set by target/mcp_stdio: build the stdio MCP server" OFF )
 
 if( InterSpec_FETCH_DEPENDENCIES )
   include( cmake/FetchInterSpecDeps.cmake )
@@ -77,6 +86,25 @@ if( hasParent )
 else( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" ON )
 endif( hasParent )
+
+if( BUILD_AS_MCP_HTTP_SERVER )
+  if( NOT hasParent )
+    message( FATAL_ERROR "The MCP HTTP server is built from target/mcp_http, not the top-level directory." )
+  endif()
+  if( BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_ELECTRON_APP OR BUILD_AS_WX_WIDGETS_APP OR NOT BUILD_AS_LOCAL_SERVER )
+    message( FATAL_ERROR "BUILD_AS_MCP_HTTP_SERVER is a local-server build, and can not be combined with other app types." )
+  endif()
+endif( BUILD_AS_MCP_HTTP_SERVER )
+
+if( BUILD_AS_MCP_STDIO_SERVER )
+  if( NOT hasParent )
+    message( FATAL_ERROR "The stdio MCP server is built from target/mcp_stdio, not the top-level directory." )
+  endif()
+  if( BUILD_AS_MCP_HTTP_SERVER OR BUILD_AS_UNIT_TEST_SUITE OR BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_ELECTRON_APP
+      OR BUILD_AS_WX_WIDGETS_APP OR NOT BUILD_AS_LOCAL_SERVER )
+    message( FATAL_ERROR "BUILD_AS_MCP_STDIO_SERVER is a local-server build, and can not be combined with other app types." )
+  endif()
+endif( BUILD_AS_MCP_STDIO_SERVER )
 
 
 option(
@@ -159,6 +187,15 @@ option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
+# The MCP server exposes this process to outside clients, so it is only built for desktop-style
+#  builds; on iOS/Android the LLM assistant itself is still available, just without MCP.  Web
+#  deployments get neither, since the LLM config (API keys included) is shared process-wide.
+if( USE_LLM_INTERFACE AND NOT (IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT) )
+  set( USE_MCP_SERVER ON )
+else()
+  set( USE_MCP_SERVER OFF )
+endif()
+
 # LLM API calls are normally made by the browser via fetch(), which gets us the system trust
 #  store, proxy configuration, PAC/WPAD and often SSO for free.  That only works for providers
 #  sending permissive CORS headers though; for one that does not, we need to make the HTTPS
@@ -167,9 +204,10 @@ option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 #  Which backend is used is decided by platform, not by the user.
 #  Defaulted ON where we ship a platform-native backend (Apple and Windows), but only for builds
 #  that actually have the LLM interface to use it - see the consistency check further down.  The
-#  NSURLSession backend is iOS-clean, so iOS is included here; it resolves to OFF today only
-#  because the iOS project builds with USE_LLM_INTERFACE off.
-if( USE_LLM_INTERFACE AND (NOT BUILD_FOR_WEB_DEPLOYMENT) AND (APPLE OR WIN32) )
+#  NSURLSession backend is iOS-clean, so iOS is included here (the iOS Xcode project links the
+#  Security and CFNetwork frameworks it needs).
+#  On Linux the backend is libcurl, loaded at run time (so only its headers are needed to build).
+if( USE_LLM_INTERFACE AND (NOT BUILD_FOR_WEB_DEPLOYMENT) AND (APPLE OR WIN32 OR (UNIX AND NOT ANDROID)) )
   set( DEFAULT_USE_NATIVE_HTTP_CLIENT ON )
 else()
   set( DEFAULT_USE_NATIVE_HTTP_CLIENT OFF )
@@ -218,7 +256,7 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 # If we are creating the command-line batch exe, or macOS Quick Look extensions, we will compile
 # LibInterSpec as a shared library, so all exe's can use it.  Otherwise we'll statically link everything.
 #  (Electron doesnt need a separate exe for batch, and we dont care about disk space for unit tests)
-if( (USE_BATCH_CLI_TOOLS OR USE_MACOS_QUICK_LOOK) AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE )
+if( (USE_BATCH_CLI_TOOLS OR USE_MACOS_QUICK_LOOK) AND NOT BUILD_AS_ELECTRON_APP AND NOT BUILD_AS_UNIT_TEST_SUITE AND NOT BUILD_AS_MCP_STDIO_SERVER )
   set( INTERSPEC_LIB_TYPE SHARED )
   set( BUILD_LibInterSpec_SHARED ON )
 else()
@@ -247,10 +285,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_AS_LOCAL_SERVER)
+if(BUILD_AS_LOCAL_SERVER AND NOT BUILD_AS_MCP_HTTP_SERVER AND NOT BUILD_AS_MCP_STDIO_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
-endif(BUILD_AS_LOCAL_SERVER)
+endif(BUILD_AS_LOCAL_SERVER AND NOT BUILD_AS_MCP_HTTP_SERVER AND NOT BUILD_AS_MCP_STDIO_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
@@ -292,28 +330,6 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set( Wt_INCLUDE_DIR "${_wt_inc}" CACHE PATH "Wt include directory" FORCE )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
-# Ceres releases before their Eigen Jet traits supplied non-finite helpers need
-# a small compatibility specialization used by the relative-activity fit.
-# Probe the capability instead of keying this on a Ceres version: downstream
-# packages occasionally backport the trait independently.
-include(CheckCXXSourceCompiles)
-include(CMakePushCheckState)
-cmake_push_check_state(RESET)
-set(CMAKE_REQUIRED_LIBRARIES Ceres::ceres Eigen3::Eigen)
-check_cxx_source_compiles([[
-  #include <Eigen/Core>
-  #include <ceres/jet.h>
-  int main()
-  {
-    using Jet = ceres::Jet<double, 1>;
-    const Jet inf = Eigen::NumTraits<Jet>::infinity();
-    const Jet nan = Eigen::NumTraits<Jet>::quiet_NaN();
-    (void)inf;
-    (void)nan;
-    return 0;
-  }
-]] INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE)
-cmake_pop_check_state()
 
 
 
@@ -329,6 +345,7 @@ set(sources
     src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
     src/DetectorEffG2kPar.cpp
+    src/DrfImport.cpp
     src/AngleOutxImport.cpp
     src/GadrasDetectorDat.cpp
     src/GammaInteractionCalc.cpp
@@ -349,6 +366,7 @@ set(sources
     src/IsotopeSearchByEnergy.cpp
     src/IsotopeSearchByEnergyModel.cpp
     src/SpectrumChart.cpp
+    src/SpectrumChartImage.cpp
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
     src/InjaLogDialog.cpp
@@ -361,6 +379,7 @@ set(sources
     src/PeakFitDetPrefs.cpp
     src/PeakFitDetPrefsGui.cpp
     src/FitSkewParamsTool.cpp
+    src/SkewParamsGrid.cpp
     src/PeakFitSpecImp.cpp
     src/PeakDef.cpp
     src/PeakDists.cpp
@@ -393,7 +412,6 @@ set(sources
     src/RowStretchTreeView.cpp
     src/DataBaseVersionUpgrade.cpp
     src/DataBaseUtils.cpp
-    src/Integrate.cpp
     src/GadrasShieldScatter.cpp
     src/DoseCalc.cpp
     src/DoseCalcWidget.cpp
@@ -419,6 +437,7 @@ set(sources
     src/DetectorGeometryDiagram.cpp
     src/EccUncertOptions.cpp
     src/DrfModifyWidget.cpp
+    src/DrfImportWidget.cpp
     src/DrfModifyCalc.cpp
     src/FluxTool.cpp
     src/NativeFloatSpinBox.cpp
@@ -481,6 +500,7 @@ set(headers
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/DetectorEffG2kPar.h
+    InterSpec/DrfImport.h
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
@@ -500,6 +520,7 @@ set(headers
     InterSpec/IsotopeSearchByEnergy.h
     InterSpec/IsotopeSearchByEnergyModel.h
     InterSpec/SpectrumChart.h
+    InterSpec/SpectrumChartImage.h
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
     InterSpec/InjaLogDialog.h
@@ -512,6 +533,7 @@ set(headers
     InterSpec/PeakFitUtils.h
     InterSpec/PeakFitDetPrefs.h
     InterSpec/PeakFitDetPrefsGui.h
+    InterSpec/SkewParamsGrid.h
     InterSpec/PeakFitSpecImp.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
@@ -544,7 +566,6 @@ set(headers
     InterSpec/RowStretchTreeView.h
     InterSpec/DataBaseVersionUpgrade.h
     InterSpec/DataBaseUtils.h
-    InterSpec/Integrate.h
     InterSpec/GadrasShieldScatter.h
     InterSpec/DoseCalc.h
     InterSpec/DoseCalcWidget.h
@@ -570,6 +591,7 @@ set(headers
     InterSpec/DetectorGeometryDiagram.h
     InterSpec/EccUncertOptions.h
     InterSpec/DrfModifyWidget.h
+    InterSpec/DrfImportWidget.h
     InterSpec/DrfModifyCalc.h
     InterSpec/FluxTool.h
     InterSpec/NativeFloatSpinBox.h
@@ -695,6 +717,7 @@ if( USE_REL_ACT_TOOL )
         src/PeakFitLM.cpp
         src/RelActCalc.cpp
         src/RelActCalcAuto.cpp
+        src/RelActCalcAuto_Roi.cpp
         src/RelActCalcManual.cpp
         src/RelActAutoGui.cpp
         src/RelActManualGui.cpp
@@ -717,6 +740,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
+        InterSpec/RelActCalcAuto_Roi.h
         InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
@@ -771,13 +795,18 @@ elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
 endif()
 
 if( USE_LLM_INTERFACE )
-  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmDeepResearchAgent.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
-  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmDeepResearchAgent.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
+  if( USE_MCP_SERVER )
+    list( APPEND sources src/LlmMcpDispatcher.cpp src/LlmMcpResource.cpp )
+    list( APPEND headers InterSpec/LlmMcpDispatcher.h InterSpec/LlmMcpResource.h )
+  endif( USE_MCP_SERVER )
+
+  list( APPEND sources src/LlmSessionTimer.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmKnowledgeBase.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmModelPresets.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
+  list( APPEND headers InterSpec/LlmSessionTimer.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmKnowledgeBase.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmModelPresets.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LlmJsSandbox.js )
-  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_model_presets.xml data/llm_tools_config.xml
     data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
-    data/llm_agent_Isotopics.xml data/llm_agent_DeepResearch.xml data/llm_agent_EnergyCalibration.xml
-    data/llm_agent_SpectrumTimeHistory.xml
+    data/llm_agent_Isotopics.xml data/llm_agent_KnowledgeBase.xml data/llm_agent_EnergyCalibration.xml
+    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml
   )
 
   # The native HTTPS transport: one platform-independent file, plus (once written) exactly one
@@ -790,13 +819,42 @@ if( USE_LLM_INTERFACE )
 
     # Testing knob: build the Wt::Http::Client backend even where a platform-native one exists, so
     #  the Linux/Android path can be exercised on a development machine.  Needs a dependency
-    #  prefix built with BUILD_OPENSSL=ON, or Wt cannot do https at all.
+    #  prefix built with WT_ENABLE_SSL=ON (target/dep_build/dep_build_linux.sh), or Wt cannot do https.
     option( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND
             "Use the Wt::Http::Client HTTP backend even on platforms with a native one (testing)"
             OFF )
     mark_as_advanced( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
 
-    if( APPLE AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+    # Likewise for the libcurl backend (e.g., on macOS, which has a libcurl).
+    option( USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND
+            "Use the libcurl HTTP backend even on platforms with a native one (testing)"
+            OFF )
+    mark_as_advanced( USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND )
+    if( WIN32 AND USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND )
+      message( FATAL_ERROR "USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND is not supported on Windows (the libcurl"
+               " backend loads libcurl with dlopen); Windows builds use WinHTTP." )
+    endif()
+
+    # libcurl on Linux; it is loaded at run time, so only its headers are needed here.  The
+    #  multi-session MCP server keeps Wt::Http::Client, as its container does not ship libcurl.
+    set( NATIVE_HTTP_CURL_BACKEND OFF )
+    if( USE_LLM_FORCED_NATIVE_CURL_HTTP_BACKEND
+        OR (UNIX AND NOT APPLE AND NOT ANDROID AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND
+            AND NOT BUILD_AS_MCP_HTTP_SERVER) )
+      find_path( CURL_INCLUDE_DIR curl/curl.h )
+      if( CURL_INCLUDE_DIR )
+        set( NATIVE_HTTP_CURL_BACKEND ON )
+      else()
+        MESSAGE( WARNING "libcurl headers (curl/curl.h) were not found, so the native HTTP client will"
+                 " use Wt::Http::Client, which has no proxy support; install libcurl's development"
+                 " headers (e.g., libcurl-devel or libcurl4-openssl-dev) to use libcurl." )
+      endif()
+    endif()
+
+    if( NATIVE_HTTP_CURL_BACKEND )
+      list( APPEND sources src/NativeHttpClient_curl.cpp )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+    elseif( APPLE AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
       # One .mm serves both macOS and iOS.  ARC is set per-file because the projects other .mm
       #  files predate it and are written for manual retain/release.
       list( APPEND sources src/NativeHttpClient_apple.mm )
@@ -825,9 +883,9 @@ if( USE_LLM_INTERFACE )
     endif( NATIVE_HTTP_HAVE_BACKEND )
   endif( USE_NATIVE_HTTP_CLIENT )
 
-  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
-    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
-  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+  if( BUILD_FOR_WEB_DEPLOYMENT )
+    MESSAGE(FATAL_ERROR "The LLM interface can not be enabled for web deployment builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT )
 endif( USE_LLM_INTERFACE )
 
 # A native HTTP client with no LLM interface to use it would be a silent no-op, so say so.
@@ -904,7 +962,6 @@ set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
 set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
-add_subdirectory(external_libs/Cuba-3.0)
 add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
@@ -951,7 +1008,7 @@ endif()
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
 
-if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) )           # $ORIGIN is a Linux/BSD feature
+if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) AND TARGET InterSpecExe )           # $ORIGIN is a Linux/BSD feature
   set_target_properties(InterSpecExe PROPERTIES
       BUILD_RPATH  "$ORIGIN/../lib"
       INSTALL_RPATH "$ORIGIN/../lib")
@@ -996,7 +1053,6 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    Cuba-3.0
     muparserx
     Boost::thread
     Boost::date_time
@@ -1050,11 +1106,17 @@ endif()
 
 
 if( InterSpec_FETCH_DEPENDENCIES )
+  if( BUILD_AS_MCP_STDIO_SERVER )
+    set( INTERSPEC_WT_CONNECTOR_LIB wttest )
+  else()
+    set( INTERSPEC_WT_CONNECTOR_LIB wthttp )
+  endif()
+
   target_link_libraries( InterSpecLib
     PUBLIC
       Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process
       wt
-      wthttp
+      ${INTERSPEC_WT_CONNECTOR_LIB}
       wtdbosqlite3
       wtdbo
   )
@@ -1066,11 +1128,11 @@ if( InterSpec_FETCH_DEPENDENCIES )
   )
 else( InterSpec_FETCH_DEPENDENCIES )
   # Wt 4 modern CMake targets; include dirs and transitive deps are automatic
-  if( BUILD_AS_UNIT_TEST_SUITE )
+  if( BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_MCP_STDIO_SERVER )
     target_link_libraries( InterSpecLib PUBLIC Wt::Test )
-  else( BUILD_AS_UNIT_TEST_SUITE )
+  else( BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_MCP_STDIO_SERVER )
     target_link_libraries( InterSpecLib PUBLIC Wt::HTTP )
-  endif( BUILD_AS_UNIT_TEST_SUITE )
+  endif( BUILD_AS_UNIT_TEST_SUITE OR BUILD_AS_MCP_STDIO_SERVER )
 
   target_link_libraries( InterSpecLib PUBLIC Wt::Wt Wt::Dbo Wt::DboSqlite3 )
 endif( InterSpec_FETCH_DEPENDENCIES )
@@ -1111,13 +1173,21 @@ if( USE_NATIVE_HTTP_CLIENT )
     target_link_libraries( InterSpecLib PUBLIC winhttp )
   endif()
 
+  if( NATIVE_HTTP_CURL_BACKEND )
+    # Headers only (libcurl itself is dlopen'ed); on macOS they come with the SDK.
+    if( NOT APPLE )
+      target_include_directories( InterSpecLib PRIVATE ${CURL_INCLUDE_DIR} )
+    endif()
+    target_link_libraries( InterSpecLib PUBLIC ${CMAKE_DL_LIBS} )
+  endif( NATIVE_HTTP_CURL_BACKEND )
+
 endif( USE_NATIVE_HTTP_CLIENT )
 
 
 # If the Wt we are linking against was built with SSL, we have to supply OpenSSL at this final
 #  link, whatever else is enabled: Wt links it PRIVATE into a static libwt.a, and InterSpecServer
 #  already pulls in Wt/Http/Client, so Client.o - and its OpenSSL references - is always present.
-#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with BUILD_OPENSSL=ON would
+#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with WT_ENABLE_SSL=ON would
 #  otherwise fail to link any build that has the native transport switched off.
 #
 #  WConfig.h is the authoritative signal; the presence of libssl.a in the prefix is not, since a
@@ -1168,12 +1238,12 @@ endif( BUILD_AS_OSX_APP )
 
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     # Setting Xcode working directory requires cmake 3.17
-    if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    if( (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0") AND TARGET InterSpecExe )
         set_target_properties(InterSpecExe PROPERTIES
             XCODE_GENERATE_SCHEME TRUE
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
-    endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    endif()
     
     set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
@@ -1390,9 +1460,12 @@ configure_file(
     COPYONLY
 )
 
-# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
-if( NOT hasParent )
-  INSTALL(TARGETS InterSpecExe DESTINATION bin)
+# Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc);
+#  target/mcp_http installs its own executable, but these same resources.
+if( NOT hasParent OR BUILD_AS_MCP_HTTP_SERVER )
+  if( NOT hasParent )
+    INSTALL(TARGETS InterSpecExe DESTINATION bin)
+  endif()
   
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
     INSTALL(TARGETS InterSpecLib DESTINATION lib)
@@ -1400,4 +1473,4 @@ if( NOT hasParent )
   
   INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
   INSTALL(DIRECTORY ${WT_RESOURCES_DIRECTORY}/ DESTINATION share/interspec/resources)
-endif( NOT hasParent )
+endif( NOT hasParent OR BUILD_AS_MCP_HTTP_SERVER )

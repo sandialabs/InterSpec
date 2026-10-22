@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "cascade/SandiaDecayCascade.h"
+#include "cross_sections/CrossSectionData.h"
 #include "SandiaDecay.h"
 
 #include <algorithm>
@@ -213,6 +214,78 @@ BOOST_AUTO_TEST_CASE(uranium_chain_direct_electron_source_terms) {
         for (const auto& line : emissions->conversion_electrons) {
             BOOST_CHECK_GT(line.energy_keV, 0.0);
             BOOST_CHECK_GT(line.yield_per_decay, 0.0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(transuranic_daughters_get_their_shell_binding_energies) {
+    // Am-241 -> Np-237 (Z=93) and Cm-244 -> Pu-240 (Z=94). The direct emission
+    // set used to gate the daughter's K/L data on the photon-table limit (then
+    // Z=92), so these conversion electrons carried the full transition energy.
+    // K lines must sit at E_gamma - B_K and L1/L2/L3 lines at E_gamma - B_L3 (the
+    // model applies the L3 edge to every L subshell); the shell-unresolved Outer
+    // share keeps E_gamma. The set lists gamma lines only, so a daughter x-ray
+    // that SandiaDecay also lists can never be double-counted.
+    const auto& xs = ceelo::CrossSectionData::instance();
+    const std::pair<const char*, int> cases[] = {{"Am241", 93}, {"Cm244", 94}};
+    for (const auto& [label, daughter_Z] : cases) {
+        BOOST_TEST_CONTEXT(label) {
+            const auto* k = xs.fluorescence(daughter_Z);
+            const auto* l = xs.l_fluorescence(daughter_Z);
+            BOOST_REQUIRE(k != nullptr);
+            BOOST_REQUIRE(l != nullptr);
+            const SandiaDecay::Nuclide* nuc = db().nuclide(label);
+            BOOST_REQUIRE(nuc != nullptr);
+            std::vector<double> transitions;   // every gamma transition energy
+            bool reaches_daughter = false;
+            for (const SandiaDecay::Transition* tr : nuc->decaysToChildren) {
+                if (!tr || !tr->child)
+                    continue;   // spontaneous-fission branches have no daughter nuclide
+                BOOST_CHECK_EQUAL(static_cast<int>(tr->child->atomicNumber), daughter_Z);
+                reaches_daughter = true;
+                for (const SandiaDecay::RadParticle& p : tr->products)
+                    if (p.type == SandiaDecay::ProductType::GammaParticle)
+                        transitions.push_back(static_cast<double>(p.energy));
+            }
+            const auto from_transition = [&](double energy, double binding) {
+                for (double t : transitions)
+                    if (std::abs(t - binding - energy) < 1e-6) return true;
+                return false;
+            };
+            BOOST_REQUIRE(reaches_daughter);
+            const RadioactiveEmissionSet e = build_radioactive_emissions(nuc);
+            int n_l = 0;
+            for (const ConversionElectronLine& c : e.conversion_electrons) {
+                BOOST_TEST_CONTEXT("CE " << c.energy_keV << " keV") {
+                    switch (c.shell) {
+                    case ConversionShell::K:
+                        BOOST_CHECK(from_transition(c.energy_keV, k->k_edge_keV));
+                        break;
+                    case ConversionShell::L1:
+                    case ConversionShell::L2:
+                    case ConversionShell::L3:
+                        BOOST_CHECK(from_transition(c.energy_keV, l->l3_edge_keV));
+                        ++n_l;
+                        break;
+                    case ConversionShell::Outer:
+                        BOOST_CHECK(from_transition(c.energy_keV, 0.0));
+                        break;
+                    }
+                }
+            }
+            BOOST_CHECK_GT(n_l, 0);
+            for (const RadioactivePhotonLine& p : e.photons)
+                BOOST_CHECK(from_transition(p.energy_keV, 0.0));   // gammas only
+            if (daughter_Z == 93) {
+                // The 59.54 keV line converts in L at 59.54 - 17.61 keV (it is
+                // below the 118.7 keV Np K edge, so it has no K line).
+                bool saw_l_59 = false;
+                for (const ConversionElectronLine& c : e.conversion_electrons)
+                    if (c.shell == ConversionShell::L3
+                        && std::abs(c.energy_keV + l->l3_edge_keV - 59.5409) < 0.01) saw_l_59 = true;
+                BOOST_CHECK(saw_l_59);
+                BOOST_CHECK_CLOSE(static_cast<double>(l->l3_edge_keV), 17.61, 0.5);
+            }
         }
     }
 }
@@ -580,8 +653,12 @@ BOOST_AUTO_TEST_CASE(whole_database_rejection_rate_is_stable) {
     //                now agrees with the shipped evaluated feed law to <= 6%
     // Each branch appears once per decay chain that reaches it, hence the
     // multiplicity. No other nuclide moved.
-    BOOST_CHECK_EQUAL(n_valid, 4558);
-    BOOST_CHECK_EQUAL(n_raw_only, 763);
+    // 2026-10-03, A=234 review (ENSDF NDS 207, 2026; JRC/IDB U spectra):
+    //   +9   Pa234m -> U234 now valid (raw feed 1.102 -> 0.015): its 43.5 and
+    //        41.82 keV records held transition flux as photon intensity
+    //        (43.5 keV: 7 transitions per decay). Pa234 -> U234 stays rejected.
+    BOOST_CHECK_EQUAL(n_valid, 4567);
+    BOOST_CHECK_EQUAL(n_raw_only, 754);
     BOOST_CHECK_EQUAL(n_partial_only, 1782);
     BOOST_CHECK_EQUAL(n_both, 1328);
     BOOST_CHECK_EQUAL(n_invalid_topology_edges, 0);
@@ -1167,13 +1244,20 @@ BOOST_AUTO_TEST_CASE(valid_partial_schemes_retain_categorical_residuals) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(u238_partial_graph_is_valid_and_residuals_coexist) {
+// Th234 -> Pa234m keeps four gamma records with no GEANT4 topology (87.02, 103.35,
+// 108.0 and 184.8 keV) beside a valid level graph. Until 2026-10-03 this test used
+// U238 -> Th234, whose residuals were ten U-234 transitions misfiled under the
+// alpha decay; they now belong to Pa234m -> U234.
+BOOST_AUTO_TEST_CASE(th234_partial_graph_is_valid_and_residuals_coexist) {
     CascadeOptions opts;
     opts.prompt_equilibrium = false;
     std::vector<BranchFeedingAudit> audit;
-    const auto cascades = build_cascades(db().nuclide("U238"), opts, &audit);
+    const auto cascades = build_cascades(db().nuclide("Th234"), opts, &audit);
     bool found = false;
     for (const DecayCascade& dc : cascades) {
+        // The Th234 build also carries short-lived progeny branches; keep the
+        // Th234 beta-minus branch (daughter Pa, unit branch weight).
+        if (dc.daughter_Z != 91 || dc.branch_weight < 0.5) continue;
         if (!dc.level_scheme.valid || dc.residual_transitions.empty()) continue;
         int matched = 0;
         for (const CascadeLevel& level : dc.level_scheme.levels)
@@ -1191,7 +1275,7 @@ BOOST_AUTO_TEST_CASE(u238_partial_graph_is_valid_and_residuals_coexist) {
     BOOST_CHECK(found);
     bool audited_partial = false;
     for (const BranchFeedingAudit& a : audit)
-        if (a.scheme_valid && a.n_residual_transitions >= 4) {
+        if (a.parent == "Th234" && a.scheme_valid && a.n_residual_transitions >= 4) {
             audited_partial = true;
             BOOST_CHECK_GT(a.residual_gamma_probability, 1e-4);
         }
@@ -1345,11 +1429,13 @@ BOOST_AUTO_TEST_CASE(partial_graph_occurrence_gate_uses_exact_feeds) {
 }
 
 BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
-    const SandiaDecay::Nuclide* parent = db().nuclide("U238");
+    // Needs a branch with a valid graph and an unmatched gamma record; see
+    // th234_partial_graph_is_valid_and_residuals_coexist for why it is Th234.
+    const SandiaDecay::Nuclide* parent = db().nuclide("Th234");
     BOOST_REQUIRE(parent != nullptr);
     SandiaDecay::Transition* transition = nullptr;
     for (const SandiaDecay::Transition* t : parent->decaysToChildren)
-        if (t && t->child && t->child->symbol == "Th234") {
+        if (t && t->child && t->child->symbol == "Pa234m") {
             transition = const_cast<SandiaDecay::Transition*>(t);
             break;
         }
@@ -1377,11 +1463,12 @@ BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
         std::vector<BranchFeedingAudit> audit;
         (void)build_cascades(parent, opts, &audit);
         for (const BranchFeedingAudit& a : audit)
-            if (a.parent == "U238" && a.child == "Th234")
+            if (a.parent == "Th234" && a.child == "Pa234m")
                 return a;
         return BranchFeedingAudit{};
     };
     const BranchFeedingAudit before = branch_audit();
+    BOOST_REQUIRE(before.scheme_valid);
 
     // A memberless E0 contributes no gamma intensity. Give the unmatched record
     // a 2% transition occurrence: occurrence-based coverage must nevertheless
@@ -1402,12 +1489,34 @@ BOOST_AUTO_TEST_CASE(unmatched_memberless_e0_counts_toward_partial_gate) {
 // U235 was removed from this list on 2026-08-03: its flux inconsistency was
 // four specific unsupported gamma records (26.55, 38.90, 41.40 keV removed;
 // 64.35 keV corrected 0.0065 -> 1.7e-5), not an irrecoverable topology problem.
-// With those fixed the branch's feed sum closes to 1.0013. Pa234 and Pa234m
-// remain inconsistent and are still guarded here.
+// With those fixed the branch's feed sum closes to 1.0013. Pa234m was removed on
+// 2026-10-03 for the same kind of reason (43.5/41.82 keV held transition flux as
+// photons); see pa234m_graph_closes_after_flux_records_corrected. Pa234 remains
+// inconsistent (raw feed 1.25: GEANT4 has no levels for its 880.5/980.3 keV
+// doublets, and the evaluation itself leaves ~0.14 per decay unbalanced at
+// excited levels) and is still guarded here.
+BOOST_AUTO_TEST_CASE(pa234m_graph_closes_after_flux_records_corrected) {
+    CascadeOptions opts;
+    opts.prompt_equilibrium = false;
+    std::vector<BranchFeedingAudit> audit;
+    (void)build_cascades(db().nuclide("Pa234m"), opts, &audit);
+    bool found = false;
+    for (const BranchFeedingAudit& a : audit)
+        if (a.parent == "Pa234m" && a.child == "U234") {
+            found = true;
+            BOOST_CHECK(a.scheme_valid);
+            BOOST_CHECK(!a.rejected);
+            // ~98% of these decays go to the U-234 ground state, so the excited-level
+            // feed is ~1.5%; a value near 1 would mean flux records are back.
+            BOOST_CHECK_LT(a.raw_total_feed, 0.05);
+        }
+    BOOST_CHECK(found);
+}
+
 BOOST_AUTO_TEST_CASE(uranium_flux_inconsistent_graphs_remain_invalid) {
     CascadeOptions opts;
     opts.prompt_equilibrium = false;
-    for (const char* name : {"Pa234", "Pa234m"}) {
+    for (const char* name : {"Pa234"}) {
         std::vector<BranchFeedingAudit> audit;
         (void)build_cascades(db().nuclide(name), opts, &audit);
         bool rejected = false;

@@ -54,6 +54,7 @@ namespace Wt
   class WComboBox;
   class WLineEdit;
   class WCheckBox;
+  class WGridLayout;
   class WDoubleSpinBox;
   class WSuggestionPopup;
 }
@@ -156,6 +157,11 @@ public:
   void useSourceLibrary( const std::vector<std::shared_ptr<const SrcLibLineInfo>> &srcs,
                          const bool auto_populate );
 protected:
+  /** Recomputes the fits from the current source/peak inputs.
+
+   Does nothing while #m_blockSourceUpdates is set, so a bulk change to the source widgets (e.g.
+   #handleFixedGeometryChanged) isnt seen part-applied; the caller re-fits once it is done.
+   */
   void handleSourcesUpdates();
   void handleSqrtEqnOrderChange();
   void handleFwhmTypeChanged();
@@ -214,11 +220,30 @@ protected:
    embedded geometry + location-support tool. */
   Wt::WContainerWidget *m_geomPanel;
   SwitchCheckbox *m_geomMode;
+  Wt::WText *m_geomGuidance;
   Wt::WContainerWidget *m_diameterDiv;
   MakeMcResponseForDrf *m_mcTool;
 
   /** Whether the geometry form has been seeded from the diameter yet (only done once). */
   bool m_geomSeeded;
+
+  /** The top-level layout; the upper row (geometry panel, chart, fit options) is given more height
+   when the geometry form is showing - see #handleGeometryModeChanged.  Null on phones, which put
+   the upper area in its own tab instead.
+   */
+  Wt::WGridLayout *m_mainLayout;
+
+  /** Height, in pixels, of the layout row holding the geometry panel, chart and fit options, for
+   the "Diameter only" and "Detector geometry" modes.  The latter is capped to a fraction of the
+   apps height so the peaks below stay visible; see #handleGeometryModeChanged.
+   */
+  static const int sm_diam_mode_height = 400;
+  static const int sm_geom_mode_height = 560;
+
+  /** Set while updating all the source widgets, to keep the sources' "updated" signals from
+   re-entering #handleSourcesUpdates() while only some of them have been updated.
+   */
+  bool m_blockSourceUpdates;
   
   GroupBox *m_detDiamGroup;
   

@@ -144,10 +144,10 @@ The thin length (1 cm) makes it effectively a surface source. The large radius (
 ## Peak Selection
 
 ### For `activity_fit_one_off`
-Specify peak energies directly via `peak_energies`. Only include peaks of the isotopes of interest.
+Specify peak energies directly via `peak_energies`; they are used whether or not they are marked for fitting. Only include peaks of the isotopes of interest.
 
 ### For `activity_fit` (app state)
-Uses peaks with the `useForShieldingSourceFit` flag. To manage:
+Takes no arguments (it does not accept `peak_energies`), and uses the peaks with the `useForShieldingSourceFit` flag. To manage:
 - `mark_peaks_for_activity_fit` - Batch mark/unmark by energy
 - `edit_analysis_peak` with `useForShieldingSourceFit` - Individual peaks
 

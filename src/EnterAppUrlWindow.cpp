@@ -92,8 +92,8 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
   desc->addStyleClass( "content" );
   desc->setInline( false );
   
-  WPushButton *cancel = window->addButton( "Cancel" );
-  WPushButton *okay = window->addButton( "Okay" );
+  WPushButton *cancel = window->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *okay = window->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
   
   // To be generous to the user, we will allow them to have stuff before the relevant part of the
   //  URI, so we'll serach for URIs beginning with following paths:
@@ -225,7 +225,7 @@ SimpleDialog *createEntryWindow( InterSpec *viewer )
     {
       // Wt4_TODO: see note above about SimpleDialog ownership
       SimpleDialog *errdialog = SimpleDialog::make( "Error with entered URL", e.what() );
-      errdialog->addButton( "Okay" );
+      errdialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
     }
   } );
   

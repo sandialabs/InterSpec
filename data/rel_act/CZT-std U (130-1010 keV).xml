@@ -1,0 +1,174 @@
+<RelActCalcAuto version="0">
+	<Description>Uranium enrichment (U-235 and U-238) from CZT spectra that cover about 130 to 1010 keV.
+Each ROI lists the gamma lines it must contain, and its extent is computed from the detector's peak width and shape.  CZT peaks have long low-energy tails, so ROIs cover 98% of a peak's area on its low side; the U-235 ROIs use a step continuum (for the shelf below CZT peaks), while the U-238 ROIs (258, 742-786, and 1001 keV) use a linear continuum, since a step there can absorb a whole peak.  U-234 and U-232 are not included, as their lines are not resolvable at CZT resolution.
+Uses the 'Physical' model for the relative efficiency curve, meaning it takes into account the currently loaded detector efficiency (a generic CZT one is fine), and the attenuation of the uranium and of external shielding.
+On long measurements of CBNM standards (0.3 to 4.5% U-235) with a 500 mm3 CZT, results were typically within 10 to 20%, with a few-percent low bias and occasional larger misses; check the fit quality before relying on a result.</Description>
+	<Options version="7">
+    <FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
+    <EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">Berstein_4</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType>ExpGaussExp</SkewType>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="1">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>U235</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#D13711</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U238</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#00B9FF</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>true</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>FRAM Physical</RelEffEqnType>
+				<PhysicalModelOptions>
+					<SelfAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Uranium trioxide</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
+						</PhysicalModelShield>
+					</SelfAtten>
+					<ExtAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Fe (iron)</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+							<ArealDensityBias remark="Weak prior pulling this shield's fitted areal density toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default.">true</ArealDensityBias>
+						</PhysicalModelShield>
+					</ExtAtten>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">Hoerl</CorrectionFcnType>
+				</PhysicalModelOptions>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
+		<RoiRangeList>
+			<RoiRange version="1">
+				<LowerEnergy>140.76</LowerEnergy>
+				<UpperEnergy>143.76</UpperEnergy>
+				<ContinuumType>LinearStepCDF</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>163.38</LowerEnergy>
+				<UpperEnergy>163.38</UpperEnergy>
+				<ContinuumType>LinearStepCDF</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>182.52</LowerEnergy>
+				<UpperEnergy>185.71</UpperEnergy>
+				<ContinuumType>LinearStepCDF</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>202.11</LowerEnergy>
+				<UpperEnergy>205.309</UpperEnergy>
+				<ContinuumType>LinearStepCDF</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>258.26</LowerEnergy>
+				<UpperEnergy>258.26</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>742.77</LowerEnergy>
+				<UpperEnergy>786.25</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+			<RoiRange version="1">
+				<LowerEnergy>1000.99</LowerEnergy>
+				<UpperEnergy>1000.99</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<RangeLimitType>LineAnchored</RangeLimitType>
+				<LowerEdge>
+					<TailFraction>2.00000000e-02</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</LowerEdge>
+				<UpperEdge>
+					<TailFraction>1.00000000e-03</TailFraction>
+					<SidebandFwhm>5.00000000e-01</SidebandFwhm>
+				</UpperEdge>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>110</LowerDisplayEnergy>
+		<UpperDisplayEnergy>1100</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>

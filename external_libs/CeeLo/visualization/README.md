@@ -22,13 +22,14 @@ open ../../visualization/test_geometry_viewer.html
 
 `test_geometry_viewer.html` is a self-contained harness: it loads
 `GeometryViewer3D.js` from the same directory, offers a dropdown of embedded
-sample geometries (the benchmark configurations, plus a cored source), a file
-picker for any `.gdml` this build exports, and the camera/slice controls.
+sample geometries (the benchmark configurations, plus a cored source), and a file
+picker for any `.gdml` this build exports.  (Camera orbit/zoom only — there is
+no slice or clip control.)
 
 The **"Source cores"** entry in the dropdown is the one to look at for a nested
-source: an iron core inside a soil shell inside an iron shield. Rotate it and
-slice through — you should see three concentric layers, not one solid ball. If
-you only ever see the outermost shield, the tree walk is broken.
+source: an iron core inside a soil shell inside an iron shield. Orbit it and hover the layers — the tooltip names each one and says which
+actually emits. You should be able to reach three concentric layers; if only the
+outermost shield is ever pickable, the tree walk is broken.
 
 ## Embedding
 

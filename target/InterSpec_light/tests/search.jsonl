@@ -1,0 +1,13 @@
+# Automated peak search on HPGe, NaI, passthrough-summed, and CNF spectra
+{"method":"setShownRefLines","params":{"sources":[{"parent":"Ba133","color":"#006600"},{"parent":"Cs137","color":"#00b9ff"},{"parent":"Background","color":"#967f55"}]}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/AnalystTests/Ba133_Cs137_RandomSummingOnly.n42","name":"Ba133_Cs137_RandomSummingOnly.n42","type":"FOREGROUND"}}
+{"method":"searchPeaks","params":{}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/PeakFitLM/Ba133_Unshielded.n42","name":"Ba133_Unshielded.n42","type":"FOREGROUND"}}
+{"method":"searchPeaks","params":{}}
+{"method":"loadFile","params":{"path":"@REPO@/example_spectra/passthrough.n42","name":"passthrough.n42","type":"FOREGROUND"}}
+{"method":"searchPeaks","params":{}}
+{"method":"loadFile","params":{"path":"@REPO@/target/testing/test_data/CamLibrary/cs137.CNF","name":"cs137.CNF","type":"FOREGROUND"}}
+{"method":"searchPeaks","params":{}}
+{"method":"loadFile","params":{"path":"@REPO@/example_spectra/ba133_source_640s_20100317.n42","name":"ba133_source_640s_20100317.n42","type":"FOREGROUND"}}
+{"method":"fitPeakAt","params":{"energy":356.0,"pixPerKeV":3.0}}
+{"method":"searchPeaks","params":{}}

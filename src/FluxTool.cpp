@@ -64,6 +64,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
@@ -315,6 +316,34 @@ namespace FluxToolImp
 }//print_uncert(...)
 
 
+  /** An uncertainty split into its statistical and systematic (detector efficiency) parts, like
+   "0.401 (stat) +- 0.112 (syst)", as the exports and the table's tooltips give it.  The systematic
+   part is only given when there is one (the note under the table says when the detector states
+   none); peak CPS never has one, and intrinsic efficiency has no statistical part.
+   Empty when `value` is not a positive, finite number.
+   */
+  std::string print_stat_syst( const FluxToolWidget::FluxColumns col, const double value,
+                               const double stat, const double syst, const bool asPercent,
+                               const std::string &plus_minus )
+  {
+    if( !(value > 0.0) || (std::isinf)(value) || (std::isnan)(value) )
+      return "";
+
+    const auto part = [=]( const double uncert ) -> std::string {
+      const std::string txt = print_uncert( value, uncert, asPercent );
+      return txt.empty() ? std::string(asPercent ? "0%" : "0") : txt;
+    };
+
+    std::string answer;
+    if( col != FluxToolWidget::FluxColumns::FluxIntrinsicEffCol )
+      answer = part( stat ) + " (stat)";
+    if( (col != FluxToolWidget::FluxColumns::FluxPeakCpsCol) && (syst > std::numeric_limits<double>::epsilon()) )
+      answer += (answer.empty() ? "" : (" " + plus_minus + " ")) + part( syst ) + " (syst)";
+
+    return answer;
+  }//print_stat_syst(...)
+
+
   /** Returns, for each entry of `peaks`, whether any of `energies` names that peak.
 
    An energy names the peak whose mean is nearest to it, and then only if that mean is
@@ -450,10 +479,12 @@ namespace FluxToolImp
 
       const auto &nucs = m_fluxtool->m_nucNames;
       const auto &data = m_fluxtool->m_data;
-      const auto &uncerts = m_fluxtool->m_uncertainties;
+      const auto &stat_uncerts = m_fluxtool->m_statUncerts;
+      const auto &syst_uncerts = m_fluxtool->m_systUncerts;
 
       assert( nucs.size() == data.size() );
-      assert( uncerts.size() == data.size() );
+      assert( stat_uncerts.size() == data.size() );
+      assert( syst_uncerts.size() == data.size() );
       assert( realind < data.size() );
 
       // The selection column has no value/uncertainty in m_data; it is checkbox-only.
@@ -481,13 +512,27 @@ namespace FluxToolImp
         return Wt::cpp17::any( data[realind][col] );
       }//if( role == Wt::ItemDataRole::Display )
 
+      if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+        return Wt::cpp17::any();
+
+      const double stat = stat_uncerts[realind][col], syst = syst_uncerts[realind][col];
+      const double total = std::sqrt( stat*stat + syst*syst );
+      const bool has_uncert = (total > std::numeric_limits<double>::epsilon());
+
+      // The combined uncertainty, which the cells show
       if( role == Wt::ItemDataRole::User )
+        return has_uncert ? Wt::cpp17::any( total ) : Wt::cpp17::any();
+
+      // The statistical / systematic split of it
+      if( (role == Wt::ItemDataRole::ToolTip) && has_uncert )
       {
-        if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
-          return Wt::cpp17::any();
-        return uncerts[realind][col] > std::numeric_limits<double>::epsilon()
-                 ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
-      }//if( role == Wt::ItemDataRole::User )
+        const bool asPercent = (m_fluxtool->displayInfoLevel() == FluxToolWidget::DisplayInfoLevel::Simple);
+        const FluxToolWidget::FluxColumns fcol = static_cast<FluxToolWidget::FluxColumns>( col );
+        const double value = data[realind][col];
+        const std::string split = print_stat_syst( fcol, value, stat, syst, asPercent, "\xC2\xB1" );
+        if( !split.empty() )
+          return Wt::cpp17::any( WString::fromUTF8( print_value( value, total ) + " \xC2\xB1 " + split ) );
+      }//if( role == Wt::ItemDataRole::ToolTip )
 
       return Wt::cpp17::any();
     }//data(...)
@@ -554,10 +599,8 @@ namespace FluxToolImp
 
       if( role == Wt::ItemDataRole::ToolTip )
       {
-        // The intrinsic and geometric columns are the far-field decomposition; the efficiency the
-        //  flux is computed from comes from the detector's response when it has one, so the two
-        //  columns do not necessarily multiply to it.  Say so rather than leave the arithmetic
-        //  looking broken.
+        // What the intrinsic and geometric columns mean - the intrinsic one is at this distance, so
+        //  for a detector with a characterized response it is not its far-field curve.
         switch( section )
         {
           case FluxToolWidget::FluxColumns::FluxIntrinsicEffCol:
@@ -723,6 +766,10 @@ namespace FluxToolImp
 
 
       oldwidget->setText( valstr );
+
+      const auto tooltip = model->data( index.row(), index.column(), Wt::ItemDataRole::ToolTip );
+      oldwidget->setToolTip( Wt::cpp17::any_has_value(tooltip) ? Wt::asString(tooltip) : WString() );
+
       return newWidget;
     }//std::unique_ptr<WWidget> update(...)
   };//class FluxRenderDelegate
@@ -778,16 +825,16 @@ namespace FluxToolImp
         else
           strm << (col==0 ? "" : ",") << colname;
         
-        //No uncertainty on energy, effs, or nuc
+        //No uncertainty on energy, geometric eff, or nuc; the intrinsic efficiency's is the DRF's
         switch( col )
         {
           case FluxToolWidget::FluxEnergyCol:
-          case FluxToolWidget::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxGeometricEffCol:
           case FluxToolWidget::FluxNuclideCol:
           case FluxToolWidget::FluxNumColumns:
             break;
             
+          case FluxToolWidget::FluxIntrinsicEffCol:
           case FluxToolWidget::FluxPeakCpsCol:
           case FluxToolWidget::FluxFluxOnDetCol:
           case FluxToolWidget::FluxFluxPerCm2PerSCol:
@@ -842,7 +889,9 @@ namespace FluxToolImp
             continue;
           
           const double data = tool->m_data[row][col];
-          const double uncert = tool->m_uncertainties[row][col];
+          const double stat = tool->m_statUncerts[row][col];
+          const double syst = tool->m_systUncerts[row][col];
+          const double uncert = std::sqrt( stat*stat + syst*syst );
           
           
           std::string datastr;
@@ -887,28 +936,21 @@ namespace FluxToolImp
           switch( col )
           {
             case FluxToolWidget::FluxEnergyCol:
-            case FluxToolWidget::FluxIntrinsicEffCol:
             case FluxToolWidget::FluxGeometricEffCol:
             case FluxToolWidget::FluxNuclideCol:
             case FluxToolWidget::FluxNumColumns:
               break;
               
+            case FluxToolWidget::FluxIntrinsicEffCol:
             case FluxToolWidget::FluxPeakCpsCol:
             case FluxToolWidget::FluxFluxOnDetCol:
             case FluxToolWidget::FluxFluxPerCm2PerSCol:
             case FluxToolWidget::FluxGammasInto4PiCol:
             {
-              switch( disptype )
-              {
-                case FluxToolWidget::DisplayInfoLevel::Simple:
-                  strm << (html ? "</td><td>" : ",") << print_uncert( data, uncert, true );
-                  break;
-                  
-                case FluxToolWidget::DisplayInfoLevel::Normal:
-                case FluxToolWidget::DisplayInfoLevel::Extended:
-                  strm << (html ? "</td><td>" : ",") << print_uncert( data, uncert, false );
-                  break;
-              }//switch( disptype )
+              // e.g. "0.401 (stat) +- 0.112 (syst)" - percents in the Simple view
+              const bool asPercent = (disptype == FluxToolWidget::DisplayInfoLevel::Simple);
+              strm << (html ? "</td><td>" : ",")
+                   << print_stat_syst( col, data, stat, syst, asPercent, (html ? "&plusmn;" : "+-") );
               
               break;
             }//case CPS, FluxOnDet, FluxPerArea, GammasInto 4pi
@@ -1083,6 +1125,7 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer )
     m_detector( nullptr ),
     m_narrowLayout( false ),
     m_msg( nullptr ),
+    m_drfUncertNote( nullptr ),
     m_distance( nullptr ),
     m_prevDistance(),
     m_table( nullptr ),
@@ -1409,6 +1452,9 @@ void FluxToolWidget::init()
   msgCell->addStyleClass( "FluxMsgCell" );
   m_msg = msgCell->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
   m_msg->addStyleClass( "FluxMsg" );
+  m_drfUncertNote = msgCell->addNew<WText>( WString::fromUTF8("") );
+  m_drfUncertNote->addStyleClass( "FluxDrfUncertNote" );
+  m_drfUncertNote->setInline( false );
   
   
   m_selectColName = WString::tr("ftw-hdr-use");
@@ -1582,7 +1628,8 @@ void FluxToolWidget::refreshPeakTable()
   
   m_nucNames.clear();
   m_data.clear();
-  m_uncertainties.clear();
+  m_statUncerts.clear();
+  m_systUncerts.clear();
 
   // Note that m_deselectedEnergies is deliberately *not* touched here - it is keyed by
   //  energy exactly so it can outlive the table.  Several of the early-returns below leave
@@ -1591,6 +1638,7 @@ void FluxToolWidget::refreshPeakTable()
   m_rowSelected.clear();
 
   m_msg->setText( "" );
+  m_drfUncertNote->setText( "" );
 
   // Shared tail for the cases below where there is nothing to compute.  The table is left
   //  empty, so the clipboard text is refreshed to match, rather than leaving the button
@@ -1639,14 +1687,20 @@ void FluxToolWidget::refreshPeakTable()
   const size_t npeaks = peaks.size();
   m_nucNames.resize( npeaks );
   m_data.resize( npeaks );
-  m_uncertainties.resize( npeaks );
+  m_statUncerts.resize( npeaks );
+  m_systUncerts.resize( npeaks );
   
   const bool fixed_geom = det->isFixedGeometry();
+
+  // The range of detector-efficiency uncertainty folded into the rows, for the note below.
+  double min_eff_uncert = std::numeric_limits<double>::infinity(), max_eff_uncert = 0.0;
+  bool eff_uncert_from_model_only = false;
 
   for( int i = 0; i < static_cast<int>(npeaks); ++i )
   {
     m_data[i].fill( 0.0 );
-    m_uncertainties[i].fill( 0.0 );
+    m_statUncerts[i].fill( 0.0 );
+    m_systUncerts[i].fill( 0.0 );
     
     const PeakDef &peak = peaks[i];
     
@@ -1656,9 +1710,20 @@ void FluxToolWidget::refreshPeakTable()
     const double ampUncert = peak.peakAreaUncert();
     const double cps = amp / live_time;
     const double cpsUncert = ampUncert / live_time;
-    const double intrinsic = det->farFieldIntrinsicEfficiency(energy);
     const double geomEff = fixed_geom ? 1.0 : det->fractionalSolidAngle( det->detectorDiameter(), distance + det->detectorSetback() );
-    const double totaleff = fixed_geom ? intrinsic : det->efficiency(energy, distance );
+    const double totaleff = det->efficiency( energy, distance );  //distance ignored for fixed geometry
+
+    // The intrinsic efficiency at this distance - per gamma crossing the face - so the intrinsic and
+    //  geometric columns multiply to the efficiency used.  Exactly the far-field curve unless the DRF
+    //  has a geometry-modeled response (which accounts for where in the crystal gammas interact).
+    const double intrinsic = (geomEff > 0.0) ? (totaleff / geomEff) : 0.0;
+
+    // The efficiency uncertainty the DRF states, plus any geometry-model part (never an assumed one).
+    const DrfModifyCalc::UncertSummary drf_uncert = DrfModifyCalc::uncertSummary( *det, energy, distance );
+    const double eff_uncert = drf_uncert.usedFrac( false );
+    min_eff_uncert = std::min( min_eff_uncert, eff_uncert );
+    max_eff_uncert = std::max( max_eff_uncert, eff_uncert );
+    eff_uncert_from_model_only |= !drf_uncert.statesOwn;
     
     
     if( peak.parentNuclide() )
@@ -1670,12 +1735,11 @@ void FluxToolWidget::refreshPeakTable()
     
     m_data[i][FluxColumns::FluxEnergyCol] = energy;
     m_data[i][FluxColumns::FluxPeakCpsCol] = cps;
-    m_uncertainties[i][FluxColumns::FluxPeakCpsCol] = cpsUncert;
+    m_statUncerts[i][FluxColumns::FluxPeakCpsCol] = cpsUncert;
     
     m_data[i][FluxColumns::FluxGeometricEffCol] = geomEff;
     m_data[i][FluxColumns::FluxIntrinsicEffCol] = intrinsic;
-    
-    // TODO: Check if there is an uncertainty on DRF, and if so include that.
+    m_systUncerts[i][FluxColumns::FluxIntrinsicEffCol] = intrinsic * eff_uncert;
     
     if( totaleff <= 0.0 || intrinsic <= 0.0 )
     {
@@ -1684,29 +1748,45 @@ void FluxToolWidget::refreshPeakTable()
       m_data[i][FluxColumns::FluxGammasInto4PiCol]  = std::numeric_limits<double>::infinity();
     }else
     {
+      // Statistical (peak area) and systematic (detector efficiency) parts, kept apart
       const double fluxOnDet = cps / intrinsic;
-      const double fluxOnDetUncert = cpsUncert / intrinsic;
-      
+
       //gammas into 4pi
       const double gammaInto4pi = cps / totaleff;
-      const double gammaInto4piUncert = cpsUncert / totaleff;
-      
+
       //Flux in g/cm2/s
       const double distance_cm = distance / PhysicalUnits::cm;
-      const double flux = gammaInto4pi / (4*M_PI*distance_cm*distance_cm);
-      const double fluxUncert = gammaInto4piUncert / (4*M_PI*distance_cm*distance_cm);
-      
-      
+      const double area_4pi = 4*M_PI*distance_cm*distance_cm;
+      const double flux = gammaInto4pi / area_4pi;
+
       m_data[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet;
-      m_uncertainties[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDetUncert;
-      
+      m_statUncerts[i][FluxColumns::FluxFluxOnDetCol] = cpsUncert / intrinsic;
+      m_systUncerts[i][FluxColumns::FluxFluxOnDetCol] = fluxOnDet * eff_uncert;
+
       m_data[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux;
-      m_uncertainties[i][FluxColumns::FluxFluxPerCm2PerSCol] = fluxUncert;
-      
+      m_statUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = cpsUncert / totaleff / area_4pi;
+      m_systUncerts[i][FluxColumns::FluxFluxPerCm2PerSCol] = flux * eff_uncert;
+
       m_data[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4pi;
-      m_uncertainties[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4piUncert;
+      m_statUncerts[i][FluxColumns::FluxGammasInto4PiCol] = cpsUncert / totaleff;
+      m_systUncerts[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4pi * eff_uncert;
     }//if( eff > 0 ) / else
   }//for( const PeakDef &peak : peaks )
+
+  // Say whether the uncertainties include the detector efficiency's, and what kind.
+  if( npeaks > 0 )
+  {
+    string range = SpecUtils::printCompact( 100.0*min_eff_uncert, 2 );
+    if( range != SpecUtils::printCompact( 100.0*max_eff_uncert, 2 ) )
+      range += "-" + SpecUtils::printCompact( 100.0*max_eff_uncert, 2 );
+
+    if( max_eff_uncert <= 0.0 )
+      m_drfUncertNote->setText( WString::tr("ftw-drf-uncert-none") );
+    else if( eff_uncert_from_model_only )
+      m_drfUncertNote->setText( WString::tr("ftw-drf-uncert-model-only").arg( range ) );
+    else
+      m_drfUncertNote->setText( WString::tr("ftw-drf-uncert-stated").arg( range ) );
+  }//if( npeaks > 0 )
 
   syncRowSelectionFromEnergies( peaks );
 

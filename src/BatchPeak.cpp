@@ -1881,6 +1881,9 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         fitPrefs = specfile->peakFitDetPrefs();
 
       vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false, fitPrefs );
+      // The search's peaks are reported: fit them like any other.
+      fit_peaks = ExperimentalAutomatedPeakSearch::refit_sparse_rois( fit_peaks, spec,
+                                        PeakFitUtils::effective_det_type( fitPrefs, spec, nullptr ), {} );
       fit_peaks_ptrs.insert( end(fit_peaks_ptrs), begin(fit_peaks), end(fit_peaks) );
     }else
     {

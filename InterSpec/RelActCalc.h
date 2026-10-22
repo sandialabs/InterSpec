@@ -94,9 +94,15 @@ static_assert( ns_num_basis_correction_terms == 2,
    - Chebyshev a1,a2:         |a|     <= ln(R)/2          (basis already normalized to u in [-1,1])
  (with narrow-window clamps b<=2, c in [1/3,3]).  R=10 is a generous guard rail (~7x above the corrections
  actually seen in fits); a 10..30 sweep showed larger R does not improve accuracy and only inflates the
- rel-eff uncertainty band.  This bound is the SOLE guard on the correction now that the coefficient prior
- has been removed. */
+ rel-eff uncertainty band.  Together with `ns_hoerl_swing_prior_sigma`, this is the guard on the correction. */
 constexpr double ns_corr_max_window_swing = 10.0;
+
+/** Width of a weak Gaussian prior, centered on "no correction", on each Hoerl term's swing across the fit window:
+ the fit pays (swing/sigma)^2 for each of `E^b` (ln-swing b*ln(Ehi/Elo)) and `c^(1/E)` (ln-swing
+ ln(c)*(1/Elo - 1/Ehi)), energies in MeV.  The two terms can grow large and opposite - and trade with the
+ self-attenuation - at almost no chi2 cost, so without a prior the fit wanders that near-flat direction; a
+ correction the data actually need costs only a few units of chi2.  0 disables it.  Hoerl form only. */
+constexpr double ns_hoerl_swing_prior_sigma = 1.0;
 
 /** The empirical correction term applied on top of (DRF x attenuation) in the Physical Model rel-eff.
 

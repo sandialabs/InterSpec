@@ -42,6 +42,7 @@
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakFitLM.h"
@@ -336,6 +337,118 @@ BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
   BOOST_CHECK_CLOSE( P(1.0),  0.453561*pf, 1.0e-2 );
   BOOST_CHECK_CLOSE( P(1.25), 0.191920*pf, 1.0e-2 );
 }//BOOST_AUTO_TEST_CASE( proximityPunishmentContinuity )
+
+
+// A refit where every Ceres parameter is held constant - e.g., the Peak Editor with Centroid and FWHM
+//  unchecked, so only the amplitude and continuum vary, and the LLS solves those.  Ceres used to be
+//  handed a zero initial trust-region radius, which it rejects, so the fit threw and the Peak Editor
+//  reported the peak as having "became insignificant".  The fitter must now skip Ceres and still
+//  solve the amplitude, leaving the fixed mean/FWHM (and their uncertainties) alone.
+BOOST_AUTO_TEST_CASE( refitWithMeanAndFwhmFixed )
+{
+  set_data_dir();
+
+  const size_t num_channels = 512;
+  const double background = 200.0;  // counts/channel, at 1 keV/channel
+  const double mean = 256.0, sigma = 2.5, true_amp = 5000.0;
+  const double mean_uncert = 0.0123, sigma_uncert = 0.0456;
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Low;
+
+  auto counts = make_shared<vector<float>>( num_channels, static_cast<float>(background) );
+  for( size_t ch = 0; ch < num_channels; ++ch )
+  {
+    const double s = sigma * std::sqrt(2.0);
+    (*counts)[ch] += static_cast<float>( 0.5*true_amp*(std::erf((ch + 1.0 - mean)/s) - std::erf((ch - mean)/s)) );
+  }
+
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( num_channels, {0.0f, 1.0f}, {} );
+  auto data = make_shared<SpecUtils::Measurement>();
+  data->set_gamma_counts( counts, 300.0f, 300.0f );
+  data->set_energy_calibration( cal );
+
+  // Single peak, mean and sigma fixed, seeded off the true amplitude so the fit has to move it.
+  auto make_peak = [&]( const bool fit_amp, const bool fit_cont ) -> shared_ptr<PeakDef> {
+    auto cont = make_shared<PeakContinuum>();
+    cont->setType( PeakContinuum::OffsetType::Linear );
+    cont->setRange( 231.0, 281.0 );
+    cont->setParameters( 231.0, vector<double>{ background, 0.0 }, {} );
+    cont->setPolynomialCoefFitFor( 0, fit_cont );
+    cont->setPolynomialCoefFitFor( 1, fit_cont );
+
+    auto p = make_shared<PeakDef>( mean, sigma, 3000.0 );
+    p->setMeanUncert( mean_uncert );
+    p->setSigmaUncert( sigma_uncert );
+    p->setFitFor( PeakDef::Mean, false );
+    p->setFitFor( PeakDef::Sigma, false );
+    p->setFitFor( PeakDef::GaussAmplitude, fit_amp );
+    p->setContinuum( cont );
+    return p;
+  };
+
+  auto check_fixed_pars = []( const PeakDef &p, const PeakDef &input ){
+    BOOST_CHECK_EQUAL( p.mean(), input.mean() );
+    BOOST_CHECK_EQUAL( p.sigma(), input.sigma() );
+    BOOST_CHECK_CLOSE( p.meanUncert(), input.meanUncert(), 1.0e-6 );
+    BOOST_CHECK_CLOSE( p.sigmaUncert(), input.sigmaUncert(), 1.0e-6 );
+  };
+
+  // (1) The reported case: amplitude + continuum by LLS, so there are no free Ceres parameters.
+  {
+    const shared_ptr<PeakDef> input = make_peak( true, true );
+    vector<shared_ptr<const PeakDef>> fit;
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( {input}, data, det_type ) );
+    BOOST_REQUIRE_EQUAL( fit.size(), size_t(1) );
+    check_fixed_pars( *fit[0], *input );
+    BOOST_CHECK_CLOSE( fit[0]->amplitude(), true_amp, 1.0 );
+    BOOST_CHECK( fit[0]->amplitudeUncert() > 0.0 );
+    BOOST_CHECK( std::isfinite(fit[0]->chi2dof()) );
+  }
+
+  // (2) Exactly what PeakEdit::refit(...) calls for a single-peak ROI.
+  {
+    const shared_ptr<PeakDef> input = make_peak( true, true );
+    vector<PeakDef> fit;
+    BOOST_REQUIRE_NO_THROW( fit = fitPeaksInRange( mean - 0.1, mean + 0.1, 0.0, 0.0, 0.0, {*input},
+                                                   data, {}, det_type ) );
+    BOOST_REQUIRE_EQUAL( fit.size(), size_t(1) );
+    check_fixed_pars( fit[0], *input );
+    BOOST_CHECK_CLOSE( fit[0].amplitude(), true_amp, 1.0 );
+  }
+
+  // (3) Nothing fit at all, off the LLS path (continuum pinned): the peak comes back unchanged.
+  {
+    const shared_ptr<PeakDef> input = make_peak( false, false );
+    vector<shared_ptr<const PeakDef>> fit;
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( {input}, data, det_type ) );
+    BOOST_REQUIRE_EQUAL( fit.size(), size_t(1) );
+    check_fixed_pars( *fit[0], *input );
+    BOOST_CHECK_EQUAL( fit[0]->amplitude(), input->amplitude() );
+  }
+
+  // (4) Continuum pinned but amplitude fit: the amplitude is then a free Ceres parameter, so this
+  //     must still go through Ceres - and the pinned continuum is the truth, so it lands on it.
+  {
+    const shared_ptr<PeakDef> input = make_peak( true, false );
+    vector<shared_ptr<const PeakDef>> fit;
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( {input}, data, det_type ) );
+    BOOST_REQUIRE_EQUAL( fit.size(), size_t(1) );
+    check_fixed_pars( *fit[0], *input );
+    BOOST_CHECK_CLOSE( fit[0]->amplitude(), true_amp, 1.0 );
+  }
+
+  // (5) The whole-spectrum fitter's shared-skew mode, which has its own Ceres driver.
+  {
+    const shared_ptr<PeakDef> input = make_peak( true, true );
+    const PeakFitLM::FitPeaksResults res = PeakFitLM::fit_peaks_in_spectrum_LM( {input}, data, 0.0, 0.0,
+                                                                det_type, PeakDef::SkewType::NoSkew );
+    BOOST_REQUIRE_MESSAGE( res.status == PeakFitLM::FitPeaksResults::FitPeaksResultsStatus::Success,
+                           "fit_peaks_in_spectrum_LM failed: " << res.error_message );
+    BOOST_REQUIRE_EQUAL( res.fit_peaks.size(), size_t(1) );
+    check_fixed_pars( *res.fit_peaks[0], *input );
+    BOOST_CHECK_CLOSE( res.fit_peaks[0]->amplitude(), true_amp, 1.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( refitWithMeanAndFwhmFixed )
 
 
 // The StatInsig option is compiled out by default (ENABLE_PUNISH_STAT_INSIG_PEAKS == 0 in

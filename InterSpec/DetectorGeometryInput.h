@@ -84,11 +84,12 @@ public:
                           const std::vector<std::string> &notes = {} );
 
 
-  /** Seeds the form from a legacy DRF: a cylinder with diameter =
-   `drf->detectorDiameter()` and (estimated) length = diameter; a note is
-   shown that the length is a guess.  Does nothing for null/invalid DRFs.
+  /** Seeds the form from a DRF: its own geometry (DetectorPeakResponse::monteCarloGeometry) when it
+   has one - returned, so an owner can tell an unedited form from the descriptor it stands for -
+   else a cylinder with diameter = `drf->detectorDiameter()` and (estimated) length = diameter, with
+   a note that the length is a guess (returns nullptr).  Does nothing for null/invalid DRFs.
    */
-  void seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
+  std::shared_ptr<const ceelo::GeometryDescriptor> seedFromDrf( std::shared_ptr<const DetectorPeakResponse> drf );
 
   /** Seeds the form from just a diameter (PhysicalUnits): a cylinder with the guessed
    length == diameter (flagged, see #generationReady), an optional crystal setback from the
@@ -150,6 +151,11 @@ public:
 
     std::vector<Layer> layers;
 
+    /** Whether the form is still the length==diameter guess (see #generationReady) - part of the
+     state so undoing an import blocks generation again - and the import notes shown with it. */
+    bool seededFromDiameterGuess = false;
+    std::string importNotes;
+
     bool operator==( const State &rhs ) const;
     bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
   };//struct State
@@ -178,6 +184,12 @@ protected:
                     const Wt::WString &sideThick,
                     const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
   void removeLayerRow();
+
+  /** Removes the last layer row, first detaching its material edit from #m_materialSuggestion: the
+   popup keeps a raw pointer to every edit it serves, so a suggestion picked later would otherwise
+   dereference the deleted edit (WSuggestionPopup::doActivate).  The only way a layer row is removed.
+   */
+  void popLayerRow();
 
   /** One concentric endcap/housing layer input row. */
   struct LayerRow

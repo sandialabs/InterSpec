@@ -132,6 +132,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   message->setInline( false );
 
   WCheckBox *cb = dialog->contents()->addNew<WCheckBox>( WString::tr("lrm-pre-warn-dont-ask") );
+  cb->addStyleClass( "DialogOptions" );
   cb->setInline( false );
   cb->checked().connect( cb, [cb](){
     InterSpec *viewer = InterSpec::instance();
@@ -139,11 +140,11 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
       UserPreferences::setPreferenceValue("ShowMapDataWarning", !cb->isChecked(), viewer);
   } );
   
-  WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn") );
+  WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn"), WidgetUtils::ButtonRole::Affirm );
   accept->clicked().connect( accept, [meas, sample_numbers, detector_names, on_create](){
     showMapWindow( meas, sample_numbers, detector_names, on_create );
   } );
-  WPushButton *cancel = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *cancel = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   cancel->clicked().connect( cancel, [](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
@@ -223,7 +224,7 @@ void LeafletRadMapWindow::handleTileLoadFailed()
   m_tileLoadWarningBtn->clicked().connect( m_tileLoadWarningBtn, [](){
     SimpleDialog *dialog = SimpleDialog::make( WString::tr( "lrm-tile-load-dialog-title"),
                                             WString::tr( "lrm-tile-load-dialog-content" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
   } );
 }//void LeafletRadMapWindow::handleTileLoadFailed()
 

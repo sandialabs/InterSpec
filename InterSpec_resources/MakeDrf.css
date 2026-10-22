@@ -12,6 +12,15 @@
   box-sizing: border-box;
 }
 
+/* The full-geometry form has a lot more in it than the diameter inputs (shape, crystal, its
+   dimensions, layers, then the MC options), and its rows put the inputs beside their labels - at
+   the diameter-only width they get squeezed to a few characters each.  The max-width keeps the
+   chart beside it usable when the dialog is narrow. */
+.MakeDrfGeomPanel.MakeDrfGeomPanelFull {
+  width: 430px;
+  max-width: 50%;
+}
+
 .MakeDrfGeomModeRow {
   padding: 2px 0 4px 0;
 }
@@ -33,6 +42,14 @@
 .MakeDrfMcTool .McGeomBox,
 .MakeDrfMcTool .McOptsBox {
   margin: 2px 0;
+}
+
+/* A <select> is as wide as its longest option, and a few of the MC choices ("Full MC
+   characterization", "No MC support (instant, from measured curve)") are long enough to push their
+   table past the edge of this panel.  Cap them - the full text still shows when the list drops
+   down - rather than widening the panel for the sake of one row. */
+.MakeDrfMcTool select {
+  max-width: 15em;
 }
 
 .MakeDrfChart {

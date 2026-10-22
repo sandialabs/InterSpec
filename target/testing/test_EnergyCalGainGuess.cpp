@@ -301,6 +301,38 @@ BOOST_AUTO_TEST_CASE( FluorescenceXrayPattern )
 }//BOOST_AUTO_TEST_CASE( FluorescenceXrayPattern )
 
 
+BOOST_AUTO_TEST_CASE( LowEnergyBa133Recovery )
+{
+  set_data_dir();
+
+  // A low-energy / x-ray geometry: the whole spectrum tops out near 240 keV, and the strongest
+  //  peaks are the Ba K x-rays at ~31/35 keV (plus the 81 keV gamma).  This is a legitimate
+  //  measurement (XRF, low-energy detectors), but its full-scale (<250 keV) and dominant lines
+  //  (<45 keV) sit below the historical span/line-energy floors, which used to gate the correct
+  //  calibration out entirely.
+  const size_t nchan = 8192;
+  const double true_offset = 0.16, true_gain = 0.0296;
+
+  const vector<SyntheticPeak> peaks{
+    {  30.97, 120000.0, hpge_fwhm(30.97) },  //Ba Ka (dominant)
+    {  34.99,  55000.0, hpge_fwhm(34.99) },  //Ba Kb
+    {  53.16,   8000.0, hpge_fwhm(53.16) },  //Ba-133
+    {  79.61,   8000.0, hpge_fwhm(79.61) },  //Ba-133
+    {  80.997, 80000.0, hpge_fwhm(80.997) }, //Ba-133 81 keV
+    { 160.61,   3000.0, hpge_fwhm(160.61) }, //Ba-133
+  };
+
+  const shared_ptr<Measurement> meas
+              = make_synthetic_spectrum( nchan, true_offset, true_gain, peaks );
+
+  GuessOptions options;
+  const vector<GuessedCal> results = guess_energy_cal( meas, options );
+
+  BOOST_REQUIRE_MESSAGE( !results.empty(), "No calibration guesses returned for low-energy Ba-133" );
+  check_cal_close( results.front(), true_offset, true_gain, nchan, 0.01, 1.0 );
+}//BOOST_AUTO_TEST_CASE( LowEnergyBa133Recovery )
+
+
 BOOST_AUTO_TEST_CASE( DegenerateGainRejected )
 {
   set_data_dir();
@@ -330,6 +362,43 @@ BOOST_AUTO_TEST_CASE( DegenerateGainRejected )
       "Truth score " << truth_score << " did not beat degenerate tiny-gain score " << tiny_score );
   BOOST_CHECK_GT( truth_score, 0.0 );
 }//BOOST_AUTO_TEST_CASE( DegenerateGainRejected )
+
+
+BOOST_AUTO_TEST_CASE( PulserSpikeRejected )
+{
+  set_data_dir();
+
+  const size_t nchan = 8192;
+  const double true_offset = 3.0, true_gain = 0.35;
+
+  // A recoverable Cs-137 + NORM spectrum, then a pulser/test-pulse spike injected as a single
+  //  channel of huge counts with empty neighbors - a common real-world artifact.  Left in, the
+  //  spike is the highest-channel and near-largest "peak" and poisons the anchor/endpoint seeds
+  //  and the spectroscopic-extent estimate; the finder must drop it so the truth still wins.
+  const shared_ptr<Measurement> meas
+              = make_synthetic_spectrum( nchan, true_offset, true_gain, cs137_norm_peaks() );
+
+  const size_t pulser_ch = static_cast<size_t>( 0.9*nchan );  //well above any real line
+  auto spiked_counts = make_shared<vector<float>>( *meas->gamma_counts() );
+  (*spiked_counts)[pulser_ch] = 25000.0f;  //neighbors keep their ~noise level
+  auto spiked = make_shared<Measurement>( *meas );
+  spiked->set_gamma_counts( spiked_counts, 600.0f, 600.0f );
+
+  // The finder must not keep the isolated spike as a candidate peak.
+  bool is_high_res = false;
+  const vector<CandidatePeak> candidates
+                                = find_candidate_peaks_channelspace( spiked, is_high_res );
+  for( const CandidatePeak &p : candidates )
+    BOOST_CHECK_MESSAGE( fabs( p.channel - static_cast<double>(pulser_ch) ) > 3.0,
+        "Pulser spike at channel " << pulser_ch << " was not rejected (candidate at "
+        << p.channel << ")" );
+
+  // And the overall guess must still recover the true calibration.
+  GuessOptions options;
+  const vector<GuessedCal> results = guess_energy_cal( spiked, options );
+  BOOST_REQUIRE_MESSAGE( !results.empty(), "No calibration guesses returned with pulser present" );
+  check_cal_close( results.front(), true_offset, true_gain, nchan, 0.005, 3.0 );
+}//BOOST_AUTO_TEST_CASE( PulserSpikeRejected )
 
 
 BOOST_AUTO_TEST_CASE( RealUraniumFileRecovery )

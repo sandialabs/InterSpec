@@ -138,6 +138,7 @@
   {% if exists("DetectorEff") %}
   <div id="det-eff-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
     Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %} [{{ DetectorEff.Note }}]{% endif %}
+    <br />Detector efficiency uncertainty used: {{ DetectorEff.UncertUsedDescription }}
   </div>
   {% endif %}
 

@@ -37,6 +37,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
@@ -73,6 +74,33 @@ float czt_fwhm_fcn( const float energy )
 }//float czt_fwhm_fcn( const float energy )
 
 
+void nai_iodine_escape_fractions( const double energy, double &kalpha_fraction, double &kbeta_fraction )
+{
+  kalpha_fraction = kbeta_fraction = 0.0;
+
+  // K-alpha escape area / full-energy area, interpolated log-log; tabulated from the GADRAS NaI
+  //  escape components of the peak-fit inject corpus (identical for a 1.4" and a 3x3 crystal).
+  static const double table[][2] = {
+    { 33.17, 0.220 }, { 40.0, 0.178 }, { 45.0, 0.152 }, { 50.0, 0.126 }, { 55.0, 0.105 },
+    { 60.0, 0.090 }, { 70.0, 0.065 }, { 80.0, 0.0465 }, { 95.0, 0.030 }, { 110.0, 0.0203 },
+    { 122.0, 0.0160 }, { 140.0, 0.0105 }, { 155.0, 0.0082 }, { 170.0, 0.0063 }, { 205.0, 0.0040 },
+    { 240.0, 0.0026 }, { 250.0, 0.0024 }
+  };
+  const size_t num_points = sizeof(table) / sizeof(table[0]);
+
+  if( !(energy >= table[0][0]) || (energy > table[num_points-1][0]) )
+    return;
+
+  size_t upper = 1;
+  while( (upper < (num_points - 1)) && (table[upper][0] < energy) )
+    ++upper;
+  const double frac = std::log( energy / table[upper-1][0] ) / std::log( table[upper][0] / table[upper-1][0] );
+  kalpha_fraction = std::exp( std::log( table[upper-1][1] )
+                              + frac * (std::log( table[upper][1] ) - std::log( table[upper-1][1] )) );
+  kbeta_fraction = 0.30 * kalpha_fraction;
+}//nai_iodine_escape_fractions(...)
+
+
 float hpge_fwhm_fcn( const float energy )
 {
   static const vector<float> hpge_fwhm_coefs{ 1.55f, 0.25f, 0.35f };//"HPGe 40%"
@@ -81,7 +109,16 @@ float hpge_fwhm_fcn( const float energy )
 }//float hpge_fwhm_fcn( const float energy )
 
 
-CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
+double ge_fano_limited_fwhm( const double energy )
+{
+  const double fano_factor = 0.05;
+  const double pair_energy = 2.96E-3;  //keV per electron-hole pair in Ge
+  return 2.35482 * std::sqrt( fano_factor * pair_energy * std::max( energy, 0.0 ) );
+}//double ge_fano_limited_fwhm( const double energy )
+
+
+CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks,
+                                                   const shared_ptr<const SpecUtils::Measurement> &data )
 {
   size_t num_peaks = 0;
   double max_sig = 0.0;
@@ -99,7 +136,10 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
     const double drf_czt_fwhm = czt_fwhm_fcn( p->mean() );
     const double drf_high_fwhm = hpge_fwhm_fcn( p->mean() );
 
-    const double stat_sig = p->peakArea() / p->peakAreaUncert();
+    // The chi2-weighted detection z at the peak's shapes (what the search decides with), whatever fit the
+    //  peak came from - its marginal uncertainty undervotes a weak peak whose width was free.
+    const double stat_sig = data ? PeakFitLM::peak_detection_significance( *p, peaks, data, /*chi2_weights=*/ true )
+                                 : (p->peakArea() / p->peakAreaUncert());
     max_sig = std::max( max_sig, stat_sig );
 
     const double w = std::min( stat_sig, 10.0 );
@@ -122,7 +162,8 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
       high_w += w;
   }//for( const auto &p : peak_candidates )
 
-  if( (num_peaks == 1) && (max_sig < 5) )
+  const double min_single_peak_significance = 5.0;  // area/uncertainty of a lone peak to classify by
+  if( (num_peaks == 1) && (max_sig < min_single_peak_significance) )
     return CoarseResolutionType::Unknown;
 
   if( all_w <= 0.0 )
@@ -141,9 +182,10 @@ CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const
 }//CoarseResolutionType coarse_resolution_from_peaks( const vector<shared_ptr<const PeakDef>> &peaks )
 
   
-CoarseResolutionType coarse_resolution_from_peaks( const deque<std::shared_ptr<const PeakDef>> &inp )
+CoarseResolutionType coarse_resolution_from_peaks( const deque<std::shared_ptr<const PeakDef>> &inp,
+                                                   const shared_ptr<const SpecUtils::Measurement> &data )
 {
-  return coarse_resolution_from_peaks( vector<shared_ptr<const PeakDef>>{begin(inp), end(inp)} );
+  return coarse_resolution_from_peaks( vector<shared_ptr<const PeakDef>>{begin(inp), end(inp)}, data );
 }
 
 

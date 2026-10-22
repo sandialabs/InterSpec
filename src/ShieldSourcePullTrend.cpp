@@ -155,8 +155,8 @@ namespace
     double sum_tau = 0.0;
     for( size_t i = 0; i < n; ++i )
     {
-      const double mu0 = GammaInteractionCalc::mass_attenuation_coef( static_cast<float>(z_model), static_cast<float>(energies[i]) );
-      const double mu1 = GammaInteractionCalc::mass_attenuation_coef( static_cast<float>(z_ref),   static_cast<float>(energies[i]) );
+      const double mu0 = GammaInteractionCalc::mass_attenuation_coef( z_model, energies[i] );
+      const double mu1 = GammaInteractionCalc::mass_attenuation_coef( z_ref,   energies[i] );
       if( !std::isfinite(mu0) || !std::isfinite(mu1) || (mu0 <= 0.0) )
         return 0.0;
       A(i,0) = 1.0; A(i,1) = tau_model[i];
@@ -275,15 +275,11 @@ namespace
             if( shield.m_isGenericMaterial )
             {
               optical_depth += GammaInteractionCalc::transmition_coefficient_generic(
-                                  static_cast<float>(shield.m_dimensions[0]),
-                                  static_cast<float>(shield.m_dimensions[1]),
-                                  static_cast<float>(energy) );
+                                  shield.m_dimensions[0], shield.m_dimensions[1], energy );
             }else if( shield.m_material )
             {
               optical_depth += GammaInteractionCalc::transmition_coefficient_material(
-                                  shield.m_material.get(),
-                                  static_cast<float>(energy),
-                                  static_cast<float>(shield.m_dimensions[0]) );
+                                  shield.m_material.get(), energy, shield.m_dimensions[0] );
             }
           }catch( std::exception & )
           {

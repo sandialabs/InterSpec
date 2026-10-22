@@ -49,7 +49,9 @@
 ///
 /// eps_total is tiered (spec Eq. 4): bare crystal -> kernel-exact
 /// K_{mu-mu_RS}; canned scintillator -> x b(E); thick-dead-layer HPGe ->
-/// k(E)*eta_tot(E,theta)*K -- the tier is chosen at generation time.
+/// k(E)*eta_tot(E,theta)*K -- the tier is chosen at generation time.  Close in,
+/// any tier is multiplied by a measured near-field N_tot when the response has
+/// one (TotEffPayload::near_field; General/Contact profiles), as eps_fep is by N.
 ///
 /// Every query returns {value, sigma, flag}; sigma combines interpolated
 /// node-MC variance, coverage-tuned per-regime model floors, grounding
@@ -731,6 +733,16 @@ struct TotEffPayload {
     std::vector<double> ln_b;
     EtaTable eta_tot;                     ///< EtaTotTable tier only
 
+    /// Optional measured near-field multiplier for eps_total, applied (any characterized tier)
+    /// below its own breakpoint exactly as DetectorResponse::near_field is for eps_fep: ln N_tot
+    /// is ln(MC total / the tier's far-field model) at each node.  Without it every close-in total
+    /// is the far-field value carried by the kernel alone - 1-4% off at grazing angles for a
+    /// 5x5 cm HPGe (measured against direct MC).  The General and Contact profiles fill it from
+    /// the near-field nodes' totals, which cost nothing extra since those nodes run full
+    /// transport anyway; a far-field-profile or transfer response has none.  Empty = absent: not
+    /// serialized, so such responses keep their bytes and content_hash.
+    NearFieldModel near_field;
+
     void finalize();
     double ln_b_at(double energy_keV) const;   ///< clamped PCHIP over (lnE, ln b)
 
@@ -1153,6 +1165,9 @@ private:
     /// fep_prefactor (hence eps_fep) and frac_covariance are its only callers - which is what
     /// makes the covariance diagonal equal the per-query sigma by construction.
     void fep_budget(double energy_keV, EvalCommon& ec, double& ln_N, double& ln_k) const;
+    /// ln N_tot from tot_eff.near_field below its breakpoint (0 without one), adding its node
+    /// sigma to `ec`'s budget - the total's counterpart of fep_budget's near-field term.
+    double total_near_ln(double energy_keV, EvalCommon& ec) const;
     /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
     /// the thing it decomposes cannot drift apart.
     void kernel_ray_weights_impl(double energy_keV, const ApertureQuadrature& q, MuChoice mu,

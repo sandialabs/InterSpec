@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <variant>
 #include <iostream>
 
 #define BOOST_TEST_MODULE LlmApiProtocol_suite
@@ -437,3 +438,65 @@ BOOST_AUTO_TEST_CASE( AnthropicOneShotRequestGetsNoMessageBreakpoint )
   BOOST_REQUIRE( req["system"].is_array() && !req["system"].empty() );
   BOOST_CHECK( req["system"].back().contains("cache_control") );
 }
+
+
+/* Claude thinking / sampling parameters depend on the model generation; sending the wrong form is
+ a 400 from the API, so pin which models get which. */
+BOOST_AUTO_TEST_CASE( AnthropicThinkingFormPerModel )
+{
+  const unique_ptr<const LlmApiProtocol> proto = LlmApiProtocol::create( ApiFormat::Anthropic );
+  BOOST_REQUIRE( !!proto );
+
+  json messages = json::array();
+  messages.push_back( json{ {"role","user"}, {"content","Identify the nuclides."} } );
+
+  const auto request_for = [&]( const string &model, const std::variant<bool,LlmConfig::LlmApi::ReasoningEffort> &reasoning,
+                                const ToolChoice choice ) -> json {
+    LlmConfig::LlmApi api = make_anthropic_api();
+    api.providers[0].models[0].name = model;
+    api.providers[0].models[0].reasoning = reasoning;
+    api.providers[0].models[0].temperature = 0.3;
+    return proto->buildRequestBody( api, "sys", messages, make_tools(), choice );
+  };
+
+  const LlmConfig::LlmApi::ReasoningEffort high = LlmConfig::LlmApi::ReasoningEffort::high;
+
+  // Claude 4.6+ get adaptive thinking, with the effort level in output_config.
+  for( const char *model : { "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-5-5", "claude-sonnet-5-5",
+                             "claude-haiku-5-5", "claude-fable-5-1", "anthropic/claude-opus-4.8", "claude-opus-6" } )
+  {
+    const json req = request_for( model, high, ToolChoice::Auto );
+    BOOST_CHECK_MESSAGE( req["thinking"].value("type","") == "adaptive", model << ": " << req["thinking"].dump() );
+    BOOST_CHECK_MESSAGE( req.contains("output_config") && (req["output_config"].value("effort","") == "high"),
+                         model << ": effort not sent" );
+  }
+
+  // Plain "on" leaves the model's default effort.
+  BOOST_CHECK( !request_for( "claude-opus-5-5", true, ToolChoice::Auto ).contains("output_config") );
+
+  // Earlier models (and Haiku 4.5) need an explicit thinking budget, and must not get an effort.
+  for( const char *model : { "claude-sonnet-4-5", "claude-sonnet-4-5-20250929", "claude-opus-4-5", "claude-opus-4-1",
+                             "claude-sonnet-4-20250514", "claude-opus-4-0", "claude-haiku-4-5",
+                             "anthropic/claude-sonnet-4.5", "anthropic.claude-haiku-4-5-20251001-v1:0",
+                             "claude-opus-4-5@20251101", "claude-3-7-sonnet-latest", "claude-3.5-haiku" } )
+  {
+    const json req = request_for( model, high, ToolChoice::Auto );
+    BOOST_CHECK_MESSAGE( req["thinking"].value("type","") == "enabled", model << ": " << req["thinking"].dump() );
+    BOOST_CHECK_MESSAGE( req["thinking"].contains("budget_tokens"), model << ": no budget" );
+    BOOST_CHECK_MESSAGE( !req.contains("output_config"), model << ": effort sent" );
+  }
+
+  // Temperature: never with thinking on; with thinking off, only to models that accept it.
+  BOOST_CHECK( !request_for( "claude-sonnet-4-5", high, ToolChoice::Auto ).contains("temperature") );
+  BOOST_CHECK( request_for( "claude-sonnet-4-5", false, ToolChoice::Auto ).contains("temperature") );
+  BOOST_CHECK( request_for( "claude-opus-4-6", false, ToolChoice::Auto ).contains("temperature") );
+  for( const char *model : { "claude-opus-4-7", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-5-5", "claude-fable-5" } )
+    BOOST_CHECK_MESSAGE( !request_for( model, false, ToolChoice::Auto ).contains("temperature"), model << ": temperature sent" );
+
+  // Forced tool use: only with thinking off, and not to models that reject it.
+  BOOST_CHECK_EQUAL( request_for( "claude-opus-4-8", false, ToolChoice::Required )["tool_choice"].value("type",""), "any" );
+  BOOST_CHECK_EQUAL( request_for( "claude-opus-4-8", high, ToolChoice::Required )["tool_choice"].value("type",""), "auto" );
+  for( const char *model : { "claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1" } )
+    BOOST_CHECK_MESSAGE( request_for( model, false, ToolChoice::Required )["tool_choice"].value("type","") == "auto",
+                         model << ": forced tool_choice" );
+}//AnthropicThinkingFormPerModel

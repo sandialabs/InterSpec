@@ -3,7 +3,8 @@
 This directory contains pre-computed GEANT4 reference efficiency values for the
 standard benchmark configurations.  They let CeeLo be validated against GEANT4
 without requiring a GEANT4 installation: `profiling/compare_validation.py` gates
-these references against CeeLo's own results in `../ceelo_reference/`, and
+these references against CeeLo's own results (regenerated into `build/examples/`; see
+`../ceelo_reference/README.md`), and
 `tests/test_cascade_summing.cpp` reads `cascade_summing_multi.csv` directly.
 
 ## FEP window

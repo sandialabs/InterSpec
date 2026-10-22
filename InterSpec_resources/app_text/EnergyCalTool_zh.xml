@@ -31,7 +31,7 @@
     更改的效果随后会传播到“应用更改到”下选中的所有谱、样本和探测器：它们的能量刻度会做等效调整，使更改前在能量上对齐的数据在更改后（在新能量处）仍然对齐——即使它们的刻度系数或类型不同。
     如果此按钮被禁用，原因会显示在其左侧。
   </message>
-  <message id="ect-fit-hint-fore-deselected">拟合已禁用：“应用更改到”中未选中“前景”</message>
+  <message id="ect-fit-hint-fore-deselected">拟合已禁用：未选中前景</message>
   <message id="ect-fit-hint-no-peaks">没有标记用于能量刻度的峰</message>
   <message id="ect-fit-hint-not-fore-cal">拟合使用前景的能量刻度</message>
   <message id="ect-fit-hint-no-coefs">未选择要拟合的系数</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">应用更改到</message>
   <message id="ect-disp-dets">显示的探测器</message>
   <message id="ect-all-dets">所有探测器</message>
+  <message id="ect-selected-det-only">独立探测器</message>
+  <message id="ect-tt-selected-det-only">选中后，能量刻度的更改（编辑或拟合系数、拖动谱图以及“更多操作”工具）只应用于“探测器”列中选定的探测器，而不会传播到其他探测器。
+    在其他选定的谱（前景、本底、次谱）中按名称匹配该探测器，样本选择仍然有效。
+    偏差对的编辑始终只应用于被编辑的探测器。
+    不影响Gain Match和多文件刻度。</message>
   <message id="ect-disp-samples">显示的样本</message>
   <message id="ect-all-samples">所有样本</message>
   <message id="ect-calib-coeffs">刻度系数</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">检索先前刻度系数时出现意外错误 - 不应用更改</message>
   <message id="ect-changed-cal-not-selected">看起来您更改的能量刻度未标记为应用更改；请更正。</message>
   <message id="ect-dev-pair-change-invalid">更改偏差对使能量刻度变为无效。错误：{1}</message>
-  <message id="ect-set-dev-pair-err">为此探测器设置偏差对时出错。</message>
   <message id="ect-dev-applied-dets-samples">偏差对仅应用于'{1}'探测器，但应用于所有样本编号{2}。</message>
   <message id="ect-dev-applied-to-samples">偏差对应用于所有样本编号{1}。</message>
   <message id="ect-of-the-fore">的前景。</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">如果您通过在谱的另一部分上ALT+CTRL+拖动再次重新刻度，您将可以选择保留此刻度的效果。</message>
   <message id="ect-lc-disp-dets">显示的探测器</message>
   <message id="ect-lc-all-dets">所有探测器</message>
+  <message id="ect-lc-selected-det-only">仅探测器“{1}”</message>
+  <message id="ect-fore-not-selected">未应用更改：按当前“应用更改到”的选择，该更改不会应用到显示的前景。</message>
   <message id="ect-lc-all-samples">所有样本</message>
   <message id="ect-lc-disp-samples">显示的样本</message>
   <message id="ect-short-fore">前景</message>

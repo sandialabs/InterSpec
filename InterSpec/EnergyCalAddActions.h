@@ -53,6 +53,17 @@ class EnergyCalAddActionsWindow : public AuxWindow
 public:
   virtual ~EnergyCalAddActionsWindow();
   
+  MoreActionsIndex actionType() const { return m_actionType; }
+  
+  /** Whether this tool works from the "Apply Changes To" selection made when it was opened (so it
+   becomes stale if that selection, or the displayed spectra, change).
+   */
+  bool usesApplyToSnapshot() const
+  {
+    return (m_actionType != MoreActionsIndex::MultipleFilesCal)
+           && (m_actionType != MoreActionsIndex::GainMatch);
+  }
+  
 protected:
   // Constructor is protected; use AuxWindow::make<EnergyCalAddActionsWindow>() to create.
   EnergyCalAddActionsWindow( const MoreActionsIndex actionType,

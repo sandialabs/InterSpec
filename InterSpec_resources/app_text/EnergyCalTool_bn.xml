@@ -28,7 +28,7 @@
     পরিবর্তনের প্রভাব তারপর "পরিবর্তন প্রয়োগ করুন"-এ নির্বাচিত সমস্ত স্পেকট্রাম, নমুনা ও ডিটেক্টরে ছড়িয়ে দেওয়া হয়: তাদের শক্তি ক্যালিব্রেশন সমতুল্যভাবে সামঞ্জস্য করা হয়, যাতে পরিবর্তনের আগে শক্তিতে সারিবদ্ধ ডেটা পরেও (নতুন শক্তিতে) সারিবদ্ধ থাকে - এমনকি তাদের ক্যালিব্রেশন সহগ বা ধরন ভিন্ন হলেও।
     এই বোতামটি নিষ্ক্রিয় থাকলে কারণটি এর বাঁ দিকে দেখানো হয়।
   </message>
-  <message id="ect-fit-hint-fore-deselected">ফিট নিষ্ক্রিয়: "পরিবর্তন প্রয়োগ করুন"-এ "ফোরগ্রাউন্ড" নির্বাচন করা নেই</message>
+  <message id="ect-fit-hint-fore-deselected">ফিট নিষ্ক্রিয়: ফোরগ্রাউন্ড নির্বাচিত নয়</message>
   <message id="ect-fit-hint-no-peaks">শক্তি ক্যালিব্রেশনে ব্যবহারের জন্য কোনো পিক চিহ্নিত নেই</message>
   <message id="ect-fit-hint-not-fore-cal">ফিট ফোরগ্রাউন্ডের ক্যালিব্রেশন ব্যবহার করে</message>
   <message id="ect-fit-hint-no-coefs">ফিট করার জন্য কোনো সহগ নির্বাচিত নেই</message>
@@ -37,6 +37,11 @@
   <message id="ect-apply-changes-to">পরিবর্তন প্রয়োগ করুন</message>
   <message id="ect-disp-dets">প্রদর্শিত ডিটেক্টর</message>
   <message id="ect-all-dets">সমস্ত ডিটেক্টর</message>
+  <message id="ect-selected-det-only">স্বতন্ত্র ডিটে.</message>
+  <message id="ect-tt-selected-det-only">চেক করা থাকলে, শক্তি ক্যালিব্রেশন পরিবর্তনগুলি (সহগ সম্পাদনা বা ফিট করা, স্পেকট্রাম টেনে আনা, এবং &quot;আরো কাজ&quot; টুলগুলি) অন্য ডিটেক্টরে ছড়িয়ে না দিয়ে শুধুমাত্র &quot;ডিটেক্টর&quot; কলামে নির্বাচিত ডিটেক্টরে প্রয়োগ করা হয়।
+    অন্যান্য নির্বাচিত স্পেকট্রায় (ফোরগ্রাউন্ড, ব্যাকগ্রাউন্ড, সেকেন্ডারি) ডিটেক্টরটি নাম দিয়ে মেলানো হয়, এবং নমুনা নির্বাচন প্রযোজ্য থাকে।
+    বিচ্যুতি পেয়ারের সম্পাদনা সবসময় শুধুমাত্র সম্পাদিত ডিটেক্টরে প্রয়োগ করা হয়।
+    এটি Gain Match বা মাল্টি ফাইল ক্যাল-কে প্রভাবিত করে না।</message>
   <message id="ect-disp-samples">প্রদর্শিত নমুনা</message>
   <message id="ect-all-samples">সমস্ত নমুনা</message>
   <message id="ect-calib-coeffs">ক্যালিব্রেশন সহগ</message>
@@ -67,7 +72,6 @@
   <message id="ect-unexpected-error-prev-coefs">পূর্ববর্তী ক্যালিব্রেশন সহগ পুনরুদ্ধারে অপ্রত্যাশিত ত্রুটি - পরিবর্তন প্রয়োগ করা হচ্ছে না</message>
   <message id="ect-changed-cal-not-selected">মনে হচ্ছে আপনি যে শক্তি ক্যালিব্রেশন পরিবর্তন করেছেন তা পরিবর্তন প্রয়োগ করার জন্য চিহ্নিত নয়; অনুগ্রহ করে এটি সংশোধন করুন।</message>
   <message id="ect-dev-pair-change-invalid">বিচ্যুতি পেয়ার পরিবর্তন করা শক্তি ক্যালিব্রেশন অবৈধ করে দিয়েছে।  ত্রুটি: {1}</message>
-  <message id="ect-set-dev-pair-err">এই ডিটেক্টরের জন্য বিচ্যুতি পেয়ার সেট করতে একটি ত্রুটি হয়েছে।</message>
   <message id="ect-dev-applied-dets-samples">বিচ্যুতি পেয়ার শুধুমাত্র '{1}' ডিটেক্টরে প্রয়োগ করা হয়েছে, কিন্তু সমস্ত নমুনা সংখ্যায়{2}।</message>
   <message id="ect-dev-applied-to-samples">বিচ্যুতি পেয়ার সমস্ত নমুনা সংখ্যায় প্রয়োগ করা হয়েছে{1}।</message>
   <message id="ect-of-the-fore"> ফোরগ্রাউন্ডের।</message>
@@ -85,6 +89,8 @@
   <message id="ect-del-graphical-msg">যদি আপনি স্পেকট্রামের অন্য অংশে ALT+CTRL+DRAG করে আবার পুনঃক্যালিব্রেট করেন, তাহলে আপনাকে এই ক্যালিব্রেশনের প্রভাবও সংরক্ষণের বিকল্প দেওয়া হবে।</message>
   <message id="ect-lc-disp-dets">প্রদর্শিত ডিটেক্টর</message>
   <message id="ect-lc-all-dets">সমস্ত ডিটেক্টর</message>
+  <message id="ect-lc-selected-det-only">শুধু ডিটেক্টর '{1}'</message>
+  <message id="ect-fore-not-selected">পরিবর্তন প্রয়োগ করা হয়নি: বর্তমান &quot;পরিবর্তন প্রয়োগ করুন&quot; নির্বাচনে এটি প্রদর্শিত ফোরগ্রাউন্ডে প্রয়োগ হবে না।</message>
   <message id="ect-lc-all-samples">সমস্ত নমুনা</message>
   <message id="ect-lc-disp-samples">প্রদর্শিত নমুনা</message>
   <message id="ect-short-fore">ফোর।</message>

@@ -116,29 +116,10 @@
   <message id="smm-err-load-iso-by-nuc">Hiba az <em>Izotópok nuklidonként</em> XML konfigurációs fájl betöltésekor: {1}</message>
   <message id="smm-err-load-xml-iso-by-nuc">Hiba a konfigurációs XML feldolgozásakor: {1}{2}</message>
   <message id="smm-err-iso-by-nuc-window-title">Érvénytelen <em>Izotópok nuklidonként</em> XML konfigurációs fájl.</message>
-  <message id="smm-ecc-curve">ISOCS hatásfok kalibrációs görbe DRF</message>
-  <message id="smm-ecc-how-to-interpret">Értelmezés módja</message>
-  <message id="smm-ecc-far-field">Távtér DRF</message>
-  <message id="smm-ecc-fix-geom-total-act">Rögzített geometria – teljes aktivitás</message>
-  <message id="smm-ecc-fix-geom-act-cm2">Rögzített geometria – aktivitás per cm2</message>
-  <message id="smm-ecc-fix-geom-act-m2">Rögzített geometria – aktivitás per m2</message>
-  <message id="smm-ecc-fix-geom-act-gram">Rögzített geometria – aktivitás per gramm</message>
-  <message id="smm-ecc-det-diam">Detektor átm.</message>
-  <message id="smm-ecc-det-setback">Det. visszahúzás</message>
-  <message id="smm-ecc-dist">Távolság</message>
-  <message id="smm-ecc-use-drf">DRF használata</message>
-  <message id="smm-ecc-error">Hiba a DRF létrehozásakor az ECC-ből: {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
-  <message id="smm-outx-curve">ANGLE hatásfok kalibrációs görbe DRF</message>
-  <message id="smm-outx-error">Hiba a DRF létrehozásakor az ANGLE .outx-ből: {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
-  <message id="smm-eff-csv-curve">Hatásfok CSV görbe DRF</message>
-  <message id="smm-eff-csv-error">Hiba a DRF létrehozásakor a hatásfok CSV-ből: {1}</message>
-  <message id="smm-eff-csv-det-dat-label">Detector.dat (opcionális)</message>
-  <message id="smm-eff-csv-intrinsic">Belső hatásfok</message>
-  <message id="smm-eff-csv-abs-eff">Abszolút hatásfok</message>
 
   <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
   <message id="smm-act-shield-xml">Aktivitás/Árnyékolás XML</message>

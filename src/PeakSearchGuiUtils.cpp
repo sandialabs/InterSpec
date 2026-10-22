@@ -663,7 +663,7 @@ protected:
     refreshRelEffChart();
 #endif
     
-    WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), true );
+    WPushButton *acceptButton = addCloseButtonToFooter( WString::tr("Accept"), WidgetUtils::ButtonRole::Affirm );
     acceptButton->clicked().connect( this, [this](){ hide(); } );
     // Undo/redo for the accept action is registered inside doFinish(), so it can capture
     //  the actually-committed peaks (post-edits from "Keep peak" checkboxes and the
@@ -673,10 +673,11 @@ protected:
     if( viewer->isPhone() )
     {
       cancelButton = footer()->addNew<WPushButton>( WString::tr("Cancel") );
+      WidgetUtils::applyButtonRole( cancelButton, WidgetUtils::ButtonRole::Dismiss );
       cancelButton->setFloatSide( Wt::Side::Right );
     }else
     {
-      cancelButton = addCloseButtonToFooter( WString::tr("Cancel"), true );
+      cancelButton = addCloseButtonToFooter( WString::tr("Cancel"));
     }
 
     cancelButton->clicked().connect( this, [this](){ cancelOperation(); } );
@@ -2452,7 +2453,7 @@ void automated_search_for_peaks( InterSpec *viewer,
   const WString content = WString::tr("psgu-search-wait-content");
   SimpleDialog *msg = SimpleDialog::make( title, content );
   msg->rejectWhenEscapePressed();
-  msg->addButton( WString::tr("Close") );
+  msg->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
 
   // Captured into only the completion lambda (session thread).  The worker
   // never references the dialog, so it is fine for the user to dismiss the
@@ -3064,6 +3065,17 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   try
   {
     *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+    // The search's peaks become the user's: fit them like any other (the user's existing peaks are kept).
+    {
+      std::set<const PeakDef *> keep;
+      if( existingPeaks )
+      {
+        for( const shared_ptr<const PeakDef> &p : *existingPeaks )
+          keep.insert( p.get() );
+      }
+      *results = ExperimentalAutomatedPeakSearch::refit_sparse_rois( *results, data,
+                                     PeakFitUtils::effective_det_type( fitPrefs, data, nullptr ), keep );
+    }
     *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
@@ -3372,8 +3384,8 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
       //  somewhere.
       msg->contents()->setObjectName( "AskToFitFwhmDialog" );
       msg->rejectWhenEscapePressed();
-      WPushButton *yes_btn = msg->addButton( WString::tr("Yes") );
-      WPushButton *no_btn = msg->addButton( WString::tr("No") );
+      WPushButton *yes_btn = msg->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+      WPushButton *no_btn = msg->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
       
       no_btn->clicked().connect( no_btn, [interspec,rightClickEnergy](){
         auto undo = [interspec,rightClickEnergy](){
@@ -4271,7 +4283,12 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
     }//if( all_peaks )
     
     
-    // Grab the suggested skew starting parameters, but use values from `near_skew_peak`, if valid
+    // Grab the suggested skew starting parameters (from the peak-fit prefs, if for this skew type),
+    //  but use values from `near_skew_peak`, if valid
+    const shared_ptr<const PeakFitDetPrefs> meas_prefs = foreground->peakFitDetPrefs();
+    const shared_ptr<const DetectorPeakResponse> drf = foreground->detector();
+    const shared_ptr<const PeakFitDetPrefs> drf_prefs = drf ? drf->peakFitDetPrefs() : nullptr;
+
     const size_t num_skew_pars = PeakDef::num_skew_parameters( type );
     vector<double> skew_pars( num_skew_pars, 0.0 );
     vector<bool> fit_for_skew_pars( num_skew_pars, true );
@@ -4284,7 +4301,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       if( !use )
         throw std::logic_error("inconsistent skew par def");
       
-      double val = starting;
+      double val = skew_starting_value( type, ct, meas_prefs.get(), drf_prefs.get() );
       bool fit_for = PeakDef::skew_parameter_fit_by_default( type, ct );
       if( near_skew_peak )
       {
@@ -4862,6 +4879,18 @@ void add_peak_from_right_click( InterSpec * const interspec,
   {
     passMessage( WString::tr("err-add-peak-no-improve"), WarningWidget::WarningMsgInfo );
     return;
+  }
+
+  // The candidates were chi2 trial fits; the one kept is fit like any other peak.
+  {
+    const vector<shared_ptr<const PeakDef>> chosen( begin(answer), end(answer) );
+    const vector<shared_ptr<const PeakDef>> refit = ExperimentalAutomatedPeakSearch::refit_sparse_rois(
+                                     chosen, dataH, PeakFitUtils::effective_det_type( fitPrefsForAdd, dataH, nullptr ), {} );
+    if( refit.size() == answer.size() )
+    {
+      for( size_t i = 0; i < refit.size(); ++i )
+        answer[i] = make_shared<PeakDef>( *refit[i] );
+    }
   }
   
   std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;

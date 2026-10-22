@@ -27,6 +27,7 @@
 
 #include <map>
 #include <set>
+#include <array>
 #include <string>
 #include <vector>
 #include <memory>
@@ -56,6 +57,7 @@ namespace Wt
 
 namespace SpecUtils
 {
+  class Measurement;
   struct EnergyCalibration;
   enum class SpectrumType : int;
 }
@@ -128,12 +130,10 @@ namespace EnergyCalImp
  
  Current assumptions made by this tool:
  - ...
- 
- TODO Tues:
- - Add a "Only Changed Detector option" to "Apply Changes To" colum
+
+ TODO:
  - [implemented but not enabled] By default dont show deviation pairs display unless a detector has
    them defined; maybe a "+ deviation pairs" button or something incase user wants to show them
- - Implement undu...
  */
 
 enum class MoreActionsIndex : int
@@ -187,6 +187,89 @@ struct LowerChanCalOriginal
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
+  /** The checkboxes of the "Apply Changes To" column, in display order. */
+  enum ApplyToCbIndex
+  {
+    ApplyToForeground = 0,
+    ApplyToBackground,
+    ApplyToSecondary,
+    ApplyToDisplayedDetectors,
+    ApplyToAllDetectors,
+    ApplyToSelectedDetOnly,
+    ApplyToDisplayedSamples,
+    ApplyToAllSamples,
+    NumApplyToCbIndex
+  };//enum ApplyToCbIndex
+
+  /** UI-independent description of the displayed spectra, indexed {foreground, background,
+   secondary}; filled from InterSpec by #currentApplyToDisplayState, or constructed directly in
+   unit tests.
+   */
+  struct ApplyToDisplayState
+  {
+    std::shared_ptr<SpecMeas> meas[3];
+    std::set<int> samples[3];
+    /** The displayed detectors (i.e., #InterSpec::detectorsToDisplay); may include neutron detectors. */
+    std::vector<std::string> detectors[3];
+  };//struct ApplyToDisplayState
+
+  /** UI-independent "Apply Changes To" selections; filled from the widgets by
+   #currentApplyToSelection, or constructed directly in unit tests.
+   */
+  struct ApplyToSelection
+  {
+    /** The checkbox states, regardless of whether the checkbox is currently applicable/shown.
+     Defaults are in #ApplyToCbIndex order: Foreground, Background, Secondary, and All Detectors and
+     All Samples, checked.
+     */
+    bool checked[NumApplyToCbIndex] = { true, true, true, false, true, false, false, true };
+    static_assert( NumApplyToCbIndex == 8, "Update the checked[] defaults to match ApplyToCbIndex" );
+
+    /** The detector the change was made to (or is selected in the "Detector" column); only used
+     when #ApplyToSelectedDetOnly is in effect.
+     */
+    std::string selected_detector;
+  };//struct ApplyToSelection
+
+  /** Which "Apply Changes To" checkboxes are applicable (and so shown) for the displayed spectra.
+
+   A checkbox that isnt applicable is interpreted as: Foreground - checked; Displayed/All Detectors
+   - all detectors; Indep. Dets. - unchecked; Displayed/All Samples - all samples.
+   */
+  static std::array<bool,NumApplyToCbIndex> applicable_apply_to_rows( const ApplyToDisplayState &state );
+
+  /** Returns which SpecUtils::Measurement's a calibration change should be applied to, given what
+   is displayed, and what the user has selected.  Returns at most one entry per SpecMeas, even if
+   the same file is displayed as multiple spectrum types.
+   */
+  static std::vector<MeasToApplyCoefChangeTo> apply_to_scope( const ApplyToSelection &selection,
+                                                              const ApplyToDisplayState &state );
+
+  /** The measurements a deviation pair edit, of detector `edited_det` of file `edited_meas`, is
+   applied to: just that detector (matched by name in the other selected files), for the spectra and
+   samples selected; the detector checkboxes dont apply.  When both the edited file, and another
+   selected file, have only a single gamma detector, that files detector is used regardless of name.
+   */
+  static std::vector<MeasToApplyCoefChangeTo> deviation_pair_edit_scope( ApplyToSelection selection,
+                                                       const ApplyToDisplayState &state,
+                                                       const std::shared_ptr<const SpecMeas> &edited_meas,
+                                                       const std::string &edited_det );
+
+  /** Whether `changemeas` includes a displayed measurement (displayed sample and detector) of the
+   foreground - i.e., whether a change made relative to the displayed foreground will be applied
+   to it.
+   */
+  static bool scope_includes_displayed_foreground( const std::vector<MeasToApplyCoefChangeTo> &changemeas,
+                                                   const ApplyToDisplayState &state );
+
+  /** The names of the detectors that have gamma data, of the given sample numbers.
+
+   We assume the first Measurement for a given named detector will have gamma data if any of the
+   Measurements from that detector will.
+   */
+  static std::set<std::string> gamma_detectors_for_samples( const std::shared_ptr<const SpecMeas> &meas,
+                                                            const std::set<int> &samples );
+
   EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel );
   virtual ~EnergyCalTool();
   
@@ -236,23 +319,50 @@ public:
                        const std::vector<MeasToApplyCoefChangeTo> &changemeas,
                        const bool isOffsetOnly );
   
-  /** Sets the energy calibration of the specified SpecMea/SampleNumber/Detector to the given energy calibration.
-   
-   Updates peaks only if `adjust_peaks` is true, and one of the calibrations being set corresponds to a calibration being set.
-   
-   Note, does not call #EnergyCalTool::doRefreshFromFiles or #InterSpec::refreshDisplayedCharts (which #applyCalChange does),
-   so you should call these functions after you call into this function all the times you currently will.
-   
-   Throws std::exception on error.
+  /** The new energy calibration to set, for each SpecUtils::Measurement being changed. */
+  typedef std::map<std::shared_ptr<const SpecUtils::Measurement>,
+                   std::shared_ptr<const SpecUtils::EnergyCalibration>> MeasToNewCalMap;
+
+  /** Sets the new calibrations, for the measurements within `changemeas`, translating the peaks
+   (and automated-search peaks) whose displayed calibration is changed; records a single undo/redo
+   step, and refreshes the charts and this tool.  All energy calibration changes go through here.
+
+   Peaks were fit to the sum of the displayed detectors, so are only translated if that whole sum
+   moves: all of their sample numbers are within `changemeas`, and every displayed gamma measurement
+   of those samples is getting a new calibration; they are then translated from the calibration they
+   are displayed with (#SpecFile::suggested_sum_energy_calibration of the displayed detectors), to
+   the new calibration of a measurement that has it.  Otherwise (e.g., only one of several summed
+   detectors changes) they are left alone, as there is no right answer for them.  Nothing is changed
+   if any of the peaks fail to translate.
+
+   Throws std::exception on error, or if no measurement would be changed.
    */
-  void setEnergyCal( std::shared_ptr<const SpecUtils::EnergyCalibration> new_cal,
-                     const MeasToApplyCoefChangeTo &changemeas,
-                     const bool adjust_peaks );
-  
-  /** Adds a deviation pair from the graphical calibration.  Adds the deviation pair measurements
-   the user has selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc).
+  void applyNewCalibrations( const std::vector<MeasToApplyCoefChangeTo> &changemeas,
+                             const MeasToNewCalMap &new_cals );
+
+  /** Adds a deviation pair (from the graphical calibration) to each of the measurements the user has
+   selected in the GUI (e.g., Back/For/Sec, visible detectors, entire file, etc), keeping each
+   measurement's own deviation pairs.
    */
   void addDeviationPair( const std::pair<float,float> &new_pair );
+  void addDeviationPair( const std::pair<float,float> &new_pair,
+                         const std::vector<MeasToApplyCoefChangeTo> &changemeas );
+
+  /** Replaces the deviation pairs of every polynomial or FRF measurement in `changemeas` with
+   `new_dev_pairs`, keeping each measurement's own coefficients.  Throws std::exception on error.
+   */
+  void applyDeviationPairEdit( const std::vector<std::pair<float,float>> &new_dev_pairs,
+                               const std::vector<MeasToApplyCoefChangeTo> &changemeas );
+
+  /** Whether changes will be applied to the foreground (i.e., the foreground is loaded, and
+   "Foreground" is checked, or not applicable, under "Apply Changes To").
+   */
+  bool applyingToForeground() const;
+
+  /** See #scope_includes_displayed_foreground; used to check that a change made relative to the
+   displayed foreground (e.g., graphically dragging the spectrum) will actually be applied to it.
+   */
+  bool scopeIncludesDisplayedForeground( const std::vector<MeasToApplyCoefChangeTo> &changemeas ) const;
   
   
   /** Callback function that gets called when the user changes the deviation pairs from the gui.
@@ -283,8 +393,15 @@ public:
   
   /** Returns which SpecUtils::Measurement need to be updated, based on what files are loaded and
    what options the user has chosen.
+
+   @param edited_det The detector whose calibration the user directly changed; used when
+          "Indep. Dets." is in effect.  If nullptr, the detector of the currently showing
+          calibration display is used.
    */
-  std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+  std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo( const std::string *edited_det = nullptr );
+
+  ApplyToDisplayState currentApplyToDisplayState() const;
+  ApplyToSelection currentApplyToSelection( const std::string *edited_det = nullptr ) const;
 
   /** Returns the original channel energies, and cumulative {offset, gain} adjustment, of a
    (possibly already adjusted) lower-channel-energy calibration; if `cal` hasnt been adjusted this
@@ -343,6 +460,11 @@ public:
   
   void cancelMoreActionWindow();
   
+  /** Closes the "More Actions" window, if it is a tool working from a now-stale snapshot of the
+   "Apply Changes To" selection; called when the selection, or the displayed spectra, change.
+   */
+  void closeStaleMoreActionWindow();
+  
 protected:
   enum class LayoutType{ Tall, Wide };
   void initWidgets( LayoutType layout );
@@ -383,26 +505,20 @@ protected:
   EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum = nullptr,
                                                   Wt::WMenuItem **item = nullptr );
 
+  /** Whether the calibration shown by `display`, for the samples it is displayed with, is within
+   `changemeas` - i.e., whether a change the user makes to that display will actually be applied
+   to it.
+   */
+  bool scopeIncludesDisplay( const std::vector<MeasToApplyCoefChangeTo> &changemeas,
+                             const EnergyCalImp::CalDisplay *display ) const;
+
   /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
    get expensive probably)
   */
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags) override;
-  
-  
-  enum ApplyToCbIndex
-  {
-    ApplyToForeground = 0,
-    ApplyToBackground,
-    ApplyToSecondary,
-    ApplyToDisplayedDetectors,
-    ApplyToAllDetectors,
-    ApplyToDisplayedSamples,
-    ApplyToAllSamples,
-    NumApplyToCbIndex
-  };//enum ApplyToCbIndex
-  
+
   void applyToCbChanged( const ApplyToCbIndex index );
   
   
@@ -494,6 +610,13 @@ protected:
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
+
+  /** The calibration display (spectrum type, detector) that was selected in the "Detector" column
+   before a wide/tall layout change, so #doRefreshFromFiles can re-select it.
+   */
+  bool m_haveRelayoutSelection;
+  SpecUtils::SpectrumType m_relayoutSelectionType;
+  std::string m_relayoutSelectionDet;
 
   /** Map from a session-adjusted lower-channel-energy calibration, to its original channel
    energies and the cumulative adjustment applied; see #LowerChanCalOriginal.  Weak keys stay

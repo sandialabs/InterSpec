@@ -95,5 +95,10 @@
   <!-- Ditampilkan di bawah masukan lanjutan ketika metode Dekonvolusi dipilih, di mana masukan itu
        dinonaktifkan.  Kendali yang dinonaktifkan tanpa penjelasan terbaca seperti bug. -->
   <message id="dls-advanced-decon-note">Ini berlaku untuk metode Currie; batas dekonvolusi belum memakainya.</message>
+  <message id="dls-drf-uncert-none">Tidak ada ketidakpastian efisiensi detektor yang disertakan: respons detektor tidak menyatakannya.</message>
+  <message id="dls-drf-uncert-stated">Termasuk ketidakpastian efisiensi detektor sebesar {1}% yang dinyatakan oleh respons detektor.</message>
+  <message id="dls-drf-uncert-model-only">Termasuk ketidakpastian efisiensi detektor sebesar {1}% hanya dari model geometri; respons detektor sendiri tidak menyatakannya.</message>
+  <message id="dls-drf-uncert-decon-excluded">Ketidakpastian efisiensi {1}% dari respons detektor tidak disertakan dalam batas dekonvolusi.</message>
+  <message id="dls-det-eff-used">Efisiensi detektor yang digunakan</message>
 </messages>
 

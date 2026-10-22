@@ -78,11 +78,15 @@ function removeOnDragEnterDom( target_id_list ){
 
 
 
-function BatchInputDropUploadSetup( target, uploadURL )
+/** @param multiple If true, clicking the target to browse allows choosing more than one file
+                    (dropping more than one is always allowed). */
+function BatchInputDropUploadSetup( target, uploadURL, multiple )
 {
   // Add a hidden <input type="file"... /> element so we can have the user click on the div and manually select a file.
   const fileInput = document.createElement("input");
   fileInput.setAttribute("type", "file");
+  if( multiple )
+    fileInput.setAttribute("multiple", "");
   fileInput.style.display = "none";
   target.appendChild(fileInput);
 

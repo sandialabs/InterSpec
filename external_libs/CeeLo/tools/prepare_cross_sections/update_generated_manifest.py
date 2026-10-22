@@ -77,13 +77,9 @@ PATHS = (
     "tools/prepare_cross_sections/reports/coefficient_sizes.csv",
     "tools/prepare_cross_sections/reports/coefficient_sizes.json",
     "tools/prepare_cross_sections/reports/coefficient_sizes.md",
-    "validation/bremsstrahlung_migration_review/README.md",
-    "validation/bremsstrahlung_migration_review/metadata.json",
-    "validation/bremsstrahlung_migration_review/review.html",
-    "validation/bremsstrahlung_migration_review/spectra.csv",
-    "validation/bremsstrahlung_migration_review/summary.csv",
-    "validation/bremsstrahlung_migration_review/worst_20.csv",
-    "validation/bremsstrahlung_migration_review/manual_review.json",
+    # The maintainer's recorded approval of the bremsstrahlung migration. The
+    # review bundle it approves (validation/, generated) is not tracked.
+    "tools/prepare_cross_sections/bremsstrahlung_manual_review.json",
 )
 
 

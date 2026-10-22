@@ -217,6 +217,10 @@ public:
     /** Selected energy units for the coefficient/formula editors (`PhysicalUnits`). */
     float efficiencyEnergyUnits = 1.0f;
 
+    /** The user removed the response's anchor (grounding), so the detector is the bare Monte Carlo;
+     see DrfModifyWidget::m_anchorRemoved. */
+    bool anchorRemoved = false;
+
     MakeMcResponseForDrf::State mc;
     std::shared_ptr<const MakeFwhmForDrf::ToolState> fwhm;
 
@@ -307,6 +311,29 @@ protected:
    match. */
   void updateAnchorEditorVisibility();
 
+  /** The response "Use" would attach in Geometry-Modeled mode, ignoring the mode: one generated in
+   this session, else the one the DRF arrived with.  Null if neither. */
+  std::shared_ptr<const ceelo::DetectorResponse> attachableResponse() const;
+
+  /** Whether the anchor can be removed from #attachableResponse: Geometry Modeled, a grounded
+   response with a Monte-Carlo backbone of its own (not a curve transfer or imported grid). */
+  bool canRemoveAnchor() const;
+
+  /** Whether the anchor removal is in force: #m_anchorRemoved, Geometry Modeled, and a response that
+   can stand without its anchor.  Switching to Flat Disk or to a curve-transfer method suspends it. */
+  bool anchorRemovedEffective() const;
+
+  /** #attachableResponse with its grounding removed; cached, as #buildWorkingDrf runs on most edits
+   and the copy is an XML round trip. */
+  std::shared_ptr<const ceelo::DetectorResponse> ungroundedResponse(
+                              const std::shared_ptr<const ceelo::DetectorResponse> &resp ) const;
+
+  /** "Remove anchor": confirm, then switch the detector to the bare Monte Carlo. */
+  void confirmRemoveAnchor();
+
+  /** Sets #m_anchorRemoved as a user edit (one undo step). */
+  void setAnchorRemoved( const bool removed );
+
   /** Appends one point row.  Every column is built; the Efficiency one is hidden by CSS for a
    formula curve (see #updateAnchorEditorVisibility), whose efficiency comes from the formula, so
    its rows describe uncertainty only.  The Source/Distance columns only exist per
@@ -392,6 +419,12 @@ protected:
    an edited curve behind a response that still answered every query.  It also means the Flat-Disk /
    Geometry-Modeled toggle cannot make a current response look stale - the mode is not content.  */
   bool responseStale();
+
+  /** Whether an imported efficiency grid is being kept while the efficiency curve or its uncertainty
+   was edited - edits the grid, which answers every efficiency and uncertainty query, ignores.  Not
+   part of #responseStale: nothing can be regenerated to take them in, and that also drives the
+   Generate button. */
+  bool gridIgnoresEdits();
 
   /** Rebuilds the General tab's chart and summary table from a quiet preview of the working DRF
    (see #buildWorkingDrf) - what "Use" would produce right now.  Cheap enough for every visit. */
@@ -499,6 +532,19 @@ protected:
    answers every efficiency and uncertainty query, and is rebuilt from them on "Use". */
   Wt::WText *m_responseNote;
 
+  /** Whether the user removed the response's anchor, so "Use" attaches the bare Monte-Carlo response
+   (grounding stripped) with the legacy curve resampled from it.  See #anchorRemovedEffective. */
+  bool m_anchorRemoved;
+
+  /** The "Remove anchor" link at the left of each editor's button row (coefficient and point). */
+  std::vector<Wt::WPushButton *> m_removeAnchorBtns;
+
+  /** Shown in place of the editors while the anchor is removed, with a link to restore it. */
+  Wt::WContainerWidget *m_anchorRemovedRow;
+
+  /** Cache for #ungroundedResponse: the response it was stripped from, and the result. */
+  mutable std::shared_ptr<const ceelo::DetectorResponse> m_ungroundedFrom, m_ungrounded;
+
   /** The uncertainty this detector reports, and how much of it is model envelope - see
    #refreshUncertSummary. */
   Wt::WText *m_uncertSummary;
@@ -595,6 +641,9 @@ protected:
   /** The fingerprint of the seed handed to the generation now running, promoted to
    #m_generatedFromFingerprint when it lands. */
   std::size_t m_pendingSeedFingerprint;
+
+  /** `DrfModifyCalc::efficiencyFingerprint` of the DRF as it arrived; see #gridIgnoresEdits. */
+  std::size_t m_origEfficiencyFingerprint;
 
   /** The export tip in the footer, hidden while #m_generateHint has something to say. */
   Wt::WText *m_exportNote;

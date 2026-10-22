@@ -31,9 +31,15 @@ the menu in the upper-right corner of the tool (&quot;<b>Configure LLM Provider&
 </p>
 <p>
 In the settings window you choose the provider (for example a hosted API endpoint or a locally
-running model), enter the API endpoint and bearer token/key, and pick the model name to use.
-Configuration is validated, and warnings are shown if, for example, the endpoint or key looks
-unset.  Your settings are saved so you do not have to re-enter them each session.
+running model) - a drop-down next to the endpoint fills in the endpoint for well-known providers -
+enter the bearer token/key, and pick the model name to use.  For models InterSpec knows about, the
+model's settings are filled in for you.  Configuration is validated, and warnings are shown if, for
+example, the endpoint or key looks unset.  Your settings are saved so you do not have to re-enter
+them each session.
+</p>
+<p>
+See the &quot;<b>Configuring an LLM Provider</b>&quot; help topic (under this topic, or via the
+help icon in the settings window) for what to enter for each provider, and what each setting does.
 </p>
 </div>
 

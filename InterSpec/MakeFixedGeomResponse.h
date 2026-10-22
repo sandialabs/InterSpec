@@ -67,6 +67,13 @@ public:
 
     std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
 
+    /** The DRF's full-energy-peak curve is the per-decay FEP efficiency times this, so activities
+     come out in the DRF's units: the source mass in grams for FixedGeomActPerGram, the emitting
+     area in m^2 for FixedGeomActPerM2, and 1 for FixedGeomTotalAct.  The total-efficiency curve is
+     always per decay.  Cascade-summing corrections divide this back out (#perDecayFepScale).
+     */
+    double fep_scale = 1.0;
+
     std::string toXmlString() const;
 
     /** Throws std::runtime_error on malformed input. */
@@ -80,6 +87,13 @@ public:
    */
   static bool sceneRepresentable( const Setup &setup, std::string *reason );
 
+  /** Factor the DRF's FEP curve must be divided by to get the per-decay FEP efficiency that
+   cascade-summing corrections need: 1 for a non-fixed or FixedGeomTotalAct DRF, else the
+   #Setup::fep_scale of its embedded scene.  Returns 0 when it can't be known (a per-mass/area
+   fixed-geometry DRF with no embedded scene, or whose scene doesn't record the scale).
+   */
+  static double perDecayFepScale( const DetectorPeakResponse &drf );
+
   /** Runs the Monte-Carlo (synchronously - call from a worker thread) and
    builds the fixed-geometry DRF.
 
@@ -90,6 +104,9 @@ public:
    @param setup The scene.
    @param extra_energies_keV Extra energy nodes (e.g. the fit peaks' gamma
           lines) unioned with a log grid over the valid range.
+   @param partner_energies_keV Cascade-summing partner energies of the fit's
+          nuclides (see CascadeSummingCalc::partnerEnergies); the log grid is
+          widened to span them, so the total curve covers them.  May be empty.
    @param fep_precision Per-node MC fractional precision target (e.g. 0.005).
    @param progress Called with fraction complete (0..1); may be empty.
    @param cancel When set true, throws std::runtime_error("cancelled").
@@ -100,6 +117,7 @@ public:
                     const std::shared_ptr<const DetectorPeakResponse> &base_drf,
                     const Setup &setup,
                     const std::vector<double> &extra_energies_keV,
+                    const std::vector<double> &partner_energies_keV,
                     const double fep_precision,
                     const std::function<void(double)> &progress,
                     const std::shared_ptr<std::atomic<bool>> &cancel );

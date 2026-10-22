@@ -90,8 +90,10 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
+#include "InterSpec/RelActCalcAuto_Roi.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -102,6 +104,7 @@
 #include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
+#include "InterSpec/RelActCalcAuto_ActiveSet.hpp"
 #include "InterSpec/RelActCalcAuto_Conditioning.hpp"
 #include "InterSpec/RelActCalcAuto_CovarianceQuality.h"
 #include "InterSpec/RelActCalcAuto_ConvergenceAudit.h"
@@ -420,29 +423,43 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
 }//void sort_rois( vector<RoiRange> &rois )
 
 
-/** Compare the actual canonical ROI definition, rather than using ROI count as a proxy.  A
- * translated boundary changes the data residual membership even when the number of ranges stays
- * constant, so it must trigger the next deterministic outer pass. */
-bool same_roi_boundaries( std::vector<RelActCalcAuto::RoiRange> lhs,
-                          std::vector<RelActCalcAuto::RoiRange> rhs )
+/** Re-expresses a Bernstein FWHM curve over the energy range `lower` to `upper`.
+
+ @param pars The Bernstein coefficients (of FWHM squared), followed by the lower and upper energy of
+        the range they are defined over; outside that range the curve is constant, as
+        `bersteinPeakResolutionFWHM(...)` clamps energies to it.
+ @returns The same kind of parameters, for `lower` to `upper`; the same curve where the ranges overlap.
+ */
+std::vector<double> bernstein_fwhm_pars_for_range( const std::vector<double> &pars,
+                                                   const double lower, const double upper )
 {
-  if( lhs.size() != rhs.size() )
-    return false;
-  sort_rois_by_energy( lhs );
-  sort_rois_by_energy( rhs );
-  for( size_t index = 0; index < lhs.size(); ++index )
+  if( (pars.size() < 4) || !(upper > lower) )
+    throw std::runtime_error( "bernstein_fwhm_pars_for_range: invalid input" );
+
+  const size_t num_coefs = pars.size() - 2;
+  const double orig_lower = pars[num_coefs], orig_upper = pars[num_coefs + 1];
+
+  // A least-squares fit to the curve sampled over the new range; where the ranges overlap the curve
+  //  is a polynomial of the same degree, so it is reproduced exactly (to rounding).
+  const size_t num_samples = 8*num_coefs;
+  std::vector<double> energies, values, uncerts;
+  for( size_t i = 0; i <= num_samples; ++i )
   {
-    const double scale = 1.0 + (std::max)( std::fabs(lhs[index].lower_energy),
-                                          std::fabs(lhs[index].upper_energy) );
-    const double tolerance = 1.0e-9*scale;
-    if( (std::fabs(lhs[index].lower_energy - rhs[index].lower_energy) > tolerance)
-       || (std::fabs(lhs[index].upper_energy - rhs[index].upper_energy) > tolerance)
-       || (lhs[index].continuum_type != rhs[index].continuum_type)
-       || (lhs[index].range_limits_type != rhs[index].range_limits_type) )
-      return false;
+    const double energy = lower + (upper - lower)*static_cast<double>(i)/num_samples;
+    const double clamped = std::clamp( energy, orig_lower, orig_upper );
+    const double t = (orig_upper > orig_lower) ? ((clamped - orig_lower) / (orig_upper - orig_lower)) : 0.0;
+    energies.push_back( energy );
+    values.push_back( BersteinPolynomial::evaluate( t, pars.data(), num_coefs ) );
+    uncerts.push_back( 1.0 );
   }
-  return true;
-}//same_roi_boundaries(...)
+
+  std::vector<double> answer = BersteinPolynomial::fit_bernstein_lls( energies, values, uncerts,
+                                                   static_cast<unsigned int>(num_coefs - 1), lower, upper );
+  answer.push_back( lower );
+  answer.push_back( upper );
+
+  return answer;
+}//bernstein_fwhm_pars_for_range(...)
 
 }//namespace
 
@@ -524,6 +541,51 @@ size_t combine_nearby_peaks( vector<RelActCalcManual::GenericPeakInfo> &input_pe
 namespace RelActCalcAutoImp
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
+
+
+/** A solve whose last `sm_stall_window_steps` successful steps together lowered chi2 by less than
+ `sm_stall_min_chi2_drop` is stopped - see `solve_stopping_creep(...)`. */
+static constexpr size_t sm_stall_window_steps = 50;
+static constexpr double sm_stall_min_chi2_drop = 0.01;
+
+/** Runs `ceres::Solve`, ending it - as a success - once it only creeps (see `StallDetector`).
+
+ The tolerances the fits use (function 1E-9, parameter 1E-11) let a solve follow a nearly flat valley -
+ e.g., between a physical-model attenuator and its correction curve - for thousands of iterations, each
+ gaining a statistically meaningless amount of chi2.  On the uranium benchmark (123 HPGe spectra) stopping
+ those cut the CPU time from 3300 to 1200 s with the chi2 of every fit unchanged; restarting a stalled
+ solve with a fresh trust region, or extrapolating along its creep, gained nothing.
+
+ Only solves with the full iteration budget use this: the pre-fit stages and backward-elimination trials
+ are capped at a few hundred iterations, and a trial that does not converge within that is discarded -
+ a decision a stall stop would change.
+ */
+static void solve_stopping_creep( const ceres::Solver::Options &options,
+                                  ceres::Problem &problem,
+                                  ceres::Solver::Summary &summary )
+{
+  class StallCallback : public ceres::IterationCallback
+  {
+    StallDetector m_detector;
+  public:
+    StallCallback()
+     : m_detector( sm_stall_window_steps, 0.5*sm_stall_min_chi2_drop ) // Ceres' cost is chi2/2
+    {
+    }
+
+    virtual ceres::CallbackReturnType operator()( const ceres::IterationSummary &iteration )
+    {
+      if( iteration.step_is_successful && m_detector.successful_step( iteration.cost ) )
+        return ceres::CallbackReturnType::SOLVER_TERMINATE_SUCCESSFULLY;
+      return ceres::CallbackReturnType::SOLVER_CONTINUE;
+    }
+  };//class StallCallback
+
+  StallCallback stall_callback;
+  ceres::Solver::Options stall_options = options;
+  stall_options.callbacks.push_back( &stall_callback );
+  ceres::Solve( stall_options, &problem, &summary );
+}//solve_stopping_creep(...)
 
 
 // Forward declaration
@@ -624,6 +686,138 @@ double eval_berstein_fwhm( double energy, const double * const pars, const size_
 
   return sqrt( BersteinPolynomial::evaluate( t, pars, num_berstein_coeffs ) );
 }//double eval_berstein_fwhm(...)
+
+
+/** FWHM for #RelActCalcAuto::FwhmForm::NoisePlusCurvedPower; `pars` are
+ `{w0, w1, s_lo, s_hi, lower_energy, upper_energy}` (keV).
+
+ The log of the power-law term is quadratic in `u = ln(E/661)` inside the range, with slopes `s_lo`
+ and `s_hi` at its ends, and continues on those end slopes outside it - so the curve is C1 and,
+ for non-negative slopes, non-decreasing everywhere.
+ */
+template<typename T>
+T noise_curved_power_fwhm( const T &energy, const T * const pars, const size_t num_pars )
+{
+  using std::log;
+  using std::exp;
+  using std::sqrt;
+
+  if( num_pars != 6 )
+    throw std::runtime_error( "noise_curved_power_fwhm(): expected 6 parameters" );
+
+  const T &noise = pars[0];
+  const T stat_661 = (pars[1] > T(1.0E-9)) ? pars[1] : T(1.0E-9);
+  const T &slope_lo = pars[2];
+  const T &slope_hi = pars[3];
+  const T u_lo = log( ((pars[4] > T(1.0)) ? pars[4] : T(1.0)) / 661.0 );
+  const T u_hi = log( ((pars[5] > T(1.0)) ? pars[5] : T(1.0)) / 661.0 );
+  const T u = log( ((energy > T(1.0)) ? energy : T(1.0)) / 661.0 );
+
+  const T span = u_hi - u_lo;
+  const T curvature = (span > T(1.0E-6)) ? ((slope_hi - slope_lo) / (2.0*span)) : T(0.0);
+  const T slope_661 = slope_lo - 2.0*curvature*u_lo;
+
+  T log_stat;
+  if( u < u_lo )
+    log_stat = log(stat_661) + slope_661*u_lo + curvature*u_lo*u_lo + slope_lo*(u - u_lo);
+  else if( u > u_hi )
+    log_stat = log(stat_661) + slope_661*u_hi + curvature*u_hi*u_hi + slope_hi*(u - u_hi);
+  else
+    log_stat = log(stat_661) + slope_661*u + curvature*u*u;
+
+  return sqrt( noise*noise + exp( 2.0*log_stat ) );
+}//T noise_curved_power_fwhm(...)
+
+
+/** One FWHM point's log-space residual for #fit_noise_curved_power. */
+struct NoiseCurvedPowerResidual
+{
+  double m_energy, m_log_fwhm, m_lower, m_upper;
+
+  template<typename T>
+  bool operator()( const T * const x, T *residual ) const
+  {
+    using std::log;
+    const T pars[6] = { x[0], x[1], x[2], x[3], T(m_lower), T(m_upper) };
+    residual[0] = log( noise_curved_power_fwhm( T(m_energy), pars, 6 ) ) - T(m_log_fwhm);
+    return true;
+  }
+};//struct NoiseCurvedPowerResidual
+
+
+/** Fits the #RelActCalcAuto::FwhmForm::NoisePlusCurvedPower parameters to FWHM values, in log
+ space (every point weighted equally, as a relative error), from several starting points. */
+std::vector<double> fit_noise_curved_power( const std::vector<double> &energies,
+                                            const std::vector<double> &fwhms,
+                                            const double lower_energy, const double upper_energy )
+{
+  if( energies.size() != fwhms.size() )
+    throw std::logic_error( "fit_noise_curved_power(): energies and widths differ in length" );
+
+  vector<pair<double,double>> points;
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    if( (energies[i] > 0.0) && (fwhms[i] > 0.0) && std::isfinite(energies[i]) && std::isfinite(fwhms[i]) )
+      points.emplace_back( energies[i], fwhms[i] );
+  }
+  if( points.size() < 4 )
+    throw std::runtime_error( "fit_noise_curved_power(): fewer than four usable points" );
+  std::sort( begin(points), end(points) );
+
+  // The width near 661 keV (or the median width) scales the starting points.
+  double ref_fwhm = points[points.size()/2].second;
+  for( size_t i = 1; i < points.size(); ++i )
+  {
+    if( (points[i-1].first <= 661.0) && (points[i].first >= 661.0) )
+    {
+      const double frac = (661.0 - points[i-1].first) / std::max( points[i].first - points[i-1].first, 1.0E-9 );
+      ref_fwhm = points[i-1].second + frac*(points[i].second - points[i-1].second);
+    }
+  }
+
+  const double starts[6][4] = {
+    { 0.5*ref_fwhm, ref_fwhm, 0.5, 0.5 }, { 0.1*ref_fwhm, ref_fwhm, 0.7, 0.7 },
+    { ref_fwhm, 0.5*ref_fwhm, 0.9, 0.9 }, { 0.3*ref_fwhm, 0.9*ref_fwhm, 0.7, 0.8 },
+    { 0.1*ref_fwhm, ref_fwhm, 0.5, 0.9 }, { 0.5*ref_fwhm, 0.7*ref_fwhm, 0.3, 0.8 }
+  };
+
+  double best_cost = std::numeric_limits<double>::infinity();
+  std::array<double,4> best = { starts[0][0], starts[0][1], starts[0][2], starts[0][3] };
+  for( const double (&start)[4] : starts )
+  {
+    std::array<double,4> x = { start[0], start[1], start[2], start[3] };
+    ceres::Problem problem;
+    for( const pair<double,double> &p : points )
+    {
+      problem.AddResidualBlock( new ceres::AutoDiffCostFunction<NoiseCurvedPowerResidual,1,4>(
+                                  new NoiseCurvedPowerResidual{ p.first, std::log(p.second), lower_energy, upper_energy } ),
+                                nullptr, x.data() );
+    }
+    problem.SetParameterLowerBound( x.data(), 0, 0.0 );
+    problem.SetParameterLowerBound( x.data(), 1, 1.0E-6 );
+    for( int i = 2; i < 4; ++i )
+    {
+      problem.SetParameterLowerBound( x.data(), i, 0.0 );
+      problem.SetParameterUpperBound( x.data(), i, 1.5 );
+    }
+
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.max_num_iterations = 200;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
+    ceres::Solver::Summary summary;
+    ceres::Solve( options, &problem, &summary );
+
+    if( summary.IsSolutionUsable() && (summary.final_cost < best_cost) )
+    {
+      best_cost = summary.final_cost;
+      best = x;
+    }
+  }//for( const double (&start)[4] : starts )
+
+  return { best[0], best[1], best[2], best[3], lower_energy, upper_energy };
+}//fit_noise_curved_power(...)
 
 
 struct DoWorkOnDestruct
@@ -810,8 +1004,37 @@ struct DoWorkOnDestruct
 
 // TODO: better customize the default FWHM parameters for each specific detector type
 //       (e.g., NaI, CZT, LaBr, etc.), rather than just branching on High vs non-High.
-void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
+void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fwhm_start, PeakFitUtils::CoarseResolutionType det_type, const std::shared_ptr<const SpecUtils::Measurement> &spectrum, RelActCalcAuto::FwhmForm fwhm_form, double lowest_energy, double highest_energy )
 {
+  if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+  {
+    // Fit to this detector class's default quadratic curve.
+    if( !(lowest_energy > 0.0) || !(highest_energy > lowest_energy) )
+    {
+      lowest_energy = 50.0;
+      highest_energy = 3000.0;
+    }
+
+    vector<double> quad_pars;
+    fill_in_default_start_fwhm_pars( quad_pars, 0, det_type, spectrum, RelActCalcAuto::FwhmForm::Polynomial_3,
+                                     lowest_energy, highest_energy );
+    vector<double> energies, fwhms;
+    const size_t num_samples = 24;
+    for( size_t i = 0; i < num_samples; ++i )
+    {
+      const double energy = lowest_energy * std::pow( highest_energy/lowest_energy, i/(num_samples - 1.0) );
+      energies.push_back( energy );
+      fwhms.push_back( DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::kSqrtPolynomial,
+                                                                  quad_pars.data(), quad_pars.size() ) );
+    }
+
+    const vector<double> fit_pars = fit_noise_curved_power( energies, fwhms, lowest_energy, highest_energy );
+    if( parameters.size() < (fwhm_start + fit_pars.size()) )
+      parameters.resize( fwhm_start + fit_pars.size(), 0.0 );
+    std::copy( begin(fit_pars), end(fit_pars), begin(parameters) + fwhm_start );
+    return;
+  }//if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+
   if( det_type == PeakFitUtils::CoarseResolutionType::High )
   {
     // The following parameters fit from the GADRAS parameters {1.54f, 0.264f, 0.33f}, using the
@@ -939,7 +1162,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
           {
             float min_sigma, max_sigma;
-            expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+            expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
             assert( min_sigma > 0 );
             
             min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1022,6 +1245,10 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
         }
         break;
+
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
@@ -1154,7 +1381,7 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
           {
             float min_sigma, max_sigma;
-            expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+            expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
             assert( min_sigma > 0 );
             
             min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1237,6 +1464,10 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
         }
         break;
 
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
+
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
         throw runtime_error( "NotApplicable should not be used here" );
@@ -1246,12 +1477,85 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
 }//fill_in_default_start_fwhm_pars()
 
 
+/** Fits the FWHM form `form_to_fit` (with `fit_order` coefficients) to `peaks`, and then re-fits
+ without the peaks furthest from that curve - at most 20% of them, only those more than 17.5% off,
+ and only when there are at least 8 peaks.
+
+ May return fewer than `fit_order` coefficients if there are too few peaks.
+ Throws if the initial fit fails; a failed re-fit keeps the initial fit, and adds a warning.
+ */
+vector<float> fit_resolution_to_peaks( const std::vector<std::shared_ptr<const PeakDef>> &all_peaks,
+                                       const DetectorPeakResponse::ResolutionFnctForm form_to_fit,
+                                       const int fit_order,
+                                       vector<string> &warnings )
+{
+  vector<float> fwhm_paramatersf, uncerts;
+  auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
+  MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
+
+  vector<pair<double,shared_ptr<const PeakDef>>> distances;
+  for( const auto &p : *peaks_deque )
+  {
+    const float mean = static_cast<float>(p->mean());
+    const float pred_fwhm = DetectorPeakResponse::peakResolutionFWHM( mean, form_to_fit, fwhm_paramatersf );
+
+    const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
+    if( !IsNan(frac_diff) && !IsInf(frac_diff) )
+      distances.emplace_back( frac_diff, p );
+  }//for( const auto &p : initial_fit_peaks )
+
+  std::sort( begin(distances), end(distances), []( const auto &lhs, const auto &rhs) -> bool {
+    return lhs.first > rhs.first;
+  } );
+
+  // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if they deviate
+  // more than 17.5% (again, arbitrarily chosen) from the fit.
+  const size_t max_remove = (distances.size() < 8) ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+  auto filtered_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+  for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
+  {
+    if( (distances[index].first > 0.175 ) && (num_removed < max_remove) ) //0.175 chosen arbitrarily
+    {
+      ++num_removed;
+      continue;
+    }
+
+    filtered_peaks->push_back( distances[index].second );
+  }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
+
+  if( (max_remove + filtered_peaks->size()) < distances.size() )
+    cerr << "RelActCalcAuto - failed logic: max_remove=" << max_remove
+    << ", filtered_peaks->size()=" << filtered_peaks->size()
+    << ", distances.size()=" << distances.size() << endl;
+
+  assert( (max_remove + filtered_peaks->size()) >= distances.size() );
+
+  if( filtered_peaks->size() != all_peaks.size() )
+  {
+    try
+    {
+      vector<float> new_result, new_result_uncerts;
+      MakeDrfFit::performResolutionFit( filtered_peaks, form_to_fit,
+                                        fit_order, new_result, new_result_uncerts );
+      fwhm_paramatersf = new_result;
+    }catch( std::exception &e )
+    {
+      warnings.push_back( "Failed to refine FWHM fit from data: " + string(e.what()) + ".  Will use initial estimate." );
+    }
+  }//if( filtered_peaks->size() != all_peaks.size() )
+
+  return fwhm_paramatersf;
+}//vector<float> fit_resolution_to_peaks(...)
+
+
 /** @brief Get the fwhm coefficients to use in the non-linear fit to data.
  * 
  * @param fwhm_form 
  * @param fwhm_estimation_method 
  * @param all_peaks 
  * @param det_type
+ * @param spectrum The spectrum being analyzed; passed to `expected_peak_width_limits(...)`, which lets
+ *        finely binned spectra (e.g., micro-calorimeters) have narrower peaks than the per-detector-type tables.
  * @param lowest_energy The lowest energy in the analysis energy range; used only when converting 
  *        DetectorPeakResponse FWHM info to a different form, and is not used when fitting FWHM from data.
  * @param highest_energy The highest energy in the analysis energy range; used only when converting 
@@ -1275,12 +1579,15 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
             const RelActCalcAuto::FwhmEstimationMethod fwhm_estimation_method,
             const std::vector<std::shared_ptr<const PeakDef>> all_peaks, 
             const PeakFitUtils::CoarseResolutionType det_type,
+            const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
             const double lowest_energy,
             const double highest_energy,
             std::shared_ptr<const DetectorPeakResponse> input_drf,
             vector<double> &paramaters,
             vector<string> &warnings,
-            const bool reuse_input_resolution = false )
+            const bool reuse_input_resolution = false,
+            const DetectorPeakResponse::ResolutionFnctForm seed_form = DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm,
+            const std::vector<float> &seed_coefficients = std::vector<float>() )
 {
   paramaters.clear();
   const size_t num_fwhm_pars = num_parameters(fwhm_form);
@@ -1291,6 +1598,68 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     throw runtime_error( "When FwhmEstimationMethod is specified as FixedToDetectorEfficiency,"
                          " FWHM form must be set to NotApplicable, and vice-versa." );
   }//if( check FWHM type and method are compatible )
+
+  if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
+  {
+    // Fit this form to the curve the source of the widths gives: the DRF's, or a curve the caller
+    //  supplied, across the whole range; otherwise the quadratic sqrt-polynomial fit to the peaks
+    //  (with its outlier handling), across the peaks' span only - this form carries on beyond it on
+    //  its end slopes, where a polynomial is not to be trusted.  The quadratic path also supplies the
+    //  returned response and its warnings and checks.
+    vector<double> quad_pars;
+    const shared_ptr<const DetectorPeakResponse> quad_drf
+                     = get_fwhm_coefficients( RelActCalcAuto::FwhmForm::Polynomial_3, fwhm_estimation_method,
+                                              all_peaks, det_type, spectrum, lowest_energy, highest_energy, input_drf,
+                                              quad_pars, warnings, reuse_input_resolution, seed_form,
+                                              seed_coefficients );
+
+    const bool drf_resolution = input_drf && input_drf->hasResolutionInfo()
+         && (reuse_input_resolution
+             || (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum)
+             || (fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency));
+    const bool supplied_curve = !drf_resolution
+                                && (seed_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+                                && !seed_coefficients.empty();
+
+    const auto source_fwhm = [&]( const double energy ) -> double {
+      if( drf_resolution )
+        return input_drf->peakResolutionFWHM( static_cast<float>(energy) );
+      if( supplied_curve )
+        return DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy), seed_form, seed_coefficients );
+      return DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::kSqrtPolynomial,
+                                                      quad_pars.data(), quad_pars.size() );
+    };//source_fwhm
+
+    double sample_lower = lowest_energy, sample_upper = highest_energy;
+    if( !drf_resolution && !supplied_curve && !all_peaks.empty() )
+    {
+      double peaks_lower = std::numeric_limits<double>::max(), peaks_upper = 0.0;
+      for( const shared_ptr<const PeakDef> &peak : all_peaks )
+      {
+        peaks_lower = std::min( peaks_lower, peak->mean() );
+        peaks_upper = std::max( peaks_upper, peak->mean() );
+      }
+      const double span_lower = std::max( lowest_energy, peaks_lower );
+      const double span_upper = std::min( highest_energy, peaks_upper );
+      if( (span_lower > 0.0) && (span_upper > 1.2*span_lower) )
+      {
+        sample_lower = span_lower;
+        sample_upper = span_upper;
+      }
+    }//if( the curve came from the peaks alone )
+
+    vector<double> energies, fwhms;
+    const size_t num_samples = 24;
+    for( size_t i = 0; i < num_samples; ++i )
+    {
+      const double energy = sample_lower * std::pow( sample_upper/sample_lower, i/(num_samples - 1.0) );
+      energies.push_back( energy );
+      fwhms.push_back( source_fwhm( energy ) );
+    }
+
+    paramaters = fit_noise_curved_power( energies, fwhms, lowest_energy, highest_energy );
+    return quad_drf;
+  }//if( fwhm_form == RelActCalcAuto::FwhmForm::NoisePlusCurvedPower )
 
   
   bool use_drf_fwhm = false, estimate_fwhm_from_data = false;
@@ -1366,7 +1735,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     for( double energy = lowest_energy; energy <= highest_energy; energy += check_delta_energy )
     {
       float min_sigma, max_sigma;
-      expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+      expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
       assert( min_sigma > 0 );
       
       min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1424,6 +1793,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
                                  && (drfpars.size() == berstein_order));
         break;
       }//case any Berstein
+
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
       {
@@ -1538,6 +1911,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         // Fit using corresponding polynomial order, then convert to Berstein
         formToFit = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       break;
+
+      case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        assert( 0 );
+        throw logic_error( "NoisePlusCurvedPower is handled before this point" );
 
       case RelActCalcAuto::FwhmForm::NotApplicable:
         assert( 0 );
@@ -1678,6 +2055,10 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       fit_order = static_cast<int>( num_parameters(fwhm_form) - 2 ); // Subtract min/max energy params
     break;
           
+    case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+      assert( 0 );
+      throw logic_error( "NoisePlusCurvedPower is handled before this point" );
+
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( 0 );
       throw runtime_error( "NotApplicable should not be used here" );
@@ -1688,64 +2069,45 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     //Instead of the below, we could potentially do
     //  new_drf->fitResolution( peaks_deque, spectrum, form_to_fit );
-    
-    vector<float> fwhm_paramatersf, uncerts;
-    auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
-    MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
-    assert( fwhm_paramatersf.size() == static_cast<size_t>(fit_order) );
-
-    vector<pair<double,shared_ptr<const PeakDef>>> distances;
-    for( const auto &p : *peaks_deque )
+    // A caller-supplied starting curve (Options::starting_fwhm_coefficients) stands in for the
+    // peaks: the same form and order is taken as-is, any other form is sampled and fit, and the
+    // peak-list outlier pass is skipped.
+    vector<float> fwhm_paramatersf;
+    bool seeded = false;
+    if( !reuse_input_resolution
+        && (seed_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+        && !seed_coefficients.empty() )
     {
-      const float mean = static_cast<float>(p->mean());
-      const float pred_fwhm = DetectorPeakResponse::peakResolutionFWHM( mean, form_to_fit, fwhm_paramatersf );
-
-      const double frac_diff = fabs( p->fwhm() - pred_fwhm ) / p->fwhm();
-      if( !IsNan(frac_diff) && !IsInf(frac_diff) )
-        distances.emplace_back( frac_diff, p );
-    }//for( const auto &p : initial_fit_peaks )
-      
-    std::sort( begin(distances), end(distances), []( const auto &lhs, const auto &rhs) -> bool {
-      return lhs.first > rhs.first;
-    } );
-
-    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if they deviate
-    // more than 17.5% (again, arbitrarily chosen) from the fit.
-    const size_t max_remove = (distances.size() < 8) ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
-    auto filtered_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
-    {
-      if( (distances[index].first > 0.175 ) && (num_removed < max_remove) ) //0.175 chosen arbitrarily
+      if( (seed_form == form_to_fit) && (seed_coefficients.size() == static_cast<size_t>(fit_order)) )
       {
-        ++num_removed;
-        continue;
+        fwhm_paramatersf = seed_coefficients;
+        seeded = true;
+      }else
+      {
+        vector<float> uncerts;
+        auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
+        const int nsamples = 20;
+        for( int i = 0; i < nsamples; ++i )
+        {
+          const double e = lowest_energy + (highest_energy - lowest_energy)*i/(nsamples - 1);
+          const float fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(e), seed_form, seed_coefficients );
+          if( !std::isfinite(fwhm) || (fwhm <= 0.0f) )
+            continue;
+          auto p = make_shared<PeakDef>( e, fwhm/PhysicalUnits::fwhm_nsigma, 1000.0 );
+          p->setSigmaUncert( 0.05*fwhm/PhysicalUnits::fwhm_nsigma );
+          peaks_deque->push_back( p );
+        }
+        seeded = (peaks_deque->size() >= static_cast<size_t>( std::max( 3, fit_order ) ));
+        if( seeded )
+          MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
+        else
+          warnings.push_back( "The supplied starting FWHM curve was not usable over the analysis range; fitting the FWHM from the peaks instead." );
       }
-        
-      filtered_peaks->push_back( distances[index].second );
-    }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
+    }//if( a starting curve was supplied )
 
-    if( (max_remove + filtered_peaks->size()) < distances.size() )
-      cerr << "RelActCalcAuto - failed logic: max_remove=" << max_remove 
-      << ", filtered_peaks->size()=" << filtered_peaks->size() 
-      << ", distances.size()=" << distances.size() << endl;
+    if( !seeded )
+      fwhm_paramatersf = fit_resolution_to_peaks( all_peaks, form_to_fit, fit_order, warnings );
 
-    assert( (max_remove + filtered_peaks->size()) >= distances.size() );
-
-    if( filtered_peaks->size() != all_peaks.size() )
-    {
-      try
-      {
-        vector<float> new_result, new_result_uncerts;
-        MakeDrfFit::performResolutionFit( filtered_peaks, form_to_fit,
-                                          fit_order, new_result, new_result_uncerts );
-        fwhm_paramatersf = new_result;
-        uncerts.swap( new_result_uncerts );
-      }catch( std::exception &e )
-      {
-        warnings.push_back( "Failed to refine FWHM fit from data: " + string(e.what()) + ".  Will use initial estimate." );
-      }
-    }//if( filtered_peaks->size() != all_peaks.size() )
-    
     // performResolutionFit() can return FEWER coefficients than the requested fit_order when the
     //  spectrum has too few peaks to constrain the full order (e.g. sparse spectra with only 2-3
     //  ROIs).  Downstream code (and the Bernstein conversion below) assumes exactly fit_order
@@ -1795,7 +2157,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   }catch( std::exception &e )
   {
     paramaters.clear();
-    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
+    fill_in_default_start_fwhm_pars( paramaters, 0, det_type, spectrum, fwhm_form, lowest_energy, highest_energy );
     warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
 
@@ -1836,7 +2198,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
       float min_sigma, max_sigma;
-      expected_peak_width_limits( energy, det_type, nullptr, min_sigma, max_sigma );
+      expected_peak_width_limits( energy, det_type, spectrum, min_sigma, max_sigma );
       assert( min_sigma > 0 );
 
       min_expected_sigma = (std::min)( min_expected_sigma, min_sigma );
@@ -1881,7 +2243,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           const double e = cen_lo + ((cen_hi - cen_lo) * i) / (n_samples - 1);
           float mn_s, mx_s;
-          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          expected_peak_width_limits( static_cast<float>(e), det_type, spectrum, mn_s, mx_s );
           synth_peaks->push_back( make_shared<PeakDef>( e, 0.5*(static_cast<double>(mn_s) + mx_s), 1000.0 ) );
         }
 
@@ -1892,7 +2254,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         {
           const double e = lowest_energy + ((highest_energy - lowest_energy) * i) / 20.0;
           float mn_s, mx_s;
-          expected_peak_width_limits( static_cast<float>(e), det_type, nullptr, mn_s, mx_s );
+          expected_peak_width_limits( static_cast<float>(e), det_type, spectrum, mn_s, mx_s );
           glob_min_sigma = (std::min)( glob_min_sigma, static_cast<double>(mn_s) );
           glob_max_sigma = (std::max)( glob_max_sigma, static_cast<double>(mx_s) );
         }
@@ -1926,7 +2288,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       cerr << "Fit FWHM is not valid for the energy range wanted - will just use default." << endl;
       warnings.push_back( "Failed to estimate FWHM from data: not a large enough span of peaks.  Using default FWHM parameters." );
       paramaters.clear();
-      fill_in_default_start_fwhm_pars( paramaters, 0, det_type, fwhm_form, lowest_energy, highest_energy );
+      fill_in_default_start_fwhm_pars( paramaters, 0, det_type, spectrum, fwhm_form, lowest_energy, highest_energy );
     }
 
     assert( paramaters.size() == num_parameters( fwhm_form ) );
@@ -2295,6 +2657,11 @@ struct NucInputGamma : public RelActCalcAuto::NucInputInfo
   };//struct EnergyYield
   
   std::shared_ptr<const vector<EnergyYield>> nominal_gammas;
+
+  /** Sorted energies of the nominal lines that get iodine escape companions (see
+   Options::iodine_escape_peaks and PeakFitUtils::sm_iodine_escape_min_relative_yield); fixed here so
+   which peaks exist never depends on the fit parameters (e.g. a fitted age). */
+  vector<double> escape_parent_energies;
   
   // Implemeneted below RelActAutoCostFcn, so we can access it
   NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn );
@@ -2499,6 +2866,48 @@ struct RelActAutoCostFcn
 
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
   std::vector<RoiRangeChannels> m_energy_ranges;
+
+  /** How each of `m_energy_ranges` came from the input ROIs; same size and order as `m_energy_ranges`. */
+  std::vector<RelActCalcAuto::RoiResolutionInfo> m_roi_info;
+
+  /** The fluorescence source-depth model (`RelActCalc::fluorescence_self_atten_correction`) for an element source
+   on a Physical-model curve whose self-attenuating material contains that element; see
+   `setup_fluorescence_depth_model()`.
+   */
+  struct FluorescenceDepth
+  {
+    size_t rel_eff_index = 0;
+    const SandiaDecay::Element *element = nullptr;
+
+    /** The curve's photon lines above the element's K edge: their source, attenuation coefficient (per areal
+     density), and yield x photoelectric absorption / attenuation - the activity is applied when evaluating. */
+    std::vector<RelActCalcAuto::SrcVariant> exciting_source;
+    std::vector<double> exciting_mu, exciting_base_weight;
+
+    /** The material's attenuation coefficient at each of the element's fluorescence energies. */
+    std::vector<std::pair<double,double>> mu_at_energy;
+
+    double mu_at( const double energy ) const
+    {
+      assert( !mu_at_energy.empty() );
+      const auto nearest = std::min_element( begin(mu_at_energy), end(mu_at_energy),
+        [energy]( const std::pair<double,double> &a, const std::pair<double,double> &b ){
+          return fabs(a.first - energy) < fabs(b.first - energy);
+      } );
+      return nearest->second;
+    }
+  };//struct FluorescenceDepth
+
+  std::vector<FluorescenceDepth> m_fluorescence_depth;
+
+  /** The fluorescence lines of an element in the fit must span at least this many keV for the source-depth model to
+   be used; below it the correction is ~constant over the lines, which the free fluorescence activity absorbs. */
+  static constexpr double sm_fluorescence_depth_min_span_kev = 5.0;
+
+  /** With `Options::lorentzian_xrays`, x-ray lines within this many keV of an ROI are modelled in it, for their
+   Lorentzian tails, even when that is beyond the detector-shape coverage (beyond 1.5 keV a ~50 eV HWHM K x-ray has
+   ~1 % of its area). */
+  static constexpr double sm_lorentzian_xray_reach_kev = 1.5;
 
   /** Per-element mass-fraction constraint block: the exact "sigma-block" reparameterization.
 
@@ -2812,6 +3221,7 @@ struct RelActAutoCostFcn
     m_may_host_profile( may_host_profile ),
   m_nuclides{},
   m_energy_ranges{},
+  m_roi_info{},
   m_mass_frac_blocks{},
   m_spectrum( spectrum ),
   m_live_time( spectrum ? spectrum->live_time() : 0.0f ),
@@ -2921,156 +3331,159 @@ struct RelActAutoCostFcn
     m_drf = drf;
     
     
-    //Need to initialize m_energy_ranges
-    for( size_t roi_index = 0; roi_index < m_options.rois.size(); ++roi_index )
+    if( cancel_calc && cancel_calc->load() )
+      throw runtime_error( "User cancelled calculation." );
+
+    // Resolve the input ROIs into the (fixed, sorted, non-overlapping) ROIs to fit; fixed input ROIs
+    //  are used as given.  No fit has been done yet, so ROIs are sized using an estimate of the peak
+    //  shape, and `RelActCalcAuto::solve(...)` re-sizes them from the fitted peak shape afterwards.
+    //  - FWHM: when the FWHM will be fit, from the peaks found in the spectrum, rather than the DRF,
+    //    whose resolution is often only nominal for the detector actually used (e.g., a generic
+    //    "HPGe 40%" DRF is about twice as wide as a small detectors peaks, and ROIs sized from it take
+    //    in, or merge with, neighboring lines - which can take the fit to the wrong minimum).
+    //  - Skew: a Gaussian, unless a skew value is fixed or given a starting value; the generic starting
+    //    skew is a heavy tail that would extend the ROIs well below their lines.
     {
-      const RelActCalcAuto::RoiRange &roi_range = m_options.rois[roi_index];
+      // Fixed ROIs are used as given, so none of the peak shape, or line, estimates are needed for them
+      //  (e.g., for the many re-solves of an all-fixed problem).
+      bool all_input_fixed = true;
+      for( const RelActCalcAuto::RoiRange &roi : m_options.rois )
+        all_input_fixed = (all_input_fixed && (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed));
 
-      if( roi_range.lower_energy >= roi_range.upper_energy )
-        throw runtime_error( "Energy range lower value (" + SpecUtils::printCompact(roi_range.lower_energy, 3)
-                            + " keV) is larger or equal to upper value ("
-                            + SpecUtils::printCompact(roi_range.upper_energy, 3) + " keV)" );
-
-      if( roi_range.lower_energy < 0.0 )
-        throw runtime_error( "Energy range, ["  + SpecUtils::printCompact(roi_range.lower_energy, 3)
-                            + " - " + SpecUtils::printCompact(roi_range.upper_energy, 3)
-                            + "], extends below zero keV.");
-
-
-      // We'll check the ranges dont overlap (but they can touch)
-      for( size_t other_roi = roi_index + 1; other_roi < m_options.rois.size(); ++other_roi )
+      // The peaks found in the spectrum that look like real photopeaks; the automated search can also
+      //  return wide humps of continuum, or negative-area peaks, which would mislead the estimates.
+      vector<shared_ptr<const PeakDef>> found_peaks;
+      for( const shared_ptr<const PeakDef> &peak : all_peaks )
       {
-        const RelActCalcAuto::RoiRange &other_roi_range = m_options.rois[other_roi];
-
-        if( (roi_range.lower_energy < other_roi_range.upper_energy)
-           && (other_roi_range.lower_energy < roi_range.upper_energy) )
-        {
-          throw runtime_error( "RelActAutoCostFcn: input energy ranges are overlapping ["
-                              + std::to_string(roi_range.lower_energy) + ", "
-                              + std::to_string(roi_range.upper_energy) + "] and ["
-                              + std::to_string(other_roi_range.lower_energy) + ", "
-                              + std::to_string(other_roi_range.upper_energy) + "]."
-                              );
-        }
-      }//for( loop over ROIs that come after roi_range )
-
-      const double mid_energy = 0.5*(roi_range.lower_energy + roi_range.upper_energy);
-      if( (mid_energy < spectrum->gamma_energy_min())
-         || (mid_energy > spectrum->gamma_energy_max()) )
-      {
-        m_setup_warnings.push_back( "Not using the [" + SpecUtils::printCompact(roi_range.lower_energy, 3)
-                                   + " - " + SpecUtils::printCompact(roi_range.upper_energy, 3) + "] ROI because over"
-                                   + " half of it is not within the spectrums energy range ("
-                                   + SpecUtils::printCompact(spectrum->gamma_energy_min(), 3)
-                                   + " - " + SpecUtils::printCompact(spectrum->gamma_energy_max(), 3)
-                                   + " keV)." );
-        continue;
+        if( !all_input_fixed && peak && is_plausible_peak( *peak ) )
+          found_peaks.push_back( peak );
       }
 
-      if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
+      // A caller-supplied starting curve (`Options::starting_fwhm_coefficients`) is already in `m_drf`,
+      //  when the solve uses it, and is the caller's estimate of these widths, so it is not overridden.
+      vector<float> peaks_fwhm_pars;
+      const bool fwhm_is_fixed = (m_options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency)
+                          || (m_options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum);
+      if( !fwhm_is_fixed && m_options.starting_fwhm_coefficients.empty() && (found_peaks.size() >= 3) )
       {
-        // TODO: we could check that the ROI has any gammas/x-rays/fixed-peaks in it at all, and if not, skip it
-        m_energy_ranges.emplace_back( m_energy_cal, roi_range );
-        continue;
-      }//if( roi_range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
-      
-      if( cancel_calc && cancel_calc->load() )
-        throw runtime_error( "User cancelled calculation." );
-      
-      //Below here in this loop - we'll try to limit/break-up energy ranges
-      const double min_br = numeric_limits<double>::min();  //arbitrary
-      const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
-      
-      vector<pair<double,double>> gammas_in_range;
-      
-      // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, &spectrum, &roi_range, num_sigma_half_roi]( const double energy ){
-        double energy_sigma;
+        try
+        {
+          vector<string> fit_warnings;
+          peaks_fwhm_pars = fit_resolution_to_peaks( found_peaks, DetectorPeakResponse::kSqrtPolynomial, 2, fit_warnings );
+        }catch( std::exception & )
+        {
+          peaks_fwhm_pars.clear(); //We'll use the DRF
+        }
+      }//if( we can estimate the FWHM from the peaks in the spectrum )
+
+      bool skew_given = false;
+      for( size_t i = 0; i < std::size(m_options.fixed_lower_skew); ++i )
+        skew_given = (skew_given || m_options.fixed_lower_skew[i].has_value() || m_options.start_lower_skew[i].has_value());
+
+      const auto initial_peak_shape = [this, &spectrum, &peaks_fwhm_pars, skew_given]( const double energy )
+                                                                                 -> RelActCalcAutoRoi::PeakShape {
+        double sigma = m_drf->peakResolutionSigma( static_cast<float>(energy) );
+        if( !peaks_fwhm_pars.empty() )
+        {
+          const double data_fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                                        DetectorPeakResponse::kSqrtPolynomial, peaks_fwhm_pars );
+          if( std::isfinite(data_fwhm) && (data_fwhm > 0.0) )
+            sigma = data_fwhm / 2.35482;
+        }//if( !peaks_fwhm_pars.empty() )
+
         float min_sigma, max_sigma;
-        expected_peak_width_limits( energy, m_det_type, spectrum, min_sigma, max_sigma );
-        
-        if( m_drf && m_drf->hasResolutionInfo() )
-        {
-          energy_sigma = m_drf->peakResolutionSigma(energy);
-          
-          // A sanity check... maybe we dont want this?
-          if( energy_sigma < min_sigma )
-            energy_sigma = min_sigma;
-          if( energy_sigma > max_sigma )
-            energy_sigma = max_sigma;
-        }else
-        {
-          energy_sigma = max_sigma;
-        }
-        
-        double gamma_row_lower = energy - num_sigma_half_roi*energy_sigma;
-        double gamma_row_upper = energy + num_sigma_half_roi*energy_sigma;
+        expected_peak_width_limits( static_cast<float>(energy), m_det_type, spectrum, min_sigma, max_sigma );
+        if( !std::isfinite(sigma) || !(sigma > 0.0) )
+          sigma = max_sigma;
+        sigma = std::min( std::max( sigma, static_cast<double>(min_sigma) ), static_cast<double>(max_sigma) );
 
-        if( roi_range.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm )
+        RelActCalcAutoRoi::PeakShape shape;
+        shape.fwhm = 2.35482*sigma;
+        if( skew_given )
         {
-          gamma_row_lower = std::max( gamma_row_lower, roi_range.lower_energy );
-          gamma_row_upper = std::min( gamma_row_upper, roi_range.upper_energy );
+          shape.skew_type = m_options.skew_type;
+          shape.skew_pars = initial_skew_parameters( energy );
         }
-        
-        gammas_in_range.push_back( {gamma_row_lower,gamma_row_upper} );
-      };//add_peak_to_range(...) lamda
-      
-      for( const vector<NucInputGamma> &nucs : m_nuclides )
-      {
-        for( const auto &n : nucs )
+        return shape;
+      };//initial_peak_shape
+
+      // Before any fit, a broken-up ROI only gets windows around lines at peaks found in the spectrum;
+      //  after the fit, `RelActCalcAuto::solve(...)` re-decides which lines are significant.  Windowing
+      //  every line with any yield would, for a many-line source (e.g., Eu152, or a decay chain) on a
+      //  lower-resolution detector, merge into a single ROI spanning much of the spectrum, whose
+      //  continuum the fit can only follow by making the peaks absurdly wide.
+      const auto near_found_peak = [&initial_peak_shape, &found_peaks]( const double energy ) -> bool {
+        const double fwhm = initial_peak_shape( energy ).fwhm;
+        for( const shared_ptr<const PeakDef> &peak : found_peaks )
         {
-          assert( n.nominal_gammas );
-          for( const auto &g : *n.nominal_gammas )
+          if( fabs( peak->mean() - energy ) <= std::max( fwhm, peak->fwhm() ) )
+            return true;
+        }
+        return false;
+      };//near_found_peak lambda
+
+      vector<RelActCalcAutoRoi::Line> lines;
+      if( !all_input_fixed )
+      {
+        for( const vector<NucInputGamma> &nucs : m_nuclides )
+        {
+          for( const NucInputGamma &n : nucs )
           {
-            const double energy = g.energy;
-            const double yield = g.yield;
-            
-            if( (yield > min_br)
-               && (energy >= roi_range.lower_energy)
-               && (energy <= roi_range.upper_energy) )
+            assert( n.nominal_gammas );
+            for( const NucInputGamma::EnergyYield &g : *n.nominal_gammas )
             {
-              add_peak_to_range( g.energy );
+              if( g.yield > numeric_limits<double>::min() )
+                lines.push_back( RelActCalcAutoRoi::Line{ g.energy, near_found_peak( g.energy ) } );
             }
-          }//for( const auto &g : n.nominal_gammas )
-        }//for( const auto &n : nucs )
-      }//for( const vector<NucInputGamma> &nucs : m_nuclides )
-        
-      for( const auto &peak : m_options.floating_peaks )
-      {
-        if( (peak.energy >= roi_range.lower_energy) && (peak.energy <= roi_range.upper_energy) )
-          add_peak_to_range( peak.energy );
-      }//for( const auto &peak : m_options.floating_peaks )
-      
-      std::sort( begin(gammas_in_range), end(gammas_in_range) );
+          }//for( const NucInputGamma &n : nucs )
+        }//for( const vector<NucInputGamma> &nucs : m_nuclides )
+      }//if( !all_input_fixed )
 
-      assert( roi_range.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::Fixed );
-
-      for( size_t index = 0; index < gammas_in_range.size();  )
+      // A broken-up ROI with no found peak at any of its lines keeps them all, so the fit can decide.
+      for( const RelActCalcAuto::RoiRange &roi : m_options.rois )
       {
-        const size_t start_index = index;
-        for( index += 1; index < gammas_in_range.size(); ++index )
+        if( (roi.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp)
+           && (roi.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) )
+          continue;
+
+        const auto in_roi = [&roi]( const RelActCalcAutoRoi::Line &line ) -> bool {
+          return (line.energy >= roi.lower_energy) && (line.energy <= roi.upper_energy);
+        };
+
+        const bool any_found = std::any_of( begin(lines), end(lines),
+                          [&in_roi]( const RelActCalcAutoRoi::Line &line ){ return in_roi(line) && line.significant; } );
+        if( !any_found )
         {
-          if( gammas_in_range[index - 1].second < gammas_in_range[index].first )
-            break;
+          for( RelActCalcAutoRoi::Line &line : lines )
+            line.significant = (line.significant || in_roi(line));
         }
-        
-        RelActCalcAuto::RoiRange this_range = roi_range;
-        this_range.lower_energy = gammas_in_range[start_index].first;
-        this_range.upper_energy = gammas_in_range[index - 1].second;
-        
-        // TODO: its possible the the channels of the ranges could overlap - right now the overlapping channel will be double counted; should fix.
-        
-        cout << "Adding energy range [" << this_range.lower_energy << ", " << this_range.upper_energy << "]\n";
-        
-        m_energy_ranges.emplace_back( m_energy_cal, this_range );
-      }//for( loop over gammas_in_range )
-    }//for( const RelActCalcAuto::RoiRange &input : energy_ranges )
-    
-    
-    std::sort( begin(m_energy_ranges), end(m_energy_ranges),
-              []( const RoiRangeChannels &lhs, const RoiRangeChannels &rhs ) -> bool {
-      return lhs.lower_energy < rhs.lower_energy;
-    } );
+      }//for( const RelActCalcAuto::RoiRange &roi : m_options.rois )
+
+      for( const RelActCalcAuto::FloatingPeak &peak : m_options.floating_peaks )
+      {
+        const bool observed = (peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum);
+        lines.push_back( RelActCalcAutoRoi::Line{ peak.energy, true, true, observed } );
+      }
+
+      const vector<RelActCalcAutoRoi::ResolvedRoi> resolved
+                    = RelActCalcAutoRoi::resolve( m_options.rois, RelActCalcAuto::default_roi_edge( m_det_type, true ),
+                                                  RelActCalcAuto::default_roi_edge( m_det_type, false ), initial_peak_shape,
+                                                  nullptr, m_energy_cal, lines, sideband_obstacles(),
+                                                  m_setup_warnings );
+
+      vector<RelActCalcAuto::RoiRange> resolved_rois;
+      for( const RelActCalcAutoRoi::ResolvedRoi &r : resolved )
+      {
+        m_energy_ranges.emplace_back( m_energy_cal, r.roi );
+        m_roi_info.push_back( r.info );
+        resolved_rois.push_back( r.roi );
+      }
+
+      // So anything built from our options (e.g., re-solves, or reporting) uses the ROIs actually fit.
+      if( !all_input_fixed )
+        m_options.rois = resolved_rois;
+
+    }
     
     
     if( m_energy_ranges.empty() )
@@ -3127,7 +3540,8 @@ struct RelActAutoCostFcn
       }//for( loop over energy ranges )
       
       if( !in_a_range )
-        throw runtime_error( "Free floating peak at " + std::to_string(peak.energy) + " is not in a ROI." );
+        throw runtime_error( "Free floating peak at " + SpecUtils::printCompact(peak.energy, 5)
+                             + " keV is not within, or next to, a ROI." );
 
       assert( m_drf && m_drf->isValid() && m_drf->hasResolutionInfo() );
       const double det_fwhm = m_drf->peakResolutionFWHM( peak.energy );
@@ -3187,7 +3601,129 @@ struct RelActAutoCostFcn
       m_aged_gammas_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
       m_aged_gamma_derivative_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
     }
+
+    setup_fluorescence_depth_model();
   }//RelActAutoCostFcn constructor.
+
+
+  /** Fills `m_fluorescence_depth`: fluorescence x-rays of an element that is part of a curve's self-attenuating
+   material are produced where the source's own photons are absorbed, which is not uniform in depth, so they get
+   `RelActCalc::fluorescence_self_atten_correction` on top of the uniform-source self-attenuation.
+
+   Used only when (1) the curve is a Physical model with a self-attenuating material containing the element,
+   (2) the element is a source of the curve, (3) its lines in the ROIs span at least
+   `sm_fluorescence_depth_min_span_kev` (otherwise the correction is a constant the free fluorescence activity takes
+   up), and (4) the curve has nuclide lines above the element's K edge to excite it.  No fit parameters are added:
+   the correction follows the fitted areal density and activities.  Bremsstrahlung (e.g., Pa-234m betas in DU) also
+   excites, but with nearly the same depth profile, so it changes the fluorescence amount, not the line pattern.
+   */
+  void setup_fluorescence_depth_model()
+  {
+    m_fluorescence_depth.clear();
+
+    for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[re];
+      if( (curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || !curve.phys_model_self_atten )
+        continue;
+
+      const shared_ptr<const Material> material = curve.phys_model_self_atten->material;
+      if( !material || !(material->density > 0.0f) )
+        continue;
+
+      const auto mu_of = [&material]( const double energy ) -> double {
+        return GammaInteractionCalc::transmition_length_coefficient( material.get(), energy )
+               / material->density;
+      };
+
+      for( const NucInputGamma &src : m_nuclides[re] )
+      {
+        const SandiaDecay::Element * const el = RelActCalcAuto::element( src.source );
+        if( !el || !src.nominal_gammas || src.nominal_gammas->empty() )
+          continue;
+
+        bool in_material = false;
+        for( const Material::ElementFractionPair &ef : material->elements )
+          in_material |= (ef.first && (ef.first->atomicNumber == el->atomicNumber) && (ef.second > 0.0f));
+        for( const Material::NuclideFractionPair &nf : material->nuclides )
+          in_material |= (nf.first && (nf.first->atomicNumber == el->atomicNumber) && (nf.second > 0.0f));
+        if( !in_material )
+          continue;
+
+        double lowest_in_roi = std::numeric_limits<double>::max(), highest_in_roi = -lowest_in_roi;
+        double highest_line = 0.0;
+        for( const NucInputGamma::EnergyYield &ey : *src.nominal_gammas )
+        {
+          highest_line = std::max( highest_line, ey.energy );
+          for( const RoiRangeChannels &r : m_energy_ranges )
+          {
+            if( (ey.energy >= r.lower_energy) && (ey.energy <= r.upper_energy) )
+            {
+              lowest_in_roi = std::min( lowest_in_roi, ey.energy );
+              highest_in_roi = std::max( highest_in_roi, ey.energy );
+            }
+          }
+        }//for( loop over the element's fluorescence lines )
+
+        if( !((highest_in_roi - lowest_in_roi) >= sm_fluorescence_depth_min_span_kev) )
+          continue;
+
+        // The element's highest K line (K-P) lies within ~30 eV of its K edge.
+        const double k_edge = highest_line + 0.05;
+
+        FluorescenceDepth info;
+        info.rel_eff_index = re;
+        info.element = el;
+        for( const NucInputGamma &exciter : m_nuclides[re] )
+        {
+          if( !RelActCalcAuto::nuclide( exciter.source ) || !exciter.nominal_gammas )
+            continue;
+
+          vector<pair<double,double>> lines; //{mu, yield x photo-absorption / mu}
+          for( const NucInputGamma::EnergyYield &ey : *exciter.nominal_gammas )
+          {
+            if( (ey.energy <= k_edge) || !(ey.yield > 0.0) )
+              continue;
+
+            const double mu = mu_of( ey.energy );
+            const double photo = MassAttenuation::massAttenuationCoefficientElement( el->atomicNumber,
+                                   ey.energy, MassAttenuation::GammaEmProcces::PhotoElectric );
+            if( (mu > 0.0) && (photo > 0.0) )
+              lines.emplace_back( mu, ey.yield * photo / mu );
+          }//for( loop over the exciting nuclide's lines )
+
+          // Lines exciting < 0.1 % as much as this source's strongest only cost evaluation time, and lines with
+          //  attenuation coefficients within ~3 % of each other give the same depth profile, so are merged.
+          double max_weight = 0.0;
+          for( const pair<double,double> &l : lines )
+            max_weight = std::max( max_weight, l.second );
+          std::map<long,pair<double,double>> merged; //{log-mu bin, {sum weight x mu, sum weight}}
+          for( const pair<double,double> &l : lines )
+          {
+            if( l.second < 1.0E-3 * max_weight )
+              continue;
+            pair<double,double> &bin = merged[std::lround( std::log( l.first ) / 0.03 )];
+            bin.first += l.second * l.first;
+            bin.second += l.second;
+          }
+          for( const auto &bin : merged )
+          {
+            info.exciting_source.push_back( exciter.source );
+            info.exciting_mu.push_back( bin.second.first / bin.second.second );
+            info.exciting_base_weight.push_back( bin.second.second );
+          }
+        }//for( loop over the curve's sources )
+
+        if( info.exciting_mu.empty() )
+          continue;
+
+        for( const NucInputGamma::EnergyYield &ey : *src.nominal_gammas )
+          info.mu_at_energy.emplace_back( ey.energy, mu_of( ey.energy ) );
+
+        m_fluorescence_depth.push_back( std::move(info) );
+      }//for( const NucInputGamma &src : m_nuclides[re] )
+    }//for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+  }//void setup_fluorescence_depth_model()
 
 
 
@@ -3913,14 +4449,8 @@ struct RelActAutoCostFcn
         return m_energy_ranges[a].lower_energy < m_energy_ranges[b].lower_energy;
       } );
 
-    // Filter out ROIs that will be broken up (they shouldn't get deviation pairs)
-    std::vector<size_t> usable_roi_indices;
-    usable_roi_indices.reserve( sorted_roi_indices.size() );
-    for( const size_t idx : sorted_roi_indices )
-    {
-      if( m_energy_ranges[idx].range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp )
-        usable_roi_indices.push_back( idx );
-    }
+    // (All ROIs have been resolved into fixed ROIs by now, so every one can have an anchor.)
+    const std::vector<size_t> &usable_roi_indices = sorted_roi_indices;
 
     // Need at least 3 usable ROIs
     if( usable_roi_indices.size() < 3 )
@@ -4198,7 +4728,9 @@ struct RelActAutoCostFcn
                                                         )
   {
 
-    const RelActCalcAuto::Options caller_options = options;
+    // Note: once the cost functor has resolved the ROIs, their resolved form replaces the input ROIs in
+    //  both `caller_options` and `options` (see below).
+    RelActCalcAuto::Options caller_options = options;
     canonicalize_source_identities( options );
 
     const vector<RelActCalcAuto::RoiRange> &energy_ranges = options.rois;
@@ -4223,7 +4755,8 @@ struct RelActAutoCostFcn
 
     // We'll track highest/lowest energy we'll use for FWHM function purposes, for when we use the Berstein
     double lowest_fwhm_energy = 0.0, highest_fwhm_energy = 0.0;
-    
+
+
     try
     {
       solution.m_foreground       = foreground;
@@ -4378,7 +4911,8 @@ struct RelActAutoCostFcn
           //  In the end, the range of FWHM on matters if we are using the Berstein polynomials, and even then it
           //  doesnt matter a ton if we say its larger than we need - it should only ever-so-slightly reduce our
           //  allowed variation of FWHM, for a given order.
-          const double aditional_factor = (r.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) ? 2.0 : 1.5;
+          //  (ROIs that are not fixed extend past their lines by an amount based on the peak shape)
+          const double aditional_factor = (r.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed) ? 1.5 : 2.0;
           float min_sigma, max_sigma;
           expected_peak_width_limits( static_cast<float>(r.lower_energy), det_type, spectrum, min_sigma, max_sigma );
           
@@ -4390,14 +4924,15 @@ struct RelActAutoCostFcn
           highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy + aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
           highest_fwhm_energy = std::min( highest_fwhm_energy, 10000.0 );
         }//for( const RelActCalcAuto::RoiRange &r : options.rois )
-          
+
         // This next call may return `input_drf` if its valid and has FWHM info,
         //  otherwise it will add FWHM estimate, or if it isnt valid at all, it will
         //  load a default efficiency function
         solution.m_drf = get_fwhm_coefficients( options.fwhm_form, options.fwhm_estimation_method, all_peaks,
-                                              det_type, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
+                                              det_type, spectrum, lowest_fwhm_energy, highest_fwhm_energy, input_drf,
                                               starting_fwhm_paramaters, solution.m_warnings,
-                                              all_peaks_are_frozen );
+                                              all_peaks_are_frozen,
+                                              options.starting_fwhm_form, options.starting_fwhm_coefficients );
 
         if( !all_peaks_are_frozen )
         {
@@ -4410,7 +4945,7 @@ struct RelActAutoCostFcn
           vector<double> retained_fwhm_parameters;
           const std::shared_ptr<const DetectorPeakResponse> retained_drf
               = get_fwhm_coefficients( options.fwhm_form,options.fwhm_estimation_method,
-                  all_peaks,det_type,lowest_fwhm_energy,highest_fwhm_energy,solution.m_drf,
+                  all_peaks,det_type,spectrum,lowest_fwhm_energy,highest_fwhm_energy,solution.m_drf,
                   retained_fwhm_parameters,solution.m_warnings,true );
           if( retained_drf.get() != solution.m_drf.get() )
             throw logic_error( "Canonical retained-DRF conversion changed detector identity." );
@@ -4560,6 +5095,16 @@ struct RelActAutoCostFcn
     solution.m_final_roi_ranges.clear();
     for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
       solution.m_final_roi_ranges.push_back( roi );
+    solution.m_final_roi_info = cost_functor->m_roi_info;
+
+    // If any input ROI needed resolving, the resolved ROIs are what we fit, so from here on they
+    //  replace the input ROIs (including in the returned `m_options`, which re-solves are built from).
+    if( cost_functor->m_options.rois != options.rois )
+    {
+      options.rois = cost_functor->m_options.rois;
+      caller_options.rois = cost_functor->m_options.rois;
+      solution.m_options.rois = cost_functor->m_options.rois;
+    }
 
     // `cost_functor` hasnt had `m_peak_ranges_with_uncert` initialized yet, which we cant do
     //  until after we get our initial activity/rel-eff estimates setup
@@ -5002,6 +5547,139 @@ struct RelActAutoCostFcn
           
           break;
         }//case Berstein
+
+        case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+        {
+          // Positive and non-decreasing by construction, so the bounds are statements about the
+          //  detector rather than an envelope on each coefficient: a noise floor no wider than the
+          //  widest plausible peak at the bottom of the range - and, like the Bernstein floor above, at
+          //  least 1.25 of the widest ROI channel, so no peak becomes unresolvably narrow at any energy -
+          //  a width at 661 keV inside the detector class's range, and log-log slopes between flat and
+          //  a steeper-than-linear 1.5.
+          if( (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum)
+             || (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency) )
+          {
+            break;
+          }
+
+          const size_t start = cost_functor->m_fwhm_par_start_index;
+          assert( (start + 6) <= parameters.size() );
+
+          double channel_floor = 0.0;
+          for( const RelActCalcAuto::RoiRange &roi : energy_ranges )
+          {
+            const size_t lower_channel = spectrum->find_gamma_channel( roi.lower_energy );
+            const size_t upper_channel = spectrum->find_gamma_channel( roi.upper_energy );
+            for( size_t ch = lower_channel; ch <= upper_channel; ++ch )
+              channel_floor = std::max( channel_floor, options.fwhm_channel_floor_factor * spectrum->gamma_channel_width( ch ) );
+          }
+
+          float low_min_sigma, low_max_sigma, ref_min_sigma, ref_max_sigma;
+          expected_peak_width_limits( static_cast<float>(lowest_fwhm_energy), det_type, spectrum,
+                                      low_min_sigma, low_max_sigma );
+          expected_peak_width_limits( 661.0f, det_type, spectrum, ref_min_sigma, ref_max_sigma );
+
+          double bounds[4][2] = {
+            { channel_floor, std::max( 1.5*channel_floor, 2.35482*low_max_sigma ) },  // noise floor
+            { 1.0E-3*2.35482*ref_min_sigma, 2.35482*ref_max_sigma },                  // width at 661 keV
+            { 0.0, 1.5 },                                                             // slope, lower end
+            { 0.0, 1.5 }                                                              // slope, upper end
+          };
+
+          // See Options::fwhm_max_ratio_to_start: box bounds around the starting curve's own parameters
+          //  that keep the curve under `ratio` times it everywhere in the fitted range.  The power term
+          //  moves by at most w1's factor times exp(slope change * max|ln(E/661)|), so each gets half of
+          //  ln(ratio) in log width; the noise floor may grow by `ratio` itself.
+          //  The reference is the caller's own curve (#Options::starting_fwhm_form) refit into this form
+          //  over the fitted range - not the solve's starting parameters, which come from its canonical
+          //  resolution response and can sit far from that curve (R500 Co56_Unsh: ~1/7 of it at 400 keV),
+          //  so bounds around them held every width to it.
+          std::vector<double> reference;
+          if( (options.fwhm_max_ratio_to_start > 1.0) && !options.starting_fwhm_coefficients.empty()
+             && (lowest_fwhm_energy > 0.0) && (highest_fwhm_energy > lowest_fwhm_energy) )
+          {
+            std::vector<double> ref_energies, ref_fwhms;
+            const size_t num_samples = 24;
+            for( size_t i = 0; i < num_samples; ++i )
+            {
+              const double energy = lowest_fwhm_energy
+                                    * std::pow( highest_fwhm_energy/lowest_fwhm_energy, i/(num_samples - 1.0) );
+              const double fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                           options.starting_fwhm_form, options.starting_fwhm_coefficients );
+              // No narrower than the resolvability floor the noise term is held to anyway: on SAM-Eagle's
+              //  12.5 keV channels the caller's curve is sub-channel below ~150 keV, and bounds around it
+              //  fought the floor (Co57_Sh's z=97 136 keV line was lost).
+              if( std::isfinite(fwhm) && (fwhm > 0.0) )
+              {
+                ref_energies.push_back( energy );
+                ref_fwhms.push_back( std::max( fwhm, channel_floor ) );
+              }
+            }//for( size_t i = 0; i < num_samples; ++i )
+            try
+            {
+              reference = fit_noise_curved_power( ref_energies, ref_fwhms, lowest_fwhm_energy, highest_fwhm_energy );
+            }catch( const std::exception &e )
+            {
+              solution.m_warnings.push_back( "Could not fit the starting FWHM curve for its ratio limit: "
+                                             + std::string(e.what()) );
+              reference.clear();
+            }
+          }//if( a ratio limit to the starting curve was asked for )
+
+          if( reference.size() >= 4 )
+          {
+            const double ln_ratio = std::log( options.fwhm_max_ratio_to_start );
+            const double max_lever = std::max( std::fabs( std::log( lowest_fwhm_energy / 661.0 ) ),
+                                               std::fabs( std::log( highest_fwhm_energy / 661.0 ) ) );
+            const double w1_factor = std::exp( 0.5*ln_ratio );
+            const double slope_delta = (max_lever > 0.0) ? (0.5*ln_ratio / max_lever) : 1.5;
+            const double ref_w0 = reference[0], ref_w1 = reference[1];
+            const double wanted[4][2] = {
+              { bounds[0][0], std::max( bounds[0][0]*1.5, options.fwhm_max_ratio_to_start*ref_w0 ) },
+              { ref_w1 / w1_factor, ref_w1 * w1_factor },
+              { reference[2] - slope_delta, reference[2] + slope_delta },
+              { reference[3] - slope_delta, reference[3] + slope_delta }
+            };
+            for( size_t i = 0; i < 4; ++i )
+            {
+              const double lower = std::max( bounds[i][0], wanted[i][0] );
+              const double upper = std::min( bounds[i][1], wanted[i][1] );
+              if( std::isfinite(lower) && std::isfinite(upper) && (upper > lower) )
+              {
+                bounds[i][0] = lower;
+                bounds[i][1] = upper;
+              }else
+              {
+                solution.m_warnings.push_back( "The FWHM limit relative to the starting curve left no room for"
+                    " parameter " + std::to_string(i) + "; kept the detector-class bounds for it." );
+              }
+            }//for( size_t i = 0; i < 4; ++i )
+          }//if( reference.size() >= 4 )
+
+          for( size_t i = 0; i < 4; ++i )
+          {
+            const size_t par_index = start + i;
+            lower_bounds[par_index] = bounds[i][0];
+            upper_bounds[par_index] = bounds[i][1];
+            if( (parameters[par_index] < bounds[i][0]) || (parameters[par_index] > bounds[i][1]) )
+            {
+              solution.m_warnings.push_back( "Initial FWHM parameter " + std::to_string(i) + " ("
+                  + std::to_string(parameters[par_index]) + ") is outside [" + std::to_string(bounds[i][0])
+                  + ", " + std::to_string(bounds[i][1]) + "] - clamped into range." );
+              parameters[par_index] = std::clamp( parameters[par_index], bounds[i][0], bounds[i][1] );
+            }
+          }//for( size_t i = 0; i < 4; ++i )
+
+          // The energy range sets where the slopes are pinned; it is not fit.
+          parameters[start + 4] = lowest_fwhm_energy;
+          parameters[start + 5] = highest_fwhm_energy;
+          for( const size_t index : { start + 4, start + 5 } )
+          {
+            if( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(index) ) == end(constant_parameters) )
+              constant_parameters.push_back( static_cast<int>(index) );
+          }
+          break;
+        }//case NoisePlusCurvedPower
           
         default:
           break;
@@ -5768,6 +6446,16 @@ struct RelActAutoCostFcn
                   upper_bounds[b_index] = ( corr_bmax/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
                   lower_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset - (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
                   upper_bounds[c_index] = RelActCalc::ns_decay_hoerl_c_offset + (corr_gamma_max/RelActCalc::ns_decay_hoerl_c_multiple);
+
+                  // Weak prior on each term's swing across the window (see ns_hoerl_swing_prior_sigma).
+                  const double swing_sigma = RelActCalc::ns_hoerl_swing_prior_sigma;
+                  if( corr_have_window && (swing_sigma > 0.0) )
+                  {
+                    cost_functor->m_phys_model_param_priors.push_back( { b_index, RelActCalc::ns_decay_hoerl_b_offset,
+                                                 std::log(corr_ehi_mev/corr_elo_mev) / swing_sigma } );
+                    cost_functor->m_phys_model_param_priors.push_back( { c_index, hoerl_c_param_for_c( 1.0 ),
+                                                 ((1.0/corr_elo_mev) - (1.0/corr_ehi_mev)) / swing_sigma } );
+                  }
                 }
               }
 
@@ -6270,8 +6958,25 @@ struct RelActAutoCostFcn
             {
               const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
               const size_t act_index = cost_functor->nuclide_parameter_index(nuc.source, re_eff_index);
-              double rel_act = empirical_seed_activity_scale
+
+              // The manual stage only fits sources its matched peaks actually name, so a requested
+              // source it saw no peaks for has no entry here.  That is normal - an element requested
+              // for its fluorescence x-rays contributes no matched peak whenever those x-rays fall
+              // outside the analysed range - and it must not cost the OTHER sources their fitted
+              // starting values: letting the lookup throw discarded this curve's whole seed and
+              // restarted it from a flat line, which is what made the shielded U/Pu fits fail or run
+              // out their time budget once the element sources were requested alongside the isotopes.
+              double rel_act = 0.0;
+              try
+              {
+                rel_act = empirical_seed_activity_scale
                                 * manual_solution.relative_activity( nuc.name() ) / live_time;
+              }catch( std::exception & )
+              {
+                rel_act = 0.0;   // clamped to the 1.0 default just below
+                solution.m_warnings.push_back( "The initial relative-efficiency estimate had no peaks"
+                    " for " + nuc.name() + ", so it starts from a default activity." );
+              }//try / catch on this source having a manual estimate
 
               // If the rel_act has an uncertainty approaching 100%, we may get totally wild starting values of activity,
               //  so we'll arbitrarily use an initial guess of 1, which may be well-off
@@ -6904,7 +7609,12 @@ struct RelActAutoCostFcn
           
         bool fit_skew_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
 
-        if( fit_skew_energy_dep )
+        // Fixed values at both ends of the spectrum are always interpolated between (they cost no
+        //  fit parameters), no matter how much of the spectrum the peaks span.
+        const bool both_ends_fixed = options.fixed_lower_skew[i].has_value()
+                                     && options.fixed_upper_skew[i].has_value();
+
+        if( fit_skew_energy_dep && !both_ends_fixed )
         {
           //We'll check if stat sig peaks span at least 100 keV (arbitrarily chosen), and if not,
           // drop fitting the energy dependence for skew
@@ -6950,7 +7660,12 @@ struct RelActAutoCostFcn
         const size_t skew_start = cost_functor->m_skew_par_start_index;
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
         
-        parameters[skew_start + i] = starting;
+        // A starting value from the options (e.g., from peak-fit preferences) is kept within bounds.
+        const auto start_value = [lower,upper]( const std::optional<double> &value, const double fallback ) -> double {
+          return value.has_value() ? std::min( std::max( value.value(), lower ), upper ) : fallback;
+        };
+
+        parameters[skew_start + i] = start_value( options.start_lower_skew[i], starting );
         lower_bounds[skew_start + i] = lower;
         upper_bounds[skew_start + i] = upper;
 
@@ -6959,6 +7674,14 @@ struct RelActAutoCostFcn
         if( lower_fixed )
         {
           parameters[skew_start + i] = options.fixed_lower_skew[i].value();
+          constant_parameters.push_back( static_cast<int>(skew_start + i) );
+          lower_bounds[skew_start + i] = std::nullopt;
+          upper_bounds[skew_start + i] = std::nullopt;
+        }else if( !options.start_lower_skew[i].has_value()
+                 && !PeakDef::skew_parameter_fit_by_default( options.skew_type, ct ) )
+        {
+          // Not given a value, and not fit by default either (e.g., a GADRAS power or extent):
+          //  hold it at its default value.
           constant_parameters.push_back( static_cast<int>(skew_start + i) );
           lower_bounds[skew_start + i] = std::nullopt;
           upper_bounds[skew_start + i] = std::nullopt;
@@ -6998,7 +7721,9 @@ struct RelActAutoCostFcn
           constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
         }else
         {
-          parameters[skew_start + i + num_skew_coefs] = starting;
+          parameters[skew_start + i + num_skew_coefs]
+                  = start_value( options.start_upper_skew[i],
+                                 start_value( options.start_lower_skew[i], starting ) );
           lower_bounds[skew_start + i + num_skew_coefs] = lower;
           upper_bounds[skew_start + i + num_skew_coefs] = upper;
 
@@ -7036,6 +7761,21 @@ struct RelActAutoCostFcn
 #endif
         }
       }//for( size_t i = 0; i < (num_skew_par/2); ++i )
+
+      {// Move the skew start off a point the fit could never leave (both GADRAS amplitudes zero)
+        const size_t skew_start = cost_functor->m_skew_par_start_index;
+        vector<double> skew_values( num_skew_coefs, 0.0 );
+        vector<bool> skew_is_fit( num_skew_coefs, false );
+        for( size_t i = 0; i < num_skew_coefs; ++i )
+        {
+          skew_values[i] = parameters[skew_start + i];
+          skew_is_fit[i] = (std::find( begin(constant_parameters), end(constant_parameters),
+                                       static_cast<int>(skew_start + i) ) == end(constant_parameters));
+        }
+        PeakDef::avoid_stationary_skew_start( options.skew_type, skew_values, skew_is_fit );
+        for( size_t i = 0; i < num_skew_coefs; ++i )
+          parameters[skew_start + i] = skew_values[i];
+      }
     
       // Floating peaks; one parameter for amplitude, one for FWHM (which will usually be unused)
     for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
@@ -7100,9 +7840,12 @@ struct RelActAutoCostFcn
         parameters.resize( num_pars, sm_peak_range_uncert_offset );
         pars = &parameters[0];
                   
-        const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
+        // The parameter at which the yield is `additional_br_min_yield_fraction` of nominal (zero by default).
+        const double min_yield = std::clamp( options.additional_br_min_yield_fraction, 0.0, 0.99 );
+        const double val_with_min_yield = sm_peak_range_uncert_offset
+                                  - (1.0 - min_yield)*sm_peak_range_uncert_par_scale/options.additional_br_uncert;
 
-        lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
+        lower_bounds.resize( num_pars, optional<double>(val_with_min_yield) );
         upper_bounds.resize( num_pars );
         
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
@@ -7218,6 +7961,17 @@ struct RelActAutoCostFcn
       // m_final_parameters re-evaluated thousands of chi2 off its own m_chi2).  Restarts
       // therefore always use the semantic re-expression below; a restart that still fails to
       // reach its seed escalates to the full candidate matrix in the caller instead.
+
+      // Bernstein FWHM coefficients are relative to the FWHM energy range, which can differ between
+      //  ROI layouts, so rather than being copied, the previous FWHM curve is re-expressed below.
+      const bool berstein_fwhm = (options.fwhm_form == RelActCalcAuto::FwhmForm::Berstein_2)
+                              || (options.fwhm_form == RelActCalcAuto::FwhmForm::Berstein_3)
+                              || (options.fwhm_form == RelActCalcAuto::FwhmForm::Berstein_4)
+                              || (options.fwhm_form == RelActCalcAuto::FwhmForm::Berstein_5)
+                              || (options.fwhm_form == RelActCalcAuto::FwhmForm::Berstein_6);
+      const size_t fwhm_start = cost_functor->m_fwhm_par_start_index;
+      const size_t num_fwhm_pars = num_parameters( options.fwhm_form );
+
       for( size_t index = 0; index < num_pars; ++index )
       {
         const std::string name = cost_functor->parameter_name(index);
@@ -7231,12 +7985,38 @@ struct RelActAutoCostFcn
         // and positions happen to agree.
         const bool empirical_q_slot = (name.rfind("REQ",0) == 0)
                                    || (name.rfind("REGauge",0) == 0);
-        if( source_slot || empirical_q_slot || is_constant(index) )
+        const bool berstein_fwhm_slot = berstein_fwhm && (index >= fwhm_start)
+                                        && (index < (fwhm_start + num_fwhm_pars));
+        if( source_slot || empirical_q_slot || berstein_fwhm_slot || is_constant(index) )
           continue;
         const auto previous = previous_named_values.find(name);
-        if( previous != end(previous_named_values) )
+        // A layout without energy-dependent skew holds its upper-energy skew values at a -999.9
+        //  placeholder, which is not a starting value.
+        const bool skew_placeholder = (previous != end(previous_named_values))
+                                      && (name.rfind("Skew_",0) == 0) && (previous->second < -500.0);
+        if( (previous != end(previous_named_values)) && !skew_placeholder )
           num_transferred += assign_if_feasible(index, previous->second);
       }
+
+      if( berstein_fwhm && (num_fwhm_pars >= 4)
+         && (semantic_warm_start->m_fwhm_form == options.fwhm_form)
+         && (semantic_warm_start->m_fwhm_coefficients.size() == num_fwhm_pars) )
+      {
+        try
+        {
+          const vector<double> &previous = semantic_warm_start->m_fwhm_coefficients;
+          const double lower = parameters[fwhm_start + num_fwhm_pars - 2];
+          const double upper = parameters[fwhm_start + num_fwhm_pars - 1];
+          const bool same_range = (previous[num_fwhm_pars - 2] == lower) && (previous[num_fwhm_pars - 1] == upper);
+          const vector<double> fwhm_pars = same_range ? previous
+                                                      : bernstein_fwhm_pars_for_range( previous, lower, upper );
+          for( size_t i = 0; (i + 2) < num_fwhm_pars; ++i )
+            num_transferred += assign_if_feasible( fwhm_start + i, fwhm_pars[i] );
+        }catch( std::exception & )
+        {
+          // Keep the starting FWHM of this layout.
+        }
+      }//if( Bernstein FWHM to transfer )
 
       // Re-express each previous empirical curve in this solve's fixed-pivot/QR frame.  The
       // normalization removed at the new pivot is applied to all activities below, preserving
@@ -7597,6 +8377,7 @@ struct RelActAutoCostFcn
         // counters, mutex, or thread-pool state.
         fresh->m_nuclides = fcn->m_nuclides;
         fresh->m_energy_ranges = fcn->m_energy_ranges;
+        fresh->m_roi_info = fcn->m_roi_info;
         fresh->m_mass_frac_blocks = fcn->m_mass_frac_blocks;
         fresh->m_empirical_basis_transforms = fcn->m_empirical_basis_transforms;
         fresh->m_corr_lower_energy = fcn->m_corr_lower_energy;
@@ -7880,10 +8661,15 @@ struct RelActAutoCostFcn
       if( pos != end(constant_parameters) )
       {
         // Test that if the paramater is totally const (e.g., not just `initial_const_parameters`), then we
-        //  shouldnt have put lower/upper bounds on the paramater
+        //  shouldnt have put lower/upper bounds on the paramater - other than a replayed model-selection
+        //  freeze, which keeps its bounds (its value was checked against them above).
         const auto init_pos = std::find( begin(initial_const_parameters), end(initial_const_parameters), static_cast<int>(i) );
+        const auto frozen_pos = std::find( begin(model_selection_fixed_parameters),
+                                           end(model_selection_fixed_parameters), static_cast<int>(i) );
         assert( (init_pos != end(initial_const_parameters))
+               || (frozen_pos != end(model_selection_fixed_parameters))
                || (!lower_bounds[i].has_value() && !upper_bounds[i].has_value()) );
+        (void)frozen_pos;
         
         continue;
       }
@@ -7894,8 +8680,14 @@ struct RelActAutoCostFcn
       if( upper_bounds[i].has_value() )
         problem.SetParameterUpperBound(pars, static_cast<int>(i), *upper_bounds[i] );
     }//for( size_t i = 0; i < num_pars; ++i )
-    
-    
+
+    // The box as the active-set polish after the main solve takes it, with Ceres' sentinels for "no bound".
+    vector<pair<double,double>> parameter_box( num_pars );
+    for( size_t i = 0; i < num_pars; ++i )
+      parameter_box[i] = { lower_bounds[i].value_or( std::numeric_limits<double>::lowest() ),
+                           upper_bounds[i].value_or( std::numeric_limits<double>::max() ) };
+
+
     // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 2 )
     if( !initial_const_parameters.empty() )
@@ -7967,6 +8759,8 @@ struct RelActAutoCostFcn
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #endif
     ceres_options.max_num_iterations = 50000;
+    if( cost_functor->m_options.max_solve_iterations > 0 )
+      ceres_options.max_num_iterations = static_cast<int>( std::min( cost_functor->m_options.max_solve_iterations, size_t(50000) ) );
     // Wall-clock time limits are a *pathological-case* backstop only; the deterministic terminator
     //  is `max_num_iterations` (above).  A wall-clock cap that trips during normal optimization makes
     //  the solve stop after a load-dependent number of iterations, which is a source of run-to-run
@@ -8007,6 +8801,7 @@ struct RelActAutoCostFcn
     
     //RelActAutoCostFcn::CeresStepSummaryCallback step_summary_callback( cost_functor.get() );
     //ceres_options.callbacks.push_back( &step_summary_callback );
+
     
     // Setting ceres_options.num_threads >1 doesnt seem to do much (any?) good.
     // Capped via max_solve_threads() so concurrent solves (e.g. the GA) don't
@@ -8273,12 +9068,16 @@ struct RelActAutoCostFcn
 
     ceres::Solver::Summary summary;
 
-    // Kept so the check after the restart loop can ask the only unambiguous question about a solve
+    // Kept so the check after the polish can ask the only unambiguous question about a solve
     // that reported convergence without accepting anything: did the answer actually move?
     const vector<double> pre_solve_parameters = parameters;
 
-    ceres::Solve(ceres_options, &problem, &summary);
+    solve_stopping_creep( ceres_options, problem, summary );
     //std::cout << summary.BriefReport() << "\n";
+
+    // The effort of the primary solve (with its polish); a severe-misfit rescue gives each of its
+    //  candidates no more than this.
+    size_t primary_solve_iterations = summary.iterations.size();
 
     cost_functor->m_solution_finished = true;
 
@@ -8299,6 +9098,11 @@ struct RelActAutoCostFcn
         cost_functor->m_skip_skew = false;
         for( const int par : initial_const_parameters )
         {
+          // A replayed model selection (auto-simplify removed this skew coefficient) keeps it fixed.
+          if( std::find( begin(model_selection_fixed_parameters), end(model_selection_fixed_parameters), par )
+              != end(model_selection_fixed_parameters) )
+            continue;
+
           const auto pos = std::find( begin(constant_parameters), end(constant_parameters), par );
           assert( pos != end(constant_parameters) );
           if( pos != end(constant_parameters) )
@@ -8327,54 +9131,37 @@ struct RelActAutoCostFcn
     }//if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
 #endif //#if( PEAK_SKEW_HACK == 2 )
 
-    // The main solve can stop on a plateau (ftol/ptol) above the full model's true minimum,
-    //  especially in flat empirical-correction <-> attenuator valleys.  A warm re-Solve resets the
-    //  trust region; from a true minimum it is nearly free, but it reliably drops out of these stalls
-    //  (the auto-simplify trial below otherwise routinely finds a lower chi2 - mathematically
-    //  impossible at a true minimum of the full model).  Loop until improvement stops, keeping the
-    //  last converged point if a restart fails to converge.
-    if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS) )
+    // Ceres clamps a step onto the box only AFTER predicting its cost reduction for the unclamped
+    //  step, so a parameter sitting on a bound with its gradient pointing outward can make every step
+    //  look like a failure, and the solve then "converges" wherever it stalled - for example with the
+    //  efficiency correction never having left its start, because a nuclide that is not actually present
+    //  was driven onto its zero-activity bound (see RelActCalcAuto_ActiveSet.hpp).  So hold any such
+    //  parameter, re-solve the rest, and release it again; a fit already at its constrained minimum
+    //  comes back untouched.  (This replaced a loop of up to five warm re-Solves, which reset the trust
+    //  region but cannot get out of these stalls: on the U benchmark, once the polish was in, the loop
+    //  moved chi2 by under 1% either way while costing ~40% of the function evaluations.)
+    //
+    //  Single-curve problems only.  With sources shared between curves, a lower objective is often
+    //  reached by emptying a curve entirely (every activity on it at zero, so its mass fractions are
+    //  0/0) - the attribution degeneracy that multi-curve fits handle with their own rescues (the EM
+    //  attribution candidates, and the merged and tied comparisons).
+    // The main solve's own answer, before any polish: whether it landed in a severely misfit basin is
+    //  what decides on the broad candidate search below, whatever the polish then makes of it.
+    const vector<double> pre_polish_parameters = parameters;
+
+    RelActCalcAutoImp::ActiveSet::PolishResult bound_polish;
+    if( ((summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS))
+        && (!cancel_calc || !cancel_calc->load())
+        && (options.rel_eff_curves.size() <= 1) )
     {
-      const int max_restarts = 5;
-      for( int restart = 0; restart < max_restarts; ++restart )
-      {
-        if( cancel_calc && cancel_calc->load() )
-          break;
+      bound_polish = RelActCalcAutoImp::ActiveSet::polish_bound_blocked( problem, parameters,
+                       constant_parameters, parameter_box, ceres_options,
+                       [cost_functor]( const vector<double> &x ) -> double { return (*cost_functor)(x); },
+                       cancel_calc, RelActCalcAutoImp::ActiveSet::PolishSettings(), &solve_stopping_creep );
 
-        const vector<double> pre_restart_pars = parameters;
-        const double pre_restart_cost = (*cost_functor)(pre_restart_pars);
-
-        ceres::Solver::Summary restart_summary;
-        ceres::Solve( ceres_options, &problem, &restart_summary );
-
-        const bool restart_converged = ((restart_summary.termination_type == ceres::CONVERGENCE)
-                                        || (restart_summary.termination_type == ceres::USER_SUCCESS));
-        if( !restart_converged )
-        {
-          // A cancel that landed mid-restart must surface (else we'd report Success for a cancelled
-          //  run); any other non-convergence just keeps the last good converged point + summary.
-          if( cancel_calc && cancel_calc->load() )
-            summary = restart_summary;
-          else
-            parameters = pre_restart_pars;
-          break;
-        }
-
-        const double restart_cost = (*cost_functor)(parameters);
-        const double rel_improve = (pre_restart_cost > 0.0)
-                                ? (pre_restart_cost - restart_cost)/pre_restart_cost : 0.0;
-        if( !std::isfinite(restart_cost) || (rel_improve < 0.0) )
-        {
-          // Non-monotonic steps are enabled, so a converged restart can end above where it started;
-          //  keep the better (pre-restart) point and its summary.
-          parameters = pre_restart_pars;
-          break;
-        }
-
-        summary = restart_summary;
-        if( rel_improve <= ceres_options.function_tolerance )
-          break;
-      }//for( int restart = 0; restart < max_restarts; ++restart )
+      primary_solve_iterations += bound_polish.iterations;
+      if( bound_polish.cancelled )
+        summary = bound_polish.cancel_summary;
     }//if( main solve converged )
 
     // Ceres' `FunctionToleranceReached()` is the one convergence test it does NOT gate on an
@@ -8387,11 +9174,10 @@ struct RelActAutoCostFcn
     // visible, because a whole analysis silently returning its starting point would be a far larger
     // problem than a single lost scan sample.
     //
-    // The step counts alone are NOT the test to use here, and measuring them was actively
-    // misleading: the restart loop above ends with a CONFIRMING solve from an already-converged
-    // point, which by design accepts nothing and rejects several trial steps - so every healthy fit
-    // shows the "accepted nothing" signature on its final summary.  The unambiguous question is
-    // whether the answer moved at all, so that is what is asked.
+    // The step counts alone are NOT the test to use here: a confirming solve from an already-converged
+    // point (a polish round, or a re-entered solve) by design accepts nothing and rejects several trial
+    // steps, so a healthy fit can show the "accepted nothing" signature on its final summary.  The
+    // unambiguous question is whether the answer moved at all, so that is what is asked.
     {
       bool parameters_moved = (parameters.size() != pre_solve_parameters.size());
       for( size_t i = 0; !parameters_moved && (i < parameters.size()); ++i )
@@ -8404,12 +9190,17 @@ struct RelActAutoCostFcn
       // already-converged model legitimately has nothing to do and rejects nothing - measured at 5
       // of 19 fits across the MassFracConstraint suite, every one of them with zero rejected steps.
       // Requiring a rejected step is what separates "nothing to do" from "could not do anything".
-      if( main_ceres_success && !parameters_moved && (summary.num_unsuccessful_steps > 0) )
+      // Steps rejected against an active bound are not that failure when the bound polish, holding
+      // the blocked parameters, found nothing more to gain: the start is then a constrained optimum.
+      const bool polish_confirmed_optimum = bound_polish.confirmed_constrained_optimum();
+      if( main_ceres_success && !parameters_moved && (summary.num_unsuccessful_steps > 0)
+          && !polish_confirmed_optimum )
       {
         const string msg = "The fit was reported as converged, but the optimizer rejected every"
               " step and never moved a single parameter, so the result is the starting point rather"
               " than a minimum (" + summary.message + ").";
         solution.m_warnings.push_back( msg );
+        solution.m_optimizer_returned_seed = true;
         cerr << "RelActCalcAuto: " << msg << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
         // Was `assert(0)`, but a single degenerate fit returning its seed must not abort the whole
@@ -8426,9 +9217,21 @@ struct RelActAutoCostFcn
              << " final_unsuccessful=" << summary.num_unsuccessful_steps
              << " parameters_moved=" << (parameters_moved ? 1 : 0)
              << " returned_its_seed=" << ((main_ceres_success && !parameters_moved
-                                          && (summary.num_unsuccessful_steps > 0)) ? 1 : 0)
+                                          && (summary.num_unsuccessful_steps > 0)
+                                          && !polish_confirmed_optimum) ? 1 : 0)
              << " nothing_to_do=" << ((main_ceres_success && !parameters_moved
                                        && (summary.num_unsuccessful_steps == 0)) ? 1 : 0)
+             << " bound_polish_rounds=" << bound_polish.rounds
+             << " bound_polish_adopted=" << bound_polish.rounds_adopted
+             << " bound_polish_iters=" << bound_polish.iterations
+             << " bound_polish_obj=" << SpecUtils::printCompact(bound_polish.objective_before,8)
+             << "->" << SpecUtils::printCompact(bound_polish.objective_after,8)
+             << " bound_polish_blocked=[" << [&]() -> string {
+                  string names;
+                  for( const int index : bound_polish.first_blocked )
+                    names += (names.empty() ? "" : ",") + cost_functor->parameter_name( static_cast<size_t>(index) );
+                  return names;
+                }() << "]"
              << endl;
     }
 
@@ -8659,17 +9462,61 @@ struct RelActAutoCostFcn
         break;
     }//switch( summary.termination_type )
     
+    // A polish round that improved the fit but ran out of budget left a point not shown stationary.
+    if( bound_polish.budget_exhausted
+       && (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+    {
+      solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings;
+      solution.m_warnings.push_back( "After the fit stalled against a parameter limit, re-solving with that"
+          " parameter held improved the fit but ran out of its iteration budget, so the result is better"
+          " than where the solver stopped, but is not shown to be the minimum." );
+    }
+
     bool success = RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status);
 
-    // TODO (RelActAuto true-minimum rescue): a few fits converge to a bad LOCAL minimum yet report
-    //  "Success" - notably depleted-U high-statistics spectra (e.g. JRC SS16 CBNM031): chi2/dof ~120
-    //  while a re-minimization from a perturbed rel-eff/physical-model point reaches chi2/dof ~1.6 and
-    //  the correct enrichment (1.0% -> 0.32%, truth 0.317%).  A 2026-06 basin-hopping experiment
-    //  confirmed this.  PLAN: when chi2/dof exceeds a high threshold N (~20, TBD) treat the fit as a
-    //  catastrophic stall and attempt a *smart* rescue.
-    //  IMPORTANT: gate this on high chi2/dof ONLY.  Chasing the global minimum on already-good fits
-    //  HURTS - the marginally-lower basins there are model/DRF-degeneracy artifacts that pull
-    //  enrichment AWAY from truth (seen on 5 of 7 affected IDB files).
+    // A few fits converge to a bad LOCAL minimum yet report "Success" - mostly high-statistics
+    //  spectra, where the physical model's self-attenuation / empirical-correction degeneracy has
+    //  basins with chi2/dof in the hundreds or thousands next to the correct one (e.g., JRC 16 h
+    //  Detective spectra with a U-235 result 20x too high).  So a severe misfit gets the complete
+    //  matrix of starting points a robust solve uses, keeping the best full objective.  This is
+    //  gated on a severe misfit ONLY: chasing a marginally lower minimum on a merely imperfect fit
+    //  HURTS, as those basins are model/DRF-degeneracy artifacts that pull the answer AWAY from the
+    //  truth.  On the U benchmark (JRC Detective + IDB HPGe), every fit this rescue fixed had a
+    //  chi2/dof of 1000 or more when it was checked, while high-statistics spectra that are just not
+    //  perfectly modeled reach 20 to 60, where re-searching changed nothing or made the answer worse.
+    //  Problems the multi-curve attribution rescue applies to keep to that rescue: there the broader
+    //  search can find a lower objective in a physically wrong split of the sources.
+    static constexpr double severe_misfit_chi2_dof = 100.0;
+    //  Judged on the main solve's own answer as well as the polished one (see `pre_polish_parameters`):
+    //  a polish can lift a stalled fit out of the severe range without reaching the basin this search
+    //  would have found.
+    const bool severe_misfit = [&]() -> bool {
+      if( !success || options.robust_solve || !allow_candidate_search
+         || (search_seed_variant != SearchSeedVariant::Default)
+         || em_attribution_rescue_applicable( options ) )
+        return false;
+
+      const auto is_severe = [&]( const vector<double> &point ) -> bool {
+        try
+        {
+          vector<double> residuals( cost_functor->number_residuals(), 0.0 );
+          cost_functor->eval( point, residuals.data() );
+          const size_t ndata = cost_functor->number_data_residuals();
+          const size_t nfree = (num_pars > constant_parameters.size()) ? (num_pars - constant_parameters.size()) : size_t(0);
+          if( ndata <= nfree )
+            return false;
+          double chi2 = 0.0;
+          for( size_t row = 0; row < ndata; ++row )
+            chi2 += residuals[row]*residuals[row];
+          return (chi2 / static_cast<double>(ndata - nfree)) > severe_misfit_chi2_dof;
+        }catch( std::exception & )
+        {
+        }
+        return false;
+      };//is_severe lambda
+
+      return is_severe( parameters ) || ((pre_polish_parameters != parameters) && is_severe( pre_polish_parameters ));
+    }();
 
     // ---- Deterministic multi-start candidate search -------------------------------------------------
     // A data-only chi2 may trigger the search, but candidate ranking is ALWAYS a fresh evaluation of
@@ -8692,7 +9539,7 @@ struct RelActAutoCostFcn
     // stage - including its trigger conditioning SVD - is skipped.
     size_t extra_candidate_function_evals = 0;
     const bool candidate_search_possible
-        = options.robust_solve || em_attribution_rescue_applicable( options );
+        = options.robust_solve || severe_misfit || em_attribution_rescue_applicable( options );
     if( allow_candidate_search && (search_seed_variant == SearchSeedVariant::Default)
         && candidate_search_possible && (!cancel_calc || !cancel_calc->load()) )
     {
@@ -8844,6 +9691,7 @@ struct RelActAutoCostFcn
       if( success && (num_rank_deficient > 0) ) trigger_reasons.push_back("rank pathology");
       if( relevant_bound_pathology ) trigger_reasons.push_back("relevant active bound");
       if( high_data_chi2 ) trigger_reasons.push_back("high data chi2");
+      if( severe_misfit ) trigger_reasons.push_back("severe misfit");
       if( force_candidate_search ) trigger_reasons.push_back("ROI/model layout change");
       // A robust solve is the explicit "spend the budget to be thorough" mode: always search the
       // complete applicable matrix, not just on pathology.  (In-frame candidates are warm
@@ -8881,9 +9729,9 @@ struct RelActAutoCostFcn
                          != RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
         const bool fit_calibration = (options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
 
-        // Outside a robust solve only the EM-attribution rescue pair is eligible; see the comment on
-        // the enclosing block for why those two are not treated as optional breadth.
-        const bool rescue_only = !options.robust_solve;
+        // Outside a robust solve (or a severe misfit) only the EM-attribution rescue pair is eligible;
+        // see the comment on the enclosing block for why those two are not treated as optional breadth.
+        const bool rescue_only = !options.robust_solve && !severe_misfit;
         const auto applicable = [&]( const SearchSeedVariant variant ){
           switch( variant )
           {
@@ -9025,8 +9873,16 @@ struct RelActAutoCostFcn
 
               assert( seed.size() == parameters.size() );
               std::copy( begin(seed), end(seed), begin(parameters) );
+
+              // A severe-misfit rescue (as opposed to a requested robust solve) bounds each candidate
+              //  by the primary solve's effort, so a slowly converging spectrum that is simply fit as
+              //  well as it can be is not re-solved a dozen times at full cost.
+              ceres::Solver::Options candidate_options = ceres_options;
+              if( !options.robust_solve )
+                candidate_options.max_num_iterations = static_cast<int>( std::max( primary_solve_iterations, size_t(300) ) );
+
               ceres::Solver::Summary candidate_summary;
-              ceres::Solve( ceres_options, &problem, &candidate_summary );
+              solve_stopping_creep( candidate_options, problem, candidate_summary );
 
               // A candidate that cannot converge within budget is not a trustworthy basin; the
               // budget-exhaustion audit is reserved for the primary solve.
@@ -9488,6 +10344,9 @@ struct RelActAutoCostFcn
     // ---------------------------------------------------------------------------------------------
     size_t num_effective_paramaters = num_pars;
 
+    // Parameters held out of the rank and covariance analysis (see the tangent-space reduction below).
+    vector<char> absent_source_par( num_pars, 0 );
+
     if( success )
     {
       solution.m_covariance.clear();
@@ -9513,7 +10372,7 @@ struct RelActAutoCostFcn
         if( (sparse_jacobian.num_rows == 0) || (sparse_jacobian.num_cols == 0) )
           throw runtime_error( "Failed to evaluate Jacobian" );
 
-        const size_t num_free_pars = static_cast<size_t>( sparse_jacobian.num_cols );
+        const size_t num_tangent_pars = static_cast<size_t>( sparse_jacobian.num_cols );
 
         Eigen::MatrixXd jacobian;
         jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
@@ -9530,16 +10389,16 @@ struct RelActAutoCostFcn
         Eigen::MatrixXd plus_jacobian;
         if( !manifold )
         {
-          if( num_free_pars != num_pars )
+          if( num_tangent_pars != num_pars )
             throw std::logic_error( "No manifold, but tangent size != ambient size" );
           plus_jacobian = Eigen::MatrixXd::Identity(
-              static_cast<Eigen::Index>(num_pars),static_cast<Eigen::Index>(num_free_pars) );
+              static_cast<Eigen::Index>(num_pars),static_cast<Eigen::Index>(num_tangent_pars) );
         }else
         {
           const int amb_size = manifold->AmbientSize();
           const int tan_size = manifold->TangentSize();
           if( (static_cast<size_t>(amb_size) != num_pars)
-              || (static_cast<size_t>(tan_size) != num_free_pars) )
+              || (static_cast<size_t>(tan_size) != num_tangent_pars) )
             throw std::logic_error( "Manifold ambient/tangent size mismatch with Jacobian" );
 
           vector<double> plus_jac( static_cast<size_t>(amb_size)
@@ -9550,6 +10409,169 @@ struct RelActAutoCostFcn
               mapped_plus_jacobian( plus_jac.data(), amb_size, tan_size );
           plus_jacobian = mapped_plus_jacobian;
         }
+
+        // The ambient index and Jacobian column of each parameter held out of the rank analysis below,
+        //  and which of them are mass-fraction carriers (on a bound by construction).
+        vector<pair<size_t,Eigen::VectorXd>> held_columns;
+        set<size_t> held_carrier_pars;
+
+        // Two kinds of parameter leave the tangent space here, exactly as if held constant - no
+        //  variance, no degree of freedom spent, and the flat directions only they span are not
+        //  counted as rank deficiency - and are reported as pinned at a bound below:
+        //   - A mass-fraction block's carrier (the element's constrained total) sitting on a bound.
+        //     There the block's sequential decode leaves each other constrained nuclide's fraction
+        //     depending on the PRODUCT of its share and the total's excess over the bound, so the
+        //     two trade along a flat direction whenever the carrier nuclide itself is barely seen.
+        //     Which point of that flat direction the optimizer stopped at decided whether a fit was
+        //     called rank-deficient (TRelActCalcAuto_MultiCurve two_disk_default_seeding_reaches_truth
+        //     flipped on a 1E-9 perturbation of the path); the carrier is at a bound by construction,
+        //     as the candidate-search trigger above also recognizes.
+        //   - A nuclide whose fitted activity cannot be told from zero while another nuclide of the
+        //     same element on the same curve clearly is present: a trace isotope simply not in the
+        //     item.  Its activity slot goes, and its age when that is its own rather than the
+        //     element's shared one.  "Cannot be told from zero" uses the conditional uncertainty
+        //     (every other parameter held), the smallest the activity could have, so a borderline
+        //     line is never dismissed; a nuclide the data do not see at all (a zero column) is not
+        //     judged.  Its freedom is folded back into the REPORTED covariance afterwards (see
+        //     `cov_reported`), so derived uncertainties are not conditional on it being absent.
+        {
+          constexpr double absent_max_nsigma = 2.0;
+
+          const auto tangent_col = [&plus_jacobian]( const size_t ambient ) -> Eigen::Index {
+            if( ambient >= static_cast<size_t>(plus_jacobian.rows()) )
+              return -1;
+            for( Eigen::Index col = 0; col < plus_jacobian.cols(); ++col )
+            {
+              if( plus_jacobian( static_cast<Eigen::Index>(ambient), col ) != 0.0 )
+                return col;
+            }
+            return -1;
+          };//tangent_col
+
+          // A source's relative activity over the uncertainty it would have with every other
+          //  parameter held; infinite when that cannot be judged.
+          const auto activity_significance = [&]( const RelActCalcAuto::SrcVariant &src, const size_t curve,
+                                                  const size_t slot, const Eigen::Index col ) -> double {
+            vector<ceres::Jet<double,sm_auto_diff_stride_size>> x( begin(parameters), end(parameters) );
+            x[slot].v[0] = 1.0;
+            const ceres::Jet<double,sm_auto_diff_stride_size> activity
+                                                    = cost_functor->relative_activity( src, curve, x );
+            const double col_norm = jacobian.col( col ).norm();
+            if( !(col_norm > 0.0) || !(std::fabs(activity.v[0]) > 0.0) || !std::isfinite(activity.a) )
+              return std::numeric_limits<double>::infinity();
+            return activity.a * col_norm / std::fabs( activity.v[0] );
+          };//activity_significance
+
+          vector<Eigen::Index> absent_cols;
+
+          // Carriers on a bound; the same tolerance as the post-fit at-bound flag.
+          for( const vector<MassFracBlock> &curve_blocks : cost_functor->m_mass_frac_blocks )
+          {
+            for( const MassFracBlock &block : curve_blocks )
+            {
+              const size_t par = block.carrier_par;
+              const Eigen::Index col = tangent_col( par );
+              if( (col < 0) || (par >= lower_bounds.size()) || (par >= upper_bounds.size())
+                  || !lower_bounds[par] || !upper_bounds[par] || !(*upper_bounds[par] > *lower_bounds[par]) )
+                continue;
+
+              const double tol = 1.0e-3*(*upper_bounds[par] - *lower_bounds[par]);
+              if( ((parameters[par] - *lower_bounds[par]) <= tol) || ((*upper_bounds[par] - parameters[par]) <= tol) )
+              {
+                absent_source_par[par] = 1;
+                absent_cols.push_back( col );
+                held_carrier_pars.insert( par );
+              }
+            }//for( const MassFracBlock &block : curve_blocks )
+          }//for( loop over curves' mass-fraction blocks )
+
+          for( size_t curve = 0; curve < cost_functor->m_options.rel_eff_curves.size(); ++curve )
+          {
+            const RelActCalcAuto::RelEffCurveInput &curve_input = cost_functor->m_options.rel_eff_curves[curve];
+            const vector<RelActCalcAuto::NucInputInfo> &nucs = curve_input.nuclides;
+
+            // NaN: not judged - not a nuclide, held constant, or an element-total carrier slot.
+            vector<double> significance( nucs.size(), std::numeric_limits<double>::quiet_NaN() );
+            for( size_t i = 0; i < nucs.size(); ++i )
+            {
+              const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nucs[i].source );
+              if( !nuc )
+                continue;
+              const size_t slot = cost_functor->nuclide_parameter_index( nucs[i].source, curve );
+              const Eigen::Index col = tangent_col( slot );
+              const MassFracBlock * const block = cost_functor->mass_frac_block( nuc->atomicNumber, curve );
+              if( (col < 0) || (block && (block->carrier_par == slot)) )
+                continue;
+              significance[i] = activity_significance( nucs[i].source, curve, slot, col );
+            }//for( size_t i = 0; i < nucs.size(); ++i )
+
+            for( size_t i = 0; i < nucs.size(); ++i )
+            {
+              if( !(significance[i] < absent_max_nsigma) )
+                continue;
+
+              const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( nucs[i].source );
+              bool element_present = false;
+              for( size_t j = 0; (j < nucs.size()) && !element_present; ++j )
+              {
+                const SandiaDecay::Nuclide * const other = RelActCalcAuto::nuclide( nucs[j].source );
+                element_present = (j != i) && other && (other->atomicNumber == nuc->atomicNumber)
+                                  && (significance[j] >= absent_max_nsigma);
+              }
+              if( !element_present )
+                continue;
+
+              const size_t slot = cost_functor->nuclide_parameter_index( nucs[i].source, curve );
+              absent_source_par[slot] = 1;
+              absent_cols.push_back( tangent_col( slot ) );
+
+              const Eigen::Index age_col = curve_input.nucs_of_el_same_age ? Eigen::Index(-1) : tangent_col( slot + 1 );
+              if( age_col >= 0 )
+              {
+                absent_source_par[slot + 1] = 1;
+                absent_cols.push_back( age_col );
+              }
+            }//for( size_t i = 0; i < nucs.size(); ++i )
+          }//for( loop over rel. eff. curves )
+
+          if( !absent_cols.empty() )
+          {
+            std::sort( begin(absent_cols), end(absent_cols) );
+            absent_cols.erase( std::unique(begin(absent_cols), end(absent_cols)), end(absent_cols) );
+
+            // Kept, so the messages can say what holding each of these out does to the results.
+            for( const Eigen::Index col : absent_cols )
+            {
+              for( Eigen::Index ambient = 0; (col >= 0) && (ambient < plus_jacobian.rows()); ++ambient )
+              {
+                if( plus_jacobian(ambient, col) != 0.0 )
+                {
+                  held_columns.emplace_back( static_cast<size_t>(ambient), jacobian.col(col) );
+                  break;
+                }
+              }
+            }//for( const Eigen::Index col : absent_cols )
+
+            vector<Eigen::Index> kept;
+            for( Eigen::Index col = 0; col < jacobian.cols(); ++col )
+            {
+              if( !std::binary_search( begin(absent_cols), end(absent_cols), col ) )
+                kept.push_back( col );
+            }
+
+            Eigen::MatrixXd kept_jacobian( jacobian.rows(), static_cast<Eigen::Index>(kept.size()) );
+            Eigen::MatrixXd kept_plus_jacobian( plus_jacobian.rows(), static_cast<Eigen::Index>(kept.size()) );
+            for( size_t k = 0; k < kept.size(); ++k )
+            {
+              kept_jacobian.col( static_cast<Eigen::Index>(k) ) = jacobian.col( kept[k] );
+              kept_plus_jacobian.col( static_cast<Eigen::Index>(k) ) = plus_jacobian.col( kept[k] );
+            }
+            jacobian = std::move( kept_jacobian );
+            plus_jacobian = std::move( kept_plus_jacobian );
+          }//if( !absent_cols.empty() )
+        }
+
+        const size_t num_free_pars = static_cast<size_t>( jacobian.cols() );
 
         // Column-equilibrate (a zero-norm column has no gradient at all: fully unconstrained -
         //  zero variance, and counted as a degenerate direction).
@@ -9635,8 +10657,9 @@ struct RelActAutoCostFcn
           solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_equil)
                               + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
                               " unconstrained by the data (near-degenerate directions).  Per-parameter"
-                              " uncertainties omit these directions; derived quantities (enrichment,"
-                              " relative-efficiency band) that depend on them are flagged and widened instead." );
+                              " uncertainties omit these directions; a derived result (enrichment,"
+                              " relative-efficiency band) whose uncertainty this makes implausibly small is"
+                              " widened, with a separate message saying so." );
 
           // A direction the data does not constrain is exactly what `UsableWithWarnings` is for:
           // results are available and may be perfectly good, but no first-party surface should
@@ -9667,6 +10690,45 @@ struct RelActAutoCostFcn
 
         const Eigen::MatrixXd cov_ambient
             = plus_jacobian * cov_tangent * plus_jacobian.transpose();
+
+        // A nuclide judged not present was held out of the rank analysis above, so the flat
+        //  directions only it spans do not mark the fit rank-deficient.  But leaving it out of the
+        //  REPORTED covariance would make every derived uncertainty conditional on its activity being
+        //  exactly what was fit - e.g. U238 at zero in a 80-123 keV fit of HEU, where the data barely
+        //  constrain it, left out >99% of the U235 mass-fraction uncertainty.  So its freedom is
+        //  folded back in by the block inverse of the information matrix with its column(s)
+        //  appended: with A the held columns, W = C J^T A and S = A^T A - A^T J W, the covariance
+        //  becomes [[C + W S^+ W^T, -W S^+], [-S^+ W^T, S^+]].  Mass-fraction carriers (on a bound by
+        //  construction) stay out, as does any column the data cannot tell from the kept ones.
+        Eigen::MatrixXd cov_reported = cov_ambient;
+        {
+          vector<size_t> fold_index;  //into held_columns
+          for( size_t i = 0; i < held_columns.size(); ++i )
+          {
+            if( !held_carrier_pars.count(held_columns[i].first) )
+              fold_index.push_back( i );
+          }
+
+          if( !fold_index.empty() )
+          {
+            const Eigen::Index nk = static_cast<Eigen::Index>( fold_index.size() );
+            Eigen::MatrixXd A( jacobian.rows(), nk );
+            Eigen::MatrixXd P = Eigen::MatrixXd::Zero( static_cast<Eigen::Index>(num_pars), nk );
+            for( Eigen::Index k = 0; k < nk; ++k )
+            {
+              const pair<size_t,Eigen::VectorXd> &held = held_columns[fold_index[static_cast<size_t>(k)]];
+              A.col(k) = held.second;
+              P( static_cast<Eigen::Index>(held.first), k ) = 1.0;  //its ambient slot
+            }
+
+            const RelActCalcAutoImp::BoundEffects::FoldedCovariance folded
+                     = RelActCalcAutoImp::BoundEffects::fold_in_held_columns( cov_tangent, jacobian, A );
+            const Eigen::MatrixXd cross = plus_jacobian * folded.cov12 * P.transpose();
+            cov_reported = plus_jacobian * folded.cov11 * plus_jacobian.transpose()
+                           + cross + cross.transpose()
+                           + P * folded.cov22 * P.transpose();
+          }//if( any not-present nuclide to fold back in )
+        }
 
         // Retain the scale-aware tangent map and every discarded direction.  A mass fraction is
         // unreliable only if *its own* ambient Jacobian projects materially on this omitted space,
@@ -9822,7 +10884,7 @@ struct RelActAutoCostFcn
         for( size_t row = 0; row < num_pars; ++row )
         {
           for( size_t col = 0; col < num_pars; ++col )
-            solution.m_covariance[row][col] = cov_ambient(static_cast<int>(row),static_cast<int>(col));
+            solution.m_covariance[row][col] = cov_reported(static_cast<int>(row),static_cast<int>(col));
         }
 
         fill_covariance_consumers();
@@ -9949,7 +11011,7 @@ struct RelActAutoCostFcn
     solution.m_parameter_were_fit.resize( parameters.size(), true );
     solution.m_parameter_fixed_by_model_selection.assign( parameters.size(), 0 );
     solution.m_param_at_bound.assign( parameters.size(), 0 );  // per-parameter bound-active flags
-    vector<string> bound_pinned_names;
+    solution.m_param_bound_side.assign( parameters.size(), 0 );
     for( size_t i = 0; i < parameters.size(); ++i )
     {
       solution.m_parameter_names[i] = cost_functor->parameter_name( i );
@@ -9991,23 +11053,25 @@ struct RelActAutoCostFcn
           at_bound = (std::fabs(val - *hi) <= tol_frac*scale);
         }
 
+        // Which edge, for the user-facing message; a nearer-lower-than-upper value counts as lower.
         if( at_bound )
         {
-          solution.m_param_at_bound[i] = 1;
-          bound_pinned_names.push_back( solution.m_parameter_names[i] );
+          const double to_lower = lo.has_value() ? std::fabs(val - *lo) : std::numeric_limits<double>::infinity();
+          const double to_upper = hi.has_value() ? std::fabs(*hi - val) : std::numeric_limits<double>::infinity();
+          solution.m_param_bound_side[i] = (to_lower <= to_upper) ? -1 : 1;
         }
+
+        // Held out of the rank analysis: a carrier on its bound, or a nuclide judged not present
+        //  (at its zero bound in effect, even a little above it).
+        at_bound = at_bound || (absent_source_par[i] != 0);
+
+        if( at_bound )
+          solution.m_param_at_bound[i] = 1;
       }//if( fit parameter with bounds in scope )
     }//for( size_t i = 0; i < parameters.size(); ++i )
 
-    if( !bound_pinned_names.empty() )
-    {
-      string msg = "These fit parameters are pinned at a bound, so their reported uncertainties are"
-                   " under-stated (Ceres' covariance ignores active bounds): ";
-      for( size_t i = 0; i < bound_pinned_names.size(); ++i )
-        msg += (i ? ", " : "") + bound_pinned_names[i];
-      msg += ".  Derived quantities depending on them are flagged and widened.";
-      solution.m_warnings.push_back( msg );
-    }//if( any bound-pinned parameters )
+    // The user-facing messages about these are added by `compute_bound_limit_messages()`, once the
+    //  derived quantities they are described in terms of are available.
 
     if( !solution.m_covariance.empty() )
     {
@@ -10150,6 +11214,10 @@ struct RelActAutoCostFcn
         {
           // Zero-amplitude placeholder peaks (from ROIs with no gammas in range) are expected
           if( removed_peak.amplitude() < 1.0 )
+            continue;
+
+          // Iodine escape companions carry no source by design (see Options::iodine_escape_peaks)
+          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_iodine_escape_label_prefix ) )
             continue;
 
           bool found_matching_floating_peak = false;
@@ -11627,6 +12695,352 @@ struct RelActAutoCostFcn
   }//float fwhm(...)
   
   
+  /** Skew parameters for a peak at `energy` before any fit is done: the fixed values from the
+   options where given, otherwise the starting values from the options where given (either
+   interpolated in energy, for an energy-dependent parameter with both lower and upper values), and
+   otherwise the parameters' default starting values.
+   */
+  std::array<double,6> initial_skew_parameters( const double energy ) const
+  {
+    std::array<double,6> answer{};
+
+    const PeakDef::SkewType skew_type = m_options.skew_type;
+    const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
+    const double lower_energy = m_spectrum->gamma_channel_lower( 0 );
+    const double upper_energy = m_spectrum->gamma_channel_upper( m_spectrum->num_gamma_channels() - 1 );
+    const double frac = (energy - lower_energy) / (upper_energy - lower_energy);
+
+    for( size_t i = 0; i < num_skew; ++i )
+    {
+      const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+      double lower, upper, starting, step;
+      if( !PeakDef::skew_parameter_range( skew_type, ct, lower, upper, starting, step ) )
+        continue;
+
+      answer[i] = starting;
+      const bool fixed = m_options.fixed_lower_skew[i].has_value();
+      const std::optional<double> &lower_value = fixed ? m_options.fixed_lower_skew[i] : m_options.start_lower_skew[i];
+      const std::optional<double> &upper_value = fixed ? m_options.fixed_upper_skew[i] : m_options.start_upper_skew[i];
+      if( lower_value.has_value() )
+      {
+        answer[i] = lower_value.value();
+        if( PeakDef::is_energy_dependent( skew_type, ct ) && upper_value.has_value() )
+          answer[i] += frac*(upper_value.value() - answer[i]);
+      }
+    }//for( size_t i = 0; i < num_skew; ++i )
+
+    return answer;
+  }//initial_skew_parameters(...)
+
+
+  /** The peak shape (FWHM and skew) of a gamma line at true `energy`, for the parameters `x`. */
+  RelActCalcAutoRoi::PeakShape peak_shape_at( const double energy, const std::vector<double> &x ) const
+  {
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> splines = compute_energy_cal_splines( x );
+
+    RelActCalcAuto::PeakDefImp<double> peak;
+    peak.m_mean = apply_energy_cal_adjustment( energy, x, splines );
+    peak.m_sigma = fwhm( energy, x ) / 2.35482;
+    set_peak_skew( peak, x );
+
+    RelActCalcAutoRoi::PeakShape shape;
+    shape.fwhm = 2.35482 * peak.m_sigma;
+    shape.skew_type = peak.m_skew_type;
+    for( size_t i = 0; i < shape.skew_pars.size(); ++i )
+      shape.skew_pars[i] = peak.m_skew_pars[i];
+
+    return shape;
+  }//peak_shape_at(...)
+
+
+  /** Where a gamma line of true `energy` sits in the spectrum's energy calibration, for parameters `x`
+   (i.e., with the fit energy-calibration adjustment applied). */
+  double line_position( const double energy, const std::vector<double> &x ) const
+  {
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> splines = compute_energy_cal_splines( x );
+    return apply_energy_cal_adjustment( energy, x, splines );
+  }//line_position(...)
+
+
+  /** The model counts, for parameters `x`, of each source gamma line with a true energy in
+   [`lower`, `upper`]; returned as {energy, counts} pairs. */
+  std::vector<std::pair<double,double>> predicted_line_counts( const double lower, const double upper,
+                                                               const std::vector<double> &x ) const
+  {
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = lower;
+    roi.upper_energy = upper;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    const RoiRangeChannels range( m_energy_cal, roi );
+
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> splines = compute_energy_cal_splines( x );
+    const RelActCalcAuto::PeaksForEnergyRangeImp<double> computed
+                                               = peaks_for_energy_range_imp( range, x, splines, false );
+
+    std::vector<std::pair<double,double>> answer;
+    for( const RelActCalcAuto::PeakDefImp<double> &peak : computed.peaks )
+    {
+      const bool is_source_line = (peak.m_rel_eff_index != std::numeric_limits<size_t>::max());
+      if( is_source_line && (peak.m_src_energy >= lower) && (peak.m_src_energy <= upper) )
+        answer.emplace_back( peak.m_src_energy, peak.m_amplitude );
+    }
+
+    return answer;
+  }//predicted_line_counts(...)
+
+
+  /** Re-resolves the caller's input ROIs using the fitted peak shape of `sol` (and, for
+   `CanBeBrokenUp` ROIs, only the lines the fit predicts to be statistically significant).
+
+   @param input_options The options originally passed to `RelActCalcAuto::solve(...)`.
+   @param sol A usable solution, whose cost functor and parameters are used.
+   */
+  static std::vector<RelActCalcAutoRoi::ResolvedRoi> resolve_rois_from_fit(
+                                                     const RelActCalcAuto::Options &input_options,
+                                                     const RelActCalcAuto::RelActAutoSolution &sol,
+                                                     std::vector<std::string> &warnings )
+  {
+    const std::shared_ptr<const RelActAutoCostFcn> fcn = sol.m_cost_functor;
+    if( !fcn || !sol.m_spectrum || (sol.m_final_parameters.size() != fcn->number_parameters()) )
+      throw std::runtime_error( "resolve_rois_from_fit: solution is missing its fit." );
+
+    const std::vector<double> &x = sol.m_final_parameters;
+
+    // A line gets its own window in a broken-up ROI if the fit predicts at least this many times the
+    //  statistical uncertainty of the data under it (the value was chosen "by eye", from a few spectra).
+    const double significance_limit = 3.0;
+    const double peak_width_nsigma = 3.0;
+
+    // The variance of the fit data from `lower` to `upper` keV, with channels partly in the range
+    //  contributing proportionally.  With a background subtracted, this includes the background's
+    //  variance, which the net counts alone would miss.
+    const std::shared_ptr<const std::vector<float>> &channel_energies = sol.m_spectrum->channel_energies();
+    const std::vector<float> &channel_uncerts = sol.m_channel_counts_uncerts;
+    const auto data_variance = [&channel_energies, &channel_uncerts]( const double lower, const double upper ) -> double {
+      if( !channel_energies || (channel_energies->size() < 2) )
+        return 0.0;
+
+      const std::vector<float> &edges = *channel_energies;
+      const size_t nchannel = std::min( edges.size() - 1, channel_uncerts.size() );
+      const std::vector<float>::const_iterator after = std::upper_bound( std::begin(edges), std::end(edges),
+                                                                          static_cast<float>(lower) );
+      double variance = 0.0;
+      for( size_t i = (after == std::begin(edges)) ? 0 : static_cast<size_t>(after - std::begin(edges)) - 1;
+           (i < nchannel) && (edges[i] < upper); ++i )
+      {
+        const double overlap = std::min( upper, static_cast<double>(edges[i+1]) )
+                               - std::max( lower, static_cast<double>(edges[i]) );
+        const double width = edges[i+1] - edges[i];
+        if( (overlap > 0.0) && (width > 0.0) )
+          variance += (overlap / width) * channel_uncerts[i] * channel_uncerts[i];
+      }
+
+      return variance;
+    };//data_variance lambda
+
+    std::vector<RelActCalcAutoRoi::Line> lines;
+    for( const RelActCalcAuto::RoiRange &roi : input_options.rois )
+    {
+      if( (roi.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp)
+         && (roi.range_limits_type != RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm) )
+        continue;
+
+      for( const std::pair<double,double> &line : fcn->predicted_line_counts( roi.lower_energy, roi.upper_energy, x ) )
+      {
+        const double energy = line.first, expected_counts = line.second;
+        const double sigma = fcn->plausible_fwhm( energy, fcn->fwhm( energy, x ) ) / 2.35482;
+        const double variance = data_variance( energy - peak_width_nsigma*sigma, energy + peak_width_nsigma*sigma );
+        const bool significant = (expected_counts > significance_limit*std::sqrt( variance ));
+        lines.push_back( RelActCalcAutoRoi::Line{ energy, significant } );
+      }
+    }//for( const RelActCalcAuto::RoiRange &roi : input_options.rois )
+
+    for( const RelActCalcAuto::FloatingPeak &peak : input_options.floating_peaks )
+    {
+      const bool observed = (peak.energy_origin == RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum);
+      lines.push_back( RelActCalcAutoRoi::Line{ peak.energy, true, true, observed } );
+    }
+
+    const auto peak_shape = [&fcn, &x]( const double energy ) -> RelActCalcAutoRoi::PeakShape {
+      RelActCalcAutoRoi::PeakShape shape = fcn->peak_shape_at( energy, x );
+      shape.fwhm = fcn->plausible_fwhm( energy, shape.fwhm );
+      return shape;
+    };
+
+    const auto position = [&fcn, &x]( const double energy ) -> double {
+      return fcn->line_position( energy, x );
+    };
+
+    return RelActCalcAutoRoi::resolve( input_options.rois, RelActCalcAuto::default_roi_edge( fcn->m_det_type, true ),
+                                       RelActCalcAuto::default_roi_edge( fcn->m_det_type, false ), peak_shape,
+                                       position, fcn->m_energy_cal, lines, fcn->sideband_obstacles(),
+                                       warnings );
+  }//resolve_rois_from_fit(...)
+
+
+  /** `fwhm` (e.g., from a fit) at `energy`, limited to what is plausible for the detector; so a fit
+   whose FWHM went astray (e.g., widening peaks to follow a continuum the ROI's polynomial could not)
+   can not make ROIs span much of the spectrum. */
+  double plausible_fwhm( const double energy, const double fwhm ) const
+  {
+    float min_sigma, max_sigma;
+    expected_peak_width_limits( static_cast<float>(energy), m_det_type, m_spectrum, min_sigma, max_sigma );
+    if( !(min_sigma <= max_sigma) )
+      return fwhm;
+    return std::clamp( fwhm, 2.35482*min_sigma, 2.35482*max_sigma );
+  }//plausible_fwhm(...)
+
+
+  /** Whether `peak` (e.g., from the automated peak search) looks like a real photopeak: a positive
+   area, and a width plausible for the detector - the search can return, e.g., a broad hump of
+   continuum as a "peak". */
+  bool is_plausible_peak( const PeakDef &peak ) const
+  {
+    const double mean = peak.mean(), sigma = peak.sigma();
+    if( !peak.gausPeak() || !(peak.peakArea() > 0.0) || !std::isfinite(mean) || !(sigma > 0.0) )
+      return false;
+
+    float min_sigma, max_sigma;
+    expected_peak_width_limits( static_cast<float>(mean), m_det_type, m_spectrum, min_sigma, max_sigma );
+    return (sigma >= min_sigma) && (sigma <= max_sigma);
+  }//is_plausible_peak(...)
+
+
+  /** Where ROI continuum sidebands should not extend to: the plausible peaks found in the spectrum
+   (#m_all_peaks), from three sigma below, to three sigma above, their means. */
+  std::vector<RelActCalcAutoRoi::SidebandObstacle> sideband_obstacles() const
+  {
+    std::vector<RelActCalcAutoRoi::SidebandObstacle> obstacles;
+    for( const std::shared_ptr<const PeakDef> &peak : m_all_peaks )
+    {
+      if( !peak || !is_plausible_peak( *peak ) )
+        continue;
+
+      const double mean = peak->mean(), sigma = peak->sigma();
+      obstacles.push_back( RelActCalcAutoRoi::SidebandObstacle{ mean - 3.0*sigma, mean + 3.0*sigma } );
+    }
+
+    return obstacles;
+  }//sideband_obstacles()
+
+
+  /** The data-only chi2 of `roi` for parameters `x`, if the ROI used continuum `type` (whose
+   coefficients are fit by linear least squares, with the peaks as given by `x`); and the number
+   of channels in the ROI. */
+  std::pair<double,size_t> roi_chi2_for_continuum( const RelActCalcAuto::RoiRange &roi,
+                                                   const PeakContinuum::OffsetType type,
+                                                   const std::vector<double> &x ) const
+  {
+    RelActCalcAuto::RoiRange trial = roi;
+    trial.continuum_type = type;
+    trial.auto_continuum = false;
+    trial.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    const RoiRangeChannels range( m_energy_cal, trial );
+
+    const RelActCalcAutoImp::CachedEnergyCalSplines<double> splines = compute_energy_cal_splines( x );
+    const RelActCalcAuto::PeaksForEnergyRangeImp<double> computed
+                                               = peaks_for_energy_range_imp( range, x, splines, false );
+
+    double chi2 = 0.0;
+    for( size_t i = 0; i < computed.peak_counts.size(); ++i )
+    {
+      const size_t channel = computed.first_channel + i;
+      const double resid = (m_channel_counts[channel] - computed.peak_counts[i]) / m_channel_count_uncerts[channel];
+      chi2 += resid*resid;
+    }
+
+    return { chi2, computed.peak_counts.size() };
+  }//roi_chi2_for_continuum(...)
+
+
+  /** For each of `rois` whose continuum is chosen automatically, picks the continuum type that best
+   describes the data with the model peaks of `sol` held fixed.
+
+   Candidates are a linear and quadratic polynomial, and flat and linear continua with a step
+   proportional to the cumulative peak area (plus cubic and bi-linear-step for ROIs wider than about
+   ten FWHM, and the ROI's current type).  Each is scored like AICc, with the chi2 scaled down by the
+   lowest reduced chi2 of the candidates when that is above one (so model imperfections elsewhere in
+   the ROI do not make every extra parameter look significant); the ROI only switches from its
+   current type if another candidate scores better by more than `min_improvement`.
+   */
+  static void choose_auto_continua( const RelActCalcAuto::RelActAutoSolution &sol,
+                                    std::vector<RelActCalcAutoRoi::ResolvedRoi> &rois,
+                                    const double min_improvement )
+  {
+    using OT = PeakContinuum::OffsetType;
+
+    const std::shared_ptr<const RelActAutoCostFcn> fcn = sol.m_cost_functor;
+    if( !fcn || (sol.m_final_parameters.size() != fcn->number_parameters()) )
+      return;
+    const std::vector<double> &x = sol.m_final_parameters;
+
+    for( RelActCalcAutoRoi::ResolvedRoi &resolved : rois )
+    {
+      if( !resolved.info.auto_continuum )
+        continue;
+
+      RelActCalcAuto::RoiRange &roi = resolved.roi;
+      const OT current = roi.continuum_type;
+
+      std::vector<OT> candidates{ OT::Linear, OT::Quadratic, OT::FlatStepCDF, OT::LinearStepCDF };
+      const double mid_energy = 0.5*(roi.lower_energy + roi.upper_energy);
+      const double fwhm = fcn->fwhm( mid_energy, x );
+      if( (fwhm > 0.0) && ((roi.upper_energy - roi.lower_energy) > 10.0*fwhm) )
+      {
+        candidates.push_back( OT::Cubic );
+        candidates.push_back( OT::BiLinearStepCDF );
+      }
+      if( std::find( begin(candidates), end(candidates), current ) == end(candidates) )
+        candidates.push_back( current );
+
+      struct Trial { OT type; double chi2; size_t num_channels; size_t num_pars; };
+      std::vector<Trial> trials;
+      for( const OT type : candidates )
+      {
+        try
+        {
+          const std::pair<double,size_t> chi2_nchan = fcn->roi_chi2_for_continuum( roi, type, x );
+          const size_t num_pars = PeakContinuum::num_parameters( type );
+          if( std::isfinite(chi2_nchan.first) && (chi2_nchan.second > (num_pars + 2)) )
+            trials.push_back( Trial{ type, chi2_nchan.first, chi2_nchan.second, num_pars } );
+        }catch( std::exception & )
+        {
+          // e.g., a peak too narrow for this ROI; just skip the candidate
+        }
+      }//for( const OT type : candidates )
+
+      const std::vector<Trial>::const_iterator current_trial
+                  = std::find_if( begin(trials), end(trials), [current]( const Trial &t ){ return t.type == current; } );
+      if( trials.empty() || (current_trial == end(trials)) )
+        continue;
+
+      // Scale the chi2 by the reduced chi2 of the best (lowest chi2 per degree of freedom) fit, if it
+      //  is above one.
+      double best_reduced = std::numeric_limits<double>::infinity();
+      for( const Trial &t : trials )
+        best_reduced = std::min( best_reduced, t.chi2 / static_cast<double>(t.num_channels - t.num_pars) );
+      const double scale = std::max( 1.0, best_reduced );
+
+      const auto score = [scale]( const Trial &t ) -> double {
+        const double k = static_cast<double>( t.num_pars );
+        const double n = static_cast<double>( t.num_channels );
+        return (t.chi2 / scale) + 2.0*k + (2.0*k*(k + 1.0) / std::max( 1.0, n - k - 1.0 ));
+      };
+
+      const Trial *best = &(*current_trial);
+      for( const Trial &t : trials )
+      {
+        if( score(t) < score(*best) )
+          best = &t;
+      }
+
+      if( (best->type != current) && ((score(*current_trial) - score(*best)) > min_improvement) )
+        roi.continuum_type = best->type;
+    }//for( loop over rois )
+  }//choose_auto_continua(...)
+
+
   template<typename P, typename T>
   void set_peak_skew( P &peak, const std::vector<T> &x ) const
   {
@@ -11663,11 +13077,13 @@ struct RelActAutoCostFcn
       for( size_t i = 0; i < skew_pars.size(); ++i )
       {
         const auto ct = PeakDef::CoefficientType(PeakDef::CoefficientType::SkewPar0 + i);
-        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) )
+        // An energy-dependent parameter may still be given no energy dependence (its upper value is
+        //  then the -999.9 placeholder), when other parameters do have one.
+        if( PeakDef::is_energy_dependent( m_options.skew_type, ct )
+            && (x[skew_start + i + num_skew] > -500.0) )
         {
           const T lower_en_val = x[skew_start + i];
           const T upper_en_val = x[skew_start + i + num_skew];
-          assert( upper_en_val > -500.0 );//should NOT have value -999.9
           
           const T val = lower_en_val + mean_frac*(upper_en_val - lower_en_val);
           check_jet_for_NaN( val );
@@ -11675,7 +13091,6 @@ struct RelActAutoCostFcn
           peak.set_coefficient( val, ct );
         }else
         {
-          assert( x[skew_start + num_skew + i] < -500.0 ); //should have value -999.9, unless being numerically varies
           const T val = x[skew_start + i];
           check_jet_for_NaN( val );
           
@@ -12015,6 +13430,143 @@ struct RelActAutoCostFcn
     
     return "dBr" + std::to_string(mid_energy);
   }//std::string parameter_name( const size_t index ) const
+
+
+  /** A plain-language description of parameter `index` for messages to the user (e.g. "U232 activity",
+   "peak-skew parameter 1 (high-energy value)"); falls back to `parameter_name(index)`. */
+  std::string describe_parameter( const size_t index ) const
+  {
+    const std::string name = parameter_name( index );
+
+    try
+    {
+      if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+      {
+        static const char * const cal_names[] = { "energy-calibration offset", "energy-calibration gain",
+                                                  "energy-calibration quadratic term" };
+        return (index < 3) ? std::string( cal_names[index] ) : name;
+      }
+
+      if( index < m_fwhm_par_start_index )
+        return "energy-calibration deviation at " + name.substr( 4 ) + " keV";  //name is "Dev_<energy>"
+
+      if( index < m_rel_eff_par_start_index )
+        return "FWHM-model coefficient " + std::to_string( index - m_fwhm_par_start_index );
+
+      const size_t num_curves = m_options.rel_eff_curves.size();
+      const auto curve_suffix = [this,num_curves]( const size_t curve ) -> std::string {
+        if( num_curves < 2 )
+          return std::string();
+        const std::string &curve_name = m_options.rel_eff_curves[curve].name;
+        return " (" + (curve_name.empty() ? ("curve " + std::to_string(curve + 1)) : curve_name) + ")";
+      };
+
+      if( index < m_acts_par_start_index )
+      {
+        size_t coef_num = m_rel_eff_par_start_index;
+        for( size_t curve = 0; curve < num_curves; ++curve )
+        {
+          const RelActCalcAuto::RelEffCurveInput &rel_eff = m_options.rel_eff_curves[curve];
+          const bool physical = (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+          const size_t num_coefs = physical ? (4 + 2*rel_eff.phys_model_external_atten.size())
+                                            : (rel_eff.rel_eff_eqn_order + 1);
+          if( (index - coef_num) >= num_coefs )
+          {
+            coef_num += num_coefs;
+            continue;
+          }
+
+          const size_t sub = index - coef_num;
+          if( !physical )
+            return "relative-efficiency coefficient " + std::to_string(sub) + curve_suffix(curve);
+
+          const auto shield_desc = []( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield,
+                                       const std::string &what ) -> std::string {
+            if( shield && shield->material )
+              return what + " (" + shield->material->name + ")";
+            return what;
+          };
+
+          if( sub == 0 )
+            return shield_desc( rel_eff.phys_model_self_atten, "self-attenuation atomic number" ) + curve_suffix(curve);
+          if( sub == 1 )
+            return shield_desc( rel_eff.phys_model_self_atten, "self-attenuation areal density" ) + curve_suffix(curve);
+
+          const size_t num_ext_slots = 2*rel_eff.phys_model_external_atten.size();
+          if( sub < (2 + num_ext_slots) )
+          {
+            const size_t ext_index = (sub - 2) / 2;
+            const std::string what = std::string("external shielding ") + std::to_string(ext_index)
+                                     + (((sub % 2) == 0) ? " atomic number" : " areal density");
+            return shield_desc( rel_eff.phys_model_external_atten[ext_index], what ) + curve_suffix(curve);
+          }
+
+          const bool second = ((sub - 2 - num_ext_slots) == 1);
+          if( is_basis_correction( rel_eff.phys_model_corr.corr_fcn ) )
+            return std::string("efficiency-correction coefficient ") + (second ? "a2" : "a1") + curve_suffix(curve);
+          return std::string("efficiency-correction (Hoerl) ") + (second ? "c" : "b") + curve_suffix(curve);
+        }//for( loop over curves )
+
+        return name;
+      }//if( a rel. eff. parameter )
+
+      if( index < m_free_peak_par_start_index )
+      {
+        size_t coef_num = m_acts_par_start_index;
+        for( size_t curve = 0; curve < num_curves; ++curve )
+        {
+          const RelActCalcAuto::RelEffCurveInput &rel_eff = m_options.rel_eff_curves[curve];
+          const size_t num_slots = 2*rel_eff.nuclides.size();
+          if( (index - coef_num) >= num_slots )
+          {
+            coef_num += num_slots;
+            continue;
+          }
+
+          const size_t sub = index - coef_num;
+          const std::string src_name = rel_eff.nuclides[sub/2].name();
+          if( SpecUtils::istarts_with(name, "Act") )
+            return src_name + " activity" + curve_suffix(curve);
+          if( SpecUtils::istarts_with(name, "Age") )
+            return src_name + " age" + curve_suffix(curve);
+          return name;  //a mass-fraction constraint slot
+        }//for( loop over curves )
+
+        return name;
+      }//if( an activity or age )
+
+      if( index < m_skew_par_start_index )
+      {
+        const size_t peak_index = (index - m_free_peak_par_start_index) / 2;
+        const bool amplitude = (((index - m_free_peak_par_start_index) % 2) == 0);
+        if( peak_index < m_options.floating_peaks.size() )
+          return std::string(amplitude ? "amplitude" : "width") + " of the free-floating peak at "
+                 + SpecUtils::printCompact( m_options.floating_peaks[peak_index].energy, 5 ) + " keV";
+        return name;
+      }//if( a floating peak parameter )
+
+      if( index < m_add_br_uncert_start_index )
+      {
+        const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+        const size_t skew_index = index - m_skew_par_start_index;
+        if( !num_skew )
+          return name;
+
+        const size_t coef = skew_index % num_skew;
+        const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + coef );
+        std::string answer = "peak-skew parameter " + std::to_string( coef );
+        if( PeakDef::is_energy_dependent( m_options.skew_type, ct ) )
+          answer += (skew_index >= num_skew) ? " (high-energy value)" : " (low-energy value)";
+        return answer;
+      }//if( a skew parameter )
+
+      return "branching-ratio uncertainty allowance near " + name.substr( 3 ) + " keV";  //name is "dBr<energy>"
+    }catch( std::exception & )
+    {
+    }
+
+    return name;
+  }//std::string describe_parameter( const size_t index ) const
   
 
   double parameter_scale_factor( const size_t index ) const
@@ -12460,18 +14012,15 @@ struct RelActAutoCostFcn
 
    Throws an exception on error.
    */
-  double relative_activity_uncertainty( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index,
-                                       const std::vector<double> &x, vector<vector<double>> &covariance ) const
+  /** d(relative activity)/d(parameter), in the ambient parameter space. */
+  std::vector<double> relative_activity_gradient( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index,
+                                                  const std::vector<double> &x ) const
   {
     typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
 
     const size_t num_pars = this->number_parameters();
-    assert( x.size() == covariance.size() );
     if( x.size() != num_pars )
-      throw runtime_error( "relative_activity_uncertainty: invalid number of parameters." );
-
-    if( covariance.size() != num_pars )
-      throw runtime_error( "relative_activity_uncertainty: invalid covariance size." );
+      throw runtime_error( "relative_activity_gradient: invalid number of parameters." );
 
     vector<double> jacobian( num_pars, 0.0 );
     for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
@@ -12483,6 +14032,23 @@ struct RelActAutoCostFcn
       for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
         jacobian[i+j] = rel_act_jet.v[j];
     }
+
+    return jacobian;
+  }//relative_activity_gradient(...)
+
+
+  double relative_activity_uncertainty( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index,
+                                       const std::vector<double> &x, vector<vector<double>> &covariance ) const
+  {
+    const size_t num_pars = this->number_parameters();
+    assert( x.size() == covariance.size() );
+    if( x.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid number of parameters." );
+
+    if( covariance.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid covariance size." );
+
+    const vector<double> jacobian = relative_activity_gradient( src, rel_eff_index, x );
 
     double uncertainty_2 = 0.0;
     for( size_t i = 0; i < num_pars; ++i )
@@ -14073,7 +15639,20 @@ struct RelActAutoCostFcn
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+    double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews.  Note, sigma, not FWHM.
+
+    // GADRAS CZT shapes routinely have >10% of their area beyond 15 sigma (e.g., ~12% below -15
+    //  sigma at 1.4 MeV), which is real peak area that must be modelled.  With truncation the GADRAS
+    //  tails are bounded anyway; without it, cap only extreme (e.g., RapiScan RPM) tails.
+    if( (m_options.skew_type == PeakDef::SkewType::GadrasGeneric)
+       || (m_options.skew_type == PeakDef::SkewType::GadrasCZT) )
+    {
+#if( USE_GADRAS_TRUNCATION )
+      max_nsigma = 0.0;   //no cap
+#else
+      max_nsigma = 60.0;
+#endif
+    }//if( a GADRAS skew type )
     const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
     const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
@@ -14103,9 +15682,23 @@ struct RelActAutoCostFcn
     answer.first_channel = first_channel;
     answer.last_channel = last_channel;
     answer.no_gammas_in_range = false;
-    answer.forced_full_range = (range.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed);
     
     vector<RelActCalcAuto::PeakDefImp<T>> &peaks = answer.peaks;
+
+    // The energy span the ROIs cover; lines outside it are left out unless
+    //  Options::model_lines_outside_roi_span.
+    double span_lower = -std::numeric_limits<double>::infinity();
+    double span_upper = std::numeric_limits<double>::infinity();
+    if( !m_options.model_lines_outside_roi_span && !m_energy_ranges.empty() )
+    {
+      span_lower = m_energy_ranges.front().lower_energy;
+      span_upper = m_energy_ranges.front().upper_energy;
+      for( const RoiRangeChannels &r : m_energy_ranges )
+      {
+        span_lower = std::min( span_lower, r.lower_energy );
+        span_upper = std::max( span_upper, r.upper_energy );
+      }
+    }//if( only lines within the ROI span )
 
     // Go through and create peaks based on rel act, eff, etc
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -14126,6 +15719,27 @@ struct RelActAutoCostFcn
         const T rel_act = relative_activity( src_info.source, rel_eff_index, x );
         //cout << "peaks_for_energy_range_imp: Relative activity of " << src_info.name()
         //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
+
+        // The source-depth model for this element's fluorescence lines, if it applies (see setup_fluorescence_depth_model())
+        const FluorescenceDepth *fluor_depth = nullptr;
+        for( size_t i = 0; el && (i < m_fluorescence_depth.size()); ++i )
+        {
+          if( (m_fluorescence_depth[i].rel_eff_index == rel_eff_index) && (m_fluorescence_depth[i].element == el) )
+            fluor_depth = &m_fluorescence_depth[i];
+        }
+        RelActCalc::FluorescenceDepthProfile<T> fluor_profile;
+        if( fluor_depth )
+        {
+          const PhysModelRelEqnDef<T> phys = make_phys_eqn_input( rel_eff_index, x );
+          assert( phys.self_atten.has_value() );
+          vector<T> fluor_weights;
+          for( size_t i = 0; i < fluor_depth->exciting_mu.size(); ++i )
+            fluor_weights.push_back( T(fluor_depth->exciting_base_weight[i])
+                                     * relative_activity( fluor_depth->exciting_source[i], rel_eff_index, x ) );
+          if( phys.self_atten.has_value() )
+            fluor_profile = RelActCalc::fluorescence_depth_profile( fluor_depth->exciting_mu, fluor_weights,
+                                                                    phys.self_atten->areal_density );
+        }//if( fluor_depth )
         
         T nuc_age;
         if( fixed_age )
@@ -14166,13 +15780,35 @@ struct RelActAutoCostFcn
           // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
           const NucInputGamma::EnergyYield &gamma = (*gammas)[gamma_index];
           const double energy = gamma.energy;
+          if( (energy < span_lower) || (energy > span_upper) )
+            continue;
+
+          // The line's iodine escape companions (see Options::iodine_escape_peaks), which can reach
+          // this ROI when the line itself does not.
+          double escape_fractions[2] = { 0.0, 0.0 };
+          if( m_options.iodine_escape_peaks
+             && std::binary_search( begin(src_info.escape_parent_energies), end(src_info.escape_parent_energies), energy ) )
+            PeakFitUtils::nai_iodine_escape_fractions( energy, escape_fractions[0], escape_fractions[1] );
+          const double escape_energies[2] = { energy - PeakFitUtils::sm_iodine_kalpha_escape_kev,
+                                              energy - PeakFitUtils::sm_iodine_kbeta_escape_kev };
+          bool escape_in_range[2] = { false, false };
+          for( size_t i = 0; i < 2; ++i )
+            escape_in_range[i] = (escape_fractions[i] > 0.0)
+                                 && (escape_energies[i] >= lower_mean) && (escape_energies[i] <= upper_mean);
 
           // Which lines this ROI integrates is decided here, from the peak-coverage limits
           // computed above for exactly this purpose ("what peaks might affect this ROI":
           // `missing_frac` of the peak area lies outside `max_nsigma`).  `energy` is the nominal
           // line energy - a fixed input - and `lower_mean`/`upper_mean` come from scalar parts, so
           // scalar and every Jet lane of one evaluation make the identical decision.
-          if( (energy < lower_mean) || (energy > upper_mean) )
+          // A Voigt x-ray's Lorentzian wings can reach past the detector-shape coverage `lower_mean`/`upper_mean`
+          //  come from - with a micro-calorimeter's ~30 eV sigma that is only ~0.5 keV, while a K x-ray has 2-3 % of
+          //  its area beyond that - so an x-ray within sm_lorentzian_xray_reach_kev of the ROI is always included.
+          const double reach = (m_options.lorentzian_xrays && (gamma.gamma_type == PeakDef::SourceGammaType::XrayGamma))
+                               ? sm_lorentzian_xray_reach_kev : 0.0;
+          const bool line_in_range = ((energy >= std::min( lower_mean, range.lower_energy - reach ))
+                                      && (energy <= std::max( upper_mean, range.upper_energy + reach )));
+          if( !line_in_range && !escape_in_range[0] && !escape_in_range[1] )
             continue;
           T yield = T(gamma.yield);
           const size_t transition_index = gamma.transition_index;
@@ -14198,7 +15834,10 @@ struct RelActAutoCostFcn
           }
           
           // We compute the relative efficiency and FWHM based off of "true" energy
-          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x );
+          const T rel_eff = relative_eff( gamma.energy, rel_eff_index, x )
+                * (fluor_depth ? RelActCalc::fluorescence_self_atten_correction( fluor_profile,
+                                                                                  fluor_depth->mu_at( gamma.energy ) )
+                               : T(1.0));
           // Membership and fixed detector-domain exclusions were frozen in the constructor.  A
           // non-finite value here therefore describes an invalid trial, not a reason to mutate the
           // model by dropping this line for one scalar/Jet pass.
@@ -14223,7 +15862,7 @@ struct RelActAutoCostFcn
                 const T par_value = x[m_add_br_uncert_start_index + range_index];
                 const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
 
-                // This parameter has a Ceres lower bound at exactly zero yield.  Do not clamp the
+                // This parameter has a Ceres lower bound at (by default exactly) zero yield.  Do not clamp the
                 // expression here: at equality, max(T(0), expression) selects the constant Jet and
                 // erases the feasible inward derivative that lets the solver leave the bound.
                 br_uncert_adj = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
@@ -14361,7 +16000,30 @@ struct RelActAutoCostFcn
           //if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
           //  continue;
 
-          peaks.push_back( std::move(peak) );
+          // Escape companions: the line's own amplitude times a fixed fraction, at the width of the
+          //  energy actually deposited.  No channel-count check - they add no width freedom.
+          for( size_t i = 0; i < 2; ++i )
+          {
+            if( !escape_in_range[i] )
+              continue;
+
+            RelActCalcAuto::PeakDefImp<T> escape = peak;
+            escape.m_mean = apply_energy_cal_adjustment( escape_energies[i], x, cached_splines );
+            escape.m_sigma = fwhm( T(escape_energies[i]), x ) / 2.35482;
+            escape.m_amplitude = peak_amplitude * escape_fractions[i];
+            escape.m_is_iodine_escape = true;
+            set_peak_skew( escape, x );
+
+            if( isinf(escape.m_sigma) || isnan(escape.m_sigma) || (escape.m_sigma <= T(0.0))
+               || isinf(escape.m_amplitude) || isnan(escape.m_amplitude) )
+              throw runtime_error( "peaks_for_energy_range_imp: invalid escape peak for "
+                                  + std::to_string(gamma.energy) + " keV gamma." );
+
+            peaks.push_back( std::move(escape) );
+          }//for( the K-alpha and K-beta escapes )
+
+          if( line_in_range )
+            peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
       }//for( const NucInputGamma &src_info : m_nuclides )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
@@ -14566,7 +16228,6 @@ struct RelActAutoCostFcn
     size_t first_channel;
     size_t last_channel;
     bool no_gammas_in_range;
-    bool forced_full_range;
     /** Number of peak-parameter variances that came out meaningfully negative (beyond round-off)
         and were clamped to zero.  A non-zero value flags an ill-conditioned covariance to the caller. */
     size_t num_negative_peak_variances = 0;
@@ -14709,7 +16370,6 @@ struct RelActAutoCostFcn
     answer.first_channel = computed_peaks.first_channel;
     answer.last_channel = computed_peaks.last_channel;
     answer.no_gammas_in_range = computed_peaks.no_gammas_in_range;
-    answer.forced_full_range = computed_peaks.forced_full_range;
     answer.num_negative_peak_variances = num_neg_peak_variances;
 
     for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
@@ -14733,8 +16393,12 @@ struct RelActAutoCostFcn
              = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
 
-        // If this skew parameter was fixed (not fit), mark fitFor as false
-        const bool was_fixed = (skew_index < 6) && m_options.fixed_lower_skew[skew_index].has_value();
+        // If this skew parameter was fixed (not fit), mark fitFor as false - the same test as the
+        //  solve's setup uses.
+        const bool was_fixed = (skew_index < 6)
+                               && (m_options.fixed_lower_skew[skew_index].has_value()
+                                   || (!m_options.start_lower_skew[skew_index].has_value()
+                                       && !PeakDef::skew_parameter_fit_by_default( comp_peak.m_skew_type, coef )));
         peak.setFitFor( coef, !was_fixed );
 
         // Set skew parameter uncertainty if computed
@@ -14744,7 +16408,18 @@ struct RelActAutoCostFcn
         }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
-      if( comp_peak.m_parent_nuclide )
+      if( comp_peak.m_is_iodine_escape )
+      {
+        // The detector's peak, not a line of the source; name the line it escaped from.
+        std::string parent = comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol : std::string();
+        if( !comp_peak.m_parent_nuclide && comp_peak.m_xray_element )
+          parent = comp_peak.m_xray_element->symbol + " x-ray";
+        else if( !comp_peak.m_parent_nuclide && comp_peak.m_reaction )
+          parent = comp_peak.m_reaction->name();
+        char energy_str[32];
+        snprintf( energy_str, sizeof(energy_str), " %.1f keV", comp_peak.m_src_energy );
+        peak.setUserLabel( RelActCalcAuto::Options::sm_iodine_escape_label_prefix + parent + energy_str );
+      }else if( comp_peak.m_parent_nuclide )
       {
         peak.setNuclearTransition( comp_peak.m_parent_nuclide, comp_peak.m_transition,
                                   static_cast<int>(comp_peak.m_rad_particle_index), comp_peak.m_gamma_type );
@@ -16272,7 +17947,7 @@ struct ProfileConditionalHost
 
     ceres::Solver::Summary summary;
     m_solve_in_flight = true;
-    ceres::Solve( m_solver_options, &m_problem, &summary );
+    solve_stopping_creep( m_solver_options, m_problem, summary );
     m_solve_in_flight = false;
     ++m_num_conditional_solves;
 
@@ -16355,7 +18030,7 @@ struct ProfileConditionalHost
 
         ceres::Solver::Summary repair_summary;
         m_solve_in_flight = true;
-        ceres::Solve( m_solver_options, &m_problem, &repair_summary );
+        solve_stopping_creep( m_solver_options, m_problem, repair_summary );
         m_solve_in_flight = false;
         ++m_num_conditional_solves;
         ++result.restarts_used;
@@ -16473,7 +18148,7 @@ struct ProfileConditionalHost
 
         ceres::Solver::Summary restart_summary;
         m_solve_in_flight = true;
-        ceres::Solve( m_solver_options, &m_problem, &restart_summary );
+        solve_stopping_creep( m_solver_options, m_problem, restart_summary );
         m_solve_in_flight = false;
         ++m_num_conditional_solves;
         ++result.restarts_used;
@@ -16893,6 +18568,21 @@ NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const Re
     
   assert( cost_fcn );
   nominal_gammas = cost_fcn->decay_gammas( info, info.age, gammas_to_exclude );
+
+  if( cost_fcn->m_options.iodine_escape_peaks && nominal_gammas )
+  {
+    double max_yield = 0.0;
+    for( const EnergyYield &gamma : *nominal_gammas )
+      max_yield = std::max( max_yield, gamma.yield );
+    for( const EnergyYield &gamma : *nominal_gammas )
+    {
+      double kalpha = 0.0, kbeta = 0.0;
+      PeakFitUtils::nai_iodine_escape_fractions( gamma.energy, kalpha, kbeta );
+      if( (kalpha > 0.0) && (gamma.yield >= PeakFitUtils::sm_iodine_escape_min_relative_yield*max_yield) )
+        escape_parent_energies.push_back( gamma.energy );
+    }
+    std::sort( begin(escape_parent_energies), end(escape_parent_energies) );
+  }//if( model iodine escape peaks )
 }//NucInputGamma constructor
 
 }//namespace RelActCalcAutoImp
@@ -17331,6 +19021,7 @@ const char *to_str( const FwhmForm form )
     case FwhmForm::Berstein_4:    return "Berstein_4";
     case FwhmForm::Berstein_5:    return "Berstein_5";
     case FwhmForm::Berstein_6:    return "Berstein_6";
+    case FwhmForm::NoisePlusCurvedPower: return "NoisePlusCurvedPower";
     case FwhmForm::NotApplicable: return "NotApplicable";
   }//switch( form )
   
@@ -17438,6 +19129,7 @@ const char *RoiRange::to_str( const RangeLimitsType type )
     case RangeLimitsType::Fixed:              return "Fixed";
     case RangeLimitsType::CanExpandForFwhm:   return "CanExpandForFwhm";
     case RangeLimitsType::CanBeBrokenUp:      return "CanBeBrokenUp";
+    case RangeLimitsType::LineAnchored:       return "LineAnchored";
   }//switch( type )
 
   assert( 0 );
@@ -17449,7 +19141,7 @@ RoiRange::RangeLimitsType RoiRange::range_limits_type_from_str( const char *str 
 {
   const size_t str_len = strlen(str);
 
-  for( int itype = 0; itype <= static_cast<int>(RangeLimitsType::CanBeBrokenUp); itype += 1 )
+  for( int itype = 0; itype <= static_cast<int>(RangeLimitsType::LineAnchored); itype += 1 )
   {
     const RangeLimitsType x = RangeLimitsType(itype);
     const char *type_str = to_str( x );
@@ -17554,6 +19246,9 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
     case RelActCalcAuto::FwhmForm::Berstein_6:
       // Handle Berstein polynomials directly without using fctntype
       return bersteinPeakResolutionFWHM( energy, pars, num_pars );
+
+    case RelActCalcAuto::FwhmForm::NoisePlusCurvedPower:
+      return RelActCalcAutoImp::noise_curved_power_fwhm( energy, pars, num_pars );
 
     case RelActCalcAuto::FwhmForm::NotApplicable:
       assert( drf && drf->isValid() && drf->hasResolutionInfo() );
@@ -17661,6 +19356,151 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 }//T eval_fwhm( const T energy, const FwhmForm form, ... )
 
 
+bool Options::lorentzian_xrays_compatible( const PeakDef::SkewType skew_type )
+{
+  return (skew_type == PeakDef::SkewType::NoSkew) || (skew_type == PeakDef::SkewType::GaussPlusBortel);
+}
+
+
+void Options::apply_peak_fit_prefs( const PeakFitDetPrefs * const prefs, const PeakFitDetPrefs * const drf_prefs )
+{
+  if( !skew_from_peak_fit_prefs || !prefs )
+    return;
+
+  set_skew_from_prefs( prefs->m_peak_skew_type, prefs, drf_prefs );
+
+  // The skew the user chose for the spectrum takes priority over Lorentzian x-rays.
+  if( !lorentzian_xrays_compatible( skew_type ) )
+    lorentzian_xrays = false;
+}//Options::apply_peak_fit_prefs(...)
+
+
+void Options::set_skew_from_prefs( const PeakDef::SkewType type, const PeakFitDetPrefs * const prefs,
+                                   const PeakFitDetPrefs * const drf_prefs )
+{
+  skew_type = type;
+  for( size_t i = 0; i < 6; ++i )
+  {
+    fixed_lower_skew[i].reset();
+    fixed_upper_skew[i].reset();
+    start_lower_skew[i].reset();
+    start_upper_skew[i].reset();
+  }
+
+  // ROI-independent skew values are for each peak fit on its own, not across the spectrum.
+  const bool use_prefs_values = prefs && (prefs->m_peak_skew_type == type) && !prefs->m_roi_independent_skew;
+
+  const size_t num_skew = PeakDef::num_skew_parameters( type );
+  for( size_t i = 0; i < num_skew; ++i )
+  {
+    const PeakDef::CoefficientType ct = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+
+    // Values outside the range this tool allows (e.g., from another tool) are moved to its limit,
+    //  rather than failing a fit the user gave no skew values to.
+    double min_value = 0.0, max_value = 0.0, starting = 0.0, step = 0.0;
+    const bool have_range = PeakDef::skew_parameter_range( type, ct, min_value, max_value, starting, step )
+                            && (min_value < max_value);
+    const auto in_range = [=]( std::optional<double> value ) -> std::optional<double> {
+      if( have_range && value.has_value() && std::isfinite( value.value() ) )
+        value = std::clamp( value.value(), min_value, max_value );
+      return value;
+    };
+
+    if( use_prefs_values && prefs->m_lower_energy_skew[i].has_value() )
+    {
+      fixed_lower_skew[i] = in_range( prefs->m_lower_energy_skew[i] );
+      if( PeakDef::is_energy_dependent( type, ct ) )
+        fixed_upper_skew[i] = in_range( prefs->m_upper_energy_skew[i] );
+    }else if( PeakDef::skew_parameter_fit_by_default( type, ct ) )
+    {
+      start_lower_skew[i] = in_range( skew_starting_value( type, ct, prefs, drf_prefs ) );
+    }else
+    {
+      fixed_lower_skew[i] = in_range( skew_starting_value( type, ct, prefs, drf_prefs ) );
+    }
+  }//for( size_t i = 0; i < num_skew; ++i )
+}//Options::set_skew_from_prefs(...)
+
+
+void Options::set_skew_type( const PeakDef::SkewType type )
+{
+  if( type != skew_type )
+  {
+    for( size_t i = 0; i < 6; ++i )
+    {
+      fixed_lower_skew[i].reset();
+      fixed_upper_skew[i].reset();
+      start_lower_skew[i].reset();
+      start_upper_skew[i].reset();
+    }
+  }//if( type != skew_type )
+
+  skew_type = type;
+  skew_from_peak_fit_prefs = false;
+}//Options::set_skew_type(...)
+
+
+bool RoiEdge::operator==( const RoiEdge &rhs ) const
+{
+  return (tail_fraction == rhs.tail_fraction) && (sideband_fwhm == rhs.sideband_fwhm);
+}
+
+
+RoiEdge default_roi_edge( const PeakFitUtils::CoarseResolutionType det_type, const bool lower )
+{
+  // Chosen on benchmark data (2026-09): for HPGe, peak areas of eight nuclides in injected spectra were
+  //  more accurate with 1 FWHM of continuum than with 0.5; for NaI and LaBr, 0.5 was better; and for
+  //  CZT uranium enrichment, 98% coverage below the line (its long hole-trapping tail would otherwise
+  //  take the ROI far below the line) with 0.5 FWHM of continuum.
+  switch( det_type )
+  {
+    case PeakFitUtils::CoarseResolutionType::CZT:
+      return lower ? RoiEdge{ 2.0E-2, 0.5 } : RoiEdge{ 1.0E-3, 0.5 };
+
+    case PeakFitUtils::CoarseResolutionType::Low:
+    case PeakFitUtils::CoarseResolutionType::LaBr:
+    case PeakFitUtils::CoarseResolutionType::MedRes:
+    case PeakFitUtils::CoarseResolutionType::LowOrMedRes:
+      return RoiEdge{ 1.0E-3, 0.5 };
+
+    case PeakFitUtils::CoarseResolutionType::High:
+    case PeakFitUtils::CoarseResolutionType::Unknown:
+      break;
+  }//switch( det_type )
+
+  return RoiEdge{ 1.0E-3, 1.0 };
+}//default_roi_edge(...)
+
+
+RoiEdge RoiRange::EdgeOverride::apply_to( RoiEdge defaults ) const
+{
+  if( tail_fraction.has_value() )
+    defaults.tail_fraction = tail_fraction.value();
+  if( sideband_fwhm.has_value() )
+    defaults.sideband_fwhm = sideband_fwhm.value();
+  return defaults;
+}//RoiRange::EdgeOverride::apply_to(...)
+
+
+bool RoiRange::EdgeOverride::operator==( const EdgeOverride &rhs ) const
+{
+  return (tail_fraction == rhs.tail_fraction) && (sideband_fwhm == rhs.sideband_fwhm);
+}
+
+
+bool RoiResolutionInfo::operator==( const RoiResolutionInfo &rhs ) const
+{
+  const auto same_energy = []( const double a, const double b ) -> bool {
+    return (a == b) || (std::isnan(a) && std::isnan(b));
+  };
+
+  return (input_roi_indices == rhs.input_roi_indices)
+          && same_energy( lower_anchor_energy, rhs.lower_anchor_energy )
+          && same_energy( upper_anchor_energy, rhs.upper_anchor_energy )
+          && (auto_continuum == rhs.auto_continuum);
+}//RoiResolutionInfo::operator==
+
+
 void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -17673,25 +19513,58 @@ void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
   xml_node<char> *base_node = doc->allocate_node( node_element, "RoiRange" );
   parent->append_node( base_node );
 
-  append_version_attrib( base_node, RoiRange::sm_xmlSerializationVersion );
+  // Write version 0 unless a version 1 feature is used, so older builds can still read it.
+  const bool needs_v1 = uses_v1_features();
+  static_assert( RoiRange::sm_xmlSerializationVersion == 1,
+                "needs to be updated for new serialization version." );
+  append_version_attrib( base_node, needs_v1 ? 1 : 0 );
 
   append_float_node( base_node, "LowerEnergy", lower_energy );
   append_float_node( base_node, "UpperEnergy", upper_energy );
 
   const char *cont_type_str = PeakContinuum::offset_type_str( continuum_type );
   append_string_node( base_node, "ContinuumType", cont_type_str );
+  if( auto_continuum )
+    append_bool_node( base_node, "AutoContinuum", auto_continuum );
 
-  // Write new format (preferred)
   const char *range_type_str = RoiRange::to_str( range_limits_type );
   append_string_node( base_node, "RangeLimitType", range_type_str );
 
-  // Also write old format for backward compatibility with older code
-  const bool compat_force_full = (range_limits_type == RangeLimitsType::Fixed);
-  const bool compat_allow_expand = (range_limits_type == RangeLimitsType::CanExpandForFwhm);
+  if( !needs_v1 )
+  {
+    // Also write old format for backward compatibility with older code
+    const bool compat_force_full = (range_limits_type == RangeLimitsType::Fixed);
+    const bool compat_allow_expand = (range_limits_type == RangeLimitsType::CanExpandForFwhm);
 
-  append_bool_node( base_node, "ForceFullRange", compat_force_full );
-  append_bool_node( base_node, "AllowExpandForPeakWidth", compat_allow_expand );
+    append_bool_node( base_node, "ForceFullRange", compat_force_full );
+    append_bool_node( base_node, "AllowExpandForPeakWidth", compat_allow_expand );
+  }//if( !needs_v1 )
+
+  const auto write_edge = [base_node,doc]( const char *name, const EdgeOverride &edge ){
+    if( edge.empty() )
+      return;
+    xml_node<char> *edge_node = doc->allocate_node( node_element, name );
+    base_node->append_node( edge_node );
+    if( edge.tail_fraction.has_value() )
+      append_float_node( edge_node, "TailFraction", edge.tail_fraction.value() );
+    if( edge.sideband_fwhm.has_value() )
+      append_float_node( edge_node, "SidebandFwhm", edge.sideband_fwhm.value() );
+  };//write_edge
+
+  if( range_limits_type != RangeLimitsType::Fixed )
+  {
+    write_edge( "LowerEdge", lower_edge );
+    write_edge( "UpperEdge", upper_edge );
+  }
 }//RoiRange::toXml(...)
+
+
+bool RoiRange::uses_v1_features() const
+{
+  return auto_continuum
+         || (range_limits_type == RangeLimitsType::LineAnchored)
+         || ((range_limits_type != RangeLimitsType::Fixed) && (!lower_edge.empty() || !upper_edge.empty()));
+}//bool RoiRange::uses_v1_features() const
 
 
 void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
@@ -17705,7 +19578,7 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
       throw std::logic_error( "invalid input node name" );
 
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( RoiRange::sm_xmlSerializationVersion == 0,
+    static_assert( RoiRange::sm_xmlSerializationVersion == 1,
                   "needs to be updated for new serialization version." );
 
     check_xml_version( range_node, RoiRange::sm_xmlSerializationVersion );
@@ -17716,6 +19589,10 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
     const rapidxml::xml_node<char> *cont_type_node = XML_FIRST_NODE( range_node, "ContinuumType" );
     const string cont_type_str = SpecUtils::xml_value_str( cont_type_node );
     continuum_type = PeakContinuum::str_to_offset_type_str( cont_type_str.c_str(), cont_type_str.size() );
+
+    auto_continuum = XML_FIRST_NODE( range_node, "AutoContinuum" )
+                       ? get_bool_node_value( range_node, "AutoContinuum" )
+                       : false;
 
     // Try to read new format first (preferred)
     const rapidxml::xml_node<char> *range_type_node = XML_FIRST_NODE( range_node, "RangeLimitType" );
@@ -17755,6 +19632,21 @@ void RoiRange::fromXml( const rapidxml::xml_node<char> *range_node )
         range_limits_type = RangeLimitsType::CanBeBrokenUp;
       }
     }
+
+    const auto read_edge = [range_node]( const char *name ) -> EdgeOverride {
+      EdgeOverride edge;
+      const rapidxml::xml_node<char> * const edge_node = range_node->first_node( name, strlen(name) );
+      if( !edge_node )
+        return edge;
+      if( XML_FIRST_NODE( edge_node, "TailFraction" ) )
+        edge.tail_fraction = get_float_node_value( edge_node, "TailFraction" );
+      if( XML_FIRST_NODE( edge_node, "SidebandFwhm" ) )
+        edge.sideband_fwhm = get_float_node_value( edge_node, "SidebandFwhm" );
+      return edge;
+    };//read_edge
+
+    lower_edge = read_edge( "LowerEdge" );
+    upper_edge = read_edge( "UpperEdge" );
   }catch( std::exception &e )
   {
     throw runtime_error( "RoiRange::fromXml(): " + string(e.what()) );
@@ -17791,7 +19683,10 @@ bool RoiRange::operator==( const RoiRange &rhs ) const
   return (lower_energy == rhs.lower_energy)
     && (upper_energy == rhs.upper_energy)
     && (continuum_type == rhs.continuum_type)
-    && (range_limits_type == rhs.range_limits_type);
+    && (auto_continuum == rhs.auto_continuum)
+    && (range_limits_type == rhs.range_limits_type)
+    && (lower_edge == rhs.lower_edge)
+    && (upper_edge == rhs.upper_edge);
 }
 
 bool RoiRange::operator!=( const RoiRange &rhs ) const
@@ -17895,6 +19790,8 @@ bool Options::operator==( const Options &rhs ) const
   return (energy_cal_type == rhs.energy_cal_type)
     && (fwhm_form == rhs.fwhm_form)
     && (fwhm_estimation_method == rhs.fwhm_estimation_method)
+    && (starting_fwhm_form == rhs.starting_fwhm_form)
+    && (starting_fwhm_coefficients == rhs.starting_fwhm_coefficients)
     && (spectrum_title == rhs.spectrum_title)
     && (foreground_filename == rhs.foreground_filename)
     && (background_filename == rhs.background_filename)
@@ -17902,9 +19799,15 @@ bool Options::operator==( const Options &rhs ) const
     && (background_sample_numbers == rhs.background_sample_numbers)
     && (skew_type == rhs.skew_type)
     && (lorentzian_xrays == rhs.lorentzian_xrays)
+    && (iodine_escape_peaks == rhs.iodine_escape_peaks)
+    && (model_lines_outside_roi_span == rhs.model_lines_outside_roi_span)
     && (additional_br_uncert == rhs.additional_br_uncert)
+    && (additional_br_min_yield_fraction == rhs.additional_br_min_yield_fraction)
+    && (fwhm_max_ratio_to_start == rhs.fwhm_max_ratio_to_start)
+    && (fwhm_channel_floor_factor == rhs.fwhm_channel_floor_factor)
     && (auto_profile_weak_mass_fractions == rhs.auto_profile_weak_mass_fractions)
     && (robust_solve == rhs.robust_solve)
+    && (max_solve_iterations == rhs.max_solve_iterations)
     && (same_corr_fcn_for_all_rel_eff_curves == rhs.same_corr_fcn_for_all_rel_eff_curves)
     && (same_external_shielding_for_all_rel_eff_curves == rhs.same_external_shielding_for_all_rel_eff_curves)
     && (auto_simplify_model == rhs.auto_simplify_model)
@@ -17912,8 +19815,26 @@ bool Options::operator==( const Options &rhs ) const
     && (profile_targets == rhs.profile_targets)
     && (rel_eff_curves == rhs.rel_eff_curves)
     && (rois == rhs.rois)
+    && (roi_settings == rhs.roi_settings)
+    && (skew_from_peak_fit_prefs == rhs.skew_from_peak_fit_prefs)
+    && std::equal( std::begin(fixed_lower_skew), std::end(fixed_lower_skew), std::begin(rhs.fixed_lower_skew) )
+    && std::equal( std::begin(fixed_upper_skew), std::end(fixed_upper_skew), std::begin(rhs.fixed_upper_skew) )
+    && std::equal( std::begin(start_lower_skew), std::end(start_lower_skew), std::begin(rhs.start_lower_skew) )
+    && std::equal( std::begin(start_upper_skew), std::end(start_upper_skew), std::begin(rhs.start_upper_skew) )
     && (floating_peaks == rhs.floating_peaks);
 }//bool Options::operator==( const Options &rhs ) const
+
+
+bool Options::RoiSettings::is_default() const
+{
+  return (*this == RoiSettings{});
+}
+
+
+bool Options::RoiSettings::operator==( const RoiSettings &rhs ) const
+{
+  return (continuum_switch_min_improvement == rhs.continuum_switch_min_improvement);
+}//Options::RoiSettings::operator==
 
 bool Options::operator!=( const Options &rhs ) const
 {
@@ -18434,7 +20355,33 @@ string Options::why_not_usable() const
       if( !error.empty() )
         return error;
     }
+
+    for( const std::optional<double> &start : { start_lower_skew[i], start_upper_skew[i] } )
+    {
+      if( start.has_value() && !std::isfinite( start.value() ) )
+        return "Peak-skew parameter " + std::to_string(i) + " starting value must be finite.";
+    }
   }//for( active skew coefficients )
+
+  // Per-ROI extent overrides (only used by ROIs that are not fixed ranges).
+  for( const RoiRange &roi : rois )
+  {
+    if( roi.range_limits_type == RoiRange::RangeLimitsType::Fixed )
+      continue;
+
+    for( const RoiRange::EdgeOverride *edge : { &roi.lower_edge, &roi.upper_edge } )
+    {
+      const bool bad_tail = edge->tail_fraction.has_value()
+                            && !((edge->tail_fraction.value() > 0.0) && (edge->tail_fraction.value() < 0.5));
+      const bool bad_sideband = edge->sideband_fwhm.has_value()
+                            && !((edge->sideband_fwhm.value() >= 0.0) && std::isfinite( edge->sideband_fwhm.value() ));
+      if( bad_tail || bad_sideband )
+        return "The " + SpecUtils::printCompact( roi.lower_energy, 5 ) + " to "
+               + SpecUtils::printCompact( roi.upper_energy, 5 ) + " keV ROI has an invalid "
+               + (bad_tail ? string("peak coverage (must be more than 50% and less than 100%).")
+                           : string("continuum sideband (must not be negative)."));
+    }
+  }//for( const RoiRange &roi : rois )
 
   // Explicit profile-target requests fail fast with the target's own reason, rather than
   // surfacing only as a Failed profile after paying for the whole solve.
@@ -18985,9 +20932,18 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   const bool uses_v5_fields = robust_solve;
   // v6 adds explicit profile targets; an empty list is written as an absent element.
   const bool uses_v6_fields = !profile_targets.empty();
-  static_assert( Options::sm_xmlSerializationVersion == 6, "Update conditional Options version logic." );
-  append_version_attrib( base_node, uses_v6_fields ? 6 : (uses_v5_fields ? 5
-                                  : (uses_v4_fields ? 4 : (uses_v3_fields ? 3 : 2))) );
+  // v7 adds RoiSettings, and v1 RoiRange children (line-anchored ROIs, auto continua, edge overrides).
+  bool uses_v1_rois = false;
+  for( const RoiRange &roi : rois )
+    uses_v1_rois = uses_v1_rois || roi.uses_v1_features();
+  bool uses_start_skew = false;
+  for( size_t i = 0; i < 6; ++i )
+    uses_start_skew = uses_start_skew || start_lower_skew[i].has_value() || start_upper_skew[i].has_value();
+  const bool uses_v7_fields = !roi_settings.is_default() || uses_v1_rois || uses_start_skew
+                              || skew_from_peak_fit_prefs;
+  static_assert( Options::sm_xmlSerializationVersion == 7, "Update conditional Options version logic." );
+  append_version_attrib( base_node, uses_v7_fields ? 7 : (uses_v6_fields ? 6 : (uses_v5_fields ? 5
+                                  : (uses_v4_fields ? 4 : (uses_v3_fields ? 3 : 2)))) );
 
   // Write "FitEnergyCal" for backwards compatibility
   const bool fit_any_energy_cal = (energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
@@ -18999,11 +20955,25 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
 
   const char *fwhm_form_str = to_str( fwhm_form );
   auto fwhm_node = append_string_node( base_node, "FwhmForm", fwhm_form_str );
-  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6" );
+  append_attrib( fwhm_node, "remark", "Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6, NoisePlusCurvedPower" );
   
   const char *fwhm_estimation_method_str = to_str( fwhm_estimation_method );
   auto fwhm_estimation_method_node = append_string_node( base_node, "FwhmEstimationMethod", fwhm_estimation_method_str );
   append_attrib( fwhm_estimation_method_node, "remark", "Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency" );
+
+  if( (starting_fwhm_form != DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm)
+      && !starting_fwhm_coefficients.empty() )
+  {
+    string coefs;
+    for( size_t i = 0; i < starting_fwhm_coefficients.size(); ++i )
+    {
+      char buffer[32];
+      snprintf( buffer, sizeof(buffer), "%s%.9g", (i ? " " : ""), starting_fwhm_coefficients[i] );
+      coefs += buffer;
+    }
+    append_string_node( base_node, "StartingFwhmForm", std::to_string( static_cast<int>(starting_fwhm_form) ) );
+    append_string_node( base_node, "StartingFwhmCoefficients", coefs );
+  }
 
   append_string_node( base_node, "Title", spectrum_title );
 
@@ -19044,11 +21014,40 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
       if( fixed_upper_skew[i].has_value() )
         append_float_node( base_node, upper_names[i], fixed_upper_skew[i].value() );
     }
+
+    // Starting values (v7), only written when set
+    for( size_t i = 0; i < 6; ++i )
+    {
+      if( start_lower_skew[i].has_value() )
+        append_float_node( base_node, doc->allocate_string( ("StartLowerSkew" + std::to_string(i)).c_str() ),
+                           start_lower_skew[i].value() );
+      if( start_upper_skew[i].has_value() )
+        append_float_node( base_node, doc->allocate_string( ("StartUpperSkew" + std::to_string(i)).c_str() ),
+                           start_upper_skew[i].value() );
+    }
+  }
+
+  if( skew_from_peak_fit_prefs )
+  {
+    xml_node<char> *prefs_node = append_string_node( base_node, "SkewFromPeakFitPrefs", "true" );
+    append_attrib( prefs_node, "remark", "If true, the skew is taken from the spectrum's (or detector's) peak-fit"
+                   " preferences when they are available (fixed where the preferences give values), instead of"
+                   " the SkewType and skew values above." );
   }
 
   append_bool_node( base_node, "LorentzianXrays", lorentzian_xrays );
+  if( iodine_escape_peaks )
+    append_bool_node( base_node, "IodineEscapePeaks", iodine_escape_peaks );
+  if( !model_lines_outside_roi_span )
+    append_bool_node( base_node, "ModelLinesOutsideRoiSpan", model_lines_outside_roi_span );
 
   append_float_node( base_node, "AddUncert", additional_br_uncert );
+  if( additional_br_min_yield_fraction > 0.0 )
+    append_float_node( base_node, "AddUncertMinYieldFraction", additional_br_min_yield_fraction );
+  if( fwhm_max_ratio_to_start > 0.0 )
+    append_float_node( base_node, "FwhmMaxRatioToStart", fwhm_max_ratio_to_start );
+  if( fwhm_channel_floor_factor != 1.25 )
+    append_float_node( base_node, "FwhmChannelFloorFactor", fwhm_channel_floor_factor );
 
   if( !auto_profile_weak_mass_fractions )
     append_bool_node( base_node, "AutoProfileWeakMassFractions", false );
@@ -19087,6 +21086,15 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
       " true) toggles it; an absent element means disabled." );
   }//if( auto_simplify_model )
 
+  if( !roi_settings.is_default() )
+  {
+    xml_node<char> *settings_node = doc->allocate_node( node_element, "RoiSettings" );
+    base_node->append_node( settings_node );
+    append_attrib( settings_node, "remark", "The score improvement needed to switch an auto-continuum ROI"
+      " from its starting continuum type." );
+    append_float_node( settings_node, "ContinuumSwitchMinImprovement", roi_settings.continuum_switch_min_improvement );
+  }//if( !roi_settings.is_default() )
+
   if( !rois.empty() )
   {
     xml_node<char> *node = doc->allocate_node( node_element, "RoiRangeList" );
@@ -19119,7 +21127,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       throw std::logic_error( "invalid input node name" );
     
     // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
-    static_assert( Options::sm_xmlSerializationVersion == 6,
+    static_assert( Options::sm_xmlSerializationVersion == 7,
                   "needs to be updated for new serialization version." );
 
     check_xml_version( parent, Options::sm_xmlSerializationVersion );
@@ -19158,6 +21166,23 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       fwhm_estimation_method = FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
     }
+
+    starting_fwhm_form = DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm;
+    starting_fwhm_coefficients.clear();
+    const rapidxml::xml_node<char> *seed_form_node = XML_FIRST_NODE( parent, "StartingFwhmForm" );
+    const rapidxml::xml_node<char> *seed_coef_node = XML_FIRST_NODE( parent, "StartingFwhmCoefficients" );
+    if( seed_form_node && seed_coef_node )
+    {
+      const int form_int = std::stoi( SpecUtils::xml_value_str( seed_form_node ) );
+      vector<float> coefs;
+      SpecUtils::split_to_floats( SpecUtils::xml_value_str( seed_coef_node ), coefs );
+      if( (form_int >= 0) && (form_int < static_cast<int>(DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm))
+          && !coefs.empty() )
+      {
+        starting_fwhm_form = static_cast<DetectorPeakResponse::ResolutionFnctForm>( form_int );
+        starting_fwhm_coefficients = coefs;
+      }
+    }//if( a starting FWHM curve was written )
 
     const rapidxml::xml_node<char> *title_node = XML_FIRST_NODE( parent, "Title" );
     spectrum_title = SpecUtils::xml_value_str( title_node );
@@ -19225,6 +21250,26 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       }//for( i )
     }//fixed skew params
 
+    // Starting skew values, and how peak-fit preferences are used (added in v7) - optional.
+    for( size_t i = 0; i < 6; ++i )
+    {
+      start_lower_skew[i] = std::nullopt;
+      start_upper_skew[i] = std::nullopt;
+
+      const string lower_name = "StartLowerSkew" + std::to_string(i);
+      const string upper_name = "StartUpperSkew" + std::to_string(i);
+      const rapidxml::xml_node<char> *lower_node = parent->first_node( lower_name.c_str(), lower_name.size(), true );
+      const rapidxml::xml_node<char> *upper_node = parent->first_node( upper_name.c_str(), upper_name.size(), true );
+      if( lower_node && !SpecUtils::xml_value_str(lower_node).empty() )
+        start_lower_skew[i] = std::stod( SpecUtils::xml_value_str(lower_node) );
+      if( upper_node && !SpecUtils::xml_value_str(upper_node).empty() )
+        start_upper_skew[i] = std::stod( SpecUtils::xml_value_str(upper_node) );
+    }//for( size_t i = 0; i < 6; ++i )
+
+    skew_from_peak_fit_prefs = false;
+    if( XML_FIRST_NODE( parent, "SkewFromPeakFitPrefs" ) )
+      skew_from_peak_fit_prefs = get_bool_node_value( parent, "SkewFromPeakFitPrefs" );
+
     // lorentzian_xrays added 20260121; optional, defaults to false
     lorentzian_xrays = false;
     try
@@ -19234,6 +21279,31 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     {
       lorentzian_xrays = false;
     }
+
+    // iodine_escape_peaks added 20260923; optional, defaults to false
+    iodine_escape_peaks = false;
+    if( XML_FIRST_NODE(parent, "IodineEscapePeaks") )
+      iodine_escape_peaks = get_bool_node_value( parent, "IodineEscapePeaks" );
+
+    // model_lines_outside_roi_span added 20260923; optional, defaults to true
+    model_lines_outside_roi_span = true;
+    if( XML_FIRST_NODE(parent, "ModelLinesOutsideRoiSpan") )
+      model_lines_outside_roi_span = get_bool_node_value( parent, "ModelLinesOutsideRoiSpan" );
+
+    // additional_br_min_yield_fraction added 20260923; optional, defaults to zero
+    additional_br_min_yield_fraction = 0.0;
+    if( XML_FIRST_NODE(parent, "AddUncertMinYieldFraction") )
+      additional_br_min_yield_fraction = std::clamp( get_float_node_value( parent, "AddUncertMinYieldFraction" ), 0.0, 0.99 );
+
+    // fwhm_max_ratio_to_start added 20260926; optional, defaults to zero (no limit)
+    fwhm_max_ratio_to_start = 0.0;
+    if( XML_FIRST_NODE(parent, "FwhmMaxRatioToStart") )
+      fwhm_max_ratio_to_start = std::max( 0.0, static_cast<double>( get_float_node_value( parent, "FwhmMaxRatioToStart" ) ) );
+
+    // fwhm_channel_floor_factor added 20260926; optional, defaults to 1.25
+    fwhm_channel_floor_factor = 1.25;
+    if( XML_FIRST_NODE(parent, "FwhmChannelFloorFactor") )
+      fwhm_channel_floor_factor = std::max( 0.0, static_cast<double>( get_float_node_value( parent, "FwhmChannelFloorFactor" ) ) );
 
     // Additional uncertainty added 202250125, so we'll allow it to be missing.
     try
@@ -19330,6 +21400,14 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       auto_simplify_model = enabled;
     }//if( <AutoRemoveDegeneraciesChi2Delta> present )
 
+    roi_settings = RoiSettings{};
+    const rapidxml::xml_node<char> * const settings_node = XML_FIRST_NODE(parent, "RoiSettings");
+    if( settings_node )
+    {
+      if( XML_FIRST_NODE(settings_node, "ContinuumSwitchMinImprovement") )
+        roi_settings.continuum_switch_min_improvement = get_float_node_value( settings_node, "ContinuumSwitchMinImprovement" );
+    }//if( settings_node )
+
     const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "RoiRangeList");
     if( !node && parent->parent() )
     {
@@ -19337,6 +21415,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
       node = XML_FIRST_NODE( parent->parent(), "RoiRangeList" );
     }
     
+    rois.clear();
     if( node )
     {
       XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
@@ -19348,6 +21427,7 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
     }//if( <RoiRangeList> )
   
   
+    floating_peaks.clear();
     node = XML_FIRST_NODE(parent, "FloatingPeakList");
     if( !node && parent->parent() )
     {
@@ -19469,6 +21549,7 @@ size_t num_parameters( const FwhmForm eqn_form )
     case FwhmForm::Berstein_4:    return 6;  // 4 Berstein coefficients + min_energy + max_energy
     case FwhmForm::Berstein_5:    return 7;  // 5 Berstein coefficients + min_energy + max_energy
     case FwhmForm::Berstein_6:    return 8;  // 6 Berstein coefficients + min_energy + max_energy
+    case FwhmForm::NoisePlusCurvedPower: return 6;  // w0, w1, s_lo, s_hi + min_energy + max_energy
     case FwhmForm::NotApplicable: return 0;
   }//switch( m_options.fwhm_form )
   
@@ -19476,6 +21557,25 @@ size_t num_parameters( const FwhmForm eqn_form )
   throw runtime_error( "Invalid FwhmForm" );
   return 0;
 }//size_t num_parameters( const FwhmForm eqn_form )
+
+
+double eval_fwhm( const double energy, const FwhmForm form, const std::vector<double> &pars )
+{
+  if( form == FwhmForm::NotApplicable )
+    throw std::runtime_error( "eval_fwhm(): FwhmForm::NotApplicable needs a detector response." );
+  if( pars.size() != num_parameters(form) )
+    throw std::runtime_error( "eval_fwhm(): wrong number of parameters for the form." );
+  return eval_fwhm<double>( energy, form, pars.data(), pars.size(), nullptr );
+}//double eval_fwhm( energy, form, pars )
+
+
+std::vector<double> fit_noise_plus_curved_power( const std::vector<double> &energies,
+                                                 const std::vector<double> &fwhms,
+                                                 const double lower_energy,
+                                                 const double upper_energy )
+{
+  return RelActCalcAutoImp::fit_noise_curved_power( energies, fwhms, lower_energy, upper_energy );
+}//fit_noise_plus_curved_power(...)
 
 RelEffCurveInput::RelEffCurveInput()
 : nuclides{},
@@ -20478,12 +22578,21 @@ Options::Options()
 : energy_cal_type( RelActCalcAuto::EnergyCalFitType::NonLinearFit ),
   fwhm_form( FwhmForm::Polynomial_2 ),
   fwhm_estimation_method( FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum ),
+  starting_fwhm_form( DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ),
+  starting_fwhm_coefficients{},
   spectrum_title( "" ),
   skew_type( PeakDef::SkewType::NoSkew ),
+  skew_from_peak_fit_prefs( false ),
   lorentzian_xrays( false ),
+  iodine_escape_peaks( false ),
+  model_lines_outside_roi_span( true ),
   additional_br_uncert( 0.0 ),
+  additional_br_min_yield_fraction( 0.0 ),
+  fwhm_max_ratio_to_start( 0.0 ),
+  fwhm_channel_floor_factor( 1.25 ),
   auto_profile_weak_mass_fractions( true ),
   robust_solve( false ),
+  max_solve_iterations( 0 ),
   rel_eff_curves{},
   rois{},
   floating_peaks{},
@@ -23335,6 +25444,351 @@ RelActAutoSolution::mass_enrichment_gradient( const SandiaDecay::Nuclide *nuclid
 }//mass_enrichment_gradient(...)
 
 
+void RelActAutoSolution::compute_bound_limit_messages()
+{
+  namespace BoundEffects = RelActCalcAutoImp::BoundEffects;
+
+  // Idempotent: replace whatever a previous call added.
+  for( const string &previous : m_bound_limit_messages )
+  {
+    const auto pos = std::find( begin(m_warnings), end(m_warnings), previous );
+    if( pos != end(m_warnings) )
+      m_warnings.erase( pos );
+  }
+  m_bound_limit_messages.clear();
+
+  const size_t num_pars = m_final_parameters.size();
+  if( !m_cost_functor || !num_pars || (m_param_at_bound.size() != num_pars)
+      || (m_cost_functor->number_parameters() != num_pars) )
+    return;
+
+  const bool have_cov = (m_covariance.size() == num_pars);
+  const size_t num_curves = m_options.rel_eff_curves.size();
+
+  const auto curve_suffix = [this,num_curves]( const size_t curve ) -> string {
+    if( num_curves < 2 )
+      return string();
+    const string &name = m_options.rel_eff_curves[curve].name;
+    return " (" + (name.empty() ? ("curve " + std::to_string(curve + 1)) : name) + ")";
+  };
+  const auto percent = []( const double fraction ) -> string {
+    return SpecUtils::printCompact( 100.0*fraction, 3 ) + "%";
+  };
+  const auto fitted_activity = [this]( const SrcVariant &src, const size_t curve ) -> double {
+    if( curve < m_rel_activities.size() )
+      for( const NuclideRelAct &act : m_rel_activities[curve] )
+        if( act.source == src )
+          return act.rel_activity;
+    return std::numeric_limits<double>::quiet_NaN();
+  };
+
+  // The results a user reads off the fit: the isotopic mass fractions of each element with two or more
+  //  fitted isotopes on a curve - else each source's relative activity.  A source that is itself at a
+  //  limit is not one of them.
+  struct MainResult
+  {
+    string name;
+    double value = 0.0;
+    vector<double> gradient;
+    double plausibility_scale = -1.0;
+    bool is_mass_fraction = false;
+    size_t own_par = std::numeric_limits<size_t>::max();
+  };//struct MainResult
+
+  vector<MainResult> results;
+  for( size_t curve = 0; have_cov && (curve < num_curves); ++curve )
+  {
+    const vector<NucInputInfo> &nucs = m_options.rel_eff_curves[curve].nuclides;
+    map<short,size_t> isotopes_per_element;
+    for( const NucInputInfo &nuc : nucs )
+    {
+      if( const SandiaDecay::Nuclide * const nuc_ptr = RelActCalcAuto::nuclide(nuc.source) )
+        isotopes_per_element[nuc_ptr->atomicNumber] += 1;
+    }
+
+    bool any_multi_isotope = false;
+    for( const pair<const short,size_t> &el : isotopes_per_element )
+      any_multi_isotope = (any_multi_isotope || (el.second >= 2));
+
+    for( const NucInputInfo &nuc : nucs )
+    {
+      try
+      {
+        MainResult result;
+        result.own_par = m_cost_functor->nuclide_parameter_index( nuc.source, curve );
+        if( (result.own_par < num_pars) && m_param_at_bound[result.own_par] )
+          continue;
+
+        const SandiaDecay::Nuclide * const nuc_ptr = RelActCalcAuto::nuclide( nuc.source );
+        if( nuc_ptr && (isotopes_per_element[nuc_ptr->atomicNumber] >= 2) )
+        {
+          result.gradient = enrichment_gradient_imp( m_cost_functor, m_final_parameters, nuc_ptr, curve, result.value );
+          result.is_mass_fraction = true;
+          result.plausibility_scale = (std::min)( std::fabs(result.value), std::fabs(1.0 - result.value) );
+          result.name = nuc_ptr->symbol + " mass fraction" + curve_suffix(curve);
+        }else if( !any_multi_isotope )
+        {
+          result.gradient = m_cost_functor->relative_activity_gradient( nuc.source, curve, m_final_parameters );
+          result.value = fitted_activity( nuc.source, curve );
+          result.name = nuc.name() + " relative activity" + curve_suffix(curve);
+        }else
+        {
+          continue;
+        }
+
+        results.push_back( std::move(result) );
+      }catch( std::exception & )
+      {
+        // A result that cannot be differentiated is simply not described.
+      }
+    }//for( const NucInputInfo &nuc : nucs )
+  }//for( loop over curves )
+
+
+  // One message per parameter at a limit.
+  for( size_t par = 0; par < num_pars; ++par )
+  {
+    if( !m_param_at_bound[par] )
+      continue;
+
+    const string short_name = (par < m_parameter_names.size()) ? m_parameter_names[par] : string();
+    const signed char side = (par < m_param_bound_side.size()) ? m_param_bound_side[par] : 0;
+
+    // An element-total slot of a mass-fraction constraint sits at a bound by construction, and the age
+    //  of a nuclide judged not present is flagged only along with its activity.
+    if( SpecUtils::istarts_with(short_name, "MTot") || SpecUtils::istarts_with(short_name, "MFSum")
+       || (SpecUtils::istarts_with(short_name, "Age") && (side == 0)) )
+      continue;
+
+    string description = m_cost_functor->describe_parameter( par );
+    if( !description.empty() )
+      description[0] = static_cast<char>( std::toupper( static_cast<unsigned char>(description[0]) ) );
+
+    // A source's activity: say whether it was detected, with an upper limit.
+    std::optional<pair<SrcVariant,size_t>> activity_of;
+    const NucInputInfo *nuc_input = nullptr;
+    for( size_t curve = 0; !activity_of && (curve < num_curves); ++curve )
+    {
+      for( const NucInputInfo &nuc : m_options.rel_eff_curves[curve].nuclides )
+      {
+        try
+        {
+          if( SpecUtils::istarts_with(short_name, "Act")
+             && (m_cost_functor->nuclide_parameter_index(nuc.source, curve) == par) )
+          {
+            activity_of = make_pair( nuc.source, curve );
+            nuc_input = &nuc;
+          }
+        }catch( std::exception & )
+        {
+        }
+      }
+    }//for( loop over curves )
+
+    // The activity's lower limit is zero unless the user set a minimum.
+    const bool zero_lower_limit = !nuc_input || !nuc_input->min_rel_act.has_value() || !(*nuc_input->min_rel_act > 0.0);
+
+    string msg;
+    if( activity_of && (side <= 0) && zero_lower_limit )
+    {
+      const SrcVariant &src = activity_of->first;
+      const size_t curve = activity_of->second;
+      const double activity = fitted_activity( src, curve );
+
+      // A linearized 2-sigma upper limit: as a mass fraction for an isotope of an element with other
+      //  fitted isotopes, else against the strongest other source on the curve.
+      string limit_txt;
+      try
+      {
+        const double sigma = (have_cov && (m_covariance[par][par] > 0.0))
+                               ? std::sqrt( m_covariance[par][par] ) : std::numeric_limits<double>::quiet_NaN();
+
+        const SandiaDecay::Nuclide * const nuc_ptr = RelActCalcAuto::nuclide( src );
+        size_t num_isotopes = 0;
+        for( const NucInputInfo &nuc : m_options.rel_eff_curves[curve].nuclides )
+        {
+          const SandiaDecay::Nuclide * const other = RelActCalcAuto::nuclide( nuc.source );
+          num_isotopes += (nuc_ptr && other && (other->atomicNumber == nuc_ptr->atomicNumber));
+        }
+
+        if( num_isotopes >= 2 )
+        {
+          double fraction = 0.0;
+          const vector<double> frac_gradient
+                 = enrichment_gradient_imp( m_cost_functor, m_final_parameters, nuc_ptr, curve, fraction );
+          const double upper = (std::max)( 0.0, fraction ) + 2.0*std::fabs(frac_gradient[par])*sigma;
+          if( std::isfinite(upper) && (upper >= 1.0) )
+            limit_txt = "the data do not constrain its mass fraction";
+          else if( std::isfinite(upper) && (upper > 0.0) )
+            limit_txt = "2σ upper limit ≈ " + SpecUtils::printCompact( upper, 2 ) + " by mass";
+        }else if( curve < m_rel_activities.size() )
+        {
+          string ref_name;
+          double ref_activity = 0.0;
+          for( const NuclideRelAct &act : m_rel_activities[curve] )
+          {
+            if( !(act.source == src) && (act.rel_activity > ref_activity) )
+            {
+              ref_activity = act.rel_activity;
+              ref_name = act.name();
+            }
+          }
+
+          const vector<double> act_gradient
+                      = m_cost_functor->relative_activity_gradient( src, curve, m_final_parameters );
+          const double upper = (std::max)( 0.0, activity ) + 2.0*std::fabs(act_gradient[par])*sigma;
+          if( std::isfinite(upper) && (upper > 0.0) && (ref_activity > 0.0) )
+            limit_txt = "2σ upper limit ≈ " + SpecUtils::printCompact( upper/ref_activity, 2 )
+                        + " of " + ref_name + "'s activity";
+        }//if( an isotope of a multi-isotope element ) / else
+      }catch( std::exception & )
+      {
+      }
+
+      // At its zero bound (Ceres clamps onto it exactly), or judged not present a little above it.
+      if( (side < 0) || !(activity > 0.0) )
+        msg = description + " fit to zero (not detected" + (limit_txt.empty() ? string() : ("; " + limit_txt)) + ").";
+      else
+        msg = description + " is not significantly above zero" + (limit_txt.empty() ? string() : (" (" + limit_txt + ")")) + ".";
+    }else if( activity_of )
+    {
+      msg = description + " ended at the " + string((side > 0) ? "maximum" : "minimum")
+            + " activity set for it, so its own uncertainty does not account for that limit.";
+    }else
+    {
+      msg = description + " ended at the " + string((side > 0) ? "upper" : "lower")
+            + " limit of its allowed range, so its own uncertainty does not account for that limit.";
+    }//if( an activity at or near zero ) / else if( an activity at a user limit ) / else
+
+    // How much it matters to the main results' uncertainties.
+    vector<pair<double,string>> effects;
+    for( const MainResult &result : results )
+    {
+      if( result.own_par == par )
+        continue;
+      const double effect = BoundEffects::uncertainty_added_by_freedom( m_covariance, result.gradient, par );
+      if( !std::isnan(effect) )
+        effects.emplace_back( effect, result.name );
+    }//for( const MainResult &result : results )
+
+    std::stable_sort( begin(effects), end(effects), []( const pair<double,string> &lhs, const pair<double,string> &rhs ){
+      return lhs.first > rhs.first;
+    } );
+
+    vector<pair<double,string>> shown;
+    for( const pair<double,string> &effect : effects )
+    {
+      if( (effect.first >= 0.01) && (shown.size() < 2) )
+        shown.push_back( effect );
+    }
+
+    const auto added = []( const pair<double,string> &effect ) -> string {
+      if( std::isinf(effect.first) )
+        return "accounts for nearly all of the " + effect.second + " uncertainty";
+      if( effect.first >= 1.0 )
+        return "makes the " + effect.second + " uncertainty " + SpecUtils::printCompact(1.0 + effect.first, 3)
+               + " times larger";
+      return "adds " + SpecUtils::printCompact(100.0*effect.first, 2) + "% to the " + effect.second + " uncertainty";
+    };
+
+    if( !shown.empty() )
+    {
+      msg += " Letting it vary " + added( shown[0] );
+      if( shown.size() > 1 )
+        msg += ", and " + added( shown[1] );
+      msg += " (already included in the reported values).";
+    }else if( !effects.empty() )
+    {
+      msg += " Its effect on the main results' uncertainties is under 1%.";
+    }
+
+    m_bound_limit_messages.push_back( msg );
+  }//for( size_t par = 0; par < num_pars; ++par )
+
+
+  // Say so whenever `reliability_floored_uncert` actually widens a reported uncertainty.
+  const auto widening_reason = [this]( const vector<double> &gradient ) -> string {
+    vector<string> reasons;
+    if( m_num_rank_deficient_dirs > 0 )
+      reasons.push_back( "the fit has near-degenerate directions" );
+    // Without a gradient (the rel. eff. band), a widening not explained by degeneracy must be a bound.
+    if( gradient.empty() ? (m_num_rank_deficient_dirs == 0) : sensitivity_rides_on_bound(gradient, m_param_at_bound) )
+      reasons.push_back( "much of its sensitivity rides on parameters that ended at a limit" );
+    string answer;
+    for( size_t i = 0; i < reasons.size(); ++i )
+      answer += (i ? " and " : "") + reasons[i];
+    return answer.empty() ? string("its linearized uncertainty is implausibly small") : answer;
+  };
+
+  for( const MainResult &result : results )
+  {
+    if( !result.is_mass_fraction )
+      continue;  //only mass fractions and the rel. eff. band are floored
+
+    const double var = BoundEffects::quadratic_form( m_covariance, result.gradient );
+    if( !(var >= 0.0) || !std::isfinite(var) )
+      continue;
+
+    const double raw = std::sqrt( var );
+    const double floored = reliability_floored_uncert( result.value, raw, result.gradient, result.plausibility_scale );
+    if( floored > raw )
+      m_bound_limit_messages.push_back( "The " + result.name + " uncertainty was widened from "
+          + SpecUtils::printCompact(100.0*raw, 3) + "% to " + SpecUtils::printCompact(100.0*floored, 3)
+          + "% (absolute), because " + widening_reason(result.gradient)
+          + ", where the linearized uncertainty is not reliable." );
+  }//for( const MainResult &result : results )
+
+  if( have_cov )
+  {
+    set<double> energies;
+    for( const PeakDef &peak : m_fit_peaks )
+    {
+      if( peak.amplitude() > 0.0 )
+        energies.insert( std::round(10.0*peak.mean())/10.0 );
+    }
+
+    for( size_t curve = 0; curve < num_curves; ++curve )
+    {
+      size_t num_checked = 0, num_widened = 0;
+      double worst_ratio = 1.0, worst_energy = 0.0, worst_raw = 0.0, worst_floored = 0.0, worst_value = 0.0;
+      for( const double energy : energies )
+      {
+        try
+        {
+          double raw = std::numeric_limits<double>::quiet_NaN();
+          const pair<double,double> rel_eff = relative_efficiency_with_uncert( energy, curve, &raw );
+          num_checked += 1;
+          if( (rel_eff.second > raw) && (raw >= 0.0) )
+          {
+            num_widened += 1;
+            const double ratio = (raw > 0.0) ? (rel_eff.second / raw) : std::numeric_limits<double>::infinity();
+            if( ratio > worst_ratio )
+            {
+              worst_ratio = ratio;
+              worst_energy = energy;
+              worst_raw = raw;
+              worst_floored = rel_eff.second;
+              worst_value = rel_eff.first;
+            }
+          }
+        }catch( std::exception & )
+        {
+        }
+      }//for( const double energy : energies )
+
+      if( num_widened && (worst_value != 0.0) )
+        m_bound_limit_messages.push_back( "The relative-efficiency band" + curve_suffix(curve) + " was widened at "
+            + std::to_string(num_widened) + " of " + std::to_string(num_checked) + " peak energies (most at "
+            + SpecUtils::printCompact(worst_energy, 5) + " keV, from " + percent(worst_raw/std::fabs(worst_value))
+            + " to " + percent(worst_floored/std::fabs(worst_value)) + " of its value), because "
+            + widening_reason( {} ) + ", where the linearized uncertainty is not reliable." );
+    }//for( loop over curves )
+  }//if( have_cov )
+
+  m_warnings.insert( end(m_warnings), begin(m_bound_limit_messages), end(m_bound_limit_messages) );
+}//void compute_bound_limit_messages()
+
+
 const RelActAutoSolution::ProfileResultEntry *RelActAutoSolution::profile_result(
                                         const Options::ProfileTarget &target ) const
 {
@@ -25890,7 +28344,8 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   
-pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
+pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index,
+                                                                         double *unfloored_uncert ) const
 {
   typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
   assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
@@ -26046,6 +28501,8 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
   // Floor the rel-eff band when the linearized covariance under-states it (rank-deficient
   //  collapse, or sensitivity riding a bound-pinned parameter).  Done after the NDEBUG analytic
   //  cross-check above so that compares the raw autodiff uncertainty.
+  if( unfloored_uncert )
+    *unfloored_uncert = uncertainty;
   uncertainty = reliability_floored_uncert( rel_eff, uncertainty, jacobian );
 
   if( IsNan(rel_eff) || IsInf(rel_eff) )
@@ -26057,7 +28514,36 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
   return {rel_eff, uncertainty};
 }//pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
 
-  
+
+vector<RelActAutoSolution::SkewParResult> RelActAutoSolution::skew_parameters() const
+{
+  vector<SkewParResult> answer;
+
+  const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
+  if( !num_skew || !m_cost_functor )
+    return answer;
+
+  // The lower-energy values, then the upper-energy values (-999.9 when not energy dependent)
+  const size_t skew_start = m_cost_functor->m_skew_par_start_index;
+  if( (skew_start + 2*num_skew) > m_final_parameters.size() )
+    return answer;
+
+  for( size_t i = 0; i < num_skew; ++i )
+  {
+    SkewParResult result;
+    result.lower = m_final_parameters[skew_start + i];
+    const double upper = m_final_parameters[skew_start + i + num_skew];
+    result.upper = (upper > -500.0) ? upper : result.lower;
+    result.was_fit = ((skew_start + i) < m_parameter_were_fit.size()) && m_parameter_were_fit[skew_start + i];
+    result.simplified = ((skew_start + i) < m_parameter_fixed_by_model_selection.size())
+                        && m_parameter_fixed_by_model_selection[skew_start + i];
+    answer.push_back( result );
+  }
+
+  return answer;
+}//vector<SkewParResult> skew_parameters() const
+
+
   
 size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const
 {
@@ -26543,6 +29029,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
     vector<double> effective_means, effective_sigmas, effective_res_sigmas, effective_amps;
     vector<vector<double>> effective_curve_amps; //[cluster][rel_eff_index] -> that curves model counts in the cluster
+    // Each cluster's shape: that of its largest peak when that peak's shape is not `options.skew_type` (i.e., a
+    //  Voigt x-ray when `Options::lorentzian_xrays`), otherwise `options.skew_type` with `peak_skews`.
+    vector<pair<PeakDef::SkewType,vector<double>>> effective_skews;
     vector<pair<double,double>> clusters;
     vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
     for( size_t range_index = 0; range_index < clustered_ranges.size(); ++range_index )
@@ -26563,6 +29052,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         vector<double> curve_amps( num_curves, 0.0 );
         vector<pair<size_t,size_t>> range_peak_indices;
         vector<double> means, sigmas, amps;
+        const PeakDef *cluster_largest = nullptr;
         for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
         {
           const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index]; //Note: do not include free-floating peaks.
@@ -26581,7 +29071,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
             if( (energy < range.first) || (energy > range.second) )
               continue;
 
-            if( p.amplitude() > max_peak_amp )
+            // Only a peak of `options.skew_type` has its skew parameters in that type's order (a Voigt x-ray's
+            //  first parameter is its Lorentzian width).
+            if( (p.skewType() == options.skew_type) && (p.amplitude() > max_peak_amp) )
             {
               max_peak_amp = p.amplitude();
               for( int skew_index = 0; skew_index < static_cast<int>(num_skew); ++skew_index )
@@ -26591,6 +29083,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
                 peak_skews[skew_index] = p.coefficient( par );
               }
             }//if( p.amplitude() > max_counts )
+
+            if( !cluster_largest || (p.amplitude() > cluster_largest->amplitude()) )
+              cluster_largest = &p;
 
             num_peaks_in_range += 1;
             const double w = p.amplitude();
@@ -26630,6 +29125,17 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         effective_curve_amps.push_back( curve_amps );
         peak_indices.push_back( range_peak_indices );
         clusters.push_back( range );
+
+        assert( cluster_largest );
+        pair<PeakDef::SkewType,vector<double>> cluster_skew{ options.skew_type, {} };
+        if( cluster_largest->skewType() != options.skew_type )
+        {
+          cluster_skew.first = cluster_largest->skewType();
+          for( size_t s = 0; s < PeakDef::num_skew_parameters( cluster_skew.first ); ++s )
+            cluster_skew.second.push_back( cluster_largest->coefficient(
+                        static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s ) ) );
+        }
+        effective_skews.push_back( std::move(cluster_skew) );
       }//if( cluseter in in ROI )
     }//for( pair<double,double> &range : clustered_ranges )
     
@@ -26682,7 +29188,33 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     const float * const channel_counts = &((*spectrum)[channel_range.first]);
     const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
 
-    if( is_cdf_step )
+    // Clusters of `options.skew_type` use the ROI's skew parameters.
+    for( pair<PeakDef::SkewType,vector<double>> &cluster_skew : effective_skews )
+    {
+      if( cluster_skew.first == options.skew_type )
+        cluster_skew.second = peak_skews;
+    }
+
+    const bool mixed_shapes = std::any_of( begin(effective_skews), end(effective_skews),
+      [&options]( const pair<PeakDef::SkewType,vector<double>> &s ){ return s.first != options.skew_type; } );
+
+    if( mixed_shapes )
+    {
+      // Each cluster keeps its own shape (e.g., Voigt x-rays among the gammas), which neither the single-shape
+      //  LLS nor the L-M fit below supports; a CDF step's coefficients are held at the solution's values.
+      const size_t num_step = PeakContinuum::num_cdf_step_pars( roi.continuum_type );
+      const vector<double> &cont_pars = continuum->parameters();
+      assert( cont_pars.size() >= num_step );
+      const vector<double> step_coeffs( end(cont_pars) - num_step, end(cont_pars) );
+
+      PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
+                                      roi.continuum_type, step_coeffs.empty() ? nullptr : step_coeffs.data(),
+                                      ref_energy, effective_means, effective_sigmas, fixed_amp_peaks,
+                                      options.skew_type, skew_parameters, fit_amps, fit_continuum_coefs,
+                                      fit_amp_uncert, fit_continuum_uncerts, peak_counts, &effective_skews );
+      fit_continuum_coefs.insert( end(fit_continuum_coefs), begin(step_coeffs), end(step_coeffs) );
+      fit_continuum_uncerts.resize( fit_continuum_coefs.size(), 0.0 );
+    }else if( is_cdf_step )
     {
       // For CDF step types, step_coeff must be optimized by a non-linear solver (it can't be solved
       //  by fit_amp_and_offset_imp which takes step_coeff as a known input).  So we construct PeakDef
@@ -26722,7 +29254,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       try
       {
         const vector<shared_ptr<const PeakDef>> lm_results
-          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type, Wt::WFlags<PeakFitLM::PeakFitLMOptions>{} );
+          = PeakFitLM::fit_peaks_in_roi_LM( lm_peaks, solution.m_spectrum, cost_functor->m_det_type,
+                                            PeakFitLM::PeakFitLMOptions::NoSparseDataLikelihood );  // consistent with this solve's chi2
 
         // Extract amplitudes from fitting peaks (first effective_means.size() results)
         // Note: fit_peaks_in_roi_LM may reorder peaks by mean; match by closest mean.
@@ -26788,12 +29321,12 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     for( size_t i = 0; i < fit_amps.size(); ++i )
     {
       PeakDef p( effective_means[i], effective_sigmas[i], std::max(0.0, fit_amps[i]) );
-      p.setSkewType( options.skew_type );
-      for( size_t s = 0; s < num_skew; ++s )
+      p.setSkewType( effective_skews[i].first );
+      for( size_t s = 0; s < effective_skews[i].second.size(); ++s )
       {
         const PeakDef::CoefficientType ct
           = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s );
-        p.set_coefficient( peak_skews[s], ct );
+        p.set_coefficient( effective_skews[i].second[s], ct );
       }
       p.setContinuum( new_continuum );
       cluster_peaks.push_back( std::move(p) );
@@ -27115,6 +29648,36 @@ static std::optional<RelActAutoSolution> multi_curve_seed_from_merged(
 }//multi_curve_seed_from_merged(...)
 
 
+/** Replaces `sol` with `rescued`, a re-solve of the same problem on `sol`s final ROIs passed as `Fixed`
+ ROIs, prepending `sol`s warnings.  That re-solve took the final ROIs as its input ROIs, so how they
+ were derived from the caller's ROIs (`m_input_rois`, `m_final_roi_info`, `m_num_roi_refits`, and
+ the resolved ROIs in `m_options.rois`) is kept from `sol`. */
+static void adopt_rescued_solution( RelActAutoSolution &sol, const RelActAutoSolution &rescued )
+{
+  assert( rescued.m_final_roi_ranges.size() == sol.m_final_roi_ranges.size() );
+
+  // The replaced fit's limit messages describe parameters it no longer reports.
+  vector<string> prior_warnings;
+  for( const string &warning : sol.m_warnings )
+  {
+    if( std::find( begin(sol.m_bound_limit_messages), end(sol.m_bound_limit_messages), warning )
+        == end(sol.m_bound_limit_messages) )
+      prior_warnings.push_back( warning );
+  }
+  vector<RoiRange> resolved_rois = sol.m_options.rois;
+  vector<RoiRange> input_rois = sol.m_input_rois;
+  vector<RoiResolutionInfo> roi_info = sol.m_final_roi_info;
+  const size_t num_roi_refits = sol.m_num_roi_refits;
+
+  sol = rescued;
+  sol.m_options.rois = std::move( resolved_rois );
+  sol.m_input_rois = std::move( input_rois );
+  sol.m_final_roi_info = std::move( roi_info );
+  sol.m_num_roi_refits = num_roi_refits;
+  sol.m_warnings.insert( begin(sol.m_warnings), begin(prior_warnings), end(prior_warnings) );
+}//adopt_rescued_solution(...)
+
+
 /** Re-solve the multi-curve model from a better-known starting point, and adopt the result when it
  genuinely lowers the objective.
 
@@ -27136,7 +29699,7 @@ static std::optional<RelActAutoSolution> multi_curve_seed_from_merged(
      baseline-reselection flow uses when a cheap warm restart stalls.  Several solves.
 
  Only `robust_solve` and the ROI ranges are changed, and both are restored on the adopted solution
- so it reports the options the caller actually asked for.  Multi-curve only, so the ordinary
+ (see `adopt_rescued_solution`) so it reports the options the caller actually asked for.  Multi-curve only, so the ordinary
  single-curve path cannot pay for any of this.
 
  @returns true if `sol` was replaced. */
@@ -27183,11 +29746,8 @@ static bool rescue_multi_curve_fit( RelActAutoSolution &sol,
       return false;
 
     const double old_chi2 = sol.m_chi2_data;
-    const vector<string> prior_warnings = sol.m_warnings;
-    sol = rescued;
+    adopt_rescued_solution( sol, rescued );
     sol.m_options.robust_solve = orig_options.robust_solve;
-    sol.m_options.rois = orig_options.rois;
-    sol.m_warnings.insert( begin(sol.m_warnings), begin(prior_warnings), end(prior_warnings) );
     sol.m_warnings.push_back( "A single merged relative-efficiency curve - a model this one"
         " contains - fit the data better, which cannot happen at a proper solution, so the"
         " multi-curve fit was re-solved "
@@ -27206,6 +29766,257 @@ static bool rescue_multi_curve_fit( RelActAutoSolution &sol,
     return false;
   }
 }//rescue_multi_curve_fit(...)
+
+
+namespace
+{
+  std::optional<RelActCalcAutoImp::FrozenModelPolicy> selected_model_policy( const RelActAutoSolution &sol );
+}
+
+
+/** The model without a source is nested in the model with it: zero activity of that source reproduces it
+ exactly.  So the fit without the source, solved from its own seed (as a configuration without the
+ source would be), must never reach a lower chi2 than the fit with it.  When it does, the fit sits in a
+ worse basin that its own path into the problem led it to - measured: adding U232 to uranium
+ configurations ended 54 of 340 fits at a higher chi2, up to 6.5x, while reporting success.  Then the full
+ model is re-solved starting from that better fit, and the lower of the two is kept.
+
+ Checked for the sources that ended at their zero-activity bound, or that were judged not present (see
+ `m_param_at_bound`) - the ones that contribute little, where a different path is most likely and the
+ comparison is most telling.  Both re-solves keep everything else the fit used - its final ROIs, its
+ selected model (auto-simplify's removals), and its branching-ratio-uncertainty ranges - so the models
+ compared really are nested.  Single-curve fits only (multi-curve fits have their own nested
+ comparisons), and only sources whose removal leaves the options otherwise unchanged: not named by a
+ constraint, an activity limit, or a profile target, nor of an element with a mass-fraction constraint.
+ Costs one cold solve whenever such a source exists - two when there are sources both at zero and only
+ judged not present and the first comparison was not better - plus a warm one when a comparison was
+ better.  Under `robust_solve` each cold solve runs the full candidate search. */
+static void add_nested_source_guard( RelActAutoSolution &sol,
+                         const Options &orig_options,
+                         const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                         const std::shared_ptr<const SpecUtils::Measurement> &background,
+                         const PeakFitUtils::CoarseResolutionType det_type,
+                         const std::shared_ptr<std::atomic_bool> &cancel_calc )
+{
+  if( !RelActAutoSolution::is_usable_status(sol.m_status)
+     || !sol.m_cost_functor
+     || (cancel_calc && cancel_calc->load())
+     || (orig_options.rel_eff_curves.size() != 1)
+     || (sol.m_rel_activities.size() != 1)
+     || sol.m_final_roi_ranges.empty()
+     || (sol.m_param_at_bound.size() != sol.m_final_parameters.size())
+     || (sol.m_param_bound_side.size() != sol.m_final_parameters.size()) )
+    return;
+
+  const RelEffCurveInput &curve = orig_options.rel_eff_curves[0];
+
+  // Whether removing `src` would change anything besides the source itself.
+  const auto referenced = [&curve, &orig_options]( const SrcVariant &src ) -> bool {
+    for( const RelEffCurveInput::ActRatioConstraint &constraint : curve.act_ratio_constraints )
+    {
+      if( (constraint.controlling_source == src) || (constraint.constrained_source == src) )
+        return true;
+    }
+
+    // Dropping any isotope of a mass-fraction-constrained element changes how the constraint is decoded.
+    const SandiaDecay::Nuclide * const nuc = nuclide( src );
+    for( const RelEffCurveInput::MassFractionConstraint &constraint : curve.mass_fraction_constraints )
+    {
+      if( nuc && constraint.nuclide && (constraint.nuclide->atomicNumber == nuc->atomicNumber) )
+        return true;
+    }
+
+    for( const Options::ProfileTarget &target : orig_options.profile_targets )
+    {
+      if( (target.source == src) || (target.denominator == src) )
+        return true;
+    }
+
+    return nuc && (nuc->atomicNumber == 94)
+           && (curve.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable);
+  };//referenced lambda
+
+  // The sources at their zero-activity bound, and those judged not present (insignificant while another
+  //  isotope of their element is clearly seen) though not exactly at zero.
+  vector<SrcVariant> at_zero, not_present;
+  for( const NucInputInfo &nuc : curve.nuclides )
+  {
+    if( nuc.force_profile_mass_fraction || nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value()
+       || referenced(nuc.source) )
+      continue;
+
+    size_t par = 0;
+    try
+    {
+      par = sol.m_cost_functor->nuclide_parameter_index( nuc.source, 0 );
+    }catch( std::exception & )
+    {
+      continue;
+    }
+
+    if( (par >= sol.m_param_at_bound.size()) || !sol.m_param_at_bound[par] || (sol.m_param_bound_side[par] > 0) )
+      continue;
+
+    bool zero_activity = false;
+    for( const NuclideRelAct &act : sol.m_rel_activities[0] )
+      zero_activity = zero_activity || ((act.source == nuc.source) && !(act.rel_activity > 0.0));
+
+    if( (sol.m_param_bound_side[par] < 0) && zero_activity )
+      at_zero.push_back( nuc.source );
+    else
+      not_present.push_back( nuc.source );
+  }//for( const NucInputInfo &nuc : curve.nuclides )
+
+  // Without the sources at zero first: that model reproduces this fit's predictions exactly, so it is the
+  //  cleanest comparison.  Only if it is not better, also without the ones judged not present.
+  vector<vector<SrcVariant>> drop_sets;
+  if( !at_zero.empty() )
+    drop_sets.push_back( at_zero );
+  if( !not_present.empty() )
+  {
+    vector<SrcVariant> both = at_zero;
+    both.insert( end(both), begin(not_present), end(not_present) );
+    drop_sets.push_back( both );
+  }
+
+  // Both re-solves use the final ROIs, so every chi2 compared covers the same channels.
+  Options fixed_rois = orig_options;
+  fixed_rois.rois = sol.m_final_roi_ranges;
+  for( RoiRange &roi : fixed_rois.rois )
+    roi.range_limits_type = RoiRange::RangeLimitsType::Fixed;
+
+  // The guard's own solves are added to the effort reported, whichever solution is kept.
+  int extra_eval_solution = 0, extra_eval_total = 0, extra_us_eval = 0, extra_us_in_eval = 0;
+  const auto count_effort = [&]( const RelActAutoSolution &other, const int sign ){
+    extra_eval_solution += sign*other.m_num_function_eval_solution;
+    extra_eval_total += sign*other.m_num_function_eval_total;
+    extra_us_eval += sign*other.m_num_microseconds_eval;
+    extra_us_in_eval += sign*other.m_num_microseconds_in_eval;
+  };
+
+  const double gain_floor = (std::max)( 1.0e-2, 1.0e-7*sol.m_chi2 );
+  const double orig_chi2 = sol.m_chi2;
+
+  // The fit's own model selection and branching-ratio-uncertainty ranges, so the re-solves neither
+  //  select a different model nor re-derive those ranges from their own seed.
+  const std::optional<RelActCalcAutoImp::FrozenModelPolicy> model_policy = selected_model_policy( sol );
+  const RelActCalcAutoImp::FrozenModelPolicy * const model_policy_ptr = model_policy ? &(*model_policy) : nullptr;
+  const vector<pair<double,double>> * const frozen_br_ranges
+                       = sol.m_peak_ranges_with_uncert.empty() ? nullptr : &sol.m_peak_ranges_with_uncert;
+
+  for( const vector<SrcVariant> &dropped : drop_sets )
+  {
+    if( dropped.size() >= curve.nuclides.size() )
+      continue;
+    if( cancel_calc && cancel_calc->load() )
+      break;
+
+    const auto is_dropped = [&dropped]( const NucInputInfo &nuc ) -> bool {
+      return std::find( begin(dropped), end(dropped), nuc.source ) != end(dropped);
+    };
+
+    string dropped_names;
+    for( const NucInputInfo &nuc : curve.nuclides )
+    {
+      if( is_dropped(nuc) )
+        dropped_names += (dropped_names.empty() ? "" : ", ") + nuc.name();
+    }
+
+    Options reduced = fixed_rois;
+    vector<NucInputInfo> &reduced_nucs = reduced.rel_eff_curves[0].nuclides;
+    reduced_nucs.erase( std::remove_if( begin(reduced_nucs), end(reduced_nucs), is_dropped ), end(reduced_nucs) );
+
+    try
+    {
+      const RelActAutoSolution reduced_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                          reduced, foreground, background, sol.m_drf, sol.m_spectrum_peaks,
+                          det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                          false, nullptr, true, frozen_br_ranges, model_policy_ptr, true, false );
+      count_effort( reduced_sol, 1 );
+
+      const bool reduced_is_better = RelActAutoSolution::is_usable_status(reduced_sol.m_status)
+                                     && std::isfinite(reduced_sol.m_chi2)
+                                     && (reduced_sol.m_chi2 < (orig_chi2 - gain_floor));
+
+      if( RelActCalcAutoImp::profile_stats_enabled() )
+        cerr << "nested-guard dropped=[" << dropped_names << "] chi2=" << orig_chi2
+             << " reduced_chi2=" << reduced_sol.m_chi2 << " reduced_better=" << reduced_is_better << endl;
+
+      if( !reduced_is_better )
+        continue;
+
+      // Start the full model at the better fit, with each dropped source at a negligible activity:
+      //  every source then has a positive warm-start activity, so none is re-seeded from scratch.
+      RelActAutoSolution seed = reduced_sol;
+      double largest = 0.0;
+      for( const NuclideRelAct &act : seed.m_rel_activities[0] )
+        largest = (std::max)( largest, act.rel_activity );
+
+      for( const NucInputInfo &nuc : curve.nuclides )
+      {
+        if( !is_dropped(nuc) )
+          continue;
+        NuclideRelAct entry;
+        entry.source = nuc.source;
+        entry.age = nuc.age;
+        entry.rel_activity = 1.0E-6 * ((largest > 0.0) ? largest : 1.0);
+        seed.m_rel_activities[0].push_back( entry );
+      }
+
+      RelActAutoSolution resolved = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+                          fixed_rois, foreground, background, sol.m_drf, sol.m_spectrum_peaks,
+                          det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
+                          false, &seed, true, frozen_br_ranges, model_policy_ptr, true,
+                          RelActCalcAutoImp::solve_may_profile(orig_options) );
+
+      if( cancel_calc && cancel_calc->load() )
+      {
+        count_effort( resolved, 1 );
+        break;
+      }
+
+      // Its warm-start note would wrongly read as a ROI refinement.
+      resolved.m_warnings.erase( std::remove_if( begin(resolved.m_warnings), end(resolved.m_warnings),
+          []( const string &warning ){ return SpecUtils::istarts_with( warning, "Warm-started " ); } ),
+          end(resolved.m_warnings) );
+
+      if( RelActCalcAutoImp::profile_stats_enabled() )
+        cerr << "nested-guard resolved_chi2=" << resolved.m_chi2 << endl;
+
+      if( RelActAutoSolution::is_usable_status(resolved.m_status) && std::isfinite(resolved.m_chi2)
+         && (resolved.m_chi2 < (orig_chi2 - gain_floor)) )
+      {
+        count_effort( sol, 1 );  //the replaced fit's effort; `resolved`s own is carried by the adoption
+        adopt_rescued_solution( sol, resolved );
+        sol.m_warnings.push_back( "The fit first converged with " + dropped_names + " at or near zero activity,"
+            " but the same model without " + dropped_names + " - which zero activity reproduces exactly -"
+            " fit better when solved from its own starting point (fit objective "
+            + SpecUtils::printCompact(reduced_sol.m_chi2, 6) + " vs " + SpecUtils::printCompact(orig_chi2, 6)
+            + "), so the earlier result was not the optimum.  Re-solving from that fit lowered the objective"
+            " to " + SpecUtils::printCompact(sol.m_chi2, 6) + "." );
+      }else
+      {
+        count_effort( resolved, 1 );
+        sol.m_warnings.push_back( "This fit has " + dropped_names + " at or near zero activity, yet the same model"
+            " without " + dropped_names + " fit better when solved from its own starting point (fit objective "
+            + SpecUtils::printCompact(reduced_sol.m_chi2, 6) + " vs " + SpecUtils::printCompact(orig_chi2, 6)
+            + "), and re-solving from that fit did not improve on it; this fit is not at its optimum, so"
+            " consider removing " + dropped_names + "." );
+      }
+      break;  //one comparison that found a better fit is enough
+    }catch( std::exception &e )
+    {
+      sol.m_warnings.push_back( "Could not check the fit against the same model without "
+                                + dropped_names + " (" + string(e.what()) + ")." );
+      break;
+    }
+  }//for( const vector<SrcVariant> &dropped : drop_sets )
+
+  sol.m_num_function_eval_solution += extra_eval_solution;
+  sol.m_num_function_eval_total += extra_eval_total;
+  sol.m_num_microseconds_eval += extra_us_eval;
+  sol.m_num_microseconds_in_eval += extra_us_in_eval;
+}//add_nested_source_guard(...)
 
 
 static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
@@ -28056,10 +30867,7 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
           && std::isfinite(rescued.m_chi2_data)
           && (rescued.m_chi2_data < old_chi2) )
       {
-        const vector<string> prior_warnings = sol.m_warnings;
-        sol = rescued;
-        sol.m_options.rois = orig_options.rois;
-        sol.m_warnings.insert( begin(sol.m_warnings), begin(prior_warnings), end(prior_warnings) );
+        adopt_rescued_solution( sol, rescued );
         sol.m_warnings.push_back( "Constraining the relative-efficiency curves to a common"
             " enrichment - a restriction of this very model - fit the data better, which cannot"
             " happen at a proper solution, so the fit was re-solved from that point.  That lowered"
@@ -28092,29 +30900,163 @@ static void add_tied_enrichment_comparison( RelActAutoSolution &sol,
 #include "InterSpec/RelActCalcAuto_Profile_imp.hpp"
 
 
-RelActAutoSolution solve( const Options options,
+namespace
+{
+  /** Whether re-fitting with the `updated` ROIs, instead of those `current` was fit with, is worth a
+   re-solve: yes if the ROI layout (count, provenance, or continuum) changed, or if an edge of a ROI
+   not fixed by the input moved by more than max(1 channel, 0.25 FWHM), in either direction.
+   */
+  bool roi_refinement_needed( const RelActAutoSolution &current,
+                              const std::vector<RelActCalcAutoRoi::ResolvedRoi> &updated )
+  {
+    const std::vector<RoiRange> &rois = current.m_final_roi_ranges;
+    if( (rois.size() != updated.size()) || (current.m_final_roi_info.size() != rois.size()) )
+      return true;
+
+    const std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> fcn = current.m_cost_functor;
+    const std::shared_ptr<const SpecUtils::EnergyCalibration> cal = fcn ? fcn->m_energy_cal : nullptr;
+    if( !cal || !cal->valid() )
+      return true;
+
+    // Width of the channel `energy` is in (resolved ROI bounds are within the spectrum).
+    const double last_channel = static_cast<double>( cal->num_channels() ) - 1.0;
+    const auto channel_width = [&cal,last_channel]( const double energy ) -> double {
+      const double channel = std::clamp( std::floor( cal->channel_for_energy( energy ) ), 0.0, last_channel );
+      return fabs( cal->energy_for_channel( channel + 1.0 ) - cal->energy_for_channel( channel ) );
+    };
+
+    for( size_t i = 0; i < rois.size(); ++i )
+    {
+      const RoiRange &old_roi = rois[i];
+      const RoiRange &new_roi = updated[i].roi;
+      const RoiResolutionInfo &old_info = current.m_final_roi_info[i];
+      const RoiResolutionInfo &new_info = updated[i].info;
+
+      if( (old_roi.continuum_type != new_roi.continuum_type)
+         || (old_info.input_roi_indices != new_info.input_roi_indices) )
+        return true;
+
+      const bool fixed_input = std::isnan( new_info.lower_anchor_energy );
+      if( fixed_input )
+      {
+        if( (old_roi.lower_energy != new_roi.lower_energy) || (old_roi.upper_energy != new_roi.upper_energy) )
+          return true;
+        continue;
+      }
+
+      const double lower_width = channel_width( new_roi.lower_energy );
+      const double upper_width = channel_width( new_roi.upper_energy );
+      // The FWHM the ROIs were sized with; a fit whose FWHM went astray must not hide the change.
+      const double lower_fwhm = fcn->plausible_fwhm( new_info.lower_anchor_energy,
+                                     fcn->fwhm( new_info.lower_anchor_energy, current.m_final_parameters ) );
+      const double upper_fwhm = fcn->plausible_fwhm( new_info.upper_anchor_energy,
+                                     fcn->fwhm( new_info.upper_anchor_energy, current.m_final_parameters ) );
+
+      // An edge within a quarter FWHM (or a channel) of where the fitted peak shape puts it is left
+      //  alone - the difference is mostly in how much continuum sideband is fit, and not worth a re-fit.
+      const double lower_change = fabs( old_roi.lower_energy - new_roi.lower_energy );
+      const double upper_change = fabs( new_roi.upper_energy - old_roi.upper_energy );
+      if( (lower_change > std::max( lower_width, 0.25*lower_fwhm ))
+         || (upper_change > std::max( upper_width, 0.25*upper_fwhm )) )
+        return true;
+    }//for( size_t i = 0; i < rois.size(); ++i )
+
+    return false;
+  }//roi_refinement_needed(...)
+
+
+  /** The name of a source the `refit` has at zero activity, but the `initial` fit found more than three
+   standard deviations above zero; or an empty string if there is none. */
+  std::string source_lost_in_refit( const RelActAutoSolution &initial, const RelActAutoSolution &refit )
+  {
+    for( size_t curve = 0; (curve < initial.m_rel_activities.size()) && (curve < refit.m_rel_activities.size()); ++curve )
+    {
+      for( const NuclideRelAct &before : initial.m_rel_activities[curve] )
+      {
+        if( !(before.rel_activity > 3.0*before.rel_activity_uncertainty) || !(before.rel_activity_uncertainty > 0.0) )
+          continue;
+
+        for( const NuclideRelAct &after : refit.m_rel_activities[curve] )
+        {
+          if( (after.source == before.source) && !(after.rel_activity > 1.0E-6*before.rel_activity) )
+            return before.name();
+        }
+      }//for( loop over initial activities )
+    }//for( loop over curves )
+
+    return "";
+  }//source_lost_in_refit(...)
+
+
+  /** The degrees of freedom `sol`s model selection (auto-simplify) held fixed, so a re-solve of the
+   same problem can use the same model rather than selecting it again. */
+  std::optional<RelActCalcAutoImp::FrozenModelPolicy> selected_model_policy( const RelActAutoSolution &sol )
+  {
+    if( (sol.m_parameter_fixed_by_model_selection.size() != sol.m_final_parameters.size())
+       || (sol.m_parameter_names.size() != sol.m_final_parameters.size()) )
+      return std::nullopt;
+
+    RelActCalcAutoImp::FrozenModelPolicy policy;
+    for( size_t index = 0; index < sol.m_final_parameters.size(); ++index )
+    {
+      if( sol.m_parameter_fixed_by_model_selection[index] )
+        policy.push_back( { sol.m_parameter_names[index], sol.m_final_parameters[index] } );
+    }
+
+    try
+    {
+      return RelActCalcAutoImp::canonical_frozen_model_policy( std::move(policy) );
+    }catch( std::exception & )
+    {
+    }
+
+    return std::nullopt;
+  }//selected_model_policy(...)
+}//namespace
+
+
+RelActAutoSolution solve( const Options input_options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> input_drf,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          const PeakFitUtils::CoarseResolutionType det_type,
-                         std::shared_ptr<std::atomic_bool> cancel_calc
+                         std::shared_ptr<std::atomic_bool> cancel_calc,
+                         std::shared_ptr<const PeakFitDetPrefs> peak_fit_prefs
                          )
 {
   // Note: `auto_simplify_model` (backward-eliminating redundant degrees of freedom at identity values)
-  //  is handled warm, inside solve_ceres(), right after the converged full fit - not here.  When the ROI
-  //  auto-ranging below re-invokes solve_ceres, the simplification simply re-runs (its warm trials are
-  //  cheap); the returned solution reflects the converged ROIs and carries that final pass's warnings.
+  //  is handled warm, inside solve_ceres(), right after the converged full fit - not here.  When the
+  //  ROIs are re-sized below, the re-solve replays that selected model rather than re-selecting it
+  //  (except for ROIs split by lines; see below).
 
-  const std::vector<RoiRange> &energy_ranges = options.rois;
-  const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
+  // Plain-language messages about parameters that ended at a limit, built once on the solution that is
+  //  returned (not on the intermediate solves the rescues and comparisons make along the way).
+  const auto add_bound_limit_messages = []( RelActAutoSolution &sol ){
+    try
+    {
+      sol.compute_bound_limit_messages();
+    }catch( std::exception &e )
+    {
+      sol.m_warnings.push_back( "Failed to describe the parameters that ended at a limit ('"
+                                + string(e.what()) + "')." );
+    }
+  };
 
+  // Take the skew from the peak-fit preferences, if wanted, so everything downstream (the fit, the
+  //  returned options, and any re-solves) sees exactly the skew that was used.
+  Options options = input_options;
+  const shared_ptr<const PeakFitDetPrefs> drf_prefs = input_drf ? input_drf->peakFitDetPrefs() : nullptr;
+  if( !peak_fit_prefs )
+    peak_fit_prefs = drf_prefs;
+  options.apply_peak_fit_prefs( peak_fit_prefs.get(), drf_prefs.get() );
 
   // Build the profile row up front when this solve could possibly profile, so the winning frame can
   // host its conditional optimizations in place; see `solve_may_profile`.
   const bool may_host_profile = RelActCalcAutoImp::solve_may_profile( options );
 
-  const RelActAutoSolution orig_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+  // The first fit uses ROIs sized from the starting peak shape (see `RelActAutoCostFcn`s constructor).
+  RelActAutoSolution current_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                      options,
                      foreground,
                      background,
@@ -28125,464 +31067,185 @@ RelActAutoSolution solve( const Options options,
                      RelActCalcAutoImp::SearchSeedVariant::Default,
                      false,nullptr,true,nullptr,nullptr,false,
                      may_host_profile );
-  
-  bool all_roi_full_range = true;
-  for( const auto &roi : energy_ranges )
-    all_roi_full_range = (all_roi_full_range && (roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed));
 
-  if( all_roi_full_range
-     || !RelActAutoSolution::is_usable_status(orig_sol.m_status)
-     || !orig_sol.m_spectrum )
+  // ROIs that are not fixed are re-sized from the fitted peak shape (and broken-up ROIs are reduced
+  //  to their significant lines), automatic continua are chosen, and the problem re-solved if that
+  //  changes things materially.
+  bool resize_after_fit = false;
+  for( const RoiRange &roi : options.rois )
+    resize_after_fit = (resize_after_fit || roi.auto_continuum
+                        || (roi.range_limits_type != RoiRange::RangeLimitsType::Fixed));
+
+  if( resize_after_fit
+     && RelActAutoSolution::is_usable_status(current_sol.m_status)
+     && current_sol.m_spectrum
+     && current_sol.m_cost_functor )
   {
-    RelActAutoSolution result = orig_sol;
-    std::shared_ptr<const RelActAutoSolution> merged_sol;
-    add_merged_single_curve_comparison( result, options, foreground, background,
-                                        input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
-    add_tied_enrichment_comparison( result, options, foreground, background,
-                                    input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
-    add_mass_fraction_profiles( result, foreground, background, input_drf,
-                                all_peaks, det_type, cancel_calc );
-    return result;
-  }
+    int num_function_eval_solution = current_sol.m_num_function_eval_solution;
+    int num_function_eval_total = current_sol.m_num_function_eval_total;
+    int num_microseconds_eval = current_sol.m_num_microseconds_eval;
+    int num_microseconds_in_eval = current_sol.m_num_microseconds_in_eval;
+    size_t num_roi_refits = 0;
 
-  // If we are here there was at least one ROI that didnt have range_limits_type set to Fixed.
-  // So we will go through and adjust these ROIs based on peaks that are statistically significant,
-  //  based on initial solution, and then re-fit.
-    
-  RelActAutoSolution current_sol = orig_sol;
-  
-  int num_function_eval_solution = orig_sol.m_num_function_eval_solution;
-  int num_function_eval_total = orig_sol.m_num_function_eval_total;
-  int num_microseconds_eval = orig_sol.m_num_microseconds_eval;
-  int num_microseconds_in_eval = orig_sol.m_num_microseconds_in_eval;
-  
-  
-  bool stop_iterating = false, errored_out_of_iterating = false;
-  const size_t max_roi_adjust_iterations = 2;
-  size_t num_roi_iters = 0;
-  for( ; !stop_iterating && (num_roi_iters < max_roi_adjust_iterations); ++num_roi_iters )
-  {
-    assert( current_sol.m_spectrum
-           && current_sol.m_spectrum->energy_calibration()
-           && current_sol.m_spectrum->energy_calibration()->valid() );
-    
-    if( !current_sol.m_spectrum
-       || !current_sol.m_spectrum->energy_calibration()
-       || !current_sol.m_spectrum->energy_calibration()->valid() )
+    // When the re-fit can not be used, the results are from ROIs sized before any fit.
+    const auto keep_initial_fit = [&current_sol]( const string &warning ){
+      current_sol.m_warnings.push_back( warning );
+      if( current_sol.m_status == RelActAutoSolution::Status::Success )
+        current_sol.m_status = RelActAutoSolution::Status::UsableWithWarnings;
+    };
+
+    const size_t max_refinements = options.robust_solve ? 2 : 1;
+    for( size_t refinement = 0; refinement < max_refinements; ++refinement )
     {
-      RelActAutoSolution result = orig_sol;
-      std::shared_ptr<const RelActAutoSolution> merged_sol;
-      add_merged_single_curve_comparison( result, options, foreground, background,
-                                          input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
-      add_tied_enrichment_comparison( result, options, foreground, background,
-                                      input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
-      add_mass_fraction_profiles( result, foreground, background, input_drf,
-                                  all_peaks, det_type, cancel_calc );
-      return result;
-    }
-    
-    vector<RoiRange> fixed_energy_ranges;
-    for( const RoiRange &roi : energy_ranges )
-    {
-      if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
-        fixed_energy_ranges.push_back( roi );
-    }//for( const RoiRange &roi : energy_ranges )
-    
-    
-    /** `orig_sol.m_spectrum` is background subtracted, and energy corrected, of those options were
-     selected.
-     */
-    const auto spectrum = current_sol.m_spectrum;
-    const float live_time = spectrum->live_time();
-    const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
-    
-    // We'll collect all the individual
-    vector<RoiRange> significant_peak_ranges;
-    
-    /** Updates the passed in ROI to have limits for the peak mean energy passed in, and adds ROI
-     to `significant_peak_ranges`.
-     */
-    auto add_updated_roi = [&significant_peak_ranges,
-                             &current_sol,
-                             &fixed_energy_ranges,
-                             num_sigma_half_roi]( RoiRange roi, const double energy ){
-      const double fwhm = eval_fwhm( energy, current_sol.m_fwhm_form, current_sol.m_fwhm_coefficients.data(), 
-                                    current_sol.m_fwhm_coefficients.size(), current_sol.m_drf );
-      const double sigma = fwhm / 2.35482f;
-      
-      double roi_lower = energy - (num_sigma_half_roi * sigma);
-      double roi_upper = energy + (num_sigma_half_roi * sigma);
+      if( cancel_calc && cancel_calc->load() )
+        break;
 
-      bool keep_roi = true;
-      switch( roi.range_limits_type )
+      vector<string> resize_warnings;
+      vector<RelActCalcAutoRoi::ResolvedRoi> updated;
+      bool refine = false;
+      try
       {
-        case RelActCalcAuto::RoiRange::RangeLimitsType::Fixed:
-          assert( 0 );
-          throw std::logic_error( "RoiRange with Fixed range_limits_type should not be in this loop" );
-          break;
-
-        case RelActCalcAuto::RoiRange::RangeLimitsType::CanBeBrokenUp:
-          roi_lower = std::max( roi_lower, roi.lower_energy );
-          roi_upper = std::min( roi_upper, roi.upper_energy );
-          break;
-
-        case RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm:
-        {
-          // Make sure we havent expanded into the range of any ROIs with forced widths
-          for( const RoiRange &fixed : fixed_energy_ranges )
-          {
-            const bool overlaps = ((roi.upper_energy > fixed.lower_energy)
-                                   && (roi.lower_energy < fixed.upper_energy));
-            if( overlaps )
-            {
-            // Do some development checks about bounds of ROI
-            if( (roi_lower >= fixed.lower_energy) && (roi_upper <= fixed.upper_energy) )
-            {
-              // This ROI is completely within a fixed ROI - this shouldnt happen!
-              assert( 0 );
-              keep_roi = false;
-              break;
-            }//if( this peaks ROI is completely within a fixed ROI )
-            
-            if( (fixed.lower_energy >= roi_lower) && (fixed.upper_energy <= roi_upper) )
-            {
-              // This fixed ROI is completely within a the peaks ROI - this shouldnt happen!
-              assert( 0 );
-              keep_roi = false;
-              break;
-            }//if( the fixed ROI is completely within this peaks ROI )
-            
-            if( roi.upper_energy > fixed.upper_energy )
-            {
-              assert( roi_lower <= fixed.upper_energy );
-              assert( roi_upper > fixed.upper_energy );
-              roi_lower = std::max( roi_lower, fixed.upper_energy );
-            }else
-            {
-              assert( roi_upper >= fixed.lower_energy );
-              assert( roi_lower < fixed.lower_energy );
-              roi_upper = std::min( roi_upper, fixed.lower_energy );
-            }
-            
-            assert( roi_lower < roi_upper );
-          }//if( overlaps )
-        }//for( const RoiRange &fixed : fixed_energy_ranges )
-          break;
-        }//case CanExpandForFwhm
-      }//switch( roi.range_limits_type )
-      
-      
-      if( !keep_roi || (roi_lower >= roi_upper) )
+        updated = RelActCalcAutoImp::RelActAutoCostFcn::resolve_rois_from_fit( options, current_sol,
+                                                                                resize_warnings );
+        RelActCalcAutoImp::RelActAutoCostFcn::choose_auto_continua( current_sol, updated,
+                                              options.roi_settings.continuum_switch_min_improvement );
+        refine = (!updated.empty() && roi_refinement_needed( current_sol, updated ));
+      }catch( std::exception &e )
       {
-        // SHouldnt ever get here
-        assert( 0 );
-        return;
+        keep_initial_fit( "Could not re-size the ROIs using the fit peak shape: " + string(e.what()) );
+        break;
       }
 
-      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
-      roi.lower_energy = roi_lower;
-      roi.upper_energy = roi_upper;
+      if( !refine )
+        break;
 
-      significant_peak_ranges.push_back( roi );
-    };//add_updated_roi
+      Options updated_options = options;
+      updated_options.rois.clear();
+      for( const RelActCalcAutoRoi::ResolvedRoi &roi : updated )
+        updated_options.rois.push_back( roi.roi );
 
+      // The re-fit uses the model (auto-simplify) selection of the previous fit - unless ROIs are split
+      //  by lines, whose first fit was only on windows around the peaks found in the spectrum, so its
+      //  selection need not suit the ROIs sized from it.
+      bool split_by_lines = false;
+      for( const RoiRange &roi : options.rois )
+        split_by_lines = (split_by_lines
+                          || (roi.range_limits_type == RoiRange::RangeLimitsType::CanBeBrokenUp)
+                          || (roi.range_limits_type == RoiRange::RangeLimitsType::CanExpandForFwhm));
 
-    vector<optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>>> phys_model_inputs( current_sol.m_rel_eff_coefficients.size() );
-    assert( options.rel_eff_curves.size() == current_sol.m_rel_activities.size() );
+      const std::optional<RelActCalcAutoImp::FrozenModelPolicy> model_policy
+                                     = split_by_lines ? std::nullopt : selected_model_policy( current_sol );
 
-
-    // Note: we loop over original energy_ranges, not the energy ranges from the solution,
-    //       (to avoid the ROIs from expanding continuously, and also we've marked the
-    //        updated ROIs as Fixed range_limits_type)
-    for( const RoiRange &roi : energy_ranges )
-    {
-      if( roi.range_limits_type == RelActCalcAuto::RoiRange::RangeLimitsType::Fixed )
-        continue;
-      
-      // TODO: should we group peaks together by nuclide?  I think so, but probably not a huge effect at first
-      
-      // Estimate peak amplitudes, so we can decide if they are significant enough.
-      for( size_t rel_eff_index = 0; rel_eff_index < current_sol.m_rel_activities.size(); ++rel_eff_index )
+      // The re-fit starts from the converged fit, so the deterministic candidate search only runs if the
+      //  re-fit shows a pathology (forcing it for every ROI change would multiply the run time).
+      RelActAutoSolution updated_sol;
+      try
       {
-        const vector<NuclideRelAct> &rel_acts = current_sol.m_rel_activities[rel_eff_index];
-        const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
-        const vector<double> &rel_eff_coefs = current_sol.m_rel_eff_coefficients[rel_eff_index];
-        const RelActCalc::RelEffEqnForm eqn_form = rel_eff.rel_eff_eqn_type;
-        
-        optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>> &phys_model_input = phys_model_inputs[rel_eff_index];
-        if( (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_input.has_value() )
-          phys_model_input = current_sol.m_cost_functor->make_phys_eqn_input(rel_eff_index, current_sol.m_final_parameters );
+        updated_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+            updated_options, foreground, background, current_sol.m_drf,
+            current_sol.m_spectrum_peaks, det_type, cancel_calc,
+            RelActCalcAutoImp::SearchSeedVariant::Default, false, &current_sol,
+            true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
 
-        for( const NuclideRelAct &rel_act : rel_acts )
+        // A warm start can land on a flat spot the trust region cannot leave, and Ceres then reports
+        // CONVERGENCE having moved nothing (see `m_optimizer_returned_seed`).  Accepting that over the
+        // incumbent replaces a real fit with the mapped seed - measured as a U235 185.7 keV line at
+        // z=50 whose ROI came back with a chi2 WORSE than no peaks at all, and was then filtered out.
+        // Re-solve cold before giving up on the new ROI layout; keep the incumbent if that stalls too.
+        if( updated_sol.m_optimizer_returned_seed )
         {
-          assert( !is_null(rel_act.source) );
-          if( is_null(rel_act.source) )
-            continue;
+          RelActAutoSolution cold_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
+              updated_options, foreground, background, current_sol.m_drf,
+              current_sol.m_spectrum_peaks, det_type, cancel_calc,
+              RelActCalcAutoImp::SearchSeedVariant::Default, false, nullptr,
+              true, nullptr, model_policy ? &(*model_policy) : nullptr, true, may_host_profile );
 
-          const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(rel_act.source);
-          
-          if( (rel_eff.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable)
-             && nuclide
-             && (nuclide->atomicNumber == 94)
-             && (nuclide->massNumber == 242) )
-          {
-            continue;
-          }
-          
-          
-          for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
-          {
-            const double &energy = energy_br.first;
-            const double &br = energy_br.second;
-            if( (energy < roi.lower_energy) || (energy > roi.upper_energy) )
-              continue;
-            
-            double rel_eff_val = -1.0;
-            
-            if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-            {
-              rel_eff_val = RelActCalc::eval_eqn( energy, eqn_form, rel_eff_coefs );
-            }else
-            {
-              assert( phys_model_input.has_value() );
-              rel_eff_val = RelActCalc::eval_physical_model_eqn( energy, phys_model_input->self_atten,
-                                                                phys_model_input->external_attens, phys_model_input->det.get(),
-                                                                phys_model_input->hoerl_b, phys_model_input->hoerl_c,
-                                                                current_sol.m_cost_functor->m_corr_lower_energy,
-                                                                current_sol.m_cost_functor->m_corr_upper_energy,
-                                                                current_sol.m_cost_functor->m_corr_pivot_energy,
-                                                                phys_model_input->corr_fcn );
-            }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-            
-            const double expected_counts = live_time * br * rel_eff_val * rel_act.rel_activity;
-            const double fwhm = eval_fwhm( energy, current_sol.m_fwhm_form,
-                                          current_sol.m_fwhm_coefficients.data(),
-                                          current_sol.m_fwhm_coefficients.size(), 
-                                          current_sol.m_drf );
-            const double sigma = fwhm / 2.35482f;
-            
-            const double peak_width_nsigma = 3.0;
-            const float lower_energy = static_cast<float>(energy - (peak_width_nsigma * sigma));
-            const float upper_energy = static_cast<float>(energy + (peak_width_nsigma * sigma));
-            const double data_counts = spectrum->gamma_integral(lower_energy, upper_energy);
-            
-            // We'll use a very simple requirement that the expected peak area should be at least 3
-            //  times the sqrt of the data area for the peak; this is of course just a coarse FOM
-            //  TODO: the value of 3.0 was chosen "by eye" from only a couple example spectra - need to re-evaluate
-            const double significance_limit = 3.0;
-            const bool significant = (expected_counts > significance_limit*sqrt(data_counts));
-            
-            cout << "For " << energy << " keV " << to_name(rel_act.source)
-            << " expect counts=" << expected_counts
-            << ", and FWHM=" << fwhm
-            << ", with data_counts=" << data_counts
-            << ", is_significant=" << significant
-            << endl;
-            
-            if( !significant )
-              continue;
-            
-            add_updated_roi( roi, energy );
-          }//for( const pair<double,double> &energy_br : rel_act.gamma_energy_br )
-        }//for( const NuclideRelAct &rel_act : current_sol.m_rel_activities )
-      }//for( const vector<NuclideRelAct> &rel_acts : current_sol.m_rel_activities )
-    }//for( const RoiRange &roi : energy_ranges )
-    
-    // Now make sure all `extra_peaks` are in an energy range; if not add an energy range for them
-    for( const FloatingPeak &peak : extra_peaks )
-    {
-      bool in_energy_range = false;
-      for( const RoiRange &roi : significant_peak_ranges )
-      {
-        in_energy_range = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
-        if( in_energy_range )
-        {
-          // The floating peak already lies inside a significant-peak ROI, so it is already covered -
-          // nothing to add.  (These ROIs were marked Fixed by add_updated_roi when created above, so
-          // re-calling it here throws "Fixed range_limits_type should not be in this loop"; that latent
-          // crash was previously never reached, but found-peak ROI seeding can place a floating 511/
-          // escape peak inside one of these ranges.)  Peak coverage is all this block must guarantee.
-          break;
-        }
-      }//for( const RoiRange &roi : significant_peak_ranges )
-      
-      if( !in_energy_range )
-      {
-        for( const RoiRange &roi : fixed_energy_ranges )
-        {
-          in_energy_range = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
-          if( in_energy_range )
-            break;
-        }//for( const RoiRange &roi : fixed_energy_ranges )
-      }//if( we needed to check if the floating peak is in a fixed range )
-      
-      //If the fixed peak isnt in any of the ROI's from significant gammas, or forced-full-range
-      //  ROIs, create a ROI for it
-      if( !in_energy_range )
-      {
-        bool found_roi = false;
-        for( const RoiRange &roi : energy_ranges )
-        {
-          found_roi = ((peak.energy >= roi.lower_energy) && (peak.energy <= roi.upper_energy));
-          if( found_roi )
-          {
-            add_updated_roi( roi, peak.energy );
-            break;
-          }//
-        }//for( const RoiRange &roi : energy_ranges )
-        
-        assert( found_roi );
-      }//if( the fixed-peak isnt in any of the ROI's
-    }//for( const FloatingPeak &peak : extra_peaks )
-    
-    //  Sort ROIs first so they are in increasing energy
-    sort_rois_by_energy( significant_peak_ranges );
-    
-    // Now combine overlapping ranges in significant_peak_ranges
-    vector<RoiRange> combined_sig_peak_ranges;
-    for( size_t index = 0; index < significant_peak_ranges.size(); ++index )
-    {
-      RoiRange range = significant_peak_ranges[index];
-      
-      // We'll loop over remaining ROIs until there is not an overlap; note that
-      //  `index` is incremented if we combine with a ROI.
-      for( size_t j = index + 1; j < significant_peak_ranges.size(); ++j, ++index )
-      {
-        const RoiRange &next_range = significant_peak_ranges[j];
-        
-        if( next_range.lower_energy > range.upper_energy )
-          break; // note: doesnt increment `index`
-        
-        range.upper_energy = next_range.upper_energy;
-        const int cont_type_int = std::max( static_cast<int>(range.continuum_type),
-                                           static_cast<int>(next_range.continuum_type) );
-        range.continuum_type = PeakContinuum::OffsetType(cont_type_int);
-      }//for( loop over the next peaks, until they shouldnt be combined )
-      
-      combined_sig_peak_ranges.push_back( range );
-    }//for( size_t i = 0; i < significant_peak_ranges.size(); ++i )
-    
-    // Put all the ROIs into one vector, and sort them
-    vector<RoiRange> updated_energy_ranges = fixed_energy_ranges;
-    
-    updated_energy_ranges.insert( end(updated_energy_ranges),
-                                 begin(combined_sig_peak_ranges),
-                                 end(combined_sig_peak_ranges) );
-    
-    sort_rois_by_energy( updated_energy_ranges );
-    
-    cout << "\nFor iteration " << num_roi_iters << ", the energy ranges being are going from the"
-    " original:\n\t{";
-    for( size_t i = 0; i < energy_ranges.size(); ++i )
-      cout << (i ? ", " : "") << "{" << energy_ranges[i].lower_energy
-           << ", " << energy_ranges[i].upper_energy << "}";
-    cout << "}\nTo:\n\t{";
-    for( size_t i = 0; i < updated_energy_ranges.size(); ++i )
-      cout << (i ? ", " : "") << "{" << updated_energy_ranges[i].lower_energy
-      << ", " << updated_energy_ranges[i].upper_energy << "}";
-    cout << "}\n\n";
+          if( !RelActAutoSolution::is_usable_status(cold_sol.m_status)
+             || cold_sol.m_optimizer_returned_seed )
+            throw runtime_error( "re-solving with the updated ROIs returned its own starting point"
+                                 " rather than a minimum" );
 
-    // Do not rebuild an identical outer problem.  Conversely, any actual boundary, continuum, or
-    // ROI-layout change is one of the deterministic-search triggers: it changes the residual set
-    // and can expose a basin that did not exist (or was poorly seeded) in the previous layout.
-    const bool roi_problem_changed
-        = !same_roi_boundaries( current_sol.m_final_roi_ranges, updated_energy_ranges );
-    if( !roi_problem_changed )
-    {
-      stop_iterating = true;
-      break;
-    }
-    
-    try
-    {
-      auto updated_options = options;
-      updated_options.rois = updated_energy_ranges;
-      
-      const RelActAutoSolution updated_sol
-      = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
-          updated_options, foreground, background, current_sol.m_drf,
-          current_sol.m_spectrum_peaks, det_type, cancel_calc,
-          RelActCalcAutoImp::SearchSeedVariant::Default, true, &current_sol,
-          true,nullptr,nullptr,true,may_host_profile );
+          cold_sol.m_warnings.push_back( "The warm-started ROI-refinement solve returned its own"
+              " starting point, so it was re-solved from the ordinary seed." );
+          updated_sol = std::move( cold_sol );
+        }//if( updated_sol.m_optimizer_returned_seed )
 
-      if( updated_sol.m_cost_functor
-          && !updated_sol.m_cost_functor->exact_retained_inputs_match(
-                              current_sol.m_drf,current_sol.m_spectrum_peaks) )
-        throw runtime_error( "ROI refinement changed the retained peak/DRF inputs" );
-      
-      switch( updated_sol.m_status )
+        if( updated_sol.m_cost_functor
+            && !updated_sol.m_cost_functor->exact_retained_inputs_match(
+                                current_sol.m_drf, current_sol.m_spectrum_peaks) )
+          throw runtime_error( "ROI refinement changed the retained peak/DRF inputs" );
+      }catch( std::exception &e )
       {
-        case RelActAutoSolution::Status::Success:
-        case RelActAutoSolution::Status::UsableWithWarnings:
-          break;
-          
-        case RelActAutoSolution::Status::NotInitiated:
-          throw runtime_error( "After breaking up energy ranges, could not initialize finding solution." );
-          
-        case RelActAutoSolution::Status::FailedToSetupProblem:
-          throw runtime_error( "After breaking up energy ranges, the setup for finding a solution became invalid." );
-          
-        case RelActAutoSolution::Status::FailToSolveProblem:
-          throw runtime_error( "After breaking up energy ranges, failed to solve the problem." );
-          
-        case RelActAutoSolution::Status::UserCanceled:
-        {
-          // The helper's guards skip the merged solve for a canceled fit, but its finalize keeps
-          //  the metrics/status contract intact on this return path too.
-          RelActAutoSolution canceled_sol = updated_sol;
-          std::shared_ptr<const RelActAutoSolution> merged_sol;
-          add_merged_single_curve_comparison( canceled_sol, options, foreground, background,
-                                              input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
-          add_tied_enrichment_comparison( canceled_sol, options, foreground, background,
-                                          input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
-          return canceled_sol;
-        }
-      }//switch( updated_sol.m_status )
-      
-      // The same number of ROIs does not mean the same objective: moving either edge by one channel
-      // changes a data residual.  Continue until the sorted energy boundaries and continuum policy
-      // themselves are stable.
-      stop_iterating = same_roi_boundaries( current_sol.m_final_roi_ranges,
-                                            updated_sol.m_final_roi_ranges );
-      
-      current_sol = updated_sol;
-      
-      // Update tally of function calls and eval time (eval time will be slightly off, but oh well)
-      num_function_eval_solution += current_sol.m_num_function_eval_solution;
-      num_function_eval_total += current_sol.m_num_function_eval_total;
-      num_microseconds_eval += current_sol.m_num_microseconds_eval;
-      num_microseconds_in_eval += current_sol.m_num_microseconds_in_eval;
-    }catch( std::exception &e )
-    {
-      stop_iterating = errored_out_of_iterating = true;
-      current_sol.m_warnings.push_back( "Failed to break up energy ranges to ROIs with significant"
-                                    " gamma counts: " + string(e.what())
-                                    + " - the current solution is from before final ROI divisions" );
-    }//try / catch
-  }//for( size_t roi_iteration = 0; roi_iteration < max_roi_adjust_iterations; ++roi_iteration )
-  
-  
-  current_sol.m_num_function_eval_solution = num_function_eval_solution;
-  current_sol.m_num_function_eval_total = num_function_eval_total;
-  current_sol.m_num_microseconds_eval = num_microseconds_eval;
-  current_sol.m_num_microseconds_in_eval = num_microseconds_in_eval;
-  
-  
-  if( !errored_out_of_iterating && !stop_iterating )
-  {
-    current_sol.m_warnings.push_back( "Final ROIs based on gamma line significances may not have been found." );
-    if( RelActAutoSolution::is_usable_status(current_sol.m_status) )
-      current_sol.m_status = RelActAutoSolution::Status::UsableWithWarnings;
-  }
-  
-  cout << "It took " << num_roi_iters << " iterations (of max " << max_roi_adjust_iterations
-  << ") to find final ROIs to use;";
-  if( errored_out_of_iterating )
-    cout << " an error prevented finding final ROIs." << endl;
-  else if( stop_iterating )
-    cout << " final ROIs were found." << endl;
-  else
-    cout << " final ROIs were NOT found." << endl;
+        keep_initial_fit( "Failed to re-fit with ROIs sized from the fit peak shape: "
+                          + string(e.what()) + " - the results are from the initial ROIs." );
+        break;
+      }
+
+      // The re-solve was given already-resolved (fixed) ROIs, so record how they relate to the input.
+      updated_sol.m_final_roi_info.clear();
+      for( const RelActCalcAutoRoi::ResolvedRoi &roi : updated )
+        updated_sol.m_final_roi_info.push_back( roi.info );
+
+      if( updated_sol.m_status == RelActAutoSolution::Status::UserCanceled )
+      {
+        // The helper's guards skip the merged solve for a canceled fit, but its finalize keeps
+        //  the metrics/status contract intact on this return path too.
+        updated_sol.m_input_rois = options.rois;
+        std::shared_ptr<const RelActAutoSolution> merged_sol;
+        add_merged_single_curve_comparison( updated_sol, options, foreground, background,
+                                            input_drf, all_peaks, det_type, cancel_calc, 0, &merged_sol );
+        add_tied_enrichment_comparison( updated_sol, options, foreground, background,
+                                        input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
+        add_bound_limit_messages( updated_sol );
+        return updated_sol;
+      }//if( user canceled )
+
+      if( !RelActAutoSolution::is_usable_status(updated_sol.m_status) )
+      {
+        keep_initial_fit( "Re-fitting with ROIs sized from the fit peak shape failed ("
+                          + updated_sol.m_error_message + ") - the results are from the initial ROIs." );
+        break;
+      }
+
+      for( const string &warning : resize_warnings )
+      {
+        if( std::find( begin(updated_sol.m_warnings), end(updated_sol.m_warnings), warning ) == end(updated_sol.m_warnings) )
+          updated_sol.m_warnings.push_back( warning );
+      }
+
+      num_function_eval_solution += updated_sol.m_num_function_eval_solution;
+      num_function_eval_total += updated_sol.m_num_function_eval_total;
+      num_microseconds_eval += updated_sol.m_num_microseconds_eval;
+      num_microseconds_in_eval += updated_sol.m_num_microseconds_in_eval;
+
+      // A re-fit that loses a source the initial fit clearly saw (zero activity, where the initial fit
+      //  had it well above zero) has most likely fallen into a local minimum - e.g., an energy
+      //  calibration adjustment that went astray moved the source's peaks away from the data, and a
+      //  zero-amplitude peak gives the fit no way back - so keep the initial fit.
+      const std::string lost_source = source_lost_in_refit( current_sol, updated_sol );
+      if( !lost_source.empty() )
+      {
+        keep_initial_fit( "Re-fitting with ROIs sized from the fit peak shape lost " + lost_source
+                          + ", which the initial fit found; the results are from the initial ROIs." );
+        break;
+      }
+
+      num_roi_refits += 1;
+
+      current_sol = std::move( updated_sol );
+    }//for( loop over refinements )
+
+    current_sol.m_num_function_eval_solution = num_function_eval_solution;
+    current_sol.m_num_function_eval_total = num_function_eval_total;
+    current_sol.m_num_microseconds_eval = num_microseconds_eval;
+    current_sol.m_num_microseconds_in_eval = num_microseconds_in_eval;
+    current_sol.m_num_roi_refits = num_roi_refits;
+  }//if( resize_after_fit && usable )
+
+  current_sol.m_input_rois = options.rois;
+
+  // A source at or near zero activity: check against the same model without it (a nested model).
+  add_nested_source_guard( current_sol, options, foreground, background, det_type, cancel_calc );
 
   std::shared_ptr<const RelActAutoSolution> merged_sol;
   add_merged_single_curve_comparison( current_sol, options, foreground, background,
@@ -28591,6 +31254,7 @@ RelActAutoSolution solve( const Options options,
                                   input_drf, all_peaks, det_type, cancel_calc, 0, merged_sol );
   add_mass_fraction_profiles( current_sol, foreground, background, input_drf,
                               all_peaks, det_type, cancel_calc );
+  add_bound_limit_messages( current_sol );
 
   return current_sol;
 }//RelActAutoSolution
@@ -28619,6 +31283,19 @@ void RoiRange::equalEnough( const RoiRange &lhs, const RoiRange &rhs )
 
   if( lhs.range_limits_type != rhs.range_limits_type )
     throw std::runtime_error( "Range limits type in lhs and rhs are not the same" );
+
+  if( lhs.auto_continuum != rhs.auto_continuum )
+    throw std::runtime_error( "Auto continuum in lhs and rhs are not the same" );
+
+  const auto check_edge = []( const EdgeOverride &l, const EdgeOverride &r, const string &side ){
+    const auto same = []( const optional<double> &a, const optional<double> &b ) -> bool {
+      return (a.has_value() == b.has_value()) && (!a.has_value() || (fabs(a.value() - b.value()) < 1.0E-6*std::max(1.0, fabs(a.value()))));
+    };
+    if( !same( l.tail_fraction, r.tail_fraction ) || !same( l.sideband_fwhm, r.sideband_fwhm ) )
+      throw std::runtime_error( side + " edge override in lhs and rhs are not the same" );
+  };
+  check_edge( lhs.lower_edge, rhs.lower_edge, "Lower" );
+  check_edge( lhs.upper_edge, rhs.upper_edge, "Upper" );
 }//RoiRange::equalEnough
 
 
@@ -28760,6 +31437,16 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.fwhm_estimation_method != rhs.fwhm_estimation_method )
     throw std::runtime_error( "FWHM estimation method in lhs and rhs are not the same" );
 
+  if( (lhs.starting_fwhm_form != rhs.starting_fwhm_form)
+      || (lhs.starting_fwhm_coefficients.size() != rhs.starting_fwhm_coefficients.size()) )
+    throw std::runtime_error( "Starting FWHM curve in lhs and rhs are not the same" );
+  for( size_t i = 0; i < lhs.starting_fwhm_coefficients.size(); ++i )
+  {
+    const float a = lhs.starting_fwhm_coefficients[i], b = rhs.starting_fwhm_coefficients[i];
+    if( fabs(a - b) > 1.0e-5*std::max( fabs(a), fabs(b) ) )
+      throw std::runtime_error( "Starting FWHM coefficients in lhs and rhs are not the same" );
+  }
+
   if( lhs.spectrum_title != rhs.spectrum_title )
     throw std::runtime_error( "Spectrum title in lhs and rhs are not the same" );
 
@@ -28789,9 +31476,24 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.lorentzian_xrays != rhs.lorentzian_xrays )
     throw std::runtime_error( "Lorentzian xrays in lhs and rhs are not the same" );
 
+  if( lhs.iodine_escape_peaks != rhs.iodine_escape_peaks )
+    throw std::runtime_error( "Iodine escape peaks in lhs and rhs are not the same" );
+
+  if( lhs.model_lines_outside_roi_span != rhs.model_lines_outside_roi_span )
+    throw std::runtime_error( "Model lines outside ROI span in lhs and rhs are not the same" );
+
   if( fabs(lhs.additional_br_uncert - rhs.additional_br_uncert) > 1.0e-5
     && ((lhs.additional_br_uncert > 0.0) || (rhs.additional_br_uncert > 0.0)) )
     throw std::runtime_error( "Additional BR uncertanty in lhs and rhs are not the same" );
+
+  if( fabs(lhs.additional_br_min_yield_fraction - rhs.additional_br_min_yield_fraction) > 1.0e-5 )
+    throw std::runtime_error( "Additional BR minimum yield fraction in lhs and rhs are not the same" );
+
+  if( fabs(lhs.fwhm_max_ratio_to_start - rhs.fwhm_max_ratio_to_start) > 1.0e-5 )
+    throw std::runtime_error( "FWHM maximum ratio to the starting curve in lhs and rhs are not the same" );
+
+  if( fabs(lhs.fwhm_channel_floor_factor - rhs.fwhm_channel_floor_factor) > 1.0e-5 )
+    throw std::runtime_error( "FWHM channel floor factor in lhs and rhs are not the same" );
 
   if( lhs.auto_profile_weak_mass_fractions != rhs.auto_profile_weak_mass_fractions )
     throw std::runtime_error( "Automatic mass-fraction profiling in lhs and rhs are not the same" );
@@ -28822,6 +31524,25 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   
   for( size_t i = 0; i < lhs.rois.size(); ++i )
     RelActCalcAuto::RoiRange::equalEnough( lhs.rois[i], rhs.rois[i] );
+
+  const auto close = []( const double a, const double b ) -> bool {
+    return fabs(a - b) <= 1.0E-6*std::max( 1.0, std::max( fabs(a), fabs(b) ) );
+  };
+  if( !close( lhs.roi_settings.continuum_switch_min_improvement, rhs.roi_settings.continuum_switch_min_improvement ) )
+    throw std::runtime_error( "ROI settings in lhs and rhs are not the same" );
+
+  if( lhs.skew_from_peak_fit_prefs != rhs.skew_from_peak_fit_prefs )
+    throw std::runtime_error( "Skew from peak-fit preferences in lhs and rhs are not the same" );
+
+  for( size_t i = 0; i < 6; ++i )
+  {
+    const auto same = [&close]( const std::optional<double> &a, const std::optional<double> &b ) -> bool {
+      return (a.has_value() == b.has_value()) && (!a.has_value() || close( a.value(), b.value() ));
+    };
+    if( !same( lhs.start_lower_skew[i], rhs.start_lower_skew[i] )
+        || !same( lhs.start_upper_skew[i], rhs.start_upper_skew[i] ) )
+      throw std::runtime_error( "Starting skew[" + std::to_string(i) + "] in lhs and rhs are not the same" );
+  }
 
   if( lhs.floating_peaks.size() != rhs.floating_peaks.size() )
     throw std::runtime_error( "Number of floating peaks in lhs and rhs are not the same" );

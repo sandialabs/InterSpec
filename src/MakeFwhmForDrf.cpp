@@ -440,6 +440,7 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   closeButton->clicked().connect( window, &AuxWindow::hide );
     
   WPushButton *saveAs = window->footer()->addNew<WPushButton>( WString::tr("mffdw-use-fwhm-btn") );
+  WidgetUtils::applyButtonRole( saveAs, WidgetUtils::ButtonRole::Affirm );
   saveAs->clicked().connect( m_tool, &MakeFwhmForDrf::setToDrf );
   m_tool->validationChanged().connect( saveAs, [saveAs]( bool valid ){ saveAs->setEnabled( valid ); } );
   // Maybe

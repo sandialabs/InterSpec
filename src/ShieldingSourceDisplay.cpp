@@ -97,6 +97,7 @@
 #include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SwitchCheckbox.h"
@@ -3296,6 +3297,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_sourceModel->rowsInserted().connect( this, &ShieldingSourceDisplay::addSourceIsotopesToShieldings );
   m_sourceModel->rowsAboutToBeRemoved().connect( this, &ShieldingSourceDisplay::removeSourceIsotopesFromShieldings );
 
+  // Which nuclides are fit (and so whether point sources sit alongside a volumetric one) gates the
+  //  "Create MC Eff" link.
+  m_sourceModel->rowsInserted().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+  m_sourceModel->rowsRemoved().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+  m_sourceModel->modelReset().connect( this, [this](){ updateFixedGeomMcAvailability(); } );
+
   m_sourceModel->layoutChanged().connect( this, &ShieldingSourceDisplay::updateChi2Chart );
   
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
@@ -3429,10 +3436,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
 
   // Detector-efficiency-uncertainty handling: a 3-option dropdown (None / propagate-to-results /
-  //  use-in-likelihood) mapping 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod.  The whole
-  //  row is hidden by #handleDetectorChanged when the current DRF carries no efficiency uncertainty.
+  //  use-in-likelihood) mapping 1:1 onto ShieldingSourceFitCalc::DrfUncertaintyMethod, an opt-in for
+  //  an assumed uncertainty, and a status line saying what is used - see
+  //  #updateDrfUncertMethodAvailability.
   m_drfUncertMethodRow = m_optionsDiv->addNew<WContainerWidget>();
-  m_drfUncertMethodRow->addStyleClass( "FitOptionsRow" );
+  m_drfUncertMethodRow->addStyleClass( "FitOptionsRow DrfUncertRow" );
   WLabel *drfUncertLabel = m_drfUncertMethodRow->addNew<WLabel>( WString::tr("ssd-drf-uncert-label") );
   HelpSystem::attachToolTipOn( m_drfUncertMethodRow, WString::tr("ssd-tt-drf-uncert"), showToolTips );
   m_drfUncertMethodCombo = m_drfUncertMethodRow->addNew<WComboBox>();
@@ -3444,6 +3452,19 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_drfUncertMethodCombo->setCurrentIndex( 1 );  //matches ShieldingSourceFitOptions default (ErrorPropagation)
   m_lastDrfUncertMethodIndex = 1;
   m_drfUncertMethodCombo->changed().connect( this, &ShieldingSourceDisplay::drfUncertMethodChanged );
+
+  // Only shown for a DRF that states no efficiency uncertainty of its own, yet reports an assumed one.
+  m_drfUncertAssumedCb = m_drfUncertMethodRow->addNew<WCheckBox>( WString::tr("ssd-cb-drf-uncert-assumed") );
+  m_drfUncertAssumedCb->addStyleClass( "CbNoLineBreak DrfUncertAssumedCb" );
+  m_drfUncertAssumedCb->setChecked( false );  //matches ShieldingSourceFitOptions default
+  m_drfUncertAssumedCb->setHidden( true );
+  HelpSystem::attachToolTipOn( m_drfUncertAssumedCb, WString::tr("ssd-tt-drf-uncert-assumed"), showToolTips );
+  m_drfUncertAssumedCb->checked().connect( this, &ShieldingSourceDisplay::drfUncertAssumedChanged );
+  m_drfUncertAssumedCb->unChecked().connect( this, &ShieldingSourceDisplay::drfUncertAssumedChanged );
+
+  m_drfUncertStatus = m_drfUncertMethodRow->addNew<WText>();
+  m_drfUncertStatus->addStyleClass( "DrfUncertStatus" );
+  updateDrfUncertMethodAvailability();  //the detector display and distance already exist
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
   lineDiv->addStyleClass( "FitOptionsRow" );
@@ -3460,7 +3481,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-vol-eff"), showToolTips );
   m_volEffMethodCombo = lineDiv->addNew<WComboBox>();
   volEffLabel->setBuddy( m_volEffMethodCombo );
-  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk).
+  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk); the
+  //  ImportedGrid item is appended only when it applies (see updateVolEffMethodAvailability).
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-auto") );
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-mc") );
   m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-efftran") );
@@ -3491,14 +3513,17 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   m_fixedGeomLockedNote = new WText( WString::tr("ssd-fixed-geom-locked-note") );
   m_fixedGeomLockedNote->addStyleClass( "FixedGeomLockedNote" );
+  m_fixedGeomLockedNote->setInline( false );  //holds block content (the embedded-scene summary)
   m_fixedGeomLockedNote->hide();
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomLockedNote),  5, 0, 1, 3, AlignmentFlag::Center );
 
+  // A small link to the right of the "Shielding" caption (placed there below); only shown when
+  //  it can be used - see updateFixedGeomMcAvailability().
   m_fixedGeomMcBtn = new WPushButton( WString::tr("ssd-fixed-geom-mc-btn") );
-  m_fixedGeomMcBtn->addStyleClass( "FixedGeomMcBtn LightButton" );
+  m_fixedGeomMcBtn->addStyleClass( "SsdLink FixedGeomMcLink" );
   HelpSystem::attachToolTipOn( m_fixedGeomMcBtn, WString::tr("ssd-tt-fixed-geom-mc"), showToolTips );
   m_fixedGeomMcBtn->clicked().connect( this, &ShieldingSourceDisplay::computeFixedGeomDrfRequested );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeomMcBtn),       6, 0, 1, 3, AlignmentFlag::Center );
+  m_fixedGeomMcBtn->hide();
 
   smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
@@ -3564,9 +3589,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   shieldSectionLayout->setVerticalSpacing( 3 );
   shieldSectionLayout->setHorizontalSpacing( 0 );
 
-  WText *shieldCap = new WText( WString::tr("ssd-cap-shielding") );
-  shieldCap->addStyleClass( "SsdCap" );
-  shieldCap->setInline( false );
+  // Caption row: "Shielding" on the left, the "Create MC Eff" link on the right.
+  WContainerWidget *shieldCap = new WContainerWidget();
+  shieldCap->addStyleClass( "ShieldCapRow" );
+  WText *shieldCapTxt = shieldCap->addNew<WText>( WString::tr("ssd-cap-shielding") );
+  shieldCapTxt->addStyleClass( "SsdCap" );
+  shieldCap->addWidget( std::unique_ptr<WWidget>(m_fixedGeomMcBtn) );
 
   // Bordered box holding the scrollable shielding cards plus a bottom footer bar with a
   //  round "+" add-button (left) and the "Show Diagram" link (right) - styled after the
@@ -3855,14 +3883,16 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
                                          && m_correctForCascade->isEnabled());
 
   // Combo index maps directly to the DrfUncertaintyMethod enum (None, ErrorPropagation, Likelihood).
-  //  Read unconditionally, even when the row is hidden (DRF carries no efficiency uncertainty): this
-  //  preserves the user's choice across DRF swaps and into serialization.  When the choice ends up
-  //  non-None against an uncertainty-free DRF the fit still runs statistics-only (empty
-  //  peakEffFracCovariance) and the calc surfaces a warning - see check_for_fit_warnings.
+  //  Read as chosen, whatever the DRF: this preserves the user's choice across DRF swaps and into
+  //  serialization.  A non-None choice against a DRF reporting no uncertainty runs statistics-only
+  //  and the calc warns (check_for_fit_warnings); the row stays visible and enabled, with a status
+  //  line saying the detector reports none, so the user can act on that warning.
   options.drf_uncert_method = static_cast<ShieldingSourceFitCalc::DrfUncertaintyMethod>(
                                 std::max( 0, m_drfUncertMethodCombo->currentIndex() ) );
+  options.drf_uncert_include_assumed = m_drfUncertAssumedCb->isChecked();  //read even when hidden
 
-  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
+  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk,
+  //  ImportedGrid).
   //  Read unconditionally: fitOptions() also feeds serialization, so gating on the widget's enabled
   //  state would silently rewrite a saved "Flat-disk" to "Auto" whenever the model happens to have
   //  no volumetric source (and WWidget::isEnabled() is ancestor-sensitive besides).
@@ -4696,7 +4726,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   }//try / catch
 
   
-  WPushButton *button = window->addCloseButtonToFooter("Okay");
+  WPushButton *button = window->addCloseButtonToFooter("Okay", WidgetUtils::ButtonRole::Affirm );
   button->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
   window->centerWindow();
@@ -5579,12 +5609,14 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
   SimpleDialog *dialog = SimpleDialog::make( WString::tr( "ssd-missing-back-peaks-title" ),
                                            WString::tr( "ssd-missing-back-peaks-msg" ).arg( energy_ss.str() ) );
 
+  // An option on the action, so it goes in its own block behind a hairline rather than floating
+  //  alongside the prose.
   WCheckBox *add_all_cb = dialog->contents()->addNew<WCheckBox>( WString::tr( "ssd-btn-add-all-detectable" ) );
-  add_all_cb->addStyleClass( "CbNoLineBreak" );
-  add_all_cb->setFloatSide( Wt::Side::Right );
+  add_all_cb->addStyleClass( "CbNoLineBreak DialogOptions" );
+  add_all_cb->setInline( false );
 
-  WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ) );
-  WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ) );
+  WPushButton *no_btn = dialog->addButton( WString::tr( "ssd-btn-no-dont-add" ), WidgetUtils::ButtonRole::Dismiss );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "ssd-btn-add-peaks" ), WidgetUtils::ButtonRole::Affirm );
   add_btn->setFocus();
 
   // Capture copies for lambdas
@@ -5701,7 +5733,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   if( candidates_to_fit.empty() )
   {
     SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
     if( triggeredFromFit )
       dialog->finished().connect( this, [dofit](){ dofit(); } );
 
@@ -5731,7 +5763,7 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   if( all_fit_peaks.empty() )
   {
     SimpleDialog *dialog = SimpleDialog::make( "", WString::tr( "ssd-no-new-back-peaks" ) );
-    dialog->addButton( WString::tr( "Okay" ) );
+    dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
 
     if( triggeredFromFit )
       dialog->finished().connect( this, [dofit](){ dofit(); } );
@@ -5812,8 +5844,8 @@ void ShieldingSourceDisplay::fitAndPreviewBackgroundPeaks(
   for( const PeakDef &p : all_fit_peaks )
     peaks_to_add.push_back( make_shared<PeakDef>( p ) );
 
-  WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ) );
-  WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ) );
+  WPushButton *accept_btn = dialog->addButton( WString::tr( "Accept" ), WidgetUtils::ButtonRole::Affirm );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr( "Reject" ), WidgetUtils::ButtonRole::Dismiss );
 
   std::function<void()> add_peaks = [this, peaks_to_add, triggeredFromFit](){ addPeaksToBackgroundAndContinue( peaks_to_add, triggeredFromFit ); };
   accept_btn->clicked().connect( this, [add_peaks](){ add_peaks(); } );
@@ -5933,6 +5965,27 @@ void ShieldingSourceDisplay::drfUncertMethodChanged()
 }//void drfUncertMethodChanged()
 
 
+void ShieldingSourceDisplay::drfUncertAssumedChanged()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [](){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_drfUncertAssumedCb->setChecked( !display->m_drfUncertAssumedCb->isChecked() );
+        display->drfUncertAssumedChanged();
+      }
+    };
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Use assumed detector-efficiency uncertainty changed." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void drfUncertAssumedChanged()
+
+
 void ShieldingSourceDisplay::correctForCascadeChanged()
 {
   using GammaInteractionCalc::CascadeSummingCalc;
@@ -5944,17 +5997,27 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
   {
     m_correctForCascade->setChecked( false );
 
+    // The detector editor can't add total efficiency to a fixed-geometry DRF.
+    if( det && det->isFixedGeometry() )
+    {
+      SimpleDialog::make<SimpleDialog>( WString::tr("ssd-cascade-need-total-eff-title"),
+                                        WString::tr("ssd-cascade-fixed-geom-no-info-msg") );
+      updateFixedGeomMcAvailability();
+      return;
+    }
+
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
                               WString::tr("ssd-cascade-need-total-eff-title"),
                               WString::tr("ssd-cascade-need-total-eff-msg") );
-    WPushButton *edit_btn = dialog->addButton( WString::tr("ssd-cascade-open-drf-editor") );
+    WPushButton *edit_btn = dialog->addButton( WString::tr("ssd-cascade-open-drf-editor"), WidgetUtils::ButtonRole::Affirm );
     edit_btn->clicked().connect( std::bind( [](){
       InterSpec * const viewer = InterSpec::instance();
       if( viewer )
         viewer->showDrfModifyWindow( nullptr );
     } ) );
-    dialog->addButton( WString::tr("Cancel") );
+    dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
 
+    updateFixedGeomMcAvailability();
     return;
   }//if( checked, but DRF doesnt have the info )
 
@@ -5973,6 +6036,7 @@ void ShieldingSourceDisplay::correctForCascadeChanged()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Cascade summing correction changed." );
   }//if( undoRedo )
 
+  updateFixedGeomMcAvailability();  //summing + a volumetric source blocks the button
   updateChi2Chart();
 }//void correctForCascadeChanged()
 
@@ -6015,39 +6079,72 @@ void ShieldingSourceDisplay::updateCascadeAvailability()
 }//void updateCascadeAvailability()
 
 
-void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
+std::string ShieldingSourceDisplay::fixedGeomMcBlockReason() const
 {
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
 
   // Needs a CeeLo detector model, and must not already be a fixed-geometry DRF.
-  bool enable = ( det && det->isValid() && det->ceeloResponse()
-                  && !det->isFixedGeometry() );
+  if( !det || !det->isValid() || !det->ceeloResponse() || det->isFixedGeometry() )
+    return "ssd-fixed-geom-mc-needs-model";
 
-  // Nothing geometric may be getting fit (activity-only fits).
-  if( enable )
+  // The scene has no off-axis placement (and a fixed-geometry DRF allows none).
+  double offset_x = 0.0, offset_y = 0.0;
+  sourceOffsets( offset_x, offset_y );
+  if( (offset_x != 0.0) || (offset_y != 0.0) )
+    return "ssd-fixed-geom-mc-blocked-offset";
+
+  size_t num_volumetric_layers = 0;
+  for( WWidget *widget : m_shieldingSelects->children() )
   {
-    for( WWidget *widget : m_shieldingSelects->children() )
+    const ShieldingSelect * const select = dynamic_cast<const ShieldingSelect *>( widget );
+    if( !select )
+      continue;
+
+    // Nothing geometric may be getting fit (activity-only fits), and generic shieldings have no
+    //  physical extent to transport through.
+    if( select->isGenericMaterial() )
+      return "ssd-fixed-geom-mc-blocked-fitting";
+
+    const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+    if( info.m_fitDimensions[0] || info.m_fitDimensions[1] || info.m_fitDimensions[2] )
+      return "ssd-fixed-geom-mc-blocked-fitting";
+
+    if( !info.m_traceSources.empty() || !info.m_nuclideFractions_.empty() )
+      num_volumetric_layers += 1;
+  }//for( shieldings )
+
+  // The response describes ONE emission distribution: a point at the centre, or a single source
+  //  layer.  A second source layer, or point sources alongside a volumetric one, would all be fit
+  //  with that one distribution's efficiency.
+  if( num_volumetric_layers > 1 )
+    return "ssd-fixed-geom-mc-blocked-multi-src-layer";
+
+  if( num_volumetric_layers == 1 )
+  {
+    for( int nuc = 0; nuc < m_sourceModel->numNuclides(); ++nuc )
     {
-      ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-      if( !select )
-        continue;
+      if( m_sourceModel->sourceType( nuc ) == ShieldingSourceFitCalc::ModelSourceType::Point )
+        return "ssd-fixed-geom-mc-blocked-mixed-src";
+    }
+  }//if( a volumetric source )
 
-      if( select->isGenericMaterial() )
-      {
-        enable = false;
-        break;
-      }
+  // A fixed-geometry response only carries volume-AVERAGED efficiencies, so summing for an extended
+  //  source would be corrected with c_net(<eps_fep>,<eps_tot>) rather than per position, which
+  //  under-corrects near the detector.  Point sources are exact, so they keep the button.
+  if( (num_volumetric_layers > 0) && m_correctForCascade && m_correctForCascade->isChecked() )
+    return "ssd-fixed-geom-mc-blocked-cascade-vol";
 
-      const ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
-      for( int i = 0; i < 3; ++i )
-        enable = (enable && !info.m_fitDimensions[i]);
-      if( !enable )
-        break;
-    }//for( shieldings )
-  }//if( enable )
+  return "";
+}//std::string fixedGeomMcBlockReason() const
 
-  m_fixedGeomMcBtn->setHidden( det && det->isFixedGeometry() );
-  m_fixedGeomMcBtn->setDisabled( !enable );
+
+void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
+{
+  if( !m_fixedGeomMcBtn )  //source-model signals can fire before the widgets exist
+    return;
+
+  // Only offered when it can be used (fixedGeomMcBlockReason() is also re-checked on click).
+  m_fixedGeomMcBtn->setHidden( !fixedGeomMcBlockReason().empty() );
 
   updateVolEffMethodAvailability();
 }//void updateFixedGeomMcAvailability()
@@ -6066,7 +6163,7 @@ void ShieldingSourceDisplay::volEffMethodChanged()
       ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
       if( display )
       {
-        display->m_volEffMethodCombo->setCurrentIndex( index );
+        display->setVolEffMethodIndex( index );
         display->volEffMethodChanged();
       }
     };
@@ -6079,6 +6176,14 @@ void ShieldingSourceDisplay::volEffMethodChanged()
 }//void volEffMethodChanged()
 
 
+void ShieldingSourceDisplay::setVolEffMethodIndex( const int index )
+{
+  if( index >= m_volEffMethodCombo->count() )  //the on-demand "Imported efficiency grid" item
+    m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );
+  m_volEffMethodCombo->setCurrentIndex( index );
+}//void setVolEffMethodIndex( const int index )
+
+
 void ShieldingSourceDisplay::updateVolEffMethodAvailability()
 {
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
@@ -6089,6 +6194,15 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   //  the flat-disk fallback is theta-blind.
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool enable = ( det && det->isValid() && !det->isFixedGeometry() );
+
+  // "Imported efficiency grid" is only listed for a DRF imported from a .par grid, or while selected.
+  const int grid_index = static_cast<int>( VolumetricEffMethod::ImportedGrid );
+  const bool list_grid = (det && det->hasImportedGrid())
+                         || (m_volEffMethodCombo->currentIndex() == grid_index);
+  if( list_grid && (m_volEffMethodCombo->count() <= grid_index) )
+    m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-grid") );
+  else if( !list_grid && (m_volEffMethodCombo->count() > grid_index) )
+    m_volEffMethodCombo->removeItem( grid_index );
 
   if( enable != m_volEffMethodCombo->isEnabled() )
     m_volEffMethodCombo->setDisabled( !enable );
@@ -6113,6 +6227,7 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   {
     case VolumetricEffMethod::MCTransfer: resolvedKey = "ssd-vol-eff-name-mc";       break;
     case VolumetricEffMethod::EffTran:    resolvedKey = "ssd-vol-eff-name-efftran";  break;
+    case VolumetricEffMethod::ImportedGrid: resolvedKey = "ssd-vol-eff-name-grid";   break;
     case VolumetricEffMethod::FlatDisk:
     case VolumetricEffMethod::Auto:       resolvedKey = "ssd-vol-eff-name-flatdisk"; break;
   }//switch( resolved )
@@ -6130,9 +6245,13 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   using GammaInteractionCalc::GeometryType;
 
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  if( !det || !det->isValid() || !det->ceeloResponse() || det->isFixedGeometry() )
+
+  // The button's enabled state can lag the model, so apply the rule again here.
+  const string block_reason = fixedGeomMcBlockReason();
+  if( !block_reason.empty() )
   {
-    passMessage( WString::tr("ssd-fixed-geom-mc-needs-model"), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr(block_reason), WarningWidget::WarningMsgHigh );
+    updateFixedGeomMcAvailability();
     return;
   }
 
@@ -6150,8 +6269,13 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   for( WWidget *widget : m_shieldingSelects->children() )
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-    if( select )
-      setup.shieldings.push_back( select->toShieldingInfo() );
+    if( !select )
+      continue;
+
+    // Nothing is fit against an embedded scene; don't let stale fit flags ride along in the blob.
+    ShieldingSourceFitCalc::ShieldingInfo info = select->toShieldingInfo();
+    info.m_fitDimensions[0] = info.m_fitDimensions[1] = info.m_fitDimensions[2] = false;
+    setup.shieldings.push_back( info );
   }
 
   string why;
@@ -6173,6 +6297,15 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
     }
   }
 
+  // The fit's nuclides, so the MC's total curve spans their cascade-summing partners (enumerated
+  //  on the worker - it can take a moment for a decay chain).
+  vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
+  for( int nuc = 0; nuc < m_sourceModel->numNuclides(); ++nuc )
+  {
+    if( m_sourceModel->nuclide( nuc ) )
+      nuc_ages.emplace_back( m_sourceModel->nuclide( nuc ), m_sourceModel->age( nuc ) );
+  }
+
   // Progress dialog with cancel; worker thread does the MC.
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>(
                               WString::tr("ssd-fixed-geom-mc-running-title"),
@@ -6181,7 +6314,7 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   progress_bar->setRange( 0.0, 1.0 );
 
   auto cancel_flag = make_shared<std::atomic<bool>>( false );
-  WPushButton *cancel_btn = dialog->addButton( WString::tr("Cancel") );
+  WPushButton *cancel_btn = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   cancel_btn->clicked().connect( std::bind( [cancel_flag](){
     cancel_flag->store( true );
   } ) );
@@ -6191,7 +6324,7 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
   const string dialog_id = dialog->id();
   const shared_ptr<const DetectorPeakResponse> base_drf = det;
 
-  auto worker = [setup, extra_energies, base_drf, cancel_flag, session_id, bar_id, dialog_id](){
+  auto worker = [setup, extra_energies, nuc_ages, base_drf, cancel_flag, session_id, bar_id, dialog_id](){
     shared_ptr<DetectorPeakResponse> new_drf;
     string errmsg;
     try
@@ -6209,8 +6342,17 @@ void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
         } );
       };
 
-      new_drf = MakeFixedGeomResponse::computeFixedGeomDrf( base_drf, setup,
-                                  extra_energies, 0.005, progress_fcn, cancel_flag );
+      vector<double> partner_energies;
+      try
+      {
+        partner_energies = GammaInteractionCalc::CascadeSummingCalc::partnerEnergies( nuc_ages );
+      }catch( std::exception & )
+      {
+        // Only widens the energy grid; without it the grid is the DRF's own range.
+      }
+
+      new_drf = MakeFixedGeomResponse::computeFixedGeomDrf( base_drf, setup, extra_energies,
+                                  partner_energies, 0.005, progress_fcn, cancel_flag );
     }catch( std::exception &e )
     {
       errmsg = e.what();
@@ -6308,6 +6450,7 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
     m_distanceEdit->setText( m_prevDistStr );
   }
   
+  updateCascadeAvailability();  //the summing-magnitude gate depends on distance
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
 
@@ -6390,6 +6533,7 @@ void ShieldingSourceDisplay::handleUserOffsetChange()
     }//if( undoRedo )
   }//if( either offset changed )
 
+  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void ShieldingSourceDisplay::handleUserOffsetChange()
 
@@ -6477,6 +6621,7 @@ void ShieldingSourceDisplay::handleOffsetCheckChange()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle source off-axis offset." );
   }//if( undoRedo )
 
+  updateFixedGeomMcAvailability();  //an off-axis source can't get an MC fixed-geometry DRF
   updateChi2Chart();
 }//void handleOffsetCheckChange()
 
@@ -6794,10 +6939,95 @@ void ShieldingSourceDisplay::handleShieldingChange()
 
   // "Show Diagram" is only meaningful with at least one shielding layer.
   if( m_showDiagramBtn )
-    m_showDiagramBtn->setHidden( numberShieldings() == 0 );
+    m_showDiagramBtn->setHidden( m_embeddedSetupXml.empty() && (numberShieldings() == 0) );
 
+  updateFixedGeomMcAvailability();
   updateChi2Chart();
 }//void handleShieldingChange()
+
+
+namespace
+{
+  /** Read-only XHTML summary of the scene a fixed-geometry DRF was computed for (see
+   MakeFixedGeomResponse): geometry, distance, then each layer innermost first, with its sources.
+   */
+  WString embeddedSceneSummary( const MakeFixedGeomResponse::Setup &setup )
+  {
+    using GammaInteractionCalc::GeometryType;
+
+    const auto len = []( const double val ) -> string {
+      return PhysicalUnits::printToBestLengthUnitsCompact( val, 4 );
+    };
+
+    string layers;
+    for( size_t i = 0; i < setup.shieldings.size(); ++i )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &info = setup.shieldings[i];
+      string item = Wt::Utils::htmlEncode( info.m_material ? info.m_material->name : string("?") );
+
+      // The innermost layer's dimensions are its radius / half-lengths; outer layers' are thicknesses.
+      const bool inner = (i == 0);
+      switch( setup.geometry )
+      {
+        case GeometryType::Spherical:
+          item += WString::tr( inner ? "ssd-emb-dims-sphere-inner" : "ssd-emb-dims-sphere" )
+                                .arg( len(info.m_dimensions[0]) ).toUTF8();
+          break;
+        case GeometryType::CylinderEndOn:
+        case GeometryType::CylinderSideOn:
+          item += WString::tr( inner ? "ssd-emb-dims-cyl-inner" : "ssd-emb-dims-cyl" )
+                                .arg( len(info.m_dimensions[0]) )
+                                .arg( len(info.m_dimensions[1]) ).toUTF8();
+          break;
+        case GeometryType::Rectangular:
+          item += WString::tr( inner ? "ssd-emb-dims-rect-inner" : "ssd-emb-dims-rect" )
+                                .arg( len(info.m_dimensions[0]) )
+                                .arg( len(info.m_dimensions[1]) )
+                                .arg( len(info.m_dimensions[2]) ).toUTF8();
+          break;
+        case GeometryType::NumGeometryType:
+          break;
+      }//switch( setup.geometry )
+
+      string srcs;
+      for( const ShieldingSourceFitCalc::TraceSourceInfo &trace : info.m_traceSources )
+      {
+        if( trace.m_nuclide )
+          srcs += (srcs.empty() ? "" : ", ") + trace.m_nuclide->symbol;
+      }
+      typedef std::tuple<const SandiaDecay::Nuclide *,double,bool> NucFrac;
+      for( const pair<const SandiaDecay::Element * const,vector<NucFrac>> &el_nucs : info.m_nuclideFractions_ )
+      {
+        for( const NucFrac &nuc : el_nucs.second )
+        {
+          if( std::get<0>(nuc) )
+            srcs += (srcs.empty() ? "" : ", ") + std::get<0>(nuc)->symbol;
+        }
+      }
+      if( !srcs.empty() )
+        item += WString::tr("ssd-emb-layer-srcs").arg( srcs ).toUTF8();
+
+      layers += "<li>" + item + "</li>";
+    }//for( layers )
+
+    if( layers.empty() )
+      layers = "<li>" + WString::tr("ssd-emb-no-layers").toUTF8() + "</li>";
+
+    const char *geom_key = "ssd-geom-point";  //same labels as the Geometry combo
+    switch( setup.geometry )
+    {
+      case GeometryType::Spherical:       geom_key = "ssd-geom-point";    break;
+      case GeometryType::CylinderEndOn:   geom_key = "ssd-geom-cyl-end";  break;
+      case GeometryType::CylinderSideOn:  geom_key = "ssd-geom-cyl-side"; break;
+      case GeometryType::Rectangular:     geom_key = "ssd-rectangular";   break;
+      case GeometryType::NumGeometryType: break;
+    }
+
+    return WString::tr("ssd-emb-scene").arg( WString::tr(geom_key) )
+                                       .arg( len(setup.distance) )
+                                       .arg( "<ul>" + layers + "</ul>" );
+  }//embeddedSceneSummary(...)
+}//namespace
 
 
 void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> det )
@@ -6932,24 +7162,49 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     {
       ShieldingSelect *thisSelect = dynamic_cast<ShieldingSelect *>(widget);
       if( thisSelect )
-      {
         thisSelect->setFixedGeometry( false );
-        thisSelect->setDisabled( false );
-        thisSelect->removeStyleClass( "FixedGeomLocked", true );
-      }
     }//for( WWidget *widget : m_shieldingSelects->children() )
+
+    // Coming off a DRF that embedded its scene: put that scene back, sources included, so the
+    //  user is left with the model the fixed-geometry response was computed for.
+    if( !m_embeddedSetupXml.empty() && (numberShieldings() == 0) )
+    {
+      try
+      {
+        // Part of the DRF change the user made (its undo re-runs this), not steps of its own.
+        UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+        MakeFixedGeomResponse::Setup setup;
+        setup.fromXmlString( m_embeddedSetupXml );
+
+        m_geometrySelect->setCurrentIndex( static_cast<int>(setup.geometry) );
+        m_prevGeometry = setup.geometry;  //else handleGeometryTypeChange() makes its own undo step
+        handleGeometryTypeChange();
+
+        m_prevDistStr = PhysicalUnits::printToBestLengthUnitsCompact( setup.distance, 6 );
+        m_distanceEdit->setValueText( WString::fromUTF8(m_prevDistStr) );
+
+        deSerializeShieldings( setup.shieldings );
+      }catch( std::exception &e )
+      {
+        cerr << "handleDetectorChanged: could not restore embedded scene: " << e.what() << endl;
+      }
+    }//if( coming off a DRF with an embedded scene )
   }//if( DRF is non-fixed geometry, but layout is for fixed geometry )
   
-  // A fixed-geometry DRF computed for a specific scene embeds it; replace the
-  //  displayed shieldings with that scene, read-only (change the DRF to
-  //  change the layers).
-  bool locked_setup = false;
+  // A fixed-geometry DRF computed for a specific scene (MakeFixedGeomResponse) embeds it: its
+  //  source, shielding, and air are already in the response's curves, so no shielding layer may
+  //  be applied on top - it would be applied twice.  The scene is shown as a read-only summary
+  //  instead, and remembered so switching back to a non-fixed DRF can restore it.
+  m_embeddedSetupXml.clear();
+  WString embedded_summary;
   if( fixed_geom && det && !det->fixedGeometrySetupXml().empty() )
   {
     try
     {
       MakeFixedGeomResponse::Setup setup;
       setup.fromXmlString( det->fixedGeometrySetupXml() );
+      embedded_summary = embeddedSceneSummary( setup );
 
       const vector<WWidget *> old_shields = m_shieldingSelects->children();
       for( WWidget *child : old_shields )
@@ -6958,20 +7213,7 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
           m_shieldingSelects->removeWidget( child );
       }
 
-      deSerializeShieldings( setup.shieldings );
-
-      for( WWidget *widget : m_shieldingSelects->children() )
-      {
-        ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-        if( select )
-        {
-          select->setFixedGeometry( true );
-          select->setDisabled( true );
-          select->addStyleClass( "FixedGeomLocked" );
-        }
-      }//for( new ShieldingSelects )
-
-      locked_setup = true;
+      m_embeddedSetupXml = det->fixedGeometrySetupXml();
     }catch( std::exception &e )
     {
       cerr << "handleDetectorChanged: invalid FixedGeomSourceSetup blob: "
@@ -6979,44 +7221,105 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     }
   }//if( fixed-geometry DRF with an embedded scene )
 
+  const bool locked_setup = !m_embeddedSetupXml.empty();
+  if( locked_setup )
+    m_fixedGeomLockedNote->setText( WString::tr("ssd-fixed-geom-locked-note").arg( embedded_summary ) );
   m_fixedGeomLockedNote->setHidden( !locked_setup );
   m_addShieldingBtn->setHidden( locked_setup );
+  if( m_showDiagramBtn )
+    m_showDiagramBtn->setHidden( !locked_setup && (numberShieldings() == 0) );
 
-  updateDrfUncertMethodAvailability();
-  updateChi2Chart();
+  updateChi2Chart();  //also updates the efficiency-uncertainty controls
   updateCascadeAvailability();
 }//void handleDetectorChanged()
 
 
 void ShieldingSourceDisplay::updateDrfUncertMethodAvailability()
 {
-  // A DRF carries efficiency-uncertainty information when it has an attached CeeLo MC response or a
-  //  DetectorEfficiencyUncert - exactly the two branches DetectorPeakResponse::efficiencyFracCovariance
-  //  dispatches to (checking those is cheaper and more robust than probing the covariance itself).
-  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  const bool has_uncert = ( det && (det->efficiencyUncert() || det->ceeloResponse()) );
+  if( !m_drfUncertMethodCombo || !m_drfUncertAssumedCb || !m_drfUncertStatus || !m_detectorDisplay )
+    return;  //still being constructed
 
-  if( m_drfUncertMethodRow )
-    m_drfUncertMethodRow->setHidden( !has_uncert );
+  // What the DRF reports, asked the way the fit asks (DetectorPeakResponse::efficiencyFracCovariance
+  //  / efficiencyEval): at a representative energy, and at the source distance when it is known, so
+  //  a response's near-field allowance shows.
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  DrfModifyCalc::UncertSummary summary;
+  if( det && det->isValid() )
+  {
+    summary = DrfModifyCalc::uncertSummary( *det );
+    if( summary.valid && !det->isFixedGeometry() )
+    {
+      try
+      {
+        const double distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+        summary = DrfModifyCalc::uncertSummary( *det, summary.energy, distance );
+      }catch( std::exception & )
+      {
+        //Unparsable distance - the far-field summary will do
+      }
+    }//if( not fixed geometry )
+  }//if( det && det->isValid() )
+
+  const bool has_uncert = (summary.valid && (summary.total > 0.0));
+
+  // The row stays visible and enabled either way, so it is plain whether an uncertainty is used, and
+  //  a "requested but none available" fit warning can be answered by choosing "Don't use".
 
   // First-load default: if the very first DRF we see has no efficiency uncertainty, start on None
   //  rather than the struct default (ErrorPropagation), per the requested first-load behavior.  This
-  //  fires once; later DRF swaps only toggle visibility, and a subsequent state restore overrides it.
+  //  fires once; later DRF swaps only toggle availability, and a subsequent state restore overrides it.
   if( !m_drfUncertMethodDefaultApplied )
   {
     m_drfUncertMethodDefaultApplied = true;
-    if( !has_uncert && m_drfUncertMethodCombo )
+    if( !has_uncert )
     {
       m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>(ShieldingSourceFitCalc::DrfUncertaintyMethod::None) );
       m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();
     }
   }//if( !m_drfUncertMethodDefaultApplied )
+
+  const auto pct = []( const double frac ) -> string {
+    return SpecUtils::printCompact( 100.0*frac, 2 );
+  };
+
+  m_drfUncertAssumedCb->setHidden( !summary.dataIsAssumed );
+  if( summary.dataIsAssumed )
+    m_drfUncertAssumedCb->setText( WString::tr("ssd-cb-drf-uncert-assumed").arg( pct(summary.data) ) );
+
+  char energy[32] = { '\0' };
+  snprintf( energy, sizeof(energy), "%.0f", summary.energy );
+
+  const bool include_assumed = m_drfUncertAssumedCb->isChecked();
+  const bool method_none = (m_drfUncertMethodCombo->currentIndex()
+                            == static_cast<int>(ShieldingSourceFitCalc::DrfUncertaintyMethod::None));
+  WString status;
+  if( !has_uncert )
+    status = WString::tr("ssd-drf-uncert-status-none");
+  else if( method_none )
+    status = WString::tr("ssd-drf-uncert-status-off");
+  else if( summary.usedFrac( include_assumed ) <= 0.0 )
+    status = WString::tr("ssd-drf-uncert-status-assumed-unused").arg( pct(summary.data) );
+  else if( summary.statesOwn && (summary.model > 0.0) )
+    status = WString::tr("ssd-drf-uncert-status-stated-model").arg( pct(summary.total) ).arg( energy )
+                                                               .arg( pct(summary.model) );
+  else if( summary.statesOwn )
+    status = WString::tr("ssd-drf-uncert-status-stated").arg( pct(summary.total) ).arg( energy );
+  else if( summary.dataIsAssumed && include_assumed )
+    status = WString::tr("ssd-drf-uncert-status-assumed").arg( pct(summary.total) ).arg( energy )
+                                                         .arg( pct(summary.data) );
+  else
+    status = WString::tr("ssd-drf-uncert-status-model-only").arg( pct(summary.model) ).arg( energy )
+                                                           .arg( pct(summary.data) );
+  m_drfUncertStatus->setText( status );
 }//void updateDrfUncertMethodAvailability()
 
 void ShieldingSourceDisplay::updateChi2Chart()
 {
   m_chi2ChartNeedsUpdating = true;
   scheduleRender(); //trigger re-render
+
+  // Every fit-input change (DRF, distance, method) can change what efficiency uncertainty is used.
+  updateDrfUncertMethodAvailability();
 
   // Single chokepoint for "the user changed a fit input": drives live/auto-fit (re)launch, or
   //  the manual-mode "needs update" button hint.  No-op during construction and while applying
@@ -8175,6 +8478,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
  
 
   WPushButton *button = m_modelDbSaveWindow->footer()->addNew<WPushButton>( WString::tr("Save") );
+  WidgetUtils::applyButtonRole( button, WidgetUtils::ButtonRole::Affirm );
   button->setIcon( "InterSpec_resources/images/disk2.png" );
   
   button->clicked().connect( this, [this, nameEdit, descEdit](){ finishGuiSaveModelToDatabase( nameEdit, descEdit ); } );
@@ -8547,6 +8851,8 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
       m_shieldingSelects->removeWidget( child );
   }//for( WWebWidget *child : shieldings )
   
+  m_embeddedSetupXml.clear();
+
   if( set_use_peaks_false )
     m_peakModel->setAllPeaksUseForShieldingSourceFit( false );
   
@@ -8633,8 +8939,9 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_drfUncertMethodDefaultApplied = true;
   m_drfUncertMethodCombo->setCurrentIndex( static_cast<int>( options.drf_uncert_method ) );
   m_lastDrfUncertMethodIndex = m_drfUncertMethodCombo->currentIndex();  //else the next user change undoes to a stale index
+  m_drfUncertAssumedCb->setChecked( options.drf_uncert_include_assumed );
   updateDrfUncertMethodAvailability();
-  m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
+  setVolEffMethodIndex( static_cast<int>( options.volumetric_eff_method ) );
   m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );
@@ -8666,6 +8973,11 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   deSerializeShieldings( state.config->shieldings );
   
   m_modifiedThisForeground = true;
+
+  // The restored state is authoritative: don't let a previously displayed embedded scene be
+  //  "restored" over it.  (If the DRF embeds a scene, handleDetectorChanged() drops the restored
+  //  layers - states saved before 2026-09-29 serialized the scene's layers - and shows the scene.)
+  m_embeddedSetupXml.clear();
 
   // Make sure if DRF is fixed/not-fixed, that the GUI state will be consistent with this
   //  (it may not have been the same when serialized)
@@ -8957,6 +9269,7 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
                               shared_ptr<const string> prev,
                               shared_ptr<const string> curr ){
     handleShieldingUndoRedoPoint( sel, prev, curr );
+    updateFixedGeomMcAvailability();  //e.g., a "Fit" checkbox was toggled
     // Any user change to a shielding (including toggling a "Fit" checkbox for thickness / AN / AD,
     //  which doesn't fire materialModified()) should refresh the chart and, in live mode, kick off
     //  a re-fit.  updateChi2Chart() -> markModelChanged() does both; it's debounced so the extra
@@ -9259,8 +9572,8 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
 
-  //A volumetric source now exists: refresh the volumetric-efficiency method availability/indicator.
-  updateVolEffMethodAvailability();
+  //A volumetric source now exists: refresh the volumetric-efficiency method + MC-button availability/indicator.
+  updateFixedGeomMcAvailability();  //also refreshes the volumetric-efficiency method
 
   //Update the Chi2
   updateChi2Chart();
@@ -9286,8 +9599,8 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
       select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
 
-  //A volumetric source may no longer exist: refresh the volumetric-efficiency method availability.
-  updateVolEffMethodAvailability();
+  //A volumetric source may no longer exist: refresh the volumetric-efficiency method + MC-button availability.
+  updateFixedGeomMcAvailability();  //also refreshes the volumetric-efficiency method
 
   //Update the Chi2
   updateChi2Chart();
@@ -9826,7 +10139,7 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     logBtn->clicked().connect( this, &ShieldingSourceDisplay::showCalcLog );
   }//if( m_lastFitResults )
 
-  dialog->addButton( WString::tr("ssd-phone-done") );
+  dialog->addButton( WString::tr("ssd-phone-done"), WidgetUtils::ButtonRole::Affirm );
 }//void showPhoneFitResults()
 
 
@@ -10835,6 +11148,23 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   } catch(...) {
      // Ignore, use default or what was parsed.
   }
+
+  GeometryType geom_type = geometry();
+
+  // A DRF that embeds its scene: draw that scene (it has no layers in m_shieldingSelects).
+  if( !m_embeddedSetupXml.empty() )
+  {
+    try
+    {
+      MakeFixedGeomResponse::Setup setup;
+      setup.fromXmlString( m_embeddedSetupXml );
+      shieldings = setup.shieldings;
+      distance = setup.distance;
+      geom_type = setup.geometry;
+    }catch( std::exception & )
+    {
+    }
+  }//if( !m_embeddedSetupXml.empty() )
   
   std::shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   double detDiameter = 3.0 * 2.54 * PhysicalUnits::cm; // Default 3 inches
@@ -10842,7 +11172,6 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
     detDiameter = det->detectorDiameter();
 
   std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
-  const GeometryType geom_type = geometry();
 
   // User-set off-axis offsets (zero when the offset checkbox is unchecked).
   double offset0 = 0.0, offset1 = 0.0;
@@ -10851,12 +11180,12 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   if( m_diagramDialog )
   {
     // Dialog already exists, update its data and show it
-    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1, det );
     m_diagramDialog->show();
     return;
   }
 
-  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1, det );
   
   //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
   //  InterSpec *viewer = InterSpec::instance();
@@ -10866,7 +11195,8 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
   //}, std::placeholders::_1 ) );
   
   m_diagramDialog->finished().connect( this, &ShieldingSourceDisplay::handleShieldSourceDiagramClosed );
-  
+  m_diagramDialog->volumetricLinesRequested().connect( this, &ShieldingSourceDisplay::handleDiagramLinesRequested );
+
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
@@ -10885,6 +11215,28 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
     undoRedo->addUndoRedoStep( undo, redo, "Show shielding diagram." );
   }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void showShieldSourceDiagram()
+
+
+void ShieldingSourceDisplay::handleDiagramLinesRequested( const double energy )
+{
+  if( !m_diagramDialog )
+    return;
+
+  // The lines follow the model as the GUI currently has it, so they come from a fit function built
+  //  for it now - the same construction a fit starts from.
+  const size_t max_lines = 300;
+  try
+  {
+    const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitParameters>
+                                                                      fcn_pars = shieldingFitnessFcn();
+    const GammaInteractionCalc::VolumetricLineSample sample
+                  = fcn_pars.first->sampleVolumetricLines( fcn_pars.second.values(), energy, max_lines );
+    m_diagramDialog->setVolumetricLines( sample );
+  }catch( std::exception &e )
+  {
+    m_diagramDialog->setVolumetricLinesError( WString::tr("ssd-diag-lines-err").arg( e.what() ) );
+  }
+}//handleDiagramLinesRequested(...)
 
 
 void ShieldingSourceDisplay::handleShieldSourceDiagramClosed()

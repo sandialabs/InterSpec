@@ -35,21 +35,9 @@
   <message id="reds-invalid-dir">répertoire invalide</message>
   <message id="reds-no-drf-in-dir">aucune réponse dans le répertoire</message>
   <message id="reds-recursive-no-drfs-in-dir">Aucune DRF valide dans le répertoire, ou ses sous-répertoires.</message>
-  <message id="ds-csv-upload-desc">
-    <div style="white-space:nowrap;">
-      Téléchargement de fichier d'efficacité :
-    </div>
-    <div>
-      Pour l'efficacité CSV, la première colonne est l'énergie en keV ; la seconde est l'efficacité en % (0 à 100).
-    </div>
-    <div>
-      Intrinsèque est l'efficacité pour les gammas frappant la surface du détecteur, tandis qu'Absolue est à une distance donnée.
-    </div>
-  </message>
   <message id="ds-det-diam">Diam. dét. :</message>
   <message id="ds-det-setback">Recul dét. :</message>
   <message id="ds-fixed-geom">Géométrie fixe</message>
-  <message id="ds-gad-det-file-label">Ou Detector.dat :</message>
   <message id="ds-manual-det-empty-fcn">Exemple : exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     Ou de manière équivalente : -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">Efficacité du détecteur définie par une formule mathématique, étant donné l'énergie x ;
@@ -128,9 +116,4 @@
   <message id="ds-err-det-dist-pos">La distance doit être positive pour les efficacités absolues</message>
   <message id="ds-warn-min-max-energy-swapped">L'énergie minimale du détecteur était supérieure à l'énergie maximale ; la plage d'énergie est ignorée.</message>
   <message id="ds-need-det-diam">Besoin du diamètre des détecteurs</message>
-  <message id="ds-err-invalid-csv-format">Fichier CSV non reconnu. Veuillez télécharger un fichier CSV d'efficacité valide (format MakeDrf ou format simple avec colonnes énergie et efficacité).</message>
-  <message id="ds-err-parsing-gadras">Erreur d'analyse du détecteur GADRAS : {1}</message>
-  <message id="ds-eff-type-intrinsic">Efficacité intrinsèque</message>
-  <message id="ds-eff-type-farfield">Efficacité en champ lointain</message>
-  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

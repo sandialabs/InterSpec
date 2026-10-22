@@ -211,7 +211,9 @@ central interval, or a predicted sensitivity &mdash; and it says which.
 </p>
 <p>
 Uncertainties come from counting statistics, and from the finite statistics of a
-background reference where one is used.  Detector-response and shielding-model
-uncertainties are not propagated.
+background reference where one is used.  The deconvolution limits do not yet
+include the detector response's efficiency uncertainty, nor any shielding-model
+uncertainty; the per-line Currie limits do include the efficiency uncertainty the
+detector response states of its own.
 </p>
 </div>

@@ -35,21 +35,9 @@
   <message id="reds-invalid-dir">অবৈধ ডিরেক্টরি</message>
   <message id="reds-no-drf-in-dir">ডিরেক্টরিতে কোনো রেসপন্স নেই</message>
   <message id="reds-recursive-no-drfs-in-dir">ডিরেক্টরি বা এর সাবডিরেক্টরিতে কোনো বৈধ DRF নেই।</message>
-  <message id="ds-csv-upload-desc">
-    <div style="white-space:nowrap;">
-      দক্ষতা ফাইল আপলোড:
-    </div>
-    <div>
-      দক্ষতা CSV-এর জন্য, প্রথম কলাম keV-তে শক্তি; দ্বিতীয় হল % দক্ষতা (0 থেকে 100)।
-    </div>
-    <div>
-      অভ্যন্তরীণ হল ডিটেক্টরের পৃষ্ঠে আঘাতকারী গামার জন্য দক্ষতা, যেখানে পরম হল একটি নির্দিষ্ট দূরত্বে।
-    </div>
-  </message>
   <message id="ds-det-diam">ডিটেক্টর ব্যাস:</message>
   <message id="ds-det-setback">ডিটেক্টর সেটব্যাক:</message>
   <message id="ds-fixed-geom">স্থির জ্যামিতি</message>
-  <message id="ds-gad-det-file-label">অথবা Detector.dat:</message>
   <message id="ds-manual-det-empty-fcn">উদাহরণ: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
     অথবা সমতুল্যভাবে: -9.8 -8.1 4.62E-02 ...</message>
   <message id="ds-manual-det-desc">একটি গাণিতিক সূত্র দ্বারা সংজ্ঞায়িত ডিটেক্টর দক্ষতা, শক্তি x দেওয়া;
@@ -122,9 +110,4 @@
   <message id="ds-err-det-dist-pos">পরম দক্ষতার জন্য দূরত্ব অবশ্যই ধনাত্মক হতে হবে</message>
   <message id="ds-warn-min-max-energy-swapped">ডিটেক্টর ন্যূনতম শক্তি সর্বোচ্চ শক্তির চেয়ে বেশি; শক্তি রেঞ্জ উপেক্ষা করা হচ্ছে।</message>
   <message id="ds-need-det-diam">ডিটেক্টরের ব্যাস প্রয়োজন</message>
-  <message id="ds-err-invalid-csv-format">ফাইল CSV শনাক্ত করা যায়নি। একটি বৈধ দক্ষতা CSV ফাইল আপলোড করুন (MakeDrf ফর্ম্যাট বা শক্তি এবং দক্ষতা কলাম সহ সরল ফর্ম্যাট)।</message>
-  <message id="ds-err-parsing-gadras">GADRAS ডিটেক্টর পার্সিং ত্রুটি: {1}</message>
-  <message id="ds-eff-type-intrinsic">অভ্যন্তরীণ দক্ষতা</message>
-  <message id="ds-eff-type-farfield">দূর-ক্ষেত্র দক্ষতা</message>
-  <message id="ds-eff-type-gadras">GADRAS</message>
 </messages>

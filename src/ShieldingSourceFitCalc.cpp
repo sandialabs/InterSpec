@@ -59,6 +59,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/MakeFixedGeomResponse.h"
 #include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
@@ -1891,6 +1892,11 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  name = "DrfUncertIncludeAssumed";
+  value = drf_uncert_include_assumed ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "CorrectForCascadeSumming";
   value = correct_for_cascade_summing ? "1" : "0";
   node = doc->allocate_node( rapidxml::node_element, name, value );
@@ -1903,6 +1909,7 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
     case VolumetricEffMethod::MCTransfer: value = "mc";       break;
     case VolumetricEffMethod::EffTran:    value = "efftran";  break;
     case VolumetricEffMethod::FlatDisk:   value = "flatdisk"; break;
+    case VolumetricEffMethod::ImportedGrid: value = "grid";   break;
   }//switch( volumetric_eff_method )
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
@@ -1983,6 +1990,10 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
                                           : DrfUncertaintyMethod::None;
   }//if( new enum node ) / else ( legacy bool node )
 
+  // Absent from state written before this option existed - those fits used the assumed part.
+  node = XML_FIRST_NODE( parent_node, "DrfUncertIncludeAssumed" );
+  drf_uncert_include_assumed = node ? boolval( node ) : true;
+
   node = XML_FIRST_NODE( parent_node, "CorrectForCascadeSumming" );
   if( node )
     correct_for_cascade_summing = boolval( node );  //absent in older XML -> keeps the default (false)
@@ -1999,6 +2010,8 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
       volumetric_eff_method = VolumetricEffMethod::EffTran;
     else if( SpecUtils::iequals_ascii(val, "flatdisk") )
       volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+    else if( SpecUtils::iequals_ascii(val, "grid") )
+      volumetric_eff_method = VolumetricEffMethod::ImportedGrid;
     else
       throw runtime_error( "ShieldingSourceFitOptions invalid VolumetricEffMethod: '" + val + "'" );
   }//if( node )  //absent in older XML -> keeps the default (Auto)
@@ -2044,6 +2057,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
   if( lhs.drf_uncert_method != rhs.drf_uncert_method )
     throw runtime_error( "ShieldingSourceFitOptions LHS drf_uncert_method != RHS drf_uncert_method" );
 
+  if( lhs.drf_uncert_include_assumed != rhs.drf_uncert_include_assumed )
+    throw runtime_error( "ShieldingSourceFitOptions LHS drf_uncert_include_assumed != RHS drf_uncert_include_assumed" );
+
   if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
     throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
 
@@ -2053,6 +2069,35 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 #endif
   
   
+const char *drfUncertUsedName( const DrfUncertUsed used )
+{
+  switch( used )
+  {
+    case DrfUncertUsed::None:              return "None";
+    case DrfUncertUsed::Stated:            return "Stated";
+    case DrfUncertUsed::GeometryModelOnly: return "GeometryModelOnly";
+    case DrfUncertUsed::IncludesAssumed:   return "IncludesAssumed";
+  }//switch( used )
+
+  assert( 0 );
+  return "None";
+}//drfUncertUsedName(...)
+
+
+const char *drfUncertMethodName( const DrfUncertaintyMethod method )
+{
+  switch( method )
+  {
+    case DrfUncertaintyMethod::None:             return "None";
+    case DrfUncertaintyMethod::ErrorPropagation: return "ErrorPropagation";
+    case DrfUncertaintyMethod::Likelihood:       return "Likelihood";
+  }//switch( method )
+
+  assert( 0 );
+  return "None";
+}//drfUncertMethodName(...)
+
+
 ModelFitProgress::ModelFitProgress()
   : m_mutex{},
   chi2( std::numeric_limits<double>::max() ),
@@ -2230,11 +2275,39 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
     }
   }//for( size_t i = 0; i < nmaterials; ++i )
 
+  // Cascade summing with a fixed-geometry DRF computed for a volumetric scene: the DRF only has the
+  //  volume-AVERAGED FEP and total efficiencies, so the correction is c_net(<eps_fep>,<eps_tot>)
+  //  instead of the per-position average the non-fixed path computes, which under-corrects summing
+  //  for extended sources near the detector (by roughly the squared coefficient of variation of the
+  //  efficiency over the source).
+  {
+    const shared_ptr<const DetectorPeakResponse> &drf = chi2Fcn.detector();
+    if( chi2Fcn.cascadeCalc() && drf && drf->isFixedGeometry()
+        && !drf->fixedGeometrySetupXml().empty() )
+    {
+      bool volumetric = false;
+      try
+      {
+        MakeFixedGeomResponse::Setup setup;
+        setup.fromXmlString( drf->fixedGeometrySetupXml() );
+        for( const ShieldingSourceFitCalc::ShieldingInfo &info : setup.shieldings )
+          volumetric = (volumetric || !info.m_traceSources.empty() || !info.m_nuclideFractions_.empty());
+      }catch( std::exception & )
+      {
+      }
+
+      if( volumetric )
+        results.warnings.push_back( "The fixed-geometry detector response was computed for a"
+          " volumetric source, so cascade-summing corrections used its volume-averaged efficiencies;"
+          " for an extended source close to the detector this under-corrects summing." );
+    }
+  }
+
   // Stale detector-efficiency-uncertainty selection: the user asked to propagate or fit with the
   //  efficiency uncertainty, but the DRF/peaks provided no efficiency covariance, so the fit ran
-  //  statistics-only.  The GUI hides the control when the current DRF has no uncertainty, but a
-  //  restored session, a batch exemplar, or a DRF swapped after the choice was made can all reach
-  //  here with a non-None method and an empty band - surface it rather than silently ignoring it.
+  //  statistics-only.  A restored session, a batch exemplar, or a DRF swapped after the choice was
+  //  made can all reach here with a non-None method and an empty band - surface it rather than
+  //  silently ignoring it (the GUI's status line also says the detector reports none).
   if( (chi2Fcn.options().drf_uncert_method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None)
       && chi2Fcn.peakEffFracCovariance().empty() )
   {
@@ -2268,9 +2341,10 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
           break;
 
         case EffFlag::OutOfRangeClamped:
+          // CeeLo raises this flag for an energy OR an angle outside its nodes.
           results.warnings.push_back( "The peaks at " + flag_list.second + " keV are outside the"
-            " detector response's validated energy range; their efficiencies were clamped to the"
-            " range edge and may be inaccurate." );
+            " detector response's validated energy or angle range; their efficiencies were clamped"
+            " to the range edge and may be inaccurate." );
           break;
 
         case EffFlag::NearFieldUnmodeled:
@@ -2296,22 +2370,36 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
     }//for( each flag kind present )
   }
 
-  // Legacy far-field DRF used close-in: with only an efficiency curve and a diameter, the model
-  //  is intrinsic-efficiency times point-source solid angle, which loses percent-level accuracy
-  //  once the source is within a few detector diameters.  (1/r-squared handles LARGE distances
-  //  correctly, so only closeness is flagged.)  A DRF with detector geometry attached evaluates
-  //  distance-correctly and is covered by the flag warnings above instead.
+  // Flat-disk model used close-in: intrinsic efficiency times point-source solid angle loses
+  //  percent-level accuracy once the source is within a few detector diameters.  (1/r-squared
+  //  handles LARGE distances correctly, so only closeness is flagged.)  Keyed on the model the fit
+  //  actually used, not on what the DRF carries: "Auto" transfers a geometry-only DRF through its
+  //  geometry, while choosing Flat-disk by name uses the flat disk even for a DRF with a response.
+  //  A response-based model is covered by the flag warnings above instead.
   {
     const shared_ptr<const DetectorPeakResponse> &drf = chi2Fcn.detector();
-    if( drf && drf->isValid() && !drf->isFixedGeometry() && !drf->ceeloResponse()
+    if( drf && drf->isValid() && !drf->isFixedGeometry()
+        && (chi2Fcn.resolvedVolumetricEffMethod() == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
         && (drf->detectorDiameter() > 0.0)
         && (chi2Fcn.distance() < 3.0*drf->detectorDiameter()) )
     {
+      // How to get a distance-aware model - not needed when Flat-disk was chosen by name, nor when
+      //  the detector has one that failed to build (the detector-efficiency-model note says why).
+      string advice;
+      if( chi2Fcn.options().volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk )
+      {
+        if( drf->geometryDisabled() )
+          advice = "  The detector's geometry is switched off (Flat Disk): switch the detector to"
+                   " \"Geometry Modeled\" to use it (Detector Response tool, \"Modify...\", \"Geom & MC\""
+                   " tab; \"No MC support\" gives an instant transfer).";
+        else if( !drf->geometry() )
+          advice = "  Consider entering the detector's dimensions for a distance-aware efficiency"
+                   " (Detector Response tool, \"Modify...\", \"Geom & MC\" tab, \"Geometry Modeled\").";
+      }//if( not flat-disk by name )
+
       results.warnings.push_back( "The source is close to the detector relative to the detector"
-        " size, but the detector efficiency curve assumes a far-field point response, so results"
-        " may be biased.  Consider enabling distance-aware efficiency transfer by entering the"
-        " detector dimensions (Detector Response tool, \"Modify...\", Geometry and MC tab,"
-        " \"From measured curve\" method)." );
+        " size, but the flat-disk detector-efficiency model assumes a far-field point response, so"
+        " results may be biased." + advice );
     }
   }
 
@@ -2662,6 +2750,19 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
     results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
     results->point_eff_model = chi2Fcn->pointSourceEffModel();
+
+    // Which efficiency uncertainty was used: an assumed part is in it exactly when the covariance
+    //  used is more than its geometry-model part (it is that part when dropped, or when zero).
+    vector<double> model_cov;
+    const vector<double> used_cov = chi2Fcn->peakEffFracCovariance( &model_cov );
+    if( (chi2Fcn->options().drf_uncert_method == DrfUncertaintyMethod::None) || used_cov.empty() )
+      results->drf_uncert_used = DrfUncertUsed::None;
+    else if( chi2Fcn->detector()->statesOwnEfficiencyUncert() )
+      results->drf_uncert_used = DrfUncertUsed::Stated;
+    else if( used_cov == model_cov )
+      results->drf_uncert_used = DrfUncertUsed::GeometryModelOnly;
+    else
+      results->drf_uncert_used = DrfUncertUsed::IncludesAssumed;
 
     // A near-field method the user asked for by name but did not get is an error, not a footnote:
     //  the answer is quietly less accurate than requested, which is exactly what should not pass
@@ -4304,7 +4405,11 @@ void fit_model( const std::string wtsession,
     if( num_var_params < 1 )
       throw runtime_error( "No parameters are selected for fitting." );
 
-    chi2Fcn->fittingIsStarting( sm_max_model_fit_time_ms );
+    // Cascade decay corrections can take a lot longer, so we'll arbitrarily increase the time out by a factor
+    //  of 10 for the moment.
+    const size_t fit_timeout_ms = (results->options.correct_for_cascade_summing ? 10 : 1) * sm_max_model_fit_time_ms;
+
+    chi2Fcn->fittingIsStarting( fit_timeout_ms );
 
     // The background-subtracted observed counts for each peak in the fit - same peak
     //  inclusion and background-subtraction as #ShieldingSourceChi2Fcn::expected_observed_chis

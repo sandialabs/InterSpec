@@ -33,7 +33,6 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
-#include "InterSpec/MassAttenuationTool.h" //for USE_SNL_GAMMA_ATTENUATION_VALUES
 #include "InterSpec/DetectorPeakResponse.h"
 
 
@@ -112,9 +111,7 @@ protected:
 
   Wt::WText *m_totalAttenuation;
   Wt::WText *m_compton;
-#if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
   Wt::WText *m_rayleigh;
-#endif
   Wt::WText *m_photoElectric;
   Wt::WText *m_conversion;
 

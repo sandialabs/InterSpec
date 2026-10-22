@@ -267,10 +267,7 @@
     L'incertitude <b>relative</b> à 1&#963; des comptages attendus par unité d'activité, en
     <b>pourcentage</b> - par exemple <b>5</b> pour 5%.  Laissez vide, ou saisissez 0, pour aucune.
     <p>
-      Elle couvre tout ce qui met à l'échelle les comptages attendus sans être de la statistique de
-      comptage : la courbe d'efficacité du détecteur et le rapport d'embranchement gamma, qui
-      interviennent de façon identique.  Saisissez les deux combinés en quadrature si les deux
-      comptent.  Les incertitudes d'efficacité des détecteurs sont typiquement de 3&#8211;10%.
+      Couvre tout ce qui met à l'échelle les coups attendus et n'est pas de la statistique de comptage, au-delà de l'incertitude d'efficacité que la réponse du détecteur déclare elle-même : celle-ci est toujours incluse, et ceci s'y ajoute en quadrature.  Utilisez-le pour le rapport d'embranchement gamma, ou pour une réponse de détecteur qui ne déclare aucune incertitude (les incertitudes d'efficacité des détecteurs sont typiquement de 3&#8211;10 %).
     </p>
     <p>
       Elle est combinée en quadrature avec l'incertitude de distance, et le total doit rester

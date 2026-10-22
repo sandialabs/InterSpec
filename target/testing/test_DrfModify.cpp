@@ -51,7 +51,12 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <fstream>
+#include <sstream>
 #include <iostream>
+
+#include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -67,6 +72,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
 
@@ -432,6 +439,88 @@ BOOST_AUTO_TEST_CASE( uncertainty_only_edit_keeps_the_efficiency )
   string why;
   BOOST_CHECK_MESSAGE( DrfModifyCalc::checkDrfSelfConsistent( *working, why ), why );
 }//BOOST_AUTO_TEST_CASE( uncertainty_only_edit_keeps_the_efficiency )
+
+
+/** The one policy every tool uses for the efficiency uncertainty (UncertSummary::usedFrac), and the
+ distance-aware summary those tools ask for. */
+BOOST_AUTO_TEST_CASE( uncert_summary_used_part_and_distance )
+{
+  set_data_dir();
+
+  // An assumed data part is left out unless asked for; a stated one is always used.
+  {
+    DrfModifyCalc::UncertSummary s;
+    s.valid = true;
+    s.total = 0.05;
+    s.model = 0.01;
+    s.data = std::sqrt( s.total*s.total - s.model*s.model );
+    s.dataIsAssumed = true;
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), 0.01 );
+    BOOST_CHECK_EQUAL( s.usedFrac( true ), 0.05 );
+
+    s.dataIsAssumed = false;
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), 0.05 );
+    BOOST_CHECK_EQUAL( DrfModifyCalc::UncertSummary{}.usedFrac( true ), 0.0 );
+  }
+
+  const float energy = 661.7f;
+
+  // A created DRF states its own uncertainty, and carries a transfer response: the summary at a
+  //  distance is exactly efficiencyEval's there, which grows close in.
+  const shared_ptr<DetectorPeakResponse> created = make_created_drf( make_measured_points() );
+  BOOST_REQUIRE( created->statesOwnEfficiencyUncert() && created->ceeloResponse() );
+  double near_total = 0.0, far_total = 0.0;
+  for( const double dist_cm : { 2.0, 100.0 } )
+  {
+    const double dist = dist_cm * PhysicalUnits::cm;
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *created, energy, dist );
+    BOOST_REQUIRE( s.valid );
+    BOOST_CHECK( !s.dataIsAssumed );
+
+    const DetectorPeakResponse::EffEval ev = created->efficiencyEval( energy, dist );
+    BOOST_REQUIRE( ev.value > 0.0 );
+    BOOST_CHECK_CLOSE( s.total, ev.sigma / ev.value, 1.0e-9 );
+    BOOST_CHECK_LE( s.model, s.total );
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), s.total );
+    (dist_cm < 10.0 ? near_total : far_total) = s.total;
+  }//for( const double dist_cm : { 2.0, 100.0 } )
+  BOOST_CHECK_GT( near_total, far_total );
+
+  // The same shape of detector stating no uncertainty at all (as every GADRAS detector): a transfer
+  //  of its curve reports the assumed anchor sigma as "data", which is left out - only the
+  //  geometry-model envelope remains.
+  {
+    const MakeDrfCalc::GeometryChoice geom = nai_geometry();
+    auto bare = make_shared<DetectorPeakResponse>( "bare", "no stated uncertainty" );
+    bare->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                         geom.diameter, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                         DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    bare->setDetectorSetback( geom.setback );
+    bare->setGeometry( geom.geometry );
+    BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( *bare ) );
+    BOOST_REQUIRE( !bare->statesOwnEfficiencyUncert() );
+
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *bare, energy, 100.0*PhysicalUnits::cm );
+    BOOST_REQUIRE( s.valid );
+    BOOST_CHECK( s.dataIsAssumed );
+    BOOST_CHECK_GT( s.data, 0.5*CeeLoUtils::sm_default_anchor_frac_sigma );
+    BOOST_CHECK_EQUAL( s.usedFrac( false ), s.model );
+    BOOST_CHECK_LT( s.usedFrac( false ), s.total );
+  }
+
+  // No uncertainty at all: valid (the efficiency evaluated), but nothing to use.
+  {
+    auto plain = make_shared<DetectorPeakResponse>( "plain", "flat disk" );
+    plain->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                          5.0*PhysicalUnits::cm, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    const DrfModifyCalc::UncertSummary s = DrfModifyCalc::uncertSummary( *plain, energy, 100.0*PhysicalUnits::cm );
+    BOOST_CHECK( s.valid );
+    BOOST_CHECK_EQUAL( s.total, 0.0 );
+    BOOST_CHECK( !s.dataIsAssumed );
+    BOOST_CHECK_EQUAL( s.usedFrac( true ), 0.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( uncert_summary_used_part_and_distance )
 
 
 BOOST_AUTO_TEST_CASE( refit_of_unedited_rows_reproduces_the_curve )
@@ -1308,6 +1397,123 @@ BOOST_AUTO_TEST_CASE( geometry_survives_a_response_being_detached )
 }//BOOST_AUTO_TEST_CASE( geometry_survives_a_response_being_detached )
 
 
+BOOST_AUTO_TEST_CASE( disabled_geometry_is_kept_but_not_used )
+{
+  set_data_dir();
+
+  const MeasuredDrfPoints points = make_measured_points();
+  const shared_ptr<DetectorPeakResponse> orig = make_created_drf( points );
+  BOOST_REQUIRE( orig->ceeloResponse() );
+
+  // Flat Disk ("Remove & use"): the response is detached, and the geometry switched off.
+  shared_ptr<DetectorPeakResponse> detached = make_shared<DetectorPeakResponse>( *orig );
+  detached->setCeeloResponse( nullptr );
+  BOOST_REQUIRE( detached->geometry() );
+
+  shared_ptr<DetectorPeakResponse> flat = make_shared<DetectorPeakResponse>( *detached );
+  flat->setGeometryDisabled( true );
+
+  // Hidden from everything that would use it - which is also what re-opens the Modify dialog on
+  //  Flat Disk (it keys on `ceeloResponse() || geometry()`) - but kept, to edit or switch back on.
+  BOOST_CHECK( !flat->geometry() );
+  BOOST_REQUIRE( flat->storedGeometry() );
+  BOOST_CHECK_EQUAL( flat->storedGeometry()->to_xml_string(), detached->geometry()->to_xml_string() );
+
+  // Identity: a different detector (or it would collapse onto the enabled one's row in the
+  //  database), and switching back restores the old identity exactly.  Without a geometry the flag
+  //  has no effect, so there it leaves the identity alone - as it does every existing DRF.
+  const uint64_t enabled_hash = detached->hashValue();
+  BOOST_CHECK( flat->hashValue() != enabled_hash );
+  BOOST_CHECK( !(*flat == *detached) );
+  {
+    DetectorPeakResponse back( *flat );
+    back.setGeometryDisabled( false );
+    BOOST_CHECK_EQUAL( back.hashValue(), enabled_hash );
+    BOOST_CHECK( back.geometry() );
+
+    DetectorPeakResponse no_geom( *detached );
+    no_geom.setGeometry( nullptr );
+    const uint64_t hash = no_geom.hashValue();
+    no_geom.setGeometryDisabled( true );
+    BOOST_CHECK( !no_geom.geometryDisabled() );
+    BOOST_CHECK_EQUAL( no_geom.hashValue(), hash );
+    BOOST_CHECK( no_geom.drfExtraToXmlString().find( "GeometryDisabled" ) == string::npos );
+  }
+
+  // The DB extras blob: written only when set, so an unset DRF writes exactly what it always did;
+  //  read back as set; and a blob from before the flag existed reads as enabled.
+  {
+    const string enabled_blob = detached->drfExtraToXmlString();
+    BOOST_CHECK( enabled_blob.find( "GeometryDisabled" ) == string::npos );
+
+    const string blob = flat->drfExtraToXmlString();
+    BOOST_CHECK( blob.find( "GeometryDisabled" ) != string::npos );
+
+    DetectorPeakResponse restored( *detached );
+    restored.setDrfExtraFromXmlString( blob );
+    BOOST_CHECK( restored.geometryDisabled() && !restored.geometry() && restored.storedGeometry() );
+
+    DetectorPeakResponse legacy( *flat );
+    legacy.setDrfExtraFromXmlString( enabled_blob );
+    BOOST_CHECK( !legacy.geometryDisabled() && legacy.geometry() );
+  }
+
+  // The full XML (a .drf.xml download, an N42), through text and back as a file is.
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *root = doc.allocate_node( rapidxml::node_element, "root" );
+    doc.append_node( root );
+    flat->toXml( root, &doc );
+
+    string xml;
+    rapidxml::print( std::back_inserter(xml), doc, 0 );
+    vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc2;
+    doc2.parse<0>( buf.data() );
+    const rapidxml::xml_node<char> *drf_node = doc2.first_node( "root" )->first_node( "DetectorPeakResponse" );
+    BOOST_REQUIRE( drf_node );
+
+    DetectorPeakResponse restored;
+    restored.fromXml( drf_node );
+    BOOST_CHECK( restored.geometryDisabled() && !restored.geometry() && restored.storedGeometry() );
+    BOOST_CHECK_EQUAL( restored.hashValue(), flat->hashValue() );
+  }
+
+  // No consumer needs to know about the flag: no transfer is attached through it, a re-fit divides
+  //  out the flat disk (the model the detector is then evaluated with), and the Activity/Shielding
+  //  fit stays on the flat disk.
+  {
+    DetectorPeakResponse copy( *flat );
+    BOOST_CHECK( !CeeLoUtils::attachCurveTransferResponse( copy ) );
+    BOOST_CHECK( !copy.ceeloResponse() );
+
+    BOOST_CHECK( MakeDrfCalc::geometryChoiceForDrf( *detached ).geometry );
+    BOOST_CHECK( !MakeDrfCalc::geometryChoiceForDrf( *flat ).geometry );
+
+    using ShieldingSourceFitCalc::VolumetricEffMethod;
+    using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+    BOOST_CHECK( ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( detached, VolumetricEffMethod::Auto )
+                 == VolumetricEffMethod::EffTran );
+    BOOST_CHECK( ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( flat, VolumetricEffMethod::Auto )
+                 == VolumetricEffMethod::FlatDisk );
+  }
+
+  // Shared as the flat disk it is: an app URL does not carry a switched-off shape.
+  BOOST_CHECK( detached->toAppUrl().find( "DETGEOM" ) != string::npos );
+  BOOST_CHECK( flat->toAppUrl().find( "DETGEOM" ) == string::npos );
+
+  // A response IS the geometry being modeled, so while one is attached the flag has no effect.
+  {
+    DetectorPeakResponse reattached( *flat );
+    reattached.setCeeloResponse( orig->ceeloResponse() );
+    BOOST_CHECK( !reattached.geometryDisabled() );
+    BOOST_CHECK( reattached.geometry() );
+  }
+}//BOOST_AUTO_TEST_CASE( disabled_geometry_is_kept_but_not_used )
+
+
 BOOST_AUTO_TEST_CASE( inconsistent_drf_is_detected )
 {
   set_data_dir();
@@ -1388,3 +1594,98 @@ BOOST_AUTO_TEST_CASE( uncert_summary_splits_data_from_model )
   BOOST_CHECK( curve_only.total > 0.0 );
   BOOST_CHECK_SMALL( curve_only.model, 1.0E-12 );
 }//BOOST_AUTO_TEST_CASE( uncert_summary_splits_data_from_model )
+
+
+
+/** "Remove anchor" in the Modify dialog: stripping the grounding from a Monte-Carlo response leaves
+ the bare MC efficiency (the grounded one divided by k(E)), and the legacy curve resampled from it
+ then agrees with the response.  A curve transfer has no MC under its anchor, so is never offered. */
+BOOST_AUTO_TEST_CASE( remove_anchor_gives_bare_monte_carlo )
+{
+  set_data_dir();
+
+  // The test-file directory, for the grounded Monte-Carlo response.
+  string testfiledir;
+  {
+    const int argc = boost::unit_test::framework::master_test_suite().argc;
+    char ** const argv = boost::unit_test::framework::master_test_suite().argv;
+    for( int i = 1; i < argc; ++i )
+    {
+      const string arg = argv[i];
+      if( SpecUtils::istarts_with( arg, "--testfiledir=" ) )
+        testfiledir = arg.substr( 14 );
+    }
+    if( testfiledir.empty() )
+    {
+      for( const char * const d : { "test_data", "../test_data", "../../test_data",
+                                    "/projects/target/testing/test_data" } )
+      {
+        if( SpecUtils::is_directory( d ) ){ testfiledir = d; break; }
+      }
+    }
+  }//get testfiledir
+
+  const string path = SpecUtils::append_path( SpecUtils::append_path( testfiledir, "cascade_truth" ),
+                                              "detective_x_grounded_response.xml" );
+  ifstream input( path.c_str(), ios::in | ios::binary );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Could not open '" << path << "'; pass --testfiledir=" );
+  stringstream buffer;
+  buffer << input.rdbuf();
+
+  const shared_ptr<const ceelo::DetectorResponse> grounded
+                                         = ceelo::DetectorResponse::from_xml_string( buffer.str() );
+  BOOST_REQUIRE( grounded );
+  BOOST_REQUIRE( !grounded->grounding.empty() );
+  BOOST_CHECK( CeeLoUtils::responseHasMcBackbone( *grounded ) );
+
+  const shared_ptr<const ceelo::DetectorResponse> bare = CeeLoUtils::withoutGrounding( *grounded );
+  BOOST_REQUIRE( bare && (bare != grounded) );
+  BOOST_CHECK( bare->grounding.empty() );
+  BOOST_CHECK( !grounded->grounding.empty() );   //the original is untouched
+  BOOST_CHECK( bare->provenance.method == grounded->provenance.method );
+  BOOST_CHECK( bare->model_transfer.has_value() == grounded->model_transfer.has_value() );
+
+  // Grounded = bare x k(E), at a far-field on-axis position.
+  const Eigen::Vector3d pos = CeeLoUtils::farFieldSourcePosition( grounded->descriptor );
+  for( const double energy : { 122.0, 344.0, 661.7, 1332.5 } )
+  {
+    bool clamped = false;
+    const double ln_k = grounded->grounding.eval_ln_k( energy, clamped );
+    const double with_k = grounded->eps_fep_at( energy, pos ).value;
+    const double without_k = bare->eps_fep_at( energy, pos ).value;
+    BOOST_REQUIRE( (with_k > 0.0) && (without_k > 0.0) );
+    BOOST_CHECK_CLOSE( with_k / without_k, std::exp( ln_k ), 1.0e-3 );
+  }
+
+  // The legacy curve sampled from the bare response reproduces it, as the Modify dialog's apply does.
+  {
+    DetectorPeakResponse drf( "bare", "anchor removed" );
+    CeeLoUtils::setLegacyEfficiencyFromResponse( drf, bare );
+    drf.setCeeloResponse( bare );
+    BOOST_REQUIRE( drf.isValid() );
+
+    const shared_ptr<const DetectorEfficiencyCurve> curve = drf.efficiencyCurve();
+    BOOST_REQUIRE( curve && curve->isValid() );
+    for( const double energy : { 200.0, 661.7, 1500.0 } )
+    {
+      const double from_curve = curve->efficiency( static_cast<float>(energy) );
+      const double from_resp = drf.intrinsicEfficiencyEval( static_cast<float>(energy) ).value;
+      BOOST_REQUIRE( from_resp > 0.0 );
+      BOOST_CHECK_CLOSE( from_curve, from_resp, 2.0 );  //percent; pairs are log-interpolated
+    }
+  }
+
+  // A curve transfer's efficiency IS its anchor curve - nothing to stand on without it.
+  {
+    const MakeDrfCalc::GeometryChoice geom = nai_geometry();
+    auto transfer = make_shared<DetectorPeakResponse>( "transfer", "curve transfer" );
+    transfer->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                             geom.diameter, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                             DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    transfer->setDetectorSetback( geom.setback );
+    transfer->setGeometry( geom.geometry );
+    BOOST_REQUIRE( CeeLoUtils::attachCurveTransferResponse( *transfer ) );
+    BOOST_REQUIRE( transfer->ceeloResponse() );
+    BOOST_CHECK( !CeeLoUtils::responseHasMcBackbone( *transfer->ceeloResponse() ) );
+  }
+}//BOOST_AUTO_TEST_CASE( remove_anchor_gives_bare_monte_carlo )

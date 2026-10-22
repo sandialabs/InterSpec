@@ -76,9 +76,10 @@ namespace
   };
 
   /** Tokens declared in CSS that are theme "mode" rather than colours; they are deliberately not
-   user-overridable, so they are not in the ColorTheme table.
+   user-overridable, so they are not in the ColorTheme table.  `modal-shadow` is a whole
+   `box-shadow` value rather than a colour, so it cannot be a ColorTheme row either.
    */
-  const set<string> sm_css_only_tokens{ "icon-filter", "color-scheme" };
+  const set<string> sm_css_only_tokens{ "icon-filter", "color-scheme", "modal-shadow" };
 
 
   /** Derives the source tree from `--datadir` (the `data` directory sits at its root). */

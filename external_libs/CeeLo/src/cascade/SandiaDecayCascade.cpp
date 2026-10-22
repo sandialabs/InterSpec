@@ -1209,12 +1209,14 @@ RadioactiveEmissionSet build_radioactive_emissions(const Nuclide* parent)
             ? static_cast<int>(transition->child->atomicNumber) : 0;
         const int daughter_A = transition->child
             ? static_cast<int>(transition->child->massNumber) : 0;
+        // The relaxation accessors cover decay daughters through Z=99 (e.g.
+        // Am-241 -> Np-237) and return nullptr outside their range, so no extra
+        // gate here: gating on the photon-table kMaxZ used to drop the K/L binding
+        // energy for Z 93-99 daughters and emit conversion electrons at E_gamma.
         const FluorescenceData* k_data =
-            daughter_Z >= 1 && daughter_Z <= kMaxZ
-            ? CrossSectionData::instance().fluorescence(daughter_Z) : nullptr;
+            CrossSectionData::instance().fluorescence(daughter_Z);
         const LFluorescenceData* l_data =
-            daughter_Z >= 1 && daughter_Z <= kMaxZ
-            ? CrossSectionData::instance().l_fluorescence(daughter_Z) : nullptr;
+            CrossSectionData::instance().l_fluorescence(daughter_Z);
         const double k_binding =
             k_data ? static_cast<double>(k_data->k_edge_keV) : 0.0;
         const double l_binding =

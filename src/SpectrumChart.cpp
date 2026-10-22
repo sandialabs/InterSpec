@@ -122,7 +122,7 @@ void getXAxisLabelTicks( const SpectrumChart *chart,
   const double minxpx = chart->mapToDevice(rendermin,0).x();
   const double maxxpx = chart->mapToDevice(rendermax,0).x();
   const double widthpx = maxxpx - minxpx;
-  const int nlabel = widthpx / 50;
+  const int nlabel = static_cast<int>( widthpx / chart->xAxisMinimumLabelSpacing() );
     
   const double range = rendermax - rendermin;
   double renderInterval;// = range / 10.0;
@@ -1731,6 +1731,7 @@ SpectrumChart::SpectrumChart()
   m_paintedLegendWidth(-100.0f),
   m_xAxisUnits( SpectrumChart::kUndefinedUnits ),
   m_compactAxis( false ),
+  m_xAxisMinLabelSpacing( 50.0 ),
   m_textInMiddleOfChart(),
   m_verticalLinesShowing( false ),
   m_horizontalLinesShowing( false )
@@ -1939,6 +1940,18 @@ void SpectrumChart::setCompactAxis( const bool compact )
   m_compactAxis = compact;
   setPlotAreaPadding( new_pad, Side::Bottom);
 }
+
+void SpectrumChart::setXAxisMinimumLabelSpacing( const double pixels )
+{
+  m_xAxisMinLabelSpacing = std::max( pixels, 1.0 );
+}
+
+
+double SpectrumChart::xAxisMinimumLabelSpacing() const
+{
+  return m_xAxisMinLabelSpacing;
+}
+
 
 bool SpectrumChart::isAxisCompacted() const
 {

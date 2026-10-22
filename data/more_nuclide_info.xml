@@ -191,7 +191,7 @@ Am-241 Neutron Source Info:
       If the 4438.9 keV peak is very weakly present or difficult to ID, consider double binning the data.&lt;br/&gt;
       Check for Mn-56 (2.6 h) from neutron activation of minor/trace amounts of Mn in alloys.  
       Due to interference, Mn-56 can be hard to confirm when strong Fe(n,n') emissions are also present.&lt;br/&gt;
-      Average neutron energy = 4.5 MeV.&lt;br/&gt;
+      Average neutron energy ≈ 4.2 MeV.&lt;br/&gt;
       Yield = 2.2E+06 n/s per Ci.&lt;br/&gt;
       Gammas per source neutron ≈ 0.557.
   &lt;/li&gt;
@@ -350,7 +350,7 @@ Check for peaks from (n,g) and (n,n'g) neutron reactions, Can be found with Cf-2
 
 Cf-252 is typically encapsulated in welded, stainless-steel capsules, which are then often surrounded by neutron-shielding materials such as polyethylene, paraffin, boron, and cadmium.
 
-Average neutron energy = 2.35 MeV.  Specific Activity = 536.3 Ci/g.  SF Rate = 4.4E+09 n/s per Ci or 2.34E+12 n/s per gram.
+Average neutron energy = 2.13 MeV.  Specific Activity = 536.3 Ci/g.  Neutron yield = 4.4E+09 n/s per Ci or 2.34E+12 n/s per gram.
 
 Neutron dose rate (mrem/hr per Ci at 1-m) = 4.10E+03 mrem/hr per Ci at 1-m
 
@@ -359,7 +359,7 @@ Gamma dose rate (mrem/hr per Ci at 1-m) = 3.00E+02 mrem/hr per Ci at 1-m
 
 Check for Doppler broadened “square” peak at 477.6 keV from B-10(n,α)Li-7.  If present with H-1(n,γ) peak at 2223.3 keV, consider presence of borated polyethylene (an effective and common neutron shield)
 
-For NaI, check for common spontaneous FPs (e.g. Cs-137, 661.7 keV) and neutron interactions (e.g. H‐1(n,γ), 2223.3 keV).  For HPGe, also check for Cf-249 impurity (388.2 and 333.4 keV) and Cf-251 impurity (176.6 keV).
+For NaI, check for common spontaneous FPs (e.g. Cs-137, 661.7 keV) and neutron interactions (e.g. H‐1(n,γ), 2223.3 keV).  For HPGe, also check for Cf-249 impurity (388.2 and 333.4 keV) and Cf-251 impurity (177.5 and 227.4 keV).
 
 A typical portable nuclear gauge source initially contains 8 mCi of Cs-137 (30.2 y) and 40 mCi (8.80E+04 n/sec) of Am-241:Be (432.2 y) or 60 µCi (2.64E+05 n/sec) of Cf-252 (2.6 y).
       </Notes>
@@ -904,7 +904,7 @@ Pu-238:Be = Average neutron energy = 4.5 MeV.  Yield = 2.3E+06 n/s per Ci.  Gamm
       <Notes>
 WGPu and/or RGPu
 
-Pu-239:Be = Average neutron energy = 3.2 MeV.  Yield = 1.7E+06 n/s per Ci.  Gammas per source neutron ≈ 0.56.
+Pu-239:Be = Average neutron energy = 4.5 MeV.  Yield = 1.7E+06 n/s per Ci.  Gammas per source neutron ≈ 0.56.
       </Notes>
     </Nuc>
 
@@ -930,7 +930,7 @@ Luminescent dials.
 
 Ra-226:Be - Check for a Doppler broadened peak at 4438.9 keV from Be-9(α,n)C-
 12. If the 4438.9 keV peak is very weakly present or difficult to ID, consider double binning the data.  
- Average neutron energy = 5 MeV.  Yield = 1.7E+07 n/s per Ci.  Per ICRU26 (1977).
+ Average neutron energy ≈ 4 MeV (3.6-4.7 MeV).  Yield = 1.0-1.7E+07 n/s per Ci (Ra-226 with progeny in equilibrium).
 
 U-Ore and Ra-226 decay chain gamma spectra are similar.  
 

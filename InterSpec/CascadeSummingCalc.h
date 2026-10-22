@@ -212,6 +212,14 @@ public:
                       const std::vector<std::pair<double,double>> &peak_energy_widths,
                       const double photopeak_cluster_sigma );
 
+  /** Every emission energy (keV, sorted) a correction for these nuclides (at these ages,
+   PhysicalUnits) can query efficiencies at - cascade gammas, daughter K/L x-rays, and 511; the
+   same set #allPartnerEnergies holds for a calculator built for them.  Enumerates the cascades
+   (not cached), so call it once, off the per-evaluation path.
+   */
+  static std::vector<double> partnerEnergies(
+              const std::vector<std::pair<const SandiaDecay::Nuclide *,double>> &nuclide_ages );
+
   /** Whether the DRF carries the total-efficiency info corrections need. */
   static bool drfHasNeededInfo( const std::shared_ptr<const DetectorPeakResponse> &drf );
 

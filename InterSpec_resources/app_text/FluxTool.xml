@@ -6,14 +6,14 @@
   <message id="ftw-qr-tool-state-text">Current state of flux tool.</message>
   <message id="ftw-hdr-intrinsic-eff">Intr. Eff.</message>
   <message id="ftw-hdr-geom-eff">Geom. Eff.</message>
-  <message id="ftw-tt-hdr-intrinsic-eff">The detector&apos;s far-field intrinsic efficiency: the chance a gamma
-    striking the detector face is recorded in the full-energy peak.  When the detector has a
-    characterized response, the efficiency used to compute the flux comes from that response, so
-    it is not exactly this column times the geometric efficiency - near the detector the flat-disk
-    product is an approximation.</message>
+  <message id="ftw-tt-hdr-intrinsic-eff">The detector&apos;s intrinsic efficiency at this distance: the chance a
+    gamma striking the detector face is recorded in the full-energy peak.  It is the efficiency
+    used divided by the geometric efficiency, so the two columns multiply to it; for a detector
+    with a characterized response this differs from its far-field curve close to the detector,
+    where gammas interact some way inside the crystal.  The uncertainty shown is the detector
+    response's own stated efficiency uncertainty.</message>
   <message id="ftw-tt-hdr-geom-eff">The nominal flat-disk solid-angle fraction the detector face takes up at
-    the given distance.  See the note on the intrinsic efficiency column for why the two do not
-    necessarily multiply to the efficiency used.</message>
+    the given distance.</message>
   <message id="ftw-hdr-flux-on-det">Flux on Det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Flux (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
@@ -45,4 +45,7 @@
   <message id="ftw-copied-to-clipboard">Copied table to clipboard.</message>
   <message id="ftw-copied-as-html">Copied table to clipboard as HTML text.</message>
   <message id="ftw-copy-unknown-status">Unknown result of copy command - sorry.</message>
+  <message id="ftw-drf-uncert-none">Uncertainties are statistical only; the detector efficiency does not have an uncertainty.</message>
+  <message id="ftw-drf-uncert-stated">Uncertainties include the detector response's stated efficiency uncertainty ({1}%).</message>
+  <message id="ftw-drf-uncert-model-only">Uncertainties include {1}% efficiency uncertainty from the detector's geometry model only; the detector response states none of its own.</message>
 </messages>

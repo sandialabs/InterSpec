@@ -1027,7 +1027,7 @@ public:
         contents->addStyleClass( "content RestRidResult" );
         contents->setInline( false );
         
-        WPushButton *btn = dialog->addButton( WString::tr("Close") );
+        WPushButton *btn = dialog->addButton( WString::tr("Close"), WidgetUtils::ButtonRole::Dismiss );
         btn->clicked().connect( btn, [rcode,result,m](){
           UndoRedoManager *undoRedo = UndoRedoManager::instance();
           if( undoRedo && undoRedo->canAddUndoRedoNow() )
@@ -1042,7 +1042,7 @@ public:
           }
         } );//Close button clicked
           
-        btn = dialog->addButton( WString::tr("rr-rid-tool-btn") );
+        btn = dialog->addButton( WString::tr("rr-rid-tool-btn"), WidgetUtils::ButtonRole::Affirm );
         btn->clicked().connect( btn, [=](){
           InterSpec *interspec = InterSpec::instance();
           assert( interspec );
@@ -2364,16 +2364,16 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   txt->setInline( false );
 
   WCheckBox *cb = dialog->contents()->addNew<WCheckBox>( "Don't show again" );
-  cb->addStyleClass( "NoShowAgain" );
+  cb->addStyleClass( "NoShowAgain DialogOptions" );
   cb->setInline( false );
   
-  Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel") );
+  Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel"), WidgetUtils::ButtonRole::Dismiss );
   btn->clicked().connect( btn, [callback](){
     if( callback )
       callback( nullptr, nullptr );
   } );
   
-  btn = dialog->addButton( WString::tr("Continue") );
+  btn = dialog->addButton( WString::tr("Continue"), WidgetUtils::ButtonRole::Affirm );
   btn->clicked().connect( btn, [viewer,callback,cb](){
     if( cb->isChecked() )
       UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
@@ -2852,7 +2852,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
 #endif
                                             " you have entered will be removed, and the External-RID"
                                             " service will no longer be used." );
-    WPushButton *cont = dialog->addButton( "Continue" );
+    WPushButton *cont = dialog->addButton( "Continue", WidgetUtils::ButtonRole::Affirm );
     cont->clicked().connect( cont, [](){
       InterSpec *interspec = InterSpec::instance();
       assert( interspec );
@@ -2864,7 +2864,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
       UserPreferences::setPreferenceValue( "ExternalRidExe", string(), interspec );
       passMessage( "External-RID preferences have been reset.", WarningWidget::WarningMsgInfo );
     } );
-    dialog->addButton( "Cancel" );
+    dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
     
     return;
   }//if( parts.count("NONE") )
@@ -2898,7 +2898,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
   "<br />If you are unsure, select <b>No</b>.";
   
   SimpleDialog *dialog = SimpleDialog::make( title, desc );
-  WPushButton *btn = dialog->addButton( "Yes" );
+  WPushButton *btn = dialog->addButton( "Yes", WidgetUtils::ButtonRole::Affirm );
   
   const auto set_to_new_prefs = [exe_path,url_path,always_call,show_dialog](){
     InterSpec *interspec = InterSpec::instance();
@@ -2975,7 +2975,7 @@ void RemoteRid::handleAppUrl( std::string query_str )
     undoRedo->addUndoRedoStep( set_to_old_prefs, set_to_new_prefs, "Set Remote-RID from URI." );
   } );
   
-  dialog->addButton( "No" );
+  dialog->addButton( "No", WidgetUtils::ButtonRole::Dismiss );
 }//void handleAppUrl( std::string query_str )
 
 

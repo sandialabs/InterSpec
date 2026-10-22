@@ -35,6 +35,8 @@ import struct
 import subprocess
 from pathlib import Path
 
+from generation_utils import ELECTRON_Z_MAX
+
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -124,10 +126,10 @@ def sb_payload_hash(path: Path) -> str | None:
         if not match:
             raise ValueError("cannot parse quantized SB scales")
         scales = [float(token) for token in NUMBER.findall(match.group(1))]
-        if len(scales) != 92:
-            raise ValueError("quantized SB scale count is not 92")
+        if len(scales) != ELECTRON_Z_MAX:
+            raise ValueError(f"quantized SB scale count is not {ELECTRON_Z_MAX}")
     digest = hashlib.sha256()
-    for z in range(1, 93):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         match = re.search(
             rf"static const (?:float|uint16_t) Z{z}_sb_chi\[[^]]*\]\s*=\s*\{{(.*?)\}};",
             text, re.DOTALL,
@@ -236,7 +238,7 @@ def main() -> int:
             elif sha256(path) != expected:
                 errors.append(f"stale generated output/report: {relative}")
 
-    review = ROOT / "validation/bremsstrahlung_migration_review/manual_review.json"
+    review = ROOT / "tools/prepare_cross_sections/bremsstrahlung_manual_review.json"
     if args.require_manual_approval:
         status = json.loads(review.read_text(encoding="utf-8")).get("status") if review.is_file() else None
         if status != "approved":

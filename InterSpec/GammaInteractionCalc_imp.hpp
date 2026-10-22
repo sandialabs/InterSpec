@@ -34,7 +34,7 @@
  generic-shield AN/AD, source activity) come out of the integration
  automatically.
 
- The Cuba/Cuhre integrator only works on doubles, so integration here is a
+ Integration here is a
  self-contained h-adaptive tensor-product Gauss-Legendre scheme over the unit
  cube (#adaptive_unit_cube_integrate), with subdivision driven by the scalar
  part of T.
@@ -1131,7 +1131,7 @@ struct DistributedSrcCalcT
      Forward Compton scatters whose energy loss stays inside the peak window are still counted in
      it (plan 3.4), hence the credit.  Rayleigh is elastic, and InterSpec's
      `transmition_length_coefficient` ALREADY excludes it (`massAttenuationCoefficientElement`
-     returns compton+photoelectric+pair; the SNL path returns 0 for RayleighScatter) - i.e. the
+     returns compton+photoelectric+pair) - i.e. the
      walk treats a coherently scattered photon as undeflected.  In a THICK layer that is wrong: the
      deflection lengthens the remaining path and a fraction h of those photons are absorbed, so
      shells OUTSIDE the source carry the loss term, evaluated at their own normal depth (see
@@ -2830,8 +2830,8 @@ namespace QuadDetail
   /** Degree-4 divided-difference weights for the fixed GL5 abscissas:
    c4[i] = 1 / prod_{j!=i}( gl5_x[i] - gl5_x[j] ).  |sum_i c4[i]*v[i]| is the magnitude of the top
    (degree-4) 1-D mode of the 5 values v[] sampled at the GL5 nodes along an axis - large only where
-   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of Cuhre's per-axis
-   "fourth difference" (Cuba: src/cuhre/Rule.c).  Computed once (thread-safe magic static).
+   the integrand is non-smooth at GL5 resolution.  This is the GL5-node analogue of the per-axis
+   "fourth difference" of Genz-Malik adaptive cubature.  Computed once (thread-safe magic static).
    */
   inline const double *gl5_divdiff4()
   {
@@ -2918,7 +2918,7 @@ namespace QuadDetail
   {
     double err;
     int nsplit[3];        // times each axis has been halved (per-axis subdivision depth)
-    double axis_err[3];   // per-axis non-smoothness indicator (Cuhre-style fourth difference)
+    double axis_err[3];   // per-axis non-smoothness indicator (fourth difference)
     double lower[3];
     double width[3];
     T fine;
@@ -2960,12 +2960,12 @@ namespace QuadDetail
  phase): a per-axis fourth-difference indicator computed from the GL5 grid
  selects which dimension(s) to split, so a thin non-axis-aligned feature (e.g.
  a nested core's silhouette) is resolved without paying to refine the smooth
- axes too - cf. Cuhre (Cuba, src/cuhre/Rule.c).  Subdivision decisions use only
+ axes too - cf. Genz-Malik adaptive cubature.  Subdivision decisions use only
  the scalar part of T, so T may be a ceres::Jet<> and the derivative
  components are integrated alongside the value.
 
  `f` is called as f(const double xx[3]) and must return T (the Jacobian onto
- [0,1]^ndim included, exactly like the Cuhre integrands).
+ [0,1]^ndim included).
 
  The error control is relative to the integral magnitude, so wildly
  near-cancelling integrands should not use this; the volumetric-source
@@ -3016,7 +3016,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
   };
 
   // While true, every cell splits isotropically (every dimension) - bit-identical to the original
-  //  integrator.  False enables Cuhre-style single roughest-axis refinement above min_depth (the
+  //  integrator.  False enables Genz-Malik-style single roughest-axis refinement above min_depth (the
   //  anisotropic optimization); the priming phase (below min_depth) stays isotropic either way, which
   //  preserves the symmetric-void defense.
   const bool force_isotropic_split = false;
@@ -3099,7 +3099,7 @@ T adaptive_unit_cube_integrate( const Fcn &f, const int ndim,
         }
       }//if( max_axis > 0.0 )
 
-      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis (Cuhre)
+      if( num_split == 0 )    // flat indicator (all ~0): fall back to halving the widest axis
       {
         double widest = -1.0;
         int best = -1;
@@ -3259,7 +3259,7 @@ std::vector<DistributedSrcCalcT<T>> split_source_subdomains( const DistributedSr
  integrates `calculator` over its source volume, filling
  `calculator.integral` (plus m_num_evals / m_est_rel_error).
 
- Unlike the Cuhre version, exceptions from the integrand (e.g., inconsistent
+ Exceptions from the integrand (e.g., inconsistent
  geometry) propagate to the caller, which decides the failure policy.
  */
 template<typename T>
@@ -3688,7 +3688,7 @@ inline EffShieldComponents integrate_effective_shielding( DistributedSrcCalcT<do
  */
 template<typename T>
 T transmission_coefficient_generic_imp( const T &atomic_number, const T &areal_density,
-                                        const float energy )
+                                        const double energy )
 {
   return areal_density * MassAttenuation::mass_atten_coef_frac_an( atomic_number, energy );
 }//transmission_coefficient_generic_imp(...)
@@ -4395,7 +4395,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
       cascade_block->partner_fep_int.push_back( std::max(0.0, fep_int) );
       cascade_block->partner_tot_int.push_back( std::max(0.0, tot_int) );
       cascade_block->air_mu.push_back(
-              transmission_length_coefficient_air( static_cast<float>(energy) ) );
+              transmission_length_coefficient_air( energy ) );
     }//for( partner energies )
   }//if( m_cascadeCalc )
 
@@ -4405,7 +4405,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     {
       mus.reserve( cascade_block->partner_energies.size() );
       for( const double energy : cascade_block->partner_energies )
-        mus.push_back( transmition_length_coefficient( mat, static_cast<float>(energy) ) );
+        mus.push_back( transmition_length_coefficient( mat, energy ) );
     }
     return mus;
   };
@@ -4699,7 +4699,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
         calculator->m_normalizeByVolume = normalizeByVolume;
 
         if( m_options.attenuate_for_air )
-          calculator->m_airTransLenCoef = transmission_length_coefficient_air( static_cast<float>(energy_count.first) );
+          calculator->m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
         else
           calculator->m_airTransLenCoef = 0.0;
 
@@ -4728,7 +4728,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             const T ad = arealDensity_imp( subMat, params );
 
             shell.dims = outer_dims;
-            shell.trans_len_coef = transmission_coefficient_generic_imp( an, ad, static_cast<float>(calculator->m_energy) );
+            shell.trans_len_coef = transmission_coefficient_generic_imp( an, ad, calculator->m_energy );
             // No survival credit for AN/AD shells: the generic parameterization has no Compton
             //  sub-coefficient to credit, so this degrades to mu_total by construction.
             shell.fep_trans_len_coef = shell.trans_len_coef;
@@ -4745,7 +4745,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
               shell.cascade_mu.reserve( cascade_block->partner_energies.size() );
               for( const double energy : cascade_block->partner_energies )
                 shell.cascade_mu.push_back( scalar_of( transmission_coefficient_generic_imp(
-                                        an, ad, static_cast<float>(energy) ) ) );
+                                        an, ad, energy ) ) );
             }
 
             calculator->m_shells.push_back( shell );
@@ -4817,13 +4817,13 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
           shell.dims = outer_dims;
           shell.trans_len_coef = T( transmition_length_coefficient( sub_material.get(),
-                                                  static_cast<float>(calculator->m_energy) ) );
+                                                                    calculator->m_energy ) );
           // The Rayleigh deflection loss is applied to layers OUTSIDE the emitting one only - the
           //  matrix self-selects a skin, so its full extent would be the wrong depth.
           const double rayleigh_thick = (subMat > calculator->m_materialIndex)
                                           ? std::max( 0.0, scalar_of(facing_thick) ) : 0.0;
           shell.fep_trans_len_coef = T( fep_survival_removal_coefficient( sub_material.get(),
-                                              static_cast<float>(calculator->m_energy),
+                                              calculator->m_energy,
                                               fepWindowKeV( calculator->m_energy, energie_widths ),
                                               rayleigh_thick ) );
           shell.type = ShellType::Material;
@@ -4977,13 +4977,14 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
                                             m_sourceOffsets[0], m_sourceOffsets[1] );
 
   const double true_dist = trueSourceToDetectorDistance();
+  const bool fixed_geom_det = (m_detector && m_detector->isFixedGeometry());
 
   std::array<T,3> cumulative_dims = { T(0.0), T(0.0), T(0.0) };
   T prev_exit_dist(0.0);
 
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
-    std::function<T(float)> att_coef_fcn;
+    std::function<T(double)> att_coef_fcn;
     const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
     const std::shared_ptr<const Material> &material = shielding.m_material;
 
@@ -5009,7 +5010,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
         areal_density = T( sm_max_areal_density_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
 
-      att_coef_fcn = [atomic_number, areal_density]( float energy ) -> T {
+      att_coef_fcn = [atomic_number, areal_density]( const double energy ) -> T {
         return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
       };
     }else
@@ -5041,8 +5042,9 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       // A shielding layer can't attenuate past where the detector sits.  If a (degenerate)
       //  over-thick layer would exit beyond the detector, cap the path at the detector so
       //  the chord stays physical, the air gap below doesn't go negative, and the exit
-      //  helpers aren't relied on for a detector that sits inside the volume.
-      if( scalar_of(exit_dist) > true_dist )
+      //  helpers aren't relied on for a detector that sits inside the volume.  A fixed-geometry
+      //  DRF has no source distance (the hidden distance field means nothing), so no cap there.
+      if( !fixed_geom_det && (scalar_of(exit_dist) > true_dist) )
         exit_dist = T(true_dist);
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
@@ -5051,7 +5053,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       //  deflection loss at this layer's chord - so a point source behind a shield is attenuated
       //  exactly as a volumetric source's outer shells are (2026-09-04; before this it used plain
       //  mu_total with neither term, and read ~5% high behind 0.5 cm of Fe at 60 keV).
-      att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( float energy ) -> T {
+      att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( const double energy ) -> T {
         return chord * fep_survival_removal_coefficient( mat, energy,
                                                          fepWindowKeV( energy, energie_widths ),
                                                          std::max( 0.0, scalar_of(chord) ) );
@@ -5059,7 +5061,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     }//if( generic material ) / else
 
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-      energy_count.second *= exp( -1.0 * att_coef_fcn( static_cast<float>(energy_count.first) ) );
+      energy_count.second *= exp( -1.0 * att_coef_fcn( energy_count.first ) );
   }//for( size_t materialN = 0; materialN < nMaterials; ++materialN )
 
   // 3) Attenuation in the air between the shielding surface and the detector
@@ -5071,7 +5073,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
     {
-      const double coef = transmission_length_coefficient_air( static_cast<float>(energy_count.first) );
+      const double coef = transmission_length_coefficient_air( energy_count.first );
       energy_count.second *= exp( -coef * air_dist );
     }
   }//if( m_options.attenuate_for_air )
@@ -5271,7 +5273,7 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
         }//switch( m_geometry )
 
         double exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
-        if( exit_dist > true_dist )  // cap a degenerate over-thick layer at the detector
+        if( !(m_detector && m_detector->isFixedGeometry()) && (exit_dist > true_dist) )  // cap a degenerate over-thick layer at the detector (no distance for fixed geometry)
           exit_dist = true_dist;
         layer_chords[materialN] = exit_dist - prev_exit;
         prev_exit = exit_dist;
@@ -5333,7 +5335,7 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
 
         // The cross-section weighted atomic number is energy-dependent
         double sum_mu_d = 0.0, sum_an_mu_d = 0.0;
-        const float energy = static_cast<float>( energy_rate.first );
+        const double energy = energy_rate.first;
         for( size_t materialN = 0; materialN < nMaterials; ++materialN )
         {
           const std::shared_ptr<const Material> &material = m_initial_shieldings[materialN].m_material;
@@ -5375,8 +5377,11 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
   //  scatter-augmentation table interpolates on.
   PointSrcAttenContext<T> ctx;
 
-  if( m_detector && m_detector->isFixedGeometry() )
-    return ctx;  //shields/air are baked into a fixed-geometry response
+  // For a fixed-geometry DRF the layers here are additive absorbers on top of the response (a DRF
+  //  that embeds its own scene is never given any - see ShieldingSourceChi2Fcn::create), so the
+  //  cascade partners are attenuated by them exactly as the primary line is in
+  //  expected_peak_counts_imp.  Only air is baked in (and attenuate_for_air is off).
+  const bool fixed_geom_det = (m_detector && m_detector->isFixedGeometry());
 
   const size_t nMaterials = m_initial_shieldings.size();
 
@@ -5418,7 +5423,7 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       if( ad_in_gcm2 > sm_max_areal_density_g_cm2 )
         areal_density = T( sm_max_areal_density_g_cm2 * PhysicalUnits::g / PhysicalUnits::cm2 );
 
-      ctx.att_fcns.push_back( [atomic_number, areal_density]( float energy ) -> T {
+      ctx.att_fcns.push_back( [atomic_number, areal_density]( const double energy ) -> T {
         return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
       } );
 
@@ -5454,14 +5459,14 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       }//switch( m_geometry )
 
       T exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims, det_geom );
-      if( scalar_of(exit_dist) > true_dist )
+      if( !fixed_geom_det && (scalar_of(exit_dist) > true_dist) )
         exit_dist = T(true_dist);
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
 
       // Same FEP coefficient as expected_peak_counts_imp (window credit + Rayleigh deflection
       //  loss), so the cascade functors see exactly the transmission the fit uses.
-      ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( float energy ) -> T {
+      ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( const double energy ) -> T {
         return chord * fep_survival_removal_coefficient( mat, energy,
                                                          fepWindowKeV( energy, *energie_widths ),
                                                          std::max( 0.0, scalar_of(chord) ) );
@@ -5520,14 +5525,14 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
   //  The parameter (Jet) dependence enters through the shield chords / AD.
   const auto fep_raw = [&]( const double energy ) -> T {
     T att(0.0);
-    for( const std::function<T(float)> &f : atten_ctx.att_fcns )
-      att += f( static_cast<float>(energy) );
+    for( const std::function<T(double)> &f : atten_ctx.att_fcns )
+      att += f( energy );
     T result = exp( -att );
     if( do_air )
-      result *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
+      result *= exp( -transmission_length_coefficient_air( energy ) * atten_ctx.air_dist );
     // The partner legs see the SAME response, model and geometry as the primary (pointSourceFepEff)
     //  - and the same memoised ray fan, so this is a lookup, not a ray trace.
-    return result * std::max( 0.0, pointSourceFepEff( energy ).value );
+    return result * std::max( 0.0, pointSourceFepEff( energy ).value ) / m_cascadeFepScale;
   };
 
   // Absolute total (any-deposit) efficiency: the shield-scatter continuum
@@ -5536,13 +5541,13 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
   //  (see ShieldScatterAugment / the GADRAS benchmark recipe).
   const auto tot_raw = [&]( const double energy ) -> T {
     T att(0.0);
-    for( const std::function<T(float)> &f : atten_ctx.att_fcns )
-      att += f( static_cast<float>(energy) );
+    for( const std::function<T(double)> &f : atten_ctx.att_fcns )
+      att += f( energy );
     T shield_part = exp( -att );
     if( scatter.valid() )
       shield_part += scatter.evaluate( energy, atten_ctx.eff_an, atten_ctx.total_ad_gcm2 );
     if( do_air )
-      shield_part *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
+      shield_part *= exp( -transmission_length_coefficient_air( energy ) * atten_ctx.air_dist );
     return shield_part * std::max( 0.0, pointSourceTotEff( energy ).value );
   };
 

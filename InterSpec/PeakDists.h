@@ -903,31 +903,70 @@ double peak_cdf( const double x, const double mean, const double sigma,
 
   // ========== GADRAS Peak Shape Distribution Functions ==========
   //
-  // A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces
-  // the Fortran shape).  See the well-marked GADRAS section in PeakDists_imp.hpp for the math (this
-  // section is expected to receive a math upgrade to an analytic form).
+  // The continuous (analytic) limit of the GADRASw discrete-line peak shape: a Gaussian core mixed
+  // with exponential tails convolved with that core (EMGs).  See the well-marked GADRAS section in
+  // PeakDists_imp.hpp for the math, and scratch/GADRAS_skew_par_audit_20261006.md for the audit
+  // against the Fortran.
   //
   // The six skew parameters (SkewPar0..SkewPar5) are:
-  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fittable
-  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fittable
-  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - fixed detector characteristic
-  //   [3] high_skew_power  (high-tail energy-dependence exponent) - fixed detector characteristic
-  //   [4] low_skew_extent  (low-tail slope shaping)               - fixed detector characteristic
-  //   [5] high_skew_extent (high-tail slope shaping)              - fixed detector characteristic
+  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fit by default
+  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fit by default
+  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - detector characteristic
+  //   [3] high_skew_power  (high-tail energy-dependence exponent) - detector characteristic
+  //   [4] low_skew_extent  (low-tail slope shaping)               - detector characteristic
+  //   [5] high_skew_extent (high-tail slope shaping)              - detector characteristic
+
+/** Whether the GADRAS tails stop where GADRAS's 128-point zeta grid ends.
+
+ GADRAS lays its exponential tails on a grid that only reaches a finite distance from the peak
+ (see `gadras_truncation_reach(...)`), so - however finely it were discretized - its shape is a
+ *truncated* exponential convolved with the Gaussian.
+ - 1: reproduce that truncation.  Needed to agree with GADRAS for detectors whose tails reach past
+      the grid (e.g., long positive extents like a high extent of 21.5, where the
+      untruncated tail would carry ~30% more area out past ~40 sigma), and it keeps every peak's
+      extent bounded.  Costs two extra erfc evaluations per tail component, where it matters.
+ - 0: the untruncated tails GADRAS likely intends; differs from 1 by < 1E-4 (in CDF) for nearly all detectors.
+ The chart JavaScript follows this setting (PeakDef JSON only carries "GadrasTrunc" when it is 1).
+ */
+#ifndef USE_GADRAS_TRUNCATION
+#define USE_GADRAS_TRUNCATION 1
+#endif
 
   /** Detector material categories that change the GADRAS tail construction. */
   enum class GadrasMaterial
   {
-    Generic,   // NaI, HPGe, CsI, LaBr3, ...
-    CZT_CdTe   // CZT or CdTe
+    /** NaI, HPGe, CsI, LaBr3, TlBr, ... - everything GADRAS does not special-case. */
+    Generic,
+
+    /** CZT or CdTe (GADRAS keys this off exactly those two material indices). */
+    CZT_CdTe,
+
+    /** PVT-like detectors (PVT, stilbene, EJ301, ...): GADRAS's "low photopeak probability" mode,
+     where the high-energy tail is a half-Gaussian of width `high_skew/9` sigma (a skew-normal once
+     convolved with the core), and the low tail is as for Generic.
+
+     Not an exposed PeakDef::SkewType; GADRAS also widens these detectors' discrete-line sigma (see
+     `gadras_sigma(...)`) and folds the photopeak into its continuum, which a peak fit can not do.
+     */
+    LowPhotopeakProbability
   };
+
+  /** Returns the [low, high] distance (in the shape's zeta units, i.e., before the
+   `(661/E)^power` rescale) at which GADRAS's zeta grid - and therefore its tails - end.
+
+   These are `(63*max(1,|low|)^0.2/12)^2` and `(64*max(1,|high|)^0.2/18)^2`, with `|low|` floored at
+   0.1 when `|high| > 0` (GADRAS's ZetaRange).  Returned regardless of `USE_GADRAS_TRUNCATION`.
+
+   @param skew  Pointer to the 6 skew parameters (only [0] and [1] are used).
+   */
+  std::pair<double,double> gadras_truncation_reach( const double * const skew );
 
   /** Returns the integral of a GADRAS peak-shape distribution between x0 and x1 (unit area).
 
    @param mean  Peak mean in keV (also the energy at which the shape is resolved).
    @param sigma Gaussian width, in keV.
    @param skew  Pointer to the 6 skew parameters (see above).
-   @param material  Generic vs CZT/CdTe.
+   @param material  Generic, CZT/CdTe, or PVT-like.
    @param x0    Lower integration limit.
    @param x1    Upper integration limit.
    */
@@ -941,7 +980,7 @@ double peak_cdf( const double x, const double mean, const double sigma,
    @param sigma           Gaussian width, in keV.
    @param peak_amplitude  Peak amplitude (use 1.0 for unit-area peak).
    @param skew            Pointer to the 6 skew parameters.
-   @param material        Generic vs CZT/CdTe.
+   @param material        Generic, CZT/CdTe, or PVT-like.
    @param energies        Channel lower energies (nchannel+1 entries).
    @param channels        Output array (nchannel entries); values are added to.
    @param nchannel        Number of channels.

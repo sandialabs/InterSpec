@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 #include <cassert>
 #include <cstring>
@@ -42,6 +43,7 @@
 #include "io/SolidAngle.h"
 #include "io/ResponseKernel.h"
 #include "geometry/Geometry.h"
+#include "cross_sections/CrossSectionData.h"
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -52,6 +54,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DetectorEffG2kPar.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -62,6 +65,29 @@ using namespace std;
 
 namespace CeeLoUtils
 {
+
+namespace
+{
+  /** Uranium: the last element with a standard atomic weight. */
+  constexpr int sm_last_standard_weight_z = 92;
+
+  /** Atomic mass (g/mol) that turns a formula's atom counts into mass fractions.
+   Through uranium this is SandiaDecay's natural atomic mass.  Above it there is
+   no standard atomic weight, and SandiaDecay's convention differs from CeeLo's
+   (Pu 244 vs 239.1, Bk 247 vs 249); CeeLo's is used there, because CeeLo turns
+   the mass fractions back into atom densities with it - with SandiaDecay's, a
+   PuO2 formula would reach the transport as PuO(1.96).  Not CeeLo's below
+   uranium: those are xraylib's two-decimal weights (H 1.01), which would move
+   a water formula's hydrogen mass fraction by 0.2%.
+   */
+  double formula_atomic_mass( const SandiaDecay::Element &el )
+  {
+    if( (el.atomicNumber > sm_last_standard_weight_z) && (el.atomicNumber <= ceelo::kMaxZ) )
+      return ceelo::CrossSectionData::instance().atomic_weight( el.atomicNumber );
+    return el.atomicMass();
+  }//formula_atomic_mass(...)
+}//namespace
+
 
 ceelo::MaterialSpec to_ceelo_material( const Material &mat )
 {
@@ -83,7 +109,7 @@ ceelo::MaterialSpec to_ceelo_material( const Material &mat )
 
   for( const auto &zf : frac_by_z )
   {
-    if( (zf.first < 1) || (zf.first > 92) )
+    if( (zf.first < 1) || (zf.first > ceelo::kMaxZ) )
       throw runtime_error( "Material '" + mat.name + "' contains an element"
                            " (Z=" + std::to_string(zf.first) + ") the Monte"
                            " Carlo has no cross-section data for." );
@@ -132,7 +158,7 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
       if( !el )
         throw runtime_error( "Material '" + mat.name + "': '" + ce.symbol
                              + "' is not an element." );
-      const double mass = ce.atoms * el->atomicMass();
+      const double mass = ce.atoms * formula_atomic_mass( *el );
       cmp_mass[el->atomicNumber] += mass;
       cmp_total += mass;
     }//for( const AngleCompoundElement &ce : cmp.elements )
@@ -155,7 +181,7 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
   spec.density_g_per_cm3 = mat.density_g_cm3;
   for( const auto &zf : frac_by_z )
   {
-    if( (zf.first < 1) || (zf.first > 92) )
+    if( (zf.first < 1) || (zf.first > ceelo::kMaxZ) )
       throw runtime_error( "Material '" + mat.name + "' contains an element"
                            " (Z=" + std::to_string(zf.first) + ") the Monte"
                            " Carlo has no cross-section data for." );
@@ -180,6 +206,9 @@ TransferAnchor transferAnchorForDrf(
   if( drf->isFixedGeometry() )
     throw runtime_error( "transferAnchorForDrf: a fixed-geometry efficiency"
                          " has no source-detector geometry to transfer." );
+
+  if( drf->hasImportedGrid() )
+    return gridTransferAnchor( *drf->ceeloResponse(), override_ref_distance_cm );
 
   TransferAnchor answer;
 
@@ -395,14 +424,58 @@ TransferAnchor transferAnchorForDrf(
 }//transferAnchorForDrf(...)
 
 
+TransferAnchor gridTransferAnchor( const ceelo::DetectorResponse &grid, const double ref_distance_cm )
+{
+  TransferAnchor answer;
+  answer.curve_derived = true;
+  answer.ref_distance_cm = (ref_distance_cm > 0.0) ? ref_distance_cm
+                                                   : DetEffG2kPar::gridReferenceDistanceCm( grid.descriptor );
+
+  for( const ceelo::GroundingPoint &p : DetEffG2kPar::groundingPoints( grid, answer.ref_distance_cm ) )
+  {
+    answer.curve.energies_keV.push_back( p.energy_keV );
+    answer.curve.eff.push_back( p.measured_eff );
+    answer.curve.frac_sigma.push_back( p.frac_stat_sigma );
+  }
+
+  if( answer.curve.energies_keV.size() < 2 )
+    throw runtime_error( "gridTransferAnchor: fewer than two usable efficiency points." );
+
+  return answer;
+}//gridTransferAnchor(...)
+
+
 ceelo::AnchorCurve totalTransferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const TransferAnchor &anchor )
 {
   ceelo::AnchorCurve tot_curve;
 
-  if( !drf || !drf->isValid() || !drf->totalEfficiencyCurve() )
+  if( !drf || !drf->isValid() )
     return tot_curve;
+
+  if( !drf->totalEfficiencyCurve() )
+  {
+    // A total the response characterizes, at the anchor's own position.  Without this an EFFTRAN
+    //  rebuilt from such a DRF (e.g., in Act/Shield) would silently have no total at all, while
+    //  the DRF itself says it has one.
+    const shared_ptr<const ceelo::DetectorResponse> resp = drf->ceeloResponse();
+    if( !resp || !resp->tot_eff.characterized() )
+      return tot_curve;
+
+    const double dist = anchor.ref_distance_cm * PhysicalUnits::cm;
+    for( const double energy : anchor.curve.energies_keV )
+    {
+      const DetectorPeakResponse::EffEval tot
+                        = drf->totalEfficiencyEval( static_cast<float>(energy), 0.0, 0.0, dist );
+      if( tot.value > 0.0 )
+      {
+        tot_curve.energies_keV.push_back( energy );
+        tot_curve.eff.push_back( tot.value );
+      }
+    }
+    return tot_curve;
+  }//if( !drf->totalEfficiencyCurve() )
 
   const double diam = drf->detectorDiameter();
   const double dist = anchor.ref_distance_cm * PhysicalUnits::cm;
@@ -600,6 +673,9 @@ TransferAnchor curveAnchorWithCovarianceForDrf(
     throw runtime_error( "curveAnchorWithCovarianceForDrf: a fixed-geometry efficiency"
                          " has no source-detector geometry to transfer." );
 
+  if( drf->hasImportedGrid() )
+    return gridTransferAnchor( *drf->ceeloResponse(), ref_distance_cm );
+
   double e_lo = drf->lowerEnergy(), e_hi = drf->upperEnergy();
   if( (e_lo <= 0.0) || (e_hi <= e_lo) )
   {
@@ -708,6 +784,17 @@ double farFieldDistanceCm( const ceelo::GeometryDescriptor &gd )
 {
   return std::max( 1000.0 * gd.transverse_half_extent(), 100.0 );
 }//farFieldDistanceCm(...)
+
+
+unsigned monteCarloThreadCount()
+{
+  const unsigned num_cores = std::thread::hardware_concurrency();
+  if( num_cores >= 8 )
+    return num_cores - 2;
+  if( num_cores >= 2 )
+    return num_cores - 1;
+  return 1;
+}//monteCarloThreadCount()
 
 
 Eigen::Vector3d farFieldSourcePosition( const ceelo::GeometryDescriptor &gd )
@@ -1298,7 +1385,7 @@ namespace
     spec.density_g_per_cm3 = density_g_per_cm3;
     for( const auto &zm : mass_by_z )
     {
-      if( (zm.first < 1) || (zm.first > 92) )
+      if( (zm.first < 1) || (zm.first > ceelo::kMaxZ) )
         throw runtime_error( "Material '" + name + "' contains an element (Z="
                              + std::to_string(zm.first) + ") the Monte Carlo has"
                              " no cross-section data for." );
@@ -1337,7 +1424,7 @@ ceelo::MaterialSpec materialFromGadrasFormula( const std::string &formula,
       const SandiaDecay::Element * const el = db->element( symbol );
       if( !el )
         throw runtime_error( "'" + symbol + "' is not an element" );
-      mass_by_z[el->atomicNumber] += atoms * el->atomicMass();
+      mass_by_z[el->atomicNumber] += atoms * formula_atomic_mass( *el );
     }
   }catch( std::exception &e )
   {
@@ -1390,7 +1477,7 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     throw runtime_error( "genericAttenuatorMaterial: areal density and thickness"
                          " must both be positive." );
 
-  if( (atomic_number < 1.0) || (atomic_number > 92.0) )
+  if( (atomic_number < 1.0) || (atomic_number > ceelo::kMaxZ) )
     throw runtime_error( "genericAttenuatorMaterial: atomic number "
                          + std::to_string(atomic_number) + " is outside the"
                          " range the Monte Carlo has cross sections for." );
@@ -1400,7 +1487,7 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     throw runtime_error( "genericAttenuatorMaterial: no nuclide database." );
 
   const int z_lo = static_cast<int>( std::floor( atomic_number ) );
-  const int z_hi = std::min( 92, z_lo + 1 );
+  const int z_hi = std::min( ceelo::kMaxZ, z_lo + 1 );
   const double f_hi = atomic_number - z_lo;   //0 when the AN is an integer
 
   map<int,double> mass_by_z;
@@ -1429,14 +1516,10 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
     {
       try
       {
-        const double lo = MassAttenuation::massAttenuationCoefficientElement(
-                                      z_lo, static_cast<float>(energy) );
-        const double hi = MassAttenuation::massAttenuationCoefficientElement(
-                                      z_hi, static_cast<float>(energy) );
+        const double lo = MassAttenuation::massAttenuationCoefficientElement( z_lo, energy );
+        const double hi = MassAttenuation::massAttenuationCoefficientElement( z_hi, energy );
         const double mix = (1.0 - f_hi)*lo + f_hi*hi;
-        const double ref = MassAttenuation::massAttenuationCoefficientFracAN(
-                                      static_cast<float>(atomic_number),
-                                      static_cast<float>(energy) );
+        const double ref = MassAttenuation::massAttenuationCoefficientFracAN( atomic_number, energy );
 
         // Skip energies where an absorption edge falls BETWEEN the two
         //  bracketing elements: their mu/rho then differ by a large factor and
@@ -1595,11 +1678,12 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
     if( att->arealDensity <= 0.0f )       //every shipped generic detector has outer AD == 0
       continue;
 
-    if( (att->atomicNumber < 1.0f) || (att->atomicNumber > 92.0f) )
+    if( (att->atomicNumber < 1.0f) || (att->atomicNumber > ceelo::kMaxZ) )
     {
       warnings.push_back( "An attenuator with an effective atomic number of "
                           + SpecUtils::printCompact(att->atomicNumber, 3)
-                          + " was dropped; only 1 through 92 can be modeled." );
+                          + " was dropped; only 1 through "
+                          + std::to_string(ceelo::kMaxZ) + " can be modeled." );
       continue;
     }
 
@@ -1647,7 +1731,7 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
   {
     const bool full = (side.covPlusX >= 99.0f) && (side.covMinusX >= 99.0f)
                       && (side.covPlusY >= 99.0f) && (side.covMinusY >= 99.0f);
-    if( full && (side.atomicNumber >= 1.0f) && (side.atomicNumber <= 92.0f) )
+    if( full && (side.atomicNumber >= 1.0f) && (side.atomicNumber <= ceelo::kMaxZ) )
     {
       // Unlike the front stack there is no length in the file to divide up - the
       //  setback says nothing about a side wall - so this is a nominal wall
@@ -1948,6 +2032,27 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
 }//setLegacyEfficiencyFromResponse(...)
 
 
+bool responseHasMcBackbone( const ceelo::DetectorResponse &resp )
+{
+  return (resp.provenance.method == ceelo::ProductionMethod::FullMc)
+         || (resp.provenance.method == ceelo::ProductionMethod::QuickMcTransfer);
+}//responseHasMcBackbone(...)
+
+
+std::shared_ptr<const ceelo::DetectorResponse> withoutGrounding( const ceelo::DetectorResponse &resp )
+{
+  // DetectorResponse is not copyable (it owns the built geometry), so copy through its one codec;
+  //  `finalize()` (called by from_xml_string) does not read the grounding, so clearing it after is fine.
+  const shared_ptr<ceelo::DetectorResponse> copy
+                               = ceelo::DetectorResponse::from_xml_string( resp.to_xml_string() );
+  if( !copy )
+    throw runtime_error( "withoutGrounding: could not copy the response." );
+
+  copy->grounding = ceelo::GroundingBlock();
+  return copy;
+}//withoutGrounding(...)
+
+
 std::string genericAttenuatorName( const double atomic_number,
                                    const double areal_density_g_cm2 )
 {
@@ -1992,7 +2097,7 @@ bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
   if( !value_after( t, an_pos, an ) || !value_after( t, ad_pos, ad ) )
     return false;
 
-  if( (an < 1.0) || (an > 92.0) || (ad <= 0.0) )
+  if( (an < 1.0) || (an > ceelo::kMaxZ) || (ad <= 0.0) )
     return false;
 
   atomic_number = an;

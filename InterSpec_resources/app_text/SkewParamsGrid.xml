@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- spg is short for SkewParamsGrid -->
+
+  <message id="spg-lower-header">Low E</message>
+  <message id="spg-upper-header">High E</message>
+  <message id="spg-fit-header">Fit</message>
+  <message id="spg-result-header">Fit result</message>
+  <message id="spg-param-label">Par {1}:</message>
+  <message id="spg-blank-placeholder">fit</message>
+
+  <message id="spg-tt-energy-dep"><br />Value varies with energy; specify at low and high energies.</message>
+  <message id="spg-tt-not-energy-dep"><br />Value is constant across the energy range.</message>
+  <message id="spg-tt-fit">If checked, the parameter is fit to the data, starting from the value given; if unchecked, the parameter is held at the value given.</message>
+</messages>

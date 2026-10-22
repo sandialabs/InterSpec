@@ -897,3 +897,17 @@ BOOST_AUTO_TEST_CASE( multi_curve_separation_block_renders )
                          "Template '" << tmplt << "' still says 'Evidence purity'" );
   }
 }//BOOST_AUTO_TEST_CASE( multi_curve_separation_block_renders )
+
+
+BOOST_AUTO_TEST_CASE( shared_string_callbacks_registered )
+{
+  set_data_dir();
+
+  // The BatchInfoLog callbacks are shared with this tool's templates
+  inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
+  nlohmann::json data;
+  data["file"] = "dir/some_file.n42";
+  data["nuc"] = "U235";
+  BOOST_CHECK_EQUAL( env.render( "{{ removeExtension(file) }} {{ nuclideUpper(nuc) }} {{ printExp(18910.0, 3) }}", data ),
+                     string("dir/some_file U-235 1.891E+04") );
+}//BOOST_AUTO_TEST_CASE( shared_string_callbacks_registered )

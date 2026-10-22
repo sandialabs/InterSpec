@@ -141,11 +141,20 @@ struct SimpleActivityCalcResult
    Accounts for all gammas in source, as well as scatter continuum.
    */
   std::optional<double> source_dose;
+
+  /** The fractional 1-sigma detector-efficiency uncertainty included in #activityUncertainty, at the
+   peak energy (zero if none), and what kind it is - so the result can say whether one was used. */
+  double drfEffFracUncert;
+  ShieldingSourceFitCalc::DrfUncertUsed drfUncertUsed;
+
+  /** Warnings from the underlying fit (e.g., an efficiency outside the response's validated range). */
+  std::vector<std::string> warnings;
   
   SimpleActivityCalcResult() 
     : activity(0.0), activityUncertainty(0.0), nuclideMass(0.0),
       isSelfAttenuating(false), sourceDimensions(0.0),
-      successful(false), errorMessage("")
+      successful(false), errorMessage(""),
+      drfEffFracUncert(0.0), drfUncertUsed(ShieldingSourceFitCalc::DrfUncertUsed::None)
   {}
 };//struct SimpleActivityCalcResult
 

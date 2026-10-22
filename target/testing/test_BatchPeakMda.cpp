@@ -24,6 +24,7 @@
 #include <cmath>
 #include <deque>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -39,7 +40,9 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/BatchPeak.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
@@ -240,6 +243,39 @@ BatchPeak::BatchPeakFitResult run_fit( const vector<double> &exemplar_energies,
   return BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", measurement,
                                        {}, options );
 }//BatchPeak::BatchPeakFitResult run_fit(...)
+
+
+/** A Poisson replica of a spectrum with a 661 keV peak of `area` counts on `continuum_per_channel`
+ counts per channel; Knuth's product method on `std::mt19937`, so the draw is the same on every platform. */
+shared_ptr<SpecMeas> sparse_spec_meas( const double area, const double continuum_per_channel, const unsigned seed )
+{
+  const shared_ptr<SpecMeas> noise_free = make_spec_meas( { { 661.0, area } } );
+  const shared_ptr<const SpecUtils::Measurement> m0 = noise_free->measurements().front();
+
+  std::mt19937 rng( seed );
+  auto counts = make_shared<vector<float>>( *m0->gamma_counts() );
+  for( float &c : *counts )
+  {
+    const double mean = (c - sm_continuum_cps*sm_live_time) + continuum_per_channel;
+    const double limit = std::exp( -mean );
+    double product = 1.0;
+    int n = 0;
+    for( ; n < 100000; ++n )
+    {
+      product *= (static_cast<double>( rng() ) + 0.5) / 4294967296.0;
+      if( product <= limit )
+        break;
+    }
+    c = static_cast<float>( n );
+  }//for( float &c : *counts )
+
+  auto m = make_shared<SpecUtils::Measurement>( *m0 );
+  m->set_gamma_counts( counts, sm_live_time, sm_live_time );
+  auto answer = make_shared<SpecMeas>();
+  answer->add_measurement( m, false );
+  answer->cleanup_after_load();
+  return answer;
+}//sparse_spec_meas(...)
 }//namespace
 
 
@@ -1368,6 +1404,9 @@ struct NominalActivityFixture
 
     ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
     options.attenuate_for_air = false;
+    // The DRF above states no efficiency uncertainty, so asking for one would (correctly) warn -
+    //  callers pass None in that case, as SimpleActivityCalc does.
+    options.drf_uncert_method = ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
     chi_input.config.distance = distance;
@@ -1560,3 +1599,76 @@ BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )
                                                     fixture.detector, false );
   BOOST_CHECK( !empty_data.contains("SupplementalPeakInfo") );
 }//BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )
+
+
+BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
+{
+  set_data_dir();
+
+  inja::Environment env = BatchInfoLog::get_default_inja_env( "" );
+
+  const auto render = [&env]( const string &fcn, const string &arg ) -> string {
+    return env.render( "{{ " + fcn + "(\"" + arg + "\") }}", nlohmann::json::object() );
+  };
+
+  const vector<pair<string,string>> nuc_cases{
+    {"Co60", "CO-60"}, {"Tc99m", "TC-99M"}, {"tc-99m", "TC-99M"}, {"U235", "U-235"},
+    {"238U", "U-238"}, {"Pa234m", "PA-234M"},
+    {"Pb", "PB"}, {"u", "U"}, {"uranium", "U"}, {"lead x-ray", "PB"}, {"Pb-xray", "PB"},
+    {"Co-600", "Co-600"}, {"H(n,g)", "H(n,g)"}, {"Al27(a,a)", "Al27(a,a)"}, {"", ""}
+  };
+
+  for( const pair<string,string> &c : nuc_cases )
+    BOOST_CHECK_MESSAGE( render( "nuclideUpper", c.first ) == c.second,
+                         "nuclideUpper(\"" << c.first << "\") gave '"
+                         << render( "nuclideUpper", c.first ) << "', expected '" << c.second << "'" );
+
+  const vector<pair<string,string>> file_cases{
+    {"some_file.n42", "some_file"}, {"/a/b.c/some_file.n42", "/a/b.c/some_file"},
+    {"some.file.n42", "some.file"}, {"no_ext", "no_ext"}, {".profile", ".profile"},
+    {"dir.d/", "dir.d/"}, {"", ""}
+  };
+
+  for( const pair<string,string> &c : file_cases )
+    BOOST_CHECK_MESSAGE( render( "removeExtension", c.first ) == c.second,
+                         "removeExtension(\"" << c.first << "\") gave '"
+                         << render( "removeExtension", c.first ) << "', expected '" << c.second << "'" );
+
+  // Works on JSON values, as templates will actually use it
+  nlohmann::json data;
+  data["Filename"] = "input.n42";
+  data["Nuclide"] = "Cs137";
+  BOOST_CHECK_EQUAL( env.render( "{{ removeExtension(Filename) }}_{{ nuclideUpper(Nuclide) }}", data ),
+                     string("input_CS-137") );
+}//BOOST_AUTO_TEST_CASE( InjaStringCallbacks )
+
+
+
+
+// A weak real peak in sparse data is fit by Poisson likelihood, so its shape test (`peak_hypothesis_threshold`)
+//  must judge it by Poisson deviance.  Judged by modified-Neyman chi2 instead, the null's least-squares
+//  refit beats the likelihood fit on that statistic: this draw (one of ~3% at this area) was dropped.
+BOOST_AUTO_TEST_CASE( SparsePeakShapeTestUsesDeviance )
+{
+  set_data_dir();
+  const shared_ptr<SpecMeas> meas = sparse_spec_meas( 22.0, 0.6, 24 );
+  const shared_ptr<const SpecUtils::Measurement> data = meas->measurements().front();
+  const shared_ptr<SpecMeas> exemplar = make_exemplar( { 661.0 } );
+
+  // The fitted peak without the shape test: in a sparse ROI; the Neyman test rejects it, the deviance test keeps it.
+  BatchPeak::BatchPeakFitOptions no_shape_test = default_options();
+  no_shape_test.peak_hypothesis_threshold = 0.0;
+  const BatchPeak::BatchPeakFitResult untested
+                 = BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", meas, {}, no_shape_test );
+  BOOST_REQUIRE_EQUAL( untested.fit_peaks.size(), 1 );
+  const PeakDef &peak = *untested.fit_peaks.front();
+  BOOST_CHECK( PeakFitLM::is_sparse_roi( { untested.fit_peaks.front() }, data ) );
+  BOOST_CHECK( !chi2_significance_test( peak, 0.0, 1.0, {}, data, false ) );
+  BOOST_CHECK( chi2_significance_test( peak, 0.0, 1.0, {}, data, true ) );
+
+  // With the default thresholds the peak is kept.
+  const BatchPeak::BatchPeakFitResult result
+                 = BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", meas, {}, default_options() );
+  BOOST_REQUIRE_EQUAL( result.fit_peaks.size(), 1 );
+  BOOST_CHECK_CLOSE( result.fit_peaks.front()->mean(), 661.0, 1.0 );
+}//BOOST_AUTO_TEST_CASE( SparsePeakShapeTestUsesDeviance )

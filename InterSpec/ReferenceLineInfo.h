@@ -27,19 +27,15 @@
 
 #include <set>
 #include <tuple>
+#include <memory>
 #include <vector>
 #include <string>
 
 #include <Wt/WColor.h>
 
-#include "InterSpec/ReactionGamma.h"
+#include "SandiaDecay/SandiaDecay.h"
 
-namespace SandiaDecay
-{
-  struct Nuclide;
-  struct Element;
-  struct Transition;
-}
+#include "InterSpec/ReactionGamma.h"
 
 namespace rapidxml
 {
@@ -553,6 +549,65 @@ struct ReferenceLineInfo
   
   void sortByEnergy();
 };//struct ReferenceLineInfo
+
+
+/** The type of fission, for computing fission-product photon lines. */
+enum class FissionType
+{
+  Thermal,
+  FourteenMeV,
+  Fast,
+  Spontaneous
+};//enum class FissionType
+
+
+/** Holds information for a single gamma/x-ray/positron line, resulting from the fission decay chain.
+
+ Note: for `particle_type == SandiaDecay::PositronParticle`, `energy` is the positron (beta+)
+ end-point energy, not 511 keV, and `relative_amplitude` already includes the factor of two for
+ the two annihilation photons.
+ */
+struct FissionLine
+{
+  const SandiaDecay::Nuclide *parent = nullptr;
+  const SandiaDecay::Transition *transition = nullptr;
+  SandiaDecay::ProductType particle_type = SandiaDecay::ProductType::GammaParticle;
+  double energy = 0.0;
+  double relative_amplitude = 0.0;
+};//struct FissionLine
+
+
+/** Returns the photon lines from fission products of the given nuclide.
+
+ \param nuc The fissioning nuclide; must have a file in `data/fission_yields/` with yields for `type`.
+ \param type The fission type.
+ \param irradiation_time_seconds For induced fission, the duration of (constant rate) irradiation,
+        in InterSpec units (i.e., `PhysicalUnits::second`).  Ignored for spontaneous fission.
+ \param cool_off_time For induced fission, the time after the end of irradiation; for spontaneous
+        fission, the age of the source (fission products accumulate over this time).
+
+ For induced fission, amplitudes are relative (normalized so 1 uCi of Cs-137 would be produced, if
+ present, before integration over irradiation time); for spontaneous fission, amplitudes are photons
+ per second, per Bq of current parent activity.
+
+ Throws if the nuclide does not have fission yield data for the type, or no lines result.
+ Results are sorted by energy, are at most 2200 lines (largest amplitudes kept), and are cached.
+ */
+std::shared_ptr<const std::vector<FissionLine>> fission_photons( const SandiaDecay::Nuclide *nuc,
+                                                                 const FissionType type,
+                                                                 const double irradiation_time_seconds,
+                                                                 const double cool_off_time );
+
+/** Parses fission-source text like "Fission U238 Fast, 1y buildup", "Fission U235 Thermal 3d",
+ "Fission Pu239 14 MeV, 1h buildup", "Cf252 + Spontaneous Fission", or "Fission Cf252 Spontaneous".
+
+ Returns false (leaving outputs unchanged) if the text does not contain "Fission", or the nuclide or
+ fission type can not be determined; on success `buildup_time` is set (in `PhysicalUnits` time units)
+ if a buildup was given, otherwise it is set to 0 (callers should pick a default for induced fission).
+ Does not check that fission-yield data exists for the nuclide (fission_photons(...) will throw).
+ */
+bool parse_fission_source_text( const std::string &text, const SandiaDecay::Nuclide *&nuc,
+                                FissionType &type, double &buildup_time );
 
 
 #endif

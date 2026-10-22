@@ -1503,6 +1503,83 @@ BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsRois_InvalidBounds )
 }
 
 
+BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsRois_LineAnchored )
+{
+  InterSpecTestFixture fixture;
+
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  BOOST_REQUIRE_NO_THROW( registry.executeTool( "reset_isotopics_config", json::object(), fixture.m_interspec ) );
+
+  const auto modify = [&]( const string &action, const json &rois ) -> json {
+    json params;
+    params["action"] = action;
+    params["rois"] = rois;
+    return registry.executeTool( "modify_isotopics_rois", params, fixture.m_interspec );
+  };
+
+  // A single-line LineAnchored ROI (lower == upper) with an automatic continuum and extent overrides,
+  //  and an overlapping LineAnchored ROI, are accepted, and reported back with the names accepted.
+  BOOST_REQUIRE_NO_THROW( modify( "add", json::array( {
+    json{ {"lower_energy", 185.71}, {"upper_energy", 185.71}, {"range_type", "LineAnchored"},
+          {"continuum_type", "Auto"}, {"lower_edge_peak_coverage_percent", 99.9}, {"upper_edge_sideband_fwhm", 0.75} },
+    json{ {"lower_energy", 182.52}, {"upper_energy", 186.0}, {"range_type", "LineAnchored"}, {"continuum_type", "Quadratic"} }
+  } ) ) );
+
+  json config;
+  BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+  BOOST_REQUIRE_EQUAL( config["rois"].size(), 2 );
+  for( const json &roi : config["rois"] )
+  {
+    BOOST_CHECK_EQUAL( roi["range_type"].get<string>(), "LineAnchored" );
+    if( roi["lower_energy"].get<double>() > 185.0 )
+    {
+      BOOST_CHECK_EQUAL( roi["upper_energy"].get<double>(), roi["lower_energy"].get<double>() );
+      BOOST_CHECK_EQUAL( roi["continuum_type"].get<string>(), "Auto" );
+      BOOST_REQUIRE( roi.contains( "lower_edge_peak_coverage_percent" ) && roi.contains( "upper_edge_sideband_fwhm" ) );
+      BOOST_CHECK_CLOSE( roi["lower_edge_peak_coverage_percent"].get<double>(), 99.9, 1.0E-6 );
+      BOOST_CHECK_CLOSE( roi["upper_edge_sideband_fwhm"].get<double>(), 0.75, 1.0E-6 );
+    }else
+    {
+      BOOST_CHECK_EQUAL( roi["continuum_type"].get<string>(), "Quadratic" );
+    }
+  }//for( const json &roi : config["rois"] )
+
+  // Only a LineAnchored ROI may be a single energy.
+  for( const char *type : { "Fixed", "CanBeBrokenUp" } )
+    BOOST_CHECK_THROW( modify( "add", json::array( { json{ {"lower_energy", 300.0}, {"upper_energy", 300.0}, {"range_type", type} } } ) ),
+                       std::runtime_error );
+
+  // Unknown range types, extent settings on a fixed range, and coverages outside (50, 100) are rejected.
+  BOOST_CHECK_THROW( modify( "add", json::array( { json{ {"lower_energy", 300.0}, {"upper_energy", 310.0}, {"range_type", "Bogus"} } } ) ),
+                     std::runtime_error );
+  BOOST_CHECK_THROW( modify( "add", json::array( { json{ {"lower_energy", 300.0}, {"upper_energy", 310.0}, {"range_type", "Fixed"},
+                                                         {"lower_edge_sideband_fwhm", 1.0} } } ) ),
+                     std::runtime_error );
+  for( const double bad : { 50.0, 100.0, -1.0 } )
+    BOOST_CHECK_THROW( modify( "update", json::array( { json{ {"lower_energy", 185.71}, {"upper_energy", 185.71},
+                                                              {"lower_edge_peak_coverage_percent", bad} } } ) ),
+                       std::runtime_error );
+
+  // A LineAnchored ROI's energies are lines, so changing it to a range needs new bounds - and as a
+  //  fixed range, it has no extent settings.
+  BOOST_CHECK_THROW( modify( "update", json::array( { json{ {"lower_energy", 185.71}, {"upper_energy", 185.71}, {"range_type", "Fixed"} } } ) ),
+                     std::runtime_error );
+  BOOST_REQUIRE_NO_THROW( modify( "update", json::array( { json{ {"lower_energy", 185.71}, {"upper_energy", 185.71}, {"range_type", "Fixed"},
+                                                                 {"new_lower_energy", 190.0}, {"new_upper_energy", 195.0} } } ) ) );
+  BOOST_REQUIRE_NO_THROW( config = registry.executeTool( "get_isotopics_config", json::object(), fixture.m_interspec ) );
+  bool found_fixed = false;
+  for( const json &roi : config["rois"] )
+  {
+    if( roi["range_type"].get<string>() != "Fixed" )
+      continue;
+    found_fixed = true;
+    BOOST_CHECK_EQUAL( roi["lower_energy"].get<double>(), 190.0 );
+    BOOST_CHECK( !roi.contains( "lower_edge_peak_coverage_percent" ) && !roi.contains( "upper_edge_sideband_fwhm" ) );
+  }
+  BOOST_CHECK( found_fixed );
+}//test_executeModifyIsotopicsRois_LineAnchored
+
+
 BOOST_AUTO_TEST_CASE( test_executeModifyIsotopicsCurveSettings_InvalidOrderForPhysical )
 {
   InterSpecTestFixture fixture;

@@ -243,10 +243,10 @@ def main() -> int:
     maximum_yield_error = 0.0
     maximum_mean_error = 0.0
 
-    # Photon/electron transport is limited to Z<=92, but radioactive-decay
+    # Photon tables stop at Z=98 (electron tables at Z=92), but radioactive-decay
     # daughters queried by the cascade model extend through Z=99 (for example,
-    # Am-241 -> Np-237, Z=93). EPICS2023 EADL has MF=28/MT=533 sections through
-    # Z=99, so retain that complete relaxation-only domain.
+    # Cf-253 -> Es-253). EPICS2023 EADL has MF=28/MT=533 sections through Z=99,
+    # so retain that complete relaxation-only domain.
     for z in range(1, MAX_RELAXATION_Z + 1):
         subshells = parse_relaxation(endf, z)
         k_initializer, k_stats = fluorescence_initializer(

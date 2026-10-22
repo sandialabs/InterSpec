@@ -32,17 +32,21 @@ GEMINI.md
 CLAUDE.md
 AGENT.md
 TODO.md
+# CeeLo's TODO.md is its tracked list of open items (CeeLo is developed here).
+!external_libs/CeeLo/TODO.md
 scratch
 scratch/
 renamed_*
 devcontainer_prefix
 *.back
-.devcontainer 
 det_response_report/
 test_datasets/
 .codex/
+# Dev-container setups are per-developer; example dockerfiles live in target/docker/
 .devcontainer*/
 .opencode*/
+
+data/llm_knowledge/*/
 
 IDB*
 
@@ -63,6 +67,8 @@ IDB*
 *.PAR
 *.par
 DETECTOR.txt
+# ...except the CeeLo-generated mock (NOT vendor data; see WriteMockParFiles in test_DetectorEffG2kPar.cpp)
+!target/testing/test_data/det_eff/mock.par
 WtsRsrcs
 XcodeFiles
 build
@@ -144,7 +150,5 @@ InterSpec_resources/d3.v3.min.js
 target/macos/quicklook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 
 target/wxwidgets/3rd_party
-.devcontainer/devcontainer.json
-/devcontainer_prefix/
 *.bak
 

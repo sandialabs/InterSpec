@@ -31,7 +31,7 @@
     Эффект изменения затем распространяется на все спектры, образцы и детекторы, выбранные в "Применить изменения к": их калибровки энергии корректируются эквивалентным образом, так что данные, совпадавшие по энергии до изменения, остаются совмещёнными (на новых энергиях) и после - даже если их коэффициенты или типы калибровки различаются.
     Если кнопка неактивна, причина показана слева от неё.
   </message>
-  <message id="ect-fit-hint-fore-deselected">Подгонка отключена: "Основной спектр" не выбран в "Применить изменения к"</message>
+  <message id="ect-fit-hint-fore-deselected">Подгонка отключена: основной спектр не выбран</message>
   <message id="ect-fit-hint-no-peaks">Нет пиков, отмеченных для калибровки энергии</message>
   <message id="ect-fit-hint-not-fore-cal">Подгонка использует калибровку основного спектра</message>
   <message id="ect-fit-hint-no-coefs">Не выбран ни один коэффициент для подгонки</message>
@@ -40,6 +40,11 @@
   <message id="ect-apply-changes-to">Применить изменения к</message>
   <message id="ect-disp-dets">Отображаемые детекторы</message>
   <message id="ect-all-dets">Все детекторы</message>
+  <message id="ect-selected-det-only">Незав. дет.</message>
+  <message id="ect-tt-selected-det-only">Если отмечено, изменения энергетической калибровки (редактирование или подгонка коэффициентов, перетаскивание спектра и инструменты &quot;Дополнительные действия&quot;) применяются только к детектору, выбранному в столбце &quot;Детектор&quot;, а не распространяются на остальные детекторы.
+    Детектор сопоставляется по имени в других выбранных спектрах (основной, фон, вторичный), а выбор образцов по-прежнему учитывается.
+    Изменения пар отклонений всегда применяются только к редактируемому детектору.
+    Не влияет на Gain Match и Многофайловая кал.</message>
   <message id="ect-disp-samples">Отображаемые образцы</message>
   <message id="ect-all-samples">Все образцы</message>
   <message id="ect-calib-coeffs">Коэффициенты калибровки</message>
@@ -70,7 +75,6 @@
   <message id="ect-unexpected-error-prev-coefs">Неожиданная ошибка получения предыдущих коэффициентов калибровки - изменения не применяются</message>
   <message id="ect-changed-cal-not-selected">Похоже, что изменённая вами калибровка энергии не отмечена для применения изменений; пожалуйста, исправьте это.</message>
   <message id="ect-dev-pair-change-invalid">Изменение пары отклонений сделало калибровку энергии недействительной.  Ошибка: {1}</message>
-  <message id="ect-set-dev-pair-err">Произошла ошибка установки пар отклонений для этого детектора.</message>
   <message id="ect-dev-applied-dets-samples">Пары отклонений применены только к детектору '{1}', но ко всем номерам образцов{2}.</message>
   <message id="ect-dev-applied-to-samples">Пары отклонений применены ко всем номерам образцов{1}.</message>
   <message id="ect-of-the-fore"> основного спектра.</message>
@@ -88,6 +92,8 @@
   <message id="ect-del-graphical-msg">Если вы повторно калибруете снова ALT+CTRL+ПЕРЕТАСКИВАНИЕ на другой части спектра, вам будет предоставлена возможность сохранить эффекты этой калибровки также.</message>
   <message id="ect-lc-disp-dets">отображаемые детекторы</message>
   <message id="ect-lc-all-dets">все детекторы</message>
+  <message id="ect-lc-selected-det-only">только детектор '{1}'</message>
+  <message id="ect-fore-not-selected">Изменение не применено: при текущем выборе в &quot;Применить изменения к&quot; оно не будет применено к отображаемому основному спектру.</message>
   <message id="ect-lc-all-samples">все образцы</message>
   <message id="ect-lc-disp-samples">отображаемые образцы</message>
   <message id="ect-short-fore">Осн.</message>

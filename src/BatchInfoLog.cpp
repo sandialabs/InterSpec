@@ -43,6 +43,8 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -53,6 +55,7 @@
 #include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
@@ -124,10 +127,8 @@ namespace BatchInfoLog
     env.set_search_included_templates_in_files( !tmplt_dir.empty() );
   #endif
     
-    // Add some callbacks incase people want more control over the precision of their printouts
-    env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
-    env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
-    env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+    // Add some callbacks incase people want more control over the formatting of their printouts
+    add_inja_callbacks( env );
 
     try
     {
@@ -135,9 +136,7 @@ namespace BatchInfoLog
       //  is problematic, so we'll just create a new `inja::Environment` to open the default
       //  templates, and then add them to `env` - not really tested yet.
       inja::Environment sub_env;
-      sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
-      sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
-      sub_env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+      add_inja_callbacks( sub_env );
 
       const string default_tmplt_dir = BatchInfoLog::default_template_dir();
       
@@ -392,9 +391,7 @@ namespace BatchInfoLog
         }
         
         inja::Environment sub_env;
-        sub_env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
-        sub_env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
-        sub_env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+        add_inja_callbacks( sub_env );
         injatmplt = sub_env.parse_template( tmplt );
       }//
       
@@ -594,6 +591,106 @@ namespace BatchInfoLog
       return "ErrorPrintingValue{" + string(e.what()) + "}";
     }
   };
+
+
+  std::string nuclideUpper( std::vector<const nlohmann::json *> &args )
+  {
+    if( args.empty() || args[0]->is_null() )
+      return "";
+    if( !args[0]->is_string() )
+      return args[0]->dump();
+
+    const string input = args[0]->get<string>();
+
+    try
+    {
+      // Peak x-ray sources are labeled like "lead x-ray"
+      string label = input;
+      for( const char * const suffix : { "x-ray", "xray" } )
+      {
+        if( SpecUtils::iends_with( label, suffix ) )
+        {
+          label = label.substr( 0, label.size() - strlen( suffix ) );
+          break;
+        }
+      }
+      SpecUtils::trim( label );
+
+      // Reactions like "Al27(a,a)" would otherwise parse as their target nuclide
+      if( label.find( '(' ) != string::npos )
+        return input;
+
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "no decay database" );
+
+      string answer;
+      if( const SandiaDecay::Nuclide * const nuc = db->nuclide( label ) )
+      {
+        // SandiaDecay symbols are like "Co60", "Tc99m", "Au192m2"
+        const size_t pos = nuc->symbol.find_first_of( "0123456789" );
+        assert( pos != string::npos );
+        answer = nuc->symbol;
+        if( pos != string::npos )
+          answer.insert( pos, "-" );
+      }else if( label.find_first_of( "0123456789" ) == string::npos )
+      {
+        // `element(...)` ignores non-letters, so only use it when there are no digits; otherwise a
+        //  nuclide typo like "Co-600" would silently become "CO".
+        const SandiaDecay::Element * const el = db->element( label );
+        if( el )
+          answer = el->symbol;
+      }
+
+      if( answer.empty() )
+        return input;
+
+      SpecUtils::to_upper_ascii( answer );
+      return answer;
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'nuclideUpper': " << e.what() << endl;
+    }
+
+    return input;
+  }//nuclideUpper(...)
+
+
+  std::string removeExtension( std::vector<const nlohmann::json *> &args )
+  {
+    if( args.empty() || args[0]->is_null() )
+      return "";
+    if( !args[0]->is_string() )
+      return args[0]->dump();
+
+    const string path = args[0]->get<string>();
+
+    try
+    {
+      // On Windows `file_extension("dir.d/")` gives ".d", so also require `path` to end with it
+      const string ext = SpecUtils::file_extension( path );
+      if( ext.empty()
+         || (ext.size() == SpecUtils::filename( path ).size())
+         || !SpecUtils::iends_with( path, ext ) )
+        return path;
+      return path.substr( 0, path.size() - ext.size() );
+    }catch( std::exception &e )
+    {
+      cerr << "Error in 'removeExtension': " << e.what() << endl;
+    }
+
+    return path;
+  }//removeExtension(...)
+
+
+  void add_inja_callbacks( inja::Environment &env )
+  {
+    env.add_callback( "printFixed", 2, &BatchInfoLog::printFixed );
+    env.add_callback( "printCompact", 2, &BatchInfoLog::printCompact );
+    env.add_callback( "printExp", 2, &BatchInfoLog::printExp );
+    env.add_callback( "nuclideUpper", 1, &BatchInfoLog::nuclideUpper );
+    env.add_callback( "removeExtension", 1, &BatchInfoLog::removeExtension );
+  }//add_inja_callbacks(...)
 
 
   // Adds the basic direct info on a source (nuclide name, activity, age, etc), but does not
@@ -842,6 +939,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       fit_options["DrfUncertaintyMethod"]     = static_cast<int>( method );
       fit_options["DrfUncertaintyMethodName"] = method_name;
       fit_options["AccountForDrfUncert"]      = (method != ShieldingSourceFitCalc::DrfUncertaintyMethod::None);
+      fit_options["DrfUncertIncludeAssumed"]  = options.drf_uncert_include_assumed;
     }
     fit_options["CorrectForCascadeSumming"] = options.correct_for_cascade_summing;
   }//void add_act_shield_fit_options_to_json(...)
@@ -1058,6 +1156,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           volumetric_str = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
           volumetric_str = "EFFTRAN transfer (near-field & off-axis correct)";      break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::ImportedGrid:
+          volumetric_str = "Imported efficiency grid";                               break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
         case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
           break;
@@ -1070,6 +1170,26 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       dj["VolumetricModel"] = volumetric_str;
       dj["Note"] = results.volumetric_eff_note;
       dj["HasNote"] = !results.volumetric_eff_note.empty();
+
+      // Which efficiency uncertainty the fit used, so a report says so whether or not one was.
+      const char *uncert_str = "none (statistical uncertainties only)";
+      switch( results.drf_uncert_used )
+      {
+        case ShieldingSourceFitCalc::DrfUncertUsed::None:
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::Stated:
+          uncert_str = "stated by the detector response";
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::GeometryModelOnly:
+          uncert_str = "geometry model only (the detector states no efficiency uncertainty of its"
+                       " own; the assumed default was not used)";
+          break;
+        case ShieldingSourceFitCalc::DrfUncertUsed::IncludesAssumed:
+          uncert_str = "assumed default (the detector states no efficiency uncertainty of its own)";
+          break;
+      }//switch( results.drf_uncert_used )
+      dj["UncertUsed"] = ShieldingSourceFitCalc::drfUncertUsedName( results.drf_uncert_used );
+      dj["UncertUsedDescription"] = uncert_str;
 
       auto &vj = data["VolumetricEff"];
       vj["Method"] = volumetric_str;

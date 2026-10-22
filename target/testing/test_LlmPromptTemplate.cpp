@@ -251,6 +251,31 @@ BOOST_AUTO_TEST_CASE( McpSurfaceIsModelAgnostic )
 }
 
 
+// With no llm_config.xml (none is shipped) there is no provider, yet the stdio MCP server still
+//  renders the tool descriptions; the context must then use default model values, not throw.
+BOOST_AUTO_TEST_CASE( BuildContextWithoutProvider )
+{
+  LlmConfig cfg;
+  cfg.mcpServer.enabled = true;
+  BOOST_REQUIRE( cfg.llmApi.providers.empty() );
+
+  json mcpCtx, agentCtx;
+  BOOST_REQUIRE_NO_THROW( mcpCtx = LlmPromptTemplate::buildContext( cfg, Surface::Mcp, AgentType::MainAgent ) );
+  BOOST_REQUIRE_NO_THROW( agentCtx = LlmPromptTemplate::buildContext( cfg, Surface::Agent, AgentType::NuclideId ) );
+
+  BOOST_CHECK_EQUAL( mcpCtx["model"]["supports_images"].get<bool>(), true );
+  BOOST_CHECK_EQUAL( agentCtx["model"]["supports_images"].get<bool>(), false );
+  BOOST_CHECK_EQUAL( agentCtx["model"]["name"].get<string>(), "" );
+  BOOST_CHECK_EQUAL( agentCtx["model"]["api_format"].get<string>(), "openai_chat" );
+  BOOST_CHECK_EQUAL( agentCtx["verbosity"].get<string>(), "normal" );
+  BOOST_CHECK_EQUAL( agentCtx["mcp_enabled"].get<bool>(), true );
+
+  // A provider without any model also falls back.
+  cfg.llmApi.providers.push_back( LlmConfig::LlmApi::ApiProvider() );
+  BOOST_CHECK_NO_THROW( LlmPromptTemplate::buildContext( cfg, Surface::Agent, AgentType::MainAgent ) );
+}
+
+
 // Regression: Inja's default line-statement token is "##", which collides with the Markdown
 // "##"/"###" headers used throughout the agent prompts.  We disable line statements, so headers must
 // render as literal text even when the prompt also contains a real {% %} tag.

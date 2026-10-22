@@ -15,10 +15,11 @@
 #include <Wt/WText.h>
 #include <Wt/WImage.h>
 #include <Wt/WAnchor.h>
+#include <Wt/WRandom.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
-#include <Wt/WGridLayout.h>
+#include <Wt/WVBoxLayout.h>
 #include <Wt/WApplication.h>
 #include <Wt/WStringUtil.h>
 #include <Wt/Utils.h>
@@ -41,10 +42,15 @@
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmConfigWindow.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
 #include "InterSpec/LlmInteractionDisplay.h"
 #include "InterSpec/LlmConversationHistory.h"
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
 
 using namespace std;
 using namespace Wt;
@@ -78,15 +84,21 @@ WT_DECLARE_WT_MEMBER
    inputArea   - the floating input area (its height sets the container's bottom padding)
    acceptImages- whether pasted images should be captured
    pasteCb     - function(base64, mimeType, widthPx, heightPx) to stage a pasted image
+   enterNewline- if true, Enter just inserts a newline (phones, whose on-screen keyboards have no
+                 Shift+Enter); the submit button is then the only way to send.
  */
 WT_DECLARE_WT_MEMBER
 (LlmSetupInput, Wt::JavaScriptFunction, "LlmSetupInput",
- function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb )
+ function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb, enterNewline )
 {
   if( !ta )
     return;
 
   function grow(){
+    // Hidden (e.g., tab not yet shown): scrollHeight would be 0 and pin the height to 0px, so keep
+    //  the current height; the ResizeObserver below re-runs this once it becomes visible.
+    if( !ta.offsetWidth )
+      return;
     ta.style.height = 'auto';
     var max = Math.max( 60, Math.round( (wrapper ? wrapper.clientHeight : 300) * 0.4 ) );
     var h = Math.min( ta.scrollHeight, max );
@@ -107,7 +119,7 @@ WT_DECLARE_WT_MEMBER
   } );
 
   ta.addEventListener( 'keydown', function( e ){
-    if( e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
+    if( !enterNewline && e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
       e.preventDefault();
       if( btn && !btn.disabled )
         btn.click();
@@ -151,6 +163,17 @@ WT_DECLARE_WT_MEMBER
     } );
   }
 
+  // Re-size when the tool is shown or resized (wrapper), or when the stylesheet finishes loading or
+  //  the image strip toggles (inputArea); the setup call below can run before either has settled.
+  //  grow() is idempotent, so the height change it makes does not cause further notifications.
+  if( window.ResizeObserver ){
+    var ro = new ResizeObserver( function(){ grow(); } );
+    if( wrapper )
+      ro.observe( wrapper );
+    if( inputArea )
+      ro.observe( inputArea );
+  }
+
   // Initialize sizing and button state.
   grow();
   Wt.WT.LlmEvalSend( ta, btn );
@@ -177,6 +200,16 @@ WT_DECLARE_WT_MEMBER
   obs.observe( container, { childList:true, subtree:true, characterData:true } );
 }
 );
+
+  /** When the settings window is opened from within a (non-modal) window, the click that got us there
+   raises that window to the front after the settings window is shown - which on phones (where both
+   are full-screen) completely hides the settings window.  So, like SimpleDialog does, raise the
+   settings window again on a delay.
+   */
+  void bring_to_front_after_click( AuxWindow *window )
+  {
+    window->doJavaScript( "setTimeout(function(){Wt.WT.AuxWindowBringToFront('" + window->id() + "');},5);" );
+  }
 }//namespace
 
 
@@ -192,13 +225,23 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_menuIcon(nullptr),
     m_layout(nullptr),
     m_isRequestPending(false),
+    m_logFilePath(),
+    m_logWriteFailed(false),
     m_imagePreviewContainer(nullptr),
     m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
-    m_jsSandboxBridge( nullptr )
+    m_jsSandboxBridge( nullptr ),
+    m_menuIconHome( nullptr ),
+    m_phoneHeaderTools(),
+    m_phoneDockButton( nullptr ),
+    m_phoneCanDock( false )
 {
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
+
+  // Phone styling is keyed off this class (on us, rather than m_root, so it survives UI rebuilds).
+  if( m_viewer->isPhone() )
+    addStyleClass( "LlmPhone" );
 
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   // The "not configured" panel and the settings window share styles + strings from these bundles.
@@ -208,15 +251,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   // Get marked/KaTeX loading now, so they are ready before the first response comes back.
   LlmMarkdown::load_resources( wApp );
 
-  // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
-  // the "not configured" panel.
-  WGridLayout *outer = setLayout( std::make_unique<WGridLayout>() );
-  outer->setContentsMargins( 0, 0, 0, 0 );
-  outer->setVerticalSpacing( 0 );
-  outer->setHorizontalSpacing( 0 );
-  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-  outer->setRowStretch( 0, 1 );
-  outer->setColumnStretch( 0, 1 );
+  createRoot();
 
   // Connect the clipboard-image paste signal once; it persists across UI rebuilds (the input widgets
   // that emit it are recreated by initializeUI(), but this JSignal belongs to the tool).
@@ -234,7 +269,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false; // e.g. a config with no providers
@@ -248,6 +283,16 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
 
 LlmToolGui::~LlmToolGui()
 {
+  // Final flush of the log, to capture anything since the last completed turn.
+  writeConversationLog();
+
+  // On phones our dock button and menu icon live in our windows header; don't leave them there
+  //  (they would call back into this destroyed widget).  A no-op if the header is already gone.
+  if( m_phoneHeaderTools )
+  {
+    const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
+  }
+
   // Fail any outstanding MCP `assistant_submit_prompt` callbacks so a blocked MCP request thread
   //  doesn't hang forever waiting on a turn that can no longer complete.
   if( m_activeMcpCallback )
@@ -281,6 +326,7 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
   try
   {
     m_llmInterface = std::make_shared<LlmInterface>(m_viewer, config);
+    m_logFilePath.clear();
 
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
@@ -311,6 +357,9 @@ void LlmToolGui::buildUnconfiguredUi()
 
   WPushButton *btn = panel->addNew<WPushButton>( WString::tr("lcw-configure-btn") );
   btn->clicked().connect( this, &LlmToolGui::openConfigWindow );
+
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( panel );
 }
 
 
@@ -325,7 +374,8 @@ void LlmToolGui::showWelcomeMessage()
   WText *title = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-title") );
   title->addStyleClass( "LlmWelcomeTitle" );
 
-  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-summary") );
+  const char * const summaryKey = m_viewer->isPhone() ? "lcw-welcome-summary-phone" : "lcw-welcome-summary";
+  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr(summaryKey) );
   summary->addStyleClass( "LlmWelcomeSummary" );
 
   // Empty WLink => an <a> with no href, so the browser does nothing on click while the
@@ -365,10 +415,30 @@ void LlmToolGui::clearConversationDisplays()
 }//clearConversationDisplays()
 
 
+void LlmToolGui::createRoot()
+{
+  // A single-item outer layout holds m_root, which we swap between the configured chat UI and
+  // the "not configured" panel.  A box layout, rather than a WGridLayout, as Wt4 implements box
+  // layouts with CSS flex, while grid layouts use its JavaScript layout engine - whose bookkeeping
+  // is left with stale entries when we are moved out of the tool-tab strip on phones (see
+  // InterSpec::setLlmToolDocked), causing a client-side exception.
+  //
+  // When swapping UIs, the whole outer layout is replaced, rather than just m_root or m_root's
+  // contents: Wt's flex layout only sizes things right when a layout and its contents are rendered
+  // together.  Adding m_root to an already-rendered layout left its item without `overflow: hidden`
+  // (so the chat UI grew past the tab), and setting a layout on an already-rendered m_root made it
+  // `height: fit-content` (so it did not fill the tab) - either way the input field was not at the
+  // bottom of the tab after the user first configured a provider.
+  m_root = nullptr;
+  WVBoxLayout *outer = setLayout( std::make_unique<WVBoxLayout>() );  // deletes any previous layout
+  outer->setContentsMargins( 0, 0, 0, 0 );
+  outer->setSpacing( 0 );
+  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 1 );
+}//void createRoot()
+
+
 void LlmToolGui::resetRoot()
 {
-  WGridLayout *outer = dynamic_cast<WGridLayout *>( layout() );
-
   // Tear down the configured-UI state.  The spectrum-changed slot must be disconnected here (not
   // just reassigned in buildConfiguredUi) - boost::signals2 reassignment drops the handle without
   // disconnecting, which would leave an orphaned slot firing into a rebuilt widget.
@@ -378,17 +448,15 @@ void LlmToolGui::resetRoot()
   // next conversation after a reconfigure.
   m_stagedImages.clear();
 
-  if( m_root )
-  {
-    // m_root is layout-managed, so its owning unique_ptr lives in the layouts WWidgetItem;
-    //  removeWidget() hands it back and destroying it here takes all child widgets with it.
-    //  (`delete m_root` would be a double-free.)
-    const std::unique_ptr<WWidget> doomed = m_root->removeFromParent();
-    m_root = nullptr;
-  }
+  // On phones the menu icon lives in the window header, so would not go away with m_root.
+  removePhoneMenuIcon();
+
+  // Replace the whole outer layout (which deletes m_root and all its children).
+  createRoot();
 
   // Child widgets owned by the old root are now gone; clear dangling pointers.
   m_layout = nullptr;
+  m_menuIconHome = nullptr;
   m_conversationContainer = nullptr;
   m_welcomeMessage = nullptr;
   m_inputEdit = nullptr;
@@ -396,13 +464,6 @@ void LlmToolGui::resetRoot()
   m_menuIcon = nullptr;
   m_imagePreviewContainer = nullptr;
   m_jsSandboxBridge = nullptr;
-
-  if( outer )
-  {
-    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-    outer->setRowStretch( 0, 1 );
-    outer->setColumnStretch( 0, 1 );
-  }
 }
 
 
@@ -415,7 +476,91 @@ void LlmToolGui::openConfigWindow()
                                         std::bind( &LlmToolGui::handleConfigSaved, this ),
                                         std::bind( &LlmToolGui::hasConversationHistory, this ) );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
+
+
+void LlmToolGui::refitPhoneWindows()
+{
+  if( m_configWindow )
+    m_configWindow->refitPhoneFullScreen();
+}//void refitPhoneWindows()
+
+
+void LlmToolGui::setPhoneWindowHeader( WContainerWidget *header )
+{
+  // Take down the controls in any previous windows header, bringing the menu icon back to the
+  //  conversation area.
+  if( m_phoneHeaderTools )
+  {
+    if( m_menuIcon && m_menuIconHome && (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+    {
+      m_menuIcon->removeStyleClass( "LlmHeaderMenuIcon" );
+      m_menuIconHome->addWidget( m_menuIcon->removeFromParent() );
+    }
+
+    const std::unique_ptr<WWidget> doomed = m_phoneHeaderTools->removeFromParent();
+    m_phoneDockButton = nullptr;
+  }//if( m_phoneHeaderTools )
+
+  // While docked, CSS hides the menu icon, and shows the expand button.
+  toggleStyleClass( "LlmDocked", !header );
+
+  if( !header )
+    return;
+
+  // Floated right, as a unit, so the dock button stays left of the menu icon even when the icon is
+  //  recreated (see initializeUI()).
+  m_phoneHeaderTools = header->addNew<WContainerWidget>();
+  m_phoneHeaderTools->addStyleClass( "LlmHeaderTools" );
+
+  m_phoneDockButton = m_phoneHeaderTools->addNew<WPushButton>();
+  m_phoneDockButton->addStyleClass( "LlmDockBtn InvertInDark" );
+  m_phoneDockButton->setToolTip( WString::tr("lcw-phone-dock-tt") );
+  m_phoneDockButton->setHidden( !m_phoneCanDock );
+  m_phoneDockButton->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( true ); } );
+
+  movePhoneMenuIcon();
+}//void setPhoneWindowHeader( WContainerWidget *header )
+
+
+void LlmToolGui::setPhoneCanDock( const bool canDock )
+{
+  m_phoneCanDock = canDock;
+  if( m_phoneHeaderTools && m_phoneDockButton )
+    m_phoneDockButton->setHidden( !canDock );
+}//void setPhoneCanDock( const bool canDock )
+
+
+void LlmToolGui::addPhoneExpandButton( WContainerWidget *parent )
+{
+  WPushButton *expand = parent->addNew<WPushButton>();
+  expand->addStyleClass( "LlmExpandBtn InvertInDark" );
+  expand->setIcon( "InterSpec_resources/images/llm_expand.svg" );
+  expand->setToolTip( WString::tr("lcw-phone-expand-tt") );
+  expand->clicked().connect( this, [this](){ m_viewer->setLlmToolDocked( false ); } );
+}//void addPhoneExpandButton( WContainerWidget *parent )
+
+
+void LlmToolGui::movePhoneMenuIcon()
+{
+  if( !m_phoneHeaderTools || !m_menuIcon || (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+    return;
+
+  // The icons popup menu is owned by, and connected to, the button itself, so it comes along.
+  m_menuIcon->addStyleClass( "LlmHeaderMenuIcon" );
+  m_phoneHeaderTools->addWidget( m_menuIcon->removeFromParent() );
+}//void movePhoneMenuIcon()
+
+
+void LlmToolGui::removePhoneMenuIcon()
+{
+  if( m_menuIcon && m_phoneHeaderTools && (m_menuIcon->parent() == m_phoneHeaderTools.get()) )
+  {
+    const std::unique_ptr<WWidget> doomed = m_menuIcon->removeFromParent();
+    m_menuIcon = nullptr;
+  }
+}//void removePhoneMenuIcon()
 
 
 void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
@@ -432,6 +577,7 @@ void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
                                         std::bind( &LlmToolGui::hasConversationHistory, this ),
                                         configFilePath );
   m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
+  bring_to_front_after_click( m_configWindow.get() );
 }
 
 
@@ -456,7 +602,7 @@ void LlmToolGui::handleConfigSaved()
   {
     SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
     errDialog->contents()->addNew<WText>( e.what() );
-    errDialog->addButton( "Okay" );
+    errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -465,7 +611,7 @@ void LlmToolGui::handleConfigSaved()
   bool configured = false;
   try
   {
-    configured = config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty();
+    configured = config && config->llmApi.isConfigured();
   }catch( std::exception & )
   {
     configured = false;
@@ -501,7 +647,7 @@ void LlmToolGui::handleConfigSaved()
       {
         SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Updating LLM" );
         errDialog->contents()->addNew<WText>( e.what() );
-        errDialog->addButton( "Okay" );
+        errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
         return;
       }
       setInputEnabled( true );
@@ -525,7 +671,7 @@ bool LlmToolGui::llmToolIsConfigured()
   try
   {
     shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
-    return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint().empty());
+    return (config && config->llmApi.isConfigured());
   }catch( std::exception &e )
   {
     cerr << "LLM config invalid: " << e.what() << endl;
@@ -545,11 +691,11 @@ void LlmToolGui::initializeUI()
 {
   m_root->addStyleClass("LlmToolGui");
 
-  // Create the main layout
-  m_layout = m_root->setLayout( std::make_unique<WGridLayout>() );
-  m_layout->setContentsMargins(5, 5, 5, 5);
-  m_layout->setVerticalSpacing(5);
-  m_layout->setHorizontalSpacing(5);
+  // Create the main layout (phones are narrow enough that we keep the margins small)
+  m_layout = m_root->setLayout( std::make_unique<WVBoxLayout>() );  // flex; see createRoot()
+  const int margin = m_viewer->isPhone() ? 2 : 5;
+  m_layout->setContentsMargins( margin, margin, margin, margin );
+  m_layout->setSpacing( 5 );
 
   // Create wrapper container for scroll area and menu icon
   auto scrollWrapperOwned = std::make_unique<WContainerWidget>();
@@ -570,15 +716,25 @@ void LlmToolGui::initializeUI()
 
   // Create menu icon for conversation-level actions (positioned in upper-right via CSS)
   m_menuIcon = scrollWrapper->addNew<WPushButton>();
+  m_menuIconHome = scrollWrapper;
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
   // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
 
   // Create popup menu
   PopupDivMenu *menu = makePopupMenu( m_menuIcon );
 
+  // On phones we leave out the items that are only of use when developing the LLM tools (raw JSON,
+  //  re-reading the config XML files, and benchmarks).
+  const bool phone = m_viewer->isPhone();
+  if( phone )
+    menu->addPhoneBackItem( nullptr );
+
   // Add "Export Conversation as JSON" option
-  PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
-  exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
+  if( !phone )
+  {
+    PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
+    exportJsonItem->triggered().connect( this, &LlmToolGui::exportConversationJson );
+  }
 
   // Add "Clear Conversation" option
   PopupDivMenuItem *clearItem = menu->addMenuItem( "Clear Conversation" );
@@ -593,14 +749,18 @@ void LlmToolGui::initializeUI()
   configItem->triggered().connect( this, &LlmToolGui::openConfigWindow );
 
   // Add "Reset LLM Config" option - re-reads config files and creates a new LlmInterface
-  PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
-  resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+  if( !phone )
+  {
+    PopupDivMenuItem *resetConfigItem = menu->addMenuItem( "Reset LLM Config" );
+    resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
+  }
 
   // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
   PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
   helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
 
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
+  if( !phone )
   {
     // Collect candidate test_datasets directories.  We take the union of benchmarks
     //  found across all of them (a benchmark may legitimately appear in more than one).
@@ -623,6 +783,12 @@ void LlmToolGui::initializeUI()
       // writableDataDirectory not set - nothing to add
     }
 #endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
+
+    // Knowledge skills can carry their own question sets (by convention in
+    //  `<llm_knowledge>/<skill>/test_datasets/<skill>/`, with any spectra next to the XML), so a
+    //  skill distributed on its own brings its benchmark with it.
+    for( const string &knowledgeDir : LlmKnowledgeBase::knowledgeDirectories() )
+      testDirs.push_back( knowledgeDir );
 
     vector<pair<string,string>> benchmarkFiles;
     for( string testDir : testDirs )
@@ -664,6 +830,9 @@ void LlmToolGui::initializeUI()
     }
   }
 
+  // On phones, the icon goes in the windows header bar, if we have been given it.
+  movePhoneMenuIcon();
+
   // Create scrollable container for conversation displays.  Wt4 removed WScrollArea; the
   //  replacement is a plain container with overflow:auto.
   WContainerWidget *scrollArea = scrollWrapper->addNew<WContainerWidget>();
@@ -674,15 +843,18 @@ void LlmToolGui::initializeUI()
   m_conversationContainer->addStyleClass("LlmConversationContainer");
 
   // Add scroll wrapper to layout (fills the whole tool; the input area floats over it)
-  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0);
-  m_layout->setRowStretch(0, 1);    // Make conversation display expand
-  m_layout->setColumnStretch(0, 1);
+  m_layout->addWidget( std::move(scrollWrapperOwned), 1 );  // Make conversation display expand
 
   // Floating input area, laid over the bottom of the scroll wrapper (CSS position:absolute).  It is
   // a horizontal flex row: the input column (image previews + growing text area) on the left, and
   // the icon submit/stop button pinned to the right.
-  WContainerWidget *inputArea = scrollWrapper->addNew<WContainerWidget>();
+  // Its client-side behaviour (see setupInputJavaScript()) is set up whenever its element is created.
+  LlmJsRenderedDiv *inputArea = scrollWrapper->addNew<LlmJsRenderedDiv>();
   inputArea->addStyleClass( "LlmInputArea" );
+
+  // Phones: while docked in the tools tab strip, an "expand to full-screen" button leads the row.
+  if( m_viewer->isPhone() )
+    addPhoneExpandButton( inputArea );
 
   WContainerWidget *inputColumn = inputArea->addNew<WContainerWidget>();
   inputColumn->addStyleClass( "LlmInputColumn" );
@@ -755,10 +927,18 @@ void LlmToolGui::setupInputJavaScript()
      << "var inputArea=btn.parentElement;"
      << "Wt.WT.LlmSetupAutoScroll(scrollArea, container);"
      << "Wt.WT.LlmSetupInput(ta, btn, scrollArea, container, wrapper, inputArea, "
-     << (acceptImages ? "true" : "false") << ", " << pasteCb << ");"
+     << (acceptImages ? "true" : "false") << ", " << pasteCb << ", "
+     << (m_viewer->isPhone() ? "true" : "false") << ");"
      << "})();";
 
-  doJavaScript( js.str() );
+  // Run by the input area whenever its element is (re-)created - the event listeners set up here
+  //  go with the old elements when the tool is moved between the tool tabs and a window.
+  LlmJsRenderedDiv * const inputArea = dynamic_cast<LlmJsRenderedDiv *>( m_sendButton->parent() );
+  assert( inputArea );
+  if( inputArea )
+    inputArea->setRenderJs( js.str() );
+  else
+    doJavaScript( js.str() );
 }//setupInputJavaScript()
 
 
@@ -781,16 +961,21 @@ void LlmToolGui::updateSendButtonEnabled()
 
 void LlmToolGui::resetInputHeight()
 {
+  // Only call this after `m_inputEdit->setText("")`.
   if( !m_inputEdit )
     return;
 
+  // Queued on the textarea itself so it runs after Wt applies the cleared value; otherwise grow()
+  //  can measure the old (long) text and leave the area expanded.  Clearing `value` here too makes
+  //  this independent of Wt's update ordering.
   ostringstream js;
   js << "(function(){var ta=" << m_inputEdit->jsRef() << ";"
      << "if(!ta) return;"
-     << "ta.style.height='auto';"
+     << "ta.value='';"
+     << "ta.style.height='';"
      << "if(ta._llmGrow) ta._llmGrow();"
      << "})();";
-  doJavaScript( js.str() );
+  m_inputEdit->doJavaScript( js.str() );
 }//resetInputHeight()
 
 
@@ -813,6 +998,8 @@ void LlmToolGui::clearHistory()
   shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( history )
     history->clear();
+
+  m_logFilePath.clear(); // The next conversation gets its own log file
 }
 
 
@@ -830,12 +1017,14 @@ bool LlmToolGui::canAcceptImages() const
 
 
 void LlmToolGui::stageImage( const string &base64Data, const string &mimeType,
-                              const string &displayName, int widthPx, int heightPx )
+                              const string &displayName, int widthPx, int heightPx,
+                              const string &caption )
 {
   StagedImage staged;
   staged.base64Data = base64Data;
   staged.mimeType = mimeType;
   staged.displayName = displayName;
+  staged.caption = caption;
   staged.widthPx = widthPx;
   staged.heightPx = heightPx;
   m_stagedImages.push_back( std::move( staged ) );
@@ -993,6 +1182,7 @@ void LlmToolGui::sendMessage(const std::string& message)
       LlmToolCall::ImageContent img;
       img.base64Data = std::move( staged.base64Data );
       img.mimeType = std::move( staged.mimeType );
+      img.caption = std::move( staged.caption );
       img.widthPx = staged.widthPx;
       img.heightPx = staged.heightPx;
       images.push_back( std::move( img ) );
@@ -1046,7 +1236,7 @@ void LlmToolGui::sendMessage(const std::string& message)
     // Show error in a dialog
     SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
     WText *errorText = errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
-    WPushButton *okBtn = errorDialog->addButton( "OK" );
+    WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
   }
 }
@@ -1239,6 +1429,8 @@ void LlmToolGui::handleConversationFinished()
 
   setInputEnabled( true );
 
+  writeConversationLog();
+
   // Resolve any in-flight MCP `assistant_submit_prompt` call, then start the next queued prompt.
   resolveActiveMcpPrompt( true );
 
@@ -1258,6 +1450,8 @@ void LlmToolGui::handleResponseError()
     setInputEnabled( true );
   }
 
+  writeConversationLog();
+
   // If this errored turn was an MCP-submitted prompt, resolve its callback with an error and keep
   //  draining the queue so automation doesn't get stuck on the human retry flow.
   resolveActiveMcpPrompt( false );
@@ -1276,7 +1470,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Conversation" );
     WText *msg = dialog->contents()->addNew<WText>( "There is no conversation history to export." );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1302,7 +1496,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Active Conversation" );
     WText *msg = dialog->contents()->addNew<WText>( "There is no active conversation to export." );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1316,7 +1510,7 @@ void LlmToolGui::exportConversationJson()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Export Failed" );
     WText *msg = dialog->contents()->addNew<WText>( string("Failed to build export JSON: ") + e.what() );
-    WPushButton *okBtn = dialog->addButton( "OK" );
+    WPushButton *okBtn = dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
   }
@@ -1345,7 +1539,7 @@ void LlmToolGui::exportConversationJson()
   download->setStyleClass( "LinkBtn DownloadLink" );
   download->setText( "Download conversation JSON" );
 
-  WPushButton *closeBtn = dialog->addButton( "Close" );
+  WPushButton *closeBtn = dialog->addButton( "Close", WidgetUtils::ButtonRole::Dismiss );
   closeBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }
 
@@ -1355,8 +1549,8 @@ void LlmToolGui::handleClearConversation()
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Clear Conversation" );
   WText *msg = dialog->contents()->addNew<WText>( "Are you sure you want to clear the entire conversation history? This cannot be undone." );
 
-  WPushButton *yesBtn = dialog->addButton( "Yes, Clear" );
-  WPushButton *noBtn = dialog->addButton( "Cancel" );
+  WPushButton *yesBtn = dialog->addButton( "Yes, Clear", WidgetUtils::ButtonRole::Destructive );
+  WPushButton *noBtn = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 
   yesBtn->clicked().connect( std::bind( [this, dialog]() {
     clearHistory();
@@ -1373,8 +1567,8 @@ void LlmToolGui::handleResetLlmConfig()
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Reset LLM Config" );
   dialog->contents()->addNew<WText>( "This will re-read the LLM configuration files and clear the current conversation. Continue?" );
 
-  WPushButton *yesBtn = dialog->addButton( "Yes, Reset" );
-  WPushButton *noBtn = dialog->addButton( "Cancel" );
+  WPushButton *yesBtn = dialog->addButton( "Yes, Reset", WidgetUtils::ButtonRole::Destructive );
+  WPushButton *noBtn = dialog->addButton( "Cancel", WidgetUtils::ButtonRole::Dismiss );
 
   yesBtn->clicked().connect( std::bind( [this, dialog]() {
     dialog->accept();
@@ -1389,15 +1583,15 @@ void LlmToolGui::handleResetLlmConfig()
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( e.what() );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
-    if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint().empty() )
+    if( !config || !config->llmApi.isConfigured() )
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
       errDialog->contents()->addNew<WText>( "LLM API is not enabled in the configuration." );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1416,7 +1610,7 @@ void LlmToolGui::handleResetLlmConfig()
     {
       SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Resetting LLM" );
       errDialog->contents()->addNew<WText>( e.what() );
-      errDialog->addButton( "Okay" );
+      errDialog->addButton( "Okay", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1436,7 +1630,7 @@ void LlmToolGui::handleCompactConversation()
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
     dialog->contents()->addNew<WText>( "Please wait for the current request to finish before compacting." );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 
@@ -1448,7 +1642,7 @@ void LlmToolGui::handleCompactConversation()
     {
       SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
       dialog->contents()->addNew<WText>( "Not enough conversation history to compact." );
-      dialog->addButton( "OK" );
+      dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
       return;
     }
 
@@ -1474,9 +1668,90 @@ void LlmToolGui::handleCompactConversation()
 
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Compaction Error" );
     dialog->contents()->addNew<WText>( string("Failed to compact conversation: ") + e.what() );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
   }
 }
+
+
+void LlmToolGui::writeConversationLog()
+{
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+  try
+  {
+    if( !m_llmInterface )
+      return;
+
+    const shared_ptr<const LlmConfig> config = m_llmInterface->config();
+    if( !config || !config->llmApi.logConversations )
+      return;
+
+    const shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+    if( !history || history->isEmpty() )
+      return;
+
+    const vector<shared_ptr<LlmInteraction>> &convos = history->getConversations();
+    assert( !convos.empty() && convos.front() );
+    // After compaction, front() is the summary placeholder, whose timestamp is that of the earliest
+    //  summarized message - so this is always when the conversation started.
+    const chrono::system_clock::time_point start_time = convos.front()->timestamp;
+
+    if( m_logFilePath.empty() )
+    {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+      // A session of an MCP agent server logs into its own directory, which goes away with it.
+      const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+      const std::optional<McpSessionManager::SessionInfo> session
+                    = manager ? manager->session( McpSessionManager::currentHandle() ) : std::nullopt;
+      if( !session.has_value() || session->dir.empty() )
+        throw runtime_error( "no session directory to log to" );
+      const string log_dir = SpecUtils::append_path( session->dir, "logs" );
+#else
+      const string base_dir = InterSpec::writableDataDirectory(); //throws if not set
+      const string log_dir = SpecUtils::append_path( base_dir, "llm_logs" );
+#endif
+      if( SpecUtils::create_directory( log_dir ) == 0 ) //-1 already existed, 1 created
+        throw runtime_error( "could not create directory '" + log_dir + "'" );
+
+      // A random id, rather than the session id, as one session may have many conversations,
+      //  and we dont want session ids on disk.
+      string path;
+      for( size_t attempt = 0; path.empty() || SpecUtils::is_file( path ); ++attempt )
+      {
+        if( attempt > 10 )
+          throw runtime_error( "could not find unused log file name" );
+        path = SpecUtils::append_path( log_dir,
+                       LlmConversationHistory::logFileName( start_time, Wt::WRandom::generateId(6) ) );
+      }
+      m_logFilePath = path;
+    }//if( m_logFilePath.empty() )
+
+    vector<pair<string,string>> attribs;
+    const char * const iso_fmt = "%Y-%m-%dT%H:%M:%S%z"; //local time, with UTC offset
+    attribs.emplace_back( "started", LlmConversationHistory::formatLocalTime( start_time, iso_fmt ) );
+    attribs.emplace_back( "lastWritten",
+                          LlmConversationHistory::formatLocalTime( chrono::system_clock::now(), iso_fmt ) );
+#ifdef InterSpec_VERSION
+    attribs.emplace_back( "InterSpecVersion", InterSpec_VERSION );
+#endif
+    try
+    {
+      attribs.emplace_back( "model", config->llmApi.model() );
+      attribs.emplace_back( "apiFormat", LlmConfig::LlmApi::apiFormatToString( config->llmApi.apiFormat() ) );
+    }catch( std::exception & )
+    {
+      // No active provider/model - not important for the log
+    }
+
+    history->writeLogFile( m_logFilePath, attribs );
+    m_logWriteFailed = false;
+  }catch( std::exception &e )
+  {
+    if( !m_logWriteFailed )
+      cerr << "Failed to write LLM conversation log: " << e.what() << endl;
+    m_logWriteFailed = true;
+  }
+#endif
+}//void writeConversationLog()
 
 
 void LlmToolGui::setInputEnabled(bool enabled)
@@ -1559,18 +1834,25 @@ void LlmToolGui::cancelCurrentRequest()
 
   cout << "Cancelling LLM request" << endl;
 
-  // Clear the pending request state
+  if( m_activeMcpCallback )
+    m_activeMcpCancelled = true;
+
+  // Stop the turn itself (in-flight requests and deferred tool rounds), or it would keep calling
+  //  tools and share the history with the next turn; cancelAll() emits conversationFinished, so
+  //  handleConversationFinished() re-enables input and resolves any MCP prompt (as cancelled).
+  if( m_llmInterface && m_llmInterface->hasActiveRequests() )
+  {
+    m_llmInterface->cancelAll();
+    return;
+  }
+
   m_isRequestPending = false;
-
-  // Re-enable the input
   setInputEnabled(true);
+  writeConversationLog();
 
-  // If an MCP prompt was in flight, resolve it as failed so the SSE stream ends
-  // and the queue can drain to the next entry.
+  // If an MCP prompt was in flight, resolve it so the SSE stream ends and the queue can drain to
+  //  the next entry.
   resolveActiveMcpPrompt( false );
-
-  // Note: We can't actually cancel the HTTP request from C++, but the response will be ignored
-  // when it comes back since we've cleared the pending request state
 }
 
 std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> LlmToolGui::getConversationHistory() const
@@ -1602,6 +1884,8 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
   shared_ptr<LlmConversationHistory> llmHistory = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( !llmHistory )
     return;
+
+  m_logFilePath.clear(); // A restored history is logged to a new file at its next turn end
 
   // Clear current display
   clearConversationDisplays();
@@ -1640,6 +1924,8 @@ void LlmToolGui::clearConversationHistory()
   if( history )
     history->clear();
 
+  m_logFilePath.clear();
+
   // Clear the display, then re-show the getting-started panel
   clearConversationDisplays();
   updateWelcomeMessage();
@@ -1664,7 +1950,9 @@ void LlmToolGui::submitMessageAsUser( const string &message )
 
 
 void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback,
-                                    McpProgressCallback progressCallback )
+                                    McpProgressCallback progressCallback,
+                                    vector<LlmToolCall::ImageContent> images,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -1687,8 +1975,53 @@ void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback call
     return;
   }
 
-  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ) } );
+  if( !images.empty() && !canAcceptImages() )
+  {
+    callback( string( "The configured model does not accept images." ) );
+    return;
+  }
+
+  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ),
+                                                std::move( images ), id } );
   drainMcpPromptQueue();
+}
+
+
+bool LlmToolGui::cancelMcpPrompt( const string &id )
+{
+  if( id.empty() )
+    return false;
+
+  for( auto iter = begin(m_mcpPromptQueue); iter != end(m_mcpPromptQueue); ++iter )
+  {
+    if( iter->id == id )
+    {
+      McpPromptCallback cb = std::move( iter->callback );
+      m_mcpPromptQueue.erase( iter );
+      if( cb )
+        cb( string( "The prompt was cancelled before it ran." ) );
+      return true;
+    }
+  }//for( loop over queued prompts )
+
+  if( m_activeMcpCallback && (m_activeMcpId == id) )
+  {
+    m_activeMcpCancelled = true;
+    cancelCurrentRequest();  //resolves the active prompt, then drains the queue
+
+    // (The queue may have started the next prompt, so check the id.)
+    if( m_activeMcpCallback && (m_activeMcpId == id) )
+      resolveActiveMcpPrompt( false );
+    return true;
+  }
+
+  return false;
+}//bool cancelMcpPrompt( const string &id )
+
+
+bool LlmToolGui::isTurnInProgress() const
+{
+  return m_isRequestPending || static_cast<bool>(m_activeMcpCallback) || !m_mcpPromptQueue.empty();
 }
 
 
@@ -1715,6 +2048,13 @@ void LlmToolGui::drainMcpPromptQueue()
   m_mcpPromptQueue.pop_front();
   m_activeMcpCallback = std::move( next.callback );
   m_activeProgressCallback = std::move( next.progressCallback );
+  m_activeMcpId = next.id;
+  m_activeMcpCancelled = false;
+
+  // Staged right before sending, since sending takes every staged image along.
+  for( const LlmToolCall::ImageContent &img : next.images )
+    stageImage( img.base64Data, img.mimeType, img.caption.empty() ? string("image") : img.caption,
+                img.widthPx, img.heightPx, img.caption );
 
   submitMessageAsUser( next.prompt );
 
@@ -1745,8 +2085,14 @@ void LlmToolGui::resolveActiveMcpPrompt( bool success )
   {
     McpPromptCallback cb = std::move( m_activeMcpCallback );
     m_activeMcpCallback = McpPromptCallback();
+    const bool cancelled = m_activeMcpCancelled;
+    m_activeMcpId.clear();
+    m_activeMcpCancelled = false;
 
-    if( success )
+    // (A cancelled turn ends through conversationFinished, i.e. "success", so check cancelled first.)
+    if( cancelled )
+      cb( string( "The assistant's turn was cancelled." ) );
+    else if( success )
       cb( buildMcpPromptResult() );
     else
       cb( string( "The assistant's turn ended with an error before producing a final response." ) );
@@ -1806,6 +2152,32 @@ nlohmann::json LlmToolGui::buildMcpPromptResult() const
     for( const LlmToolCall &call : req->toolCalls() )
       result["tool_calls"].push_back( call.toolName );
   }
+
+  // Questions the assistant asked the GUI's user (ask_user_question), with their answers, so an
+  //  MCP client can surface them.  (An MCP HTTP server has no such user, nor the tool.)
+  nlohmann::json questions = nlohmann::json::array();
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    if( !turn || (turn->type() != LlmInteractionTurn::Type::ToolResult) )
+      continue;
+
+    const LlmToolResults *results = dynamic_cast<const LlmToolResults *>( turn.get() );
+    if( !results )
+      continue;
+
+    for( const LlmToolCall &call : results->toolCalls() )
+    {
+      if( call.toolName != "ask_user_question" )
+        continue;
+      nlohmann::json entry;
+      entry["question"] = call.toolParameters.value( "question", nlohmann::json("") );
+      entry["answer"] = call.content;
+      questions.push_back( std::move(entry) );
+    }
+  }//for( loop over turns )
+
+  if( !questions.empty() )
+    result["questions_asked"] = std::move( questions );
 
   return result;
 }
@@ -1968,7 +2340,8 @@ void LlmToolGui::disconnectMcpProgress()
 
 
 void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
-                                    McpPromptCallback callback, McpProgressCallback progressCallback )
+                                    McpPromptCallback callback, McpProgressCallback progressCallback,
+                                    const string &id )
 {
   if( !callback )
     return;
@@ -2003,7 +2376,7 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
   const string wrappedPrompt = "Please use the invoke_" + agentName
     + " tool to handle the following request:\n\n" + prompt;
 
-  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ) );
+  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ), {}, id );
 }
 
 
@@ -2041,7 +2414,7 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
   {
     SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Benchmark Running" );
     dialog->contents()->addNew<WText>( "A benchmark is already running. Please wait for it to finish." );
-    dialog->addButton( "OK" );
+    dialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
     return;
   }
 

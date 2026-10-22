@@ -446,8 +446,12 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     }//if( app && viewer && viewer->m_user )
 #endif
     
+#if( NO_WT_HTTP_SERVER )
+    const int httpPort = 0; //No HTTP connector, so libwttest does not implement WServer::httpPort()
+#else
     auto server = WServer::instance();
     const int httpPort = server ? server->httpPort() : 0;
+#endif
     
     WText *text = parent->addNew<WText>( WString::tr("ladw-data-location-user").arg(datadir) );
     text->addStyleClass( "DataLocationSection" );

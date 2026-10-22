@@ -144,6 +144,14 @@ add_test( NAME TDoseCalc
 )
 
 
+add_executable( test_DecayBatchCalc test_DecayBatchCalc.cpp )
+target_link_libraries( test_DecayBatchCalc PRIVATE InterSpecLib )
+add_test( NAME TDecayBatchCalc
+  COMMAND $<TARGET_FILE:test_DecayBatchCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RelEffManual test_RelEffManual.cpp )
 target_link_libraries( test_RelEffManual PRIVATE InterSpecLib )
 add_test( NAME TestRelEffManual
@@ -199,6 +207,11 @@ add_test( NAME TRelActCalcAuto_ProfileScan
 # dumps per-profile-sample delta-chi2 so scan convergence can be studied over a population.
 add_executable( rel_act_corpus_sweep rel_act_corpus_sweep.cpp )
 target_link_libraries( rel_act_corpus_sweep PRIVATE InterSpecLib )
+
+# The fit-peaks-for-nuclides corpus evaluation (fit_peaks_corpus_eval) and its scorer's unit test
+# (TFitPeaksCorpusScore) live with the rest of the peak-fit improvement tools.
+add_subdirectory( "${CMAKE_CURRENT_SOURCE_DIR}/../peak_fit_improve_ai"
+                  "${CMAKE_CURRENT_BINARY_DIR}/peak_fit_improve_ai" )
 
 # The JRC known-truth plutonium grid always builds, so its sources are compile-checked with every
 # other test, but it is not registered as a ctest by default: each of the three cases runs a free-age
@@ -284,6 +297,13 @@ add_test( NAME TPeakFitLM_MultiPeak
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_PeakFitLM_Likelihood test_PeakFitLM_Likelihood.cpp )
+target_link_libraries( test_PeakFitLM_Likelihood PRIVATE InterSpecLib )
+add_test( NAME TPeakFitLM_Likelihood
+  COMMAND $<TARGET_FILE:test_PeakFitLM_Likelihood> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakContinuumCdfStep test_PeakContinuumCdfStep.cpp )
 target_link_libraries( test_PeakContinuumCdfStep PRIVATE InterSpecLib )
 add_test( NAME TPeakContinuumCdfStep
@@ -326,10 +346,31 @@ add_test( NAME TRelActCalcAuto_Search
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_Roi test_RelActCalcAuto_Roi.cpp )
+target_link_libraries( test_RelActCalcAuto_Roi PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_Roi
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_Roi> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_LineAnchoredFit test_RelActCalcAuto_LineAnchoredFit.cpp )
+target_link_libraries( test_RelActCalcAuto_LineAnchoredFit PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_LineAnchoredFit
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_LineAnchoredFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_Conditioning test_RelActCalcAuto_Conditioning.cpp )
 target_link_libraries( test_RelActCalcAuto_Conditioning PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_Conditioning
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_Conditioning> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_ActiveSet test_RelActCalcAuto_ActiveSet.cpp )
+target_link_libraries( test_RelActCalcAuto_ActiveSet PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ActiveSet
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ActiveSet> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -347,10 +388,38 @@ add_test( NAME TRelActCalcAuto_MassFracConstraint
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_FwhmForm test_RelActCalcAuto_FwhmForm.cpp )
+target_link_libraries( test_RelActCalcAuto_FwhmForm PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_FwhmForm
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_FwhmForm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_FloatingPeakFwhm test_RelActCalcAuto_FloatingPeakFwhm.cpp )
 target_link_libraries( test_RelActCalcAuto_FloatingPeakFwhm PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_FloatingPeakFwhm
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_FloatingPeakFwhm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_MicroCalFwhm test_RelActCalcAuto_MicroCalFwhm.cpp )
+target_link_libraries( test_RelActCalcAuto_MicroCalFwhm PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_MicroCalFwhm
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_MicroCalFwhm> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalc_FluorescenceDepth test_RelActCalc_FluorescenceDepth.cpp )
+target_link_libraries( test_RelActCalc_FluorescenceDepth PRIVATE InterSpecLib )
+add_test( NAME TRelActCalc_FluorescenceDepth
+  COMMAND $<TARGET_FILE:test_RelActCalc_FluorescenceDepth> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_XrayObsEff test_RelActCalcAuto_XrayObsEff.cpp )
+target_link_libraries( test_RelActCalcAuto_XrayObsEff PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_XrayObsEff
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_XrayObsEff> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -746,6 +815,13 @@ if( USE_LLM_INTERFACE )
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
 
+  add_executable( test_LlmKnowledgeBase test_LlmKnowledgeBase.cpp )
+  target_link_libraries( test_LlmKnowledgeBase PRIVATE InterSpecLib )
+  add_test( NAME TLlmKnowledgeBase
+    COMMAND $<TARGET_FILE:test_LlmKnowledgeBase> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
   add_executable( test_LlmPromptTemplate test_LlmPromptTemplate.cpp )
   target_link_libraries( test_LlmPromptTemplate PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
   add_test( NAME TLlmPromptTemplate
@@ -780,6 +856,32 @@ if( USE_LLM_INTERFACE )
     COMMAND $<TARGET_FILE:test_LlmApiProtocol> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   )
+
+  add_executable( test_LlmConversationLog test_LlmConversationLog.cpp )
+  target_link_libraries( test_LlmConversationLog PRIVATE InterSpecLib )
+  add_test( NAME TLlmConversationLog
+    COMMAND $<TARGET_FILE:test_LlmConversationLog> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmModelPresets test_LlmModelPresets.cpp )
+  target_link_libraries( test_LlmModelPresets PRIVATE InterSpecLib )
+  add_test( NAME TLlmModelPresets
+    COMMAND $<TARGET_FILE:test_LlmModelPresets> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  # The MCP agent server (env() config references, path confinement, analysis N42 round trip);
+  #  the MCP server is only built for desktop-style platforms.  The session manager is built into the
+  #  test, as it is part of target/mcp_http rather than InterSpecLib.
+  if( NOT (IOS OR ANDROID) )
+    add_executable( test_McpAgentServer test_McpAgentServer.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_http/McpSessionManager.cpp )
+    target_link_libraries( test_McpAgentServer PRIVATE InterSpecLib )
+    add_test( NAME TMcpAgentServer
+      COMMAND $<TARGET_FILE:test_McpAgentServer> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+  endif( NOT (IOS OR ANDROID) )
 
   add_executable( test_LlmInterface test_LlmInterface.cpp )
   target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
@@ -816,6 +918,22 @@ add_executable( test_DrfModify test_DrfModify.cpp )
 target_link_libraries( test_DrfModify PRIVATE InterSpecLib )
 add_test( NAME TDrfModify
   COMMAND $<TARGET_FILE:test_DrfModify> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Identifying detector-efficiency files and building DRFs from them (DrfImport) - the DRF Select
+#  "Import" tab and the dialog for a DRF file dropped onto the app, less the widgets.
+add_executable( test_DrfImport test_DrfImport.cpp )
+target_link_libraries( test_DrfImport PRIVATE InterSpecLib )
+add_test( NAME TDrfImport
+  COMMAND $<TARGET_FILE:test_DrfImport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_ImportedGridDrf test_ImportedGridDrf.cpp )
+target_link_libraries( test_ImportedGridDrf PRIVATE InterSpecLib )
+add_test( NAME TImportedGridDrf
+  COMMAND $<TARGET_FILE:test_ImportedGridDrf> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -872,6 +990,13 @@ add_executable( test_ExportSpecFile test_ExportSpecFile.cpp )
 target_link_libraries( test_ExportSpecFile PRIVATE InterSpecLib )
 add_test( NAME TExportSpecFile
   COMMAND $<TARGET_FILE:test_ExportSpecFile> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCalTool test_EnergyCalTool.cpp )
+target_link_libraries( test_EnergyCalTool PRIVATE InterSpecLib )
+add_test( NAME TEnergyCalTool
+  COMMAND $<TARGET_FILE:test_EnergyCalTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

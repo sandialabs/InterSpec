@@ -93,4 +93,9 @@
   <!-- Affiché sous les entrées avancées lorsque la méthode Déconvolution est sélectionnée, où elles
        sont désactivées.  Un contrôle désactivé sans explication passe pour un bogue. -->
   <message id="dls-advanced-decon-note">Ceux-ci s'appliquent à la méthode de Currie ; la limite par déconvolution ne les utilise pas encore.</message>
+  <message id="dls-drf-uncert-none">Aucune incertitude d'efficacité du détecteur n'est incluse : la réponse du détecteur n'en déclare aucune.</message>
+  <message id="dls-drf-uncert-stated">Inclut l'incertitude d'efficacité du détecteur de {1} % déclarée par la réponse du détecteur.</message>
+  <message id="dls-drf-uncert-model-only">Inclut {1} % d'incertitude d'efficacité du détecteur provenant uniquement du modèle géométrique ; la réponse du détecteur n'en déclare aucune elle-même.</message>
+  <message id="dls-drf-uncert-decon-excluded">L'incertitude d'efficacité de {1} % de la réponse du détecteur n'est pas incluse dans la limite par déconvolution.</message>
+  <message id="dls-det-eff-used">Efficacité du détecteur utilisée</message>
 </messages>

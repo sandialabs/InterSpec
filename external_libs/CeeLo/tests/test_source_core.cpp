@@ -30,7 +30,11 @@
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 
+#include "physics/ElectronCsda.h"
+
+#include <algorithm>
 #include <cmath>
+#include <random>
 #include <vector>
 
 using namespace ceelo;
@@ -331,6 +335,165 @@ BOOST_AUTO_TEST_CASE(one_segment_request_gets_the_whole_material_run) {
     sg2.trace_source_segments({2.5, 0, 0}, {-1, 0, 0}, 662.0, segs, 1);
     BOOST_REQUIRE_EQUAL(segs.size(), 1u);
     BOOST_CHECK_CLOSE(segs[0].length, 0.5, 1e-9);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE(SourceCoreTransport)
+
+// The analytic suite above pins the GEOMETRY.  These pin the two TRANSPORT
+// paths a core reaches that the geometry tests cannot see, both of which were
+// silently wrong until an adversarial review found them.
+
+BOOST_AUTO_TEST_CASE(fep_only_self_core_matches_the_solid_it_equals) {
+    // compute_transmission_fep_only() walks the stack with a REUSED segment
+    // buffer and re-traces after every Rayleigh turn.  trace_cored_segments()
+    // appends, so a missing clear() made each turn re-process the segments
+    // already walked: attenuation applied twice, and the exit point ran far
+    // outside the source (a 2 cm source reported >100 cm), which then fed a
+    // bogus air gap downstream.
+    //
+    // A core of the shell's own material is the same solid, so the two must
+    // agree.  60 keV iron is chosen because Rayleigh is strong there
+    // (mu_rs * L ~ 1.5), which is what drives the retrace.
+    Material fe = make_Iron();
+
+    SourceGeometry cored, solid;
+    cored.configure_spherical(Eigen::Vector3d(0, 0, 0), 1.0, 0.5, Eigen::Matrix3d::Identity());
+    cored.set_source_material(&fe);
+    cored.add_core(&fe, 0.5);
+    solid.configure_spherical(Eigen::Vector3d(0, 0, 0), 1.0, 0.0, Eigen::Matrix3d::Identity());
+    solid.set_source_material(&fe);
+
+    std::mt19937_64 rng_a(12345), rng_b(12345);
+    double sum_a = 0.0, sum_b = 0.0, max_exit_a = 0.0;
+    const int N = 4000;
+    for (int i = 0; i < N; ++i) {
+        const Eigen::Vector3d dir(0.0, 0.0, 1.0);
+        // NOTE keV vs MeV: this entry point takes MeV.  Passing 60.0 here means
+        //  60 MeV, where Rayleigh is negligible, no retrace ever happens and the
+        //  test is vacuous -- which is exactly how the first version of it passed
+        //  against the un-fixed code.
+        auto a = cored.compute_transmission_fep_only(Eigen::Vector3d(0, 0, -1.0), dir, 0.060, rng_a);
+        auto b = solid.compute_transmission_fep_only(Eigen::Vector3d(0, 0, -1.0), dir, 0.060, rng_b);
+        sum_a += a.weight;
+        sum_b += b.weight;
+        max_exit_a = std::max(max_exit_a, a.exit_position.norm());
+    }
+    // The exit point must stay on the source, not run away down the ray.
+    BOOST_CHECK_LT(max_exit_a, 1.01);
+    // Same optical medium, same chord => same mean weight.  The tolerance is
+    // loose only because the cored path re-traces the post-scatter leg, which
+    // the aggregated legacy path does not model.
+    BOOST_CHECK_CLOSE(sum_a / N, sum_b / N, 12.0);
+}
+
+BOOST_AUTO_TEST_CASE(an_electron_crossing_the_cavity_has_not_escaped) {
+    // A partly-filled core leaves a null-material cavity segment.  The Moliere
+    // source walk read that as "outside the source geometry" and declared the
+    // electron escaped -- at a point deep INSIDE the source, with full residual
+    // energy, skipping the far wall and every shield beyond it.
+    Material soil = make_Soil(), fe = make_Iron();
+
+    SourceGeometry sg;
+    sg.configure_spherical(Eigen::Vector3d(0, 0, 0), 2.05, 2.0, Eigen::Matrix3d::Identity());
+    sg.set_source_material(&soil);
+    sg.add_core(&fe, 0.05);            // fills [1.95, 2.0]; r < 1.95 stays void
+    sg.set_source_electron_transport(true);
+
+    // Born in the near wall heading inward.  This geometry is deliberately thin
+    // enough that escaping is physically possible, so the invariant is not HOW
+    // OFTEN an electron gets out but WHERE: the only way out is the outer
+    // surface at r = 2.05.  Exiting at the cavity wall (r = 1.95) is the bug.
+    std::mt19937_64 rng(999);
+    int escaped = 0, escaped_inside = 0;
+    const int N = 200;
+    for (int i = 0; i < N; ++i) {
+        auto w = ElectronCsda::instance().walk_in_source_geometry(
+            sg, soil, Eigen::Vector3d(0, 0, -2.02), Eigen::Vector3d(0, 0, 1),
+            2000.0, rng);
+        if (!w.escaped) continue;
+        ++escaped;
+        if (w.exit_position.norm() < 2.0) ++escaped_inside;
+    }
+    // Before the fix EVERY electron "escaped" from the cavity wall at r = 1.95
+    // carrying ~1.9 MeV; now none does.
+    BOOST_CHECK_EQUAL(escaped_inside, 0);
+    BOOST_CHECK_GT(escaped, 0);   // the walk still reaches the outside at all
+}
+
+BOOST_AUTO_TEST_CASE(a_cavity_does_not_let_an_electron_skip_a_shield) {
+    // The same defect, in the form that matters: with a real shield outside, an
+    // electron that "escaped" at the cavity wall was handed to detector-side
+    // transport having skipped the far wall AND the shield entirely.
+    // The electron has to actually REACH the cavity for this to test anything:
+    // born inside a thin core wall heading inward, so it enters the void at once.
+    // (A first version started it in the outer shell, where 2 MeV stops well
+    // before the cavity - it passed against the un-fixed code.)
+    // Same geometry as the test above (which is known to get an electron as far
+    // as the cavity), plus a shield.  Two earlier attempts were vacuous: one
+    // started the electron where 2 MeV stops before reaching the cavity, the
+    // other in a 0.01 cm sliver that exhausted the walk's step budget.  Both
+    // passed against the un-fixed code, which is how they were caught.
+    Material soil = make_Soil(), fe = make_Iron();
+
+    SourceGeometry sg;
+    sg.configure_spherical(Eigen::Vector3d(0, 0, 0), 2.05, 2.0, Eigen::Matrix3d::Identity());
+    sg.set_source_material(&soil);
+    sg.add_core(&fe, 0.05);            // fills [1.95, 2.0]; r < 1.95 stays void
+    sg.add_shield(&fe, 0.5);           // 0.5 cm of iron outside, at [2.05, 2.55]
+    sg.set_source_electron_transport(true);
+
+    std::mt19937_64 rng(4242);
+    int escaped_inside = 0;
+    const int N = 200;
+    for (int i = 0; i < N; ++i) {
+        auto w = ElectronCsda::instance().walk_in_source_geometry(
+            sg, soil, Eigen::Vector3d(0, 0, -2.02), Eigen::Vector3d(0, 0, 1),
+            2000.0, rng);
+        if (w.escaped && w.exit_position.norm() < 2.55) ++escaped_inside;
+    }
+    // Nothing may report escaping from anywhere inside the outer shield surface.
+    // Before the fix these "escaped" at the cavity wall, r = 1.95, and were then
+    // handed to detector-side transport having skipped the far wall AND the
+    // 0.5 cm iron shield entirely.
+    BOOST_CHECK_EQUAL(escaped_inside, 0);
+}
+
+BOOST_AUTO_TEST_CASE(a_solid_cylinder_is_not_secretly_hollow) {
+    // configure_cylindrical() sets cyl_inner_half_length_ to the FULL half-length
+    // for a solid cylinder, so testing the cavity triple's maxCoeff called a
+    // solid cylinder hollow: it gained a phantom void layer, accepted add_core(),
+    // and lost the closed-form and electron-containment fast paths for good.
+    Material water = make_Water();
+    SourceGeometry solid;
+    solid.configure_cylindrical(Eigen::Vector3d(0, 0, 0), 3.0, 3.0,
+                                Eigen::Matrix3d::Identity());
+    solid.set_source_material(&water);
+    BOOST_CHECK_EQUAL(solid.source_layer_index(), 0u);   // no leading void
+    BOOST_CHECK(!solid.has_attenuating_interior());
+    BOOST_CHECK_EQUAL(solid.layers().size(), 1u);
+}
+
+BOOST_AUTO_TEST_CASE(reconfiguring_to_a_shape_without_a_cavity_drops_the_cores) {
+    // The gate that routes to the ordered march is cached.  Reconfiguring into a
+    // shape that cannot hold cores used to leave it set, and the walker then
+    // returned nothing for every trace -- silently dropping the shields.
+    Material pb = make_Lead(), soil = make_Soil();
+    SourceGeometry sg;
+    sg.configure_spherical(Eigen::Vector3d(0, 0, 0), 3.0, 2.0, Eigen::Matrix3d::Identity());
+    sg.set_source_material(&soil);
+    sg.add_core(&pb, 2.0);
+    BOOST_CHECK(sg.has_attenuating_interior());
+
+    sg.configure_point(Eigen::Vector3d(0, 0, 0));
+    sg.add_shield(&pb, 0.5);
+    BOOST_CHECK(!sg.has_attenuating_interior());
+    // The shield must still attenuate: exp(-mu * 0.5), not 1.
+    const double t = sg.compute_transmission(Eigen::Vector3d(0, 0, 0),
+                                             Eigen::Vector3d(0, 0, 1), 0.662);
+    BOOST_CHECK_LT(t, 0.99);
+    BOOST_CHECK_CLOSE(t, std::exp(-pb.mu_total(0.662) * 0.5), 1e-6);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

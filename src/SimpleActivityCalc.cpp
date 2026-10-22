@@ -28,6 +28,7 @@
 #include <limits>
 #include <algorithm>
 
+#include <Wt/Utils.h>
 #include <Wt/WMenu.h>
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
@@ -58,6 +59,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/DrfModifyCalc.h"
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
@@ -1591,7 +1593,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         if( updated_back_roi_peaks.empty() )
         {
           SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-no-background-peak") );
-          dialog->addButton( WString::tr( "Okay" ) );
+          dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
           m_backgroundSubtractCheck->setChecked( false );
           return;
         }
@@ -1628,7 +1630,7 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
         if( !background_peak )
         {
           SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-no-background-peak") );
-          dialog->addButton( WString::tr( "Okay" ) );
+          dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
           m_backgroundSubtractCheck->setChecked( false );
           return;
         }
@@ -1661,14 +1663,14 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
           }
         } );
         
-        WPushButton *okay_btn = dialog->addButton( WString::tr("Yes") );
-        WPushButton *no_btn = dialog->addButton( WString::tr("No") );
+        WPushButton *okay_btn = dialog->addButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+        WPushButton *no_btn = dialog->addButton( WString::tr("No"), WidgetUtils::ButtonRole::Dismiss );
         okay_btn->clicked().connect( this, [this, background_peak](){ setFitBackgroundPeak( background_peak ); } );
         no_btn->clicked().connect( m_backgroundSubtractCheck, &WCheckBox::setUnChecked );
       }catch( std::exception &e )
       {
         SimpleDialog *dialog = SimpleDialog::make( "", WString::tr("sac-error-fitting-background-peak").arg(e.what()) );
-        dialog->addButton( WString::tr( "Okay" ) );
+        dialog->addButton( WString::tr( "Okay" ), WidgetUtils::ButtonRole::Affirm );
         m_backgroundSubtractCheck->setChecked( false );
         return;
       }
@@ -1881,6 +1883,34 @@ void SimpleActivityCalc::updateResult()
         const string dosestr = PhysicalUnits::printToBestEquivalentDoseRateUnits( *result.source_dose, 2, useBq );
         resultStr += "<span class=\"DoseTxt\">estimated dose: " + dosestr + "</span>";
       }//if( result.source_dose.has_value() )
+
+      // Say whether the uncertainty includes the detector efficiency's, and what kind.
+      {
+        const auto pct = []( const double frac ) -> string {
+          return SpecUtils::printCompact( 100.0*frac, 2 );
+        };
+
+        WString note;
+        switch( result.drfUncertUsed )
+        {
+          case ShieldingSourceFitCalc::DrfUncertUsed::None:
+            note = WString::tr("sac-drf-uncert-none");
+            break;
+          case ShieldingSourceFitCalc::DrfUncertUsed::Stated:
+            note = WString::tr("sac-drf-uncert-stated").arg( pct(result.drfEffFracUncert) );
+            break;
+          case ShieldingSourceFitCalc::DrfUncertUsed::GeometryModelOnly:
+            note = WString::tr("sac-drf-uncert-model-only").arg( pct(result.drfEffFracUncert) );
+            break;
+          case ShieldingSourceFitCalc::DrfUncertUsed::IncludesAssumed:  //not requested here
+            note = WString::tr("sac-drf-uncert-assumed").arg( pct(result.drfEffFracUncert) );
+            break;
+        }//switch( result.drfUncertUsed )
+        resultStr += "<span class=\"DrfUncertNote\">" + note.toUTF8() + "</span>";
+      }
+
+      for( const string &warning : result.warnings )
+        resultStr += "<span class=\"FitWarning\">" + Wt::Utils::htmlEncode( warning ) + "</span>";
       
       m_resultText->setText( WString::fromUTF8(resultStr) );
     }else
@@ -2141,6 +2171,14 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     fit_options.photopeak_cluster_sigma = 1.25;
     fit_options.background_peak_subtract = !!input.background_peak;
     fit_options.same_age_isotopes = false;
+
+    // Propagate the efficiency uncertainty (the stated part, and any geometry-model part - see
+    //  ShieldingSourceFitOptions::drf_uncert_include_assumed) - but only ask when the DRF reports one,
+    //  else the fit warns it was requested and unavailable.
+    const DrfModifyCalc::UncertSummary drf_uncert = DrfModifyCalc::uncertSummary( *input.detector );
+    fit_options.drf_uncert_method = (drf_uncert.valid && (drf_uncert.total > 0.0))
+                                    ? ShieldingSourceFitCalc::DrfUncertaintyMethod::ErrorPropagation
+                                    : ShieldingSourceFitCalc::DrfUncertaintyMethod::None;
     
     // Set up source definition
     ShieldingSourceFitCalc::SourceFitDef source;
@@ -2388,6 +2426,14 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     result.successful = true;
     result.activity = fitResult.activity;
     result.activityUncertainty = fitResult.activityUncertainty.value_or(-1.0);
+
+    result.warnings = fit_results->warnings;
+    result.drfUncertUsed = fit_results->drf_uncert_used;
+    if( result.drfUncertUsed != ShieldingSourceFitCalc::DrfUncertUsed::None )
+    {
+      const vector<double> eff_uncerts = fcn_pars.first->peakEffFracUncerts();
+      result.drfEffFracUncert = (eff_uncerts.size() == 1) ? eff_uncerts[0] : 0.0;
+    }
     
     if( input.geometryType == SimpleActivityGeometryType::Plane )
     {

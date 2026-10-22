@@ -23,8 +23,12 @@
 
 #include "InterSpec_config.h"
 
-#include <string>
 #include <cmath>
+#include <deque>
+#include <memory>
+#include <string>
+#include <vector>
+#include <sstream>
 
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE PeakModel_suite
@@ -33,8 +37,10 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
@@ -106,6 +112,45 @@ void set_data_dir()
   const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
   BOOST_REQUIRE_MESSAGE( u238, "Full SandiaDecayDataBase empty?" );
 }//void set_data_dir()
+
+
+/** A flat spectrum, 1 keV per channel over [0,3000] keV, to read peak CSVs against. */
+shared_ptr<const SpecUtils::Measurement> make_flat_spectrum()
+{
+  const size_t nchannel = 3000;
+  const shared_ptr<SpecUtils::EnergyCalibration> cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( nchannel, { 0.0f, 1.0f }, {} );
+
+  const shared_ptr<SpecUtils::Measurement> meas = make_shared<SpecUtils::Measurement>();
+  meas->set_gamma_counts( make_shared<vector<float>>( nchannel, 10.0f ), 300.0f, 300.0f );
+  meas->set_energy_calibration( cal );
+
+  return meas;
+}//make_flat_spectrum()
+
+
+/** `gammaParticleEnergy()`, or -1 if the peak has no usable source. */
+double source_energy( const PeakDef &peak )
+{
+  try
+  {
+    return peak.hasSourceGammaAssigned() ? peak.gammaParticleEnergy() : -1.0;
+  }catch( std::exception & )
+  {
+  }
+
+  return -1.0;
+}//source_energy(...)
+
+
+string transition_str( const SandiaDecay::Transition * const trans )
+{
+  if( !trans )
+    return "none";
+
+  return (trans->parent ? trans->parent->symbol : string("null")) + "->"
+         + (trans->child ? trans->child->symbol : string("null"));
+}//transition_str(...)
 
 
 BOOST_AUTO_TEST_CASE( testSetNuclideXrayRctn )
@@ -314,4 +359,137 @@ BOOST_AUTO_TEST_CASE( testSetNuclideXrayRctn )
   BOOST_CHECK( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
   BOOST_CHECK( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
   BOOST_CHECK( peak.hasSourceGammaAssigned() );
+
+  // The annihilation reaction; the first form is how peak search assigns it from reference lines
+  for( const char *txt : { "Annihilation 510.998901 keV", "Annihilation" } )
+  {
+    peak = PeakDef( 511, 5, 1.8E6 );
+    result = PeakModel::setNuclideXrayReaction( peak, txt, 4.0 );
+    BOOST_CHECK_MESSAGE( result == PeakModel::SetGammaSource::SourceChange, "Failed to set '" << txt << "'" );
+    BOOST_CHECK( peak.reaction() && (peak.sourceName() == "Annihilation") );
+    BOOST_CHECK( fabs( source_energy(peak) - 511 ) < 1.0 );
+    BOOST_CHECK( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
+  }
 }
+
+
+// Every kind of source `write_peak_csv` writes must come back from `csv_to_candidate_fit_peaks`
+//  as the same source.
+BOOST_AUTO_TEST_CASE( peakCsvRoundTripKeepsSources )
+{
+  set_data_dir();
+
+  const shared_ptr<const SpecUtils::Measurement> meas = make_flat_spectrum();
+
+  struct SrcCase
+  {
+    double mean;                     // Where the peak is in the spectrum
+    string src;                      // As a user would type it, with the photon energy
+    string name;                     // Expected `PeakDef::sourceName()`
+    PeakDef::SourceGammaType type;
+    double energy;                   // Expected `gammaParticleEnergy()`
+  };
+
+  const double me = 510.9989;
+  const vector<SrcCase> cases{
+    { 2614.53,          "Th232 2614.53 keV",      "Th232",  PeakDef::NormalGamma,       2614.53 },
+    { 2614.53 - me,     "Th232 2614.53 keV S.E.", "Th232",  PeakDef::SingleEscapeGamma, 2614.53 - me },
+    { 2614.53 - 2.0*me, "Th232 2614.53 keV D.E.", "Th232",  PeakDef::DoubleEscapeGamma, 2614.53 - 2.0*me },
+    { 2223.25,          "H(n,g) 2223.25 keV",     "H(n,g)", PeakDef::NormalGamma,       2223.25 },
+    { 2223.25 - me,     "H(n,g) 2223.25 keV S.E.", "H(n,g)", PeakDef::SingleEscapeGamma, 2223.25 - me },
+    { 2223.25 - 2.0*me, "H(n,g) 2223.25 keV D.E.", "H(n,g)", PeakDef::DoubleEscapeGamma, 2223.25 - 2.0*me },
+    { 30.97,            "Ba133 xray 30.97 keV",   "Ba133",  PeakDef::XrayGamma,         30.97 },
+    { 75.0,             "Pb xray 75.0 keV",       "Pb",     PeakDef::NormalGamma,       75.0 },
+    { 511.0,            "Na22 511 keV",           "Na22",   PeakDef::AnnihilationGamma, 511.0 },
+    { 511.0,            "Annihilation 511 keV",   "Annihilation", PeakDef::NormalGamma, 511.0 }
+  };
+
+  deque<shared_ptr<const PeakDef>> peaks;
+  for( const SrcCase &c : cases )
+  {
+    PeakDef peak( c.mean, 1.0, 1000.0 );
+    peak.continuum()->setRange( c.mean - 6.0, c.mean + 6.0 );
+
+    PeakModel::setNuclideXrayReaction( peak, c.src, 4.0 );
+
+    // Make sure the test itself set up the source it meant to
+    BOOST_REQUIRE_MESSAGE( (peak.sourceName() == c.name) && (peak.sourceGammaType() == c.type)
+                           && (fabs(source_energy(peak) - c.energy) < 0.5),
+                          "Setting '" << c.src << "' gave '" << peak.sourceName() << "', type "
+                          << int(peak.sourceGammaType()) << ", at " << source_energy(peak) << " keV" );
+
+    peaks.push_back( make_shared<const PeakDef>( peak ) );
+  }//for( const SrcCase &c : cases )
+
+  stringstream csv;
+  PeakModel::write_peak_csv( csv, "synthetic", PeakModel::PeakCsvType::Full, peaks, meas );
+
+  stringstream in( csv.str() );
+  const vector<PeakDef> read_peaks = PeakModel::csv_to_candidate_fit_peaks( meas, in );
+  BOOST_REQUIRE_EQUAL( read_peaks.size(), peaks.size() );
+
+  // Peaks are read back in the order they were written
+  for( size_t i = 0; i < peaks.size(); ++i )
+  {
+    const PeakDef &orig = *peaks[i];
+    const PeakDef &read = read_peaks[i];
+    const string label = orig.sourceName() + " at " + std::to_string( orig.mean() ) + " keV";
+
+    BOOST_REQUIRE_MESSAGE( fabs(read.mean() - orig.mean()) < 0.01,
+                          label << ": read back at " << read.mean() << " keV" );
+    BOOST_CHECK_MESSAGE( read.sourceGammaType() == orig.sourceGammaType(),
+                        label << ": source type " << int(orig.sourceGammaType())
+                        << " read back as " << int(read.sourceGammaType()) );
+    BOOST_CHECK_MESSAGE( (read.parentNuclide() == orig.parentNuclide())
+                         && (read.reaction() == orig.reaction())
+                         && (read.xrayElement() == orig.xrayElement()),
+                        label << ": source read back as '" << read.sourceName() << "'" );
+    BOOST_CHECK_MESSAGE( (read.nuclearTransition() == orig.nuclearTransition())
+                         && (read.decayParticleIndex() == orig.decayParticleIndex()),
+                        label << ": transition " << transition_str( orig.nuclearTransition() )
+                        << " read back as " << transition_str( read.nuclearTransition() ) );
+    BOOST_CHECK_MESSAGE( fabs(source_energy(read) - source_energy(orig)) < 0.01,
+                        label << ": gammaParticleEnergy " << source_energy(orig)
+                        << " keV read back as " << source_energy(read) << " keV" );
+  }//for( size_t i = 0; i < peaks.size(); ++i )
+}//BOOST_AUTO_TEST_CASE( peakCsvRoundTripKeepsSources )
+
+
+// Pins the source convention that existing CSV and SPE files use: an escape peak's
+//  "Photopeak_Energy" is the escape-peak energy, a reaction's comma is written as a space,
+//  element x-rays are written like "Pb-xray", and the annihilation reaction as "Annihilation".
+BOOST_AUTO_TEST_CASE( peakCsvReadsSourcesAsWritten )
+{
+  set_data_dir();
+
+  const shared_ptr<const SpecUtils::Measurement> meas = make_flat_spectrum();
+
+  stringstream csv(
+    "Centroid,Net_Area,FWHM,Nuclide,Photopeak_Energy,ROI_Lower_Energy,ROI_Upper_Energy\r\n"
+    "2103.53,1000,2.35,Th232 (S.E.),2103.53,2097.5,2109.5\r\n"
+    "1592.54,1000,2.35,Th232 (D.E.),1592.54,1586.5,1598.5\r\n"
+    "1712.25,1000,2.35,H(n g) (S.E.),1712.25,1706.25,1718.25\r\n"
+    "75.00,1000,2.35,Pb-xray,75.00,69,81\r\n"
+    "511.00,1000,2.35,Annihilation,511.00,505,517\r\n" );
+
+  const vector<PeakDef> peaks = PeakModel::csv_to_candidate_fit_peaks( meas, csv );
+  BOOST_REQUIRE_EQUAL( peaks.size(), size_t(5) );
+
+  auto check_peak = []( const PeakDef &p, const string &name, const PeakDef::SourceGammaType type,
+                        const string &transition, const double energy ){
+    BOOST_CHECK_MESSAGE( p.sourceName() == name, "Expected '" << name << "', got '" << p.sourceName() << "'" );
+    BOOST_CHECK_MESSAGE( p.sourceGammaType() == type,
+                        name << ": expected type " << int(type) << ", got " << int(p.sourceGammaType()) );
+    BOOST_CHECK_MESSAGE( transition_str( p.nuclearTransition() ) == transition,
+                        name << ": expected transition " << transition << ", got "
+                        << transition_str( p.nuclearTransition() ) );
+    BOOST_CHECK_MESSAGE( fabs(source_energy(p) - energy) < 0.01,
+                        name << ": expected " << energy << " keV, got " << source_energy(p) << " keV" );
+  };
+
+  check_peak( peaks[0], "Th232",  PeakDef::SingleEscapeGamma, "Tl208->Pb208", 2103.53 );
+  check_peak( peaks[1], "Th232",  PeakDef::DoubleEscapeGamma, "Tl208->Pb208", 1592.54 );
+  check_peak( peaks[2], "H(n,g)", PeakDef::SingleEscapeGamma, "none",         1712.25 );
+  check_peak( peaks[3], "Pb",     PeakDef::NormalGamma,       "none",         75.0 );
+  check_peak( peaks[4], "Annihilation", PeakDef::NormalGamma, "none",         511.0 );
+}//BOOST_AUTO_TEST_CASE( peakCsvReadsSourcesAsWritten )

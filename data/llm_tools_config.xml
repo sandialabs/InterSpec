@@ -288,6 +288,7 @@ Skew types (number of parameters, and their meaning):
 - GaussPlusBortel: 2 params (skewPar0=R mixing 0-1, skewPar1=tau 0.01-15)
 - DoubleBortel: 3 params (skewPar0=tau1, skewPar1=tau2_delta, skewPar2=eta 0-1)
 - VoigtPlusBortel: 3 params (skewPar0=gamma_lor keV, skewPar1=R 0-1, skewPar2=tau 0.01-15)
+- GadrasGeneric / GadrasCZT: 6 params (skewPar0=low tail amplitude -100 to 100, skewPar1=high tail amplitude -100 to 100, both at 661 keV, normally positive; skewPar2/skewPar3=low/high tail energy-dependence power 0-5; skewPar4/skewPar5=low/high tail extent -100 to 30). The tail energy dependence is built in; parameters 2-5 are detector characteristics, fixed by default. Changing to a GADRAS type takes the values from the detector, when it is a GADRAS detector.
 
 Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Quadratic (3), Cubic (4), FlatStep (2), LinearStep (3), BiLinearStep (4), FlatStepCDF (2), LinearStepCDF (3), BiLinearStepCDF (4), External.</Description>
     <AvailableFor>
@@ -317,7 +318,7 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
           "skewType": {
             "type": "string",
             "description": "Peak skew type.",
-            "enum": ["NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall", "GaussPlusBortel", "DoubleBortel", "VoigtPlusBortel"]
+            "enum": ["NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall", "GaussPlusBortel", "DoubleBortel", "VoigtPlusBortel", "GadrasGeneric", "GadrasCZT"]
           },
           "skewPar0": {
             "type": "number",
@@ -333,7 +334,15 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
           },
           "skewPar3": {
             "type": "number",
-            "description": "Skew parameter 3 value. Only valid for DoubleSidedCrystalBall."
+            "description": "Skew parameter 3 value. Only valid for skew types with >= 4 parameters (DoubleSidedCrystalBall, GADRAS)."
+          },
+          "skewPar4": {
+            "type": "number",
+            "description": "Skew parameter 4 value. Only valid for the GADRAS skew types."
+          },
+          "skewPar5": {
+            "type": "number",
+            "description": "Skew parameter 5 value. Only valid for the GADRAS skew types."
           },
           "fitForSkewPar0": {
             "type": "boolean",
@@ -350,6 +359,14 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
           "fitForSkewPar3": {
             "type": "boolean",
             "description": "Whether skew parameter 3 is free (true) or fixed (false)."
+          },
+          "fitForSkewPar4": {
+            "type": "boolean",
+            "description": "Whether skew parameter 4 is free (true) or fixed (false)."
+          },
+          "fitForSkewPar5": {
+            "type": "boolean",
+            "description": "Whether skew parameter 5 is free (true) or fixed (false)."
           },
           "continuumType": {
             "type": "string",
@@ -575,14 +592,15 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
     }</ParametersSchema>
   </Tool>
 
+  <!-- TODO(displayed-detectors): 'detectors' is Foreground-only, following InterSpec::detectorsToDisplay(). -->
   <Tool name="load_spectrum_file">
-    <Description>Load a spectrum file from the filesystem and display it as the specified spectrum type (foreground, background, or secondary). Returns information about the loaded spectrum including file metadata, detector names, and basic spectrum statistics.  Note: when you load a foreground spectrum, the currently displayed background and secondary spectra may un-displayed if the foreground is likely from a different detector (this is not true for loading background/secondary); so if you want to load a foreground and background pair, load foreground first, then background.</Description>
+    <Description>Load a spectrum file and display it as the foreground, background, or secondary spectrum, the same way opening the file in the InterSpec GUI does: the file is added to the "Spectrum Files" list and, unless sampleNumbers is given, the samples to show are chosen as the GUI chooses them. For a file with several samples, a Foreground load shows a sample marked Foreground (or the first sample), and also loads the file's background sample as the background, if it has exactly one and no background closer in time from the same detector is already loaded. A search-mode/passthrough file sums all its non-background samples. A Background load from a different file than the foreground uses that file's Foreground-marked sample (or its first sample); from the same file, its Background-marked sample. Loading a file that is already displayed reuses that copy, keeping its peaks and other work; for example, load a file as Foreground, then load the same path as Background (optionally with sampleNumbers) to use its background sample. The result says what was displayed and why: "summary" (plain text), "file" (all samples by source type, detectors), "displayed" (for each of Foreground/Background/Secondary: the file, samples, detectors summed, live time, counts, and whether it changed - a new foreground with a different number of channels unloads the background/secondary), "samplesNotDisplayed", and any GUI "notices" or "parseWarnings". Load the foreground first, then a background from another file.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "path": {
           "type": "string",
-          "description": "Filesystem path to the spectrum file to load. If empty or null, the specified spectrum type will be unloaded/removed from display."
+          "description": "Filesystem path to the spectrum file to load; for a session created with create_session, a path relative to the session directory, like \"input/spectrum.n42\". If empty or null, the specified spectrum type will be unloaded/removed from display."
         },
         "specType": {
           "type": "string",
@@ -592,7 +610,17 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
         "sampleNumbers": {
           "type": "array",
           "items": {"type": "integer"},
-          "description": "Optional: Specific sample numbers to display from the file. If not specified, all non-background/calibration samples are used for Foreground, or all samples for Background/Secondary. Use get_spectrum_info with fileInfo=true to see available sample numbers, after loading."
+          "description": "Optional: the sample numbers to display (summed), instead of the GUI's choice; see \"file\" in the result of a previous load for the samples and their source types. When given, no background is loaded along with a Foreground."
+        },
+        "detectors": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional, Foreground only: the detector names to sum (gamma, and neutron if wanted), instead of all of them; as unchecking detectors in the GUI's Detectors menu. A background or secondary with the same detectors follows this choice."
+        },
+        "conversation": {
+          "type": "string",
+          "description": "Optional, for foreground loads: what happens to the assistant conversation. \"resume\" continues the conversation saved in the file (an N42 from export_analysis) - only use it for files you exported; \"keep\" keeps the current conversation; \"new\" starts an empty one.  Default is \"keep\" for sessions from create_session, otherwise \"resume\".",
+          "enum": ["keep", "resume", "new"]
         }
       },
       "required": ["specType"]
@@ -834,9 +862,9 @@ Each returned source includes its characteristic energies (keV) that fall inside
   </Tool>
 
   <Tool name="run_javascript">
-    <Description>Executes a snippet of JavaScript inside a sandboxed iframe in the user's browser, returning the value of the last expression (assuming there is an explicit `return` for the last line) along with anything written to `console`.  Use this any time you need a deterministic numerical or string-manipulation calculation - propagating uncertainties, weighted averages, isotopic ratios, unit conversions (e.g. surface vs. volumetric activity), tabulating results, etc. - rather than performing arithmetic in your head.
+    <Description>Executes a snippet of JavaScript in a sandbox, returning the value of the last expression (assuming there is an explicit `return` for the last line) along with anything written to `console`.  Use this any time you need a deterministic numerical or string-manipulation calculation - propagating uncertainties, weighted averages, isotopic ratios, unit conversions (e.g. surface vs. volumetric activity), tabulating results, etc. - rather than performing arithmetic in your head.
 
-The snippet runs in an isolated, opaque-origin iframe with no access to InterSpec, the parent page, network, storage, or any DOM beyond its own.  State does NOT persist across calls; treat every call as a fresh JS context.  Pass any data you need via the `data` parameter (exposed inside the snippet as the `data` variable) instead of hard-coding large arrays into `code`.
+The snippet runs in an isolated sandbox (a sandboxed iframe in the user's browser, or an embedded JavaScript engine when InterSpec runs without a browser) with no access to InterSpec, network, files, storage, or a DOM.  State does NOT persist across calls; treat every call as a fresh JS context.  Pass any data you need via the `data` parameter (exposed inside the snippet as the `data` variable) instead of hard-coding large arrays into `code`.
 
 Mechanics:
 - The snippet body is wrapped in a function and called with `data`; have the last line of your script `return` the value you would like given back.
@@ -872,7 +900,7 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
       <Agent>NuclideId</Agent>
       <Agent>ActivityFit</Agent>
       <Agent>Isotopics</Agent>
-      <Agent>DeepResearch</Agent>
+      <Agent>KnowledgeBase</Agent>
       <Agent>SpectrumTimeHistory</Agent>
       <Agent>InSitu</Agent>
     </AvailableFor>
@@ -880,7 +908,7 @@ Example: `run_javascript( { "code": "let base = 9; const exponent = 4; console.l
 
   <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
-    <Description>Returns the photon lines (energy in keV, and intensity) emitted by a nuclide, fluorescence x-ray element, or nuclear reaction.
+    <Description>Returns the photon lines (energy in keV, and intensity) emitted by a nuclide, fluorescence x-ray element, nuclear reaction, or a mixture of fission products.
 
 Use when: you know the source and need its gamma/x-ray line energies and intensities - e.g., to predict which peaks it produces, or compare expected vs observed peak amplitudes.
 Do not use to find what sources emit near an energy - use 'sources_with_gammas_near_energy' (catalog lookup) or 'search_sources_by_energy' (ranked against loaded spectrum) instead.
@@ -888,18 +916,19 @@ Do not use to find what sources emit near an energy - use 'sources_with_gammas_n
 Output notes:
 - 'photons' is a compact table: 'columns' names the fields, 'rows' has one entry per line. For nuclides, 'intensity_perBq' is photons per becquerel of parent activity (decay-chain progeny included, aged per 'age'); for x-ray elements and reactions, 'intensity_rel' is relative to the strongest line (max 1).
 - 'prominent_energies_keV' lists the few energies most characteristic of this source - check for these first. Not seeing a peak at these energies does not rule the source out, but seeing them makes it a stronger candidate.
+- Fission products: use a source like "Fission U235 Thermal, 1d buildup", "Fission U238 Fast, 1y buildup", "Fission Pu239 14 MeV, 1h buildup" (fission types: Thermal, Fast, 14 MeV), with 'age' as the cool-off time since irradiation ended; intensities are relative to the strongest line.  For a spontaneous-fission source use e.g. "Cf252 + Spontaneous Fission" with 'age' as the source age; intensities are then photons per Bq of the parent, including its own decay photons.  Useful to see which fission products dominate at a given time after fission, and their relative line intensities.
 - If cascade sums are requested: 'coincidenceIntensity' is how often the two photons are emitted simultaneously (NOT a detection rate); apply attenuation and detection efficiency to each photon individually, then multiply by it. Only relevant for sources closer than ~15 cm to the detector.</Description>
-    <Description role="NuclideId">Your candidate-validation tool: returns all photon lines (energy_keV, intensity) of a source, plus 'prominent_energies_keV' - the characteristic energies to check for first. Use e.g. {"source": "Co60", "sortOrder": "intensity", "maxResults": 25} when checking for corroborating peaks of a candidate. Absence of a prominent line does not rule a source out (attenuation, low BR, interference), but presence makes it a stronger candidate. For nuclides, intensities are photons per Bq of parent (progeny included, aged per 'age'); for x-ray elements/reactions, relative to the strongest line.</Description>
+    <Description role="NuclideId">Your candidate-validation tool: returns all photon lines (energy_keV, intensity) of a source, plus 'prominent_energies_keV' - the characteristic energies to check for first. Use e.g. {"source": "Co60", "sortOrder": "intensity", "maxResults": 25} when checking for corroborating peaks of a candidate. Absence of a prominent line does not rule a source out (attenuation, low BR, interference), but presence makes it a stronger candidate. For nuclides, intensities are photons per Bq of parent (progeny included, aged per 'age'); for x-ray elements/reactions, relative to the strongest line. For suspected fresh fission products, check the expected mixture with e.g. {"source": "Fission U235 Thermal, 1d buildup", "age": "7 days", "sortOrder": "intensity", "maxResults": 30} (relative intensities).</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "source": {
           "type": "string",
-          "description": "The nuclide, element, or reaction for which to retrieve decay product data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction)."
+          "description": "The nuclide, element, reaction, or fission source for which to retrieve photon data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction), 'Fission U235 Thermal, 1d buildup' or 'Cf252 + Spontaneous Fission' (fission products)."
         },
         "age": {
           "type": "string",
-          "description":  "The age of the nuclide at which to return decay products. Applicable only for nuclides; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
+          "description":  "The age of the nuclide at which to return decay products; for an induced-fission source, the cool-off time after irradiation ended; for a spontaneous-fission source, the source age (defaults to 1 day for fission sources). Applicable only for nuclides and fission sources; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
         },
         "maxResults": {
           "type": "integer",
@@ -1014,7 +1043,7 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "additionalUncertainty": {
           "type": "number",
-          "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
+          "description": "Optional: Additional relative uncertainty to include (e.g., from the gamma branching ratio). The detector efficiency uncertainty the loaded detector response states of its own is always included when a nuclide and distance are given (reported as 'drfEffFracUncert'); this adds to it in quadrature. Defaults to 0.0.",
           "minimum": 0.0,
           "default": 0.0
         },
@@ -1122,7 +1151,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="photopeak_detection_efficiency">
-    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.</Description>
+    <Description>Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'available_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.  When the detector efficiency function is geometry-modeled (Monte-Carlo response, efficiency transfer, or imported efficiency grid) and a distance is given, the total uses its absolute efficiency at that distance ('detectorAbsoluteEfficiency', near-field aware), and the solid-angle and intrinsic factors are reported only as a flat-disk breakdown.  'detectorEffFracUncert' is the relative 1-sigma uncertainty of the detector efficiency (what the detector response states, plus any geometry-model part, 'detectorEffFracUncertModel'); 'detectorAssumedFracUncertNotUsed' is present when the detector response states no uncertainty of its own, giving the assumed value that was not used.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1257,7 +1286,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="detector_efficiency_function_info">
-    <Description>Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.</Description>
+    <Description>Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.  At each sampled energy, 'intrinsicEfficiencyFracUncert' is the relative 1-sigma efficiency uncertainty calculations use; 'statesOwnEfficiencyUncert' false means the detector states none of its own, and any 'assumedFracUncertNotUsed' is an assumed value that calculations leave out.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1298,16 +1327,10 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
-      "properties": {
-        "peak_energies": {
-          "type": "array",
-          "items": {"type": "number"},
-          "description": "Optional: Peak energies in keV to filter which peaks are used for fitting. If not specified, uses all peaks marked for fitting in the GUI. Tolerance is max(peak FWHM, 1 keV). Peaks must already be assigned to nuclides."
-        }
-      }
+      "properties": {}
     }</ParametersSchema>
     <AvailableFor>
       <Agent>ActivityFit</Agent>
@@ -1324,7 +1347,7 @@ Further investigation of top returned candidates is required to make sure they m
         "peak_energies": {
           "type": "array",
           "items": {"type": "number"},
-          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides."
+          "description": "Peak energies in keV to use for fitting. Tolerance is `max(peak FWHM, 1 keV)`. Peaks must already be assigned to nuclides; they are used whether or not they are marked for fitting."
         },
         "distance": {
           "type": "string",
@@ -1512,7 +1535,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="get_shielding_source_config">
-    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., if "from_app_state" is used with the `activity_fit` tool). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
+    <Description>Retrieve the current activity/shielding fit configuration from the application state (i.e., what the `activity_fit` tool fits). Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {},
@@ -1629,6 +1652,15 @@ Further investigation of top returned candidates is required to make sure they m
       "same_age_isotopes": {
         "type": "boolean",
         "description": "For `set_fit_options`: isotopes of the same element share the same age (e.g., U235 and U238). Default: true."
+      },
+      "drf_uncert_method": {
+        "type": "string",
+        "enum": ["None", "ErrorPropagation", "Likelihood"],
+        "description": "For `set_fit_options`: how the detector efficiency uncertainty is used. 'None': counting statistics only. 'ErrorPropagation' (default): best-fit values as for 'None', but the reported uncertainties include the efficiency uncertainty. 'Likelihood': the correlated efficiency uncertainty is folded into the fit itself."
+      },
+      "include_assumed_drf_uncert": {
+        "type": "boolean",
+        "description": "For `set_fit_options`: also use an efficiency uncertainty that is assumed for a detector response stating none of its own (e.g., GADRAS detectors). Default: false - then only the geometry-model part of such a detector's uncertainty is used. The fit result's `fit_configuration.fit_options.drf_uncert_used` says what was used ('None', 'Stated', 'GeometryModelOnly', or 'IncludesAssumed')."
       }
     },
     "required": ["operation"],
@@ -1757,7 +1789,9 @@ Further investigation of top returned candidates is required to make sure they m
             { "required": ["attenuate_for_air"] },
             { "required": ["multiple_nucs_contribute_to_peaks"] },
             { "required": ["background_peak_subtract"] },
-            { "required": ["same_age_isotopes"] }
+            { "required": ["same_age_isotopes"] },
+            { "required": ["drf_uncert_method"] },
+            { "required": ["include_assumed_drf_uncert"] }
           ]
         }
       }
@@ -2078,12 +2112,17 @@ Only specify fields you want to change - unspecified fields remain unchanged.
 Actions:
 - add: Add new ROIs to the configuration
 - remove: Remove ROIs matching the specified energy bounds
-- update: Modify properties of existing ROIs (continuum_type, range_type, or change bounds)
+- update: Modify properties of existing ROIs (continuum_type, range_type, edge settings, or change bounds)
 - replace_all: Replace all ROIs with the specified list
 
-For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.
+For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.  Changing a LineAnchored ROI to another range type requires new bounds, since its energies are lines rather than a range (roi_info from the last calculation gives the range it was fit over).  The ROIs in roi_info list the configured ROI(s) they were made from (from_input_rois); use those bounds to identify a ROI here.
 
-Validation: ROIs may not overlap - tool returns error if overlapping ROIs would result.</Description>
+Range types:
+- LineAnchored (preferred for new ROIs): lower_energy/upper_energy are the energies of the lowest and highest gamma lines to include (equal for a single line); the fit ROI extends past them based on the detector's peak width and shape, so it suits any detector resolution.  ROIs whose peaks are close together are merged; otherwise ROIs share the continuum between them, and a ROI's continuum region stops short of other peaks in the spectrum.
+- Fixed: lower_energy/upper_energy are the exact ROI limits.
+- CanBeBrokenUp: an ROI is made around each significant gamma line in the range.
+
+Validation: Fixed ROIs may not overlap - tool returns error if overlapping Fixed ROIs would result.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -2116,13 +2155,29 @@ Validation: ROIs may not overlap - tool returns error if overlapping ROIs would 
               },
               "continuum_type": {
                 "type": "string",
-                "description": "Optional. Continuum type for peak fitting. Valid values: Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep.",
-                "enum": ["Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep"]
+                "description": "Optional (default Linear for new ROIs). Continuum type for peak fitting; 'Auto' chooses it after an initial fit, based on how well each candidate describes the data.",
+                "enum": ["Auto", "Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep", "FlatStepCDF", "LinearStepCDF", "BiLinearStepCDF"]
               },
               "range_type": {
                 "type": "string",
-                "description": "Optional. How ROI bounds behave. Valid values: Fixed (bounds strictly enforced), CanExpandForFwhm (can expand to accommodate peak FWHM), CanBeBrokenUp (ROI can be broken up based on peaks).",
-                "enum": ["Fixed", "CanExpandForFwhm", "CanBeBrokenUp"]
+                "description": "Optional (default Fixed for new ROIs). LineAnchored: energies are the lowest/highest gamma lines to include, and the ROI extends past them by the detector's peak shape. Fixed: energies are the ROI limits. CanBeBrokenUp: an ROI is made around each significant line in the range.",
+                "enum": ["Fixed", "LineAnchored", "CanBeBrokenUp"]
+              },
+              "lower_edge_peak_coverage_percent": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Extend below the lowest line until this percent (more than 50, less than 100) of its peak area is covered (default depends on the detector: 99.9, or 98 for CZT)."
+              },
+              "lower_edge_sideband_fwhm": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Additional continuum below the coverage limit, in units of FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT)."
+              },
+              "upper_edge_peak_coverage_percent": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Extend above the highest line until this percent (more than 50, less than 100) of its peak area is covered (default 99.9)."
+              },
+              "upper_edge_sideband_fwhm": {
+                "type": "number",
+                "description": "Optional, non-Fixed ROIs only. Additional continuum above the coverage limit, in units of FWHM (default depends on the detector: 1 for HPGe, 0.5 for NaI, LaBr and CZT)."
               }
             }
           }
@@ -2264,7 +2319,7 @@ Note: background_subtract requires a background spectrum to be loaded.</Descript
         },
         "skew_type": {
           "type": "string",
-          "description": "Optional. Peak skew type for fitting.",
+          "description": "Optional. Peak skew type for fitting.  If the configuration used the skew from the peak-fit preferences (skew_from_peak_fit_preferences in get_isotopics_config), setting this stops doing so.",
           "enum": ["NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall"]
         },
         "additional_br_uncert": {

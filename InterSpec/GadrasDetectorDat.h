@@ -243,6 +243,20 @@ struct GadrasDetectorDat
   /** Table row for a material name (case-insensitive), or nullptr if not found. */
   static const MaterialInfo *materialByName( const std::string &name );
 
+  /** Whether GADRAS treats a detector of this material as having a "low photopeak probability"
+   (PVT-like): its photoelectric to Compton cross-section ratio at 661.7 keV is below 0.001
+   (GadrasDetector.f90 `HasLowPhotopeakProbability`).  GADRAS then uses a special high-energy tail,
+   widens discrete-line peaks, and folds the photopeak into the continuum.
+
+   Of the default material table this is PVT, Stilbene, Deuterated Stilbene, EJ301, and EJ301D
+   (verified against the cross-sections in test_GadrasDetectorDat); matched case-insensitively.
+   */
+  static bool hasLowPhotopeakProbability( const std::string &material_name );
+
+  /** Whether GADRAS builds this material's peak tails with its CZT/CdTe construction - which it
+   does for exactly those two material indices (not, e.g., TlBr or HgI2).  Case-insensitive. */
+  static bool usesCztPeakShape( const std::string &material_name );
+
   //=========================== Shape inference (doc §5.1) ===========================
 
   /** Recovered physical crystal shape class. */

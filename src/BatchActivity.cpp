@@ -1927,6 +1927,17 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   try
   {
     // We have all the parts, lets do the computation:
+    // A fixed-geometry DRF made by "Create MC Eff" already contains its scene's shielding; states
+    //  saved before 2026-09-29 also serialized that scene's layers, which would be applied twice
+    //  (ShieldingSourceChi2Fcn::create refuses them).  Drop them, as the GUI does.
+    if( detector && detector->isFixedGeometry() && !detector->fixedGeometrySetupXml().empty()
+        && !shield_definitions.empty() )
+    {
+      shield_definitions.clear();
+      result.m_warnings.push_back( "The detector response already includes the source/shielding setup"
+                                   " it was computed for; the exemplar's shieldings were not applied." );
+    }
+
     GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
     chi_input.config.distance = distance;
     chi_input.config.geometry = geometry;

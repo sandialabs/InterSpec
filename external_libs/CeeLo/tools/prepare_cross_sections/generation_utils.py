@@ -44,14 +44,21 @@ OUT_KAPPA = [
     0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.925, 0.95, 0.97,
     0.99, 0.995, 0.999, 0.9995, 0.9999, 0.99995, 0.99999, 1.0,
 ]
-Z_MAX = 92
+# Element domains. Photon-interaction data (EPICS2023 EPDL) and per-element
+# support data (xraylib atomic weights and Compton shells) cover Z=1..PHOTON_Z_MAX.
+# Electron-side tables (NIST EPQ Seltzer-Berger bremsstrahlung, NIST ESTAR
+# stopping powers) stop at ELECTRON_Z_MAX: the EPQ set is pdebr01..pdebr92. The
+# runtime reuses the ELECTRON_Z_MAX (uranium) tables above it; see
+# electron_table_z() in src/cross_sections/CrossSectionData.h.
+PHOTON_Z_MAX = 98
+ELECTRON_Z_MAX = 92
 SECTION_START = (
     "// =====================================================================\n"
     "// Seltzer-Berger bremsstrahlung spectral data\n"
 )
 SECTION_END = (
     "// =====================================================================\n"
-    "// Master element data array: g_element_data[92]\n"
+    "// Master element data array: g_element_data\n"
 )
 ELEMENT_SYMBOLS = [
     "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
@@ -63,8 +70,10 @@ ELEMENT_SYMBOLS = [
     "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb",
     "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
     "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th",
-    "Pa", "U",
+    "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf",
 ]
+if len(ELEMENT_SYMBOLS) != PHOTON_Z_MAX:
+    raise RuntimeError("ELEMENT_SYMBOLS must list every element through PHOTON_Z_MAX")
 
 
 def as_float32(value: float) -> float:
@@ -109,14 +118,14 @@ def write_section(
     count = n_energy * n_kappa
     scales: dict[int, float] = {}
     if encoding == "uint16":
-        for z in range(1, Z_MAX + 1):
+        for z in range(1, ELECTRON_Z_MAX + 1):
             maximum = max(value for row in tables[z] for value in row)
             scales[z] = as_float32(maximum / 65535.0) if maximum > 0.0 else 0.0
-        out.write(f"extern const float kSB_chi_scale[{Z_MAX}] = {{\n")
-        out.write(format_rows([scales[z] for z in range(1, Z_MAX + 1)], 6,
+        out.write(f"extern const float kSB_chi_scale[{ELECTRON_Z_MAX}] = {{\n")
+        out.write(format_rows([scales[z] for z in range(1, ELECTRON_Z_MAX + 1)], 6,
                               "    ", format_float32))
         out.write("\n};\n\n")
-    for z in range(1, Z_MAX + 1):
+    for z in range(1, ELECTRON_Z_MAX + 1):
         flat = [value for row in tables[z] for value in row]
         if encoding == "uint16":
             scale = scales[z]

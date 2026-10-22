@@ -90,7 +90,11 @@
   --interspec-selected-text-color: black;
   --interspec-hover-background: rgba(128,128,128,0.20); /* list / menu item hover */
   --interspec-button-background: #707070;               /* trial: 5.0:1 under white button text (#888888 was 3.5:1) */
-  --interspec-button-hover-background: #737373;
+  /* Hover DARKENS the button, which is what it did before the button colour was lowered to #707070
+     for contrast; the old #737373 was a darkening of the old #888888 base, but against #707070 it
+     became a 1.04x step - no visible feedback at all.  Darkening also raises the white-text contrast
+     (4.95:1 -> 6.90:1), where lightening would erode it. */
+  --interspec-button-hover-background: #5a5a5a;
   --interspec-button-border-color: #e1e1e1;
   --interspec-button-text-color: white;
   --interspec-menubar-background: #ffffff;             /* the menu bar and its buttons */
@@ -111,4 +115,8 @@
   /* ---- Mode (not colours, and not overridable from a saved theme) ---- */
   --interspec-icon-filter: none;                       /* dark themes use invert(100%) to flip black icons */
   --interspec-color-scheme: light;                     /* feeds `color-scheme`, so native scrollbars and form controls follow the theme */
+  /* Drop shadow under a modal dialog.  A full shadow rather than a colour, so it is not a
+     ColorTheme row; it needs to be a token anyway because the alpha that reads correctly over the
+     light scrim is far too weak over the dark one. */
+  --interspec-modal-shadow: 0 8px 24px rgba(0,0,0,0.28);
 }
