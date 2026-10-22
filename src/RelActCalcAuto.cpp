@@ -10205,6 +10205,36 @@ struct RelActAutoCostFcn
     if( !cost_functor->m_cascade_curves.empty() )
       cost_functor->refresh_cascade_factors( parameters, constant_parameters );
 
+    // Cascade summing: a solve uses the factors linearized about wherever they were last refreshed, which is only
+    //  accurate near that point.  So after any solve that may have moved the parameters (the main solve, the bound
+    //  polish, each search candidate and each elimination trial) the factors are refreshed at its answer, re-solving
+    //  from there until they settle; the answer then agrees with its own summing correction, and objectives compared
+    //  between solves are each evaluated with factors linearized at their own point.  Each warm re-solve starts at
+    //  (nearly) the optimum, so it takes only a few iterations.  Returns the iterations the re-solves took.
+    const auto settle_cascade_factors = [&]( const ceres::Solver::Options &settle_options,
+                                             const vector<int> &settle_constants ) -> size_t {
+      size_t iterations = 0;
+      for( size_t round = 0; !cost_functor->m_cascade_curves.empty()
+                             && (round < RelActAutoCostFcn::sm_cascade_max_refresh_rounds); ++round )
+      {
+        if( cancel_calc && cancel_calc->load() )
+          break;
+
+        const double change = cost_functor->refresh_cascade_factors( parameters, settle_constants );
+        if( change < RelActAutoCostFcn::sm_cascade_refresh_tolerance )
+          break;
+
+        ceres::Solver::Summary settle_summary;
+        solve_stopping_creep( settle_options, problem, settle_summary );
+        iterations += settle_summary.iterations.size();
+        if( (settle_summary.termination_type != ceres::CONVERGENCE)
+           && (settle_summary.termination_type != ceres::USER_SUCCESS)
+           && (settle_summary.termination_type != ceres::NO_CONVERGENCE) )
+          break;
+      }//for( refresh rounds )
+      return iterations;
+    };//settle_cascade_factors
+
     ceres::Solver::Summary summary;
 
     // Kept so the check after the polish can ask the only unambiguous question about a solve
@@ -10218,26 +10248,10 @@ struct RelActAutoCostFcn
     //  candidates no more than this.
     size_t primary_solve_iterations = summary.iterations.size();
 
-    // Cascade summing: the solve used factors linearized about its starting point; refresh them at its answer and
-    //  re-solve from there, until they settle, so the answer agrees with its own summing correction.  Each warm
-    //  re-solve starts at (nearly) the optimum, so it takes only a few iterations.
-    if( !cost_functor->m_cascade_curves.empty() )
-    {
-      for( size_t round = 0; round < RelActAutoCostFcn::sm_cascade_max_refresh_rounds; ++round )
-      {
-        if( (cancel_calc && cancel_calc->load())
-           || ((summary.termination_type != ceres::CONVERGENCE) && (summary.termination_type != ceres::USER_SUCCESS)
-               && (summary.termination_type != ceres::NO_CONVERGENCE)) )
-          break;
-
-        const double change = cost_functor->refresh_cascade_factors( parameters, constant_parameters );
-        if( change < RelActAutoCostFcn::sm_cascade_refresh_tolerance )
-          break;
-
-        solve_stopping_creep( ceres_options, problem, summary );
-        primary_solve_iterations += summary.iterations.size();
-      }//for( refresh rounds )
-    }//if( correcting for cascade summing )
+    // Cascade summing: the solve used factors linearized about its starting point.
+    if( (summary.termination_type == ceres::CONVERGENCE) || (summary.termination_type == ceres::USER_SUCCESS)
+       || (summary.termination_type == ceres::NO_CONVERGENCE) )
+      primary_solve_iterations += settle_cascade_factors( ceres_options, constant_parameters );
 
     cost_functor->m_solution_finished = true;
 
@@ -10322,6 +10336,8 @@ struct RelActAutoCostFcn
       primary_solve_iterations += bound_polish.iterations;
       if( bound_polish.cancelled )
         summary = bound_polish.cancel_summary;
+      else if( bound_polish.rounds_adopted > 0 )
+        primary_solve_iterations += settle_cascade_factors( ceres_options, constant_parameters );
     }//if( main solve converged )
 
     // Ceres' `FunctionToleranceReached()` is the one convergence test it does NOT gate on an
@@ -11048,6 +11064,8 @@ struct RelActAutoCostFcn
               // budget-exhaustion audit is reserved for the primary solve.
               const bool usable = ((candidate_summary.termination_type == ceres::CONVERGENCE)
                                    || (candidate_summary.termination_type == ceres::USER_SUCCESS));
+              if( usable )
+                settle_cascade_factors( candidate_options, constant_parameters );
               const double objective = usable ? fresh_objective_at(parameters)
                                               : std::numeric_limits<double>::infinity();
               results.push_back( { search_seed_variant_name(variant), parameters,
@@ -11102,6 +11120,8 @@ struct RelActAutoCostFcn
         assert( results[selected].final_parameters.size() == parameters.size() );
         std::copy( begin(results[selected].final_parameters),
                    end(results[selected].final_parameters), begin(parameters) );
+        // The cascade-summing factors were last linearized at the last candidate polished.
+        settle_cascade_factors( ceres_options, constant_parameters );
         if( (selected != 0) && results[selected].usable && !success )
         {
           // A rescue candidate converged where the primary did not.
@@ -11240,6 +11260,8 @@ struct RelActAutoCostFcn
       // chi2 = Sum(residual^2), including the AD-bias prior residuals (same metric as `m_chi2`).  Fixing a
       //  DOF also zeroes that parameter's prior penalty, so the Delta-chi2 gate is marginally easier for the
       //  external-AD candidate than a pure data-misfit test would be - negligible vs a tolerance of order 1.
+      if( !candidates.empty() )
+        settle_cascade_factors( ceres_options, constant_parameters );
       double best_chi2 = (*cost_functor)( parameters );
       if( !std::isfinite(best_chi2) )  // a converged solution shouldn't eval to inf/NaN; if it does, don't simplify
         candidates.clear();
@@ -11281,6 +11303,10 @@ struct RelActAutoCostFcn
 
           ceres::Solver::Summary trial_summary;
           ceres::Solve(elimination_trial_options,&problem,&trial_summary);
+          // Fixing a parameter at its identity can be a large step from where the summing factors were linearized.
+          if( (trial_summary.termination_type == ceres::CONVERGENCE)
+             || (trial_summary.termination_type == ceres::USER_SUCCESS) )
+            settle_cascade_factors( elimination_trial_options, trial_const );
           double objective = std::numeric_limits<double>::infinity();
           try { objective = (*cost_functor)(parameters); }
           catch( const std::exception & ) { objective = std::numeric_limits<double>::infinity(); }
