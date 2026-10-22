@@ -46,6 +46,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 #include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmConversationHistory.h"
 
 //Forward declarations
 class SpecMeas;
@@ -159,16 +160,30 @@ public:
    under the session UpdateLock).
    If `progressCallback` is provided, it will be called with intermediate results as the assistant
    works (tool calls, tool results, sub-agent responses).
+   `images` are sent with the prompt (refused if the model does not accept images); `id`, if not
+   empty, identifies the prompt to `cancelMcpPrompt`.
    */
   void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback,
-                          McpProgressCallback progressCallback = {} );
+                          McpProgressCallback progressCallback = {},
+                          std::vector<LlmToolCall::ImageContent> images = {},
+                          const std::string &id = {} );
+
+  /** Cancels the MCP prompt queued with `id`: dropped if it has not started, or its turn cancelled
+   if it is running; its callback then reports the cancellation.  Returns false if no such prompt
+   is queued or running.
+   */
+  bool cancelMcpPrompt( const std::string &id );
+
+  /** True if an assistant turn is running, or MCP prompts are queued. */
+  bool isTurnInProgress() const;
 
   /** Directly invoke a specialized agent (e.g. NuclideId, ActivityFit) with a prompt, streaming
    intermediate results via `progressCallback` and resolving `callback` when the agent finishes.
    Shows the assistant widget if it is not already visible.
    */
   void invokeAgentForMcp( AgentType agentType, const std::string &prompt,
-                          McpPromptCallback callback, McpProgressCallback progressCallback );
+                          McpPromptCallback callback, McpProgressCallback progressCallback,
+                          const std::string &id = {} );
 
   /** Disconnect the spectrum-changed handler (used by LlmBenchmarkRunner during SpectrumSequence). */
   void disconnectSpectrumChangedForBenchmark();
@@ -418,6 +433,8 @@ private:
     std::string prompt;
     McpPromptCallback callback;
     McpProgressCallback progressCallback;
+    std::vector<LlmToolCall::ImageContent> images;
+    std::string id;
   };//struct PendingMcpPrompt
 
   /** FIFO of MCP-submitted prompts awaiting their turn (front = next to run). */
@@ -429,6 +446,10 @@ private:
 
   /** Progress callback for the in-flight MCP prompt (streams intermediate results). */
   McpProgressCallback m_activeProgressCallback;
+
+  /** The `id` of the in-flight MCP prompt, and whether `cancelMcpPrompt` cancelled it. */
+  std::string m_activeMcpId;
+  bool m_activeMcpCancelled = false;
 
   /** Connection to the current conversation's `responseAdded` signal for streaming MCP progress. */
   Wt::Signals::connection m_mcpResponseAddedConn;

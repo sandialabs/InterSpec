@@ -507,12 +507,15 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
     }//for( const SampleNumsToPeakMap::value_type &vt : *(rhs.m_peaks) )
   }//if( rhs.m_peaks )
   
-  for( const SampleNumsToPeakMap::value_type &vt : m_autoSearchPeaks )
+  for( const SampleNumsToPeakMap::value_type &vt : rhs.m_autoSearchPeaks )
   {
     m_autoSearchPeaks[vt.first] = std::make_shared<PeakDeque>();
-    for( PeakShrdPtr peak : *(vt.second) )
-      m_autoSearchPeaks[vt.first]->push_back( peak );
-  }//for( const SampleNumsToPeakMap::value_type &vt : *(rhs.m_peaks) )
+    if( vt.second )
+    {
+      for( PeakShrdPtr peak : *(vt.second) )
+        m_autoSearchPeaks[vt.first]->push_back( peak );
+    }
+  }//for( const SampleNumsToPeakMap::value_type &vt : rhs.m_autoSearchPeaks )
   
 //  for( const SampleNumsToPeakMap::value_type &vt : m_autoSearchInitialPeaks )
 //  {
@@ -2201,8 +2204,10 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
       auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
       sampleHistoryNode->append_attribute( samplesAttribute );
 
-      // Use the static toXml function from LlmConversationHistory
-      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
+      // Use the static toXml function from LlmConversationHistory.  The MCP agent server's files
+      //  go to its clients' users, so they leave out the raw LLM API requests (with the system
+      //  prompt) - which also grow with the square of the number of turns.
+      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc, !BUILD_AS_MCP_HTTP_SERVER );
     }
   }
 #endif

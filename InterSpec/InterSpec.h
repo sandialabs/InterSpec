@@ -439,9 +439,29 @@ public:
    */
   std::set<int> validForegroundSamples() const;
   
+  /** The detectors summed for display of `type`: the foreground's are checked in the "Detectors"
+   menu; a background or secondary uses that choice if it has exactly the foreground's detectors,
+   and otherwise all of its own.
+
+   TODO(displayed-detectors): the choice is only kept for the foreground, and is not restored from
+   a file's saved <DisplayedDetectors> (SpecMeas::m_displayedDetectors).  When this is reworked,
+   also update the LLM assistant/MCP code that relies on the current rule (grep for the tag).
+   */
   std::vector<std::string> detectorsToDisplay( const SpecUtils::SpectrumType type ) const;
 
-  
+  /** Sets which of the foreground's detectors are summed for display, as checking boxes in the
+   "Detectors" menu does (no undo step is added); empty means all.  The background and secondary
+   follow this choice when they have the same detectors as the foreground.
+
+   @throws std::runtime_error if no foreground is loaded, a name is not one of its detectors, or no
+           gamma detector would be displayed.
+
+   TODO(displayed-detectors): foreground only, as the GUI's menu; take a SpectrumType once the
+   background and secondary can have choices of their own.
+   */
+  void setDetectorsToDisplay( const std::vector<std::string> &detectors );
+
+
   std::shared_ptr<SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type );
   std::shared_ptr<const SpecMeas> measurment( SpecUtils::SpectrumType spectrum_type ) const;
 
@@ -742,6 +762,12 @@ public:
   ShieldingSourceDisplay *shieldingSourceFit( const bool create_window = true );
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
+
+  /** Copies into the foreground SpecMeas the state that open tools keep outside of it - the
+   Activity/Shielding fit, Isotopics (by nuclides, and from peaks), and the LLM assistant
+   conversation - so a save or export of the foreground includes all of the user's work.
+   */
+  void syncAllToolStateToForegroundSpecMeas();
   
   /** Shows the help window; if a preselect (ex., "energy-calibration", or "getting-started"), then that topic will be set to be selected.
    */

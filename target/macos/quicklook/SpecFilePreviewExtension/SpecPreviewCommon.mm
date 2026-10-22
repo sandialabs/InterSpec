@@ -23,6 +23,7 @@
 
 // Refactored from SpecPreviewCommon.cpp (originally created 12/25/17), to use real
 // InterSpec classes instead of the forked QL* versions, for macOS Quick Look thumbnail rendering.
+// The charts themselves are drawn by SpectrumChartImage (shared with the stdio MCP server).
 
 #include "SpecPreviewCommon.h"
 
@@ -36,15 +37,9 @@
 
 #include "CGPaintDevice.h"
 
-#include <Wt/WFont.h>
-#include <Wt/WPainter.h>
-#include <Wt/WPainterPath.h>
-#include <Wt/Chart/WDataSeries.h>
-
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakDef.h"
-#include "InterSpec/SpectrumChart.h"
-#include "InterSpec/SpectrumDataModel.h"
+#include "InterSpec/SpectrumChartImage.h"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -53,414 +48,6 @@
 using namespace std;
 using namespace Wt;
 using SpecUtils::Measurement;
-
-
-namespace
-{
-  const float ns_large_render_font_size = 14;
-  const float ns_compact_render_font_size = 10;
-
-  enum SpecRenderType
-  {
-    CompactSpecRender,
-    LargeSpecRender
-  };
-
-
-  /** A minimal subclass of SpectrumChart that can paint peaks without needing PeakModel.
-
-   The real SpectrumChart::paintPeaks() reads peaks from a PeakModel, which requires an
-   InterSpec application instance. This subclass stores peaks directly and overrides paintPeaks().
-   */
-  class PreviewSpectrumChart : public SpectrumChart
-  {
-  public:
-    PreviewSpectrumChart()
-      : SpectrumChart()
-      , m_directPeaks( nullptr )
-    {
-    }
-
-    void setDirectPeaks( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
-    {
-      m_directPeaks = peaks;
-    }
-
-    // Always allow rendering, even at small sizes (e.g., Finder thumbnails).
-    // The base class refuses to render below 50px, which is too restrictive.
-    bool isLargeEnough( Wt::WPainter & ) const override { return true; }
-
-    // Expose chartArea() for manual axis line drawing in thumbnails.
-    const Wt::WRectF &getChartArea() const { return chartArea(); }
-
-    void paintPeaks( Wt::WPainter &painter ) const override
-    {
-      if( !m_directPeaks || m_directPeaks->empty() )
-        return;
-
-      // Get the data model to check axis ranges
-      const double minx = axis( Chart::Axis::X ).minimum();
-      const double maxx = axis( Chart::Axis::X ).maximum();
-
-      std::vector<std::shared_ptr<const PeakDef>> gauspeaks, nongauspeaks;
-
-      for( const auto &peak : *m_directPeaks )
-      {
-        if( !peak || peak->lowerX() > maxx || peak->upperX() < minx )
-          continue;
-
-        if( peak->gausPeak() )
-          gauspeaks.push_back( peak );
-        else
-          nongauspeaks.push_back( peak );
-      }
-
-      // Group gaussian peaks by shared continuum (same ROI)
-      std::map<const PeakContinuum *, std::vector<std::shared_ptr<const PeakDef>>> continuum_groups;
-      for( const auto &peak : gauspeaks )
-      {
-        if( peak->continuum() )
-          continuum_groups[peak->continuum().get()].push_back( peak );
-      }
-
-      for( auto &entry : continuum_groups )
-      {
-        std::vector<std::shared_ptr<const PeakDef>> &group = entry.second;
-        std::sort( group.begin(), group.end(), &PeakDef::lessThanByMeanShrdPtr );
-        paintGausPeaks( group, painter );
-      }
-
-      for( const auto &peak : nongauspeaks )
-        paintNonGausPeak( *peak, painter );
-    }//paintPeaks(...)
-
-  private:
-    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> m_directPeaks;
-  };//class PreviewSpectrumChart
-
-
-  /** Renders a spectrum to a WPaintDevice (PDF or SVG image).
-
-   @param thumbnail If true, renders with axis lines but no tick labels or titles, thinner
-          spectrum line, and a watermark logo.  Used for Finder thumbnail generation.
-   @param logo_path Path to the InterSpec logo PNG for watermark (only used when thumbnail=true).
-          Pass empty string to skip the watermark.
-   */
-  template <class ImageType>
-  bool renderSpectrum( ImageType &image,
-                       std::shared_ptr<const SpecUtils::Measurement> foreground,
-                       std::shared_ptr<const SpecUtils::Measurement> background,
-                       std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks,
-                       const bool thumbnail,
-                       const std::string &logo_path = "" )
-  {
-    if( !foreground )
-      return false;
-
-    const std::string title = foreground->title();
-    const float width = image.width().toPixels();
-
-    std::shared_ptr<const SpecUtils::Measurement> meas = foreground;
-    std::shared_ptr<const SpecUtils::Measurement> back = background;
-
-    auto dataModel = std::make_shared<SpectrumDataModel>();
-    PreviewSpectrumChart chart;
-    chart.setModel( dataModel );
-    chart.setDirectPeaks( peaks );
-
-    dataModel->setDataHistogram( meas );
-    if( back )
-    {
-      dataModel->setBackgroundHistogram( back );
-      if( meas->live_time() > 0.0f && back->live_time() > 0.0f )
-        dataModel->setBackgroundDataScaleFactor( meas->live_time() / back->live_time() );
-    }
-
-    vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
-
-    if( thumbnail )
-    {
-      // Use a thinner line for thumbnails
-      for( Chart::WDataSeries &s : series )
-      {
-        WPen pen = s.pen();
-        pen.setWidth( WLength( 0.5 ) );
-        s.setPen( pen );
-      }
-    }
-
-    std::vector<std::unique_ptr<Chart::WDataSeries>> seriesPtrs;
-    seriesPtrs.reserve( series.size() );
-    for( Chart::WDataSeries &s : series )
-      seriesPtrs.push_back( std::make_unique<Chart::WDataSeries>( std::move(s) ) );
-    chart.setSeries( std::move(seriesPtrs) );
-
-    chart.setPlotAreaPadding( 0, Wt::Side::Top );
-
-    if( thumbnail )
-    {
-      // Thumbnail: axis lines visible, but no tick labels or titles.
-      // setCompactAxis(true) subtracts 17px from the bottom padding,
-      // so set padding after calling it to get the desired values.
-      chart.setCompactAxis( true );
-      chart.setPlotAreaPadding( 4, Wt::Side::Left );
-      chart.setPlotAreaPadding( 4, Wt::Side::Bottom );
-      chart.setPlotAreaPadding( 2, Wt::Side::Right );
-      chart.setPlotAreaPadding( 2, Wt::Side::Top );
-
-      // Hide tick labels but keep axis lines
-      chart.axis( Chart::Axis::X ).setLabelFormat( " " );
-      chart.axis( Chart::Axis::Y1 ).setLabelFormat( " " );
-    }else
-    {
-      const SpecRenderType render_type = ((width < 641) ? CompactSpecRender : LargeSpecRender);
-
-      WFont labelFont = chart.axis( Chart::Axis::Y1 ).labelFont();
-      WFont titleFont = chart.titleFont();
-
-      switch( render_type )
-      {
-        case LargeSpecRender:
-          labelFont.setSize( WLength( ns_large_render_font_size ) );
-          chart.setPlotAreaPadding( 62, Wt::Side::Left );
-          chart.setPlotAreaPadding( 42, Wt::Side::Bottom );
-          chart.setPlotAreaPadding( 10, Wt::Side::Right );
-          if( title.size() )
-          {
-            chart.setPlotAreaPadding( ns_large_render_font_size + 4, Wt::Side::Top );
-            titleFont.setSize( ns_large_render_font_size );
-          }
-          chart.axis( Chart::Axis::X ).setTitle( "Energy (keV)" );
-          chart.setCompactAxis( false );
-          if( title.size() )
-            chart.setTitle( title );
-          break;
-
-        case CompactSpecRender:
-          labelFont.setSize( WLength( ns_compact_render_font_size ) );
-          chart.setPlotAreaPadding( 5, Wt::Side::Left );
-          chart.setPlotAreaPadding( 20, Wt::Side::Bottom );
-          chart.setPlotAreaPadding( 0, Wt::Side::Right );
-          titleFont.setSize( ns_compact_render_font_size );
-          chart.axis( Chart::Axis::X ).setTitle( "(keV)" );
-          chart.setCompactAxis( true );
-          break;
-      }//switch( render_type )
-
-      chart.axis( Chart::Axis::X ).setLabelFont( labelFont );
-      chart.axis( Chart::Axis::Y1 ).setLabelFont( labelFont );
-      chart.axis( Chart::Axis::X ).setTitleFont( labelFont );
-      chart.axis( Chart::Axis::Y1 ).setTitleFont( labelFont );
-      chart.setTitleFont( titleFont );
-    }//if( thumbnail ) / else
-
-    const size_t nchannel = meas->num_gamma_channels();
-    const float lowx = meas->gamma_channel_lower( 0 );
-    const float upperx = meas->gamma_channel_upper( nchannel - 1 );
-    chart.setXAxisRange( lowx, upperx );
-
-    const size_t displayednbin = meas->find_gamma_channel( upperx ) - meas->find_gamma_channel( lowx );
-    const int plotAreaWidth = static_cast<int>( image.width().toPixels() )
-                              - chart.plotAreaPadding( Side::Left )
-                              - chart.plotAreaPadding( Side::Right );
-    const float bins_per_pixel = float( displayednbin ) / float( plotAreaWidth );
-    const int factor = max( static_cast<int>( ceil( bins_per_pixel / 2 ) ), 1 );
-    dataModel->setRebinFactor( factor );
-
-    chart.setYAxisScale( Wt::Chart::AxisScale::Log );
-    chart.setAutoYAxisRange();
-
-    if( !thumbnail && (width >= 641) )
-    {
-      if( factor == 1 )
-        chart.axis( Chart::Axis::Y1 ).setTitle( "Counts Per Channel" );
-      else
-        chart.axis( Chart::Axis::Y1 ).setTitle( "Counts Per " + std::to_string( factor ) + " Channels" );
-    }
-
-    WPainter p( &image );
-    chart.paint( p );
-
-    // Draw watermark logo in upper-right for thumbnails
-    if( thumbnail && !logo_path.empty() )
-    {
-      WPainter::Image logo( logo_path, logo_path );
-      if( logo.width() > 0 && logo.height() > 0 )
-      {
-        const double img_w = image.width().toPixels();
-        const double img_h = image.height().toPixels();
-
-        // Logo at ~35% of the image height, positioned in upper-right
-        const double logo_h = 0.35 * img_h;
-        const double logo_w = logo_h * (double( logo.width() ) / double( logo.height() ));
-        const double logo_x = img_w - logo_w - 4;
-        const double logo_y = 4;
-
-        p.drawImage( WRectF( logo_x, logo_y, logo_w, logo_h ), logo );
-      }
-    }
-
-    p.end();
-
-    return true;
-  }//renderSpectrum(...)
-
-
-  /** Renders a time series chart to a WPaintDevice. */
-  template <class ImageType>
-  bool renderTimeSeries( ImageType &image, std::shared_ptr<SpecMeas> meas )
-  {
-    const float width = image.width().toPixels();
-    const SpecRenderType render_type = ((width < 641) ? CompactSpecRender : LargeSpecRender);
-
-    const std::set<int> &sample_numbers = meas->sample_numbers();
-    const std::vector<int> sample_numbers_vec( sample_numbers.begin(), sample_numbers.end() );
-    const size_t num_samples = sample_numbers_vec.size();
-    const std::vector<int> &det_numbers = meas->detector_numbers();
-    const vector<string> &det_names = meas->detector_names();
-
-    if( num_samples < 2 )
-      return false;
-
-    auto gamma_counts = std::make_shared<vector<float>>( num_samples );
-    auto neutron_counts = std::make_shared<vector<float>>( num_samples );
-    auto time_values = std::make_shared<vector<float>>( num_samples + 1, 0.0f );
-    vector<bool> is_occupied( num_samples, false );
-
-    bool contained_neutrons = false;
-    float time_sum = 0.0;
-
-    for( size_t i = 0; i < sample_numbers_vec.size(); ++i )
-    {
-      bool is_occ = false;
-      int ndet = 0;
-      for( const int detnum : det_numbers )
-      {
-        const auto thismeas = meas->measurement( sample_numbers_vec[i], detnum );
-        if( thismeas && thismeas->real_time() > 0.0 )
-          ++ndet;
-        if( thismeas )
-          is_occ = (is_occ || (thismeas->occupied() == SpecUtils::OccupancyStatus::Occupied));
-      }
-      if( !ndet )
-        ndet = 1;
-
-      set<int> thisset;
-      thisset.insert( sample_numbers_vec[i] );
-      const auto sum = meas->sum_measurements( thisset, det_names, nullptr );
-      if( !sum )
-        continue;
-
-      float real_time = sum->real_time() / ndet;
-      real_time = (real_time > 0.0f ? real_time : 0.1f);
-
-      contained_neutrons = (contained_neutrons || sum->contained_neutron());
-      (*gamma_counts)[i] = sum->gamma_count_sum() / real_time;
-      (*neutron_counts)[i] = sum->neutron_counts_sum() / real_time;
-      is_occupied[i] = is_occ;
-      (*time_values)[i] = time_sum;
-      time_sum += real_time;
-    }//for( size_t i = 0; ... )
-
-    (*time_values)[num_samples] = time_sum;
-
-    auto gammaH = std::make_shared<SpecUtils::Measurement>();
-    auto neutronH = std::make_shared<SpecUtils::Measurement>();
-
-    gammaH->set_title( "Gammas" );
-    neutronH->set_title( "Neutrons" );
-
-    gammaH->set_gamma_counts( gamma_counts, 0.0f, 0.0f );
-    neutronH->set_gamma_counts( neutron_counts, 0.0f, 0.0f );
-
-    auto timecal = make_shared<SpecUtils::EnergyCalibration>();
-    timecal->set_lower_channel_energy( num_samples, *time_values );
-
-    gammaH->set_energy_calibration( timecal );
-    neutronH->set_energy_calibration( timecal );
-
-    auto dataModel = std::make_shared<SpectrumDataModel>();
-    PreviewSpectrumChart chart;
-    chart.setModel( dataModel );
-    chart.setPlotAreaPadding( 0, Wt::Side::Top );
-
-    WFont labelFont = chart.axis( Chart::Axis::Y1 ).labelFont();
-
-    switch( render_type )
-    {
-      case LargeSpecRender:
-        labelFont.setSize( WLength( ns_large_render_font_size ) );
-        chart.setPlotAreaPadding( 62, Wt::Side::Left );
-        chart.setPlotAreaPadding( 42, Wt::Side::Bottom );
-        chart.setPlotAreaPadding( (contained_neutrons ? 20 : 5), Wt::Side::Right );
-        chart.axis( Chart::Axis::X ).setTitle( "Time (s)" );
-        chart.setCompactAxis( false );
-        break;
-
-      case CompactSpecRender:
-        labelFont.setSize( WLength( ns_compact_render_font_size ) );
-        chart.setPlotAreaPadding( 5, Wt::Side::Left );
-        chart.setPlotAreaPadding( 20, Wt::Side::Bottom );
-        chart.setPlotAreaPadding( 5, Wt::Side::Right );
-        chart.axis( Chart::Axis::X ).setTitle( "(sec.)" );
-        chart.setCompactAxis( true );
-        break;
-    }//switch( render_type )
-
-    chart.axis( Chart::Axis::X ).setLabelFont( labelFont );
-    chart.axis( Chart::Axis::Y1 ).setLabelFont( labelFont );
-    chart.axis( Chart::Axis::Y2 ).setLabelFont( labelFont );
-    chart.axis( Chart::Axis::X ).setTitleFont( labelFont );
-    chart.axis( Chart::Axis::Y1 ).setTitleFont( labelFont );
-    chart.axis( Chart::Axis::Y2 ).setTitleFont( labelFont );
-
-    dataModel->setDataHistogram( gammaH );
-    if( contained_neutrons )
-    {
-      dataModel->setSecondDataHistogram( neutronH, true );
-      chart.axis( Chart::Axis::Y2 ).setVisible( true );
-    }
-
-    // Highlight occupied time regions
-    vector<pair<double, double>> timeranges;
-    {
-      const size_t ntimes = std::min( time_values->size(), is_occupied.size() );
-      bool inregion = (ntimes > 0) ? is_occupied[0] : false;
-      double startt = (ntimes > 0) ? (*time_values)[0] : 0.0;
-      for( size_t i = 1; i < ntimes; ++i )
-      {
-        if( inregion == is_occupied[i] )
-          continue;
-        if( !is_occupied[i] )
-          timeranges.push_back( make_pair( startt, (*time_values)[i] ) );
-        inregion = is_occupied[i];
-        startt = (*time_values)[i];
-      }
-      if( inregion && time_values->size() && (!timeranges.empty() || is_occupied[0] != is_occupied.back()) )
-        timeranges.push_back( make_pair( startt, time_values->back() ) );
-    }
-
-    chart.setTimeHighLightRegions( timeranges, SpectrumChart::ForegroundHighlight );
-
-    vector<Chart::WDataSeries> series = dataModel->suggestDataSeries();
-    std::vector<std::unique_ptr<Chart::WDataSeries>> seriesPtrs;
-    seriesPtrs.reserve( series.size() );
-    for( Chart::WDataSeries &s : series )
-      seriesPtrs.push_back( std::make_unique<Chart::WDataSeries>( std::move(s) ) );
-    chart.setSeries( std::move(seriesPtrs) );
-
-    chart.setXAxisRange( time_values->at( 0 ), time_values->back() );
-    chart.axis( Chart::Axis::Y1 ).setAutoLimits( Chart::AxisValue::Minimum | Chart::AxisValue::Maximum );
-    if( contained_neutrons )
-      chart.axis( Chart::Axis::Y2 ).setAutoLimits( Chart::AxisValue::Minimum | Chart::AxisValue::Maximum );
-
-    WPainter p( &image );
-    chart.paint( p );
-    p.end();
-
-    return true;
-  }//renderTimeSeries(...)
-}//anonymous namespace
 
 
 namespace
@@ -637,18 +224,34 @@ CGImageRef render_spec_file_to_cgimage( const char * const filename,
       const float spec_height = 2.0f * height / 3.0f;
       const float time_height = height - spec_height;
 
+      SpectrumChartImage::SpectrumOptions spec_options;
+      spec_options.foreground = foreground;
+      spec_options.background = background;
+      spec_options.peaks = peaks;
+      spec_options.title = foreground->title();
+
       CGPaintDevice specDevice( device, 0, 0, width, spec_height );
-      if( !renderSpectrum( specDevice, foreground, background, peaks, false ) )
-        throw std::runtime_error( "Failed in renderSpectrum for passthrough" );
+      if( !SpectrumChartImage::paintSpectrum( specDevice, spec_options ) )
+        throw std::runtime_error( "Failed in paintSpectrum for passthrough" );
+
+      SpectrumChartImage::TimeSeriesOptions time_options;
+      time_options.meas = spec;
+      time_options.highlight_occupied = true;
 
       CGPaintDevice timeDevice( device, 0, spec_height, width, time_height );
-      if( !renderTimeSeries( timeDevice, spec ) )
-        throw std::runtime_error( "Failed in renderTimeSeries" );
+      if( !SpectrumChartImage::paintTimeSeries( timeDevice, time_options ) )
+        throw std::runtime_error( "Failed in paintTimeSeries" );
     }else
     {
-      const std::string logo = (logo_path ? logo_path : "");
-      if( !renderSpectrum( device, foreground, background, peaks, is_thumbnail, logo ) )
-        throw std::runtime_error( "Failed in renderSpectrum" );
+      SpectrumChartImage::SpectrumOptions spec_options;
+      spec_options.foreground = foreground;
+      spec_options.background = background;
+      spec_options.peaks = peaks;
+      spec_options.title = foreground->title();
+      spec_options.thumbnail = is_thumbnail;
+      spec_options.logo_path = (logo_path ? logo_path : "");
+      if( !SpectrumChartImage::paintSpectrum( device, spec_options ) )
+        throw std::runtime_error( "Failed in paintSpectrum" );
     }
 
     return device.createCGImage();

@@ -4,7 +4,9 @@
 #if( USE_LLM_INTERFACE )
 
 #include <map>
+#include <mutex>
 #include <sstream>
+#include <fstream>
 #include <optional>
 #include <iostream>
 #include <algorithm>
@@ -12,6 +14,7 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <Wt/Utils.h>
 #include <Wt/WDialog.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WLineEdit.h>
@@ -50,6 +53,9 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/DrfModifyCalc.h"
 #include "InterSpec/GadrasShieldScatter.h"
@@ -83,6 +89,10 @@
 #include "InterSpec/LlmIsotopicsTool.h"
 #include "InterSpec/LlmActivityFitTool.h"
 #include "InterSpec/LlmRelActManualTool.h"
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+#include "target/mcp_http/McpSessionManager.h"
+#endif
 
 
 
@@ -1960,6 +1970,26 @@ namespace {
 namespace LlmTools
 {
 
+namespace
+{
+  std::mutex ns_js_runner_mutex;
+  JavaScriptRunner ns_js_runner;
+
+  JavaScriptRunner java_script_runner()
+  {
+    std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+    return ns_js_runner;
+  }
+}//namespace
+
+
+void setJavaScriptRunner( JavaScriptRunner runner )
+{
+  std::lock_guard<std::mutex> lock( ns_js_runner_mutex );
+  ns_js_runner = std::move( runner );
+}
+
+
 int effective_async_timeout_ms( const SharedTool &tool )
 {
   return (tool.asyncTimeoutMs > 0) ? tool.asyncTimeoutMs : sm_default_async_timeout_ms;
@@ -1974,6 +2004,84 @@ std::string async_timeout_error_message( const std::string &toolName, const int 
          " modifies state, re-check with a read tool before relying on this result."
          " This tool is not responding - prefer another approach over retrying it.";
 }//async_timeout_error_message(...)
+
+
+std::string resolve_client_file_path( const std::string &path )
+{
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  const std::shared_ptr<McpSessionManager> manager = McpSessionManager::instance();
+  const string handle = McpSessionManager::currentHandle();
+  if( !manager || handle.empty() )
+    throw runtime_error( "File access is only available within an MCP session." );
+  return manager->resolveSessionPath( handle, path );
+#else
+  return path;
+#endif
+}//resolve_client_file_path(...)
+
+
+std::vector<LlmToolCall::ImageContent> images_from_mcp_param( const nlohmann::json &images,
+                                                             const uint64_t max_bytes )
+{
+  vector<LlmToolCall::ImageContent> answer;
+  if( images.is_null() )
+    return answer;
+
+  if( !images.is_array() )
+    throw runtime_error( "'images' must be an array of {path or base64Data, mimeType, caption}." );
+
+  const size_t max_images = 8;
+  if( images.size() > max_images )
+    throw runtime_error( "At most " + std::to_string(max_images) + " images may be sent with a prompt." );
+
+  for( const json &item : images )
+  {
+    if( !item.is_object() )
+      throw runtime_error( "Each entry of 'images' must be an object." );
+
+    string bytes;
+    const string path = item.value( "path", string() );
+    const string base64_in = item.value( "base64Data", string() );
+    if( !path.empty() )
+    {
+      const string full_path = resolve_client_file_path( path );
+      if( !SpecUtils::is_file( full_path ) )
+        throw runtime_error( "Image not found: " + path );
+      if( SpecUtils::file_size( full_path ) > max_bytes )
+        throw runtime_error( "Image '" + path + "' is larger than the " + std::to_string(max_bytes)
+                             + " byte limit; please downsize it." );
+#ifdef _WIN32
+      std::ifstream input( SpecUtils::convert_from_utf8_to_utf16(full_path).c_str(), ios::binary | ios::in );
+#else
+      std::ifstream input( full_path.c_str(), ios::binary | ios::in );
+#endif
+      bytes.assign( std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>() );
+    }else if( !base64_in.empty() )
+    {
+      if( ((base64_in.size() / 4) * 3) > (max_bytes + 3) )
+        throw runtime_error( "An image is larger than the " + std::to_string(max_bytes)
+                             + " byte limit; please downsize it." );
+      bytes = Wt::Utils::base64Decode( base64_in );
+    }else
+    {
+      throw runtime_error( "Each image needs a 'path' or 'base64Data'." );
+    }
+
+    if( bytes.empty() || (bytes.size() > max_bytes) )
+      throw runtime_error( "An image was empty, or larger than the " + std::to_string(max_bytes) + " byte limit." );
+
+    LlmToolCall::ImageContent img;
+    if( !img.setTypeFromContent( bytes ) )
+      throw runtime_error( "Unsupported image type; images must be PNG, JPEG, GIF, or WebP." );
+
+    img.caption = item.value( "caption", string() );
+    // Re-encoded, as the decoder skips characters (e.g., line breaks) that LLM APIs reject.
+    img.base64Data = Wt::Utils::base64Encode( bytes, false );
+    answer.push_back( std::move(img) );
+  }//for( const json &item : images )
+
+  return answer;
+}//images_from_mcp_param(...)
 
 
 ToolRegistry::ToolRegistry( const LlmConfig &config )
@@ -2508,8 +2616,21 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction>, LlmConversationHistory*,
           SharedTool::AsyncCallback callback) {
-        LlmToolGui *gui = interspec ? interspec->currentLlmTool() : nullptr;
-        LlmJsSandboxBridge *bridge = gui ? gui->jsSandboxBridge() : nullptr;
+        // The stdio server has no browser for the iframe sandbox (whose timeout is enforced in the
+        //  browser, so a call there would never return); it runs the code with its own engine.
+        const JavaScriptRunner runner = java_script_runner();
+#if( BUILD_AS_MCP_STDIO_SERVER )
+        LlmJsSandboxBridge * const bridge = nullptr;
+#else
+        LlmToolGui * const gui = interspec ? interspec->currentLlmTool() : nullptr;
+        LlmJsSandboxBridge * const bridge = gui ? gui->jsSandboxBridge() : nullptr;
+#endif
+        if( !bridge && runner )
+        {
+          runner( params, std::move(callback) );
+          return;
+        }
+
         if( !bridge )
         {
           callback( std::string("No active LLM GUI session - JS sandbox unavailable") );
@@ -2528,6 +2649,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       // Captures are serialized behind at most sm_max_queued_captures others, and each of those is
       // itself bounded by the chart's own capture timer, so this covers the worst-case queued wait.
       tool.asyncTimeoutMs = sm_spectrum_image_tool_timeout_ms;
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2551,6 +2673,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     }else if( toolName == "get_time_chart_image" )
     {
       tool.asyncTimeoutMs = sm_time_chart_image_tool_timeout_ms;  // browser round-trip, never queued
+      tool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // the stdio server draws charts itself
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2659,6 +2782,13 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // Register tools from configs
   for( const LlmConfig::ToolConfig &toolConfig : config.tools )
   {
+#if( NO_INTERACTIVE_GUI_USER )
+    // No one is at the session's GUI to answer; the assistant states its assumptions, or asks in its
+    //  reply - which the MCP client relays to its user.
+    if( toolConfig.name == "ask_user_question" )
+      continue;
+#endif
+
     try
     {
       // Create tool with executor
@@ -2700,12 +2830,15 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     SharedTool submitTool;
     submitTool.name = "assistant_submit_prompt";
     submitTool.description =
-      "Submit a prompt into the InterSpec assistant conversation as if the user typed it, then wait"
-      " until the assistant's turn (including all tool calls and sub-agents) finishes.  Returns the"
-      " assistant's final response text plus a compact list of the tools it called.  Intermediate"
-      " results (tool calls, results, sub-agent responses) are streamed as progress events."
-      "  Prompts submitted while a turn is already in progress are queued and run in order."
-      " Refused while a benchmark is running.";
+      "Submit a prompt into the InterSpec assistant conversation as if the user typed it.  The"
+      " assistant analyzes the loaded spectra with its own tools (and sub-agents), and answers."
+      "  Returns {status, turn_id}: with status \"done\" the result has the assistant's final"
+      " response text, the tools it called, and any questions it asked (answered with a stated"
+      " assumption, as there is no interactive user); with status \"running\" the turn is still"
+      " going - call assistant_get_result with the turn_id to wait for it, or assistant_cancel."
+      "  Clients that accept text/event-stream, and send a progressToken, also get progress"
+      " notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
+      " run in order.";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
         "type": "object",
@@ -2713,14 +2846,38 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
           "prompt": {
             "type": "string",
             "description": "The message to submit to the assistant, exactly as if the user typed it."
+          },
+          "images": {
+            "type": "array",
+            "description": "Optional images (PNG, JPEG, GIF, or WebP) to send with the prompt, e.g. photos of the source or detector; only if the model accepts images.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string", "description": "Path of an image file, relative to the session directory (e.g. \"input/photo.jpg\")."},
+                "base64Data": {"type": "string", "description": "The image, base64 encoded; instead of 'path'."},
+                "mimeType": {"type": "string", "description": "Optional; the type is detected from the content."},
+                "caption": {"type": "string", "description": "Optional label sent with the image, so the prompt can refer to it."}
+              }
+            }
+          },
+          "wait_seconds": {
+            "type": "number",
+            "description": "How long to wait for the turn to finish before returning status \"running\" (default 30, at most 50)."
           }
         },
         "required": ["prompt"]
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
     submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    // The stdio server runs the assistant itself, with native LLM requests; otherwise the
+    //  assistant needs a session's browser.
+    submitTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;
 
-    submitTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
+    const uint64_t max_image_bytes = config.mcpServer.agentServer.has_value()
+                                       ? config.mcpServer.agentServer->maxImageBytes
+                                       : LlmConfig::McpServer::AgentServer{}.maxImageBytes;
+
+    submitTool.asyncStreamingExecutor = [max_image_bytes]( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
         SharedTool::AsyncCallback callback, SharedTool::AsyncProgressFn progressFn )
     {
@@ -2747,7 +2904,20 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       if( params.contains("prompt") && params["prompt"].is_string() )
         prompt = params["prompt"].get<std::string>();
 
-      gui->queuePromptForMcp( prompt, std::move( callback ), std::move( progressFn ) );
+      vector<LlmToolCall::ImageContent> images;
+      try
+      {
+        images = images_from_mcp_param( params.value( "images", json() ), max_image_bytes );
+      }catch( std::exception &e )
+      {
+        callback( std::string( e.what() ) );
+        return;
+      }
+
+      // Set by LlmMcpResource (not the client), so the turn can be found by assistant_cancel.
+      const std::string turn_id = params.value( "_mcp_turn_id", std::string() );
+
+      gui->queuePromptForMcp( prompt, std::move( callback ), std::move( progressFn ), std::move( images ), turn_id );
     };
 
     registerTool( submitTool );
@@ -2794,6 +2964,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     agentTool.parameters_schema = std::move( schema );
     agentTool.availableForAgents = { AgentType::McpServer };
     agentTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+    agentTool.requiresBrowser = !BUILD_AS_MCP_STDIO_SERVER;  // as for assistant_submit_prompt
 
     agentTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
@@ -2836,7 +3007,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         return;
       }
 
-      gui->invokeAgentForMcp( agentType, prompt, std::move( callback ), std::move( progressFn ) );
+      const std::string turn_id = params.value( "_mcp_turn_id", std::string() );
+      gui->invokeAgentForMcp( agentType, prompt, std::move( callback ), std::move( progressFn ), turn_id );
     };
 
     registerTool( agentTool );
@@ -2912,7 +3084,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "search_sources_by_energy",
     "activity_fit",
     "activity_fit_one_off",
+#if( !NO_INTERACTIVE_GUI_USER )
     "ask_user_question",
+#endif
     "close_activity_shielding_display",
     "get_shielding_source_config",
     "mark_peaks_for_activity_fit",
@@ -2946,11 +3120,10 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   if( !config.llmApi.rag_url.empty() )
     expectedTools.push_back( "query_rag_endpoint" );
 
-#if( PERFORM_DEVELOPER_CHECKS )
-  // Registered programmatically above (dev/automation only); list it so the drift checks below
-  // don't flag it as an "unexpected" tool.
-  expectedTools.push_back( "assistant_submit_prompt" );
-#endif
+  // Registered programmatically above, when configured; list it so the drift checks below don't
+  //  flag it as an "unexpected" tool (or as missing, when it is not configured).
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.isConfigured() )
+    expectedTools.push_back( "assistant_submit_prompt" );
 
   std::vector<std::string> missingTools;
   for( const std::string &toolName : expectedTools )
@@ -3978,6 +4151,277 @@ nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& para
 }
 
 
+namespace
+{
+  const char *spec_type_label( const SpecUtils::SpectrumType type )
+  {
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:       return "Foreground";
+      case SpecUtils::SpectrumType::Background:       return "Background";
+      case SpecUtils::SpectrumType::SecondForeground: return "Secondary";
+    }
+    return "";
+  }//spec_type_label(...)
+
+
+  const char *source_type_label( const SpecUtils::SourceType type )
+  {
+    switch( type )
+    {
+      case SpecUtils::SourceType::IntrinsicActivity: return "IntrinsicActivity";
+      case SpecUtils::SourceType::Calibration:       return "Calibration";
+      case SpecUtils::SourceType::Background:        return "Background";
+      case SpecUtils::SourceType::Foreground:        return "Foreground";
+      case SpecUtils::SourceType::Unknown:           return "Unknown";
+    }
+    return "Unknown";
+  }//source_type_label(...)
+
+
+  /** Samples grouped by their source type (as the "Spectrum Files" tab gives it: that of the samples
+   last record), in the order Foreground, Background, Unknown, IntrinsicActivity, Calibration.
+   */
+  vector<pair<string,set<int>>> samples_by_source_type( const SpecMeas &meas, const set<int> &samples )
+  {
+    const SpecUtils::SourceType order[] = { SpecUtils::SourceType::Foreground, SpecUtils::SourceType::Background,
+      SpecUtils::SourceType::Unknown, SpecUtils::SourceType::IntrinsicActivity, SpecUtils::SourceType::Calibration };
+
+    map<SpecUtils::SourceType,set<int>> by_type;
+    for( const int sample : samples )
+    {
+      const vector<shared_ptr<const SpecUtils::Measurement>> records = meas.sample_measurements( sample );
+      by_type[records.empty() ? SpecUtils::SourceType::Unknown : records.back()->source_type()].insert( sample );
+    }
+
+    vector<pair<string,set<int>>> answer;
+    for( const SpecUtils::SourceType type : order )
+    {
+      if( by_type.count( type ) )
+        answer.emplace_back( source_type_label( type ), by_type[type] );
+    }
+    return answer;
+  }//samples_by_source_type(...)
+
+
+  /** E.g., {"Foreground": {"samples": "2-10", "count": 9}, "Background": {"samples": "1", "count": 1}}. */
+  json samples_by_source_type_json( const vector<pair<string,set<int>>> &by_type )
+  {
+    json answer = json::object();
+    for( const pair<string,set<int>> &type_samples : by_type )
+      answer[type_samples.first] = json{ {"samples", SpecUtils::sequencesToBriefString( type_samples.second )},
+                                         {"count", type_samples.second.size()} };
+    return answer;
+  }//samples_by_source_type_json(...)
+
+
+  /** E.g., "sample 5 (Foreground)", or "samples 2-10 (Foreground) and 1 (Background)". */
+  string describe_samples( const vector<pair<string,set<int>>> &by_type )
+  {
+    size_t nsamples = 0;
+    for( const pair<string,set<int>> &type_samples : by_type )
+      nsamples += type_samples.second.size();
+
+    string answer = (nsamples == 1) ? "sample " : "samples ";
+    for( size_t i = 0; i < by_type.size(); ++i )
+    {
+      if( i )
+        answer += (i + 1 == by_type.size()) ? " and " : ", ";
+      const string &type = by_type[i].first;
+      answer += SpecUtils::sequencesToBriefString( by_type[i].second )
+                + " (" + ((type == "Unknown") ? string("source type not given") : type) + ")";
+    }
+    return answer;
+  }//describe_samples(...)
+
+
+  /** E.g., "Aa1", "Aa1 and Aa2", or "Aa1, Aa2 and Ba1". */
+  string join_names( const vector<string> &names )
+  {
+    string answer;
+    for( size_t i = 0; i < names.size(); ++i )
+    {
+      if( i )
+        answer += (i + 1 == names.size()) ? " and " : ", ";
+      answer += names[i].empty() ? string("(unnamed)") : names[i];
+    }
+    return answer;
+  }//join_names(...)
+
+
+  /** Plain text of a GUI notice, which may be XHTML. */
+  string notice_to_text( string msg )
+  {
+    // Tags become spaces, and a line break ends a sentence.
+    string text, tag;
+    bool in_tag = false;
+    for( const char c : msg )
+    {
+      if( c == '<' )
+      {
+        in_tag = true;
+        tag.clear();
+      }else if( c == '>' )
+      {
+        in_tag = false;
+        const size_t last = text.find_last_not_of( " \t\n" );
+        const bool line_break = SpecUtils::istarts_with( tag, "br" ) || SpecUtils::istarts_with( tag, "p" )
+                                || SpecUtils::istarts_with( tag, "/p" ) || SpecUtils::istarts_with( tag, "div" );
+        if( line_break && (last != string::npos) && (string( ".!?:;" ).find( text[last] ) == string::npos) )
+          text.insert( last + 1, "." );
+        text += ' ';
+      }else if( in_tag )
+        tag += c;
+      else
+        text += c;
+    }//for( const char c : msg )
+
+    const pair<const char *,const char *> entities[] = { {"&nbsp;", " "}, {"&lt;", "<"}, {"&gt;", ">"},
+      {"&quot;", "\""}, {"&#39;", "'"}, {"&apos;", "'"}, {"&amp;", "&"} };
+    for( const pair<const char *,const char *> &entity : entities )
+      SpecUtils::ireplace_all( text, entity.first, entity.second );
+
+    // Collapse whitespace, and the space a tag left before punctuation.
+    string answer;
+    for( const char c : text )
+    {
+      const bool space = std::isspace( static_cast<unsigned char>(c) );
+      if( space && (answer.empty() || (answer.back() == ' ')) )
+        continue;
+      if( !space && answer.size() && (answer.back() == ' ') && ((c == '.') || (c == ',')) )
+        answer.pop_back();
+      answer += (space ? ' ' : c);
+    }
+    SpecUtils::trim( answer );
+    return answer;
+  }//notice_to_text(...)
+
+
+  /** What is displayed for one spectrum type; compared before and after a load. */
+  struct DisplayedState
+  {
+    shared_ptr<SpecMeas> meas;
+    set<int> samples;
+    vector<string> detectors;
+
+    bool operator==( const DisplayedState &rhs ) const
+    {
+      return (meas == rhs.meas) && (samples == rhs.samples) && (detectors == rhs.detectors);
+    }
+  };//struct DisplayedState
+
+
+  DisplayedState displayed_state( InterSpec *interspec, const SpecUtils::SpectrumType type )
+  {
+    DisplayedState state;
+    state.meas = interspec->measurment( type );
+    if( state.meas )
+    {
+      state.samples = interspec->displayedSamples( type );
+      state.detectors = interspec->detectorsToDisplay( type );
+    }
+    return state;
+  }//displayed_state(...)
+
+
+  /** The `detectors` of `state` that are gamma (or, if `gamma` is false, neutron) detectors. */
+  vector<string> displayed_detectors( const DisplayedState &state, const bool gamma )
+  {
+    vector<string> answer;
+    if( !state.meas )
+      return answer;
+
+    const vector<string> &kind = gamma ? state.meas->gamma_detector_names() : state.meas->neutron_detector_names();
+    for( const string &name : state.detectors )
+    {
+      if( std::find( begin(kind), end(kind), name ) != end(kind) )
+        answer.push_back( name );
+    }
+    return answer;
+  }//displayed_detectors(...)
+
+
+  /** How long the displayed samples took to measure: each sample's real time (the longest of its
+   records), summed over samples - unlike a summed spectrum's live and real times, which are also
+   summed over its detectors.
+   */
+  double measurement_duration( const DisplayedState &state )
+  {
+    double duration = 0.0;
+    if( !state.meas )
+      return duration;
+
+    for( const int sample : state.samples )
+    {
+      float sample_real_time = 0.0f;
+      for( const shared_ptr<const SpecUtils::Measurement> &m : state.meas->sample_measurements( sample ) )
+      {
+        if( m && (m->num_gamma_channels() > 0) )
+          sample_real_time = std::max( sample_real_time, m->real_time() );
+      }
+      duration += sample_real_time;
+    }
+
+    return duration;
+  }//measurement_duration(...)
+
+
+  json displayed_state_json( InterSpec *interspec, const SpecUtils::SpectrumType type,
+                             const DisplayedState &state, const DisplayedState &before,
+                             const shared_ptr<const SpecMeas> &loaded )
+  {
+    if( !state.meas )
+      return json{ {"loaded", false}, {"changed", (before.meas != nullptr)} };
+
+    json answer;
+    answer["loaded"] = true;
+    answer["changed"] = !(state == before);
+    answer["fileName"] = state.meas->filename();
+    if( loaded && (state.meas == loaded) )
+      answer["fileJustLoaded"] = true;
+    answer["samples"] = SpecUtils::sequencesToBriefString( state.samples );
+    answer["samplesBySourceType"] = samples_by_source_type_json( samples_by_source_type( *state.meas, state.samples ) );
+    answer["gammaDetectors"] = displayed_detectors( state, true );
+    const vector<string> neutron_dets = displayed_detectors( state, false );
+    if( !neutron_dets.empty() )
+      answer["neutronDetectors"] = neutron_dets;
+
+    const double duration = measurement_duration( state );
+    if( duration > 0.0 )
+      answer["durationSeconds"] = duration;
+
+    const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( type );
+    if( hist )
+    {
+      // InterSpec sums the displayed detectors' spectra, live times, and real times.
+      if( displayed_detectors( state, true ).size() > 1 )
+        answer["timesSummedOverDetectors"] = true;
+      if( hist->live_time() > 0.0f )
+        answer["liveTime"] = hist->live_time();
+      if( hist->real_time() > 0.0f )
+        answer["realTime"] = hist->real_time();
+      if( !SpecUtils::is_special( hist->start_time() ) )
+        answer["startTime"] = SpecUtils::to_iso_string( hist->start_time() );
+      answer["numChannels"] = hist->num_gamma_channels();
+      answer["minimumGammaEnergy"] = hist->gamma_energy_min();
+      answer["maximumGammaEnergy"] = hist->gamma_energy_max();
+      if( hist->gamma_counts() && !hist->gamma_counts()->empty() )
+        answer["totalCounts"] = hist->gamma_count_sum();
+      if( hist->contained_neutron() )
+      {
+        answer["neutronCounts"] = hist->neutron_counts_sum();
+        if( hist->neutron_live_time() > 0.0f )
+          answer["neutronCPS"] = hist->neutron_counts_sum() / hist->neutron_live_time();
+      }
+      if( !hist->title().empty() )
+        answer["title"] = hist->title();
+    }//if( hist )
+
+    return answer;
+  }//displayed_state_json(...)
+}//namespace
+
+
 nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &params, InterSpec *interspec )
 {
   if( !interspec )
@@ -3999,6 +4443,13 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
   else
     throw std::runtime_error( "Invalid specType: '" + specTypeStr + "'; must be Foreground, Background, or Secondary." );
 
+  const SpecUtils::SpectrumType all_types[] = { SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background, SpecUtils::SpectrumType::SecondForeground };
+
+  map<SpecUtils::SpectrumType,DisplayedState> before, after;
+  for( const SpecUtils::SpectrumType type : all_types )
+    before[type] = displayed_state( interspec, type );
+
   // Parse path - empty/null means unload the spectrum
   const string path_key = find_case_insensitive_key( "path", params );
   const bool hasPath = params.contains( path_key ) && params[path_key].is_string()
@@ -4013,110 +4464,552 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
     result["success"] = true;
     result["specType"] = specTypeStr;
     result["action"] = "unloaded";
+    const string label = SpecUtils::to_lower_ascii_copy( specTypeStr );
+    result["summary"] = before[specType].meas ? ("Unloaded the " + label + " (" + before[specType].meas->filename() + ").")
+                                              : ("No " + label + " was loaded.");
+    json displayed;
+    for( const SpecUtils::SpectrumType type : all_types )
+      displayed[spec_type_label(type)] = displayed_state_json( interspec, type, displayed_state( interspec, type ),
+                                                               before[type], nullptr );
+    result["displayed"] = std::move( displayed );
     return result;
-  }
+  }//if( !hasPath )
 
-  const string path = params[path_key].get<string>();
+  // `client_path` is what the client gave (and what error messages show); `path` is what we open.
+  const string client_path = params[path_key].get<string>();
+  const string path = resolve_client_file_path( client_path );
 
   if( !SpecUtils::is_file( path ) )
-    throw std::runtime_error( "File not found: " + path );
+    throw std::runtime_error( "File not found: " + client_path );
 
-  // Load the spectrum file
-  shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
-  if( !meas->load_file( path, SpecUtils::ParserType::Auto, SpecUtils::filename( path ) ) )
-    throw std::runtime_error( "Failed to parse spectrum file: " + path );
+  // What happens to the assistant conversation when a new foreground is loaded: by default the
+  //  file's saved conversation (if any) replaces the current one, except for an MCP agent server,
+  //  which keeps the current conversation - an uploaded file may carry a made-up "conversation", so
+  //  the client must ask for it with "resume" (for files it exported itself).
+  const string convo_key = find_case_insensitive_key( "conversation", params );
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  string conversation_mode = "keep";
+#else
+  string conversation_mode = "resume";
+#endif
+  if( params.contains( convo_key ) && params[convo_key].is_string() )
+    conversation_mode = params[convo_key].get<string>();
+  if( (conversation_mode != "keep") && (conversation_mode != "resume") && (conversation_mode != "new") )
+    throw std::runtime_error( "Invalid 'conversation' value '" + conversation_mode + "'; must be keep, resume, or new." );
+
+  // Optional detectors to sum, for a foreground.
+  vector<string> requestedDetectors;
+  const string detectors_key = find_case_insensitive_key( "detectors", params );
+  if( params.contains( detectors_key ) && !params[detectors_key].is_null() )
+  {
+    if( !params[detectors_key].is_array() )
+      throw std::runtime_error( "detectors must be an array of detector names." );
+    for( const json &name : params[detectors_key] )
+    {
+      if( !name.is_string() )
+        throw std::runtime_error( "detectors must be an array of detector names." );
+      requestedDetectors.push_back( name.get<string>() );
+    }
+    // TODO(displayed-detectors): only the foreground has a choice of detectors (see
+    //  InterSpec::detectorsToDisplay()); allow it for any specType once the app does, and update
+    //  this tool's 'detectors' docs (data/llm_tools_config.xml, data/skills/interspec-mcp-agent).
+    if( !requestedDetectors.empty() && (specType != SpecUtils::SpectrumType::Foreground) )
+      throw std::runtime_error( "detectors can only be given for a Foreground; a background or secondary uses the"
+                                " foreground's choice when it has the same detectors, and otherwise all of its own." );
+  }//if( detectors given )
+
+  SpecMeasManager * const manager = interspec->fileManager();
+  if( !manager )
+    throw std::runtime_error( "No spectrum file manager available." );
+
+  // Keep the notices the GUI shows while opening the file (e.g., which sample of several it shows).
+  vector<string> notices;
+  struct ConnectionGuard
+  {
+    Wt::Signals::connection connection;
+    ~ConnectionGuard(){ connection.disconnect(); }
+  } notice_guard{ interspec->messageLogged().connect( [&notices]( const Wt::WString &msg, int ){
+    notices.push_back( msg.toUTF8() );
+  } ) };
+
+  // Open the file into the "Spectrum Files" list, as dropping it onto the GUI does.
+  const string display_name = SpecUtils::filename( path );
+  shared_ptr<SpectraFileHeader> header;
+  shared_ptr<SpecMeas> meas;
+  int row = -1;
+  try
+  {
+    row = manager->setFile( display_name, path, header, meas, SpecUtils::ParserType::Auto );
+  }catch( std::exception & )
+  {
+    throw std::runtime_error( "Not a spectrum file InterSpec can read (none of its file-format parsers"
+                              " accepted it): " + client_path );
+  }
+
+  if( !meas || (row < 0) )
+    throw std::runtime_error( "Not a spectrum file InterSpec can read: " + client_path );
+
+  // Takes a file just opened back out of the "Spectrum Files" list (and the memory cache).
+  const auto discard_opened_file = [manager]( const shared_ptr<SpecMeas> &opened ){
+    manager->removeSpecMeas( opened, false );
+    manager->removeFromSpectrumInfoCache( opened, false );
+  };
 
   if( meas->num_measurements() == 0 )
-    throw std::runtime_error( "Spectrum file contained no measurements: " + path );
-
-  // Parse optional sample numbers
-  set<int> requestedSamples;
-  const string samples_key = find_case_insensitive_key( "sampleNumbers", params );
-  if( params.contains( samples_key ) )
   {
-    const json &samplesJson = params[samples_key];
-    if( samplesJson.is_array() )
+    discard_opened_file( meas );
+    throw std::runtime_error( "Spectrum file contained no measurements: " + client_path );
+  }
+
+  // If this same file is already displayed (e.g., the client now wants its background sample, after
+  //  loading it as the foreground), use that copy, as picking samples in the "Spectrum Files" tab
+  //  does: the GUI then treats it as the same file, and its peaks and other work are kept.
+  const char *reused_from = nullptr;
+  for( const SpecUtils::SpectrumType type : all_types )
+  {
+    const shared_ptr<SpecMeas> &displayed = before[type].meas;
+    if( !displayed || (displayed->uuid() != meas->uuid()) || (displayed->filename() != meas->filename()) )
+      continue;
+
+    discard_opened_file( meas );
+    meas = displayed;
+    Wt::WModelIndex index = manager->model()->index( std::shared_ptr<const SpecUtils::SpecFile>( meas ) );
+    if( !index.isValid() )
+      index = manager->model()->index( manager->addFile( meas->filename(), meas ) );
+    row = index.row();
+    reused_from = spec_type_label( type );
+    break;
+  }//for( const SpecUtils::SpectrumType type : all_types )
+
+  if( row < 0 )
+    throw std::runtime_error( "Failed to add the spectrum file to the file manager." );
+
+  // Optional sample numbers (otherwise they are chosen as the GUI does for a newly opened file), and
+  //  detectors; checked before anything is displayed, and a newly opened file is taken back out of
+  //  the "Spectrum Files" list if they are not valid.
+  const set<int> &allSamples = meas->sample_numbers();
+  set<int> requestedSamples;
+  try
+  {
+    const string samples_key = find_case_insensitive_key( "sampleNumbers", params );
+    if( params.contains( samples_key ) && !params[samples_key].is_null() )
     {
-      const set<int> &allSamples = meas->sample_numbers();
-      for( const auto &s : samplesJson )
+      if( !params[samples_key].is_array() )
+        throw std::runtime_error( "sampleNumbers must be an array of integers." );
+
+      for( const json &s : params[samples_key] )
       {
+        if( !s.is_number_integer() )
+          throw std::runtime_error( "sampleNumbers must be an array of integers." );
         const int sampleNum = s.get<int>();
-        if( allSamples.find( sampleNum ) == allSamples.end() )
-        {
-          throw std::runtime_error( "Sample number " + to_string( sampleNum )
-            + " not found in file. Available: " + SpecUtils::sequencesToBriefString( allSamples ) );
-        }
+        if( !allSamples.count( sampleNum ) )
+          throw std::runtime_error( "Sample number " + to_string( sampleNum ) + " not found in file. Available: "
+                                    + SpecUtils::sequencesToBriefString( allSamples ) );
         requestedSamples.insert( sampleNum );
       }//for( loop over requested sample numbers )
-    }else if( samplesJson.is_string() )
+
+      if( requestedSamples.empty() )
+        throw std::runtime_error( "sampleNumbers is empty; leave it out to have the samples chosen as"
+                                  " the GUI chooses them." );
+    }//if( sampleNumbers provided )
+
+    const vector<string> &det_names = meas->detector_names();
+    const vector<string> &gamma_det_names = meas->gamma_detector_names();
+    bool any_gamma = requestedDetectors.empty();
+    for( const string &name : requestedDetectors )
     {
-      // Accept a brief string like "1-5,10" as well
-      // For now, just require the array form
-      throw std::runtime_error( "sampleNumbers must be an array of integers." );
-    }
-  }//if( sampleNumbers provided )
+      if( std::find( begin(det_names), end(det_names), name ) == end(det_names) )
+        throw std::runtime_error( "'" + name + "' is not a detector in the file; its detectors are: "
+                                  + join_names( det_names ) + "." );
+      any_gamma = (any_gamma
+                   || (std::find( begin(gamma_det_names), end(gamma_det_names), name ) != end(gamma_det_names)));
+    }//for( const string &name : requestedDetectors )
 
-  // TODO (needs testing): Using interspec->setSpectrum() directly, bypassing SpecMeasManager.
-  //  This avoids UI coupling (tree view, file model), but may miss necessary setup.
-  //  If testing reveals issues (e.g., file not appearing in CompactFileManager, or display
-  //  problems), we may need to switch to using SpecMeasManager::setFile() followed by
-  //  SpecMeasManager::displayFile() instead.
-  interspec->setSpectrum( meas, requestedSamples, specType,
-    InterSpec::SetSpectrumOptions::SkipParseWarnings );
+    if( gamma_det_names.empty() )
+      throw std::runtime_error( "The file has no gamma spectra (its detectors are: " + join_names( det_names )
+                                + "), so there is nothing to display or analyze: " + client_path );
 
-  // Verify the spectrum loaded
-  const shared_ptr<const SpecUtils::Measurement> displayed = interspec->displayedHistogram( specType );
-  if( !displayed )
-    throw std::runtime_error( "Spectrum file loaded but failed to display." );
+    if( !any_gamma )
+      throw std::runtime_error( "detectors must include at least one gamma detector; the file's gamma detectors are: "
+                                + join_names( gamma_det_names ) + "." );
 
-  // Build response
+    // The chosen samples and detectors must have some gamma data, or nothing could be displayed.
+    if( !requestedSamples.empty() || !requestedDetectors.empty() )
+    {
+      bool have_gamma_data = false;
+      for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+      {
+        have_gamma_data = (m && (m->num_gamma_channels() > 0)
+          && (requestedSamples.empty() || requestedSamples.count( m->sample_number() ))
+          && (requestedDetectors.empty() || (std::find( begin(requestedDetectors), end(requestedDetectors),
+                                                        m->detector_name() ) != end(requestedDetectors))));
+        if( have_gamma_data )
+          break;
+      }
+
+      if( !have_gamma_data )
+      {
+        set<int> gamma_samples;
+        for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+        {
+          if( m && (m->num_gamma_channels() > 0) )
+            gamma_samples.insert( m->sample_number() );
+        }
+
+        throw std::runtime_error( "The requested sampleNumbers and detectors have no gamma data; the file's samples"
+                                  " with gamma data are: " + SpecUtils::sequencesToBriefString( gamma_samples )
+                                  + ", and its gamma detectors: " + join_names( gamma_det_names ) + "." );
+      }//if( !have_gamma_data )
+    }//if( samples or detectors were given )
+  }catch( std::exception & )
+  {
+    if( !reused_from )
+      discard_opened_file( meas );
+    throw;
+  }//try / catch
+
+  LlmToolGui * const llm_tool = interspec->currentLlmTool();
+  const bool is_foreground = (specType == SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<vector<shared_ptr<LlmInteraction>>> prev_conversation
+         = (is_foreground && llm_tool && (conversation_mode == "keep")) ? llm_tool->getConversationHistory() : nullptr;
+
+  if( requestedSamples.empty() )
+  {
+    // As the GUI does, but without dialogs: derived data, energy calibration variants and virtual
+    //  detectors are all kept (the GUI's default choices), no offer to keep the previous energy
+    //  calibration or to propagate peaks, and no database lookup.
+    manager->displayFile( row, meas, specType, false, false, SpecMeasManager::VariantChecksToDo::None );
+  }else
+  {
+    interspec->setSpectrum( meas, requestedSamples, specType, InterSpec::SetSpectrumOptions::SkipParseWarnings );
+
+    // The file may say which samples to show (an N42 InterSpec saved), which `setSpectrum` prefers.
+    if( interspec->displayedSamples( specType ) != requestedSamples )
+    {
+      interspec->changeDisplayedSampleNums( requestedSamples, specType );
+
+      // `setSpectrum` restored the conversation of the file's samples; use the requested ones'.
+      if( is_foreground && llm_tool && (conversation_mode == "resume") && !meas->passthrough() )
+      {
+        const shared_ptr<vector<shared_ptr<LlmInteraction>>> history = meas->llmConversationHistory( requestedSamples );
+        llm_tool->setConversationHistory( history ? history : make_shared<vector<shared_ptr<LlmInteraction>>>() );
+      }
+    }//if( setSpectrum chose other samples )
+  }//if( requestedSamples.empty() ) / else
+
+  if( !requestedDetectors.empty() )
+    interspec->setDetectorsToDisplay( requestedDetectors );
+
+  // setSpectrum() swapped in the files conversation ("resume"); undo that, if asked to.
+  if( is_foreground && llm_tool && (llm_tool == interspec->currentLlmTool()) )
+  {
+    if( conversation_mode == "keep" )
+      llm_tool->setConversationHistory( prev_conversation ? prev_conversation
+                                          : make_shared<vector<shared_ptr<LlmInteraction>>>() );
+    else if( conversation_mode == "new" )
+      llm_tool->clearConversationHistory();
+  }//if( foreground was loaded )
+
+  notice_guard.connection.disconnect();
+
+  // The GUI's notices, without its pointers to the GUI.
+  const auto notices_json = [&notices]() -> json {
+    const string gui_pointers[] = { Wt::WString::tr("smm-warn-upload-use-spec-manager").toUTF8(),
+                                    Wt::WString::tr("smm-warn-upload-use-file-manager").toUTF8() };
+    json notice_texts = json::array();
+    set<string> seen;
+    for( string msg : notices )
+    {
+      for( const string &pointer : gui_pointers )
+      {
+        const size_t pos = pointer.empty() ? string::npos : msg.find( pointer );
+        if( pos != string::npos )
+          msg.erase( pos, pointer.size() );
+      }
+      const string text = notice_to_text( msg );
+      if( !text.empty() && seen.insert( text ).second )
+        notice_texts.push_back( text );
+    }//for( string msg : notices )
+    return notice_texts;
+  };//notices_json lambda
+
+  for( const SpecUtils::SpectrumType type : all_types )
+    after[type] = displayed_state( interspec, type );
+
+  // (A background or secondary is not drawn while there is no foreground, but is still loaded.)
+  const DisplayedState &now = after[specType];
+  if( (now.meas != meas)
+     || (!interspec->displayedHistogram( specType ) && after[SpecUtils::SpectrumType::Foreground].meas) )
+  {
+    // The GUI may have changed state on the way (e.g., replaced the foreground), so say what is
+    //  displayed now, along with the GUI's explanation.
+    json result;
+    result["success"] = false;
+    result["specType"] = specTypeStr;
+    result["error"] = "The spectrum file was opened, but could not be displayed as the "
+                      + SpecUtils::to_lower_ascii_copy( specTypeStr ) + "; see notices.";
+    const json notice_texts = notices_json();
+    if( !notice_texts.empty() )
+      result["notices"] = notice_texts;
+    json displayed;
+    for( const SpecUtils::SpectrumType type : all_types )
+      displayed[spec_type_label(type)] = displayed_state_json( interspec, type, after[type], before[type], meas );
+    result["displayed"] = std::move( displayed );
+    return result;
+  }//if( the file is not displayed )
+
   json result;
   result["success"] = true;
   result["specType"] = specTypeStr;
-  result["fileName"] = SpecUtils::filename( path );
+  result["fileName"] = meas->filename();
+  if( reused_from )
+    result["reusedLoadedFile"] = reused_from;
 
-  // All sample numbers in file (compact form)
-  const set<int> &allSamples = meas->sample_numbers();
-  result["allSampleNumbers"] = SpecUtils::sequencesToBriefString( allSamples );
-
-  // Displayed sample numbers
-  const set<int> &displayedSamples = interspec->displayedSamples( specType );
-  result["displayedSamples"] = SpecUtils::sequencesToBriefString( displayedSamples );
-
-  // Detector names
-  result["gammaDetectorNames"] = meas->gamma_detector_names();
-  result["neutronDetectorNames"] = meas->neutron_detector_names();
-
-  // Basic spectrum info from displayed histogram
-  result["numChannels"] = displayed->num_gamma_channels();
-  if( displayed->live_time() > 0.0f )
-    result["liveTime"] = displayed->live_time();
-  if( displayed->real_time() > 0.0f )
-    result["realTime"] = displayed->real_time();
-  result["minimumGammaEnergy"] = displayed->gamma_energy_min();
-  result["maximumGammaEnergy"] = displayed->gamma_energy_max();
-  if( displayed->gamma_counts() && !displayed->gamma_counts()->empty() )
-    result["totalCounts"] = displayed->gamma_count_sum();
-
-  // File-level metadata
-  if( !meas->manufacturer().empty() )
-    result["manufacturer"] = meas->manufacturer();
-  if( !meas->instrument_model().empty() )
-    result["instrumentModel"] = meas->instrument_model();
-  if( !meas->instrument_id().empty() )
-    result["serialNumber"] = meas->instrument_id();
-  if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
-    result["detectorType"] = SpecUtils::detectorTypeToString( meas->detector_type() );
-
-  if( displayed->contained_neutron() )
+  // The file as a whole.
+  const vector<pair<string,set<int>>> all_by_type = samples_by_source_type( *meas, allSamples );
   {
-    result["neutronCounts"] = displayed->neutron_counts_sum();
-    if( displayed->neutron_live_time() > 0.0f )
-      result["neutronCPS"] = displayed->neutron_counts_sum() / displayed->neutron_live_time();
+    json file;
+    file["numSamples"] = allSamples.size();
+    file["samplesBySourceType"] = samples_by_source_type_json( all_by_type );
+    file["gammaDetectors"] = meas->gamma_detector_names();
+    if( !meas->neutron_detector_names().empty() )
+      file["neutronDetectors"] = meas->neutron_detector_names();
+    file["numRecords"] = meas->num_measurements();
+    if( meas->passthrough() )
+      file["searchModeOrPassthrough"] = true;
+    if( meas->contains_derived_data() )
+      file["containsDerivedData"] = true;
+    const set<string> cal_variants = meas->energy_cal_variants();
+    if( cal_variants.size() > 1 )
+      file["energyCalibrationVariants"] = cal_variants;
+    if( !meas->manufacturer().empty() )
+      file["manufacturer"] = meas->manufacturer();
+    if( !meas->instrument_model().empty() )
+      file["instrumentModel"] = meas->instrument_model();
+    if( !meas->instrument_id().empty() )
+      file["serialNumber"] = meas->instrument_id();
+    if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
+      file["detectorType"] = SpecUtils::detectorTypeToString( meas->detector_type() );
+    const shared_ptr<const SpecUtils::DetectorAnalysis> riid = meas->detectors_analysis();
+    if( riid && !riid->is_empty() )
+    {
+      const string riid_summary = notice_to_text( riidAnaSummary( meas ) );
+      file["instrumentRiidResults"] = riid_summary.empty() ? string("present") : riid_summary;
+    }
+    result["file"] = std::move( file );
   }
 
-  if( !displayed->title().empty() )
-    result["title"] = displayed->title();
+  // Samples of this file not displayed in any slot.
+  set<int> not_displayed = allSamples;
+  for( const SpecUtils::SpectrumType type : all_types )
+  {
+    if( after[type].meas == meas )
+    {
+      for( const int sample : after[type].samples )
+        not_displayed.erase( sample );
+    }
+  }//for( const SpecUtils::SpectrumType type : all_types )
+  const vector<pair<string,set<int>>> not_displayed_by_type = samples_by_source_type( *meas, not_displayed );
+  result["samplesNotDisplayed"] = samples_by_source_type_json( not_displayed_by_type );
+
+  json displayed;
+  for( const SpecUtils::SpectrumType type : all_types )
+    displayed[spec_type_label(type)] = displayed_state_json( interspec, type, after[type], before[type], meas );
+  result["displayed"] = std::move( displayed );
+
+  // A short account of what happened, for the client.
+  {
+    string summary = meas->filename() + " has " + to_string( allSamples.size() )
+                     + ((allSamples.size() == 1) ? " sample" : " samples");
+    if( allSamples.size() > 1 )
+      summary += " (" + describe_samples( all_by_type ) + ")";
+    const vector<string> &gamma_dets = meas->gamma_detector_names();
+    summary += ", with " + to_string( gamma_dets.size() ) + " gamma detector" + ((gamma_dets.size() == 1) ? "" : "s");
+    if( (gamma_dets.size() > 1) && (gamma_dets.size() <= 8) )
+      summary += " (" + join_names( gamma_dets ) + ")";
+    if( meas->passthrough() )
+      summary += "; it is search-mode/passthrough data";
+    summary += ". ";
+
+    if( reused_from )
+      summary += "It was already loaded as the " + SpecUtils::to_lower_ascii_copy( reused_from )
+                 + ", so that copy (with any analysis work) was used. ";
+
+    summary += "Displayed " + describe_samples( samples_by_source_type( *meas, now.samples ) ) + " as the "
+               + SpecUtils::to_lower_ascii_copy( specTypeStr );
+    const vector<string> now_gamma = displayed_detectors( now, true );
+    if( now_gamma.size() > 1 )
+      summary += ", summing " + ((now_gamma.size() == gamma_dets.size()) ? string("all ") : string(""))
+                 + to_string( now_gamma.size() ) + " gamma detectors"
+                 + ((now_gamma.size() < gamma_dets.size()) ? " (" + join_names( now_gamma ) + ")" : string(""));
+    else if( (now_gamma.size() == 1) && (gamma_dets.size() > 1) )
+      summary += ", using only gamma detector " + now_gamma.front();
+    if( !meas->neutron_detector_names().empty() && displayed_detectors( now, false ).empty() )
+      summary += ", without the neutron detectors";
+    summary += ". ";
+
+    {
+      const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( specType );
+      const double duration = measurement_duration( now );
+      if( hist && (now_gamma.size() > 1) && (hist->live_time() > 0.0f) && (duration > 0.0) )
+      {
+        char buffer[256];
+        snprintf( buffer, sizeof(buffer), "Its live time (%.1f s) is summed over the %i detectors; the"
+                  " measurement took %.1f s. ", hist->live_time(), static_cast<int>(now_gamma.size()), duration );
+        summary += buffer;
+      }
+    }
+
+    // Peaks are kept for each set of samples, so ones fit on other samples are not shown now.
+    {
+      vector<string> other_peak_sets;
+      for( const set<int> &samples : meas->sampleNumsWithPeaks() )
+      {
+        const shared_ptr<const std::deque<shared_ptr<const PeakDef>>> peaks
+                                  = std::const_pointer_cast<const SpecMeas>(meas)->peaks( samples );
+        if( (samples != now.samples) && peaks && !peaks->empty() && (other_peak_sets.size() < 3) )
+          other_peak_sets.push_back( to_string( peaks->size() ) + " on " + describe_samples(
+                                       samples_by_source_type( *meas, samples ) ) );
+      }
+      if( !other_peak_sets.empty() )
+        summary += "Peaks are kept for each set of samples; this file also has peaks fit for other"
+                   " samples (" + join_names( other_peak_sets ) + "), not shown with the current ones. ";
+    }
+
+    if( !not_displayed.empty() )
+      summary += "Not displayed: " + describe_samples( not_displayed_by_type )
+                 + "; use sampleNumbers to choose other samples. ";
+
+    // What happened to the other slots.
+    for( const SpecUtils::SpectrumType type : all_types )
+    {
+      if( type == specType )
+        continue;
+
+      const DisplayedState &was = before[type], &is = after[type];
+      const string label = SpecUtils::to_lower_ascii_copy( string( spec_type_label( type ) ) );
+      if( is == was )
+      {
+        // A file with an unambiguous background sample, whose background was not loaded because one
+        //  is already loaded - the GUI keeps it if it is from this detector and closer in time.
+        const auto back_pos = std::find_if( begin(not_displayed_by_type), end(not_displayed_by_type),
+                                [](const pair<string,set<int>> &v){ return v.first == "Background"; } );
+        if( is_foreground && (type == SpecUtils::SpectrumType::Background) && is.meas && (is.meas != meas)
+            && (back_pos != end(not_displayed_by_type)) )
+        {
+          summary += "The file's background " + describe_samples( {*back_pos} ) + " was not loaded, keeping the"
+                     " current background (" + is.meas->filename() + "); load this file with specType"
+                     " Background to use it. ";
+        }else if( is.meas )
+        {
+          summary += "The " + label + " (" + is.meas->filename() + ", "
+                     + describe_samples( samples_by_source_type( *is.meas, is.samples ) ) + ") is unchanged. ";
+        }
+        continue;
+      }//if( is == was )
+
+      if( is.meas && (is.meas == was.meas) && (is.samples == was.samples) )
+      {
+        // Only its detectors changed: it follows the foreground's choice of detectors.
+        //  TODO(displayed-detectors): not so once each spectrum has its own choice.
+        const vector<string> is_gamma = displayed_detectors( is, true );
+        summary += "The " + label + " now " + ((is_gamma.size() == 1) ? "uses gamma detector " : "sums gamma detectors ")
+                   + join_names( is_gamma ) + ", like the foreground. ";
+      }else if( is.meas == meas )
+      {
+        summary += "Also loaded " + describe_samples( samples_by_source_type( *meas, is.samples ) )
+                   + " of this file as the " + label;
+        if( was.meas && (was.meas != meas) )
+          summary += ", replacing " + was.meas->filename();
+        summary += ". ";
+      }else if( !is.meas && was.meas )
+      {
+        summary += "The " + label + " (" + was.meas->filename() + ") was unloaded, as its number of"
+                   " channels differs from the new foreground. ";
+      }else if( is.meas )
+      {
+        summary += "The " + label + " (" + is.meas->filename() + ") now displays "
+                   + describe_samples( samples_by_source_type( *is.meas, is.samples ) ) + ". ";
+      }
+    }//for( const SpecUtils::SpectrumType type : all_types )
+
+    if( !is_foreground && !after[SpecUtils::SpectrumType::Foreground].meas )
+      summary += "No foreground is loaded; load one for analysis. ";
+
+    // A background (or secondary) with a different number of channels is likely from another
+    //  detector; it is rebinned to the foreground for display and comparisons.
+    {
+      const shared_ptr<const SpecUtils::Measurement> fore_hist
+                                    = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+      for( const SpecUtils::SpectrumType type : { SpecUtils::SpectrumType::Background, SpecUtils::SpectrumType::SecondForeground } )
+      {
+        const shared_ptr<const SpecUtils::Measurement> hist = interspec->displayedHistogram( type );
+        if( fore_hist && hist && (hist->num_gamma_channels() != fore_hist->num_gamma_channels()) )
+          summary += "Note: the " + SpecUtils::to_lower_ascii_copy( string( spec_type_label( type ) ) )
+                     + " has " + to_string( hist->num_gamma_channels() ) + " channels and the foreground "
+                     + to_string( fore_hist->num_gamma_channels() ) + ", so it is likely from a different"
+                     " detector; it is rebinned to the foreground's energy calibration for display and"
+                     " comparisons. ";
+      }
+    }
+
+    if( result["file"].contains( "instrumentRiidResults" ) )
+      summary += "The file includes the instrument's own nuclide ID results (see get_automated_id_results). ";
+
+    SpecUtils::trim( summary );
+    result["summary"] = summary;
+  }
+
+  // The GUI's notices.
+  const json notice_texts = notices_json();
+  if( !notice_texts.empty() )
+    result["notices"] = notice_texts;
+
+  // Problems the parser noted, for the file and the displayed records.
+  {
+    set<string> warnings( begin(meas->parse_warnings()), end(meas->parse_warnings()) );
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meas->measurements() )
+    {
+      if( m && now.samples.count( m->sample_number() ) )
+        warnings.insert( begin(m->parse_warnings()), end(m->parse_warnings()) );
+    }
+    if( !warnings.empty() )
+    {
+      json list = json::array();
+      for( const string &w : warnings )
+      {
+        if( list.size() >= 10 )
+          break;
+        list.push_back( w );
+      }
+      result["parseWarnings"] = std::move( list );
+    }
+  }
+
+  // What analysis work the file brought with it (e.g., when resuming from an exported N42).
+  //  TODO(displayed-detectors): the file's saved choice of detectors is not restored (all of them
+  //  are shown), so a resumed analysis made with only some detectors needs `detectors` again.
+  {
+    // (Through a const SpecMeas, as the non-const peaks() adds an empty entry for the samples.)
+    const shared_ptr<const SpecMeas> const_meas = meas;
+    const shared_ptr<const std::deque<shared_ptr<const PeakDef>>> peaks = const_meas->peaks( now.samples );
+    json restored;
+    restored["peaks"] = peaks ? peaks->size() : size_t(0);
+    restored["activity_model"] = (meas->shieldingSourceModel() != nullptr);
+#if( USE_REL_ACT_TOOL )
+    restored["isotopics_config"] = (meas->relActAutoGuiState() != nullptr);
+#endif
+    if( is_foreground )
+    {
+      // Without an assistant open yet, the file's conversation is restored when one is.
+      const set<int> history_key = meas->passthrough() ? set<int>{} : now.samples;
+      const shared_ptr<vector<shared_ptr<LlmInteraction>>> convo = llm_tool ? llm_tool->getConversationHistory()
+                                                                 : meas->llmConversationHistory( history_key );
+      restored["conversation_turns"] = convo ? convo->size() : size_t(0);
+      restored["conversation"] = conversation_mode;
+    }
+    result["restored"] = std::move( restored );
+  }
 
   return result;
 }//executeLoadSpectrumFile(...)
@@ -4218,6 +5111,17 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   // Get the current visible range for the description text
   double curMinE = 0, curMaxE = 0, curMinY = 0, curMaxY = 0;
   interspec->displayedSpectrumRange( curMinE, curMaxE, curMinY, curMaxY );
+  if( curMaxE <= curMinE )
+  {
+    // No range from a browser (e.g., the stdio server); the whole spectrum is shown.
+    const shared_ptr<const SpecUtils::Measurement> fore
+                                  = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    if( fore && (fore->num_gamma_channels() > 1) )
+    {
+      curMinE = fore->gamma_energy_min();
+      curMaxE = fore->gamma_energy_max();
+    }
+  }//if( no displayed range )
   const double descMinE = energyRange ? energyRange->first : curMinE;
   const double descMaxE = energyRange ? energyRange->second : curMaxE;
 
@@ -4227,9 +5131,12 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
     [callback, format, descMinE, descMaxE, didBgSub]( std::string base64Data, std::string mimeType,
                                              int widthPx, int heightPx )
     {
-      if( base64Data.empty() )
+      // A chart with no size (e.g., never laid out) gives an "image" with no content; so does a
+      //  capture refused because others are already queued (see D3SpectrumDisplayDiv).
+      if( base64Data.empty() || (widthPx <= 0) || (heightPx <= 0) )
       {
-        callback( string( "Error: Failed to capture spectrum image." ) );
+        callback( string( "Error: Failed to capture spectrum image (other image captures may still"
+                          " be running; try again once they finish)." ) );
         return;
       }
 
@@ -4666,7 +5573,8 @@ void ToolRegistry::executeGetTimeChartImageAsync( const nlohmann::json &params, 
     [callback, format, fgHighlightColor, bgHighlightColor]( std::string base64Data, std::string mimeType,
                          int widthPx, int heightPx )
     {
-      if( base64Data.empty() )
+      // A chart with no size (e.g., never laid out) gives an "image" with no content.
+      if( base64Data.empty() || (widthPx <= 0) || (heightPx <= 0) )
       {
         callback( string( "Error: Failed to capture time chart image." ) );
         return;
@@ -7332,7 +8240,17 @@ std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
   loadedFrom.clear();
 
   // Helper lambda to try loading from a file path
-  auto tryLoadFromFilePath = [&](const std::string& path) -> std::shared_ptr<DetectorPeakResponse> {
+  auto tryLoadFromFilePath = [&](const std::string& client_path) -> std::shared_ptr<DetectorPeakResponse> {
+    // An MCP agent server only reads from the calling session's directory.
+    std::string path;
+    try
+    {
+      path = resolve_client_file_path( client_path );
+    }catch( std::exception & )
+    {
+      return nullptr;
+    }
+
     if( !SpecUtils::is_file(path) && !SpecUtils::is_directory(path) )
       return nullptr;
 
@@ -9516,6 +10434,8 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   for( const ApplyEntry &entry : apply_entries )
   {
     // Determine which detector names are used for the "display" calibration for this SpecMeas
+    //  TODO(displayed-detectors): a file shown in two slots takes the first slot's detectors; check
+    //  this once the slots' detector choices can differ.
     vector<string> display_detectors;
     if( entry.meas == fore_meas )
       display_detectors = interspec->detectorsToDisplay( SpectrumType::Foreground );

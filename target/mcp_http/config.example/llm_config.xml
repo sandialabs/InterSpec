@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Example LLM configuration for the InterSpec MCP analysis server (target/mcp_http).
+
+     Copy this directory, edit it, and mount it read-only into the container at /config:
+       docker run -v /srv/interspec/config:/config:ro ...
+
+     Any value that is entirely `env(NAME)` or `env(NAME,default)` is taken from that environment
+     variable when the config is loaded (NAME must start with INTERSPEC_); so this file can be kept
+     without secrets, and they passed in with `docker run -e ...` or a secrets mechanism.  An unset
+     variable without a default is an error.
+
+     You can also put customized llm_tools_config.xml / llm_agent_*.xml files, and an
+     llm_knowledge/ directory of extra knowledge-base skills, next to this file.
+-->
+<LlmConfig version="0">
+  <LlmApi version="1">
+    <Enabled>true</Enabled>
+
+    <!-- apiFormat: "openai_chat" (OpenAI-compatible chat completions; most providers and local
+         servers), "openai_responses", or "anthropic". -->
+    <ApiProvider active="true" apiFormat="env(INTERSPEC_LLM_API_FORMAT,openai_chat)">
+      <ApiEndpoint>env(INTERSPEC_LLM_ENDPOINT)</ApiEndpoint>
+      <BearerToken>env(INTERSPEC_LLM_BEARER_TOKEN)</BearerToken>
+      <!-- supportsImages lets the assistant look at spectrum images, and photos sent with prompts. -->
+      <Model active="true" supportsImages="env(INTERSPEC_LLM_SUPPORTS_IMAGES,true)" reasoning="env(INTERSPEC_LLM_REASONING,medium)">
+        <Name>env(INTERSPEC_LLM_MODEL)</Name>
+        <MaxTokens>env(INTERSPEC_LLM_MAX_TOKENS,32000)</MaxTokens>
+        <ContextLengthLimit>env(INTERSPEC_LLM_CONTEXT_LENGTH,200000)</ContextLengthLimit>
+      </Model>
+    </ApiProvider>
+
+    <!-- For a server, LLM calls are always made from C++ (an agent server forces this), never the browser. -->
+    <HttpBackend>native</HttpBackend>
+    <!-- Optional, e.g. for a private CA: <HttpCaBundle>/config/ca.pem</HttpCaBundle> -->
+
+    <!-- Writes each conversation as XML to the session's logs/ directory (deleted with the session,
+         unless KeepSessionFiles is true). -->
+    <LogConversations>env(INTERSPEC_LLM_LOG_CONVERSATIONS,false)</LogConversations>
+  </LlmApi>
+
+  <McpServer version="1">
+    <Enabled>true</Enabled>
+    <!-- Clients (your chat back-end) must send "Authorization: Bearer <token>"; at least 16
+         characters.  Keep it on the back-end - never hand it to browsers. -->
+    <BearerToken>env(INTERSPEC_MCP_BEARER_TOKEN)</BearerToken>
+    <!-- Lets clients ask the built-in assistant (assistant_submit_prompt). -->
+    <AllowAssistantPrompt>true</AllowAssistantPrompt>
+    <!-- Lets clients invoke a specialist agent directly (invoke_agent). -->
+    <AllowAgentInvocation>env(INTERSPEC_MCP_ALLOW_AGENT_INVOCATION,false)</AllowAgentInvocation>
+
+    <AgentServer>
+      <MaxSessions>env(INTERSPEC_MAX_SESSIONS,8)</MaxSessions>
+      <SessionIdleTimeoutSeconds>env(INTERSPEC_SESSION_IDLE_TIMEOUT,1800)</SessionIdleTimeoutSeconds>
+      <SessionMaxLifetimeSeconds>env(INTERSPEC_SESSION_MAX_LIFETIME,14400)</SessionMaxLifetimeSeconds>
+      <!-- Holds a <YYYY-MM-DD>_<session>/{input,output,logs} directory per session; mount it from the
+           host to exchange files directly. -->
+      <ExchangeDirectory>env(INTERSPEC_EXCHANGE_DIR,/exchange)</ExchangeDirectory>
+      <!-- If false, a session's directory is deleted when it ends. -->
+      <KeepSessionFiles>env(INTERSPEC_KEEP_SESSION_FILES,false)</KeepSessionFiles>
+      <MaxUploadBytes>env(INTERSPEC_MAX_UPLOAD_BYTES,268435456)</MaxUploadBytes>
+      <MaxSessionBytes>env(INTERSPEC_MAX_SESSION_BYTES,1073741824)</MaxSessionBytes>
+      <MaxImageBytes>env(INTERSPEC_MAX_IMAGE_BYTES,5242880)</MaxImageBytes>
+      <!-- Base of the upload/download URLs given to clients, if they reach this server through a
+           proxy (e.g. "https://analysis.example.com/interspec"); else taken from the Host header. -->
+      <PublicBaseUrl>env(INTERSPEC_PUBLIC_BASE_URL,)</PublicBaseUrl>
+      <!-- Chromium executable; empty to search the usual names. -->
+      <BrowserPath>env(INTERSPEC_BROWSER_PATH,)</BrowserPath>
+    </AgentServer>
+  </McpServer>
+</LlmConfig>
