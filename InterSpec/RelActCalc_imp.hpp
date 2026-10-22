@@ -759,6 +759,17 @@ T fluorescence_self_atten_correction( const double mu_f, const std::vector<doubl
 }//fluorescence_self_atten_correction(...)
 
 
+/** Attenuation coefficient, per unit areal density, of a Physical-Model shield at `energy` (keV): from its material
+ if it has one, otherwise from its (possibly fitted) atomic number.  Not clamped. */
+template<typename T>
+T phys_model_shield_mu( const double energy, const RelActCalc::PhysModelShield<T> &shield )
+{
+  if( shield.material )
+    return T( GammaInteractionCalc::transmition_length_coefficient( shield.material.get(), energy ) / shield.material->density );
+  return get_atten_coef_for_an( shield.atomic_number, energy );
+}//phys_model_shield_mu(...)
+
+
 template<typename T>
 T eval_physical_model_eqn_imp( const double energy,
                                 std::optional<RelActCalc::PhysModelShield<T>> self_atten,
@@ -823,11 +834,7 @@ T eval_physical_model_eqn_imp( const double energy,
   
   if( self_atten.has_value() )
   {
-    T mu( 0.0 );
-    if( self_atten->material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( self_atten->material.get(), energy ) / self_atten->material->density );
-    else
-      mu = get_atten_coef_for_an( self_atten->atomic_number, energy );
+    T mu = phys_model_shield_mu( energy, *self_atten );
     
     T areal_density = self_atten->areal_density;
 
@@ -873,11 +880,7 @@ T eval_physical_model_eqn_imp( const double energy,
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
   {
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
-    T mu( 0.0 );
-    if( ext_atten.material )
-      mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energy ) / ext_atten.material->density );
-    else
-      mu = get_atten_coef_for_an( ext_atten.atomic_number, energy );
+    T mu = phys_model_shield_mu( energy, ext_atten );
     
     T areal_density = ext_atten.areal_density;
 

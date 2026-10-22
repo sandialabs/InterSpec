@@ -748,6 +748,21 @@ struct RelEffCurveInput
   /** Convenience: whether any empirical correction is applied (replaces the legacy `phys_model_use_hoerl`). */
   bool uses_phys_model_correction() const { return phys_model_corr.uses_correction(); }
 
+  /** Correct the line amplitudes for true-coincidence (cascade) summing.
+
+   Only for `RelActCalc::RelEffEqnForm::FramPhysicalModel` curves, and requires a detector response with
+   total-efficiency information (see `GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo`).  One extra
+   parameter is fit for the curve: `s`, the effective fractional solid angle, so that `s * rel_eff(E)` - with the
+   empirical correction's arbitrary scale removed at its pivot energy - is the absolute full-energy efficiency.  Each
+   line's amplitude is then multiplied by its summing factor, computed by CeeLo's
+   analytic engine from that full-energy efficiency and the matching total efficiency, and averaged over the depth of
+   the self-attenuating source.  Significant pure coincidence-sum peaks inside the ROIs are added to the model.  Lines
+   whose summing would change a lot near contact, and that have a comparably strong line of the same nuclide nearby to
+   hold the efficiency curve there, get a yield-nuisance parameter (3% prior), so a yield error is not fit as
+   summing.  Default false.
+   */
+  bool correct_for_cascade_summing = false;
+
   /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
    Pu isotopics).
    
@@ -882,8 +897,11 @@ struct RelEffCurveInput
    boolean `<PhysModelUseHoerl>` *and* the new elements -- whenever its correction is v0-representable (None
    or Hoerl) and no areal-density biasing is enabled; Chebyshev or any enabled AD biasing forces v1 (new
    elements only).  Reading prefers `<CorrectionFcnType>` and falls back to the legacy `<PhysModelUseHoerl>`
-   (a plain bool: true => Hoerl, false/absent => None). */
-  static const int sm_xmlSerializationVersion = 1;
+   (a plain bool: true => Hoerl, false/absent => None).
+
+   Version 2 (from 1): the optional `<CorrectForCascadeSumming>` element; a curve is written as v2 only when it is
+   true, so builds that cannot honor it reject the curve rather than silently ignoring it. */
+  static const int sm_xmlSerializationVersion = 2;
 
   /** Puts this object to XML
    * 
@@ -1049,6 +1067,11 @@ struct Options
    */
   bool iodine_escape_peaks;
   static constexpr const char *sm_iodine_escape_label_prefix = "I-escape of ";
+
+  /** Pure coincidence-sum peaks of a curve corrected for cascade summing (see
+   `RelEffCurveInput::correct_for_cascade_summing`) are returned with no source assigned, and a user label starting
+   with this that names the nuclide and the sum energy. */
+  static constexpr const char *sm_cascade_sum_label_prefix = "Cascade sum of ";
 
   /** Whether a source line outside the energy span the ROIs cover (below the lowest ROI's lower
    edge or above the highest's upper edge) is modelled for the tail it puts into an edge ROI.  Such a
@@ -2990,6 +3013,56 @@ struct RelActAutoSolution
     double corr_lower_energy = 0.0;
     double corr_upper_energy = 0.0;
     double corr_pivot_energy = 0.0;
+
+    /** The cascade-summing correction (`RelEffCurveInput::correct_for_cascade_summing`). */
+    struct CascadeSummingInfo
+    {
+      /** The fitted effective fractional solid angle `s`: `s * rel_eff(E) / correction(corr_pivot_energy)` is the
+       absolute full-energy efficiency (the empirical correction's scale is arbitrary, so it is removed at its pivot). */
+      double solid_angle_frac = 0.0;
+      /** sqrt of the covariance diagonal; not present if the covariance was unavailable. */
+      std::optional<double> solid_angle_frac_uncert;
+
+      /** Source-depth quadrature nodes used (1 for an optically thin, or no, self-attenuating source). */
+      size_t num_depth_nodes = 0;
+
+      /** The summing factor applied to each line given a summing window (all other lines use 1). */
+      struct LineFactor
+      {
+        SrcVariant source;
+        double energy = 0.0;
+        double factor = 1.0;       ///< multiplies the line's amplitude (summing-out plus summing-in)
+        double summing_out = 1.0;  ///< the summing-out part (<= 1)
+        double summing_in = 0.0;   ///< the summing-in part (>= 0)
+        bool model_complete = true;  ///< false if the decay data's level scheme was incomplete for the line
+      };
+      std::vector<LineFactor> lines;
+
+      /** The pure coincidence-sum peaks fit (sums of one decay's photons landing where the nuclide emits no line,
+       inside an ROI), with their fitted areas. */
+      struct SumPeak
+      {
+        SrcVariant source;
+        double energy = 0.0;   ///< rate-weighted mean energy of the sums
+        double counts = 0.0;   ///< the fitted peak area
+        bool model_complete = true;
+      };
+      std::vector<SumPeak> sum_peaks;
+
+      /** The yield multiple fit for each line given a yield nuisance: a line whose summing could reach a few percent
+       may move from its tabulated yield, with a Gaussian prior, so one line's yield error cannot set `s`. */
+      struct YieldMultiple
+      {
+        SrcVariant source;
+        double energy = 0.0;
+        double multiple = 1.0;
+        std::optional<double> uncert;
+      };
+      std::vector<YieldMultiple> yield_multiples;
+    };//struct CascadeSummingInfo
+
+    /** Present only for a curve that corrected for cascade summing. */
+    std::optional<CascadeSummingInfo> cascade_summing;
   };//struct PhysicalModelFitInfo
   
   /** The curve information for Physical Model curves.

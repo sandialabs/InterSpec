@@ -65,6 +65,9 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+// CeeLo (external_libs/CeeLo/src): the detector geometry a response states.
+#include "io/DetectorResponse.h"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -93,6 +96,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/RelActCalcAuto_Roi.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/BersteinPolynomial.hpp"
@@ -3022,6 +3026,138 @@ struct RelActAutoCostFcn
   };
   std::vector<ParamPrior> m_phys_model_param_priors;
 
+  /** True-coincidence (cascade) summing, for each Physical-model curve with
+   `RelEffCurveInput::correct_for_cascade_summing` (see `setup_cascade_summing()`).
+
+   Each such curve has one fit parameter, `s` (the effective fractional solid angle: `s * rel_eff(E) / corr(E_ref)` is
+   the absolute full-energy efficiency, the correction's arbitrary scale removed at its pivot energy; see
+   `cascade_window_results(...)`).  The summing factor of each significant line - from CeeLo's analytic engine, given that
+   efficiency, the matching total efficiency, and averaged over the source's depth - is far too expensive to compute
+   on every cost-function evaluation, so `refresh_cascade_factors(...)` computes it, with its derivatives with
+   respect to `s` and the curve's fitted efficiency parameters, between solves, and the cost function uses it
+   linearized about that point (`cascade_factor(...)`).  The solve re-refreshes and re-solves until it settles.
+   */
+  struct CascadeCurve
+  {
+    size_t rel_eff_index = 0;
+    size_t s_par_index = 0;
+    std::shared_ptr<const GammaInteractionCalc::CascadeSummingCalc> calc;
+
+    /** The largest physical `s` for the detector (see `cascade_s_upper(...)`). */
+    double s_upper = 0.5;
+
+    /** Per source of the curve (`m_nuclides[rel_eff_index]` order): one window per significant line of a nuclide
+     in an ROI.  Chosen at the first refresh (when activities are first known), then kept for the solve. */
+    std::vector<std::vector<ceelo::PeakWindow>> windows;
+    bool windows_chosen = false;
+
+    struct LineFactor
+    {
+      double energy = 0.0;
+      double c = 1.0;          //summing factor at the last refresh
+      double c_out = 1.0;      //its summing-out part
+      double c_in = 0.0;       //its summing-in part
+      bool complete = true;    //false if the engine's level-scheme model was incomplete for the line
+      std::vector<double> grad;  //dc/dx for each of `lane_pars`
+    };
+
+    /** Per source, sorted by energy; lines without a window are not listed (factor 1). */
+    std::vector<std::vector<LineFactor>> factors;
+
+    /** A pure coincidence-sum peak of one of the curve's nuclides: photons of one decay summing, inside an ROI, where
+     the nuclide emits no line.  Its area is `rel_act * live_time * value`; `value` is the sum's absolute rate per
+     decay times `corr(E_ref) / s` (the relative activity carries `s / corr(E_ref)`), linearized like the line factors. */
+    struct SumLine
+    {
+      double energy = 0.0;       //rate-weighted mean energy of the sums in its window
+      double value = 0.0;        //at the last refresh
+      double scale = 0.0;        //the strongest line of its ROI, in the same units, for judging changes in `value`
+      bool complete = true;      //false if the engine's level-scheme model was incomplete for it
+      std::vector<double> grad;  //d(value)/dx for each of `lane_pars`
+    };
+
+    /** Per source: the windows of its significant pure sums (chosen with the line windows; see
+     `choose_cascade_windows(...)`), and those sums, in the same order. */
+    std::vector<std::vector<ceelo::PeakWindow>> sum_windows;
+    std::vector<std::vector<SumLine>> sums;
+
+    /** The parameters the factors are linearized in, and their values at the last refresh. */
+    std::vector<size_t> lane_pars;
+    std::vector<double> lane_x0;
+
+    /** All the parameters at the last refresh; a refresh at the same point would change nothing. */
+    std::vector<double> refresh_x;
+
+    /** A line whose yield gets its own nuisance parameter (see `sm_cascade_yield_min_effect`). */
+    struct YieldNuisance
+    {
+      size_t source_index = 0;   //into `m_nuclides[rel_eff_index]`
+      double energy = 0.0;       //the nominal-gamma energy it scales
+      size_t par_index = 0;
+    };
+    std::vector<YieldNuisance> yield_nuisances;
+
+    /** Depth-quadrature nodes used at the last refresh (1 for an optically thin, or no, self-attenuating source). */
+    size_t num_depth_nodes = 0;
+  };//struct CascadeCurve
+
+  std::vector<CascadeCurve> m_cascade_curves;
+
+  /** The first `s` parameter; `std::numeric_limits<size_t>::max()` when no curve corrects for summing.  The cascade
+   block is one `s` per curve, then every curve's yield nuisances (`CascadeCurve::yield_nuisances`). */
+  size_t m_cascade_s_start_index;
+
+  /** Parameters in the cascade block: the curves' `s`, plus their yield nuisances. */
+  size_t m_cascade_num_pars = 0;
+
+  /** `s = sm_cascade_s_scale * (x - sm_cascade_s_offset)`, bounded to [0, CascadeCurve::s_upper], which is never
+   more than `sm_cascade_s_upper` (a source filling a half space against a bare crystal). */
+  static constexpr double sm_cascade_s_offset = 1.0;
+  static constexpr double sm_cascade_s_scale = 0.1;
+  static constexpr double sm_cascade_s_upper = 0.5;
+
+  /** `s` is reported as unconstrained when its uncertainty is at least max(s, this). */
+  static constexpr double sm_cascade_s_unconstrained_floor = 0.01;
+
+  /** Starting `s`: the fractional solid angle at this distance from the detector face. */
+  static constexpr double sm_cascade_s_start_distance_cm = 5.0;
+
+  /** Weak Gaussian prior pulling `s` toward zero, with this sigma; keeps it defined when no line constrains it. */
+  static constexpr double sm_cascade_s_prior_sigma = 0.5;
+
+  /** The smallest `s` the summing engine is evaluated at (see `cascade_window_results(...)`). */
+  static constexpr double sm_cascade_s_eval_floor = 1.0E-6;
+
+  /** A line gets a summing window if its predicted counts are at least this fraction of the strongest line in its
+   ROI; weaker lines keep a factor of 1 (their summing changes the ROI by less than this times the summing). */
+  static constexpr double sm_cascade_window_min_roi_frac = 1.0E-3;
+
+  /** A line whose summing at contact (a thin source, with the detector's own efficiencies) changes it by at least this
+   fraction gets a yield nuisance: its amplitude is multiplied by (1 + delta), with a Gaussian prior on delta of
+   `sm_cascade_yield_sigma`.  The summing-out moderate geometries give (a few percent) is the size of the evaluated
+   yield uncertainties, and of peak-shape effects on weak lines beside strong ones, so without these a single line's
+   yield error pins `s`; with them, `s` follows the summing-in features and the consensus of the lines.  Each
+   nuclide's strongest line is left out, so it still anchors the activity. */
+  static constexpr double sm_cascade_yield_min_effect = 0.05;
+
+  /** How near (keV, or fraction of its energy, whichever is larger) a line without a yield nuisance must be to anchor
+   one that has it (see `choose_cascade_yield_nuisances(...)`). */
+  static constexpr double sm_cascade_yield_anchor_kev = 50.0;
+  static constexpr double sm_cascade_yield_anchor_frac = 0.1;
+  static constexpr double sm_cascade_yield_sigma = 0.03;
+
+  /** Yield multiple = 1 + sm_cascade_yield_scale * (par - sm_cascade_yield_offset), within +-sm_cascade_yield_max_change. */
+  static constexpr double sm_cascade_yield_offset = 1.0;
+  static constexpr double sm_cascade_yield_scale = 0.1;
+  static constexpr double sm_cascade_yield_max_change = 0.3;
+
+  /** Refreshes and warm re-solves stop once no line's factor moves by more than this (or after the max rounds). */
+  static constexpr double sm_cascade_refresh_tolerance = 1.0E-4;
+  static constexpr size_t sm_cascade_max_refresh_rounds = 4;
+
+  /** Derivative lanes per engine pass (more lanes are done in further passes). */
+  static constexpr int sm_cascade_jet_lanes = 8;
+
   /** Deviation pair anchor points for non-linear energy calibration correction.
 
    Each anchor defines an energy point where a deviation offset can be applied.  The first and last
@@ -3245,6 +3381,8 @@ struct RelActAutoCostFcn
 #endif
   m_peak_ranges_with_uncert{},
   m_phys_model_param_priors{},
+  m_cascade_curves{},
+  m_cascade_s_start_index( std::numeric_limits<size_t>::max() ),
   m_dev_pair_anchors{},
   m_num_fitted_dev_pair_params( 0 ),
   m_all_peaks( all_peaks ),
@@ -3603,6 +3741,8 @@ struct RelActAutoCostFcn
     }
 
     setup_fluorescence_depth_model();
+
+    setup_cascade_summing();
   }//RelActAutoCostFcn constructor.
 
 
@@ -3724,6 +3864,960 @@ struct RelActAutoCostFcn
       }//for( const NucInputGamma &src : m_nuclides[re] )
     }//for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
   }//void setup_fluorescence_depth_model()
+
+
+  /** Fills `m_cascade_curves` (and `m_cascade_s_start_index`) for the curves with
+   `RelEffCurveInput::correct_for_cascade_summing`.  Needs the parameter start indices.  Throws if a curve that asks
+   for it cannot do it (not a Physical model, or a detector response without total-efficiency information).
+
+   The `GammaInteractionCalc::CascadeSummingCalc` (decay cascades per nuclide and age, and the detector's FEP and
+   total efficiencies at every partner energy - which for a CeeLo response costs a ray-traced quadrature per energy)
+   is shared between the many cost functors one solve builds, through a small cache.
+   */
+  void setup_cascade_summing()
+  {
+    m_cascade_curves.clear();
+    m_cascade_s_start_index = std::numeric_limits<size_t>::max();
+
+    for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+    {
+      const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[re];
+      if( !curve.correct_for_cascade_summing )
+        continue;
+
+      if( curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        throw runtime_error( "Correcting for cascade summing requires the Physical Model relative efficiency"
+                             " (curve '" + curve.name + "')." );
+
+      if( !GammaInteractionCalc::CascadeSummingCalc::drfHasNeededInfo( m_drf ) )
+        throw runtime_error( "Correcting for cascade summing requires a detector response with total-efficiency"
+                             " information." );
+
+      if( m_drf->isFixedGeometry() )
+        throw runtime_error( "Correcting for cascade summing is not yet supported for fixed-geometry detector"
+                             " responses." );
+
+      vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
+      vector<const SandiaDecay::Nuclide *> age_fit_nucs;
+      for( const NucInputGamma &src : m_nuclides[re] )
+      {
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+        if( !nuc )
+          continue;
+        nuc_ages.emplace_back( nuc, std::max( 0.0, src.age ) );
+        if( !is_fixed_age( nuc, re ) )
+          age_fit_nucs.push_back( nuc );
+      }//for( const NucInputGamma &src : m_nuclides[re] )
+
+      if( nuc_ages.empty() )
+      {
+        m_setup_warnings.push_back( "Curve '" + curve.name + "' has no nuclides, so there is no cascade summing"
+                                    " to correct for." );
+        continue;
+      }
+
+      CascadeCurve cc;
+      cc.rel_eff_index = re;
+      cc.calc = shared_cascade_calc( m_drf, nuc_ages, age_fit_nucs );
+      cc.s_upper = cascade_s_upper( *m_drf );
+      m_cascade_curves.push_back( std::move(cc) );
+    }//for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+
+    if( m_cascade_curves.empty() )
+      return;
+
+    m_cascade_s_start_index = m_skew_par_start_index + 2*PeakDef::num_skew_parameters( m_options.skew_type );
+    for( size_t i = 0; i < m_cascade_curves.size(); ++i )
+      m_cascade_curves[i].s_par_index = m_cascade_s_start_index + i;
+
+    size_t next_par = m_cascade_s_start_index + m_cascade_curves.size();
+    for( CascadeCurve &cc : m_cascade_curves )
+    {
+      choose_cascade_yield_nuisances( cc );
+      for( CascadeCurve::YieldNuisance &yn : cc.yield_nuisances )
+        yn.par_index = next_par++;
+    }
+    m_cascade_num_pars = next_par - m_cascade_s_start_index;
+  }//void setup_cascade_summing()
+
+
+  /** Chooses the lines of cascade curve `cc` that get a yield nuisance (see `sm_cascade_yield_min_effect`): each of its
+   nuclides' lines in an ROI, other than the nuclide's strongest, whose summing factor at contact is at least that far
+   from 1, and that have a nearby anchor (see below).  Judged once, before the fit, against a thin source with the
+   detector's own intrinsic efficiencies times the curve's largest physical `s`, so the set does not depend on the
+   fit. */
+  void choose_cascade_yield_nuisances( CascadeCurve &cc ) const
+  {
+    cc.yield_nuisances.clear();
+
+    const size_t re = cc.rel_eff_index;
+    const vector<double> &energies = cc.calc->allPartnerEnergies();
+    const vector<double> &det_fep = cc.calc->partnerFepIntrinsic();
+    const vector<double> &det_tot = cc.calc->partnerTotIntrinsic();
+    const std::function<double(double)> eps_fep = [&]( const double energy ) -> double {
+      const int j = GammaInteractionCalc::CascadeSummingCalc::nearestEnergyIndex( energies, energy );
+      return (j < 0) ? 0.0 : cc.s_upper * det_fep[static_cast<size_t>(j)];
+    };
+    const std::function<double(double)> eps_tot = [&]( const double energy ) -> double {
+      const int j = GammaInteractionCalc::CascadeSummingCalc::nearestEnergyIndex( energies, energy );
+      return (j < 0) ? 0.0 : cc.s_upper * det_tot[static_cast<size_t>(j)];
+    };
+
+    for( size_t source_index = 0; source_index < m_nuclides[re].size(); ++source_index )
+    {
+      const NucInputGamma &src = m_nuclides[re][source_index];
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+      if( !nuc || !src.nominal_gammas )
+        continue;
+
+      // The nuclide's lines in an ROI, weighted by their expected counts per decay.
+      vector<pair<double,double>> lines;  //{energy, yield * FEP efficiency}
+      double max_weight = 0.0;
+      for( const NucInputGamma::EnergyYield &line : *src.nominal_gammas )
+      {
+        for( const RoiRangeChannels &range : m_energy_ranges )
+        {
+          if( (line.energy < range.lower_energy) || (line.energy > range.upper_energy) )
+            continue;
+          const double weight = line.yield * eps_fep( line.energy );
+          lines.emplace_back( line.energy, weight );
+          max_weight = std::max( max_weight, weight );
+          break;
+        }
+      }//for( loop over the nuclide's lines )
+
+      if( lines.empty() || !(max_weight > 0.0) )
+        continue;
+
+      vector<ceelo::PeakWindow> windows;
+      for( const pair<double,double> &line : lines )
+      {
+        const double fwhm_kev = (m_drf && m_drf->hasResolutionInfo())
+                                ? m_drf->peakResolutionFWHM( static_cast<float>(line.first) ) : 1.2;
+        windows.push_back( ceelo::PeakWindow{ line.first, std::max( 0.25, 1.25 * fwhm_kev / 2.35482 ) } );
+      }
+
+      const vector<ceelo::AnalyticPeakResultT<double>> results
+                         = cc.calc->evaluateWindows<double>( nuc, std::max( 0.0, src.age ), windows, eps_fep, eps_tot );
+
+      // Candidates: lines whose summing could be large, other than the strongest line.
+      vector<bool> candidate( lines.size(), false );
+      for( size_t i = 0; (i < lines.size()) && (i < results.size()); ++i )
+      {
+        candidate[i] = (lines[i].second < max_weight)  //the nuclide's strongest line anchors its activity
+                       && (lines[i].second >= sm_cascade_window_min_roi_frac * max_weight)  //else too weak to matter
+                       && results[i].found
+                       && (fabs( 1.0 - results[i].c_net ) >= sm_cascade_yield_min_effect);
+      }
+
+      // A candidate keeps its nuisance only if a line of the same nuclide without one, at least half as strong, sits
+      //  near it (`sm_cascade_yield_anchor_kev`, or that fraction of its energy): that line holds the efficiency curve
+      //  where it is.  A line that alone ties its nuclide to a stretch of the curve (U-238's 258 keV, between U-235's
+      //  lines and 742 keV) must not float, or the nuclide's activity decouples from the curve there.
+      for( size_t i = 0; i < lines.size(); ++i )
+      {
+        if( !candidate[i] )
+          continue;
+
+        bool anchored = false;
+        for( size_t j = 0; !anchored && (j < lines.size()); ++j )
+        {
+          const double reach = std::max( sm_cascade_yield_anchor_kev, sm_cascade_yield_anchor_frac * lines[i].first );
+          anchored = (j != i) && !candidate[j] && (lines[j].second >= 0.5 * lines[i].second)
+                     && (fabs( lines[j].first - lines[i].first ) <= reach);
+        }
+        if( !anchored )
+          continue;
+
+        CascadeCurve::YieldNuisance yn;
+        yn.source_index = source_index;
+        yn.energy = lines[i].first;
+        cc.yield_nuisances.push_back( yn );
+      }//for( loop over the lines )
+    }//for( loop over the curve's sources )
+  }//choose_cascade_yield_nuisances(...)
+
+
+  /** The yield multiple of the line at `energy` of source `source_index` of cascade curve `cc`: 1 unless the line has a
+   yield nuisance. */
+  template<typename T>
+  T cascade_yield_multiple( const CascadeCurve &cc, const size_t source_index, const double energy,
+                            const std::vector<T> &x ) const
+  {
+    for( const CascadeCurve::YieldNuisance &yn : cc.yield_nuisances )
+    {
+      if( (yn.source_index == source_index) && (fabs( yn.energy - energy ) < 1.0E-6) )
+        return T(1.0) + sm_cascade_yield_scale * (x[yn.par_index] - sm_cascade_yield_offset);
+    }
+    return T(1.0);
+  }//cascade_yield_multiple(...)
+
+
+  /** The yield nuisance (and its curve) a parameter index belongs to, or nullptr. */
+  const CascadeCurve::YieldNuisance *cascade_yield_nuisance( const size_t index, const CascadeCurve **curve ) const
+  {
+    for( const CascadeCurve &cc : m_cascade_curves )
+    {
+      for( const CascadeCurve::YieldNuisance &yn : cc.yield_nuisances )
+      {
+        if( yn.par_index == index )
+        {
+          if( curve )
+            *curve = &cc;
+          return &yn;
+        }
+      }
+    }
+    return nullptr;
+  }//cascade_yield_nuisance(...)
+
+
+  /** The largest physical `s`: the fractional solid angle the crystal face subtends from a point on the endcap, no
+   source (point or extended, at any distance) being able to exceed it.  Without it a fit could explain line deficits
+   that are not summing with a solid angle the detector cannot have. */
+  static double cascade_s_upper( const DetectorPeakResponse &drf )
+  {
+    const double diameter = drf.detectorDiameter();
+    if( !(diameter > 0.0) )
+      return sm_cascade_s_upper;
+
+    // A response with a stated geometry knows where the crystal sits behind the endcap; the setback field may not.
+    double setback = std::max( 0.0, drf.detectorSetback() );
+    if( const shared_ptr<const ceelo::GeometryDescriptor> geom = drf.geometry() )
+      setback = std::max( setback, geom->endcap_front_offset_cm() * PhysicalUnits::cm );
+
+    return std::clamp( DetectorPeakResponse::fractionalSolidAngle( diameter, setback ), 0.05, sm_cascade_s_upper );
+  }//cascade_s_upper(...)
+
+
+  /** A `CascadeSummingCalc` for these nuclides and ages with this detector, from a small cache (they are immutable,
+   so sharing them between functors and threads is safe). */
+  static std::shared_ptr<const GammaInteractionCalc::CascadeSummingCalc> shared_cascade_calc(
+                            const std::shared_ptr<const DetectorPeakResponse> &drf,
+                            const vector<pair<const SandiaDecay::Nuclide *,double>> &nuc_ages,
+                            const vector<const SandiaDecay::Nuclide *> &age_fit_nucs )
+  {
+    using GammaInteractionCalc::CascadeSummingCalc;
+
+    // The key: the DRF (by hash), and each nuclide with its age bucket and whether its age may move.
+    vector<std::uint64_t> key{ drf->hashValue() };
+    for( const pair<const SandiaDecay::Nuclide *,double> &na : nuc_ages )
+    {
+      const bool age_fit = (std::find( begin(age_fit_nucs), end(age_fit_nucs), na.first ) != end(age_fit_nucs));
+      key.push_back( reinterpret_cast<std::uintptr_t>( na.first ) );
+      key.push_back( static_cast<std::uint64_t>( static_cast<std::int64_t>( CascadeSummingCalc::ageCacheBucket( na.second ) ) ) );
+      key.push_back( age_fit ? 1 : 0 );
+    }
+
+    static std::mutex s_mutex;
+    static std::deque<pair<vector<std::uint64_t>,shared_ptr<const CascadeSummingCalc>>> s_cache;
+
+    {
+      std::lock_guard<std::mutex> lock( s_mutex );
+      for( const pair<vector<std::uint64_t>,shared_ptr<const CascadeSummingCalc>> &entry : s_cache )
+      {
+        if( entry.first == key )
+          return entry.second;
+      }
+    }
+
+    // No peak windows: each refresh evaluates its own per-nuclide windows (`CascadeSummingCalc::evaluateWindows`).
+    const shared_ptr<const CascadeSummingCalc> calc = make_shared<const CascadeSummingCalc>( nuc_ages,
+                                     vector<pair<double,double>>{}, 1.25, drf, 0.0, false,
+                                     InterSpec::staticDataDirectory(), age_fit_nucs );
+
+    std::lock_guard<std::mutex> lock( s_mutex );
+    s_cache.emplace_back( key, calc );
+    if( s_cache.size() > 6 )
+      s_cache.pop_front();
+    return calc;
+  }//shared_cascade_calc(...)
+
+
+  /** The `m_cascade_curves` entry for curve `rel_eff_index`, or nullptr. */
+  const CascadeCurve *cascade_curve( const size_t rel_eff_index ) const
+  {
+    for( const CascadeCurve &cc : m_cascade_curves )
+    {
+      if( cc.rel_eff_index == rel_eff_index )
+        return &cc;
+    }
+    return nullptr;
+  }//cascade_curve(...)
+
+
+  /** The summing factor of the line at `energy` of source `source_index` of the curve, linearized about the last
+   `refresh_cascade_factors(...)`; 1 for a line without a summing window. */
+  template<typename T>
+  T cascade_factor( const CascadeCurve &cc, const size_t source_index, const double energy,
+                    const std::vector<T> &x ) const
+  {
+    if( source_index >= cc.factors.size() )
+      return T(1.0);
+
+    const vector<CascadeCurve::LineFactor> &lines = cc.factors[source_index];
+    const auto pos = std::lower_bound( begin(lines), end(lines), energy - 1.0E-6,
+                         []( const CascadeCurve::LineFactor &lf, const double e ){ return lf.energy < e; } );
+    if( (pos == end(lines)) || (fabs(pos->energy - energy) > 1.0E-6) )
+      return T(1.0);
+
+    assert( pos->grad.size() == cc.lane_pars.size() );
+    T c( pos->c );
+    for( size_t k = 0; k < cc.lane_pars.size(); ++k )
+      c += pos->grad[k] * (x[cc.lane_pars[k]] - cc.lane_x0[k]);
+    return c;
+  }//cascade_factor(...)
+
+
+  /** The value (see CascadeCurve::SumLine) of pure-sum peak `k` of source `source_index`, linearized about the last
+   `refresh_cascade_factors(...)`, and not below zero. */
+  template<typename T>
+  T cascade_sum_value( const CascadeCurve &cc, const size_t source_index, const size_t k, const std::vector<T> &x ) const
+  {
+    const CascadeCurve::SumLine &line = cc.sums[source_index][k];
+    T value( line.value );
+    if( line.grad.size() == cc.lane_pars.size() )
+    {
+      for( size_t i = 0; i < cc.lane_pars.size(); ++i )
+        value += line.grad[i] * (x[cc.lane_pars[i]] - cc.lane_x0[i]);
+    }
+    return (value < T(0.0)) ? T(0.0) : value;
+  }//cascade_sum_value(...)
+
+
+  /** The plain value of a double or a `ceres::Jet`. */
+  template<typename T>
+  static double scalar_value( const T &v )
+  {
+    if constexpr ( std::is_same_v<T, double> )
+      return v;
+    else
+      return v.a;
+  }
+
+
+  /** The physical `s` of a cascade curve. */
+  template<typename T>
+  static T cascade_s( const T &par )
+  {
+    return sm_cascade_s_scale * (par - sm_cascade_s_offset);
+  }
+
+
+  /** Depth quadrature for cascade summing in a self-attenuating slab of areal density `ad`, where `mu_max` is the
+   largest attenuation coefficient (per areal density) of the summing lines: (depth as a fraction of `ad`, weight),
+   weights summing to one.
+
+   A coincident pair is emitted at one depth, so given that the primary escapes and is detected, its partner escapes
+   with probability T(mu_i + mu_j)/T(mu_i) - not the average T(mu_j) a single efficiency curve implies, and the
+   difference grows without bound for thick sources.  The engine is evaluated at each node, with the efficiencies
+   attenuated from that depth, and the window rates are averaged.  The nodes are 3-point Gauss-Legendre panels whose
+   edges grow geometrically (x3) from a quarter of the most attenuated line's mean free path, so the conditional
+   escape is resolved to ~2e-4 (absolute) for uranium lines at any thickness, with 6-27 nodes (2026-10-19 study).
+
+   Empty when the slab is optically thin for every line (mu_max * ad < 0.05): then the average of the product is the
+   product of the averages to well within the summing precision, and the depth-averaged efficiency is used directly.
+   */
+  static std::vector<std::pair<double,double>> cascade_depth_nodes( const double ad, const double mu_max )
+  {
+    std::vector<std::pair<double,double>> nodes;
+    if( !(ad > 0.0) || !(mu_max > 0.0) || ((mu_max * ad) < 0.05) )
+      return nodes;
+
+    const double gl_x[3] = { -0.7745966692414834, 0.0, 0.7745966692414834 };
+    const double gl_w[3] = { 0.5555555555555556, 0.8888888888888888, 0.5555555555555556 };
+
+    vector<double> breaks{ 0.0 };
+    for( double z = 0.25/mu_max; z < ad; z *= 3.0 )
+      breaks.push_back( z );
+    breaks.push_back( ad );
+
+    for( size_t p = 0; (p + 1) < breaks.size(); ++p )
+    {
+      const double half = 0.5*(breaks[p+1] - breaks[p]), mid = 0.5*(breaks[p+1] + breaks[p]);
+      for( size_t i = 0; i < 3; ++i )
+        nodes.emplace_back( (mid + half*gl_x[i]) / ad, half*gl_w[i] / ad );
+    }
+
+    return nodes;
+  }//cascade_depth_nodes(...)
+
+
+  /** The Ceres parameters a Physical-model curve's efficiency depends on: its own block, plus the other
+   Physical-model curves' blocks when the correction or external shielding is shared, or it is shielded by them. */
+  std::vector<size_t> cascade_efficiency_parameters( const size_t rel_eff_index ) const
+  {
+    std::vector<size_t> answer;
+    const auto add_block = [&answer,this]( const size_t re ){
+      const size_t start = rel_eff_eqn_start_parameter( re );
+      const size_t num = rel_eff_eqn_num_parameters( re );
+      for( size_t i = 0; i < num; ++i )
+        answer.push_back( start + i );
+    };
+
+    add_block( rel_eff_index );
+
+    const RelActCalcAuto::RelEffCurveInput &curve = m_options.rel_eff_curves[rel_eff_index];
+    if( m_options.same_corr_fcn_for_all_rel_eff_curves || m_options.same_external_shielding_for_all_rel_eff_curves
+       || !curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
+      {
+        if( (re != rel_eff_index)
+           && (m_options.rel_eff_curves[re].rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+          add_block( re );
+      }
+    }
+
+    std::sort( begin(answer), end(answer) );
+    answer.erase( std::unique( begin(answer), end(answer) ), end(answer) );
+    return answer;
+  }//cascade_efficiency_parameters(...)
+
+
+  /** Chooses each cascade curve's summing windows (see `CascadeCurve::windows`) from the predicted line counts at `x`:
+   a nuclide line in an ROI gets one if its counts are at least `sm_cascade_window_min_roi_frac` of the strongest
+   line of any source in that ROI. */
+  void choose_cascade_windows( CascadeCurve &cc, const std::vector<double> &x ) const
+  {
+    struct Candidate
+    {
+      size_t source;
+      double energy;
+      double counts;
+      size_t roi;
+    };
+
+    vector<double> roi_max( m_energy_ranges.size(), 0.0 );
+    vector<Candidate> candidates;
+    for( size_t re = 0; re < m_nuclides.size(); ++re )
+    {
+      for( size_t source_index = 0; source_index < m_nuclides[re].size(); ++source_index )
+      {
+        const NucInputGamma &src = m_nuclides[re][source_index];
+        if( !src.nominal_gammas )
+          continue;
+
+        double rel_act = 0.0;
+        try
+        {
+          rel_act = std::max( 0.0, relative_activity( src.source, re, x ) );
+        }catch( std::exception & )
+        {
+        }
+
+        for( const NucInputGamma::EnergyYield &line : *src.nominal_gammas )
+        {
+          for( size_t roi = 0; roi < m_energy_ranges.size(); ++roi )
+          {
+            if( (line.energy < m_energy_ranges[roi].lower_energy) || (line.energy > m_energy_ranges[roi].upper_energy) )
+              continue;
+
+            double counts = 0.0;
+            try
+            {
+              counts = rel_act * relative_eff( line.energy, re, x ) * line.yield;
+            }catch( std::exception & )
+            {
+            }
+            if( !std::isfinite(counts) )
+              counts = 0.0;
+
+            roi_max[roi] = std::max( roi_max[roi], counts );
+            if( (re == cc.rel_eff_index) && RelActCalcAuto::nuclide( src.source ) )
+              candidates.push_back( Candidate{ source_index, line.energy, counts, roi } );
+            break;
+          }//for( size_t roi = 0; roi < m_energy_ranges.size(); ++roi )
+        }//for( const NucInputGamma::EnergyYield &line : *src.nominal_gammas )
+      }//for( size_t source_index = 0; source_index < m_nuclides[re].size(); ++source_index )
+    }//for( size_t re = 0; re < m_nuclides.size(); ++re )
+
+    cc.windows.assign( m_nuclides[cc.rel_eff_index].size(), {} );
+    for( const Candidate &c : candidates )
+    {
+      if( !(c.counts > 0.0) || !(c.counts >= sm_cascade_window_min_roi_frac*roi_max[c.roi]) )
+        continue;
+
+      ceelo::PeakWindow window;
+      window.energy_keV = c.energy;
+      window.tolerance_keV = std::max( 0.25, 1.25 * fwhm( c.energy, x ) / 2.35482 );
+      cc.windows[c.source].push_back( window );
+    }//for( const Candidate &c : candidates )
+
+    for( vector<ceelo::PeakWindow> &windows : cc.windows )
+    {
+      std::sort( begin(windows), end(windows), []( const ceelo::PeakWindow &a, const ceelo::PeakWindow &b ){
+        return a.energy_keV < b.energy_keV;
+      } );
+      windows.erase( std::unique( begin(windows), end(windows), []( const ceelo::PeakWindow &a, const ceelo::PeakWindow &b ){
+        return a.energy_keV == b.energy_keV;
+      } ), end(windows) );
+    }
+
+    choose_cascade_sum_windows( cc, x, roi_max );
+
+    cc.windows_chosen = true;
+  }//choose_cascade_windows(...)
+
+
+  /** Chooses each source's pure coincidence-sum windows (see CascadeCurve::SumLine): every energy in an ROI at which
+   two photons of one decay of the nuclide can sum (`ceelo::coincidence_sum_energies`), grouped into windows as wide as
+   the line windows, kept where a window holds no line of the nuclide and its sum would be at least
+   `sm_cascade_window_min_roi_frac` of the ROI's strongest line (`roi_max`, as `choose_cascade_windows` computes it).
+   Judged at the curve's largest physical `s`, so the set does not depend on where the fit starts. */
+  void choose_cascade_sum_windows( CascadeCurve &cc, const std::vector<double> &x,
+                                   const std::vector<double> &roi_max ) const
+  {
+    const size_t re = cc.rel_eff_index;
+    const size_t num_sources = m_nuclides[re].size();
+    cc.sum_windows.assign( num_sources, {} );
+    cc.sums.assign( num_sources, {} );
+
+    // Candidate windows, and the ROI each came from.
+    CascadeCurve probe = cc;
+    probe.sum_windows.assign( num_sources, {} );
+    vector<vector<size_t>> probe_roi( num_sources );
+    for( size_t source_index = 0; source_index < num_sources; ++source_index )
+    {
+      const NucInputGamma &src = m_nuclides[re][source_index];
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+      if( !nuc )
+        continue;
+
+      const shared_ptr<const ceelo::AnalyticCascadeModel> model = cc.calc->cascadeModel( nuc, age( src, re, x ) );
+      if( !model )
+        continue;
+
+      for( size_t roi = 0; roi < m_energy_ranges.size(); ++roi )
+      {
+        const vector<double> energies = ceelo::coincidence_sum_energies( *model, m_energy_ranges[roi].lower_energy,
+                                                                         m_energy_ranges[roi].upper_energy );
+        for( size_t i = 0; i < energies.size(); )
+        {
+          const double tol = std::max( 0.25, 1.25 * fwhm( energies[i], x ) / 2.35482 );
+          size_t j = i;
+          double total = 0.0;
+          while( (j < energies.size()) && ((energies[j] - energies[i]) <= tol) )
+            total += energies[j++];
+
+          ceelo::PeakWindow window;
+          window.energy_keV = total / static_cast<double>( j - i );
+          window.tolerance_keV = std::max( 0.25, 1.25 * fwhm( window.energy_keV, x ) / 2.35482 );
+          probe.sum_windows[source_index].push_back( window );
+          probe_roi[source_index].push_back( roi );
+          i = j;
+        }//for( loop over candidate sum energies )
+      }//for( loop over ROIs )
+    }//for( loop over sources )
+
+    vector<double> x_probe = x;
+    x_probe[cc.s_par_index] = sm_cascade_s_offset + cc.s_upper/sm_cascade_s_scale;
+    size_t num_nodes = 0;
+    vector<vector<CascadeSumResult<double>>> results;
+    cascade_window_results<double>( probe, x_probe, x_probe, num_nodes, &results );
+
+    for( size_t source_index = 0; (source_index < num_sources) && (source_index < results.size()); ++source_index )
+    {
+      double rel_act = 0.0;
+      try
+      {
+        rel_act = std::max( 0.0, relative_activity( m_nuclides[re][source_index].source, re, x ) );
+      }catch( std::exception & )
+      {
+      }
+      if( !(rel_act > 0.0) )
+        continue;
+
+      for( size_t k = 0; k < results[source_index].size(); ++k )
+      {
+        const CascadeSumResult<double> &r = results[source_index][k];
+        const size_t roi = probe_roi[source_index][k];
+        if( !(r.value > 0.0) || !((rel_act * r.value) >= sm_cascade_window_min_roi_frac*roi_max[roi]) )
+          continue;  //no sum (or a line in the window), or too weak to matter
+
+        cc.sum_windows[source_index].push_back( probe.sum_windows[source_index][k] );
+        CascadeCurve::SumLine line;
+        line.energy = r.energy;
+        line.scale = roi_max[roi] / rel_act;
+        line.complete = r.complete;
+        cc.sums[source_index].push_back( line );
+      }//for( loop over candidate windows )
+    }//for( loop over sources )
+  }//choose_cascade_sum_windows(...)
+
+
+  /** One window's depth-averaged summing result from `cascade_window_results(...)`. */
+  template<typename T>
+  struct CascadeWindowResult
+  {
+    T c = T(1.0);
+    double c_out = 1.0, c_in = 0.0;
+    bool complete = true;
+  };
+
+  /** One pure-sum window's depth-averaged result from `cascade_window_results(...)`: `value` is the absolute sum rate
+   per decay times `corr(E_ref) / s` (see CascadeCurve::SumLine). */
+  template<typename T>
+  struct CascadeSumResult
+  {
+    T value = T(0.0);
+    double energy = 0.0;
+    bool complete = true;
+  };
+
+
+  /** Every window's summing factor for cascade curve `cc` at parameters `xj` (`x` holds their plain values), with
+   the derivatives `xj` carries.  The efficiencies passed to the engine are, at partner energy E and source depth z:
+     eps_fep(E,z) = s * [corr(E)/corr(E_ref)] * ext(E) * det_fep(E) * exp(-mu_self(E) z)
+     eps_tot(E,z) = s * [corr(E)/corr(E_ref)] * ext(E) * det_tot(E) * exp(-mu_self(E) z)
+   i.e. the curve's own pieces (the correction evaluated at E clamped to its fit range, the external attenuation,
+   the detector's far-field intrinsic FEP or total efficiency, and attenuation from depth z of the self-attenuating
+   source), so that their depth average at a line is `s * rel_eff(E) / corr(E_ref)`.  The correction's overall scale
+   is arbitrary (the relative activities absorb it), so it is taken relative to its value at E_ref, the correction's
+   pivot energy (the geometric middle of the ROIs); `s` is then the fractional solid angle, with the detector response
+   taken as right at E_ref, which keeps its bounds and prior physical.  Window rates are averaged over the depth nodes
+   (see `cascade_depth_nodes(...)`) before forming each factor.
+   */
+  template<typename T>
+  std::vector<std::vector<CascadeWindowResult<T>>> cascade_window_results( const CascadeCurve &cc,
+                                                      const std::vector<T> &xj, const std::vector<double> &x,
+                                                      size_t &num_depth_nodes,
+                                                      std::vector<std::vector<CascadeSumResult<T>>> *sum_results = nullptr ) const
+  {
+    using namespace std;
+    using namespace ceres;
+
+    const size_t re = cc.rel_eff_index;
+    const PhysModelRelEqnDef<T> phys = make_phys_eqn_input( re, xj );
+
+    // At s = 0 every efficiency is zero, so the factors would come back 1 with no derivative, and a solve that reached
+    //  that bound could never leave it.  So evaluate no lower than a tiny s, shifting only the value (the derivatives
+    //  are kept): the factors are then 1 to within ~1e-6, with their true slope.
+    T s = cascade_s( xj[cc.s_par_index] );
+    if( scalar_value( s ) < sm_cascade_s_eval_floor )
+      s += (sm_cascade_s_eval_floor - scalar_value( s ));
+
+    const vector<double> &energies = cc.calc->allPartnerEnergies();
+    const vector<double> &det_fep = cc.calc->partnerFepIntrinsic();
+    const vector<double> &det_tot = cc.calc->partnerTotIntrinsic();
+    const size_t num_energies = energies.size();
+    if( (det_fep.size() != num_energies) || (det_tot.size() != num_energies) )
+      throw std::logic_error( "cascade_window_results: partner tables out of step" );
+
+    const bool clamp_corr = (m_corr_upper_energy > m_corr_lower_energy) && (m_corr_lower_energy > 0.0);
+    const auto correction = [&]( const double energy ) -> T {
+      const double corr_energy = clamp_corr ? std::clamp( energy, m_corr_lower_energy, m_corr_upper_energy ) : energy;
+      return RelActCalc::eval_physical_model_eqn_imp<T>( corr_energy, std::nullopt, {}, nullptr,
+                                     phys.hoerl_b, phys.hoerl_c, m_corr_lower_energy, m_corr_upper_energy,
+                                     m_corr_pivot_energy, phys.corr_fcn );
+    };
+    const T corr_norm = (m_corr_pivot_energy > 0.0) ? correction( m_corr_pivot_energy ) : T(1.0);
+    if( !(scalar_value( corr_norm ) > 0.0) || !std::isfinite( scalar_value( corr_norm ) ) )
+      throw std::runtime_error( "cascade_window_results: invalid efficiency-correction normalization" );
+
+    vector<T> base( num_energies ), mu_self( num_energies, T(0.0) );
+    for( size_t j = 0; j < num_energies; ++j )
+    {
+      const double energy = energies[j];
+      const T ext = RelActCalc::eval_physical_model_eqn_imp<T>( energy, std::nullopt, phys.external_attens, nullptr,
+                                                                std::nullopt, std::nullopt );
+      base[j] = s * (correction( energy ) / corr_norm) * ext;
+      if( phys.self_atten.has_value() )
+      {
+        mu_self[j] = RelActCalc::phys_model_shield_mu( energy, *phys.self_atten );
+        if( mu_self[j] < 0.0 )
+          mu_self[j] = T(0.0);
+      }
+    }//for( size_t j = 0; j < num_energies; ++j )
+
+    const auto energy_index = [&energies]( const double energy ) -> int {
+      return GammaInteractionCalc::CascadeSummingCalc::nearestEnergyIndex( energies, energy );
+    };
+
+    const T ad = phys.self_atten.has_value() ? phys.self_atten->areal_density : T(0.0);
+    double mu_max = 0.0;
+    for( const vector<ceelo::PeakWindow> &windows : cc.windows )
+    {
+      for( const ceelo::PeakWindow &window : windows )
+      {
+        const int j = energy_index( window.energy_keV );
+        if( j >= 0 )
+          mu_max = std::max( mu_max, scalar_value( mu_self[static_cast<size_t>(j)] ) );
+      }
+    }//for( loop over windows )
+
+    const vector<pair<double,double>> nodes = cascade_depth_nodes( scalar_value(ad), mu_max );
+    num_depth_nodes = nodes.empty() ? size_t(1) : nodes.size();
+
+    // Per source and window: sum over nodes of w * eff_no * c_net (and of w * eff_no), plus the summing-out/in parts.
+    struct Accum
+    {
+      T num = T(0.0), den = T(0.0);
+      double num_out = 0.0, num_in = 0.0, den_d = 0.0;
+      bool complete = true;
+    };
+    vector<vector<Accum>> accum( cc.windows.size() );
+    for( size_t source_index = 0; source_index < cc.windows.size(); ++source_index )
+      accum[source_index].resize( cc.windows[source_index].size() );
+
+    // The pure-sum windows' rates (and rate-weighted energies), averaged over the nodes the same way.
+    struct SumAccum
+    {
+      T rate = T(0.0);
+      double e_num = 0.0, e_den = 0.0;
+      bool complete = true;
+    };
+    vector<vector<SumAccum>> sum_accum( cc.windows.size() );
+    for( size_t source_index = 0; sum_results && (source_index < cc.sum_windows.size())
+                                  && (source_index < sum_accum.size()); ++source_index )
+      sum_accum[source_index].resize( cc.sum_windows[source_index].size() );
+
+    vector<T> att( num_energies );
+    for( size_t node = 0; node < num_depth_nodes; ++node )
+    {
+      const double weight = nodes.empty() ? 1.0 : nodes[node].second;
+      for( size_t j = 0; j < num_energies; ++j )
+      {
+        if( nodes.empty() )
+        {
+          // The depth-averaged self-attenuation, as in `eval_physical_model_eqn_imp`.
+          const T xx = mu_self[j] * ad;
+          att[j] = (xx < T(1.0e-8)) ? T(T(1.0) - 0.5*xx + ((xx*xx) / 6.0)) : T(-expm1(-xx) / xx);
+        }else
+        {
+          att[j] = exp( -mu_self[j] * (nodes[node].first * ad) );
+        }
+      }//for( size_t j = 0; j < num_energies; ++j )
+
+      const std::function<T(double)> eps_fep = [&]( const double energy ) -> T {
+        const int j = energy_index( energy );
+        return (j < 0) ? T(0.0) : T(base[j] * det_fep[j] * att[j]);
+      };
+      const std::function<T(double)> eps_tot = [&]( const double energy ) -> T {
+        const int j = energy_index( energy );
+        return (j < 0) ? T(0.0) : T(base[j] * det_tot[j] * att[j]);
+      };
+
+      for( size_t source_index = 0; source_index < cc.windows.size(); ++source_index )
+      {
+        const size_t num_sums = sum_accum[source_index].size();
+        if( cc.windows[source_index].empty() && !num_sums )
+          continue;
+
+        const NucInputGamma &src = m_nuclides[re][source_index];
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( src.source );
+        assert( nuc );
+        const double nuc_age = age( src, re, x );
+
+        // The line windows, then any pure-sum windows (only those come back with a pure-sum rate).
+        vector<ceelo::PeakWindow> windows = cc.windows[source_index];
+        if( num_sums )
+          windows.insert( end(windows), begin(cc.sum_windows[source_index]), end(cc.sum_windows[source_index]) );
+
+        const vector<ceelo::AnalyticPeakResultT<T>> results
+                    = cc.calc->evaluateWindows<T>( nuc, nuc_age, windows, eps_fep, eps_tot, (num_sums > 0) );
+        assert( results.size() == windows.size() );
+
+        for( size_t k = 0; k < num_sums; ++k )
+        {
+          const ceelo::AnalyticPeakResultT<T> &r = results[cc.windows[source_index].size() + k];
+          SumAccum &a = sum_accum[source_index][k];
+          a.rate += weight * r.pure_sum_rate;
+          const double w = weight * scalar_value( r.pure_sum_rate );
+          a.e_num += w * r.pure_sum_energy_keV;
+          a.e_den += w;
+          a.complete = (a.complete && r.summing_model_complete && !r.found);
+        }
+
+        for( size_t w = 0; (w < cc.windows[source_index].size()) && (w < accum[source_index].size()); ++w )
+        {
+          const ceelo::AnalyticPeakResultT<T> &r = results[w];
+          if( !r.found )
+            continue;
+          Accum &a = accum[source_index][w];
+          a.num += weight * r.eff_no_summing * r.c_net;
+          a.den += weight * r.eff_no_summing;
+          const double eff_no = scalar_value( r.eff_no_summing );
+          a.num_out += weight * eff_no * scalar_value( r.c_out );
+          a.num_in += weight * eff_no * scalar_value( r.c_in );
+          a.den_d += weight * eff_no;
+          a.complete = (a.complete && r.summing_model_complete);
+        }//for( loop over windows )
+      }//for( loop over sources )
+    }//for( loop over depth nodes )
+
+    vector<vector<CascadeWindowResult<T>>> answer( cc.windows.size() );
+    for( size_t source_index = 0; source_index < cc.windows.size(); ++source_index )
+    {
+      answer[source_index].resize( accum[source_index].size() );
+      for( size_t w = 0; w < accum[source_index].size(); ++w )
+      {
+        const Accum &a = accum[source_index][w];
+        CascadeWindowResult<T> &result = answer[source_index][w];
+        if( a.den_d > 0.0 )
+        {
+          result.c = a.num / a.den;
+          result.c_out = a.num_out / a.den_d;
+          result.c_in = a.num_in / a.den_d;
+        }
+        result.complete = a.complete;
+      }
+    }//for( loop over sources )
+
+    if( sum_results )
+    {
+      sum_results->assign( sum_accum.size(), {} );
+      for( size_t source_index = 0; source_index < sum_accum.size(); ++source_index )
+      {
+        for( const SumAccum &a : sum_accum[source_index] )
+        {
+          CascadeSumResult<T> result;
+          // The relative activity is the absolute activity times s / corr(E_ref) (see above), so the sum's area per
+          //  unit relative activity is its absolute rate times corr(E_ref) / s - the same (floored) s and normalization
+          //  the efficiencies were built from.
+          result.value = a.rate * corr_norm / s;
+          result.energy = (a.e_den > 0.0) ? (a.e_num / a.e_den) : 0.0;
+          result.complete = a.complete;
+          (*sum_results)[source_index].push_back( result );
+        }
+      }
+    }//if( sum_results )
+
+    return answer;
+  }//cascade_window_results(...)
+
+
+  /** Recomputes every cascade curve's line factors, and their derivatives with respect to `s` and the curve's fitted
+   efficiency parameters, at `x`; the cost function then uses them linearized about `x` (see `cascade_factor(...)`).
+   `constant_parameters` lists the parameters held fixed, which need no derivative.  Returns the largest change in any
+   line's factor relative to the previous linearized value at `x` (the factor itself the first time).
+
+   Mutates the functor, so call only between solves (Ceres evaluates from many threads during one).
+   */
+  double refresh_cascade_factors( const std::vector<double> &x, const std::vector<int> &constant_parameters )
+  {
+    using JetT = ceres::Jet<double,sm_cascade_jet_lanes>;
+
+    double max_change = 0.0;
+    for( CascadeCurve &cc : m_cascade_curves )
+    {
+      if( !cc.windows_chosen )
+        choose_cascade_windows( cc, x );
+
+      vector<size_t> lanes{ cc.s_par_index };
+      for( const size_t index : cascade_efficiency_parameters( cc.rel_eff_index ) )
+      {
+        if( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(index) )
+            == end(constant_parameters) )
+          lanes.push_back( index );
+      }
+
+      const size_t num_sources = cc.windows.size();
+      vector<vector<CascadeCurve::LineFactor>> factors( num_sources );
+      for( size_t source_index = 0; source_index < num_sources; ++source_index )
+      {
+        for( const ceelo::PeakWindow &window : cc.windows[source_index] )
+        {
+          CascadeCurve::LineFactor lf;
+          lf.energy = window.energy_keV;
+          lf.grad.assign( lanes.size(), 0.0 );
+          factors[source_index].push_back( std::move(lf) );
+        }
+      }
+
+      // The pure-sum peaks (chosen with the windows) keep their energy and scale; their values are refreshed below.
+      vector<vector<CascadeCurve::SumLine>> sums = cc.sums;
+      bool have_sums = false;
+      for( vector<CascadeCurve::SumLine> &source_sums : sums )
+      {
+        for( CascadeCurve::SumLine &line : source_sums )
+          line.grad.assign( lanes.size(), 0.0 );
+        have_sums = (have_sums || !source_sums.empty());
+      }
+
+      for( size_t batch_start = 0; batch_start < lanes.size(); batch_start += sm_cascade_jet_lanes )
+      {
+        const size_t batch_size = std::min( lanes.size() - batch_start, static_cast<size_t>(sm_cascade_jet_lanes) );
+        vector<JetT> xj( x.size() );
+        for( size_t i = 0; i < x.size(); ++i )
+          xj[i] = JetT( x[i] );
+        for( size_t k = 0; k < batch_size; ++k )
+          xj[lanes[batch_start + k]] = JetT( x[lanes[batch_start + k]], static_cast<int>(k) );
+
+        size_t num_nodes = 0;
+        vector<vector<CascadeSumResult<JetT>>> sum_results;
+        const vector<vector<CascadeWindowResult<JetT>>> results
+                          = cascade_window_results( cc, xj, x, num_nodes, have_sums ? &sum_results : nullptr );
+        cc.num_depth_nodes = num_nodes;
+
+        for( size_t source_index = 0; have_sums && (source_index < sums.size()); ++source_index )
+        {
+          for( size_t k = 0; k < sums[source_index].size(); ++k )
+          {
+            const CascadeSumResult<JetT> &r = sum_results[source_index][k];
+            CascadeCurve::SumLine &line = sums[source_index][k];
+            if( batch_start == 0 )
+            {
+              line.value = r.value.a;
+              line.complete = r.complete;
+            }
+            for( size_t i = 0; i < batch_size; ++i )
+              line.grad[batch_start + i] = r.value.v[static_cast<int>(i)];
+          }//for( loop over the source's sums )
+        }//for( loop over sources )
+
+        for( size_t source_index = 0; source_index < num_sources; ++source_index )
+        {
+          for( size_t w = 0; w < factors[source_index].size(); ++w )
+          {
+            const CascadeWindowResult<JetT> &r = results[source_index][w];
+            CascadeCurve::LineFactor &lf = factors[source_index][w];
+            if( batch_start == 0 )
+            {
+              lf.c = r.c.a;
+              lf.c_out = r.c_out;
+              lf.c_in = r.c_in;
+              lf.complete = r.complete;
+            }
+            for( size_t k = 0; k < batch_size; ++k )
+              lf.grad[batch_start + k] = r.c.v[static_cast<int>(k)];
+          }//for( loop over windows )
+        }//for( loop over sources )
+      }//for( loop over derivative batches )
+
+      // How far the previous linearization was from the refreshed factors, at this `x`.
+      for( size_t source_index = 0; source_index < num_sources; ++source_index )
+      {
+        for( const CascadeCurve::LineFactor &lf : factors[source_index] )
+        {
+          const double previous = cascade_factor( cc, source_index, lf.energy, x );
+          max_change = std::max( max_change, fabs( lf.c - previous ) );
+        }
+      }
+
+      // A sum's change counts as a fraction of its ROI's strongest line, like a factor's change does of its line.
+      for( size_t source_index = 0; source_index < sums.size(); ++source_index )
+      {
+        for( size_t k = 0; k < sums[source_index].size(); ++k )
+        {
+          const CascadeCurve::SumLine &line = sums[source_index][k];
+          const double previous = cascade_sum_value( cc, source_index, k, x );
+          if( line.scale > 0.0 )
+            max_change = std::max( max_change, fabs( line.value - previous ) / line.scale );
+        }
+      }
+
+      cc.factors = std::move( factors );
+      cc.sums = std::move( sums );
+      cc.refresh_x = x;
+      cc.lane_pars = lanes;
+      cc.lane_x0.resize( lanes.size() );
+      for( size_t k = 0; k < lanes.size(); ++k )
+        cc.lane_x0[k] = x[lanes[k]];
+    }//for( CascadeCurve &cc : m_cascade_curves )
+
+    return max_change;
+  }//refresh_cascade_factors(...)
 
 
 
@@ -4249,6 +5343,11 @@ struct RelActAutoCostFcn
     //  maybe not being used
     const size_t num_skew = PeakDef::num_skew_parameters( m_options.skew_type );
     num_pars += 2*num_skew;
+
+    // Cascade summing: `s`, one per curve that corrects for summing, then the curves' yield nuisances
+    assert( (m_cascade_s_start_index == std::numeric_limits<size_t>::max())
+           || (m_cascade_s_start_index == num_pars) );
+    num_pars += m_cascade_num_pars;
     
     // Even if `m_options.additional_br_uncert > 0.0`, m_peak_ranges_with_uncert may still be empty (but `m_add_br_uncert_start_index!=max`)
     //  if there were no photons to cluster from a source
@@ -5305,7 +6404,8 @@ struct RelActAutoCostFcn
       assert( cost_functor->m_acts_par_start_index == (cost_functor->m_rel_eff_par_start_index + num_rel_eff_par) );
       assert( cost_functor->m_free_peak_par_start_index == (cost_functor->m_acts_par_start_index + num_acts_par) );
       assert( cost_functor->m_skew_par_start_index == (cost_functor->m_free_peak_par_start_index + 2*extra_peaks.size()) );
-      assert( (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type)) == cost_functor->number_parameters() );
+      assert( (cost_functor->m_skew_par_start_index + 2*PeakDef::num_skew_parameters(options.skew_type)
+               + cost_functor->m_cascade_num_pars) == cost_functor->number_parameters() );
     }//End some dev checks
 #endif //NDEBUG
 
@@ -7811,6 +8911,37 @@ struct RelActAutoCostFcn
     }//for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
     
     
+    // Cascade-summing `s` (see RelActAutoCostFcn::CascadeCurve): start at the fractional solid angle a few cm from
+    //  the detector, bounded to [0, CascadeCurve::s_upper], with a weak prior toward 0.
+    for( const RelActAutoCostFcn::CascadeCurve &cc : cost_functor->m_cascade_curves )
+    {
+      const size_t index = cc.s_par_index;
+      assert( index < parameters.size() );
+      const double diameter = cost_functor->m_drf->detectorDiameter();
+      const double distance = RelActAutoCostFcn::sm_cascade_s_start_distance_cm*PhysicalUnits::cm
+                              + cost_functor->m_drf->detectorSetback();
+      double s_start = (diameter > 0.0) ? DetectorPeakResponse::fractionalSolidAngle( diameter, distance ) : 0.05;
+      s_start = std::clamp( s_start, 0.001, 0.9*cc.s_upper );
+
+      parameters[index] = RelActAutoCostFcn::sm_cascade_s_offset + s_start/RelActAutoCostFcn::sm_cascade_s_scale;
+      lower_bounds[index] = RelActAutoCostFcn::sm_cascade_s_offset;
+      upper_bounds[index] = RelActAutoCostFcn::sm_cascade_s_offset + cc.s_upper/RelActAutoCostFcn::sm_cascade_s_scale;
+      cost_functor->m_phys_model_param_priors.push_back( RelActAutoCostFcn::ParamPrior{ index,
+                         RelActAutoCostFcn::sm_cascade_s_offset, 1.0/RelActAutoCostFcn::sm_cascade_s_prior_sigma } );
+
+      // Yield nuisances (see RelActAutoCostFcn::sm_cascade_yield_min_effect): nominal start, Gaussian prior.
+      for( const RelActAutoCostFcn::CascadeCurve::YieldNuisance &yn : cc.yield_nuisances )
+      {
+        assert( yn.par_index < parameters.size() );
+        const double half_range = RelActAutoCostFcn::sm_cascade_yield_max_change / RelActAutoCostFcn::sm_cascade_yield_scale;
+        parameters[yn.par_index] = RelActAutoCostFcn::sm_cascade_yield_offset;
+        lower_bounds[yn.par_index] = RelActAutoCostFcn::sm_cascade_yield_offset - half_range;
+        upper_bounds[yn.par_index] = RelActAutoCostFcn::sm_cascade_yield_offset + half_range;
+        cost_functor->m_phys_model_param_priors.push_back( RelActAutoCostFcn::ParamPrior{ yn.par_index,
+                         RelActAutoCostFcn::sm_cascade_yield_offset, 1.0/RelActAutoCostFcn::sm_cascade_yield_sigma } );
+      }
+    }//for( const RelActAutoCostFcn::CascadeCurve &cc : cost_functor->m_cascade_curves )
+
     // If we are adding an additional uncertainty onto "branching ratios", what we will actually
     //  do is cluster things together that will effectively appear as one peak.  We will then
     //  add each clustered peak as its own residual, to allow it to vary.
@@ -7849,7 +8980,8 @@ struct RelActAutoCostFcn
         upper_bounds.resize( num_pars );
         
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
-        cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs;
+        cost_functor->m_add_br_uncert_start_index = cost_functor->m_skew_par_start_index + 2*num_skew_coefs
+                                                     + cost_functor->m_cascade_num_pars;
         
         assert( num_pars == cost_functor->number_parameters() );
         assert( num_pars == (cost_functor->m_add_br_uncert_start_index + cost_functor->m_peak_ranges_with_uncert.size()) );
@@ -8387,6 +9519,9 @@ struct RelActAutoCostFcn
         fresh->m_phys_model_param_priors = fcn->m_phys_model_param_priors;
         fresh->m_free_peak_area_multiples = fcn->m_free_peak_area_multiples;
         fresh->m_add_br_uncert_start_index = fcn->m_add_br_uncert_start_index;
+        fresh->m_cascade_curves = fcn->m_cascade_curves;
+        fresh->m_cascade_s_start_index = fcn->m_cascade_s_start_index;
+        fresh->m_cascade_num_pars = fcn->m_cascade_num_pars;
 #if( PEAK_SKEW_HACK == 2 )
         fresh->m_skip_skew = fcn->m_skip_skew;
 #endif
@@ -9065,6 +10200,10 @@ struct RelActAutoCostFcn
     }//if( single rel-eff curve )
 #endif //TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE
 
+    // Cascade summing: choose the summing windows, and linearize the line factors, at the pre-fit's answer (the pre-fit
+    //  itself, only seeding the activities, uses factors of 1; see RelActAutoCostFcn::refresh_cascade_factors).
+    if( !cost_functor->m_cascade_curves.empty() )
+      cost_functor->refresh_cascade_factors( parameters, constant_parameters );
 
     ceres::Solver::Summary summary;
 
@@ -9078,6 +10217,27 @@ struct RelActAutoCostFcn
     // The effort of the primary solve (with its polish); a severe-misfit rescue gives each of its
     //  candidates no more than this.
     size_t primary_solve_iterations = summary.iterations.size();
+
+    // Cascade summing: the solve used factors linearized about its starting point; refresh them at its answer and
+    //  re-solve from there, until they settle, so the answer agrees with its own summing correction.  Each warm
+    //  re-solve starts at (nearly) the optimum, so it takes only a few iterations.
+    if( !cost_functor->m_cascade_curves.empty() )
+    {
+      for( size_t round = 0; round < RelActAutoCostFcn::sm_cascade_max_refresh_rounds; ++round )
+      {
+        if( (cancel_calc && cancel_calc->load())
+           || ((summary.termination_type != ceres::CONVERGENCE) && (summary.termination_type != ceres::USER_SUCCESS)
+               && (summary.termination_type != ceres::NO_CONVERGENCE)) )
+          break;
+
+        const double change = cost_functor->refresh_cascade_factors( parameters, constant_parameters );
+        if( change < RelActAutoCostFcn::sm_cascade_refresh_tolerance )
+          break;
+
+        solve_stopping_creep( ceres_options, problem, summary );
+        primary_solve_iterations += summary.iterations.size();
+      }//for( refresh rounds )
+    }//if( correcting for cascade summing )
 
     cost_functor->m_solution_finished = true;
 
@@ -10186,6 +11346,38 @@ struct RelActAutoCostFcn
     }//if( success && options.auto_simplify_model && no frozen selected model )
     // ---- End Auto-simplify -----------------------------------------------------------------------------
 
+    // Cascade summing: the polish, candidate search and auto-simplify may have moved the answer, so refresh the
+    //  factors there (re-solving if they changed), and always end on a refresh, so the reported peaks and the
+    //  covariance's Jacobian - which includes the factors' derivatives - use factors linearized at the answer.
+    if( !cost_functor->m_cascade_curves.empty() && success && !(cancel_calc && cancel_calc->load()) )
+    {
+      const auto refreshed_here = [&cost_functor,&parameters]() -> bool {
+        for( const RelActAutoCostFcn::CascadeCurve &cc : cost_functor->m_cascade_curves )
+        {
+          if( cc.refresh_x != parameters )
+            return false;
+        }
+        return true;
+      };
+
+      for( size_t round = 0; !refreshed_here(); ++round )
+      {
+        const double change = cost_functor->refresh_cascade_factors( parameters, constant_parameters );
+        if( change < RelActAutoCostFcn::sm_cascade_refresh_tolerance )
+          break;
+
+        if( round >= 2 )
+        {
+          solution.m_warnings.push_back( "The cascade-summing factors had not fully settled (their last refresh"
+                                         " changed one by " + SpecUtils::printCompact( change, 3 ) + ")." );
+          break;
+        }
+
+        ceres::Solver::Summary final_summary;
+        solve_stopping_creep( ceres_options, problem, final_summary );
+      }//for( refresh rounds )
+    }//if( correcting for cascade summing )
+
 #if( PERFORM_DEVELOPER_CHECKS )
     // Re-run the check at the converged point (opt-in, same env gate), where boundary-sensitive
     // defects are most likely to show up.
@@ -11216,8 +12408,10 @@ struct RelActAutoCostFcn
           if( removed_peak.amplitude() < 1.0 )
             continue;
 
-          // Iodine escape companions carry no source by design (see Options::iodine_escape_peaks)
-          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_iodine_escape_label_prefix ) )
+          // Iodine escape companions carry no source by design (see Options::iodine_escape_peaks), nor do
+          //  cascade-sum peaks (see RelEffCurveInput::correct_for_cascade_summing)
+          if( SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_iodine_escape_label_prefix )
+             || SpecUtils::starts_with( removed_peak.userLabel(), RelActCalcAuto::Options::sm_cascade_sum_label_prefix ) )
             continue;
 
           bool found_matching_floating_peak = false;
@@ -11888,6 +13082,93 @@ struct RelActAutoCostFcn
             phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
           }
         }//if( report_corr_fcn != PhysModelCorrFcn::None )
+
+        if( const RelActAutoCostFcn::CascadeCurve * const cascade = cost_functor->cascade_curve( rel_eff_index ) )
+        {
+          using CascadeInfo = RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::CascadeSummingInfo;
+          CascadeInfo info;
+          info.solid_angle_frac = RelActAutoCostFcn::cascade_s( parameters[cascade->s_par_index] );
+          const double s_uncert = uncertainties[cascade->s_par_index] * RelActAutoCostFcn::sm_cascade_s_scale;
+          if( std::isfinite(s_uncert) )
+            info.solid_angle_frac_uncert = s_uncert;
+          info.num_depth_nodes = cascade->num_depth_nodes;
+
+          double max_effect = 0.0;
+          for( size_t source_index = 0; source_index < cascade->factors.size(); ++source_index )
+          {
+            for( const RelActAutoCostFcn::CascadeCurve::LineFactor &lf : cascade->factors[source_index] )
+            {
+              CascadeInfo::LineFactor line;
+              line.source = cost_functor->m_nuclides[rel_eff_index][source_index].source;
+              line.energy = lf.energy;
+              line.factor = lf.c;
+              line.summing_out = lf.c_out;
+              line.summing_in = lf.c_in;
+              line.model_complete = lf.complete;
+              info.lines.push_back( line );
+              max_effect = std::max( max_effect, fabs( 1.0 - lf.c ) );
+            }
+          }//for( loop over sources )
+
+          for( const RelActAutoCostFcn::CascadeCurve::YieldNuisance &yn : cascade->yield_nuisances )
+          {
+            CascadeInfo::YieldMultiple ym;
+            ym.source = cost_functor->m_nuclides[rel_eff_index][yn.source_index].source;
+            ym.energy = yn.energy;
+            ym.multiple = 1.0 + RelActAutoCostFcn::sm_cascade_yield_scale
+                                * (parameters[yn.par_index] - RelActAutoCostFcn::sm_cascade_yield_offset);
+            const double unc = uncertainties[yn.par_index] * RelActAutoCostFcn::sm_cascade_yield_scale;
+            if( std::isfinite(unc) )
+              ym.uncert = unc;
+            info.yield_multiples.push_back( ym );
+          }//for( loop over yield nuisances )
+
+          for( size_t source_index = 0; source_index < cascade->sums.size(); ++source_index )
+          {
+            const RelActCalcAuto::SrcVariant &source = cost_functor->m_nuclides[rel_eff_index][source_index].source;
+            double rel_act = 0.0;
+            try
+            {
+              rel_act = cost_functor->relative_activity( source, rel_eff_index, parameters );
+            }catch( std::exception & )
+            {
+            }
+
+            for( size_t k = 0; k < cascade->sums[source_index].size(); ++k )
+            {
+              CascadeInfo::SumPeak sum_peak;
+              sum_peak.source = source;
+              sum_peak.energy = cascade->sums[source_index][k].energy;
+              sum_peak.counts = rel_act * static_cast<double>(cost_functor->m_live_time)
+                                * cost_functor->cascade_sum_value( *cascade, source_index, k, parameters );
+              sum_peak.model_complete = cascade->sums[source_index][k].complete;
+              info.sum_peaks.push_back( sum_peak );
+            }
+          }//for( loop over sources' pure-sum peaks )
+
+          if( max_effect > 0.1 )
+            solution.m_warnings.push_back( "Cascade summing changes some line areas by more than 10% (up to "
+                                  + SpecUtils::printCompact( 100.0*max_effect, 3 ) + "%); the correction is only"
+                                  " as good as the decay data and the detector's total-efficiency information." );
+          if( info.solid_angle_frac > 0.99*cascade->s_upper )
+            solution.m_warnings.push_back( "The cascade-summing effective solid angle is at its upper limit (the solid"
+                                  " angle of a source on the detector face, " + SpecUtils::printCompact( cascade->s_upper, 3 )
+                                  + "), so the line deficits it explains are probably not all summing." );
+          // An unconstrained s is only reported: benchmarks showed that falling back to uncorrected results in this
+          //  case does not improve accuracy on average.
+          const double s_floor = RelActAutoCostFcn::sm_cascade_s_unconstrained_floor;
+          if( info.solid_angle_frac_uncert
+             && ((*info.solid_angle_frac_uncert) >= std::max( info.solid_angle_frac, s_floor )) )
+            solution.m_warnings.push_back( "The data constrain the cascade-summing effective solid angle only weakly ("
+                                  + SpecUtils::printCompact( info.solid_angle_frac, 3 ) + " +/- "
+                                  + SpecUtils::printCompact( *info.solid_angle_frac_uncert, 2 ) + "), so the size of the"
+                                  " summing correction is poorly determined; the activity uncertainties include this." );
+          if( options.additional_br_uncert > 0.0 )
+            solution.m_warnings.push_back( "Correcting for cascade summing together with an additional branching-ratio"
+                                  " uncertainty: the latter can absorb part of the summing effect." );
+
+          phys_model_result.cascade_summing = std::move(info);
+        }//if( correcting this curve for cascade summing )
 
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
       }//if( FramPhysicalModel )
@@ -13409,6 +14690,21 @@ struct RelActAutoCostFcn
       return "FPeak_" + std::to_string(index - m_free_peak_par_start_index);
     }//if( index < m_skew_par_start_index )
     
+    if( (m_cascade_s_start_index != std::numeric_limits<size_t>::max())
+       && (index >= m_cascade_s_start_index) && (index < (m_cascade_s_start_index + m_cascade_curves.size())) )
+    {
+      const size_t re = m_cascade_curves[index - m_cascade_s_start_index].rel_eff_index;
+      return "CascS" + ((m_options.rel_eff_curves.size() > 1) ? std::to_string(re) : std::string());
+    }//if( a cascade-summing `s` parameter )
+
+    {
+      const CascadeCurve *curve = nullptr;
+      if( const CascadeCurve::YieldNuisance * const yn = cascade_yield_nuisance( index, &curve ) )
+        return "CascY" + ((m_options.rel_eff_curves.size() > 1) ? std::to_string(curve->rel_eff_index) : std::string())
+               + "_" + RelActCalcAuto::to_name( m_nuclides[curve->rel_eff_index][yn->source_index].source )
+               + "_" + SpecUtils::printCompact( yn->energy, 6 );
+    }
+
     if( index < m_add_br_uncert_start_index )
     {
       // TODO: we could give a better name for the skew parameter here
@@ -13544,6 +14840,18 @@ struct RelActAutoCostFcn
                  + SpecUtils::printCompact( m_options.floating_peaks[peak_index].energy, 5 ) + " keV";
         return name;
       }//if( a floating peak parameter )
+
+      if( (m_cascade_s_start_index != std::numeric_limits<size_t>::max())
+         && (index >= m_cascade_s_start_index) && (index < (m_cascade_s_start_index + m_cascade_curves.size())) )
+        return "cascade-summing effective solid angle";
+
+      {
+        const CascadeCurve *curve = nullptr;
+        if( const CascadeCurve::YieldNuisance * const yn = cascade_yield_nuisance( index, &curve ) )
+          return "cascade-summing yield nuisance of the "
+                 + RelActCalcAuto::to_name( m_nuclides[curve->rel_eff_index][yn->source_index].source ) + " "
+                 + SpecUtils::printCompact( yn->energy, 6 ) + " keV line";
+      }
 
       if( index < m_add_br_uncert_start_index )
       {
@@ -13710,6 +15018,15 @@ struct RelActAutoCostFcn
       return 1.0;
     }//if( index < m_skew_par_start_index )
     
+    if( (m_cascade_s_start_index != std::numeric_limits<size_t>::max())
+       && (index >= m_cascade_s_start_index) && (index < (m_cascade_s_start_index + m_cascade_curves.size())) )
+    {
+      return sm_cascade_s_scale;  // s = sm_cascade_s_scale * (par - sm_cascade_s_offset)
+    }
+
+    if( cascade_yield_nuisance( index, nullptr ) )
+      return sm_cascade_yield_scale;  // yield multiple = 1 + sm_cascade_yield_scale * (par - sm_cascade_yield_offset)
+
     if( index < m_add_br_uncert_start_index )
     {
       return 1.0; // No scale factor for skew parameters currently
@@ -15717,6 +17034,7 @@ struct RelActAutoCostFcn
         std::shared_ptr<const AgeDerivativeResult> age_yield_derivatives;
         
         const T rel_act = relative_activity( src_info.source, rel_eff_index, x );
+        const CascadeCurve * const cascade = (nuc && !m_cascade_curves.empty()) ? cascade_curve( rel_eff_index ) : nullptr;
         //cout << "peaks_for_energy_range_imp: Relative activity of " << src_info.name()
         //     << " is " << PhysicalUnits::printToBestActivityUnits(rel_act) << endl;
 
@@ -15896,7 +17214,10 @@ struct RelActAutoCostFcn
           }//if( !std::is_same_v<T, double> )          
 
           const T peak_mean = apply_energy_cal_adjustment( gamma.energy, x, cached_splines );
-          const T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
+          T peak_amplitude = rel_act * static_cast<double>(m_live_time) * rel_eff * yield * br_uncert_adj;
+          if( cascade )
+            peak_amplitude *= cascade_factor( *cascade, source_index, gamma.energy, x )
+                              * cascade_yield_multiple( *cascade, source_index, gamma.energy, x );
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
           // The line identity is frozen.  Reject an invalid trial through the ordinary Ceres
@@ -16025,6 +17346,35 @@ struct RelActAutoCostFcn
           if( line_in_range )
             peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+
+        // The nuclide's pure coincidence-sum peaks this ROI covers (see RelActAutoCostFcn::CascadeCurve::SumLine).
+        if( cascade && (source_index < cascade->sums.size()) )
+        {
+          for( size_t k = 0; k < cascade->sums[source_index].size(); ++k )
+          {
+            const double energy = cascade->sums[source_index][k].energy;
+            if( (energy < lower_mean) || (energy > upper_mean) )
+              continue;
+
+            RelActCalcAuto::PeakDefImp<T> sum_peak;
+            sum_peak.m_mean = apply_energy_cal_adjustment( energy, x, cached_splines );
+            sum_peak.m_sigma = fwhm( T(energy), x ) / 2.35482;
+            sum_peak.m_amplitude = rel_act * static_cast<double>(m_live_time)
+                                   * cascade_sum_value( *cascade, source_index, k, x );
+            sum_peak.m_src_energy = energy;
+            sum_peak.m_parent_nuclide = nuc;
+            sum_peak.m_is_cascade_sum = true;
+            sum_peak.m_rel_eff_index = rel_eff_index;
+            set_peak_skew( sum_peak, x );
+
+            if( isinf(sum_peak.m_sigma) || isnan(sum_peak.m_sigma) || (sum_peak.m_sigma <= T(0.0))
+               || isinf(sum_peak.m_amplitude) || isnan(sum_peak.m_amplitude) )
+              throw runtime_error( "peaks_for_energy_range_imp: invalid cascade-sum peak at "
+                                  + std::to_string(energy) + " keV." );
+
+            peaks.push_back( std::move(sum_peak) );
+          }//for( loop over the nuclide's sum peaks )
+        }//if( this nuclide has pure-sum peaks )
       }//for( const NucInputGamma &src_info : m_nuclides )
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     
@@ -16408,7 +17758,14 @@ struct RelActAutoCostFcn
         }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
-      if( comp_peak.m_is_iodine_escape )
+      if( comp_peak.m_is_cascade_sum )
+      {
+        // Photons of one decay summing, not a line of the source.
+        char label[96];
+        snprintf( label, sizeof(label), "%s%s %.1f keV", RelActCalcAuto::Options::sm_cascade_sum_label_prefix,
+                  comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol.c_str() : "", comp_peak.m_src_energy );
+        peak.setUserLabel( label );
+      }else if( comp_peak.m_is_iodine_escape )
       {
         // The detector's peak, not a line of the source; name the line it escaped from.
         std::string parent = comp_peak.m_parent_nuclide ? comp_peak.m_parent_nuclide->symbol : std::string();
@@ -19747,6 +21104,7 @@ bool RelEffCurveInput::operator==( const RelEffCurveInput &rhs ) const
     || (rel_eff_eqn_type != rhs.rel_eff_eqn_type)
     || (rel_eff_eqn_order != rhs.rel_eff_eqn_order)
     || (phys_model_corr != rhs.phys_model_corr)
+    || (correct_for_cascade_summing != rhs.correct_for_cascade_summing)
     || (pu242_correlation_method != rhs.pu242_correlation_method)
     || (shielded_by_other_phys_model_curve_shieldings != rhs.shielded_by_other_phys_model_curve_shieldings)
     || (nuclides != rhs.nuclides)
@@ -22252,7 +23610,7 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   const bool advanced_corr = writes_phys_model
                              && ( (phys_model_corr.corr_fcn == RelActCalc::PhysModelCorrFcn::Chebyshev)
                                   || any_ad_biasing );
-  append_version_attrib( base_node, advanced_corr ? 1 : 0 );
+  append_version_attrib( base_node, correct_for_cascade_summing ? 2 : (advanced_corr ? 1 : 0) );
 
   append_string_node( base_node, "Name", name );
 
@@ -22332,6 +23690,9 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     const string &method_str = RelActCalc::to_str( pu242_correlation_method );
     append_string_node( base_node, "Pu242CorrMethod", method_str );
   }
+
+  if( correct_for_cascade_summing )
+    append_string_node( base_node, "CorrectForCascadeSumming", "true" );
 
   if( !act_ratio_constraints.empty() )
   {
@@ -22479,6 +23840,10 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent )
     // The self-/external-attenuation AD biasing priors are read per-shield by
     //  `PhysicalModelShieldInput::fromXml` (the `<ArealDensityBias>` element on each shield).
   }//if( phys_model_node )
+
+  correct_for_cascade_summing = false;
+  if( XML_FIRST_NODE( parent, "CorrectForCascadeSumming" ) )
+    correct_for_cascade_summing = XmlUtils::get_bool_node_value( parent, "CorrectForCascadeSumming" );
 
   pu242_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
   const rapidxml::xml_node<char> *pu242_corr_node = XML_FIRST_NODE( parent, "Pu242CorrMethod" );
@@ -28208,6 +29573,19 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
         
       const vector<pair<double,double>> &gamma_energy_br = nucinfo.gamma_energy_br;
 
+      // The cascade-summing factors the fit applied, if it corrected for summing.
+      const RelActCalcAutoImp::RelActAutoCostFcn::CascadeCurve *cascade = nullptr;
+      size_t cascade_source_index = 0;
+      if( m_cost_functor && (m_final_parameters.size() == m_cost_functor->number_parameters()) )
+      {
+        cascade = m_cost_functor->cascade_curve( rel_eff_index );
+        const vector<RelActCalcAutoImp::NucInputGamma> &fcn_sources = m_cost_functor->m_nuclides.at( rel_eff_index );
+        while( (cascade_source_index < fcn_sources.size()) && (fcn_sources[cascade_source_index].source != src) )
+          ++cascade_source_index;
+        if( cascade_source_index >= fcn_sources.size() )
+          cascade = nullptr;
+      }//if( we have the cost functor )
+
         
         for( const pair<double,double> &gamma : gamma_energy_br )
         {
@@ -28255,7 +29633,11 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
           }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
           
           
-          const double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
+          double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
+          if( cascade )
+            peak_amplitude *= m_cost_functor->cascade_factor( *cascade, cascade_source_index, energy, m_final_parameters )
+                              * m_cost_functor->cascade_yield_multiple( *cascade, cascade_source_index, energy,
+                                                                        m_final_parameters );
           if( isinf(peak_amplitude) || isnan(peak_amplitude) )
             throw runtime_error( "nuclide_counts: inf or NaN peak amplitude for "
                                 + std::to_string(energy) + " keV.");
@@ -31405,6 +32787,9 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
   
   if( lhs.phys_model_corr != rhs.phys_model_corr )
     throw std::runtime_error( "Physical model correction options in lhs and rhs are not the same" );
+
+  if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
+    throw std::runtime_error( "Cascade-summing correction option in lhs and rhs are not the same" );
 
   if( lhs.pu242_correlation_method != rhs.pu242_correlation_method )
     throw std::runtime_error( "Pu242 correlation method in lhs and rhs are not the same" );

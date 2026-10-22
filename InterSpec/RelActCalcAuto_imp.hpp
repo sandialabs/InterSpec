@@ -77,6 +77,10 @@ struct PeakDefImp
    fields above describe; `m_src_energy` is that parent line's energy. */
   bool m_is_iodine_escape = false;
 
+  /** A pure coincidence-sum peak of the nuclide in `m_parent_nuclide` (see `RelEffCurveInput::correct_for_cascade_summing`);
+   `m_src_energy` is the sum energy, and the other source fields are unset. */
+  bool m_is_cascade_sum = false;
+
   size_t m_rel_eff_index = std::numeric_limits<size_t>::max();
 
   // Some functions to be compatible with PeakDef, in templated functions
