@@ -158,6 +158,10 @@
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 #include "InterSpec/EnergyCalPreserveWindow.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+#include "InterSpec/SpectrumChartImage.h"
+#endif
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
 
@@ -1583,6 +1587,14 @@ InterSpec::~InterSpec() noexcept(true)
 
     if( m_preferences )
       removeChild( m_preferences.get() );
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+    // Each session has its own database user, which is never used again; remove it, and with it
+    //  (by cascade) its preferences and detector-response rows, or the database grows with every
+    //  session.
+    if( m_user )
+      m_user.remove();
+#endif
     m_user.reset();
 
     if( transaction )
@@ -2008,10 +2020,12 @@ void InterSpec::hotKeyPressed( const unsigned int value )
         setLogY( !m_spectrum->yAxisIsLog() );
         break;
         
+#if( USE_DB_TO_STORE_SPECTRA )
       case 's': case 'S':
         stateSave();
         break;
-        
+#endif
+
       case 'e': case 'E':
         createExportSpectrumFileDialog();
         break;
@@ -3591,14 +3605,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 
   try
   {
-    saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-#endif
-#if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-#endif
+    syncAllToolStateToForegroundSpecMeas();
 
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
@@ -5801,14 +5808,7 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     if( !output.is_open() )
       throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
-    saveShieldingSourceModelToForegroundSpecMeas();
-  #if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-  #endif
-  #if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-  #endif
+    syncAllToolStateToForegroundSpecMeas();
 
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -6449,14 +6449,7 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
   const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
   if( !saveState || !m_dataMeasurement )
   {
-    saveShieldingSourceModelToForegroundSpecMeas();
-  #if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-  #endif
-  #if( USE_LLM_INTERFACE )
-    syncLlmHistoryToSpecMeas();
-  #endif
+    syncAllToolStateToForegroundSpecMeas();
 
     return;
   }//if( !saveState || !m_dataMeasurement )
@@ -6521,14 +6514,7 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
       }//if( we have done work we might want to save )
     }else
     {
-      saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-      saveRelActManualStateToForegroundSpecMeas();
-      saveRelActAutoStateToForegroundSpecMeas();
-#endif
-#if( USE_LLM_INTERFACE )
-      syncLlmHistoryToSpecMeas();
-#endif
+      syncAllToolStateToForegroundSpecMeas();
       
       // Get foreground/background/secondary files, and update them to the database..
       SpectraFileModel *filemodel = m_fileManager->model();
@@ -9011,6 +8997,40 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
 }//saveSpectrumToPng()
 
 
+#if( BUILD_AS_MCP_STDIO_SERVER )
+namespace
+{
+  /** Renders a chart image server-side, and gives it to `callback` as the browser capture would:
+   (base64 data, mime type, width, height), or empty data on failure.
+   */
+  void render_chart_image( const std::string &format, const int maxLongestSide,
+                           std::function<void(std::string, std::string, int, int)> callback,
+                           const std::function<void( Wt::WPaintDevice & )> &paint )
+  {
+    // About the size of the chart in a desktop window; scaled down to `maxLongestSide`.
+    int width = 1200, height = 600;
+    if( (maxLongestSide > 0) && (maxLongestSide < width) )
+    {
+      height = std::max( 1, (height * maxLongestSide) / width );
+      width = maxLongestSide;
+    }
+
+    const std::string mime = (format == "svg") ? "image/svg+xml"
+                                               : ((format == "jpeg") ? "image/jpeg" : "image/png");
+    try
+    {
+      const std::string image = SpectrumChartImage::renderImage( width, height, format, paint );
+      callback( Wt::Utils::base64Encode( image, false ), mime, width, height );
+    }catch( std::exception &e )
+    {
+      Wt::log("error") << "Rendering a chart image failed: " << e.what();
+      callback( std::string(), std::string(), 0, 0 );
+    }
+  }//render_chart_image(...)
+}//namespace
+#endif //BUILD_AS_MCP_STDIO_SERVER
+
+
 void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
                                        std::optional<std::pair<double,double>> energyRange,
                                        std::optional<bool> yAxisLog,
@@ -9019,8 +9039,43 @@ void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestS
 {
   if( !m_spectrum )
     throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // No browser draws the chart, so draw what it would show here.
+  SpectrumChartImage::SpectrumOptions options;
+  options.foreground = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  options.background = displayedHistogram( SpecUtils::SpectrumType::Background );
+  options.secondary = displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
+  options.background_scale = displayScaleFactor( SpecUtils::SpectrumType::Background );
+  options.secondary_scale = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+  options.peaks = m_peakModel ? m_peakModel->peaks() : nullptr;
+  if( m_referencePhotopeakLines )
+  {
+    for( const ReferenceLineInfo &lines : m_referencePhotopeakLines->showingNuclides() )
+      options.reference_lines.push_back( std::make_shared<ReferenceLineInfo>( lines ) );
+  }
+
+  if( energyRange )
+  {
+    options.energy_range = energyRange;
+  }else
+  {
+    double xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0;
+    displayedSpectrumRange( xmin, xmax, ymin, ymax );
+    if( xmax > xmin )
+      options.energy_range = std::make_pair( xmin, xmax );
+  }
+
+  options.log_y = yAxisLog.value_or( m_spectrum->yAxisIsLog() );
+  options.background_subtract = backgroundSubtract.value_or( m_spectrum->backgroundSubtract() );
+  options.theme = getColorTheme();
+
+  render_chart_image( format, maxLongestSide, std::move( callback ),
+    [options]( Wt::WPaintDevice &device ){ SpectrumChartImage::paintSpectrum( device, options ); } );
+#else
   m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog,
                                  backgroundSubtract, std::move( callback ) );
+#endif
 }//captureSpectrumImage(...)
 
 
@@ -9033,7 +9088,25 @@ void InterSpec::captureTimeChartImage( const std::string &format, int maxLongest
   if( m_timeSeries->isHidden() )
     throw std::runtime_error( "captureTimeChartImage: time chart is not visible" );
 
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // No browser draws the chart, so draw what it would show here.
+  SpectrumChartImage::TimeSeriesOptions options;
+  options.meas = measurment( SpecUtils::SpectrumType::Foreground );
+  if( !options.meas )
+    throw std::runtime_error( "captureTimeChartImage: no foreground is loaded" );
+  options.detectors = detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  options.foreground_samples = displayedSamples( SpecUtils::SpectrumType::Foreground );
+  if( measurment( SpecUtils::SpectrumType::Background ) == options.meas )
+    options.background_samples = displayedSamples( SpecUtils::SpectrumType::Background );
+  if( measurment( SpecUtils::SpectrumType::SecondForeground ) == options.meas )
+    options.secondary_samples = displayedSamples( SpecUtils::SpectrumType::SecondForeground );
+  options.theme = getColorTheme();
+
+  render_chart_image( format, maxLongestSide, std::move( callback ),
+    [options]( Wt::WPaintDevice &device ){ SpectrumChartImage::paintTimeSeries( device, options ); } );
+#else
   m_timeSeries->captureChartImage( format, maxLongestSide, std::move( callback ) );
+#endif
 }//captureTimeChartImage(...)
 
 
@@ -11551,6 +11624,19 @@ void InterSpec::saveShieldingSourceModelToForegroundSpecMeas()
 }//void saveShieldingSourceModelToForegroundSpecMeas()
 
 
+void InterSpec::syncAllToolStateToForegroundSpecMeas()
+{
+  saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+  saveRelActManualStateToForegroundSpecMeas();
+  saveRelActAutoStateToForegroundSpecMeas();
+#endif
+#if( USE_LLM_INTERFACE )
+  syncLlmHistoryToSpecMeas();
+#endif
+}//void syncAllToolStateToForegroundSpecMeas()
+
+
 
 void InterSpec::closeShieldingSourceFit()
 {
@@ -12443,6 +12529,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     syncLlmHistoryToSpecMeas();
 #endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
+
+#if( USE_LLM_INTERFACE )
+  // The same file again (e.g., other samples of it picked in "Spectrum Files"): the conversation is
+  //  swapped for the new samples' one at the end of this function, so keep the current one first.
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && (previous == meas) )
+    syncLlmHistoryToSpecMeas();
+#endif
   
   if( !!meas && isMobile() && !toolTabsVisible()
       /* && options.test(SetSpectrumOptions::CheckToPreservePreviousEnergyCal) */
@@ -12610,22 +12703,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     //Assume we will use all the detectors (just to determine binning)
     const vector<string> &detectors = m_dataMeasurement->detector_names();
     
-    shared_ptr<const vector<float>> binning;
+    size_t num_foreground_channels = 0;
     try
     {
       auto energy_cal = m_dataMeasurement->suggested_sum_energy_calibration( sample_numbers, detectors );
       if( energy_cal )
-        binning = energy_cal->channel_energies();
+        num_foreground_channels = energy_cal->num_channels();
     }catch( std::exception & )
     {
-      
+
     }
-    
-    shared_ptr<const vector<float>> prev_binning = prev_display ? prev_display->channel_energies() : nullptr;
-    
-    const bool diff_fore_nchan = ((!prev_binning || !binning) || (prev_binning->size() != binning->size()));
-    
-    const size_t num_foreground_channels = binning ? binning->size() : 0;
+
+    // Compare numbers of channels (`channel_energies()` has one more entry than there are channels)
+    const size_t prev_num_channels = prev_display ? prev_display->num_gamma_channels() : size_t(0);
+
+    const bool diff_fore_nchan = (!prev_num_channels || !num_foreground_channels
+                                  || (prev_num_channels != num_foreground_channels));
+
     size_t num_sec_channel = 0, num_back_channel = 0;
     if( m_secondDataMeasurement )
       num_sec_channel = m_secondDataMeasurement->num_gamma_channels();
@@ -14654,6 +14748,61 @@ vector<string> InterSpec::detectorsToDisplay( const SpecUtils::SpectrumType type
 
   return detector_names;
 }//std::vector<string> detectorsToDisplay() const
+
+
+void InterSpec::setDetectorsToDisplay( const std::vector<std::string> &detectors )
+{
+  if( !m_dataMeasurement )
+    throw runtime_error( "No foreground is loaded." );
+
+  const vector<string> &all_det_names = m_dataMeasurement->detector_names();
+  const vector<string> &gamma_det_names = m_dataMeasurement->gamma_detector_names();
+
+  bool any_gamma = detectors.empty();
+  for( const string &name : detectors )
+  {
+    if( std::find( begin(all_det_names), end(all_det_names), name ) == end(all_det_names) )
+      throw runtime_error( "'" + name + "' is not a detector of the foreground." );
+    any_gamma = (any_gamma || (std::find( begin(gamma_det_names), end(gamma_det_names), name ) != end(gamma_det_names)));
+  }
+
+  if( !any_gamma )
+    throw runtime_error( "At least one gamma detector must be displayed." );
+
+  if( !m_detectorToShowMenu )
+    throw runtime_error( "Selecting detectors is not available." );
+
+  // The menu has one checkbox per detector, in the order of `detector_names()`; see
+  //  `detectorsToDisplay(...)`.
+  bool changed = false;
+  size_t detnum = 0;
+  for( WMenuItem *menu_item : m_detectorToShowMenu->items() )
+  {
+    if( menu_item->hasStyleClass("PhoneMenuBack") )
+      continue;
+
+    PopupDivMenuItem * const item = dynamic_cast<PopupDivMenuItem *>( menu_item );
+    WCheckBox * const cb = item ? item->checkBox() : nullptr;
+    if( cb && (detnum < all_det_names.size()) )
+    {
+      const bool want = detectors.empty()
+               || (std::find( begin(detectors), end(detectors), all_det_names[detnum] ) != end(detectors));
+      if( cb->isChecked() != want )
+      {
+        cb->setChecked( want );
+        syncNativeMenuCheckBox( cb );
+        changed = true;
+      }
+    }//if( cb && (detnum < all_det_names.size()) )
+    ++detnum;
+  }//for( WMenuItem *menu_item : m_detectorToShowMenu->items() )
+
+  if( detnum != all_det_names.size() )
+    throw runtime_error( "InterSpec::setDetectorsToDisplay(): detector menu does not match the foreground." );
+
+  if( changed )
+    detectorsToDisplayChanged();
+}//void setDetectorsToDisplay( const std::vector<std::string> &detectors )
 
 
 void InterSpec::refreshDisplayedCharts()

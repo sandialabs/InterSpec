@@ -55,8 +55,14 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
  |--------------|--------------------|-------------------------------------------|
  | Windows      | WinHTTP            | full, including Negotiate/NTLM SSO        |
  | macOS + iOS  | NSURLSession       | full except SSO (best effort)             |
- | Linux        | `Wt::Http::Client` | system trust only, no proxy support       |
+ | Linux        | libcurl            | system trust; proxies (explicit, or the   |
+ |              |                    | `https_proxy`/`NO_PROXY` environment)     |
  | Android      | `Wt::Http::Client` | system trust only, no proxy support       |
+
+ libcurl is loaded at run time (dlopen), so a Linux binary does not depend on one particular
+ libcurl build; if none is installed, `available()` is false.  `Wt::Http::Client` remains an
+ option on Linux (`USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND`), and is what the multi-session MCP
+ server's container uses.
 
  Two caveats on the Windows row.  It was written without a Windows machine to develop on: it is
  verified to compile and link for x64 and x86 (mingw-w64 ships the same WinHTTP headers and
@@ -67,7 +73,7 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
  because nothing here can host one.  Treat the whole row as needing a pass on real hardware.
 
  Nothing above this header knows which backend is in use, and no platform `#ifdef` reaches
- above it.  Not supporting proxies on Linux/Android is a deliberate, accepted limitation.
+ above it.  Not supporting proxies on Android is a deliberate, accepted limitation.
  */
 namespace NativeHttp
 {
@@ -81,7 +87,8 @@ namespace NativeHttp
     None,          ///< No backend available for this platform.
     NSUrlSession,  ///< macOS and iOS.
     WinHttp,       ///< Windows.
-    WtHttpClient   ///< Linux and Android.
+    WtHttpClient,  ///< Android (and, as an option, Linux).
+    Curl           ///< Linux: libcurl, loaded at run time.
   };//enum class Backend
 
 
@@ -346,7 +353,7 @@ namespace NativeHttp
    */
   InterSpec_API const char *backendName();
 
-  /** Whether this backend honours `Request::proxyUrl`.  False for `Wt::Http::Client`. */
+  /** Whether this backend honours `Request::proxyUrl`.  False for `Wt::Http::Client`; true for libcurl. */
   InterSpec_API bool supportsProxyOverride();
 
   /** Whether this backend honours `Request::caBundlePath`.  False for WinHTTP, which validates

@@ -5166,37 +5166,39 @@ void SpecMeasManager::displayFile( int row,
               
             case SpecUtils::SourceType::Foreground:
             {
-              ++numForeground;
-              childrow = static_cast<int>( i );
-              const vector<shared_ptr<const SpecUtils::Measurement>> fores
+              // Show the first foreground sample (in preference to an earlier Unknown one)
+              if( !numForeground )
+              {
+                childrow = static_cast<int>( i );
+                const vector<shared_ptr<const SpecUtils::Measurement>> fores
                                       = measement_ptr->sample_measurements(spechead.sample_number);
-              assert( !fores.empty() );
-              for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
-                foreground_start_time = std::max( foreground_start_time, f->start_time() );
-              
-              //i = header->m_samples.size();  //first foreground, terminate loop
+                assert( !fores.empty() );
+                for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
+                  foreground_start_time = std::max( foreground_start_time, f->start_time() );
+              }//if( first foreground sample )
+
+              ++numForeground;
               break;
             }//case SpecUtils::SourceType::Foreground:
-              
+
             case SpecUtils::SourceType::Background:
             {
+              // We keep looping, so `numbackground` counts all background samples - one is only
+              //  loaded along with the foreground if it is unambiguous.
               ++numbackground;
               backrow = static_cast<int>( i );
-              
+
               if( old_back )
               {
                 back_start_time = SpecUtils::time_point_t{};
-                
+
                 const vector<shared_ptr<const SpecUtils::Measurement>> backs
                                       = measement_ptr->sample_measurements(spechead.sample_number);
                 assert( !backs.empty() );
                 for( const shared_ptr<const SpecUtils::Measurement> &b : backs )
                   back_start_time = std::max( back_start_time, b->start_time() );
               }//if( numForeground )
-                
-              if( numForeground )
-                i = header->m_samples.size();  //We have foreground and background, terminate loop
-              
+
               break;
             }//case SpecUtils::SourceType::Background:
             

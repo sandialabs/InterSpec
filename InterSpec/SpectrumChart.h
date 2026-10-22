@@ -163,6 +163,10 @@ public:
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
 
+  /** Minimum spacing, in pixels, between x-axis labels; default 50, which suits small label fonts. */
+  void setXAxisMinimumLabelSpacing( const double pixels );
+  double xAxisMinimumLabelSpacing() const;
+
   
   void showGridLines( const bool draw ); //shows horizantal and vertical
   void showVerticalLines( const bool draw );
@@ -476,6 +480,7 @@ protected:
   XAxisUnits m_xAxisUnits;
   
   bool m_compactAxis;
+  double m_xAxisMinLabelSpacing;
   Wt::WString m_textInMiddleOfChart;
   
   // Added by christian (20170425)

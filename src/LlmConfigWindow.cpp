@@ -221,6 +221,17 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
   assert( m_presets );
 
   seedWorkingCopy();
+
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  m_saveBlockedReason = WString::tr("lcw-save-agent-mode");
+#else
+  const std::string config_dir = LlmConfig::configDirectory();
+  if( m_seededFromEnvReferences )
+    m_saveBlockedReason = WString::tr("lcw-save-env-refs");
+  else if( !config_dir.empty() && SpecUtils::is_file( SpecUtils::append_path( config_dir, "llm_config.xml" ) ) )
+    m_saveBlockedReason = WString::tr("lcw-save-config-dir").arg( config_dir );  // it takes precedence over a saved file
+#endif
+
   buildUi();
   rebuildProviders();
   updateSummary();
@@ -261,7 +272,7 @@ void LlmConfigWindow::seedWorkingCopy()
     try
     {
       std::pair<LlmConfig::LlmApi,LlmConfig::McpServer> parsed
-                                    = LlmConfig::loadApiAndMcpConfigs( m_importConfigPath );
+                                    = LlmConfig::loadApiAndMcpConfigs( m_importConfigPath, &m_seededFromEnvReferences );
       m_working.llmApi = std::move( parsed.first );
       m_working.mcpServer = std::move( parsed.second );
       m_uiState.assign( m_working.llmApi.providers.size(), ProviderUiState() );
@@ -282,6 +293,7 @@ void LlmConfigWindow::seedWorkingCopy()
     {
       m_working.llmApi = cached->llmApi;
       m_working.mcpServer = cached->mcpServer;
+      m_seededFromEnvReferences = cached->usesEnvReferences;
       m_uiState.assign( m_working.llmApi.providers.size(), ProviderUiState() );
       return;
     }
@@ -306,7 +318,8 @@ void LlmConfigWindow::seedWorkingCopy()
       continue;
     try
     {
-      std::pair<LlmConfig::LlmApi,LlmConfig::McpServer> parsed = LlmConfig::loadApiAndMcpConfigs( path );
+      std::pair<LlmConfig::LlmApi,LlmConfig::McpServer> parsed
+                                    = LlmConfig::loadApiAndMcpConfigs( path, &m_seededFromEnvReferences );
       m_working.llmApi = std::move( parsed.first );
       m_working.mcpServer = std::move( parsed.second );
       m_uiState.assign( m_working.llmApi.providers.size(), ProviderUiState() );
@@ -652,13 +665,13 @@ void LlmConfigWindow::buildUi()
   }
   cancelBtn->clicked().connect( this, &AuxWindow::hide );
 
-  if( m_writableDir.empty() )
+  if( m_writableDir.empty() || !m_saveBlockedReason.empty() )
   {
     m_acceptBtn->disable();
     // Deliberately NOT HelpSystem::attachToolTipOn: this is dynamic status ("why is Save
     //  disabled"), re-set and cleared as validation changes, and must not be suppressible by the
     //  user's ShowTooltips preference.
-    m_acceptBtn->setToolTip( WString::tr("lcw-save-unavailable") );
+    m_acceptBtn->setToolTip( m_saveBlockedReason.empty() ? WString::tr("lcw-save-unavailable") : m_saveBlockedReason );
   }
 }//buildUi()
 
@@ -1586,9 +1599,11 @@ void LlmConfigWindow::updateValidation()
 
   if( m_acceptBtn )
   {
-    const bool enable = !blocking && !m_writableDir.empty();
+    const bool enable = !blocking && !m_writableDir.empty() && m_saveBlockedReason.empty();
     m_acceptBtn->setEnabled( enable );
-    if( blocking )
+    if( !m_saveBlockedReason.empty() )
+      m_acceptBtn->setToolTip( m_saveBlockedReason );
+    else if( blocking )
       m_acceptBtn->setToolTip( WString::tr("lcw-blocking-tip") );
     else if( m_writableDir.empty() )
       m_acceptBtn->setToolTip( WString::tr("lcw-save-unavailable") );
@@ -1829,7 +1844,7 @@ std::string LlmConfigWindow::deriveModelsUrl( const std::string &chatEndpoint )
 
 bool LlmConfigWindow::saveConfig()
 {
-  if( m_writableDir.empty() )
+  if( m_writableDir.empty() || !m_saveBlockedReason.empty() )
     return false;
   const string path = SpecUtils::append_path( m_writableDir, "llm_config.xml" );
   return LlmConfig::saveToFile( m_working, path );
@@ -1838,8 +1853,8 @@ bool LlmConfigWindow::saveConfig()
 
 void LlmConfigWindow::handleAccept()
 {
-  if( m_writableDir.empty() )
-    return;  // Accept is disabled when there is nowhere to save.
+  if( m_writableDir.empty() || !m_saveBlockedReason.empty() )
+    return;  // Accept is disabled when there is nowhere to save, or saving is not allowed.
 
   // Import mode: the user opened a config file to install it.  Warn before clobbering any existing
   //  config; there is nothing to preserve on the session side, so just save+apply on confirmation.

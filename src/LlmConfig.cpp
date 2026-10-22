@@ -1,8 +1,12 @@
 #include "InterSpec_config.h"
 #include "InterSpec/LlmConfig.h"
 
-#include <iostream>
+#include <mutex>
+#include <cctype>
+#include <algorithm>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 
 #include <rapidxml/rapidxml.hpp>
@@ -58,6 +62,107 @@ AgentType stringToAgentType( const std::string &name )
 }//stringToAgentType(...)
 
 const std::string LlmConfig::McpServer::sm_invalid_bearer_token = "INVALID-BEARER-TOKEN";
+
+
+namespace
+{
+  std::mutex ns_config_dir_mutex;
+  std::string ns_config_dir;
+
+  /** Replaces, in place, every attribute, element, and data value of `node` and its descendants
+   that is entirely an `env(...)` reference.  Returns true if any value was replaced.
+   */
+  bool resolve_env_references( rapidxml::xml_node<char> *node, rapidxml::xml_document<char> &doc )
+  {
+    bool any = false;
+
+    const auto resolve = [&doc,&any]( auto *item ){
+      bool was_reference = false;
+      const string resolved = LlmConfig::resolveEnvReference( string(item->value(), item->value_size()),
+                                                              was_reference );
+      if( was_reference )
+      {
+        item->value( doc.allocate_string( resolved.c_str(), resolved.size() + 1 ), resolved.size() );
+        any = true;
+      }
+    };
+
+    for( rapidxml::xml_attribute<char> *attrib = node->first_attribute(); attrib; attrib = attrib->next_attribute() )
+      resolve( attrib );
+
+    const rapidxml::node_type type = node->type();
+    if( (type == rapidxml::node_element) || (type == rapidxml::node_data) || (type == rapidxml::node_cdata) )
+      resolve( node );
+
+    for( rapidxml::xml_node<char> *child = node->first_node(); child; child = child->next_sibling() )
+    {
+      if( resolve_env_references( child, doc ) )
+        any = true;
+    }
+
+    return any;
+  }//resolve_env_references(...)
+}//namespace
+
+
+void LlmConfig::setConfigDirectory( const std::string &dir )
+{
+  std::lock_guard<std::mutex> lock( ns_config_dir_mutex );
+  ns_config_dir = dir;
+}
+
+
+std::string LlmConfig::configDirectory()
+{
+  std::lock_guard<std::mutex> lock( ns_config_dir_mutex );
+  return ns_config_dir;
+}
+
+
+std::string LlmConfig::resolveEnvReference( const std::string &value, bool &wasReference )
+{
+  wasReference = false;
+
+  string trimmed = value;
+  SpecUtils::trim( trimmed );
+  if( (trimmed.size() < 5) || !SpecUtils::starts_with( trimmed, "env(" ) || (trimmed.back() != ')') )
+    return value;
+
+  const string inner = trimmed.substr( 4, trimmed.size() - 5 );
+  const size_t comma_pos = inner.find( ',' );
+
+  string name = inner.substr( 0, comma_pos );
+  SpecUtils::trim( name );
+
+  std::optional<string> default_value;
+  if( comma_pos != string::npos )
+  {
+    default_value = inner.substr( comma_pos + 1 );
+    SpecUtils::trim( *default_value );
+  }
+
+  const bool valid_name = !name.empty()
+                          && std::all_of( begin(name), end(name), []( const char c ){
+                            return std::isalnum( static_cast<unsigned char>(c) ) || (c == '_');
+                          } );
+  if( !valid_name )
+    throw runtime_error( "Invalid env() reference '" + trimmed + "'." );
+
+  if( !SpecUtils::starts_with( name, "INTERSPEC_" ) )
+    throw runtime_error( "env() reference to '" + name + "' is not allowed; only environment"
+                         " variables whose names start with INTERSPEC_ may be used." );
+
+  wasReference = true;
+
+  const char * const env_value = std::getenv( name.c_str() );
+  if( env_value )
+    return env_value;
+
+  if( default_value.has_value() )
+    return default_value.value();
+
+  throw runtime_error( "Environment variable '" + name + "', referenced by the LLM config, is not set." );
+}//LlmConfig::resolveEnvReference(...)
 
 
 LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::parseApiFormat( const std::string &str )
@@ -167,7 +272,12 @@ std::optional<std::variant<bool,LlmConfig::LlmApi::ReasoningEffort>> LlmConfig::
 
 std::string LlmConfig::configFilePath( const std::string &filename )
 {
-  // User files in writableDataDirectory() override default files in staticDataDirectory().
+  // A deployment's config directory (--llm-config-dir) comes first; then user files in
+  //  writableDataDirectory() override default files in staticDataDirectory().
+  const string config_dir = LlmConfig::configDirectory();
+  if( !config_dir.empty() && SpecUtils::is_file( SpecUtils::append_path(config_dir, filename) ) )
+    return SpecUtils::append_path( config_dir, filename );
+
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   const string user_data_dir = ([](){ try{ return InterSpec::writableDataDirectory(); }catch(...){ return ""s; } })();
   if( !user_data_dir.empty() && SpecUtils::is_file(SpecUtils::append_path(user_data_dir,filename)) )
@@ -181,6 +291,18 @@ std::string LlmConfig::configFilePath( const std::string &filename )
 
 std::shared_ptr<LlmConfig> LlmConfig::load()
 {
+#if( BUILD_AS_MCP_HTTP_SERVER )
+  // A multi-session server must run with the configuration it was deployed with, never one found in
+  //  a user or static data directory.
+  const string config_dir = LlmConfig::configDirectory();
+  if( config_dir.empty() )
+    throw runtime_error( "An LLM config directory (--llm-config-dir) must be specified for the MCP"
+                         " agent server." );
+
+  if( !SpecUtils::is_file( SpecUtils::append_path(config_dir, "llm_config.xml") ) )
+    throw runtime_error( "No 'llm_config.xml' in the LLM config directory '" + config_dir + "'." );
+#endif
+
   const string configPath = configFilePath( "llm_config.xml" );
   const string toolsPath = configFilePath( "llm_tools_config.xml" );
   
@@ -193,7 +315,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   {
     try
     {
-      std::pair<LlmApi, McpServer> apiAndMcp = loadApiAndMcpConfigs(configPath);
+      std::pair<LlmApi, McpServer> apiAndMcp = loadApiAndMcpConfigs( configPath, &config->usesEnvReferences );
       config->llmApi = std::move(apiAndMcp.first);
       config->mcpServer = std::move(apiAndMcp.second);
     }catch( const std::exception &e )
@@ -202,6 +324,21 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
       throw; // rethrow
     }
   }//if( SpecUtils::is_file( configPath ) )
+
+  // With a browser-side transport, API keys are handed to page JavaScript - which, in a server
+  //  running LLM-written code for untrusted users, is not a place secrets may go; and the stdio
+  //  server has no browser at all.
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
+  config->llmApi.httpBackend = LlmApi::HttpBackend::Native;
+  for( LlmApi::ApiProvider &provider : config->llmApi.providers )
+    provider.httpBackend = LlmApi::HttpBackend::Native;
+#endif
+
+#if( BUILD_AS_MCP_STDIO_SERVER )
+  // Launching the stdio server is the opt-in to MCP, so <McpServer><Enabled> is not needed - nor is
+  //  a llm_config.xml at all; but without this, the early return below would skip loading the tools.
+  config->mcpServer.enabled = true;
+#endif
 
 #if( BUILD_AS_UNIT_TEST_SUITE )
   // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
@@ -292,7 +429,8 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
 }//LlmConfig LlmConfig::load()
 
 
-std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfigs( const std::string &llmConfigPath )
+std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfigs( const std::string &llmConfigPath,
+                                                                                    bool *usesEnvReferences )
 {
   try
   {
@@ -303,6 +441,11 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
     const int flags = rapidxml::parse_trim_whitespace; // parse_normalize_whitespace would collapse newlines in text content
 
     doc.parse<flags>( &xmlContent[0] );
+
+    // Resolve env(...) references up front, so every value read below sees the final value.
+    const bool used_env_refs = resolve_env_references( &doc, doc );
+    if( usesEnvReferences )
+      *usesEnvReferences = used_env_refs;
 
     const rapidxml::xml_node<char> * const root = XML_FIRST_NODE(&doc, "LlmConfig");
     if( !root )
@@ -686,6 +829,60 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       const rapidxml::xml_node<char> *allowAgentNode = XML_FIRST_NODE( mcpServerNode, "AllowAgentInvocation" );
       if( allowAgentNode )
         mcpServer.allowAgentInvocation = XmlUtils::get_bool_node_value( mcpServerNode, "AllowAgentInvocation" );
+
+      // Optional multi-session server settings; each absent element keeps its default.
+      const rapidxml::xml_node<char> * const agentNode = XML_FIRST_NODE( mcpServerNode, "AgentServer" );
+      if( agentNode )
+      {
+        McpServer::AgentServer agent;
+
+        const auto text_of = [agentNode]( const char *name ) -> std::optional<string> {
+          const rapidxml::xml_node<char> * const node = agentNode->first_node( name );
+          if( !node )
+            return std::nullopt;
+          string value = SpecUtils::xml_value_str( node );
+          SpecUtils::trim( value );
+          return value;
+        };
+
+        const auto read_number = [&text_of]( const char *name, auto &value ){
+          const std::optional<string> txt = text_of( name );
+          if( !txt.has_value() || txt->empty() )
+            return;
+          long long parsed = 0;
+          size_t num_used = 0;
+          try
+          {
+            parsed = std::stoll( *txt, &num_used );
+          }catch( std::exception & )
+          {
+            num_used = 0;
+          }
+          if( (num_used != txt->size()) || (parsed < 0) )
+            throw runtime_error( "Invalid <" + string(name) + "> value '" + *txt + "'." );
+          value = static_cast<std::remove_reference_t<decltype(value)>>( parsed );
+        };
+
+        read_number( "MaxSessions", agent.maxSessions );
+        read_number( "SessionIdleTimeoutSeconds", agent.sessionIdleTimeoutSeconds );
+        read_number( "SessionMaxLifetimeSeconds", agent.sessionMaxLifetimeSeconds );
+        read_number( "MaxUploadBytes", agent.maxUploadBytes );
+        read_number( "MaxSessionBytes", agent.maxSessionBytes );
+        read_number( "MaxImageBytes", agent.maxImageBytes );
+
+        const std::optional<string> exchange_dir = text_of( "ExchangeDirectory" );
+        if( exchange_dir.has_value() && !exchange_dir->empty() )
+          agent.exchangeDirectory = *exchange_dir;
+
+        const std::optional<string> keep_files = text_of( "KeepSessionFiles" );
+        if( keep_files.has_value() && !keep_files->empty() )
+          agent.keepSessionFiles = (*keep_files == "true") || (*keep_files == "1");
+
+        agent.publicBaseUrl = text_of( "PublicBaseUrl" ).value_or( "" );
+        agent.browserPath = text_of( "BrowserPath" ).value_or( "" );
+
+        mcpServer.agentServer = agent;
+      }//if( agentNode )
     }// End load MCP server settings
 
     return std::make_pair( llmApi, mcpServer );
@@ -954,6 +1151,26 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 #endif
   XmlUtils::append_bool_node( mcpServer, "AllowAssistantPrompt", config.mcpServer.allowAssistantPrompt );
   XmlUtils::append_bool_node( mcpServer, "AllowAgentInvocation", config.mcpServer.allowAgentInvocation );
+
+  if( config.mcpServer.agentServer.has_value() )
+  {
+    const McpServer::AgentServer &agent = config.mcpServer.agentServer.value();
+
+    append_comment( mcpServer,
+      " Settings used only by the multi-session MCP HTTP server (target/mcp_http). " );
+    rapidxml::xml_node<char> *agentNode = doc.allocate_node( rapidxml::node_element, "AgentServer" );
+    mcpServer->append_node( agentNode );
+    XmlUtils::append_int_node( agentNode, "MaxSessions", agent.maxSessions );
+    XmlUtils::append_int_node( agentNode, "SessionIdleTimeoutSeconds", agent.sessionIdleTimeoutSeconds );
+    XmlUtils::append_int_node( agentNode, "SessionMaxLifetimeSeconds", agent.sessionMaxLifetimeSeconds );
+    XmlUtils::append_string_node( agentNode, "ExchangeDirectory", agent.exchangeDirectory );
+    XmlUtils::append_bool_node( agentNode, "KeepSessionFiles", agent.keepSessionFiles );
+    XmlUtils::append_int_node( agentNode, "MaxUploadBytes", agent.maxUploadBytes );
+    XmlUtils::append_int_node( agentNode, "MaxSessionBytes", agent.maxSessionBytes );
+    XmlUtils::append_int_node( agentNode, "MaxImageBytes", agent.maxImageBytes );
+    XmlUtils::append_string_node( agentNode, "PublicBaseUrl", agent.publicBaseUrl );
+    XmlUtils::append_string_node( agentNode, "BrowserPath", agent.browserPath );
+  }//if( config.mcpServer.agentServer.has_value() )
 
   std::string out;
   rapidxml::print( std::back_inserter(out), doc, 0 );

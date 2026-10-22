@@ -40,6 +40,23 @@ using namespace Wt;
 using json = nlohmann::json;
 
 
+namespace
+{
+  /** Wraps `statement` so it runs once LlmJsSandbox.js has loaded.  When this widget is created by a
+   server-pushed update (e.g., an MCP client's prompt), Wt can send its JavaScript ahead of the
+   script it just required - and any JavaScript error ends the session.
+   */
+  std::string when_sandbox_loaded_js( const std::string &statement )
+  {
+    return "(function f(n){"
+             "if( window.InterSpec && InterSpec.LlmJsSandbox ){ " + statement + " }"
+             "else if( n < 400 ){ setTimeout( function(){ f(n+1); }, 25 ); }"
+             "else{ console.error('LlmJsSandbox.js did not load'); }"
+           "})(0);";
+  }//when_sandbox_loaded_js(...)
+}//namespace
+
+
 LlmJsSandboxBridge::LlmJsSandboxBridge()
   : WContainerWidget(),
     m_resultSignal( this, "jsSandboxResult", false ),
@@ -63,9 +80,7 @@ LlmJsSandboxBridge::LlmJsSandboxBridge()
 
   // Initialize the JS-side singleton with our widget id so it knows
   // where to attach the iframe and where to emit results to.
-  WStringStream init_js;
-  init_js << "console.log('Initing InterSpec.LlmJsSandbox'); InterSpec.LlmJsSandbox.init('" << id() << "');";
-  doJavaScript( init_js.str() );
+  doJavaScript( when_sandbox_loaded_js( "InterSpec.LlmJsSandbox.init('" + id() + "');" ) );
 }//LlmJsSandboxBridge::LlmJsSandboxBridge( ... )
 
 
@@ -122,14 +137,16 @@ void LlmJsSandboxBridge::run( const json &params, AsyncCallback callback )
   const std::string dataLiteral = data.dump();
   const std::string idLiteral   = json(requestId).dump();
 
+  // (init() again, as the constructor's init() polls separately, so could run after this.)
   WStringStream js;
-  js << "console.log('Calling InterSpec.LlmJsSandbox.run'); InterSpec.LlmJsSandbox.run("
+  js << "InterSpec.LlmJsSandbox.init('" << id() << "');"
+     << "InterSpec.LlmJsSandbox.run("
      << idLiteral << ", "
      << codeLiteral << ", "
      << dataLiteral << ", "
      << timeoutMs << ");";
 
-  doJavaScript( js.str() );
+  doJavaScript( when_sandbox_loaded_js( js.str() ) );
 }//void LlmJsSandboxBridge::run( ... )
 
 
@@ -156,6 +173,20 @@ void LlmJsSandboxBridge::handleJsResult( std::string payload )
   AsyncCallback cb = std::move( it->second );
   m_pending.erase( it );
 
+  const json response = toolResult( incoming );
+
+  try
+  {
+    cb( response );
+  }catch( std::exception &e )
+  {
+    cerr << "LlmJsSandboxBridge: result callback threw: " << e.what() << endl;
+  }
+}//void LlmJsSandboxBridge::handleJsResult( ... )
+
+
+json LlmJsSandboxBridge::toolResult( const json &incoming )
+{
   // Reshape the JS-side payload into the documented tool result schema.
   json response = json::object();
 
@@ -201,13 +232,7 @@ void LlmJsSandboxBridge::handleJsResult( std::string payload )
     }
   }//if( error or timeout ) / else
 
-  try
-  {
-    cb( response );
-  }catch( std::exception &e )
-  {
-    cerr << "LlmJsSandboxBridge: result callback threw: " << e.what() << endl;
-  }
-}//void LlmJsSandboxBridge::handleJsResult( ... )
+  return response;
+}//json toolResult( const json &incoming )
 
 #endif // USE_LLM_INTERFACE

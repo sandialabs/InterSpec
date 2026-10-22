@@ -142,6 +142,12 @@ namespace AppUtils
    Returns if it looks like things where successful.
    */
   InterSpec_API bool showFileInOsFileBrowser( const std::string &filepath );
+
+  /** The directories the desktop builds of InterSpec keep per-user data in (preferences, detectors,
+   LLM configuration, ...), most common first; for programs that share them with an installed
+   InterSpec (the batch tool, the stdio MCP server).  Whether they exist is not checked.
+   */
+  InterSpec_API std::vector<std::string> candidate_user_data_dirs();
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
   
   InterSpec_API std::string file_contents( const std::string &filename );
@@ -207,8 +213,11 @@ InterSpec_API void getUtf8Args( int &argc, wchar_t **argvw, char **&argv );
 /** Frees the memory allopcated by #getUtf8Args */
 InterSpec_API void cleanupUtf8Args( int &argc, char **&argv );
 
-/** Returns the standard user data directory from the OS
-C:\Users\username\AppData\Roaming\InterSpec
+/** Returns the user's roaming application-data directory (%APPDATA%), e.g.
+ C:\Users\username\AppData\Roaming - InterSpec's own directory is the "InterSpec" directory in it
+ (see `candidate_user_data_dirs()`).
+
+ @throws std::runtime_error if it can not be determined.
 */
 InterSpec_API std::string user_data_dir();
 #endif

@@ -32,6 +32,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <cstdlib>
 #include <iostream>
 
 #include <boost/program_options.hpp>
@@ -45,6 +46,10 @@
 
 #if( USE_BATCH_CLI_TOOLS )
 #include "InterSpec/BatchCommandLine.h"
+#endif
+
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
 #endif
 
 //#if( USE_REL_ACT_TOOL )
@@ -78,6 +83,8 @@ int main( int argc, char **argv )
   std::string http_address = "127.0.0.1";
   static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");
 #endif
+
+  std::string llm_config_dir;
   
   namespace po = boost::program_options;
   
@@ -92,6 +99,13 @@ int main( int argc, char **argv )
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   ( "http-address", po::value<std::string>(&http_address),
    "The network HTTP address to bind the web-server too; '127.0.0.1' is localhost, while '0.0.0.0' will serve the web-app to the external network."
+   )
+#endif
+#if( USE_LLM_INTERFACE )
+  ("llm-config-dir", po::value<std::string>(&llm_config_dir),
+   "Directory searched first for llm_config.xml, llm_tools_config.xml, llm_agent_*.xml, and an"
+   " llm_knowledge directory.  The INTERSPEC_LLM_CONFIG_DIR environment variable is used if not"
+   " specified."
    )
 #endif
   ("userdatadir", po::value<std::string>(&user_data_dir),
@@ -184,6 +198,25 @@ int main( int argc, char **argv )
   }
 #endif
   
+#if( USE_LLM_INTERFACE )
+  if( llm_config_dir.empty() )
+  {
+    const char * const env_dir = std::getenv( "INTERSPEC_LLM_CONFIG_DIR" );
+    if( env_dir )
+      llm_config_dir = env_dir;
+  }
+
+  if( !llm_config_dir.empty() )
+  {
+    if( !SpecUtils::is_directory( llm_config_dir ) )
+    {
+      std::cerr << "The LLM config directory ('" << llm_config_dir << "') is not a directory." << std::endl;
+      return -27;
+    }
+    LlmConfig::setConfigDirectory( llm_config_dir );
+  }//if( !llm_config_dir.empty() )
+#endif
+
   if( (server_port_num <= 0) || (server_port_num > 65535) )
   {
     std::cerr << "Invalid server port number: " << server_port_num
