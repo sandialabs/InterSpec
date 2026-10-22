@@ -65,8 +65,9 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
-// CeeLo (external_libs/CeeLo/src): the detector geometry a response states.
+// CeeLo (external_libs/CeeLo/src): the detector geometry a response states, and K-shell fluorescence data.
 #include "io/DetectorResponse.h"
+#include "cross_sections/CrossSectionData.h"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
@@ -97,6 +98,7 @@
 #include "InterSpec/XRayWidthServer.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/CascadeSummingCalc.h"
+#include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/RelActCalcAuto_Roi.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/BersteinPolynomial.hpp"
@@ -3099,6 +3101,22 @@ struct RelActAutoCostFcn
 
     /** Depth-quadrature nodes used at the last refresh (1 for an optically thin, or no, self-attenuating source). */
     size_t num_depth_nodes = 0;
+
+    /** An element of the curve's self-attenuating material whose K x-rays, made when a partner photon is
+     photo-absorbed in the source, can reach the detector and so take part in summing (see
+     `cascade_window_results(...)`). */
+    struct FluorescingElement
+    {
+      int atomic_number = 0;
+      /** Per partner energy (`calc->allPartnerEnergies()`): the material's K-shell photo-absorption coefficient for
+       this element, per unit areal density (0 below the K edge). */
+      std::vector<double> partner_mu_k;
+      std::vector<double> line_energy;   //the K x-rays (keV)
+      std::vector<double> line_yield;    //per K vacancy (fluorescence yield times the line's branch)
+      std::vector<double> line_mu;       //the material's attenuation coefficient at the line, per unit areal density
+      std::vector<double> line_det_tot;  //the detector's intrinsic total efficiency at the line
+    };
+    std::vector<FluorescingElement> fluorescing;
   };//struct CascadeCurve
 
   std::vector<CascadeCurve> m_cascade_curves;
@@ -3118,6 +3136,10 @@ struct RelActAutoCostFcn
 
   /** `s` is reported as unconstrained when its uncertainty is at least max(s, this). */
   static constexpr double sm_cascade_s_unconstrained_floor = 0.01;
+
+  /** In-source fluorescence (`CascadeCurve::fluorescing`) is modelled for elements with a K edge at least this high;
+   lighter elements' K x-rays would not reach the detector. */
+  static constexpr double sm_cascade_fluor_min_k_edge_kev = 20.0;
 
   /** Starting `s`: the fractional solid angle at this distance from the detector face. */
   static constexpr double sm_cascade_s_start_distance_cm = 5.0;
@@ -3920,6 +3942,7 @@ struct RelActAutoCostFcn
       cc.rel_eff_index = re;
       cc.calc = shared_cascade_calc( m_drf, nuc_ages, age_fit_nucs );
       cc.s_upper = cascade_s_upper( *m_drf );
+      cc.fluorescing = cascade_fluorescing_elements( curve, *cc.calc );
       m_cascade_curves.push_back( std::move(cc) );
     }//for( size_t re = 0; re < m_options.rel_eff_curves.size(); ++re )
 
@@ -3939,6 +3962,93 @@ struct RelActAutoCostFcn
     }
     m_cascade_num_pars = next_par - m_cascade_s_start_index;
   }//void setup_cascade_summing()
+
+
+  /** The elements of `curve`'s self-attenuating material whose K x-rays can take part in summing (see
+   `CascadeCurve::fluorescing`).  None for a curve without a self-attenuating material, or whose self-attenuation is
+   given by atomic number only. */
+  std::vector<CascadeCurve::FluorescingElement> cascade_fluorescing_elements(
+                                                  const RelActCalcAuto::RelEffCurveInput &curve,
+                                                  const GammaInteractionCalc::CascadeSummingCalc &calc ) const
+  {
+    vector<CascadeCurve::FluorescingElement> answer;
+    if( !curve.phys_model_self_atten || !curve.phys_model_self_atten->material )
+      return answer;
+
+    const shared_ptr<const Material> material = curve.phys_model_self_atten->material;
+    if( !(material->density > 0.0f) )
+      return answer;
+
+    // Mass fraction of each element, with the nuclides of an element counted toward it.
+    std::map<int,double> mass_fractions;
+    for( const Material::ElementFractionPair &ef : material->elements )
+    {
+      if( ef.first && (ef.second > 0.0f) )
+        mass_fractions[static_cast<int>(ef.first->atomicNumber)] += ef.second;
+    }
+    for( const Material::NuclideFractionPair &nf : material->nuclides )
+    {
+      if( nf.first && (nf.second > 0.0f) )
+        mass_fractions[static_cast<int>(nf.first->atomicNumber)] += nf.second;
+    }
+
+    const vector<double> &partner_energies = calc.allPartnerEnergies();
+    const ceelo::CrossSectionData &xs = ceelo::CrossSectionData::instance();
+    for( const pair<const int,double> &element_frac : mass_fractions )
+    {
+      const int atomic_number = element_frac.first;
+      const ceelo::FluorescenceData * const fluor
+                       = ((atomic_number >= 1) && (atomic_number <= ceelo::kMaxZ)) ? xs.fluorescence( atomic_number ) : nullptr;
+      if( !fluor || !(fluor->k_edge_keV >= sm_cascade_fluor_min_k_edge_kev) || !(fluor->fluorescence_yield > 0.0f) )
+        continue;
+
+      CascadeCurve::FluorescingElement element;
+      element.atomic_number = atomic_number;
+      element.partner_mu_k.assign( partner_energies.size(), 0.0 );
+      bool any_absorbed = false;
+      for( size_t j = 0; j < partner_energies.size(); ++j )
+      {
+        const double energy = partner_energies[j];
+        if( energy <= fluor->k_edge_keV )
+          continue;
+
+        // The K-shell share of the element's photo-absorption, applied to the photo-absorption coefficient the
+        //  self-attenuation itself is computed from.
+        const double sigma_pe = xs.sigma_photoelectric( atomic_number, 1.0E-3*energy );
+        const double sigma_k = xs.sigma_K_photoelectric( atomic_number, 1.0E-3*energy );
+        if( !(sigma_pe > 0.0) || !(sigma_k > 0.0) )
+          continue;
+
+        element.partner_mu_k[j] = element_frac.second * std::min( 1.0, sigma_k / sigma_pe )
+                                   * MassAttenuation::massAttenuationCoefficientElement( atomic_number, energy,
+                                                                  MassAttenuation::GammaEmProcces::PhotoElectric );
+        any_absorbed = (any_absorbed || (element.partner_mu_k[j] > 0.0));
+      }//for( loop over partner energies )
+
+      for( uint8_t i = 0; i < fluor->num_lines; ++i )
+      {
+        const double energy = fluor->line_energy_keV[i];
+        double det_tot = 0.0;
+        try
+        {
+          det_tot = m_drf->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
+        }catch( std::exception & )
+        {
+        }
+
+        element.line_energy.push_back( energy );
+        element.line_yield.push_back( static_cast<double>(fluor->fluorescence_yield) * fluor->line_probability[i] );
+        element.line_mu.push_back( GammaInteractionCalc::transmition_length_coefficient( material.get(), energy )
+                                   / material->density );
+        element.line_det_tot.push_back( std::max( 0.0, det_tot ) );
+      }//for( loop over K lines )
+
+      if( any_absorbed && !element.line_energy.empty() )
+        answer.push_back( std::move(element) );
+    }//for( loop over the material's elements )
+
+    return answer;
+  }//cascade_fluorescing_elements(...)
 
 
   /** Chooses the lines of cascade curve `cc` that get a yield nuisance (see `sm_cascade_yield_min_effect`): each of its
@@ -4475,8 +4585,9 @@ struct RelActAutoCostFcn
    source), so that their depth average at a line is `s * rel_eff(E) / corr(E_ref)`.  The correction's overall scale
    is arbitrary (the relative activities absorb it), so it is taken relative to its value at E_ref, the correction's
    pivot energy (the geometric middle of the ROIs); `s` is then the fractional solid angle, with the detector response
-   taken as right at E_ref, which keeps its bounds and prior physical.  Window rates are averaged over the depth nodes
-   (see `cascade_depth_nodes(...)`) before forming each factor.
+   taken as right at E_ref, which keeps its bounds and prior physical.  A partner's total efficiency also includes the
+   K x-rays it makes when absorbed in the source (see `CascadeCurve::fluorescing`).  Window rates are averaged over the
+   depth nodes (see `cascade_depth_nodes(...)`) before forming each factor.
    */
   template<typename T>
   std::vector<std::vector<CascadeWindowResult<T>>> cascade_window_results( const CascadeCurve &cc,
@@ -4549,6 +4660,71 @@ struct RelActAutoCostFcn
     const vector<pair<double,double>> nodes = cascade_depth_nodes( scalar_value(ad), mu_max );
     num_depth_nodes = nodes.empty() ? size_t(1) : nodes.size();
 
+    // In-source K fluorescence (see CascadeCurve::fluorescing): a partner photon from depth z that is K-shell
+    //  photo-absorbed at depth z' of the source sends that element's K x-ray toward the detector, which it reaches with
+    //  exp(-mu_x z') times the x-ray's own efficiency.  So the partner's total efficiency gains
+    //    sum_x  eps_tot(E_x) * yield_x * mu_K * (1/2) int_0^A E1(mu |z' - z|) exp(-mu_x z') dz'
+    //  (a laterally infinite slab, as for the fluorescence lines; see `RelActCalc::slab_absorb_escape_kernel`), with a
+    //  normal exit like the source's own photons.  Its full-energy efficiency is unchanged, as an absorbed partner adds
+    //  no counts at its own energy.  The kernel is taken at the scalar areal density, so carries no derivative with
+    //  respect to it.  Computed only for the partner energies the engine asks for.
+    const double ad_value = scalar_value( ad );
+    const bool fluoresce = !cc.fluorescing.empty() && phys.self_atten.has_value() && (ad_value > 0.0);
+    vector<vector<T>> fluor_line_eff( cc.fluorescing.size() );  //eps_tot(E_x) * yield_x
+    for( size_t el = 0; fluoresce && (el < cc.fluorescing.size()); ++el )
+    {
+      const CascadeCurve::FluorescingElement &element = cc.fluorescing[el];
+      for( size_t i = 0; i < element.line_energy.size(); ++i )
+      {
+        const double energy = element.line_energy[i];
+        const T ext = RelActCalc::eval_physical_model_eqn_imp<T>( energy, std::nullopt, phys.external_attens, nullptr,
+                                                                  std::nullopt, std::nullopt );
+        fluor_line_eff[el].push_back( s * (correction( energy ) / corr_norm) * ext
+                                      * (element.line_det_tot[i] * element.line_yield[i]) );
+      }
+    }//for( loop over fluorescing elements )
+
+    vector<T> fluor_tot( fluoresce ? num_energies : size_t(0) );
+    vector<char> fluor_done( fluor_tot.size(), 0 );
+    const auto fluorescence_tot = [&]( const size_t j, const size_t node ) -> T {
+      if( fluor_done[j] )
+        return fluor_tot[j];
+
+      // An optically thin source is evaluated once, with depth-averaged efficiencies, so this is averaged too.
+      static const double gl_u[4] = { 0.0694318442029737, 0.3300094782075719, 0.6699905217924281, 0.9305681557970263 };
+      static const double gl_w[4] = { 0.1739274225687269, 0.3260725774312731, 0.3260725774312731, 0.1739274225687269 };
+
+      const double mu = scalar_value( mu_self[j] );
+      T answer( 0.0 );
+      for( size_t el = 0; el < cc.fluorescing.size(); ++el )
+      {
+        const CascadeCurve::FluorescingElement &element = cc.fluorescing[el];
+        const double mu_k = element.partner_mu_k[j];
+        if( !(mu_k > 0.0) )
+          continue;
+
+        for( size_t i = 0; i < element.line_energy.size(); ++i )
+        {
+          double kernel = 0.0;
+          if( nodes.empty() )
+          {
+            for( size_t g = 0; g < 4; ++g )
+              kernel += gl_w[g] * RelActCalc::slab_absorb_escape_kernel( mu, element.line_mu[i], ad_value,
+                                                                          gl_u[g] * ad_value );
+          }else
+          {
+            kernel = RelActCalc::slab_absorb_escape_kernel( mu, element.line_mu[i], ad_value,
+                                                            nodes[node].first * ad_value );
+          }
+          answer += fluor_line_eff[el][i] * (mu_k * kernel);
+        }//for( loop over the element's K lines )
+      }//for( loop over fluorescing elements )
+
+      fluor_done[j] = 1;
+      fluor_tot[j] = answer;
+      return answer;
+    };//fluorescence_tot
+
     // Per source and window: sum over nodes of w * eff_no * c_net (and of w * eff_no), plus the summing-out/in parts.
     struct Accum
     {
@@ -4576,6 +4752,7 @@ struct RelActAutoCostFcn
     for( size_t node = 0; node < num_depth_nodes; ++node )
     {
       const double weight = nodes.empty() ? 1.0 : nodes[node].second;
+      std::fill( begin(fluor_done), end(fluor_done), 0 );
       for( size_t j = 0; j < num_energies; ++j )
       {
         if( nodes.empty() )
@@ -4595,7 +4772,10 @@ struct RelActAutoCostFcn
       };
       const std::function<T(double)> eps_tot = [&]( const double energy ) -> T {
         const int j = energy_index( energy );
-        return (j < 0) ? T(0.0) : T(base[j] * det_tot[j] * att[j]);
+        if( j < 0 )
+          return T(0.0);
+        const T direct = base[j] * det_tot[j] * att[j];
+        return fluoresce ? T(direct + fluorescence_tot( static_cast<size_t>(j), node )) : direct;
       };
 
       for( size_t source_index = 0; source_index < cc.windows.size(); ++source_index )

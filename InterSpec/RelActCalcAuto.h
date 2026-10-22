@@ -756,7 +756,8 @@ struct RelEffCurveInput
    empirical correction's arbitrary scale removed at its pivot energy - is the absolute full-energy efficiency.  Each
    line's amplitude is then multiplied by its summing factor, computed by CeeLo's
    analytic engine from that full-energy efficiency and the matching total efficiency, and averaged over the depth of
-   the self-attenuating source.  Significant pure coincidence-sum peaks inside the ROIs are added to the model.  Lines
+   the self-attenuating source; partner photons absorbed in a self-attenuating material can also sum through the K
+   x-rays they make there.  Significant pure coincidence-sum peaks inside the ROIs are added to the model.  Lines
    whose summing would change a lot near contact, and that have a comparably strong line of the same nuclide nearby to
    hold the efficiency curve there, get a yield-nuisance parameter (3% prior), so a yield error is not fit as
    summing.  Default false.

@@ -634,6 +634,64 @@ T expint_e3( const T &x )
 }
 
 
+/** Ein(x) = integral from 0 to x of (1 - exp(-t))/t dt, an entire function, for any real x.  For x < 0 it grows like
+ -exp(|x|)/|x|, so overflows past |x| ~ 700. */
+inline double expint_ein( const double x )
+{
+  if( x > 1.0 )
+    return expint_e1( x ) + std::log( x ) + 0.5772156649015329;
+
+  // Ein(x) = sum_k (-1)^(k+1) x^k / (k k!): alternating for 0 < x <= 1, and of one sign for x < 0.
+  double sum = 0.0, term = 1.0;
+  for( int k = 1; k < 4000; ++k )
+  {
+    term *= -x / k;
+    const double add = -term / k;
+    sum += add;
+    if( std::fabs( add ) <= 1.0E-16 * std::fabs( sum ) )
+      break;
+  }
+  return sum;
+}//expint_ein(...)
+
+
+/** The chance per unit attenuation coefficient that a photon emitted isotropically at depth z of a laterally infinite
+ slab of areal density A is absorbed somewhere in it, and an x-ray then emitted there toward the face at depth 0
+ escapes it:
+   (1/2) integral_0^A E1(a |z' - z|) exp(-c z') dz'
+ where a is the attenuation coefficient of the photon and c of the x-ray (both per unit areal density).  Multiplied by
+ the coefficient of the absorption that makes the x-ray (e.g., K-shell photo-absorption) it is that x-ray's escape
+ probability toward the face, per photon, for a normal exit.  As A and z grow it goes to log((a+c)/(a-c)) exp(-c z)/(2c)
+ (for a > c), and so to 1/a as c goes to 0.
+ */
+inline double slab_absorb_escape_kernel( const double a, const double c, const double A, const double z )
+{
+  if( !(a > 0.0) || !(c > 0.0) || !(A > 0.0) )
+    return 0.0;
+
+  // integral_0^L E1(a t) exp(-b t) dt = [E1(aL)(1 - exp(-bL)) + Ein((a+b)L) - Ein(aL)] / b, for either sign of b;
+  //  the photon is absorbed deeper than z over L = A - z (with b = c), and shallower over L = z (with b = -c), each
+  //  then times the exp(-c z) of the x-ray's way out from depth z.
+  const double deeper_len = A - z;
+  double deeper = 0.0;
+  if( a*deeper_len > 1.0E-12 )
+    deeper = std::exp( -c*z ) * (expint_e1( a*deeper_len ) * -std::expm1( -c*deeper_len )
+                                 + expint_ein( (a + c)*deeper_len ) - expint_ein( a*deeper_len )) / c;
+
+  double shallower = 0.0;
+  if( a*z > 1.0E-12 )
+  {
+    const double p = (a - c)*z;
+    // exp(-c z) Ein((a - c) z); for a < c it is ~ -exp(-a z)/((c - a) z), whose parts would overflow apart.
+    const double tail = (p > -500.0) ? (std::exp( -c*z ) * expint_ein( p ))
+                                     : (-std::exp( -a*z ) / -p) * (1.0 + 1.0/-p + 2.0/(p*p));
+    shallower = (expint_e1( a*z ) * -std::expm1( -c*z ) + std::exp( -c*z ) * expint_ein( a*z ) - tail) / c;
+  }
+
+  return std::max( 0.0, 0.5*(deeper + shallower) );
+}//slab_absorb_escape_kernel(...)
+
+
 /** Nodes and weights, as fractions u of a slab's depth, for integrating over it: 8-point Gauss-Legendre on panels with
  breakpoints u = 0, 1E-4, 1E-3, 0.01, 0.03, 0.1, 0.3, 1, so integrands like exp(-mu z) are resolved for mu A up to
  ~1E4 (and the z ln(z) behaviour of the production density near a face is handled). */
