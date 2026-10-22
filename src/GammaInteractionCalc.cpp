@@ -1198,10 +1198,13 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
     {
 
     vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
+    vector<const SandiaDecay::Nuclide *> age_fit_nuclides;  //ages that may move during the fit
     for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
     {
       if( src.nuclide )
         nuc_ages.emplace_back( src.nuclide, src.age );
+      if( src.nuclide && (src.fitAge || src.ageDefiningNuc) )
+        age_fit_nuclides.push_back( src.nuclide );
     }
 
     // The shield stack's AD-weighted hydrogen mass fraction, at the starting
@@ -1230,12 +1233,17 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ShieldingSourceFitCalc::FitPa
     answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( nuc_ages,
                     cascade_windows, options.photopeak_cluster_sigma,
                     detector, shield_frac_h, shields_present,
-                    InterSpec::staticDataDirectory() );
+                    InterSpec::staticDataDirectory(), age_fit_nuclides );
     }//if( input.reuse_cascade_calc ) / else
 
     // drfHasNeededInfo() guarantees this is known (> 0) for a fixed-geometry DRF.
     answer->m_cascadeFepScale = detector ? MakeFixedGeomResponse::perDecayFepScale( *detector ) : 1.0;
     assert( answer->m_cascadeFepScale > 0.0 );
+
+    // Air attenuation at every partner energy, tabulated once (the detector-side constants are
+    //  tabulated by the calculator itself - see CascadeSummingCalc::partnerFepIntrinsic).
+    for( const double energy : answer->m_cascadeCalc->allPartnerEnergies() )
+      answer->m_cascadePartnerAirMu.push_back( transmission_length_coefficient_air( energy ) );
   }//if( options.correct_for_cascade_summing )
 
   // Hold onto the input verbatim, so the per-peak supplemental information can be computed after

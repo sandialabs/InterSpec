@@ -1754,6 +1754,11 @@ protected:
    */
   double m_cascadeFepScale = 1.0;
 
+  /** The air attenuation coefficient at every #m_cascadeCalc partner energy (`allPartnerEnergies()`
+   order), tabulated once in #create rather than per evaluation.  Empty when #m_cascadeCalc is null.
+   */
+  std::vector<double> m_cascadePartnerAirMu;
+
   /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
   struct CascadeCorrEntry
   {
