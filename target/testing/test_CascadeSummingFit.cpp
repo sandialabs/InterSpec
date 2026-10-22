@@ -65,6 +65,8 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
+#include <functional>
 
 #include <Wt/Utils.h>
 
@@ -676,6 +678,7 @@ void regenerate_truth()
 
     ceelo::cascade_adapter::CascadeOptions copt;
     copt.age_seconds = sc.age / PhysicalUnits::second;
+    copt.prompt_equilibrium = false;  //pure-parent ageing, as the fit and CascadeSummingCalc
     const vector<ceelo::DecayCascade> cascades
                           = ceelo::cascade_adapter::build_cascades( nuc, copt );
     BOOST_REQUIRE( !cascades.empty() );
@@ -1253,6 +1256,7 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
 
     ceelo::cascade_adapter::CascadeOptions copt;
     copt.age_seconds = c.age / PhysicalUnits::second;
+    copt.prompt_equilibrium = false;  //pure-parent ageing, as the fit and CascadeSummingCalc
     const vector<ceelo::DecayCascade> casc
                             = ceelo::cascade_adapter::build_cascades( nuc, copt );
 
@@ -1448,6 +1452,7 @@ BOOST_AUTO_TEST_CASE( FixedGeomVolumeAveragedSummingGap )
     {
       ceelo::cascade_adapter::CascadeOptions copt;
       copt.age_seconds = n.age / PhysicalUnits::second;
+      copt.prompt_equilibrium = false;  //pure-parent ageing, as the fit and CascadeSummingCalc
       const vector<ceelo::DecayCascade> casc
                           = ceelo::cascade_adapter::build_cascades( db->nuclide( n.nuc ), copt );
 
@@ -1724,3 +1729,99 @@ BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )
   }
   ShieldingSourceChi2Fcn::sm_default_volumetric_num_lines = prev_lines;
 }//BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )
+
+
+/** CascadeSummingCalc must age its decay chains the way the fit ages its gamma lines: from a pure
+ parent (`NuclideMixture::addNuclideByActivity`, then the source age), not with SandiaDecay's prompt
+ equilibrium, which hands U-234 its whole Ra-226 chain and young Th-232 its full chain. */
+BOOST_AUTO_TEST_CASE( CascadeBranchWeightsArePureParentAged )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const shared_ptr<const DetectorPeakResponse> drf = fit_drf();
+  BOOST_REQUIRE( drf && CascadeSummingCalc::drfHasNeededInfo( drf ) );
+
+  const double year = PhysicalUnits::year;
+  for( const pair<const char *,double> &na : { make_pair( "U234", 20.0*year ),
+                                               make_pair( "Th232", 1.0*year ),
+                                               make_pair( "Cs137", 5.0*year ) } )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( na.first );
+    BOOST_REQUIRE( nuc );
+    const double age = na.second;
+
+    const CascadeSummingCalc calc( {{nuc, age}}, {{100.0, 1.0}}, 1.25, drf, 0.0, false, g_data_dir );
+    const shared_ptr<const vector<ceelo::DecayCascade>> casc = calc.cascades( nuc, age );
+    BOOST_REQUIRE( casc );
+
+    // Every branch's firings per parent decay must be one of the pure-parent mixture's
+    //  (activity x branch ratio) at this age - the mixture the fit uses.  (A branch with no photon,
+    //  e.g. a pure alpha decay, gets no cascade, so the totals need not match.)
+    SandiaDecay::NuclideMixture mix;
+    mix.addNuclideByActivity( nuc, 1.0 );
+    vector<double> expected;
+    for( const SandiaDecay::NuclideActivityPair &nap : mix.activity( age / PhysicalUnits::second ) )
+      for( const SandiaDecay::Transition *tr : nap.nuclide->decaysToChildren )
+        expected.push_back( static_cast<double>(nap.activity) * static_cast<double>(tr->branchRatio) );
+
+    BOOST_REQUIRE( !casc->empty() );
+    for( const ceelo::DecayCascade &dc : *casc )
+    {
+      const bool matched = std::any_of( begin(expected), end(expected), [&dc]( const double w ){
+        return fabs( w - dc.branch_weight ) <= 1.0E-12*std::max( fabs(w), 1.0E-300 );
+      } );
+      BOOST_CHECK_MESSAGE( matched, string(na.first) << ": cascade branch weight " << dc.branch_weight
+                           << " is not a pure-parent (activity x branch ratio) at this age" );
+    }
+
+    // 20-year-old U-234 has essentially no Ra-226 chain (prompt equilibrium gave Pb-214's
+    //  351.9 keV line 0.38 per decay); the weight of any branch emitting it must be negligible.
+    if( string(na.first) == "U234" )
+    {
+      double pb214_weight = 0.0;
+      for( const ceelo::DecayCascade &dc : *casc )
+        for( const ceelo::CascadeMember &m : dc.members )
+          if( fabs( m.energy_keV - 351.93 ) < 0.05 )
+            pb214_weight += dc.branch_weight;
+      BOOST_CHECK_MESSAGE( pb214_weight < 1.0E-5, "U234 at 20 y: Pb-214 branch weight " << pb214_weight );
+    }
+  }//for( nuclide, age )
+
+  // At age zero a pure parent has no progeny: Cs-137 has no 661.7 keV branch, and a window there
+  //  comes back not-found (factor 1) rather than as a warning or an error.
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+  const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
+  BOOST_REQUIRE( cs137 && th232 );
+  const CascadeSummingCalc calc0( {{cs137, 0.0}}, {{661.657, 1.0}}, 1.25, drf, 0.0, false,
+                                  g_data_dir );
+  const std::function<double(double)> eps = []( double ){ return 0.05; };
+  const vector<ceelo::AnalyticPeakResult> res = calc0.evaluate<double>( cs137, 0.0, eps, eps );
+  BOOST_REQUIRE_EQUAL( res.size(), size_t(1) );
+  BOOST_CHECK( !res[0].found );
+  BOOST_CHECK_EQUAL( res[0].c_net, 1.0 );
+
+  // A nuclide whose age is fit must list the partner energies of its whole chain, so that an age
+  //  fit starting at zero can move older: Ba-137m's 661.7 keV for Cs-137, and Tl-208's 2614.5 keV
+  //  for Th-232 (whose deep progeny underflow to zero activity at small ages).  At a fixed age only
+  //  what that age emits is listed.
+  const auto has_energy = []( const vector<double> &energies, const double e ) -> bool {
+    return std::any_of( begin(energies), end(energies),
+                        [e]( double x ){ return fabs(x - e) < 0.05; } );
+  };
+  const CascadeSummingCalc fit_age( {{cs137, 0.0}, {th232, 0.0}}, {{661.657, 1.0}}, 1.25, drf, 0.0,
+                                    false, g_data_dir, {cs137, th232} );
+  BOOST_CHECK_MESSAGE( has_energy( fit_age.allPartnerEnergies(), 661.657 ),
+                       "Cs137 with a fitted age: 661.7 keV missing from the partner energies" );
+  BOOST_CHECK_MESSAGE( has_energy( fit_age.allPartnerEnergies(), 2614.5 ),
+                       "Th232 with a fitted age: 2614.5 keV missing from the partner energies" );
+  BOOST_CHECK_MESSAGE( !has_energy( calc0.allPartnerEnergies(), 661.657 ),
+                       "Cs137 at a fixed age of zero should not list 661.7 keV" );
+  BOOST_CHECK( fit_age.partnerFepIntrinsic().size() == fit_age.allPartnerEnergies().size() );
+  BOOST_CHECK( fit_age.partnerTotIntrinsic().size() == fit_age.allPartnerEnergies().size() );
+  const vector<double> any_age = CascadeSummingCalc::partnerEnergies( {{th232, 0.0}} );
+  BOOST_CHECK( has_energy( any_age, 2614.5 ) );
+}//BOOST_AUTO_TEST_CASE( CascadeBranchWeightsArePureParentAged )
