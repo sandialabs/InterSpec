@@ -355,6 +355,9 @@ public:
 
   /** Same as #evaluate, but for an explicit window subset - e.g. the volume
    integrand evaluates a single calculator's window per element.
+
+   With `report_pure_sums`, a window holding no line of the nuclide also gets its pure coincidence-sum rate
+   (`ceelo::AnalyticCascadeOptions::report_pure_sums`).
    */
   template <class T>
   std::vector<ceelo::AnalyticPeakResultT<T>> evaluateWindows(
@@ -362,7 +365,8 @@ public:
                       const double age,
                       const std::vector<ceelo::PeakWindow> &windows,
                       const std::function<T(double)> &eps_fep_abs,
-                      const std::function<T(double)> &eps_tot_abs ) const
+                      const std::function<T(double)> &eps_tot_abs,
+                      const bool report_pure_sums = false ) const
   {
     struct FunctorProv final : public ceelo::EfficiencyProviderT<T>
     {
@@ -380,6 +384,7 @@ public:
     prov.tot_f = &eps_tot_abs;
 
     ceelo::AnalyticCascadeOptions opts;  //defaults: triples + W(0) angular on
+    opts.report_pure_sums = report_pure_sums;
 
     std::vector<ceelo::AnalyticPeakResultT<T>> results
               = ceelo::compute_cascade_analytic( *model, windows, prov, opts );
