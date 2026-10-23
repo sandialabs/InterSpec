@@ -30,6 +30,7 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <optional>
 #include <functional>
 
 #include <Wt/WContainerWidget.h>
@@ -192,6 +193,12 @@ public:
    @return Request ID for the sub-agent invocation
    */
   int invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo );
+
+  /** Checks if the agent can be invoked in the current application state (e.g., an agent with
+   `LlmConfig::AgentConfig::requiresForeground` needs a foreground spectrum loaded).
+   @return A user-facing reason the agent can not be invoked right now, or nullopt if it can be.
+   */
+  std::optional<std::string> subAgentPrerequisiteError( const AgentType agentType ) const;
 
   /** Build the messages array for a conversation.
 

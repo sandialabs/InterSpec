@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="ActivityFit">
+  <Agent name="ActivityFit" RequiresForeground="true">
     <Description>Specialized sub-agent for determining radioactive source activities and shielding parameters from identified peaks</Description>
     <SystemPrompt><![CDATA[## **Role and Goal**
 

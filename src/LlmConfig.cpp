@@ -1701,6 +1701,15 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
         throw std::runtime_error( "Unknown agent type '" + agent.name + "' in agent config" );
       }
 
+      // Optional; agents (e.g., user-customized files) without it never require a foreground
+      const rapidxml::xml_attribute<char> * const fgAttr = XML_FIRST_ATTRIB( agentNode, "RequiresForeground" );
+      if( fgAttr )
+      {
+        string fg_str = SpecUtils::xml_value_str( fgAttr );
+        SpecUtils::trim( fg_str );
+        agent.requiresForeground = (fg_str == "true" || fg_str == "1");
+      }
+
       // Load Description
       const rapidxml::xml_node<char> * const descNode = XmlUtils::get_required_node( agentNode, "Description" );
       agent.description = SpecUtils::xml_value_str( descNode );

@@ -2723,6 +2723,28 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
         if( agent_type == AgentType::MainAgent )
           throw runtime_error( "Can not invoke a agent of type AgentType::MainAgent" );
 
+        // Refuse up front (no sub-agent conversation, no LLM call) when the agent's prerequisites
+        //  aren't met; the error result goes back to the calling agent with the rest of this round.
+        const std::optional<std::string> prereq_error = subAgentPrerequisiteError( agent_type );
+        if( prereq_error )
+        {
+          if( m_debug_stream )
+            (*m_debug_stream) << "Refusing sub-agent invocation of " << agentName << ": " << *prereq_error << endl;
+
+          json result;
+          result["error"] = *prereq_error;
+          result["success"] = false;
+
+          // The request was already pushed above, so requests/results stay in sync
+          LlmToolCall toolResult( toolName, callId, arguments );
+          toolResult.status = LlmToolCall::CallStatus::Error;
+          toolResult.content = result.dump();
+          toolCallResults.push_back( std::move(toolResult) );
+
+          executedToolCallIds.push_back( callId );  // As at the bottom of this loop, which `continue` skips
+          continue;
+        }//if( prereq_error )
+
         if( m_debug_stream )
         {
           (*m_debug_stream) << "Detected sub-agent invocation: " << agentName << " (context: " << context.substr(0,50)
@@ -4240,6 +4262,9 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   assert( sub_agent_convo->agent_type != AgentType::MainAgent );
 
+  // Callers must check (and report) prerequisites before creating the sub-agent conversation
+  assert( !subAgentPrerequisiteError( sub_agent_convo->agent_type ) );
+
   // Initialize state machine if the agent has one
   //initializeStateMachineForConversation( sub_agent_convo );
 
@@ -4297,6 +4322,28 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   return requestId;
 }//invokeSubAgent(...)
+
+
+std::optional<std::string> LlmInterface::subAgentPrerequisiteError( const AgentType agentType ) const
+{
+  assert( m_interspec ); // Constructor throws if null
+  if( !m_config || !m_interspec )
+    return std::nullopt;
+
+  for( const LlmConfig::AgentConfig &agent : m_config->agents )
+  {
+    if( agent.type != agentType )
+      continue;
+
+    if( agent.requiresForeground && !m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) )
+      return "No foreground spectrum is loaded; the " + agent.name
+             + " agent requires one. The user is likely asking a general question, not about a specific spectrum.";
+
+    return std::nullopt;
+  }//for( const LlmConfig::AgentConfig &agent : m_config->agents )
+
+  return std::nullopt;
+}//subAgentPrerequisiteError(...)
 
 
 nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo )

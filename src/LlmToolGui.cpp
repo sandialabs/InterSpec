@@ -2364,6 +2364,15 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
     return;
   }
 
+  // Checked here too (not just when the main agent calls the invoke_* tool), so we dont spend a main
+  //  agent LLM round-trip only to have the invocation refused.
+  const std::optional<std::string> prereq_error = m_llmInterface->subAgentPrerequisiteError( agentType );
+  if( prereq_error )
+  {
+    callback( *prereq_error );
+    return;
+  }
+
   if( isBenchmarkRunning() )
   {
     callback( string( "A benchmark is currently running; cannot invoke agent right now." ) );
