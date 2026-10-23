@@ -200,6 +200,7 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
     m_history(std::make_shared<LlmConversationHistory>()),
     m_debug_stream( nullptr ),
     m_debug_file( nullptr ),
+    m_lastActivityState( ActivityState::Idle ),
     m_instanceId( std::to_string( []{ static std::atomic<int> s_instance_count{0}; return s_instance_count.fetch_add(1); }() ) ),
     m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse_" + m_instanceId)),
     m_nextRequestId(1)
@@ -579,9 +580,16 @@ void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::i
   // sub-agent completion, sweep) works the same.
   const std::string conversationId = pos->second.conversationId;
   const std::shared_ptr<LlmInteraction> convo = conversationForRound( pos->second );
+
+  // The round's tools are all done; record how long they took before the display sees the next request.
+  if( const std::shared_ptr<LlmToolRequest> toolRequest = pos->second.toolRequest.lock() )
+    toolRequest->setCallDuration( std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - pos->second.roundStart ) );
+
   m_deferredToolResults.erase( pos );
   updateDeferredSweepTimer();
   assertDeferredInvariants();
+  updateActivityState();
 
   if( !convo )
   {
@@ -765,6 +773,7 @@ LlmToolCall *LlmInterface::findPendingToolResult( const std::shared_ptr<LlmInter
 void LlmInterface::emitConversationFinished()
 {
   disarmWatchdog();
+  updateActivityState();  // e.g., after cancelAll() or a teardown cleared the maps
   m_conversationFinished.emit();
 }//emitConversationFinished()
 
@@ -772,6 +781,7 @@ void LlmInterface::emitConversationFinished()
 void LlmInterface::emitResponseError()
 {
   disarmWatchdog();
+  updateActivityState();
   m_responseError.emit();
 }//emitResponseError()
 
@@ -941,6 +951,8 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   // into the wrong conversation.
 
   initDebugLoggingFromConfig();
+
+  updateActivityState();  // failInFlightConversations() cleared the in-flight maps
 }
 
 
@@ -993,6 +1005,8 @@ void LlmInterface::applyConfigPreservingHistory( const std::shared_ptr<const Llm
     stripReasoningFromHistory();
 
   initDebugLoggingFromConfig();
+
+  updateActivityState();  // failInFlightConversations() cleared the in-flight maps
 }//applyConfigPreservingHistory(...)
 
 
@@ -1209,6 +1223,33 @@ Wt::Signal<>& LlmInterface::conversationFinished() {
 Wt::Signal<>& LlmInterface::responseError() {
   return m_responseError;
 }
+
+
+LlmInterface::ActivityState LlmInterface::activityState() const
+{
+  if( !m_pendingRequests.empty() )
+    return ActivityState::AwaitingLlm;
+  if( !m_deferredToolResults.empty() )
+    return ActivityState::RunningTools;
+  return ActivityState::Idle;
+}//activityState()
+
+
+Wt::Signal<LlmInterface::ActivityState> &LlmInterface::activityChanged()
+{
+  return m_activityChanged;
+}
+
+
+void LlmInterface::updateActivityState()
+{
+  const ActivityState state = activityState();
+  if( state == m_lastActivityState )
+    return;
+
+  m_lastActivityState = state;
+  m_activityChanged.emit( state );
+}//updateActivityState()
 
 bool LlmInterface::isRequestPending(int requestId) const {
   return m_pendingRequests.find(requestId) != m_pendingRequests.end();
@@ -2590,6 +2631,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   // Set current conversation for tool execution context
   m_currentConversation = convo;
 
+  // For the tool-call turn's callDuration: the time to run all of this round's tools.
+  const std::chrono::steady_clock::time_point roundStart = std::chrono::steady_clock::now();
+
   if( m_debug_stream )
     (*m_debug_stream) << "Executing " << toolCalls.size() << " tool calls" << endl;
 
@@ -3637,6 +3681,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     deferred.conversation = convo;
     deferred.subAgentToolCallIds = subAgentRequestIds;
     deferred.pendingAsyncCalls = std::move( asyncCalls );
+    deferred.toolRequest = tool_request;
+    deferred.roundStart = roundStart;
 
     // Re-stamp the deadlines now, at registration.  They were set when each tool was dispatched, but
     // nothing can observe a call until this entry exists and the sweep starts - and the rest of this
@@ -3649,11 +3695,16 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
     m_deferredToolResults[parentRequestId] = std::move( deferred );
     updateDeferredSweepTimer();
     assertDeferredInvariants();
+    updateActivityState();
 
     // Don't send results yet - wait for sub-agent and/or async tools
   }else
   {
     // No sub-agent and no async tools - send results immediately
+    if( tool_request )
+      tool_request->setCallDuration( std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - roundStart ) );
+
     if (!executedToolCallIds.empty()) {
       if( m_debug_stream )
         (*m_debug_stream) << "Sending tool results back to LLM for " << executedToolCallIds.size() << " executed tools" << endl;
@@ -4287,30 +4338,16 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
 
   // Build API request for this specific agent - since the combined message is already in the
   const json requestJson = buildMessagesArray( sub_agent_convo );
-  
-  // Make tracked API call
-  const int requestId = m_nextRequestId++;
-
-  // Create pending request with sub-agent info
-  PendingRequest pending;
-  pending.requestId = requestId;
-  pending.conversation = sub_agent_convo;
-  pending.isSubAgentRequest = true;
-
-#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
-  pending.requestJson = requestJson;
-#endif
-
-  m_pendingRequests[requestId] = pending;
-  armWatchdog();  // a sub-agent request is now in flight
 
   if( m_debug_stream )
   {
     (*m_debug_stream) << "Main agent will pause until sub-agent completes" << endl;
   }
 
-  // Make the actual API call
-  std::string msg_content = makeApiCallWithId(requestJson, requestId);
+  // Make tracked API call (registered as a sub-agent request, since this is not the MainAgent)
+  std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, sub_agent_convo );
+  const int requestId = request_id_content.first;
+  std::string &msg_content = request_id_content.second;
 
   // Store raw JSON request in the InitialRequest turn's rawContent field
   if( !sub_agent_convo->responses.empty() )
@@ -5333,6 +5370,12 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     {
       pendingRequest = std::move(m_pendingRequests[requestId]);
       m_pendingRequests.erase(requestId);
+
+      // Set before any response turn is added, so the display can show the round-trip time.
+      if( const shared_ptr<LlmInteractionTurn> requestTurn = pendingRequest.requestTurn.lock() )
+        requestTurn->setCallDuration( chrono::duration_cast<chrono::milliseconds>(
+                                        chrono::steady_clock::now() - pendingRequest.sendTime ) );
+      updateActivityState();
     }else
     {
       // A response for an unknown request id is a legitimate race (a late/timed-out browser fetch
@@ -5508,6 +5551,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         {
           updateDeferredSweepTimer();
           assertDeferredInvariants();
+          updateActivityState();
           if( m_debug_stream )
             (*m_debug_stream) << "Error response - cleared " << cleared
               << " orphaned deferred tool result(s) for this conversation" << endl;
@@ -5635,11 +5679,17 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
   
   const int requestId = m_nextRequestId++;  
 
+  // The turn the LLM will be responding to; its callDuration is set when the response arrives.
+  const std::shared_ptr<LlmInteractionTurn> requestTurn
+                                  = convo->responses.empty() ? nullptr : convo->responses.back();
+
   // Store the pending request
   PendingRequest pending;
   pending.requestId = requestId;
   pending.conversation = convo;
   pending.isSubAgentRequest = (convo->agent_type != AgentType::MainAgent);
+  pending.sendTime = std::chrono::steady_clock::now();
+  pending.requestTurn = requestTurn;
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   pending.requestJson = requestJson;
 #endif
@@ -5649,7 +5699,11 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
 
   // Make the call with request ID tracking
   std::string request_content = makeApiCallWithId(requestJson, requestId);
-  
+
+  updateActivityState();
+  if( requestTurn )
+    convo->llmRequestSent.emit( requestTurn );
+
   return make_pair(requestId,std::move(request_content));
 }
 

@@ -26,10 +26,12 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <functional>
 
+#include <Wt/WText.h>
 #include <Wt/WPanel.h>
 #include <Wt/WContainerWidget.h>
 
@@ -38,7 +40,6 @@
 // Forward declarations
 namespace Wt
 {
-  class WText;
   class WWidget;
   class WTextArea;
   class WPushButton;
@@ -111,6 +112,38 @@ private:
 };//class LlmJsRenderedDiv
 
 
+/** A text showing a client-side, once-a-second "label Ns" elapsed-time counter (no server round trips),
+ until replaced by a final text, e.g. the duration measured in C++.
+
+ Like LlmJsRenderedDiv, the counter is restarted - from the time already elapsed - whenever the DOM
+ element is re-created.
+ */
+class LlmElapsedText : public Wt::WText
+{
+public:
+  LlmElapsedText();
+
+  /** Starts counting up from zero, shown after `label` (if not empty). */
+  void start( const Wt::WString &label );
+
+  /** Stops any counter, and shows `text` instead.  Use this rather than setText(). */
+  void setFinalText( const Wt::WString &text );
+
+  bool isCounting() const;
+
+protected:
+  virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
+
+private:
+  /** Issues the JS to start the client-side counter from the current elapsed time. */
+  void startClientCounter();
+
+  bool m_counting;
+  Wt::WString m_label;
+  std::chrono::steady_clock::time_point m_start;
+};//class LlmElapsedText
+
+
 /** Base class for displaying a single LLM interaction turn (response, tool call, result, or error).
  *
  * Each turn is displayed as a WPanel with:
@@ -162,12 +195,19 @@ protected:
   /** Handle panel expansion - creates body content if not yet created */
   void handleExpansion( bool expanded );
 
+public:
+  /** The status text at the right of the title bar (e.g., a "Pending LLM response... 5s" counter, or
+   the call duration), created on first call.  Returns nullptr if this panel has no title bar.
+   */
+  LlmElapsedText *statusText();
+
 protected:
   std::shared_ptr<LlmInteractionTurn> m_turn;
   Wt::WPushButton *m_menuIcon;
   PopupDivMenu *m_menu;
   Wt::WContainerWidget *m_bodyContainer;
   bool m_bodyCreated;
+  LlmElapsedText *m_statusText;
 
   /** If the user is on a phone; phones get a pared-down display, without the developer-oriented
    menus (raw request/response JSON, etc).
@@ -341,13 +381,30 @@ protected:
   /** Update the status indicator text and timer */
   void updateStatus();
 
+  /** An API request was sent for this conversation; `turn` is the turn it carried. */
+  void handleRequestSent( std::shared_ptr<LlmInteractionTurn> turn );
+
+  /** The interface's activity changed; when it goes idle, stops any counters still running. */
+  void handleActivityIdle();
+
+  /** Starts the "live" counter `status` (finalizing any other first); its final text will be the
+   callDuration() of `turn`.  `status` may be null.
+   */
+  void startActiveStatus( LlmElapsedText *status, const Wt::WString &label,
+                          std::shared_ptr<LlmInteractionTurn> turn );
+
+  /** Replaces the live counter (if any) with the duration of its turn. */
+  void finalizeActiveStatus();
+
+  /** Shows the saved duration of `turn` (restored history, or an already finished call) in `status`,
+   labeled as LLM or tool time.
+   */
+  static void showFinalDuration( LlmElapsedText *status, const std::shared_ptr<LlmInteractionTurn> &turn );
+
   /** Update the summary section with start time, duration, and tokens */
   void updateSummary();
 
-  /** Start JavaScript timer for status display */
-  void startStatusTimer();
-
-  /** Stop JavaScript timer and show final time */
+  /** Stop the conversation's total-time counter and show the final time */
   void stopStatusTimer();
 
   /** Create the title text with status */
@@ -386,13 +443,29 @@ private:
   Wt::WContainerWidget *m_turnContainer;
   Wt::WContainerWidget *m_summaryDiv;
   Wt::WText *m_statusText;
-  Wt::WText *m_timerText;  // Separate widget for timer display
+  LlmElapsedText *m_timerText;  // The conversation's total-time counter, in the title bar
   Wt::WPushButton *m_menuIcon;
   PopupDivMenu *m_menu;
 
   int m_nestingLevel;  // For indentation of sub-agents
   bool m_isFinished;
-  std::string m_timerId;  // Unique ID for JavaScript timer
+
+  /** True once the constructor has replayed the conversation's existing turns; turns added after that
+   are "live", and get running counters (replayed ones only show their saved durations).
+   */
+  bool m_isLive;
+
+  /** The single counter in this conversation's turns that is currently running (null if none), and
+   the turn whose callDuration() becomes its final text.  See startActiveStatus().
+   */
+  LlmElapsedText *m_activeStatus;
+  std::shared_ptr<LlmInteractionTurn> m_activeStatusTurn;
+
+  /** The most recent turn that is sent to the LLM (a ToolResult or AutoReply) and its panel; when a
+   request carrying it goes out, its panel shows the "Pending LLM response" counter.
+   */
+  std::shared_ptr<LlmInteractionTurn> m_lastRequestTurn;
+  LlmInteractionTurnDisplay *m_lastRequestDisplay;
 
   /** On phones, the tool-call, tool-result, and auto-reply turns of the interaction are folded into
    a single collapsed row (`m_phoneToolSummary`, whose body is `m_phoneToolList`), titled with the
@@ -406,7 +479,8 @@ private:
   int m_phoneOpenToolRequests;                // Tool-call turns still awaiting their results
   bool m_phoneToolErrors;
 
-  static int s_nextTimerId;
+  /** Phones: the counter at the right of m_phoneToolSummary's title, for whatever is being waited on. */
+  LlmElapsedText *m_phoneStatus;
 };//class LlmInteractionDisplay
 
 

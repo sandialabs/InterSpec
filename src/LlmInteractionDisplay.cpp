@@ -161,6 +161,44 @@ WT_DECLARE_WT_MEMBER
   attempt();
 }
 );
+
+
+/** Shows a once-a-second "label Ns" counter in `el`, counting up from `elapsedMs`; see LlmElapsedText. */
+WT_DECLARE_WT_MEMBER
+(LlmElapsedStart, Wt::JavaScriptFunction, "LlmElapsedStart",
+  function( el, label, elapsedMs )
+{
+  if( !el )
+    return;
+  if( el._llmTick )
+    clearInterval( el._llmTick );
+
+  var t0 = Date.now() - elapsedMs;
+  var update = function(){
+    // The element was removed (e.g., the conversation was cleared) - so stop.
+    if( !el.isConnected ){
+      clearInterval( el._llmTick );
+      el._llmTick = null;
+      return;
+    }
+    el.textContent = (label ? (label + ' ') : '') + Math.floor( (Date.now() - t0) / 1000 ) + 's';
+  };
+  el._llmTick = setInterval( update, 1000 );
+  update();
+}
+);
+
+
+WT_DECLARE_WT_MEMBER
+(LlmElapsedStop, Wt::JavaScriptFunction, "LlmElapsedStop",
+  function( el )
+{
+  if( el && el._llmTick ){
+    clearInterval( el._llmTick );
+    el._llmTick = null;
+  }
+}
+);
 }//namespace
 
 
@@ -202,6 +240,23 @@ namespace
 
     return oss.str();
   }//formatDuration(...)
+
+
+  /** Format a call duration for a panel title: "4 ms", "13.1 s", or "6 m 14 s". */
+  string formatShortDuration( const chrono::milliseconds &duration )
+  {
+    const long long ms = duration.count();
+    if( ms < 1000 )
+      return to_string( ms ) + " ms";
+
+    ostringstream oss;
+    if( ms < 60000 )
+      oss << fixed << setprecision(1) << (0.001 * ms) << " s";
+    else
+      oss << (ms / 60000) << " m " << ((ms % 60000) / 1000) << " s";
+
+    return oss.str();
+  }//formatShortDuration(...)
 
 
   /** Truncate string to max length, adding ellipsis if needed */
@@ -351,6 +406,75 @@ void LlmJsRenderedDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render(...)
 
 
+LlmElapsedText::LlmElapsedText()
+  : WText(),
+    m_counting( false ),
+    m_label(),
+    m_start()
+{
+  setTextFormat( TextFormat::Plain );
+  setInline( true );
+}//LlmElapsedText constructor
+
+
+void LlmElapsedText::start( const WString &label )
+{
+  m_counting = true;
+  m_label = label;
+  m_start = chrono::steady_clock::now();
+
+  // What the client shows until its first tick; it also guarantees a later setFinalText() differs
+  //  from the server-side text, so Wt always sends it.
+  setText( label.empty() ? WString("0s") : WString("{1} 0s").arg(label) );
+
+  if( isRendered() )
+    startClientCounter();
+}//start(...)
+
+
+void LlmElapsedText::setFinalText( const WString &text )
+{
+  if( m_counting )
+  {
+    m_counting = false;
+    if( isRendered() )
+    {
+      LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmElapsedStop );
+      doJavaScript( "Wt.WT.LlmElapsedStop(" + jsRef() + ");" );
+    }
+  }//if( m_counting )
+
+  setText( text );
+}//setFinalText(...)
+
+
+bool LlmElapsedText::isCounting() const
+{
+  return m_counting;
+}//isCounting()
+
+
+void LlmElapsedText::startClientCounter()
+{
+  LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmElapsedStart );
+
+  const long long elapsedMs = chrono::duration_cast<chrono::milliseconds>(
+                                                   chrono::steady_clock::now() - m_start ).count();
+  doJavaScript( "Wt.WT.LlmElapsedStart(" + jsRef() + "," + m_label.jsStringLiteral() + ","
+                + to_string(elapsedMs) + ");" );
+}//startClientCounter()
+
+
+void LlmElapsedText::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  // A full render means the DOM element is being (re-)created, without a counter running.
+  if( m_counting && flags.test( RenderFlag::Full ) )
+    startClientCounter();
+
+  WText::render( flags );
+}//render(...)
+
+
 namespace LlmMarkdown
 {
 void load_resources( WApplication *app )
@@ -425,6 +549,7 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
     m_menu( nullptr ),
     m_bodyContainer( nullptr ),
     m_bodyCreated( false ),
+    m_statusText( nullptr ),
     m_phoneLayout( is_phone_layout() )
 {
   addStyleClass( "LlmInteractionTurnDisplay" );
@@ -451,6 +576,28 @@ shared_ptr<LlmInteractionTurn> LlmInteractionTurnDisplay::turn() const
 {
   return m_turn;
 }//turn()
+
+
+LlmElapsedText *LlmInteractionTurnDisplay::statusText()
+{
+  if( m_statusText )
+    return m_statusText;
+
+  WContainerWidget * const titleBar = titleBarWidget();
+  if( !titleBar )
+    return nullptr;  // e.g., the compact phone tool-results display
+
+  // Right-aligned, just before the menu icon (if there is one).
+  std::unique_ptr<LlmElapsedText> status = std::make_unique<LlmElapsedText>();
+  m_statusText = status.get();
+  m_statusText->addStyleClass( "LlmTurnStatus" );
+  if( m_menuIcon && (titleBar->indexOf( m_menuIcon ) >= 0) )
+    titleBar->insertBefore( std::move(status), m_menuIcon );
+  else
+    titleBar->addWidget( std::move(status) );
+
+  return m_statusText;
+}//statusText()
 
 
 void LlmInteractionTurnDisplay::handleExpansion( bool expanded )
@@ -1734,8 +1881,6 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
 // LlmInteractionDisplay implementation
 //
 
-int LlmInteractionDisplay::s_nextTimerId = 0;
-
 LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interaction,
                                               std::weak_ptr<LlmInterface> llmInterface,
                                               int nestingLevel,
@@ -1750,19 +1895,22 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
     m_menu( nullptr ),
     m_nestingLevel( nestingLevel ),
     m_isFinished( false ),
+    m_isLive( false ),
+    m_activeStatus( nullptr ),
+    m_activeStatusTurn( nullptr ),
+    m_lastRequestTurn( nullptr ),
+    m_lastRequestDisplay( nullptr ),
     m_phoneLayout( is_phone_layout() ),
     m_phoneToolSummary( nullptr ),
     m_phoneToolList( nullptr ),
     m_phoneVisuals( m_phoneLayout ? phoneVisuals : nullptr ),
     m_phoneOpenToolRequests( 0 ),
-    m_phoneToolErrors( false )
+    m_phoneToolErrors( false ),
+    m_phoneStatus( nullptr )
 {
   assert( m_interaction );
 
   addStyleClass( "LlmInteractionDisplay" );
-
-  // Generate unique timer ID
-  m_timerId = "llmTimer_" + to_string( s_nextTimerId++ );
 
   // Set collapsible to create title bar
   setCollapsible( true );
@@ -1777,10 +1925,8 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   m_statusText->setTextFormat( TextFormat::Plain );  // Plain text only
   m_statusText->addStyleClass( "LlmStatusIndicator" );
 
-  // Create separate timer widget with the timer ID
-  m_timerText = titleBarWidget()->addNew<WText>();
-  m_timerText->setId( m_timerId );
-  m_timerText->setInline( true );
+  // Separate widget for the total-time counter
+  m_timerText = titleBarWidget()->addNew<LlmElapsedText>();
   m_timerText->setText( "0s" );
   m_timerText->addStyleClass( "LlmStatusIndicator" );
 
@@ -1854,11 +2000,21 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   {
     handleResponseAdded( turn );
   }
+  m_isLive = true;
 
   // Connect to signals
   interaction->responseAdded.connect( this, &LlmInteractionDisplay::handleResponseAdded );
   interaction->subAgentFinished.connect( this, &LlmInteractionDisplay::handleSubAgentFinished );
   interaction->conversationFinished.connect( this, &LlmInteractionDisplay::handleConversationFinished );
+  interaction->llmRequestSent.connect( this, &LlmInteractionDisplay::handleRequestSent );
+
+  if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+  {
+    llm->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
+      if( state == LlmInterface::ActivityState::Idle )
+        handleActivityIdle();
+    } );
+  }//if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
 
   // Check if conversation is already finished
   bool hasError = false;
@@ -1875,10 +2031,15 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   {
     m_isFinished = true;
     updateSummary();
-  }else
+  }else if( !m_interaction->finishTime.has_value() )
   {
-    // Start status timer
-    startStatusTimer();
+    // Count up the total time so far (a conversation restored unfinished has no live request, so
+    //  it just shows the static "0s").
+    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+    {
+      if( llm->hasActiveRequests() )
+        m_timerText->start( WString() );
+    }
   }
 
   // Apply nesting indentation
@@ -1896,8 +2057,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
 LlmInteractionDisplay::~LlmInteractionDisplay()
 {
-  stopStatusTimer();
-
+  // Nothing to do for the JS counters: they stop themselves once their element is gone.
   // See ~LlmInteractionTurnDisplay(): m_menu is owned by m_menuIcon, not by us.
 }//~LlmInteractionDisplay()
 
@@ -1932,6 +2092,8 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
     case LlmInteractionTurn::Type::FinalLlmResponse:
     {
+      finalizeActiveStatus();  // The LLM answered
+
       shared_ptr<LlmInteractionFinalResponse> response =
         dynamic_pointer_cast<LlmInteractionFinalResponse>( turn );
       turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( response );
@@ -1951,6 +2113,12 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       shared_ptr<LlmToolRequest> request =
         dynamic_pointer_cast<LlmToolRequest>( turn );
 
+      finalizeActiveStatus();  // The LLM answered
+
+      // The tools have usually already run (and their duration is set when the results are sent, in
+      //  this same event-loop iteration); this counter only lasts for async tools and sub-agents.
+      const bool countRunningTools = m_isLive && !turn->callDuration().has_value();
+
       if( m_phoneLayout )
       {
         // No request panel on phones; just note what is running in the summary row title.
@@ -1965,10 +2133,20 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
           }
         }//if( request )
         updatePhoneToolSummaryTitle();
+
+        if( countRunningTools )
+          startActiveStatus( m_phoneStatus, WString::tr("lcw-status-running-tools"), turn );
         break;
       }//if( m_phoneLayout )
 
-      turnDisplay = m_turnContainer->addNew<LlmToolRequestDisplay>( request );
+      LlmToolRequestDisplay * const requestDisplay
+                                    = m_turnContainer->addNew<LlmToolRequestDisplay>( request );
+      turnDisplay = requestDisplay;
+
+      if( countRunningTools )
+        startActiveStatus( requestDisplay->statusText(), WString::tr("lcw-status-running-tools"), turn );
+      else if( turn->callDuration().has_value() )
+        showFinalDuration( requestDisplay->statusText(), turn );
       break;
     }
 
@@ -1995,15 +2173,26 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         turnDisplay = m_phoneToolList->addNew<LlmToolResultsDisplay>( results, m_llmInterface,
                                                                      m_nestingLevel, m_phoneVisuals );
         updatePhoneToolSummaryTitle();
+
+        m_lastRequestTurn = turn;
+        m_lastRequestDisplay = nullptr;  // phones use m_phoneStatus
         break;
       }//if( m_phoneLayout )
 
       turnDisplay = m_turnContainer->addNew<LlmToolResultsDisplay>( results, m_llmInterface, m_nestingLevel );
+
+      // When the results are sent to the LLM, this panel shows the "Pending LLM response" counter.
+      m_lastRequestTurn = turn;
+      m_lastRequestDisplay = turnDisplay;
+      if( turn->callDuration().has_value() )
+        showFinalDuration( turnDisplay->statusText(), turn );
       break;
     }
 
     case LlmInteractionTurn::Type::Error:
     {
+      finalizeActiveStatus();  // The request failed or was cancelled
+
       shared_ptr<LlmInteractionError> error =
         dynamic_pointer_cast<LlmInteractionError>( turn );
       LlmInteractionErrorDisplay *errorDisplay =
@@ -2034,6 +2223,9 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         ensurePhoneToolSummary();
         WText *note = m_phoneToolList->addNew<WText>( WString::tr("lcw-phone-auto-reply") );
         note->addStyleClass( "LlmPhoneAutoReply" );
+
+        m_lastRequestTurn = turn;
+        m_lastRequestDisplay = nullptr;
         break;
       }//if( m_phoneLayout )
 
@@ -2046,7 +2238,12 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
       turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( tempResponse );
 
-      // AutoReply doesn't mean conversation is finished - we're waiting for LLM response
+      // AutoReply doesn't mean conversation is finished - we're waiting for LLM response.  Keyed on
+      //  `turn` (not the wrapper), as that is what the request is sent with.
+      m_lastRequestTurn = turn;
+      m_lastRequestDisplay = turnDisplay;
+      if( turn->callDuration().has_value() )
+        showFinalDuration( turnDisplay->statusText(), turn );
       break;
     }
   }//switch( turn->type() )
@@ -2089,6 +2286,9 @@ void LlmInteractionDisplay::ensurePhoneToolSummary()
   m_phoneToolSummary->setCollapsed( true );
   m_phoneToolList = m_phoneToolSummary->setCentralWidget( std::make_unique<WContainerWidget>() );
   m_phoneToolList->addStyleClass( "LlmPhoneToolList" );
+
+  m_phoneStatus = m_phoneToolSummary->titleBarWidget()->addNew<LlmElapsedText>();
+  m_phoneStatus->addStyleClass( "LlmTurnStatus" );
 
   // Visuals go right after the summary row (and so before the final response).  Sub-agents were
   //  handed their top-level interactions container instead, so their visuals are not hidden inside
@@ -2138,6 +2338,88 @@ void LlmInteractionDisplay::handleConversationFinished()
 }//handleConversationFinished()
 
 
+void LlmInteractionDisplay::handleRequestSent( shared_ptr<LlmInteractionTurn> turn )
+{
+  // A new request ends whatever was being waited on before it (e.g., a tool round).
+  finalizeActiveStatus();
+
+  // The InitialRequest has no panel; the conversation title already shows that wait.
+  if( !turn || (turn != m_lastRequestTurn) )
+    return;
+
+  LlmElapsedText * const status = m_phoneLayout
+                       ? m_phoneStatus
+                       : (m_lastRequestDisplay ? m_lastRequestDisplay->statusText() : nullptr);
+  startActiveStatus( status, WString::tr("lcw-status-pending-llm"), turn );
+}//handleRequestSent(...)
+
+
+void LlmInteractionDisplay::handleActivityIdle()
+{
+  // Nothing is in flight any more, so nothing this conversation shows can still be running.
+  finalizeActiveStatus();
+
+  // A cancel or timeout marks nested sub-agent conversations finished (sets finishTime) without
+  //  emitting their conversationFinished signal, so catch that here.
+  if( !m_isFinished && m_interaction->finishTime.has_value() )
+    handleConversationFinished();
+}//handleActivityIdle()
+
+
+void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const WString &label,
+                                               shared_ptr<LlmInteractionTurn> turn )
+{
+  finalizeActiveStatus();
+  if( !status )
+    return;
+
+  m_activeStatus = status;
+  m_activeStatusTurn = turn;
+  status->start( label );
+}//startActiveStatus(...)
+
+
+void LlmInteractionDisplay::finalizeActiveStatus()
+{
+  if( !m_activeStatus )
+    return;
+
+  LlmElapsedText * const status = m_activeStatus;
+  const shared_ptr<LlmInteractionTurn> turn = m_activeStatusTurn;
+  m_activeStatus = nullptr;
+  m_activeStatusTurn.reset();
+
+  // The phone summary row is shared by all the calls, so it doesnt show any one calls duration.
+  if( status == m_phoneStatus )
+    status->setFinalText( WString() );
+  else
+    showFinalDuration( status, turn );
+}//finalizeActiveStatus()
+
+
+void LlmInteractionDisplay::showFinalDuration( LlmElapsedText *status,
+                                               const shared_ptr<LlmInteractionTurn> &turn )
+{
+  if( !status )
+    return;
+
+  if( !turn || !turn->callDuration().has_value() )
+  {
+    status->setFinalText( WString() );
+    status->setToolTip( WString() );
+    return;
+  }
+
+  // A ToolCall turn's duration is the time to run its tools here; any other turn's is the time the
+  //  LLM took to respond to it.  They look alike, so say which.
+  const bool isTools = (turn->type() == LlmInteractionTurn::Type::ToolCall);
+  const string duration = formatShortDuration( turn->callDuration().value() );
+  status->setFinalText( WString::tr( isTools ? "lcw-duration-tools" : "lcw-duration-llm" )
+                          .arg( WString::fromUTF8( duration ) ) );
+  status->setToolTip( WString::tr( isTools ? "lcw-duration-tools-tt" : "lcw-duration-llm-tt" ) );
+}//showFinalDuration(...)
+
+
 void LlmInteractionDisplay::updateStatus()
 {
   WString titleWithStatus = getTitleWithStatus();
@@ -2178,7 +2460,7 @@ void LlmInteractionDisplay::updateStatus()
       
       const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
       const string durationStr = formatDuration( duration );
-      m_timerText->setText( "(total time: " + durationStr + ")" );
+      m_timerText->setFinalText( "(total time: " + durationStr + ")" );
     }//if( m_isFinished && m_interaction )
   }
 }//updateStatus()
@@ -2318,76 +2600,19 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
 }//getTitleWithStatus()
 
 
-void LlmInteractionDisplay::startStatusTimer()
-{
-  // Start JavaScript timer to update the timer display
-  const auto now = chrono::system_clock::now();
-  const long long startMs = chrono::duration_cast<chrono::milliseconds>(
-    now.time_since_epoch() ).count();
-
-  //cerr << "LlmInteractionDisplay::startStatusTimer(): Starting timer with ID='" << m_timerId
-  //     << "', startMs=" << startMs << endl;
-
-  ostringstream js;
-  js << "console.log('Starting timer for ID: " << m_timerId << ", startMs: " << startMs << "');"
-     << "window.llmTimers = window.llmTimers || {};"
-     << "window.llmTimers['" << m_timerId << "'] = {"
-     << "  startTime: " << startMs << ","
-     << "  interval: setInterval(function() {"
-     << "    var elem = document.getElementById('" << m_timerId << "');"
-     //<< "    console.log('Timer tick for " << m_timerId << ":', elem ? 'elem found' : 'elem NOT found');"
-     << "    if (!elem) {"
-     << "      console.warn('Timer " << m_timerId << ": element not found, stopping timer');"
-     << "      clearInterval(window.llmTimers['" << m_timerId << "'].interval);"
-     << "      delete window.llmTimers['" << m_timerId << "'];"
-     << "      return;"
-     << "    }"
-     << "    var elapsed = Date.now() - " << startMs << ";"
-     << "    var seconds = Math.floor(elapsed / 1000);"
-     //<< "    console.log('Timer " << m_timerId << ": elapsed=' + elapsed + 'ms, seconds=' + seconds + 's');"
-     << "    elem.innerHTML = seconds + 's';"
-     << "  }, 1000)"
-     << "};"
-     //<< "console.log('Timer started for " << m_timerId << ":', window.llmTimers['" << m_timerId << "']);"
-  ;
-
-  doJavaScript( js.str() );
-}//startStatusTimer()
-
-
 void LlmInteractionDisplay::stopStatusTimer()
 {
-  // Calculate final duration
-  
-  //conversation->finishTime
   std::chrono::system_clock::time_point end_time;
   if( m_interaction->finishTime.has_value() )
     end_time = m_interaction->finishTime.value();
   else
     end_time = chrono::system_clock::now();
-  
+
   const auto duration = chrono::duration_cast<chrono::milliseconds>( end_time - m_interaction->timestamp );
   const string durationStr = formatDuration( duration );
 
-  //cerr << "LlmInteractionDisplay::stopStatusTimer(): Stopping timer ID='" << m_timerId
-  //     << "', final duration=" << durationStr << endl;
-
-  // Stop JavaScript timer and set final time
-  ostringstream js;
-  js << "console.log('Stopping timer for ID: " << m_timerId << ", final duration: " << durationStr << "');"
-     << "if (window.llmTimers && window.llmTimers['" << m_timerId << "']) {"
-     << "  clearInterval(window.llmTimers['" << m_timerId << "'].interval);"
-     << "  delete window.llmTimers['" << m_timerId << "'];"
-     << "  var elem = document.getElementById('" << m_timerId << "');"
-     //<< "  console.log('Timer " << m_timerId << ": elem for final update:', elem);"
-     << "  if (elem) elem.innerHTML = '" << durationStr << ")';"  // Include closing parenthesis
-     << "}";
-
-  doJavaScript( js.str() );
-
-  // Also update the widget directly
   if( m_timerText )
-    m_timerText->setText( "(total time: " + durationStr + ")" );
+    m_timerText->setFinalText( "(total time: " + durationStr + ")" );
 }//stopStatusTimer()
 
 
