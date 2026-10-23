@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="NuclideId">
+  <Agent name="NuclideId" RequiresForeground="true">
     <Description>Specialized sub-agent for identifying nuclides, x-ray sources, and nuclear reactions in gamma spectra.
 Do NOT provide generic information about what spectra are loaded.
 Instead, provide any nuclide-specific information you suspect (if any) and situational context (e.g., NORM, medical, shielding, reactor, etc.).

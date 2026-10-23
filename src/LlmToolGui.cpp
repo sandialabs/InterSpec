@@ -331,6 +331,11 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
     // Connect to LLM interface response signals
     m_llmInterface->conversationFinished().connect(this, &LlmToolGui::handleConversationFinished);
     m_llmInterface->responseError().connect(this, &LlmToolGui::handleResponseError);
+    m_llmInterface->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
+      if( m_sendButton )
+        m_sendButton->toggleStyleClass( "llm-tools-running",
+                                        (state == LlmInterface::ActivityState::RunningTools) );
+    } );
 
     // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
     m_spectrumChangedConnection =
@@ -877,10 +882,16 @@ void LlmToolGui::initializeUI()
 #endif
 
   // Icon submit/stop button, pinned to the right of the text area.  The button is transparent/
-  // borderless, so the standard "InvertInDark" class inverts just the icon glyph for the dark theme.
+  // borderless; the CSS inverts just the icon glyph for the dark theme (not the whole button, which
+  // would also invert the ring colors).  The ring is an animated "working" outline around the stop
+  // icon, shown only while the button is a Stop button (CSS); its color shows whether the LLM or
+  // tools are being waited on (the "llm-tools-running" class).
   m_sendButton = inputArea->addNew<WPushButton>();
-  m_sendButton->addStyleClass("llm-send-button InvertInDark");
+  m_sendButton->addStyleClass("llm-send-button");
   m_sendButton->setIcon( "InterSpec_resources/images/llm_submit_arrow.svg" );
+  m_sendButton->setTextFormat( TextFormat::XHTML );
+  m_sendButton->setText( "<svg class=\"LlmWorkingRing\" width=\"28\" height=\"28\" viewBox=\"0 0 28 28\">"
+                         "<rect x=\"1\" y=\"1\" width=\"26\" height=\"26\" rx=\"6\" ry=\"6\" /></svg>" );
 
   // Connect signals (Enter-to-submit is handled client-side in setupInputJavaScript)
   m_sendButton->clicked().connect(this, &LlmToolGui::handleSendButton);
@@ -2361,6 +2372,15 @@ void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
   if( agentType == AgentType::MainAgent || agentType == AgentType::McpServer )
   {
     callback( string( "Cannot directly invoke MainAgent or McpServer agent types." ) );
+    return;
+  }
+
+  // Checked here too (not just when the main agent calls the invoke_* tool), so we dont spend a main
+  //  agent LLM round-trip only to have the invocation refused.
+  const std::optional<std::string> prereq_error = m_llmInterface->subAgentPrerequisiteError( agentType );
+  if( prereq_error )
+  {
+    callback( *prereq_error );
     return;
   }
 

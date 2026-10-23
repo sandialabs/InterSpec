@@ -173,7 +173,11 @@ protected:
   std::string m_thinkingSignature;  // Encrypted signature for Claude thinking blocks (must be passed back unmodified)
   std::string m_reasoningContent;   // reasoning_content field (must be passed back during tool calls) - untested with models that require it
   std::string m_reasoningDetails;   // OpenRouter reasoning_details JSON array (must be passed back unmodified)
-  std::optional<std::chrono::milliseconds> m_callDuration;  // Duration of API call or tool execution
+  /** For a turn sent to the LLM (InitialRequest, ToolResult, AutoReply): the round-trip time of the
+   API request that carried it.  For a ToolCall turn: the wall-clock time to run its tools.  Unset
+   for other turns, or until the request/tools have finished.
+   */
+  std::optional<std::chrono::milliseconds> m_callDuration;
   std::string m_rawContent;  // Raw content: JSON sent to LLM for tool results, or JSON received from LLM
   bool m_exclude_from_history;  // If true, exclude this turn from conversation history sent to LLM
 
@@ -567,6 +571,11 @@ struct LlmInteraction
    Can be used by the GUI to re-enable input.
    */
   Wt::Signal<> conversationFinished;
+
+  /** Signal emitted when an API request is sent to the LLM for this conversation.
+   Emits the conversation's last turn at that time - i.e., the turn the LLM is now responding to.
+   */
+  Wt::Signal<std::shared_ptr<LlmInteractionTurn>> llmRequestSent;
 
   /** Factory method to create a new LlmInteraction with an initial message.
 

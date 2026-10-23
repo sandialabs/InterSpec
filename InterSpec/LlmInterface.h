@@ -30,6 +30,7 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <optional>
 #include <functional>
 
 #include <Wt/WContainerWidget.h>
@@ -193,6 +194,12 @@ public:
    */
   int invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo );
 
+  /** Checks if the agent can be invoked in the current application state (e.g., an agent with
+   `LlmConfig::AgentConfig::requiresForeground` needs a foreground spectrum loaded).
+   @return A user-facing reason the agent can not be invoked right now, or nullopt if it can be.
+   */
+  std::optional<std::string> subAgentPrerequisiteError( const AgentType agentType ) const;
+
   /** Build the messages array for a conversation.
 
    This is exposed publicly to support retry functionality from LlmToolGui.
@@ -259,6 +266,19 @@ public:
    */
   bool hasActiveRequests() const;
 
+  /** What the interface is currently waiting on; used by the GUI for "working" indicators. */
+  enum class ActivityState
+  {
+    Idle,          // Nothing in flight
+    AwaitingLlm,   // At least one API request is in flight
+    RunningTools   // No request in flight, but a tool round (async tools/sub-agents) is outstanding
+  };
+
+  ActivityState activityState() const;
+
+  /** Emitted (only) when activityState() changes. */
+  Wt::Signal<ActivityState> &activityChanged();
+
   /** Direct all debug logging to the specified file path.
    Pass an empty string to disable file logging.
    Opens the file in append mode; logs a warning to stderr if the file cannot be opened.
@@ -295,6 +315,15 @@ private:
   Wt::Signal<> m_conversationFinished; // Signal emitted when succesful final response from LLM is recieved.
   Wt::Signal<> m_responseError;    // Signal emitted when error responses are received
 
+  Wt::Signal<ActivityState> m_activityChanged;
+  ActivityState m_lastActivityState;
+
+  /** Emits m_activityChanged if activityState() differs from m_lastActivityState.  Call after any
+   change to m_pendingRequests or m_deferredToolResults - except from failInFlightConversations(),
+   which also runs from the destructor, while the GUI listening to us is being torn down.
+   */
+  void updateActivityState();
+
   /** Backstop against a hung conversation.  A single-shot timer (re)armed while work is outstanding
    (a request in flight, a response being rendered, or async tools running); if no terminal signal
    (conversationFinished/responseError) fires within sm_watchdog_timeout_ms, onWatchdogTimeout()
@@ -322,6 +351,11 @@ private:
 
     // Summarization support
     bool isSummarizationRequest = false;  // True if this is a context summarization request
+
+    /** When the request was sent, and the turn it carried (the conversation's last turn then); the
+     round-trip time is stored to that turn's callDuration when the response arrives. */
+    std::chrono::steady_clock::time_point sendTime;
+    std::weak_ptr<LlmInteractionTurn> requestTurn;
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
     nlohmann::json requestJson;
@@ -408,6 +442,11 @@ private:
       std::chrono::steady_clock::time_point deadline;  // when onDeferredSweep() force-fails this call
     };
     std::map<std::string,PendingAsyncCall> pendingAsyncCalls;  // key is the tool-call invocation id
+
+    /** The round's tool-call turn, and when the round started, so its callDuration can be set when
+     the round finalizes. */
+    std::weak_ptr<LlmToolRequest> toolRequest;
+    std::chrono::steady_clock::time_point roundStart;
   };
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is the requestId the tool round came from
 

@@ -169,6 +169,14 @@
   <message id="lcw-phone-tools-used">Used: {1}</message>
   <message id="lcw-phone-tools-used-errors">Used (some failed): {1}</message>
   <message id="lcw-phone-auto-reply">Prompted the assistant to continue.</message>
+  <!-- Live status at the right of a conversation panel's title; a counting "Ns" is appended. -->
+  <message id="lcw-status-pending-llm">Pending LLM response...</message>
+  <message id="lcw-status-running-tools">Running tools...</message>
+  <!-- Final durations at the right of a panel title; {1} is like "6.2 s". -->
+  <message id="lcw-duration-llm">(LLM: {1})</message>
+  <message id="lcw-duration-llm-tt">How long the LLM took to respond to this, including network, queueing, and generation time.</message>
+  <message id="lcw-duration-tools">(tools: {1})</message>
+  <message id="lcw-duration-tools-tt">How long InterSpec took to run these tools.</message>
   <message id="lcw-phone-dock-tt">Shrink the assistant into the tools tab, to see the spectrum</message>
   <message id="lcw-phone-expand-tt">Make the assistant full-screen</message>
   <message id="lcw-welcome-learn-more">Learn more about the AI Assistant</message>

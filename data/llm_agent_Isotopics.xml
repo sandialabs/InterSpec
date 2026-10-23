@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="Isotopics">
+  <Agent name="Isotopics" RequiresForeground="true">
     <Description>Specialized sub-agent for performing isotopic ratio analysis of nuclear materials, primarily Plutonium and Uranium isotopics from gamma-ray spectroscopy.  This is also known as enrichment (usually Uranium) or burn-up calculations (plutonium).
 This agent performs its own fits to data, and does not need nuclide ID or peak fits performed before calling it.
 For the task, give this agent the type of enrichment to perform (i.e. U or Pu), if you know it, as well as any other special requests or additional knowledge you know that may be relevant.
@@ -195,8 +195,7 @@ The state machine provides soft enforcement:
 ## **Prerequisites Check**
 
 Before starting isotopics analysis, verify:
-1. Foreground spectrum is loaded (`get_spectrum_info`)
-2. You are told, or are able to determine which isotopics are to be performed
+1. You are told, or are able to determine which isotopics are to be performed
 
 ## **Error Handling**
 
@@ -237,7 +236,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Tool>get_spectrum_info</Tool>
           <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>First, verify that a foreground spectrum is loaded and peaks are fit. Use get_spectrum_info and get_peaks (filter 'analysis') to check prerequisites. Determine if the user wants Plutonium or Uranium isotopics. Once you understand the request and have confirmed prerequisites, transition to SELECT_CONFIGURATION state.</PromptGuidance>
+        <PromptGuidance>First, verify that peaks are fit, using get_peaks (filter 'analysis'); get_spectrum_info gives detector details if needed. Determine if the user wants Plutonium or Uranium isotopics. Once you understand the request and have confirmed prerequisites, transition to SELECT_CONFIGURATION state.</PromptGuidance>
       </State>
 
       <State name="SELECT_CONFIGURATION">

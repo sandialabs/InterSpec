@@ -7,7 +7,7 @@
 -->
 
 <AgentDefinitions version="0">
-  <Agent name="SpectrumTimeHistory">
+  <Agent name="SpectrumTimeHistory" RequiresForeground="true">
     <Description>Specialized sub-agent to select relevant time-regions of search-mode/passthrough time-series data (`searchMode: true` in get_spectrum_info fileInfo) to sum for the foreground/background spectra.
     By default will pick the most elevated gamma CPS portion of the data as foreground, and lower CPS time period as background - but you can provide other instructions, or a specific energy range to looks for elevated counts in.
     After returning, the displayed/used foreground and background spectra will be sums of the selected time periods.

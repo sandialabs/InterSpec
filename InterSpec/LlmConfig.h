@@ -165,6 +165,7 @@ public:
     std::string systemPrompt; // System prompt for this agent
     std::vector<AgentType> availableForAgents; // List of agent types that can invoke this agent (empty = all agents can invoke)
     std::shared_ptr<AgentStateMachine> state_machine; // Optional state machine for workflow guidance (nullptr if not used)
+    bool requiresForeground = false; // If true, invoking this agent is refused (no LLM call) when no foreground is loaded
   };//struct AgentConfig
 
   /** Configuration for a tool with role-specific descriptions */

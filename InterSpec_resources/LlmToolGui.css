@@ -102,6 +102,7 @@
    (higher specificity than a bare class) can't shrink it on mouseover. */
 .llm-send-button,
 .llm-send-button:hover {
+  position: relative;   /* positions the .LlmWorkingRing */
   flex-shrink: 0;
   min-width: 0;
   width: 34px;
@@ -122,12 +123,60 @@
   background: var(--interspec-menubar-hover-color);
 }
 
-/* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding). */
-.llm-send-button img {
+/* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding, and
+   the theme's `.Wt-btn.with-label img` padding, as the ring markup counts as a label).
+   Dark themes invert just the glyph (like .InvertInDark), leaving the ring's colors alone. */
+.llm-send-button img,
+.llm-send-button.Wt-btn.with-label img {
   width: 18px;
   height: 18px;
   margin: 0;
   padding: 0;
+  filter: var(--interspec-icon-filter);
+}
+
+/* "Working" ring: a short dash travelling around the rounded-square stop icon, shown only while the
+   button is a Stop button.  Accent color while waiting on the LLM; warning color while only tools
+   are running.  The dash lengths are fractions of the rect's perimeter (~93.7). */
+.LlmWorkingRing {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -14px;   /* centered on the button (and so on the icon); the ring is 28x28 */
+  margin-top: -14px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.llm-send-button.llm-stop-button .LlmWorkingRing {
+  display: block;
+}
+
+.LlmWorkingRing rect {
+  fill: none;
+  stroke: var(--interspec-accent-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 20 73.7;
+  animation: LlmWorkingRingTrace 1.6s linear infinite;
+}
+
+.llm-send-button.llm-tools-running .LlmWorkingRing rect {
+  stroke: var(--interspec-warning-color);
+}
+
+@keyframes LlmWorkingRingTrace {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -93.7; }
+}
+
+/* No motion: a solid, colored outline still shows the working state. */
+@media (prefers-reduced-motion: reduce) {
+  .LlmWorkingRing rect {
+    animation: none;
+    stroke-dasharray: none;
+  }
 }
 
 /* Disabled submit button (JS sets the native `disabled` attribute when there is nothing to send):
@@ -269,6 +318,22 @@
 .Wt-panel.LlmInteractionTurnDisplay .titlebar .RoundMenuIcon {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Status at the right of a turn's title: a live "Pending LLM response... 5s" counter, or the call
+   duration once done.  It takes over the auto margin from the menu icon that follows it. */
+.LlmTurnStatus {
+  margin-left: auto;
+  padding: 0 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--interspec-label-color);
+}
+
+.Wt-panel.LlmInteractionTurnDisplay .titlebar .LlmTurnStatus + .RoundMenuIcon {
+  margin-left: 0;
 }
 
 .LlmInteractionTurnDisplay.Wt-panel > .body {
@@ -1009,6 +1074,20 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+}
+
+/* The tool names give way (ellipsized) to the status at the right. */
+.LlmPhoneToolSummary.Wt-panel > .titlebar > :not(.Wt-collapse-button):not(.LlmTurnStatus) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.LlmPhoneToolSummary.Wt-panel > .titlebar > .LlmTurnStatus {
+  flex: 0 0 auto;
 }
 
 .LlmPhoneToolSummary.Wt-panel > .body {

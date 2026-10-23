@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <fstream>
 #include <iostream>
 
 #include <Wt/Utils.h>
@@ -48,6 +49,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmToolGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
@@ -2402,6 +2404,10 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
   const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit", "Isotopics",
     "KnowledgeBase", "EnergyCalibration", "InSitu", "SpectrumTimeHistory" };
 
+  // The agents that can do nothing useful without a foreground spectrum (RequiresForeground="true")
+  const std::set<std::string> foregroundAgents = { "NuclideId", "ActivityFit", "Isotopics",
+    "EnergyCalibration", "InSitu", "SpectrumTimeHistory" };
+
   cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
 
   std::set<std::string> foundAgents;
@@ -2421,6 +2427,10 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
     BOOST_CHECK_MESSAGE( agent.systemPrompt.length() >= 100,
                         "Agent '" << agent.name << "' has suspiciously short system prompt: "
                         << agent.systemPrompt.length() << " chars" );
+
+    BOOST_CHECK_MESSAGE( agent.requiresForeground == (foregroundAgents.count(agent.name) > 0),
+                        "Agent '" << agent.name << "' has unexpected requiresForeground="
+                        << agent.requiresForeground );
 
     foundAgents.insert( agent.name );
   }
@@ -2445,6 +2455,70 @@ BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
 
   cout << "Successfully validated " << expectedAgents.size() << " agents from XML configuration" << endl;
 }
+
+
+BOOST_AUTO_TEST_CASE( test_agentRequiresForegroundAttribute )
+{
+  InterSpecTestFixture fixture;
+  InterSpec * const interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  // Parsing: the attribute is optional (defaults to false), so customized agent files without it still load
+  const vector<pair<string,bool>> attrib_cases = {
+    { "", false },
+    { " RequiresForeground=\"1\"", true },
+    { " RequiresForeground=\"true\"", true },
+    { " RequiresForeground=\"false\"", false }
+  };
+
+  for( const pair<string,bool> &attrib_case : attrib_cases )
+  {
+    const string xml = "<AgentDefinitions version=\"0\">\n"
+      "  <Agent name=\"NuclideId\"" + attrib_case.first + ">\n"
+      "    <Description>Test agent</Description>\n"
+      "    <SystemPrompt><![CDATA[Test prompt]]></SystemPrompt>\n"
+      "  </Agent>\n"
+      "</AgentDefinitions>\n";
+
+    const string filename = SpecUtils::temp_file_name( "test_agent_requires_fore", SpecUtils::temp_dir() );
+    {
+      ofstream outfile( filename.c_str(), ios::out | ios::binary );
+      BOOST_REQUIRE( outfile.is_open() );
+      outfile << xml;
+    }
+
+    vector<LlmConfig::AgentConfig> agents;
+    BOOST_CHECK_NO_THROW( agents = LlmConfig::loadAgentsFromFile( filename ) );
+    SpecUtils::remove_file( filename );
+
+    BOOST_REQUIRE_EQUAL( agents.size(), 1 );
+    BOOST_CHECK_MESSAGE( agents[0].requiresForeground == attrib_case.second,
+                         "Attribute '" << attrib_case.first << "' gave requiresForeground="
+                         << agents[0].requiresForeground );
+  }//for( const pair<string,bool> &attrib_case : attrib_cases )
+
+  // Prerequisite check: the fixture loads a foreground, so nothing should be refused
+  LlmToolGui * const llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+  LlmInterface * const llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  BOOST_REQUIRE( interspec->measurment( SpecUtils::SpectrumType::Foreground ) );
+  BOOST_CHECK( !llm_interface->subAgentPrerequisiteError( AgentType::NuclideId ) );
+  BOOST_CHECK( !llm_interface->subAgentPrerequisiteError( AgentType::KnowledgeBase ) );
+
+  // With no foreground, only agents marked RequiresForeground are refused
+  interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, {} );
+  BOOST_REQUIRE( !interspec->measurment( SpecUtils::SpectrumType::Foreground ) );
+
+  const std::optional<std::string> nuc_id_error = llm_interface->subAgentPrerequisiteError( AgentType::NuclideId );
+  BOOST_REQUIRE( nuc_id_error.has_value() );
+  BOOST_CHECK( nuc_id_error->find( "NuclideId" ) != string::npos );
+  BOOST_CHECK( nuc_id_error->find( "foreground" ) != string::npos );
+
+  BOOST_CHECK( llm_interface->subAgentPrerequisiteError( AgentType::ActivityFit ).has_value() );
+  BOOST_CHECK( !llm_interface->subAgentPrerequisiteError( AgentType::KnowledgeBase ) );
+}//BOOST_AUTO_TEST_CASE( test_agentRequiresForegroundAttribute )
 
 
 // ============================================================================
