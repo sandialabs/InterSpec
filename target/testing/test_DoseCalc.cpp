@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE( U238_NoShield_100cm )
               100.0f * PhysicalUnits::cm,
               0.0f,
               60.0f,
-              1.6836E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
+              1.5427E-6 * PhysicalUnits::rem / PhysicalUnits::hour );
 }
 
 BOOST_AUTO_TEST_CASE( U238_2gcm2_100cm )

@@ -2271,6 +2271,93 @@ struct ManualGenericRelActFunctor
   };//bool operator() - for Ceres
 
 };//class ManualGenericRelActFunctor
+
+
+/** Covariance of the fit as the truncated pseudo-inverse of J^T J, from the SVD of the
+ column-equilibrated Jacobian (van der Sluis: J~ = J*D, D = diag(1/||col||), so
+ (J^T J)^+ = D (J~^T J~)^+ D) - the same computation RelActCalcAuto uses.
+
+ Directions with sigma_i/sigma_max below `sv_ratio_cutoff` are treated as null space (zero
+ variance).  Equilibrating first makes that cutoff independent of parameter units: the raw
+ Jacobian of a Ceres-fit LnX curve has column norms spanning ~7 decades (activity multiples ~1,
+ the ln(E)^4 coefficient ~1e6), so a cutoff on the raw spectrum discarded well-constrained
+ activity directions and reported activity uncertainties ~1e5x too small (spec184, LnX order 4).
+ When nothing is dropped, the result is identical to the raw pseudo-inverse.
+
+ \param jacobian Row-major, `num_residuals` x `num_parameters`.
+ \param constant_parameters Parameters held fixed; their covariance rows and columns are zero.
+ \param covariance Output, `num_parameters` x `num_parameters`.
+ \returns The number of free-parameter directions dropped as degenerate.
+
+ Throws on a degenerate input (no free parameters, or a non-finite/zero spectrum).
+ */
+size_t equilibrated_covariance( const vector<double> &jacobian,
+                                const size_t num_residuals,
+                                const size_t num_parameters,
+                                const vector<int> &constant_parameters,
+                                const double sv_ratio_cutoff,
+                                vector<vector<double>> &covariance )
+{
+  assert( jacobian.size() == (num_residuals * num_parameters) );
+
+  vector<size_t> free_pars;
+  for( size_t i = 0; i < num_parameters; ++i )
+  {
+    if( !std::count( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) )
+      free_pars.push_back( i );
+  }
+
+  if( free_pars.empty() )
+    throw runtime_error( "No free parameters to compute a covariance for." );
+
+  const Eigen::Index num_free = static_cast<Eigen::Index>( free_pars.size() );
+  Eigen::MatrixXd jacobian_eq( static_cast<Eigen::Index>(num_residuals), num_free );
+  Eigen::VectorXd inv_col_norm( num_free );
+  for( Eigen::Index col = 0; col < num_free; ++col )
+  {
+    const size_t par_index = free_pars[static_cast<size_t>(col)];
+    for( size_t row = 0; row < num_residuals; ++row )
+      jacobian_eq( static_cast<Eigen::Index>(row), col ) = jacobian[row*num_parameters + par_index];
+
+    // A zero-norm column has no gradient at all: zero variance, and counted as dropped below.
+    const double col_norm = jacobian_eq.col(col).norm();
+    inv_col_norm(col) = (col_norm > 0.0) ? (1.0 / col_norm) : 0.0;
+    jacobian_eq.col(col) *= inv_col_norm(col);
+  }//for( Eigen::Index col = 0; col < num_free; ++col )
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeFullV> svd( jacobian_eq );
+#else
+  const Eigen::JacobiSVD<Eigen::MatrixXd> svd( jacobian_eq, Eigen::ComputeFullV );
+#endif
+  const Eigen::VectorXd &sing_vals = svd.singularValues(); //sorted decreasing
+  if( !sing_vals.size() || !(sing_vals(0) > 0.0) || IsInf(sing_vals(0)) || IsNan(sing_vals(0)) )
+    throw runtime_error( "Jacobian SVD produced a non-finite or zero spectrum." );
+
+  // Fewer residuals than free parameters leaves a rectangular null space, also dropped.
+  size_t num_dropped = static_cast<size_t>( num_free - sing_vals.size() );
+  Eigen::VectorXd inv_s2( sing_vals.size() );
+  for( Eigen::Index i = 0; i < sing_vals.size(); ++i )
+  {
+    const bool keep = (sing_vals(i) > (sv_ratio_cutoff * sing_vals(0)));
+    inv_s2(i) = keep ? (1.0 / (sing_vals(i) * sing_vals(i))) : 0.0;
+    num_dropped += !keep;
+  }
+
+  // C_free = D * V * S^-2 * V^T * D   (dropped directions contribute zero)
+  const Eigen::MatrixXd V = svd.matrixV().leftCols( sing_vals.size() );
+  const Eigen::MatrixXd cov_free = inv_col_norm.asDiagonal() * V * inv_s2.asDiagonal()
+                                   * V.transpose() * inv_col_norm.asDiagonal();
+
+  covariance.assign( num_parameters, vector<double>(num_parameters, 0.0) );
+  for( Eigen::Index row = 0; row < num_free; ++row )
+  {
+    for( Eigen::Index col = 0; col < num_free; ++col )
+      covariance[free_pars[static_cast<size_t>(row)]][free_pars[static_cast<size_t>(col)]] = cov_free(row,col);
+  }
+
+  return num_dropped;
+}//size_t equilibrated_covariance(...)
 }//namespace
 
 
@@ -5665,57 +5752,74 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
   try
   {
-    ceres::Covariance::Options cov_options;
-    //cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //faster, but not capable of computing the covariance if the Jacobian is rank deficient.
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
-    cov_options.null_space_rank = -1;
-    // Drop near-null directions (sigma_i/sigma_max < 1e-6) from the covariance instead of
-    //  letting their ~1/sigma^2 variances blow up the reported uncertainties; these are the
-    //  structurally near-degenerate directions (e.g., self-AD vs ext-AD vs Hoerl tilt in the
-    //  physical model).  Same remedy as the RelActCalcAuto solver; the manual problem's
-    //  parameters are already near-unit-scaled (activity multiples, AN/50, AD in g/cm2,
-    //  offset Hoerl), so a raw-Jacobian cutoff is appropriate here without the column
-    //  equilibration the Auto solver needs.
-    cov_options.min_reciprocal_condition_number = 1.0E-12;
-    cov_options.num_threads = ceres_options.num_threads;
-    
     vector<double> uncertainties( num_nuclides, 0.0 ), uncerts_squared( num_nuclides, 0.0 );
-    
-    ceres::Covariance covariance(cov_options);
-    vector<const double*> parameter_blocks;
-    vector<pair<const double*, const double*> > covariance_blocks;
 
-    parameter_blocks.push_back( pars );
-    covariance_blocks.push_back( {pars, pars} );
-    
+    // Jacobian of every residual at the solution (row-major): the covariance below uses all of
+    //  them, and its peak rows are kept as `m_nonlin_jacobian`.
+    const size_t num_residuals = cost_functor->number_residuals();
+    vector<double> jacobian;
+    if( !input.point_estimate_only )
+    {
+      try
+      {
+        vector<double> residuals( num_residuals );
+        jacobian.resize( num_parameters * num_residuals );
+
+        const double * const parameters_ptr = parameters.data();
+        double *jacobians_ptr = jacobian.data();  //We only have a single paramater block; the pointer passed into Ceres expects first index to index into parameter block
+
+        const bool success = cost_function->Evaluate( &parameters_ptr, residuals.data(), &jacobians_ptr );
+        if( !success )
+          throw std::runtime_error( "Failed to evaluate the cost function." );
+
+        // Keep only the peak rows, so the k-index stays the peak index no matter which extra
+        //  channels the functor carries (profile-likelihood penalty, degeneracy pin).
+        solution.m_nonlin_jacobian.resize( num_peaks, vector<double>(num_parameters, 0.0) );
+        for( size_t k = 0; k < num_peaks; ++k )
+        {
+          for( size_t i = 0; i < num_parameters; ++i )
+            solution.m_nonlin_jacobian[k][i] = jacobian[k*num_parameters + i];
+        }
+      }catch( const std::exception &e )
+      {
+        jacobian.clear();
+        solution.m_nonlin_jacobian.clear();
+        cerr << "Failed to compute final Jacobian! - " << e.what() << endl;
+        solution.m_warnings.push_back( "Failed to compute Jacobian: " + string(e.what()) );
+      }//try / catch to compute Jacobian
+    }//if( !input.point_estimate_only )
+
+    // Drop near-null directions (sigma_i/sigma_max < 1e-6, on the column-equilibrated Jacobian -
+    //  see `equilibrated_covariance`) from the covariance instead of letting their ~1/sigma^2
+    //  variances blow up the reported uncertainties; these are the structurally near-degenerate
+    //  directions (e.g., self-AD vs ext-AD vs Hoerl tilt in the physical model).
+    size_t num_degenerate_dirs = 0;
+
     solution.m_nonlin_covariance.clear();
+    if( !input.point_estimate_only && !jacobian.empty() )
+    {
+      try
+      {
+        num_degenerate_dirs = equilibrated_covariance( jacobian, num_residuals, num_parameters,
+                                                       constant_parameters, 1.0E-6,
+                                                       solution.m_nonlin_covariance );
+      }catch( const std::exception &e )
+      {
+        cerr << "Failed to compute final covariances! - " << e.what() << endl;
+        solution.m_nonlin_covariance.clear();
+      }
+    }//if( !input.point_estimate_only && !jacobian.empty() )
+
     if( input.point_estimate_only )
     {
       // Skip all covariance work: derived uncertainties carry their "not available" sentinels
       //  (empty matrices, -1 uncertainties), but point estimates, chi2, DOF, and the shield fit
       //  values below are still produced.  Used by the AN scan and profile-likelihood sub-solves.
-    }else if( !covariance.Compute(covariance_blocks, &problem) )
+    }else if( solution.m_nonlin_covariance.empty() )
     {
-      cerr << "Failed to compute final covariances!" << endl;
       solution.m_warnings.push_back( "Failed to compute final covariances." );
     }else
     {
-      // row-major order: the elements of the first row are consecutively given, followed by second
-      //                  row contents, etc
-      vector<double> row_major_covariance( num_parameters * num_parameters );
-      
-      const bool success = covariance.GetCovarianceMatrix( parameter_blocks, row_major_covariance.data() );
-      assert( success );
-      if( !success )
-        throw runtime_error( "Failed to get covariance matrix - maybe didnt add all covariance blocks?" );
-      
-      solution.m_nonlin_covariance.resize( num_parameters, vector<double>(num_parameters,0.0) );
-      for( size_t row = 0; row < num_parameters; ++row )
-      {
-        for( size_t col = 0; col < num_parameters; ++col )
-          solution.m_nonlin_covariance[row][col] = row_major_covariance[row*num_parameters + col];
-      }//for( size_t row = 0; row < num_nuclides; ++row )
-
       // Inflate the covariance when the data scatter about the model exceeds the assumed
       //  uncertainties (the classic "variance of unit weight" / Birge rescale): the raw
       //  covariance then systematically understates the parameter uncertainties.  Never shrink
@@ -5867,75 +5971,23 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
         static_assert( use_auto_diff, "Numeric diff not implemented for computing the manual solver rel. act. covariance" );
       }
     }//if( we failed to get covariance ) / else
-    
-    // Compute the Jacobian (the rank-deficiency check below auto-skips when this is skipped)
-    if( !input.point_estimate_only )
-    try
+
+    // Warn about effectively-unconstrained (near-degenerate) directions: the ones the covariance
+    //  above dropped (same equilibrated spectrum and cutoff), so the per-parameter uncertainties
+    //  omit exactly these directions.
+    if( num_degenerate_dirs > 0 )
     {
-      const size_t num_residuals = cost_functor->number_residuals();
-      vector<double> residuals( num_residuals );
-      vector<double> jacobian( num_parameters * num_residuals );
-
-      const double * const parameters_ptr = parameters.data();
-      double * const residuals_ptr = &(residuals[0]);
-      double * jacobians_ptr = &(jacobian[0]);  //We only have a single paramater block; the pointer passed into Ceres expects first index to index into parameter block
-
-      const bool success = cost_function->Evaluate( &parameters_ptr, residuals_ptr, &jacobians_ptr );
-      if( !success )
-        throw std::runtime_error( "Failed to evaluate the cost function." );
-
-      // Keep only the peak rows, so the k-index stays the peak index no matter which extra
-      //  channels the functor carries (profile-likelihood penalty, degeneracy pin).
-      solution.m_nonlin_jacobian.resize( num_peaks, vector<double>(num_parameters, 0.0) );
-      for( size_t k = 0; k < num_peaks; ++k )
-      {
-        for( size_t i = 0; i < num_parameters; ++i )
-          solution.m_nonlin_jacobian[k][i] = jacobian[k*num_parameters + i];
-      }
-    }catch(const std::exception& e)
-    {
-      cerr << "Failed to compute final Jacobian! - " << e.what() << endl;
-      solution.m_warnings.push_back( "Failed to compute Jacobian: " + string(e.what()) );
-    }//try / catch to compute Jacobian
-
-    // Detect effectively-unconstrained (near-degenerate) parameter directions, and warn.  With
-    //  DENSE_SVD + null_space_rank = -1 + the min_reciprocal_condition_number above, such
-    //  directions are dropped from the covariance (truncated pseudo-inverse) rather than
-    //  blowing it up - but the per-parameter uncertainties then omit those directions.  The
-    //  parameters are near-unit-scaled, so a raw-Jacobian singular value cutoff is meaningful.
-    if( !solution.m_nonlin_jacobian.empty() && !solution.m_nonlin_covariance.empty() )
-    {
-      vector<size_t> free_pars;
+      size_t num_free_pars = 0;
       for( size_t i = 0; i < num_parameters; ++i )
-      {
-        if( !std::count( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) )
-          free_pars.push_back( i );
-      }
+        num_free_pars += !std::count( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) );
 
-      const size_t num_resids = solution.m_nonlin_jacobian.size();
-      if( !free_pars.empty() && (num_resids >= free_pars.size()) )
-      {
-        Eigen::MatrixXd jacobian_mat( num_resids, free_pars.size() );
-        for( size_t r = 0; r < num_resids; ++r )
-          for( size_t c = 0; c < free_pars.size(); ++c )
-            jacobian_mat(r,c) = solution.m_nonlin_jacobian[r][free_pars[c]];
-
-        const Eigen::JacobiSVD<Eigen::MatrixXd> svd( jacobian_mat );
-        const Eigen::VectorXd &sing_vals = svd.singularValues(); //sorted decreasing
-
-        size_t num_deficient = 0;
-        for( Eigen::Index i = 0; i < sing_vals.size(); ++i )
-          num_deficient += ((sing_vals.size() > 0) && (sing_vals(i) < 1.0E-6*sing_vals(0)));
-
-        if( num_deficient > 0 )
-          solution.m_warnings.push_back( "The fit is rank-deficient: "
-                + std::to_string(num_deficient) + " of " + std::to_string(free_pars.size())
+      solution.m_warnings.push_back( "The fit is rank-deficient: "
+                + std::to_string(num_degenerate_dirs) + " of " + std::to_string(num_free_pars)
                 + " fitted parameters are effectively unconstrained by the data"
                 " (near-degenerate directions).  Per-parameter uncertainties omit these"
                 " directions, so uncertainties of quantities that depend on them may be"
                 " understated." );
-      }//if( sensible matrix dimensions )
-    }//if( have jacobian and covariance )
+    }//if( num_degenerate_dirs > 0 )
 
 
     // Compute the relative activities
