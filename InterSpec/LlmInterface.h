@@ -266,6 +266,11 @@ public:
    */
   bool hasActiveRequests() const;
 
+  /** Returns true if `convo` has a request in flight, a tool round outstanding, or a message queued
+   behind a summarization - i.e., something that will still add to it, or finish it.
+   */
+  bool isConversationActive( const std::shared_ptr<const LlmInteraction> &convo ) const;
+
   /** What the interface is currently waiting on; used by the GUI for "working" indicators. */
   enum class ActivityState
   {
@@ -352,8 +357,9 @@ private:
     // Summarization support
     bool isSummarizationRequest = false;  // True if this is a context summarization request
 
-    /** When the request was sent, and the turn it carried (the conversation's last turn then); the
-     round-trip time is stored to that turn's callDuration when the response arrives. */
+    /** When the request was sent, and the turn it carried (the conversation's last turn then, if an
+     InitialRequest, ToolResult, or AutoReply - else null); the round-trip time is stored to that
+     turn's callDuration when the response arrives. */
     std::chrono::steady_clock::time_point sendTime;
     std::weak_ptr<LlmInteractionTurn> requestTurn;
 
@@ -636,8 +642,9 @@ private:
 
    @param reason Error message recorded on each finalized conversation.
    @param recordErrorTurn If true, append a (display-only) error turn to each conversation, which
-          emits responseAdded to the GUI.  Pass false from the destructor to avoid emitting signals
-          while this object is being torn down.
+          emits responseAdded to the GUI, and emit each finalized conversation's (including nested
+          sub-agents') conversationFinished.  Pass false from the destructor to avoid emitting
+          signals while this object is being torn down.
    */
   void failInFlightConversations( const std::string &reason, bool recordErrorTurn = true );
 

@@ -123,13 +123,12 @@ class LlmElapsedText : public Wt::WText
 public:
   LlmElapsedText();
 
-  /** Starts counting up from zero, shown after `label` (if not empty). */
-  void start( const Wt::WString &label );
+  /** Starts counting up from `alreadyElapsed`, shown after `label` (if not empty). */
+  void start( const Wt::WString &label,
+              const std::chrono::milliseconds alreadyElapsed = std::chrono::milliseconds(0) );
 
   /** Stops any counter, and shows `text` instead.  Use this rather than setText(). */
   void setFinalText( const Wt::WString &text );
-
-  bool isCounting() const;
 
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags ) override;
@@ -381,11 +380,20 @@ protected:
   /** Update the status indicator text and timer */
   void updateStatus();
 
-  /** An API request was sent for this conversation; `turn` is the turn it carried. */
+  /** An API request was sent for this conversation; `turn` is the turn it carried (null if the last
+   turn was not one sent to the LLM - e.g., a retry after a failed tool round).
+   */
   void handleRequestSent( std::shared_ptr<LlmInteractionTurn> turn );
 
-  /** The interface's activity changed; when it goes idle, stops any counters still running. */
+  /** The interface went idle, so stops the live turn counter (if any) - a backstop for a request or
+   tool round ending without a turn or signal that finalizes it.
+   */
   void handleActivityIdle();
+
+  /** Subscribes to the interface's activityChanged() only while m_activeStatus is counting, so
+   conversations with nothing in flight (all of history) dont listen.
+   */
+  void updateIdleListener();
 
   /** Starts the "live" counter `status` (finalizing any other first); its final text will be the
    callDuration() of `turn`.  `status` may be null.
@@ -460,6 +468,9 @@ private:
    */
   LlmElapsedText *m_activeStatus;
   std::shared_ptr<LlmInteractionTurn> m_activeStatusTurn;
+
+  /** Our connection to LlmInterface::activityChanged(); see updateIdleListener(). */
+  Wt::Signals::connection m_idleConnection;
 
   /** The most recent turn that is sent to the LLM (a ToolResult or AutoReply) and its panel; when a
    request carrying it goes out, its panel shows the "Pending LLM response" counter.

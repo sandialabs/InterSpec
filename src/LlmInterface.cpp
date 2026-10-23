@@ -290,9 +290,12 @@ namespace
    missed).  Sets finishTime so an abandoned conversation does not display "Pending LLM response..."
    forever; only the directly-cancelled top conversation gets a visible error turn (when requested),
    nested sub-agents are just marked finished.  The finishTime guard also de-duplicates and leaves
-   already-completed conversations untouched. */
+   already-completed conversations untouched.  `notify` emits each finalized conversation's
+   conversationFinished signal (not its completion handler), so its display stops showing it as
+   running; pass false when the GUI is being torn down or replaced. */
   void finalize_convo_tree( const shared_ptr<LlmInteraction> &convo, const std::string &reason,
-                            const bool recordErrorTurn, LlmConversationHistory * const history )
+                            const bool recordErrorTurn, const bool notify,
+                            LlmConversationHistory * const history )
   {
     if( !convo || convo->finishTime.has_value() )
       return;
@@ -310,8 +313,11 @@ namespace
       if( !calls )
         continue;
       for( const LlmToolCall &tc : *calls )
-        finalize_convo_tree( tc.sub_agent_conversation, reason, /*recordErrorTurn=*/false, history );
+        finalize_convo_tree( tc.sub_agent_conversation, reason, /*recordErrorTurn=*/false, notify, history );
     }
+
+    if( notify )
+      convo->conversationFinished.emit();
   }//finalize_convo_tree(...)
 }//namespace
 
@@ -327,9 +333,10 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
 
   // Finalize a conversation (and its nested sub-agents) exactly once.  The finishTime check both
   // skips already-finished conversations and de-duplicates a conversation that appears in more than
-  // one of the maps below.
+  // one of the maps below.  The callers that dont want an error turn are those tearing down or
+  // replacing the GUI's history, so they dont want the finished signals either.
   const auto finalize = [this, &reason, recordErrorTurn]( const shared_ptr<LlmInteraction> &convo ){
-    finalize_convo_tree( convo, reason, recordErrorTurn, m_history.get() );
+    finalize_convo_tree( convo, reason, recordErrorTurn, /*notify=*/recordErrorTurn, m_history.get() );
   };
 
   for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
@@ -368,6 +375,33 @@ bool LlmInterface::hasActiveRequests() const
   return !m_pendingRequests.empty() || !m_deferredToolResults.empty()
          || !m_summarizationPendingConvos.empty();
 }//hasActiveRequests()
+
+
+bool LlmInterface::isConversationActive( const std::shared_ptr<const LlmInteraction> &convo ) const
+{
+  if( !convo )
+    return false;
+
+  for( const std::pair<const int, PendingRequest> &pr : m_pendingRequests )
+  {
+    if( pr.second.conversation.lock() == convo )
+      return true;
+  }
+
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    if( conversationForRound( dr.second ) == convo )
+      return true;
+  }
+
+  for( const std::weak_ptr<LlmInteraction> &wk : m_summarizationPendingConvos )
+  {
+    if( wk.lock() == convo )
+      return true;
+  }
+
+  return false;
+}//isConversationActive(...)
 
 
 void LlmInterface::cancelAll()
@@ -5621,6 +5655,14 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         m_history->applySummary( summaryText );
       }
 
+      // The compaction conversation is done - mark it so, as with an empty summary it got no final
+      //  turn, and its display would otherwise keep counting.
+      if( convo && !convo->finishTime.has_value() )
+      {
+        convo->finishTime = std::chrono::system_clock::now();
+        convo->conversationFinished.emit();
+      }
+
       // Now send any queued user message(s)
       const bool hadQueued = !m_summarizationPendingConvos.empty();
       flushSummarizationQueue();
@@ -5679,9 +5721,19 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
   
   const int requestId = m_nextRequestId++;  
 
-  // The turn the LLM will be responding to; its callDuration is set when the response arrives.
-  const std::shared_ptr<LlmInteractionTurn> requestTurn
-                                  = convo->responses.empty() ? nullptr : convo->responses.back();
+  // The turn the LLM will be responding to - the last turn, if it is one we send (not, e.g., the
+  //  ToolCall a retry after a failed tool round leaves last, whose callDuration is the tools' time);
+  //  its callDuration is set when the response arrives.
+  std::shared_ptr<LlmInteractionTurn> requestTurn;
+  if( !convo->responses.empty() )
+  {
+    const std::shared_ptr<LlmInteractionTurn> &lastTurn = convo->responses.back();
+    const LlmInteractionTurn::Type lastType = lastTurn->type();
+    if( (lastType == LlmInteractionTurn::Type::InitialRequest)
+        || (lastType == LlmInteractionTurn::Type::ToolResult)
+        || (lastType == LlmInteractionTurn::Type::AutoReply) )
+      requestTurn = lastTurn;
+  }//if( !convo->responses.empty() )
 
   // Store the pending request
   PendingRequest pending;
@@ -5701,8 +5753,7 @@ std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::jso
   std::string request_content = makeApiCallWithId(requestJson, requestId);
 
   updateActivityState();
-  if( requestTurn )
-    convo->llmRequestSent.emit( requestTurn );
+  convo->llmRequestSent.emit( requestTurn );
 
   return make_pair(requestId,std::move(request_content));
 }

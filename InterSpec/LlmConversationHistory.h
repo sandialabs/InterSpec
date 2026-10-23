@@ -567,13 +567,16 @@ struct LlmInteraction
    */
   Wt::Signal<std::shared_ptr<LlmInteractionTurn>, std::shared_ptr<LlmInteraction>> subAgentFinished;
 
-  /** Signal emitted when this conversation finishes (no more tool calls to process).
-   Can be used by the GUI to re-enable input.
+  /** Signal emitted when this conversation finishes (no more tool calls to process), or is ended
+   early by a cancel, timeout, or settings change (after finishTime is set; a compaction conversation
+   also emits it when its response arrives, even if the summary was empty).  Can be used by the GUI
+   to re-enable input.
    */
   Wt::Signal<> conversationFinished;
 
   /** Signal emitted when an API request is sent to the LLM for this conversation.
-   Emits the conversation's last turn at that time - i.e., the turn the LLM is now responding to.
+   Emits the turn the LLM is now responding to (the last InitialRequest, ToolResult, or AutoReply
+   turn), or nullptr if the last turn is not one of those (e.g., a retry after a failed tool round).
    */
   Wt::Signal<std::shared_ptr<LlmInteractionTurn>> llmRequestSent;
 

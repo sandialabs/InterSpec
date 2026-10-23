@@ -181,7 +181,7 @@ WT_DECLARE_WT_MEMBER
       el._llmTick = null;
       return;
     }
-    el.textContent = (label ? (label + ' ') : '') + Math.floor( (Date.now() - t0) / 1000 ) + 's';
+    el.textContent = (label ? (label + " ") : "") + Math.floor( (Date.now() - t0) / 1000 ) + "s";
   };
   el._llmTick = setInterval( update, 1000 );
   update();
@@ -189,14 +189,20 @@ WT_DECLARE_WT_MEMBER
 );
 
 
+/** Stops the LlmElapsedStart counter in `el`, and shows `text` - Wt sends a WText's new text before
+ the JS queued in the same response, so a start earlier in that response would otherwise overwrite it.
+ */
 WT_DECLARE_WT_MEMBER
 (LlmElapsedStop, Wt::JavaScriptFunction, "LlmElapsedStop",
-  function( el )
+  function( el, text )
 {
-  if( el && el._llmTick ){
+  if( !el )
+    return;
+  if( el._llmTick ){
     clearInterval( el._llmTick );
     el._llmTick = null;
   }
+  el.textContent = text;
 }
 );
 }//namespace
@@ -417,15 +423,15 @@ LlmElapsedText::LlmElapsedText()
 }//LlmElapsedText constructor
 
 
-void LlmElapsedText::start( const WString &label )
+void LlmElapsedText::start( const WString &label, const chrono::milliseconds alreadyElapsed )
 {
   m_counting = true;
   m_label = label;
-  m_start = chrono::steady_clock::now();
+  m_start = chrono::steady_clock::now() - alreadyElapsed;
 
-  // What the client shows until its first tick; it also guarantees a later setFinalText() differs
-  //  from the server-side text, so Wt always sends it.
-  setText( label.empty() ? WString("0s") : WString("{1} 0s").arg(label) );
+  // What the client shows until its first tick (and what a full render starts from).
+  const string secs = to_string( chrono::duration_cast<chrono::seconds>( alreadyElapsed ).count() ) + "s";
+  setText( label.empty() ? WString::fromUTF8(secs) : WString("{1} {2}").arg(label).arg(secs) );
 
   if( isRendered() )
     startClientCounter();
@@ -440,18 +446,12 @@ void LlmElapsedText::setFinalText( const WString &text )
     if( isRendered() )
     {
       LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmElapsedStop );
-      doJavaScript( "Wt.WT.LlmElapsedStop(" + jsRef() + ");" );
+      doJavaScript( "Wt.WT.LlmElapsedStop(" + jsRef() + "," + text.jsStringLiteral() + ");" );
     }
   }//if( m_counting )
 
   setText( text );
 }//setFinalText(...)
-
-
-bool LlmElapsedText::isCounting() const
-{
-  return m_counting;
-}//isCounting()
 
 
 void LlmElapsedText::startClientCounter()
@@ -1537,10 +1537,12 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
     return;
 
   // Sub-agent finished - create the result text area if content is available
-  // Find the corresponding tool call in m_results
+  // Find the corresponding tool call in m_results.  A sub-agent ended early (cancel, timeout) still
+  //  has its "processing" placeholder, so skip it while it is Pending.
   for( const LlmToolCall &call : m_results->toolCalls() )
   {
-    if( call.sub_agent_conversation == subAgent && !call.content.empty() )
+    if( call.sub_agent_conversation == subAgent && !call.content.empty()
+        && (call.status != LlmToolCall::CallStatus::Pending) )
     {
       // Find the result div for this sub-agent
       const auto divIter = m_subAgentResultDivs.find( subAgent );
@@ -2008,15 +2010,8 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   interaction->conversationFinished.connect( this, &LlmInteractionDisplay::handleConversationFinished );
   interaction->llmRequestSent.connect( this, &LlmInteractionDisplay::handleRequestSent );
 
-  if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
-  {
-    llm->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
-      if( state == LlmInterface::ActivityState::Idle )
-        handleActivityIdle();
-    } );
-  }//if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
-
-  // Check if conversation is already finished
+  // Check if conversation is already finished; a set finishTime with no final or error turn means it
+  //  was ended without one (e.g., a cancelled sub-agent, or the interface was closed mid-request).
   bool hasError = false;
   bool hasFinalResponse = false;
   for( const shared_ptr<LlmInteractionTurn> &turn : interaction->responses )
@@ -2027,18 +2022,21 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
       hasFinalResponse = true;
   }
 
-  if( hasError || hasFinalResponse )
+  if( hasError || hasFinalResponse || m_interaction->finishTime.has_value() )
   {
     m_isFinished = true;
     updateSummary();
-  }else if( !m_interaction->finishTime.has_value() )
+    updateStatus();
+  }else
   {
-    // Count up the total time so far (a conversation restored unfinished has no live request, so
-    //  it just shows the static "0s").
-    if( const shared_ptr<LlmInterface> llm = m_llmInterface.lock() )
+    // Count up the total time since the conversation started - but only if it has work in flight; a
+    //  conversation restored unfinished has nothing that would end it, so it just shows "0s".
+    const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+    if( llm && llm->isConversationActive( m_interaction ) )
     {
-      if( llm->hasActiveRequests() )
-        m_timerText->start( WString() );
+      const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+      m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                    chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
     }
   }
 
@@ -2329,12 +2327,14 @@ void LlmInteractionDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
 
 void LlmInteractionDisplay::handleConversationFinished()
 {
+  // Also emitted for a conversation ended without a final or error turn (e.g., a cancelled
+  //  sub-agent), so nothing it shows may still be counting.
+  finalizeActiveStatus();
+
   m_isFinished = true;
   stopStatusTimer();
   updateSummary();
   updateStatus();
-  
-  
 }//handleConversationFinished()
 
 
@@ -2356,14 +2356,34 @@ void LlmInteractionDisplay::handleRequestSent( shared_ptr<LlmInteractionTurn> tu
 
 void LlmInteractionDisplay::handleActivityIdle()
 {
-  // Nothing is in flight any more, so nothing this conversation shows can still be running.
+  // Nothing is in flight any more, so the turn being waited on cant still be running.  (Not the
+  //  total-time counter: the interface also passes through idle between a response and the next
+  //  request, so that counter is only stopped when the conversation finishes.)
   finalizeActiveStatus();
-
-  // A cancel or timeout marks nested sub-agent conversations finished (sets finishTime) without
-  //  emitting their conversationFinished signal, so catch that here.
-  if( !m_isFinished && m_interaction->finishTime.has_value() )
-    handleConversationFinished();
 }//handleActivityIdle()
+
+
+void LlmInteractionDisplay::updateIdleListener()
+{
+  const bool counting = (m_activeStatus != nullptr);
+  if( counting == m_idleConnection.isConnected() )
+    return;
+
+  if( !counting )
+  {
+    m_idleConnection.disconnect();
+    return;
+  }
+
+  const shared_ptr<LlmInterface> llm = m_llmInterface.lock();
+  if( !llm )
+    return;
+
+  m_idleConnection = llm->activityChanged().connect( this, [this]( const LlmInterface::ActivityState state ){
+    if( state == LlmInterface::ActivityState::Idle )
+      handleActivityIdle();
+  } );
+}//updateIdleListener()
 
 
 void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const WString &label,
@@ -2376,6 +2396,7 @@ void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const WSt
   m_activeStatus = status;
   m_activeStatusTurn = turn;
   status->start( label );
+  updateIdleListener();
 }//startActiveStatus(...)
 
 
@@ -2394,6 +2415,8 @@ void LlmInteractionDisplay::finalizeActiveStatus()
     status->setFinalText( WString() );
   else
     showFinalDuration( status, turn );
+
+  updateIdleListener();
 }//finalizeActiveStatus()
 
 
