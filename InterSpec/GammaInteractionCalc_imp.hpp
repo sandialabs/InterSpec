@@ -1458,12 +1458,7 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
     return T(1.0);
 
   const auto idx_of = [&cb]( const double energy ) -> int {
-    // partner_energies is sorted; binary search within 0.25 keV
-    const auto pos = std::lower_bound( std::begin(cb.partner_energies),
-                                       std::end(cb.partner_energies), energy - 0.25 );
-    if( (pos != std::end(cb.partner_energies)) && (std::fabs(*pos - energy) < 0.25) )
-      return static_cast<int>( pos - std::begin(cb.partner_energies) );
-    return -1;
+    return CascadeSummingCalc::nearestEnergyIndex( cb.partner_energies, energy );
   };
 
   const ShieldScatterAugment &scatter = cb.calc->scatterAugment();
@@ -4379,24 +4374,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     cascade_block = std::make_shared<typename DistributedSrcCalcT<T>::CascadeBlock>();
     cascade_block->calc = m_cascadeCalc.get();
     cascade_block->partner_energies = m_cascadeCalc->allPartnerEnergies();
-    for( const double energy : cascade_block->partner_energies )
-    {
-      double fep_int = 0.0, tot_int = 0.0;
-      try
-      {
-        fep_int = m_detector->farFieldIntrinsicEfficiency( static_cast<float>(energy) );
-        // CeeLo-aware, and returns 0 (rather than throwing) when the DRF has no
-        //  total-efficiency info - the CeeLo-response case, where the total
-        //  lives in the response, not a separate curve.
-        tot_int = m_detector->totalIntrinsicEfficiencyAny( static_cast<float>(energy) );
-      }catch( std::exception & )
-      {
-      }
-      cascade_block->partner_fep_int.push_back( std::max(0.0, fep_int) );
-      cascade_block->partner_tot_int.push_back( std::max(0.0, tot_int) );
-      cascade_block->air_mu.push_back(
-              transmission_length_coefficient_air( energy ) );
-    }//for( partner energies )
+    cascade_block->partner_fep_int = m_cascadeCalc->partnerFepIntrinsic();
+    cascade_block->partner_tot_int = m_cascadeCalc->partnerTotIntrinsic();
+    cascade_block->air_mu = m_cascadePartnerAirMu;
+    const size_t npartner = cascade_block->partner_energies.size();
+    if( (cascade_block->partner_fep_int.size() != npartner)
+       || (cascade_block->partner_tot_int.size() != npartner)
+       || (cascade_block->air_mu.size() != npartner) )
+      throw std::logic_error( "build_volumetric_calculators: cascade partner tables out of step" );
   }//if( m_cascadeCalc )
 
   const auto cascade_mu_for_material = [&]( const Material * const mat ) -> const std::vector<double> & {
@@ -4435,9 +4420,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
     const std::vector<double> &feps = cascade_block->partner_fep_int;
     const std::vector<double> &tots = cascade_block->partner_tot_int;
     const auto find_idx = [&energies]( const double energy ) -> int {
-      const auto p = std::lower_bound( std::begin(energies), std::end(energies), energy - 0.25 );
-      return ((p != std::end(energies)) && (std::fabs(*p - energy) < 0.25))
-                ? static_cast<int>(p - std::begin(energies)) : -1;
+      return CascadeSummingCalc::nearestEnergyIndex( energies, energy );
     };
     const std::function<double(double)> fep_f = [&]( double energy ) -> double {
       const int j = find_idx(energy);

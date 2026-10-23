@@ -311,6 +311,19 @@ to the same value and dropping these pins together.
 
 - **FEP-only mode**: Full MC transport inside the scoring crystal (same Compton/PE/fluorescence physics as full mode), but uses importance-weighted stochastic Rayleigh through non-scoring segments (attenuators, source shielding) -- treating Compton/PE as absorption and only sampling Rayleigh scattering. Photons that exit the crystal boundary are immediately killed (can't contribute to FEP). Faster than full mode but only computes FEP efficiency (no spectrum or total efficiency).
 
+### Analytic cascade summing (`compute_cascade_analytic`)
+
+`cascade/AnalyticCascade.h` gives per-window summing factors from a nuclide's `DecayCascade`s and an
+injected efficiency provider, with no MC (the exact level-scheme joint-probability form; see the
+header). Everything that does not depend on the efficiencies or windows - level-scheme DAGs, x-ray
+line tables, summing-in occurrence lists - is prepared once in an `AnalyticCascadeModel`; callers that
+evaluate the same cascades repeatedly (a fit) build the model once and call the model overload. The
+vector overload builds a temporary model, and both give identical results. Within one call the engine
+computes each branch's survival factors and DPs once, and memoizes each primary's summing-out factor
+and each summing-in pair key's coincident survival (the ~25 vacancy x-ray lines of one transition
+share one key), so a U-235/U-238 evaluation over ~300 windows takes tens of ms rather than seconds.
+Providers must be deterministic and side-effect free (their values are memoized per energy).
+
 ### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
 
 `src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
