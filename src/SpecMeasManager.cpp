@@ -6814,13 +6814,14 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
-  return loadFromFileSystem( name, type, parseType, true );
+  return loadFromFileSystem( name, type, parseType,
+                             VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
 }
 
 
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType,
-                                         bool checkIfPreviouslyOpened )
+                                         const VariantChecksToDo viewingChecks )
 {
   if( m_previousStatesDialog )
     handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
@@ -6840,8 +6841,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     selected.insert( index );
     m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-    displayFile( row, measurement, type, true, true, 
-              SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
+    displayFile( row, measurement, type, true, true, viewingChecks );
   }catch( const std::exception &e )
   {
     {

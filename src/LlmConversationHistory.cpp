@@ -1104,7 +1104,8 @@ std::string LlmConversationHistory::logFileName( const std::chrono::system_clock
 
 
 void LlmConversationHistory::writeLogFile( const std::string &path,
-                                  const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const
+                                  const std::vector<std::pair<std::string,std::string>> &rootAttribs,
+                                  const bool include_raw_content ) const
 {
   rapidxml::xml_document<char> doc;
 
@@ -1119,7 +1120,7 @@ void LlmConversationHistory::writeLogFile( const std::string &path,
   for( const pair<string,string> &attrib : rootAttribs )
     XmlUtils::append_attrib( root, attrib.first, attrib.second );
 
-  toXml( root, &doc );
+  toXml( m_conversations, root, &doc, include_raw_content );
 
   string xml;
   rapidxml::print( std::back_inserter(xml), doc );

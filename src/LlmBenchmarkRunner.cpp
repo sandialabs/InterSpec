@@ -56,13 +56,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmToolGui.h"
-#include "InterSpec/LlmConversationHistory.h"
-#include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmSessionTimer.h"
+#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmConversationHistory.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
@@ -114,12 +115,160 @@ namespace
 
     return string();
   }//image_mime_type
+
+
+  /** Longest string argument value kept in a results-JSON tool call; longer ones are shortened. */
+  const size_t sm_max_tool_arg_chars = 200;
+
+
+  /** A copy of `value` with every string over sm_max_tool_arg_chars cut short, and a note of its
+   original length appended, so a tool call's arguments stay readable in the results JSON. */
+  nlohmann::json shorten_tool_args( const nlohmann::json &value )
+  {
+    if( value.is_string() )
+    {
+      string str = value.get<string>();
+      if( str.size() <= sm_max_tool_arg_chars )
+        return value;
+      const size_t orig_size = str.size();
+      SpecUtils::utf8_limit_str_size( str, sm_max_tool_arg_chars );  // wont split a multi-byte character
+      return str + "...(" + to_string( orig_size ) + " chars)";
+    }//if( value.is_string() )
+
+    if( value.is_object() || value.is_array() )
+    {
+      nlohmann::json answer = value;
+      for( nlohmann::json &child : answer )
+        child = shorten_tool_args( child );
+      return answer;
+    }
+
+    return value;
+  }//shorten_tool_args(...)
+
+
+  /** Appends the tool calls made in `convo`, in order, descending into the conversations of any
+   sub-agents it invoked (attached to the tool-result turns), so a sub-agent's calls follow the
+   `invoke_*` call that started it. */
+  void collect_tool_calls( const shared_ptr<LlmInteraction> &convo,
+                           vector<BenchmarkToolCall> &calls,
+                           set<const LlmInteraction *> &visited )
+  {
+    if( !convo || !visited.insert( convo.get() ).second )
+      return;
+
+    string agent;
+    try
+    {
+      agent = agentTypeToString( convo->agent_type );
+    }catch( std::exception & )
+    {
+      agent = "unknown";
+    }
+
+    for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+    {
+      if( !turn )
+        continue;
+
+      if( turn->type() == LlmInteractionTurn::Type::ToolCall )
+      {
+        const LlmToolRequest * const request = dynamic_cast<const LlmToolRequest *>( turn.get() );
+        assert( request );
+        if( !request )
+          continue;
+
+        for( const LlmToolCall &call : request->toolCalls() )
+        {
+          BenchmarkToolCall entry;
+          entry.agent = agent;
+          entry.tool = call.toolName;
+          entry.args = shorten_tool_args( call.toolParameters );
+          calls.push_back( std::move( entry ) );
+        }
+      }else if( turn->type() == LlmInteractionTurn::Type::ToolResult )
+      {
+        const LlmToolResults * const results = dynamic_cast<const LlmToolResults *>( turn.get() );
+        assert( results );
+        if( !results )
+          continue;
+
+        for( const LlmToolCall &call : results->toolCalls() )
+          collect_tool_calls( call.sub_agent_conversation, calls, visited );
+      }
+    }//for( loop over turns )
+  }//collect_tool_calls(...)
+
+
+  /** `id` with anything but letters, digits, '-', '_', and '.' replaced by '_', for use in a file name. */
+  string file_name_safe( string id )
+  {
+    for( char &c : id )
+    {
+      const bool ok = ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'))
+                      || ((c >= '0') && (c <= '9')) || (c == '-') || (c == '_') || (c == '.');
+      if( !ok )
+        c = '_';
+    }
+    return id.empty() ? string( "problem" ) : id;
+  }//file_name_safe(...)
+
+
+  /** Canonical names of the KnowledgeBase skills the assistant is given (after any skill filter). */
+  vector<string> available_skill_names()
+  {
+    vector<string> names;
+    try
+    {
+      for( const LlmKnowledgeBase::SkillInfo &skill : LlmKnowledgeBase::loadSkills() )
+        names.push_back( skill.canonical_name );
+    }catch( std::exception &e )
+    {
+      cerr << "[LlmBenchmark] Failed to list KnowledgeBase skills: " << e.what() << endl;
+    }
+    return names;
+  }//available_skill_names()
+
+
+  /** Which "how do you want to view this file" questions loading a spectrum file may ask: none
+   when there is no one to answer them. */
+  SpecMeasManager::VariantChecksToDo viewing_checks( const bool interactive )
+  {
+    return interactive ? SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets
+                       : SpecMeasManager::VariantChecksToDo::None;
+  }
+
+
+  /** The judge's system prompt, if llm_judge_prompt.xml is not found. */
+  const char * const sm_default_judge_prompt =
+    "You grade answers to questions about gamma-ray spectroscopy, radiation detection, and nuclear"
+    " physics, against an expected answer and an optional scoring rubric.\n\n"
+    "Grade on scientific substance, not wording: accept equivalent notation, units, and rounding; a"
+    " numeric answer is correct if it agrees with the expected value to the precision the question"
+    " calls for.  Do not reward content beyond what was asked, nor penalize extra correct detail;"
+    " penalize statements that are wrong.  Apply each rubric criterion independently and"
+    " consistently; the score is the sum of the points earned.  If there is no rubric, give score 1"
+    " (correct) or 0 (incorrect), with maxScore 1.\n\n"
+    "Reply with only the JSON object the request asks for - no markdown code fences and no other text.";
+
+
+  BenchmarkToolCall tool_call_from_json( const nlohmann::json &j )
+  {
+    BenchmarkToolCall call;
+    call.agent = j.value( "agent", string() );
+    call.tool = j.value( "tool", string() );
+    if( j.contains( "args" ) )
+      call.args = j["args"];
+    return call;
+  }//tool_call_from_json(...)
 }//namespace
 
 
-LlmBenchmarkRunner::LlmBenchmarkRunner( InterSpec *viewer, LlmToolGui *toolGui )
+LlmBenchmarkRunner::LlmBenchmarkRunner( InterSpec *viewer, LlmToolGui *toolGui,
+                                        const BenchmarkRunOptions &options )
   : m_viewer( viewer ),
     m_toolGui( toolGui ),
+    m_options( options ),
     m_state( State::Idle ),
     m_currentProblem( 0 ),
     m_currentQuestion( 0 ),
@@ -155,10 +304,16 @@ void LlmBenchmarkRunner::cancelBenchmark()
 
   log( "Benchmark cancelled by user" );
 
+  // Keep the conversation of an interrupted attempt, which can show where a run got stuck.
+  if( (m_state == State::WaitingForResponse) || (m_state == State::WaitingForSequenceStepResponse) )
+    writeAttemptLog( "cancelled" );
+
   // Reconnect spectrum changed handler if we disconnected it
   reconnectSpectrumChangedHandler();
 
+  m_retryTimer.reset();
   m_state = State::Finished;
+  m_results.endTime = chrono::system_clock::now();
   computeSummaryStats();
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
@@ -172,6 +327,33 @@ void LlmBenchmarkRunner::cancelBenchmark()
 Wt::Signal<> &LlmBenchmarkRunner::benchmarkFinished()
 {
   return m_benchmarkFinished;
+}
+
+
+bool LlmBenchmarkRunner::completed() const
+{
+  return m_completed;
+}
+
+
+const BenchmarkResults &LlmBenchmarkRunner::results() const
+{
+  return m_results;
+}
+
+
+string LlmBenchmarkRunner::resultsFilePath() const
+{
+  if( m_runStem.empty() )
+    return string();
+  return SpecUtils::append_path( m_outputDir, m_runStem + (m_completed ? "_results.json" : "_in_progress.json") );
+}
+
+
+void LlmBenchmarkRunner::abortStart()
+{
+  m_state = State::Finished;
+  m_benchmarkFinished.emit();
 }
 
 
@@ -553,6 +735,55 @@ vector<pair<string,string>> LlmBenchmarkRunner::findBenchmarkFiles( const string
 }//findBenchmarkFiles
 
 
+vector<pair<string,string>> LlmBenchmarkRunner::findAvailableBenchmarks()
+{
+  // We take the union of benchmarks found across all candidate directories (a benchmark may
+  //  legitimately appear in more than one).
+  vector<string> testDirs;
+
+  // Shipped location: one up from the static data dir, then into test_datasets/
+  testDirs.push_back(
+    SpecUtils::append_path( SpecUtils::parent_path( InterSpec::staticDataDirectory() ), "test_datasets" ) );
+
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+  // User-writable location: test_datasets/ under the writable data dir.  The getter
+  //  throws when the writable dir hasnt been set, which is a normal condition to skip.
+  try
+  {
+    testDirs.push_back( SpecUtils::append_path( InterSpec::writableDataDirectory(), "test_datasets" ) );
+  }catch( std::exception & )
+  {
+    // writableDataDirectory not set - nothing to add
+  }
+#endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
+
+  // Knowledge skills can carry their own question sets (by convention in
+  //  `<llm_knowledge>/<skill>/test_datasets/<skill>/`, with any spectra next to the XML), so a
+  //  skill distributed on its own brings its benchmark with it.
+  for( const string &knowledgeDir : LlmKnowledgeBase::knowledgeDirectories() )
+    testDirs.push_back( knowledgeDir );
+
+  vector<pair<string,string>> benchmarkFiles;
+  for( string testDir : testDirs )
+  {
+    // Make absolute so the returned paths are valid regardless of the process working directory.
+    SpecUtils::make_canonical_path( testDir );
+    if( !SpecUtils::is_directory( testDir ) )
+      continue;
+
+    const vector<pair<string,string>> found = findBenchmarkFiles( testDir );
+    benchmarkFiles.insert( benchmarkFiles.end(), found.begin(), found.end() );
+  }
+
+  std::sort( benchmarkFiles.begin(), benchmarkFiles.end(),
+    []( const pair<string,string> &a, const pair<string,string> &b ){
+      return a.first < b.first;
+    } );
+
+  return benchmarkFiles;
+}//findAvailableBenchmarks()
+
+
 // ---- Benchmark Execution ----
 
 std::string LlmBenchmarkRunner::benchmarkBaseName( const string &xmlPath )
@@ -593,6 +824,18 @@ std::string LlmBenchmarkRunner::benchmarkOutputDir()
 {
   return SpecUtils::append_path( InterSpec::writableDataDirectory(), "llm_benchmarks" );
 }//benchmarkOutputDir
+
+
+chrono::milliseconds LlmBenchmarkRunner::retryDelay( const int retryNumber )
+{
+  // An outage typically lasts seconds to a minute; a hard error just costs ~1.5 minutes.
+  switch( retryNumber )
+  {
+    case 0: case 1: return chrono::seconds( 5 );
+    case 2:         return chrono::seconds( 20 );
+    default:        return chrono::seconds( 60 );
+  }
+}//retryDelay(...)
 
 
 std::vector<LlmBenchmarkRunner::InProgressRun>
@@ -657,12 +900,22 @@ void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
   //  early if it fails to parse).
   m_grade = true;
   m_warnedNoImageSupport = false;
+  m_attemptLogs.clear();
+  m_lastQuestionToolCalls.clear();
+  m_completed = false;
+
+  // An unattended run always starts fresh, leaving any interrupted runs' checkpoints alone.
+  if( !m_options.interactive )
+  {
+    runFresh( xmlFilePath );
+    return;
+  }
 
   // Look for interrupted runs of this same benchmark (matched by base name and
   //  a hash of the XML contents) and offer to resume before starting fresh.
   const string base = benchmarkBaseName( xmlFilePath );
   const string hash = computeBenchmarkHash( xmlFilePath );
-  const string outputDir = benchmarkOutputDir();
+  const string outputDir = m_options.outputDir.empty() ? benchmarkOutputDir() : m_options.outputDir;
   const vector<InProgressRun> inProgress = scanInProgress( outputDir, base, hash );
 
   if( !inProgress.empty() )
@@ -687,6 +940,7 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
   }catch( const exception &e )
   {
     logError( "Failed to parse benchmark XML: " + string( e.what() ) );
+    abortStart();
     return;
   }
 
@@ -724,6 +978,7 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
   LlmInterface *llm = m_toolGui ? m_toolGui->llmInterface() : nullptr;
   if( llm && llm->config() )
     m_results.modelName = llm->config()->llmApi.model();
+  m_results.skills = available_skill_names();
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   const string session = wApp ? wApp->sessionId() : string("null");
@@ -769,14 +1024,20 @@ void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
 
   m_benchmarkHash = computeBenchmarkHash( xmlFilePath );
   m_startTimeStr = startTimeString( m_results.startTime );
-  m_outputDir = benchmarkOutputDir();
+  m_outputDir = m_options.outputDir.empty() ? benchmarkOutputDir() : m_options.outputDir;
   SpecUtils::create_directory( m_outputDir );
+  m_runStem = benchmarkBaseName( xmlFilePath ) + "_" + m_startTimeStr + "_" + m_benchmarkHash;
+
+  // Runs started within the same second (e.g., several from the command line) must not share files.
+  for( int i = 2; SpecUtils::is_file( SpecUtils::append_path( m_outputDir, m_runStem + "_in_progress.json" ) )
+                  || SpecUtils::is_file( SpecUtils::append_path( m_outputDir, m_runStem + "_results.json" ) )
+                  || SpecUtils::is_directory( SpecUtils::append_path( m_outputDir, m_runStem + "_logs" ) ); ++i )
   {
-    const string base = benchmarkBaseName( xmlFilePath );
-    const string fname = base + "_" + m_startTimeStr + "_" + m_benchmarkHash
-                         + "_in_progress.json";
-    m_inProgressPath = SpecUtils::append_path( m_outputDir, fname );
+    m_startTimeStr = startTimeString( m_results.startTime ) + "-" + to_string( i );
+    m_runStem = benchmarkBaseName( xmlFilePath ) + "_" + m_startTimeStr + "_" + m_benchmarkHash;
   }
+
+  m_inProgressPath = SpecUtils::append_path( m_outputDir, m_runStem + "_in_progress.json" );
 
   // Write an initial (empty) checkpoint so the file exists from the outset.
   writeInProgressCheckpoint();
@@ -798,6 +1059,7 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
   }catch( const exception &e )
   {
     logError( "Failed to parse benchmark XML: " + string( e.what() ) );
+    abortStart();
     return;
   }
 
@@ -823,6 +1085,7 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
   LlmInterface *llm = m_toolGui ? m_toolGui->llmInterface() : nullptr;
   if( llm && llm->config() )
     m_results.modelName = llm->config()->llmApi.model();
+  m_results.skills = available_skill_names();
 
   if( resumeProblemIndex > m_problems.size() )
     resumeProblemIndex = m_problems.size();
@@ -877,9 +1140,14 @@ void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inP
   if( m_grade )
     createJudgeInterface();
 
-  // Keep writing to the same checkpoint file so we don't create a duplicate.
+  // Keep writing to the same checkpoint file (and conversation-log directory) so we don't create
+  //  a duplicate.
   m_inProgressPath = inProgressPath;
   m_outputDir = SpecUtils::parent_path( inProgressPath );
+  m_runStem = SpecUtils::filename( inProgressPath );
+  const string inProgressSuffix = "_in_progress.json";
+  if( SpecUtils::iends_with( m_runStem, inProgressSuffix ) )
+    m_runStem = m_runStem.substr( 0, m_runStem.size() - inProgressSuffix.size() );
 
   advanceToNextStep();
 }
@@ -948,19 +1216,86 @@ void LlmBenchmarkRunner::createJudgeInterface()
   if( !llm || !llm->config() )
     return;
 
-  // Use main config (or JudgeApi config if available in future)
   shared_ptr<const LlmConfig> config = llm->config();
+  const LlmConfig::LlmApi &api = config->llmApi;
+  if( !api.isConfigured() )
+    return;
+
+  // The judge uses the same provider (endpoint and token) as the model it grades; the model is the
+  //  one asked for, else the provider's judge="true" model, else the model being graded.
+  string judgeModel = m_options.judgeModel;
+  const LlmConfig::LlmApi::ApiProvider &provider = api.activeProvider();
+  if( judgeModel.empty() && provider.judgeModelIndex.has_value()
+      && (provider.judgeModelIndex.value() < provider.models.size()) )
+    judgeModel = provider.models[provider.judgeModelIndex.value()].name;
+
+  if( !judgeModel.empty() && (judgeModel != api.model()) )
+  {
+    try
+    {
+      const shared_ptr<LlmConfig> judgeConfig = make_shared<LlmConfig>( *config );
+      judgeConfig->llmApi.selectModel( judgeModel );
+      config = judgeConfig;
+    }catch( const std::exception &e )
+    {
+      logError( "Could not select judge model '" + judgeModel + "' (" + string( e.what() )
+                + "); answers will be graded by " + api.model() );
+    }
+  }//if( a different judge model )
 
   m_judgeInterface = make_shared<LlmInterface>( m_viewer, config );
-  m_judgeInterface->setBlockToolCalls( true );
+  m_judgeInterface->setBlockToolCalls( true );  // No tools are offered either; this is a backstop
+  m_judgeInterface->setPlainCompletion( judgeSystemPrompt() );
 
   m_judgeConversationFinishedConn = m_judgeInterface->conversationFinished().connect(
     this, &LlmBenchmarkRunner::handleJudgeConversationFinished );
   m_judgeResponseErrorConn = m_judgeInterface->responseError().connect(
     this, &LlmBenchmarkRunner::handleJudgeResponseError );
 
-  log( "Created judge LLM interface (tool calls blocked)" );
+  m_results.judgeModelName = config->llmApi.model();
+  log( "Answers will be judged by model " + m_results.judgeModelName
+       + ((m_results.judgeModelName == m_results.modelName)
+          ? " - the model being tested (set judge=\"true\" on another <Model> in llm_config.xml to use a different one)"
+          : string()) );
 }
+
+
+string LlmBenchmarkRunner::judgeSystemPrompt()
+{
+  const string path = LlmConfig::configFilePath( "llm_judge_prompt.xml" );
+  if( !SpecUtils::is_file( path ) )
+    return sm_default_judge_prompt;
+
+  try
+  {
+    vector<char> data;
+    SpecUtils::load_file_data( path.c_str(), data );
+    data.push_back( '\0' );
+
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_trim_whitespace>( data.data() );
+    const rapidxml::xml_node<char> * const root = XML_FIRST_NODE( &doc, "LlmJudgePrompt" );
+    const rapidxml::xml_node<char> * const promptNode = root ? XML_FIRST_NODE( root, "SystemPrompt" ) : nullptr;
+    if( !promptNode )
+      throw runtime_error( "no <LlmJudgePrompt><SystemPrompt> element" );
+
+    // The text is normally in a CDATA section, which is a child node of its own.
+    const rapidxml::xml_node<char> * const cdataNode = promptNode->first_node();
+    string prompt = (cdataNode && (cdataNode->type() == rapidxml::node_cdata))
+                      ? SpecUtils::xml_value_str( cdataNode ) : SpecUtils::xml_value_str( promptNode );
+    SpecUtils::trim( prompt );
+    if( prompt.empty() )
+      throw runtime_error( "empty <SystemPrompt>" );
+
+    return prompt;
+  }catch( const std::exception &e )
+  {
+    cerr << "[LlmBenchmark] ERROR: Failed to read '" << path << "' (" << e.what()
+         << "); using the built-in judge prompt." << endl;
+  }
+
+  return sm_default_judge_prompt;
+}//judgeSystemPrompt()
 
 
 void LlmBenchmarkRunner::advanceToNextStep()
@@ -970,6 +1305,7 @@ void LlmBenchmarkRunner::advanceToNextStep()
   {
     log( "All problems complete" );
     m_state = State::Finished;
+    m_completed = true;
     m_results.endTime = chrono::system_clock::now();
     computeSummaryStats();
     generateReport();
@@ -977,7 +1313,8 @@ void LlmBenchmarkRunner::advanceToNextStep()
     // Write the final _results.json and remove the in-progress checkpoint.
     finalizeResults();
 
-    showResultsDialog();
+    if( m_options.interactive )
+      showResultsDialog();
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   m_log_file.reset();
@@ -1062,18 +1399,9 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
 
   m_state = State::LoadingSpectrum;
 
-  // Save the conversation history from the previous problem for later reference,
-  //  then let the normal spectrum-change flow clear it so the new problem starts fresh.
+  // Let the normal spectrum-change flow clear the previous problem's conversation, so the new
+  //  problem starts fresh; it was already written to the attempt logs (see writeAttemptLog()).
   {
-    auto prevHistory = m_toolGui->getConversationHistory();
-    if( prevHistory && !prevHistory->empty() )
-    {
-      log( "Saved " + to_string( prevHistory->size() )
-           + " conversation(s) from previous problem" );
-      // The conversations are stored in m_results.questionResults[].llmAnswer already,
-      //  so we don't need to store the full history separately.
-    }
-
     // Reconnect the LlmToolGui spectrum-changed handler so the normal setSpectrum()
     //  flow will clear the conversation history when the foreground changes.
     m_toolGui->reconnectSpectrumChangedForBenchmark();
@@ -1085,6 +1413,7 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
   //  For the foreground load, this clears the conversation (new file has no history).
   //  We do NOT send the question from a signal handler — we send it after all files load.
   SpecMeasManager *fileMgr = m_viewer->fileManager();
+  const SpecMeasManager::VariantChecksToDo viewingChecks = viewing_checks( m_options.interactive );
   for( const BenchmarkSpectrumFile &sf : problem->spectrumFiles )
   {
     const string fullPath = resolvePath( sf.filePath );
@@ -1092,7 +1421,7 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
          (sf.specType == SpecUtils::SpectrumType::Foreground ? "Foreground" :
           sf.specType == SpecUtils::SpectrumType::Background ? "Background" : "Secondary") );
 
-    if( !fileMgr->loadFromFileSystem( fullPath, sf.specType, SpecUtils::ParserType::Auto, false ) )
+    if( !fileMgr->loadFromFileSystem( fullPath, sf.specType, SpecUtils::ParserType::Auto, viewingChecks ) )
     {
       logError( "Failed to load spectrum file: " + fullPath );
 
@@ -1197,12 +1526,13 @@ void LlmBenchmarkRunner::loadSequenceStep()
     this, &LlmBenchmarkRunner::handleSpectrumLoaded );
 
   SpecMeasManager *fileMgr = m_viewer->fileManager();
+  const SpecMeasManager::VariantChecksToDo viewingChecks = viewing_checks( m_options.interactive );
   for( const BenchmarkSpectrumFile &sf : step.spectra )
   {
     const string fullPath = resolvePath( sf.filePath );
     log( "  Loading: " + fullPath );
 
-    if( !fileMgr->loadFromFileSystem( fullPath, sf.specType, SpecUtils::ParserType::Auto, false ) )
+    if( !fileMgr->loadFromFileSystem( fullPath, sf.specType, SpecUtils::ParserType::Auto, viewingChecks ) )
     {
       logError( "Failed to load sequence step spectrum: " + fullPath );
       m_spectrumChangedConn.disconnect();
@@ -1263,7 +1593,8 @@ void LlmBenchmarkRunner::sendSequenceStepPrompt()
   log( "Sending sequence step prompt: "
        + (prompt.size() > 100 ? prompt.substr( 0, 100 ) + "..." : prompt) );
 
-  m_toolGui->submitMessageAsUser( prompt );
+  if( !m_toolGui->submitMessageAsUser( prompt ) )
+    handleSubmitFailure();
 }
 
 
@@ -1274,10 +1605,12 @@ bool LlmBenchmarkRunner::retryCurrentQuestionOnError( const string &why )
 
   m_currentQuestionRetries += 1;
 
+  const chrono::milliseconds delay = retryDelay( m_currentQuestionRetries );
   const BenchmarkProblem *problem = currentProblem();
   const BenchmarkQuestion *question = currentQuestion();
   logError( "Retrying " + (problem ? problem->id : string("?"))
             + " Q" + to_string( question ? question->part : -1 )
+            + " in " + to_string( delay.count() / 1000 ) + " s"
             + " (retry " + to_string( m_currentQuestionRetries )
             + " of " + to_string( sm_max_question_retries )
             + ") after error: " + why );
@@ -1288,10 +1621,39 @@ bool LlmBenchmarkRunner::retryCurrentQuestionOnError( const string &why )
   if( m_toolGui )
     m_toolGui->clearConversationHistory();
 
-  m_state = State::Idle;
-  sendCurrentQuestion();  // re-sends the same question; resets m_questionStartTime
+  // Re-sends the same question; resets m_questionStartTime
+  scheduleRetry( delay, [this](){ sendCurrentQuestion(); } );
   return true;
 }//retryCurrentQuestionOnError()
+
+
+void LlmBenchmarkRunner::scheduleRetry( const chrono::milliseconds delay, std::function<void()> resend )
+{
+  m_state = State::WaitingToRetry;
+
+  // The timer is replaced by the next retry, and reset if the run is cancelled, so it never fires
+  //  into a run that has moved on.
+  m_retryTimer = std::make_unique<LlmSessionTimer>( [this, resend](){
+    if( m_state != State::WaitingToRetry )
+      return;
+    m_state = State::Idle;
+    resend();
+
+    // Push any changes to the browser (for the browser fetch() transport, the request itself).
+    if( wApp )
+      wApp->triggerUpdate();
+  } );
+  m_retryTimer->setSingleShot( true );
+  m_retryTimer->setInterval( delay );
+  m_retryTimer->start();
+}//scheduleRetry(...)
+
+
+void LlmBenchmarkRunner::handleSubmitFailure()
+{
+  logError( "The message could not be sent to the LLM" );
+  handleResponseError();
+}//handleSubmitFailure()
 
 
 bool LlmBenchmarkRunner::stageQuestionImages( const BenchmarkQuestion &question )
@@ -1424,8 +1786,73 @@ void LlmBenchmarkRunner::sendCurrentQuestion()
     return;
   }//if( could not stage this questions images )
 
-  m_toolGui->submitMessageAsUser( prompt );
+  if( !m_toolGui->submitMessageAsUser( prompt ) )
+    handleSubmitFailure();
 }
+
+
+void LlmBenchmarkRunner::writeAttemptLog( const string &outcome )
+{
+  const BenchmarkProblem * const problem = currentProblem();
+  LlmInterface * const llm = m_toolGui ? m_toolGui->llmInterface() : nullptr;
+  const shared_ptr<LlmConversationHistory> history = llm ? llm->getHistory() : nullptr;
+  if( !problem || !history || m_outputDir.empty() || m_runStem.empty() )
+    return;
+
+  const bool isSequenceStep = (m_state == State::WaitingForSequenceStepResponse);
+  const BenchmarkQuestion * const question = isSequenceStep ? nullptr : currentQuestion();
+  if( !isSequenceStep && !question )
+    return;
+
+  // The tool calls are wanted even if the log can not be written.
+  if( question )
+  {
+    m_lastQuestionToolCalls.clear();
+    const vector<shared_ptr<LlmInteraction>> &convos = history->getConversations();
+    if( !convos.empty() )
+    {
+      set<const LlmInteraction *> visited;
+      collect_tool_calls( convos.back(), m_lastQuestionToolCalls, visited );
+    }
+  }//if( question )
+
+  const int attempt = m_currentQuestionRetries + 1;
+  const string part = isSequenceStep ? ("step" + to_string( m_currentSequenceStep + 1 ))
+                                     : ("q" + to_string( question->part ));
+  const string logDirName = m_runStem + "_logs";
+  const string fileName = file_name_safe( problem->id ) + "_" + part + "_try" + to_string( attempt ) + ".xml";
+
+  try
+  {
+    const string logDir = SpecUtils::append_path( m_outputDir, logDirName );
+    if( !SpecUtils::is_directory( logDir ) && !SpecUtils::create_directory( logDir ) )
+      throw runtime_error( "could not create directory '" + logDir + "'" );
+
+    vector<pair<string,string>> attribs;
+    attribs.emplace_back( "benchmark", m_results.benchmarkName );
+    attribs.emplace_back( "problemId", problem->id );
+    if( isSequenceStep )
+      attribs.emplace_back( "sequenceStep", to_string( m_currentSequenceStep + 1 ) );
+    else
+      attribs.emplace_back( "questionPart", to_string( question->part ) );
+    attribs.emplace_back( "attempt", to_string( attempt ) );
+    attribs.emplace_back( "outcome", outcome );
+    attribs.emplace_back( "model", m_results.modelName );
+    attribs.emplace_back( "written", LlmConversationHistory::formatLocalTime( chrono::system_clock::now(),
+                                                                             "%Y-%m-%dT%H:%M:%S%z" ) );
+#ifdef InterSpec_VERSION
+    attribs.emplace_back( "InterSpecVersion", InterSpec_VERSION );
+#endif
+
+    // Without the raw request JSON, which repeats the whole conversation on every round trip.
+    history->writeLogFile( SpecUtils::append_path( logDir, fileName ), attribs, false );
+
+    m_attemptLogs.push_back( logDirName + "/" + fileName );
+  }catch( const std::exception &e )
+  {
+    logError( "Failed to write conversation log '" + fileName + "': " + string( e.what() ) );
+  }
+}//writeAttemptLog(...)
 
 
 void LlmBenchmarkRunner::handleConversationFinished()
@@ -1434,7 +1861,8 @@ void LlmBenchmarkRunner::handleConversationFinished()
   {
     log( "Sequence step response received" );
 
-    // Advance to next sequence step
+    // Advance to next sequence step; its retries are its own
+    m_currentQuestionRetries = 0;
     m_currentSequenceStep++;
     m_state = State::Idle;
     advanceToNextStep();
@@ -1464,6 +1892,10 @@ void LlmBenchmarkRunner::handleResponseError()
   logError( "LLM response error for problem " + (problem ? problem->id : "?")
             + " question " + to_string( question ? question->part : -1 ) );
 
+  // Before a retry clears the conversation.
+  writeAttemptLog( (m_state == State::WaitingForSequenceStepResponse)
+                   ? "sequence step response error" : "response error" );
+
   if( m_state == State::WaitingForSequenceStepResponse )
   {
     // Retry the sequence step before giving up on the whole problem.  We do NOT
@@ -1472,9 +1904,11 @@ void LlmBenchmarkRunner::handleResponseError()
     if( m_currentQuestionRetries < sm_max_question_retries )
     {
       m_currentQuestionRetries += 1;
-      logError( "Retrying sequence step (retry " + to_string( m_currentQuestionRetries )
-                + " of " + to_string( sm_max_question_retries ) + ") after LLM response error" );
-      sendSequenceStepPrompt();
+      const chrono::milliseconds delay = retryDelay( m_currentQuestionRetries );
+      logError( "Retrying sequence step in " + to_string( delay.count() / 1000 ) + " s (retry "
+                + to_string( m_currentQuestionRetries ) + " of " + to_string( sm_max_question_retries )
+                + ") after LLM response error" );
+      scheduleRetry( delay, [this](){ sendSequenceStepPrompt(); } );
       return;
     }
 
@@ -1579,6 +2013,9 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
   log( "Extracted answer (" + to_string( llmAnswer.size() ) + " chars, "
        + to_string( duration.count() ) + " ms): "
        + (llmAnswer.size() > 200 ? llmAnswer.substr( 0, 200 ) + "..." : llmAnswer) );
+
+  // Before a retry for an empty answer clears the conversation.
+  writeAttemptLog( SpecUtils::trim_copy( llmAnswer ).empty() ? "empty answer" : "answered" );
 
   // An empty final answer means the turn finished without the model producing a
   //  usable response (e.g. it errored out, hit the watchdog, or emitted content
@@ -1922,6 +2359,14 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   m_lastQuestionCachedTokens.reset();
   m_lastQuestionCacheCreationTokens.reset();
 
+  // Likewise the attempt logs and tool calls, which writeAttemptLog() collected.
+  if( result.conversationLogs.empty() )
+    result.conversationLogs = std::move( m_attemptLogs );
+  m_attemptLogs.clear();
+  if( result.toolCalls.empty() )
+    result.toolCalls = std::move( m_lastQuestionToolCalls );
+  m_lastQuestionToolCalls.clear();
+
   log( "Recorded result for " + result.problemId + " Q" + to_string( result.questionPart )
        + ": " + (result.hadError ? "ERROR" : (result.graded ? (result.correct ? "PASS" : "FAIL") : "UNGRADED"))
        + (result.errorRetries > 0 ? (" [after " + to_string( result.errorRetries ) + " error-retries]") : string()) );
@@ -2141,6 +2586,8 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
   nlohmann::json j;
   j["benchmarkName"] = results.benchmarkName;
   j["modelName"] = results.modelName;
+  j["judgeModelName"] = results.judgeModelName;
+  j["skills"] = results.skills;
   j["benchmarkFile"] = results.benchmarkFilePath;
   // Carried explicitly: a reader cannot tell an intentionally ungraded run from one where every
   //  question errored, since both give gradedQuestions == 0.
@@ -2200,6 +2647,11 @@ std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &result
     qj["totalTokens"] = tok( r.totalTokens );
     qj["cachedTokens"] = tok( r.cachedTokens );
     qj["cacheCreationTokens"] = tok( r.cacheCreationTokens );
+    qj["conversationLogs"] = r.conversationLogs;
+    nlohmann::json toolCalls = nlohmann::json::array();
+    for( const BenchmarkToolCall &call : r.toolCalls )
+      toolCalls.push_back( { {"agent", call.agent}, {"tool", call.tool}, {"args", call.args} } );
+    qj["toolCalls"] = std::move( toolCalls );
     questionsArray.push_back( qj );
 
     totDurationMs += r.duration.count();
@@ -2263,6 +2715,9 @@ bool LlmBenchmarkRunner::resultsFromJson( const string &path,
     out = BenchmarkResults();
     out.benchmarkName = j.value( "benchmarkName", string() );
     out.modelName = j.value( "modelName", string() );
+    out.judgeModelName = j.value( "judgeModelName", string() );
+    if( j.contains( "skills" ) && j["skills"].is_array() )
+      out.skills = j["skills"].get<vector<string>>();
     out.benchmarkFilePath = j.value( "benchmarkFile", string() );
     out.graded = j.value( "graded", true );  // Checkpoints from before this field was added
     resumeProblemIndex = j.value( "resumeProblemIndex", size_t( 0 ) );
@@ -2312,6 +2767,13 @@ bool LlmBenchmarkRunner::resultsFromJson( const string &path,
         if( qj.contains( "totalTokens" ) ) r.totalTokens = optTok( qj["totalTokens"] );
         if( qj.contains( "cachedTokens" ) ) r.cachedTokens = optTok( qj["cachedTokens"] );
         if( qj.contains( "cacheCreationTokens" ) ) r.cacheCreationTokens = optTok( qj["cacheCreationTokens"] );
+        if( qj.contains( "conversationLogs" ) && qj["conversationLogs"].is_array() )
+          r.conversationLogs = qj["conversationLogs"].get<vector<string>>();
+        if( qj.contains( "toolCalls" ) && qj["toolCalls"].is_array() )
+        {
+          for( const nlohmann::json &cj : qj["toolCalls"] )
+            r.toolCalls.push_back( tool_call_from_json( cj ) );
+        }
         out.questionResults.push_back( std::move( r ) );
       }
     }//if( has questions array )

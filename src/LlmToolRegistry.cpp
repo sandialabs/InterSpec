@@ -3,6 +3,7 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <set>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -2716,7 +2717,12 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // The KnowledgeBase agent is only offered if it has something to work from: skills in a
   //  `llm_knowledge` directory, or a RAG endpoint.  Its description then lists the topics it covers.
   const vector<LlmKnowledgeBase::SkillInfo> knowledge_skills = LlmKnowledgeBase::loadSkills();
-  const bool have_rag_endpoint = !config.llmApi.rag_url.empty();
+
+  // A skill filter of "none" (see LlmKnowledgeBase::setSkillFilter) is for testing the assistant
+  //  with no domain knowledge, so it rules out the RAG endpoint as well.
+  const optional<set<string>> skill_filter = LlmKnowledgeBase::skillFilter();
+  const string rag_url = (skill_filter && skill_filter->empty()) ? string() : config.llmApi.rag_url;
+  const bool have_rag_endpoint = !rag_url.empty();
 
   // Register agent-specific invoke tools dynamically from config
   for( const LlmConfig::AgentConfig &agent : config.agents )
@@ -3015,7 +3021,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   }//if( config.mcpServer.allowAgentInvocation && config.llmApi.isConfigured() )
 
   LlmKnowledgeBase::registerKnowledgeBaseTools( knowledge_skills,
-                                                config.llmApi.rag_url,
+                                                rag_url,
                                                 config.llmApi.rag_model,
                                                 config.llmApi.rag_corpora,
                                                 [this]( const SharedTool &tool ){ registerTool(tool); } );
@@ -3117,7 +3123,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "run_javascript"
   };
 
-  if( !config.llmApi.rag_url.empty() )
+  if( have_rag_endpoint )
     expectedTools.push_back( "query_rag_endpoint" );
 
   // Registered programmatically above, when configured; list it so the drift checks below don't

@@ -185,3 +185,96 @@ BOOST_AUTO_TEST_CASE( WriteLogFileRoundTrip )
   BOOST_CHECK( first->totalTokens.has_value() );
   BOOST_CHECK( !loaded[1]->totalTokens.has_value() );
 }//WriteLogFileRoundTrip
+
+
+BOOST_AUTO_TEST_CASE( WriteLogFileWithoutRawContent )
+{
+  // The benchmark runner writes logs without the raw request/response JSON (each request repeats the
+  //  whole conversation); the conversation itself must still be there.
+  LlmConversationHistory history;
+  const shared_ptr<LlmInteraction> convo = history.addUserMessageToMainConversation( "What is in my spectrum?" );
+  history.addAssistantMessageWithThinking( "Cs-137.", "", "{\"raw\":\"RAW-MARKER\"}", convo );
+
+  const string path = SpecUtils::temp_file_name( "llm_log_test", SpecUtils::temp_dir() ) + ".xml";
+
+  history.writeLogFile( path, {} );
+  const string with_raw = read_file( path );
+  BOOST_CHECK( with_raw.find( "RAW-MARKER" ) != string::npos );
+
+  history.writeLogFile( path, {}, false );
+  string without_raw = read_file( path );
+  SpecUtils::remove_file( path );
+  BOOST_CHECK( without_raw.find( "RAW-MARKER" ) == string::npos );
+  BOOST_CHECK( without_raw.find( "Cs-137." ) != string::npos );
+
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( doc.parse<rapidxml::parse_trim_whitespace>( &without_raw[0] ) );
+  const rapidxml::xml_node<char> * const root = XML_FIRST_NODE( (&doc), "LlmConversationLog" );
+  BOOST_REQUIRE( root );
+  vector<shared_ptr<LlmInteraction>> loaded;
+  LlmConversationHistory::fromXml( root, loaded );
+  BOOST_CHECK_EQUAL( loaded.size(), 1 );
+}//WriteLogFileWithoutRawContent
+
+
+BOOST_AUTO_TEST_CASE( JudgeModelConfig )
+{
+  const string config_xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<LlmConfig version=\"0\">\n"
+    "  <LlmApi version=\"1\">\n"
+    "    <Enabled>true</Enabled>\n"
+    "    <ApiProvider active=\"true\">\n"
+    "      <ApiEndpoint>https://api.example.com/v1/chat/completions</ApiEndpoint>\n"
+    "      <BearerToken>x</BearerToken>\n"
+    "      <Model active=\"true\"><Name>test-model</Name></Model>\n"
+    "      <Model judge=\"true\"><Name>judge-model</Name></Model>\n"
+    "    </ApiProvider>\n"
+    "  </LlmApi>\n"
+    "  <McpServer version=\"1\"><Enabled>false</Enabled><BearerToken>x</BearerToken></McpServer>\n"
+    "</LlmConfig>\n";
+
+  const string path = write_temp_file( config_xml );
+  LlmConfig config;
+  std::tie( config.llmApi, config.mcpServer ) = LlmConfig::loadApiAndMcpConfigs( path );
+  SpecUtils::remove_file( path );
+
+  const LlmConfig::LlmApi::ApiProvider &prov = config.llmApi.activeProvider();
+  BOOST_REQUIRE( prov.judgeModelIndex.has_value() );
+  BOOST_CHECK_EQUAL( prov.judgeModelIndex.value(), 1 );
+  BOOST_CHECK_EQUAL( config.llmApi.model(), "test-model" );
+
+  // Written back (so saving from the settings window keeps it), documented, and read back.
+  const string xml = LlmConfig::toXmlString( config );
+  BOOST_CHECK( xml.find( "judge=\"true\"" ) != string::npos );
+  BOOST_CHECK( xml.find( "judge  " ) != string::npos );  // The <Model> attribute documentation
+  const string path2 = write_temp_file( xml );
+  const pair<LlmConfig::LlmApi, LlmConfig::McpServer> reloaded = LlmConfig::loadApiAndMcpConfigs( path2 );
+  SpecUtils::remove_file( path2 );
+  BOOST_REQUIRE( reloaded.first.activeProvider().judgeModelIndex.has_value() );
+  BOOST_CHECK_EQUAL( reloaded.first.activeProvider().judgeModelIndex.value(), 1 );
+
+  // Without the attribute, there is no judge model.
+  const string plain_path = write_temp_file( sm_minimal_config );
+  const pair<LlmConfig::LlmApi, LlmConfig::McpServer> plain = LlmConfig::loadApiAndMcpConfigs( plain_path );
+  SpecUtils::remove_file( plain_path );
+  BOOST_CHECK( !plain.first.activeProvider().judgeModelIndex.has_value() );
+  BOOST_CHECK( LlmConfig::toXmlString( LlmConfig() ).find( "judge=\"true\"" ) == string::npos );
+
+  // selectModel(): selects a listed model, or adds one; the judge index stays on the same model.
+  LlmConfig copy( config );
+  BOOST_CHECK_EQUAL( copy.llmApi.selectModel( "judge-model" ), 1 );
+  BOOST_CHECK_EQUAL( copy.llmApi.model(), "judge-model" );
+  BOOST_CHECK_EQUAL( copy.llmApi.selectModel( "brand-new-model" ), 2 );
+  BOOST_CHECK_EQUAL( copy.llmApi.model(), "brand-new-model" );
+  BOOST_CHECK_EQUAL( copy.llmApi.activeProvider().models.size(), 3 );
+  BOOST_CHECK_EQUAL( copy.llmApi.activeProvider().judgeModelIndex.value(), 1 );
+  BOOST_CHECK_THROW( copy.llmApi.selectModel( "" ), std::exception );
+
+  // ... without changing the config it was copied from.
+  BOOST_CHECK_EQUAL( config.llmApi.model(), "test-model" );
+  BOOST_CHECK_EQUAL( config.llmApi.activeProvider().models.size(), 2 );
+
+  LlmConfig::LlmApi no_provider;
+  BOOST_CHECK_THROW( no_provider.selectModel( "x" ), std::exception );
+}//JudgeModelConfig

@@ -767,10 +767,15 @@ public:
    The file is written to a temporary file first and then renamed into place, so a failure mid-write
    does not leave a truncated log.
 
+   @param include_raw_content Whether to include each turn's raw request/response JSON; see toXml().
+          Each request repeats the whole conversation so far, so leaving it out keeps logs of long
+          conversations from growing quadratically.
+
    Throws std::exception on failure.
    */
   void writeLogFile( const std::string &path,
-                     const std::vector<std::pair<std::string,std::string>> &rootAttribs ) const;
+                     const std::vector<std::pair<std::string,std::string>> &rootAttribs,
+                     const bool include_raw_content = true ) const;
 
   /** Build the messages array for a MainAgent conversation, including all prior
    history and the system prompt.

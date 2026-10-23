@@ -1376,6 +1376,15 @@ void LlmConfigWindow::removeModel( const size_t pi, const size_t mi )
   else if( p.activeModelIndex > mi )
     p.activeModelIndex -= 1;
 
+  // The judge model (judge="true", for benchmarks) has no UI, but must keep pointing at the same model.
+  if( p.judgeModelIndex.has_value() )
+  {
+    if( p.judgeModelIndex.value() == mi )
+      p.judgeModelIndex.reset();
+    else if( p.judgeModelIndex.value() > mi )
+      p.judgeModelIndex = p.judgeModelIndex.value() - 1;
+  }
+
   rebuildProviders();
   updateSummary();
   updateValidation();

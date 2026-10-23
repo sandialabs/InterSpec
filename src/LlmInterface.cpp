@@ -821,6 +821,12 @@ void LlmInterface::setBlockToolCalls( bool block )
 }
 
 
+void LlmInterface::setPlainCompletion( std::optional<std::string> system_prompt )
+{
+  m_plainSystemPrompt = std::move( system_prompt );
+}
+
+
 shared_ptr<LlmInteraction> LlmInterface::triggerManualCompaction()
 {
   if( !m_history )
@@ -946,6 +952,7 @@ void LlmInterface::resetWithConfig( const std::shared_ptr<const LlmConfig> &conf
   m_currentConversation.reset();
   m_summarizationPendingConvos.clear();
   m_block_tool_calls = false;  // "clears all conversation state" per the contract
+  m_plainSystemPrompt.reset();
   // Deliberately do NOT reset m_nextRequestId: keeping it monotonic across resets prevents a
   // late/stale in-flight response from colliding with a brand-new request's id and being routed
   // into the wrong conversation.
@@ -1000,6 +1007,7 @@ void LlmInterface::applyConfigPreservingHistory( const std::shared_ptr<const Llm
   // Deliberately KEEP m_history and m_currentConversation so the user can continue the conversation.
   m_summarizationPendingConvos.clear();  // any pending summarization used the old config
   m_block_tool_calls = false;
+  m_plainSystemPrompt.reset();
 
   if( stripReasoning )
     stripReasoningFromHistory();
@@ -4395,9 +4403,10 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   assert( m_protocol );
 
   // Build system prompt with optional state machine overview
-  string systemPrompt = getSystemPromptForAgent( convo->agent_type );
+  string systemPrompt = m_plainSystemPrompt.has_value() ? m_plainSystemPrompt.value()
+                                                        : getSystemPromptForAgent( convo->agent_type );
 
-  if( convo->state_machine )
+  if( convo->state_machine && !m_plainSystemPrompt.has_value() )
   {
     systemPrompt += "\n\n## Workflow State Machine\n\n";
     systemPrompt += "You will follow a structured workflow through these states:\n\n";
@@ -4505,9 +4514,11 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     }
   }//if( state machine ephemeral reminder )
 
-  // Build the normalized tool list for the active agent.
+  // Build the normalized tool list for the active agent (none for a plain completion).
   std::vector<NormalizedTool> tools;
-  const map<string, const LlmTools::SharedTool*> agentTools = m_tool_registry->getToolsForAgent( convo->agent_type );
+  const map<string, const LlmTools::SharedTool*> agentTools = m_plainSystemPrompt.has_value()
+                                    ? map<string, const LlmTools::SharedTool*>{}
+                                    : m_tool_registry->getToolsForAgent( convo->agent_type );
   for( const auto &[name, tool] : agentTools )
   {
     // Functions used to include a "userSession" argument for the MCP server (now added by the MCP
@@ -4524,7 +4535,7 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
     tools.push_back( std::move(nt) );
   }//for( const auto &[name, tool] : agentTools )
 
-  assert( !tools.empty() );
+  assert( m_plainSystemPrompt.has_value() || !tools.empty() );
 
   // Use "required" tool choice when configured and in a non-final state machine state, to force the
   // model to make a tool call rather than just producing text.

@@ -145,12 +145,6 @@ public:
   //  Returns whether or not file was loaded.
   bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
                            SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
-
-  /** Load a file from disk with control over the "Previously Stored States" dialog.
-   If checkIfPreviouslyOpened is false, the dialog will be suppressed (useful for benchmarks).
-   */
-  bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
-                           SpecUtils::ParserType parseType, bool checkIfPreviouslyOpened );
   
   
   void selectionChanged();
@@ -284,6 +278,13 @@ public:
      */
     DerivedDataAndMultiEnergyAndMultipleVirtualDets = 3
   };//enum class VariantChecksToDo
+
+  /** Load a file from disk, as the overload above does, but with `viewingChecks` selecting which
+   "how do you want to view this file" questions may be asked; `VariantChecksToDo::None` for when
+   there is no one to answer them (e.g., an unattended benchmark run).
+   */
+  bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
+                           SpecUtils::ParserType parseType, VariantChecksToDo viewingChecks );
   
   // displayFile(...) displays the file passed in as specified type, if it can.
   //  --if kForground is specified and the measurment contains a background
