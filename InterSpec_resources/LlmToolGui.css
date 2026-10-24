@@ -239,14 +239,21 @@
   margin-left: 8px;
 }
 
-/* Summary section at top of interaction */
+/* Summary section, after the turns; hidden while the conversation runs. */
 .LlmInteractionSummary {
   padding: 8px 12px;
   background-color: var(--interspec-background-color);
   border-bottom: 1px solid var(--interspec-border-color);
   font-size: 12px;
   color: var(--interspec-label-color);
+  margin-top: 10px;
   margin-bottom: 10px;
+}
+
+/* The gap below the last turn belongs to the summary, so a running conversation's newest turn isn't
+   followed by empty space. */
+.LlmTurnContainer > :last-child {
+  margin-bottom: 0;
 }
 
 .LlmSummaryItem {
@@ -546,6 +553,16 @@
   font-weight: 600;
   font-size: 13px;
   color: var(--interspec-text-color);
+}
+
+/* While a sub-agent runs, its result item is the newest content, so drop the margins stacked below
+   it; they return (with the result text) once it finishes.  Specific enough to beat the phone rules. */
+.LlmToolResultItem.LlmSubAgentRunning > .LlmInteractionDisplay {
+  margin-bottom: 0;
+}
+
+.LlmToolResultItem.LlmSubAgentRunning:last-child {
+  margin-bottom: 0;
 }
 
 /* ============================================ */

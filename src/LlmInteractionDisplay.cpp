@@ -1444,6 +1444,10 @@ void LlmToolResultsDisplay::createBodyContent()
                     call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1, m_phoneVisuals );
         subAgentDisplay->addStyleClass( "LlmSubAgentNesting" );
 
+        // While it runs, trim the margins below it, so its newest turn isn't scrolled out of view.
+        if( !call.sub_agent_conversation->finishTime.has_value() )
+          resultDiv->addStyleClass( "LlmSubAgentRunning" );
+
         m_subAgentDisplays.push_back( subAgentDisplay );
 
         // Store the result div for later when sub-agent finishes
@@ -1536,6 +1540,11 @@ void LlmToolResultsDisplay::addMenuItems( PopupDivMenu *menu )
 void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTurn> turn,
                                                     shared_ptr<LlmInteraction> subAgent )
 {
+  // However the sub-agent ended, it is no longer running, so restore its normal spacing.
+  const auto runningDivIter = m_subAgentResultDivs.find( subAgent );
+  if( runningDivIter != m_subAgentResultDivs.end() )
+    runningDivIter->second->removeStyleClass( "LlmSubAgentRunning" );
+
   // The compact phone display does not show raw tool results.
   if( m_phoneVisuals )
     return;
@@ -2028,10 +2037,13 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
   // Create container for turns
   m_turnContainer = bodyContainer->addNew<WContainerWidget>();
+  m_turnContainer->addStyleClass( "LlmTurnContainer" );
 
-  // Add summary section after the turns
+  // Add summary section after the turns; it is empty, so hidden, until updateSummary() fills it - so
+  //  it doesn't add blank space below the newest turn while the conversation is running.
   m_summaryDiv = bodyContainer->addNew<WContainerWidget>();
   m_summaryDiv->addStyleClass( "LlmInteractionSummary" );
+  m_summaryDiv->setHidden( true );
 
   // Add any existing responses
   for( const shared_ptr<LlmInteractionTurn> &turn : interaction->responses )
@@ -2566,6 +2578,7 @@ void LlmInteractionDisplay::updateSummary()
     return;
 
   m_summaryDiv->clear();
+  m_summaryDiv->setHidden( false );
 
   // Start time
   const string startTimeStr = formatTime( m_interaction->timestamp );
