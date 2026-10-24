@@ -55,6 +55,7 @@ class LlmInterface;
 class LlmConfigWindow;
 class LlmBenchmarkRunner;
 class LlmJsSandboxBridge;
+struct BenchmarkRunOptions;
 class LlmInteractionDisplay;
 class LlmConversationHistory;
 struct LlmInteraction;
@@ -137,11 +138,13 @@ public:
   /** Clear the current conversation history */
   void clearConversationHistory();
 
-  /** Submit a message as if the user typed it.
-   Sets the text on the input field, then triggers send — identical to the user pressing Enter.
-   Used by LlmBenchmarkRunner to drive automated evaluation.
+  /** Submit a message as if the user typed it - as when the user presses Enter.
+   Used by LlmBenchmarkRunner to drive automated evaluation, and to submit the MCP tools' prompts.
+   @returns false if the message could not be sent (e.g., the assistant is not configured, a request
+            is already pending, or the request could not be built), in which case no response signal
+            will follow; during a benchmark, no error dialog is shown either.
    */
-  void submitMessageAsUser( const std::string &message );
+  bool submitMessageAsUser( const std::string &message );
 
   /** Callback used by the MCP `assistant_submit_prompt` tool: invoked exactly once, on the session
    event loop, with either a result JSON (final assistant text + compact tool-call trace) or an
@@ -212,6 +215,19 @@ public:
    */
   void clearStagedImages();
 
+  /** Start running the benchmark in `xmlPath`, without any dialogs of our own (the runner may still
+   show some, unless `options.interactive` is false).
+   @param finished Called (in this session) when the run ends - finished, cancelled, or could not
+          start - with the runner, from which the results can be read.
+   @returns false, without calling `finished`, if a benchmark is already running, or the assistant
+            is not configured.
+   */
+  bool startBenchmark( const std::string &xmlPath, const BenchmarkRunOptions &options,
+                       std::function<void(const LlmBenchmarkRunner &)> finished = nullptr );
+
+  /** Cancel the running benchmark (if any), and its in-flight LLM request. */
+  void cancelBenchmark();
+
   /** Returns true if a benchmark is currently running. */
   bool isBenchmarkRunning() const;
 
@@ -232,8 +248,8 @@ protected:
   /** Handle user clicking the send button */
   void handleSendButton();
 
-  /** Process the user's input message */
-  void sendMessage(const std::string& message);
+  /** Process the user's input message; returns false if it could not be sent. */
+  bool sendMessage(const std::string& message);
 
   /** Handle retry request from error display */
   //void handleRetry( std::shared_ptr<LlmInteraction> interaction );

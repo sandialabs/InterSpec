@@ -40,11 +40,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "SpecUtils/SpecFile.h"
 
+#include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
+
 // Forward declarations
 class InterSpec;
 class LlmToolGui;
 class LlmInterface;
 class LlmConfig;
+class LlmSessionTimer;
 struct LlmInteraction;
 
 
@@ -134,6 +137,18 @@ struct BenchmarkProblem
 };//struct BenchmarkProblem
 
 
+/** One tool call made while answering a question - by the main agent or by a sub-agent it invoked -
+ so a reader of the results JSON can see which agents ran, and which skills/references they loaded,
+ without opening the conversation logs.
+ */
+struct BenchmarkToolCall
+{
+  std::string agent;     // e.g. "MainAgent", "KnowledgeBase"
+  std::string tool;      // e.g. "invoke_KnowledgeBase", "knowledge_snm"
+  nlohmann::json args;   // The call's arguments, with long string values shortened
+};//struct BenchmarkToolCall
+
+
 struct BenchmarkQuestionResult
 {
   std::string problemId;
@@ -173,6 +188,15 @@ struct BenchmarkQuestionResult
   //  the LLM-endpoint reliability from the tool's spectroscopy ability: a
   //  question with errorRetries>0 but hadError==false was recovered by a retry.
   int errorRetries = 0;
+
+  /** Conversation log of each attempt at this question (failed ones included), in order; paths are
+   relative to the directory the results JSON is in.  Only paths: the full histories would make the
+   checkpoint, which is rewritten after every question, grow to tens of MB.
+   */
+  std::vector<std::string> conversationLogs;
+
+  /** The tool calls of the final attempt, in order, including those of sub-agents. */
+  std::vector<BenchmarkToolCall> toolCalls;
 };//struct BenchmarkQuestionResult
 
 
@@ -180,7 +204,12 @@ struct BenchmarkResults
 {
   std::string benchmarkName;
   std::string modelName;
+  std::string judgeModelName;   // Model that graded the answers; empty if nothing was LLM-judged
   std::string benchmarkFilePath;
+
+  /** Canonical names of the KnowledgeBase skills the assistant had, so with/without-skill runs are
+   distinguishable from the results alone. */
+  std::vector<std::string> skills;
   std::chrono::system_clock::time_point startTime;
   std::chrono::system_clock::time_point endTime;
   std::vector<BenchmarkQuestionResult> questionResults;
@@ -201,6 +230,24 @@ struct BenchmarkResults
 };//struct BenchmarkResults
 
 
+/** How a benchmark run is started; the defaults are those of a run started from the GUI. */
+struct BenchmarkRunOptions
+{
+  /** False for an unattended run (e.g. from the command line): no dialogs - always a fresh run, with
+   no offer to resume an interrupted one (whose checkpoint files are left alone), no results dialog,
+   and no prompts about how to display the spectrum files loaded. */
+  bool interactive = true;
+
+  /** Directory to write the checkpoint, results, and conversation logs to; empty means
+   `<writable data directory>/llm_benchmarks`. */
+  std::string outputDir;
+
+  /** Model (of the active provider) to grade answers with; empty means the provider's
+   `judge="true"` model, or if none, the model being tested. */
+  std::string judgeModel;
+};//struct BenchmarkRunOptions
+
+
 /** Drives LLM benchmark evaluation through the LlmToolGui.
 
  This class parses a benchmark XML file, loops over problems, loads spectra,
@@ -219,8 +266,10 @@ public:
   /** Construct a benchmark runner.
    @param viewer The InterSpec instance
    @param toolGui The LlmToolGui that owns this runner
+   @param options How to run; see BenchmarkRunOptions.
    */
-  LlmBenchmarkRunner( InterSpec *viewer, LlmToolGui *toolGui );
+  LlmBenchmarkRunner( InterSpec *viewer, LlmToolGui *toolGui,
+                      const BenchmarkRunOptions &options = BenchmarkRunOptions() );
 
   ~LlmBenchmarkRunner();
 
@@ -235,8 +284,26 @@ public:
   /** Cancel a running benchmark. */
   void cancelBenchmark();
 
-  /** Signal emitted when the benchmark finishes (or is cancelled). */
+  /** Signal emitted when the benchmark finishes (or is cancelled, or could not be started). */
   Wt::Signal<> &benchmarkFinished();
+
+  /** True once every problem has been run (wrong answers and per-question errors are part of the
+   results); false while running, or if the run was cancelled or could not start. */
+  bool completed() const;
+
+  /** The results so far; complete once completed() is true. */
+  const BenchmarkResults &results() const;
+
+  /** Path of the final results JSON if completed(), else of the in-progress checkpoint (empty if the
+   run never started). */
+  std::string resultsFilePath() const;
+
+  /** All `*_llm_benchmark.xml` files in the places InterSpec looks for them: `test_datasets/` next to
+   the static data directory and in the writable data directory, and the KnowledgeBase skill
+   directories (skills may carry their own question sets).
+   @return (display name, absolute path) pairs, sorted by display name.
+   */
+  static std::vector<std::pair<std::string,std::string>> findAvailableBenchmarks();
 
   /** Parse a benchmark XML file into problems.
    @param xmlPath Absolute path to the benchmark XML file
@@ -262,12 +329,14 @@ private:
     LoadingSequenceStep,
     WaitingForResponse,
     WaitingForSequenceStepResponse,
+    WaitingToRetry,   // Backing off before re-asking after an error; see m_retryTimer
     Judging,
     Finished
   };
 
   InterSpec *m_viewer;
   LlmToolGui *m_toolGui;
+  const BenchmarkRunOptions m_options;
 
   State m_state;
   std::vector<BenchmarkProblem> m_problems;
@@ -299,6 +368,20 @@ private:
   //  failing endpoint can't hang the run.
   static constexpr int sm_max_question_retries = 3;
 
+  // Waits before each re-ask, so a short endpoint outage does not use up every retry in a second.
+  static std::chrono::milliseconds retryDelay( int retryNumber );
+
+  // Fires once the wait before a retry is over; null when not waiting.
+  std::unique_ptr<LlmSessionTimer> m_retryTimer;
+
+  // Set when every problem has been run; see completed().
+  bool m_completed = false;
+
+  // Conversation-log paths (relative to m_outputDir) of the attempts at the current question, and
+  //  the tool calls of its latest attempt; moved into the result by recordResult().
+  std::vector<std::string> m_attemptLogs;
+  std::vector<BenchmarkToolCall> m_lastQuestionToolCalls;
+
   // Timing for current question
   std::chrono::system_clock::time_point m_questionStartTime;
 
@@ -317,6 +400,7 @@ private:
   std::string m_startTimeStr;    // Run start time as YYMMDDTHHMMSS (filename component)
   std::string m_outputDir;       // <writableDataDirectory>/llm_benchmarks
   std::string m_inProgressPath;  // Path of the in-progress checkpoint JSON we write to
+  std::string m_runStem;         // "<base>_<time>_<hash>": the checkpoint/results name, minus suffix
   size_t m_totalExpectedQuestions = 0;  // Sum of questions across all problems
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
@@ -367,13 +451,32 @@ private:
 
   // Re-ask the current question after an endpoint/LLM error, if we have retries
   //  left.  Clears the (failed) conversation turn so the retry starts fresh
-  //  against the already-loaded spectrum, then re-sends the question.
+  //  against the already-loaded spectrum, then re-sends the question after a
+  //  short wait (see retryDelay()).
   //  Returns true if a retry was initiated (caller should just return); false
   //  if retries are exhausted (caller should record the error and advance).
   bool retryCurrentQuestionOnError( const std::string &why );
 
+  /** Calls `resend` after `delay`, in State::WaitingToRetry, unless the run is cancelled first. */
+  void scheduleRetry( std::chrono::milliseconds delay, std::function<void()> resend );
+
+  /** Called when the message for a question or sequence step could not be sent; handled like an
+   error response, so it is retried, and the run does not wait forever for a reply. */
+  void handleSubmitFailure();
+
+  /** Marks the run as over without results (the XML could not be read), and tells listeners. */
+  void abortStart();
+
   /** Send the current sequence step prompt to the LLM. */
   void sendSequenceStepPrompt();
+
+  /** Write the current conversation (the attempt that just ended) to
+   `<m_outputDir>/<m_runStem>_logs/<problem>_q<part>_try<N>.xml` (or `..._step<K>_try<N>.xml` for a
+   sequence step), and for a question, note the path and the attempt's tool calls for its result.
+   Must be called before the history is cleared.  A failure is logged, and does not stop the run.
+   @param outcome How the attempt ended (e.g. "answered", "response error"); recorded in the log.
+   */
+  void writeAttemptLog( const std::string &outcome );
 
   /** Called when the LLM finishes responding. */
   void handleConversationFinished();
@@ -465,8 +568,12 @@ private:
   /** Reconnect LlmToolGui::handleSpectrumChanged after SpectrumSequence. */
   void reconnectSpectrumChangedHandler();
 
-  /** Create the judge LLM interface. */
+  /** Create the judge LLM interface, using the judge model (see BenchmarkRunOptions::judgeModel)
+   and the grading system prompt from llm_judge_prompt.xml, with no tools. */
   void createJudgeInterface();
+
+  /** The judge's system prompt: from llm_judge_prompt.xml if found, else a built-in default. */
+  static std::string judgeSystemPrompt();
 
   /** Get the current problem, or nullptr if done. */
   const BenchmarkProblem *currentProblem() const;

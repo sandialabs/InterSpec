@@ -42,7 +42,6 @@
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmConfigWindow.h"
 #include "InterSpec/InterSpecServer.h"
-#include "InterSpec/LlmKnowledgeBase.h"
 #include "InterSpec/LlmBenchmarkRunner.h"
 #include "InterSpec/LlmJsSandboxBridge.h"
 #include "InterSpec/LlmInteractionDisplay.h"
@@ -777,52 +776,7 @@ void LlmToolGui::initializeUI()
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
   if( !phone )
   {
-    // Collect candidate test_datasets directories.  We take the union of benchmarks
-    //  found across all of them (a benchmark may legitimately appear in more than one).
-    vector<string> testDirs;
-
-    // Shipped location: one up from the static data dir, then into test_datasets/
-    testDirs.push_back(
-      SpecUtils::append_path( SpecUtils::parent_path( InterSpec::staticDataDirectory() ),
-                              "test_datasets" ) );
-
-#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    // User-writable location: test_datasets/ under the writable data dir.  The getter
-    //  throws when the writable dir hasnt been set, which is a normal condition to skip.
-    try
-    {
-      testDirs.push_back(
-        SpecUtils::append_path( InterSpec::writableDataDirectory(), "test_datasets" ) );
-    }catch( std::exception & )
-    {
-      // writableDataDirectory not set - nothing to add
-    }
-#endif //BUILD_AS_ELECTRON_APP || IOS || ... || BUILD_AS_UNIT_TEST_SUITE
-
-    // Knowledge skills can carry their own question sets (by convention in
-    //  `<llm_knowledge>/<skill>/test_datasets/<skill>/`, with any spectra next to the XML), so a
-    //  skill distributed on its own brings its benchmark with it.
-    for( const string &knowledgeDir : LlmKnowledgeBase::knowledgeDirectories() )
-      testDirs.push_back( knowledgeDir );
-
-    vector<pair<string,string>> benchmarkFiles;
-    for( string testDir : testDirs )
-    {
-      // Make absolute so the paths handed to handleStartBenchmark(...) are valid
-      //  regardless of the process working directory.
-      SpecUtils::make_canonical_path( testDir );
-      if( !SpecUtils::is_directory( testDir ) )
-        continue;
-
-      const vector<pair<string,string>> found = LlmBenchmarkRunner::findBenchmarkFiles( testDir );
-      benchmarkFiles.insert( benchmarkFiles.end(), found.begin(), found.end() );
-    }
-
-    // Sort the merged list by display name
-    std::sort( benchmarkFiles.begin(), benchmarkFiles.end(),
-      []( const pair<string,string> &a, const pair<string,string> &b ){
-        return a.first < b.first;
-      } );
+    const vector<pair<string,string>> benchmarkFiles = LlmBenchmarkRunner::findAvailableBenchmarks();
 
     if( !benchmarkFiles.empty() )
     {
@@ -1178,17 +1132,17 @@ void LlmToolGui::handleSendButton()
   sendMessage(message);
 }
 
-void LlmToolGui::sendMessage(const std::string& message)
+bool LlmToolGui::sendMessage(const std::string& message)
 {
   if (!m_llmInterface) {
     cout << "Error: LLM interface not available" << endl;
-    return;
+    return false;
   }
 
   // Don't allow sending if a request is already pending
   if (m_isRequestPending) {
     cout << "Warning: Request already pending, ignoring new message" << endl;
-    return;
+    return false;
   }
 
   try {
@@ -1258,12 +1212,20 @@ void LlmToolGui::sendMessage(const std::string& message)
     setInputEnabled(true);
     m_isRequestPending = false;
 
-    // Show error in a dialog
-    SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
-    WText *errorText = errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
-    WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
-    okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
+    // Show error in a dialog - except to a benchmark, which handles (and logs) the failure itself,
+    //  and may be running with no one to dismiss the dialog.
+    if( !isBenchmarkRunning() )
+    {
+      SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
+      errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
+      WPushButton *okBtn = errorDialog->addButton( "OK", WidgetUtils::ButtonRole::Affirm );
+      okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
+    }
+
+    return false;
   }
+
+  return true;
 }
 
 /*
@@ -1957,10 +1919,10 @@ void LlmToolGui::clearConversationHistory()
 }
 
 
-void LlmToolGui::submitMessageAsUser( const string &message )
+bool LlmToolGui::submitMessageAsUser( const string &message )
 {
   if( !m_inputEdit )
-    return;
+    return false;
 
   // During benchmarks, force-clear any pending/disabled state from previous errors
   if( isBenchmarkRunning() )
@@ -1969,8 +1931,14 @@ void LlmToolGui::submitMessageAsUser( const string &message )
     setInputEnabled( true );
   }
 
-  m_inputEdit->setText( WString::fromUTF8( message ) );
-  handleSendButton();
+  // As handleSendButton() does with what the user typed, but reporting whether it was sent.
+  if( m_isRequestPending || (message.empty() && m_stagedImages.empty()) )
+    return false;
+
+  m_inputEdit->setText( "" );
+  resetInputHeight();
+
+  return sendMessage( message );
 }
 
 
@@ -2452,14 +2420,44 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
     return;
   }
 
+  startBenchmark( xmlPath, BenchmarkRunOptions() );
+}
+
+
+bool LlmToolGui::startBenchmark( const string &xmlPath, const BenchmarkRunOptions &options,
+                                 std::function<void(const LlmBenchmarkRunner &)> finished )
+{
+  if( isBenchmarkRunning() || !m_llmInterface )
+    return false;
+
   // Clean up any previous runner
   m_benchmarkRunner.reset();
 
   cout << "[LlmBenchmark] Starting benchmark: " << xmlPath << endl;
 
-  m_benchmarkRunner = std::make_unique<LlmBenchmarkRunner>( m_viewer, this );
+  m_benchmarkRunner = std::make_unique<LlmBenchmarkRunner>( m_viewer, this, options );
+  if( finished )
+  {
+    LlmBenchmarkRunner * const runner = m_benchmarkRunner.get();
+    runner->benchmarkFinished().connect( [runner, finished](){ finished( *runner ); } );
+  }
+
   m_benchmarkRunner->startBenchmark( xmlPath );
-}
+  return true;
+}//startBenchmark(...)
+
+
+void LlmToolGui::cancelBenchmark()
+{
+  if( !isBenchmarkRunning() )
+    return;
+
+  m_benchmarkRunner->cancelBenchmark();
+
+  // Stop the in-flight request too, so its reply does not arrive into a cancelled run.
+  if( m_llmInterface )
+    m_llmInterface->cancelAll();
+}//cancelBenchmark()
 
 
 LlmJsSandboxBridge *LlmToolGui::jsSandboxBridge()

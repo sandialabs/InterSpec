@@ -20,6 +20,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/XmlUtils.hpp"
+#include "InterSpec/LlmModelPresets.h"
 
 
 
@@ -248,6 +249,38 @@ LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::detectApiFormat( const std::stri
 
   return ApiFormat::OpenAiChat;
 }//LlmConfig::LlmApi::detectApiFormat(...)
+
+
+size_t LlmConfig::LlmApi::selectModel( const std::string &name )
+{
+  if( name.empty() )
+    throw runtime_error( "No model name given." );
+  if( activeProviderIndex >= providers.size() )
+    throw runtime_error( "There is no active LLM provider to select model '" + name + "' from." );
+
+  ApiProvider &provider = providers[activeProviderIndex];
+  for( size_t i = 0; i < provider.models.size(); ++i )
+  {
+    if( provider.models[i].name == name )
+    {
+      provider.activeModelIndex = i;
+      return i;
+    }
+  }
+
+  // Not listed: add it at the end (so `judgeModelIndex` stays valid), with what the presets know.
+  ModelInfo model;
+  model.name = name;
+  const shared_ptr<const LlmModelPresets> presets = LlmModelPresets::load();
+  const optional<LlmModelPresets::ModelDefaults> defaults
+                            = presets ? presets->defaultsFor( name, provider.apiEndpoint ) : nullopt;
+  if( defaults )
+    defaults->applyTo( model );
+
+  provider.models.push_back( std::move( model ) );
+  provider.activeModelIndex = provider.models.size() - 1;
+  return provider.activeModelIndex;
+}//size_t LlmConfig::LlmApi::selectModel( const std::string &name )
 
 
 std::optional<std::variant<bool,LlmConfig::LlmApi::ReasoningEffort>> LlmConfig::LlmApi::parseReasoning( std::string str )
@@ -614,6 +647,7 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
             provider.httpBackend = LlmApi::parseHttpBackend( backend_str );  // throws on invalid value
 
           bool foundActiveModel = false;
+          int numJudgeModels = 0;
 
           for( const rapidxml::xml_node<char> *modelNode = XML_FIRST_NODE( provNode, "Model" );
                modelNode;
@@ -690,8 +724,23 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
               foundActiveModel = true;
             }
 
+            // Check "judge" attribute on model (the model that grades benchmark answers)
+            const rapidxml::xml_attribute<char> * const judgeModelAttr = XML_FIRST_ATTRIB( modelNode, "judge" );
+            string model_judge_str = SpecUtils::xml_value_str( judgeModelAttr );
+            SpecUtils::trim( model_judge_str );
+            if( (model_judge_str == "true") || (model_judge_str == "1") )
+            {
+              numJudgeModels += 1;
+              if( !provider.judgeModelIndex.has_value() )
+                provider.judgeModelIndex = provider.models.size();
+            }
+
             provider.models.push_back( std::move( modelInfo ) );
           }// for each Model node
+
+          if( numJudgeModels > 1 )
+            cerr << "Warning: " << numJudgeModels << " <Model> entries of an <ApiProvider> are judge=\"true\";"
+                    " only the first is used." << endl;
 
           if( provider.models.empty() )
             throw runtime_error( "ApiProvider has no Model elements." );
@@ -958,6 +1007,9 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
     "                                     level sets the thinking budget.\n"
     "         requireToolInStateMachine - \"true\" forces tool_choice=\"required\" in non-final state-machine states.\n"
     "         instructionVerbosity      - \"terse\"/\"normal\"/\"verbose\"; how explicit the rendered instructions are (default normal).\n"
+    "         judge                     - \"true\" for the model that grades LLM benchmark answers (only the\n"
+    "                                     active provider's is used); without one, the active model grades\n"
+    "                                     its own answers.\n"
     "       <Model> child elements:\n"
     "         <Name>               - required model identifier (e.g. gpt-5-mini).\n"
     "         <MaxTokens>          - max output tokens (omit/0 = API default; REQUIRED by Anthropic).\n"
@@ -1000,6 +1052,9 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 
       if( mi == prov.activeModelIndex )
         modelNode->append_attribute( doc.allocate_attribute( "active", "true" ) );
+
+      if( prov.judgeModelIndex.has_value() && (mi == prov.judgeModelIndex.value()) )
+        modelNode->append_attribute( doc.allocate_attribute( "judge", "true" ) );
 
       if( m.supportsImages )
         modelNode->append_attribute( doc.allocate_attribute( "supportsImages", "true" ) );

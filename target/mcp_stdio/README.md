@@ -103,6 +103,46 @@ or in an MCP client's JSON configuration:
 
 Spectra are loaded with `load_spectrum_file` and an absolute `path`.
 
+## Running LLM benchmarks
+With `--run-benchmark`, the program is not an MCP server: it does not read stdin, and instead runs
+`*_llm_benchmark.xml` question sets through InterSpec's LLM assistant - as the "Benchmarks / Quizzes"
+menu of the assistant does in the GUI - prints a summary of each to stdout, and exits.
+```
+InterSpec-mcp-stdio [--datadir ...] [--userdatadir ...] [--llm-config-dir ...] [--log-file ...]
+    --run-benchmark <xml> [--run-benchmark <xml> ...] [--skills all|none|<name>[,<name>...]]
+    [--model <name>] [--judge-model <name>] [--output-dir <dir>]
+InterSpec-mcp-stdio [--datadir ...] [--userdatadir ...] --list-benchmarks
+```
+- `--run-benchmark`: a benchmark XML; may be given more than once, to run several in order, in one session.
+- `--skills`: the KnowledgeBase skills the assistant gets: `all` (the default), `none` (no KnowledgeBase
+  agent at all, even with a RAG endpoint configured), or a comma-separated list of skill names (an
+  unknown name is an error that lists the available ones).
+- `--model`, `--judge-model`: the model to test, and the model that grades the answers, for this run
+  only; both must be served by the active `<ApiProvider>` of `llm_config.xml` (they need not be listed
+  in it).  By default the model tested is the active one, and the judge is the `<Model judge="true">`,
+  or else the model being tested.  `llm_config.xml` is never written.
+- `--output-dir`: where to write results; by default `<userdatadir>/llm_benchmarks`.  Required when
+  there is no user data directory, so results never go into an installed data directory.
+- `--list-benchmarks`: lists the benchmarks found (in `test_datasets/` and the KnowledgeBase skill
+  directories, as the GUI menu does), one `<name><tab><path>` per line, and exits.
+
+A run always starts fresh (an interrupted run's `_in_progress.json` is left alone; the GUI can resume
+it), and shows no dialogs.  It needs an LLM provider configured in `llm_config.xml`, but not
+`<McpServer><AllowAssistantPrompt>`.  For each benchmark the output directory gets
+`<base>_<time>_<hash>_results.json`, and a `<base>_<time>_<hash>_logs/` directory with the conversation
+of every attempt at every question (`<problem>_q<part>_try<N>.xml`, failed attempts included); the
+results JSON lists each question's logs (`conversationLogs`), and the tool calls of its final attempt,
+sub-agents' included (`toolCalls`).
+
+Stdout carries only the summaries: for each benchmark, its name, model, judge model, skills, score,
+correct and error counts, a line per question (score, error/skip marker, retries, tokens), and the path
+of the results JSON.  Progress goes to stderr (or the `--log-file`).  Ctrl-C cancels the run and prints
+what was done so far (the checkpoint is written after every question).
+
+Exit code: 0 if every benchmark ran to the end (wrong answers and per-question errors are part of the
+results), 1 for bad arguments or a setup problem, and 2 if a benchmark could not be run (or was
+interrupted).
+
 ## Testing
 ```bash
 python3 -I target/mcp_stdio/tests/stdio_test.py --exe target/mcp_stdio/build/InterSpec-mcp-stdio \

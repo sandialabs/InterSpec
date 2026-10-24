@@ -806,7 +806,7 @@ if( USE_LLM_INTERFACE )
   list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_model_presets.xml data/llm_tools_config.xml
     data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
     data/llm_agent_Isotopics.xml data/llm_agent_KnowledgeBase.xml data/llm_agent_EnergyCalibration.xml
-    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml
+    data/llm_agent_SpectrumTimeHistory.xml data/llm_agent_InSitu.xml data/llm_judge_prompt.xml
   )
 
   # The native HTTPS transport: one platform-independent file, plus (once written) exactly one

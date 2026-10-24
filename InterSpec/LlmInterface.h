@@ -253,6 +253,13 @@ public:
    */
   void setUnattended( bool unattended );
 
+  /** Makes every request a plain completion: `system_prompt` in place of the agent's system prompt,
+   and no tool definitions sent.  For a helper interface that only needs text back (e.g. the LLM
+   benchmark's judge), so its requests do not carry the full agent prompt and every tool
+   definition.  Pass an empty optional to go back to normal requests.
+   */
+  void setPlainCompletion( std::optional<std::string> system_prompt );
+
   /** Manually trigger context compaction (summarization of older exchanges).
 
    Unlike the automatic trigger in sendUserMessage(), this does not queue a user
@@ -324,6 +331,7 @@ private:
   
   InterSpec* m_interspec;
   bool m_block_tool_calls; // If true, tool calls return an error instead of being executed
+  std::optional<std::string> m_plainSystemPrompt;  // If set, see setPlainCompletion(...)
   std::shared_ptr<const LlmConfig> m_config;
   std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
