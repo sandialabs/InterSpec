@@ -46,6 +46,7 @@ namespace Wt
   class WApplication;
 }
 class PopupDivMenu;
+class LlmInterface;
 struct LlmInteraction;
 class LlmInteractionTurn;
 class LlmToolRequest;
@@ -138,7 +139,7 @@ private:
   void startClientCounter();
 
   bool m_counting;
-  Wt::WString m_label;
+  std::string m_format;  // The counter's text, with "{1}" for the whole seconds elapsed
   std::chrono::steady_clock::time_point m_start;
 };//class LlmElapsedText
 
@@ -333,6 +334,12 @@ protected:
   void handleRetry();
   void handleContinueAnyway();
 
+  /** If this error is of a sub-agent that has since ended - its failure handed to the agent that
+   invoked it, or it was cancelled or timed out with that agent - says so, disables the buttons, and
+   returns true: there is no tool round left for Retry or Continue Anyway to resume.
+   */
+  bool refuseIfEndedSubAgent();
+
 private:
   std::shared_ptr<LlmInteractionError> m_error;
   std::weak_ptr<class LlmInterface> m_llmInterface;
@@ -381,7 +388,8 @@ protected:
   void updateStatus();
 
   /** An API request was sent for this conversation; `turn` is the turn it carried (null if the last
-   turn was not one sent to the LLM - e.g., a retry after a failed tool round).
+   turn was not one sent to the LLM - e.g., a retry after a failed tool round).  Reopens a finished
+   display, as the conversation is running again (a Retry, or an auto-reply after a final response).
    */
   void handleRequestSent( std::shared_ptr<LlmInteractionTurn> turn );
 
@@ -395,11 +403,22 @@ protected:
    */
   void updateIdleListener();
 
-  /** Starts the "live" counter `status` (finalizing any other first); its final text will be the
-   callDuration() of `turn`.  `status` may be null.
+  /** Starts the "live" counter `status` (finalizing any other first), from `alreadyElapsed`; its final
+   text will be the callDuration() of `turn`.  `status` may be null.
    */
   void startActiveStatus( LlmElapsedText *status, const Wt::WString &label,
-                          std::shared_ptr<LlmInteractionTurn> turn );
+                          std::shared_ptr<LlmInteractionTurn> turn,
+                          const std::chrono::milliseconds alreadyElapsed = std::chrono::milliseconds(0) );
+
+  /** Where the "Pending LLM response" counter for a request carrying `turn` goes; null if it has no
+   panel (e.g., the InitialRequest, whose wait the conversation's title already shows).
+   */
+  LlmElapsedText *requestStatusText( const std::shared_ptr<LlmInteractionTurn> &turn );
+
+  /** Starts the live counter for whatever `llm` has in flight for this conversation; for a display
+   made mid-flight, whose replayed turns got no counters.
+   */
+  void resumeActiveStatus( const LlmInterface &llm );
 
   /** Replaces the live counter (if any) with the duration of its turn. */
   void finalizeActiveStatus();

@@ -163,10 +163,12 @@ WT_DECLARE_WT_MEMBER
 );
 
 
-/** Shows a once-a-second "label Ns" counter in `el`, counting up from `elapsedMs`; see LlmElapsedText. */
+/** Shows a once-a-second counter in `el`, counting up from `elapsedMs`: `fmt` with its "{1}" replaced
+ by the whole seconds elapsed; see LlmElapsedText.
+ */
 WT_DECLARE_WT_MEMBER
 (LlmElapsedStart, Wt::JavaScriptFunction, "LlmElapsedStart",
-  function( el, label, elapsedMs )
+  function( el, fmt, elapsedMs )
 {
   if( !el )
     return;
@@ -181,7 +183,7 @@ WT_DECLARE_WT_MEMBER
       el._llmTick = null;
       return;
     }
-    el.textContent = (label ? (label + " ") : "") + Math.floor( (Date.now() - t0) / 1000 ) + "s";
+    el.textContent = fmt.replace( "{1}", Math.floor( (Date.now() - t0) / 1000 ) );
   };
   el._llmTick = setInterval( update, 1000 );
   update();
@@ -226,43 +228,40 @@ namespace
   }//formatTime(...)
 
 
-  /** Format duration in milliseconds as human-readable string */
-  string formatDuration( const chrono::milliseconds &duration )
+  /** Formats a duration like "4 ms", "13.1 s", or "6 m 14 s". */
+  WString formatDuration( const chrono::milliseconds &duration )
   {
     const long long ms = duration.count();
-
     if( ms < 1000 )
-      return to_string(ms) + "ms";
+      return WString::tr( "lcw-time-ms" ).arg( ms );
 
-    const long long seconds = ms / 1000;
-    if( seconds < 60 )
-      return to_string(seconds) + "s";
+    if( ms < 60000 )
+    {
+      ostringstream oss;
+      oss << fixed << setprecision(1) << (0.001 * ms);
+      return WString::tr( "lcw-time-s" ).arg( oss.str() );
+    }
 
-    const long long minutes = seconds / 60;
-    const long long sec_remainder = seconds % 60;
-
-    ostringstream oss;
-    oss << minutes << "m " << sec_remainder << "s";
-
-    return oss.str();
+    return WString::tr( "lcw-time-min-s" ).arg( ms / 60000 ).arg( (ms % 60000) / 1000 );
   }//formatDuration(...)
 
 
-  /** Format a call duration for a panel title: "4 ms", "13.1 s", or "6 m 14 s". */
-  string formatShortDuration( const chrono::milliseconds &duration )
+  /** How long a finished conversation took: to its finishTime, or else to its latest turn. */
+  chrono::milliseconds totalDuration( const LlmInteraction &convo )
   {
-    const long long ms = duration.count();
-    if( ms < 1000 )
-      return to_string( ms ) + " ms";
+    chrono::system_clock::time_point endTime = convo.timestamp;
+    if( convo.finishTime.has_value() )
+    {
+      endTime = convo.finishTime.value();
+    }else
+    {
+      for( const shared_ptr<LlmInteractionTurn> &turn : convo.responses )
+        endTime = std::max( endTime, turn->timestamp() );
+    }
 
-    ostringstream oss;
-    if( ms < 60000 )
-      oss << fixed << setprecision(1) << (0.001 * ms) << " s";
-    else
-      oss << (ms / 60000) << " m " << ((ms % 60000) / 1000) << " s";
-
-    return oss.str();
-  }//formatShortDuration(...)
+    return std::max( chrono::milliseconds(0),
+                     chrono::duration_cast<chrono::milliseconds>( endTime - convo.timestamp ) );
+  }//totalDuration(...)
 
 
   /** Truncate string to max length, adding ellipsis if needed */
@@ -415,23 +414,28 @@ void LlmJsRenderedDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
 LlmElapsedText::LlmElapsedText()
   : WText(),
     m_counting( false ),
-    m_label(),
+    m_format(),
     m_start()
 {
   setTextFormat( TextFormat::Plain );
-  setInline( true );
 }//LlmElapsedText constructor
 
 
 void LlmElapsedText::start( const WString &label, const chrono::milliseconds alreadyElapsed )
 {
   m_counting = true;
-  m_label = label;
   m_start = chrono::steady_clock::now() - alreadyElapsed;
 
+  // The counter's text, with its "{1}" left for the seconds (Wt fills arguments in order, so the
+  //  "{1}" of the seconds' format survives being put in as argument 2).
+  const WString secs = WString::tr( "lcw-time-s" );
+  m_format = (label.empty() ? secs : WString::tr( "lcw-status-counting" ).arg( label ).arg( secs )).toUTF8();
+
   // What the client shows until its first tick (and what a full render starts from).
-  const string secs = to_string( chrono::duration_cast<chrono::seconds>( alreadyElapsed ).count() ) + "s";
-  setText( label.empty() ? WString::fromUTF8(secs) : WString("{1} {2}").arg(label).arg(secs) );
+  setText( WString::fromUTF8( m_format ).arg( chrono::duration_cast<chrono::seconds>( alreadyElapsed ).count() ) );
+
+  // A tooltip about a previous final text (e.g., before a retry) no longer applies.
+  setToolTip( WString() );
 
   if( isRendered() )
     startClientCounter();
@@ -460,8 +464,8 @@ void LlmElapsedText::startClientCounter()
 
   const long long elapsedMs = chrono::duration_cast<chrono::milliseconds>(
                                                    chrono::steady_clock::now() - m_start ).count();
-  doJavaScript( "Wt.WT.LlmElapsedStart(" + jsRef() + "," + m_label.jsStringLiteral() + ","
-                + to_string(elapsedMs) + ");" );
+  doJavaScript( "Wt.WT.LlmElapsedStart(" + jsRef() + "," + WString::fromUTF8( m_format ).jsStringLiteral()
+                + "," + to_string(elapsedMs) + ");" );
 }//startClientCounter()
 
 
@@ -848,8 +852,8 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
   // Duration
   if( m_response->callDuration().has_value() )
   {
-    const string durationStr = formatDuration( m_response->callDuration().value() );
-    WText *durationText = metadataDiv->addNew<WText>( " | Duration: " + durationStr );
+    const WString durationStr = formatDuration( m_response->callDuration().value() );
+    WText *durationText = metadataDiv->addNew<WText>( WString::tr( "lcw-response-duration" ).arg( durationStr ) );
     durationText->addStyleClass( "LlmDuration" );
   }
 
@@ -1105,8 +1109,8 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   // Execution duration
   if( call.executionDuration.has_value() )
   {
-    const string durationStr = formatDuration( call.executionDuration.value() );
-    WText *durationText = resultDiv->addNew<WText>( " - took " + durationStr );
+    const WString durationStr = formatDuration( call.executionDuration.value() );
+    WText *durationText = resultDiv->addNew<WText>( WString::tr( "lcw-tool-took" ).arg( durationStr ) );
     durationText->addStyleClass( "LlmDuration" );
   }
 
@@ -1699,8 +1703,28 @@ void LlmInteractionErrorDisplay::createBodyContent()
 }//createBodyContent()
 
 
+bool LlmInteractionErrorDisplay::refuseIfEndedSubAgent()
+{
+  const shared_ptr<LlmInteraction> convo = m_error->conversation().lock();
+  if( !convo || (convo->agent_type == AgentType::MainAgent) || !convo->finishTime.has_value() )
+    return false;
+
+  if( m_retryBtn )
+    m_retryBtn->setEnabled( false );
+  if( m_continueBtn )
+    m_continueBtn->setEnabled( false );
+  if( m_helpText )
+    m_helpText->setText( WString::tr( "lcw-subagent-ended" ) );
+
+  return true;
+}//refuseIfEndedSubAgent()
+
+
 void LlmInteractionErrorDisplay::handleRetry()
 {
+  if( refuseIfEndedSubAgent() )
+    return;
+
   // Disable both buttons to prevent double-clicks
   if( m_retryBtn )
     m_retryBtn->setEnabled( false );
@@ -1755,11 +1779,16 @@ void LlmInteractionErrorDisplay::handleRetry()
   cout << "\n=== Retrying request for conversation: " << convo->conversationId << " ===" << endl;
   cout << "Error type: " << static_cast<int>(m_error->errorType()) << endl;
 
+  // The conversation is running again (e.g., after a watchdog timeout, which set this), so that a later
+  //  cancel or timeout ends it properly.
+  const std::optional<std::chrono::system_clock::time_point> previousFinishTime = convo->finishTime;
+
   try
   {
     // Remove the error from conversation history
     // This allows the conversation to continue as if the error never happened
     convo->responses.pop_back();
+    convo->finishTime.reset();
 
     // Build API request with the conversation history (which now excludes the error)
     const nlohmann::json requestJson = llmInterface->buildMessagesArray( convo );
@@ -1779,6 +1808,7 @@ void LlmInteractionErrorDisplay::handleRetry()
 
     // Re-add the error to the conversation since retry failed
     convo->responses.push_back( m_error );
+    convo->finishTime = previousFinishTime;
 
     // Update help text
     if( m_helpText )
@@ -1798,6 +1828,9 @@ void LlmInteractionErrorDisplay::handleRetry()
 
 void LlmInteractionErrorDisplay::handleContinueAnyway()
 {
+  if( refuseIfEndedSubAgent() )
+    return;
+
   // Disable both buttons to prevent double-clicks
   if( m_continueBtn )
     m_continueBtn->setEnabled( false );
@@ -1862,10 +1895,13 @@ void LlmInteractionErrorDisplay::handleContinueAnyway()
       }
     }
 
-    // Mark conversation as finished
+    // Mark conversation as finished.  The completion handler (a sub-agent's resolves its parent's
+    //  tool round) is cleared before it runs, so nothing can run it a second time.
     convo->finishTime = std::chrono::system_clock::now();
-    if( convo->conversation_completion_handler )
-      convo->conversation_completion_handler();
+    std::function<void(void)> handler;
+    handler.swap( convo->conversation_completion_handler );
+    if( handler )
+      handler();
     convo->conversationFinished.emit();
   }
 
@@ -1929,7 +1965,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
   // Separate widget for the total-time counter
   m_timerText = titleBarWidget()->addNew<LlmElapsedText>();
-  m_timerText->setText( "0s" );
+  m_timerText->setText( WString::tr( "lcw-time-s" ).arg( 0 ) );
   m_timerText->addStyleClass( "LlmStatusIndicator" );
 
   updateStatus();
@@ -2037,6 +2073,10 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
       const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
       m_timerText->start( WString(), std::max( chrono::milliseconds(0),
                                     chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+
+      // The turns were replayed without live counters, so start the one for what is in flight now
+      //  (e.g., this display was rebuilt from a restored history).
+      resumeActiveStatus( *llm );
     }
   }
 
@@ -2113,8 +2153,8 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
 
       finalizeActiveStatus();  // The LLM answered
 
-      // The tools have usually already run (and their duration is set when the results are sent, in
-      //  this same event-loop iteration); this counter only lasts for async tools and sub-agents.
+      // A round whose tools have all run already has its duration set, so this only counts while
+      //  async tools or sub-agents are still running.
       const bool countRunningTools = m_isLive && !turn->callDuration().has_value();
 
       if( m_phoneLayout )
@@ -2244,6 +2284,10 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
         showFinalDuration( turnDisplay->statusText(), turn );
       break;
     }
+
+    case LlmInteractionTurn::Type::ConversationSummary:
+      // Stands in for the older conversations it summarizes, for the LLM; nothing to show.
+      break;
   }//switch( turn->type() )
   }catch( const std::exception &e )
   {
@@ -2343,22 +2387,71 @@ void LlmInteractionDisplay::handleRequestSent( shared_ptr<LlmInteractionTurn> tu
   // A new request ends whatever was being waited on before it (e.g., a tool round).
   finalizeActiveStatus();
 
+  // A request for a finished conversation - a Retry of its error, or a re-prompt after a response
+  //  that did not end it (an auto-reply) - means it is running again.
+  if( m_isFinished )
+  {
+    m_isFinished = false;
+    const chrono::system_clock::duration sinceStart = chrono::system_clock::now() - m_interaction->timestamp;
+    m_timerText->start( WString(), std::max( chrono::milliseconds(0),
+                                  chrono::duration_cast<chrono::milliseconds>( sinceStart ) ) );
+    updateStatus();
+    updateSummary();
+  }//if( m_isFinished )
+
+  startActiveStatus( requestStatusText( turn ), WString::tr("lcw-status-pending-llm"), turn );
+}//handleRequestSent(...)
+
+
+LlmElapsedText *LlmInteractionDisplay::requestStatusText( const shared_ptr<LlmInteractionTurn> &turn )
+{
   // The InitialRequest has no panel; the conversation title already shows that wait.
   if( !turn || (turn != m_lastRequestTurn) )
+    return nullptr;
+
+  if( m_phoneLayout )
+    return m_phoneStatus;
+
+  return m_lastRequestDisplay ? m_lastRequestDisplay->statusText() : nullptr;
+}//requestStatusText(...)
+
+
+void LlmInteractionDisplay::resumeActiveStatus( const LlmInterface &llm )
+{
+  const std::optional<LlmInterface::InFlightWait> wait = llm.inFlightWait( m_interaction );
+  if( !wait || !wait->turn )
     return;
 
-  LlmElapsedText * const status = m_phoneLayout
-                       ? m_phoneStatus
-                       : (m_lastRequestDisplay ? m_lastRequestDisplay->statusText() : nullptr);
-  startActiveStatus( status, WString::tr("lcw-status-pending-llm"), turn );
-}//handleRequestSent(...)
+  LlmElapsedText *status = nullptr;
+  if( !wait->runningTools )
+  {
+    status = requestStatusText( wait->turn );
+  }else if( m_phoneLayout )
+  {
+    status = m_phoneStatus;
+  }else
+  {
+    for( WWidget * const child : m_turnContainer->children() )
+    {
+      LlmInteractionTurnDisplay * const display = dynamic_cast<LlmInteractionTurnDisplay *>( child );
+      if( display && (display->turn() == wait->turn) )
+        status = display->statusText();
+    }
+  }//if( request ) / else
+
+  const chrono::milliseconds elapsed = chrono::duration_cast<chrono::milliseconds>(
+                                                        chrono::steady_clock::now() - wait->since );
+  startActiveStatus( status,
+                     WString::tr( wait->runningTools ? "lcw-status-running-tools" : "lcw-status-pending-llm" ),
+                     wait->turn, std::max( chrono::milliseconds(0), elapsed ) );
+}//resumeActiveStatus(...)
 
 
 void LlmInteractionDisplay::handleActivityIdle()
 {
   // Nothing is in flight any more, so the turn being waited on cant still be running.  (Not the
-  //  total-time counter: the interface also passes through idle between a response and the next
-  //  request, so that counter is only stopped when the conversation finishes.)
+  //  total-time counter, which is only stopped when the conversation finishes - e.g., an error leaves
+  //  it paused, not finished.)
   finalizeActiveStatus();
 }//handleActivityIdle()
 
@@ -2387,7 +2480,8 @@ void LlmInteractionDisplay::updateIdleListener()
 
 
 void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const WString &label,
-                                               shared_ptr<LlmInteractionTurn> turn )
+                                               shared_ptr<LlmInteractionTurn> turn,
+                                               const chrono::milliseconds alreadyElapsed )
 {
   finalizeActiveStatus();
   if( !status )
@@ -2395,7 +2489,7 @@ void LlmInteractionDisplay::startActiveStatus( LlmElapsedText *status, const WSt
 
   m_activeStatus = status;
   m_activeStatusTurn = turn;
-  status->start( label );
+  status->start( label, alreadyElapsed );
   updateIdleListener();
 }//startActiveStatus(...)
 
@@ -2436,9 +2530,8 @@ void LlmInteractionDisplay::showFinalDuration( LlmElapsedText *status,
   // A ToolCall turn's duration is the time to run its tools here; any other turn's is the time the
   //  LLM took to respond to it.  They look alike, so say which.
   const bool isTools = (turn->type() == LlmInteractionTurn::Type::ToolCall);
-  const string duration = formatShortDuration( turn->callDuration().value() );
   status->setFinalText( WString::tr( isTools ? "lcw-duration-tools" : "lcw-duration-llm" )
-                          .arg( WString::fromUTF8( duration ) ) );
+                          .arg( formatDuration( turn->callDuration().value() ) ) );
   status->setToolTip( WString::tr( isTools ? "lcw-duration-tools-tt" : "lcw-duration-llm-tt" ) );
 }//showFinalDuration(...)
 
@@ -2461,31 +2554,8 @@ void LlmInteractionDisplay::updateStatus()
   //     << titleWithStatus.toUTF8() << "', m_isFinished=" << m_isFinished << endl;
   m_statusText->setText( titleWithStatus );
 
-  // Show/hide timer based on finished status
-  if( m_timerText )
-  {
-    m_timerText->setHidden( false ); // Make sure it's visible when running
-    
-    if( m_isFinished && m_interaction )
-    {
-      auto endTime = m_interaction->timestamp;
-      if( m_interaction->finishTime.has_value() )
-      {
-        endTime = m_interaction->finishTime.value();
-      }else
-      {
-        for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-        {
-          if( turn->timestamp() > endTime )
-            endTime = turn->timestamp();
-        }
-      }
-      
-      const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
-      const string durationStr = formatDuration( duration );
-      m_timerText->setFinalText( "(total time: " + durationStr + ")" );
-    }//if( m_isFinished && m_interaction )
-  }
+  if( m_isFinished )
+    stopStatusTimer();
 }//updateStatus()
 
 
@@ -2499,25 +2569,15 @@ void LlmInteractionDisplay::updateSummary()
 
   // Start time
   const string startTimeStr = formatTime( m_interaction->timestamp );
-  WText *startTime = m_summaryDiv->addNew<WText>( "Start Time: " + startTimeStr );
+  WText *startTime = m_summaryDiv->addNew<WText>( WString::tr( "lcw-summary-start" ).arg( startTimeStr ) );
   startTime->addStyleClass( "LlmSummaryItem" );
 
   // Total duration (if conversation is finished)
   if( m_isFinished )
   {
-    // Calculate total duration from start to last response
-    auto endTime = m_interaction->timestamp;
-    for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-    {
-      if( turn->timestamp() > endTime )
-        endTime = turn->timestamp();
-    }
-
-    const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
-    const string durationStr = formatDuration( duration );
-
-    WText *totalDuration = m_summaryDiv->addNew<WText>( " | Total Duration: " + durationStr );
-    totalDuration->addStyleClass( "LlmSummaryItem" );
+    const WString duration = WString::tr( "lcw-summary-duration" ).arg( formatDuration( totalDuration( *m_interaction ) ) );
+    WText *durationText = m_summaryDiv->addNew<WText>( " | " + duration );
+    durationText->addStyleClass( "LlmSummaryItem" );
   }
 
   // Token usage.  Note the input count is cumulative across all of this conversation's API calls
@@ -2528,27 +2588,26 @@ void LlmInteractionDisplay::updateSummary()
     const size_t promptTok = m_interaction->promptTokens.value_or(0);
     const size_t completionTok = m_interaction->completionTokens.value_or(0);
 
-    const string tokenStr = " | Tokens: " + to_string(promptTok) + " in + "
-                         + to_string(completionTok) + " out = "
-                         + to_string(m_interaction->totalTokens.value()) + " total";
-    WText *tokens = m_summaryDiv->addNew<WText>( tokenStr );
+    const WString tokenStr = WString::tr( "lcw-summary-tokens" ).arg( to_string(promptTok) )
+                         .arg( to_string(completionTok) ).arg( to_string(m_interaction->totalTokens.value()) );
+    WText *tokens = m_summaryDiv->addNew<WText>( " | " + tokenStr );
     tokens->addStyleClass( "LlmSummaryItem" );
 
     // Cache usage: how much of the (cumulative) input was served from / written to cache.
     if( m_interaction->cachedTokens.has_value() )
     {
       const size_t cachedTok = m_interaction->cachedTokens.value();
-      string cacheStr = " | Cache: " + to_string(cachedTok) + " read";
+      WString cacheStr = WString::tr( "lcw-summary-cache" ).arg( to_string(cachedTok) );
       if( promptTok > 0 )
       {
         const int pct = static_cast<int>( (100.0 * cachedTok / promptTok) + 0.5 );
-        cacheStr += " (" + to_string(pct) + "% of input)";
+        cacheStr = WString::tr( "lcw-summary-cache-pct" ).arg( to_string(cachedTok) ).arg( pct );
       }
       const size_t writtenTok = m_interaction->cacheCreationTokens.value_or(0);
       if( writtenTok > 0 )
-        cacheStr += ", " + to_string(writtenTok) + " written";
+        cacheStr = WString::tr( "lcw-summary-cache-written" ).arg( cacheStr ).arg( to_string(writtenTok) );
 
-      WText *cache = m_summaryDiv->addNew<WText>( cacheStr );
+      WText *cache = m_summaryDiv->addNew<WText>( " | " + cacheStr );
       cache->addStyleClass( "LlmSummaryItem" );
     }
   }
@@ -2557,8 +2616,6 @@ void LlmInteractionDisplay::updateSummary()
 
 WString LlmInteractionDisplay::getTitleWithStatus() const
 {
-  ostringstream oss;
-
   // User question (truncated) - get from InitialRequest turn if available
   std::string questionContent;
   if( !m_interaction->responses.empty() )
@@ -2572,70 +2629,45 @@ WString LlmInteractionDisplay::getTitleWithStatus() const
     }
   }
 
-  const string question = truncateString( questionContent, 60 );
-  oss << question;
+  const WString question = WString::fromUTF8( truncateString( questionContent, 60 ) );
 
   // Status
   if( m_isFinished )
-  {
-    // Show completion status without timer
-    oss << " - Complete";
-  }else
-  {
-    // Check if performing tool calls
-    bool hasToolRequest = false;
-    for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-    {
-      if( turn->type() == LlmInteractionTurn::Type::ToolCall )
-      {
-        hasToolRequest = true;
-        break;
-      }
-    }
+    return WString::tr( "lcw-title-complete" ).arg( question );
 
-    if( hasToolRequest )
+  // Check if performing tool calls
+  bool hasToolRequest = false;
+  for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
+  {
+    if( turn->type() == LlmInteractionTurn::Type::ToolCall )
     {
-      // Check if we have results for all tool calls
-      bool hasToolResults = false;
-      for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
-      {
-        if( turn->type() == LlmInteractionTurn::Type::ToolResult )
-        {
-          hasToolResults = true;
-          break;
-        }
-      }
-
-      if( !hasToolResults )
-      {
-        oss << " - Performing tool calls...";
-      }else
-      {
-        oss << " - Pending LLM response...";
-      }
-    }else
-    {
-      oss << " - Pending LLM response...";
+      hasToolRequest = true;
+      break;
     }
   }
 
-  return WString( oss.str() );
+  // Check if we have results for all tool calls
+  bool hasToolResults = false;
+  for( const shared_ptr<LlmInteractionTurn> &turn : m_interaction->responses )
+  {
+    if( turn->type() == LlmInteractionTurn::Type::ToolResult )
+    {
+      hasToolResults = true;
+      break;
+    }
+  }
+
+  if( hasToolRequest && !hasToolResults )
+    return WString::tr( "lcw-title-running-tools" ).arg( question );
+
+  return WString::tr( "lcw-title-pending-llm" ).arg( question );
 }//getTitleWithStatus()
 
 
 void LlmInteractionDisplay::stopStatusTimer()
 {
-  std::chrono::system_clock::time_point end_time;
-  if( m_interaction->finishTime.has_value() )
-    end_time = m_interaction->finishTime.value();
-  else
-    end_time = chrono::system_clock::now();
-
-  const auto duration = chrono::duration_cast<chrono::milliseconds>( end_time - m_interaction->timestamp );
-  const string durationStr = formatDuration( duration );
-
   if( m_timerText )
-    m_timerText->setFinalText( "(total time: " + durationStr + ")" );
+    m_timerText->setFinalText( WString::tr( "lcw-total-time" ).arg( formatDuration( totalDuration( *m_interaction ) ) ) );
 }//stopStatusTimer()
 
 

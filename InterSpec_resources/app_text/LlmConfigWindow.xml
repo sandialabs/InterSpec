@@ -169,9 +169,30 @@
   <message id="lcw-phone-tools-used">Used: {1}</message>
   <message id="lcw-phone-tools-used-errors">Used (some failed): {1}</message>
   <message id="lcw-phone-auto-reply">Prompted the assistant to continue.</message>
-  <!-- Live status at the right of a conversation panel's title; a counting "Ns" is appended. -->
+  <!-- Live status at the right of a conversation panel's title, followed by the time counting up. -->
   <message id="lcw-status-pending-llm">Pending LLM response...</message>
   <message id="lcw-status-running-tools">Running tools...</message>
+  <!-- A live status ({1}) and the time it has been counting ({2}, like "5 s"). -->
+  <message id="lcw-status-counting">{1} {2}</message>
+  <!-- Durations; lcw-time-s is also the live counter's whole seconds. -->
+  <message id="lcw-time-ms">{1} ms</message>
+  <message id="lcw-time-s">{1} s</message>
+  <message id="lcw-time-min-s">{1} m {2} s</message>
+  <!-- A conversation's title: {1} is the (truncated) question. -->
+  <message id="lcw-title-complete">{1} - Complete</message>
+  <message id="lcw-title-running-tools">{1} - Performing tool calls...</message>
+  <message id="lcw-title-pending-llm">{1} - Pending LLM response...</message>
+  <message id="lcw-total-time">(total time: {1})</message>
+  <!-- The summary line at the bottom of a conversation. -->
+  <message id="lcw-summary-start">Start Time: {1}</message>
+  <message id="lcw-summary-duration">Total Duration: {1}</message>
+  <message id="lcw-summary-tokens">Tokens: {1} in + {2} out = {3} total</message>
+  <message id="lcw-summary-cache">Cache: {1} read</message>
+  <message id="lcw-summary-cache-pct">Cache: {1} read ({2}% of input)</message>
+  <message id="lcw-summary-cache-written">{1}, {2} written</message>
+  <message id="lcw-response-duration"> | Duration: {1}</message>
+  <message id="lcw-tool-took"> - took {1}</message>
+  <message id="lcw-subagent-ended">This sub-agent has ended, so there is nothing to retry or continue.</message>
   <!-- Final durations at the right of a panel title; {1} is like "6.2 s". -->
   <message id="lcw-duration-llm">(LLM: {1})</message>
   <message id="lcw-duration-llm-tt">How long the LLM took to respond to this, including network, queueing, and generation time.</message>

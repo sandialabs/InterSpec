@@ -307,7 +307,8 @@ std::shared_ptr<LlmInteractionFinalResponse> LlmConversationHistory::addAssistan
 
 shared_ptr<LlmToolRequest> LlmConversationHistory::addToolCalls( std::vector<LlmToolCall> &&toolCalls,
                                                                 const std::string &rawResponseContent,
-                                           const std::shared_ptr<LlmInteraction> &convo )
+                                           const std::shared_ptr<LlmInteraction> &convo,
+                                           const std::optional<std::chrono::milliseconds> &callDuration )
 {
   assert( convo );
   if( !convo )
@@ -325,6 +326,8 @@ shared_ptr<LlmToolRequest> LlmConversationHistory::addToolCalls( std::vector<Llm
   auto response = std::make_shared<LlmToolRequest>( convo );
   response->setToolCalls( std::move(toolCalls) );
   response->setRawContent( rawResponseContent );
+  if( callDuration.has_value() )
+    response->setCallDuration( callDuration.value() );
   convo->responses.push_back(response);
   convo->responseAdded.emit( response );
   

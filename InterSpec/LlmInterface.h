@@ -216,6 +216,8 @@ public:
    @param requestJson The JSON request to send
    @param convo The conversation this request belongs to
    @return Pair of (requestId, request content as string)
+
+   Throws if the request could not be sent, leaving nothing pending for it.
    */
   std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
                          std::shared_ptr<LlmInteraction> convo );
@@ -243,6 +245,14 @@ public:
    */
   void setBlockToolCalls( bool block );
 
+  /** Whether no one is there to answer an error panel - e.g., the prompt came from an MCP client or a
+   benchmark.  Then a sub-agent whose request fails is ended, and its failure handed to the agent that
+   invoked it as a tool error; otherwise the invoking agent's tool round stays paused (Stop and the
+   watchdog still apply) until the user presses Retry or Continue Anyway on the sub-agent's error.
+   Defaults to false.
+   */
+  void setUnattended( bool unattended );
+
   /** Manually trigger context compaction (summarization of older exchanges).
 
    Unlike the automatic trigger in sendUserMessage(), this does not queue a user
@@ -266,8 +276,8 @@ public:
    */
   bool hasActiveRequests() const;
 
-  /** Returns true if `convo` has a request in flight, a tool round outstanding, or a message queued
-   behind a summarization - i.e., something that will still add to it, or finish it.
+  /** Returns true if `convo` has a request in flight, a tool round outstanding or running, or a message
+   queued behind a summarization - i.e., something that will still add to it, or finish it.
    */
   bool isConversationActive( const std::shared_ptr<const LlmInteraction> &convo ) const;
 
@@ -279,10 +289,29 @@ public:
     RunningTools   // No request in flight, but a tool round (async tools/sub-agents) is outstanding
   };
 
+  /** Ignores conversations queued behind a context compaction (m_summarizationPendingConvos), as the
+   compaction request is in flight whenever one is queued, so the state is already AwaitingLlm.
+   */
   ActivityState activityState() const;
 
-  /** Emitted (only) when activityState() changes. */
+  /** Emitted (only) when activityState() changes.  Never for a state passed through partway through
+   handling a response or tool completion (e.g., Idle, between a response and the request it leads to).
+   */
   Wt::Signal<ActivityState> &activityChanged();
+
+  /** What a conversation is waiting on; see inFlightWait(). */
+  struct InFlightWait
+  {
+    bool runningTools = false;  // A tool round (async tools/sub-agents), rather than an LLM request
+    std::shared_ptr<LlmInteractionTurn> turn;  // The request's turn (may be null), or the round's ToolCall turn
+    std::chrono::steady_clock::time_point since;  // When the request was sent, or the round started
+  };
+
+  /** The request `convo` has in flight, or else its outstanding tool round; for a display created
+   while work is already in flight (e.g., one rebuilt from a restored history) to show the live counter
+   it would have started had it been listening.
+   */
+  std::optional<InFlightWait> inFlightWait( const std::shared_ptr<const LlmInteraction> &convo ) const;
 
   /** Direct all debug logging to the specified file path.
    Pass an empty string to disable file logging.
@@ -326,8 +355,37 @@ private:
   /** Emits m_activityChanged if activityState() differs from m_lastActivityState.  Call after any
    change to m_pendingRequests or m_deferredToolResults - except from failInFlightConversations(),
    which also runs from the destructor, while the GUI listening to us is being torn down.
+   Does nothing while an ActivityBatch exists; the outermost one calls it when it ends.
    */
   void updateActivityState();
+
+  /** Defers activityChanged() to the end of the batch, so a response that ends one request and sends
+   the next is seen as one change, not a pass through Idle.  Create one at each entry point that can
+   both end and start work.
+   */
+  class ActivityBatch
+  {
+  public:
+    explicit ActivityBatch( LlmInterface &llm );
+    ~ActivityBatch();
+
+    ActivityBatch( const ActivityBatch & ) = delete;
+    ActivityBatch &operator=( const ActivityBatch & ) = delete;
+
+  private:
+    LlmInterface &m_llm;
+  };//class ActivityBatch
+
+  int m_activityBatchDepth;
+
+  /** See setUnattended(). */
+  bool m_unattended;
+
+  /** A sub-agent's request failed (its Error turn is already added).  If unattended, ends it, which
+   hands the failure to the agent that invoked it; see setUnattended().  Does nothing for a main-agent
+   conversation, or one already finished.
+   */
+  void handleSubAgentError( const std::shared_ptr<LlmInteraction> &convo );
 
   /** Backstop against a hung conversation.  A single-shot timer (re)armed while work is outstanding
    (a request in flight, a response being rendered, or async tools running); if no terminal signal
@@ -475,8 +533,9 @@ private:
    NOTE: this covers `pendingAsyncCalls` only.  A round's `subAgentToolCallIds` leg has no deadline -
    a sub-agent turn is legitimately open-ended - so it is still resolved solely by the sub-agent's
    conversation_completion_handler (or, failing that, the watchdog).  A sub-agent whose own request
-   ends in an API error therefore still pins its parent's round, since the error path pauses that
-   conversation for the user to retry rather than completing it.
+   ends in an API error therefore pins its parent's round - deliberately: the error pauses it for the
+   user to Retry or Continue Anyway, and the turn stays in flight (Stop and the watchdog still apply)
+   until they do.  When unattended, the failure is instead handed to the parent; see setUnattended().
    */
   std::unique_ptr<LlmSessionTimer> m_deferredSweepTimer;
 
@@ -657,9 +716,10 @@ private:
   void initDebugLoggingFromConfig();
 
   /** Send every conversation queued in m_summarizationPendingConvos (and clear the queue).  Called
-   when a compaction request completes or fails so queued user messages are not stranded.
+   when a compaction request completes or fails so queued user messages are not stranded.  One that
+   cannot be sent gets an error turn (so it can be retried); returns false if any could not be sent.
    */
-  void flushSummarizationQueue();
+  bool flushSummarizationQueue();
 
   /** Watchdog helpers (see m_watchdogTimer).  armWatchdog() (re)starts the single-shot timer;
    disarmWatchdog() stops it; onWatchdogTimeout() force-fails outstanding conversations and emits
@@ -672,6 +732,15 @@ private:
    there is exactly one disarm site per terminal transition. */
   void emitConversationFinished();
   void emitResponseError();
+
+  /** How many terminal signals have been emitted; see emitResponseErrorIfDone(). */
+  size_t m_terminalSignalCount;
+
+  /** After an error, emits responseError if nothing is in flight any more - unless a terminal signal
+   was emitted since `terminalSignalsBefore`: handing a sub-agent's failure to its parent can end the
+   turn itself (e.g., if sending the parent's results fails), and a turn must not be ended twice.
+   */
+  void emitResponseErrorIfDone( const size_t terminalSignalsBefore );
 };
 
 

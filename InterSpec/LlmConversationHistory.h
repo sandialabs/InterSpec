@@ -672,10 +672,12 @@ public:
   /** Add tool call requests (potentially multiple) as a follow-up to the last message.
 
    This creates a single LlmToolRequest containing all the tool calls.
+   `callDuration`, if given (the tools have all run already), is set before the turn is announced.
    */
   std::shared_ptr<LlmToolRequest> addToolCalls( std::vector<LlmToolCall> &&toolCalls,
                                                const std::string &rawResponseContent,
-                     const std::shared_ptr<LlmInteraction> &convo );
+                     const std::shared_ptr<LlmInteraction> &convo,
+                     const std::optional<std::chrono::milliseconds> &callDuration = std::nullopt );
 
   /** Add tool call results (potentially multiple) as a follow-up to the last message.
 

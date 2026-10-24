@@ -335,6 +335,16 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
       if( m_sendButton )
         m_sendButton->toggleStyleClass( "llm-tools-running",
                                         (state == LlmInterface::ActivityState::RunningTools) );
+
+      // A request not sent through sendMessage() - e.g., Retry on an error - is still work the user
+      //  may want to stop; the terminal signals return the input to idle as usual.  The user started
+      //  it, so is there to answer any error it hits.
+      if( (state != LlmInterface::ActivityState::Idle) && !m_isRequestPending )
+      {
+        m_isRequestPending = true;
+        setInputEnabled( false );
+        m_llmInterface->setUnattended( false );
+      }
     } );
 
     // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
@@ -1144,11 +1154,11 @@ void LlmToolGui::handleInputSubmit()
 
 void LlmToolGui::handleSendButton()
 {
-  // While a request is in flight the Send button acts as a Stop button.
+  // While a request is in flight the Send button acts as a Stop button.  (cancelCurrentRequest() also
+  //  returns the input to idle if nothing turns out to be outstanding.)
   if( m_isRequestPending )
   {
-    if( m_llmInterface )
-      m_llmInterface->cancelAll();
+    cancelCurrentRequest();
     return;
   }
 
@@ -1199,6 +1209,10 @@ void LlmToolGui::sendMessage(const std::string& message)
       images.push_back( std::move( img ) );
     }
     clearStagedImages();
+
+    // An MCP client or benchmark cant answer a sub-agent's error panel, so have the agent that invoked
+    //  it carry on instead.
+    m_llmInterface->setUnattended( static_cast<bool>( m_activeMcpCallback ) || isBenchmarkRunning() );
 
     // Send message to LLM - this creates a new LlmInteraction in the history
     shared_ptr<LlmInteraction> convo = m_llmInterface->sendUserMessage( message, std::move( images ) );
