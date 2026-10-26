@@ -968,7 +968,8 @@ public:
         json toolDef;
         toolDef["name"] = t.name;
         toolDef["description"] = t.description;
-        toolDef["input_schema"] = t.parameters;
+        // Anthropic rejects oneOf/anyOf/allOf at the top level of input_schema.
+        toolDef["input_schema"] = strip_top_level_schema_combinators( t.parameters );
         toolsArr.push_back( toolDef );
       }
       request["tools"] = toolsArr;
@@ -1437,3 +1438,14 @@ std::unique_ptr<const LlmApiProtocol> LlmApiProtocol::create( LlmConfig::LlmApi:
   }
   throw std::logic_error( "LlmApiProtocol::create: unknown ApiFormat" );
 }//LlmApiProtocol::create(...)
+
+
+nlohmann::json strip_top_level_schema_combinators( nlohmann::json schema )
+{
+  if( schema.is_object() )
+  {
+    for( const char *key : { "oneOf", "anyOf", "allOf", "not", "if", "then", "else" } )
+      schema.erase( key );
+  }
+  return schema;
+}//strip_top_level_schema_combinators(...)

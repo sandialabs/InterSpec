@@ -500,3 +500,44 @@ BOOST_AUTO_TEST_CASE( AnthropicThinkingFormPerModel )
     BOOST_CHECK_MESSAGE( request_for( model, false, ToolChoice::Required )["tool_choice"].value("type","") == "auto",
                          model << ": forced tool_choice" );
 }//AnthropicThinkingFormPerModel
+
+
+// Anthropic rejects oneOf/anyOf/allOf at the top level of a tool's input_schema, so those must be
+//  stripped for that format only - nested combinators, and every other format, keep the full schema.
+BOOST_AUTO_TEST_CASE( AnthropicStripsTopLevelSchemaCombinators )
+{
+  NormalizedTool tool;
+  tool.name = "modify_config";
+  tool.description = "Modify the config.";
+  tool.parameters = json::parse( R"({
+    "type": "object",
+    "properties": {
+      "operation": { "type": "string", "enum": ["add", "remove"] },
+      "value": { "oneOf": [ {"type": "string"}, {"type": "number"} ] }
+    },
+    "required": ["operation"],
+    "allOf": [ { "if": {"properties": {"operation": {"const": "add"}}}, "then": {"required": ["value"]} } ],
+    "anyOf": [ {"required": ["operation"]} ]
+  })" );
+  const vector<NormalizedTool> tools{ tool };
+  const json messages = json::array( { json{ {"role","user"}, {"content","hi"} } } );
+  const LlmConfig::LlmApi api = make_anthropic_api();
+
+  const json anthropicReq = LlmApiProtocol::create( ApiFormat::Anthropic )
+                                ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_REQUIRE( anthropicReq.contains("tools") && (anthropicReq["tools"].size() == 1) );
+  const json &schema = anthropicReq["tools"][0]["input_schema"];
+  BOOST_CHECK( !schema.contains("allOf") );
+  BOOST_CHECK( !schema.contains("anyOf") );
+  BOOST_CHECK_EQUAL( schema.value("type", ""), "object" );
+  BOOST_CHECK( schema["required"] == tool.parameters["required"] );
+  BOOST_CHECK( schema["properties"] == tool.parameters["properties"] );  // nested oneOf kept
+
+  const json chatReq = LlmApiProtocol::create( ApiFormat::OpenAiChat )
+                           ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_CHECK( chatReq["tools"][0]["function"]["parameters"] == tool.parameters );
+
+  const json responsesReq = LlmApiProtocol::create( ApiFormat::OpenAiResponses )
+                                ->buildRequestBody( api, "sys", messages, tools, ToolChoice::Auto );
+  BOOST_CHECK( responsesReq["tools"][0]["parameters"] == tool.parameters );
+}//AnthropicStripsTopLevelSchemaCombinators

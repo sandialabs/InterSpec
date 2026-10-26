@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <cctype>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -55,6 +57,7 @@
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AnalystChecks.h"
+#include "InterSpec/LlmApiProtocol.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -2388,6 +2391,186 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
 
   cout << "Successfully validated " << expectedTools.size() << " tools from XML configuration" << endl;
 }
+
+
+namespace
+{
+  /** Whether `text` contains `word` with no identifier character (alphanumeric or '_') on either
+   side - so e.g. "activity" does not match within "activity_type". */
+  bool mentions_word( const std::string &text, const std::string &word )
+  {
+    const auto is_ident = []( const char c ){ return std::isalnum( static_cast<unsigned char>(c) ) || (c == '_'); };
+    for( size_t pos = text.find( word ); pos != std::string::npos; pos = text.find( word, pos + 1 ) )
+    {
+      const size_t end = pos + word.size();
+      if( (pos == 0 || !is_ident( text[pos - 1] )) && (end >= text.size() || !is_ident( text[end] )) )
+        return true;
+    }
+    return false;
+  }//mentions_word(...)
+
+
+  /** Adds the property names in `schema["required"]`, and recursively in any `oneOf`/`anyOf`/
+   `allOf`/`not` sub-schemas, to `names`. */
+  void collect_required_names( const json &schema, std::set<std::string> &names )
+  {
+    if( !schema.is_object() )
+      return;
+
+    if( schema.contains("required") && schema["required"].is_array() )
+    {
+      for( const json &n : schema["required"] )
+        names.insert( n.get<std::string>() );
+    }
+
+    for( const char *key : { "oneOf", "anyOf", "allOf" } )
+    {
+      if( schema.contains(key) && schema[key].is_array() )
+      {
+        for( const json &sub : schema[key] )
+          collect_required_names( sub, names );
+      }
+    }
+
+    if( schema.contains("not") )
+      collect_required_names( schema["not"], names );
+  }//collect_required_names(...)
+
+
+  /** For each `if`/`then` rule in `rules` (and nested `then.allOf` rules), checks that every
+   property the `then` constrains has the condition described in text: either the constrained
+   property's description mentions a triggering value/property of the `if`, or a triggering
+   property's description mentions the constrained property. */
+  void check_rules_described( const std::string &toolName, const json &properties, const json &rules )
+  {
+    for( const json &rule : rules )
+    {
+      if( !rule.is_object() || !rule.contains("if") || !rule.contains("then") )
+        continue;
+
+      const json &cond = rule["if"];
+      const json &then = rule["then"];
+
+      // Triggers: `const`/`enum` string values in `if.properties`, and property names that `if`
+      //  requires to be present.
+      std::set<std::string> trigger_terms, trigger_props;
+      if( cond.contains("properties") )
+      {
+        for( const auto &[prop, constraint] : cond["properties"].items() )
+        {
+          trigger_props.insert( prop );
+          if( constraint.contains("const") && constraint["const"].is_string() )
+            trigger_terms.insert( constraint["const"].get<std::string>() );
+          if( constraint.contains("enum") )
+          {
+            for( const json &v : constraint["enum"] )
+              if( v.is_string() )
+                trigger_terms.insert( v.get<std::string>() );
+          }
+        }
+      }//if( cond.contains("properties") )
+
+      // A required property is itself the trigger only if its value isn't also constrained (e.g.,
+      //  for `source_type` required to be `Intrinsic`, the description must mention `Intrinsic`).
+      const std::set<std::string> value_constrained = trigger_props;
+      std::set<std::string> required_in_if;
+      collect_required_names( cond, required_in_if );
+      for( const std::string &prop : required_in_if )
+      {
+        trigger_props.insert( prop );
+        if( !value_constrained.count( prop ) )
+          trigger_terms.insert( prop );
+      }
+
+      // Targets: properties the `then` requires, forbids, or restricts.
+      std::set<std::string> targets;
+      collect_required_names( then, targets );
+      if( then.contains("properties") )
+      {
+        for( const auto &[prop, constraint] : then["properties"].items() )
+          targets.insert( prop );
+      }
+
+      for( const std::string &target : targets )
+      {
+        if( trigger_props.count( target ) )
+          continue;
+
+        BOOST_REQUIRE_MESSAGE( properties.contains( target ),
+                              "Tool '" + toolName + "': conditional schema references unknown property '" + target + "'" );
+        const std::string target_desc = properties[target].value( "description", "" );
+
+        bool described = false;
+        for( const std::string &term : trigger_terms )
+        {
+          described = described || mentions_word( target_desc, term );
+
+          for( const std::string &prop : trigger_props )
+          {
+            const std::string prop_desc = properties.contains( prop ) ? properties[prop].value( "description", "" ) : "";
+            described = described || (mentions_word( prop_desc, target ) && mentions_word( prop_desc, term ));
+          }
+        }
+
+        std::string trigger_list;
+        for( const std::string &term : trigger_terms )
+          trigger_list += (trigger_list.empty() ? "" : "|") + term;
+
+        BOOST_CHECK_MESSAGE( described, "Tool '" + toolName + "': rule '" + trigger_list + " -> " + target
+                            + "' is not described in property text" );
+      }//for( const std::string &target : targets )
+
+      if( then.contains("allOf") )
+        check_rules_described( toolName, properties, then["allOf"] );
+    }//for( const json &rule : rules )
+  }//check_rules_described(...)
+}//namespace
+
+
+// Conditional (if/then) rules at the top level of a tool's schema are stripped for the Anthropic API
+//  (see strip_top_level_schema_combinators), so those models rely on the property descriptions -
+//  check every such rule is also stated in the text, and that the stripped schema is acceptable.
+BOOST_AUTO_TEST_CASE( test_toolSchemaConditionsDescribedInText )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  size_t num_tools_with_rules = 0;
+  for( const auto &[toolName, tool] : registry.getTools() )
+  {
+    const json &schema = tool.parameters_schema;
+    BOOST_REQUIRE_MESSAGE( schema.is_object(), "Tool '" + toolName + "' parameters schema is not an object" );
+
+    const json stripped = strip_top_level_schema_combinators( schema );
+    for( const char *key : { "oneOf", "anyOf", "allOf", "not", "if", "then", "else" } )
+      BOOST_CHECK_MESSAGE( !stripped.contains(key), "Tool '" + toolName + "': stripped schema still has '" + key + "'" );
+    BOOST_CHECK_MESSAGE( schema.empty() || (stripped.value("type", "") == "object"),
+                        "Tool '" + toolName + "': schema is not of type 'object'" );
+
+    const json properties = schema.value( "properties", json::object() );
+    bool has_rules = false;
+    for( const char *key : { "allOf", "anyOf", "oneOf" } )
+    {
+      if( schema.contains(key) && schema[key].is_array() )
+      {
+        has_rules = true;
+        check_rules_described( toolName, properties, schema[key] );
+      }
+    }
+
+    // A bare top-level if/then (not wrapped in allOf)
+    if( schema.contains("if") && schema.contains("then") )
+    {
+      has_rules = true;
+      check_rules_described( toolName, properties, json::array( { json{ {"if", schema["if"]}, {"then", schema["then"]} } } ) );
+    }
+
+    num_tools_with_rules += has_rules;
+  }//for( const auto &[toolName, tool] : registry.getTools() )
+
+  // modify_shielding_source_config currently has top-level rules; make sure we actually test something.
+  BOOST_CHECK_GE( num_tools_with_rules, 1 );
+}//test_toolSchemaConditionsDescribedInText
 
 
 // Activity/Shielding Fit Tool Tests

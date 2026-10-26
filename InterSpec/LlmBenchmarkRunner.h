@@ -413,7 +413,6 @@ private:
   // Signal connections we manage
   Wt::Signals::connection m_conversationFinishedConn;
   Wt::Signals::connection m_responseErrorConn;
-  Wt::Signals::connection m_spectrumChangedConn;  // For sequence step spectrum loads
   Wt::Signals::connection m_judgeConversationFinishedConn;
   Wt::Signals::connection m_judgeResponseErrorConn;
 
@@ -430,12 +429,6 @@ private:
 
   /** Load spectrum for the current sequence step. */
   void loadSequenceStep();
-
-  /** Called when spectrum loading finishes (for simple problems). */
-  void handleSpectrumLoaded( SpecUtils::SpectrumType specType,
-                             std::shared_ptr<SpecMeas> meas,
-                             std::set<int> samples,
-                             std::vector<std::string> detectors );
 
   /** Send the current judged question to the LLM. */
   void sendCurrentQuestion();
