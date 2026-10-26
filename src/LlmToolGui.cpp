@@ -2376,6 +2376,9 @@ void LlmToolGui::disconnectSpectrumChangedForBenchmark()
 
 void LlmToolGui::reconnectSpectrumChangedForBenchmark()
 {
+  // Assigning over a live connection drops its handle without disconnecting it (see resetRoot()),
+  //  which would leave a second copy of the slot that disconnectSpectrumChangedForBenchmark() can't reach.
+  m_spectrumChangedConnection.disconnect();
   m_spectrumChangedConnection =
     m_viewer->displayedSpectrumChanged().connect( this, &LlmToolGui::handleSpectrumChanged );
 }
