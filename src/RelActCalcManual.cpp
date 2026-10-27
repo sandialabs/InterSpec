@@ -62,6 +62,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/CeresUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/UserPreferences.h"
@@ -5256,8 +5257,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
   // The chi2 of the DATA channels alone, at the given parameters.  Everything that reports or
   //  differences a chi2 goes through here, so an armed profile-likelihood penalty channel (see
-  //  RelEffInput::profile_targets) can never leak into a reported number: 2*Ceres' final cost
-  //  would include it.  With the channel disarmed this is exactly 2*final_cost.
+  //  RelEffInput::profile_targets) can never leak into a reported number: 2*Ceres' cost would
+  //  include it.  With the channel disarmed this equals 2*CeresUtils::cost_at_solution(...), to
+  //  rounding.
   const auto peaks_only_chi2 = [cost_functor, num_peaks]( const vector<double> &pars ) -> double {
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
     cost_functor->eval( pars, residuals.data() );
@@ -5683,7 +5685,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     for( size_t i = 0; i < num_parameters; ++i )
       cout << (i ? ", " : "") << parameters[i];
     cout << "}\n";
-    cout << "Chi2=" << summary.final_cost << " (from initial value " << summary.initial_cost << ")\n\n";
+    cout << "Chi2=" << 2.0*CeresUtils::cost_at_solution( summary ) << " (from initial value " << 2.0*summary.initial_cost << ")\n\n";
   }//if( debug_printout() )
 
 
@@ -5692,13 +5694,14 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   // Chi2 under the weights actually minimized (i.e., including any
   //  GenericPeakInfo::m_base_rel_eff_uncert).  Note the gauge pin for Ceres-fit empirical forms
   //  is a constant parameter, not an extra residual, so the data channels are the whole cost
-  //  here; `peaks_only_chi2` (== 2*summary.final_cost on this path) is used so this and the
-  //  profile scan's chi2 values are produced by the identical expression.
+  //  here; `peaks_only_chi2` (2x Ceres' cost at the solution on this path, to rounding) is used
+  //  so this and the profile scan's chi2 values are produced by the identical expression.
   solution.m_chi2_fit_weights = peaks_only_chi2( parameters );
 #if( !USE_RESIDUAL_TO_BREAK_DEGENERACY )
   //  Only equal to Ceres' cost when every residual is a peak; the degeneracy-breaking channel
-  //  would be part of `final_cost` but not of `peaks_only_chi2`.
-  assert( fabs(solution.m_chi2_fit_weights - 2.0*summary.final_cost)
+  //  would be part of Ceres' cost but not of `peaks_only_chi2`.  Note: compare against
+  //  `cost_at_solution`, not `summary.final_cost`, which can describe a rejected trial step.
+  assert( fabs(solution.m_chi2_fit_weights - 2.0*CeresUtils::cost_at_solution( summary ))
           <= 1.0E-6*(std::max)(1.0, fabs(solution.m_chi2_fit_weights)) );
 #endif
 

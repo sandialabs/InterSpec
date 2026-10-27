@@ -86,6 +86,7 @@
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/RelEffChart.h"
+#include "InterSpec/CeresUtils.hpp"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
@@ -809,9 +810,11 @@ std::vector<double> fit_noise_curved_power( const std::vector<double> &energies,
     ceres::Solver::Summary summary;
     ceres::Solve( options, &problem, &summary );
 
-    if( summary.IsSolutionUsable() && (summary.final_cost < best_cost) )
+    // Not `summary.final_cost`, which can be the cost of a rejected trial step, not of `x`
+    const double cost = CeresUtils::cost_at_solution( summary );
+    if( summary.IsSolutionUsable() && (cost < best_cost) )
     {
-      best_cost = summary.final_cost;
+      best_cost = cost;
       best = x;
     }
   }//for( const double (&start)[4] : starts )

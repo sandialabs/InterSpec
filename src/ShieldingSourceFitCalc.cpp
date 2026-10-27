@@ -53,6 +53,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/CeresUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -3655,7 +3656,7 @@ namespace
    @param cov_counts If non-null and sized to match, the EXPECTED (model) counts used to scale the
                correlated detector-efficiency covariance (the driver's iterated-GLS loop supplies
                these from the previous solution); null bootstraps the covariance from `observed`.
-   @returns the chi2 (=2*final_cost) at the solution.
+   @returns the chi2 (=2x the Ceres cost) at the solution.
    */
   double run_ceres_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                           const std::vector<ShieldingSourceFitCalc::FitParameter> &par_defs,
@@ -3789,8 +3790,9 @@ namespace
         std::cout << "}" << std::endl;
       }//if( INTERSPEC_DEBUG_CERES_FIT )
 
-      const double this_chi2 = 2.0*summary.final_cost;
-      const bool improved = (this_chi2 < best_chi2);
+      // Not `summary.final_cost`, which can be the cost of a rejected trial step, not of `u`
+      const double this_chi2 = 2.0*CeresUtils::cost_at_solution( summary );
+      const bool improved = std::isfinite( this_chi2 ) && (this_chi2 < best_chi2);
       if( improved )
       {
         best_chi2 = this_chi2;
@@ -3844,10 +3846,19 @@ namespace
     }//for( int attempt = 0; attempt < max_attempts; ++attempt )
 
     // If no solve attempt got a valid cost, the problem is unevaluatable at/near the
-    //  starting parameters - report it rather than returning garbage.
+    //  starting parameters - report it rather than returning garbage.  A cancel or time-out
+    //  before the first evaluation looks the same (the cost functor returns false), so report
+    //  that as the cancel it is.
     if( best_chi2 == std::numeric_limits<double>::max() )
+    {
+      using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+      const ShieldingSourceChi2Fcn::CalcStatus cancel_status = chi2Fcn->currentCancelStatus();
+      if( cancel_status != ShieldingSourceChi2Fcn::CalcStatus::NotCanceled )
+        throw ShieldingSourceChi2Fcn::CancelException( cancel_status );
+
       throw std::runtime_error( "The optimizer could not evaluate the model"
                                 " (check starting values and limits)." );
+    }//if( no attempt got a valid cost )
 
     // Surface non-convergence (e.g. hit the iteration cap, or a numeric failure) so the
     //  user gets a "fit may not be reliable" signal.  A

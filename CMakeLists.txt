@@ -497,6 +497,7 @@ set(headers
     InterSpec/PhysicalUnits.h
     InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
+    InterSpec/MassAttenuationTool_imp.hpp
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/DetectorEffG2kPar.h
@@ -504,6 +505,9 @@ set(headers
     InterSpec/AngleOutxImport.h
     InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
+    InterSpec/GammaInteractionCalc_imp.hpp
+    InterSpec/VolumetricLineIntegration_imp.hpp
+    InterSpec/VolumetricElementAperture_imp.hpp
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/SourceFitNuclideDisplay.h
     InterSpec/ShieldingSourceDiagram.h
@@ -531,6 +535,7 @@ set(headers
     InterSpec/PeakFit.h
     InterSpec/PeakFit_imp.hpp
     InterSpec/PeakFitUtils.h
+    InterSpec/CeresUtils.hpp
     InterSpec/PeakFitDetPrefs.h
     InterSpec/PeakFitDetPrefsGui.h
     InterSpec/SkewParamsGrid.h
@@ -736,12 +741,18 @@ if( USE_REL_ACT_TOOL )
   
   list( APPEND headers
         InterSpec/PeakFitLM.h
+        InterSpec/PeakFitLMObjective_imp.hpp
         InterSpec/RelActCalc.h
         InterSpec/RelActCalc_imp.hpp
+        InterSpec/RelActCalc_CeresJetTraits.hpp
         InterSpec/RelActCalcAuto.h
         InterSpec/RelActCalcAuto_imp.hpp
         InterSpec/RelActCalcAuto_Roi.h
         InterSpec/RelActCalcAuto_EnergyCal_imp.hpp
+        InterSpec/RelActCalcAuto_ActiveSet.hpp
+        InterSpec/RelActCalcAuto_Conditioning.hpp
+        InterSpec/RelActCalcAuto_Search_imp.hpp
+        InterSpec/RelActCalcAuto_Profile_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h
