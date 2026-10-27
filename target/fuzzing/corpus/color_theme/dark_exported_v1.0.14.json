@@ -1,0 +1,68 @@
+{
+	"JsonVersion" : "1",
+	"created" : "2018-12-24T07:02:39+0000",
+	"defaultPeakLineColor" : "#cecfd0",
+	"description" : "Dark InterSpec color scheme.",
+	"modified" : "2018-12-26T02:58:03+0000",
+	"name" : "Dark",
+	"nonChartArea" : {
+		"backgroundColor" : "rgb(44,45,48)",
+		"borderColor" : "rgb(136,136,136)",
+		"buttonBackground" : "rgb(86,88,90)",
+		"buttonBorderColor" : "rgb(106,107,109)",
+		"buttonTextColor" : "rgb(230,230,230)",
+		"cssTheme" : "dark",
+		"inputBackground" : "rgb(59,60,63)",
+		"labelColor" : "rgb(197,198,201)",
+		"linkColor" : "rgb(18,101,200)",
+		"menuBarActiveColor" : "rgb(18,101,200)",
+		"menuBarBackground" : "rgb(65,65,65)",
+		"menuBarHoverColor" : "rgb(18,101,200)",
+		"textColor" : "white"
+	},
+	"peaksTakeOnReferenceLineColor" : true,
+	"referenceLines" : {
+		"dynamicRefLineCommonColor" : "#9da2f2",
+		"dynamicRefLineIndustrialColor" : "#D7D7DA",
+		"dynamicRefLineMedicalColor" : "#FF0000",
+		"dynamicRefLineNormColor" : "#39a004",
+		"dynamicRefLineOtherColor" : "#8055ef",
+		"dynamicRefLineSnmColor" : "#ff7600",
+		"lineColors" : [
+			"#c0c0c0",
+			"#ffff99",
+			"#b8d9f0",
+			"#9933FF",
+			"#FF66FF",
+			"#CC3333",
+			"#FF6633",
+			"#FFFF99",
+			"#CCFFCC",
+			"#0000CC",
+			"#666666",
+			"#003333"
+		],
+		"specificSources" : {
+			"Ba131" : "rgb(192,192,192)",
+			"background" : "#967f55"
+		}
+	},
+	"spectrum" : {
+		"axisLines" : "#cfced2",
+		"backgroundColor" : "#a9ebdd",
+		"chartText" : "#cfced2",
+		"foregroundColor" : "#cfced2",
+		"logYAxisMin" : 0.1,
+		"secondaryColor" : "#fd8273"
+	},
+	"timeChart" : {
+		"axisLines" : "#cfced2",
+		"backgroundHighlightColor" : "rgb(0,255,255)",
+		"chartText" : "#cfced2",
+		"foregroundHighlightColor" : "#f6f6ad",
+		"gammaLine" : "#cfced2",
+		"neutronLine" : "rgb(0,128,0)",
+		"occIndicatorLines" : "rgb(128,128,128)",
+		"secondaryHighlightColor" : "rgb(0,128,0)"
+	}
+}

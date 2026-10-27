@@ -576,7 +576,8 @@ private:
     DrfImportFile,       ///< DRF file with options: .ecc, ANGLE, eff. CSV, Detector.dat, .par, DETECTOR.txt
     ShieldingSourceXml,
     SourceLib,
-    BatchDecayCsv        ///< nuclide/activity list for the Batch Decay tool (see DecayBatchCalc::parse_csv)
+    BatchDecayCsv,       ///< nuclide/activity list for the Batch Decay tool (see DecayBatchCalc::parse_csv)
+    ColorThemeJson       ///< color theme exported from the "Color Themes" window (see ColorTheme::toJson)
 #if( USE_LLM_INTERFACE )
     , LlmConfigXml       ///< `llm_config.xml` provider/MCP config for the LLM assistant
 #endif
@@ -691,6 +692,11 @@ private:
    nothing, if the whole file does not parse as batch-decay input (so the next candidate is tried).
    */
   bool tryOpenBatchDecayCsv( std::ifstream &infile, size_t fileSize );
+
+  /** If the file parses as a color theme, opens the "Color Themes" window asking the user to import
+   it, and returns true; returns false (with nothing shown) otherwise.
+   */
+  bool tryImportColorThemeJson( std::ifstream &infile, size_t fileSize );
 
   /** Registers an undo/redo step on the currently active `m_nonSpecFileDialog` such that
    undo closes the dialog and redo re-opens it.  For files ≤10 MB, file data is cached in

@@ -25,6 +25,7 @@
 
 #include <fstream>
 
+#include <Wt/Utils.h>
 #include <Wt/WMenu.h>
 #include <Wt/WText.h>
 #include <Wt/WAnchor.h>
@@ -70,7 +71,7 @@ namespace
     {
     }
     
-    const ColorTheme *theme() { return m_theme.get(); }
+    const ColorTheme *theme() const { return m_theme.get(); }
     bool editable() const { return m_editable;  }
     
     bool isEditedSinceApply() const { return m_isEditedSinceApply; }
@@ -147,6 +148,20 @@ namespace
     }
   };//class JsonDownloadResource : public Wt::WResource
   
+  /** Raises `window` (and, unless on a phone, re-centers it) after a short delay.  A dialog opened by a
+   click inside the (non-modal) Color Themes window, or right after InterSpec::showColorThemeWindow()
+   re-shows it, ends up under that window, since its raise lands after ours - so, like SimpleDialog,
+   raise again on a delay.  The re-center is for the upload dialog, which becomes much larger, once
+   the theme preview is added, than when it was first positioned.
+   */
+  void raiseAndCenterAfterDelay( AuxWindow *window )
+  {
+    string js = "setTimeout(function(){";
+    if( !window->isPhone() )
+      js += "Wt.WT.AuxWindowCenter(" + window->jsRef() + ");";
+    js += "Wt.WT.AuxWindowBringToFront('" + window->id() + "');},60);";
+    window->doJavaScript( js );
+  }//void raiseAndCenterAfterDelay( AuxWindow *window )
 }//namespace
 
 
@@ -158,6 +173,7 @@ m_menu( nullptr ),
 m_edit( nullptr ),
 m_removeIcn( nullptr ),
 m_addIcn( nullptr ),
+m_readOnlyNote( nullptr ),
 m_close( nullptr ),
 m_save( nullptr ),
 m_apply( nullptr )
@@ -185,6 +201,16 @@ m_apply( nullptr )
   WContainerWidget *editDiv = editDivOwner.get();
   editDiv->addStyleClass( "ColorThemeEditContainer" );
 
+  // Built-in themes show up in a disabled editor; without a note, users take that to mean colours
+  //  cant be customized at all, rather than that they should clone the theme first.
+  m_readOnlyNote = editDiv->addNew<WContainerWidget>();
+  m_readOnlyNote->addStyleClass( "ColorThemeReadOnlyNote" );
+  m_readOnlyNote->addNew<WText>( WString::tr("ctw-builtin-readonly") );
+  WPushButton *copyBtn = m_readOnlyNote->addNew<WPushButton>( WString::tr("ctw-make-copy-btn") );
+  copyBtn->addStyleClass( "LinkBtn" );
+  copyBtn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
+  m_readOnlyNote->hide();
+
   m_edit = editDiv->addNew<ColorThemeWidget>();
   m_edit->edited().connect( this, [this](){ themEditedCallback(); } );
 
@@ -208,17 +234,19 @@ m_apply( nullptr )
   {
     auto adSubDiv = std::make_unique<WContainerWidget>();
     adSubDiv->addStyleClass( "AddRemoveThemeButtons" );
-    m_removeIcn = adSubDiv->addNew<WContainerWidget>(); //needed or else button wont show up
-    m_removeIcn->setStyleClass( "DeleteColorTheme Wt-icon" );
-    m_removeIcn->setInline( true );
-    m_removeIcn->clicked().connect( this, &ColorThemeWindow::removeThemeCallback );
-    HelpSystem::attachToolTipOn( {m_removeIcn}, WString::tr("ctw-remove-tooltip"), true );
-
+    // "+" first, and "-" keeps its space when hidden (built-in themes), so neither ever moves
     m_addIcn = adSubDiv->addNew<WContainerWidget>(); //needed or else button wont show up
     m_addIcn->setStyleClass( "AddColorTheme Wt-icon" );
     m_addIcn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
     m_addIcn->setInline( true );
     HelpSystem::attachToolTipOn( {m_addIcn}, WString::tr("ctw-clone-tooltip"), true );
+
+    m_removeIcn = adSubDiv->addNew<WContainerWidget>(); //needed or else button wont show up
+    m_removeIcn->setStyleClass( "DeleteColorTheme Wt-icon" );
+    m_removeIcn->setInline( true );
+    m_removeIcn->setHiddenKeepsGeometry( true );
+    m_removeIcn->clicked().connect( this, &ColorThemeWindow::removeThemeCallback );
+    HelpSystem::attachToolTipOn( {m_removeIcn}, WString::tr("ctw-remove-tooltip"), true );
 
     WPushButton *upload = adSubDiv->addNew<WPushButton>( "" );
     upload->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
@@ -349,6 +377,8 @@ m_apply( nullptr )
   {
     m_menu->select( currentItem );
     m_edit->setTheme( currentItem->theme(), currentItem->editable() );
+    m_removeIcn->setHidden( !currentItem->editable() );
+    m_readOnlyNote->setHidden( currentItem->editable() );
     if( currentThemeSelected )
       m_apply->setDisabled( true );
   }//if( currentItem )
@@ -365,7 +395,10 @@ m_apply( nullptr )
 
 ColorThemeWindow::~ColorThemeWindow()
 {
-  
+  // These are owned by wApp, so would otherwise outlive us, with buttons connected to this window.
+  for( const Wt::Core::observing_ptr<AuxWindow> &dialog : m_childDialogs )
+    AuxWindow::deleteAuxWindow( dialog.get() );
+  SimpleDialog::deleteSimpleDialog( m_savePrompt.get() );
 }//~ColorThemeWindow
 
 
@@ -442,7 +475,7 @@ void ColorThemeWindow::removeThemeCallback()
     showOrHideApplyButton();
   };//doDelete
   
-  conf->contents()->addNew<WText>( WString::tr("ctw-delete-confirm-text").arg(name) );
+  conf->contents()->addNew<WText>( WString::tr("ctw-delete-confirm-text").arg( Wt::Utils::htmlEncode(name) ) );
   conf->contents()->setMargin( 15 );
 
   WContainerWidget *bottom = conf->footer();
@@ -463,6 +496,8 @@ void ColorThemeWindow::removeThemeCallback()
   conf->rejectWhenEscapePressed();
   conf->resizeToFitOnScreen();
   conf->centerWindow();
+  raiseAndCenterAfterDelay( conf );
+  m_childDialogs.emplace_back( conf );
   
   showOrHideApplyButton();
 }//void removeThemeCallback()
@@ -523,35 +558,7 @@ void ColorThemeWindow::uploadThemeCallback()
         ColorTheme::fromJson(data, *theme);
 
         //4) Ask user if they want to save to database (show disabled version of edit widget)
-        window->contents()->addNew<WText>( WString::tr("ctw-import-confirm").arg(theme->theme_name) );
-        WContainerWidget *editParent = window->contents()->addNew<WContainerWidget>();
-
-        const int w = m_interspec->renderedWidth();
-        const int h = m_interspec->renderedHeight();
-
-        editParent->setMaximumSize( 0.75*w, 0.75*h );
-        ColorThemeWidget *edit = editParent->addNew<ColorThemeWidget>();
-        edit->setTheme( theme.get(), false );
-        WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
-        yes->clicked().connect( this, [=](){
-          //5) Add to database, and set as current theme to display
-          std::unique_ptr<ColorTheme> newtheme = this->saveThemeToDb( theme.get() );
-          if( newtheme )
-          {
-            auto newitemOwner = std::make_unique<ThemeMenuItem>( newtheme->theme_name, std::move( newtheme ), true );
-            ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
-            m_menu->select( newitem );
-            newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
-            m_apply->setDisabled( false );
-          }else
-          {
-            m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
-          }
-          window->hide();
-        } );
-
-        window->resizeToFitOnScreen();
-        window->centerWindow();
+        populateImportConfirm( window, theme );
       }catch( std::exception & )
       {
         throw;
@@ -576,7 +583,107 @@ void ColorThemeWindow::uploadThemeCallback()
   window->show();
   window->resizeToFitOnScreen();
   window->centerWindow();
+  raiseAndCenterAfterDelay( window );
+  m_childDialogs.emplace_back( window );
 }//void uploadThemeCallback()
+
+
+void ColorThemeWindow::confirmThemeImport( std::shared_ptr<ColorTheme> theme )
+{
+  if( !theme )
+    return;
+
+  AuxWindow *window = AuxWindow::make( WString::tr("ctw-import-title"),
+                                    (AuxWindowProperties::IsModal
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse
+                                     | AuxWindowProperties::SetCloseable) );
+
+  WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
+  close->clicked().connect( window, [window](){ window->hide(); } );
+
+  window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
+  window->rejectWhenEscapePressed();
+  window->show();
+
+  populateImportConfirm( window, theme );
+  m_childDialogs.emplace_back( window );
+}//void confirmThemeImport( std::shared_ptr<ColorTheme> theme )
+
+
+void ColorThemeWindow::populateImportConfirm( AuxWindow *window, std::shared_ptr<ColorTheme> theme )
+{
+  assert( window && theme );
+
+  // Importing a theme exported from this app (e.g., to get an editable "Dark") would otherwise give
+  //  two identically named entries - and since the active theme is matched by name, reopening this
+  //  window would then highlight the wrong one.
+  const WString origName = theme->theme_name;
+  theme->theme_name = uniqueThemeName( origName );
+
+  const WString nameHtml = Wt::Utils::htmlEncode( theme->theme_name );
+  window->contents()->addNew<WText>( WString::tr("ctw-import-confirm").arg(nameHtml) );
+  // The preview is much taller than the screen, so it scrolls within at most 3/4 of the viewport
+  //  (viewport units, as the app's rendered size is still zero if opened at start-up).
+  WContainerWidget *editParent = window->contents()->addNew<WContainerWidget>();
+  editParent->setMaximumSize( WLength(75, WLength::Unit::ViewportWidth),
+                              WLength(75, WLength::Unit::ViewportHeight) );
+  editParent->setOverflow( Wt::Overflow::Auto );
+
+  ColorThemeWidget *edit = editParent->addNew<ColorThemeWidget>();
+  edit->setTheme( theme.get(), false );
+  WPushButton *yes = window->addFooterButton( WString::tr("Yes"), WidgetUtils::ButtonRole::Affirm );
+  yes->clicked().connect( this, [this,window,theme,origName](){
+    // Another import may have taken the name since the preview was shown (e.g., several themes
+    //  dropped at once), so check again.
+    theme->theme_name = uniqueThemeName( origName );
+
+    // Add to database, and set as current theme to display
+    std::unique_ptr<ColorTheme> newtheme = saveThemeToDb( theme.get() );
+    if( newtheme )
+    {
+      auto newitemOwner = std::make_unique<ThemeMenuItem>( newtheme->theme_name, std::move( newtheme ), true );
+      ThemeMenuItem *newitem = dynamic_cast<ThemeMenuItem *>( m_menu->addItem( std::move(newitemOwner) ) );
+      m_menu->select( newitem );
+      newitem->clicked().connect( this, [this, newitem](){ selectItem( newitem ); } );
+      m_apply->setDisabled( false );
+    }else
+    {
+      m_interspec->logMessage( "Error saving theme to database - sorry!.", 2 ); //2 = WarningWidget::WarningMsgLevel::WarningMsgInfo
+    }
+    window->hide();
+  } );
+
+  window->resizeToFitOnScreen();
+  window->centerWindow();
+  raiseAndCenterAfterDelay( window );
+}//void populateImportConfirm(...)
+
+
+WString ColorThemeWindow::uniqueThemeName( const WString &name ) const
+{
+  const vector<WMenuItem *> items = m_menu->items();
+  const auto inUse = [&items]( const WString &candidate ) -> bool {
+    for( const WMenuItem *item : items )
+    {
+      // Compare to the theme, not the menu label, which isnt updated when a theme is renamed
+      const ThemeMenuItem * const themeItem = dynamic_cast<const ThemeMenuItem *>( item );
+      const ColorTheme * const theme = themeItem ? themeItem->theme() : nullptr;
+      if( theme && (theme->theme_name == candidate) )
+        return true;
+    }
+    return false;
+  };
+
+  if( !inUse(name) )
+    return name;
+
+  WString candidate = WString::tr("ctw-imported-name").arg( name );
+  for( int i = 2; inUse(candidate) && (i < 1000); ++i )
+    candidate = WString::tr("ctw-imported-name-n").arg( name ).arg( i );
+
+  return candidate;
+}//WString uniqueThemeName( const WString &name ) const
 
 
 void ColorThemeWindow::selectItem( WMenuItem *item )
@@ -595,16 +702,33 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
     return;
   }
   
+  if( m_savePrompt )
+    return;
+  
   WString content = WString::tr("ctw-save-changes-text").arg(m_edit->m_currentTheme->theme_name);
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ctw-save-changes-title"), content );
+  m_savePrompt = dialog;
   
-  
+  // A clicked SimpleDialog deletes itself, so we let go of it before deleting ourselves - our
+  //  destructor only cleans up a prompt that is still pending.
   WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn"), WidgetUtils::ButtonRole::Destructive );
-  discard->clicked().connect( this, [this](){ AuxWindow::deleteAuxWindow( this ); } );
+  discard->clicked().connect( this, [this](){
+    m_savePrompt.reset();
+    AuxWindow::deleteAuxWindow( this );
+  } );
 
   WPushButton *save = dialog->addButton( WString::tr("Save"), WidgetUtils::ButtonRole::Affirm );
-  save->clicked().connect( this, [this](){ saveAndDelete(); } );
+  save->clicked().connect( this, [this](){
+    m_savePrompt.reset();
+    saveAndDelete();
+  } );
 }//void checkForSavesAndCleanUp()
+
+
+void ColorThemeWindow::dismissSaveChangesPrompt()
+{
+  SimpleDialog::deleteSimpleDialog( m_savePrompt.get() );
+}//void dismissSaveChangesPrompt()
 
 
 void ColorThemeWindow::saveAndDelete()
@@ -855,6 +979,7 @@ void ColorThemeWindow::themeSelected( Wt::WMenuItem *item )
   
   m_edit->setTheme( themeItem->theme(), themeItem->editable() );
   m_removeIcn->setHidden( !themeItem->editable() );
+  m_readOnlyNote->setHidden( themeItem->editable() );
   m_save->setDisabled( true );
   
   showOrHideApplyButton();

@@ -120,6 +120,7 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/DrfImport.h"
 #include "InterSpec/DrfImportWidget.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -133,6 +134,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/EnergyCalUndoRedo.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -2364,6 +2366,16 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
     result.candidates.push_back( NonSpecFileKind::LlmConfigXml );
 #endif
 
+  // --- Color theme JSON from the "Color Themes" window.  ColorTheme::toJson writes keys in sorted
+  //  order, so "JsonVersion" leads the file, and nothing else we read uses that key. ---
+  {
+    size_t pos = 0;
+    while( (pos < headerLen) && std::isspace( header[pos] ) )
+      ++pos;
+    if( (pos < headerLen) && (header[pos] == '{') && (position_in_header( "\"JsonVersion\"" ) >= 0) )
+      result.candidates.push_back( NonSpecFileKind::ColorThemeJson );
+  }
+
   
 
 #if( USE_REL_ACT_TOOL )
@@ -2572,6 +2584,10 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
 
       case NonSpecFileKind::BatchDecayCsv:
         handled = tryOpenBatchDecayCsv( infile, filesize );
+        break;
+
+      case NonSpecFileKind::ColorThemeJson:
+        handled = tryImportColorThemeJson( infile, filesize );
         break;
 
 #if( USE_LLM_INTERFACE )
@@ -3088,6 +3104,35 @@ bool SpecMeasManager::tryOpenBatchDecayCsv( std::ifstream &infile, const size_t 
 
   return true;
 }//tryOpenBatchDecayCsv(...)
+
+
+bool SpecMeasManager::tryImportColorThemeJson( std::ifstream &infile, const size_t fileSize )
+{
+  // Same limit as the "Color Themes" window's upload button
+  if( (fileSize == 0) || (fileSize > 64*1024) )
+    return false;
+
+  string contents( fileSize, '\0' );
+  if( !infile.read( &(contents[0]), static_cast<std::streamsize>(fileSize) ) )
+    return false;
+
+  const shared_ptr<ColorTheme> theme = make_shared<ColorTheme>();
+  try
+  {
+    ColorTheme::fromJson( contents, *theme );
+  }catch( std::exception & )
+  {
+    return false; // Not a valid theme; let the next candidate, or the "not a spectrum" message, have it
+  }
+
+  ColorThemeWindow * const window = m_viewer->showColorThemeWindow();
+  if( !window )
+    return false;
+
+  window->confirmThemeImport( theme );
+
+  return true;
+}//tryImportColorThemeJson(...)
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,

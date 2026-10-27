@@ -101,6 +101,7 @@ class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
+class ColorThemeWindow;
 class LicenseAndDisclaimersWindow;
 namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
@@ -999,6 +1000,11 @@ public:
    */
   DrfModifyWidget *drfModifyWidget() const;
 
+  /** Shows the window that allows users to select, alter, and apply color themes; brings an
+   already-open one forward rather than creating a second.
+   */
+  ColorThemeWindow *showColorThemeWindow();
+
 #if( USE_LLM_INTERFACE )
   /** Create and show the LLM tool widget in the tools tab, if its not already created. */
   void createLlmTool();
@@ -1553,9 +1559,6 @@ protected:
   */
   void setReferenceLineColors( std::shared_ptr<const ColorTheme> theme );
   
-  /** Creates the ColorThemeWidget Window that allows users to alter themes/colors. */
-  void showColorThemeWindow();
-  
   void initDragNDrop();
   
   void hotKeyPressed( const unsigned int value );
@@ -1882,6 +1885,11 @@ protected:
       other statements.  Will be nullptr if not showing.
    */
   Wt::Core::observing_ptr<LicenseAndDisclaimersWindow> m_licenseWindow;
+  
+  /** The color themes window; it deletes itself when closed (once any "Save changes?" prompt is
+   answered), so this is nullptr unless it is showing or waiting on that prompt.
+   */
+  Wt::Core::observing_ptr<ColorThemeWindow> m_colorThemeWindow;
   
   //m_useInfoWindow: a pointer to the window initially shown when app starts up
   //  that allows you to select a previous work state or spectrum, or to watch

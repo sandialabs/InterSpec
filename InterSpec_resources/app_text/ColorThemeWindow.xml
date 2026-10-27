@@ -17,6 +17,10 @@
   
   <!-- Clone theme -->
   <message id="ctw-cloned-name">{1} (cloned)</message>
+
+  <!-- Note shown above the editor when a built-in theme is selected -->
+  <message id="ctw-builtin-readonly">Built-in themes can't be edited.</message>
+  <message id="ctw-make-copy-btn">Make an editable copy</message>
   
   <!-- Delete confirmation dialog -->
   <message id="ctw-delete-confirm-title">Delete {1}?</message>
@@ -31,6 +35,9 @@
   <message id="ctw-upload-error-json">Invalid JSON, or missing required info.</message>
   <message id="ctw-upload-too-large">Too Large of file.</message>
   <message id="ctw-import-confirm"><![CDATA[Would you like to import <em>{1}</em>?]]></message>
+  <message id="ctw-import-title">Import Color Theme</message>
+  <message id="ctw-imported-name">{1} (imported)</message>
+  <message id="ctw-imported-name-n">{1} (imported {2})</message>
   
   <!-- Save changes dialog -->
   <message id="ctw-save-changes-title">Save Changes?</message>

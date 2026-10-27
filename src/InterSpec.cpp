@@ -565,6 +565,7 @@ InterSpec::InterSpec()
   m_refLineDynamic( nullptr ),
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
+  m_colorThemeWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
   m_decayBatchCalc( nullptr ),
@@ -1375,6 +1376,7 @@ InterSpec::~InterSpec() noexcept(true)
   if( m_undo )
     removeChild( m_undo.get() );
   AuxWindow::deleteAuxWindow( m_licenseWindow.get() );
+  AuxWindow::deleteAuxWindow( m_colorThemeWindow.get() );
   
   try
   {
@@ -5139,13 +5141,24 @@ void InterSpec::osThemeChange( std::string name )
 #endif
 
 
-void InterSpec::showColorThemeWindow()
+ColorThemeWindow *InterSpec::showColorThemeWindow()
 {
+  if( m_colorThemeWindow )
+  {
+    // It may be hidden, waiting on its "Save changes?" prompt from being closed.
+    m_colorThemeWindow->dismissSaveChangesPrompt();
+    m_colorThemeWindow->show();
+    m_colorThemeWindow->centerWindowHeavyHanded();
+    return m_colorThemeWindow.get();
+  }
+
   //Takes ~5ms (on the server) to create a ColorThemeWindow.
-	ColorThemeWindow *window = AuxWindow::make<ColorThemeWindow>(this);
+  m_colorThemeWindow = AuxWindow::make<ColorThemeWindow>(this);
   
-  window->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
-}//void showColorThemeWindow()
+  m_colorThemeWindow->addChild( std::make_unique<UndoRedoManager::BlockGuiUndoRedo>() ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
+
+  return m_colorThemeWindow.get();
+}//ColorThemeWindow *showColorThemeWindow()
 
 
 void InterSpec::showLicenseAndDisclaimersWindow()

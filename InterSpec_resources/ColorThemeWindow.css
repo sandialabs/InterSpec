@@ -12,6 +12,25 @@
   padding-left: 10px;
 }
 
+/* Wraps the button below the text on narrow (phone) windows, keeping it inside the box. */
+.ColorThemeReadOnlyNote{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+  margin: 0px 0px 8px 5px;
+  padding: 6px 10px;
+  border: solid 1px var(--interspec-border-color);
+  border-radius: 3px;
+  background-color: var(--interspec-panel-background);
+  color: var(--interspec-secondary-text-color);
+}
+
+.ColorThemeReadOnlyNote > .LinkBtn{
+  margin-left: auto;  /* .LinkBtn's float:right doesnt apply to flex items */
+}
+
 .AddRemoveThemeButtons{
   padding-top: 3.5px;
   
@@ -20,28 +39,31 @@
   border-top: solid 1px var(--interspec-border-color);
 }
 
+/* Same vector icons, and dim-until-hover, as the other tools' add/remove buttons; dark themes
+   flip the black glyphs to white through --interspec-icon-filter. */
 .AddColorTheme, .DeleteColorTheme
 {
   display: inline-block;
-  opacity: 0.8;
+  opacity: 0.6;
   padding: 0px;
   margin-left: 10px;
   margin-right: 0px;
   cursor:pointer;
   background-repeat: no-repeat;
-  background-position: 3px 3px center;
+  background-position: center;
   width: 21px;  /* width of the image plus a little extra padding */
   height: 21px;
+  filter: var(--interspec-icon-filter);
 }
 
 .AddColorTheme
 {
-  background-image: url('../InterSpec_resources/images/plus_min.png');
+  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
 }
 
 .DeleteColorTheme
 {
-  background-image: url('../InterSpec_resources/images/minus_min.png');
+  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
 }
 
 .AddColorTheme:hover, .DeleteColorTheme:hover
