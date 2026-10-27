@@ -223,6 +223,12 @@ public:
 
   static nlohmann::json rpcError( const nlohmann::json &id, int code, const std::string &message );
 
+  /** A `tools/call` reply for a tool that failed: `message` as text, with `isError` set.  MCP reports
+   tool failures this way (rather than as JSON-RPC errors, which are for protocol problems), so the
+   model sees the message and can correct its call.
+   */
+  static nlohmann::json toolErrorResult( const nlohmann::json &id, const std::string &message );
+
   /** For message-based transports (stdio): sends `pending`'s progress notifications as they come,
    and then its reply, through `send` (called from Wt IO threads, one call at a time per reply).
    Returns right away.

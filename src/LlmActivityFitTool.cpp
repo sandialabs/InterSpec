@@ -574,8 +574,8 @@ nlohmann::json executeCloseActivityShieldingDisplay(
   json result;
   result["success"] = false;
 
-  // Get the ShieldingSourceDisplay from InterSpec
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Get the ShieldingSourceDisplay from InterSpec, without creating it
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
 
   if( !display )
   {
@@ -2821,14 +2821,11 @@ nlohmann::json executeActivityFit(
   json result;
   result["status"] = "failed";
 
-  // Check if GUI is already open
-  ShieldingSourceDisplay *display = interspec->shieldingSourceFit();
+  // Opens the tool, if not already open
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( true );
 
   if( !display )
-  {
-    throw runtime_error( "Activity/Shielding fit GUI is not currently open. "
-                       "Please open it manually from the Tools menu, or use 'activity_fit_one_off' for direct fitting without the GUI." );
-  }
+    throw runtime_error( "The Activity/Shielding fit tool could not be opened; use 'activity_fit_one_off' instead." );
 
   // The fit uses the peaks marked for it, so do not quietly fit other peaks than were asked for.
   if( params.contains( "peak_energies" ) )

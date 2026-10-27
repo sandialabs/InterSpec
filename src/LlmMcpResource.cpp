@@ -384,15 +384,15 @@ std::optional<LlmMcpDispatcher::Outcome> LlmMcpResource::handle_agent_tool( cons
     call->poll = [manager, handle, id, base_url]( const bool deadline_passed ) -> std::optional<json> {
       const std::optional<McpSessionManager::SessionInfo> info = manager->session( handle );
       if( !info || (info->state == McpSessionManager::State::Ended) )
-        return rpc_error( id, -32603, "The session could not be started"
-                          + (info ? (": " + info->end_reason) : std::string()) + "." );
+        return LlmMcpDispatcher::toolErrorResult( id, "The session could not be started"
+                                                  + (info ? (": " + info->end_reason) : std::string()) + "." );
 
       if( info->state == McpSessionManager::State::Starting )
       {
         if( !deadline_passed )
           return std::nullopt;
         manager->endSession( handle, "the session did not start in time" );
-        return rpc_error( id, -32603, "The session did not start in time; please try again." );
+        return LlmMcpDispatcher::toolErrorResult( id, "The session did not start in time; please try again." );
       }
 
       const McpSessionManager::AgentSettings &settings = manager->settings();

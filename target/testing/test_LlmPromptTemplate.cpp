@@ -23,9 +23,11 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <string>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 #define BOOST_TEST_MODULE LlmPromptTemplate_suite
 #include <boost/test/included/unit_test.hpp>
@@ -293,4 +295,98 @@ BOOST_AUTO_TEST_CASE( MarkdownHeadersAreNotLineStatements )
       "## Role and Goal\n\nYou are an expert.\n### Steps\n1. Do X (and view the image).\n" );
   BOOST_CHECK_EQUAL( LlmPromptTemplate::render( tmplt, noImgCtx ),
       "## Role and Goal\n\nYou are an expert.\n### Steps\n1. Do X.\n" );
+}
+
+
+// Every shipped tool description, and every parameter description in its schema, must render
+//  without leaving template markers, on both surfaces and for each MCP server; and the
+//  load_spectrum_file path wording must suit each server.
+BOOST_AUTO_TEST_CASE( ShippedToolDescriptionsRenderForEachServer )
+{
+  const string tools_file = SpecUtils::append_path( data_dir(), "llm_tools_config.xml" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( tools_file ), "llm_tools_config.xml not at '" << tools_file << "'" );
+
+  vector<LlmConfig::ToolConfig> tools;
+  BOOST_REQUIRE_NO_THROW( tools = LlmConfig::loadToolConfigsFromFile( tools_file ) );
+  BOOST_REQUIRE( !tools.empty() );
+
+  const LlmConfig cfg = make_config( true, Verbosity::Normal );
+  const json agentCtx = LlmPromptTemplate::buildContext( cfg, Surface::Agent, AgentType::MainAgent );
+  BOOST_CHECK_EQUAL( agentCtx["mcp_server"].get<string>(), "" );
+
+  map<string, json> contexts{ { "agent", agentCtx } };
+  for( const char * const server : { "stdio", "multi_session", "desktop" } )
+  {
+    json ctx = LlmPromptTemplate::buildContext( cfg, Surface::Mcp, AgentType::MainAgent );
+    ctx["mcp_server"] = server;  // The value is fixed at compile time; try each.
+    contexts[server] = ctx;
+  }
+
+  const auto has_markers = []( const string &s ){
+    return (s.find( "{%" ) != string::npos) || (s.find( "{{" ) != string::npos) || (s.find( "{#" ) != string::npos);
+  };
+
+  for( const auto &[name, ctx] : contexts )
+  {
+    for( const LlmConfig::ToolConfig &tool : tools )
+    {
+      BOOST_CHECK_MESSAGE( !has_markers( LlmPromptTemplate::render( tool.defaultDescription, ctx ) ),
+                           tool.name << " description, for " << name );
+      const string schema = LlmPromptTemplate::renderSchemaDescriptions( tool.parametersSchema, ctx ).dump();
+      BOOST_CHECK_MESSAGE( !has_markers( schema ), tool.name << " parameters, for " << name );
+    }
+  }//for( const auto &[name, ctx] : contexts )
+
+  const auto load_tool = std::find_if( begin(tools), end(tools), []( const LlmConfig::ToolConfig &t ){
+    return t.name == "load_spectrum_file";
+  } );
+  BOOST_REQUIRE( load_tool != end(tools) );
+
+  const auto path_description = [&]( const string &server ) -> string {
+    const json schema = LlmPromptTemplate::renderSchemaDescriptions( load_tool->parametersSchema, contexts[server] );
+    return schema["properties"]["path"]["description"].get<string>();
+  };
+
+  BOOST_CHECK( path_description( "multi_session" ).find( "create_session" ) != string::npos );
+  BOOST_CHECK( path_description( "stdio" ).find( "create_session" ) == string::npos );
+  BOOST_CHECK( path_description( "stdio" ).find( "absolute path" ) != string::npos );
+  BOOST_CHECK( path_description( "agent" ).find( "create_session" ) == string::npos );
+  BOOST_CHECK( path_description( "agent" ).find( "absolute path" ) == string::npos );
+
+  // A parameter named "description" is a property, not text: it must be left alone.
+  const json odd = json::parse( R"({"properties":{"description":{"type":"string","description":"x{% if true %}y{% endif %}"}}})" );
+  const json rendered = LlmPromptTemplate::renderSchemaDescriptions( odd, agentCtx );
+  BOOST_CHECK_EQUAL( rendered["properties"]["description"]["type"].get<string>(), "string" );
+  BOOST_CHECK_EQUAL( rendered["properties"]["description"]["description"].get<string>(), "xy" );
+}
+
+
+// The MainAgent prompt mentions invoke_KnowledgeBase only when the agent has that tool (it is only
+//  offered with llm_knowledge skills or a RAG endpoint); `tools` comes from LlmInterface, and is
+//  empty from buildContext() alone.
+BOOST_AUTO_TEST_CASE( MainAgentKnowledgeBaseIsToolGated )
+{
+  const string agent_file = SpecUtils::append_path( data_dir(), "llm_agent_MainAgent.xml" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( agent_file ), "llm_agent_MainAgent.xml not at '" << agent_file << "'" );
+
+  vector<LlmConfig::AgentConfig> agents;
+  BOOST_REQUIRE_NO_THROW( agents = LlmConfig::loadAgentsFromFile( agent_file ) );
+  BOOST_REQUIRE( !agents.empty() );
+  const string &prompt = agents[0].systemPrompt;
+  BOOST_REQUIRE( prompt.find( "\"invoke_KnowledgeBase\" in tools" ) != string::npos );
+
+  json ctx = LlmPromptTemplate::buildContext( make_config( true, Verbosity::Normal ), Surface::Agent, AgentType::MainAgent );
+  BOOST_REQUIRE( ctx.contains( "tools" ) && ctx["tools"].is_array() && ctx["tools"].empty() );
+
+  const string without_kb = LlmPromptTemplate::render( prompt, ctx );
+  ctx["tools"] = json::array( { "invoke_NuclideId", "invoke_KnowledgeBase" } );
+  const string with_kb = LlmPromptTemplate::render( prompt, ctx );
+
+  BOOST_CHECK( with_kb.find( "invoke_KnowledgeBase" ) != string::npos );
+  BOOST_CHECK( without_kb.find( "invoke_KnowledgeBase" ) == string::npos );
+  for( const string *s : { &with_kb, &without_kb } )
+  {
+    BOOST_CHECK( s->find( "{%" ) == string::npos );
+    BOOST_CHECK( s->find( "invoke_InSitu" ) != string::npos );  // the text around it is kept
+  }
 }

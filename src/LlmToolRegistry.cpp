@@ -2821,6 +2821,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       for( auto &roleDesc : tool.roleDescriptions )
         roleDesc.second = LlmPromptTemplate::render( roleDesc.second, agentCtx( roleDesc.first ) );
 
+      // Parameter descriptions are templates too (e.g., file paths differ between MCP servers).
+      tool.mcpParametersSchema = LlmPromptTemplate::renderSchemaDescriptions( tool.parameters_schema, mcpCtx );
+      tool.parameters_schema = LlmPromptTemplate::renderSchemaDescriptions( tool.parameters_schema,
+                                                                            agentCtx( AgentType::MainAgent ) );
+
       registerTool(tool);
     }catch( const std::exception &e )
     {
@@ -2842,8 +2847,8 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       " response text, the tools it called, and any questions it asked (answered with a stated"
       " assumption, as there is no interactive user); with status \"running\" the turn is still"
       " going - call assistant_get_result with the turn_id to wait for it, or assistant_cancel."
-      "  Clients that accept text/event-stream, and send a progressToken, also get progress"
-      " notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
+      "  Clients that send a progressToken (and, over HTTP, accept text/event-stream) also get"
+      " progress notifications while waiting.  Prompts submitted while a turn is in progress are queued and"
       " run in order.";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
@@ -2859,7 +2864,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
             "items": {
               "type": "object",
               "properties": {
-                "path": {"type": "string", "description": "Path of an image file, relative to the session directory (e.g. \"input/photo.jpg\")."},
+                "path": {"type": "string", "description": "Path of an image file: for a session from create_session, relative to the session directory (e.g. \"input/photo.jpg\"); otherwise, an absolute path."},
                 "base64Data": {"type": "string", "description": "The image, base64 encoded; instead of 'path'."},
                 "mimeType": {"type": "string", "description": "Optional; the type is detected from the content."},
                 "caption": {"type": "string", "description": "Optional label sent with the image, so the prompt can refer to it."}
@@ -4489,11 +4494,11 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
     throw std::runtime_error( "File not found: " + client_path );
 
   // What happens to the assistant conversation when a new foreground is loaded: by default the
-  //  file's saved conversation (if any) replaces the current one, except for an MCP agent server,
-  //  which keeps the current conversation - an uploaded file may carry a made-up "conversation", so
-  //  the client must ask for it with "resume" (for files it exported itself).
+  //  file's saved conversation (if any) replaces the current one, except for the MCP servers, which
+  //  keep the current conversation - a file from someone else may carry a made-up "conversation",
+  //  so the client must ask for it with "resume" (for files it exported itself).
   const string convo_key = find_case_insensitive_key( "conversation", params );
-#if( BUILD_AS_MCP_HTTP_SERVER )
+#if( BUILD_AS_MCP_HTTP_SERVER || BUILD_AS_MCP_STDIO_SERVER )
   string conversation_mode = "keep";
 #else
   string conversation_mode = "resume";
@@ -5073,8 +5078,8 @@ void ToolRegistry::executeGetSpectrumImageAsync( const nlohmann::json &params, I
   if( !format_key.empty() && effectiveParams.contains( format_key ) )
   {
     format = effectiveParams.at( format_key ).get<string>();
-    if( format != "png" && format != "jpeg" && format != "svg" )
-      throw runtime_error( "Invalid format '" + format + "'. Must be 'png', 'jpeg', or 'svg'." );
+    if( format != "png" && format != "jpeg" )
+      throw runtime_error( "Invalid format '" + format + "'. Must be 'png' or 'jpeg'." );
   }
 
   const string max_size_key = find_case_insensitive_key( "max_size", effectiveParams );
@@ -5553,8 +5558,8 @@ void ToolRegistry::executeGetTimeChartImageAsync( const nlohmann::json &params, 
   if( !format_key.empty() && params.contains( format_key ) )
   {
     format = params.at( format_key ).get<string>();
-    if( format != "png" && format != "jpeg" && format != "svg" )
-      throw runtime_error( "Invalid format '" + format + "'. Must be 'png', 'jpeg', or 'svg'." );
+    if( format != "png" && format != "jpeg" )
+      throw runtime_error( "Invalid format '" + format + "'. Must be 'png' or 'jpeg'." );
   }
 
   const string max_size_key = find_case_insensitive_key( "max_size", params );

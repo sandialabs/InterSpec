@@ -18,7 +18,7 @@ InterSpec is a nuclear radiation spectral analysis application. The MCP server e
 
 If the server has a `create_session` tool, it is a multi-session analysis server: see the [interspec-mcp-agent](../interspec-mcp-agent/SKILL.md) skill for sessions, file exchange, and working with its built-in assistant.
 
-If the server is `InterSpec-mcp-stdio` (launched by your MCP client, rather than reached over HTTP), it has a single session of its own, with no window and no browser: load spectra with `load_spectrum_file` and an absolute `path`, and there is no `userSession` argument. The spectrum and time-chart images are drawn by the server itself (labels are always in English), and the built-in assistant is not offered.
+If the server is `InterSpec-mcp-stdio` (launched by your MCP client, rather than reached over HTTP), it has a single session of its own, with no window and no browser: load spectra with `load_spectrum_file` and an absolute `path`, and there is no `userSession` argument. The spectrum and time-chart images are drawn by the server itself (PNG or JPEG; labels are always in English). InterSpec's built-in assistant (`assistant_submit_prompt`) is only offered if the user's `llm_config.xml` configures an LLM provider and allows MCP clients to use it.
 
 ## Core Principles
 

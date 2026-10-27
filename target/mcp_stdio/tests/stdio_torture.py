@@ -144,6 +144,8 @@ class StdioServer:
         if 'error' in reply:
             return None, [], reply['error'].get('message', str(reply['error'])), elapsed
         content = reply['result']['content']
+        if reply['result'].get('isError'):
+            return None, [], content[0]['text'], elapsed
         result = json.loads(content[0]['text'])
         images = [(c['mimeType'], base64.b64decode(c['data'])) for c in content if c.get('type') == 'image']
         return result, images, None, elapsed
@@ -235,6 +237,8 @@ def chaos(T, report, args):
                     errors.append('%s: wrong id' % label)
                 elif 'error' in reply:
                     errors.append('%s: %s' % (label, reply['error'].get('message')))
+                elif reply.get('result', {}).get('isError'):
+                    errors.append('%s: %s' % (label, reply['result']['content'][0]['text']))
             except queue.Empty:
                 missing.append(label)
         report.add(phase, '32 calls in flight', 'FAIL' if (missing or errors) else 'ok', time.time() - t0,
@@ -323,7 +327,7 @@ def chaos(T, report, args):
 
         # A client that stops reading stdout for a while, with large replies pending.
         s.reading.clear()
-        pending = [s.start('tools/call', {'name': 'get_spectrum_image', 'arguments': {'format': 'svg'}}) for _ in range(20)]
+        pending = [s.start('tools/call', {'name': 'get_spectrum_image', 'arguments': {'format': 'png'}}) for _ in range(20)]
         time.sleep(10)
         alive = (s.proc.poll() is None)
         s.reading.set()

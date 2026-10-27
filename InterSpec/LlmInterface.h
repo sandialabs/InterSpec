@@ -674,6 +674,12 @@ private:
    */
   void prepareModelInstructions();
 
+  /** The context an agent's instruction text is rendered against: LlmPromptTemplate::buildContext(),
+   plus `tools` - the names of the tools the agent has (e.g., so a prompt can mention
+   invoke_KnowledgeBase only when that agent is offered).
+   */
+  nlohmann::json agentTemplateContext( const AgentType agentType ) const;
+
   /** Initialize state machine for a conversation if the agent has one defined.
 
    Creates a fresh copy of the agent's state machine and resets it to the initial state.

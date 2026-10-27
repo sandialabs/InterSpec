@@ -313,6 +313,26 @@ namespace
   }//set_user_data_dir(...)
 
 
+  /** The `instructions` sent to the MCP client with its `initialize` reply: mcp_stdio_instructions.md,
+   from the LLM config, user data, or static data directory (see LlmConfig::configFilePath); empty
+   if there is none.
+   */
+  std::string load_mcp_instructions()
+  {
+    const std::string path = LlmConfig::configFilePath( "mcp_stdio_instructions.md" );
+    try
+    {
+      std::vector<char> data;
+      SpecUtils::load_file_data( path.c_str(), data );  // null-terminates `data`
+      return SpecUtils::trim_copy( std::string( data.data() ) );
+    }catch( std::exception & )
+    {
+      std::cerr << "Warning: no instructions for the MCP client; could not read '" << path << "'." << std::endl;
+    }
+    return std::string();
+  }//load_mcp_instructions()
+
+
   /** Exit codes of `--run-benchmark` / `--list-benchmarks`. */
   const int sm_exit_ok = 0;              // Every benchmark ran to the end
   const int sm_exit_setup_error = 1;     // Bad arguments, or the setup failed
@@ -731,13 +751,23 @@ int main( int argc, char **argv )
 
   // The session.  The environment owns the app (through its session), and deletes it when it is
   //  destroyed.
+  // InterSpec_resources/ (its text, report templates, ...) is next to the data directory.
+  const std::string app_root = SpecUtils::lexically_normalize_path( SpecUtils::append_path( static_data_dir, ".." ) );
+  const std::string app_text = SpecUtils::append_path( app_root, "InterSpec_resources/app_text/InterSpec.xml" );
+  if( !SpecUtils::is_file( app_text ) )
+    std::cerr << "Warning: '" << app_text << "' was not found, so InterSpec's messages will show as"
+              << " ??key?? placeholders; InterSpec_resources/ should be next to the data directory." << std::endl;
+
   std::unique_ptr<Wt::Test::WTestEnvironment> env;
   std::string session_id;
   try
   {
     env = std::make_unique<Wt::Test::WTestEnvironment>( "", "", Wt::EntryPointType::Application );
     Wt::WServer::instance()->logger().configure( "-* +error +warning +secure" );
-    env->setAppRoot( SpecUtils::lexically_normalize_path( SpecUtils::append_path( static_data_dir, ".." ) ) );
+    env->setAppRoot( app_root );
+    // Files read relative to the doc root would otherwise be looked for in the working directory
+    //  the client started us in.
+    env->setDocRoot( app_root );
 
     InterSpecApp * const app = new InterSpecApp( *env );
     if( !app->viewer() )
@@ -884,6 +914,7 @@ int main( int argc, char **argv )
   LlmMcpDispatcher::Options options;
   options.session_argument = false;
   options.browser_available = false;
+  options.instructions = load_mcp_instructions();
   std::unique_ptr<LlmMcpDispatcher> dispatcher;
   try
   {

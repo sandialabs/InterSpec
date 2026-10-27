@@ -9015,8 +9015,7 @@ namespace
       width = maxLongestSide;
     }
 
-    const std::string mime = (format == "svg") ? "image/svg+xml"
-                                               : ((format == "jpeg") ? "image/jpeg" : "image/png");
+    const std::string mime = (format == "jpeg") ? "image/jpeg" : "image/png";
     try
     {
       const std::string image = SpectrumChartImage::renderImage( width, height, format, paint );

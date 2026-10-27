@@ -105,6 +105,8 @@ def image_of(reply):
     if 'error' in reply:
         raise RuntimeError('tool error: %s' % reply['error'].get('message'))
     content = reply['result']['content']
+    if reply['result'].get('isError'):
+        raise RuntimeError('tool error: %s' % content[0]['text'])
     text = json.loads(content[0]['text'])
     images = [c for c in content if c.get('type') == 'image']
     if not images:
@@ -117,6 +119,8 @@ def tool_result(reply):
     if 'error' in reply:
         raise RuntimeError('tool error: %s' % reply['error'].get('message'))
     content = reply['result']['content']
+    if reply['result'].get('isError'):
+        raise RuntimeError('tool error: %s' % content[0]['text'])
     return json.loads(content[0]['text'])
 
 
@@ -163,6 +167,7 @@ def main():
                                               'clientInfo': {'name': 'stdio_test', 'version': '1'}}, timeout=120)
         c.check('initialize', reply.get('result', {}).get('protocolVersion') == '2025-06-18',
                 json.dumps(reply.get('result', {}).get('serverInfo')))
+        init_result = reply.get('result', {})
         reply = client.request('initialize', {'protocolVersion': '1999-01-01'})
         c.check('initialize with an unknown version', reply['result']['protocolVersion'] == '2025-11-25')
         client.send({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
@@ -179,6 +184,22 @@ def main():
         assistant_tools = [n for n in ('assistant_submit_prompt', 'invoke_agent') if n in tools]
         c.check('no assistant tools without a llm_config.xml', not assistant_tools, ', '.join(assistant_tools))
         c.check('image tools offered', 'get_spectrum_image' in tools and 'get_time_chart_image' in tools)
+        # A model can only look at raster images, so SVG is not a format.
+        formats = [tools[n]['inputSchema']['properties']['format'].get('enum', [])
+                   for n in ('get_spectrum_image', 'get_time_chart_image') if n in tools]
+        c.check('image tools offer no svg', formats and all('svg' not in f and 'png' in f for f in formats), str(formats))
+        c.check('initialize has instructions', 'load_spectrum_file' in init_result.get('instructions', ''),
+                init_result.get('instructions', '')[:80])
+        path_desc = tools['load_spectrum_file']['inputSchema']['properties']['path']['description']
+        c.check('load_spectrum_file path text is for stdio', 'absolute path' in path_desc and 'create_session' not in path_desc,
+                path_desc[:120])
+
+        # A tool that fails gives a result with isError (for the model to read), not a JSON-RPC error.
+        reply = client.call('decay_calculator', {'nuclide': 'NotANuclide', 'activity': '1 uCi', 'time_duration': '1 years'})
+        c.check('tool failure is an isError result', 'error' not in reply and reply.get('result', {}).get('isError') is True,
+                json.dumps(reply)[:200])
+        reply = client.request('tools/call', {'arguments': {}})
+        c.check('tools/call without a name is invalid params', reply.get('error', {}).get('code') == -32602, json.dumps(reply)[:200])
 
         reply = client.call('load_spectrum_file', {'path': spectrum, 'specType': 'Foreground'})
         result = tool_result(reply)
@@ -228,9 +249,10 @@ def main():
         c.check('get_spectrum_image (jpeg)', mime == 'image/jpeg' and data[:3] == b'\xff\xd8\xff', desc)
         save('spectrum.jpg', data)
 
-        data, mime, desc = image_of(client.call('get_spectrum_image', {'format': 'svg'}))
-        c.check('get_spectrum_image (svg)', mime == 'image/svg+xml' and b'<svg' in data[:400], desc)
-        save('spectrum.svg', data)
+        # Models only take raster images, so SVG is not a format.
+        reply = client.call('get_spectrum_image', {'format': 'svg'})
+        c.check('get_spectrum_image (svg) is an error', reply.get('result', {}).get('isError') is True,
+                json.dumps(reply)[:200])
 
         if args.time_spectrum:
             tool_result(client.call('load_spectrum_file', {'path': os.path.abspath(args.time_spectrum),

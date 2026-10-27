@@ -771,10 +771,16 @@ nlohmann::json executeListIsotopicsPresets(
   }
 #endif
 
-  // Scan static directory (built-in presets)
+  // Scan static directory (built-in presets) - unless it is also the writable one (e.g., the stdio
+  //  MCP server, with no user data directory), already scanned above.
   const string static_data_dir = InterSpec::staticDataDirectory();
   const string static_rel_act_dir = SpecUtils::append_path( static_data_dir, "rel_act" );
-  if( SpecUtils::is_directory(static_rel_act_dir) )
+  bool static_is_writable = false;
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+  static_is_writable = (SpecUtils::lexically_normalize_path( static_rel_act_dir )
+                        == SpecUtils::lexically_normalize_path( writable_rel_act_dir ));
+#endif
+  if( !static_is_writable && SpecUtils::is_directory(static_rel_act_dir) )
   {
     vector<string> static_files = SpecUtils::recursive_ls( static_rel_act_dir, ".xml" );
     preset_files.insert( preset_files.end(), static_files.begin(), static_files.end() );
@@ -819,7 +825,7 @@ nlohmann::json executeListIsotopicsPresets(
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
     // Indicate whether this is a user preset or built-in preset
-    if( SpecUtils::istarts_with(filepath, writable_rel_act_dir) )
+    if( !static_is_writable && SpecUtils::istarts_with(filepath, writable_rel_act_dir) )
       preset["location"] = "user";
     else
       preset["location"] = "built-in";

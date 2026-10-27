@@ -62,7 +62,12 @@ namespace LlmPromptTemplate
 
    Describes the active model (name, image support, reasoning, api-format, token limits), the
    author-selected `verbosity`, the `surface`, and a few feature flags (`mcp_enabled`,
-   `rag_enabled`, `interactive_user`).  Pure; performs no I/O.  For `Surface::Mcp` the `agent` argument is
+   `rag_enabled`, `interactive_user`).  On the MCP surface, `mcp_server` says which server the text
+   is for: "stdio" (InterSpec-mcp-stdio), "multi_session" (target/mcp_http, with create_session), or
+   "desktop" (the GUI app's MCP endpoint); it is empty on the agent surface.  `tools` is an empty
+   array here; for the assistant's agent prompts (system prompt, state guidance, compaction) it is
+   the names of the tools that agent has (see LlmInterface::agentTemplateContext), for
+   `{% if "invoke_KnowledgeBase" in tools %}...{% endif %}`.  It is not known for tool descriptions.  Pure; performs no I/O.  For `Surface::Mcp` the `agent` argument is
    ignored and `model.*` are neutral defaults.
    */
   nlohmann::json buildContext( const LlmConfig &config, Surface surface, AgentType agent );
@@ -74,6 +79,11 @@ namespace LlmPromptTemplate
    template must never break the assistant).  Never throws.
    */
   std::string render( const std::string &tmplt, const nlohmann::json &ctx );
+
+  /** Returns `schema` (a tool's JSON parameter schema) with every string "description" in it, at
+   any depth, rendered with `render()`.  Never throws.
+   */
+  nlohmann::json renderSchemaDescriptions( nlohmann::json schema, const nlohmann::json &ctx );
 }//namespace LlmPromptTemplate
 
 #endif //LLM_PROMPT_TEMPLATE_H

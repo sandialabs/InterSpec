@@ -600,7 +600,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
       "properties": {
         "path": {
           "type": "string",
-          "description": "Filesystem path to the spectrum file to load; for a session created with create_session, a path relative to the session directory, like \"input/spectrum.n42\". If empty or null, the specified spectrum type will be unloaded/removed from display."
+          "description": "Filesystem path to the spectrum file to load{% if mcp_server == \"multi_session\" %}; for a session created with create_session, a path relative to the session directory, like \"input/spectrum.n42\"{% else if surface == \"mcp\" %}; an absolute path{% endif %}. If empty or null, the specified spectrum type will be unloaded/removed from display."
         },
         "specType": {
           "type": "string",
@@ -619,7 +619,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
         },
         "conversation": {
           "type": "string",
-          "description": "Optional, for foreground loads: what happens to the assistant conversation. \"resume\" continues the conversation saved in the file (an N42 from export_analysis) - only use it for files you exported; \"keep\" keeps the current conversation; \"new\" starts an empty one.  Default is \"keep\" for sessions from create_session, otherwise \"resume\".",
+          "description": "Optional, for foreground loads: what happens to the assistant conversation. \"resume\" continues the conversation saved in the file ({% if mcp_server == \"multi_session\" %}an N42 from export_analysis{% else %}an N42 saved by InterSpec{% endif %}) - only use it for files you {% if mcp_server == \"multi_session\" %}exported{% else %}saved{% endif %} yourself; \"keep\" keeps the current conversation; \"new\" starts an empty one.  Default is {% if mcp_server == \"desktop\" %}\"resume\"{% else %}\"keep\"{% endif %}.",
           "enum": ["keep", "resume", "new"]
         }
       },
@@ -1327,7 +1327,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using the current application state (GUI configuration). Requires the Activity/Shielding fit GUI to be open. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration), opening the Activity/Shielding fit tool if it is not already. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {}
@@ -2748,9 +2748,9 @@ Returns information about:
         },
         "format": {
           "type": "string",
-          "enum": ["png", "jpeg", "svg"],
+          "enum": ["png", "jpeg"],
           "default": "png",
-          "description": "Image format. PNG and JPEG are raster; SVG is vector."
+          "description": "Image format: PNG or JPEG."
         },
         "max_size": {
           "type": "integer",
@@ -2858,9 +2858,9 @@ Output notes:
       "properties": {
         "format": {
           "type": "string",
-          "enum": ["png", "jpeg", "svg"],
+          "enum": ["png", "jpeg"],
           "default": "png",
-          "description": "Image format. PNG and JPEG are raster; SVG is vector."
+          "description": "Image format: PNG or JPEG."
         },
         "max_size": {
           "type": "integer",

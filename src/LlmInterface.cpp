@@ -4442,14 +4442,13 @@ void LlmInterface::prepareModelInstructions()
   // The compaction prompt is a single top-level instruction; render it with the MainAgent context.
   if( !m_config->llmApi.compactionSystemPrompt.empty() )
     m_renderedCompaction = LlmPromptTemplate::render( m_config->llmApi.compactionSystemPrompt,
-      LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, AgentType::MainAgent ) );
+                                                      agentTemplateContext( AgentType::MainAgent ) );
 
-  // Per-agent: the base system prompt plus any per-state PromptGuidance / ephemeral text.  buildContext()
+  // Per-agent: the base system prompt plus any per-state PromptGuidance / ephemeral text.  agentTemplateContext()
   // is cheap and this runs only on model change, so we simply (re)render everything here.
   for( const LlmConfig::AgentConfig &agent : m_config->agents )
   {
-    const nlohmann::json ctx = LlmPromptTemplate::buildContext( *m_config,
-                                                    LlmPromptTemplate::Surface::Agent, agent.type );
+    const nlohmann::json ctx = agentTemplateContext( agent.type );
 
     m_renderedSystemPrompt[agent.type] = LlmPromptTemplate::render( agent.systemPrompt, ctx );
 
@@ -4467,6 +4466,23 @@ void LlmInterface::prepareModelInstructions()
 }//prepareModelInstructions()
 
 
+nlohmann::json LlmInterface::agentTemplateContext( const AgentType agentType ) const
+{
+  assert( m_config );
+  nlohmann::json ctx = LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, agentType );
+
+  nlohmann::json tools = nlohmann::json::array();
+  if( m_tool_registry )
+  {
+    for( const auto &name_tool : m_tool_registry->getToolsForAgent( agentType ) )
+      tools.push_back( name_tool.first );
+  }
+  ctx["tools"] = std::move( tools );
+
+  return ctx;
+}//agentTemplateContext(...)
+
+
 std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) const
 {
   if( !m_config || !m_config->llmApi.enabled )
@@ -4481,8 +4497,7 @@ std::string LlmInterface::getSystemPromptForAgent( const AgentType agentType ) c
   for( const LlmConfig::AgentConfig &agent : m_config->agents )
   {
     if( agent.type == agentType )
-      return LlmPromptTemplate::render( agent.systemPrompt,
-               LlmPromptTemplate::buildContext( *m_config, LlmPromptTemplate::Surface::Agent, agentType ) );
+      return LlmPromptTemplate::render( agent.systemPrompt, agentTemplateContext( agentType ) );
   }
 
   assert( 0 );

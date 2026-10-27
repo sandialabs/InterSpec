@@ -55,7 +55,8 @@ struct SharedTool {
     std::string name;
     std::string description;  // Default description (agent surface), rendered for the active model
     std::string mcpDescription;  // Default description rendered for the MCP surface (see LlmPromptTemplate)
-    nlohmann::json parameters_schema;
+    nlohmann::json parameters_schema;  // Its "description"s rendered for the agent surface
+    nlohmann::json mcpParametersSchema;  // ... and for the MCP surface; null if not built (then use parameters_schema)
     // The executor takes parameters, InterSpec instance, optionally the current LlmInteraction conversation,
     // and optionally the LlmConversationHistory (for data that persists across conversations, like peak checkpoints)
     std::function<nlohmann::json(const nlohmann::json&, InterSpec*, std::shared_ptr<LlmInteraction>, LlmConversationHistory*)> executor;

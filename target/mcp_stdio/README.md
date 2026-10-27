@@ -51,9 +51,8 @@ iframe, with the same results; each call gets a fresh engine limited to 64 MB, a
 time limit, with no modules, files, network or timers.
 
 ## Building
-On Linux and Windows the executable is linked statically as far as the platform allows (only system
-libraries are linked dynamically), so it can be copied next to an installed InterSpec.  On macOS it is
-only built for local use.
+The executable is linked statically as far as the platform allows (only system libraries and, on
+macOS, system frameworks are linked dynamically).
 
 Using the dependency prefix the other builds use (see `target/dep_build`, which also builds
 `libwttest`):
@@ -63,7 +62,24 @@ cmake -S target/mcp_stdio -B target/mcp_stdio/build -G Ninja \
 cmake --build target/mcp_stdio/build
 ```
 or with `-DInterSpec_FETCH_DEPENDENCIES=ON` to have CMake fetch and build them (which builds
-`libwttest` for this target; not yet tested).
+`libwttest` for this target; not yet tested).  On macOS, add `-DCMAKE_OSX_ARCHITECTURES=arm64` (or
+`"arm64;x86_64"` for a universal binary, if the prefix is universal).
+
+To make a self-contained directory to give to others:
+```bash
+cmake --install target/mcp_stdio/build --prefix /path/to/InterSpec-mcp-stdio
+```
+which holds:
+- `bin/InterSpec-mcp-stdio`, which finds the rest by itself, relative to its own location;
+- `share/interspec/data/` - InterSpec's data (nuclear data, detector responses, the tool definitions,
+  and the Claude skills in `data/skills/`); local `data/llm_knowledge/` skills are left out;
+- `share/interspec/InterSpec_resources/app_text/` - InterSpec's text (without it, messages in tool
+  results show as `??key??` placeholders);
+- `share/interspec/{README.md, LICENSE.txt, NOTICE.html}` and `share/interspec/licenses/`, which must
+  accompany the executable.
+
+A macOS executable given to others must be signed with a Developer ID and notarized (as
+`.github/workflows/build_macos.yml` does for the app), or Gatekeeper will refuse to run a downloaded copy.
 
 On Windows this needs Visual Studio 2022 17.5 or newer (QuickJS uses C11 atomics), and the static-runtime
 (`/MT`) prefix from `target/dep_build/dep_build_msvc2022.bat`.  The Visual Studio generator builds several
@@ -75,12 +91,18 @@ dependencies).
 InterSpec-mcp-stdio [--datadir <dir>] [--userdatadir <dir>] [--llm-config-dir <dir>] [--log-file <file>]
 ```
 - `--datadir`: InterSpec's `data` directory.  By default, that of an InterSpec installed next to the
-  executable (`data/`, `resources/app/data/`, `../data/`, or `../share/interspec/data/`).
+  executable (`data/`, `resources/app/data/`, `../data/`, or `../share/interspec/data/`).  To use the
+  data of an installed macOS app instead, pass `/Applications/InterSpec.app/Contents/Resources/data`.
+  `InterSpec_resources/` must be next to this directory.
 - `--userdatadir`: InterSpec's per-user directory, with things like `llm_config.xml`, an
   `llm_knowledge/` directory, user detector responses, and `serial_to_model.csv`.  By default, the one
   the desktop app uses, if it exists: `%APPDATA%\InterSpec` on Windows; `~/.local/share/InterSpec`,
   `~/.config/InterSpec`, or `~/.config/InterSpecAddOn` on Linux; `~/Library/Application Support/InterSpec`
-  on macOS.
+  or `~/Library/Application Support/sandia.InterSpec` on macOS.  The Mac App Store app keeps its in its
+  container, which is not looked in (macOS asks the user before a program reads another app's
+  container); pass
+  `--userdatadir "$HOME/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec"`
+  to use it.  None is needed: the preferences database is in memory either way.
 - `--llm-config-dir`: a directory with `llm_config.xml` (and `llm_tools_config.xml`, ...) to use first.
 - `--log-file`: append the log here, rather than to stderr.
 
@@ -91,17 +113,29 @@ assistant tools need one with an LLM provider configured, as above.
 Stdout carries only the MCP protocol; everything else InterSpec writes goes to stderr (or the log
 file).  The server exits when its stdin is closed.
 
-To use it from Claude Code:
+To use it from Claude Code (`--datadir` is not needed for an installed directory, as above):
 ```bash
-claude mcp add interspec-stdio -- /path/to/InterSpec-mcp-stdio --datadir /path/to/InterSpec/data
+claude mcp add interspec -- /path/to/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio
 ```
-or in an MCP client's JSON configuration:
+or in an MCP client's JSON configuration (e.g., Claude Desktop's `claude_desktop_config.json`):
 ```json
-{ "mcpServers": { "interspec": { "command": "/path/to/InterSpec-mcp-stdio",
-                                 "args": ["--datadir", "/path/to/InterSpec/data"] } } }
+{ "mcpServers": { "interspec": { "command": "/path/to/InterSpec-mcp-stdio/bin/InterSpec-mcp-stdio",
+                                 "args": [] } } }
 ```
 
-Spectra are loaded with `load_spectrum_file` and an absolute `path`.
+The server gives the client brief usage instructions (`data/mcp_stdio_instructions.md`) when it
+connects.  For much better analyses, also give Claude InterSpec's skills - copy (or symlink) the
+`interspec-*` directories of `share/interspec/data/skills/`, except `interspec-mcp-agent` (which is
+for the multi-session server), into `~/.claude/skills/`:
+```bash
+for s in /path/to/InterSpec-mcp-stdio/share/interspec/data/skills/interspec-*; do
+  [ "$(basename "$s")" = interspec-mcp-agent ] || cp -R "$s" ~/.claude/skills/
+done
+```
+
+Spectra are loaded with `load_spectrum_file` and an absolute `path`.  Tool descriptions can differ
+between the MCP servers: they are Inja templates (see `InterSpec/LlmPromptTemplate.h`), and
+`mcp_server` is `"stdio"` here.
 
 ## Running LLM benchmarks
 With `--run-benchmark`, the program is not an MCP server: it does not read stdin, and instead runs
