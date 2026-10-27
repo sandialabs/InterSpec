@@ -145,6 +145,40 @@ class PeakSelectorWindow : public AuxWindow
   vector<WComboBox *> m_nuc_select_combos;
   vector<WCheckBox *> m_dont_change_nuc_cbs;
   vector<bool> m_peak_updated;
+
+  /** What a nuclide select item assigns to a peak; kept so the select text doesnt have to be parsed. */
+  struct SourceChoice
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    /** The decay that emits the photon (may be of a descendant of #nuclide); nullptr if unknown. */
+    const SandiaDecay::Transition *transition = nullptr;
+    const SandiaDecay::Element *element = nullptr;
+    const ReactionGamma::Reaction *reaction = nullptr;
+    PeakDef::SourceGammaType type = PeakDef::NormalGamma;
+    /** Photon energy, in keV; for S.E. and D.E. this is the full-energy gamma. */
+    double energy = 0.0;
+    /** The select item text, without the intensity; only parsed if none of the source pointers are set. */
+    std::string label;
+  };//struct SourceChoice
+
+  /** Parallel to #m_nuc_select_combos; entry [i][j] is what item j of select i assigns (item 0 is "No Source"). */
+  vector<vector<SourceChoice>> m_nuc_select_choices;
+  
+  /** A reference line a peak can be assigned to. */
+  struct RefLineChoice
+  {
+    SourceChoice choice;
+    /** The select item text; the choice label, plus the intensity. */
+    std::string text;
+    /** Where the line is in the spectrum (i.e., the escape energy for S.E. and D.E.). */
+    double energy = 0.0;
+    /** How close the peaks assigned energy must be, for this to be its current choice. */
+    double allowed_diff = 0.001;
+    bool is_background = false;
+  };//struct RefLineChoice
+  
+  /** All the reference lines peaks can be assigned to; built by #populateNuclideSelects on first use. */
+  vector<RefLineChoice> m_ref_line_choices;
   
   /** For each entry the first peak is a previously existing peak (before either
    the nuclide ID or peak search); the second peak is the new peak (either found
@@ -379,6 +413,7 @@ protected:
     
     m_keep_peak_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_nuc_select_combos.resize( m_old_to_new_peaks.size(), nullptr );
+    m_nuc_select_choices.resize( m_old_to_new_peaks.size() );
     m_dont_change_nuc_cbs.resize( m_old_to_new_peaks.size(), nullptr );
     m_peak_updated.resize( m_old_to_new_peaks.size(), false );
     
@@ -636,6 +671,23 @@ protected:
     
     if( m_showAllPeaks )
       m_showAllPeaks->setHidden( all_peaks_modified );
+    
+    //If this was a peak-search operation leading to this dialog, and the old
+    //  peak did not have any source identified, then dont identify a source
+    //  for the new peak either.  If the old peak did have a source, then that
+    //  would not have been changed by the ID part of the search anyway.
+    //  (done here, and not in populateNuclideSelects(), so re-populating the
+    //  selects wont undo the users selections)
+    if( m_reason == PeakSelectorWindowReason::PeakSearch )
+    {
+      for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
+      {
+        const shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
+        const shared_ptr<PeakDef> &newpeak = m_old_to_new_peaks[i].second;
+        if( m_nuc_select_combos[i] && oldpeak && newpeak && !oldpeak->hasSourceGammaAssigned() )
+          newpeak->clearSources();
+      }
+    }//if( m_reason == PeakSelectorWindowReason::PeakSearch )
     
     populateNuclideSelects();
     
@@ -1174,15 +1226,20 @@ public:
   
   
   
-  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc,
-                           const SandiaDecay::RadParticle *particle,
-                           const PeakDef::SourceGammaType type )
+  /** Returns like "Ra226 (Pb214, 53.2 keV)" when a descendant of \p nuc emits the photon, or like
+   "Co60 1332.5 keV" when \p nuc itself does, or the emitter is unknown.
+
+   \p energy is the full-energy photon (i.e., 2614.5 keV for the Th232 S.E. line).
+   */
+  static std::string nuclideLineLabel( const SandiaDecay::Nuclide *nuc,
+                                       const SandiaDecay::Transition *transition,
+                                       const double energy,
+                                       const PeakDef::SourceGammaType type )
   {
-    if( !nuc || !particle )
+    assert( nuc );
+    if( !nuc )
       return "---";
-    
-    const ReferenceLineInfo *refline = nullptr;
-    
+
     const char *gamtype = "";
     switch( type )
     {
@@ -1192,9 +1249,50 @@ public:
       case PeakDef::AnnihilationGamma: gamtype = " Annih."; break;
       case PeakDef::DoubleEscapeGamma: gamtype = " D.E.";   break;
       case PeakDef::SingleEscapeGamma: gamtype = " S.E.";   break;
-    }//switch( displayPeak->sourceGammaType() )
+    }//switch( type )
+
+    // Annihilation photons may come from several decays in the chain, so we wont name an emitter
+    const SandiaDecay::Nuclide * const emitter
+                 = (transition && (type != PeakDef::AnnihilationGamma)) ? transition->parent : nullptr;
+
+    char buffer[128] = { '\0' };
+    if( emitter && (emitter != nuc) )
+      snprintf( buffer, sizeof(buffer), "%s (%s, %.1f keV%s)",
+               nuc->symbol.c_str(), emitter->symbol.c_str(), energy, gamtype );
+    else
+      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s", nuc->symbol.c_str(), energy, gamtype );
+
+    return buffer;
+  }//std::string nuclideLineLabel(...)
+
+
+  /** Returns like ", I=0.051%", or ", I=194%"; i.e., avoids exponents for larger intensities. */
+  static std::string intensityTxt( const double fraction )
+  {
+    const double percent = 100.0*fraction;
+    char buffer[32] = { '\0' };
+    if( percent >= 10.0 )
+      snprintf( buffer, sizeof(buffer), ", I=%.0f%%", percent );
+    else
+      snprintf( buffer, sizeof(buffer), ", I=%.2g%%", percent );
+    return buffer;
+  }//std::string intensityTxt( const double fraction )
+  
+  
+  std::string nuclideDesc( const SandiaDecay::Nuclide *nuc,
+                           const SandiaDecay::Transition *transition,
+                           const SandiaDecay::RadParticle *particle,
+                           const PeakDef::SourceGammaType type )
+  {
+    // For annihilation, `particle` is the positron (if there is only one in the chain), or null
+    const bool is_annih = (type == PeakDef::AnnihilationGamma);
+    if( !nuc || (!particle && !is_annih) )
+      return "---";
     
-    
+    const double energy = is_annih ? 510.9989 : particle->energy;
+
+    const ReferenceLineInfo *refline = nullptr;
+
     for( const auto &d : m_displayed )
     {
       if( nuc == d->m_nuclide )
@@ -1217,13 +1315,12 @@ public:
         break;
     }//for( const auto &d : m_displayed )
     
-    char buffer[256] = { '\0' };
+    double intensity = 0.0;
     if( refline )
     {
-      double intensity = 0.0;
       for( const ReferenceLineInfo::RefLine &line : refline->m_ref_lines )
       {
-        if( fabs(line.m_energy - particle->energy) >= 0.01 )
+        if( fabs(line.m_energy - energy) >= 0.01 )
           continue;
         
         // We are only interested i ngammas and x-rays
@@ -1257,9 +1354,6 @@ public:
         
         intensity += line.m_decay_intensity;
       }//for( loop over ref line particles )
-      
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }else
     {
       const double activity = 1.0E-3*SandiaDecay::curie;
@@ -1268,20 +1362,15 @@ public:
       SandiaDecay::NuclideMixture mix;
       mix.addAgedNuclideByActivity( nuc, activity, age );
       const auto gammas = mix.gammas(0.0, SandiaDecay::NuclideMixture::OrderByEnergy, true );
-      double intensity = 0.0;
       for( const auto &g : gammas )
       {
-        if( fabs(g.energy - particle->energy) < 0.01 )
+        if( fabs(g.energy - energy) < 0.01 )
           intensity += g.numPerSecond;
       }
       intensity /= activity;
-      
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-               nuc->symbol.c_str(), particle->energy, gamtype, 100.0*intensity );
     }//if( source is a reference line ) / else
     
-    
-    return buffer;
+    return nuclideLineLabel( nuc, transition, energy, type ) + intensityTxt( intensity );
   }//std::string nuclideDesc(...)
   
   
@@ -1293,14 +1382,10 @@ public:
     const SandiaDecay::EnergyIntensityPair *xrayIntensity = PeakDef::findNearestXray(el, energy);
     
     char buffer[256] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV xray", el->symbol.c_str(), energy );
+    
     if( xrayIntensity && fabs(xrayIntensity->energy - energy) < 0.1 )
-    {
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV xray, I=%.2g%%)",
-               el->symbol.c_str(), energy, 100.0*xrayIntensity->intensity );
-    }else
-    {
-      snprintf( buffer, sizeof(buffer), "%s %.1f keV xray", el->symbol.c_str(), energy );
-    }
+      return buffer + intensityTxt( xrayIntensity->intensity );
     
     return buffer;
   }//std::string xrayDesc( const SandiaDecay::Element *el )
@@ -1330,10 +1415,9 @@ public:
       if( fabs(g.energy - energy) < 0.1 )
         intensity += g.abundance;
     
-    snprintf( buffer, sizeof(buffer), "%s %.1f keV%s, I=%.2g%%",
-              rctn->name().c_str(), energy, gamtype, 100.0*intensity );
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV%s", rctn->name().c_str(), energy, gamtype );
     
-    return buffer;
+    return buffer + intensityTxt( intensity );
   }//std::string reactionDesc(...)
   
   
@@ -1343,9 +1427,10 @@ public:
     if( !p )
       return "---";
     
-    if( p->parentNuclide() && p->decayParticle() )
+    if( p->parentNuclide()
+       && (p->decayParticle() || (p->sourceGammaType() == PeakDef::AnnihilationGamma)) )
     {
-      return nuclideDesc( p->parentNuclide(), p->decayParticle(), p->sourceGammaType() );
+      return nuclideDesc( p->parentNuclide(), p->nuclearTransition(), p->decayParticle(), p->sourceGammaType() );
     }else if( p->xrayElement() )
     {
       return xrayDesc( p->xrayElement(), p->xrayEnergy() );
@@ -1356,8 +1441,167 @@ public:
     
     return "---";
   }//std::string makeSourceDesciption( const shared_ptr<PeakDef> &p )
-  
-  
+
+
+  /** Returns what assigning a peak to \p line would set; the line must be a gamma or x-ray, and not
+   a sum line, as a peak cant be assigned to those.
+   */
+  static SourceChoice sourceChoiceFromRefLine( const ReferenceLineInfo &ref,
+                                               const ReferenceLineInfo::RefLine &line )
+  {
+    const bool is_xray = (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray);
+    assert( is_xray || (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma) );
+
+    SourceChoice choice;
+    choice.energy = line.m_energy;
+
+    switch( line.m_source_type )
+    {
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+        choice.type = is_xray ? PeakDef::XrayGamma : PeakDef::NormalGamma;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+        choice.type = PeakDef::AnnihilationGamma;
+        break;
+
+      // Escape lines are at the escape energy, but peaks are assigned the full-energy gamma
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+        choice.type = PeakDef::SingleEscapeGamma;
+        choice.energy += 510.9989;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        choice.type = PeakDef::DoubleEscapeGamma;
+        choice.energy += 2.0*510.9989;
+        break;
+
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+        assert( 0 );
+        break;
+    }//switch( line.m_source_type )
+
+    if( line.m_parent_nuclide )
+    {
+      choice.nuclide = line.m_parent_nuclide;
+      choice.transition = line.m_transition;
+
+      // Background lines dont record their transition, so look it up to know what emits the line
+      //  (there can be thousands of background lines, so we scan the chain directly, rather than
+      //  use the much slower PeakDef::findNearestPhotopeak).
+      if( !choice.transition && (choice.type != PeakDef::AnnihilationGamma) )
+      {
+        const SandiaDecay::ProductType wanted_type = is_xray ? SandiaDecay::XrayParticle
+                                                             : SandiaDecay::GammaParticle;
+        double best_diff = 0.1, best_energy = choice.energy; //Background line energies may be rounded a little
+        for( const SandiaDecay::Nuclide *desc : choice.nuclide->descendants() )
+        {
+          for( const SandiaDecay::Transition *trans : desc->decaysToChildren )
+          {
+            for( const SandiaDecay::RadParticle &particle : trans->products )
+            {
+              const double diff = fabs( particle.energy - choice.energy );
+              if( (particle.type == wanted_type) && (diff < best_diff) )
+              {
+                best_diff = diff;
+                best_energy = particle.energy;
+                choice.transition = trans;
+              }
+            }//for( loop over transition products )
+          }//for( loop over decays of descendant )
+        }//for( loop over descendants )
+
+        choice.energy = best_energy;
+      }//if( !choice.transition )
+
+      choice.label = nuclideLineLabel( choice.nuclide, choice.transition, choice.energy, choice.type );
+      return choice;
+    }//if( line.m_parent_nuclide )
+
+    string label = ref.m_input.m_input_txt;
+    if( line.m_element )
+    {
+      choice.element = line.m_element;
+      label = line.m_element->symbol;
+    }else if( line.m_reaction )
+    {
+      choice.reaction = line.m_reaction;
+
+      //We wont set label to reaction, because the user may have input an element, but this
+      //  particular line might be an isotope of the element.
+      if( SpecUtils::icontains(label, "background") )
+        label = line.m_reaction->name();
+    }
+
+    char buffer[128] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%s %.1f keV", label.c_str(), line.m_energy );
+    choice.label = buffer;
+
+    return choice;
+  }//SourceChoice sourceChoiceFromRefLine(...)
+
+
+  /** Assigns \p choice as the source of \p peak, including which descendant emits the photon. */
+  static PeakModel::SetGammaSource assignSource( PeakDef &peak, const SourceChoice &choice )
+  {
+    if( choice.element )
+      return PeakModel::setXray( peak, choice.element, choice.energy );
+
+    if( choice.reaction )
+    {
+      // We set the reaction directly, as `PeakModel::setReaction` looks it up by name, which is
+      //  element-level (ex., "O(a,n)"), so could give a different isotopes reaction.
+      const bool same_rctn = ((peak.reaction() == choice.reaction)
+                              && (peak.sourceGammaType() == choice.type)
+                              && (fabs(peak.reactionEnergy() - choice.energy) < 0.1));
+      
+      // PeakDef::setReaction throws for AnnihilationGamma; reaction lines shouldnt ever be this
+      assert( choice.type != PeakDef::AnnihilationGamma );
+      const PeakDef::SourceGammaType type = (choice.type == PeakDef::AnnihilationGamma)
+                                             ? PeakDef::NormalGamma : choice.type;
+      peak.setReaction( choice.reaction, static_cast<float>(choice.energy), type );
+      
+      return same_rctn ? PeakModel::SetGammaSource::NoSourceChange : PeakModel::SetGammaSource::SourceChange;
+    }//if( choice.reaction )
+
+    if( !choice.nuclide )
+      return PeakModel::setNuclideXrayReaction( peak, choice.label, 0.0 );
+
+    const PeakModel::SetGammaSource result
+                    = PeakModel::setNuclide( peak, choice.type, choice.nuclide, choice.energy, 0.0 );
+
+    // `setNuclide` uses the chains line nearest in energy, which may be from a different
+    //  descendant than the user selected (ex., same energy x-rays), so pin the transition.
+    const SandiaDecay::Transition * const trans = choice.transition;
+    if( trans
+       && (peak.parentNuclide() == choice.nuclide)
+       && (peak.nuclearTransition() != trans)
+       && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
+    {
+      const SandiaDecay::ProductType wanted_type = (choice.type == PeakDef::XrayGamma)
+                                                    ? SandiaDecay::XrayParticle
+                                                    : SandiaDecay::GammaParticle;
+      for( size_t index = 0; index < trans->products.size(); ++index )
+      {
+        const SandiaDecay::RadParticle &particle = trans->products[index];
+        if( (particle.type == wanted_type) && (fabs(particle.energy - choice.energy) < 0.001) )
+        {
+          // Keep S.E. or D.E., but otherwise make the type agree with the particle we pinned
+          PeakDef::SourceGammaType type = peak.sourceGammaType();
+          if( (type == PeakDef::NormalGamma) || (type == PeakDef::XrayGamma) )
+            type = (wanted_type == SandiaDecay::XrayParticle) ? PeakDef::XrayGamma : PeakDef::NormalGamma;
+          
+          peak.setNuclearTransition( choice.nuclide, trans, static_cast<int>(index), type );
+          break;
+        }
+      }//for( loop over transition products )
+    }//if( setNuclide picked a different transition than selected )
+
+    return result;
+  }//PeakModel::SetGammaSource assignSource(...)
+
+
   void nucSelectChanged( const size_t i )
   {
     assert( i < m_dont_change_nuc_cbs.size() );
@@ -1434,13 +1678,16 @@ public:
       return;
     }//if( no source )
     
-    string newnucstr = combo->currentText().toUTF8();
-    const size_t intens_pos = newnucstr.find( ", I=" );
-    if( intens_pos != string::npos )
-      newnucstr = newnucstr.substr( 0, intens_pos );
+    const vector<SourceChoice> &choices = m_nuc_select_choices[i];
+    assert( static_cast<size_t>(index) < choices.size() );
+    if( static_cast<size_t>(index) >= choices.size() ) //shouldnt ever happen
+    {
+      populateNuclideSelects();
+      return;
+    }
 
-    const auto result = PeakModel::setNuclideXrayReaction( *newpeak, newnucstr, 0.0 );
-    
+    const PeakModel::SetGammaSource result = assignSource( *newpeak, choices[index] );
+
     switch( result )
     {
       case PeakModel::SetGammaSource::NoSourceChange:
@@ -1536,19 +1783,79 @@ public:
   void populateNuclideSelects()
   {
     assert( m_old_to_new_peaks.size() == m_nuc_select_combos.size() );
+    assert( m_old_to_new_peaks.size() == m_nuc_select_choices.size() );
+    
+    // The choices dont depend on the peak, or change while the dialog is showing, and there can be
+    //  thousands of them (ex., background lines), so only build them once, and only if needed.
+    bool any_selects = false;
+    for( const WComboBox *combo : m_nuc_select_combos )
+      any_selects = (any_selects || combo);
+    
+    vector<RefLineChoice> &ref_choices = m_ref_line_choices;
+    const bool build_choices = (any_selects && ref_choices.empty());
+    for( size_t ref_index = 0; build_choices && (ref_index < m_displayed.size()); ++ref_index )
+    {
+      const shared_ptr<const ReferenceLineInfo> &ref = m_displayed[ref_index];
+      
+      // Make sure we can assign the peak to the source type.
+      switch( ref->m_source_type )
+      {
+        case ReferenceLineInfo::SourceType::Nuclide:
+        case ReferenceLineInfo::SourceType::FluorescenceXray:
+        case ReferenceLineInfo::SourceType::Reaction:
+        case ReferenceLineInfo::SourceType::Background:
+        case ReferenceLineInfo::SourceType::NuclideMixture:
+        case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          break;
+        
+        case ReferenceLineInfo::SourceType::CustomEnergy:
+        case ReferenceLineInfo::SourceType::None:
+          continue;
+          break;
+      }//switch( ref->m_source_type )
+      
+      for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+      {
+        if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+            && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )
+          continue;
+        
+        // A peak cant be assigned to a sum of gammas
+        if( (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak)
+           || (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak) )
+          continue;
+        
+        RefLineChoice rc;
+        rc.choice = sourceChoiceFromRefLine( *ref, line );
+        rc.energy = line.m_energy;
+        rc.is_background = (ref->m_source_type == ReferenceLineInfo::SourceType::Background);
+        
+        // If we are assigning from a nuclide, we should be pretty close, but OneOffSrcLines energies
+        //  may not exactly match the decay data
+        rc.allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
+        
+        const double intensity = line.m_decay_intensity; //Before DRF and Shielding
+        rc.text = rc.choice.label + intensityTxt( intensity );
+        
+        ref_choices.push_back( std::move(rc) );
+      }//for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+    }//for( loop over m_displayed )
+    
     
     for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )
     {
       if( !m_nuc_select_combos[i] )
         continue;
       
+      vector<SourceChoice> &choices = m_nuc_select_choices[i];
+      choices.assign( 1, SourceChoice{} ); // "No Source"
       m_nuc_select_combos[i]->clear();
       m_nuc_select_combos[i]->addItem( WString::tr("psd-no-source") );
       
       shared_ptr<PeakDef> &p = m_old_to_new_peaks[i].second;
       if( !p )
         continue;
-      shared_ptr<PeakDef> &oldpeak = m_old_to_new_peaks[i].first;
       
       const double peakmean = p->mean();
       double energy = peakmean;
@@ -1558,128 +1865,89 @@ public:
         energy = p->gammaParticleEnergy();
       }else if( p->parentNuclide() )
       {
-        if( p->decayParticle() )
+        // For annihilation, the decay particle (if any) is the positron, so use the 511 keV
+        if( p->decayParticle() && (p->sourceGammaType() != PeakDef::AnnihilationGamma) )
           energy = p->decayParticle()->energy;  // Use this so the 511 or 1022 keV wont be subtracted off for S.E. or D.E.
         else
           energy = p->gammaParticleEnergy();    //Annihilation gammas make it here
       }
       
       
-      //This string will store the description of what is currently assigned to
-      //  the peak so we can make it the current selection
-      //  I'm a little un-easy about how this is determined... but seems to work
-      string currentstr;
       
-      //If this was a peak-search operation leading to this dialog, and the old
-      //  peak did not have any source identified, then dont identify a source
-      //  for the new peak either.  If the old peak did have a source, then that
-      //  would not have been changed by the ID part of the search anyway.
-      switch( m_reason )
-      {
-        case PeakSelectorWindowReason::PeakSearch:
-          if( oldpeak && !oldpeak->hasSourceGammaAssigned() )
-            p->clearSources();
-          break;
-          
-        case PeakSelectorWindowReason::NuclideId:
-          break;
-          
-        case PeakSelectorWindowReason::PeaksFromPreviousSpectrum:
-          break;
-          
-        case PeakSelectorWindowReason::PeaksFromCsvFile:
-          break;
-      }//switch( m_reason )
-
+      
+      //This string will store the description of what is currently assigned to
+      //  the peak so we can make it the current selection.  We rank how well each
+      //  line matches the peaks source, as there can be several lines at the same
+      //  energy (ex, the S.E. and full-energy line, or from different descendants).
+      string currentstr;
+      int current_rank = 0;
       
       //We'll sort the select by distance away from current nuclide, or peak mean
       //  - will probably miss some weird edgecase, but what ever for the moment.
-      map<double,set<string>> distToDescs;
-      for( const auto &ref : m_displayed )
+      //  Maps distance to {item text, index into `ref_choices`}.
+      map<double,map<string,size_t>> distToChoices;
+      for( size_t index = 0; index < ref_choices.size(); ++index )
       {
-        // Make sure we can assign the peak to the source type.
-        switch( ref->m_source_type )
-        {
-          case ReferenceLineInfo::SourceType::Nuclide:
-          case ReferenceLineInfo::SourceType::FluorescenceXray:
-          case ReferenceLineInfo::SourceType::Reaction:
-          case ReferenceLineInfo::SourceType::Background:
-          case ReferenceLineInfo::SourceType::NuclideMixture:
-          case ReferenceLineInfo::SourceType::OneOffSrcLines:
-          case ReferenceLineInfo::SourceType::FissionRefLines:
-            break;
-          
-          case ReferenceLineInfo::SourceType::CustomEnergy:
-          case ReferenceLineInfo::SourceType::None:
-            continue;
-            break;
-        }//switch( ref->m_source_type )
+        const RefLineChoice &rc = ref_choices[index];
+        const SourceChoice &c = rc.choice;
         
-        for( const ReferenceLineInfo::RefLine &line : ref->m_ref_lines )
+        const double diff_from_mean = fabs( rc.energy - peakmean );
+        const double diff_from_assigned = fabs( c.energy - energy );
+        
+        const bool same_source = ((c.nuclide && (c.nuclide == p->parentNuclide()))
+                                  || (c.element && (c.element == p->xrayElement()))
+                                  || (c.reaction && (c.reaction == p->reaction())));
+        
+        int rank = 0;
+        if( same_source && (diff_from_assigned < rc.allowed_diff) )
         {
-          if( (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
-              && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray) )
-            continue;
-          
-          const double refenergy = line.m_energy;
-          const double intensity = line.m_decay_intensity; //Before DRF and Shielding
-          
-          string label = ref->m_input.m_input_txt;
-          if( line.m_parent_nuclide )
-          {
-            label = line.m_parent_nuclide->symbol;
-          }else if( line.m_element )
-          {
-            label = line.m_element->symbol;
-          }else if( line.m_reaction )
-          {
-            //We wont set label to reaction, because the user may have input an element, but this
-            //  particular line might be an isotope of the element.
-            if( SpecUtils::icontains(label, "background") )
-              label = line.m_reaction->name();
-          }
-          
-          char buffer[128];
-          snprintf( buffer, sizeof(buffer), "%s %.1f keV, I=%.2g%%",
-                    label.c_str(), refenergy, 100.0*intensity );
-          
-          const double diff_from_mean = fabs( refenergy - peakmean );
-          const double diff_from_assigned = fabs( refenergy - energy );
-          
-          // If we are assigning from a nuclide, we should be pretty close, but if OneOffSrcLines,
-          //  we might be off by even a
-          const double allowed_diff = (ref->m_source_type == ReferenceLineInfo::SourceType::OneOffSrcLines) ? 0.05 : 0.001;
-          
-          if( (diff_from_assigned < allowed_diff) //May need to decrease
-             && ((p->parentNuclide() && (line.m_parent_nuclide==p->parentNuclide()))
-                 || (p->xrayElement() && (line.m_element==p->xrayElement()))
-                 || (p->reaction() && (line.m_reaction ==p->reaction()))
-             ))
-          {
-#if( PERFORM_DEVELOPER_CHECKS )
-            if( currentstr.size() )  //shouldnt ever happen, right?
-              log_developer_error( __func__, ("PeakSelectorWindow::populateNuclideSelects(): Found mutliple matches of select strings for a nuclide: '" + string(buffer) + "'").c_str() );
-#endif
-            currentstr = buffer;
-          }else if( (ref->m_source_type == ReferenceLineInfo::SourceType::Background)
-                   && (diff_from_assigned < 0.1) )
-          {
-            currentstr = buffer;
-          }
-          
-          //Use the minimum of distance between the reference line and either
-          //  the peak mean, or currently assigned source, to sort select
-          //  contents by.
-          const double diff = min( diff_from_mean, diff_from_assigned );
-          
-          distToDescs[diff].insert( buffer );
-        }//for( size_t i = 0; i < ref.energies.size(); ++i )
-      }//for( const auto &ref : m_displayed )
+          rank = 2 + ((c.type == p->sourceGammaType()) ? 2 : 0)
+                   + ((c.transition && (c.transition == p->nuclearTransition())) ? 1 : 0);
+        }else if( rc.is_background && p->hasSourceGammaAssigned() && (diff_from_assigned < 0.1) )
+        {
+          rank = 1;
+        }
+        
+        if( rank > current_rank )
+        {
+          current_rank = rank;
+          currentstr = rc.text;
+        }
+        
+        //Use the minimum of distance between the reference line and either
+        //  the peak mean, or currently assigned source, to sort select
+        //  contents by.
+        const double diff = min( diff_from_mean, diff_from_assigned );
+        
+        distToChoices[diff].emplace( rc.text, index );
+      }//for( size_t index = 0; index < ref_choices.size(); ++index )
       
       int currentitem = -1;
+
+      // A peak assigned as an escape peak, when the escape lines arent displayed, would otherwise
+      //  show the full-energy line as selected (and become it, if re-selected); so we'll list the
+      //  actual assignment first.
+      const bool is_escape = ((p->sourceGammaType() == PeakDef::SingleEscapeGamma)
+                              || (p->sourceGammaType() == PeakDef::DoubleEscapeGamma));
+      if( is_escape && (current_rank < 4)
+         && ((p->parentNuclide() && p->decayParticle()) || p->reaction()) )
+      {
+        SourceChoice assigned;
+        assigned.type = p->sourceGammaType();
+        assigned.nuclide = p->parentNuclide();
+        assigned.transition = p->nuclearTransition();
+        assigned.reaction = assigned.nuclide ? nullptr : p->reaction();
+        assigned.energy = assigned.nuclide ? p->decayParticle()->energy : p->reactionEnergy();
+
+        m_nuc_select_combos[i]->addItem( makeSourceDesciption( p ) );
+        choices.push_back( assigned );
+        currentitem = m_nuc_select_combos[i]->count() - 1;
+        currentstr.clear();
+      }//if( peak is an escape peak, without a matching reference line )
+
       size_t nitems = 0;
       const double fwhm = p->fwhm();
-      for( auto iter = begin(distToDescs); iter != end(distToDescs); ++iter )
+      for( auto iter = begin(distToChoices); iter != end(distToChoices); ++iter )
       {
         const double energydiff = iter->first;
         //Put at most 30 items into the select, or if we have 15 items, keep
@@ -1691,11 +1959,14 @@ public:
         ++nitems;
         for( const auto &s : iter->second )
         {
-          m_nuc_select_combos[i]->addItem( s );
-          if( s == currentstr )
+          m_nuc_select_combos[i]->addItem( s.first );
+          choices.push_back( ref_choices[s.second].choice );
+          if( s.first == currentstr )
             currentitem = m_nuc_select_combos[i]->count() - 1;
         }
-      }//for( auto iter = begin(distToDescs); iter != end(distToDescs); ++iter )
+      }//for( auto iter = begin(distToChoices); iter != end(distToChoices); ++iter )
+      
+      assert( choices.size() == static_cast<size_t>(m_nuc_select_combos[i]->count()) );
       
       m_nuc_select_combos[i]->setCurrentIndex( std::max(0, currentitem) );
     }//for( size_t i = 0; i < m_old_to_new_peaks.size(); ++i )

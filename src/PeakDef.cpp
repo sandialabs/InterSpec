@@ -4099,7 +4099,10 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
         answer << "," << q << "decayParent" << q << ":" << q << transistion_parent << q;
         answer << "," << q << "decayChild" << q << ":" << q << decay_child << q;
-        const float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
+        // For annihilation, the decay particle is the positron, so use the photon energy
+        float energy = (IsInf(decayPart->energy) || IsNan(decayPart->energy)) ? 0.0f : decayPart->energy;
+        if( p.sourceGammaType() == AnnihilationGamma )
+          energy = 510.9989f;
         answer << "," << q << "energy" << q << ":" << energy << "";
         answer << srcTypeJSON( p.sourceGammaType() );
       }else if( p.sourceGammaType() == AnnihilationGamma )
