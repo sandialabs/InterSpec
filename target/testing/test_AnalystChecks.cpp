@@ -51,6 +51,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/AnalystChecks.h"
@@ -58,6 +59,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -1506,3 +1508,144 @@ BOOST_FIXTURE_TEST_CASE( test_sum_check_real_line_at_twice_energy, InterSpecTest
     BOOST_CHECK( !SpecUtils::icontains( result.pileupTauSource, "2 x 344" ) );
   }
 }//test_sum_check_real_line_at_twice_energy
+
+
+// Peaks the LLM tools add get a color per source, the way showing reference lines for each source in
+//  turn would: new sources in one call each get their own color, peaks of a source whose reference
+//  lines are showing take the lines' color, and other sources avoid that color.
+BOOST_FIXTURE_TEST_CASE( test_added_peaks_colored_per_source, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, "Ba133_Cs137_RandomSummingOnly.n42" );
+
+  ReferencePhotopeakDisplay * const ref_lines = m_interspec->referenceLinesWidget();
+  BOOST_REQUIRE( ref_lines );
+  const shared_ptr<PeakModel> pmodel = m_interspec->peakModel();
+  BOOST_REQUIRE( pmodel );
+
+  const auto same_rgb = []( const Wt::WColor &lhs, const Wt::WColor &rhs ) -> bool {
+    return (lhs.red() == rhs.red()) && (lhs.green() == rhs.green()) && (lhs.blue() == rhs.blue());
+  };
+
+  // The distinct colors of the analysis peaks of each source
+  const auto source_colors = [&]() -> map<string,vector<Wt::WColor>> {
+    map<string,vector<Wt::WColor>> answer;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel->peaks();
+    for( size_t i = 0; peaks && (i < peaks->size()); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = (*peaks)[i];
+      if( p->sourceName().empty() )
+        continue;
+      vector<Wt::WColor> &colors = answer[p->sourceName()];
+      const Wt::WColor &c = p->lineColor();
+      if( std::none_of( begin(colors), end(colors), [&]( const Wt::WColor &o ){ return same_rgb(c, o) && (c.isDefault() == o.isDefault()); } ) )
+        colors.push_back( c );
+    }
+    return answer;
+  };
+
+  // Each source has exactly one, non-default, color, which no other source shares.
+  const auto check_one_color_per_source = [&]( const map<string,vector<Wt::WColor>> &colors ) {
+    for( const auto &src_colors : colors )
+    {
+      BOOST_REQUIRE_MESSAGE( src_colors.second.size() == 1, src_colors.first << " has "
+                             << src_colors.second.size() << " colors" );
+      BOOST_CHECK_MESSAGE( !src_colors.second[0].isDefault(), src_colors.first << " has no color" );
+      for( const auto &other : colors )
+      {
+        BOOST_CHECK_MESSAGE( (other.first == src_colors.first) || !same_rgb( other.second[0], src_colors.second[0] ),
+                             src_colors.first << " and " << other.first << " have the same color, "
+                             << src_colors.second[0].cssText() );
+      }
+    }//for( const auto &src_colors : colors )
+  };
+
+  // Show Co60 reference lines; peaks of other sources mustnt take their color.
+  ref_lines->setNuclideAndAge( "Co60", "" );
+  const Wt::WColor co60_color = ref_lines->currentlyShowingNuclide().m_input.m_color;
+  BOOST_REQUIRE( !co60_color.isDefault() );
+
+  // Two new sources in one call get two colors
+  AnalystChecks::FitPeaksForNuclideOptions fit_options;
+  fit_options.sources = { "Ba133", "Cs137" };
+  BOOST_REQUIRE( !AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec ).fitPeaks.empty() );
+
+  map<string,vector<Wt::WColor>> colors = source_colors();
+  BOOST_REQUIRE( colors.count("Ba133") && colors.count("Cs137") );
+  check_one_color_per_source( colors );
+  for( const auto &src_colors : colors )
+    BOOST_CHECK_MESSAGE( !same_rgb( src_colors.second[0], co60_color ), src_colors.first << " took the Co60 lines' color" );
+  const Wt::WColor ba133_color = colors["Ba133"][0];
+
+  // Reference lines then shown for a source take the color of its peaks
+  ref_lines->setNuclideAndAge( "Cs137", "" );
+  BOOST_CHECK( same_rgb( ref_lines->currentlyShowingNuclide().m_input.m_color, colors["Cs137"][0] ) );
+
+  // Peaks of a source whose reference lines are showing take the lines' color (with the color cache
+  //  for the source cleared, so the color can only come from the lines)
+  pmodel->removeAllPeaks();
+  Wt::WColor cs137_line_color( "#123456" );
+  ref_lines->setCurrentColor( cs137_line_color );
+  ref_lines->updateColorCacheForSource( "Cs137", Wt::WColor() );
+  BOOST_REQUIRE( !AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec ).fitPeaks.empty() );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Ba133") && colors.count("Cs137") );
+  check_one_color_per_source( colors );
+  BOOST_CHECK( same_rgb( colors["Cs137"][0], cs137_line_color ) );
+  BOOST_CHECK( same_rgb( colors["Ba133"][0], ba133_color ) );  // remembered from before
+
+  // Two sources new to this session, in one explicit ROI, get two colors
+  pmodel->removeAllPeaks();
+  AnalystChecks::FitPeakOptions roi_options;
+  roi_options.explicitRoi = AnalystChecks::FitPeakOptions::ExplicitRoi{};
+  roi_options.explicitRoi->energies = { 276.40, 302.85 };
+  roi_options.explicitRoi->sources = { "Eu152", "Pb212" };
+  roi_options.energy = 276.40;
+  BOOST_REQUIRE_NO_THROW( AnalystChecks::fit_user_peak( roi_options, m_interspec ) );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Eu152") && colors.count("Pb212") );
+  check_one_color_per_source( colors );
+  BOOST_CHECK( !same_rgb( colors["Pb212"][0], cs137_line_color ) );
+  const Wt::WColor eu152_color = colors["Eu152"][0];
+
+  // Changing a lone peak's source gives it the color of the new source's other peaks...
+  AnalystChecks::EditAnalysisPeakOptions edit_options;
+  edit_options.energy = 302.85;
+  edit_options.source = "Eu152";
+  BOOST_REQUIRE( AnalystChecks::edit_analysis_peak( edit_options, m_interspec ).success );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Eu152") && !colors.count("Pb212") );
+  BOOST_CHECK_EQUAL( colors["Eu152"].size(), 1u );
+  BOOST_CHECK( same_rgb( colors["Eu152"][0], eu152_color ) );
+
+  // ... but a peak keeps its own color - one differing from the other peaks of its old source ...
+  const Wt::WColor own_color( "#654321" );
+  edit_options.source.reset();
+  edit_options.color = own_color.cssText();
+  BOOST_REQUIRE( AnalystChecks::edit_analysis_peak( edit_options, m_interspec ).success );
+  edit_options.color.reset();
+  edit_options.source = "Pb212";
+  BOOST_REQUIRE( AnalystChecks::edit_analysis_peak( edit_options, m_interspec ).success );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Pb212") );
+  BOOST_CHECK( same_rgb( colors["Pb212"][0], own_color ) );
+
+  // ... while a lone peak's color is taken as its source's, so it gets a color for the new source.
+  edit_options.source = "Ba133";
+  BOOST_REQUIRE( AnalystChecks::edit_analysis_peak( edit_options, m_interspec ).success );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Ba133") && !colors.count("Pb212") );
+  check_one_color_per_source( colors );
+  BOOST_CHECK( !same_rgb( colors["Ba133"][0], own_color ) );
+
+  // Without a reference lines widget, sources still get their own colors.  The lines must be cleared
+  //  first, or hiding the tool tabs moves the widget into its own window, rather than deleting it.
+  ref_lines->clearAllLines();
+  m_interspec->setToolTabsVisible( false );
+  Wt::WApplication::instance()->processEvents();
+  BOOST_REQUIRE( !m_interspec->referenceLinesWidget() );
+  pmodel->removeAllPeaks();
+  BOOST_REQUIRE( !AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec ).fitPeaks.empty() );
+  colors = source_colors();
+  BOOST_REQUIRE( colors.count("Ba133") && colors.count("Cs137") );
+  check_one_color_per_source( colors );
+}//test_added_peaks_colored_per_source
