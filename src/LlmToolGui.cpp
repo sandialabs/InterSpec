@@ -227,6 +227,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_logFilePath(),
     m_logWriteFailed(false),
     m_imagePreviewContainer(nullptr),
+    m_inputBanner(nullptr),
     m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
     m_jsSandboxBridge( nullptr ),
@@ -467,6 +468,7 @@ void LlmToolGui::resetRoot()
   m_sendButton = nullptr;
   m_menuIcon = nullptr;
   m_imagePreviewContainer = nullptr;
+  m_inputBanner = nullptr;
   m_jsSandboxBridge = nullptr;
 }
 
@@ -655,6 +657,7 @@ void LlmToolGui::handleConfigSaved()
         return;
       }
       setInputEnabled( true );
+      updateInputBanner();
     }else
     {
       // Was unconfigured: build the full chat UI now.
@@ -818,6 +821,12 @@ void LlmToolGui::initializeUI()
   WContainerWidget *inputColumn = inputArea->addNew<WContainerWidget>();
   inputColumn->addStyleClass( "LlmInputColumn" );
 
+  // Optional per-provider banner, directly above the text area (shown by updateInputBanner())
+  m_inputBanner = inputColumn->addNew<WText>();
+  m_inputBanner->setTextFormat( TextFormat::Plain );
+  m_inputBanner->addStyleClass( "LlmInputBanner" );
+  m_inputBanner->hide();
+
   // Image preview strip (hidden by default)
   m_imagePreviewContainer = inputColumn->addNew<WContainerWidget>();
   m_imagePreviewContainer->addStyleClass( "LlmStagedImagePreview" );
@@ -853,10 +862,35 @@ void LlmToolGui::initializeUI()
   // Wire client-side behavior: auto-grow, Enter submit, enable/disable, paste, and auto-scroll.
   setupInputJavaScript();
 
+  updateInputBanner();
+
   // Show the getting-started panel when the conversation area is still empty.  Any subsequent
   // restore of saved history (setConversationHistory) reconciles this away.
   updateWelcomeMessage();
 }
+
+
+void LlmToolGui::updateInputBanner()
+{
+  if( !m_inputBanner )
+    return;
+
+  string banner;
+  try
+  {
+    const shared_ptr<const LlmConfig> config = m_llmInterface ? m_llmInterface->config() : nullptr;
+    if( config )
+      banner = config->llmApi.activeProvider().banner;
+  }catch( std::exception & )
+  {
+    // No active provider - leave the banner hidden
+  }
+
+  // The CSS clamps long text to two lines, so the tooltip carries the full text.
+  m_inputBanner->setText( WString::fromUTF8(banner) );
+  m_inputBanner->setToolTip( WString::fromUTF8(banner) );
+  m_inputBanner->setHidden( banner.empty() );
+}//void updateInputBanner()
 
 
 void LlmToolGui::focusInput()
@@ -1588,6 +1622,7 @@ void LlmToolGui::handleResetLlmConfig()
     }
 
     setInputEnabled( true );
+    updateInputBanner();
   }));
 
   noBtn->clicked().connect( dialog, &SimpleDialog::accept );

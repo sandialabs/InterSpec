@@ -327,6 +327,12 @@ public:
        the `<ApiProvider>` element; purely additive, so the `LlmApi` version was not bumped. */
       std::optional<HttpBackend> httpBackend;
 
+      /** Optional short text shown above the assistant's input field while this provider is active
+       (e.g., an organization's usage notice); empty means no banner.  Read from an optional
+       `<Banner>` child element of `<ApiProvider>`; purely additive, so the `LlmApi` version was
+       not bumped. */
+      std::string banner;
+
       std::vector<ModelInfo> models;
       size_t activeModelIndex = 0;  // Index of the active model; resolved at parse time
 

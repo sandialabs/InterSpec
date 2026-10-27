@@ -64,6 +64,9 @@
   <message id="lcw-fetch-models">Fetch models</message>
   <message id="lcw-fetching">Fetching&#8230;</message>
   <message id="lcw-token-warn">Token looks unset &#8212; paste your key, or fetch / enter models manually.</message>
+  <message id="lcw-banner">Banner text (optional)</message>
+  <message id="lcw-banner-ph">e.g. Internal server &#8212; do not enter sensitive data</message>
+  <message id="lcw-banner-tip">Short note shown above the assistant&#8217;s input field while this provider is active. Leave blank for none.</message>
 
   <!-- Fetch results -->
   <message id="lcw-fetch-found">Found {1} models &#183; names only (capabilities not provided by the API)</message>

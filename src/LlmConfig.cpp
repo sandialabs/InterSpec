@@ -624,6 +624,10 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
           provider.apiEndpoint = XmlUtils::get_string_node_value( provNode, "ApiEndpoint" );
           provider.bearerToken = XmlUtils::get_string_node_value( provNode, "BearerToken" );
 
+          // Optional banner text to show above the assistant's input field.
+          provider.banner = SpecUtils::xml_value_str( XML_FIRST_NODE( provNode, "Banner" ) );
+          SpecUtils::trim( provider.banner );
+
           // Check "active" attribute on provider
           const rapidxml::xml_attribute<char> * const activeProvAttr = XML_FIRST_ATTRIB( provNode, "active" );
           string active_str = SpecUtils::xml_value_str( activeProvAttr );
@@ -991,7 +995,9 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
     "         openai_responses - the newer OpenAI Responses API (/v1/responses).\n"
     "         anthropic        - the native Anthropic Messages API (/v1/messages); auth via x-api-key.\n"
     "       If apiFormat is omitted it is auto-detected from the endpoint URL (api.anthropic.com or a\n"
-    "       path ending in /messages -> anthropic; ending in /responses -> openai_responses; else openai_chat). " );
+    "       path ending in /messages -> anthropic; ending in /responses -> openai_responses; else openai_chat).\n\n"
+    "       The optional <Banner> child element of <ApiProvider> is short, plain text shown above the\n"
+    "       assistant's input field while that provider is active (e.g. a usage notice). " );
 
   append_comment( llmApi,
     " <Model> attributes (all optional unless noted):\n"
@@ -1044,6 +1050,9 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 
     XmlUtils::append_string_node( provNode, "ApiEndpoint", prov.apiEndpoint );
     XmlUtils::append_string_node( provNode, "BearerToken", prov.bearerToken );
+
+    if( !prov.banner.empty() )
+      XmlUtils::append_string_node( provNode, "Banner", prov.banner );
 
     for( size_t mi = 0; mi < prov.models.size(); ++mi )
     {
