@@ -16,6 +16,7 @@
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakModel.h"
@@ -2255,7 +2256,18 @@ void add_peak_info_to_json(
 
   peak_json["observed_counts"] = peak.observedCounts;
   peak_json["observed_counts_uncert"] = peak.observedUncert;
-  peak_json["observed_cps"] = peak.cps;
+
+  // The rate the fit used - background-subtracted, like observed_counts - and the gross peak rate.
+  //  The uncertainty is the counting statistics only (observedUncert may include the DRF's).
+  if( peak.liveTime > 0.0 )
+  {
+    const double live_time = peak.liveTime;
+    const double bkg_uncert = (peak.backgroundCounts > 0.0f) ? peak.backgroundCountsUncert : 0.0;
+    peak_json["observed_cps"] = LlmTools::compact_rate( peak.observedCounts / live_time );
+    peak_json["observed_cps_uncert"] = LlmTools::compact_rate(
+                    sqrt( peak.countsUncert*peak.countsUncert + bkg_uncert*bkg_uncert ) / live_time );
+    peak_json["gross_cps"] = LlmTools::compact_rate( peak.cps );
+  }//if( we know the live time )
   peak_json["predicted_counts"] = peak.expectedCounts;
   peak_json["num_sigma_off"] = peak.numSigmaOff;
   peak_json["observed_over_predicted"] = peak.observedOverExpected;

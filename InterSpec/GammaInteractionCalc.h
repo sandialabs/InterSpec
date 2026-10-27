@@ -509,6 +509,9 @@ struct PeakDetail
   double energy, decayParticleEnergy, fwhm;
   /** counts=peak.peakArea(); countsUncert=peak.peakAreaUncert();  cps=peak.peakArea()/LiveTime*/
   double counts, countsUncert, cps, cpsUncert;
+
+  /** Live time (seconds) of the spectrum the peak is from. */
+  double liveTime = 0.0;
   double expectedCounts, observedCounts, observedUncert, numSigmaOff;
   double observedOverExpected, observedOverExpectedUncert;
   //float modelInto4Pi, modelInto4PiCps;
@@ -1610,6 +1613,16 @@ public:
    */
   double fepWindowKeV( const double energy,
                        const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** The optical depth of a material shielding layer, for a point source's full-energy peak at
+   `energy` (keV): `chord` times the FEP survival-removal coefficient (in-window Compton credit and
+   Rayleigh deflection loss; see #fep_survival_removal_coefficient), with the window from
+   #fepWindowKeV.  The ONE rule the fit, the cascade functors, and the reported per-peak values
+   (#energy_chi_contributions) all use, so what is reported is what was minimised.
+   */
+  template<typename T>
+  T pointLayerOpticalDepth( const Material *material, const double energy, const T &chord,
+                            const std::vector<std::pair<double,double>> &energie_widths ) const;
 
   /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available. */
   static constexpr double sm_default_fep_window_keV = 1.0;

@@ -334,8 +334,18 @@ struct CurrieMdaResult
    \sa CurrieMdaInput::detection_probability
    */
   float upper_limit;
-  
-  
+
+
+  /** Chi2 of the side-channel counts about the fitted straight-line continuum (`continuum_eqn`),
+   with Poisson variances (at least 1), and its degrees of freedom (number of side channels - 2).
+   A large chi2/dof means the continuum is not a straight line there - e.g., a Compton edge or a
+   nearby peak in a side band - so the continuum under the peak region, and everything derived from
+   it, is unreliable.  Zero with zero dof when there are no side channels.
+   */
+  double side_channel_chi2;
+  int side_channel_dof;
+
+
   /** Default constructor that just zeros everything out. */
   CurrieMdaResult();
   

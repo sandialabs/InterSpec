@@ -23,9 +23,13 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
+#include <tuple>
 #include <string>
 #include <fstream>
+#include <variant>
 #include <iostream>
+#include <algorithm>
 
 #include <Wt/Utils.h>
 #include <Wt/WApplication.h>
@@ -265,8 +269,11 @@ BOOST_FIXTURE_TEST_CASE( test_escape_peak_check_in_range_peaks, InterSpecTestFix
     }
 
     // Check potential energies are calculated correctly
-    BOOST_CHECK_CLOSE( result.potentialSingleEscapePeakEnergy, 2087.24 - 510.9989, 0.1 );
-    BOOST_CHECK_CLOSE( result.potentialDoubleEscapePeakEnergy, 2087.24 - 2*510.9989, 0.1 );
+    BOOST_REQUIRE( result.potentialSingleEscapePeakEnergy.has_value() );
+    BOOST_REQUIRE( result.potentialDoubleEscapePeakEnergy.has_value() );
+    BOOST_CHECK_CLOSE( *result.potentialSingleEscapePeakEnergy, 2087.24 - 510.9989, 0.1 );
+    BOOST_CHECK_CLOSE( *result.potentialDoubleEscapePeakEnergy, 2087.24 - 2*510.9989, 0.1 );
+    BOOST_CHECK( !result.belowPairProductionThreshold );
     BOOST_CHECK_CLOSE( result.potentialParentPeakSingleEscape, 2087.24 + 510.9989, 0.1 );
     BOOST_CHECK_CLOSE( result.potentialParentPeakDoubleEscape, 2087.24 + 2*510.9989, 0.1 );
   }
@@ -386,8 +393,10 @@ BOOST_FIXTURE_TEST_CASE( test_escape_peak_potential_energies, InterSpecTestFixtu
   AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, m_interspec );
 
   // Verify potential energy calculations
-  BOOST_CHECK_CLOSE( result.potentialSingleEscapePeakEnergy, test_energy - electron_rest_mass, 0.01 );
-  BOOST_CHECK_CLOSE( result.potentialDoubleEscapePeakEnergy, test_energy - 2*electron_rest_mass, 0.01 );
+  BOOST_REQUIRE( result.potentialSingleEscapePeakEnergy.has_value() );
+  BOOST_REQUIRE( result.potentialDoubleEscapePeakEnergy.has_value() );
+  BOOST_CHECK_CLOSE( *result.potentialSingleEscapePeakEnergy, test_energy - electron_rest_mass, 0.01 );
+  BOOST_CHECK_CLOSE( *result.potentialDoubleEscapePeakEnergy, test_energy - 2*electron_rest_mass, 0.01 );
   BOOST_CHECK_CLOSE( result.potentialParentPeakSingleEscape, test_energy + electron_rest_mass, 0.01 );
   BOOST_CHECK_CLOSE( result.potentialParentPeakDoubleEscape, test_energy + 2*electron_rest_mass, 0.01 );
 }
@@ -436,7 +445,7 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
 
       BOOST_CHECK_MESSAGE( info.sumType == expected_type,
                           description << ": Expected sum type " << AnalystChecks::to_string(expected_type)
-                          << " but got " << AnalystChecks::to_string(info.sumType) );
+                          << " but got " << AnalystChecks::to_string(info.sumType) << " (" << info.reason << ")" );
 
       BOOST_REQUIRE_MESSAGE( info.firstPeak && info.secondPeak,
                             description << ": Contributing peaks should be present" );
@@ -504,12 +513,13 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
       {
         const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
 
-        // Could be CascadeSum or Unknown depending on Ba-133 coincidence data
-        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::CascadeSum) ||
-                               (info.sumType == AnalystChecks::SumPeakType::Unknown);
+        // 356 + 81 keV is a Ba-133 cascade, but this spectrum was simulated with random summing only
+        //  (at 53% dead time), which accounts for nearly all of the 437 keV rate.
+        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::RandomSum) ||
+                                (info.sumType == AnalystChecks::SumPeakType::CascadeAndRandomSum);
         BOOST_CHECK_MESSAGE( valid_type,
-                            "Test 5a: Expected CascadeSum or Unknown (no distance), got "
-                            << AnalystChecks::to_string(info.sumType) );
+                            "Test 5a: Expected RandomSum or CascadeAndRandomSum (no distance), got "
+                            << AnalystChecks::to_string(info.sumType) << " - " << info.reason );
 
         if( info.firstPeak && info.secondPeak )
         {
@@ -542,12 +552,12 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
       {
         const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
 
-        // Should get same result as no distance - CascadeSum or Unknown
-        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::CascadeSum) ||
-                               (info.sumType == AnalystChecks::SumPeakType::Unknown);
+        // Should get same result as no distance
+        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::RandomSum) ||
+                                (info.sumType == AnalystChecks::SumPeakType::CascadeAndRandomSum);
         BOOST_CHECK_MESSAGE( valid_type,
-                            "Test 5b: Expected CascadeSum or Unknown (5 cm), got "
-                            << AnalystChecks::to_string(info.sumType) );
+                            "Test 5b: Expected RandomSum or CascadeAndRandomSum (5 cm), got "
+                            << AnalystChecks::to_string(info.sumType) << " - " << info.reason );
 
         if( info.firstPeak && info.secondPeak )
         {
@@ -580,8 +590,9 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
         const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
 
         // Should NOT be CascadeSum at this distance
-        BOOST_CHECK_MESSAGE( info.sumType != AnalystChecks::SumPeakType::CascadeSum,
-                            "Test 5c: At 100 cm, should NOT be CascadeSum, got "
+        BOOST_CHECK_MESSAGE( (info.sumType != AnalystChecks::SumPeakType::CascadeSum)
+                             && (info.sumType != AnalystChecks::SumPeakType::CascadeAndRandomSum),
+                            "Test 5c: At 100 cm, should NOT be a cascade sum, got "
                             << AnalystChecks::to_string(info.sumType) );
 
         // If detected as a sum peak, should be RandomSum or Unknown
@@ -1036,3 +1047,462 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
                       << " skipped for missing spectrum files)" );
   BOOST_CHECK_GT( num_cases, 0 );
 }//test_beta_continuum_case_manifest
+
+
+namespace
+{
+  /** Loads a spectrum from `test_data/AnalystTests/` as the foreground, and optionally another as
+   the background.  (Not `userOpenFileFromFilesystem`, which may ask if a second file is a background.) */
+  shared_ptr<SpecMeas> load_analyst_test_spectrum( InterSpec * const interspec, const std::string &filename,
+                                                   const std::string &background_filename = "" )
+  {
+    const auto load = [interspec]( const std::string &name, const SpecUtils::SpectrumType type ) -> shared_ptr<SpecMeas> {
+      const string path = SpecUtils::append_path( g_test_file_dir, "AnalystTests/" + name );
+      BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Missing test file " << path );
+
+      shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+      BOOST_REQUIRE( meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+      BOOST_REQUIRE( !meas->sample_numbers().empty() );
+
+      interspec->setSpectrum( meas, { *meas->sample_numbers().begin() }, type, {} );
+      Wt::WApplication::instance()->processEvents();
+      return meas;
+    };
+
+    shared_ptr<SpecMeas> foreground = load( filename, SpecUtils::SpectrumType::Foreground );
+    if( !background_filename.empty() )
+      load( background_filename, SpecUtils::SpectrumType::Background );
+    return foreground;
+  }//load_analyst_test_spectrum(...)
+
+
+  // NSDD "Flavor of the Month" January 2025 drill (LA-UR-24-33222): an unshielded Pb-203 HPGe
+  //  spectrum (8192 channels, 6.6% dead time), with Tl K x-rays, 279.2, 401.3 and 680.5 keV lines.
+  const char * const sm_q567_file = "NSDD_2025Jan_Q567_Pb203_HPGe.CHN";
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_characteristic_gammas_of_gammaless_nuclides )
+{
+  set_data_dir();
+
+  // SandiaDecay lists a zero-rate 511 keV entry for every nuclide; for one with no photons at all
+  //  that used to come out as its "characteristic" line.
+  for( const char * const nuc : { "H3", "P32", "C14", "S35" } )
+  {
+    const vector<float> gammas = AnalystChecks::get_characteristic_gammas( nuc );
+    BOOST_CHECK_MESSAGE( gammas.empty(), nuc << " should have no characteristic gammas, got " << gammas.size()
+                         << (gammas.empty() ? string() : (" starting with " + std::to_string(gammas[0]))) );
+  }
+
+  const vector<float> cs137 = AnalystChecks::get_characteristic_gammas( "Cs137" );
+  BOOST_REQUIRE( !cs137.empty() );
+  BOOST_CHECK( std::any_of( begin(cs137), end(cs137), []( const float e ){ return fabs(e - 661.66f) < 0.5f; } ) );
+
+  // A source's only gamma is characteristic of it, however weak (Po210: 803 keV in 1E-5 of decays)
+  const vector<float> po210 = AnalystChecks::get_characteristic_gammas( "Po210" );
+  BOOST_CHECK_MESSAGE( std::any_of( begin(po210), end(po210), []( const float e ){ return fabs(e - 803.1f) < 0.5f; } ),
+                       "Po210 should have its 803 keV line as characteristic" );
+
+  // The importance helper on photons that are never emitted
+  BOOST_CHECK( AnalystChecks::cacl_estimated_gamma_importance( { {511.0f, 0.0f} } ).empty() );
+  const vector<tuple<float,float,float>> one = AnalystChecks::cacl_estimated_gamma_importance( { {511.0f, 0.0f}, {100.0f, 2.0f} } );
+  BOOST_REQUIRE_EQUAL( one.size(), 1 );
+  BOOST_CHECK_CLOSE( std::get<2>(one[0]), 1.0f, 1.0E-4 );
+}//test_characteristic_gammas_of_gammaless_nuclides
+
+
+BOOST_FIXTURE_TEST_CASE( test_positron_emitters_for_511, InterSpecTestFixture )
+{
+  const vector<AnalystChecks::AnnihilationSource> sources = AnalystChecks::positron_emitters_for_annihilation( m_interspec );
+  BOOST_REQUIRE( !sources.empty() );
+
+  map<string,double> yields;
+  for( size_t i = 0; i < sources.size(); ++i )
+  {
+    BOOST_REQUIRE( sources[i].nuclide );
+    BOOST_CHECK_GE( sources[i].photons511PerDecay, 0.1 );
+    if( i )
+      BOOST_CHECK_GE( sources[i-1].photons511PerDecay, sources[i].photons511PerDecay );
+    yields[sources[i].nuclide->symbol] = sources[i].photons511PerDecay;
+  }
+
+  BOOST_REQUIRE( yields.count( "Na22" ) );
+  BOOST_CHECK_CLOSE( yields["Na22"], 1.8, 5.0 );
+  BOOST_REQUIRE( yields.count( "F18" ) );
+  BOOST_CHECK_CLOSE( yields["F18"], 1.93, 5.0 );
+  BOOST_CHECK( yields.count( "Ga68" ) || yields.count( "Ge68" ) );
+  BOOST_CHECK( !yields.count( "H3" ) );
+  BOOST_CHECK( !yields.count( "Cs137" ) );
+  BOOST_CHECK( !yields.count( "Cl36" ) );  // beta+ in ~1E-5 of decays
+
+  // A nuclide may have 511.0 keV (annihilation) as a characteristic line only if it is a real
+  //  positron emitter - not, e.g., Cl36, whose trace annihilation photons are its only gamma-ray-energy
+  //  photons.  (Rh106's 511.86 keV is a real gamma, so is not in this window.)
+  const vector<AnalystChecks::AnnihilationSource> any_positrons
+                                 = AnalystChecks::positron_emitters_for_annihilation( m_interspec, 1.0E-12 );
+  map<string,double> any_yields;
+  for( const AnalystChecks::AnnihilationSource &src : any_positrons )
+    any_yields[src.nuclide->symbol] = src.photons511PerDecay;
+
+  size_t num_checked = 0;
+  for( const auto &item : AnalystChecks::get_nuclides_with_characteristics_in_energy_range( 510.95, 511.05, m_interspec ) )
+  {
+    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(item) )
+      continue;
+    const string symbol = std::get<const SandiaDecay::Nuclide *>(item)->symbol;
+    num_checked += 1;
+    BOOST_CHECK_MESSAGE( any_yields.count( symbol ) && (any_yields[symbol] >= AnalystChecks::sm_min_annihilation_photons_per_decay),
+                         symbol << " has 511 keV as a characteristic line, with only "
+                         << (any_yields.count( symbol ) ? any_yields[symbol] : 0.0) << " annihilation photons per decay" );
+  }
+  BOOST_CHECK_GT( num_checked, 2 );
+
+  const vector<float> cl36 = AnalystChecks::get_characteristic_gammas( "Cl36" );
+  BOOST_CHECK( std::none_of( begin(cl36), end(cl36), []( const float e ){ return fabs(e - 511.0f) < 1.0f; } ) );
+}//test_positron_emitters_for_511
+
+
+BOOST_FIXTURE_TEST_CASE( test_expected_fwhm_checks_drf, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> meas = load_analyst_test_spectrum( m_interspec, sm_q567_file );
+  meas->setDetector( nullptr );
+
+  // The spectrum's own peaks: about 0.55 keV at 70 keV, and 0.8 keV at 279 keV.
+  string source;
+  const float fwhm_no_drf = AnalystChecks::get_expected_fwhm( 143.7, m_interspec, &source );
+  BOOST_TEST_MESSAGE( "Q567 FWHM at 143.7 keV, no DRF: " << fwhm_no_drf << " (" << source << ")" );
+  BOOST_CHECK_GT( fwhm_no_drf, 0.5f );
+  BOOST_CHECK_LT( fwhm_no_drf, 0.85f );
+  BOOST_CHECK( SpecUtils::icontains( source, "fit to" ) );
+
+  // A generic DRF, whose ~1.6 keV FWHM is twice what this detector does, is overruled by the peaks.
+  auto generic = make_shared<DetectorPeakResponse>( "Generic HPGe", "" );
+  generic->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f,
+                                          DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  generic->setFwhmCoefficients( { 1.54f, 0.264f, 0.33f }, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn );
+  meas->setDetector( generic );
+
+  const float fwhm_generic = AnalystChecks::get_expected_fwhm( 143.7, m_interspec, &source );
+  BOOST_TEST_MESSAGE( "Q567 FWHM at 143.7 keV, generic DRF: " << fwhm_generic << " (" << source << ")" );
+  BOOST_CHECK_LT( fwhm_generic, 0.9f );
+  BOOST_CHECK( SpecUtils::icontains( source, "not for this detector" ) );
+
+  // A DRF that agrees with the peaks is used as is.
+  auto matching = make_shared<DetectorPeakResponse>( "Matching HPGe", "" );
+  matching->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV, 0.0f, 0.0f,
+                                           DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  matching->setFwhmCoefficients( { 0.25f, 1.6f }, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+  meas->setDetector( matching );
+
+  const float fwhm_matching = AnalystChecks::get_expected_fwhm( 143.7, m_interspec, &source );
+  BOOST_TEST_MESSAGE( "Q567 FWHM at 143.7 keV, matching DRF: " << fwhm_matching << " (" << source << ")" );
+  BOOST_CHECK_EQUAL( source, "detector response function" );
+  BOOST_CHECK_CLOSE( fwhm_matching, matching->peakResolutionFWHM( 143.7f ), 1.0E-3 );
+
+  BOOST_CHECK_THROW( AnalystChecks::get_expected_fwhm( -100.0, m_interspec ), std::exception );
+}//test_expected_fwhm_checks_drf
+
+
+BOOST_FIXTURE_TEST_CASE( test_compton_kinematics_without_candidate, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, sm_q567_file );
+
+  // 133-146 keV is the backscatter / Compton-edge plateau of the 279.2 keV line (E_bs = 133.4,
+  //  E_edge = 145.8 keV), a broad feature the peak search does not fit.
+  for( const double energy : { 133.0, 140.0, 146.0 } )
+  {
+    AnalystChecks::ComptonPeakCheckOptions options;
+    options.energy = energy;
+    const AnalystChecks::ComptonPeakCheckStatus result = AnalystChecks::compton_peak_check( options, m_interspec );
+
+    BOOST_TEST_MESSAGE( "Compton " << energy << " keV: " << AnalystChecks::to_string(result.type) << ", "
+                        << AnalystChecks::to_string(result.confidence) << " - " << result.reason );
+    BOOST_CHECK( !result.reason.empty() );
+    BOOST_REQUIRE_MESSAGE( !result.kinematicParents.empty(), "No Compton parent for " << energy << " keV" );
+
+    const AnalystChecks::ComptonKinematicParent &best = result.kinematicParents.front();
+    BOOST_CHECK_SMALL( best.parentEnergy - 279.15, 0.5 );
+    BOOST_CHECK_CLOSE( best.backscatterEnergy, 133.4, 0.2 );
+    BOOST_CHECK_CLOSE( best.comptonEdgeEnergy, 145.8, 0.2 );
+    BOOST_CHECK( best.feature != AnalystChecks::ComptonScatterType::None );
+    BOOST_CHECK_GE( static_cast<int>(best.confidence), static_cast<int>(AnalystChecks::ComptonScatterConfidence::Likely) );
+    if( result.noCandidatePeak )
+    {
+      BOOST_CHECK( result.type != AnalystChecks::ComptonScatterType::None );
+      BOOST_CHECK_GE( static_cast<int>(result.confidence), static_cast<int>(AnalystChecks::ComptonScatterConfidence::Likely) );
+    }
+  }//for( energies )
+
+  // Nothing scatters to 600 keV: it is above every backscatter region, and at no Compton edge.
+  AnalystChecks::ComptonPeakCheckOptions options;
+  options.energy = 600.0;
+  const AnalystChecks::ComptonPeakCheckStatus none = AnalystChecks::compton_peak_check( options, m_interspec );
+  BOOST_CHECK( none.kinematicParents.empty() );
+  BOOST_CHECK( none.noCandidatePeak );
+  BOOST_CHECK( !none.reason.empty() );
+}//test_compton_kinematics_without_candidate
+
+
+BOOST_FIXTURE_TEST_CASE( test_escape_check_thresholds_and_xrays, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, sm_q567_file );
+
+  AnalystChecks::EscapePeakCheckOptions options;
+
+  // 170 keV is below the pair-production threshold; its would-be S.E. parent, 681 keV, is a real
+  //  Pb-203 line, but is also below the threshold.
+  {
+    options.energy = 170.0;
+    const AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, m_interspec );
+    BOOST_CHECK( result.belowPairProductionThreshold );
+    BOOST_CHECK( !result.potentialSingleEscapePeakEnergy.has_value() );
+    BOOST_CHECK( !result.potentialDoubleEscapePeakEnergy.has_value() );
+    BOOST_CHECK( !result.parentPeak.has_value() );
+    BOOST_REQUIRE( result.peakAtPotentialSingleEscapeParent.has_value() );
+    BOOST_CHECK_SMALL( result.peakAtPotentialSingleEscapeParent->peak->mean() - 680.6, 1.5 );
+    BOOST_REQUIRE( !result.notes.empty() );
+    bool mentions_threshold = false;
+    for( const string &note : result.notes )
+      mentions_threshold = mentions_threshold || SpecUtils::icontains( note, "1022" );
+    BOOST_CHECK( mentions_threshold );
+    BOOST_CHECK( SpecUtils::icontains( result.detectorMaterialAssumed, "Ge" ) );
+  }
+
+  // 391.4 keV is where a Ge K-alpha escape of the 401.3 keV line would be - at 401 keV the escape is
+  //  far too rare to make a peak, so it is listed but not plausible.
+  {
+    options.energy = 391.44;
+    const AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, m_interspec );
+    bool found_ge_ka = false;
+    for( const AnalystChecks::XrayEscapeInfo &x : result.xrayEscapes )
+    {
+      if( (x.element == "Ge") && (x.line == "Ka") )
+      {
+        found_ge_ka = true;
+        BOOST_REQUIRE( x.parentPeak.has_value() );
+        BOOST_CHECK_SMALL( x.parentPeak->peak->mean() - 401.32, 1.0 );
+        BOOST_CHECK( !x.plausible );
+        BOOST_CHECK_LT( x.maxEscapeFraction, 0.01 );
+      }
+    }//for( x-ray escapes )
+    BOOST_CHECK( found_ge_ka );
+  }
+
+  // 350.02 keV (a Tl K-alpha + 279 keV sum) is 10.98 keV - a Ge K-beta escape - below the 361.6 keV
+  //  sum peak, but is bigger than it, so it is not that peak's escape.
+  {
+    options.energy = 350.02;
+    const AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, m_interspec );
+    BOOST_CHECK( result.belowPairProductionThreshold );
+    BOOST_REQUIRE( !result.xrayEscapes.empty() );
+    for( const AnalystChecks::XrayEscapeInfo &x : result.xrayEscapes )
+      BOOST_CHECK_MESSAGE( !x.plausible, "350.02 keV should not be a plausible " << x.element << " " << x.line << " escape" );
+  }
+}//test_escape_check_thresholds_and_xrays
+
+
+BOOST_FIXTURE_TEST_CASE( test_sum_check_xray_cascade_and_pileup, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, sm_q567_file );
+
+  // The sum checks need the peaks attributed to Pb203.
+  AnalystChecks::FitPeaksForNuclideOptions fit_options;
+  fit_options.sources = { "Pb203" };
+  const AnalystChecks::FitPeaksForNuclideStatus fit_status = AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec );
+  BOOST_REQUIRE( !fit_status.fitPeaks.empty() );
+
+  const auto check = [this]( const double energy ) -> AnalystChecks::SumPeakCheckStatus {
+    AnalystChecks::SumPeakCheckOptions options;
+    options.energy = energy;
+    const AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+    if( result.sumPeakInfo )
+      BOOST_TEST_MESSAGE( "Sum " << energy << " keV: " << AnalystChecks::to_string(result.sumPeakInfo->sumType)
+                          << " - " << result.sumPeakInfo->reason << "; tau=" << (result.pileupTau ? *result.pileupTau : -1.0)
+                          << " (" << result.pileupTauSource << ")" );
+    return result;
+  };
+
+  // A line can only sum with itself randomly: one Pb-203 decay emits at most one 279 keV gamma.
+  {
+    const AnalystChecks::SumPeakCheckStatus result = check( 558.34 );
+    BOOST_REQUIRE( result.sumPeakInfo.has_value() );
+    BOOST_CHECK( result.sumPeakInfo->sumType == AnalystChecks::SumPeakType::RandomSum );
+    BOOST_CHECK( !result.sumPeakInfo->reason.empty() );
+  }
+
+  // Tl K x-rays (from the electron capture) are emitted with the 279 keV gamma.
+  for( const double energy : { 350.02, 352.06, 361.61 } )
+  {
+    const AnalystChecks::SumPeakCheckStatus result = check( energy );
+    BOOST_REQUIRE_MESSAGE( result.sumPeakInfo.has_value(), "No sum found at " << energy << " keV" );
+    const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+    BOOST_CHECK_MESSAGE( (info.sumType == AnalystChecks::SumPeakType::CascadeSum)
+                         || (info.sumType == AnalystChecks::SumPeakType::CascadeAndRandomSum),
+                         energy << " keV: expected a cascade sum, got " << AnalystChecks::to_string(info.sumType)
+                         << " - " << info.reason );
+    BOOST_CHECK( info.cascadeNuclide.has_value() && (*info.cascadeNuclide == "Pb203") );
+    BOOST_CHECK( info.coincidenceType.has_value() && (*info.coincidenceType == "x-ray-gamma") );
+    BOOST_CHECK( info.coincidenceFraction.has_value() && (*info.coincidenceFraction > 0.01) );
+  }//for( Tl K x-ray + 279 keV sums )
+
+  // Two K x-rays in one decay - the EC K-capture's, and the 279 keV transition's K-conversion's -
+  //  sum to 143.7 keV (Ka2 70.83 + Ka1 72.87).  There is no fitted peak there, so no observed rate.
+  {
+    const AnalystChecks::SumPeakCheckStatus result = check( 143.7 );
+    BOOST_REQUIRE( result.sumPeakInfo.has_value() );
+    const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+    BOOST_CHECK_MESSAGE( info.sumType == AnalystChecks::SumPeakType::CascadeSum,
+                         "143.7 keV: expected CascadeSum, got " << AnalystChecks::to_string(info.sumType) << " - " << info.reason );
+    BOOST_CHECK( info.coincidenceType.has_value() && (*info.coincidenceType == "x-ray-x-ray") );
+    BOOST_REQUIRE( info.coincidenceFraction.has_value() );
+    // ~0.78 EC-K x 0.13 K-conversions, x 2 x 0.49 x 0.29 (Ka1, Ka2 per vacancy)
+    BOOST_CHECK_GT( *info.coincidenceFraction, 0.015 );
+    BOOST_CHECK_LT( *info.coincidenceFraction, 0.05 );
+    BOOST_CHECK( !info.observedSumCps.has_value() );
+    BOOST_CHECK( info.expectedRandomSumCps.has_value() );
+    BOOST_CHECK( SpecUtils::icontains( info.reason, "no fitted peak" ) );
+    BOOST_CHECK( !SpecUtils::icontains( info.reason, "could not be" ) );
+  }
+
+  // The pile-up constant from the 558 keV self-sum: 0.46 cps / (909 cps)^2 ~ 5.6E-7 s.
+  {
+    const AnalystChecks::SumPeakCheckStatus result = check( 352.06 );
+    BOOST_REQUIRE( result.pileupTau.has_value() );
+    BOOST_CHECK( !result.pileupTauIsUpperBound );
+    BOOST_CHECK_GT( *result.pileupTau, 0.5*5.6E-7 );
+    BOOST_CHECK_LT( *result.pileupTau, 2.0*5.6E-7 );
+    BOOST_REQUIRE( result.sumPeakInfo && result.sumPeakInfo->expectedRandomSumCps );
+    BOOST_CHECK_GT( *result.sumPeakInfo->expectedRandomSumCps, 0.3 );
+    BOOST_CHECK_LT( *result.sumPeakInfo->expectedRandomSumCps, 3.0 );
+  }
+}//test_sum_check_xray_cascade_and_pileup
+
+
+BOOST_FIXTURE_TEST_CASE( test_fit_user_peak_probe_reports_why, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, sm_q567_file );
+
+  // On the 279 keV backscatter plateau there is no peak the automated thresholds accept; a probe
+  //  says why, and gives what the data show there.
+  AnalystChecks::FitPeakOptions options;
+  options.energy = 143.7;
+  options.doNotAddToAnalysisPeaks = true;
+  const AnalystChecks::FitPeakStatus probe = AnalystChecks::fit_user_peak( options, m_interspec );
+  BOOST_CHECK( !probe.significant );
+  BOOST_REQUIRE( probe.diagnostic.has_value() );
+  BOOST_TEST_MESSAGE( "Probe at 143.7 keV: " << probe.diagnostic->reason << "; fixed fit "
+                      << probe.diagnostic->fixedFitArea << " +- " << probe.diagnostic->fixedFitAreaUncert );
+  BOOST_CHECK( !probe.diagnostic->reason.empty() );
+  BOOST_CHECK( probe.diagnostic->fixedFitValid );
+  BOOST_CHECK_GT( probe.diagnostic->fixedFitAreaUncert, 0.0 );
+  BOOST_CHECK_GT( probe.diagnostic->expectedFwhm, 0.4 );
+  BOOST_CHECK_LT( probe.diagnostic->expectedFwhm, 1.0 );
+  BOOST_CHECK( m_interspec->measurment( SpecUtils::SpectrumType::Foreground )->peaks(
+                 m_interspec->displayedSamples( SpecUtils::SpectrumType::Foreground ) )->empty() );
+
+  // Without the probe flag it is an error, whose message says why.
+  options.doNotAddToAnalysisPeaks = false;
+  try
+  {
+    AnalystChecks::fit_user_peak( options, m_interspec );
+    BOOST_CHECK_MESSAGE( false, "Expected adding a peak at 143.7 keV to fail" );
+  }catch( std::exception &e )
+  {
+    const string msg = e.what();
+    BOOST_CHECK( SpecUtils::icontains( msg, "Could not fit peak" ) );
+    BOOST_CHECK( SpecUtils::icontains( msg, "DoNotAddToAnalysisPeaks" ) );
+  }
+
+  // A real peak is still just fit.
+  options.energy = 279.15;
+  options.doNotAddToAnalysisPeaks = true;
+  const AnalystChecks::FitPeakStatus real = AnalystChecks::fit_user_peak( options, m_interspec );
+  BOOST_CHECK( real.significant );
+  BOOST_REQUIRE( real.fitPeak );
+  BOOST_CHECK_SMALL( real.fitPeak->mean() - 279.15, 0.3 );
+}//test_fit_user_peak_probe_reports_why
+
+
+// A candidate peak near a strong line's backscatter peak, when a weaker (here spurious) peak matches
+//  its energy even better, is judged against the parent that could have produced it.  From the NSDD
+//  January 2025 drill: Pb-203 behind ~3 cm Pb on NaI, where add-peaks-for-source fits a 5-sigma
+//  "279 keV" peak (transmission ~4E-7, so not real), and 190 keV is the 681 keV line's backscatter
+//  peak (E_bs = 185.8 keV).
+BOOST_FIXTURE_TEST_CASE( test_compton_candidate_uses_plausible_parent, InterSpecTestFixture )
+{
+  load_analyst_test_spectrum( m_interspec, "NSDD_2025Jan_Q4_Pb203_NaI.CHN", "NSDD_2025Jan_Q4_Pb203_NaI_Background.CHN" );
+
+  AnalystChecks::FitPeaksForNuclideOptions fit_options;
+  fit_options.sources = { "Pb203" };
+  const AnalystChecks::FitPeaksForNuclideStatus fit_status = AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec );
+  BOOST_REQUIRE( !fit_status.fitPeaks.empty() );
+
+  AnalystChecks::ComptonPeakCheckOptions options;
+  options.energy = 190.0;
+  const AnalystChecks::ComptonPeakCheckStatus result = AnalystChecks::compton_peak_check( options, m_interspec );
+
+  BOOST_CHECK( !result.reason.empty() );
+  BOOST_TEST_MESSAGE( "Compton 190 keV (Q4 NaI): " << AnalystChecks::to_string(result.type) << ", "
+                      << AnalystChecks::to_string(result.confidence) << ", noCandidate=" << result.noCandidatePeak
+                      << ", parent=" << (result.parentInfo ? result.parentInfo->parentEnergy : -1.0)
+                      << " - " << result.reason );
+
+  BOOST_REQUIRE( !result.kinematicParents.empty() );
+  BOOST_CHECK_SMALL( result.kinematicParents.front().parentEnergy - 680.5, 5.0 );
+
+  // The verdict is about the 681 keV line, not the spurious 279 keV peak the candidate outweighs
+  BOOST_REQUIRE_MESSAGE( !result.noCandidatePeak, "Expected a fitted candidate peak near 190 keV" );
+  BOOST_REQUIRE( result.parentInfo.has_value() );
+  BOOST_CHECK_SMALL( result.parentInfo->parentEnergy - 680.5, 5.0 );
+  BOOST_CHECK( result.type != AnalystChecks::ComptonScatterType::None );
+  BOOST_CHECK( result.confidence != AnalystChecks::ComptonScatterConfidence::No );
+  BOOST_CHECK( !SpecUtils::icontains( result.reason, "larger than its kinematic parent" ) );
+
+  // A verdict below VeryLikely names the criteria that held it there
+  if( result.confidence != AnalystChecks::ComptonScatterConfidence::VeryLikely )
+    BOOST_CHECK_MESSAGE( SpecUtils::icontains( result.reason, "rather than VeryLikely because of:" ), result.reason );
+}//test_compton_candidate_uses_plausible_parent
+
+
+// A real line at twice a line's energy is not that line's random sum, and must not be taken as a
+//  self-sum peak when measuring the pile-up rate: Eu-152 has a real 688.67 keV line at 2 x 344.28 keV.
+BOOST_FIXTURE_TEST_CASE( test_sum_check_real_line_at_twice_energy, InterSpecTestFixture )
+{
+  const string path = SpecUtils::append_path( g_test_file_dir,
+                          "../analysis_tests/AEGIS_Eu152_surface_contamination.n42_20230622T113239.276178.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Missing test file " << path );
+  shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+  BOOST_REQUIRE( meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+  BOOST_REQUIRE( !meas->sample_numbers().empty() );
+  m_interspec->setSpectrum( meas, meas->displayedSampleNumbers().empty() ? set<int>{ *meas->sample_numbers().begin() }
+                                                                          : meas->displayedSampleNumbers(),
+                            SpecUtils::SpectrumType::Foreground, {} );
+  Wt::WApplication::instance()->processEvents();
+
+  AnalystChecks::FitPeaksForNuclideOptions fit_options;
+  fit_options.sources = { "Eu152" };
+  AnalystChecks::fit_peaks_for_nuclides( fit_options, m_interspec );
+
+  AnalystChecks::SumPeakCheckOptions options;
+  options.energy = 688.67;
+  const AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+  if( result.sumPeakInfo )
+  {
+    BOOST_TEST_MESSAGE( "Sum 688.67 keV (Eu152): " << AnalystChecks::to_string(result.sumPeakInfo->sumType)
+                        << " - " << result.sumPeakInfo->reason );
+    BOOST_CHECK_MESSAGE( result.sumPeakInfo->sumType != AnalystChecks::SumPeakType::RandomSum,
+                         "The real Eu152 688.67 keV line was called a random sum: " << result.sumPeakInfo->reason );
+  }
+
+  // Whatever tau is, it is not "measured" from 688.67 = 2 x 344.28, so not above the dead-time bound
+  const shared_ptr<const SpecUtils::Measurement> spec = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  BOOST_REQUIRE( spec );
+  if( result.pileupTau && !result.pileupTauIsUpperBound
+      && (spec->real_time() > spec->live_time()) && (spec->gamma_count_sum() > 0.0) )
+  {
+    BOOST_TEST_MESSAGE( "tau = " << *result.pileupTau << " (" << result.pileupTauSource << ")" );
+    BOOST_CHECK_LE( *result.pileupTau, (spec->real_time() - spec->live_time()) / spec->gamma_count_sum() );
+    BOOST_CHECK( !SpecUtils::icontains( result.pileupTauSource, "2 x 344" ) );
+  }
+}//test_sum_check_real_line_at_twice_energy

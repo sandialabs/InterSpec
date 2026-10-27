@@ -68,13 +68,14 @@ If the server is `InterSpec-mcp-stdio` (launched by your MCP client, rather than
 - `get_automated_id_results` - Results from on-board and GADRAS automated ID algorithms (may be wrong/incomplete).
 
 ### Peak Validation
-- `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent.
-- `sum_peak_check` - Check if a peak is a cascade-sum or random-sum (pile-up) peak.
+- `escape_peak_check` - Check if a peak is a single/double escape peak of a higher-energy parent (parents below 1022 keV cannot pair-produce), or a detector K x-ray escape peak (Ge for HPGe, I for NaI, ...).
+- `sum_peak_check` - Check if a peak is a cascade-sum (gamma-gamma, or EC/IC x-ray + gamma), random-sum (pile-up), or both; gives the expected random-sum rate when the pile-up rate can be measured.
+- `compton_scatter_peak_check` - Check if a peak, or a broad feature with no fitted peak, is a backscatter peak or Compton edge of a higher-energy peak.
 - `beta_continuum_check` - Deterministic check for a pure-beta-emitter (bremsstrahlung) continuum; background-subtracts the foreground and grades the net continuum shape (requires a background loaded). Returns candidate pure-beta nuclides consistent with the observed termination energy.
 - `peak_based_relative_efficiency` - Validate source ID by checking if peak areas are consistent with a smooth relative efficiency curve. Run on one nuclide at a time. See [interspec-nuclide-id](../interspec-nuclide-id/SKILL.md).
 
 ### Detection and Dose
-- `currie_mda_calc` - Minimum Detectable Activity using Currie/ISO 11929 methodology. Also checks if a peak appears present.
+- `currie_mda_calc` - Minimum Detectable Activity using Currie/ISO 11929 methodology. Also checks if a peak appears present; a `continuumWarning` means that check is unreliable there (curved continuum, Compton edge).
 - `photopeak_detection_efficiency` - Fraction of photons that contribute to a peak, accounting for shielding, distance, and detector efficiency.
 - `calculate_dose` - Gamma dose rate from a nuclide at a distance (ANSI/ANS-6.1.1-1991, AP orientation).
 

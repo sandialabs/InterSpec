@@ -749,7 +749,7 @@ Each element describes one fitted peak that the source contributes gammas to. Bu
 | `SignalCountsStr`            | string |       | |
 | `SignalCountsUncert`         | number | cnt   | |
 | `SignalCountsUncertStr`      | string |       | |
-| `PredictedCounts`            | number | cnt   | What the fitted model predicts for this peak. |
+| `PredictedCounts`            | number | cnt   | What the fitted model predicts for this peak - the same model the fit minimised, so an exactly determined fit has `ObservedOverPredicted` of 1. |
 | `PredictedNumSigmaOff`       | number | σ     | `(SignalCounts − PredictedCounts) / SignalCountsUncert`. |
 | `ObservedOverPredicted`      | number |       | `SignalCounts / PredictedCounts`. |
 | `ObservedOverPredictedUncert`| number |       | Propagated uncertainty on the ratio. |
@@ -761,7 +761,7 @@ Each element describes one fitted peak that the source contributes gammas to. Bu
 | `DrfEffFracUncertModel`      | number | 0–1   | The part of `DrfEffFracUncert` that is the response's ad hoc model envelope (regime floor, geometry-transfer envelope, near-field penalty) rather than uncertainty the DRF's own data supports.  Always ≤ `DrfEffFracUncert`; 0 for a measured-curve DRF used in its measured regime.  A value close to `DrfEffFracUncert` means the uncertainty is a statement about the model, not about the measurement. |
 | `DrfEffFracUncertModelPercentStr` | string | % | `DrfEffFracUncertModel` as a percent, for display. |
 | `DrfEffFlag`                 | string |       | Detector-efficiency validity at this energy and geometry: `ok`, `out-of-range-clamped`, `near-field-unmodeled`, `shadowed`, or `needs-mc`.  Present only when not `ok`; non-`ok` values also appear as fit warnings. |
-| `ShieldAttenuations`         | array[number] | | One factor per shielding layer (`Shieldings.Shields[]` order). |
+| `ShieldAttenuations`         | array[number] | | One factor per shielding layer (`Shieldings.Shields[]` order).  For a material layer these are the full-energy-peak survival factors the fit uses - photons Compton-scattered by small enough angles to stay in the peak are credited, and Rayleigh deflection out of the beam is charged - so they are somewhat larger than the narrow-beam `exp(-mu*x)` (most noticeably for wide, low-resolution peaks).  Generic (AN/AD) layers use the plain attenuation. |
 | `AttenuationByShieldingFactor` | number |     | Product of `ShieldAttenuations[]`. |
 | `AttenuationByAirFactor`     | number |       | Air attenuation factor between source and detector. |
 | `AttenuationTotalFactor`     | number |       | `AttenuationByShieldingFactor × AttenuationByAirFactor`. |

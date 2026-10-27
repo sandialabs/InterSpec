@@ -25,6 +25,7 @@
 
 #include <set>
 #include <cctype>
+#include <limits>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -5359,3 +5360,246 @@ BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_keeps_continuum_type )
   const json result = add_peak_ok( registry, params, fixture.m_interspec );
   BOOST_CHECK_EQUAL( result["roi"]["continuumType"].get<std::string>(), "FlatStep" );
 }//test_addAnalysisPeak_keeps_continuum_type
+
+
+BOOST_AUTO_TEST_CASE( test_compact_rate_literals )
+{
+  // Rates print with at least two significant figures, and no digits that would cost characters.
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 0.0026999999999999997 ).dump(), "0.0027" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 909.27 ).dump(), "909" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 1234.5 ).dump(), "1235" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 1.23456E-05 ).dump(), "1.2e-05" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 3.14159 ).dump(), "3.1" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 2.99999 ).dump(), "3" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 12.34 ).dump(), "12" );
+  BOOST_CHECK_EQUAL( LlmTools::compact_rate( 0.0 ).dump(), "0" );
+  BOOST_CHECK( LlmTools::compact_rate( std::numeric_limits<double>::quiet_NaN() ).is_null() );
+
+  const json j = { {"cps", LlmTools::compact_rate( 0.0026999999999999997 )} };
+  BOOST_CHECK_EQUAL( j.dump(), "{\"cps\":0.0027}" );
+}//test_compact_rate_literals
+
+
+namespace
+{
+  /** Displays a `test_data/AnalystTests/` spectrum as the foreground, with no background. */
+  void load_analyst_test_foreground( InterSpec *interspec, const std::string &filename )
+  {
+    const string path = SpecUtils::append_path( g_test_file_dir, "AnalystTests/" + filename );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Missing test file " << path );
+
+    shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
+    BOOST_REQUIRE( meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
+    BOOST_REQUIRE( !meas->sample_numbers().empty() );
+
+    interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, {} );
+    interspec->setSpectrum( meas, { *meas->sample_numbers().begin() }, SpecUtils::SpectrumType::Foreground, {} );
+    Wt::WApplication::instance()->processEvents();
+  }//load_analyst_test_foreground(...)
+
+  // NSDD January 2025 drill (LA-UR-24-33222): unshielded Pb-203 on HPGe.
+  const char * const sm_q567 = "NSDD_2025Jan_Q567_Pb203_HPGe.CHN";
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_peak_rates_compact )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_analyst_test_foreground( fixture.m_interspec, sm_q567 );
+
+  const double live_time = fixture.m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground )->live_time();
+  BOOST_REQUIRE( live_time > 0.0 );
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "get_peaks", json{ {"filter", "all"} }, fixture.m_interspec ) );
+  BOOST_REQUIRE( result.contains( "rois" ) );
+
+  size_t num_peaks = 0;
+  for( const json &roi : result["rois"] )
+  {
+    for( const json &peak : roi["peaks"] )
+    {
+      if( !peak.contains( "cps" ) )
+        continue;
+      num_peaks += 1;
+
+      // The rate is the area over the live time, compactly printed
+      const double exact = peak["amplitude"].get<double>() / live_time;
+      BOOST_CHECK_EQUAL( peak["cps"].dump(), LlmTools::compact_rate( exact ).dump() );
+      BOOST_CHECK_LE( peak["cps"].dump().size(), std::max( size_t(6), std::to_string( static_cast<long long>(exact) ).size() ) );
+      BOOST_CHECK( peak.contains( "cpsUncert" ) );
+    }
+  }//for( rois )
+  BOOST_CHECK_GT( num_peaks, 3 );
+
+  // Peaks from add_analysis_peaks_for_source carry the rate uncertainty too
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "add_analysis_peaks_for_source", json{ {"source", "Pb203"} },
+                                                         fixture.m_interspec ) );
+  BOOST_REQUIRE( result.contains( "peaks" ) && !result["peaks"].empty() );
+  for( const json &peak : result["peaks"] )
+  {
+    BOOST_CHECK( peak.contains( "cps" ) );
+    BOOST_CHECK( peak.contains( "cpsUncert" ) );
+  }
+}//test_peak_rates_compact
+
+
+BOOST_AUTO_TEST_CASE( test_no_511_for_gammaless_nuclides )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  for( const char * const nuc : { "H3", "P32" } )
+  {
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "source_photons", json{ {"source", nuc} }, fixture.m_interspec ) );
+    BOOST_CHECK_MESSAGE( !result.contains( "prominent_energies_keV" ) || result["prominent_energies_keV"].empty(),
+                         nuc << " should have no prominent energies: " << result.dump() );
+    BOOST_CHECK_MESSAGE( result["photons"]["rows"].empty(), nuc << " should have no photon rows: " << result.dump() );
+  }
+
+  // A 511 keV lookup names annihilation, and the common positron emitters, not beta emitters
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "sources_with_gammas_near_energy",
+                                                         json{ {"energy", 511.0}, {"window", 1.0} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "sources_with_gammas_near_energy(511): " << result.dump() );
+  BOOST_CHECK( result.contains( "annihilation_note" ) );
+  BOOST_REQUIRE( !result["sources"].empty() );
+
+  // Na22, the most common field cause (an instrument check source), first
+  BOOST_CHECK_EQUAL( result["sources"][0]["name"].get<string>(), "Na22" );
+
+  set<string> names;
+  bool past_emitters = false;
+  double previous_yield = std::numeric_limits<double>::infinity();
+  for( size_t i = 0; i < result["sources"].size(); ++i )
+  {
+    const json &src = result["sources"][i];
+    const string name = src["name"].get<string>();
+    names.insert( name );
+
+    // Every annihilation (511.0 keV) entry is a positron emitter, with its yield; after Na22 they
+    //  are in order of yield, then the sources with a real gamma near 511 keV, unlabelled.
+    bool has_511_0 = false;
+    for( const json &e : src["energies_keV"] )
+      has_511_0 = has_511_0 || (std::fabs( e.get<double>() - 511.0 ) < 0.05);
+
+    if( src.contains( "annihilation_511_per_decay" ) )
+    {
+      const double yield = src["annihilation_511_per_decay"].get<double>();
+      BOOST_CHECK_MESSAGE( !past_emitters, name << " is a positron emitter listed after a non-emitter" );
+      BOOST_CHECK_GE( yield, 0.1 );
+      if( i > 1 )
+        BOOST_CHECK_MESSAGE( yield <= previous_yield, name << " is out of yield order" );
+      if( i > 0 )
+        previous_yield = yield;
+    }else
+    {
+      past_emitters = true;
+      BOOST_CHECK_MESSAGE( !has_511_0, name << " lists 511.0 keV but carries no annihilation_511_per_decay" );
+    }
+  }//for( loop over sources )
+
+  BOOST_CHECK( names.count( "Na22" ) );
+  BOOST_CHECK( names.count( "F18" ) );
+  for( const char * const not_there : { "H3", "C14", "P32", "Ni63", "S35", "B11", "Si28", "Cl36" } )
+    BOOST_CHECK_MESSAGE( !names.count( not_there ), not_there << " should not be listed for 511 keV" );
+
+  // Rb82 decays by positron emission (its listed 511.9 keV is annihilation); Rh106's 511.86 keV is
+  //  a real gamma, from a beta- decay.
+  for( const json &src : result["sources"] )
+  {
+    if( src["name"].get<string>() == "Rb82" )
+      BOOST_CHECK( src.contains( "annihilation_511_per_decay" ) );
+    if( src["name"].get<string>() == "Rh106" )
+      BOOST_CHECK( !src.contains( "annihilation_511_per_decay" ) );
+  }
+}//test_no_511_for_gammaless_nuclides
+
+
+BOOST_AUTO_TEST_CASE( test_currie_roi_and_continuum_warning )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_analyst_test_foreground( fixture.m_interspec, sm_q567 );
+
+  // On the 279 keV backscatter / Compton-edge plateau: ROI of +-1.25 FWHM of this spectrum's
+  //  peaks (~0.7 keV), and a warning that the straight-line continuum does not hold there.
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "currie_mda_calc", json{ {"energy", 143.7} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "currie_mda_calc(143.7): " << result.dump() );
+  BOOST_REQUIRE( result.contains( "fwhmUsed_keV" ) );
+  const double fwhm = result["fwhmUsed_keV"].get<double>();
+  BOOST_CHECK_GT( fwhm, 0.5 );
+  BOOST_CHECK_LT( fwhm, 0.85 );
+  BOOST_CHECK( result.contains( "fwhmSource" ) );
+  const double half_width = 0.5*(result["roiUpperEnergy"].get<double>() - result["roiLowerEnergy"].get<double>());
+  BOOST_CHECK_CLOSE( half_width, 1.25*fwhm, 1.0 );
+  BOOST_CHECK( result.contains( "sideChannelChi2PerDof" ) );
+  BOOST_CHECK( result.contains( "continuumWarning" ) );
+
+  // The 85k-count 279 keV peak's tails reach the side channels: the peak is clearly there, but the
+  //  straight-line continuum is biased high, which is said, as being about the net counts.
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "currie_mda_calc", json{ {"energy", 279.15} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "currie_mda_calc(279.15): " << result.dump() );
+  BOOST_CHECK( result["peakPresentInData"].get<bool>() );
+  BOOST_CHECK_GT( result["sideChannelChi2PerDof"].get<double>(), 4.0 );
+  BOOST_REQUIRE( result.contains( "continuumWarning" ) );
+  const string warning = result["continuumWarning"].get<string>();
+  BOOST_CHECK( SpecUtils::icontains( warning, "tails" ) );
+  BOOST_CHECK( SpecUtils::icontains( warning, "279.1" ) );
+  BOOST_CHECK( SpecUtils::icontains( warning, "clearly present" ) );
+
+  // A clean, flat continuum (where the absent Pb-214 295.2 keV line would be): no warning.
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "currie_mda_calc", json{ {"energy", 295.22} }, fixture.m_interspec ) );
+  BOOST_CHECK( !result["peakPresentInData"].get<bool>() );
+  BOOST_CHECK_LT( result["sideChannelChi2PerDof"].get<double>(), 4.0 );
+  BOOST_CHECK_MESSAGE( !result.contains( "continuumWarning" ), "Unexpected warning at 295.22 keV: " << result.dump() );
+}//test_currie_roi_and_continuum_warning
+
+
+BOOST_AUTO_TEST_CASE( test_analyst_checks_json )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_analyst_test_foreground( fixture.m_interspec, sm_q567 );
+
+  // A broad Compton feature, never fit as a peak, still gets its parent
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "compton_scatter_peak_check", json{ {"energy", 140.0} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "compton_scatter_peak_check(140): " << result.dump() );
+  BOOST_CHECK( result["FeatureType"].get<string>() != "None" );
+  BOOST_CHECK( result.contains( "reason" ) );
+  BOOST_REQUIRE( result.contains( "kinematicParents" ) && !result["kinematicParents"].empty() );
+  BOOST_CHECK_SMALL( result["kinematicParents"][0]["parentEnergy_keV"].get<double>() - 279.15, 0.5 );
+  // The per-parent rating is the region's, named so it isn't read as a second verdict
+  BOOST_CHECK( result["kinematicParents"][0].contains( "regionConfidence" ) );
+  BOOST_CHECK( !result["kinematicParents"][0].contains( "confidence" ) );
+
+  // No negative escape energies; the threshold is stated
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "escape_peak_check", json{ {"energy", 170.0} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "escape_peak_check(170): " << result.dump() );
+  BOOST_CHECK( !result.contains( "potentialSingleEscapePeakEnergy" ) );
+  BOOST_CHECK( !result.contains( "potentialDoubleEscapePeakEnergy" ) );
+  BOOST_CHECK( result["belowPairProductionThreshold"].get<bool>() );
+  BOOST_CHECK( result.contains( "notes" ) && !result["notes"].empty() );
+  BOOST_CHECK( result.contains( "xrayEscapes" ) );
+
+  // A line summing with itself is a random sum, whatever the dead time
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "sum_peak_check", json{ {"energy", 558.34} }, fixture.m_interspec ) );
+  BOOST_TEST_MESSAGE( "sum_peak_check(558.34): " << result.dump() );
+  BOOST_REQUIRE( result.contains( "sumPeakInfo" ) );
+  BOOST_CHECK_EQUAL( result["sumPeakInfo"]["sumType"].get<string>(), "RandomSum" );
+  BOOST_CHECK( result["sumPeakInfo"].contains( "reason" ) );
+
+  // A probe where no peak passes the automated thresholds returns a measurement, not an error
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "add_analysis_peak",
+                                    json{ {"energy", 143.7}, {"DoNotAddToAnalysisPeaks", true} }, fixture.m_interspec ) );
+  result.erase( "_visuals" );
+  BOOST_TEST_MESSAGE( "add_analysis_peak probe(143.7): " << result.dump() );
+  BOOST_CHECK( !result.contains( "error" ) );
+  BOOST_CHECK_EQUAL( result["status"].get<string>(), "not_significant" );
+  BOOST_CHECK( result.contains( "reason" ) );
+  BOOST_CHECK( result.contains( "fixedPositionFit" ) );
+}//test_analyst_checks_json

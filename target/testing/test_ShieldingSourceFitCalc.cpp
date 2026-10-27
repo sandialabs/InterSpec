@@ -2680,6 +2680,75 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
       }
     }
   }//for( on-axis, off-axis )
+
+  // Cases I-J: a point source behind a material shield, with peak widths from an Fe-shield HPGe
+  //  and a Pb-shield NaI.  The fit credits the in-window forward Compton scatter (and charges the
+  //  Rayleigh deflection loss) through the shield; the reported values must use the same
+  //  coefficient, or an exactly-determined fit reports observed/predicted far from 1 - several
+  //  percent on NaI peak widths.
+  {
+    const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+    BOOST_REQUIRE( matdb );
+
+    struct MaterialCase
+    {
+      const char *label;
+      const char *material;
+      double thickness;
+      const char *nuclide;
+      vector<double> energies;
+      double fwhm_frac_at_662;  // peak FWHM / energy at 662 keV, scaled as sqrt(E)
+    };
+
+    const MaterialCase cases[] = {
+      { "Ba133+1cm-Fe-HPGe", "Fe (iron)", 1.0*PhysicalUnits::cm, "Ba133", { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 }, 0.003 },
+      { "Pb203+2cm-Pb-NaI", "Pb (lead)", 2.0*PhysicalUnits::cm, "Pb203", { 401.320, 680.515 }, 0.07 }
+    };
+
+    for( const MaterialCase &c : cases )
+    {
+      const std::shared_ptr<const Material> material = matdb->material( c.material );
+      BOOST_REQUIRE_MESSAGE( material, "Missing material " << c.material );
+
+      ShieldingSourceFitCalc::ShieldingInfo shield;
+      shield.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+      shield.m_isGenericMaterial = false;
+      shield.m_forFitting = true;
+      shield.m_material = material;
+      shield.m_dimensions[0] = c.thickness;
+      shield.m_dimensions[1] = shield.m_dimensions[2] = 0.0;
+      shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = shield.m_fitDimensions[2] = false;
+
+      ShieldingSourceFitCalc::SourceFitDef src;
+      src.nuclide = db->nuclide( c.nuclide );
+      BOOST_REQUIRE( src.nuclide );
+      src.activity = 10.0*PhysicalUnits::microCi;
+      src.fitActivity = true;
+      src.age = PeakDef::defaultDecayTime( src.nuclide );
+      src.fitAge = false;
+      src.ageDefiningNuc = nullptr;
+      src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+      deque<shared_ptr<const PeakDef>> peaks;
+      for( const double energy : c.energies )
+      {
+        const double fwhm = c.fwhm_frac_at_662 * 661.657 * std::sqrt( energy / 661.657 );
+        peaks.push_back( make_test_peak( src.nuclide, energy, fwhm / PhysicalUnits::fwhm_nsigma, 1.0E4 ) );
+      }
+
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+      chi_input.config.distance = distance;
+      chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+      chi_input.config.shieldings = { shield };
+      chi_input.config.sources = { src };
+      chi_input.config.options = options;
+      chi_input.detector = detector;
+      chi_input.foreground = foreground;
+      chi_input.foreground_peaks = peaks;
+
+      check_expected_counts_parity( chi_input, 1.0E-9, c.label );
+    }//for( material cases )
+  }// End Cases I-J
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 
 
@@ -5818,8 +5887,8 @@ BOOST_AUTO_TEST_CASE( FixedGeomLayersAndCascade )
   fe_layer.m_dimensions[1] = fe_layer.m_dimensions[2] = 0.0;
   fe_layer.m_fitDimensions[0] = fe_layer.m_fitDimensions[1] = fe_layer.m_fitDimensions[2] = false;
 
-  // The fit's expected counts per peak.  (Not compared to energy_chi_contributions: for a material
-  //  shield the display path still uses plain mu, not the fit's FEP-window/Rayleigh coefficient.)
+  // The fit's expected counts per peak.  (For a material shield, energy_chi_contributions uses the
+  //  same FEP-window/Rayleigh coefficient - see ExpectedPeakCountsImpParity Cases I-J.)
   const auto counts = []( const ShieldingSourceChi2Fcn::ShieldSourceInput &input ) -> vector<double> {
     const auto fcn_pars = ShieldingSourceChi2Fcn::create( input );
     ShieldingSourceChi2Fcn::NucMixtureCache cache;

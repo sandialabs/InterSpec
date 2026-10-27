@@ -38,6 +38,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 
 #include <Wt/Utils.h>
 
@@ -7556,3 +7557,57 @@ BOOST_AUTO_TEST_CASE( Iso11929Part4Example2LowCounts )
            << fabs(get<2>(r) - get<1>(r))/get<1>(r) << ',' << get<3>(r) << '\n';
   }
 }//BOOST_AUTO_TEST_CASE( Iso11929Part4Example2LowCounts )
+
+
+// The side-channel chi2 says whether the straight-line continuum holds: about 1 per dof on a
+//  smooth continuum, large when a side band holds a step (e.g., a Compton edge).
+BOOST_AUTO_TEST_CASE( CurrieSideChannelChi2 )
+{
+  using namespace DetectionLimitCalc;
+
+  const size_t num_channels = 1024;
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( num_channels, { 0.0f, 1.0f }, {} );
+
+  const auto run = [&cal, num_channels]( const std::function<float(size_t)> &channel_counts ) -> CurrieMdaResult {
+    auto counts = make_shared<vector<float>>( num_channels );
+    for( size_t i = 0; i < num_channels; ++i )
+      counts->at( i ) = channel_counts( i );
+
+    auto spectrum = make_shared<SpecUtils::Measurement>();
+    spectrum->set_gamma_counts( counts, 100.0f, 100.0f );
+    spectrum->set_energy_calibration( cal );
+
+    CurrieMdaInput input;
+    input.spectrum = spectrum;
+    input.gamma_energy = 500.5f;
+    input.roi_lower_energy = 497.0f;
+    input.roi_upper_energy = 504.0f;
+    input.num_lower_side_channels = 6;
+    input.num_upper_side_channels = 6;
+    input.detection_probability = 0.95;
+    input.additional_uncertainty = 0.0;
+    return currie_mda_calc( input );
+  };
+
+  // A linear continuum, with values exactly on the line: chi2 is zero.
+  const CurrieMdaResult linear = run( []( const size_t i ){ return 1000.0f + 0.5f*static_cast<float>(i); } );
+  BOOST_CHECK_EQUAL( linear.side_channel_dof, 10 );
+  BOOST_CHECK_SMALL( linear.side_channel_chi2, 1.0E-3 );
+
+  // Poisson noise on a flat continuum: chi2/dof about 1.
+  std::mt19937 rng( 1234 );
+  std::poisson_distribution<int> poisson( 1000.0 );
+  vector<float> noisy( num_channels );
+  for( float &v : noisy )
+    v = static_cast<float>( poisson( rng ) );
+  const CurrieMdaResult flat = run( [&noisy]( const size_t i ){ return noisy[i]; } );
+  BOOST_CHECK_LT( flat.side_channel_chi2 / flat.side_channel_dof, 3.0 );
+
+  // A step down part way through the upper side band (like a Compton edge): chi2 is large.
+  const CurrieMdaResult step = run( []( const size_t i ){ return (i < 508) ? 1000.0f : 600.0f; } );
+  BOOST_TEST_MESSAGE( "Side-channel chi2/dof: linear=" << linear.side_channel_chi2 << ", flat="
+                      << (flat.side_channel_chi2 / flat.side_channel_dof) << ", step="
+                      << (step.side_channel_chi2 / step.side_channel_dof) );
+  BOOST_CHECK_GT( step.side_channel_chi2 / step.side_channel_dof, 10.0 );
+}//BOOST_AUTO_TEST_CASE( CurrieSideChannelChi2 )

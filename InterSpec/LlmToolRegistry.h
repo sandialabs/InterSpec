@@ -103,6 +103,13 @@ struct SharedTool {
 };
 
 
+/** A count rate (or its uncertainty) for tool-result JSON: at least two significant figures, plus any
+ further digits that take no extra characters - e.g., 0.0027, 3.1, 909, 1234, 1.2e-05.  Rates of 10 or
+ more are given as integers; non-finite values become null.
+ */
+InterSpec_API nlohmann::json compact_rate( const double value );
+
+
 /** Runs a `run_javascript` call where there is no browser sandbox; the stdio MCP server sets one,
  using QuickJS.  Called in the session, and must call `callback` exactly once, in the session.
  */

@@ -17,7 +17,7 @@
   <Tool name="get_peaks">
     <Description>Returns peaks in a displayed spectrum, grouped by Region Of Interest (ROI), with an optional filter for which subset you want.
 
-Each peak gives energy (keV), FWHM (keV), amplitude (peak area, in counts), counts per second (cps), statistical significance (numSigma), whether it is an analysis peak (isAnalysisPeak), and its assigned source if any. The automated peak search is not perfect - additional peaks may still be fittable in the data (use 'add_analysis_peak').
+Each peak gives energy (keV), FWHM (keV), amplitude (peak area, in counts), counts per second (cps, cpsUncert), statistical significance (numSigma), whether it is an analysis peak (isAnalysisPeak), and its assigned source if any. The automated peak search is not perfect - additional peaks may still be fittable in the data (use 'add_analysis_peak').
 
 Filter values:
 - 'all' (default): every automated-search peak plus analysis peaks.
@@ -150,7 +150,7 @@ Filter values:
   -->
 
   <Tool name="add_analysis_peak">
-    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.
+    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns the Region Of Interest that was created, or that the peak was added to.  A single energy is held to the automated-search significance and quality thresholds; if no peak passes, the 'error' field says why.  With 'DoNotAddToAnalysisPeaks' true, nothing is added, and such a peak is reported with status "not_significant", a 'reason', and a 'fixedPositionFit' (net counts, uncertainty, and an approximate upper limit at exactly the energy) instead of an error.
 
 To fit several peaks in one ROI, give 'energy' as an array (a peak is fit at each, even if weak); the ROI range and continuum are optional. Nearby existing peaks are fit along with the new ones, or replaced if at the same energy - check 'removedPeaks' and 'warnings'.</Description>
     <ParametersSchema>{
@@ -441,7 +441,7 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
   </Tool>
 
   <Tool name="compton_scatter_peak_check">
-    <Description>Check if a peak at a specified energy is a Compton-scatter feature (backscatter Compton peak or Compton edge) of a higher-energy peak in the spectrum. Returns confidence (No, Unlikely, Likely, VeryLikely), if if possibly a feature, the type (None, ComptonPeak, ComptonEdge, ComptonPeakOrEdge) and parent peak energy.</Description>
+    <Description>Check whether a peak - or a broad feature with no fitted peak - at the specified energy is a Compton-scatter feature (backscatter peak or Compton edge) of a higher-energy peak.  Returns 'FeatureType' (None, ComptonPeak, ComptonEdge, ComptonPeakOrEdge), 'Confidence' (No, Unlikely, Likely, VeryLikely), and a 'reason'.  A fitted peak at the energy is judged on its width and area against a parent that could have produced it, and 'reason' names any criterion that kept it below VeryLikely; 'kinematicParents' lists every higher-energy peak whose backscatter peak or Compton edge is at the energy, each with a 'regionConfidence' from the region's counts alone, so it can be higher than 'Confidence'.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -460,7 +460,7 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
   </Tool>
 
   <Tool name="escape_peak_check">
-    <Description>Check if a peak at a specified energy is a single or double escape peak of another peak in the spectrum. Returns the parent peak information if found, plus calculated energies where potential escape peaks or parent peaks could exist.  If the parent peak is found, and it has an assigned source, a "sourceLabel" will be returned that can be used to set the peaks source, or if the parent peak does not have a source, a "userLabel" will be returned that should be used to set the peaks user-label.</Description>
+    <Description>Check if a peak at the specified energy is an escape peak of a higher-energy line: a single or double escape peak (one or both 511 keV annihilation photons escaping; only gammas above 1022 keV make them), or a detector K x-ray escape peak (Ge for HPGe, I for NaI, Cd/Te for CZT, La/Br for LaBr3; mostly below ~150 keV).  'parentPeak' is set if it is a single or double escape peak, with a 'sourceLabel' (or 'userLabel') to label the peak with; 'notes' say when a would-be parent is below the pair-production threshold; in 'xrayEscapes', 'plausible' is the verdict for each detector x-ray line.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -479,7 +479,7 @@ Continuum types (number of coefficients): NoOffset, Constant (1), Linear (2), Qu
   </Tool>
 
   <Tool name="sum_peak_check">
-    <Description>Check if a peak at a specified energy is a sum peak, where two lower-energy photons are detected simultaneously and their energies add together. There are two types: (1) Cascade-sum peaks occur when a nuclide emits two photons nearly simultaneously during decay and the detector is close enough to detect both (typically &lt;15 cm). Both contributing peaks must have the same nuclide source assigned. (2) Random-sum peaks (pile-up) occur when unrelated photons arrive simultaneously, typically when dead time is high (&gt;20% for HPGe, &gt;10% for low-resolution detectors). The function returns the sum type (CascadeSum, RandomSum, Unknown, or NotASumPeak), information about the two contributing peaks (energy, area, source), and appropriate labels (sourceLabel or userLabel) that can be used to identify the peak. When multiple candidate peak pairs are found, the best match is selected based on closest energy match, or if energies are similar, the pair with largest combined areas. An optional distance parameter can be provided to disable cascade-sum detection if the source is far from the detector (&gt;15 cm).</Description>
+    <Description>Check if a peak at the specified energy is a sum peak - two lower-energy photons detected together.  'sumType' is CascadeSum (true coincidence of photons from one decay - a gamma cascade, an electron-capture or conversion K x-ray with a gamma, two K x-rays, or annihilation with a gamma; needs the source close, typically &lt;15 cm), RandomSum (pile-up of photons from different decays; the only way a line sums with itself), CascadeAndRandomSum (both contribute substantially), Unknown, or NotASumPeak; 'reason' says why.  Cascades are only found for a nuclide assigned to at least one of the two peaks.  The pile-up rate is measured from self-sum (2E) peaks of strong lines when possible, giving 'expectedRandomSumCps' to compare with 'observedSumCps'.  'otherSourcesWithLinesAtThisEnergy' lists sources whose own lines could explain the peak instead.  Give a 'distance' over 15 cm to rule out cascade sums.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -524,7 +524,7 @@ If you want to fit peaks for a source that has multiple gamma or x-ray energies,
 The peaks added to the analysis peaks will have their respective source assigned to them.
 If you have multiple sources to fit, it is better to call this tool with multiple sources, rather than multiple tool calls.
 If you wish to fit for just the NORM background peaks call with no source but with the FitNormPeaks option, like `{ source: null, options: ["FitNormPeaks"] }`.
-Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, and source) for the peaks that were fit.
+Returns simplified peak information (energy, fwhm, amplitude, amplitudeUncert, numSigma, cps, cpsUncert, and source) for the peaks that were fit.
 Overlap behavior:
 - Same-source re-fit: If the specified source already has analysis peaks, those peaks are replaced by the new fit results (within the energy regions covered by the new fit). Peaks for other sources are not affected.
 - Different-source overlap (default): If a source gamma falls near an existing ROI from a different source, the new ROI extent is trimmed to avoid the existing ROI. If an existing ROI contains peaks for both the source being fit and other sources (a mixed ROI), the other-source peaks are included as bystanders in the combined fit using the existing ROI extent, and both sets of peaks are updated from the fit result.
@@ -674,7 +674,7 @@ If the source you want to fit peaks for will likely have overlapping ROIs with p
   </Tool>
 
   <Tool name="get_expected_fwhm">
-    <Description>Calculate the expected Full Width at Half Maximum (FWHM) for a peak at the specified energy, based on the detector response function, detected peaks, or detector type. This is useful for determining the expected width of a peak for ROI calculations.</Description>
+    <Description>Calculate the expected Full Width at Half Maximum (FWHM) for a peak at the specified energy, from the widths of the spectrum's peaks, the detector response function (when consistent with them), or the detector type; 'fwhmSource' says which.  Useful for ROI calculations.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1047,7 +1047,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Detection Limit and Efficiency Tools -->
 
   <Tool name="currie_mda_calc">
-    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output). When nuclide and distance are specified, the response will also include activity calculations (detection limit in activity, or observed activity with ranges, etc.)</Description>
+    <Description>Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology, and whether a peak appears present at the energy ('peakPresentInData').  With a nuclide and distance, also gives activities (the detection limit, or the observed activity with its range).  The continuum is a straight line through side channels around a +-1.25 FWHM region; if 'continuumWarning' is present (a curved continuum, a Compton edge, or the tails of a strong nearby peak), treat 'peakPresentInData' and the counts as unreliable - unless it says the peak is clearly present, in which case only the net counts are biased.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -1348,7 +1348,7 @@ Further investigation of top returned candidates is required to make sure they m
   <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
 
   <Tool name="activity_fit">
-    <Description>Perform activity and shielding fitting using the current application state (GUI configuration), opening the Activity/Shielding fit tool if it is not already. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
+    <Description>Perform activity and shielding fitting using the current application state (GUI configuration), opening the Activity/Shielding fit tool if it is not already. Uses existing sources, shielding, and configuration from the GUI, and the peaks marked for fitting (choose them with 'mark_peaks_for_activity_fit'). Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions; per peak, 'observed_cps' is the background-subtracted rate, and 'by_shield' factors credit small-angle scatter into the peak (slightly above a narrow-beam transmission). Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {}
@@ -1361,7 +1361,7 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="activity_fit_one_off">
-    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions. Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
+    <Description>Perform a one-off activity and shielding fit with full specification. Does not use or modify GUI state. Ideal for custom fits where you want complete control over all parameters. Requires specifying distance, geometry, and peak energies. Can optionally specify sources and shielding, otherwise sources are auto-generated from peak nuclide assignments. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions; per peak, 'observed_cps' is the background-subtracted rate, and 'by_shield' factors credit small-angle scatter into the peak (slightly above a narrow-beam transmission). Also returns a 'pull_trend_diagnostic' object with an always-present 'atomic_number_status' ('too_low'/'too_high'/'consistent'/'not_determinable') indicating whether the data support the modeled shielding's effective atomic number; note 'not_determinable' means the data lack the power to judge the AN, NOT that the AN is correct.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {

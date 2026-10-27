@@ -4345,6 +4345,15 @@ inline double ShieldingSourceChi2Fcn::fepWindowKeV( const double energy,
 
 
 template<typename T>
+T ShieldingSourceChi2Fcn::pointLayerOpticalDepth( const Material *material, const double energy, const T &chord,
+                                    const std::vector<std::pair<double,double>> &energie_widths ) const
+{
+  return chord * fep_survival_removal_coefficient( material, energy, fepWindowKeV( energy, energie_widths ),
+                                                   std::max( 0.0, scalar_of(chord) ) );
+}//pointLayerOpticalDepth(...)
+
+
+template<typename T>
 std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
                         const std::vector<T> &params,
                         NucMixtureCache &mixturecache,
@@ -5037,9 +5046,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       //  exactly as a volumetric source's outer shells are (2026-09-04; before this it used plain
       //  mu_total with neither term, and read ~5% high behind 0.5 cm of Fe at 60 keV).
       att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( const double energy ) -> T {
-        return chord * fep_survival_removal_coefficient( mat, energy,
-                                                         fepWindowKeV( energy, energie_widths ),
-                                                         std::max( 0.0, scalar_of(chord) ) );
+        return pointLayerOpticalDepth( mat, energy, chord, energie_widths );
       };
     }//if( generic material ) / else
 
@@ -5450,9 +5457,7 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       // Same FEP coefficient as expected_peak_counts_imp (window credit + Rayleigh deflection
       //  loss), so the cascade functors see exactly the transmission the fit uses.
       ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( const double energy ) -> T {
-        return chord * fep_survival_removal_coefficient( mat, energy,
-                                                         fepWindowKeV( energy, *energie_widths ),
-                                                         std::max( 0.0, scalar_of(chord) ) );
+        return pointLayerOpticalDepth( mat, energy, chord, *energie_widths );
       } );
 
       // `mat` is m_initial_shieldings' material, fixed for the life of this function object, so the

@@ -5084,6 +5084,7 @@ vector<PeakResultPlotInfo>
         log_peak.counts = peak.peakArea();
         log_peak.countsUncert = peak.peakAreaUncert();
         
+        log_peak.liveTime = m_liveTime / PhysicalUnits::second;
         log_peak.cps = log_peak.counts / m_liveTime;
         log_peak.cpsUncert = log_peak.countsUncert / m_liveTime;
         
@@ -5287,8 +5288,10 @@ vector<PeakResultPlotInfo>
       const double thickness = exit_dist - shield_outer_rad;  //chord through this layer
       shield_outer_rad = exit_dist;
 
-      att_coef_fcn = [mat = material.get(), thickness]( const double energy ){
-        return transmition_coefficient_material( mat, energy, thickness );
+      // The fit's coefficient (see pointLayerOpticalDepth), not plain mu, so the reported expected
+      //  counts and per-shield factors are what the fit minimised.
+      att_coef_fcn = [this, mat = material.get(), thickness, &energie_widths]( const double energy ){
+        return pointLayerOpticalDepth( mat, energy, thickness, energie_widths );
       };
     }//if( generic material ) / else
 
