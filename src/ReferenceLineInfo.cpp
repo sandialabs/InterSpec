@@ -1183,7 +1183,9 @@ void compute_cascade_summing_for_nuclide(
     //  to redraw on every option change.  With flat members the engine still gives
     //  the per-line summing-OUT (its pairwise model for a branch with no level
     //  scheme), and the coincidence sums are enumerated below, which is also what
-    //  keeps gamma-xray and xray-xray sums available.
+    //  keeps gamma-xray and xray-xray sums available (CeeLo links each K x-ray to
+    //  the other K lines, and to itself via CascadeMember::self_pair_prob, from the
+    //  two-vacancy law, so e.g. Pb-203's Tl Ka1+Ka2 = 143.7 keV appears).
     copt.include_xrays = true;
     copt.vacancy_xray_model = false;
     cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
@@ -1322,8 +1324,9 @@ void compute_cascade_summing_for_nuclide(
   const double min_triple_seed = 100.0 * min_cand_rate;
 
   // --- Coincidence sums, from the cascade coincidence links ---
-  //  Each coincident pair (and each mutually-coincident triple) contributes the
-  //  joint probability that all of its photons are emitted and each fully
+  //  Each coincident pair (and each mutually-coincident triple, and each line that
+  //  can be emitted twice in one decay - two K x-rays of the same line) contributes
+  //  the joint probability that all of its photons are emitted and each fully
   //  detected, reduced by the chance some OTHER photon of the same decay also
   //  deposits and pushes the event out of the peak.  Sums that land on a
   //  displayed line make that line taller; the rest become their own peaks.
@@ -1438,7 +1441,13 @@ void compute_cascade_summing_for_nuclide(
 
         add_cand( ea + eb, gain, ea, eb, 0.0 );
 
-        if( gain > min_triple_seed )
+        //No triple is seeded from two x-rays (which are then never both in one): two
+        //  K x-rays need two K vacancies, and the flat x-ray model's x-ray-gamma links
+        //  cannot condition a third photon on that - e.g., Pb-203's K-K pair needs its
+        //  279 keV transition converted, so that gamma cannot be the third photon.
+        const bool both_xray = (dc.members[ai].type == ceelo::CascadeParticleType::Xray)
+                               && (dc.members[bi].type == ceelo::CascadeParticleType::Xray);
+        if( (gain > min_triple_seed) && !both_xray )
         {
           links[ai].insert( bi );
           links[bi].insert( ai );
@@ -1449,6 +1458,18 @@ void compute_cascade_summing_for_nuclide(
           triple_seeds.push_back( seed );
         }
       }//for( coincidence links )
+
+      //Two photons of member a's own line - two K vacancies of one decay both filled
+      //  by it (e.g., Pb-203 Tl Ka1 + Ka1 = 145.7 keV).  Both photons are member a,
+      //  so only its own survival factor is divided out.
+      const double self_pair = dc.members[a].self_pair_prob;
+      if( self_pair > 0.0 )
+      {
+        const double gain = dc.branch_weight * self_pair * eps_fep_sh(ea) * eps_fep_sh(ea)
+                            * branch_survival / member_survival[a];
+        if( gain > min_cand_rate )
+          add_cand( 2.0*ea, gain, ea, ea, 0.0 );
+      }//if( member a can pair with itself )
     }//for( members a )
 
     //Triples: three mutually-coincident members.  Only the strongest members are
@@ -1465,9 +1486,9 @@ void compute_cascade_summing_for_nuclide(
         strong.resize( max_triple_members );
       const std::set<uint16_t> considered( begin(strong), end(strong) );
 
-      //P(to emitted | from emitted).  Coincidence links are stored in one
-      //  direction only, so when the forward link is missing invert the reverse
-      //  one: P(to|from) = P(from|to) * I_to / I_from.
+      //P(to emitted | from emitted).  Most coincidence links are stored in one
+      //  direction only (K x-ray pairs are in both), so when the forward link is
+      //  missing invert the reverse one: P(to|from) = P(from|to) * I_to / I_from.
       auto link_prob = [&dc]( const uint16_t from, const uint16_t to ) -> double {
         for( const ceelo::CoincidenceLink &lnk : dc.members[from].coincident )
         {
@@ -4331,11 +4352,14 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       const SandiaDecay::Nuclide * const cnuc = std::get<0>(na);
 
-      //(energy, per-decay intensity) of this nuclide's displayed photon lines
+      //(energy, per-decay intensity) of this nuclide's displayed photon lines.  A
+      //  zero-intensity record (e.g., Pb-214's 181.5 keV) emits nothing, so a sum
+      //  landing on it must not be folded into it and drawn under its label.
       vector<pair<double,double>> real_lines;
       for( const ReferenceLineInfo::RefLine &line : lines )
       {
         if( (line.m_parent_nuclide == cnuc)
+           && (line.m_decay_intensity > 0.0)
            && (line.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal)
            && ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma)
                || (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)) )

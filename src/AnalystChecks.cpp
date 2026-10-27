@@ -535,7 +535,7 @@ namespace
     copt.age_seconds = age;
     copt.prompt_equilibrium = false;
     copt.include_xrays = true;
-    copt.vacancy_xray_model = false;  // each x-ray of a transition is linked to each of its gammas
+    copt.vacancy_xray_model = false;  // x-rays linked to the gammas, and K x-rays to each other
     copt.include_annihilation = true;
 
     // The adapter starts from a unit parent activity, decayed to `age`.
@@ -548,89 +548,10 @@ namespace
   }//nuclide_cascades(...)
 
 
-  /** Probability per decay of `nuc` (with its progeny, at its default age) that two K x-rays, within
-   `tol1` of `e1` and `tol2` of `e2`, are both emitted: one filling the K vacancy of an electron
-   capture, the other the K vacancy left by K-shell internal conversion of a transition that follows
-   it (e.g., Pb-203: EC-K in 78% of decays, the 279 keV transition K-converted in 13%).  The cascade
-   adapter links x-rays only to gammas, so these pairs are not in its cascades.
-
-   The two vacancies are taken as independent, and each is filled by a given K line in proportion
-   to that line's yield (so the fluorescence yield cancels): with P_EC the EC-K probability, N_IC the
-   K-conversions, and I_a the yield of line a (all per decay of the branch), the pair (a, b) is emitted
-   in P_EC * N_IC * 2 * I_a * I_b / (P_EC + N_IC)^2 of decays (no factor 2 when a == b).  Zero
-   without the enriched decay data (EC shell fractions and K conversion coefficients).
-   */
-  double kxray_pair_probability( const SandiaDecay::Nuclide *nuc, const double e1, const double tol1,
-                                 const double e2, const double tol2 )
-  {
-    if( !nuc )
-      return 0.0;
-
-    const double parent_activity = 1.0*SandiaDecay::Bq;
-    SandiaDecay::NuclideMixture mix;
-    mix.addAgedNuclideByActivity( nuc, parent_activity, PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second );
-
-    double total = 0.0;
-    for( const SandiaDecay::NuclideActivityPair &nap : mix.activity( 0.0 ) )
-    {
-      if( !nap.nuclide || !(nap.activity > 0.0) )
-        continue;
-
-      for( const SandiaDecay::Transition * const transition : nap.nuclide->decaysToChildren )
-      {
-        if( !transition || !(transition->branchRatio > 0.0) )
-          continue;
-
-        double ec_k = 0.0, ic_k = 0.0, max_xray_energy = 0.0;
-        for( const SandiaDecay::RadParticle &particle : transition->products )
-        {
-          if( particle.type == SandiaDecay::ProductType::CaptureElectronParticle )
-            ec_k += particle.intensity * particle.ec_K;
-          else if( particle.type == SandiaDecay::ProductType::GammaParticle )
-            ic_k += particle.intensity * particle.icc_K;
-          else if( particle.type == SandiaDecay::ProductType::XrayParticle )
-            max_xray_energy = std::max( max_xray_energy, static_cast<double>(particle.energy) );
-        }
-
-        const double num_k_vacancies = ec_k + ic_k;
-        if( !(ec_k > 0.0) || !(ic_k > 0.0) )
-          continue;
-
-        // The K lines of the daughter: the L lines are well below them (Tl: 10-15 vs 70-85 keV)
-        vector<const SandiaDecay::RadParticle *> k_lines;
-        for( const SandiaDecay::RadParticle &particle : transition->products )
-        {
-          if( (particle.type == SandiaDecay::ProductType::XrayParticle)
-              && (particle.energy >= 0.6*max_xray_energy) && (particle.intensity > 0.0) )
-            k_lines.push_back( &particle );
-        }
-
-        const double weight = (nap.activity / parent_activity) * transition->branchRatio * ec_k * ic_k;
-        for( size_t a = 0; a < k_lines.size(); ++a )
-        {
-          for( size_t b = a; b < k_lines.size(); ++b )
-          {
-            const double ea = k_lines[a]->energy, eb = k_lines[b]->energy;
-            const bool matches = ((fabs(ea - e1) <= tol1) && (fabs(eb - e2) <= tol2))
-                                 || ((fabs(ea - e2) <= tol2) && (fabs(eb - e1) <= tol1));
-            if( !matches )
-              continue;
-
-            const double pa = k_lines[a]->intensity / num_k_vacancies;
-            const double pb = k_lines[b]->intensity / num_k_vacancies;
-            total += weight * ((a == b) ? (pa*pa) : (2.0*pa*pb));
-          }
-        }//for( loop over K line pairs )
-      }//for( loop over transitions )
-    }//for( loop over nuclides in the chain )
-
-    return total;
-  }//kxray_pair_probability(...)
-
-
   /** Probability per decay that two coincident photons, within `tol1` of `e1` and `tol2` of `e2`,
-   are emitted (summed over every such pair of lines); `type` is set to the kind of pair with the
-   largest probability, e.g. "x-ray-gamma".  Zero if there is no such coincidence.
+   are emitted (summed over every such pair of lines, including two photons of one line, such as
+   two Kalpha1 x-rays from two K vacancies); `type` is set to the kind of pair with the largest
+   probability, e.g. "x-ray-gamma" or "x-ray-x-ray".  Zero if there is no such coincidence.
    */
   double cascade_pair_probability( const std::vector<ceelo::DecayCascade> &cascades,
                                    const double per_parent_decay,
@@ -656,6 +577,20 @@ namespace
       for( size_t a = 0; a < dc.members.size(); ++a )
       {
         const ceelo::CascadeMember &ma = dc.members[a];
+
+        // Two photons of this one line (a link always joins two different members)
+        if( (ma.self_pair_prob > 0.0)
+           && (fabs(ma.energy_keV - e1) <= tol1) && (fabs(ma.energy_keV - e2) <= tol2) )
+        {
+          const double prob = per_parent_decay * dc.branch_weight * ma.self_pair_prob;
+          total += prob;
+          if( prob > largest )
+          {
+            largest = prob;
+            type = string( type_name( ma.type ) ) + "-" + type_name( ma.type );
+          }
+        }//if( member a pairs with itself )
+
         for( const ceelo::CoincidenceLink &link : ma.coincident )
         {
           const size_t b = link.partner;
@@ -5332,8 +5267,7 @@ namespace AnalystChecks
       const NucCascades &c = cascades_of( nuc );
       const double tol = std::max( 1.0, 0.5*peak->fwhm() );
       string type;
-      return (cascade_pair_probability( c.cascades, c.per_parent_decay, peak->mean(), tol, peak->mean(), tol, type ) > 0.0)
-             || (kxray_pair_probability( nuc, peak->mean(), tol, peak->mean(), tol ) > 0.0);
+      return (cascade_pair_probability( c.cascades, c.per_parent_decay, peak->mean(), tol, peak->mean(), tol, type ) > 0.0);
     };
 
     // True if `nuc` (with its progeny, at its default age) emits a photon within `tol` of `energy`
@@ -5497,13 +5431,7 @@ namespace AnalystChecks
             const NucCascades &c = cascades_of( nuc );
             const double tol1 = std::max( 1.0, 0.5*peak1->fwhm() ), tol2 = std::max( 1.0, 0.5*peak2->fwhm() );
             string type;
-            double prob = cascade_pair_probability( c.cascades, c.per_parent_decay, energy1, tol1, energy2, tol2, type );
-
-            // Two K x-rays, from separate vacancies of one decay (EC-K + K-conversion)
-            const double kx_prob = kxray_pair_probability( nuc, energy1, tol1, energy2, tol2 );
-            if( kx_prob > prob )
-              type = "x-ray-x-ray";
-            prob += kx_prob;
+            const double prob = cascade_pair_probability( c.cascades, c.per_parent_decay, energy1, tol1, energy2, tol2, type );
             if( prob > 0.0 && ((candidate.cascade_nuclide.empty()) || (prob > candidate.coincidence_fraction)) )
             {
               candidate.cascade_nuclide = nuc->symbol;
