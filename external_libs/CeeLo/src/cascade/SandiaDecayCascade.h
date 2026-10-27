@@ -39,6 +39,11 @@
 //    linked as coincident with that transition's gammas, since atomic relaxation
 //    accompanies the same decay event. This is approximate (near-exact for
 //    electron-capture emitters, which dominate x-ray summing).
+//  - xray-xray (transition-group model, K lines only): two K x-rays of one decay
+//    need two K vacancies -- an EC from the K shell plus a K-converted transition,
+//    or two K-converted transitions of one cascade. The K x-ray members are linked
+//    to each other with that joint law, and a line's pairing with itself goes in
+//    CascadeMember::self_pair_prob (see CascadeOptions::kxray_coincidences).
 //  - beta+ : each positron is expanded into a 511 keV annihilation member
 //    coincident with the branch gammas; the engine emits the back-to-back pair.
 
@@ -75,6 +80,13 @@ struct CascadeOptions {
     /// the right per-decay multiplicity). Falls back to the transition-group
     /// model when the data is absent. Set false to force the legacy model.
     bool vacancy_xray_model = true;
+    /// In the transition-group x-ray model, link the K x-ray members to each other
+    /// with the joint law of two K vacancies in one decay (EC-K x IC-K, plus
+    /// IC-K x IC-K of two linked transitions), and set each K line's
+    /// self_pair_prob. Needs the enriched EC-shell / K-ICC data; a branch without
+    /// it, or with only one vacancy per decay, gets no links. Set false for the
+    /// legacy x-ray-gamma-only links (K lines then sum out as if independent).
+    bool kxray_coincidences = true;
     /// Expand positrons into a 511 keV annihilation member.
     bool include_annihilation = true;
     /// Carry gamma-gamma angular-correlation coefficients (a2/a4) from the

@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <set>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -581,6 +582,169 @@ VacancyGroup make_e0_vacancy_group(const TransitionSplit& sp,
     return group;
 }
 
+/// True if `e_keV` is one of the element's K x-ray lines (`fl` from
+/// CrossSectionData::fluorescence). The tolerance only absorbs the differences
+/// between SandiaDecay's and EPICS's line energies; every K line is far from the
+/// element's L lines.
+bool matches_k_line(const FluorescenceData* fl, double e_keV)
+{
+    if (!fl)
+        return false;
+    for (int li = 0; li < fl->num_lines; ++li)
+        if (std::abs(e_keV - static_cast<double>(fl->line_energy_keV[li])) < 1.5)
+            return true;
+    return false;
+}
+
+/// Links the transition-group K x-ray members of `dc` to each other.
+///
+/// One vacancy gives at most one K x-ray, so two K x-rays from one decay need
+/// two K vacancies: a K-shell electron capture plus a K-converted transition after
+/// it, or two K-converted transitions of one cascade. The expected number of such
+/// vacancy pairs per decay of the branch is
+///     D2 = P_EC * N_IC + N_ICIC,
+/// with P_EC the K-capture probability, N_IC the K conversions, and N_ICIC the
+/// pairs of K-converted transitions in one cascade (capture and conversions taken
+/// as independent). Each vacancy is filled by K line a with
+/// probability p_a = I_a / N_vac, N_vac = P_EC + N_IC, so the fluorescence yield
+/// cancels; where the tabulated yields exceed one x-ray per vacancy (sum I_a >
+/// N_vac, as for Pb-203's Tl lines) the denominator is that sum instead, so the
+/// p_a never total more than one. The expected number of (a, b) photon pairs is
+/// then D2 * 2 p_a p_b for a != b -- stored as the links P(b|a) = joint / I_a
+/// and P(a|b) = joint / I_b -- and D2 * p_a^2 for a line with itself, stored in
+/// CascadeMember::self_pair_prob.
+void add_kxray_pair_links(DecayCascade& dc, const Transition& tr, int daughter_Z)
+{
+    const FluorescenceData* const kfl =
+        CrossSectionData::instance().fluorescence(daughter_Z);
+    if (!kfl)
+        return;
+
+    std::vector<std::size_t> kmembers;
+    double sum_kxray = 0.0;
+    for (std::size_t m = 0; m < dc.members.size(); ++m) {
+        const CascadeMember& cm = dc.members[m];
+        if (cm.type == CascadeParticleType::Xray && cm.intensity > 0.0
+            && matches_k_line(kfl, cm.energy_keV)) {
+            kmembers.push_back(m);
+            sum_kxray += cm.intensity;
+        }
+    }
+    if (kmembers.empty())
+        return;
+
+    // K conversions, from the same repaired transition split the level path uses.
+    const std::size_t n_prod = tr.products.size();
+    std::vector<TransitionSplit> split(n_prod);
+    std::vector<unsigned char> is_gamma(n_prod, 0);
+    double n_ic = 0.0;
+    for (std::size_t i = 0; i < n_prod; ++i) {
+        const RadParticle& p = tr.products[i];
+        if (is_suppressed_duplicate(p) || p.type != ProductType::GammaParticle
+            || !(p.intensity > 0.0f))
+            continue;
+        split[i] = transition_split(p);
+        is_gamma[i] = 1;
+        n_ic += split[i].weight * split[i].p_icK;
+    }
+    if (!(n_ic > 0.0))
+        return;  // every vacancy pair needs at least one K conversion
+
+    double p_ec = 0.0;
+    for (const WeakOutcome& o : dc.weak_outcome_law.outcomes)
+        if (o.kind == WeakOutcomeKind::ElectronCapture)
+            p_ec += o.selected_mass * o.ec_K;
+
+    // Two K-converted transitions of one cascade. For transitions placed in the
+    // daughter's level scheme, below[L] is the expected number of K conversions
+    // on the way down from level L: each level splits its flux among its
+    // out-going transitions by their occurrence weights, as the level path does.
+    // Levels are numbered upwards and every placed transition goes down, so one
+    // ascending pass fills it.
+    std::vector<unsigned char> placed(n_prod, 0);
+    int max_level = -1;
+    for (std::size_t i = 0; i < n_prod; ++i) {
+        const RadParticle& p = tr.products[i];
+        if (is_gamma[i] && p.to_level >= 0 && p.to_level < p.from_level) {
+            placed[i] = 1;
+            max_level = std::max(max_level, p.from_level);
+        }
+    }
+    double n_icic = 0.0;
+    if (max_level > 0) {
+        const std::size_t n_lev = static_cast<std::size_t>(max_level) + 1;
+        std::vector<double> out_flow(n_lev, 0.0), below(n_lev, 0.0);
+        std::vector<std::vector<std::size_t>> out_of(n_lev);
+        for (std::size_t i = 0; i < n_prod; ++i) {
+            if (!placed[i])
+                continue;
+            const std::size_t from = static_cast<std::size_t>(tr.products[i].from_level);
+            out_flow[from] += split[i].weight;
+            out_of[from].push_back(i);
+        }
+        for (std::size_t lev = 0; lev < n_lev; ++lev) {
+            if (!(out_flow[lev] > 0.0))
+                continue;
+            for (std::size_t t : out_of[lev]) {
+                const std::size_t to = static_cast<std::size_t>(tr.products[t].to_level);
+                below[lev] += split[t].weight / out_flow[lev]
+                            * (split[t].p_icK + below[to]);
+            }
+        }
+        for (std::size_t i = 0; i < n_prod; ++i)
+            if (placed[i])
+                n_icic += split[i].weight * split[i].p_icK
+                        * below[static_cast<std::size_t>(tr.products[i].to_level)];
+    }
+
+    // A pair with a transition outside the scheme falls back on SandiaDecay's
+    // gamma-gamma link, P(gamma j | gamma i), divided by transition j's gamma
+    // fraction to give P(transition j | transition i). The scheme is preferred
+    // because those links do not always agree with it: Lu-177's 208.4 keV
+    // transition always feeds the 112.9 keV level, yet the link to the 112.9 keV
+    // gamma is 0.032, not 1/(1 + alpha) = 0.31.
+    std::set<std::pair<std::size_t, std::size_t>> seen;
+    for (std::size_t i = 0; i < n_prod; ++i) {
+        if (!is_gamma[i] || !(split[i].p_icK > 0.0) || !(split[i].p_gamma > 0.0))
+            continue;
+        for (const auto& c : tr.products[i].coincidences) {
+            const std::size_t j = c.first;
+            if (j >= n_prod || j == i || !is_gamma[j] || (placed[i] && placed[j]))
+                continue;
+            if (!seen.insert({std::min(i, j), std::max(i, j)}).second)
+                continue;
+            const TransitionSplit& sj = split[j];
+            if (!(sj.p_icK > 0.0) || !(sj.p_gamma > 0.0) || !(c.second > 0.0f))
+                continue;
+            const double p_j_given_i =
+                std::min(1.0, static_cast<double>(c.second) / sj.p_gamma);
+            n_icic += split[i].weight * split[i].p_icK * p_j_given_i * sj.p_icK;
+        }
+    }
+
+    const double d2 = p_ec * n_ic + n_icic;
+    const double denom = std::max(p_ec + n_ic, sum_kxray);
+    if (!(d2 > 0.0) || !(denom > 0.0))
+        return;
+
+    for (std::size_t ia = 0; ia < kmembers.size(); ++ia) {
+        CascadeMember& ma = dc.members[kmembers[ia]];
+        const double pa = ma.intensity / denom;
+        ma.self_pair_prob = std::min(ma.intensity, d2 * pa * pa);
+        for (std::size_t ib = ia + 1; ib < kmembers.size(); ++ib) {
+            CascadeMember& mb = dc.members[kmembers[ib]];
+            // Bound the joint itself, not each conditional, so the two directions
+            // keep I_a * P(b|a) == I_b * P(a|b) (only exotic isomers reach this).
+            const double joint = std::min({d2 * 2.0 * pa * (mb.intensity / denom),
+                                           ma.intensity, mb.intensity});
+            ma.coincident.push_back({static_cast<std::uint16_t>(kmembers[ib]),
+                                     joint / ma.intensity});
+            mb.coincident.push_back({static_cast<std::uint16_t>(kmembers[ia]),
+                                     joint / mb.intensity});
+        }
+    }
+}
+
 } // namespace
 
 std::vector<DecayCascade> build_cascades(const Nuclide* parent,
@@ -660,10 +824,8 @@ std::vector<DecayCascade> build_cascades(
             const LFluorescenceData* dflL =
                 (use_vacancy ? CrossSectionData::instance().l_fluorescence(daughter_Z) : nullptr);
             auto is_daughter_xray_line = [&](double e_keV) {
-                if (dfl)
-                    for (int li = 0; li < dfl->num_lines; ++li)
-                        if (std::abs(e_keV - static_cast<double>(dfl->line_energy_keV[li])) < 1.5)
-                            return true;
+                if (matches_k_line(dfl, e_keV))
+                    return true;
                 if (dflL)
                     for (int s = 0; s < 3; ++s)
                         for (int li = 0; li < dflL->sub[s].num_lines; ++li)
@@ -754,8 +916,9 @@ std::vector<DecayCascade> build_cascades(
             }
 
             // Transition-group x-ray links (legacy model): each x-ray is
-            // coincident with the branch's gammas. Used only when the vacancy
-            // model is not active for this branch.
+            // coincident with the branch's gammas, and the K x-rays with each
+            // other. Used only when the vacancy model is not active for this
+            // branch.
             if (opts.include_xrays && !use_vacancy) {
                 for (CascadeMember& m : dc.members) {
                     if (m.type != CascadeParticleType::Xray)
@@ -764,6 +927,8 @@ std::vector<DecayCascade> build_cascades(
                         m.coincident.push_back({static_cast<std::uint16_t>(gi),
                                                 dc.members[gi].intensity});
                 }
+                if (opts.kxray_coincidences)
+                    add_kxray_pair_links(dc, *tr, daughter_Z);
             }
 
             // Vacancy-level K x-ray model. Prefer the LEVEL-PATH realization

@@ -101,7 +101,19 @@ struct CascadeMember {
     /// SandiaDecay's RadParticle::coincidences. Used by the realization sampler
     /// to reconstruct correlated co-emission from pairwise fractions, and (when
     /// has_correlation is set) to sample the angular correlation W(theta).
+    /// The adapter's transition-group x-ray model also links K x-ray members to
+    /// each other (two K vacancies in one decay); those links are stored in both
+    /// directions, with intensity * prob equal from either side.
     std::vector<CoincidenceLink> coincident;
+
+    /// Probability, per decay of the branch, that this line is emitted TWICE --
+    /// two K vacancies of one decay both filled by this K x-ray line (e.g. Pb-203
+    /// Tl Kalpha1 + Kalpha1 = 145.7 keV). A link always joins two different
+    /// members, so the same-line pair needs this field. It is the joint: the 2E sum
+    /// peak's emission rate is branch_weight * self_pair_prob, and given one photon
+    /// of the line, 2 * self_pair_prob / intensity more are expected on average
+    /// (for summing-out). 0 for every member except transition-group K x-rays.
+    double self_pair_prob = 0.0;
 };
 
 /// A per-decay K-shell vacancy production channel (electron capture, or internal
@@ -543,6 +555,11 @@ inline bool cascade_invalid_branch_can_feed_peak(
         // positron outcome.  A surrounding/well detector can therefore receive
         // their 2E sum even though there is no second flat member to enumerate.
         if (dc.members[i].type == CascadeParticleType::Annih511
+            && std::abs(2.0 * dc.members[i].energy_keV - peak_keV)
+                   <= tolerance_keV)
+            return true;
+        // Two photons of one K x-ray line (two vacancies) likewise sum to 2E.
+        if (branch_mass * dc.members[i].self_pair_prob > material_probability
             && std::abs(2.0 * dc.members[i].energy_keV - peak_keV)
                    <= tolerance_keV)
             return true;

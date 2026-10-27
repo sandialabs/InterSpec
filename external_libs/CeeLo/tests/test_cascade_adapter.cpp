@@ -25,6 +25,7 @@
 #define BOOST_TEST_MODULE CascadeAdapterTests
 #include <boost/test/unit_test.hpp>
 
+#include "cascade/AnalyticCascade.h"
 #include "cascade/SandiaDecayCascade.h"
 #include "cross_sections/CrossSectionData.h"
 #include "SandiaDecay.h"
@@ -1524,4 +1525,373 @@ BOOST_AUTO_TEST_CASE(uranium_flux_inconsistent_graphs_remain_invalid) {
             rejected = rejected || a.rejected;
         BOOST_TEST_CONTEXT(name) { BOOST_CHECK(rejected); }
     }
+}
+
+
+// --------------------------------------------------------------------------
+// Transition-group (flat) x-ray model: K x-ray - K x-ray coincidences.
+//
+// Two K x-rays of one decay need two K vacancies. With D2 the expected number of
+// K-vacancy pairs per branch decay (EC-K x IC-K, plus IC-K x IC-K of two linked
+// transitions) and p_a = I_a / max(N_vac, sum I_K) the chance a vacancy is filled
+// by line a, the (a, b) pair is emitted D2 * 2 p_a p_b times per decay, and the
+// (a, a) pair D2 * p_a^2 times.
+// --------------------------------------------------------------------------
+
+namespace {
+
+CascadeOptions flat_xray_options() {
+    CascadeOptions opts;
+    opts.vacancy_xray_model = false;
+    return opts;
+}
+
+// The two-vacancy law, recomputed here from the raw SandiaDecay fields of one
+// transition rather than through the adapter's own helpers.
+struct KPairLaw {
+    double p_ec = 0.0, n_ic = 0.0, n_icic = 0.0, sum_kxray = 0.0;
+    double d2() const { return p_ec * n_ic + n_icic; }
+    double denom() const { return std::max(p_ec + n_ic, sum_kxray); }
+};
+
+KPairLaw k_pair_law(const SandiaDecay::Transition& tr) {
+    using SandiaDecay::ProductType;
+    KPairLaw law;
+    double weak_sum = 0.0, ec_k = 0.0, max_xray = 0.0;
+    for (const SandiaDecay::RadParticle& p : tr.products) {
+        if (p.type == ProductType::CaptureElectronParticle) {
+            weak_sum += p.intensity;
+            ec_k += static_cast<double>(p.intensity) * p.ec_K;
+        } else if (p.type == ProductType::PositronParticle) {
+            weak_sum += p.intensity;
+        } else if (p.type == ProductType::GammaParticle) {
+            law.n_ic += static_cast<double>(p.intensity) * p.icc_K;
+        } else if (p.type == ProductType::XrayParticle) {
+            max_xray = std::max(max_xray, static_cast<double>(p.energy));
+        }
+    }
+    law.p_ec = ec_k / std::max(1.0, weak_sum);  // the weak law's common scale
+    for (const SandiaDecay::RadParticle& p : tr.products)
+        if (p.type == ProductType::XrayParticle && p.energy > 0.75 * max_xray)
+            law.sum_kxray += p.intensity;  // K lines (the L lines sit far below)
+
+    // Two K-converted transitions in one cascade. Where both are placed in the
+    // level scheme, walk down from each converting transition's destination level,
+    // splitting each level's flux by its out-going occurrence weights
+    // I (1 + alpha); otherwise use the SandiaDecay link, as
+    // I_i alpha_K,i * P(gamma_j | gamma_i) * (1 + alpha_j) * alpha_K,j / (1 + alpha_j).
+    const std::size_t n = tr.products.size();
+    auto is_placed = [&](std::size_t i) {
+        const SandiaDecay::RadParticle& p = tr.products[i];
+        return p.type == ProductType::GammaParticle && p.intensity > 0.0f
+               && p.to_level >= 0 && p.to_level < p.from_level;
+    };
+    auto weight = [&](std::size_t i) {
+        return static_cast<double>(tr.products[i].intensity) * (1.0 + tr.products[i].icc_total);
+    };
+    auto p_k = [&](std::size_t i) {
+        return static_cast<double>(tr.products[i].icc_K) / (1.0 + tr.products[i].icc_total);
+    };
+    int max_level = 0;
+    for (std::size_t i = 0; i < n; ++i)
+        if (is_placed(i))
+            max_level = std::max(max_level, tr.products[i].from_level);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!is_placed(i) || !(tr.products[i].icc_K > 0.0f))
+            continue;
+        std::vector<double> reach(static_cast<std::size_t>(max_level) + 1, 0.0);
+        reach[static_cast<std::size_t>(tr.products[i].to_level)] = 1.0;
+        for (int lev = tr.products[i].to_level; lev > 0; --lev) {
+            if (!(reach[lev] > 0.0))
+                continue;
+            double out = 0.0;
+            for (std::size_t t = 0; t < n; ++t)
+                if (is_placed(t) && tr.products[t].from_level == lev)
+                    out += weight(t);
+            for (std::size_t t = 0; out > 0.0 && t < n; ++t) {
+                if (!is_placed(t) || tr.products[t].from_level != lev)
+                    continue;
+                const double p_t = reach[lev] * weight(t) / out;
+                reach[tr.products[t].to_level] += p_t;
+                law.n_icic += weight(i) * p_k(i) * p_t * p_k(t);
+            }
+        }
+    }
+    std::set<std::pair<std::size_t, std::size_t>> seen;
+    for (std::size_t i = 0; i < n; ++i) {
+        const SandiaDecay::RadParticle& pi = tr.products[i];
+        if (pi.type != ProductType::GammaParticle)
+            continue;
+        for (const auto& c : pi.coincidences) {
+            const std::size_t j = c.first;
+            if (j >= n || tr.products[j].type != ProductType::GammaParticle
+                || (is_placed(i) && is_placed(j))
+                || !seen.insert({std::min(i, j), std::max(i, j)}).second)
+                continue;
+            law.n_icic += static_cast<double>(pi.intensity) * pi.icc_K * c.second
+                          * tr.products[j].icc_K;
+        }
+    }
+    return law;
+}
+
+// The branch of `cascades` holding a member at `energy`, or nullptr.
+const DecayCascade* branch_with(const std::vector<DecayCascade>& cascades,
+                                double energy) {
+    for (const DecayCascade& dc : cascades)
+        if (find_member(dc, energy, 0.01))
+            return &dc;
+    return nullptr;
+}
+
+std::size_t member_index(const DecayCascade& dc, double energy) {
+    for (std::size_t m = 0; m < dc.members.size(); ++m)
+        if (std::abs(dc.members[m].energy_keV - energy) < 0.01)
+            return m;
+    return dc.members.size();
+}
+
+// P(to | from) from the explicit link, or -1 if there is none.
+double link_prob(const DecayCascade& dc, std::size_t from, std::size_t to) {
+    for (const CoincidenceLink& lk : dc.members[from].coincident)
+        if (lk.partner == to)
+            return lk.prob;
+    return -1.0;
+}
+
+bool has_xray_xray_link(const DecayCascade& dc) {
+    for (const CascadeMember& m : dc.members)
+        for (const CoincidenceLink& lk : m.coincident)
+            if (m.type == CascadeParticleType::Xray
+                && dc.members[lk.partner].type == CascadeParticleType::Xray)
+                return true;
+    return false;
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(flat_model_pb203_kxray_pairs) {
+    // Pb-203 -> Tl-203: EC-K in ~78% of decays, and the 279 keV transition
+    // K-converted in ~13%, so ~10% of decays make two K vacancies.
+    const SandiaDecay::Nuclide* const pb203 = db().nuclide("Pb203");
+    BOOST_REQUIRE(pb203 && pb203->decaysToChildren.size() == 1);
+    const KPairLaw law = k_pair_law(*pb203->decaysToChildren[0]);
+    BOOST_CHECK_CLOSE(law.p_ec, 0.775, 1.0);
+    BOOST_CHECK_CLOSE(law.n_ic, 0.133, 2.0);
+    BOOST_CHECK_GT(law.sum_kxray, law.p_ec + law.n_ic);  // the data's ~3% excess
+
+    const auto cascades = build_cascades(db(), "Pb203", flat_xray_options());
+    const DecayCascade* const dc = branch_with(cascades, 72.873);
+    BOOST_REQUIRE(dc);
+    const std::size_t ka1 = member_index(*dc, 72.873), ka2 = member_index(*dc, 70.833);
+    BOOST_REQUIRE(ka1 < dc->members.size() && ka2 < dc->members.size());
+    const double i1 = dc->members[ka1].intensity, i2 = dc->members[ka2].intensity;
+    const double p1 = i1 / law.denom(), p2 = i2 / law.denom();
+
+    const double p12 = link_prob(*dc, ka1, ka2), p21 = link_prob(*dc, ka2, ka1);
+    BOOST_REQUIRE(p12 > 0.0 && p21 > 0.0);
+    BOOST_CHECK_CLOSE(i1 * p12, law.d2() * 2.0 * p1 * p2, 0.01);
+    BOOST_CHECK_CLOSE(i2 * p21, i1 * p12, 1e-9);
+    BOOST_CHECK_CLOSE(dc->members[ka1].self_pair_prob, law.d2() * p1 * p1, 0.01);
+    BOOST_CHECK_CLOSE(dc->members[ka2].self_pair_prob, law.d2() * p2 * p2, 0.01);
+
+    // Per decay: Ka1+Ka2 (143.7 keV), Ka1+Ka1 (145.7), Ka2+Ka2 (141.7).
+    BOOST_CHECK(i1 * p12 > 0.027 && i1 * p12 < 0.031);
+    BOOST_CHECK(dc->members[ka1].self_pair_prob > 0.023
+                && dc->members[ka1].self_pair_prob < 0.027);
+    BOOST_CHECK(dc->members[ka2].self_pair_prob > 0.0078
+                && dc->members[ka2].self_pair_prob < 0.0094);
+
+    // Only x-rays pair with themselves, and the gammas stay unlinked to x-rays.
+    for (const CascadeMember& m : dc->members) {
+        if (m.type != CascadeParticleType::Xray)
+            BOOST_CHECK_EQUAL(m.self_pair_prob, 0.0);
+        if (m.type == CascadeParticleType::Gamma)
+            for (const CoincidenceLink& lk : m.coincident)
+                BOOST_CHECK(dc->members[lk.partner].type == CascadeParticleType::Gamma);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(flat_model_links_valid_and_kxray_pairs_symmetric) {
+    // Every link (flat and default model) must point at another valid member with a
+    // positive probability, at most 1 for the links the adapter makes (gamma-gamma
+    // links are SandiaDecay's verbatim: Th-229 49.75 keV, in the Am-241 chain, has
+    // one at 1.00035); K x-ray pairs carry the same joint from either side, even
+    // where it had to be bounded by a line's intensity (Cs-124m).
+    for (const char* nuc : {"Pb203", "Ba133", "Eu152", "Co57", "Cs137", "Am241",
+                            "Co60", "Na22", "I125", "Tl201", "U235", "Cs124m"}) {
+        BOOST_TEST_CONTEXT(nuc) {
+            for (const bool flat : {false, true}) {
+                const CascadeOptions opts = flat ? flat_xray_options() : CascadeOptions{};
+                const auto cascades = build_cascades(db(), nuc, opts);
+                BOOST_REQUIRE(!cascades.empty());
+                for (const DecayCascade& dc : cascades) {
+                    BOOST_CHECK(flat || !has_xray_xray_link(dc));
+                    for (std::size_t a = 0; a < dc.members.size(); ++a) {
+                        const CascadeMember& ma = dc.members[a];
+                        BOOST_CHECK_GE(ma.self_pair_prob, 0.0);
+                        BOOST_CHECK_LE(ma.self_pair_prob, ma.intensity);
+                        for (const CoincidenceLink& lk : ma.coincident) {
+                            BOOST_REQUIRE_LT(lk.partner, dc.members.size());
+                            BOOST_CHECK_NE(static_cast<std::size_t>(lk.partner), a);
+                            BOOST_CHECK_GT(lk.prob, 0.0);
+                            const CascadeMember& mb = dc.members[lk.partner];
+                            if (ma.type == CascadeParticleType::Xray
+                                || mb.type == CascadeParticleType::Xray)
+                                BOOST_CHECK_LE(lk.prob, 1.0);
+                            if (ma.type != CascadeParticleType::Xray
+                                || mb.type != CascadeParticleType::Xray)
+                                continue;
+                            const double back = link_prob(dc, lk.partner, a);
+                            BOOST_REQUIRE_GT(back, 0.0);
+                            BOOST_CHECK_CLOSE(ma.intensity * lk.prob,
+                                              mb.intensity * back, 1e-9);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(flat_model_kxray_pairs_match_vacancy_model) {
+    // The level-scheme vacancy model enumerates every pair of K-vacancy sources
+    // exactly (the EC-K at its fed level, and each K-converted transition reached
+    // from it). Its pure-sum rate at Ka1 + Ka2, divided by its own per-vacancy line
+    // weights 2 w1 w2, is the exact D2; the flat model's D2 assumes the capture and
+    // the conversions independent. Ba-133's IC-K x IC-K term (53/79.6/356 keV then
+    // the 81 keV transition, alpha_K 1.4) is ~13% of its D2; for the beta- emitters
+    // Lu-177 and Eu-155 it is all of it, and SandiaDecay's gamma-gamma links
+    // understate it there ~4-10x, which is why the adapter walks the level scheme.
+    // The adapter's own D2 (self_pair_prob / p^2 of its strongest K line) must
+    // equal the recomputation, which checks the adapter rather than the model.
+    struct Case { const char* nuc; int Z; double tol_percent; };
+    for (const Case& c : {Case{"Pb203", 81, 2.0}, Case{"Ba133", 55, 5.0},
+                          Case{"Lu177", 72, 2.0}, Case{"Eu155", 64, 2.0}}) {
+        BOOST_TEST_CONTEXT(c.nuc) {
+            const SandiaDecay::Nuclide* const nuc = db().nuclide(c.nuc);
+            BOOST_REQUIRE(nuc && nuc->decaysToChildren.size() == 1);
+            const KPairLaw law = k_pair_law(*nuc->decaysToChildren[0]);
+
+            // The two strongest EPICS K lines are Ka1 and Ka2.
+            const FluorescenceData* const fl = CrossSectionData::instance().fluorescence(c.Z);
+            BOOST_REQUIRE(fl && fl->num_lines >= 2);
+            int i1 = 0, i2 = -1;
+            for (int li = 1; li < fl->num_lines; ++li)
+                if (fl->line_probability[li] > fl->line_probability[i1])
+                    i1 = li;
+            for (int li = 0; li < fl->num_lines; ++li)
+                if (li != i1 && (i2 < 0 || fl->line_probability[li] > fl->line_probability[i2]))
+                    i2 = li;
+            const double e_sum = fl->line_energy_keV[i1] + fl->line_energy_keV[i2];
+            const double w1 = fl->fluorescence_yield * fl->line_probability[i1];
+            const double w2 = fl->fluorescence_yield * fl->line_probability[i2];
+            const double win = 0.1;
+            for (int a = 0; a < fl->num_lines; ++a)
+                for (int b = a; b < fl->num_lines; ++b)
+                    if (!((a == i1 && b == i2) || (a == i2 && b == i1)))
+                        BOOST_REQUIRE_GT(std::abs(fl->line_energy_keV[a]
+                                                  + fl->line_energy_keV[b] - e_sum), win);
+
+            struct Unit : EfficiencyProvider {
+                double fep(double) const override { return 1.0; }
+                double total(double) const override { return 0.0; }
+            } unit;
+            AnalyticCascadeOptions eopts;
+            eopts.report_pure_sums = true;
+            const auto cascades = build_cascades(db(), c.nuc);  // vacancy model
+            PeakWindow w;
+            w.energy_keV = e_sum;
+            w.tolerance_keV = win;
+            const auto res = compute_cascade_analytic(cascades, {w}, unit, eopts);
+            BOOST_REQUIRE_EQUAL(res.size(), 1u);
+            BOOST_REQUIRE(!res[0].found);
+            const double d2_exact = res[0].pure_sum_rate / (2.0 * w1 * w2);
+            BOOST_TEST_MESSAGE(c.nuc << ": D2 exact " << d2_exact << ", flat " << law.d2()
+                               << " (EC x IC " << law.p_ec * law.n_ic
+                               << ", IC x IC " << law.n_icic << ")");
+            BOOST_CHECK_CLOSE(law.d2(), d2_exact, c.tol_percent);
+
+            const auto flat = build_cascades(db(), c.nuc, flat_xray_options());
+            const CascadeMember* strongest = nullptr;
+            for (const DecayCascade& dc : flat)
+                for (const CascadeMember& m : dc.members)
+                    if (m.self_pair_prob > 0.0
+                        && (!strongest || m.intensity > strongest->intensity))
+                        strongest = &m;
+            BOOST_REQUIRE(strongest);
+            const double p = strongest->intensity / law.denom();
+            BOOST_CHECK_CLOSE(strongest->self_pair_prob / (p * p), law.d2(), 0.01);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(flat_model_single_vacancy_has_no_kxray_pairs) {
+    // Cs-137 -> Ba-137m: the Ba K x-rays come only from converting the 661.7 keV
+    // transition, one vacancy per decay, so no two of them are ever emitted together.
+    const auto cascades = build_cascades(db(), "Cs137", flat_xray_options());
+    bool saw_kxray = false;
+    for (const DecayCascade& dc : cascades) {
+        saw_kxray = saw_kxray || (find_member(dc, 32.19, 0.05) != nullptr);
+        BOOST_CHECK(!has_xray_xray_link(dc));
+        for (const CascadeMember& m : dc.members)
+            BOOST_CHECK_EQUAL(m.self_pair_prob, 0.0);
+    }
+    BOOST_CHECK(saw_kxray);
+}
+
+BOOST_AUTO_TEST_CASE(flat_model_kxray_coincidences_option) {
+    // Off: the legacy x-ray-gamma-only links.
+    CascadeOptions off = flat_xray_options();
+    off.kxray_coincidences = false;
+    for (const DecayCascade& dc : build_cascades(db(), "Pb203", off)) {
+        BOOST_CHECK(!has_xray_xray_link(dc));
+        for (const CascadeMember& m : dc.members)
+            BOOST_CHECK_EQUAL(m.self_pair_prob, 0.0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(flat_model_kxray_summing_out_uses_pair_links) {
+    // The analytic engine's pairwise summing-out of a K x-ray: another K line b
+    // now deposits with P(b|a) rather than its full intensity (one vacancy cannot
+    // give two K x-rays), and a second photon of the line itself with
+    // 2 P(a,a) / I_a. Pin the ratio to the legacy (independent) result.
+    const double tot = 0.2;  // constant total efficiency, so each factor is explicit
+    struct Flat : EfficiencyProvider {
+        double t = 0.0;
+        double fep(double) const override { return 0.1; }
+        double total(double) const override { return t; }
+    } prov;
+    prov.t = tot;
+
+    CascadeOptions off = flat_xray_options();
+    off.kxray_coincidences = false;
+    const auto with_links = build_cascades(db(), "Pb203", flat_xray_options());
+    const auto legacy = build_cascades(db(), "Pb203", off);
+    const DecayCascade* const dc = branch_with(with_links, 72.873);
+    BOOST_REQUIRE(dc);
+    const std::size_t ka1 = member_index(*dc, 72.873);
+    BOOST_REQUIRE_LT(ka1, dc->members.size());
+
+    // Gamma and L x-ray partners sum it out alike either way, so only the K
+    // partners (the x-rays it links to) differ: before, each at its intensity.
+    double expected_ratio = 1.0;
+    for (std::size_t b = 0; b < dc->members.size(); ++b) {
+        const double pb = (b == ka1) ? -1.0 : link_prob(*dc, ka1, b);
+        if (pb > 0.0 && dc->members[b].type == CascadeParticleType::Xray)
+            expected_ratio *= (1.0 - pb * tot) / (1.0 - dc->members[b].intensity * tot);
+    }
+    const CascadeMember& m1 = dc->members[ka1];
+    expected_ratio *= 1.0 - 2.0 * m1.self_pair_prob / m1.intensity * tot;
+
+    PeakWindow w;
+    w.energy_keV = 72.873;
+    w.tolerance_keV = 0.25;
+    const AnalyticCascadeOptions eopts;
+    const auto r_links = compute_cascade_analytic(with_links, {w}, prov, eopts);
+    const auto r_legacy = compute_cascade_analytic(legacy, {w}, prov, eopts);
+    BOOST_REQUIRE(r_links.size() == 1 && r_legacy.size() == 1);
+    BOOST_REQUIRE(r_links[0].found && r_legacy[0].found);
+    BOOST_CHECK_GT(r_links[0].c_out, r_legacy[0].c_out);
+    BOOST_CHECK_CLOSE(r_links[0].c_out / r_legacy[0].c_out, expected_ratio, 1e-6);
 }

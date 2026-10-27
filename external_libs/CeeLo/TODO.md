@@ -129,6 +129,40 @@ Worth adding the cascade block to ctest.
 (`cascade_observables`, ~85 s) and record the producing commit in its header. Do not regenerate first
 — that would bake the drift in as the new expectation.
 
+### Transition-group (flat) x-ray model: remaining approximations `[low]`
+- **Effect:** the flat model (`vacancy_xray_model=false`; InterSpec's reference lines and sum-peak
+  check) now carries K x-ray–K x-ray pairs (see DESIGN.md → Decay x-ray models), but:
+  - **X-rays and gammas are independent.** An x-ray→gamma link is the gamma's intensity. For
+    Pb-203 a K–K pair needs the 279 keV transition K-converted, so that gamma cannot accompany
+    it, yet the link treats it as coincident. InterSpec's reference lines therefore seed no
+    triple from an x-ray pair. Also, the pair survival (the summing-out of a sum peak by the
+    decay's other photons) uses marginal intensities. A K–K sum is then "knocked out" by the
+    279 keV gamma and by further K lines at their full rate, which reads ~10–20% low at contact.
+  - **The capture and the conversions are independent** in `D2 = P_EC*N_IC + N_ICIC`. Neither
+    is conditioned on the EC-fed level (exact in the vacancy model). This is +0.2% on Pb-203,
+    +2.8% on Ba-133, and +5.9% on Te-123m. The weak law's `fed_level` plus the same level walk
+    that N_ICIC uses would remove it.
+  - **The MC ignores `self_pair_prob`.** A flat member is one Bernoulli per realization, so
+    FullRealization/Conditional with the flat model miss the same-line pair (2E sum and
+    same-line summing-out). The K–K links do reach the fallback forest and `cascade_partner_prob`.
+  - **There are no L x-ray pairs, and no K→L relaxation** (a Kα leaves an L vacancy).
+  - **Gamma-gamma links are SandiaDecay's coincidence fractions, verbatim.** They often
+    disagree with the level scheme the same data carries. A quick census (2026-10-27, branches
+    with complete topology only) found ~20k of ~27.5k links off by more than 20%. Lu-177's are
+    all ~0.10x (208.4 -> 112.9 keV: 0.032 against 0.31). Eu-152's Sm branch 125.7 -> 562.9 keV
+    is 0.37 against 0.99, although the 684.8 keV 0+ level has nowhere else to go. Bi-214's links
+    from 221.0 keV are 0.068x, except ->609.3 at 0.92 against 0.11. Clean: Ba-133, Co-60,
+    Ra-226, Tl-208, I-131. This is a decay-data question first. The flat model's K x-ray
+    IC x IC already walks the scheme instead. The flat gamma-gamma links (InterSpec's
+    reference-line and sum-peak-check gamma sums, the MC fallback forest) still use the
+    fractions. The level path does not use them.
+- **Implementation:** the clean fix is the vacancy model, which is exact. It is too slow for
+  InterSpec's interactive redraw (36–78 ms per window for Eu-152; see `ReferenceLineInfo.cpp`).
+  A cheaper route is to condition the flat x-ray→gamma links on the vacancy source (EC vs.
+  conversion of a given transition).
+- **Shows up when:** x-ray–gamma or x-ray–x-ray sums at contact for EC emitters whose x-rays come
+  mostly from conversion of one strong line (Pb-203, Ba-133, Eu-152's EC branch).
+
 ### Sum-peak-fed / x-ray-fed summing-IN in the Conditional estimator `[low]`
 - **Effect:** `CascadeMethod::Conditional` now captures gamma-gamma sum-peak-fed summing-IN (pairs a+b
   in the window where neither is the peak gamma, e.g. Co-57 122.06+14.41→136.47) and coincident vacancy

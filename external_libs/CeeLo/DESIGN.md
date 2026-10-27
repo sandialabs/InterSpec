@@ -324,6 +324,56 @@ and each summing-in pair key's coincident survival (the ~25 vacancy x-ray lines 
 share one key), so a U-235/U-238 evaluation over ~300 windows takes tens of ms rather than seconds.
 Providers must be deterministic and side-effect free (their values are memoized per energy).
 
+### Decay x-ray models (SandiaDecay adapter)
+
+`cascade_adapter::build_cascades` represents a branch's decay x-rays in one of two ways.
+
+- **Vacancy model** (default, `CascadeOptions::vacancy_xray_model`): the branch carries its K/L
+  vacancy sources (EC shell fractions, per-transition K/L ICCs), and the engine emits lines from the
+  daughter's EPICS relaxation data. Line exclusivity per vacancy and the per-decay multiplicity are
+  exact, and with a valid level scheme the analytic engine's summing-in enumerates x-ray–x-ray pairs
+  exactly (EC-K x IC-K at the fed level, IC-K x IC-K along the walk). The cost is ~25 line
+  occurrences per converting transition in that enumeration.
+- **Transition-group ("flat") model** (`vacancy_xray_model=false`, or a branch with no vacancy
+  data): SandiaDecay's tabulated x-ray lines become `Xray` members. Each is linked to the branch's
+  gammas at the gamma's intensity, which encodes independence. InterSpec's reference-line display
+  and sum-peak check use it for speed, enumerating sums from the links themselves.
+  With `kxray_coincidences` (default on) and the enriched EC/ICC data, the K x-ray members are
+  also linked to each other, because two K x-rays of one decay need two K vacancies. With P_EC
+  the K-capture probability, N_IC the K conversions, and N_ICIC the pairs of K-converted
+  transitions in one cascade, the expected vacancy pairs per branch decay are
+  `D2 = P_EC*N_IC + N_ICIC`. The capture and the conversions are taken as independent.
+  N_ICIC walks the level scheme where both transitions are placed in it (`from_level`/
+  `to_level`): each level splits its flux among its out-going transitions by their occurrence
+  weights, the same weights the level path uses. A pair with an unplaced transition falls back on
+  SandiaDecay's gamma-gamma link, P(transition j | transition i) = P(gamma j | gamma i) /
+  (gamma fraction of j). The scheme is preferred because those links often disagree with it.
+  Lu-177's links are all ~0.10x the scheme (208.4 keV -> 112.9 keV is 0.032 against 0.31), which
+  left its K-K pairs 10x low. A vacancy
+  is filled by line a with `p_a = I_a / max(P_EC + N_IC, sum I_K)`, so the fluorescence yield
+  cancels. The max caps sum p_a at 1 where the tabulated yields exceed one x-ray per vacancy:
+  Pb-203's Tl lines exceed it by ~3%. The (a,b) pair is emitted `D2*2*p_a*p_b` times per decay.
+  This is stored as links in both directions, P(b|a) = joint/I_a. A line with itself is emitted
+  `D2*p_a^2` times, which is stored in `CascadeMember::self_pair_prob`, because a link always
+  joins two different members. For Pb-203, Ka1+Ka2 is 0.029/decay. Against the vacancy-model
+  engine's exact enumeration (`flat_model_kxray_pairs_match_vacancy_model`), the flat D2 equals
+  it to machine precision for the beta- emitters Lu-177 and Eu-155, where it is all IC x IC on the
+  same scheme. Where EC x IC enters, the residual is the independence assumption: Pb-203 +0.2%,
+  Ce-139 0%, Bi-206 +3%, Ba-133 +2.8%, Hf-175 +4.6%, Te-123m +5.9%. Without the IC x IC term,
+  Ba-133 would be 12% low (its 53/79.6/356 keV transitions feed the alpha_K = 1.4 81 keV one).
+  The emitted pair rates also inherit SandiaDecay's line yields, which can differ from EPICS's
+  by 10-20% (Bi-206, Eu-155). The analytic
+  engine's pairwise summing-out of a flat x-ray uses these links, and the self term
+  2*self_pair_prob/I_a. Every K line then sums out alike: the other vacancy's line does not
+  depend on which line filled the first. Before, every other K line counted as independent at
+  its full intensity, and the line's own second photon not at all. For Pb-203 that expected
+  ~2x too many partner x-rays (0.48 vs 0.22 per K x-ray). For Ba-133 it expected too few
+  (0.57 vs 0.71), because its decays average more K vacancies; at eps_tot = 0.1 its Kalpha1
+  c_out went 0.821 -> 0.810, and Pb-203's went 0.842 -> 0.864. The links add only
+  (number of K lines)^2 per branch. The engine's per-window time is unchanged. `build_cascades`
+  pays for the transition splits and the IC x IC walk: Eu-152 goes 0.03 -> 0.06 ms, and the
+  U-238 chain 0.3 -> 0.7 ms (Release, 2026-10). InterSpec's reference-line redraw is unchanged.
+
 ### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
 
 `src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
