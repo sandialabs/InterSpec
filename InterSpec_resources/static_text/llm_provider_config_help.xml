@@ -6,7 +6,7 @@
     </div>
 
 <div style="padding-top: 10px">
-The <b>AI Assistant</b> needs to know which large-language-model (LLM) service to talk to, how to
+The <b>LLM Assistant</b> needs to know which large-language-model (LLM) service to talk to, how to
 authenticate with it, and which model to use.  These settings are made in the
 &quot;<b>LLM Provider Settings</b>&quot; window.  Until a provider is set up, the assistant shows a
 <b>Configure LLM Provider</b> button that opens this window; afterwards it is available from the
@@ -121,6 +121,12 @@ yourself.
 InterSpec uses for its display, which some providers (for example, Ask Sage) refuse to answer
 because of their cross-origin (CORS) policy.  Checking this sends that provider's requests from
 InterSpec itself instead.
+</p>
+<p>
+<b>Banner text</b> (optional): a short note shown above the assistant's input field while that
+provider is active - for example, your organization's rules for what may be sent to it.  It is
+saved as the <code>&lt;Banner&gt;</code> element of the provider in <code>llm_config.xml</code>.
+Leave it blank for no banner.
 </p>
 </div>
 

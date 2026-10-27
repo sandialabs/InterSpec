@@ -5583,8 +5583,14 @@ const char *PeakContinuum::offset_type_str( const PeakContinuum::OffsetType type
     case BiLinearStepCDF:  return "BiLinearStepCDF";
     case External:         return "External";
   }//switch( m_type )
-  
+
   return "InvalidOffsetType";
+}
+
+
+const char *PeakContinuum::offset_type_name( const PeakContinuum::OffsetType type )
+{
+  return (type == Quadratic) ? "Quadratic" : offset_type_str( type );
 }
 
 

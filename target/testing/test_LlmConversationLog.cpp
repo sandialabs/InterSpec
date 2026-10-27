@@ -278,3 +278,47 @@ BOOST_AUTO_TEST_CASE( JudgeModelConfig )
   LlmConfig::LlmApi no_provider;
   BOOST_CHECK_THROW( no_provider.selectModel( "x" ), std::exception );
 }//JudgeModelConfig
+
+
+BOOST_AUTO_TEST_CASE( ProviderBannerConfig )
+{
+  const string config_xml =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<LlmConfig version=\"0\">\n"
+    "  <LlmApi version=\"1\">\n"
+    "    <Enabled>true</Enabled>\n"
+    "    <ApiProvider active=\"true\">\n"
+    "      <ApiEndpoint>https://api.example.com/v1/chat/completions</ApiEndpoint>\n"
+    "      <BearerToken>x</BearerToken>\n"
+    "      <Banner>  Lab server &amp; test &lt;internal&gt;  </Banner>\n"
+    "      <Model active=\"true\"><Name>test-model</Name></Model>\n"
+    "    </ApiProvider>\n"
+    "  </LlmApi>\n"
+    "  <McpServer version=\"1\"><Enabled>false</Enabled><BearerToken>x</BearerToken></McpServer>\n"
+    "</LlmConfig>\n";
+
+  const string path = write_temp_file( config_xml );
+  LlmConfig config;
+  std::tie( config.llmApi, config.mcpServer ) = LlmConfig::loadApiAndMcpConfigs( path );
+  SpecUtils::remove_file( path );
+
+  // Trimmed, with XML entities decoded.
+  const string expected = "Lab server & test <internal>";
+  BOOST_CHECK_EQUAL( config.llmApi.activeProvider().banner, expected );
+
+  // Written back escaped, and read back the same.
+  const string xml = LlmConfig::toXmlString( config );
+  BOOST_CHECK( xml.find( "<Banner>Lab server &amp; test &lt;internal&gt;</Banner>" ) != string::npos );
+  const string path2 = write_temp_file( xml );
+  const pair<LlmConfig::LlmApi, LlmConfig::McpServer> reloaded = LlmConfig::loadApiAndMcpConfigs( path2 );
+  SpecUtils::remove_file( path2 );
+  BOOST_CHECK_EQUAL( reloaded.first.activeProvider().banner, expected );
+
+  // Without the element there is no banner, and none is written.
+  const string plain_path = write_temp_file( sm_minimal_config );
+  LlmConfig plain;
+  std::tie( plain.llmApi, plain.mcpServer ) = LlmConfig::loadApiAndMcpConfigs( plain_path );
+  SpecUtils::remove_file( plain_path );
+  BOOST_CHECK( plain.llmApi.activeProvider().banner.empty() );
+  BOOST_CHECK( LlmConfig::toXmlString( plain ).find( "</Banner>" ) == string::npos );  // "<Banner>" is in the docs comment
+}//ProviderBannerConfig

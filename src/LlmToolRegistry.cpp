@@ -435,9 +435,102 @@ namespace {
     }
   }
 
-  void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
+  void from_json(const json& j_in, AnalystChecks::FitPeakOptions& p) {
 
-    p.energy = get_number( j, "energy" );
+    // Some LLMs give arrays as JSON strings (e.g., "[742.8, 766.4]")
+    json j = j_in;
+    for( const char *key : { "energy", "energies", "source" } )
+    {
+      const string field = find_case_insensitive_key( key, j );
+      if( j.contains(field) && j[field].is_string() && SpecUtils::istarts_with( SpecUtils::trim_copy(j[field].get<string>()), "[" ) )
+        normalize_json_field( j, field );
+    }
+
+    // The energies requested; `energies` is accepted as an alias of `energy`
+    const string energy_key = find_case_insensitive_key( "energy", j );
+    const string energies_key = find_case_insensitive_key( "energies", j );
+    const string used_energy_key = (j.contains(energy_key) && !j[energy_key].is_null()) ? energy_key : energies_key;
+    if( !j.contains(used_energy_key) || j[used_energy_key].is_null() )
+      throw runtime_error( "'energy' parameter must be specified." );
+
+    vector<double> energies;
+    if( j[used_energy_key].is_array() )
+    {
+      for( const json &e : j[used_energy_key] )
+        energies.push_back( get_double( e ) );
+      if( energies.empty() )
+        throw runtime_error( "'energy' must contain at least one energy." );
+    }else
+    {
+      energies.push_back( get_number( j, used_energy_key ) );
+    }
+
+    // The source(s): `source`, or one of its aliases; a string, or an array with one entry per energy
+    vector<string> sources;
+    for( const char *key : { "source", "nuclide", "element", "xray", "x-ray", "reaction" } )
+    {
+      const string src_key = find_case_insensitive_key( key, j );
+      if( !j.contains(src_key) || j[src_key].is_null() )
+        continue;
+
+      const json &src_val = j[src_key];
+      if( src_val.is_array() )
+      {
+        if( src_val.size() != energies.size() )
+          throw runtime_error( "When '" + src_key + "' is an array, it must have one entry per energy (got "
+                               + std::to_string(src_val.size()) + " sources for "
+                               + std::to_string(energies.size()) + " energies); use \"\" for no source." );
+        for( const json &src : src_val )
+          sources.push_back( src.is_string() ? src.get<string>() : string() );
+      }else if( src_val.is_string() )
+      {
+        sources.assign( energies.size(), src_val.get<string>() );
+      }else
+      {
+        throw runtime_error( "'" + src_key + "' must be a string, or an array of strings." );
+      }
+      break;
+    }//for( loop over source keys )
+
+    // Multiple peaks, or a ROI range/continuum given, fit exactly the requested peaks in one ROI;
+    //  otherwise (one energy, nothing else), search for the best peak near the energy.
+    bool roi_params_given = false;
+    for( const char *key : { "roiLowerEnergy", "roiUpperEnergy", "continuumType" } )
+    {
+      const string field = find_case_insensitive_key( key, j );
+      roi_params_given |= (j.contains(field) && !j[field].is_null());
+    }
+
+    p.explicitRoi.reset();
+    p.energy = energies.front();
+    p.source = std::nullopt;
+    if( (energies.size() > 1) || roi_params_given )
+    {
+      AnalystChecks::FitPeakOptions::ExplicitRoi roi;
+      roi.energies = energies;
+      roi.sources = sources;
+
+      const string lower_key = find_case_insensitive_key( "roiLowerEnergy", j );
+      if( j.contains(lower_key) && !j[lower_key].is_null() )
+        roi.lowerEnergy = get_number( j, lower_key );
+
+      const string upper_key = find_case_insensitive_key( "roiUpperEnergy", j );
+      if( j.contains(upper_key) && !j[upper_key].is_null() )
+        roi.upperEnergy = get_number( j, upper_key );
+
+      const string cont_key = find_case_insensitive_key( "continuumType", j );
+      if( j.contains(cont_key) && !j[cont_key].is_null() )
+      {
+        if( !j[cont_key].is_string() )
+          throw runtime_error( "'continuumType' must be a string." );
+        roi.continuumType = j[cont_key].get<string>();
+      }
+
+      p.explicitRoi = std::move( roi );
+    }else if( !sources.empty() )
+    {
+      p.source = sources.front();
+    }//if( explicit ROI ) / else if( a source )
 
     p.doNotAddToAnalysisPeaks = get_boolean( j, "DoNotAddToAnalysisPeaks", false );
 
@@ -451,20 +544,6 @@ namespace {
     } else {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
-
-    p.source = std::nullopt;
-    if( j.contains("source") )
-      p.source = j["source"].get<std::string>();
-    else if( j.contains("nuclide") )
-      p.source = j["nuclide"].get<std::string>();
-    else if( j.contains("element") )
-      p.source = j["element"].get<std::string>();
-    else if( j.contains("xray") )
-      p.source = j["xray"].get<std::string>();
-    else if( j.contains("x-ray") )
-      p.source = j["x-ray"].get<std::string>();
-    else if( j.contains("reaction") )
-      p.source = j["reaction"].get<std::string>();
   }
   
   /*
@@ -586,7 +665,7 @@ namespace {
     roi_json = json{
       {"lowerEnergy", rount_to_hundredth(cont->lowerEnergy())},
       {"upperEnergy", rount_to_hundredth(cont->upperEnergy())},
-      {"continuumType", PeakContinuum::offset_type_str(cont->type()) }
+      {"continuumType", PeakContinuum::offset_type_name(cont->type()) }
       //("continuumCounts", cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), dataH ) }
     };
 
@@ -668,6 +747,23 @@ namespace {
       j["fitPeakEnergy"] = rount_to_hundredth(fitPeak->mean());
 
       j["status"] = "success";
+
+      if( !p.removedPeaks.empty() )
+      {
+        json removed = json::array();
+        for( const shared_ptr<const PeakDef> &peak : p.removedPeaks )
+        {
+          json removed_json{ {"energy", rount_to_hundredth(peak->mean())} };
+          const string src = peak->sourceName();
+          if( !src.empty() )
+            removed_json["source"] = src;
+          removed.push_back( removed_json );
+        }
+        j["removedPeaks"] = removed;
+      }//if( !p.removedPeaks.empty() )
+
+      if( !p.warnings.empty() )
+        j["warnings"] = p.warnings;
 
       //"response":"OK"
       //"status":200
@@ -924,7 +1020,7 @@ namespace {
     const shared_ptr<const PeakContinuum> cont = peak->continuum();
     if( cont )
     {
-      peak_json["continuumType"] = PeakContinuum::offset_type_str( cont->type() );
+      peak_json["continuumType"] = PeakContinuum::offset_type_name( cont->type() );
       peak_json["roiLowerEnergy"] = rount_to_hundredth( cont->lowerEnergy() );
       peak_json["roiUpperEnergy"] = rount_to_hundredth( cont->upperEnergy() );
 

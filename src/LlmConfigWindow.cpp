@@ -945,6 +945,24 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     fetchMsg->addStyleClass( ui.fetchOk ? "LcwFetchOk" : "LcwFetchErr" );
   }
 
+  // Optional banner shown above the assistant's input field while this provider is active
+  WLabel *bannerLbl = bodyc->addNew<WLabel>( WString::tr("lcw-banner") );
+  bannerLbl->addStyleClass( "LcwFieldLabel" );
+  WLineEdit *bannerEdit = bodyc->addNew<WLineEdit>();
+  bannerEdit->addStyleClass( "LcwInput" );
+  bannerEdit->setText( WString::fromUTF8(prov.banner) );
+  bannerEdit->setPlaceholderText( WString::tr("lcw-banner-ph") );
+  bannerLbl->setBuddy( bannerEdit );
+  HelpSystem::attachToolTipOn( bannerEdit, WString::tr("lcw-banner-tip"), showToolTips );
+  bannerEdit->changed().connect( std::bind( [this,pi,bannerEdit](){
+    if( pi >= m_working.llmApi.providers.size() )
+      return;
+    string banner = bannerEdit->text().toUTF8();
+    SpecUtils::trim( banner );
+    m_working.llmApi.providers[pi].banner = banner;
+    refreshPreview();
+  } ) );
+
   // Models subsection
   WContainerWidget *modelsHeader = bodyc->addNew<WContainerWidget>();
   modelsHeader->addStyleClass( "LcwSectionHeader LcwModelsHeader" );

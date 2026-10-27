@@ -59,6 +59,17 @@ struct NormalizedTool
   nlohmann::json parameters;  // JSON-schema object describing the tool's parameters
 };//struct NormalizedTool
 
+
+/** Returns a copy of `schema` without the root-level conditional keywords (`oneOf`, `anyOf`,
+ `allOf`, `not`, `if`, `then`, `else`), which the Anthropic Messages API rejects in a tool's
+ `input_schema`.  Uses nested within `properties` are left as-is.
+
+ Other providers get the full schema, as the structured constraints may help smaller models; the
+ constraints are also expected to be stated in the property descriptions (enforced by unit test),
+ and the tool executors validate them regardless.
+ */
+nlohmann::json strip_top_level_schema_combinators( nlohmann::json schema );
+
 /** A normalized view of an LLM response, independent of the provider wire format.
 
  `LlmApiProtocol::parseResponse()` fills this in; `LlmInterface::handleApiResponse()` then drives

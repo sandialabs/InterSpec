@@ -14,6 +14,7 @@
 
 Grade on scientific substance, not wording:
 - Accept equivalent notation, units, and rounding (e.g. "Cs-137", "137Cs", "cesium-137"; 662 keV vs 661.7 keV; 1 mCi vs 37 MBq).
+- When comparing numeric values, first convert the answer's value and the expected value to the same unit, and state that conversion in your reason (e.g. "88.5 uCi = 3.27 MBq"); check SI prefixes (n, u, m, k, M, G) carefully.
 - A numeric answer is correct if it agrees with the expected value to the precision the question calls for; a range is correct if it contains or is consistent with the expected value, unless the range is so wide it does not answer the question.
 - Do not reward an answer for content beyond what was asked, and do not penalize it for extra correct detail; penalize statements that are wrong.
 - Apply each rubric criterion independently and consistently: award a criterion's points when the answer meets it, partial points only if the rubric allows it, and none otherwise.  The score is the sum of the points earned.

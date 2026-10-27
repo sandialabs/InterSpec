@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
+#include <cctype>
 #include <string>
 #include <fstream>
 #include <iostream>
@@ -47,6 +49,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakFitDetPrefs.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/LlmConfig.h"
@@ -55,6 +58,7 @@
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AnalystChecks.h"
+#include "InterSpec/LlmApiProtocol.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -2096,10 +2100,8 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
     BOOST_CHECK( result.contains("success") );
     if( result["success"].get<bool>() && result["modifiedPeak"].contains("continuumType") )
     {
-      // PeakContinuum serializes Quadratic with the historical misspelling "Quardratic",
-      //  intentionally kept for backwards compatibility (see PeakDef.cpp).
-      const std::string expected = (cont_type == "Quadratic") ? std::string("Quardratic") : cont_type;
-      BOOST_CHECK_EQUAL( result["modifiedPeak"]["continuumType"].get<std::string>(), expected );
+      // The LLM tools use the correctly spelled names (not the file-format "Quardratic").
+      BOOST_CHECK_EQUAL( result["modifiedPeak"]["continuumType"].get<std::string>(), cont_type );
     }
   }
 
@@ -2388,6 +2390,186 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
 
   cout << "Successfully validated " << expectedTools.size() << " tools from XML configuration" << endl;
 }
+
+
+namespace
+{
+  /** Whether `text` contains `word` with no identifier character (alphanumeric or '_') on either
+   side - so e.g. "activity" does not match within "activity_type". */
+  bool mentions_word( const std::string &text, const std::string &word )
+  {
+    const auto is_ident = []( const char c ){ return std::isalnum( static_cast<unsigned char>(c) ) || (c == '_'); };
+    for( size_t pos = text.find( word ); pos != std::string::npos; pos = text.find( word, pos + 1 ) )
+    {
+      const size_t end = pos + word.size();
+      if( (pos == 0 || !is_ident( text[pos - 1] )) && (end >= text.size() || !is_ident( text[end] )) )
+        return true;
+    }
+    return false;
+  }//mentions_word(...)
+
+
+  /** Adds the property names in `schema["required"]`, and recursively in any `oneOf`/`anyOf`/
+   `allOf`/`not` sub-schemas, to `names`. */
+  void collect_required_names( const json &schema, std::set<std::string> &names )
+  {
+    if( !schema.is_object() )
+      return;
+
+    if( schema.contains("required") && schema["required"].is_array() )
+    {
+      for( const json &n : schema["required"] )
+        names.insert( n.get<std::string>() );
+    }
+
+    for( const char *key : { "oneOf", "anyOf", "allOf" } )
+    {
+      if( schema.contains(key) && schema[key].is_array() )
+      {
+        for( const json &sub : schema[key] )
+          collect_required_names( sub, names );
+      }
+    }
+
+    if( schema.contains("not") )
+      collect_required_names( schema["not"], names );
+  }//collect_required_names(...)
+
+
+  /** For each `if`/`then` rule in `rules` (and nested `then.allOf` rules), checks that every
+   property the `then` constrains has the condition described in text: either the constrained
+   property's description mentions a triggering value/property of the `if`, or a triggering
+   property's description mentions the constrained property. */
+  void check_rules_described( const std::string &toolName, const json &properties, const json &rules )
+  {
+    for( const json &rule : rules )
+    {
+      if( !rule.is_object() || !rule.contains("if") || !rule.contains("then") )
+        continue;
+
+      const json &cond = rule["if"];
+      const json &then = rule["then"];
+
+      // Triggers: `const`/`enum` string values in `if.properties`, and property names that `if`
+      //  requires to be present.
+      std::set<std::string> trigger_terms, trigger_props;
+      if( cond.contains("properties") )
+      {
+        for( const auto &[prop, constraint] : cond["properties"].items() )
+        {
+          trigger_props.insert( prop );
+          if( constraint.contains("const") && constraint["const"].is_string() )
+            trigger_terms.insert( constraint["const"].get<std::string>() );
+          if( constraint.contains("enum") )
+          {
+            for( const json &v : constraint["enum"] )
+              if( v.is_string() )
+                trigger_terms.insert( v.get<std::string>() );
+          }
+        }
+      }//if( cond.contains("properties") )
+
+      // A required property is itself the trigger only if its value isn't also constrained (e.g.,
+      //  for `source_type` required to be `Intrinsic`, the description must mention `Intrinsic`).
+      const std::set<std::string> value_constrained = trigger_props;
+      std::set<std::string> required_in_if;
+      collect_required_names( cond, required_in_if );
+      for( const std::string &prop : required_in_if )
+      {
+        trigger_props.insert( prop );
+        if( !value_constrained.count( prop ) )
+          trigger_terms.insert( prop );
+      }
+
+      // Targets: properties the `then` requires, forbids, or restricts.
+      std::set<std::string> targets;
+      collect_required_names( then, targets );
+      if( then.contains("properties") )
+      {
+        for( const auto &[prop, constraint] : then["properties"].items() )
+          targets.insert( prop );
+      }
+
+      for( const std::string &target : targets )
+      {
+        if( trigger_props.count( target ) )
+          continue;
+
+        BOOST_REQUIRE_MESSAGE( properties.contains( target ),
+                              "Tool '" + toolName + "': conditional schema references unknown property '" + target + "'" );
+        const std::string target_desc = properties[target].value( "description", "" );
+
+        bool described = false;
+        for( const std::string &term : trigger_terms )
+        {
+          described = described || mentions_word( target_desc, term );
+
+          for( const std::string &prop : trigger_props )
+          {
+            const std::string prop_desc = properties.contains( prop ) ? properties[prop].value( "description", "" ) : "";
+            described = described || (mentions_word( prop_desc, target ) && mentions_word( prop_desc, term ));
+          }
+        }
+
+        std::string trigger_list;
+        for( const std::string &term : trigger_terms )
+          trigger_list += (trigger_list.empty() ? "" : "|") + term;
+
+        BOOST_CHECK_MESSAGE( described, "Tool '" + toolName + "': rule '" + trigger_list + " -> " + target
+                            + "' is not described in property text" );
+      }//for( const std::string &target : targets )
+
+      if( then.contains("allOf") )
+        check_rules_described( toolName, properties, then["allOf"] );
+    }//for( const json &rule : rules )
+  }//check_rules_described(...)
+}//namespace
+
+
+// Conditional (if/then) rules at the top level of a tool's schema are stripped for the Anthropic API
+//  (see strip_top_level_schema_combinators), so those models rely on the property descriptions -
+//  check every such rule is also stated in the text, and that the stripped schema is acceptable.
+BOOST_AUTO_TEST_CASE( test_toolSchemaConditionsDescribedInText )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  size_t num_tools_with_rules = 0;
+  for( const auto &[toolName, tool] : registry.getTools() )
+  {
+    const json &schema = tool.parameters_schema;
+    BOOST_REQUIRE_MESSAGE( schema.is_object(), "Tool '" + toolName + "' parameters schema is not an object" );
+
+    const json stripped = strip_top_level_schema_combinators( schema );
+    for( const char *key : { "oneOf", "anyOf", "allOf", "not", "if", "then", "else" } )
+      BOOST_CHECK_MESSAGE( !stripped.contains(key), "Tool '" + toolName + "': stripped schema still has '" + key + "'" );
+    BOOST_CHECK_MESSAGE( schema.empty() || (stripped.value("type", "") == "object"),
+                        "Tool '" + toolName + "': schema is not of type 'object'" );
+
+    const json properties = schema.value( "properties", json::object() );
+    bool has_rules = false;
+    for( const char *key : { "allOf", "anyOf", "oneOf" } )
+    {
+      if( schema.contains(key) && schema[key].is_array() )
+      {
+        has_rules = true;
+        check_rules_described( toolName, properties, schema[key] );
+      }
+    }
+
+    // A bare top-level if/then (not wrapped in allOf)
+    if( schema.contains("if") && schema.contains("then") )
+    {
+      has_rules = true;
+      check_rules_described( toolName, properties, json::array( { json{ {"if", schema["if"]}, {"then", schema["then"]} } } ) );
+    }
+
+    num_tools_with_rules += has_rules;
+  }//for( const auto &[toolName, tool] : registry.getTools() )
+
+  // modify_shielding_source_config currently has top-level rules; make sure we actually test something.
+  BOOST_CHECK_GE( num_tools_with_rules, 1 );
+}//test_toolSchemaConditionsDescribedInText
 
 
 // Activity/Shielding Fit Tool Tests
@@ -4188,8 +4370,7 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
   BOOST_CHECK_EQUAL( result["refitPerformed"].get<bool>(), false );
   if( result["modifiedPeak"].contains( "continuumType" ) )
   {
-    // Note: offset_type_str returns "Quardratic" (known historical typo kept for compatibility)
-    BOOST_CHECK_EQUAL( result["modifiedPeak"]["continuumType"].get<string>(), "Quardratic" );
+    BOOST_CHECK_EQUAL( result["modifiedPeak"]["continuumType"].get<string>(), "Quadratic" );
   }
 
   // Reset continuum to Linear
@@ -4461,3 +4642,720 @@ BOOST_AUTO_TEST_CASE( test_editAnalysisPeak_Ra226 )
   BOOST_TEST_MESSAGE( "All edit_analysis_peak Ra226 tests passed" );
 }//test_editAnalysisPeak_Ra226
 
+
+
+namespace
+{
+  /** Loads the spectrum used by the add_analysis_peak tests - HPGe uranium, with the Pa-234m lines at
+   742.81, 766.36, and 786.27 keV - as the foreground, and removes the analysis peaks saved in the
+   file, so each test starts from a known state. */
+  void load_uranium_without_peaks( InterSpec *interspec )
+  {
+    load_spectrum_as_foreground( interspec,
+                                 SpecUtils::append_path( g_test_file_dir, "uranium_40pct_selfatten_HPGe_15cm.n42" ) );
+    BOOST_REQUIRE( interspec->peakModel() );
+    interspec->peakModel()->removeAllPeaks();
+  }
+}//namespace
+
+
+// Legacy (single number `energy`) add_analysis_peak calls must behave exactly as before explicit-ROI
+//  mode was added; this also prints the results, for comparing across code changes.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_legacy_unchanged )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  for( const double energy : { 766.4, 1001.0, 742.8 } )
+  {
+    json params = json::object();
+    params["energy"] = energy;
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "add_analysis_peak", params, fixture.m_interspec ) );
+    BOOST_CHECK( result.contains("_visuals") );
+    result.erase( "_visuals" );  // the SVG preview of the fit
+    BOOST_TEST_MESSAGE( "LEGACY_RESULT " << energy << ": " << result.dump() );
+
+    BOOST_REQUIRE_MESSAGE( result.contains("fitPeakEnergy"), "No fit at " << energy << ": " << result.dump() );
+    BOOST_CHECK_LT( fabs( result["fitPeakEnergy"].get<double>() - energy ), 1.0 );
+
+    std::set<std::string> keys;
+    for( const auto &[key, value] : result.items() )
+      keys.insert( key );
+    const std::set<std::string> expected_keys{ "roi", "fitPeakEnergy", "status" };
+    BOOST_CHECK_MESSAGE( keys == expected_keys, "Unexpected keys in legacy result: " << result.dump() );
+  }//for( const double energy : ... )
+}//test_addAnalysisPeak_legacy_unchanged
+
+
+namespace
+{
+  /** The analysis peaks of the displayed foreground. */
+  std::vector<std::shared_ptr<const PeakDef>> foreground_peaks( InterSpec *interspec )
+  {
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = interspec->peakModel()->peaks();
+    return peaks ? std::vector<std::shared_ptr<const PeakDef>>( begin(*peaks), end(*peaks) )
+                 : std::vector<std::shared_ptr<const PeakDef>>{};
+  }
+
+  /** The foreground analysis peak nearest `energy`, if within `tolerance` keV. */
+  std::shared_ptr<const PeakDef> foreground_peak_near( InterSpec *interspec, const double energy, const double tolerance = 1.0 )
+  {
+    std::shared_ptr<const PeakDef> nearest;
+    for( const std::shared_ptr<const PeakDef> &p : foreground_peaks( interspec ) )
+    {
+      if( !nearest || (fabs(p->mean() - energy) < fabs(nearest->mean() - energy)) )
+        nearest = p;
+    }
+    return (nearest && (fabs(nearest->mean() - energy) <= tolerance)) ? nearest : nullptr;
+  }
+
+  /** Runs add_analysis_peak, requiring the result is not an error. */
+  json add_peak_ok( const LlmTools::ToolRegistry &registry, const json &params, InterSpec *interspec )
+  {
+    json result;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool( "add_analysis_peak", params, interspec ) );
+    BOOST_REQUIRE_MESSAGE( !result.contains("error") && result.contains("roi"),
+                           "add_analysis_peak " << params.dump() << " failed: " << result.dump() );
+    result.erase( "_visuals" );
+    BOOST_TEST_MESSAGE( "add_analysis_peak " << params.dump() << " -> " << result.dump() );
+    return result;
+  }
+
+  /** Runs add_analysis_peak, requiring it fails (either by throwing, or with an 'error' field), with a
+   message containing `phrase` (case-insensitive). */
+  void add_peak_fails( const LlmTools::ToolRegistry &registry, const json &params, InterSpec *interspec,
+                       const std::string &phrase )
+  {
+    std::string error_msg;
+    try
+    {
+      const json result = registry.executeTool( "add_analysis_peak", params, interspec );
+      BOOST_CHECK_MESSAGE( result.contains("error"), "Expected an error for " << params.dump() << ", got: " << result.dump() );
+      if( result.contains("error") )
+        error_msg = result["error"].get<std::string>();
+    }catch( const std::exception &e )
+    {
+      error_msg = e.what();
+    }
+
+    BOOST_TEST_MESSAGE( "Expected error for " << params.dump() << ": " << error_msg );
+    BOOST_CHECK_MESSAGE( SpecUtils::icontains( error_msg, phrase ),
+                         "Error for " << params.dump() << " was '" << error_msg << "', expected it to contain '" << phrase << "'" );
+  }
+}//namespace
+
+
+// The example from the tool's design: one call creating a 702-800 keV ROI, with a linear continuum,
+//  and the three Pa-234m peaks.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  const double truth[3] = { 742.81, 766.36, 786.27 };
+
+  json params = json::object();
+  params["energy"] = json::array( { 742.8, 766.4, 786.25 } );
+  params["roiLowerEnergy"] = 702.0;
+  params["roiUpperEnergy"] = 800.0;
+  params["continuumType"] = "Linear";
+  params["source"] = "U238";
+  const json result = add_peak_ok( registry, params, fixture.m_interspec );
+
+  // Response shape
+  BOOST_CHECK( result.contains("fitPeakEnergy") );
+  BOOST_CHECK( !result.contains("removedPeaks") );
+  BOOST_CHECK_EQUAL( result["status"].get<std::string>(), "success" );
+  const json &roi = result["roi"];
+  BOOST_CHECK_CLOSE( roi["lowerEnergy"].get<double>(), 702.0, 0.01 );
+  BOOST_CHECK_CLOSE( roi["upperEnergy"].get<double>(), 800.0, 0.01 );
+  BOOST_CHECK_EQUAL( roi["continuumType"].get<std::string>(), "Linear" );
+  BOOST_REQUIRE_EQUAL( roi["peaks"].size(), 3 );
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK_LT( fabs( roi["peaks"][i]["energy"].get<double>() - truth[i] ), 0.5 );
+    BOOST_CHECK_EQUAL( roi["peaks"][i]["source"]["nuclide"].get<std::string>(), "U238" );
+  }
+
+  // In the analysis peaks, the three peaks share one Linear continuum covering the requested range
+  const std::vector<std::shared_ptr<const PeakDef>> peaks = foreground_peaks( fixture.m_interspec );
+  BOOST_REQUIRE_EQUAL( peaks.size(), 3 );
+  const std::shared_ptr<const PeakContinuum> cont = peaks[0]->continuum();
+  for( size_t i = 0; i < 3; ++i )
+  {
+    BOOST_CHECK( peaks[i]->continuum() == cont );
+    BOOST_CHECK( peaks[i]->gausPeak() );
+    BOOST_CHECK_LT( fabs( peaks[i]->mean() - truth[i] ), 0.5 );
+    BOOST_REQUIRE( peaks[i]->parentNuclide() );
+    BOOST_CHECK_EQUAL( peaks[i]->parentNuclide()->symbol, "U238" );
+  }
+  BOOST_CHECK( cont->type() == PeakContinuum::OffsetType::Linear );
+  BOOST_CHECK_CLOSE( cont->lowerEnergy(), 702.0, 0.01 );
+  BOOST_CHECK_CLOSE( cont->upperEnergy(), 800.0, 0.01 );
+}//test_addAnalysisPeak_explicit_roi
+
+
+// An existing analysis peak at a requested energy is replaced (and the new peak, without a source given,
+//  keeps the replaced peak's source), peaks elsewhere are untouched, and the change can be undone.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi_replaces_overlapping )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  json params = json::object();
+  params["energy"] = 766.4;
+  params["source"] = "U238";
+  add_peak_ok( registry, params, fixture.m_interspec );
+
+  params = json::object();
+  params["energy"] = 1001.0;
+  add_peak_ok( registry, params, fixture.m_interspec );
+
+  const std::shared_ptr<const PeakDef> orig_766 = foreground_peak_near( fixture.m_interspec, 766.4 );
+  const std::shared_ptr<const PeakDef> orig_1001 = foreground_peak_near( fixture.m_interspec, 1001.0 );
+  BOOST_REQUIRE( orig_766 && orig_1001 );
+  BOOST_REQUIRE( orig_766->parentNuclide() );
+  const std::vector<std::shared_ptr<const PeakDef>> peaks_before = foreground_peaks( fixture.m_interspec );
+
+  params = json::object();
+  params["energy"] = json::array( { 742.8, 766.4, 786.25 } );
+  params["roiLowerEnergy"] = 702.0;
+  params["roiUpperEnergy"] = 800.0;
+  const json result = add_peak_ok( registry, params, fixture.m_interspec );
+
+  BOOST_REQUIRE( result.contains("removedPeaks") );
+  BOOST_REQUIRE_EQUAL( result["removedPeaks"].size(), 1 );
+  BOOST_CHECK_LT( fabs( result["removedPeaks"][0]["energy"].get<double>() - orig_766->mean() ), 0.01 );
+  BOOST_CHECK_EQUAL( result["removedPeaks"][0]["source"].get<std::string>(), "U238" );
+
+  const std::vector<std::shared_ptr<const PeakDef>> peaks_after = foreground_peaks( fixture.m_interspec );
+  BOOST_CHECK_EQUAL( peaks_after.size(), 4 );
+  BOOST_CHECK( std::find( begin(peaks_after), end(peaks_after), orig_766 ) == end(peaks_after) );
+  BOOST_CHECK( std::find( begin(peaks_after), end(peaks_after), orig_1001 ) != end(peaks_after) );
+
+  // The replacement 766 keV peak keeps the U238 source, the other new peaks have none
+  const std::shared_ptr<const PeakDef> new_766 = foreground_peak_near( fixture.m_interspec, 766.4 );
+  BOOST_REQUIRE( new_766 );
+  BOOST_REQUIRE( new_766->parentNuclide() );
+  BOOST_CHECK_EQUAL( new_766->parentNuclide()->symbol, "U238" );
+  const std::shared_ptr<const PeakDef> new_742 = foreground_peak_near( fixture.m_interspec, 742.8 );
+  BOOST_REQUIRE( new_742 );
+  BOOST_CHECK( !new_742->parentNuclide() );
+  BOOST_CHECK( new_742->continuum() == new_766->continuum() );
+
+  // Undo restores the peaks from before the explicit-ROI call
+  UndoRedoManager * const undo = fixture.m_interspec->undoRedoManager();
+  BOOST_TEST_MESSAGE( "Undo manager " << (undo ? "present" : "absent") << ", canUndo=" << (undo && undo->canUndo()) );
+  BOOST_REQUIRE_MESSAGE( undo && undo->canUndo(), "Undo/redo is not available in the test environment" );
+  undo->executeUndo();
+  const std::vector<std::shared_ptr<const PeakDef>> peaks_undone = foreground_peaks( fixture.m_interspec );
+  BOOST_CHECK_EQUAL( peaks_undone.size(), peaks_before.size() );
+  BOOST_CHECK( foreground_peak_near( fixture.m_interspec, 742.8 ) == nullptr );
+  const std::shared_ptr<const PeakDef> undone_766 = foreground_peak_near( fixture.m_interspec, 766.4 );
+  BOOST_REQUIRE( undone_766 );
+  BOOST_CHECK_CLOSE( undone_766->mean(), orig_766->mean(), 1.0E-6 );
+  BOOST_CHECK_CLOSE( undone_766->continuum()->lowerEnergy(), orig_766->continuum()->lowerEnergy(), 1.0E-6 );
+}//test_addAnalysisPeak_explicit_roi_replaces_overlapping
+
+
+// With both ROI bounds given, an existing ROI overlapping the new one is: left as-is if none of its
+//  peaks are inside the new ROI (they just share an edge); combined if all its peaks are inside, or at
+//  least half of it is (its peaks are then fit with the requested ones); and otherwise refused.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi_overlap_rules )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  json params = json::object();
+  params["energy"] = json::array( { 742.8 } );
+  params["roiLowerEnergy"] = 730.0;
+  params["roiUpperEnergy"] = 760.0;
+  params["source"] = "U238";
+  add_peak_ok( registry, params, fixture.m_interspec );
+  const std::shared_ptr<const PeakDef> orig_742 = foreground_peak_near( fixture.m_interspec, 742.8 );
+  BOOST_REQUIRE( orig_742 );
+
+  // Shares 755-760 keV with the 730-760 keV ROI, but neither has a peak in the other: both kept
+  params = json::object();
+  params["energy"] = json::array( { 766.4, 786.25 } );
+  params["roiLowerEnergy"] = 755.0;
+  params["roiUpperEnergy"] = 800.0;
+  json result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK( !result.contains("removedPeaks") );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 3 );
+  BOOST_CHECK( foreground_peak_near( fixture.m_interspec, 742.8 ) == orig_742 );
+
+  // Contains the 766 keV peak of the 755-800 keV ROI, but not its 786 keV peak, and covers only a
+  //  third of it: refused
+  params = json::object();
+  params["energy"] = json::array( { 766.4 } );
+  params["roiLowerEnergy"] = 760.0;
+  params["roiUpperEnergy"] = 775.0;
+  add_peak_fails( registry, params, fixture.m_interspec, "less than half of it" );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 3 );
+
+  // Contains all the peaks of the 730-760 keV ROI (although only a third of its range): its peak is
+  //  replaced by the requested one at the same energy, keeping the source
+  params = json::object();
+  params["energy"] = json::array( { 742.8 } );
+  params["roiLowerEnergy"] = 736.0;
+  params["roiUpperEnergy"] = 750.0;
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_REQUIRE( result.contains("removedPeaks") );
+  BOOST_REQUIRE_EQUAL( result["removedPeaks"].size(), 1 );
+  BOOST_CHECK_LT( fabs( result["removedPeaks"][0]["energy"].get<double>() - orig_742->mean() ), 0.02 );
+  const std::shared_ptr<const PeakDef> new_742 = foreground_peak_near( fixture.m_interspec, 742.8 );
+  BOOST_REQUIRE( new_742 && (new_742 != orig_742) );
+  BOOST_CHECK_EQUAL( new_742->sourceName(), "U238" );
+  BOOST_CHECK_CLOSE( new_742->continuum()->lowerEnergy(), 736.0, 0.01 );
+  BOOST_CHECK_CLOSE( new_742->continuum()->upperEnergy(), 750.0, 0.01 );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 3 );
+
+  // Covers over half of the 755-800 keV ROI, but not its 786 keV peak, which would be co-fit:
+  //  refused, rather than silently deleting or distorting a peak outside the given range
+  params = json::object();
+  params["energy"] = json::array( { 770.0 } );
+  params["roiLowerEnergy"] = 752.0;
+  params["roiUpperEnergy"] = 782.0;
+  add_peak_fails( registry, params, fixture.m_interspec, "is outside the ROI" );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 3 );
+
+  // Covering the whole 755-800 keV ROI, a new peak is added to it: the existing peaks are co-fit
+  //  (not replaced), all in one ROI
+  const std::shared_ptr<const PeakDef> orig_786 = foreground_peak_near( fixture.m_interspec, 786.25 );
+  BOOST_REQUIRE( orig_786 );
+  params = json::object();
+  params["energy"] = json::array( { 776.0 } );
+  params["roiLowerEnergy"] = 755.0;
+  params["roiUpperEnergy"] = 800.0;
+  params["DoNotAddToAnalysisPeaks"] = true;
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK( !result.contains("removedPeaks") );
+  BOOST_CHECK_EQUAL( result["roi"]["peaks"].size(), 3 );
+  BOOST_CHECK( foreground_peak_near( fixture.m_interspec, 786.25 ) == orig_786 );  // DoNotAdd: unchanged
+}//test_addAnalysisPeak_explicit_roi_overlap_rules
+
+
+// Default ROI range/continuum, a single number with ROI parameters, DoNotAddToAnalysisPeaks, and the
+//  background spectrum.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi_defaults_and_options )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  // An array of energies with nothing else: the ROI is chosen from the data, at least 1.5 FWHM past
+  //  the outer peaks, with a Quadratic continuum for three HPGe peaks.
+  json params = json::object();
+  params["energy"] = json::array( { 786.25, 742.8, 766.4 } );  // order shouldnt matter
+  params["DoNotAddToAnalysisPeaks"] = true;
+  json result = add_peak_ok( registry, params, fixture.m_interspec );
+  {
+    const json &roi = result["roi"];
+    BOOST_REQUIRE_EQUAL( roi["peaks"].size(), 3 );
+    BOOST_CHECK_EQUAL( roi["continuumType"].get<std::string>(), "Quadratic" );
+    const double low_fwhm = roi["peaks"][0]["fwhm"].get<double>();
+    const double high_fwhm = roi["peaks"][2]["fwhm"].get<double>();
+    BOOST_CHECK_LE( roi["lowerEnergy"].get<double>(), 742.8 - 1.4*low_fwhm );
+    BOOST_CHECK_GE( roi["upperEnergy"].get<double>(), 786.25 + 1.4*high_fwhm );
+    BOOST_CHECK_GT( roi["lowerEnergy"].get<double>(), 700.0 );
+    BOOST_CHECK_LT( roi["upperEnergy"].get<double>(), 830.0 );
+  }
+
+  // DoNotAddToAnalysisPeaks: nothing added
+  BOOST_CHECK( foreground_peaks( fixture.m_interspec ).empty() );
+
+  // A single number, with ROI parameters, is explicit ROI mode
+  params = json::object();
+  params["energy"] = 766.4;
+  params["roiLowerEnergy"] = 755.0;
+  params["roiUpperEnergy"] = 777.0;
+  params["continuumType"] = "Quadratic";
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK( result.contains("fitPeakEnergy") );
+  BOOST_CHECK_CLOSE( result["roi"]["lowerEnergy"].get<double>(), 755.0, 0.01 );
+  BOOST_CHECK_CLOSE( result["roi"]["upperEnergy"].get<double>(), 777.0, 0.01 );
+  BOOST_CHECK_EQUAL( result["roi"]["continuumType"].get<std::string>(), "Quadratic" );
+  BOOST_REQUIRE_EQUAL( result["roi"]["peaks"].size(), 1 );
+  BOOST_CHECK_LT( fabs( result["roi"]["peaks"][0]["energy"].get<double>() - 766.36 ), 0.5 );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 1 );
+
+  // A CDF-step continuum (its integral depends on the peaks, so needs care when starting the fit)
+  params = json::object();
+  params["energy"] = json::array( { 766.4 } );
+  params["roiLowerEnergy"] = 755.0;
+  params["roiUpperEnergy"] = 777.0;
+  params["continuumType"] = "FlatStepCDF";
+  params["DoNotAddToAnalysisPeaks"] = true;
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK_EQUAL( result["roi"]["continuumType"].get<std::string>(), "FlatStepCDF" );
+  BOOST_CHECK( !result.contains("removedPeaks") );  // nothing is removed when not adding peaks
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), 1 );
+  BOOST_REQUIRE_EQUAL( result["roi"]["peaks"].size(), 1 );
+  BOOST_CHECK_LT( fabs( result["roi"]["peaks"][0]["energy"].get<double>() - 766.36 ), 0.5 );
+
+  // Arrays given as JSON strings, and a per-peak source array
+  params = json::object();
+  params["energy"] = "[742.8, 786.25]";
+  params["source"] = json::array( { "U238", "" } );
+  params["roiLowerEnergy"] = 735.0;
+  params["roiUpperEnergy"] = 750.0;
+  add_peak_fails( registry, params, fixture.m_interspec, "not inside the ROI" );
+  params["roiUpperEnergy"] = 754.0;
+  params["energy"] = "[742.8, 749.5]";
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_REQUIRE_EQUAL( result["roi"]["peaks"].size(), 2 );
+  BOOST_CHECK_EQUAL( result["roi"]["peaks"][0]["source"]["nuclide"].get<std::string>(), "U238" );
+  BOOST_CHECK( !result["roi"]["peaks"][1].contains("source") );
+
+  // Background spectrum: the K-40 line of the Detective-X background (loading the foreground above
+  //  unloaded the fixture's background)
+  {
+    const std::string back_file = SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                                    "reference_spectra/Common_Field_Nuclides/Detective X/background.txt" );
+    auto back_meas = std::make_shared<SpecMeas>();
+    BOOST_REQUIRE( back_meas->load_file( back_file, SpecUtils::ParserType::Auto, back_file ) );
+    const std::shared_ptr<const SpecUtils::Measurement> m = back_meas->measurement_at_index( 0 );
+    BOOST_REQUIRE( m );
+    fixture.m_interspec->setSpectrum( back_meas, {m->sample_number()}, SpecUtils::SpectrumType::Background, {} );
+  }
+  params = json::object();
+  params["energy"] = json::array( { 1460.8 } );
+  params["roiLowerEnergy"] = 1450.0;
+  params["roiUpperEnergy"] = 1472.0;
+  params["specType"] = "Background";
+  params["source"] = "K40";
+  const size_t num_fore_before = foreground_peaks( fixture.m_interspec ).size();
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK_LT( fabs( result["roi"]["peaks"][0]["energy"].get<double>() - 1460.8 ), 1.0 );
+  BOOST_CHECK_EQUAL( foreground_peaks( fixture.m_interspec ).size(), num_fore_before );
+
+  const std::shared_ptr<SpecMeas> back = fixture.m_interspec->measurment( SpecUtils::SpectrumType::Background );
+  BOOST_REQUIRE( back );
+  const auto back_peaks = back->peaks( fixture.m_interspec->displayedSamples( SpecUtils::SpectrumType::Background ) );
+  BOOST_REQUIRE( back_peaks );
+  BOOST_REQUIRE_EQUAL( back_peaks->size(), 1 );
+  BOOST_CHECK_LT( fabs( back_peaks->front()->mean() - 1460.8 ), 1.0 );
+  BOOST_REQUIRE( back_peaks->front()->parentNuclide() );
+  BOOST_CHECK_EQUAL( back_peaks->front()->parentNuclide()->symbol, "K40" );
+}//test_addAnalysisPeak_explicit_roi_defaults_and_options
+
+
+// Invalid explicit-ROI requests give errors an LLM can act on, and change nothing.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi_invalid_inputs )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+  InterSpec * const interspec = fixture.m_interspec;
+
+  auto base_params = [](){
+    json params = json::object();
+    params["energy"] = json::array( { 742.8, 766.4, 786.25 } );
+    params["roiLowerEnergy"] = 702.0;
+    params["roiUpperEnergy"] = 800.0;
+    return params;
+  };
+
+  json params = base_params();
+  params["roiLowerEnergy"] = 800.0;
+  params["roiUpperEnergy"] = 702.0;
+  add_peak_fails( registry, params, interspec, "must be less than" );
+
+  params = base_params();
+  params["roiUpperEnergy"] = 780.0;
+  add_peak_fails( registry, params, interspec, "is not inside the ROI" );
+
+  params = base_params();
+  params["roiUpperEnergy"] = 1.0E6;
+  add_peak_fails( registry, params, interspec, "past the spectrum energy range" );
+
+  params = base_params();
+  params["energy"] = json::array( { 1.0E6 } );
+  add_peak_fails( registry, params, interspec, "outside the spectrum energy range" );
+
+  params = base_params();
+  json eleven = json::array();
+  for( int i = 0; i < 11; ++i )
+    eleven.push_back( 705.0 + 8.0*i );
+  params["energy"] = eleven;
+  add_peak_fails( registry, params, interspec, "At most 10 peaks" );
+
+  params = base_params();
+  params["continuumType"] = "Hyperbolic";
+  add_peak_fails( registry, params, interspec, "Invalid continuumType" );
+
+  params = base_params();
+  params["continuumType"] = "External";
+  add_peak_fails( registry, params, interspec, "External" );
+
+  params = base_params();
+  params["source"] = json::array( { "U238", "U238" } );
+  add_peak_fails( registry, params, interspec, "one entry per energy" );
+
+  params = base_params();
+  params["energy"] = json::array( { 766.4, 766.5 } );
+  add_peak_fails( registry, params, interspec, "within half a FWHM" );
+
+  params = base_params();
+  params["energy"] = json::array( { 766.4 } );
+  params["roiLowerEnergy"] = 766.0;
+  params["roiUpperEnergy"] = 767.0;
+  add_peak_fails( registry, params, interspec, "too few to fit" );
+
+  params = base_params();
+  params["source"] = "NotARealNuclide";
+  add_peak_fails( registry, params, interspec, "not a valid nuclide" );
+
+  BOOST_CHECK( foreground_peaks( interspec ).empty() );
+
+  // A data-defined peak in the range is refused
+  {
+    const std::shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    BOOST_REQUIRE( data );
+    const PeakDef data_defined( 760.0, 772.0, 766.4, data, nullptr );
+    BOOST_REQUIRE( !data_defined.gausPeak() );
+    interspec->peakModel()->addNewPeak( data_defined );
+    BOOST_REQUIRE_EQUAL( foreground_peaks( interspec ).size(), 1 );
+
+    add_peak_fails( registry, base_params(), interspec, "data-defined" );
+    BOOST_CHECK_EQUAL( foreground_peaks( interspec ).size(), 1 );
+  }
+}//test_addAnalysisPeak_explicit_roi_invalid_inputs
+
+
+// When two peaks overlap in the data, fitting one, and then the other, puts both peaks into a single
+//  ROI, as a user double-clicking to add a peak next to an existing one would - whether the second peak
+//  is given as a number (the peak search) or an array (exactly the requested peak).
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_sequential_overlapping_peaks )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  InterSpec * const interspec = fixture.m_interspec;
+
+  // Eu-152 1085.84 and 1089.74 keV, which overlap on the Detective-X HPGe
+  load_spectrum_as_foreground( interspec, SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                                  "reference_spectra/Common_Field_Nuclides/Detective X/Eu152_Unshielded.txt" ) );
+
+  const double e1 = 1085.84, e2 = 1089.74;
+  std::map<bool,double> second_peak_areas;
+  for( const bool second_as_array : { false, true } )
+  {
+    interspec->peakModel()->removeAllPeaks();
+
+    json params = json::object();
+    params["energy"] = e1;
+    params["source"] = "Eu152";
+    add_peak_ok( registry, params, interspec );
+    BOOST_REQUIRE_EQUAL( foreground_peaks( interspec ).size(), 1 );
+
+    params = json::object();
+    params["energy"] = second_as_array ? json( json::array( { e2, e1 } ) ) : json( e2 );
+    if( second_as_array )
+      params["source"] = json::array( { "", "" } );  // e1 keeps its source, as it is replaced
+    const json second = add_peak_ok( registry, params, interspec );
+
+    const std::vector<std::shared_ptr<const PeakDef>> peaks = foreground_peaks( interspec );
+    const std::shared_ptr<const PeakDef> p1 = foreground_peak_near( interspec, e1 );
+    const std::shared_ptr<const PeakDef> p2 = foreground_peak_near( interspec, e2 );
+    BOOST_TEST_INFO( "second peak " << (second_as_array ? "as array" : "as number") );
+    BOOST_REQUIRE( p1 && p2 );
+    BOOST_CHECK_EQUAL( peaks.size(), 2 );
+    BOOST_CHECK( p1->continuum() == p2->continuum() );
+    BOOST_CHECK_EQUAL( second["roi"]["peaks"].size(), 2 );
+    BOOST_CHECK_EQUAL( p1->sourceName(), "Eu152" );
+    BOOST_CHECK_LT( fabs( p2->mean() - e2 ), 0.3 );
+    second_peak_areas[second_as_array] = p2->amplitude();
+  }//for( const bool second_as_array : { false, true } )
+
+  // A one-element array with no ROI parameters is the same as a number (the peak search).  Then
+  //  check an explicit second peak, alone in the array, is combined with the existing ROI, giving
+  //  about the same area as the peak search did.
+  interspec->peakModel()->removeAllPeaks();
+  json params = json::object();
+  params["energy"] = json::array( { e1 } );
+  params["source"] = "Eu152";
+  add_peak_ok( registry, params, interspec );
+  params = json::object();
+  params["energy"] = json::array( { e2 } );
+  params["continuumType"] = "Linear";  // makes it an explicit-ROI request
+  const json second = add_peak_ok( registry, params, interspec );
+  const std::shared_ptr<const PeakDef> p1 = foreground_peak_near( interspec, e1 );
+  const std::shared_ptr<const PeakDef> p2 = foreground_peak_near( interspec, e2 );
+  BOOST_REQUIRE( p1 && p2 );
+  BOOST_CHECK( p1->continuum() == p2->continuum() );
+  BOOST_CHECK_EQUAL( p1->sourceName(), "Eu152" );
+  BOOST_CHECK( !second.contains("removedPeaks") );  // the existing peak was co-fit, not replaced
+  BOOST_CHECK_CLOSE( p2->amplitude(), second_peak_areas[false], 15.0 );
+  BOOST_TEST_MESSAGE( "1089.7 keV area: search " << second_peak_areas[false] << ", array of both "
+                      << second_peak_areas[true] << ", explicit alone " << p2->amplitude() );
+}//test_addAnalysisPeak_sequential_overlapping_peaks
+
+
+// Several explicit-ROI calls prepared before any commits (as when an LLM makes parallel tool calls,
+//  which are all started before the background fits finish) all succeed if they don't interact, and
+//  a later one fails cleanly if an earlier one changed the peaks it depends on.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_parallel_commits )
+{
+  InterSpecTestFixture fixture;
+  InterSpec * const interspec = fixture.m_interspec;
+  load_uranium_without_peaks( interspec );
+
+  const auto make_opts = []( const std::vector<double> &energies ){
+    AnalystChecks::FitPeakOptions opts;
+    AnalystChecks::FitPeakOptions::ExplicitRoi roi;
+    roi.energies = energies;
+    opts.explicitRoi = roi;
+    return opts;
+  };
+
+  // Independent ROIs
+  {
+    const std::vector<std::vector<double>> requests{ { 742.8, 766.4, 786.25 }, { 1001.0 }, { 258.2 } };
+    std::vector<AnalystChecks::ExplicitRoiPreparedFit> prepared;
+    for( const std::vector<double> &energies : requests )
+      BOOST_REQUIRE_NO_THROW( prepared.push_back( AnalystChecks::prepare_explicit_roi_fit( make_opts(energies), interspec ) ) );
+    for( AnalystChecks::ExplicitRoiPreparedFit &fit : prepared )
+      BOOST_REQUIRE_NO_THROW( AnalystChecks::run_explicit_roi_fit( fit ) );
+    for( AnalystChecks::ExplicitRoiPreparedFit &fit : prepared )
+      BOOST_CHECK_NO_THROW( AnalystChecks::commit_explicit_roi_fit( fit, interspec ) );
+    BOOST_CHECK_EQUAL( foreground_peaks( interspec ).size(), 5 );
+  }
+
+  // Two requests that both combine with the 1001 keV peak: the second fails, without changing anything
+  {
+    std::vector<AnalystChecks::ExplicitRoiPreparedFit> prepared;
+    for( const std::vector<double> &energies : { std::vector<double>{ 1001.0 }, std::vector<double>{ 1001.0 } } )
+      BOOST_REQUIRE_NO_THROW( prepared.push_back( AnalystChecks::prepare_explicit_roi_fit( make_opts(energies), interspec ) ) );
+    for( AnalystChecks::ExplicitRoiPreparedFit &fit : prepared )
+      BOOST_REQUIRE_NO_THROW( AnalystChecks::run_explicit_roi_fit( fit ) );
+    BOOST_CHECK_NO_THROW( AnalystChecks::commit_explicit_roi_fit( prepared[0], interspec ) );
+    const std::vector<std::shared_ptr<const PeakDef>> before = foreground_peaks( interspec );
+    BOOST_CHECK_THROW( AnalystChecks::commit_explicit_roi_fit( prepared[1], interspec ), std::exception );
+    BOOST_CHECK( foreground_peaks( interspec ) == before );
+  }
+}//test_addAnalysisPeak_parallel_commits
+
+
+// The source aliases ('nuclide', etc.) work for multiple peaks too; a source array with a single
+//  number gives a clear error, not a JSON type error.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_source_params )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  json params = json::object();
+  params["energy"] = json::array( { 742.8, 766.4 } );
+  params["nuclide"] = "U238";
+  params["roiUpperEnergy"] = 776.0;
+  json result = add_peak_ok( registry, params, fixture.m_interspec );
+  for( const json &peak : result["roi"]["peaks"] )
+    BOOST_CHECK_EQUAL( peak["source"]["nuclide"].get<std::string>(), "U238" );
+
+  // A single energy with a one-element source array: the peak search, with the source
+  params = json::object();
+  params["energy"] = 1001.0;
+  params["source"] = json::array( { "U238" } );
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK( result.contains("fitPeakEnergy") );
+  const std::shared_ptr<const PeakDef> p1001 = foreground_peak_near( fixture.m_interspec, 1001.0 );
+  BOOST_REQUIRE( p1001 );
+  BOOST_CHECK_EQUAL( p1001->sourceName(), "U238" );
+
+  params = json::object();
+  params["energy"] = 258.2;
+  params["source"] = json::array( { "U238", "U238" } );
+  add_peak_fails( registry, params, fixture.m_interspec, "one entry per energy" );
+
+  // 'energies' alias
+  params = json::object();
+  params["energies"] = json::array( { 258.2 } );
+  result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK_LT( fabs( result["fitPeakEnergy"].get<double>() - 258.2 ), 1.0 );
+}//test_addAnalysisPeak_source_params
+
+
+// Requested peaks too close to resolve are refused; a peak forced where there is none is kept, but
+//  flagged, and not used for activity or relative-efficiency fits.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_weak_and_close_peaks )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  // 748.2 keV has no peak (see test_addAnalysisPeak_explicit_roi_defaults_and_options)
+  json params = json::object();
+  params["energy"] = json::array( { 742.8, 748.2 } );
+  params["roiLowerEnergy"] = 735.0;
+  params["roiUpperEnergy"] = 754.0;
+  const json result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_REQUIRE( result.contains("warnings") );
+  const std::shared_ptr<const PeakDef> empty_peak = foreground_peak_near( fixture.m_interspec, 748.2, 3.0 );
+  BOOST_REQUIRE( empty_peak );
+  if( empty_peak->amplitude() <= 0.0 )
+  {
+    BOOST_CHECK( !empty_peak->useForShieldingSourceFitUserPreference() );
+    BOOST_CHECK( !empty_peak->useForManualRelEffUserPreference() );
+  }
+  BOOST_TEST_MESSAGE( "Forced empty peak: area " << empty_peak->amplitude() << ", warnings " << result["warnings"].dump() );
+
+  // Within half a FWHM
+  params = json::object();
+  params["energy"] = json::array( { 766.0, 766.6 } );
+  add_peak_fails( registry, params, fixture.m_interspec, "within half a FWHM" );
+}//test_addAnalysisPeak_weak_and_close_peaks
+
+
+// On a NaI spectrum: the ROI and continuum defaults, and the resolution estimate, are reasonable.
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_explicit_roi_nai )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_spectrum_as_foreground( fixture.m_interspec, SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                                  "reference_spectra/Common_Field_Nuclides/IdentiFINDER-R500-NaI/Co60_Unshielded.txt" ) );
+  fixture.m_interspec->peakModel()->removeAllPeaks();
+
+  json params = json::object();
+  params["energy"] = json::array( { 1173.2, 1332.5 } );
+  params["source"] = "Co60";
+  const json result = add_peak_ok( registry, params, fixture.m_interspec );
+  const json &roi = result["roi"];
+  BOOST_REQUIRE_EQUAL( roi["peaks"].size(), 2 );
+  BOOST_CHECK_EQUAL( roi["continuumType"].get<std::string>(), "Quadratic" );  // 2 peaks, low resolution
+  for( size_t i = 0; i < 2; ++i )
+  {
+    const double energy = roi["peaks"][i]["energy"].get<double>();
+    const double fwhm = roi["peaks"][i]["fwhm"].get<double>();
+    BOOST_CHECK_LT( fabs( energy - (i ? 1332.5 : 1173.2) ), 20.0 );
+    BOOST_CHECK( (fwhm > 40.0) && (fwhm < 120.0) );  // ~7% resolution
+  }
+  // The default bounds are at least 1.5 expected-FWHM past the outer peaks
+  BOOST_CHECK_LT( roi["lowerEnergy"].get<double>(), 1173.2 - 1.2*roi["peaks"][0]["fwhm"].get<double>() );
+  BOOST_CHECK_GT( roi["upperEnergy"].get<double>(), 1332.5 + 1.2*roi["peaks"][1]["fwhm"].get<double>() );
+}//test_addAnalysisPeak_explicit_roi_nai
+
+
+// Replacing or combining with an existing ROI keeps its continuum type, if higher order than the
+//  default (as a double-click does).
+BOOST_AUTO_TEST_CASE( test_addAnalysisPeak_keeps_continuum_type )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+  load_uranium_without_peaks( fixture.m_interspec );
+
+  json params = json::object();
+  params["energy"] = json::array( { 1001.0 } );
+  params["continuumType"] = "FlatStep";
+  add_peak_ok( registry, params, fixture.m_interspec );
+
+  params = json::object();
+  params["energy"] = json::array( { 1001.0, 1010.0 } );
+  const json result = add_peak_ok( registry, params, fixture.m_interspec );
+  BOOST_CHECK_EQUAL( result["roi"]["continuumType"].get<std::string>(), "FlatStep" );
+}//test_addAnalysisPeak_keeps_continuum_type

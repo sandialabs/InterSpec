@@ -63,6 +63,7 @@ class LlmInteractionTurn;
 
 namespace Wt
 {
+  class WText;
   class WTextArea;
   class WPushButton;
   class WVBoxLayout;
@@ -195,7 +196,7 @@ public:
   void reconnectSpectrumChangedForBenchmark();
 
   /** Stage an image to be sent with the next user message.
-   Called from UploadedImgDisplay when user clicks "Send to AI assistant".
+   Called from UploadedImgDisplay when user clicks "Send to LLM assistant".
    Shows a thumbnail preview near the input area.
 
    `displayName` labels the thumbnail in the GUI only.  `caption`, if non-empty, is additionally
@@ -363,6 +364,10 @@ private:
   /** Container for thumbnail previews of staged images, shown above the input field. */
   Wt::WContainerWidget *m_imagePreviewContainer;
 
+  /** The active provider's optional banner text (llm_config.xml `<Banner>`), shown above the input
+   field; hidden when the provider has none. */
+  Wt::WText *m_inputBanner;
+
   /** Emitted from client-side JS when the user pastes an image into the focused input.
    Carries (base64Data, mimeType, widthPx, heightPx); connected to stage the pasted image. */
   Wt::JSignal<std::string, std::string, int, int> m_pasteImageSignal;
@@ -427,6 +432,9 @@ private:
 
   /** Enable or disable the input field and send button */
   void setInputEnabled(bool enabled);
+
+  /** Show the active provider's banner text above the input field, or hide it if there is none. */
+  void updateInputBanner();
   
   /** Handle spectrum changes - cancel pending requests if foreground spectrum changes.
    For passthrough/search-mode data, foreground sample changes are expected (the LLM is changing them)

@@ -54,6 +54,7 @@
 #include "InterSpec/FitPeaksForNuclides.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/RelActCalcAuto.h"
 
@@ -170,6 +171,130 @@ namespace
     const double continuum = cont_per_kev * (hi - lo);
     return gross - continuum;                   // net counts under the peak window
   }//estimate_net_counts_in_hist(...)
+
+
+  /** Assigns `source` to `peak`, the way a user entering it into the peak table would, and colors it
+   to match other peaks of the same source, or else a color suggested by the reference lines.
+
+   A source containing "unknown" (or starting with "unk") sets the user label to "UNKNOWN" instead,
+   which `ToolRegistry::executeGetUnidentifiedDetectedPeaks(...)` recognizes.  An empty source
+   does nothing.
+
+   @param other_peaks The other peaks in the spectrum, to match the color of.
+   @returns false if `source` is not a valid source string.
+   */
+  bool assign_source_and_color( PeakDef &peak, const std::string &source,
+                                const std::vector<std::shared_ptr<const PeakDef>> &other_peaks,
+                                ReferencePhotopeakDisplay *ref_lines )
+  {
+    if( source.empty() )
+      return true;
+
+    if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+    {
+      peak.setUserLabel( "UNKNOWN" );
+      return true;
+    }
+
+    const PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( peak, source, 4.0 );
+    if( res == PeakModel::SetGammaSource::FailedSourceChange )
+      return false;
+
+    vector<Wt::WColor> src_colors;
+    size_t num_same_src_peaks = 0;
+    for( const shared_ptr<const PeakDef> &srcPeak : other_peaks )
+    {
+      if( (srcPeak->parentNuclide() || srcPeak->xrayElement() || srcPeak->reaction())
+          && srcPeak->parentNuclide()==peak.parentNuclide()
+          && srcPeak->xrayElement()==peak.xrayElement()
+          && srcPeak->reaction()==peak.reaction() )
+      {
+        num_same_src_peaks += 1;
+
+        if( !srcPeak->lineColor().isDefault()
+           && (std::find( begin(src_colors), end(src_colors), srcPeak->lineColor()) == end(src_colors)) )
+        {
+          src_colors.push_back( srcPeak->lineColor() );
+        }
+      }
+    }//for( const auto &srcPeak : other_peaks )
+
+    if( src_colors.size() == 1 )
+    {
+      peak.setLineColor( src_colors[0] );
+    }else if( (num_same_src_peaks == 0) && ref_lines )
+    {
+      string src_name;
+      if( peak.parentNuclide() )
+        src_name = peak.parentNuclide()->symbol;
+      else if( peak.xrayElement() )
+        src_name = peak.xrayElement()->symbol;
+      else if( peak.reaction() )
+        src_name = peak.reaction()->name();
+
+      Wt::WColor c = ref_lines->suggestColorForSource( src_name );
+
+      if( c.isDefault() && !src_name.empty() )
+      {
+        c = ref_lines->nextGenericSourceColor();
+        if( !c.isDefault() )
+          ref_lines->updateColorCacheForSource( src_name, c );
+      }
+
+      peak.setLineColor( c );
+    }//if( one existing color for source ) / else if( no other peaks of source )
+
+    return true;
+  }//assign_source_and_color(...)
+
+
+  /** Assigns the source to the newly fit peak in `peaks_to_add_in` (the one without a source,
+   nearest `energy`), for the legacy `fit_user_peak` path.
+
+   @returns The newly fit peak (possibly a copy, if a source was assigned).
+   */
+  shared_ptr<const PeakDef> assign_source_to_user_fit_peak( vector<shared_ptr<const PeakDef>> &peaks_to_add_in,
+                                                const double energy, const string &source,
+                                                const vector<shared_ptr<const PeakDef>> &orig_peaks,
+                                                ReferencePhotopeakDisplay *ref_lines )
+  {
+    // The new peak may share a ROI with previously existing peaks, so we have to figure out
+    //  what peak we just fit.
+    //  TODO: For the moment, we'll just match up to nearest peak, but in a normal user double click for a peak, we match up peaks in ROI to previous peaks, and then take whats left-over, which is maybe a better way.
+    size_t fit_peak_index = peaks_to_add_in.size();
+    for( size_t index = 0; index < peaks_to_add_in.size(); ++index )
+    {
+      const shared_ptr<const PeakDef> &peak = peaks_to_add_in[index];
+      if( peak->parentNuclide() || peak->xrayElement() || peak->reaction() )
+        continue;  //We know new peak doesnt have a source assigned yet
+
+      const double diff = fabs(peak->mean() - energy);
+      if( (fit_peak_index >= peaks_to_add_in.size())
+         || (diff < fabs(peaks_to_add_in[fit_peak_index]->mean() - energy)) )
+      {
+        fit_peak_index = index;
+      }
+    }//for( loop over peaks_to_add_in )
+
+    assert( fit_peak_index < peaks_to_add_in.size() );
+    if( fit_peak_index >= peaks_to_add_in.size() )
+      throw runtime_error( "Could not identify newly fit peak." );
+
+    if( source.empty() )
+      return peaks_to_add_in[fit_peak_index];
+
+    shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *peaks_to_add_in[fit_peak_index] );
+    if( !assign_source_and_color( *new_fit_peak, source, orig_peaks, ref_lines ) )
+      throw runtime_error( "Peak was fit, but source string '" + source + "' was not valid to set source." );
+
+    // Long-standing behavior, kept as-is: an "UNKNOWN" label only goes on the returned peak, not the
+    //  peak added to the model (probably unintended).
+    const bool unknown_label = (SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk"));
+    if( !unknown_label )
+      peaks_to_add_in[fit_peak_index] = new_fit_peak;
+
+    return new_fit_peak;
+  }//assign_source_to_user_fit_peak(...)
 
 
 }//anonymous namespace
@@ -664,13 +789,885 @@ namespace AnalystChecks
 
     return result;
   }
-  
-  
+
+
+  // Forward declaration; defined further down, next to `make_expected_fwhm_fcn( InterSpec * )`.
+  std::function<float(double)> make_expected_fwhm_fcn( const shared_ptr<const DetectorPeakResponse> &drf,
+                                                       const shared_ptr<const deque<shared_ptr<const PeakDef>>> &peaks,
+                                                       const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                                                       const bool isHPGe );
+
+  PeakContinuum::OffsetType parse_continuum_type_str( const std::string &str );
+
+
+  /** Everything needed to fit, and then commit, a `FitPeakOptions::explicitRoi` request; gathered on
+   the GUI thread by `prepare_explicit_roi(...)`, so `fit_explicit_roi(...)` can run on any thread.
+   */
+  struct ExplicitRoiSetup
+  {
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+    bool doNotAddToAnalysisPeaks = false;
+
+    shared_ptr<const SpecUtils::Measurement> data;
+    shared_ptr<const DetectorPeakResponse> drf;
+    shared_ptr<const PeakFitDetPrefs> fitPrefs;
+    PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+
+    /** The first requested energy, as given; the peak nearest it is reported as `FitPeakStatus::fitPeak`. */
+    double first_energy = 0.0;
+
+    /** Requested starting means, sorted, with their sources (empty string for none). */
+    vector<double> energies;
+    vector<string> sources;
+
+    /** Expected FWHM at each of `energies`. */
+    vector<double> fwhms;
+
+    double roi_lower = 0.0, roi_upper = 0.0;
+    PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::Linear;
+
+    /** Existing peaks to fit together with the requested ones, in the new ROI (as when a user
+     double-clicks to add a peak to, or next to, an existing ROI); these keep their source, color,
+     etc.  Sorted by mean. */
+    vector<shared_ptr<const PeakDef>> cofit_peaks;
+
+    /** Existing peaks removed, as a requested energy is at about the same energy; a requested peak
+     without a source keeps the source, color, etc. of the replaced peak. */
+    vector<shared_ptr<const PeakDef>> replaced_peaks;
+  };//struct ExplicitRoiSetup
+
+
+  /** Formats an energy for messages to the LLM, to at most two decimals, e.g., "742.81 keV". */
+  string kev_str( const double energy )
+  {
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.2f", energy );
+    string answer = buffer;
+    if( answer.find('.') != string::npos )
+    {
+      while( !answer.empty() && (answer.back() == '0') )
+        answer.pop_back();
+      if( !answer.empty() && (answer.back() == '.') )
+        answer.pop_back();
+    }
+    return answer + " keV";
+  }
+
+
+  /** Groups `peaks` by ROI (i.e., shared continuum). */
+  vector<vector<shared_ptr<const PeakDef>>> peaks_by_roi( const deque<shared_ptr<const PeakDef>> &peaks )
+  {
+    vector<vector<shared_ptr<const PeakDef>>> rois;
+    for( const shared_ptr<const PeakDef> &p : peaks )
+    {
+      auto pos = std::find_if( begin(rois), end(rois),
+                               [&p]( const auto &roi ){ return roi.front()->continuum() == p->continuum(); } );
+      if( pos == end(rois) )
+        rois.push_back( { p } );
+      else
+        pos->push_back( p );
+    }
+    return rois;
+  }//peaks_by_roi(...)
+
+
+  /** Works out what to do with the existing peaks of the spectrum, for the requested peaks/ROI of
+   `setup`, filling in `setup.cofit_peaks` and `setup.replaced_peaks`, and widening the ROI of
+   `setup` (for bounds not given) to include ROIs being combined.
+
+   An existing ROI is combined with the new one (its peaks fit together with the requested ones) if:
+   - no ROI bounds were given, and a requested peak is close to one of its peaks, or the ROI the
+     data suggests for the requested peaks overlaps it substantially - the same criteria as when a
+     user double-clicks to add a peak near an existing one (see `combine_peaks_to_roi(...)`).
+   - ROI bounds were given, and at least half the existing ROI is inside them, or all its peaks are.
+   An existing ROI that overlaps the new ROI, but isn't combined, is left as-is if none of its peaks
+   are inside the new ROI (the ROIs just share an edge); otherwise it's an error, as what is wanted
+   is ambiguous.
+
+   An existing peak within 0.5 FWHM of a requested energy is replaced by the requested peak.
+
+   Throws with a message intended for the LLM to act on.
+   */
+  void resolve_existing_rois( ExplicitRoiSetup &setup, const deque<shared_ptr<const PeakDef>> &existing,
+                              const bool lower_given, const bool upper_given, const bool isHPGe )
+  {
+    setup.cofit_peaks.clear();
+    setup.replaced_peaks.clear();
+
+    const vector<vector<shared_ptr<const PeakDef>>> rois = peaks_by_roi( existing );
+    vector<bool> combine( rois.size(), false );
+
+    const auto roi_range = []( const vector<shared_ptr<const PeakDef>> &roi ) -> pair<double,double> {
+      double lower = std::numeric_limits<double>::infinity(), upper = -lower;
+      for( const shared_ptr<const PeakDef> &p : roi )
+      {
+        lower = std::min( lower, p->lowerX() );
+        upper = std::max( upper, p->upperX() );
+      }
+      return { lower, upper };
+    };
+
+    const auto num_inside = [&setup]( const vector<shared_ptr<const PeakDef>> &roi ) -> size_t {
+      size_t n = 0;
+      for( const shared_ptr<const PeakDef> &p : roi )
+        n += ((p->mean() > setup.roi_lower) && (p->mean() < setup.roi_upper));
+      return n;
+    };
+
+    // Decide which ROIs to combine; with a bound not given, combining a ROI widens the new ROI, which
+    //  may then reach further ROIs, so iterate until nothing changes.
+    for( bool changed = true; changed; )
+    {
+      changed = false;
+      for( size_t roi_index = 0; roi_index < rois.size(); ++roi_index )
+      {
+        if( combine[roi_index] )
+          continue;
+
+        const vector<shared_ptr<const PeakDef>> &roi = rois[roi_index];
+        const pair<double,double> range = roi_range( roi );
+        const double overlap = std::min( range.second, setup.roi_upper ) - std::max( range.first, setup.roi_lower );
+        if( overlap <= 0.0 )
+          continue;
+
+        bool do_combine = false;
+        if( lower_given && upper_given )
+        {
+          do_combine = (num_inside( roi ) == roi.size()) || (overlap >= 0.5*(range.second - range.first));
+        }else
+        {
+          // The double-click criteria (`combine_peaks_to_roi(...)`): near in sigma, or the ROIs
+          //  overlap by enough of the new ROI.
+          const double overlap_frac = overlap / (setup.roi_upper - setup.roi_lower);
+          for( const shared_ptr<const PeakDef> &p : roi )
+          {
+            for( const double energy : setup.energies )
+            {
+              const double nsigma = fabs( p->mean() - energy ) / p->sigma();
+              if( isHPGe )
+                do_combine |= ((((1.0 + fabs( p->mean() - energy )) / p->sigma()) < 8.5)
+                               || ((overlap_frac > 0.35) && (nsigma <= 10.0)));
+              else
+                do_combine |= (((overlap_frac > 0.2) || (nsigma < 5.0)) && (nsigma < 10.0));
+            }
+          }//for( loop over ROI peaks )
+
+          // A ROI with a peak inside the new ROI must be combined
+          do_combine |= (num_inside( roi ) > 0);
+        }//if( both bounds given ) / else
+
+        if( !do_combine )
+        {
+          if( num_inside( roi ) )
+          {
+            string inside_str;
+            for( const shared_ptr<const PeakDef> &p : roi )
+              inside_str += (inside_str.empty() ? "" : ", ") + kev_str( p->mean() );
+
+            throw runtime_error( "The ROI (" + kev_str(setup.roi_lower) + " to " + kev_str(setup.roi_upper)
+                                 + ") contains part of the existing ROI from " + kev_str(range.first) + " to "
+                                 + kev_str(range.second) + " (peaks at " + inside_str + "), but less than half of it;"
+                                 " either widen the ROI to cover most of the existing ROI (its peaks are then fit"
+                                 " along with yours), or narrow it to not contain any of its peaks." );
+          }//if( an existing peak is inside the new ROI )
+
+          continue;
+        }//if( !do_combine )
+
+        for( const shared_ptr<const PeakDef> &p : roi )
+        {
+          if( !p->gausPeak() )
+            throw runtime_error( "The ROI (" + kev_str(setup.roi_lower) + " to " + kev_str(setup.roi_upper)
+                                 + ") overlaps the data-defined peak covering " + kev_str(p->lowerX()) + " to "
+                                 + kev_str(p->upperX()) + "; peaks can not be fit within the ROI of a data-defined peak." );
+        }
+
+        combine[roi_index] = true;
+        changed = true;
+
+        // Expand any bounds not given, to include the combined ROI
+        if( !lower_given && (range.first < setup.roi_lower) )
+          setup.roi_lower = range.first;
+        if( !upper_given && (range.second > setup.roi_upper) )
+          setup.roi_upper = range.second;
+      }//for( loop over ROIs )
+    }//for( until nothing changes )
+
+    // The peaks of combined ROIs are fit along with the requested peaks, except those at about the
+    //  same energy as a requested peak, which are replaced by it.
+    for( size_t roi_index = 0; roi_index < rois.size(); ++roi_index )
+    {
+      if( !combine[roi_index] )
+        continue;
+
+      for( const shared_ptr<const PeakDef> &p : rois[roi_index] )
+      {
+        bool is_replaced = false;
+        for( size_t i = 0; i < setup.energies.size(); ++i )
+          is_replaced |= (fabs( p->mean() - setup.energies[i] ) < 0.5*std::max( p->fwhm(), setup.fwhms[i] ));
+
+        (is_replaced ? setup.replaced_peaks : setup.cofit_peaks).push_back( p );
+      }
+    }//for( loop over ROIs )
+
+    std::sort( begin(setup.cofit_peaks), end(setup.cofit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    // Co-fit peaks must be inside the ROI (bounds given may cut a combined ROI)
+    for( const shared_ptr<const PeakDef> &p : setup.cofit_peaks )
+    {
+      if( (p->mean() <= setup.roi_lower) || (p->mean() >= setup.roi_upper) )
+        throw runtime_error( "The existing peak at " + kev_str(p->mean()) + " would be fit along with your peak(s),"
+                             " but is outside the ROI (" + kev_str(setup.roi_lower) + " to " + kev_str(setup.roi_upper)
+                             + "); include it in the ROI, or narrow the ROI to not overlap its ROI." );
+    }
+
+    // Co-fit peaks too close to each other, or a requested peak, can't be fit independently
+    vector<pair<double,double>> means_fwhms;
+    for( size_t i = 0; i < setup.energies.size(); ++i )
+      means_fwhms.emplace_back( setup.energies[i], setup.fwhms[i] );
+    for( const shared_ptr<const PeakDef> &p : setup.cofit_peaks )
+      means_fwhms.emplace_back( p->mean(), p->fwhm() );
+    std::sort( begin(means_fwhms), end(means_fwhms) );
+    if( means_fwhms.size() > FitPeakOptions::ExplicitRoi::sm_max_peaks + 2 )
+      throw runtime_error( "The ROI would have " + std::to_string(means_fwhms.size()) + " peaks, including "
+                           + std::to_string(setup.cofit_peaks.size()) + " existing peaks; please use a narrower ROI." );
+  }//resolve_existing_rois(...)
+
+
+  /** Stage A of an explicit-ROI fit (GUI thread): gathers the data, validates the request, chooses
+   any default ROI range and continuum type, and works out what to do with existing peaks.
+
+   Throws with a message intended for the LLM to act on, on any problem with the request.
+   */
+  ExplicitRoiSetup prepare_explicit_roi( const FitPeakOptions &options, InterSpec *interspec )
+  {
+    assert( options.explicitRoi );
+    if( !options.explicitRoi )
+      throw logic_error( "prepare_explicit_roi: no explicit ROI specified" );
+
+    const FitPeakOptions::ExplicitRoi &request = *options.explicitRoi;
+    const string spec_desc = SpecUtils::descriptionText( options.specType );
+
+    ExplicitRoiSetup setup;
+    setup.specType = options.specType;
+    setup.doNotAddToAnalysisPeaks = options.doNotAddToAnalysisPeaks;
+
+    const shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+      throw runtime_error( "No measurement loaded for " + spec_desc + " spectrum" );
+
+    const set<int> sample_nums = interspec->displayedSamples( options.specType );
+    if( sample_nums.empty() )
+      throw runtime_error( "No samples displayed for " + spec_desc + " spectrum" );
+
+    setup.data = interspec->displayedHistogram( options.specType );
+    const shared_ptr<const SpecUtils::Measurement> &data = setup.data;
+    if( !data || (data->num_gamma_channels() < 16) )
+      throw runtime_error( "No spectrum displayed for " + spec_desc + " spectrum" );
+
+    setup.drf = meas->detector();
+    setup.fitPrefs = meas->peakFitDetPrefs();
+    if( !setup.fitPrefs && setup.drf )
+      setup.fitPrefs = setup.drf->peakFitDetPrefs();
+    if( !setup.fitPrefs )
+      setup.fitPrefs = make_shared<PeakFitDetPrefs>();
+    // Classify from the data, not the file metadata, like the single-energy search does
+    setup.det_type = PeakFitUtils::effective_det_type( setup.fitPrefs, data, nullptr );
+    const bool isHPGe = (setup.det_type == PeakFitUtils::CoarseResolutionType::High)
+                        || ((setup.det_type == PeakFitUtils::CoarseResolutionType::Unknown)
+                            && PeakFitUtils::is_likely_high_res( interspec ));
+
+    // The analysis peaks of this spectrum; we will not wait for the automated search, so its peaks
+    //  are used for estimating resolution only if they are already available.
+    shared_ptr<deque<shared_ptr<const PeakDef>>> meas_peaks = meas->peaks( sample_nums );
+    if( !meas_peaks )
+      throw runtime_error( "Unexpected error getting existing peak list" );
+
+    auto resolution_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+    for( const shared_ptr<const PeakDef> &p : *meas_peaks )
+    {
+      if( p->gausPeak() )
+        resolution_peaks->push_back( p );
+    }
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas->automatedSearchPeaks( sample_nums );
+    if( auto_peaks )
+      resolution_peaks->insert( end(*resolution_peaks), begin(*auto_peaks), end(*auto_peaks) );
+
+    const std::function<float(double)> fwhm_fcn = make_expected_fwhm_fcn( setup.drf, resolution_peaks, data, isHPGe );
+
+    // Validate, and sort, the requested energies
+    if( request.energies.empty() )
+      throw runtime_error( "At least one energy must be specified." );
+    if( request.energies.size() > FitPeakOptions::ExplicitRoi::sm_max_peaks )
+      throw runtime_error( "At most " + std::to_string(FitPeakOptions::ExplicitRoi::sm_max_peaks)
+                           + " peaks may be fit in one ROI; " + std::to_string(request.energies.size())
+                           + " energies were given." );
+    if( !request.sources.empty() && (request.sources.size() != request.energies.size()) )
+      throw runtime_error( "The number of sources (" + std::to_string(request.sources.size())
+                           + ") must match the number of energies (" + std::to_string(request.energies.size()) + ")." );
+
+    const double spec_lower = data->gamma_energy_min(), spec_upper = data->gamma_energy_max();
+
+    setup.first_energy = request.energies.front();
+    vector<pair<double,string>> energy_sources;
+    for( size_t i = 0; i < request.energies.size(); ++i )
+    {
+      const double energy = request.energies[i];
+      if( IsNan(energy) || IsInf(energy) || (energy <= spec_lower) || (energy >= spec_upper) )
+        throw runtime_error( "Energy " + kev_str(energy) + " is outside the spectrum energy range ("
+                             + kev_str(spec_lower) + " to " + kev_str(spec_upper) + ")." );
+      energy_sources.emplace_back( energy, request.sources.empty() ? string() : request.sources[i] );
+    }
+
+    std::stable_sort( begin(energy_sources), end(energy_sources),
+                      []( const pair<double,string> &lhs, const pair<double,string> &rhs ){ return lhs.first < rhs.first; } );
+
+    for( const pair<double,string> &es : energy_sources )
+    {
+      double fwhm = fwhm_fcn( es.first );
+      if( (fwhm <= 0.0) || IsNan(fwhm) || IsInf(fwhm) )
+        throw runtime_error( "Could not estimate the peak width at " + kev_str(es.first) + "." );
+
+      // Keep the starting width within what the fitter will allow
+      float min_sigma = 0.0f, max_sigma = 0.0f;
+      expected_peak_width_limits( static_cast<float>(es.first), setup.det_type, data, min_sigma, max_sigma );
+      if( (min_sigma > 0.0f) && (max_sigma > min_sigma) )
+        fwhm = std::clamp( fwhm, PhysicalUnits::fwhm_nsigma*1.05*min_sigma, PhysicalUnits::fwhm_nsigma*0.95*max_sigma );
+
+      setup.energies.push_back( es.first );
+      setup.sources.push_back( es.second );
+      setup.fwhms.push_back( fwhm );
+    }//for( const pair<double,string> &es : energy_sources )
+
+    const size_t npeaks = setup.energies.size();
+    for( size_t i = 1; i < npeaks; ++i )
+    {
+      const double min_sep = 0.5 * 0.5 * (setup.fwhms[i-1] + setup.fwhms[i]);
+      if( (setup.energies[i] - setup.energies[i-1]) < min_sep )
+        throw runtime_error( "Energies " + kev_str(setup.energies[i-1]) + " and " + kev_str(setup.energies[i])
+                             + " are within half a FWHM of each other, which is too close to fit as separate peaks." );
+    }
+
+    // Test each source string is valid, before doing any fitting
+    for( size_t i = 0; i < npeaks; ++i )
+    {
+      PeakDef test_peak( setup.energies[i], setup.fwhms[i] / PhysicalUnits::fwhm_nsigma, 100.0 );
+      if( !assign_source_and_color( test_peak, setup.sources[i], {}, nullptr ) )
+        throw runtime_error( "Source '" + setup.sources[i] + "' (for the peak at " + kev_str(setup.energies[i])
+                             + ") is not a valid nuclide, x-ray element, or reaction." );
+    }
+
+    if( request.continuumType.has_value() )
+    {
+      try
+      {
+        setup.continuum_type = parse_continuum_type_str( *request.continuumType );
+      }catch( std::exception & )
+      {
+        throw runtime_error( "Invalid continuumType '" + *request.continuumType + "'; valid values are NoOffset,"
+                             " Constant, Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep, FlatStepCDF,"
+                             " LinearStepCDF, and BiLinearStepCDF." );
+      }
+
+      if( setup.continuum_type == PeakContinuum::OffsetType::External )
+        throw runtime_error( "The External continuumType can not be used when adding a peak." );
+    }//if( request.continuumType )
+
+    // ROI bounds not given: the ROI limit found from the data for the outer peaks (like for a
+    //  single peak ROI), but at least 1.5 FWHM past them; this is then widened to include any
+    //  existing ROIs combined with it.
+    setup.roi_lower = request.lowerEnergy.value_or( 0.0 );
+    setup.roi_upper = request.upperEnergy.value_or( 0.0 );
+    if( !request.lowerEnergy.has_value() )
+    {
+      const PeakDef low_peak( setup.energies.front(), setup.fwhms.front() / PhysicalUnits::fwhm_nsigma, 100.0 );
+      double lower = 0.0, upper = 0.0;
+      findROIEnergyLimits( lower, upper, low_peak, data, isHPGe );
+      setup.roi_lower = std::min( lower, setup.energies.front() - 1.5*setup.fwhms.front() );
+    }
+
+    if( !request.upperEnergy.has_value() )
+    {
+      const PeakDef high_peak( setup.energies.back(), setup.fwhms.back() / PhysicalUnits::fwhm_nsigma, 100.0 );
+      double lower = 0.0, upper = 0.0;
+      findROIEnergyLimits( lower, upper, high_peak, data, isHPGe );
+      setup.roi_upper = std::max( upper, setup.energies.back() + 1.5*setup.fwhms.back() );
+    }
+
+    if( IsNan(setup.roi_lower) || IsInf(setup.roi_lower) || IsNan(setup.roi_upper) || IsInf(setup.roi_upper) )
+      throw runtime_error( "Invalid ROI energy range." );
+
+    if( setup.roi_lower >= setup.roi_upper )
+      throw runtime_error( "roiLowerEnergy (" + kev_str(setup.roi_lower) + ") must be less than roiUpperEnergy ("
+                           + kev_str(setup.roi_upper) + ")." );
+
+    for( const double energy : setup.energies )
+    {
+      if( (energy <= setup.roi_lower) || (energy >= setup.roi_upper) )
+        throw runtime_error( "Energy " + kev_str(energy) + " is not inside the ROI (" + kev_str(setup.roi_lower)
+                             + " to " + kev_str(setup.roi_upper) + "); each energy must be within roiLowerEnergy and roiUpperEnergy." );
+    }
+
+    resolve_existing_rois( setup, *meas_peaks, request.lowerEnergy.has_value(), request.upperEnergy.has_value(), isHPGe );
+
+    // Defaulted bounds stay within the spectrum
+    if( !request.lowerEnergy.has_value() )
+      setup.roi_lower = std::max( setup.roi_lower, static_cast<double>( data->gamma_channel_lower(1) ) );
+    if( !request.upperEnergy.has_value() )
+      setup.roi_upper = std::min( setup.roi_upper, static_cast<double>( data->gamma_channel_upper(data->num_gamma_channels() - 2) ) );
+
+    if( (setup.roi_lower < spec_lower) || (setup.roi_upper > spec_upper) )
+      throw runtime_error( "The ROI (" + kev_str(setup.roi_lower) + " to " + kev_str(setup.roi_upper)
+                           + ") extends past the spectrum energy range (" + kev_str(spec_lower) + " to " + kev_str(spec_upper) + ")." );
+
+    // Without a requested continuum: the default for the number of peaks, or a combined ROI's
+    //  continuum if it is a higher order (as `fit_peak_for_user_click_LM(...)` does)
+    const size_t num_roi_peaks = npeaks + setup.cofit_peaks.size();
+    if( !request.continuumType.has_value() )
+    {
+      setup.continuum_type = (num_roi_peaks < (isHPGe ? 3 : 2)) ? PeakContinuum::OffsetType::Linear
+                                                                : PeakContinuum::OffsetType::Quadratic;
+      for( const vector<shared_ptr<const PeakDef>> *peaks : { &setup.cofit_peaks, &setup.replaced_peaks } )
+      {
+        for( const shared_ptr<const PeakDef> &p : *peaks )
+        {
+          const PeakContinuum::OffsetType type = p->continuum()->type();
+          if( (type != PeakContinuum::OffsetType::External) && (type > setup.continuum_type) )
+            setup.continuum_type = type;
+        }
+      }
+    }//if( !request.continuumType.has_value() )
+
+    const size_t lower_channel = data->find_gamma_channel( static_cast<float>(setup.roi_lower) );
+    const size_t upper_channel = data->find_gamma_channel( static_cast<float>(setup.roi_upper) );
+    const size_t num_roi_channels = (upper_channel > lower_channel) ? (1 + upper_channel - lower_channel) : 1;
+    const size_t num_fit_pars = PeakContinuum::num_parameters( setup.continuum_type ) + 3*num_roi_peaks;
+    if( num_roi_channels <= num_fit_pars )
+      throw runtime_error( "The ROI (" + kev_str(setup.roi_lower) + " to " + kev_str(setup.roi_upper) + ") only has "
+                           + std::to_string(num_roi_channels) + " channels, which is too few to fit "
+                           + std::to_string(num_roi_peaks) + " peak(s) with a " + PeakContinuum::offset_type_name(setup.continuum_type)
+                           + " continuum; please widen the ROI." );
+
+    return setup;
+  }//prepare_explicit_roi(...)
+
+
+  /** The fit results of an explicit ROI. */
+  struct ExplicitRoiFitResult
+  {
+    /** The fit requested peaks, in the same order as `ExplicitRoiSetup::energies`. */
+    vector<shared_ptr<const PeakDef>> requested_peaks;
+
+    /** The fit co-fit (existing) peaks, in the same order as `ExplicitRoiSetup::cofit_peaks`. */
+    vector<shared_ptr<const PeakDef>> cofit_peaks;
+
+    vector<string> warnings;
+  };//struct ExplicitRoiFitResult
+
+
+  /** Stage B of an explicit-ROI fit: fits the requested peaks, along with any existing peaks being
+   combined into the ROI.
+
+   Does not touch any session state, so may be called from a background thread.
+   Throws on failure.
+   */
+  ExplicitRoiFitResult fit_explicit_roi( const ExplicitRoiSetup &setup )
+  {
+    const shared_ptr<const SpecUtils::Measurement> &data = setup.data;
+    assert( data );
+    assert( !setup.energies.empty() );
+    assert( setup.energies.size() == setup.fwhms.size() );
+
+    ExplicitRoiFitResult result;
+
+    // One continuum shared by all the peaks; start it as a straight line between the ROI edges.
+    //  The starting areas are estimated using this line, before changing the continuum type (a
+    //  CDF-step continuum can't be integrated without its peaks).
+    auto continuum = make_shared<PeakContinuum>();
+    continuum->calc_linear_continuum_eqn( data, setup.roi_lower, setup.roi_lower, setup.roi_upper, 2, 2 );
+
+    vector<shared_ptr<PeakDef>> new_peaks;
+    for( size_t i = 0; i < setup.energies.size(); ++i )
+    {
+      const double mean = setup.energies[i];
+      const double fwhm = setup.fwhms[i];
+
+      // Initial area from the counts above the continuum within +-0.5 FWHM (76.1% of a Gaussian);
+      //  the amplitudes are solved for linearly by the fit, so this just needs to be reasonable.
+      const double x0 = mean - 0.5*fwhm, x1 = mean + 0.5*fwhm;
+      const double data_counts = data->gamma_integral( static_cast<float>(x0), static_cast<float>(x1) );
+      const double cont_counts = continuum->offset_integral( x0, x1, data, vector<shared_ptr<const PeakDef>>{} );
+      const double area = std::max( 1.0, (data_counts - cont_counts) / 0.761 );
+
+      auto peak = make_shared<PeakDef>( mean, fwhm / PhysicalUnits::fwhm_nsigma, area );
+      peak->setContinuum( continuum );
+      new_peaks.push_back( peak );
+    }//for( loop over energies )
+
+    // Skew and FWHM method from the peak-fit preferences, like a user fit uses
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    assert( setup.fitPrefs );
+    if( setup.fitPrefs )
+      apply_fit_prefs_to_peaks( new_peaks, data, setup.drf, *setup.fitPrefs, fit_options );
+
+    // Existing peaks being combined into the ROI keep their parameters as starting values, and their
+    //  skew type is made to match (the fit uses one skew type per ROI)
+    vector<shared_ptr<PeakDef>> cofit_peaks;
+    for( const shared_ptr<const PeakDef> &p : setup.cofit_peaks )
+    {
+      auto peak = make_shared<PeakDef>( *p );
+      peak->setContinuum( continuum );
+      if( setup.fitPrefs )
+        apply_prefs_skew_to_peak( *peak, *setup.fitPrefs, data,
+                                  setup.drf ? setup.drf->peakFitDetPrefs().get() : nullptr );
+      cofit_peaks.push_back( peak );
+    }
+
+    continuum->setType( setup.continuum_type );
+
+    vector<shared_ptr<const PeakDef>> input_peaks( begin(new_peaks), end(new_peaks) );
+    input_peaks.insert( end(input_peaks), begin(cofit_peaks), end(cofit_peaks) );
+    std::sort( begin(input_peaks), end(input_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    vector<shared_ptr<const PeakDef>> fit_peaks = PeakFitLM::fit_peaks_in_roi_LM( input_peaks, data, setup.det_type, fit_options );
+
+    if( fit_peaks.size() != input_peaks.size() )
+      throw runtime_error( "Fitting the peaks in the ROI failed." );
+
+    // The fit returns peaks sorted by mean; match them back to the input peaks by order, which the
+    //  fit keeps unless peaks cross.
+    std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    for( size_t i = 0; i < fit_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &peak = fit_peaks[i];
+      if( !peak->gausPeak() || IsNan(peak->mean()) || IsNan(peak->amplitude()) )
+        throw runtime_error( "Fitting the peaks in the ROI gave invalid results." );
+
+      if( i && (fabs( peak->mean() - fit_peaks[i-1]->mean() ) < 0.5*std::min( peak->fwhm(), fit_peaks[i-1]->fwhm() )) )
+        throw runtime_error( "The peaks started at " + kev_str(input_peaks[i-1]->mean()) + " and " + kev_str(input_peaks[i]->mean())
+                             + " fit to nearly the same energy (" + kev_str(peak->mean()) + "), so the data likely only"
+                             " supports one peak there; please remove one of the energies." );
+
+      const auto pos = std::find( begin(new_peaks), end(new_peaks), input_peaks[i] );
+      if( pos != end(new_peaks) )
+      {
+        const size_t index = static_cast<size_t>( pos - begin(new_peaks) );
+        if( result.requested_peaks.empty() )
+          result.requested_peaks.resize( new_peaks.size() );
+        result.requested_peaks[index] = peak;
+
+        if( fabs(peak->mean() - setup.energies[index]) > setup.fwhms[index] )
+          result.warnings.push_back( "The peak started at " + kev_str(setup.energies[index]) + " moved to "
+                                     + kev_str(peak->mean()) + " (more than one FWHM); check if this is the peak you intended." );
+
+        const double nsigma = (peak->amplitudeUncert() > 0.0) ? (peak->amplitude() / peak->amplitudeUncert()) : 0.0;
+        if( peak->amplitude() <= 0.0 )
+          result.warnings.push_back( "The peak at " + kev_str(peak->mean()) + " fit to a negative area, so there is"
+                                     " likely no peak there; it was marked to not be used for activity or relative"
+                                     " efficiency fits - consider deleting it." );
+        else if( nsigma < 2.0 )
+          result.warnings.push_back( "The peak at " + kev_str(peak->mean()) + " is not statistically significant ("
+                                     + SpecUtils::printCompact(nsigma, 2) + " sigma); consider deleting it." );
+      }else
+      {
+        result.cofit_peaks.push_back( peak );
+      }
+    }//for( loop over fit peaks )
+
+    assert( result.requested_peaks.size() == new_peaks.size() );
+    assert( result.cofit_peaks.size() == setup.cofit_peaks.size() );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    {
+      const shared_ptr<const PeakContinuum> fit_cont = fit_peaks.front()->continuum();
+      for( const shared_ptr<const PeakDef> &p : fit_peaks )
+      {
+        if( p->continuum() != fit_cont )
+          log_developer_error( __func__, "Explicit ROI fit peaks do not share a continuum." );
+      }
+      if( (fabs(fit_cont->lowerEnergy() - setup.roi_lower) > 0.01)
+         || (fabs(fit_cont->upperEnergy() - setup.roi_upper) > 0.01)
+         || (fit_cont->type() != setup.continuum_type) )
+      {
+        log_developer_error( __func__, "Explicit ROI fit did not preserve ROI range or continuum type." );
+      }
+
+      for( const shared_ptr<const PeakDef> &p : result.cofit_peaks )
+      {
+        // The fit carries over sources (etc.) by closest mean (`inheritUserSelectedOptions`); check the
+        //  co-fit peaks kept theirs
+        const auto orig = std::find_if( begin(setup.cofit_peaks), end(setup.cofit_peaks),
+          [&p]( const shared_ptr<const PeakDef> &o ){ return fabs( o->mean() - p->mean() ) < o->fwhm(); } );
+        if( (orig != end(setup.cofit_peaks)) && ((*orig)->sourceName() != p->sourceName()) )
+          log_developer_error( __func__, ("Co-fit peak at " + kev_str(p->mean()) + " changed source.").c_str() );
+      }
+    }
+#endif
+
+    return result;
+  }//fit_explicit_roi(...)
+
+
+  /** Stage C of an explicit-ROI fit (GUI thread): assigns sources, and unless
+   `setup.doNotAddToAnalysisPeaks`, updates the analysis peaks, as one undo/redo step.
+
+   The current analysis peaks are re-checked, so other tool calls (e.g., run in parallel) committed
+   since `setup` was made are fine, unless they changed the peaks this fit uses or replaces.
+
+   Throws if the existing peaks this fit depends on changed, or a source can't be assigned.
+   */
+  FitPeakStatus commit_explicit_roi( const ExplicitRoiSetup &setup, const ExplicitRoiFitResult &fit,
+                                     InterSpec *interspec )
+  {
+    assert( interspec );
+    assert( fit.requested_peaks.size() == setup.energies.size() );
+    assert( fit.cofit_peaks.size() == setup.cofit_peaks.size() );
+
+    const shared_ptr<SpecMeas> meas = interspec->measurment( setup.specType );
+    const set<int> sample_nums = interspec->displayedSamples( setup.specType );
+    const shared_ptr<deque<shared_ptr<const PeakDef>>> meas_peaks = meas ? meas->peaks( sample_nums ) : nullptr;
+    if( !meas_peaks )
+      throw runtime_error( "The spectrum changed while fitting; please retry." );
+
+    // The existing peaks this fit uses or replaces must still be there, and no other peak may have
+    //  been added inside the ROI.
+    vector<shared_ptr<const PeakDef>> to_remove = setup.cofit_peaks;
+    to_remove.insert( end(to_remove), begin(setup.replaced_peaks), end(setup.replaced_peaks) );
+    for( const shared_ptr<const PeakDef> &p : to_remove )
+    {
+      if( std::find( begin(*meas_peaks), end(*meas_peaks), p ) == end(*meas_peaks) )
+        throw runtime_error( "The analysis peak at " + kev_str(p->mean()) + " was changed while fitting; please retry." );
+    }
+    for( const shared_ptr<const PeakDef> &p : *meas_peaks )
+    {
+      if( (p->mean() > setup.roi_lower) && (p->mean() < setup.roi_upper)
+         && (std::find( begin(to_remove), end(to_remove), p ) == end(to_remove)) )
+        throw runtime_error( "A peak at " + kev_str(p->mean()) + " was added inside the ROI while fitting; please retry." );
+    }
+
+    // The other peaks of the spectrum, for matching source colors
+    vector<shared_ptr<const PeakDef>> other_peaks;
+    for( const shared_ptr<const PeakDef> &p : *meas_peaks )
+    {
+      if( std::find( begin(setup.replaced_peaks), end(setup.replaced_peaks), p ) == end(setup.replaced_peaks) )
+        other_peaks.push_back( p );
+    }
+
+    ReferencePhotopeakDisplay * const ref_lines = interspec->referenceLinesWidget();
+
+    vector<shared_ptr<const PeakDef>> new_peaks;
+    vector<bool> inherited( setup.replaced_peaks.size(), false );
+    for( size_t i = 0; i < fit.requested_peaks.size(); ++i )
+    {
+      auto peak = make_shared<PeakDef>( *fit.requested_peaks[i] );
+      peak->clearSources();
+      peak->setUserLabel( "" );
+
+      if( !setup.sources[i].empty() )
+      {
+        if( !assign_source_and_color( *peak, setup.sources[i], other_peaks, ref_lines ) )
+          throw runtime_error( "Source '" + setup.sources[i] + "' is not valid." );
+      }else
+      {
+        // Without a requested source, keep the source (and color, label, and use-for flags) of a
+        //  replaced peak at about the same energy.
+        size_t best = setup.replaced_peaks.size();
+        for( size_t j = 0; j < setup.replaced_peaks.size(); ++j )
+        {
+          const shared_ptr<const PeakDef> &old = setup.replaced_peaks[j];
+          const double diff = fabs( old->mean() - peak->mean() );
+          if( !inherited[j] && (diff < peak->fwhm())
+             && ((best >= setup.replaced_peaks.size()) || (diff < fabs(setup.replaced_peaks[best]->mean() - peak->mean()))) )
+          {
+            best = j;
+          }
+        }
+
+        if( best < setup.replaced_peaks.size() )
+        {
+          inherited[best] = true;
+          const PeakDef &old = *setup.replaced_peaks[best];
+          if( old.parentNuclide() )
+            peak->setNuclearTransition( old.parentNuclide(), old.nuclearTransition(),
+                                        old.decayParticleIndex(), old.sourceGammaType() );
+          else if( old.xrayElement() )
+            peak->setXray( old.xrayElement(), old.xrayEnergy() );
+          else if( old.reaction() )
+            peak->setReaction( old.reaction(), old.reactionEnergy(), old.sourceGammaType() );
+
+          peak->setLineColor( old.lineColor() );
+          peak->setUserLabel( old.userLabel() );
+          peak->useForEnergyCalibration( old.useForEnergyCalibrationUserPreference() );
+          peak->useForShieldingSourceFit( old.useForShieldingSourceFitUserPreference() );
+          peak->useForManualRelEff( old.useForManualRelEffUserPreference() );
+        }//if( found a replaced peak to inherit from )
+      }//if( source requested ) / else
+
+      // A peak with no area shouldn't feed activity or relative efficiency fits
+      if( peak->amplitude() <= 0.0 )
+      {
+        peak->useForShieldingSourceFit( false );
+        peak->useForManualRelEff( false );
+      }
+
+      new_peaks.push_back( peak );
+    }//for( loop over requested peaks )
+
+    // The co-fit peaks keep the source, color, label, and use-for flags they had
+    vector<shared_ptr<const PeakDef>> refit_peaks;
+    for( size_t i = 0; i < fit.cofit_peaks.size(); ++i )
+    {
+      auto peak = make_shared<PeakDef>( *fit.cofit_peaks[i] );
+      peak->inheritUserSelectedOptions( *setup.cofit_peaks[i], false );
+      // `inheritUserSelectedOptions` copies the fit-for flags too, which may have been changed for the fit
+      for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0); t < PeakDef::NumCoefficientTypes;
+          t = PeakDef::CoefficientType(t+1) )
+      {
+        peak->setFitFor( t, fit.cofit_peaks[i]->fitFor(t) );
+      }
+      refit_peaks.push_back( peak );
+    }
+
+    vector<shared_ptr<const PeakDef>> to_add = new_peaks;
+    to_add.insert( end(to_add), begin(refit_peaks), end(refit_peaks) );
+
+    // All the ROI peaks share a continuum
+    assert( std::all_of( begin(to_add), end(to_add),
+                         [&to_add]( const auto &p ){ return p->continuum() == to_add.front()->continuum(); } ) );
+
+    if( !setup.doNotAddToAnalysisPeaks )
+    {
+      const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
+      if( !pmodel )
+        throw runtime_error( "No peak model available." );
+
+      UndoRedoManager::PeakModelChange peak_undo_creator;
+
+      if( setup.specType == SpecUtils::SpectrumType::Foreground )
+      {
+        pmodel->removePeaks( to_remove );
+        pmodel->addPeaks( to_add );
+      }else
+      {
+        deque<shared_ptr<const PeakDef>> peak_deque = *meas_peaks;
+        for( const shared_ptr<const PeakDef> &old : to_remove )
+        {
+          const auto pos = std::find( begin(peak_deque), end(peak_deque), old );
+          assert( pos != end(peak_deque) );
+          if( pos != end(peak_deque) )
+            peak_deque.erase( pos );
+        }
+
+        peak_deque.insert( end(peak_deque), begin(to_add), end(to_add) );
+        std::sort( begin(peak_deque), end(peak_deque), &PeakDef::lessThanByMeanShrdPtr );
+
+        pmodel->setPeaks( peak_deque, setup.specType );
+      }//if( foreground ) / else
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> final_peaks = meas->peaks( sample_nums );
+      size_t num_in_new_roi = 0;
+      for( const shared_ptr<const PeakDef> &p : (final_peaks ? *final_peaks : deque<shared_ptr<const PeakDef>>{}) )
+      {
+        if( p->continuum() == to_add.front()->continuum() )
+        {
+          num_in_new_roi += 1;
+          continue;
+        }
+        // Other ROIs may overlap the new ROIs edges, but not have peaks inside it
+        if( (p->mean() > setup.roi_lower) && (p->mean() < setup.roi_upper) )
+          log_developer_error( __func__, ("Another ROI has a peak inside the explicit ROI, at " + kev_str(p->mean())).c_str() );
+      }
+      // Foreground peaks are copied as they are added to the PeakModel, but keep their continuum
+      if( num_in_new_roi != to_add.size() )
+        log_developer_error( __func__, "Not all explicit ROI peaks made it into the analysis peaks." );
+#endif
+    }//if( !setup.doNotAddToAnalysisPeaks )
+
+    // Report the peaks as they are now in the analysis peaks (the PeakModel copies foreground peaks)
+    vector<shared_ptr<const PeakDef>> reported = to_add;
+    std::sort( begin(reported), end(reported), &PeakDef::lessThanByMeanShrdPtr );
+    if( !setup.doNotAddToAnalysisPeaks )
+    {
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> final_peaks = meas->peaks( sample_nums );
+      if( final_peaks )
+      {
+        vector<shared_ptr<const PeakDef>> in_model;
+        for( const shared_ptr<const PeakDef> &p : *final_peaks )
+        {
+          if( p->continuum() == to_add.front()->continuum() )
+            in_model.push_back( p );
+        }
+        if( in_model.size() == to_add.size() )
+          reported = in_model;
+      }
+    }//if( peaks were added )
+
+    FitPeakStatus status;
+    status.explicitRoi = true;
+    status.peaksInRoi = reported;
+    if( !setup.doNotAddToAnalysisPeaks )
+      status.removedPeaks = setup.replaced_peaks;
+    status.warnings = fit.warnings;
+
+    // `fitPeak` is the peak nearest the first requested energy (as given, before sorting)
+    const auto first_pos = std::find( begin(setup.energies), end(setup.energies), setup.first_energy );
+    assert( first_pos != end(setup.energies) );
+    const shared_ptr<const PeakDef> first_peak = new_peaks[ (first_pos != end(setup.energies)) ? (first_pos - begin(setup.energies)) : 0 ];
+    for( const shared_ptr<const PeakDef> &p : reported )
+    {
+      if( !status.fitPeak || (fabs(p->mean() - first_peak->mean()) < fabs(status.fitPeak->mean() - first_peak->mean())) )
+        status.fitPeak = p;
+    }
+
+    return status;
+  }//commit_explicit_roi(...)
+
+
+  ExplicitRoiPreparedFit prepare_explicit_roi_fit( const FitPeakOptions &options, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error( "No InterSpec session available" );
+
+    ExplicitRoiPreparedFit prepared;
+    prepared.setup = make_shared<ExplicitRoiSetup>( prepare_explicit_roi( options, interspec ) );
+    return prepared;
+  }//prepare_explicit_roi_fit(...)
+
+
+  void run_explicit_roi_fit( ExplicitRoiPreparedFit &prepared )
+  {
+    assert( prepared.setup );
+    if( !prepared.setup )
+      throw std::logic_error( "run_explicit_roi_fit: not prepared" );
+    prepared.fit = make_shared<ExplicitRoiFitResult>( fit_explicit_roi( *prepared.setup ) );
+  }//run_explicit_roi_fit(...)
+
+
+  FitPeakStatus commit_explicit_roi_fit( const ExplicitRoiPreparedFit &prepared, InterSpec *interspec )
+  {
+    assert( prepared.setup && prepared.fit );
+    if( !prepared.setup || !prepared.fit )
+      throw std::logic_error( "commit_explicit_roi_fit: not fit" );
+    if( !interspec )
+      throw std::runtime_error( "No InterSpec session available" );
+    return commit_explicit_roi( *prepared.setup, *prepared.fit, interspec );
+  }//commit_explicit_roi_fit(...)
+
+
   FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec )
   {
     if (!interspec)
       throw std::runtime_error("No InterSpec session available");
-    
+
+    if( options.explicitRoi )
+    {
+      ExplicitRoiPreparedFit prepared = prepare_explicit_roi_fit( options, interspec );
+      run_explicit_roi_fit( prepared );
+      return commit_explicit_roi_fit( prepared, interspec );
+    }//if( options.explicitRoi )
+
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
       throw std::runtime_error("No measurement loaded for "
@@ -748,108 +1745,10 @@ namespace AnalystChecks
       throw runtime_error( error_msg );
     }
     
-    // The new peak may share a ROI with previously existing peaks, so we have to figure out
-    //  what peak we just fit.
-    //  TODO: For the moment, we'll just match up to nearest peak, but in a normal user double click for a peak, we match up peaks in ROI to previous peaks, and then take whats left-over, which is maybe a better way.
-    shared_ptr<const PeakDef> fit_peak;
-    for( shared_ptr<const PeakDef> peak : peaks_to_add_in )
-    {
-      if( peak->parentNuclide() || peak->xrayElement() || peak->reaction() )
-        continue;  //We know new peak doesnt have a source assigned yet
-      
-      const double diff = fabs(peak->mean() - options.energy);
-      if( !fit_peak || (diff < fabs(fit_peak->mean() - options.energy)) )
-        fit_peak = peak;
-    }//for( shared_ptr<const PeakDef> peak : peaks_to_add_in )
-    
-    
-    assert( fit_peak );
-    if( !fit_peak )
-      throw runtime_error( "Could not identify newly fit peak." );
-    
-    // get fit peak
     const string source = options.source.has_value() ? options.source.value() : ""s;
+    const shared_ptr<const PeakDef> fit_peak = assign_source_to_user_fit_peak( peaks_to_add_in,
+                                                options.energy, source, origPeaks, interspec->referenceLinesWidget() );
 
-    if( source.empty() )
-    {
-      // Nothing to do here
-    }else if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
-    {
-      // `ToolRegistry::executeGetUnidentifiedDetectedPeaks(...)` will treat the peak as unknown if user label is set to "UNKNOWN"
-      shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
-      new_fit_peak->setUserLabel( "UNKNOWN" );
-      fit_peak = new_fit_peak;
-    }else
-    {
-      shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
-      
-      PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );
-      
-      if( res == PeakModel::SetGammaSource::FailedSourceChange )
-        throw runtime_error( "Peak was fit, but source string '" + source + "' was not valid to set source." );
-      
-      bool replaced_peak = false;
-      for( size_t index = 0; index < peaks_to_add_in.size(); ++index )
-      {
-        if( peaks_to_add_in[index] == fit_peak )
-        {
-          replaced_peak = true;
-          fit_peak = new_fit_peak;
-          peaks_to_add_in[index] = new_fit_peak;
-          break;
-        }
-      }
-      assert( replaced_peak );
-      
-      vector<Wt::WColor> src_colors;
-      vector<shared_ptr<const PeakDef>> other_src_peaks;
-      for( const shared_ptr<const PeakDef> &srcPeak : origPeaks )
-      {
-        if( (srcPeak->parentNuclide() || srcPeak->xrayElement() || srcPeak->reaction())
-            && srcPeak->parentNuclide()==new_fit_peak->parentNuclide()
-            && srcPeak->xrayElement()==new_fit_peak->xrayElement()
-            && srcPeak->reaction()==new_fit_peak->reaction() )
-        {
-          other_src_peaks.push_back( srcPeak );
-          
-          if( !srcPeak->lineColor().isDefault()
-             && (std::find( begin(src_colors), end(src_colors),srcPeak->lineColor()) == end(src_colors)) )
-          {
-            src_colors.push_back( srcPeak->lineColor() );
-          }
-        }
-      }//for( const auto &p : *m_peaks )
-          
-      if( src_colors.size() == 1 )
-      {
-        new_fit_peak->setLineColor( src_colors[0] );
-      }else if( other_src_peaks.empty() )
-      {
-        ReferencePhotopeakDisplay *ref_lines = interspec->referenceLinesWidget();
-        if( ref_lines )
-        {
-          string src_name;
-          if( new_fit_peak->parentNuclide() )
-            src_name = new_fit_peak->parentNuclide()->symbol;
-          else if( new_fit_peak->xrayElement() )
-            src_name = new_fit_peak->xrayElement()->symbol;
-          else if( new_fit_peak->reaction() )
-            src_name = new_fit_peak->reaction()->name();
-          
-          Wt::WColor c = ref_lines->suggestColorForSource( src_name );
-          
-          if( c.isDefault() && !src_name.empty() )
-          {
-            c = ref_lines->nextGenericSourceColor();
-            if( !c.isDefault() )
-              ref_lines->updateColorCacheForSource( src_name, c );
-          }
-          
-          new_fit_peak->setLineColor( c );
-        }
-      }
-    }//if( options.source.has_value() )
-    
     const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
     assert( pmodel );
     if( !options.doNotAddToAnalysisPeaks && pmodel )
@@ -925,6 +1824,74 @@ namespace AnalystChecks
       callback( string("No WServer instance available") );
       return;
     }
+
+    if( options.explicitRoi )
+    {
+      // Validate and gather on this (GUI) thread, fit in the background, then commit on the GUI thread
+      shared_ptr<const ExplicitRoiSetup> setup;
+      try
+      {
+        setup = make_shared<const ExplicitRoiSetup>( prepare_explicit_roi( options, interspec ) );
+      }catch( const exception &e )
+      {
+        callback( string("Error in fit_user_peak: ") + e.what() );
+        return;
+      }
+
+      const string sessionid = wApp->sessionId();
+      const weak_ptr<const SpecUtils::Measurement> weak_data = setup->data;
+
+      // The background thread fits to its own copy of the spectrum
+      auto bg_setup = make_shared<ExplicitRoiSetup>( *setup );
+      bg_setup->data = make_shared<SpecUtils::Measurement>( *setup->data );
+
+      server->ioService().boost::asio::io_service::post( [=](){
+        const shared_ptr<ExplicitRoiFitResult> fit = make_shared<ExplicitRoiFitResult>();
+        const shared_ptr<string> bg_error = make_shared<string>();
+        try
+        {
+          *fit = fit_explicit_roi( *bg_setup );
+        }catch( const exception &e )
+        {
+          *bg_error = string("Error in fit_user_peak: ") + e.what();
+        }catch( ... )
+        {
+          *bg_error = "Error in fit_user_peak: unknown error fitting ROI";
+        }
+
+        Wt::WServer::instance()->post( sessionid, [=](){
+          InterSpec *viewer = InterSpec::instance();
+          if( !wApp || !viewer )
+            return;
+
+          if( !bg_error->empty() )
+          {
+            callback( *bg_error );
+            return;
+          }
+
+          const shared_ptr<const SpecUtils::Measurement> current_data = weak_data.lock();
+          if( !current_data || (viewer->displayedHistogram( setup->specType ) != current_data) )
+          {
+            callback( string("Spectrum changed while fitting peak - results discarded") );
+            return;
+          }
+
+          try
+          {
+            const FitPeakStatus result = commit_explicit_roi( *setup, *fit, viewer );
+            callback( result );
+          }catch( const exception &e )
+          {
+            callback( string("Error in fit_user_peak: ") + e.what() );
+          }
+
+          wApp->triggerUpdate();
+        } );//GUI-thread post
+      } );//background post
+
+      return;
+    }//if( options.explicitRoi )
 
     // Stage A (GUI thread): capture all data needed for background computation
     try
@@ -1045,104 +2012,17 @@ namespace AnalystChecks
             return;
           }
 
-          // Find the newly fit peak (the one without a source assigned)
+          // Find the newly fit peak (the one without a source assigned), and assign source if specified
           shared_ptr<const PeakDef> fit_peak;
-          for( const shared_ptr<const PeakDef> &peak : peaks_to_add_in )
+          try
           {
-            if( peak->parentNuclide() || peak->xrayElement() || peak->reaction() )
-              continue;
-
-            const double diff = fabs( peak->mean() - energy );
-            if( !fit_peak || (diff < fabs( fit_peak->mean() - energy )) )
-              fit_peak = peak;
-          }
-
-          assert( fit_peak );
-          if( !fit_peak )
+            fit_peak = assign_source_to_user_fit_peak( peaks_to_add_in, energy, source, origPeaks,
+                                                       viewer->referenceLinesWidget() );
+          }catch( std::exception &e )
           {
-            callback( string("Could not identify newly fit peak.") );
+            callback( string(e.what()) );
             return;
           }
-
-          // Assign source if specified
-          if( source.empty() )
-          {
-            // Nothing to do
-          }else if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
-          {
-            shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
-            new_fit_peak->setUserLabel( "UNKNOWN" );
-            fit_peak = new_fit_peak;
-          }else
-          {
-            shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
-
-            PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );
-            if( res == PeakModel::SetGammaSource::FailedSourceChange )
-            {
-              callback( string("Peak was fit, but source string '") + source + "' was not valid to set source." );
-              return;
-            }
-
-            bool replaced_peak = false;
-            for( size_t index = 0; index < peaks_to_add_in.size(); ++index )
-            {
-              if( peaks_to_add_in[index] == fit_peak )
-              {
-                replaced_peak = true;
-                fit_peak = new_fit_peak;
-                peaks_to_add_in[index] = new_fit_peak;
-                break;
-              }
-            }
-            assert( replaced_peak );
-
-            // Assign color from existing peaks or reference lines
-            vector<Wt::WColor> src_colors;
-            vector<shared_ptr<const PeakDef>> other_src_peaks;
-            for( const shared_ptr<const PeakDef> &srcPeak : origPeaks )
-            {
-              if( (srcPeak->parentNuclide() || srcPeak->xrayElement() || srcPeak->reaction())
-                  && srcPeak->parentNuclide()==new_fit_peak->parentNuclide()
-                  && srcPeak->xrayElement()==new_fit_peak->xrayElement()
-                  && srcPeak->reaction()==new_fit_peak->reaction() )
-              {
-                other_src_peaks.push_back( srcPeak );
-                if( !srcPeak->lineColor().isDefault()
-                   && (find( begin(src_colors), end(src_colors), srcPeak->lineColor()) == end(src_colors)) )
-                {
-                  src_colors.push_back( srcPeak->lineColor() );
-                }
-              }
-            }
-
-            if( src_colors.size() == 1 )
-            {
-              new_fit_peak->setLineColor( src_colors[0] );
-            }else if( other_src_peaks.empty() )
-            {
-              ReferencePhotopeakDisplay *ref_lines = viewer->referenceLinesWidget();
-              if( ref_lines )
-              {
-                string src_name;
-                if( new_fit_peak->parentNuclide() )
-                  src_name = new_fit_peak->parentNuclide()->symbol;
-                else if( new_fit_peak->xrayElement() )
-                  src_name = new_fit_peak->xrayElement()->symbol;
-                else if( new_fit_peak->reaction() )
-                  src_name = new_fit_peak->reaction()->name();
-
-                Wt::WColor c = ref_lines->suggestColorForSource( src_name );
-                if( c.isDefault() && !src_name.empty() )
-                {
-                  c = ref_lines->nextGenericSourceColor();
-                  if( !c.isDefault() )
-                    ref_lines->updateColorCacheForSource( src_name, c );
-                }
-                new_fit_peak->setLineColor( c );
-              }
-            }
-          }//if( source assignment )
 
           // Update PeakModel
           const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
@@ -2122,33 +3002,31 @@ namespace AnalystChecks
   }//get_characteristics_near_energy(...)
   
   
-  std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec )
+  /** Worker-safe implementation of `make_expected_fwhm_fcn(InterSpec *)`.
+
+   @param drf The loaded detector response; used if it has resolution info.  May be null.
+   @param peaks Peaks to fit a resolution function to (and to take the nearest from), if the DRF is
+          not usable.  May be null or empty.
+   @param spectrum The spectrum the peaks are from.
+   @param isHPGe Selects the generic resolution used as the final fallback.
+   */
+  std::function<float(double)> make_expected_fwhm_fcn( const shared_ptr<const DetectorPeakResponse> &drf,
+                                                       const shared_ptr<const deque<shared_ptr<const PeakDef>>> &peaks,
+                                                       const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                                                       const bool isHPGe )
   {
-    if( !interspec )
-      throw std::runtime_error("No InterSpec session available");
-
-    shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
-    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-    if( !meas || !spectrum )
-      throw std::runtime_error("No foreground loaded");
-
-    // Try the currently loaded peak detector response
     shared_ptr<const DetectorPeakResponse> res_drf;
-    if( meas->detector() && meas->detector()->hasResolutionInfo() )
-      res_drf = meas->detector();
+    if( drf && drf->hasResolutionInfo() )
+      res_drf = drf;
 
-    // Otherwise, estimate the FWHM response by fitting the detected peaks (once, up front)...
-    shared_ptr<deque<shared_ptr<const PeakDef>>> peak_deque;
+    // Otherwise, estimate the FWHM response by fitting the peaks (once, up front)...
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> peak_deque;
     shared_ptr<DetectorPeakResponse> fit_drf;
-    if( !res_drf )
+    if( !res_drf && peaks && !peaks->empty() )
     {
+      peak_deque = peaks;
       try
       {
-        DetectedPeaksOptions opts;
-        opts.specType = SpecUtils::SpectrumType::Foreground;
-        const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
-        peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
-
         fit_drf = make_shared<DetectorPeakResponse>();
         fit_drf->setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
                                                0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
@@ -2161,7 +3039,6 @@ namespace AnalystChecks
     }//if( !res_drf )
 
     // GADRAS-parameter wag by detection type, as the final fallback.
-    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
     const vector<float> wag_pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
 
     return [res_drf, fit_drf, peak_deque, wag_pars]( const double energy ) -> float
@@ -2199,6 +3076,37 @@ namespace AnalystChecks
       return fwhm;
     };
   }//make_expected_fwhm_fcn(...)
+
+
+  std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error("No InterSpec session available");
+
+    shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( !meas || !spectrum )
+      throw std::runtime_error("No foreground loaded");
+
+    // If the DRF can't give the resolution, use the detected peaks (which may run the peak search).
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> peak_deque;
+    if( !meas->detector() || !meas->detector()->hasResolutionInfo() )
+    {
+      try
+      {
+        DetectedPeaksOptions opts;
+        opts.specType = SpecUtils::SpectrumType::Foreground;
+        opts.nonBackgroundPeaksOnly = false;
+        const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
+        peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
+      }catch( std::exception & )
+      {
+      }
+    }//if( DRF can't give resolution )
+
+    return make_expected_fwhm_fcn( meas->detector(), peak_deque, spectrum,
+                                   PeakFitUtils::is_likely_high_res(interspec) );
+  }//make_expected_fwhm_fcn( InterSpec * )
 
 
   float get_expected_fwhm( const double energy, InterSpec *interspec )
@@ -2917,7 +3825,7 @@ namespace AnalystChecks
           {
             throw runtime_error( "continuumCoef" + std::to_string( i )
               + " is not valid for continuum type "
-              + string( PeakContinuum::offset_type_str( continuum->type() ) )
+              + string( PeakContinuum::offset_type_name( continuum->type() ) )
               + " (has " + std::to_string( num_cont_pars ) + " parameters)" );
           }
           continuum->setPolynomialCoef( i, *(*cont_coefs[i]) );
@@ -2938,7 +3846,7 @@ namespace AnalystChecks
           {
             throw runtime_error( "fitForContinuumCoef" + std::to_string( i )
               + " is not valid for continuum type "
-              + string( PeakContinuum::offset_type_str( continuum->type() ) ) );
+              + string( PeakContinuum::offset_type_name( continuum->type() ) ) );
           }
           continuum->setPolynomialCoefFitFor( i, *(*cont_fit_flags[i]) );
         }

@@ -245,7 +245,8 @@ namespace
     " physics, against an expected answer and an optional scoring rubric.\n\n"
     "Grade on scientific substance, not wording: accept equivalent notation, units, and rounding; a"
     " numeric answer is correct if it agrees with the expected value to the precision the question"
-    " calls for.  Do not reward content beyond what was asked, nor penalize extra correct detail;"
+    " calls for; before comparing numeric values, convert both to the same unit, and state the"
+    " conversion in your reason.  Do not reward content beyond what was asked, nor penalize extra correct detail;"
     " penalize statements that are wrong.  Apply each rubric criterion independently and"
     " consistently; the score is the sum of the points earned.  If there is no rubric, give score 1"
     " (correct) or 0 (incorrect), with maxScore 1.\n\n"
@@ -285,7 +286,6 @@ LlmBenchmarkRunner::~LlmBenchmarkRunner()
   // Disconnect any active signal connections
   m_conversationFinishedConn.disconnect();
   m_responseErrorConn.disconnect();
-  m_spectrumChangedConn.disconnect();
   m_judgeConversationFinishedConn.disconnect();
   m_judgeResponseErrorConn.disconnect();
 }
@@ -1479,32 +1479,6 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
 }
 
 
-void LlmBenchmarkRunner::handleSpectrumLoaded( SpecUtils::SpectrumType /*specType*/,
-                                                shared_ptr<SpecMeas> /*meas*/,
-                                                set<int> /*samples*/,
-                                                vector<string> /*detectors*/ )
-{
-  if( m_state != State::LoadingSpectrum && m_state != State::LoadingSequenceStep )
-    return;
-
-  // Disconnect this one-shot handler
-  m_spectrumChangedConn.disconnect();
-
-  log( "Spectrum loaded successfully" );
-
-  if( m_state == State::LoadingSequenceStep )
-  {
-    sendSequenceStepPrompt();
-    return;
-  }
-
-  // For normal loading, give a brief moment for the UI to settle, then send question
-  // In Wt, we can just proceed directly since everything is on the same event loop
-  m_state = State::Idle;
-  sendCurrentQuestion();
-}
-
-
 void LlmBenchmarkRunner::loadSequenceStep()
 {
   const BenchmarkProblem *problem = currentProblem();
@@ -1516,15 +1490,18 @@ void LlmBenchmarkRunner::loadSequenceStep()
   log( "Sequence step " + to_string( m_currentSequenceStep + 1 )
        + "/" + to_string( problem->sequenceSteps.size() ) );
 
-  // Disconnect spectrum changed handler so conversation is preserved across loads
+  // Disconnect spectrum changed handler so conversation is preserved across loads.
+  //  loadCurrentSpectrum() reconnects LlmToolGui's handler directly, so m_spectrumChangeDisconnected
+  //  can be stale; disconnect unconditionally.
   disconnectSpectrumChangedHandler();
+  m_toolGui->disconnectSpectrumChangedForBenchmark();
 
   m_state = State::LoadingSequenceStep;
 
-  // Connect our own handler for this load
-  m_spectrumChangedConn = m_viewer->displayedSpectrumChanged().connect(
-    this, &LlmBenchmarkRunner::handleSpectrumLoaded );
-
+  // Load all of this step's files, then send the step prompt once.  (Sending it from a
+  //  displayedSpectrumChanged handler would fire on the first file, and loading the
+  //  step's later files - e.g. its background - would then cancel the pending request.)
+  //  loadFromFileSystem() sets the spectrum synchronously.
   SpecMeasManager *fileMgr = m_viewer->fileManager();
   const SpecMeasManager::VariantChecksToDo viewingChecks = viewing_checks( m_options.interactive );
   for( const BenchmarkSpectrumFile &sf : step.spectra )
@@ -1535,7 +1512,6 @@ void LlmBenchmarkRunner::loadSequenceStep()
     if( !fileMgr->loadFromFileSystem( fullPath, sf.specType, SpecUtils::ParserType::Auto, viewingChecks ) )
     {
       logError( "Failed to load sequence step spectrum: " + fullPath );
-      m_spectrumChangedConn.disconnect();
       reconnectSpectrumChangedHandler();
 
       // Skip entire problem on sequence step failure
@@ -1547,6 +1523,9 @@ void LlmBenchmarkRunner::loadSequenceStep()
       return;
     }
   }
+
+  log( "Sequence step spectra loaded" );
+  sendSequenceStepPrompt();
 }
 
 

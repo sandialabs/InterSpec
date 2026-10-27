@@ -92,25 +92,97 @@ namespace AnalystChecks
   
   
   struct FitPeakOptions {
-    bool doNotAddToAnalysisPeaks;
-    double energy;
-    SpecUtils::SpectrumType specType;
+    bool doNotAddToAnalysisPeaks = false;
+    double energy = 0.0;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
     std::optional<std::string> source;
+
+    /** A ROI the caller fully specifies: exactly these peaks are fit together in one ROI. */
+    struct ExplicitRoi
+    {
+      /** Starting means (keV) of the peaks to fit; at most #sm_max_peaks. */
+      std::vector<double> energies;
+
+      /** Source for each peak (empty string for none); either empty, or the same size as `energies`. */
+      std::vector<std::string> sources;
+
+      /** ROI range (keV); a bound not given is chosen from the data around the outermost peaks. */
+      std::optional<double> lowerEnergy;
+      std::optional<double> upperEnergy;
+
+      /** A `PeakContinuum::offset_type_str(...)` name; if not given, chosen from the number of peaks. */
+      std::optional<std::string> continuumType;
+
+      static constexpr size_t sm_max_peaks = 10;
+    };//struct ExplicitRoi
+
+    /** If set, `energy` and `source` are ignored, and the requested peaks are fit in one ROI,
+     instead of searching for the best peak near `energy`.
+     */
+    std::optional<ExplicitRoi> explicitRoi;
   };
-  
+
   struct FitPeakStatus {
+    /** For a `FitPeakOptions::explicitRoi` fit, the peak nearest the first requested energy. */
     std::shared_ptr<const PeakDef> fitPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
+
+    /** If this was a `FitPeakOptions::explicitRoi` fit; the members below are only used for these. */
+    bool explicitRoi = false;
+
+    /** Previously existing peaks replaced by the fit (a requested peak was at about their energy). */
+    std::vector<std::shared_ptr<const PeakDef>> removedPeaks;
+
+    /** Notes for the caller, e.g., weak peaks, or peaks that moved a lot. */
+    std::vector<std::string> warnings;
   };
-  
+
+  /** Fits a peak, and unless `options.doNotAddToAnalysisPeaks`, adds it to the analysis peaks.
+
+   Normally searches for the best peak near `options.energy`, with the fitter choosing the ROI and the
+   peaks in it (like a user double-click, but with the automated-search significance requirements).
+
+   If `options.explicitRoi` is set, instead creates one ROI with the given (or a default) range and
+   continuum, holding one Gaussian peak per requested energy, all fit together, even if weak.
+   Existing ROIs are combined into the new ROI (their peaks fit along with the requested ones) as a
+   user double-click would combine them - or, if ROI bounds are given, if at least half of an existing
+   ROI, or all its peaks, are inside the bounds.  An existing peak at about a requested energy is
+   replaced by the requested peak.  Overlapping, but not combined, ROIs must not have peaks inside the
+   new ROI; that, or overlapping a data-defined peak, is an error.  Records an undo/redo step.
+
+   Throws std::exception, with a description intended to be actionable by an LLM, on error.
+   */
   InterSpec_API FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
 
-  /** Async version of fit_user_peak that runs the expensive peak search in a background thread.
+  /** Async version of fit_user_peak that runs the expensive peak search (or explicit ROI fit) in a
+   background thread.
    The callback is called on the GUI thread with either a FitPeakStatus (success) or a string (error message).
    */
   using FitPeakCallback = std::function<void( std::variant<FitPeakStatus, std::string> )>;
   InterSpec_API void fit_user_peak_async( const FitPeakOptions &options, InterSpec *interspec,
                                           FitPeakCallback callback );
+
+  struct ExplicitRoiSetup;
+  struct ExplicitRoiFitResult;
+
+  /** The stages of a `FitPeakOptions::explicitRoi` fit, which `fit_user_peak_async` runs on the GUI
+   thread, a background thread, and the GUI thread, respectively.  Exposed so tests can interleave
+   the stages of several requests, as happens with parallel tool calls.
+   */
+  struct ExplicitRoiPreparedFit
+  {
+    std::shared_ptr<ExplicitRoiSetup> setup;
+    std::shared_ptr<ExplicitRoiFitResult> fit;
+  };
+
+  /** Validates the request, and works out what to do with existing peaks (GUI thread); throws on error. */
+  InterSpec_API ExplicitRoiPreparedFit prepare_explicit_roi_fit( const FitPeakOptions &options, InterSpec *interspec );
+
+  /** Fits the peaks; touches no session state, so may be run on any thread.  Throws on error. */
+  InterSpec_API void run_explicit_roi_fit( ExplicitRoiPreparedFit &prepared );
+
+  /** Updates the analysis peaks (GUI thread); throws if the peaks it depends on have changed. */
+  InterSpec_API FitPeakStatus commit_explicit_roi_fit( const ExplicitRoiPreparedFit &prepared, InterSpec *interspec );
 
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;

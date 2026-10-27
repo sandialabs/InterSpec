@@ -272,7 +272,7 @@
       },
       {
         "id":"llm-assistant",
-        "title":"AI Assistant",
+        "title":"LLM Assistant",
         "help-xml":"llm_assistant_help.xml",
         "keywords":"LLM AI assistant chat model provider API key question analyze automate",
         "children" :

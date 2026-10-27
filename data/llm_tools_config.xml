@@ -150,17 +150,38 @@ Filter values:
   -->
 
   <Tool name="add_analysis_peak">
-    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.</Description>
+    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.
+
+To fit several peaks in one ROI, give 'energy' as an array (a peak is fit at each, even if weak); the ROI range and continuum are optional. Nearby existing peaks are fit along with the new ones, or replaced if at the same energy - check 'removedPeaks' and 'warnings'.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
           "energy": {
-            "type": "number",
-            "description": "Approximate energy (in keV) to look for a peak to fit."
+            "anyOf": [
+              {"type": "number"},
+              {"type": "array", "items": {"type": "number"}, "minItems": 1}
+            ],
+            "description": "Approximate energy (in keV) to look for a peak to fit; or an array of energies, to fit that many peaks in one ROI (max 10)."
           },
           "source": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "array", "items": {"type": "string"}}
+            ],
+            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray fluorescence element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak. For multiple energies, either one source for all peaks, or an array with one entry per energy (\"\" for none)."
+          },
+          "roiLowerEnergy": {
+            "type": "number",
+            "description": "Optional: lower energy (in keV) of the ROI; if omitted, chosen from the data."
+          },
+          "roiUpperEnergy": {
+            "type": "number",
+            "description": "Optional: upper energy (in keV) of the ROI; if omitted, chosen from the data."
+          },
+          "continuumType": {
             "type": "string",
-            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray fluorescence element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak."
+            "enum": ["NoOffset", "Constant", "Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep", "FlatStepCDF", "LinearStepCDF", "BiLinearStepCDF"],
+            "description": "Optional: continuum under the peak(s); if omitted, chosen from the number of peaks."
           },
           "specType": {
             "type": "string",
@@ -169,7 +190,7 @@ Filter values:
           },
           "DoNotAddToAnalysisPeaks": {
             "type": "boolean",
-            "description": "Optional: if true, the fit peak will not be added to the users analysis peaks, and instead the fit values will just be returned; defaults to false (i.e., peaks are added by default)."
+            "description": "Optional: if true, the fit peak(s) will not be added to the users analysis peaks, and instead the fit values will just be returned; defaults to false (i.e., peaks are added by default)."
           }
       },
       "required": ["energy"]
@@ -1556,11 +1577,11 @@ Further investigation of top returned candidates is required to make sure they m
       "operation": {
         "type": "string",
         "enum": ["add_shielding", "remove_shielding", "modify_source", "set_distance", "set_geometry", "set_fit_options"],
-        "description": "Operation to perform on the configuration. `modify_source` modifies properties of a source in the fit problem, including source type, shielding-layer assignment for `Trace` or `Intrinsic` sources, activity and whether activity should be fit for non-`Intrinsic` sources, age, and whether age should be fit. To remove a source from the fit problem entirely, use `mark_peaks_for_activity_fit` or equivalent peak editing to mark all peaks of that nuclide as not used for fitting."
+        "description": "Operation to perform on the configuration. `modify_source` modifies properties of a source in the fit problem, including source type, shielding-layer assignment for `Trace` or `Intrinsic` sources, activity and whether activity should be fit for non-`Intrinsic` sources, age, and whether age should be fit. To remove a source from the fit problem entirely, use `mark_peaks_for_activity_fit` or equivalent peak editing to mark all peaks of that nuclide as not used for fitting. `set_fit_options` requires at least one of the fit-option parameters."
       },
       "material": {
         "type": "string",
-        "description": "For `add_shielding`: material name or formula. For `remove_shielding`: material name of the shielding layer to remove. For `modify_source` when `source_type` is `Trace` or `Intrinsic`: material name of the shielding layer to assign the source to. Use exactly one of `material` or `index` to identify the shielding layer. If `source_type` is `Point`, `material` is ignored."
+        "description": "For `add_shielding` (required): material name or formula. For `remove_shielding`: material name of the shielding layer to remove. For `modify_source` when `source_type` is `Trace` or `Intrinsic`: material name of the shielding layer to assign the source to. Use exactly one of `material` or `index` to identify the shielding layer. If `source_type` is `Point`, `material` is ignored."
       },
       "index": {
         "type": "integer",
@@ -1597,19 +1618,19 @@ Further investigation of top returned candidates is required to make sure they m
       "geometry": {
         "type": "string",
         "enum": ["Spherical", "CylinderSideOn", "CylinderEndOn", "Rectangular"],
-        "description": "For `set_geometry`: new geometry type. For `add_shielding`: geometry for the layer."
+        "description": "For `set_geometry` (required): new geometry type. For `add_shielding`: geometry for the layer."
       },
       "distance": {
         "type": "string",
-        "description": "For `set_distance`: new source-to-detector distance with units (e.g., '100 cm', '3 ft')."
+        "description": "For `set_distance` (required): new source-to-detector distance with units (e.g., '100 cm', '3 ft')."
       },
       "nuclide": {
         "type": "string",
-        "description": "For `modify_source`: nuclide symbol. The nuclide must have at least one peak marked for use in activity/shielding fitting in order to participate in the fit problem."
+        "description": "For `modify_source` (required): nuclide symbol. The nuclide must have at least one peak marked for use in activity/shielding fitting in order to participate in the fit problem."
       },
       "activity": {
         "type": "string",
-        "description": "For `modify_source`: source activity with units (e.g., '10 uCi'). Only valid when `source_type` is `Point` or `Trace`. If omitted, activity is unchanged."
+        "description": "For `modify_source`: source activity with units (e.g., '10 uCi'). Only valid when `source_type` is `Point` or `Trace` (not `Intrinsic`). If omitted, activity is unchanged."
       },
       "age": {
         "type": "string",
@@ -1617,7 +1638,7 @@ Further investigation of top returned candidates is required to make sure they m
       },
       "fit_activity": {
         "type": "boolean",
-        "description": "For `modify_source`: whether the source activity should be fit. Only valid when `source_type` is `Point` or `Trace`. If omitted, the current setting is unchanged."
+        "description": "For `modify_source`: whether the source activity should be fit. Only valid when `source_type` is `Point` or `Trace` (not `Intrinsic`). If omitted, the current setting is unchanged."
       },
       "fit_age": {
         "type": "boolean",
