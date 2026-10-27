@@ -150,17 +150,38 @@ Filter values:
   -->
 
   <Tool name="add_analysis_peak">
-    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.</Description>
+    <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.
+
+To fit several peaks in one ROI, give 'energy' as an array (a peak is fit at each, even if weak); the ROI range and continuum are optional. Nearby existing peaks are fit along with the new ones, or replaced if at the same energy - check 'removedPeaks' and 'warnings'.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
           "energy": {
-            "type": "number",
-            "description": "Approximate energy (in keV) to look for a peak to fit."
+            "anyOf": [
+              {"type": "number"},
+              {"type": "array", "items": {"type": "number"}, "minItems": 1}
+            ],
+            "description": "Approximate energy (in keV) to look for a peak to fit; or an array of energies, to fit that many peaks in one ROI (max 10)."
           },
           "source": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "array", "items": {"type": "string"}}
+            ],
+            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray fluorescence element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak. For multiple energies, either one source for all peaks, or an array with one entry per energy (\"\" for none)."
+          },
+          "roiLowerEnergy": {
+            "type": "number",
+            "description": "Optional: lower energy (in keV) of the ROI; if omitted, chosen from the data."
+          },
+          "roiUpperEnergy": {
+            "type": "number",
+            "description": "Optional: upper energy (in keV) of the ROI; if omitted, chosen from the data."
+          },
+          "continuumType": {
             "type": "string",
-            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray fluorescence element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak."
+            "enum": ["NoOffset", "Constant", "Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep", "FlatStepCDF", "LinearStepCDF", "BiLinearStepCDF"],
+            "description": "Optional: continuum under the peak(s); if omitted, chosen from the number of peaks."
           },
           "specType": {
             "type": "string",
@@ -169,7 +190,7 @@ Filter values:
           },
           "DoNotAddToAnalysisPeaks": {
             "type": "boolean",
-            "description": "Optional: if true, the fit peak will not be added to the users analysis peaks, and instead the fit values will just be returned; defaults to false (i.e., peaks are added by default)."
+            "description": "Optional: if true, the fit peak(s) will not be added to the users analysis peaks, and instead the fit values will just be returned; defaults to false (i.e., peaks are added by default)."
           }
       },
       "required": ["energy"]

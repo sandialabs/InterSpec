@@ -110,11 +110,7 @@ nlohmann::json roiToJson( const RelActCalcAuto::RoiRange &roi )
   roi_json["lower_energy"] = roi.lower_energy;
   roi_json["upper_energy"] = roi.upper_energy;
 
-  // `offset_type_str` keeps a historical misspelling ("Quardratic"); both spellings are accepted back.
-  string continuum = roi.auto_continuum ? string("Auto") : string( PeakContinuum::offset_type_str(roi.continuum_type) );
-  if( !roi.auto_continuum && (roi.continuum_type == PeakContinuum::OffsetType::Quadratic) )
-    continuum = "Quadratic";
-  roi_json["continuum_type"] = continuum;
+  roi_json["continuum_type"] = roi.auto_continuum ? string("Auto") : string( PeakContinuum::offset_type_name(roi.continuum_type) );
   roi_json["range_type"] = RelActCalcAuto::RoiRange::to_str( roi.range_limits_type );
 
   if( roi.lower_edge.tail_fraction.has_value() )
@@ -1592,7 +1588,7 @@ namespace
   }//parseNuclideFromJson()
 
 
-  /** Sets the continuum from a JSON string: a continuum type name (as `PeakContinuum::offset_type_str`
+  /** Sets the continuum from a JSON string: a continuum type name (as `PeakContinuum::offset_type_name`
    gives, or the GUI label key, e.g. "pct-linear", that older versions of this tool reported), or
    "Auto" to have the continuum chosen automatically (starting from the current type). */
   void setContinuumFromJson( RelActCalcAuto::RoiRange &roi, const std::string &continuum_str )
