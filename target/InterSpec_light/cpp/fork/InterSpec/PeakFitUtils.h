@@ -27,6 +27,7 @@
 
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 
 // Forward declarations
@@ -134,6 +135,14 @@ CoarseResolutionType classify_det_type(
  than a spectrum - can use the same mapping instead of keeping a second list of model names.
  */
 CoarseResolutionType coarse_type_for_detector_type( const SpecUtils::DetectorType type );
+
+
+/** Whether `text` contains `keyword` as a whole word (case-insensitive), where a word boundary is
+ any non-letter character.  E.g., "NaI" is found in "3x3 NaI(Tl)" and "3x3NaI", but not "Original".
+
+ Used by #coarse_det_type to search spectrum-file metadata for detector-type keywords.
+ */
+bool contains_keyword( const std::string &text, const std::string &keyword );
 
 
 /** Determines the coarse detector resolution type using a three-tier approach:
