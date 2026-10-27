@@ -163,7 +163,7 @@
   <message id="lcw-not-configured"><![CDATA[The LLM assistant is not configured.<br/>Add an API provider, model, and key to get started.]]></message>
 
   <!-- Getting-started / welcome panel shown in the empty conversation area (LlmToolGui) -->
-  <message id="lcw-welcome-title">InterSpec AI Assistant</message>
+  <message id="lcw-welcome-title">InterSpec LLM Assistant</message>
   <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu in the upper&#8209;right to clear, compact, export, or reconfigure the conversation.]]></message>
   <message id="lcw-welcome-summary-phone"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below, then tap the arrow to send it. Use the menu in the upper&#8209;right to clear, compact, or reconfigure the conversation.]]></message>
   <!-- Phone-only: the tool calls of a question are folded into a single summary row with these titles
@@ -182,6 +182,6 @@
   <message id="lcw-duration-tools-tt">How long InterSpec took to run these tools.</message>
   <message id="lcw-phone-dock-tt">Shrink the assistant into the tools tab, to see the spectrum</message>
   <message id="lcw-phone-expand-tt">Make the assistant full-screen</message>
-  <message id="lcw-welcome-learn-more">Learn more about the AI Assistant</message>
+  <message id="lcw-welcome-learn-more">Learn more about the LLM Assistant</message>
   <message id="lcw-help-menu">Help</message>
 </messages>

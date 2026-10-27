@@ -196,7 +196,7 @@ public:
   void reconnectSpectrumChangedForBenchmark();
 
   /** Stage an image to be sent with the next user message.
-   Called from UploadedImgDisplay when user clicks "Send to AI assistant".
+   Called from UploadedImgDisplay when user clicks "Send to LLM assistant".
    Shows a thumbnail preview near the input area.
 
    `displayName` labels the thumbnail in the GUI only.  `caption`, if non-empty, is additionally

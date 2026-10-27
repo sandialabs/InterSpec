@@ -762,7 +762,7 @@ void LlmToolGui::initializeUI()
     resetConfigItem->triggered().connect( this, &LlmToolGui::handleResetLlmConfig );
   }
 
-  // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
+  // Add "Help" option - opens the standard InterSpec help window on the LLM Assistant topic
   PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
   helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
 

@@ -1,12 +1,12 @@
     <div align="center">
       <h1 id="llm-assistant">
-            <b>AI Assistant</b>
+            <b>LLM Assistant</b>
       </h1>
       <hr />
     </div>
 
 <div style="padding-top: 10px">
-The <b>AI Assistant</b> lets you work with <b>InterSpec</b> by typing questions and
+The <b>LLM Assistant</b> lets you work with <b>InterSpec</b> by typing questions and
 instructions in plain language.  A large-language-model (LLM) reads your request together with
 context about the currently displayed spectrum, and then drives <b>InterSpec</b>'s own tools on
 your behalf &mdash; fitting peaks, identifying nuclides, calculating decays, adjusting energy
@@ -80,7 +80,7 @@ the assistant to interpret.  There are two ways to attach an image:
 <ul>
   <li><b>Drag&#8209;and&#8209;drop a file onto <b>InterSpec</b></b>: drop an image file (PNG, JPEG,
       etc.) anywhere on the app window.  <b>InterSpec</b> shows the image, along with a
-      &quot;<b>Send to AI assistant</b>&quot; button; click it to attach the image to your next
+      &quot;<b>Send to LLM assistant</b>&quot; button; click it to attach the image to your next
       message.  A thumbnail of the attached image appears just above the input field.</li>
   <li><b>Paste into the input field</b>: copy an image to your clipboard (for example with a
       screenshot tool) and paste it directly into the message input area with

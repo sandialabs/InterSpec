@@ -6,7 +6,7 @@
     </div>
 
 <div style="padding-top: 10px">
-The <b>AI Assistant</b> needs to know which large-language-model (LLM) service to talk to, how to
+The <b>LLM Assistant</b> needs to know which large-language-model (LLM) service to talk to, how to
 authenticate with it, and which model to use.  These settings are made in the
 &quot;<b>LLM Provider Settings</b>&quot; window.  Until a provider is set up, the assistant shows a
 <b>Configure LLM Provider</b> button that opens this window; afterwards it is available from the
