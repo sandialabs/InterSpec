@@ -302,8 +302,8 @@ struct LevelScheme {
     /// masses and exact fed levels replace that aggregate primitive; consumers
     /// sum selected_mass * dag.pass_from_level(t, fed_level) instead.
     /// Below 1 whenever some decays go straight to the ground state -- Th-234
-    /// feeds the Pa-234m isomer directly in ~71% of decays, so its scheme carries
-    /// entry_probability = 0.286. 1.0 when unset, so schemes built by a host
+    /// feeds the Pa-234m isomer directly in ~76% of decays, so its scheme carries
+    /// entry_probability = 0.242. 1.0 when unset, so schemes built by a host
     /// application behave exactly as before.
     ///
     /// Do NOT round values just below 1 up to 1 on the theory that they are data

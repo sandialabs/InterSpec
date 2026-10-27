@@ -44,8 +44,8 @@ infeasible. Counts in the original audit snapshot (1052 topology-bearing violati
 occurrences, and 1897 distinct parent->child candidates -> 1542 valid / 355 rejected) are retained in
 the study artifacts for provenance, but are **not current effective-tree counts**: they used the old
 XML and an earlier acceptance policy. The final regenerated-XML test reports per-branch-instance,
-disjoint audit categories: **4567 valid, 754 raw-only, 1782 partial-only, and 1328 both raw+partial**;
-accepted graphs contain **323 E0 repairs and 801 intensity caps** (2026-10-03, after the A=234 review). Those categories deliberately do
+disjoint audit categories: **4566 valid, 754 raw-only, 1782 partial-only, and 1328 both raw+partial**;
+accepted graphs contain **323 E0 repairs and 804 intensity caps** (2026-10-27, after the A=234 and Sr-89/Y-89m reviews). Those categories deliberately do
 not collapse into the historical distinct-pair denominator; a final distinct parent->child recount
 is still needed before quoting a replacement rejection percentage. Rejected branches fall back to
 the pairwise-coincidence model described above.
@@ -729,7 +729,14 @@ being a mandatory void. See DESIGN.md "Source shapes" and `tests/test_source_cor
   transitions because exact correlation information is absent.
 - **Known cross-evaluation case:** high-coverage Th-234 remains on the inferred DAG. Its old RDM exact
   starts disagree with the newer evaluated 63.29/92.8-keV photon yields; forcing those starts would move
-  the result away from the photon evaluation the cascade currently models.
+  the result away from the photon evaluation the cascade currently models. Since SandiaDecay c83f5a3
+  (92.36/92.79/112.8 keV x1.16) the DAG enters the scheme 0.242 per decay against the levelFeed's
+  0.219; both feed sets (levelFeed from G4 RDM, `<beta>` summing to 0.924) are stale gamma-balance
+  derivations, not independent data. The record also lacks G4's 29.5 keV (103.42 -> 73.92, alpha 4390)
+  and 20.01 keV (186.73 -> 166.72, alpha 240) transitions, so 103.42 keV is a 0.0565/decay sink whose
+  Pa L-shell conversions are never generated. The fix is SandiaDecay data (add both transitions,
+  re-derive the feeds, a reviewed levelFeed override in the enricher); entry_probability then depends
+  on how the doublet excess splits between 92.38 (M1) and 92.80 keV (E1): 0.260 to 0.225.
 - **Implementation:** replace the independence approximation only if a future enrichment maps the
   residual transition topology, or supplies authoritative joint correlations for it.
 - **Shows up when:** unmatched transitions carry less than one percent of the branch occurrence sum.

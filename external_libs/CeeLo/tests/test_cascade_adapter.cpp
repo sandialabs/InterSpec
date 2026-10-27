@@ -487,8 +487,8 @@ BOOST_AUTO_TEST_CASE(fallback_forest_preserves_selected_member_marginals) {
 //
 // The feeding sum is BELOW 1 whenever some decays populate the daughter's ground
 // or isomeric state directly, so 1.0 is an upper bound, not a target: Th-234
-// feeds the Pa-234m isomer directly in ~71% of decays and correctly sums to
-// ~0.29. Only daughters fed entirely through excited levels sum to 1.
+// feeds the Pa-234m isomer directly in ~76% of decays and correctly sums to
+// ~0.24. Only daughters fed entirely through excited levels sum to 1.
 
 namespace {
 
@@ -658,13 +658,20 @@ BOOST_AUTO_TEST_CASE(whole_database_rejection_rate_is_stable) {
     //   +9   Pa234m -> U234 now valid (raw feed 1.102 -> 0.015): its 43.5 and
     //        41.82 keV records held transition flux as photon intensity
     //        (43.5 keV: 7 transitions per decay). Pa234 -> U234 stays rejected.
-    BOOST_CHECK_EQUAL(n_valid, 4567);
+    // 2026-10-19, Sr-89/Y-89m review (SandiaDecay ca2a34a):
+    //   -1   valid: Sr89 -> Y89 lost its spurious 908.96 keV gamma and its IC
+    //        x-rays, so the branch has nothing left to build a scheme from
+    //   +3   capped: Y89m IT 908.96 keV is now ENSDF's 0.9916 with alpha
+    //        0.00851, so I*(1+alpha) = 1.0000384 and the 4-digit rounding is
+    //        clamped; once each in the Y89m, Tc89 and Tc89m builds
+    // The 2026-10-04..09 U-chain line reviews moved no category.
+    BOOST_CHECK_EQUAL(n_valid, 4566);
     BOOST_CHECK_EQUAL(n_raw_only, 754);
     BOOST_CHECK_EQUAL(n_partial_only, 1782);
     BOOST_CHECK_EQUAL(n_both, 1328);
     BOOST_CHECK_EQUAL(n_invalid_topology_edges, 0);
     BOOST_CHECK_EQUAL(n_accepted_e0, 323); // includes reviewed Eu152 615.4-keV E0
-    BOOST_CHECK_EQUAL(n_accepted_capped, 801);
+    BOOST_CHECK_EQUAL(n_accepted_capped, 804);  // includes Y89m 908.96 keV x3
 }
 
 BOOST_AUTO_TEST_CASE(e0_transitions_emit_no_photon) {
@@ -1245,7 +1252,7 @@ BOOST_AUTO_TEST_CASE(valid_partial_schemes_retain_categorical_residuals) {
     }
 }
 
-// Th234 -> Pa234m keeps four gamma records with no GEANT4 topology (87.02, 103.35,
+// Th234 -> Pa234m keeps four gamma records with no GEANT4 topology (87.02, 103.59,
 // 108.0 and 184.8 keV) beside a valid level graph. Until 2026-10-03 this test used
 // U238 -> Th234, whose residuals were ten U-234 transitions misfiled under the
 // alpha decay; they now belong to Pa234m -> U234.
@@ -1265,8 +1272,13 @@ BOOST_AUTO_TEST_CASE(th234_partial_graph_is_valid_and_residuals_coexist) {
             matched += static_cast<int>(level.out.size());
         if (matched < 2) continue;
         found = true;
-        BOOST_CHECK_GT(dc.level_scheme.entry_probability, 0.19);
-        BOOST_CHECK_LT(dc.level_scheme.entry_probability, 0.22);
+        // 0.2424 = sum of I*(1+alpha) out of the levels above the isomer. It was
+        // 0.2167 until SandiaDecay c83f5a3 (2026-10-05) raised the 92.36, 92.79
+        // and 112.8 keV intensities x1.16 against measured U3O8 spectra. The
+        // graph follows the gamma intensities, so it now sits ~10% above the
+        // unrescaled beta feeds (0.221); see TODO.md's Th-234 cross-evaluation note.
+        BOOST_CHECK_GT(dc.level_scheme.entry_probability, 0.23);
+        BOOST_CHECK_LT(dc.level_scheme.entry_probability, 0.255);
         BOOST_CHECK_GE(dc.residual_transitions.size(), 4u);
         double residual_gamma = 0.0;
         for (const ResidualTransition& r : dc.residual_transitions)

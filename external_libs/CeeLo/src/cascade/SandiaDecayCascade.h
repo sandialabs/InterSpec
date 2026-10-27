@@ -113,7 +113,7 @@ struct CascadeOptions {
 ///
 /// total_feed is BELOW 1 whenever some decays populate the daughter's ground (or
 /// isomeric) state directly -- e.g. Th-234 -> Pa-234m feeds the 73.9 keV isomer
-/// in ~72% of decays, so 0.286 is correct, not a defect.
+/// in ~76% of decays, so 0.242 is correct, not a defect.
 ///
 /// `n_sinks` counts levels with net in-flow. It is NOT an error indicator on its
 /// own: many valid schemes have more than one, including validated examples
