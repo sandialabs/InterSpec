@@ -2463,6 +2463,13 @@ struct RelActAutoSolution
    number of fit parameters. */
   size_t m_dof_data = 0;
 
+  /** The data chi-square of each fit ROI - the part of `m_chi2_data` from that ROI's channels - and the
+   number of channels it has; same order as `m_final_roi_ranges`.  Both are empty if the fit did not
+   get to its final bookkeeping.  There is no per-ROI DOF, since the fit parameters are shared by ROIs.
+   */
+  std::vector<double> m_roi_chi2_data;
+  std::vector<size_t> m_roi_num_channels;
+
   /** The covariance inflation factor applied to every reported covariance/uncertainty:
    `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
    Variances are multiplied by this; standard deviations by its square root. */

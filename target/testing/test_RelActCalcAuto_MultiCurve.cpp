@@ -368,8 +368,35 @@ BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
 
   check_fitted_areal_density_user_bounds(options,sol);
 
+  // A curve's `shields_from_other_curves` are the outer curves' own shieldings - the same fit
+  //  parameters - so they must report the same areal densities and uncertainties.
+  using ShieldInfo = RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo;
+  size_t num_inherited_checked = 0;
+  for( size_t curve = 0; curve < options.rel_eff_curves.size(); ++curve )
+  {
+    vector<const ShieldInfo *> expected;
+    for( const size_t outer : options.rel_eff_curves[curve].shielded_by_other_phys_model_curve_shieldings )
+    {
+      BOOST_REQUIRE( (outer < sol.m_phys_model_results.size()) && sol.m_phys_model_results[outer].has_value() );
+      const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &outer_fit = *sol.m_phys_model_results[outer];
+      if( outer_fit.self_atten.has_value() )
+        expected.push_back( &(*outer_fit.self_atten) );
+      for( const ShieldInfo &shield : outer_fit.ext_shields )
+        expected.push_back( &shield );
+    }//for( loop over outer curves )
 
-
+    const vector<ShieldInfo> &inherited = sol.m_phys_model_results[curve]->shields_from_other_curves;
+    BOOST_REQUIRE_EQUAL( inherited.size(), expected.size() );
+    for( size_t i = 0; i < inherited.size(); ++i, ++num_inherited_checked )
+    {
+      BOOST_CHECK_EQUAL( inherited[i].areal_density, expected[i]->areal_density );
+      BOOST_CHECK_MESSAGE( inherited[i].areal_density_uncert == expected[i]->areal_density_uncert,
+                           "curve " << curve << " inherited shield " << i << " areal density uncertainty "
+                           << inherited[i].areal_density_uncert.value_or(-1.0) << " vs the owning curve's "
+                           << expected[i]->areal_density_uncert.value_or(-1.0) );
+    }
+  }//for( loop over curves )
+  BOOST_CHECK( num_inherited_checked > 0 );
 
   const double chi2_dof = (sol.m_dof_data > 0) ? sol.m_chi2_data/static_cast<double>(sol.m_dof_data) : -1.0;
   BOOST_CHECK_MESSAGE( (chi2_dof > 0.0) && (chi2_dof < 2.0),

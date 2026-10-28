@@ -44,11 +44,12 @@ control which gamma/x-ray lines are used to compute relative activities.
 * **get_isotopics_config** - Retrieve current configuration
 * **reset_isotopics_config** - Clear current configuration
 * **perform_isotopics_calculation** - Execute the isotopics calculation using current configuration
-* **get_peaks** (with filter 'analysis') - Review which peaks the user has fit in the spectrum - these are not used by the "perform_isotopics_calculation" tool.
-* **get_spectrum_info** - Get information about loaded spectra
+* **get_peaks** (with filter 'analysis') - Review the peaks fit in the spectrum, if any - "perform_isotopics_calculation" fits its own peaks, so none need to be fit
+* **get_spectrum_info** - Get information about loaded spectra, such as the detector type
 * **get_isotopics_config_schema** - get the full description of configuration
 * **modify_isotopics_rois** - Add, remove, or update ROIs to use in the data
-* **modify_isotopics_nuclides** - add, remove, or
+* **modify_isotopics_nuclides** - Add, remove, or update nuclides (e.g., to set a known age)
+* **modify_isotopics_options**, **modify_isotopics_curve_settings**, **modify_isotopics_constraints** - Change fit options (skew, FWHM form, energy calibration, background subtraction), the relative efficiency curve (form, shielding), and constraints
 
 ## **Isotopics Analysis Workflow**
 
@@ -59,8 +60,8 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 
 **Actions:**
 * Determine if this is Plutonium, Uranium, or some custom isotopics
-* Check if spectrum is loaded using `get_spectrum_info`
-* Use `get_peaks` to determine relevant peaks in the spectrum (to e.g., check if there are Pu-related peaks in the ~650 keV range); this can help determine isotopics goals, if not explicitly specified.
+* If this is not specified, and peaks have been fit, `get_peaks` can show which lines are present (e.g., Pu lines in the ~650 keV range); peaks do not need to be fit for the calculation
+* Use `get_spectrum_info` if you need the detector type (e.g., HPGe or CZT) to choose a preset
 
 **Transition to:** SELECT_CONFIGURATION
 
@@ -104,9 +105,9 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 **Goal:** Identify potential interferences from other nuclides
 
 **Actions:**
-* Review analysis peaks with `get_peaks` (filter 'analysis')
-* Look for non-target nuclides with peaks in the analysis energy ranges
+* If peaks have been fit, review them with `get_peaks` (filter 'analysis') for non-target nuclides with peaks in the analysis energy ranges
 * Assess if interferences will significantly affect results
+* Without fit peaks, interferences show up in the results instead: ROIs with a high chi2_per_channel, or peaks the solution under-predicts
 
 **Common Interferences:**
 * **Pu analysis:** I131, Cs137, and other fission nuclides
@@ -121,9 +122,9 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 **Goal:** Perform the isotopics analysis
 
 **Actions:**
-* Call `perform_isotopics_calculation` (no parameters needed - uses loaded configuration)
+* Call `perform_isotopics_calculation` (uses the loaded configuration)
 * The tool returns structured covariance quality and bounded profile intervals when local Gaussian uncertainties are weak
-* Results include quality metrics (chi-squared per DOF)
+* Results include quality metrics (data chi-squared per DOF), the fitted relative efficiency curve parameters (rel_eff_curves), each ROI's chi2 (roi_info), and the relative efficiency chart's points (observed_efficiencies); pass detail "full" to also get each ROI's fit peaks and source areas when investigating a poor fit
 
 
 **Transition to:** EVALUATE_RESULTS
@@ -137,14 +138,15 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
   * **Acceptable:** χ²/DOF < 5.0
   * **Possibly acceptable:** χ²/DOF < 10.0 (especially possible for high statistics spectra)
   * **Poor fit:** χ²/DOF > 10.0 (investigate issues - solution is very likely not acceptable)
-* Check χ²/DOF for individual ROIs (see roi_info -> chi2_per_dof) to check for problem ROIs (maybe an ROI can be removed - or perhaps a source is missing that the ROI needs); each entry's from_input_rois gives the configured ROI(s) it came from - use those bounds with modify_isotopics_rois
+* Check each ROI's chi2_per_channel (roi_info -> rois; comparable to the overall χ²/DOF, and the ROI chi2 values add up to the overall chi2) to find problem ROIs (maybe an ROI can be removed - or perhaps a source is missing that the ROI needs); a ROI's from_input_rois, when present, gives the configured ROI(s) it came from - use those bounds (or the ROI's own bounds, when absent) with modify_isotopics_rois
   * If it is a higher statics ROI, it could be helpful to change continuum type, to for example a stepped continuum, or to "Auto" to have it chosen from the data.
   * For a `LineAnchored` ROI, widen (or narrow) how far it extends past its lines with `lower_edge_sideband_fwhm` / `upper_edge_sideband_fwhm` (continuum margin, in FWHM) or `lower_edge_peak_coverage_percent` / `upper_edge_peak_coverage_percent`.
-* Check how well the relative efficiency solution matches peak areas to what would be freely-fit in the spectrum (see observed_efficiencies -> deviation_from_solution_sigma).
+* Check how well the relative efficiency solution matches peak areas to what would be freely-fit in the spectrum (see the observed_efficiencies deviation_sigma column; positive when the freely-fit area is larger than the solution's).
   * If the solution under-predicts the peak that would be freely fit - it could be a sign of a missing source, or too much shielding being applied
   * If the solution over-predicts, then perhaps shielding should be added (especially if low energy peaks are over-predicted and/or higher energy peaks under-predict)
 * If mass_fraction_profile_intervals are present, use the 68% profile as the primary uncertainty and the 95% interval for detail. If mass_fraction_status is non_identifiable, say that the data do not identify the fraction over its feasible range. Never turn mass_fraction_local_gaussian_one_sigma_diagnostic into a symmetric reported uncertainty when covariance quality is weak.
-* If solution χ²/DOF is not good, and all the ROIs have poor individual χ²/DOF, then:
+* Check that the fitted shielding in rel_eff_curves (areal_density_g_cm2, thickness_mm) is physically plausible for the item
+* If solution χ²/DOF is not good, and all the ROIs have poor chi2_per_channel, then:
   * Try a different peak skew model
 
 
@@ -201,7 +203,6 @@ Before starting isotopics analysis, verify:
 
 **Recovery:**
 * Use `reset_isotopics_config` to clear configuration and start over
-* Guide user to fit peaks if not already done
 * Select different preset if needed
 
 ## **Best Practices**
@@ -236,7 +237,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Tool>get_spectrum_info</Tool>
           <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>First, verify that peaks are fit, using get_peaks (filter 'analysis'); get_spectrum_info gives detector details if needed. Determine if the user wants Plutonium or Uranium isotopics. Once you understand the request and have confirmed prerequisites, transition to SELECT_CONFIGURATION state.</PromptGuidance>
+        <PromptGuidance>Determine if the user wants Plutonium or Uranium isotopics. If not specified and peaks have been fit, get_peaks (filter 'analysis') can show which lines are present; peaks do not need to be fit, as the calculation fits its own. get_spectrum_info gives the detector type, if needed to choose a preset. Then transition to SELECT_CONFIGURATION.</PromptGuidance>
       </State>
 
       <State name="SELECT_CONFIGURATION">
@@ -260,9 +261,8 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         </AllowedTransitions>
         <SuggestedTools>
           <Tool>get_isotopics_config</Tool>
-          <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>Use get_isotopics_config to retrieve loaded configuration. Use get_peaks (filter 'analysis') to verify peaks exist in configuration ROI ranges. Check peak fit quality, verify detector efficiency loaded, confirm expected nuclides in config. If wrong preset loaded (no peaks in ROIs or wrong nuclides), go back to SELECT_CONFIGURATION. Otherwise transition to CHECK_INTERFERENCE.</PromptGuidance>
+        <PromptGuidance>Use get_isotopics_config to confirm the expected nuclides and ROIs are configured, and check whether a detector efficiency function is loaded (helpful for the physical relative efficiency model). If source ages are known, set them with modify_isotopics_nuclides. If the wrong preset was loaded, go back to SELECT_CONFIGURATION. Otherwise transition to CHECK_INTERFERENCE.</PromptGuidance>
       </State>
 
       <State name="CHECK_INTERFERENCE">
@@ -274,7 +274,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         <SuggestedTools>
           <Tool>get_peaks</Tool>
         </SuggestedTools>
-        <PromptGuidance>Review analysis peaks to identify non-target nuclides that could interfere. For Pu: Am-241 (59.5 keV - if severe, switch to high-energy preset). For U: Th-234 (indicates decay). Check for mixed U/Pu. Note interferences as limitations. If severe interference requires preset change, go back to SELECT_CONFIGURATION. Otherwise proceed to EXECUTE_CALCULATION.</PromptGuidance>
+        <PromptGuidance>If peaks have been fit, review them (get_peaks, filter 'analysis') to identify non-target nuclides that could interfere; if not, go on, as interferences then show up in the results (ROIs with high chi2_per_channel, or under-predicted peaks). For Pu: Am-241 (59.5 keV - if severe, switch to high-energy preset). For U: Th-234 (indicates decay). Check for mixed U/Pu. Note interferences as limitations. If severe interference requires preset change, go back to SELECT_CONFIGURATION. Otherwise proceed to EXECUTE_CALCULATION.</PromptGuidance>
       </State>
 
       <State name="EXECUTE_CALCULATION">
@@ -286,7 +286,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         <SuggestedTools>
           <Tool>perform_isotopics_calculation</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call perform_isotopics_calculation (no parameters - uses loaded configuration). The tool returns structured mass-fraction covariance quality and, when needed, bounded 68% and 95% profile intervals with endpoint classifications. Treat a non-identifiable profile as the scientific result; never restate the local Gaussian diagnostic as a usable symmetric uncertainty. For Pu it may include Pu-242-corrected and uncorrected fitted fractions plus an extrapolation warning. For U it reports U-235 enrichment. Transition to EVALUATE_RESULTS to assess quality.</PromptGuidance>
+        <PromptGuidance>Call perform_isotopics_calculation (uses the loaded configuration; detail "full" adds per-ROI peaks when investigating a poor fit). The tool returns structured mass-fraction covariance quality and, when needed, bounded 68% and 95% profile intervals with endpoint classifications. Treat a non-identifiable profile as the scientific result; never restate the local Gaussian diagnostic as a usable symmetric uncertainty. For Pu it may include Pu-242-corrected and uncorrected fitted fractions plus an extrapolation warning. For U it reports U-235 enrichment. Transition to EVALUATE_RESULTS to assess quality.</PromptGuidance>
       </State>
 
       <State name="EVALUATE_RESULTS">
@@ -298,7 +298,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
           <Transition>VALIDATE_CONFIGURATION</Transition>
         </AllowedTransitions>
         <SuggestedTools></SuggestedTools>
-        <PromptGuidance>Critically evaluate the results. Check chi-squared per DOF (should less than 2 for a great fit, acceptable if less than 5, concerning if greater than 8.0). Review uncertainties on mass fractions (should be &lt;5% for major isotopes), although there isnt much to do about it. Verify results are physically reasonable. If quality is good, transition to FINALIZE_RESULTS. If issues found, consider returning to earlier states to address problems.</PromptGuidance>
+        <PromptGuidance>Critically evaluate the results. Check chi-squared per DOF (about 1 is a good fit, acceptable if less than 5, very likely not acceptable if greater than 10), and each ROI's chi2_per_channel. Review uncertainties on mass fractions (should be &lt;5% for major isotopes), although there isnt much to do about it. Verify results are physically reasonable. If quality is good, transition to FINALIZE_RESULTS. If issues found, consider returning to earlier states to address problems.</PromptGuidance>
       </State>
 
       <State name="FINALIZE_RESULTS">

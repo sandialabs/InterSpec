@@ -10954,6 +10954,26 @@ struct RelActAutoCostFcn
 
       solution.m_chi2_data = chi2_data;
       solution.m_dof_data = (n_data_rows > num_effective_paramaters) ? (n_data_rows - num_effective_paramaters) : size_t(0);
+
+      // The same data residual rows, split by ROI; `eval()` writes each ROI's channels in turn.
+      solution.m_roi_chi2_data.clear();
+      solution.m_roi_num_channels.clear();
+      size_t row = 0;
+      for( const RelActCalcAutoImp::RoiRangeChannels &roi : cost_functor->m_energy_ranges )
+      {
+        double roi_chi2 = 0.0;
+        for( size_t i = 0; (i < roi.num_channels) && (row < n_data_rows); ++i, ++row )
+          roi_chi2 += data_residuals[row]*data_residuals[row];
+        solution.m_roi_chi2_data.push_back( roi_chi2 );
+        solution.m_roi_num_channels.push_back( roi.num_channels );
+      }//for( loop over ROIs )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      const double roi_chi2_sum = std::accumulate( begin(solution.m_roi_chi2_data), end(solution.m_roi_chi2_data), 0.0 );
+      if( fabs(roi_chi2_sum - chi2_data) > 1.0E-6*(std::max)(1.0, chi2_data) )
+        log_developer_error( __func__, ("Per-ROI data chi2 sum " + std::to_string(roi_chi2_sum)
+                                        + " != total " + std::to_string(chi2_data)).c_str() );
+#endif
       solution.m_cov_scale = (solution.m_dof_data > 0) ? (std::max)(1.0, chi2_data/static_cast<double>(solution.m_dof_data)) : 1.0;
 
       // Weighted coefficient of determination: R^2 = 1 - SS_res/SS_tot, with SS_res = chi2_data (the
@@ -11316,8 +11336,18 @@ struct RelActAutoCostFcn
       
       if( !solution.m_fit_peaks_in_spectrums_cal.empty() )
       {
+        // `m_spectrum` already has the fit energy calibration, but these peaks are still in the
+        //  original one, so evaluate them against the background-subtracted data in that calibration.
+        shared_ptr<const SpecUtils::Measurement> data = solution.m_spectrum;
+        if( data && cost_functor->m_energy_cal && (data->energy_calibration() != cost_functor->m_energy_cal) )
+        {
+          const shared_ptr<SpecUtils::Measurement> orig_cal_data = make_shared<SpecUtils::Measurement>( *data );
+          orig_cal_data->set_energy_calibration( cost_functor->m_energy_cal );
+          data = orig_cal_data;
+        }
+
         const vector<float> &channel_count_uncerts = cost_functor->m_channel_count_uncerts;
-        set_chi2_dof( solution.m_spectrum, solution.m_fit_peaks_in_spectrums_cal,
+        set_chi2_dof( data, solution.m_fit_peaks_in_spectrums_cal,
                      0, solution.m_fit_peaks_in_spectrums_cal.size(), &channel_count_uncerts );
       }
     }else
@@ -11747,9 +11777,12 @@ struct RelActAutoCostFcn
         phys_model_result.corr_upper_energy = cost_functor->m_corr_upper_energy;
         phys_model_result.corr_pivot_energy = cost_functor->m_corr_pivot_energy;
 
+        // `start_index` indexes `these_rel_eff_coefficients`; `uncert_index` is the same parameter's
+        //  absolute index into `uncertainties` (the two differ for shields owned by another curve).
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
                                    const vector<double> &these_rel_eff_coefficients,
-                                   const size_t start_index )
+                                   const size_t start_index,
+                                   const size_t uncert_index )
           -> RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo {
 
           assert( (start_index + 2) <= these_rel_eff_coefficients.size() );
@@ -11764,8 +11797,8 @@ struct RelActAutoCostFcn
             answer.atomic_number = these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
             assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
             
-            if( uncertainties.size() > (this_rel_eff_start_index + start_index) )
-              answer.atomic_number_uncert = uncertainties[this_rel_eff_start_index + start_index + 0] * RelActCalc::ns_an_ceres_mult;
+            if( uncertainties.size() > uncert_index )
+              answer.atomic_number_uncert = uncertainties[uncert_index + 0] * RelActCalc::ns_an_ceres_mult;
           }else if( !input.material )
           {
             assert( (these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
@@ -11790,8 +11823,8 @@ struct RelActAutoCostFcn
                                   * (1.0 + std::fabs(lower_ad));
             assert( answer.areal_density + roundoff >= lower_ad );
 
-            if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
-              answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1]
+            if( uncertainties.size() > (uncert_index + 1) )
+              answer.areal_density_uncert = uncertainties[uncert_index + 1]
                                             * RelActCalc::ns_ad_ceres_mult * PhysicalUnits::g_per_cm2;
           }else
           {
@@ -11810,12 +11843,13 @@ struct RelActAutoCostFcn
                || ((rel_eff_curve.phys_model_self_atten->atomic_number >= 1.0) && (rel_eff_curve.phys_model_self_atten->atomic_number <= 98.0))
                || rel_eff_curve.phys_model_self_atten->fit_atomic_number ) )
         {
-          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, rel_eff_coefficients, 0 );
+          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, rel_eff_coefficients, 0, this_rel_eff_start_index );
         }//if( options.phys_model_self_atten )
         
         for( size_t ext_ind = 0; ext_ind < rel_eff_curve.phys_model_external_atten.size(); ++ext_ind )
         {
-          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], rel_eff_coefficients, 2 + 2*ext_ind );
+          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], rel_eff_coefficients, 2 + 2*ext_ind,
+                                     this_rel_eff_start_index + 2 + 2*ext_ind );
           phys_model_result.ext_shields.push_back( std::move(res) );
         }//for( loop over external attens )
 
@@ -11834,14 +11868,15 @@ struct RelActAutoCostFcn
 
           if( outer_curve.phys_model_self_atten )
           {
-            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index );
+            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index, re_start_index );
             phys_model_result.shields_from_other_curves.push_back( res );
           }
           for( size_t i = 0; i < outer_curve.phys_model_external_atten.size(); ++i )
           {
             if( outer_curve.phys_model_external_atten[i] )
             {
-              auto res = get_shield_info( *outer_curve.phys_model_external_atten[i], solution.m_final_parameters, re_start_index + 2 + 2*i );
+              auto res = get_shield_info( *outer_curve.phys_model_external_atten[i], solution.m_final_parameters,
+                                         re_start_index + 2 + 2*i, re_start_index + 2 + 2*i );
               phys_model_result.shields_from_other_curves.push_back( res );
             }
           }

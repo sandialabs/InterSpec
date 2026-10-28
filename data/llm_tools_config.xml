@@ -2047,10 +2047,16 @@ Use list_isotopics_presets to discover the preset configurations available.
   </Tool>
 
   <Tool name="perform_isotopics_calculation">
-    <Description>Execute isotopics analysis on the currently loaded spectrum using the configuration that was previously loaded via load_isotopics_preset. This performs the actual calculation to determine the mass fractions of isotopes from gamma-ray peak areas, detector response, and nuclear decay data. Before calling this tool, you MUST have: (1) a foreground spectrum loaded, (2) peaks fit to the spectrum, (3) an isotopics configuration loaded via load_isotopics_preset. The tool returns: mass fractions with uncertainties for each isotope, relative activities, ages (time since purification) if fit, quality metrics (chi-squared per degree of freedom), and optionally Pu242-corrected values for Plutonium analysis. Lower chi2/DOF (ideally near 1.0) indicates better fit quality. Values much greater than 2-3 may indicate problems with peak fits, interference, or incorrect configuration.</Description>
+    <Description>Runs the isotopics analysis on the foreground spectrum with the current configuration (from load_isotopics_preset, plus any modify_isotopics_* changes); it fits its own peaks, so none need to be fit first. Returns each nuclide's mass fraction and uncertainty, the fit quality, and per-ROI and relative efficiency details. Can take a few minutes.</Description>
     <ParametersSchema>{
       "type": "object",
-      "properties": {}
+      "properties": {
+        "detail": {
+          "type": "string",
+          "enum": ["compact", "full"],
+          "description": "Optional: \"full\" adds each ROI's fit peaks and source areas, and more observed-efficiency columns. Default is \"compact\"."
+        }
+      }
     }</ParametersSchema>
     <AvailableFor>
       <Agent>Isotopics</Agent>
@@ -2136,7 +2142,7 @@ Actions:
 - update: Modify properties of existing ROIs (continuum_type, range_type, edge settings, or change bounds)
 - replace_all: Replace all ROIs with the specified list
 
-For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.  Changing a LineAnchored ROI to another range type requires new bounds, since its energies are lines rather than a range (roi_info from the last calculation gives the range it was fit over).  The ROIs in roi_info list the configured ROI(s) they were made from (from_input_rois); use those bounds to identify a ROI here.
+For update action: specify existing bounds to find the ROI, then new_lower_energy/new_upper_energy for new bounds.  Changing a LineAnchored ROI to another range type requires new bounds, since its energies are lines rather than a range (roi_info from the last calculation gives the range it was fit over).  A ROI in roi_info lists the configured ROI(s) it was made from (from_input_rois, as [lower, upper, range_type]) when they differ from its fit range; use those bounds to identify a ROI here, or the ROI's own bounds when from_input_rois is absent.
 
 Range types:
 - LineAnchored (preferred for new ROIs): lower_energy/upper_energy are the energies of the lowest and highest gamma lines to include (equal for a single line); the fit ROI extends past them based on the detector's peak width and shape, so it suits any detector resolution.  ROIs whose peaks are close together are merged; otherwise ROIs share the continuum between them, and a ROI's continuum region stops short of other peaks in the spectrum.
@@ -2330,8 +2336,8 @@ Note: background_subtract requires a background spectrum to be loaded.</Descript
         },
         "fwhm_form": {
           "type": "string",
-          "description": "Optional. FWHM functional form for peak fitting.",
-          "enum": ["Gadras", "SqrtEnergyPlusInverse", "ConstantPlusSqrtEnergy", "Polynomial_2", "Polynomial_3", "Polynomial_4", "Polynomial_5", "Polynomial_6"]
+          "description": "Optional. FWHM functional form for peak fitting; get_isotopics_config reports the current one by these names. Berstein_N is FWHM = sqrt(polynomial in energy with N coefficients), in a numerically stable basis ('Polynomial_N' is accepted as the same form).",
+          "enum": ["Gadras", "SqrtEnergyPlusInverse", "ConstantPlusSqrtEnergy", "Berstein_2", "Berstein_3", "Berstein_4", "Berstein_5", "Berstein_6", "NoisePlusCurvedPower"]
         },
         "fwhm_estimation_method": {
           "type": "string",
@@ -2462,27 +2468,7 @@ This information provides detailed explanation about the meaning of fields and o
   </Tool>
 
   <Tool name="peak_based_relative_efficiency">
-    <Description>Perform a peak-based relative efficiency calculation using existing analysis peaks.
-
-This tool performs relative efficiency analysis using peaks that have already been added to analysis peaks and have assigned sources. It is useful for:
-- Validating nuclide identification: peaks that deviate significantly from the fit curve may not be the assigned nuclide
-- Enrichment checks for Uranium or Plutonium isotopes
-- Calculating relative activities/masses of fission products when geometry is unknown
-
-Peaks can be specified either by energy list or by source nuclide list (mutually exclusive).
-When using 'sources', you can optionally specify 'energy_ranges' to limit which peaks are included based on energy.
-
-The output includes:
-- Activity ratios and mass ratios between sources with uncertainties
-- Per-peak information including observed vs fit efficiency
-- The residual_sigma field indicates how close each peak is to the fit curve:
-  * 0 to 5 sigma: Good - peak is consistent with the fit curve
-  * 5 to 10 sigma: Acceptable - some deviation but still reasonable  
-  * Beyond 10 sigma: Poor - peak is likely not the nuclide assigned, or there are other issues
-- Fit quality metrics (chi2, dof, chi2_per_dof)
-- Warnings about data quality or fitting issues
-
-The save_to_state option allows persisting the configuration to the app state for later retrieval.</Description>
+    <Description>Fits a relative efficiency curve to analysis peaks that are already fit and have sources assigned, selected by energy or by source, and returns the sources' activity and mass ratios, how far each peak is from the curve, and the fit quality. Use it to check a nuclide identification (a peak far from the curve may not be from its assigned source), or for the relative activities of sources when the geometry is unknown. For U or Pu isotopics, use the isotopics analysis instead (perform_isotopics_calculation, or the Isotopics agent), which fits its own peaks.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -2659,9 +2645,7 @@ Returns information about:
       "properties": {}
     }</ParametersSchema>
     <AvailableFor>
-      <Agent>NuclideId</Agent>
       <Agent>Isotopics</Agent>
-      <Agent>McpServer</Agent>
     </AvailableFor>
   </Tool>
 

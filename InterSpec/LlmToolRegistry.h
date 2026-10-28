@@ -110,6 +110,15 @@ struct SharedTool {
 InterSpec_API nlohmann::json compact_rate( const double value );
 
 
+/** `val` rounded to `n` significant figures, as a double that serializes to JSON without spurious
+ trailing digits (e.g., "1.66", not "1.6600000000000001"); zero stays zero.
+ */
+InterSpec_API double round_to_sig_figs( const double val, const int n );
+
+/** `val` rounded to `n` decimal places; serializes cleanly, like `round_to_sig_figs(...)`. */
+InterSpec_API double round_to_decimal_places( const double val, const int n );
+
+
 /** Runs a `run_javascript` call where there is no browser sandbox; the stdio MCP server sets one,
  using QuickJS.  Called in the session, and must call `callback` exactly once, in the session.
  */

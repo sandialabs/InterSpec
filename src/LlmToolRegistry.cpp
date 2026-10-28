@@ -2222,6 +2222,19 @@ namespace {
 
 namespace LlmTools
 {
+double round_to_sig_figs( const double val, const int n )
+{
+  return ::round_to_sig_figs( val, n );
+}
+
+double round_to_decimal_places( const double val, const int n )
+{
+  return ::round_to_decimal_places( val, n );
+}
+}//namespace LlmTools
+
+namespace LlmTools
+{
 
 namespace
 {
@@ -8041,7 +8054,8 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
 {
   using namespace PhysicalUnits;
 
-  // To keep from overwhelming the context, we will just return a subset of possbile shieldings
+  // To keep from overwhelming the context, we will just return a subset of possbile shieldings; this
+  //  must include every material the shipped isotopics presets (data/rel_act/) use.
   nlohmann::json materials_array = nlohmann::json{ "acetone", "adipose tissue", "air", "aluminum oxide",
     "amber", "ammonia", "bakelite", "baratol high explosive",
     "benzene", "beryllium oxide", "bgo", "blood",
@@ -8055,7 +8069,7 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
     "Jet fuel", "kapton", "kevlar",  "lipoly",
     "mock he", "Monocalcium phosphate", "muscle", "mylar",
     "nylon 6,6", "nylon-8062", "nylon-6-10", "paraffin", "PBX-9404 high explosive", "PBX-9501 high explosive",
-    "pine wood", "plastic_sc_vinyltoluene", "plexiglass", "Plutonium dioxide",
+    "pine wood", "plastic_sc_vinyltoluene", "plexiglass", "Plutonium dioxide", "plutonium_dioxide",
     "plywood", "polyacrylonitrile", "polycarbonate",
     "polychlorostyrene", "polyethylene", "polypropylene", "polystyrene", 
     "Polyurethane foam", "propane", "pvc - polyvinyl chloride", "pvt - polyvinyl toluene",
@@ -8063,8 +8077,8 @@ nlohmann::json ToolRegistry::executeGetMaterials( InterSpec * /*interspec*/ )
     "Salt water", "silver_iodide", "skin", "sodium_iodide", 
     "soft tissue", "soil", "stainless steel ss-304", "stainless-steel nist",
     "Steel - AISI 1040 Med. Carbon", "teflon",
-    "Thorium oxide", "titanium_dioxide", "Uranium hexafluoride",
-    "Uranium metal", "void", "water","wet soil"
+    "Thorium oxide", "titanium_dioxide", "UO2 Uranium Dioxide", "Uranium hexafluoride",
+    "Uranium metal", "Uranium trioxide", "void", "water","wet soil"
   };
 
   nlohmann::json result = nlohmann::json::object();

@@ -291,7 +291,6 @@ def sweep(client, report, args, out_dir, mode_agent):
         ('activity_fit', 'activity_fit', {'peak_energies': [81, 302.9, 356, 383.8]}, 'any'),
         ('activity_fit_one_off', 'activity_fit_one_off', {'distance': '50 cm', 'geometry': 'Spherical', 'peak_energies': [81, 356]}, 'any'),
         ('peak_based_relative_efficiency', 'peak_based_relative_efficiency', {'sources': ['Ba133']}, 'any'),
-        ('get_rel_act_manual_state', 'get_rel_act_manual_state', {}, 'any'),
         ('save_energy_cal_checkpoint', 'save_energy_cal_checkpoint', {'name_hint': 'torture'}, 'ok'),
         ('fit_energy_calibration', 'fit_energy_calibration', {'specType': 'Foreground', 'peak_energies': [81, 302.9, 356, 383.8]}, 'any'),
         ('restore_energy_cal_checkpoint', 'restore_energy_cal_checkpoint', lambda c: {'checkpoint_name': checkpoint_name(c, 'save_energy_cal_checkpoint')}, 'ok'),
