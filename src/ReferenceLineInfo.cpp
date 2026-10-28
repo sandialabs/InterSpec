@@ -4160,7 +4160,29 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Xray;
           vector<string> parts;
           SpecUtils::split( parts, std::get<2>( bl ), " " );
-          if( !parts.empty() )
+          
+          // Background x-rays are labeled by the decaying nuclide (ex., "Pb214 x-ray"), but the
+          //  x-rays are of the daughter atom (ex., Bi), so find the decay that gives this x-ray.
+          const SandiaDecay::Nuclide * const xray_nuc = parts.empty() ? nullptr : db->nuclide( parts[0] );
+          for( size_t i = 0; xray_nuc && !line.m_element && (i < xray_nuc->decaysToChildren.size()); ++i )
+          {
+            const SandiaDecay::Transition * const trans = xray_nuc->decaysToChildren[i];
+            if( !trans->child )
+              continue;
+            
+            for( const SandiaDecay::RadParticle &particle : trans->products )
+            {
+              if( (particle.type == SandiaDecay::ProductType::XrayParticle)
+                 && (fabs(particle.energy - line.m_energy) < 0.01) )
+              {
+                line.m_element = db->element( trans->child->atomicNumber );
+                break;
+              }
+            }//for( loop over decay products )
+          }//for( loop over decays of xray_nuc )
+          
+          // Otherwise label may be an element, like "Pb xray"
+          if( !line.m_element && !xray_nuc && !parts.empty() )
             line.m_element = db->element( parts[0] );
           // TODO: set a color here
           break;
@@ -4185,6 +4207,18 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
             if( pos != string::npos )
               line.m_parent_nuclide = db->nuclide( nucstr.substr(0,pos) ); // Make like "Th232"
           }//if( !line.m_parent_nuclide )
+          
+          // The background annihilation line isnt from any one nuclide, so associate it with the
+          //  annihilation "reaction", so peaks can be assigned to it.
+          if( !line.m_parent_nuclide && is_background && (fabs(line.m_energy - 510.9989) < 0.01) )
+          {
+            const ReactionGamma * const rctnDb = ReactionGammaServer::database();
+            vector<ReactionGamma::ReactionPhotopeak> annih_gammas;
+            if( rctnDb )
+              rctnDb->gammas( "Annihilation", annih_gammas );
+            if( !annih_gammas.empty() )
+              line.m_reaction = annih_gammas[0].reaction;
+          }//if( background annihilation line )
           
           
           // TODO: try to get reaction if didnt get nuclide - also, nuclide list may be CSV, could split that

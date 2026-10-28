@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <deque>
 #include <memory>
 #include <string>
@@ -80,6 +81,7 @@ namespace Wt
   class WSuggestionPopup;
 }//namespace Wt
 
+class PeakDef;
 class InterSpec;
 class ColorSelect;
 class DetectorDisplay;
@@ -340,9 +342,37 @@ public:
    */
   Wt::WColor suggestColorForSource( const std::string &src ) const;
   
-  /** Returns the next color that would be given to a source that doesnt already have a defined color. */
-  Wt::WColor nextGenericSourceColor() const;
-  
+  /** Returns the next color that would be given to a source that doesnt already have a defined color.
+
+   @param also_avoid Additional colors to not use (e.g., colors picked for peaks not yet in the PeakModel).
+   */
+  Wt::WColor nextGenericSourceColor( const std::vector<Wt::WColor> &also_avoid = {} ) const;
+
+  /** Returns the first color of `palette` whose RGB isn't in `used`; if all are used, returns
+   `palette[fallback_index % palette.size()]`.  Returns a default color if `palette` is empty.
+   */
+  static Wt::WColor firstUnusedColor( const std::vector<Wt::WColor> &palette,
+                                      const std::vector<Wt::WColor> &used,
+                                      const size_t fallback_index );
+
+  /** Returns the color for a peak being added with a source assigned, chosen the way showing
+   reference lines for that source would, so each source gets its own color.
+
+   In order: the color already chosen for the source in `pending`; the color of existing peaks of
+   the source; the color of displayed (current, then persisted) reference lines for the source; the
+   color previously used for the source, if no other source now uses it; the color theme's color for
+   the source; the next palette color not used by peaks, displayed reference lines, or `pending`.
+   The returned color is added to `pending`, and a newly picked palette color is cached (see
+   `updateColorCacheForSource(...)`) so later reference lines of the source match it.
+
+   Returns a default color if the peak has no source, or the color theme says peaks don't take on
+   reference line colors.
+
+   @param pending Source to color picks for peaks not yet in the PeakModel (e.g., earlier peaks of
+          the same batch being added); updated by this call.
+   */
+  Wt::WColor colorForNewPeak( const PeakDef &peak, std::map<std::string,Wt::WColor> &pending );
+
   /** Updates `m_previouslyPickedSourceColors` for the specified source.
    
    If source string is empty, no action is taken.
@@ -542,8 +572,8 @@ protected:
    */
   bool m_userHasPickedColor;
   
-  /** Only effects how colors are chosen for reference line, does not influence
-      coloring of peaks.
+  /** Effects how colors are chosen for reference lines, and whether `colorForNewPeak(...)` gives
+   peaks a color; it does not change the colors of existing peaks.
    */
   bool m_peaksGetAssignedRefLineColor;
   

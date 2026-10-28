@@ -45,6 +45,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/ColorTheme.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -177,19 +178,98 @@ namespace
   }//estimate_net_counts_in_hist(...)
 
 
+  /** Compares only RGB, as `WColor::operator==` also compares the color name. */
+  bool same_rgb( const Wt::WColor &lhs, const Wt::WColor &rhs )
+  {
+    return (lhs.red() == rhs.red()) && (lhs.green() == rhs.green()) && (lhs.blue() == rhs.blue());
+  }
+
+
+  /** Returns the color for a peak being added with a source assigned, chosen the way showing
+   reference lines for the source would, so each source gets its own color (see
+   `ReferencePhotopeakDisplay::colorForNewPeak(...)`).  Without a reference-lines widget (e.g., tool
+   tabs hidden on phones), picks from the color theme's reference-line palette, avoiding the colors
+   of existing peaks and of `pending`.
+
+   @param pending Source to color picks for peaks not yet added to the PeakModel (e.g., earlier
+          peaks of the same batch); updated by this call.
+   */
+  Wt::WColor color_for_new_peak( const PeakDef &peak, InterSpec *viewer,
+                                 std::map<std::string,Wt::WColor> &pending )
+  {
+    if( !viewer )
+      return Wt::WColor();
+
+    ReferencePhotopeakDisplay * const ref_lines = viewer->referenceLinesWidget();
+    if( ref_lines )
+      return ref_lines->colorForNewPeak( peak, pending );
+
+    const string src = peak.sourceName();
+    const shared_ptr<const ColorTheme> theme = viewer->getColorTheme();
+    if( src.empty() || (theme && !theme->peaksTakeOnReferenceLineColor) )
+      return Wt::WColor();
+
+    const auto pending_pos = pending.find( src );
+    if( pending_pos != end(pending) )
+      return pending_pos->second;
+
+    // Use the color of existing peaks of the source, if any, otherwise avoid all existing colors
+    Wt::WColor color;
+    vector<Wt::WColor> used;
+    const shared_ptr<PeakModel> pmodel = viewer->peakModel();
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel ? pmodel->peaks() : nullptr;
+    for( size_t i = 0; peaks && (i < peaks->size()); ++i )
+    {
+      const Wt::WColor &c = (*peaks)[i]->lineColor();
+      if( c.isDefault() )
+        continue;
+
+      used.push_back( c );
+      if( color.isDefault() && ((*peaks)[i]->sourceName() == src) )
+        color = c;
+    }//for( loop over existing peaks )
+
+    if( color.isDefault() && theme )
+    {
+      const auto specific_pos = theme->referenceLineColorForSources.find( src );
+      if( specific_pos != end(theme->referenceLineColorForSources) )
+        color = specific_pos->second;
+    }
+
+    if( color.isDefault() )
+    {
+      for( const auto &p : pending )
+        used.push_back( p.second );
+
+      const vector<Wt::WColor> &palette = (theme && !theme->referenceLineColor.empty())
+                                            ? theme->referenceLineColor
+                                            : ReferencePhotopeakDisplay::sm_def_line_colors;
+      color = ReferencePhotopeakDisplay::firstUnusedColor( palette, used, pending.size() );
+    }//if( color.isDefault() )
+
+    if( !color.isDefault() )
+      pending[src] = color;
+
+    return color;
+  }//color_for_new_peak(...)
+
+
   /** Assigns `source` to `peak`, the way a user entering it into the peak table would, and colors it
-   to match other peaks of the same source, or else a color suggested by the reference lines.
+   to match other peaks of the same source, or else a new color for the source (see
+   `color_for_new_peak(...)`).
 
    A source containing "unknown" (or starting with "unk") sets the user label to "UNKNOWN" instead,
    which `ToolRegistry::executeGetUnidentifiedDetectedPeaks(...)` recognizes.  An empty source
    does nothing.
 
    @param other_peaks The other peaks in the spectrum, to match the color of.
+   @param viewer The session, to pick new colors from; if null, no new color is picked.
+   @param pending Source to color picks for peaks not yet added to the PeakModel; updated by this call.
    @returns false if `source` is not a valid source string.
    */
   bool assign_source_and_color( PeakDef &peak, const std::string &source,
                                 const std::vector<std::shared_ptr<const PeakDef>> &other_peaks,
-                                ReferencePhotopeakDisplay *ref_lines )
+                                InterSpec *viewer, std::map<std::string,Wt::WColor> &pending )
   {
     if( source.empty() )
       return true;
@@ -215,38 +295,20 @@ namespace
       {
         num_same_src_peaks += 1;
 
-        if( !srcPeak->lineColor().isDefault()
-           && (std::find( begin(src_colors), end(src_colors), srcPeak->lineColor()) == end(src_colors)) )
-        {
-          src_colors.push_back( srcPeak->lineColor() );
-        }
+        const Wt::WColor &c = srcPeak->lineColor();
+        const bool have_color = std::any_of( begin(src_colors), end(src_colors), [&c]( const Wt::WColor &rhs ){
+          return same_rgb( c, rhs );
+        } );
+
+        if( !c.isDefault() && !have_color )
+          src_colors.push_back( c );
       }
     }//for( const auto &srcPeak : other_peaks )
 
     if( src_colors.size() == 1 )
-    {
       peak.setLineColor( src_colors[0] );
-    }else if( (num_same_src_peaks == 0) && ref_lines )
-    {
-      string src_name;
-      if( peak.parentNuclide() )
-        src_name = peak.parentNuclide()->symbol;
-      else if( peak.xrayElement() )
-        src_name = peak.xrayElement()->symbol;
-      else if( peak.reaction() )
-        src_name = peak.reaction()->name();
-
-      Wt::WColor c = ref_lines->suggestColorForSource( src_name );
-
-      if( c.isDefault() && !src_name.empty() )
-      {
-        c = ref_lines->nextGenericSourceColor();
-        if( !c.isDefault() )
-          ref_lines->updateColorCacheForSource( src_name, c );
-      }
-
-      peak.setLineColor( c );
-    }//if( one existing color for source ) / else if( no other peaks of source )
+    else if( num_same_src_peaks == 0 )
+      peak.setLineColor( color_for_new_peak( peak, viewer, pending ) );
 
     return true;
   }//assign_source_and_color(...)
@@ -260,7 +322,7 @@ namespace
   shared_ptr<const PeakDef> assign_source_to_user_fit_peak( vector<shared_ptr<const PeakDef>> &peaks_to_add_in,
                                                 const double energy, const string &source,
                                                 const vector<shared_ptr<const PeakDef>> &orig_peaks,
-                                                ReferencePhotopeakDisplay *ref_lines )
+                                                InterSpec *viewer )
   {
     // The new peak may share a ROI with previously existing peaks, so we have to figure out
     //  what peak we just fit.
@@ -288,7 +350,8 @@ namespace
       return peaks_to_add_in[fit_peak_index];
 
     shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *peaks_to_add_in[fit_peak_index] );
-    if( !assign_source_and_color( *new_fit_peak, source, orig_peaks, ref_lines ) )
+    map<string,Wt::WColor> pending_colors;
+    if( !assign_source_and_color( *new_fit_peak, source, orig_peaks, viewer, pending_colors ) )
       throw runtime_error( "Peak was fit, but source string '" + source + "' was not valid to set source." );
 
     // Long-standing behavior, kept as-is: an "UNKNOWN" label only goes on the returned peak, not the
@@ -1474,7 +1537,8 @@ namespace AnalystChecks
     for( size_t i = 0; i < npeaks; ++i )
     {
       PeakDef test_peak( setup.energies[i], setup.fwhms[i] / PhysicalUnits::fwhm_nsigma, 100.0 );
-      if( !assign_source_and_color( test_peak, setup.sources[i], {}, nullptr ) )
+      map<string,Wt::WColor> unused_colors;
+      if( !assign_source_and_color( test_peak, setup.sources[i], {}, nullptr, unused_colors ) )
         throw runtime_error( "Source '" + setup.sources[i] + "' (for the peak at " + kev_str(setup.energies[i])
                              + ") is not a valid nuclide, x-ray element, or reaction." );
     }
@@ -1776,7 +1840,7 @@ namespace AnalystChecks
         other_peaks.push_back( p );
     }
 
-    ReferencePhotopeakDisplay * const ref_lines = interspec->referenceLinesWidget();
+    map<string,Wt::WColor> pending_colors;  // So each new source of the ROI gets its own color
 
     vector<shared_ptr<const PeakDef>> new_peaks;
     vector<bool> inherited( setup.replaced_peaks.size(), false );
@@ -1788,7 +1852,7 @@ namespace AnalystChecks
 
       if( !setup.sources[i].empty() )
       {
-        if( !assign_source_and_color( *peak, setup.sources[i], other_peaks, ref_lines ) )
+        if( !assign_source_and_color( *peak, setup.sources[i], other_peaks, interspec, pending_colors ) )
           throw runtime_error( "Source '" + setup.sources[i] + "' is not valid." );
       }else
       {
@@ -2082,7 +2146,7 @@ namespace AnalystChecks
     
     const string source = options.source.has_value() ? options.source.value() : ""s;
     const shared_ptr<const PeakDef> fit_peak = assign_source_to_user_fit_peak( peaks_to_add_in,
-                                                options.energy, source, origPeaks, interspec->referenceLinesWidget() );
+                                                options.energy, source, origPeaks, interspec );
 
     const std::shared_ptr<PeakModel> pmodel = interspec->peakModel();
     assert( pmodel );
@@ -2392,8 +2456,7 @@ namespace AnalystChecks
           shared_ptr<const PeakDef> fit_peak;
           try
           {
-            fit_peak = assign_source_to_user_fit_peak( peaks_to_add_in, energy, source, origPeaks,
-                                                       viewer->referenceLinesWidget() );
+            fit_peak = assign_source_to_user_fit_peak( peaks_to_add_in, energy, source, origPeaks, viewer );
           }catch( std::exception &e )
           {
             callback( string(e.what()) );
@@ -3029,31 +3092,15 @@ namespace AnalystChecks
                               + (fit_results.error_message.empty() ? string("") : (string("; error: ") + fit_results.error_message) ) );
       }//switch( fit_results.status )
 
-      ReferencePhotopeakDisplay * const ref_lines = interspec ? interspec->referenceLinesWidget() : nullptr;
-
       result.warnings = fit_results.warnings;
+      map<string,Wt::WColor> pending_colors;  // So each new source gets its own color
       for( const PeakDef &p : fit_results.observable_peaks )
       {
         auto sp = make_shared<PeakDef>(p);
 
-        string src_str;
-        if( sp->parentNuclide() )
-          src_str = sp->parentNuclide()->symbol;
-        else if( sp->xrayElement() )
-          src_str = sp->xrayElement()->symbol;
-        else if( sp->reaction() )
-          src_str = sp->reaction()->name();
-
-        if( ref_lines && !src_str.empty() )
-        {
-          Wt::WColor color = ref_lines->suggestColorForSource( src_str );
-          if( color.isDefault() )
-          {
-            color = ref_lines->nextGenericSourceColor();
-            ref_lines->updateColorCacheForSource( src_str, color );
-          }
-          sp->setLineColor( color );
-        }//if( ref_lines && !src_str.empty() )
+        // Keep colors the fitter gave (e.g., gray for NORM lines it added on its own)
+        if( sp->lineColor().isDefault() )
+          sp->setLineColor( color_for_new_peak( *sp, interspec, pending_colors ) );
 
         result.fitPeaks.push_back( sp );
       }//for( const PeakDef &p : fit_results.observable_peaks )
@@ -3321,30 +3368,15 @@ namespace AnalystChecks
           FitPeaksForNuclideStatus result;
           result.warnings = fit_result->warnings;
 
-          ReferencePhotopeakDisplay * const ref_lines = viewer->referenceLinesWidget();
+          map<string,Wt::WColor> pending_colors;  // So each new source gets its own color
 
           for( const PeakDef &p : fit_result->observable_peaks )
           {
             shared_ptr<PeakDef> sp = make_shared<PeakDef>( p );
 
-            string src_str;
-            if( sp->parentNuclide() )
-              src_str = sp->parentNuclide()->symbol;
-            else if( sp->xrayElement() )
-              src_str = sp->xrayElement()->symbol;
-            else if( sp->reaction() )
-              src_str = sp->reaction()->name();
-
-            if( ref_lines && !src_str.empty() )
-            {
-              Wt::WColor color = ref_lines->suggestColorForSource( src_str );
-              if( color.isDefault() )
-              {
-                color = ref_lines->nextGenericSourceColor();
-                ref_lines->updateColorCacheForSource( src_str, color );
-              }
-              sp->setLineColor( color );
-            }
+            // Keep colors the fitter gave (e.g., gray for NORM lines it added on its own)
+            if( sp->lineColor().isDefault() )
+              sp->setLineColor( color_for_new_peak( *sp, viewer, pending_colors ) );
 
             result.fitPeaks.push_back( sp );
           }
@@ -4409,6 +4441,53 @@ namespace AnalystChecks
           = PeakModel::setNuclideXrayReaction( modifiedPeak, *options.source, 4.0 );
         if( result == PeakModel::SetGammaSource::FailedSourceChange )
           throw runtime_error( "Failed to set source: " + *options.source );
+
+        // Recolor for the new source, like the peak table does: take the color of the new source's
+        //  other peaks, else a new color for the source (or none, if the source was cleared).  A peak
+        //  keeps its own color - one without a source, or one differing from the other peaks of its old
+        //  source; a lone peak's color is taken to be its source's, so it gets the new source's color.
+        const string old_src = peak->sourceName();
+        const string new_src = modifiedPeak.sourceName();
+        if( !options.color.has_value() && (new_src != old_src) )
+        {
+          // The distinct colors of the other peaks of a source
+          const shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks = peakModel->peaks();
+          const auto other_peak_colors = [&all_peaks, &peak]( const string &src ) -> vector<Wt::WColor> {
+            vector<Wt::WColor> colors;
+            for( size_t i = 0; !src.empty() && all_peaks && (i < all_peaks->size()); ++i )
+            {
+              const shared_ptr<const PeakDef> &p = (*all_peaks)[i];
+              const Wt::WColor &c = p->lineColor();
+              if( (p != peak) && (p->sourceName() == src) && !c.isDefault()
+                 && std::none_of( begin(colors), end(colors), [&c]( const Wt::WColor &o ){ return same_rgb( c, o ); } ) )
+              {
+                colors.push_back( c );
+              }
+            }
+            return colors;
+          };//other_peak_colors lambda
+
+          const Wt::WColor &old_color = peak->lineColor();
+          const vector<Wt::WColor> old_src_colors = other_peak_colors( old_src );
+          const bool matches_old_src = std::any_of( begin(old_src_colors), end(old_src_colors),
+                                         [&old_color]( const Wt::WColor &c ){ return same_rgb( c, old_color ); } );
+          const bool own_color = !old_color.isDefault()
+                                 && (old_src.empty() || (!old_src_colors.empty() && !matches_old_src));
+
+          if( !own_color )
+          {
+            const vector<Wt::WColor> new_src_colors = other_peak_colors( new_src );
+            map<string,Wt::WColor> pending_colors;
+            const Wt::WColor color = (new_src_colors.size() == 1)
+                                       ? new_src_colors[0]
+                                       : color_for_new_peak( modifiedPeak, interspec, pending_colors );
+
+            // If there is no color for the new source (e.g., the color theme doesnt color peaks by
+            //  source), a lone peak keeps its color, as in the peak table.
+            if( !color.isDefault() || new_src.empty() || !old_src_colors.empty() )
+              modifiedPeak.setLineColor( color );
+          }//if( !own_color )
+        }//if( source changed, and no color given )
       }
 
       if( options.color.has_value() )
