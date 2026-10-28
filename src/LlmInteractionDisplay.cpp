@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <chrono>
 #include <sstream>
 #include <iomanip>
@@ -244,6 +245,20 @@ namespace
 
     return WString::tr( "lcw-time-min-s" ).arg( ms / 60000 ).arg( (ms % 60000) / 1000 );
   }//formatDuration(...)
+
+
+  /** Formats a USD cost like "Cost: $0.00423" - three significant figures below $1 (per-request
+   costs are often fractions of a cent), and cents at $1 or more. */
+  WString formatCost( const double usd )
+  {
+    int decimals = 2;
+    if( (usd > 0.0) && (usd < 1.0) )
+      decimals = std::min( 8, std::max( 2, 2 - static_cast<int>( std::floor( std::log10( usd ) ) ) ) );
+
+    ostringstream oss;
+    oss << fixed << setprecision( decimals ) << usd;
+    return WString::tr( "lcw-summary-cost" ).arg( oss.str() );
+  }//formatCost(...)
 
 
   /** How long a finished conversation took: to its finishTime, or else to its latest turn. */
@@ -888,6 +903,12 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
         tokenStr += " (" + to_string(convo->cachedTokens.value()) + " cached)";
       WText *tokenText = metadataDiv->addNew<WText>( tokenStr );
       tokenText->addStyleClass( "LlmTokenUsage" );
+    }
+
+    if( convo->cost.has_value() )
+    {
+      WText *costText = metadataDiv->addNew<WText>( " | " + formatCost( convo->cost.value() ) );
+      costText->addStyleClass( "LlmTokenUsage" );
     }
   }
 
@@ -2642,6 +2663,13 @@ void LlmInteractionDisplay::updateSummary()
       WText *cache = m_summaryDiv->addNew<WText>( " | " + cacheStr );
       cache->addStyleClass( "LlmSummaryItem" );
     }
+  }
+
+  // Cost - only shown when the provider reports it (e.g. OpenRouter).
+  if( m_interaction->cost.has_value() )
+  {
+    WText *cost = m_summaryDiv->addNew<WText>( " | " + formatCost( m_interaction->cost.value() ) );
+    cost->addStyleClass( "LlmSummaryItem" );
   }
 }//updateSummary()
 

@@ -193,6 +193,7 @@
   <message id="lcw-summary-cache">Cache: {1} read</message>
   <message id="lcw-summary-cache-pct">Cache: {1} read ({2}% of input)</message>
   <message id="lcw-summary-cache-written">{1}, {2} written</message>
+  <message id="lcw-summary-cost">Cost: ${1}</message>
   <message id="lcw-response-duration"> | Duration: {1}</message>
   <message id="lcw-tool-took"> - took {1}</message>
   <message id="lcw-subagent-ended">This sub-agent has ended, so there is nothing to retry or continue.</message>

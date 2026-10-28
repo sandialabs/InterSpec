@@ -339,6 +339,24 @@ namespace
 
     convo->conversationFinished.emit();
   }//finish_conversation(...)
+
+
+  /** Accumulates a parsed API response's token usage and cost (whichever the provider reported)
+   onto `convo`. */
+  void add_parsed_usage( LlmConversationHistory &history, const shared_ptr<LlmInteraction> &convo,
+                         const ParsedLlmResponse &parsed )
+  {
+    const auto to_int = []( const std::optional<size_t> &v ) -> std::optional<int> {
+      return v.has_value() ? std::optional<int>( static_cast<int>( v.value() ) ) : std::nullopt;
+    };
+
+    if( parsed.promptTokens.has_value() || parsed.completionTokens.has_value()
+       || parsed.totalTokens.has_value() || parsed.cachedTokens.has_value()
+       || parsed.cacheCreationTokens.has_value() || parsed.cost.has_value() )
+      history.addTokenUsage( convo, to_int( parsed.promptTokens ), to_int( parsed.completionTokens ),
+                             to_int( parsed.totalTokens ), to_int( parsed.cachedTokens ),
+                             to_int( parsed.cacheCreationTokens ), parsed.cost );
+  }//add_parsed_usage(...)
 }//namespace
 
 
@@ -2441,33 +2459,19 @@ void LlmInterface::handleApiResponse( const std::string &response,
     assert( m_protocol );
     const ParsedLlmResponse parsed = m_protocol->parseResponse( responseJson );
 
-    // Accumulate token usage (and log it when debugging).
+    // Accumulate token usage and cost (and log them when debugging).
     std::optional<size_t> promptTokens = parsed.promptTokens;
     std::optional<size_t> completionTokens = parsed.completionTokens;
     {
-      std::optional<int> promptTokensInt, completionTokensInt, totalTokens, cachedTokensInt, cacheCreationInt;
-      if( parsed.promptTokens.has_value() )
-        promptTokensInt = static_cast<int>( parsed.promptTokens.value() );
-      if( parsed.completionTokens.has_value() )
-        completionTokensInt = static_cast<int>( parsed.completionTokens.value() );
-      if( parsed.totalTokens.has_value() )
-        totalTokens = static_cast<int>( parsed.totalTokens.value() );
-      if( parsed.cachedTokens.has_value() )
-        cachedTokensInt = static_cast<int>( parsed.cachedTokens.value() );
-      if( parsed.cacheCreationTokens.has_value() )
-        cacheCreationInt = static_cast<int>( parsed.cacheCreationTokens.value() );
-
-      if( promptTokensInt.has_value() || completionTokensInt.has_value() || totalTokens.has_value()
-         || cachedTokensInt.has_value() || cacheCreationInt.has_value() )
-        m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens,
-                                  cachedTokensInt, cacheCreationInt );
+      add_parsed_usage( *m_history, conversation, parsed );
 
       if( m_debug_stream )
       {
         const bool has_completion = completionTokens.has_value();
         const bool has_cache = parsed.cachedTokens.has_value();
+        const bool has_cost = parsed.cost.has_value();
 
-        if( has_completion || has_cache )
+        if( has_completion || has_cache || has_cost )
           (*m_debug_stream) << "=== Token Usage This Call ===" << endl;
 
         if( has_completion )
@@ -2488,7 +2492,10 @@ void LlmInterface::handleApiResponse( const std::string &response,
           (*m_debug_stream) << endl;
         }
 
-        if( has_completion || has_cache )
+        if( has_cost )
+          (*m_debug_stream) << "Cost: $" << parsed.cost.value() << endl;
+
+        if( has_completion || has_cache || has_cost )
           (*m_debug_stream) << "=============================" << endl;
       }//if( m_debug_stream )
     }
@@ -3207,7 +3214,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 sub_agent_convo->completionTokens.has_value() ||
                 sub_agent_convo->totalTokens.has_value() ||
                 sub_agent_convo->cachedTokens.has_value() ||
-                sub_agent_convo->cacheCreationTokens.has_value() )
+                sub_agent_convo->cacheCreationTokens.has_value() ||
+                sub_agent_convo->cost.has_value() )
             {
               if( interface->m_debug_stream )
               {
@@ -3254,6 +3262,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 parent_conv->cacheCreationTokens = parent_conv->cacheCreationTokens.value_or(0)
                                             + sub_agent_convo->cacheCreationTokens.value();
 
+              if( sub_agent_convo->cost.has_value() )
+                parent_conv->cost = parent_conv->cost.value_or(0.0) + sub_agent_convo->cost.value();
+
               if( interface->m_debug_stream )
               {
                 (*interface->m_debug_stream) << "Parent conversation now has:" << endl;
@@ -3262,6 +3273,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 (*interface->m_debug_stream) << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
                 (*interface->m_debug_stream) << "  Cache read tokens: " << (parent_conv->cachedTokens.has_value() ? std::to_string(parent_conv->cachedTokens.value()) : "N/A") << endl;
                 (*interface->m_debug_stream) << "  Cache write tokens: " << (parent_conv->cacheCreationTokens.has_value() ? std::to_string(parent_conv->cacheCreationTokens.value()) : "N/A") << endl;
+                if( parent_conv->cost.has_value() )
+                  (*interface->m_debug_stream) << "  Cost: $" << parent_conv->cost.value() << endl;
                 (*interface->m_debug_stream) << "===================================================" << endl;
               }
             }
@@ -5833,15 +5846,23 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
         (*m_debug_stream) << "=== Processing summarization response ===" << endl;
 
       // Extract the summary text from the LLM response (format-agnostic, via the active protocol).
-      string summaryText;
+      ParsedLlmResponse parsed;
       try
       {
         assert( m_protocol );
-        summaryText = m_protocol->parseResponse( responseJson ).content;
+        parsed = m_protocol->parseResponse( responseJson );
       }catch( const std::exception &e )
       {
         cerr << "Error extracting summary from LLM response: " << e.what() << endl;
       }
+      const string &summaryText = parsed.content;
+
+      // Count the compaction call's tokens/cost on its own (visible) conversation - before any turn
+      //  is added, so the display picks them up.  But its prompt carried the whole pre-compaction
+      //  history, and this is the newest conversation, so leave lastCallPromptTokens unset or
+      //  shouldSummarize() would read it as the context still being nearly full.
+      add_parsed_usage( *m_history, convo, parsed );
+      convo->lastCallPromptTokens.reset();
 
       if( summaryText.empty() )
       {

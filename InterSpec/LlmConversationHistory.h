@@ -528,7 +528,10 @@ struct LlmInteraction
   // but nothing was served from cache.
   std::optional<size_t> cachedTokens;        // Prompt tokens served from cache (cache reads; all providers)
   std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache (Anthropic cache writes)
-  
+  // Provider-reported cost in USD (e.g. OpenRouter), accumulated like promptTokens (API calls +
+  // sub-agents); nullopt means the provider did not report cost.
+  std::optional<double> cost;
+
   /** The conversation turns sent to, or recieved from the LLM.
 
    The first entry is the initial prompt sent to the LLM to start the conversation, with following entries being
@@ -699,13 +702,14 @@ public:
                        const std::shared_ptr<LlmInteraction> &convo );
 
 
-  /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
+  /** Add token usage (and provider-reported cost, in USD) to a conversation; accumulates across API calls */
   static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
                      std::optional<int> completionTokens,
                      std::optional<int> totalTokens,
                      std::optional<int> cachedTokens = std::nullopt,
-                     std::optional<int> cacheCreationTokens = std::nullopt );
+                     std::optional<int> cacheCreationTokens = std::nullopt,
+                     std::optional<double> cost = std::nullopt );
   
   /** Find a conversation start by conversation ID */
   std::shared_ptr<LlmInteraction> findConversationByConversationId(const std::string& conversationId);

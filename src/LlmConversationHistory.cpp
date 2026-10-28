@@ -236,6 +236,7 @@ std::shared_ptr<LlmInteraction> LlmInteraction::shallowClone() const
   clone->totalTokens      = totalTokens;
   clone->cachedTokens     = cachedTokens;
   clone->cacheCreationTokens = cacheCreationTokens;
+  clone->cost             = cost;
   clone->responses        = responses; // shared_ptr copies; turns are immutable read-only objects
   if( state_machine )
     clone->state_machine = state_machine->copy();
@@ -410,7 +411,8 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
                                            std::optional<int> completionTokens,
                                            std::optional<int> totalTokens,
                                            std::optional<int> cachedTokens,
-                                           std::optional<int> cacheCreationTokens )
+                                           std::optional<int> cacheCreationTokens,
+                                           std::optional<double> cost )
 {
   assert( conversation );
   if( !conversation )
@@ -452,6 +454,10 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conv
 
   if( cacheCreationTokens.has_value() && (cacheCreationTokens.value() >= 0) )
     conversation->cacheCreationTokens = conversation->cacheCreationTokens.value_or(0) + static_cast<size_t>( cacheCreationTokens.value() );
+
+  // Cost: like the cache counters, a reported 0 (e.g. a free model) is kept, so it still displays.
+  if( cost.has_value() && (cost.value() >= 0.0) )
+    conversation->cost = conversation->cost.value_or(0.0) + cost.value();
 }//void addTokenUsage(...)
 
 
@@ -879,6 +885,14 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &co
     append_tokens( "cachedTokens", conv->cachedTokens );
     append_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
 
+    if( conv->cost.has_value() )
+    {
+      // Enough significant figures that small per-request costs (e.g. $0.0000123) survive a round trip.
+      std::ostringstream costStrm;
+      costStrm << std::setprecision( 10 ) << conv->cost.value();
+      XmlUtils::append_attrib( convNode, "cost", costStrm.str() );
+    }
+
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
     for( const std::shared_ptr<LlmInteractionTurn> &response : conv->responses )
@@ -1233,6 +1247,16 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     read_tokens( "lastCallPromptTokens", conv->lastCallPromptTokens );
     read_tokens( "cachedTokens", conv->cachedTokens );
     read_tokens( "cacheCreationTokens", conv->cacheCreationTokens );
+
+    if( const rapidxml::xml_attribute<char> *costAttr = convNode->first_attribute( "cost" ) )
+    {
+      double costVal = 0.0;
+      if( SpecUtils::parse_double( costAttr->value(), costAttr->value_size(), costVal ) && (costVal >= 0.0) )
+        conv->cost = costVal;
+      else
+        cerr << "LlmConversationHistory: could not parse cost from '"
+             << SpecUtils::xml_value_str( costAttr ) << "' - ignoring" << endl;
+    }
 
     // Read responses
     if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )
