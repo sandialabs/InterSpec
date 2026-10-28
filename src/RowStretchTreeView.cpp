@@ -38,8 +38,19 @@ WT_DECLARE_WT_MEMBER(TreeViewCheckWidth, Wt::JavaScriptFunction, "TreeViewCheckW
   function(el){
     var w = -1, sw = -1;
     el._isData = el._isData || {};
-    if( el._isData.noadj )
+    if( el._isData.noadj || !el.isConnected )
       return;
+
+    // Wt drops (and logs "not exposed") signals from disabled widgets, and from widgets outside
+    //  the top modal dialog (the dialog cover sits just below it) - so in those cases hold off,
+    //  without recording the width, and check again shortly.
+    var dc = document.querySelector('.Wt-dialogcover'), dlg = el.closest('.Wt-dialog');
+    var zIndex = function(e){ return parseInt(getComputedStyle(e).zIndex) || 0; };
+    if( (dc && dc.offsetWidth > 0 && (!dlg || zIndex(dlg) <= zIndex(dc))) || el.closest('.Wt-disabled') ){
+      clearTimeout( el._isData.recheck );
+      el._isData.recheck = setTimeout( function(){ Wt.WT.TreeViewCheckWidth(el); }, 500 );
+      return;
+    }
 
     var panels = el.querySelectorAll(':scope > * > .cwidth:not(.Wt-header)');
     if( panels.length > 0 && panels[0].children.length > 0 )

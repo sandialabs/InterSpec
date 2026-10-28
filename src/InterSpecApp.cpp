@@ -403,10 +403,16 @@ void InterSpecApp::setupDomEnvironment()
     if( !e || !e.key || e.altKey || (e.shiftKey && ((e.key != 'Z') && (e.key != 'z'))) || (typeof e.keyCode === 'undefined') )
       return;
 
+    // Whether a modal dialog is showing; the cover is position:fixed, so its offsetParent is
+    //  always null, and we must check its size instead.
+    function dialogCoverShowing(){
+      var dc = document.querySelector('.Wt-dialogcover');
+      return !!dc && (dc.offsetWidth > 0);
+    }
+
     // Activate menu bar for keyboard browsing (Ctrl/Cmd+I or F10)
     function activateMenuBar(){
-      var dc = document.querySelector('.Wt-dialogcover');
-      if( dc && dc.offsetParent !== null )
+      if( dialogCoverShowing() )
         return;
       var firstBtn = document.querySelector('.MenuLabel.PopupMenuParentButton');
       if( !firstBtn )
@@ -435,7 +441,7 @@ void InterSpecApp::setupDomEnvironment()
         case 's': // Store
         case 'l': // Log/Linear
         case 'e': case 'E': // Export file dialog
-          if( (function(){ var dc = document.querySelector('.Wt-dialogcover'); return dc && dc.offsetParent !== null; })() ) // Dont do shortcut when there is a blocking-dialog showing
+          if( dialogCoverShowing() ) // Dont do shortcut when there is a blocking-dialog showing
             return;
           code = e.key.charCodeAt(0);
           break;
